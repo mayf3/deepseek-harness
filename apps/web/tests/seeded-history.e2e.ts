@@ -39,6 +39,13 @@ const UI_EXPANDED_EXPECTED = fileURLToPath(
 const COMMAND_ROW_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/command-row.expected.md', import.meta.url))
 const FEEDBACK_ROW_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/feedback-row.expected.md', import.meta.url))
 const FILE_PREVIEW_EXPECTED = join(SNAPSHOT_DIR, 'file-preview.expected.md')
+// The pinned-header geometry golden: a pure-CSS, user-visible behavior that
+// changes no DOM and no accessible name, so the aria goldens cannot capture it
+// (docs/testing.md, "when a snapshot test is required", still requires a
+// keyless snapshot). Following composer-draft-scroll's geometry golden, it
+// records platform-independent semantic booleans about the pinned compaction
+// header, no absolute pixels.
+const STICKY_GEOMETRY_EXPECTED = join(SNAPSHOT_DIR, 'sticky-geometry.expected.md')
 const MODE = webSnapshotMode()
 const SEED_ID = 'seeded-history-web-e2e'
 
@@ -137,7 +144,14 @@ function withCompaction(raw: string, meter: TokenMeter): string {
       sourceCommandId: commandId,
       summary: [{
         type: 'text',
-        text: '## Cold resume compact summary\n\n- The exact summary remains available.',
+        text: '## Cold resume compact summary\n\n- The exact summary remains available.\n\n'
+          // A fenced code block gives the summary body a sticky-bannered
+          // descendant (CodeBlock pins its banner at z-index 6); the pinned
+          // compaction header must outrank it, so the summary carries one to
+          // give the hit-test below a real target. The list makes the body
+          // overflow the shrunk viewport.
+          + '```ts\nfunction resume() { return true }\n```\n\n'
+          + Array.from({ length: 40 }, (_, index) => `- Retained fact ${index + 1}: the reader still sees the pre-compaction surface.`).join('\n'),
       }],
       shadowedRange: { start: first, end: last },
       shadowedSeqs: surfaceSeqs,
@@ -437,20 +451,159 @@ describe('web e2e: seeded history renders through cold resume', () => {
     await page.getByRole('navigation', { name: 'Turn navigation', exact: true }).waitFor({ state: 'visible' })
   })
 
-  it.skipIf(MODE === 'record')('expands the cold-resumed compact summary', async () => {
+  it.skipIf(MODE === 'record')('expands the cold-resumed compact summary and pins its header while scrolling', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-compaction'))
     const marker = page.getByRole('button', { name: /compact Compacted \d+ history items/ })
     await marker.waitFor({ timeout: 10_000 })
     expect(await marker.getAttribute('aria-expanded')).toBe('false')
-    await marker.click()
-    await expect.poll(() => marker.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('true')
-    await expect.poll(() => page.getByRole('heading', { name: 'Cold resume compact summary' }).count(), {
-      timeout: 5_000,
-    }).toBe(1)
-    expect(await page.getByText('The exact summary remains available.', { exact: false }).count()).toBeGreaterThan(0)
-    // Restore the shared page state for any later case.
-    await marker.click()
-    await expect.poll(() => marker.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('false')
+    // Collapsed, the marker is not pinned: the sticky rule's `:has()` gate
+    // needs the body sibling, which only exists while open. jsdom computes no
+    // sticky layout, so this real-browser layer proves the CSS resolves.
+    const collapsedPosition = await marker.evaluate(element => getComputedStyle(element).position)
+    expect(collapsedPosition).not.toBe('sticky')
+    const originalViewport = page.viewportSize() ?? { width: 1680, height: 1000 }
+    try {
+      await marker.click()
+      await expect.poll(() => marker.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('true')
+      await expect.poll(() => page.getByRole('heading', { name: 'Cold resume compact summary' }).count(), {
+        timeout: 5_000,
+      }).toBe(1)
+      expect(await page.getByText('The exact summary remains available.', { exact: false }).count()).toBeGreaterThan(0)
+      // Open, the toggle pins to the scroll container's top.
+      const openStyle = await marker.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return { position: style.position, top: style.top, zIndex: Number.parseInt(style.zIndex, 10) }
+      })
+      expect(openStyle.position).toBe('sticky')
+      expect(openStyle.top).toBe('0px')
+      // The summary body carries a fenced code block whose own banner pins at
+      // z-index 6; the toggle must outrank it, or a code-block summary would
+      // re-bury the toggle. Sample the banner inside THIS summary body, not a
+      // code block elsewhere on the page.
+      const bannerZ = await page.locator('[class*="compactionBody"] [class*="bannerWrap"]').first().evaluate(
+        element => Number.parseInt(getComputedStyle(element).zIndex, 10),
+      )
+      expect(openStyle.zIndex).toBeGreaterThan(bannerZ)
+      // Hovering the open toggle must keep an OPAQUE fill: the default hover
+      // token is translucent and would let the scrolling prose bleed through
+      // the moment the pointer lands to collapse it. The alpha token, if
+      // present, is the fourth comma value (`rgba(r, g, b, a)`) or the value
+      // after `/` in the space form; three channels mean opaque. A color that
+      // parses to neither returns -1, which fails loud instead of passing as
+      // opaque.
+      await marker.hover()
+      const hoverAlpha = await marker.evaluate((element) => {
+        const bg = getComputedStyle(element).backgroundColor
+        const inner = /^rgba?\((.+)\)$/.exec(bg.trim())?.[1]
+        if (inner === undefined) return -1
+        const slashAlpha = inner.split('/')[1]
+        if (slashAlpha !== undefined) return Number.parseFloat(slashAlpha)
+        const channels = inner.split(/[\s,]+/).filter(token => token.length > 0)
+        const commaAlpha = channels[3]
+        if (commaAlpha !== undefined) return Number.parseFloat(commaAlpha)
+        if (channels.length === 3) return 1
+        return -1
+      })
+      expect(hoverAlpha).toBe(1)
+      // Scroll the code block up until its banner covers the pinned header's
+      // own CENTER point, then prove the header (not the banner) is the topmost
+      // element there. A shallower scroll that lands the banner merely tangent
+      // to the header's bottom edge leaves the center clear, so the hit-test
+      // could not tell a correct z-rank from a broken one. Shrinking the
+      // viewport first forces overflow regardless of summary length.
+      await page.setViewportSize({ width: originalViewport.width, height: 360 })
+      const geom = await marker.evaluate((button) => {
+        const container = button.closest('[data-conversation-scroll]') as HTMLElement
+        const banner = container.querySelector('[class*="compactionBody"] [class*="bannerWrap"]') as HTMLElement
+        // Both the toggle and the code banner are sticky at top 0, so a rect
+        // taken while either is stuck reports the stuck position rather than its
+        // content offset. Measure both unstuck, so the target below does not
+        // depend on where the scrollport happened to be when this case started.
+        const markerInline = button.style.position
+        const bannerInline = banner.style.position
+        const bannerTopInline = banner.style.top
+        button.style.position = 'static'
+        banner.style.position = 'static'
+        banner.style.top = 'auto'
+        const containerTop = container.getBoundingClientRect().top
+        const markerStaticTop = button.getBoundingClientRect().top - containerTop + container.scrollTop
+        const bannerStaticTop = banner.getBoundingClientRect().top - containerTop + container.scrollTop
+        const headerHeight = button.getBoundingClientRect().height
+        button.style.position = markerInline
+        banner.style.position = bannerInline
+        banner.style.top = bannerTopInline
+        // Pinned, the header's center sits at containerTop + headerHeight/2.
+        // Scroll the banner's static top a few px above that center line, so
+        // the banner spans the point the hit-test samples.
+        container.scrollTop = Math.max(0, bannerStaticTop - headerHeight / 2 + 4)
+        const markerRect = button.getBoundingClientRect()
+        const bannerRect = banner.getBoundingClientRect()
+        const centerX = markerRect.left + markerRect.width / 2
+        const centerY = markerRect.top + markerRect.height / 2
+        const probe = document.elementFromPoint(centerX, centerY)
+        return {
+          scrollTop: container.scrollTop,
+          // The header's own content offset now lies above the scrollport top,
+          // so its rect top can equal the scrollport top only through stickiness
+          // — this is the precondition that makes the pinning assertion mean
+          // something.
+          staticAboveViewport: container.scrollTop > markerStaticTop,
+          markerTop: markerRect.top,
+          containerTop: container.getBoundingClientRect().top,
+          // The banner must span the sampled point on BOTH axes, or the
+          // hit-test there proves nothing about the z-rank.
+          bannerCoversCenter: bannerRect.top <= centerY && bannerRect.bottom >= centerY
+            && bannerRect.left <= centerX && bannerRect.right >= centerX,
+          markerOwnsCenter: button.contains(probe),
+        }
+      })
+      expect(geom.scrollTop).toBeGreaterThan(0)
+      expect(geom.staticAboveViewport).toBe(true)
+      expect(Math.abs(geom.markerTop - geom.containerTop)).toBeLessThanOrEqual(1)
+      expect(geom.bannerCoversCenter).toBe(true)
+      expect(geom.markerOwnsCenter).toBe(true)
+      // Keyless geometry golden for this user-visible, DOM-invariant CSS
+      // behavior: platform-independent semantic facts, no absolute pixels.
+      // Every line is a value asserted just above, so a regression reddens the
+      // expect first; compareOrRefreshGolden writes the file in refresh mode
+      // and byte-compares it in replay.
+      const stickyGolden = [
+        '# Compaction marker sticky header (pinned over a code-block summary)',
+        '',
+        '## Collapsed',
+        '',
+        `- header is not sticky: ${String(collapsedPosition !== 'sticky')}`,
+        '',
+        '## Open, pinned at the scroll container top',
+        '',
+        `- header position is sticky: ${String(openStyle.position === 'sticky')}`,
+        `- header pins to the top edge: ${String(openStyle.top === '0px')}`,
+        `- header outranks the summary code-block banner: ${String(openStyle.zIndex > bannerZ)}`,
+        `- hover fill stays fully opaque: ${String(hoverAlpha === 1)}`,
+        '',
+        '## Scrolled so the code-block banner overlaps the header center',
+        '',
+        `- container is scrolled off its top: ${String(geom.scrollTop > 0)}`,
+        `- header's static position sits above the scrollport: ${String(geom.staticAboveViewport)}`,
+        `- header holds at the scrollport top: ${String(Math.abs(geom.markerTop - geom.containerTop) <= 1)}`,
+        `- banner spans the sampled center point: ${String(geom.bannerCoversCenter)}`,
+        `- header owns the center point (toggle stays clickable): ${String(geom.markerOwnsCenter)}`,
+      ].join('\n').trimEnd()
+      await compareOrRefreshGolden(STICKY_GEOMETRY_EXPECTED, stickyGolden, MODE)
+    } finally {
+      // Restore the shared page state even if an assertion above threw. Order
+      // matters: collapse the marker, restore the viewport, then re-enter
+      // follow-bottom through the control's own handler. Assigning scrollTop
+      // does not restore ownership: reader movement stays pending until the
+      // sampling interval or `scrollend`, so the control would leak into later
+      // aria goldens.
+      if (await marker.getAttribute('aria-expanded') === 'true') await marker.click()
+      await expect.poll(() => marker.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('false')
+      await page.setViewportSize(originalViewport)
+      const backToBottom = page.getByRole('button', { name: 'Back to bottom', exact: true })
+      if (await backToBottom.count() > 0) await backToBottom.click()
+      await expect.poll(() => backToBottom.count(), { timeout: 10_000 }).toBe(0)
+    }
   })
 
   it.skipIf(MODE === 'record')('an Access-chip switch lands one command row: bare name, non-repeating settlement text', async () => {
@@ -546,7 +699,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'command-row.expected.md', 'feedback-row.expected.md', 'file-preview.expected.md',
-      'session.v3.jsonl', 'ui.expected.md', 'ui-expanded.expected.md',
+      'session.v3.jsonl', 'sticky-geometry.expected.md', 'ui.expected.md', 'ui-expanded.expected.md',
     ])
   })
 })

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-03-web-sticky-collapsible-headers.md
+2026-08-03-web-sticky-collapsible-headers.md: bcb4a8c2e889ab5a02e37b87c08f863120a3a889
+2026-08-03-web-sticky-collapsible-headers.zh.md: 3cad851ddea1dfd6b08715435b7bbd2ee7a084e3

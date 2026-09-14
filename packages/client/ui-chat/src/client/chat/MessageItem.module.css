@@ -71,6 +71,27 @@
   text-align: left;
 }
 
+/* The summary body flows uncapped with the page, so a long checkpoint summary
+   carries this toggle off the top of the viewport. Pin it to the conversation
+   scroll container's top while the row is open (the body is a sibling rendered
+   only when expanded); the base background masks the prose scrolling under it.
+   z-index outranks the markdown code block's own sticky banner (z-index 6 in
+   CodeBlock.module.css), which would otherwise pin over this toggle and hide
+   it once a summary's fenced code block scrolls into the header band. */
+.compactionRow:has(.compactionBody) .compactionButton {
+  position: sticky;
+  top: 0;
+  z-index: 7;
+  background: var(--dsw-alias-bg-base);
+}
+
+/* Pinned, the toggle needs an opaque hover fill: the default translucent hover
+   token below would let the scrolling prose show through the moment the pointer
+   lands on the toggle to collapse it. */
+.compactionRow:has(.compactionBody) .compactionButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
 .compactionButton:not(:disabled) {
   cursor: pointer;
 }
