@@ -79,7 +79,7 @@
 | `event:turn/start` | event | `aa0957eca50aeb28bcd2e6930b95809926edacb550c8c340ba526ba6b861b3d8` | [`event:turn/start`](#persistence-type-eventturnstart) |
 | `event:user/message` | event | `314765bdff29c7862fb6ce820f1773563ba3094a680d163ea21180a2591b8578` | [`event:user/message`](#persistence-type-eventusermessage) |
 | `event:web/deepseek-search-llm-request` | event | `cf6e3aaf1e2de6480aa0157730a41b9a492108a55304100b0f7e112711dd4331` | [`event:web/deepseek-search-llm-request`](#persistence-type-eventwebdeepseek-search-llm-request) |
-| `event:workspace/changes` | event | `0a176529351301e438fc4d94ea0c80f0f105e33fd85a256d76178b0a6dda3061` | [`event:workspace/changes`](#persistence-type-eventworkspacechanges) |
+| `event:workspace/changes` | event | `e308ccf867a5398e316e0af8cb6ce238a8d33a63b9b384c8250a686786285f72` | [`event:workspace/changes`](#persistence-type-eventworkspacechanges) |
 
 ## 事件信封
 
@@ -1250,13 +1250,15 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 #### `workspace/changes` — log-only
 
 ```ts persistence-catalog
-/** Files changed by a completed top-level turn; the latest event for one turn replaces earlier ones. */
-'workspace/changes': WorkspaceChangesData
+/**
+ * A completed top-level turn's changed files were summarized; the summary itself stays on the
+ * Host and is served by `workspaceChanges.summary` for the event's sequence while the Session
+ * lives. The latest event for one turn replaces earlier ones.
+ */
+'workspace/changes': { turn: number }
 ```
 
-类型：[WorkspaceChangesData](subsystems/deliverables.zh.md)
-
-来源：[`packages/deliverables/workspace-changes/src/types.ts:36`](../packages/deliverables/workspace-changes/src/types.ts)
+来源：[`packages/deliverables/workspace-changes/src/types.ts:52`](../packages/deliverables/workspace-changes/src/types.ts)
 
 ## 已解析的持久化类型
 
@@ -3920,7 +3922,7 @@ SHA-256: `aa0957eca50aeb28bcd2e6930b95809926edacb550c8c340ba526ba6b861b3d8`
 
 SHA-256: `f90eb4ab2d3897bc20c521a038e3119d581f791ec974b1a0004f63a8ab9e232d`
 
-来源：[`packages/core/session/src/types.ts:276`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:276`](../packages/core/session/src/types.ts) · [`packages/deliverables/workspace-changes/src/types.ts:52`](../packages/deliverables/workspace-changes/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -4045,36 +4047,15 @@ SHA-256: `2d11ca7b0d4493e244b74eba093227866b33249841e59a1e9bf56afed38604c3`
 
 ### `event:workspace/changes`
 
-SHA-256: `0a176529351301e438fc4d94ea0c80f0f105e33fd85a256d76178b0a6dda3061`
+SHA-256: `e308ccf867a5398e316e0af8cb6ce238a8d33a63b9b384c8250a686786285f72`
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
-| `data` | 必需 | [`packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangesData`](#persistence-type-packagesdeliverablesworkspace-changessrctypestsworkspacechangesdata) |
+| `data` | 必需 | [`event:turn/start.data`](#persistence-type-eventturnstartdata) |
 | `ignorable` | 可选 | `true` |
 | `seq` | 必需 | `number` |
 | `time` | 必需 | `number` |
 | `type` | 必需 | `"workspace/changes"` |
-
-<a id="persistence-type-eventworkspacechangesdatafiles"></a>
-
-### `event:workspace/changes.data.files`
-
-SHA-256: `39c5a9c9f4688d412c567d287ae6577a3f38a73c3f8ba4deffc563d9ec93b927`
-
-[`packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangedFile`](#persistence-type-packagesdeliverablesworkspace-changessrctypestsworkspacechangedfile) 的数组。
-
-<a id="persistence-type-eventworkspacechangesdatasnapshot"></a>
-
-### `event:workspace/changes.data.snapshot`
-
-SHA-256: `f53ef94c56c9b1b890a1eba459ca22023d91f5f50bc829289181961ee052e4f7`
-
-来源：[`packages/deliverables/workspace-changes/src/types.ts:30`](../packages/deliverables/workspace-changes/src/types.ts)
-
-| 属性 | 存在性 | 类型 |
-|---|---|---|
-| `after` | 必需 | `string` |
-| `before` | 必需 | `string` |
 
 <a id="persistence-type-every"></a>
 
@@ -4735,37 +4716,6 @@ SHA-256: `b8fc636a2121df9d8423c242e03c9d23b7ab7c6fdce00e45746932c60b730f97`
 |---|---|---|
 | `description` | 可选 | `string` |
 | `path` | 必需 | `string` |
-
-<a id="persistence-type-packagesdeliverablesworkspace-changessrctypestsworkspacechangedfile"></a>
-
-### `packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangedFile`
-
-SHA-256: `14b37f44c06d8820b6601845f2ad7c995522044c58a6e87da04e29718f4835a1`
-
-来源：[`packages/deliverables/workspace-changes/src/types.ts:4`](../packages/deliverables/workspace-changes/src/types.ts)
-
-| 属性 | 存在性 | 类型 |
-|---|---|---|
-| `added` | 必需 | `number` |
-| `binary` | 可选 | `true` |
-| `deleted` | 必需 | `number` |
-| `display` | 必需 | `string` |
-| `path` | 必需 | `string` |
-
-<a id="persistence-type-packagesdeliverablesworkspace-changessrctypestsworkspacechangesdata"></a>
-
-### `packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangesData`
-
-SHA-256: `69ef2dbc5ed9134fd8199bf6da90da4bd78de61e9336ef008d1770101aa40ae2`
-
-来源：[`packages/deliverables/workspace-changes/src/types.ts:22`](../packages/deliverables/workspace-changes/src/types.ts)
-
-| 属性 | 存在性 | 类型 |
-|---|---|---|
-| `files` | 必需 | [`event:workspace/changes.data.files`](#persistence-type-eventworkspacechangesdatafiles) |
-| `snapshot` | 必需 | [`event:workspace/changes.data.snapshot`](#persistence-type-eventworkspacechangesdatasnapshot) |
-| `total` | 必需 | `number` |
-| `turn` | 必需 | `number` |
 
 <a id="persistence-type-packagesexperimentalagent-teamsrctypeststeammemberphase"></a>
 

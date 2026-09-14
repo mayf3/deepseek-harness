@@ -14,6 +14,7 @@ import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { ChangesSummaryStore } from './changes-summary.ts'
 import { PresentedOpenController } from './present-open.ts'
 import { PresentRow } from './PresentRow.tsx'
 import { Deliverables, selectDeliverables, type DeliverablesInjected } from './Deliverables.tsx'
@@ -38,8 +39,12 @@ export const inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.se
  */
 export function apply(ctx: ClientContext): void {
   const opener = new PresentedOpenController()
-  ctx.effect(() => () => opener.dispose())
-  ctx.on('connection/reset', () => { opener.resetHost() })
+  const summaries = new ChangesSummaryStore()
+  ctx.effect(() => () => Promise.all([opener.dispose(), summaries.dispose()]))
+  ctx.on('connection/reset', () => {
+    opener.resetHost()
+    summaries.reset()
+  })
   ctx.uiConversation.events.register(deliverablesDefinition)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-deliverables: dictionaries')
   ctx.slots.inject(
@@ -49,8 +54,9 @@ export function apply(ctx: ClientContext): void {
       select: selectDeliverables,
       locale: NS,
       inject: (): DeliverablesInjected => ({
-        hooks: { presentedOpen: opener.state, presentedHost: opener.host },
+        hooks: { presentedOpen: opener.state, presentedHost: opener.host, changesSummary: summaries.state },
         reloadPresentedHost: () => opener.loadHost(),
+        loadChangesSummary: (sessionId, seq) => summaries.load(sessionId, seq),
         openPresented: (sessionId, seq, index, action) => opener.open(sessionId, seq, index, action),
         openChanged: (sessionId, seq, index) => opener.openChanged(sessionId, seq, index),
       }),

@@ -1,5 +1,5 @@
 /** Git command bounds, snapshot recovery, and diff failure reporting. */
-import { chmod, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -8,6 +8,9 @@ import { GitRunner, diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree } 
 import { TurnRecorder } from '../src/recorder.ts'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { git, scratchDir } from './support.ts'
+
+/** An object directory factory under a scratch root. */
+const objectsIn = (root: string) => () => Promise.resolve(join(root, 'objects'))
 
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => {
@@ -55,7 +58,7 @@ describe('snapshots and diffs', () => {
     expect(() => git(cwd, 'merge', 'side')).toThrow()
     expect(git(cwd, 'status', '--porcelain')).toContain('UU f.txt')
     const { git: runnerGit } = await runner()
-    const workspace = await locateGitWorkspace(runnerGit, cwd, { home: await scratchDir('dsh-git-store-', cleanups), maxBytes: 1024 * 1024 }, signal)
+    const workspace = await locateGitWorkspace(runnerGit, cwd, objectsIn(await scratchDir('dsh-git-store-', cleanups)), signal)
     expect(workspace?.root).toBe(await realpath(cwd))
     const tree = await snapshotTree(runnerGit, workspace!, signal)
     expect(tree).toMatch(/^[0-9a-f]{40,64}$/)
@@ -65,9 +68,9 @@ describe('snapshots and diffs', () => {
   it('fails loudly when the addressed repository cannot be written or diffed', async () => {
     const cwd = await scratchDir('dsh-git-broken-', cleanups)
     const { git: runnerGit } = await runner()
-    const store = { home: await scratchDir('dsh-git-store-', cleanups), maxBytes: 1024 * 1024 }
+    const store = objectsIn(await scratchDir('dsh-git-store-', cleanups))
     expect(await locateGitWorkspace(runnerGit, cwd, store, signal)).toBeNull()
-    const broken = { root: cwd, gitDir: join(cwd, 'missing'), objectsDir: join(cwd, 'missing-objects'), env: {} }
+    const broken = { root: cwd, gitDir: join(cwd, 'missing'), env: {} }
     await expect(snapshotTree(runnerGit, broken, signal)).rejects.toThrow('git add in')
     await expect(ignoredPaths(runnerGit, broken, ['x'], signal)).rejects.toThrow('git check-ignore failed')
     expect(await ignoredPaths(runnerGit, broken, [], signal)).toEqual(new Set())
@@ -95,7 +98,7 @@ describe('repository edge cases', () => {
     await chmod(join(cwd, 'locked.txt'), 0o000)
     cleanups.push(() => chmod(join(cwd, 'locked.txt'), 0o644))
     const { git: runnerGit } = await runner()
-    const store = { home: await scratchDir('dsh-git-store-', cleanups), maxBytes: 1024 * 1024 }
+    const store = objectsIn(await scratchDir('dsh-git-store-', cleanups))
     const workspace = (await locateGitWorkspace(runnerGit, cwd, store, signal))!
     expect(await snapshotTree(runnerGit, workspace, signal)).toMatch(/^[0-9a-f]{40,64}$/)
   })
@@ -105,7 +108,7 @@ describe('repository edge cases', () => {
     git(cwd, 'init', '-q', '-b', 'main')
     await mkdir(join(cwd, '.git', 'index'))
     const { git: runnerGit } = await runner()
-    const store = { home: await scratchDir('dsh-git-store-', cleanups), maxBytes: 1024 * 1024 }
+    const store = objectsIn(await scratchDir('dsh-git-store-', cleanups))
     const workspace = (await locateGitWorkspace(runnerGit, cwd, store, signal))!
     await expect(snapshotTree(runnerGit, workspace, signal)).rejects.toThrow()
   })
@@ -117,12 +120,12 @@ describe('repository edge cases', () => {
     const original = await readFile(config, 'utf8')
     await writeFile(config, original.replace(/repositoryformatversion = \d+/, 'repositoryformatversion = 99'))
     const { git: runnerGit } = await runner()
-    const store = { home: await scratchDir('dsh-git-store-', cleanups), maxBytes: 1024 * 1024 }
+    const store = objectsIn(await scratchDir('dsh-git-store-', cleanups))
     await expect(locateGitWorkspace(runnerGit, cwd, store, signal)).rejects.toThrow('git rev-parse failed')
     await writeFile(config, original)
     const blocked = join(cwd, 'store-file')
     await writeFile(blocked, 'not a directory')
-    await expect(locateGitWorkspace(runnerGit, cwd, { home: blocked, maxBytes: 1 }, signal)).rejects.toThrow()
+    await expect(locateGitWorkspace(runnerGit, cwd, objectsIn(blocked), signal)).rejects.toThrow()
   })
 })
 
@@ -134,19 +137,18 @@ describe('TurnRecorder', () => {
     const warnings: string[] = []
     let release!: (runner: GitRunner | null) => void
     const gate = new Promise<GitRunner | null>((resolve) => { release = resolve })
-    const env = {
-      git: gate, objects: { home: await scratchDir('dsh-git-store-', cleanups), maxBytes: 1024 * 1024 },
-      maxFiles: 10, warn: (m: string) => { warnings.push(m) },
-    }
+    const tempRoot = await scratchDir('dsh-git-store-', cleanups)
+    const env = { git: gate, tempRoot, maxFiles: 10, warn: (m: string) => { warnings.push(m) } }
     const disposed = new TurnRecorder(session, cwd, env)
     disposed.start(1)
     await new Promise(resolve => setTimeout(resolve, 5))
-    disposed.dispose()
+    const disposal = disposed.dispose()
     release(runnerGit)
-    await disposed.settled()
+    await disposal
     disposed.start(2)
     await disposed.settled()
     expect(warnings).toEqual([])
+    expect(disposed.summary(1)).toBeUndefined()
 
     const { git: missing } = await runner(undefined, '/nonexistent/git-binary')
     const failing = new TurnRecorder(session, cwd, { ...env, git: Promise.resolve(missing) })
@@ -154,5 +156,25 @@ describe('TurnRecorder', () => {
     await failing.settled()
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toContain('workspace-changes:')
+  })
+
+  it('removes its snapshot objects on disposal and never creates them outside a repository', async () => {
+    const tempRoot = await scratchDir('dsh-git-store-', cleanups)
+    const { ctx, git: runnerGit } = await runner()
+    const env = { git: Promise.resolve(runnerGit), tempRoot, maxFiles: 10, warn: (m: string) => { throw new Error(m) } }
+    const plain = new TurnRecorder(ctx.sessions.create(SessionId('plain'), { meta: { cwd: tempRoot } }), tempRoot, env)
+    plain.start(1)
+    await plain.settled()
+    await plain.dispose()
+    const cwd = await scratchDir('dsh-recorder-repo-', cleanups)
+    git(cwd, 'init', '-q', '-b', 'main')
+    const repo = new TurnRecorder(ctx.sessions.create(SessionId('repo'), { meta: { cwd } }), cwd, env)
+    repo.start(1)
+    await repo.settled()
+    const [objects, ...others] = (await readdir(tempRoot)).filter(entry => entry.startsWith('dsh-workspace-changes-objects-'))
+    expect(others).toEqual([])
+    expect(objects).toBeDefined()
+    await repo.dispose()
+    expect(await readdir(tempRoot)).toEqual([])
   })
 })

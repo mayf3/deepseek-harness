@@ -90,16 +90,19 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     cwd = session.header.cwd
     if (MODE === 'record') await recordFixture(scaffold, sessionId, FIXTURE)
 
-    const summaries = session.snapshotEvents().filter(event => event.type === 'workspace/changes')
-    const summary = summaries.at(-1)
-    expect(summary, 'the turn must record its changed files').toBeDefined()
-    if (summary === undefined) throw new Error('no changed-files summary')
+    const announced = session.snapshotEvents().filter(event => event.type === 'workspace/changes').at(-1)
+    expect(announced, 'the turn must announce its changed files').toBeDefined()
+    if (announced === undefined) throw new Error('no changed-files announcement')
+    expect(announced.data).toEqual({ turn: 1 })
+    // The log carries only the turn; the Host serves the summary for the announcing event while the Session lives.
+    const summary = scaffold.ctx.workspaceChanges.summary(sessionId, announced.seq)
+    if (summary === undefined) throw new Error('the Host serves no summary for the announcement')
     // app.local is ignored by the repository, so its counts come from the write call rather than git.
-    expect(summary.data.files.map(file => file.display)).toEqual(['app.local', 'intro.md', 'notes.txt', 'src/util.ts'])
-    expect(summary.data.total).toBe(4)
-    for (const file of summary.data.files) expect(file.added).toBeGreaterThan(0)
-    expect(summary.data.files[0]).toMatchObject({ path: 'app.local', added: 1, deleted: 0 })
-    expect(summary.data.files[2]).toMatchObject({ path: 'notes.txt', added: 1, deleted: 0 })
+    expect(summary.files.map(file => file.display)).toEqual(['app.local', 'intro.md', 'notes.txt', 'src/util.ts'])
+    expect(summary.total).toBe(4)
+    for (const file of summary.files) expect(file.added).toBeGreaterThan(0)
+    expect(summary.files[0]).toMatchObject({ path: 'app.local', added: 1, deleted: 0 })
+    expect(summary.files[2]).toMatchObject({ path: 'notes.txt', added: 1, deleted: 0 })
     expect(await readFile(join(cwd, 'notes.txt'), 'utf8')).toBe('start\ndone\n')
 
     const card = page.locator('[data-changed-files]')

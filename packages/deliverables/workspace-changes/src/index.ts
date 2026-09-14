@@ -1,22 +1,23 @@
 /**
- * Records the files each top-level turn changed as a durable `workspace/changes`
- * Session event, derived from git working-tree snapshots taken at turn start
- * and turn end plus the hunks file tools persist for paths git does not cover.
- * Only a working directory inside a git repository is recorded.
+ * Summarizes the files each top-level turn changed from git working-tree
+ * snapshots taken at turn start and turn end plus the hunks file tools persist
+ * for paths git does not cover. Each summary is announced by a `workspace/changes`
+ * Session event that carries only the turn number and is served through the
+ * `workspaceChanges` service until the Session is disposed. Only a working
+ * directory inside a git repository is recorded.
  */
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type {} from '@deepseek-ai/dsh-agent'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-tools'
 import { GitRunner } from './git.ts'
 import { TurnRecorder } from './recorder.ts'
+import type { WorkspaceChanges } from './types.ts'
 
-export type { WorkspaceChangedFile, WorkspaceChangesData } from './types.ts'
+export type { WorkspaceChangedFile, WorkspaceChanges, WorkspaceChangesSummary } from './types.ts'
 
 /** Stable Loader identity. */
 export const name = 'workspace-changes'
@@ -24,24 +25,18 @@ export const name = 'workspace-changes'
 /** Services used to run git and observe turns. */
 export const inject = ['subprocess']
 
-/** Snapshot bounds and object store placement. Invalid values fail plugin load. */
+/** Snapshot bounds. Invalid values fail plugin load. */
 export interface Config {
-  /** Harness home whose `workspace-changes/` directory holds one snapshot object store per repository; `$DSH_HOME`, then `~/.dsh`. */
-  dshHome?: string
-  /** Bytes one repository's snapshot object store may hold before it is discarded and restarted empty. */
-  objectStoreMaxBytes: number
   /** Milliseconds one git command may run before the turn's record is abandoned. */
   timeoutMs: number
   /** Bytes of git output retained per command; a larger diff listing abandons the record. */
   outputMaxBytes: number
-  /** Maximum files carried by one event; `total` still reports the complete count. */
+  /** Maximum files carried by one summary; `total` still reports the complete count. */
   maxFiles: number
 }
 
 /** Schemastery validation for {@link Config}. */
 export const Config: z<Config> = z.object({
-  dshHome: z.string(),
-  objectStoreMaxBytes: z.number().default(1024 * 1024 * 1024),
   timeoutMs: z.number().default(30_000),
   outputMaxBytes: z.number().default(8 * 1024 * 1024),
   maxFiles: z.number().default(500),
@@ -78,25 +73,32 @@ async function resolveGit(ctx: Context, signal: AbortSignal): Promise<string | n
 
 /**
  * Observe top-level turns of every Session whose working directory lies in a
- * git repository and append their change summaries.
+ * git repository, announce their change summaries, and serve them as
+ * `workspaceChanges`.
  * @param ctx - host context with `subprocess`.
- * @param config - validated bounds and placement.
+ * @param config - validated bounds.
  */
 export function apply(ctx: Context, config: Config): void {
   for (const [field, value] of [
     ['timeoutMs', config.timeoutMs], ['outputMaxBytes', config.outputMaxBytes], ['maxFiles', config.maxFiles],
-    ['objectStoreMaxBytes', config.objectStoreMaxBytes],
   ] as const) {
     if (!Number.isSafeInteger(value) || value < 1) throw new Error(`workspace-changes requires a positive integer ${field}`)
   }
   const lifetime = new AbortController()
   const recorders = new Map<Session, TurnRecorder>()
-  ctx.effect(() => () => {
+  const byId = new Map<SessionId, TurnRecorder>()
+  const forget = (session: Session): Promise<void> => {
+    const recorder = recorders.get(session)
+    recorders.delete(session)
+    byId.delete(session.id)
+    return recorder?.dispose() ?? Promise.resolve()
+  }
+  ctx.effect(() => async () => {
     lifetime.abort()
-    for (const recorder of recorders.values()) recorder.dispose()
-    recorders.clear()
+    await Promise.all([...recorders.keys()].map(forget))
   })
-  const objects = { home: join(resolveDshHome(config.dshHome), 'workspace-changes'), maxBytes: config.objectStoreMaxBytes }
+  const service: WorkspaceChanges = { summary: (sessionId, seq) => byId.get(sessionId)?.summary(seq) }
+  ctx.provide('workspaceChanges', service)
   let runner: Promise<GitRunner | null> | undefined
   const gitRunner = (): Promise<GitRunner | null> => {
     runner ??= resolveGit(ctx, lifetime.signal).then((executable) => {
@@ -112,10 +114,11 @@ export function apply(ctx: Context, config: Config): void {
     let recorder = recorders.get(session)
     if (recorder === undefined) {
       recorder = new TurnRecorder(session, cwd, {
-        git: gitRunner(), objects, maxFiles: config.maxFiles,
+        git: gitRunner(), tempRoot: tmpdir(), maxFiles: config.maxFiles,
         warn: (message) => { ctx.logger.warn(message) },
       })
       recorders.set(session, recorder)
+      byId.set(session.id, recorder)
     }
     return recorder
   }
@@ -129,10 +132,7 @@ export function apply(ctx: Context, config: Config): void {
     else if (event.type === 'tool/result') recorders.get(session)?.observe(event)
     else if (event.type === 'turn/end') recorders.get(session)?.end(event.data.turn)
   })
-  ctx.on('session/disposed', (session) => {
-    recorders.get(session)?.dispose()
-    recorders.delete(session)
-  })
+  ctx.on('session/disposed', (session) => { void forget(session) })
   ctx.on('agent/turn-stopping', async ({ agent, turn }) => {
     await recorders.get(agent.session)?.stopping(turn)
   })

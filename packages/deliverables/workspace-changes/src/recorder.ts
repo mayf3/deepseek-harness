@@ -1,21 +1,21 @@
-/** Per-Session turn recorder: snapshot at turn start, diff and append at turn end. */
-import { realpath } from 'node:fs/promises'
+/** Per-Session turn recorder: snapshot at turn start, diff at turn end, summary kept until disposal. */
+import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { relative, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { FileDiff } from '@deepseek-ai/dsh-tools'
-import { diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree, type GitRunner, type GitWorkspace, type ObjectStoreOptions } from './git.ts'
+import { diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree, type GitRunner, type GitWorkspace } from './git.ts'
 import { argumentHunks, fileDiffsOf, hunkLineCounts } from './numstat.ts'
 import { canonicalPath, compareDisplay, displayPathOf, durablePathOf, isInside, isTemporaryPath, temporaryRoots, toPosix } from './paths.ts'
-import type { WorkspaceChangedFile } from './types.ts'
+import type { WorkspaceChangedFile, WorkspaceChangesSummary } from './types.ts'
 
 /** Facts shared by every recorder of one plugin instance. */
 export interface RecorderEnvironment {
   /** Resolves to the runner, or null when git is unavailable and no turn records anything. */
   git: Promise<GitRunner | null>
-  /** Where snapshot objects live and how large one repository's store may grow. */
-  objects: ObjectStoreOptions
-  /** Maximum files carried by one event. */
+  /** Directory that receives each Session's snapshot object directory. */
+  tempRoot: string
+  /** Maximum files carried by one summary. */
   maxFiles: number
   /** Failure reporter; a failed turn records nothing and the next turn retries. */
   warn: (message: string) => void
@@ -56,9 +56,11 @@ function freshState(turn: number): TurnState {
 
 /**
  * Serializes one Session's git work: the turn-start snapshot, the turn-end
- * snapshot with its diff, and the appended `workspace/changes` event. Tool
- * execution waits for pending work so a snapshot never races a mutation. A
- * working directory outside any repository records nothing.
+ * snapshot with its diff, and the appended `workspace/changes` event whose
+ * summary this recorder keeps. Snapshot objects live in a temporary directory
+ * owned by the recorder; disposal removes it together with the summaries.
+ * Tool execution waits for pending work so a snapshot never races a mutation.
+ * A working directory outside any repository records nothing.
  */
 export class TurnRecorder {
   private chain: Promise<void> = Promise.resolve()
@@ -66,6 +68,10 @@ export class TurnRecorder {
   private state = freshState(0)
   /** The located repository, reused across turns once found; null keeps retrying each turn. */
   private located: Located | null = null
+  /** Temporary directory holding this Session's snapshot objects, created with the first located repository. */
+  private objectsDir: string | undefined
+  /** Summaries by the sequence of the event that announced them. */
+  private readonly summaries = new Map<number, WorkspaceChangesSummary>()
   private readonly lifetime = new AbortController()
 
   constructor(
@@ -142,9 +148,24 @@ export class TurnRecorder {
     return this.chain
   }
 
-  /** Abort queued git work; the recorder accepts nothing afterwards. */
-  dispose(): void {
+  /**
+   * The summary announced by one `workspace/changes` event of this Session.
+   * @param seq - the event's sequence number.
+   * @returns the summary, or undefined for a sequence this recorder did not announce.
+   */
+  summary(seq: number): WorkspaceChangesSummary | undefined {
+    return this.summaries.get(seq)
+  }
+
+  /**
+   * Abort queued git work, forget every summary, and remove the snapshot objects.
+   * @returns once the temporary directory is gone.
+   */
+  async dispose(): Promise<void> {
     this.lifetime.abort()
+    this.summaries.clear()
+    await this.chain
+    if (this.objectsDir !== undefined) await rm(this.objectsDir, { recursive: true, force: true })
   }
 
   private enqueue(task: (signal: AbortSignal) => Promise<void>): Promise<void> {
@@ -171,7 +192,10 @@ export class TurnRecorder {
     const git = await this.env.git
     if (git === null) return null
     const cwd = await realpath(this.cwd)
-    const workspace = await locateGitWorkspace(git, cwd, this.env.objects, signal)
+    const workspace = await locateGitWorkspace(git, cwd, async () => {
+      this.objectsDir ??= await mkdtemp(join(this.env.tempRoot, 'dsh-workspace-changes-objects-'))
+      return this.objectsDir
+    }, signal)
     if (workspace === null) return null
     this.located = { git, workspace, cwd, home: await canonicalPath(homedir()), temporaryRoots: await temporaryRoots() }
     return this.located
@@ -206,12 +230,8 @@ export class TurnRecorder {
     const sorted = [...files.values()].sort(compareDisplay)
     // An empty list after an earlier in-turn record supersedes that record.
     if (sorted.length === 0 && state.recordedAfterSeq < 0) return
-    const event = this.session.append('workspace/changes', {
-      turn: state.turn,
-      files: sorted.slice(0, this.env.maxFiles),
-      total: sorted.length,
-      snapshot: { before, after },
-    })
+    const event = this.session.append('workspace/changes', { turn: state.turn })
+    this.summaries.set(event.seq, { turn: state.turn, cwd: this.cwd, files: sorted.slice(0, this.env.maxFiles), total: sorted.length })
     state.recordedAfterSeq = event.seq
   }
 }

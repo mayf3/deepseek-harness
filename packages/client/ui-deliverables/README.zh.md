@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-与 `ui-conversation` 和 Host 侧的 [workspace-changes](../../deliverables/workspace-changes/README.zh.md) 插件一起挂载本插件；已完成轮次随即以改动文件卡片收尾，位于收尾消息正文与其动作页脚之间。没有记录的摘要时——工作区不在任何 git 仓库内、Host 上没有 git，或该插件被组合出去——卡片不出现，只保留交付卡片与正文链接。
+与 `ui-conversation` 和 Host 侧的 [workspace-changes](../../deliverables/workspace-changes/README.zh.md) 插件一起挂载本插件；已完成轮次随即以改动文件卡片收尾，位于收尾消息正文与其动作页脚之间。没有可提供的摘要时——工作区不在任何 git 仓库内、Host 上没有 git、该插件被组合出去，或该轮之后 Host 重启过——卡片不出现，只保留交付卡片与正文链接。
 
 <a id="explicit-deliveries"></a>
 ### 显式交付
@@ -36,7 +36,7 @@ Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于声明交�
 
 ### 改动文件卡片
 
-卡片渲染本轮最新的 `workspace/changes` 事件：标题给出改动文件总数与增删行数合计，每一行显示一个文件的展示路径及其增删行数，二进制文件显示“二进制”。行按记录的展示顺序排列，因此仓库内位于工作目录之上的文件与工作区外的文件排在最前。折叠前显示三行；下方的控件展开全部记录文件，展开后同一位置的控件从底部收起列表。Host 有桌面时，标题在文件管理器中打开包含所列文件的最深工作区文件夹，每一行用默认应用打开该文件，两者都通过经过认证的 Host 操作完成，并在计数位置显示交付卡片的等待与可重试错误状态；打开成功后重新显示计数。没有桌面时标题是普通标签，行改为在右侧 Sidebar 中预览文件。首个文件区块位于收尾正文下方 20px，后续显式交付区块位于卡片下方 16px，操作页脚位于最后一个文件区块下方 20px。最终文件交付仍需调用 `present`。
+卡片渲染 Host 为本轮最新一条 `workspace/changes` 宣告提供的摘要，每条宣告通过经过认证的摘要路由读取一次；读取尚未完成、Host 答复摘要已不存在，或摘要没有列出任何文件时，没有卡片。标题给出改动文件总数与增删行数合计，每一行显示一个文件的展示路径及其增删行数，二进制文件显示“二进制”。行按记录的展示顺序排列，因此仓库内位于工作目录之上的文件与工作区外的文件排在最前。折叠前显示三行；下方的控件展开全部记录文件，展开后同一位置的控件从底部收起列表。Host 有桌面时，标题在文件管理器中打开包含所列文件的最深工作区文件夹，每一行用默认应用打开该文件，两者都通过经过认证的 Host 操作完成，并在计数位置显示交付卡片的等待与可重试错误状态；打开成功后重新显示计数。没有桌面时标题是普通标签，行改为在右侧 Sidebar 中预览文件。首个文件区块位于收尾正文下方 20px，后续显式交付区块位于卡片下方 16px，操作页脚位于最后一个文件区块下方 20px。最终文件交付仍需调用 `present`。
 
 ### 行内代码链接
 
@@ -50,7 +50,7 @@ Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于声明交�
 <details>
 <summary>实现细节——点击展开</summary>
 
-Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，要求模型点名成功创建或修改的主要文件，并把这些文件以及正文中提到的其他本轮变更文件写成 Markdown 行内代码。浏览器半部把组合改动文件卡片与显式交付的包装组件注册进 chat 视图的 `conversation.chat.turnTail` 洞。`deliverablesDefinition` 把每个轮次最新且通过校验的 `workspace/changes` 事件折叠进 `DeliverablesTurnData.changes`，把 `deliverables/presented` 事件折叠为交付，并根据 `write`、`edit` 和有修改作用的 `str_replace_editor` 命令中经过校验的原始参数把成功的第一方修改调用折叠为产出路径；产出路径只供正文提及解析器使用。读取、删除、不受支持的工具、格式错误的调用、格式错误的事件和失败结果不贡献任何条目。本包还提供 chat 视图按收尾消息查询的 `chatFileMentions` 服务；把插件组合出去会同时移除两个表面，视图的空链以零成本留下。
+Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，要求模型点名成功创建或修改的主要文件，并把这些文件以及正文中提到的其他本轮变更文件写成 Markdown 行内代码。浏览器半部把组合改动文件卡片与显式交付的包装组件注册进 chat 视图的 `conversation.chat.turnTail` 洞。`deliverablesDefinition` 把每个轮次最新且通过校验的 `workspace/changes` 宣告的序号折叠进 `DeliverablesTurnData.changes`，卡片按它向 Host 读取摘要并缓存到连接被替换为止，把 `deliverables/presented` 事件折叠为交付，并根据 `write`、`edit` 和有修改作用的 `str_replace_editor` 命令中经过校验的原始参数把成功的第一方修改调用折叠为产出路径；产出路径只供正文提及解析器使用。读取、删除、不受支持的工具、格式错误的调用、格式错误的事件和失败结果不贡献任何条目。本包还提供 chat 视图按收尾消息查询的 `chatFileMentions` 服务；把插件组合出去会同时移除两个表面，视图的空链以零成本留下。
 
 原生打开使用经过认证的 POST，通过当前查看的会话、事件序号和原始文件索引定位声明；改动文件路由省略索引时打开公共文件夹，Host 从记录的工作区相对路径推导该文件夹并验证它是目录。Host 读取声明或摘要及当前查看的会话 header，将其中的 cwd 传给 `workspaceFiles.stat`；未记录 cwd 时使用部署的工作目录。它与侧栏预览使用同一组合文件系统，无需启动 Agent，子会话也适用。原生操作要求规范化的进程路径能从 Host 路径映射回同一进程路径。提供方没有这种映射时返回 422，卡片提示使用侧栏预览；Host 上存在同名文件并不足够。同一份桌面可用性配置同时约束信息查询和实际执行。编辑会影响后续打开的内容；删除后返回错误。不创建文件内容副本或附件。插件释放时取消并等待进行中的原生打开请求。
 
@@ -63,7 +63,7 @@ Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，�
 
 当产出物面不够用时阅读以下页面。它们从卡片进入 Host 记录器、turn-tail 洞与词表背后的决策。
 
-- [workspace-changes](../../deliverables/workspace-changes/README.zh.md)——记录卡片所渲染摘要的 Host 插件。
+- [workspace-changes](../../deliverables/workspace-changes/README.zh.md)——记录并提供卡片所渲染摘要的 Host 插件。
 - [ui-conversation](../ui-conversation/README.zh.md)——声明 `conversation.chat.turnTail` 洞并渲染收尾正文。
 - [本轮改动文件卡片](../../../.agents/notes/implemented/feature/2026-09-11-turn-changed-files-card.zh.md)——用 git 记录的摘要取代修改调用行背后的决策。
 - [工作区文件链接](../../../.agents/notes/implemented/feature/2026-07-31-web-workspace-file-links.zh.md)——早先产出文件行背后的决策；其 Host 打开路径已被[右侧 Sidebar](../../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.zh.md)取代。

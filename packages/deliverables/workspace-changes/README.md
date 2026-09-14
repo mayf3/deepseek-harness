@@ -1,5 +1,5 @@
 ---
-description: "Record each top-level turn's changed files from git working-tree snapshots as a durable workspace/changes Session event; configuration, repository requirement, and coverage rules."
+description: "Summarize each top-level turn's changed files from git working-tree snapshots, announce them with a workspace/changes Session event, and serve the summary while the Session lives; configuration, repository requirement, and coverage rules."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This plugin records which files each top-level turn changed, with per-file added and deleted line counts, as a `workspace/changes` Session event. It snapshots the working tree with git when a turn starts and when it ends, diffs the two snapshots, and adds the file-tool edits that git does not cover. Only a working directory inside a git repository is recorded. The Web changed-files card renders the event; the model never sees it.
+This plugin summarizes which files each top-level turn changed, with per-file added and deleted line counts. It snapshots the working tree with git when a turn starts and when it ends, diffs the two snapshots, and adds the file-tool edits that git does not cover. The Session log receives only a `workspace/changes` event naming the turn; the summary itself stays on the Host, served through the `workspaceChanges` service until the Session is disposed. Only a working directory inside a git repository is recorded. The Web changed-files card renders the served summary; the model never sees it.
 
 ## Table of Contents
 
@@ -35,17 +35,15 @@ The shipped Web bundle mounts this plugin. Mount it in any composition with the 
 
 | Field | Default | Meaning |
 |---|---|---|
-| `dshHome` | `$DSH_HOME`, then `~/.dsh` | Harness home whose `workspace-changes/` directory holds one snapshot object store per repository |
-| `objectStoreMaxBytes` | `1073741824` | Bytes one repository's snapshot object store may hold before it is discarded and restarted empty |
 | `timeoutMs` | `30000` | Milliseconds one git command may run before the turn's record is abandoned |
 | `outputMaxBytes` | `8388608` | Bytes of git output retained per command; a larger diff listing abandons the record |
-| `maxFiles` | `500` | Maximum files carried by one event; `total` still reports the complete count |
+| `maxFiles` | `500` | Maximum files carried by one summary; `total` still reports the complete count |
 
-Every Session whose working directory lies inside a git repository and that has no subagent origin is recorded; subagent Sessions and working directories outside any repository are not. Snapshots are written through a private index into a private object store under the Harness home, with the repository's own object store attached as a read-only alternate; the repository's index, objects, work tree, and refs stay untouched, and the user's earlier uncommitted changes never enter a summary. One store serves every Session of a repository; a Session checks its size when it first locates the repository and discards a store over `objectStoreMaxBytes`, which starts empty. Nested repositories and submodules inside the working directory are recorded as gitlinks, so their internal changes do not appear. Without git — or, on macOS, with only the developer-tools stub at `/usr/bin/git` — the plugin records nothing and logs that once.
+Every Session whose working directory lies inside a git repository and that has no subagent origin is recorded; subagent Sessions and working directories outside any repository are not. Snapshots are written through a private index into a temporary object directory owned by the Session, with the repository's own object store attached as a read-only alternate; the repository's index, objects, work tree, and refs stay untouched, and the user's earlier uncommitted changes never enter a summary. Session disposal removes the directory. Nested repositories and submodules inside the working directory are recorded as gitlinks, so their internal changes do not appear. Without git — or, on macOS, with only the developer-tools stub at `/usr/bin/git` — the plugin records nothing and logs that once.
 
 Files the file tools changed but the snapshots do not cover are added from the hunks those tools persist with their results, or from the call's own arguments when the result persists none — a `write` that creates a file and every `str_replace_editor` mutation: files matching an ignore pattern and files outside the repository. Files under `/tmp` or the platform temporary directory are excluded unless they lie inside the repository. Line counts for these files sum over the recorded hunks, so repeated edits to one file in a turn can count a line more than once. Changes made through shell commands outside the snapshot coverage are not recorded.
 
-Each file carries a durable `path` — relative to the working directory inside it, absolute elsewhere — and a `display` path used for ordering and labels: the relative path, a `../` path for repository files above the working directory, a `~` path under the home directory, otherwise the absolute path. Files sort by `display` in code-unit order, which lists parent and absolute paths before the working directory's own files. The event also carries the two snapshot tree ids.
+Each file carries a durable `path` — relative to the working directory inside it, absolute elsewhere — and a `display` path used for ordering and labels: the relative path, a `../` path for repository files above the working directory, a `~` path under the home directory, otherwise the absolute path. Files sort by `display` in code-unit order, which lists parent and absolute paths before the working directory's own files. The `workspace/changes` event carries only the turn number; `ctx.workspaceChanges.summary(sessionId, seq)` returns the summary the event with that sequence announced, or undefined once the Session is disposed or when this Host process never recorded it. A conversation reopened after a Host restart therefore has no card for its earlier turns.
 
 -----
 
@@ -55,11 +53,11 @@ Each file carries a durable `path` — relative to the working directory inside 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-One `TurnRecorder` per Session serializes its git work. `turn/start` queues the baseline: `rev-parse` locates the repository and its object store once per Session, then `add --all --ignore-errors` into a temporary index seeded from the repository's index and `write-tree` produce the tree id; an unreadable file is skipped and reported through git's exit code 1, which the snapshot accepts. Each turn holds its own state object, so a record still running for an interrupted turn keeps that turn's files when the next turn starts. Every command runs with `GIT_OBJECT_DIRECTORY` pointing at the private store and `GIT_ALTERNATE_OBJECT_DIRECTORIES` at the repository's objects, so committed content is read from the repository and new objects never land there. Every `tools/pre-execute` waits for that queue before a tool runs, so no mutation can precede its baseline. `tool/call` events keep each mutation call's argument-derived hunks and `tool/result` events collect the persisted ones, preferring the latter. `agent/turn-stopping` records inside the turn: a second snapshot, `diff-tree -r -M --numstat` between the two trees, `check-ignore` for hunk paths inside the work tree, and the appended event. `turn/end` records again only when tool results settled after the last record attempt, which covers aborted, failed, and steered turns without repeating a failed attempt; an empty list after an earlier record supersedes it. The repository's index is only read.
+One `TurnRecorder` per Session serializes its git work. `turn/start` queues the baseline: `rev-parse` locates the repository once per Session and the Session's temporary object directory is created, then `add --all --ignore-errors` into a temporary index seeded from the repository's index and `write-tree` produce the tree id; an unreadable file is skipped and reported through git's exit code 1, which the snapshot accepts. Each turn holds its own state object, so a record still running for an interrupted turn keeps that turn's files when the next turn starts. Every command runs with `GIT_OBJECT_DIRECTORY` pointing at the temporary directory and `GIT_ALTERNATE_OBJECT_DIRECTORIES` at the repository's objects, so committed content is read from the repository and new objects never land there. Every `tools/pre-execute` waits for that queue before a tool runs, so no mutation can precede its baseline. `tool/call` events keep each mutation call's argument-derived hunks and `tool/result` events collect the persisted ones, preferring the latter. `agent/turn-stopping` records inside the turn: a second snapshot, `diff-tree -r -M --numstat` between the two trees, `check-ignore` for hunk paths inside the work tree, the appended event, and the summary kept under the event's sequence. `turn/end` records again only when tool results settled after the last record attempt, which covers aborted, failed, and steered turns without repeating a failed attempt; an empty list after an earlier record supersedes it. The repository's index is only read.
 
-Git runs through the `subprocess` capability with a scrubbed environment, `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0`, the configured timeout, and bounded output. A failing step abandons that turn's record with a warning; the next turn starts afresh. Session disposal and plugin disposal abort queued work.
+Git runs through the `subprocess` capability with a scrubbed environment, `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0`, the configured timeout, and bounded output. A failing step abandons that turn's record with a warning; the next turn starts afresh. Session disposal and plugin disposal abort queued work, forget the summaries, and remove the temporary directory.
 
-**Runtime invariant:** No companion is published. Event listeners are effect-owned, the Session log owns the recorded summaries, and the git object store owns snapshot trees; no independent observation can diverge from them.
+**Runtime invariant:** No companion is published. Event listeners are effect-owned and the recorder owns both the summaries and the snapshot trees for its Session's lifetime; no independent observation can diverge from them.
 
 </details>
 
@@ -68,7 +66,7 @@ Git runs through the `subprocess` capability with a scrubbed environment, `GIT_T
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Web deliverables](../../client/ui-deliverables/README.md) — the changed-files card that renders this event and opens its files.
+- [Web deliverables](../../client/ui-deliverables/README.md) — the changed-files card that reads the served summary and opens its files.
 - [Subprocess capability](../../subprocess/README.md) — the seam git runs through.
 - [Turn changed-files card decision](../../../.agents/notes/implemented/feature/2026-09-11-turn-changed-files-card.md) — snapshot design, coverage rules, the deferred shadow repository, and rejected alternatives.
 
@@ -85,8 +83,7 @@ Nothing here enters a model request, so provider cache reuse is unaffected.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- Snapshot trees survive only until their private store exceeds `objectStoreMaxBytes` and is discarded; the recorded counts survive, the trees needed for a later full-file comparison do not.
-- The store is shared by every Session of one repository. A Session that discards it while another Session is snapshotting makes that other turn warn and record nothing; the next turn starts afresh.
+- Summaries and snapshot trees live only as long as their Session in this Host process; earlier turns of a conversation reopened after a Host restart have no card. This is the decided behavior: a card whose content the Host can no longer open is not shown.
 - Two git features still write into the repository's own git directory during a snapshot: `core.splitIndex` writes `sharedindex.*` files, and git-lfs runs its clean filter on changed files and stores their objects under `.git/lfs`.
 - git 2.13 or later is required for `rev-parse --absolute-git-dir`; an unsupported repository format or another git failure abandons the turn with a warning rather than being treated as a plain directory.
 - Edits the user makes during a turn are attributed to that turn.

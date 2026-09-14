@@ -2174,7 +2174,12 @@
     },
     {
       "doc": "docs/subsystems/deliverables.md",
-      "symbol": "WorkspaceChangesData",
+      "symbol": "WorkspaceChangesSummary",
+      "source": "packages/deliverables/workspace-changes/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/deliverables.md",
+      "symbol": "WorkspaceChanges",
       "source": "packages/deliverables/workspace-changes/src/types.ts"
     }
   ]

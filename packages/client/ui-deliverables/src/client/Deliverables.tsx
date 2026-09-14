@@ -1,13 +1,15 @@
-/** The changed-files card and explicitly declared files for a closing turn. */
+/** The changed-files card, shown only while the Host serves the turn's summary, and explicitly declared files for a closing turn. */
 import { useEffect, useState } from 'react'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { Button, IconChevronDownOutline14, IconChevronUpOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GlobalStandardProps, InjectFace, PropsLocale, SessionStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { PresentedOpenController } from './present-open.ts'
+import type { ChangesSummaryStore } from './changes-summary.ts'
 import { ChangedFiles } from './ChangedFiles.tsx'
 import { changesForClosing, presentedForClosing, type ChangesTurnData, type PresentedPath } from './turn-deliverables.ts'
 import type { NS } from './locales.ts'
+import { changesSummaryUrl } from '../changes.ts'
 import { presentedFileUrl } from '../presented.ts'
 import { PresentedFileCard } from './PresentedFileCard.tsx'
 import css from './Deliverables.module.css'
@@ -16,21 +18,23 @@ interface DeliverablesMatch { changes: ChangesTurnData | null; presented: readon
 
 const COLLAPSED_PRESENTED_COUNT = 4
 
-/** Native-open callbacks and shared gesture status supplied by the plugin. */
+/** Summary reads, native-open callbacks, and shared gesture status supplied by the plugin. */
 export interface DeliverablesInjected {
   hooks: {
     presentedOpen: ObservableSnapshot<ReturnType<PresentedOpenController['state']['getSnapshot']>>
     presentedHost: ObservableSnapshot<ReturnType<PresentedOpenController['host']['getSnapshot']>>
+    changesSummary: ObservableSnapshot<ReturnType<ChangesSummaryStore['state']['getSnapshot']>>
   }
   reloadPresentedHost: PresentedOpenController['loadHost']
+  loadChangesSummary: ChangesSummaryStore['load']
   openPresented: PresentedOpenController['open']
   openChanged: PresentedOpenController['openChanged']
 }
 
 /**
- * Claim turns with a recorded change summary or declared files.
+ * Claim turns with a change announcement or declared files.
  * @param owner - closing turn.
- * @returns matched changes and deliveries, or null for a turn with neither.
+ * @returns matched announcement and deliveries, or null for a turn with neither.
  */
 export function selectDeliverables(owner: TurnTailOwnerProps): DeliverablesMatch | null {
   const changes = changesForClosing(owner)
@@ -39,17 +43,30 @@ export function selectDeliverables(owner: TurnTailOwnerProps): DeliverablesMatch
 }
 
 /**
- * Render the changed-files card and default-application buttons for declared files.
- * @param props - matched files, workspace opener, and localized copy.
+ * Render the changed-files card, once the Host has served the announced
+ * summary and it lists a file, and default-application buttons for declared
+ * files. A summary the Host no longer serves leaves no card.
+ * @param props - matched announcement and files, workspace opener, and localized copy.
  * @returns the closing turn's file rows.
  */
-export function Deliverables({ matched, openFile, t, sessionId, useSessions, openPresented, openChanged, usePresentedOpen, usePresentedHost, reloadPresentedHost }: Pick<TurnTailOwnerProps, 'openFile'> & {
+export function Deliverables({
+  matched, openFile, t, sessionId, useSessions, openPresented, openChanged, usePresentedOpen, usePresentedHost, useChangesSummary,
+  reloadPresentedHost, loadChangesSummary,
+}: Pick<TurnTailOwnerProps, 'openFile'> & {
   matched: DeliverablesMatch
 } & PropsLocale<typeof NS> & Pick<SessionStandardProps, 'sessionId'> & Pick<GlobalStandardProps, 'useSessions'> & InjectFace<DeliverablesInjected>) {
   const [expanded, setExpanded] = useState(false)
   const cwd = useSessions(state => state.byId[sessionId]?.cwd)
   const states = usePresentedOpen(value => value)
   const host = usePresentedHost(value => value)
+  const announced = matched.changes
+  const summary = useChangesSummary(value => announced === null ? undefined : value[changesSummaryUrl(sessionId, announced.seq)])
+  useEffect(() => {
+    if (announced !== null && summary === undefined) void loadChangesSummary(sessionId, announced.seq)
+  }, [announced, summary, sessionId, loadChangesSummary])
+  const changes = announced !== null && typeof summary === 'object' && summary.files.length > 0
+    ? { seq: announced.seq, files: summary.files, total: summary.total }
+    : null
   const collapsible = matched.presented.length > COLLAPSED_PRESENTED_COUNT
   const presented = collapsible && !expanded
     ? matched.presented.slice(0, COLLAPSED_PRESENTED_COUNT)
@@ -57,14 +74,13 @@ export function Deliverables({ matched, openFile, t, sessionId, useSessions, ope
   useEffect(() => {
     if (host === null) void reloadPresentedHost()
   }, [host, reloadPresentedHost])
-  const { changes } = matched
   return <>
     {changes !== null && <ChangedFiles changes={changes} cwd={cwd} sessionId={sessionId}
       host={host === 'error' ? null : host} phases={states} t={t} openFile={openFile}
       onOpen={(index) => { void openChanged(sessionId, changes.seq, index) }} />}
     {matched.presented.length > 0 && <div
       className={css.root}
-      data-after-changes={matched.changes !== null || undefined}
+      data-after-changes={changes !== null || undefined}
     >
       {host === 'error' && <div className={css.hostStatus}>
         <span>{t('presented.hostError')}</span>

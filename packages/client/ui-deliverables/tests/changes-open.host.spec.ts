@@ -1,4 +1,4 @@
-/** Changed-file and common-folder native opens resolve the viewed Session's current workspace. */
+/** The change summary route and the changed-file and common-folder native opens over the Host-served summaries. */
 import { mkdtemp, rm, writeFile, mkdir, realpath, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -8,13 +8,12 @@ import { Context } from '@deepseek-ai/cordis'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import type { SessionEventReadRequest } from '@deepseek-ai/dsh-session-query'
-import type { WorkspaceChangedFile } from '@deepseek-ai/dsh-workspace-changes/types'
+import type { WorkspaceChangedFile, WorkspaceChangesSummary } from '@deepseek-ai/dsh-workspace-changes/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { commonChangedFolder, registerPresentOpen } from '../src/present-open.ts'
-import { changedFileUrl, CHANGES_OPEN_PATH, isChangedFile, isChangesData } from '../src/changes.ts'
+import { changedFileUrl, changesSummaryUrl, CHANGES_OPEN_PATH, CHANGED_FILES_PATH, isChangedFile, isChangesEvent, isChangesSummary } from '../src/changes.ts'
 
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => {
@@ -34,30 +33,50 @@ async function fixture() {
   await writeFile(join(cwd, 'src', 'b.ts'), 'b')
   const outside = join(root, 'outside.txt')
   await writeFile(outside, 'outside')
-  const data = { turn: 1, total: 3, snapshot: { before: 'a'.repeat(40), after: 'b'.repeat(40) }, files: [changed('src/lib/a.ts'), changed('src/b.ts'), changed(outside, '~/outside.txt')] }
+  const data: WorkspaceChangesSummary = { turn: 1, cwd, total: 3, files: [changed('src/lib/a.ts'), changed('src/b.ts'), changed(outside, '~/outside.txt')] }
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
-  const session: { cwd?: string } = { cwd }
   await ctx.plugin(LocalFileSystem, { cwd })
   ctx.provide('sandboxPolicy', { workspaceRoot: cwd } as never)
   await ctx.plugin({
     inject: ['fs', 'sandboxPolicy'],
     apply: (scope) => { new WorkspaceFiles(scope, { maxBytes: 1024, maxFileBytes: 1024, maxLines: 100, maxEntries: 100 }) },
   })
-  const readEvent = vi.fn(async (request: SessionEventReadRequest) => {
-    if (request.sessionId !== 'owner') throw new SessionQueryError('missing', 'SESSION_QUERY_SESSION_NOT_FOUND')
-    if (request.seq !== 9) throw new SessionQueryError('missing', 'SESSION_QUERY_EVENT_NOT_FOUND')
-    return { session, target: { type: 'workspace/changes', data } as SessionEvent }
+  const readEvent = vi.fn(async (_request: SessionEventReadRequest) => {
+    throw new SessionQueryError('missing', 'SESSION_QUERY_EVENT_NOT_FOUND')
   })
   ctx.provide('sessionQuery', { readEvent } as never)
+  const summary = vi.fn((sessionId: SessionId, seq: number) => sessionId === 'owner' && seq === 9 ? data : undefined)
+  ctx.provide('workspaceChanges', { summary })
   const opener = vi.fn(async (_request: { path: string; action?: 'reveal' }, _signal: AbortSignal) => ({ opened: true as const }))
   ctx.provide('sessionController', { openWorkspacePath: opener, workspaceDesktop: () => ({ name: 'desktop', available: true, fileManager: 'finder' }) } as never)
   const connection = new HostConnectionService(ctx, [], {} as BrowserAuth)
-  await ctx.plugin({ inject: ['connection', 'sessionQuery', 'sessionController', 'workspaceFiles', 'fs', 'sandboxPolicy'], apply: registerPresentOpen })
+  await ctx.plugin({
+    inject: ['connection', 'sessionQuery', 'sessionController', 'workspaceFiles', 'fs', 'sandboxPolicy', 'workspaceChanges'],
+    apply: registerPresentOpen,
+  })
   const handler = connection.createSharedFetchHandler('/api')
   const open = (query = '?sessionId=owner&seq=9&index=0') => handler.fetch(new Request(`http://localhost${CHANGES_OPEN_PATH}${query}`, { method: 'POST' }))
-  return { root, cwd, ctx, data, session, readEvent, open, opener, outside }
+  const read = (query = '?sessionId=owner&seq=9') => handler.fetch(new Request(`http://localhost${CHANGED_FILES_PATH}${query}`))
+  return { root, cwd, ctx, data, readEvent, open, read, opener, outside, summary }
 }
+
+describe('change summary route', () => {
+  it('serves the Host-held summary without its working directory, and 404 once it is gone', async () => {
+    const { read, data, summary } = await fixture()
+    expect(changesSummaryUrl(SessionId('owner'), 9)).toBe(`${CHANGED_FILES_PATH}?sessionId=owner&seq=9`)
+    const response = await read()
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(await response.json()).toEqual({ turn: 1, total: 3, files: data.files })
+    expect((await read('?sessionId=owner&seq=8')).status).toBe(404)
+    expect((await read('?sessionId=other&seq=9')).status).toBe(404)
+    for (const bad of ['', '?seq=9', '?sessionId=owner', '?sessionId=owner&seq=x', '?sessionId=owner&seq=1.5']) {
+      expect((await read(bad)).status).toBe(400)
+    }
+    expect(summary).toHaveBeenCalledTimes(3)
+  })
+})
 
 describe('changed files native open route', () => {
   it('opens a listed file inside or outside the workspace with its verified Host path', async () => {
@@ -92,17 +111,12 @@ describe('changed files native open route', () => {
       expect(readEvent).not.toHaveBeenCalled()
     })
 
-  it('refuses unrelated Sessions, other events, malformed data, unknown indices, and missing files', async () => {
-    const { open, readEvent, session, opener, cwd, data } = await fixture()
+  it('refuses unrelated Sessions, forgotten summaries, unknown indices, and missing files', async () => {
+    const { open, readEvent, opener, cwd } = await fixture()
     expect((await open('?sessionId=other&seq=9&index=0')).status).toBe(404)
     expect((await open('?sessionId=owner&seq=8&index=0')).status).toBe(404)
     expect((await open('?sessionId=owner&seq=9&index=5')).status).toBe(404)
-    readEvent.mockResolvedValueOnce({ session, target: { type: 'deliverables/presented', data } as unknown as SessionEvent })
-    expect((await open()).status).toBe(404)
-    for (const bad of [null, { turn: 0, files: [], total: 0 }, { turn: 1, files: null, total: 0 }, { turn: 1, files: [{ path: 'a' }], total: 1 }, { turn: 1, files: [], total: 1.5 }]) {
-      readEvent.mockResolvedValueOnce({ session, target: { type: 'workspace/changes', data: bad } as unknown as SessionEvent })
-      expect((await open()).status).toBe(404)
-    }
+    expect(readEvent).not.toHaveBeenCalled()
     await unlink(join(cwd, 'src', 'lib', 'a.ts'))
     expect((await open()).status).toBe(404)
     await rm(join(cwd, 'src'), { recursive: true })
@@ -126,22 +140,24 @@ describe('changed files native open route', () => {
     expect((await open()).status).toBe(204)
   })
 
-  it('uses the deployment workspace root when the viewed Session has no cwd', async () => {
-    const { session, open, opener, cwd } = await fixture()
-    delete session.cwd
-    expect((await open('?sessionId=owner&seq=9')).status).toBe(204)
-    expect(opener.mock.lastCall?.[0].path).toBe(await realpath(join(cwd, 'src')))
-  })
-
-  it('validates recorded change records', () => {
+  it('validates served summaries and logged announcements', () => {
     expect(isChangedFile({ path: 'a', display: 'a', added: 1, deleted: 2, binary: true })).toBe(true)
     expect(isChangedFile({ path: 'a', display: 'a', added: 1, deleted: 2, binary: false })).toBe(false)
     expect(isChangedFile({ path: '', display: 'a', added: 1, deleted: 2 })).toBe(false)
     expect(isChangedFile({ path: 'a', display: '', added: 1, deleted: 2 })).toBe(false)
     expect(isChangedFile({ path: 'a', display: 'a', added: 1.5, deleted: 2 })).toBe(false)
     expect(isChangedFile([])).toBe(false)
-    expect(isChangesData({ turn: 1, total: 0, files: [] })).toBe(true)
-    expect(isChangesData({ turn: '1', total: 0, files: [] })).toBe(false)
-    expect(isChangesData([])).toBe(false)
+    expect(isChangesSummary({ turn: 1, total: 0, files: [] })).toBe(true)
+    expect(isChangesSummary({ turn: 1, total: 1, files: [{ path: 'a', display: 'a', added: 1, deleted: 0 }] })).toBe(true)
+    expect(isChangesSummary({ turn: '1', total: 0, files: [] })).toBe(false)
+    expect(isChangesSummary({ turn: 0, total: 0, files: [] })).toBe(false)
+    expect(isChangesSummary({ turn: 1, total: 1.5, files: [] })).toBe(false)
+    expect(isChangesSummary({ turn: 1, total: 1, files: [{ path: 'a' }] })).toBe(false)
+    expect(isChangesSummary([])).toBe(false)
+    expect(isChangesEvent({ turn: 1 })).toBe(true)
+    expect(isChangesEvent({ turn: 1, extra: true })).toBe(true)
+    expect(isChangesEvent({ turn: 0 })).toBe(false)
+    expect(isChangesEvent({ turn: '1' })).toBe(false)
+    expect(isChangesEvent(null)).toBe(false)
   })
 })

@@ -4,11 +4,10 @@ import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { IconChevronDownOutline14, IconChevronUpOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { changedFileUrl } from '../changes.ts'
+import { changedFileUrl, type ChangesSummary } from '../changes.ts'
 import type { PresentedHost } from '../presented.ts'
 import { IconCodeBracketsOutline16 } from './icons.tsx'
 import type { PresentedOpenPhase } from './present-open.ts'
-import type { ChangesTurnData } from './turn-deliverables.ts'
 import type { NS } from './locales.ts'
 import css from './ChangedFiles.module.css'
 
@@ -51,7 +50,8 @@ function Counts({ added, deleted, t }: { added: number; deleted: number } & Prop
  * @returns the card.
  */
 export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, openFile, t }: {
-  changes: ChangesTurnData
+  /** The served summary with the sequence of the event that announced it. */
+  changes: Pick<ChangesSummary, 'files' | 'total'> & { seq: number }
   cwd: string | undefined
   sessionId: SessionId
   host: PresentedHost | null

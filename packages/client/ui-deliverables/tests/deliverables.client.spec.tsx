@@ -23,22 +23,27 @@ import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-c
 import type { ChatFileMentions, TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { Deliverables, selectDeliverables, type DeliverablesInjected } from '../src/client/Deliverables.tsx'
+import { ChangesSummaryStore } from '../src/client/changes-summary.ts'
+import { changesSummaryUrl, type ChangesSummary } from '../src/changes.ts'
 import { PresentedOpenController } from '../src/client/present-open.ts'
 import {
   basename, changesForClosing, deliverablesDefinition, presentedForClosing, producedFileMentions, producedForClosing,
-  selectProducedFiles, type ChangesTurnData, type DeliverablesTurnData,
+  selectProducedFiles, type DeliverablesTurnData,
 } from '../src/client/turn-deliverables.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 
-function openProps(controller = new PresentedOpenController()) {
+function openProps(controller = new PresentedOpenController(), summaries = new ChangesSummaryStore()) {
   controller.host.set({ name: 'desktop', available: true, fileManager: 'finder' })
   const sessions: SessionListState = { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined }
   return {
     useSessions: <T,>(select: (state: SessionListState) => T): T => select(sessions),
     reloadPresentedHost: vi.fn(() => controller.loadHost()),
+    useChangesSummary: <T,>(select: (state: ReturnType<typeof summaries.state.getSnapshot>) => T): T =>
+      select(summaries.state.getSnapshot()),
+    loadChangesSummary: vi.fn((...args: Parameters<ChangesSummaryStore['load']>) => summaries.load(...args)),
     usePresentedHost: <T,>(select: (state: ReturnType<typeof controller.host.getSnapshot>) => T): T =>
       select(controller.host.getSnapshot()),
     openPresented: vi.fn((...args: Parameters<PresentedOpenController['open']>) => controller.open(...args)),
@@ -428,30 +433,28 @@ describe('produced-file Turn data', () => {
 const changedFile = (display: string, added = 1, deleted = 0, extra: { binary?: true; path?: string } = {}) =>
   ({ path: extra.path ?? display, display, added, deleted, ...extra.binary === true ? { binary: true as const } : {} })
 
-const changesEvent = (seq: number, files: ReturnType<typeof changedFile>[], turn = 1, total = files.length) =>
-  at(seq, 'workspace/changes', { turn, files, total, snapshot: { before: 'a'.repeat(40), after: 'b'.repeat(40) } })
+const changesEvent = (seq: number, turn = 1) => at(seq, 'workspace/changes', { turn })
 
-describe('recorded changes Turn data', () => {
-  it('keeps the latest valid summary of the turn and ignores malformed or empty ones for the card', () => {
+describe('announced changes Turn data', () => {
+  it('keeps the latest valid announcement of the turn and ignores malformed ones', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
-      changesEvent(2, [changedFile('old.ts')]),
-      at(3, 'workspace/changes', { turn: 1, files: [{ path: 'x' }], total: 1 }),
+      changesEvent(2),
+      at(3, 'workspace/changes', { turn: 'x' }),
       at(4, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
-      changesEvent(5, [changedFile('src/a.ts', 3, 1), changedFile('b.bin', 0, 0, { binary: true })], 1, 7),
+      changesEvent(5),
       at(6, 'turn/start', { turn: 2 }),
-      changesEvent(7, [], 2),
     ])
     const owner = tailOwner(deliverablesOf(value), 4)
-    expect(changesForClosing(owner)).toEqual({ seq: 5, total: 7, files: [changedFile('src/a.ts', 3, 1), changedFile('b.bin', 0, 0, { binary: true })] })
-    expect(selectDeliverables(owner)).toEqual({ changes: changesForClosing(owner), presented: [] })
+    expect(changesForClosing(owner)).toEqual({ seq: 5 })
+    expect(selectDeliverables(owner)).toEqual({ changes: { seq: 5 }, presented: [] })
     expect(changesForClosing(tailOwner(deliverablesOf(value, 2), 8))).toBeNull()
     expect(selectDeliverables(tailOwner(deliverablesOf(value, 2), 8))).toBeNull()
     expect(changesForClosing(tailOwner(undefined, 8))).toBeNull()
   })
 
   it('preserves Turn data identity across unrelated appends', () => {
-    const value = assembler([at(1, 'turn/start', { turn: 1 }), changesEvent(2, [changedFile('a.ts')])])
+    const value = assembler([at(1, 'turn/start', { turn: 1 }), changesEvent(2)])
     const first = deliverablesOf(value)
     value.append(call(3, 'later', 'read', { file_path: 'a.ts' }))
     value.flush()
@@ -465,15 +468,75 @@ describe('ChangedFiles card', () => {
     changedFile('config/launch-plan.yaml', 654, 9), changedFile('src/index.ts', 393, 274),
     changedFile('~/.zshrc', 0, 0, { binary: true, path: '/home/u/.zshrc' }),
   ]
-  const changes: ChangesTurnData = { seq: 5, files, total: 11 }
+  const changes = { seq: 5 }
+  const served: ChangesSummary = { turn: 1, files, total: 11 }
 
-  function renderCard(controller = new PresentedOpenController(), locale = en, matched = { changes, presented: [] as never[] }) {
-    const props = openProps(controller)
+  /** A store already holding the summary the Host served for the announced sequence. */
+  function servedStore(summary: ChangesSummary = served, seq = 5) {
+    const summaries = new ChangesSummaryStore()
+    summaries.state.set({ [changesSummaryUrl(SessionId('child-session'), seq)]: summary })
+    return summaries
+  }
+
+  function renderCard(
+    controller = new PresentedOpenController(), locale = en, matched = { changes, presented: [] as never[] }, summaries = servedStore(),
+  ) {
+    const props = openProps(controller, summaries)
     props.openChanged.mockResolvedValue(undefined)
     const openFile = vi.fn<(path: string) => void>()
     const view = render(<Deliverables {...props} matched={matched} openFile={openFile} sessionId={SessionId('child-session')} t={makeTranslate(locale)} />)
     return { props, openFile, view }
   }
+
+  it('reads the announced summary once and renders nothing while it loads, when it is gone, or when it lists no file', async () => {
+    const summaries = new ChangesSummaryStore()
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (url.endsWith('seq=5')) return Response.json(served)
+      if (url.endsWith('seq=6')) return Response.json({ turn: 1, files: [], total: 0 })
+      return new Response('gone', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { props, view } = renderCard(new PresentedOpenController(), en, { changes, presented: [] as never[] }, summaries)
+    expect(view.container.querySelector('[data-changed-files]')).toBeNull()
+    expect(props.loadChangesSummary).toHaveBeenCalledWith('child-session', 5)
+    await vi.waitFor(() => { expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 5)]).toEqual(served) })
+    view.rerender(<Deliverables {...props} matched={{ changes, presented: [] }} openFile={() => {}} sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
+    expect(view.getByText('Edited 11 files')).toBeTruthy()
+    for (const seq of [6, 7]) {
+      view.rerender(<Deliverables {...props} matched={{ changes: { seq }, presented: [] }} openFile={() => {}} sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
+      await vi.waitFor(() => { expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), seq)]).not.toBe('loading') })
+      view.rerender(<Deliverables {...props} matched={{ changes: { seq }, presented: [] }} openFile={() => {}} sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
+      expect(view.container.querySelector('[data-changed-files]')).toBeNull()
+    }
+    expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 7)]).toBe('missing')
+    await summaries.load(SessionId('child-session'), 5)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    // A replaced connection forgets every read; a later mount asks the new Host again.
+    summaries.reset()
+    expect(summaries.state.getSnapshot()).toEqual({})
+    fetchMock.mockRejectedValueOnce(new Error('offline'))
+    await summaries.load(SessionId('child-session'), 5)
+    expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 5)]).toBe('missing')
+    fetchMock.mockResolvedValueOnce(Response.json({ turn: 'x' }))
+    await summaries.load(SessionId('child-session'), 8)
+    expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 8)]).toBe('missing')
+    await summaries.dispose()
+    await summaries.load(SessionId('child-session'), 9)
+    expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 9)]).toBeUndefined()
+  })
+
+  it('drops a read that settles after disposal', async () => {
+    const summaries = new ChangesSummaryStore()
+    let settle!: (response: Response) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => { settle = resolve })))
+    const loading = summaries.load(SessionId('child-session'), 5)
+    expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 5)]).toBe('loading')
+    const disposal = summaries.dispose()
+    settle(Response.json(served))
+    await Promise.all([loading, disposal])
+    expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 5)]).toBe('loading')
+  })
 
   it('summarizes the turn, folds after three rows, and opens rows and the folder natively', () => {
     const { props, openFile, view } = renderCard()
@@ -555,8 +618,8 @@ describe('ChangedFiles card', () => {
   })
 
   it('renders without a fold for three files or fewer and beside delivery cards', () => {
-    const short: ChangesTurnData = { seq: 5, files: files.slice(0, 2), total: 2 }
-    const { view } = renderCard(new PresentedOpenController(), en, { changes: short, presented: [{ path: 'report.pdf', seq: 6, index: 0 }] as never[] })
+    const short = servedStore({ turn: 1, files: files.slice(0, 2), total: 2 })
+    const { view } = renderCard(new PresentedOpenController(), en, { changes, presented: [{ path: 'report.pdf', seq: 6, index: 0 }] as never[] }, short)
     expect(view.getByText('Edited 2 files')).toBeTruthy()
     expect(view.queryByRole('button', { name: /Show all|Collapse changed/ })).toBeNull()
     expect(view.container.querySelectorAll('[data-presented-file]')).toHaveLength(1)
@@ -653,8 +716,13 @@ describe('plugin registration', () => {
     fetcher.mockResolvedValueOnce(Response.json({ name: 'desktop', available: true, fileManager: 'finder' }))
     await face.reloadPresentedHost()
     expect(face.hooks.presentedHost.getSnapshot()).toMatchObject({ name: 'desktop' })
+    fetcher.mockResolvedValueOnce(Response.json({ turn: 1, files: [], total: 0 }))
+    await face.loadChangesSummary(SessionId('child-session'), 5)
+    expect(face.hooks.changesSummary.getSnapshot()['/api/changes.summary?sessionId=child-session&seq=5']).toEqual({ turn: 1, files: [], total: 0 })
     ctx.emit('connection/reset')
     expect(face.hooks.presentedHost.getSnapshot()).toBeNull()
+    // The replaced connection may reach a Host that no longer serves the summaries read so far.
+    expect(face.hooks.changesSummary.getSnapshot()).toEqual({})
     await face.openPresented(SessionId('child-session'), 2, 0)
     expect(face.hooks.presentedOpen.getSnapshot()['/api/present.open?sessionId=child-session&seq=2&index=0']).toBe('opened')
     await face.openChanged(SessionId('child-session'), 5, null)
@@ -741,11 +809,13 @@ it.each([{}, { turn: '1', callId: 'bad', files: [] },
     call(2, 'write-a', 'write', { file_path: 'a.txt', content: 'a' }),
     result(3, 'write-a'),
     at(4, 'deliverables/presented', data),
-    at(5, 'workspace/changes', { turn: 1, files: [{ path: 'a.txt', display: 'a.txt', added: 1, deleted: 0 }], total: 1 }),
+    at(5, 'workspace/changes', { turn: 1 }),
   ])
   const owner = tailOwner(deliverablesOf(value), 6)
   const matched = selectDeliverables(owner)!
-  const view = render(<Deliverables {...openProps()} matched={matched} openFile={owner.openFile} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  const summaries = new ChangesSummaryStore()
+  summaries.state.set({ [changesSummaryUrl(SessionId('session'), 5)]: { turn: 1, files: [{ path: 'a.txt', display: 'a.txt', added: 1, deleted: 0 }], total: 1 } })
+  const view = render(<Deliverables {...openProps(new PresentedOpenController(), summaries)} matched={matched} openFile={owner.openFile} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.getByText('Edited 1 files')).toBeTruthy()
   expect(view.queryByText('Deliverables')).toBeNull()
 })
@@ -817,7 +887,7 @@ it('loads desktop information once the tail renders and not again while it is kn
   controller.host.set(null)
   props.reloadPresentedHost.mockResolvedValue(undefined)
   const shared = { ...props, openFile: () => {}, sessionId: SessionId('session'), t: makeTranslate(en) }
-  const view = render(<Deliverables {...shared} matched={{ changes: { seq: 2, total: 1, files: [{ path: 'a.ts', display: 'a.ts', added: 1, deleted: 0 }] }, presented: [] }} />)
+  const view = render(<Deliverables {...shared} matched={{ changes: { seq: 2 }, presented: [] }} />)
   expect(props.reloadPresentedHost).toHaveBeenCalledOnce()
   controller.host.set({ name: 'desktop', available: true, fileManager: 'finder' })
   view.rerender(<Deliverables {...shared} matched={{ changes: null, presented: [{ path: 'report.txt', seq: 2, index: 0 }] }} />)

@@ -13748,7 +13748,7 @@
       "kind": "event",
       "event": "workspace/changes",
       "surface": false,
-      "digest": "0a176529351301e438fc4d94ea0c80f0f105e33fd85a256d76178b0a6dda3061",
+      "digest": "e308ccf867a5398e316e0af8cb6ce238a8d33a63b9b384c8250a686786285f72",
       "schema": {
         "root": 0,
         "nodes": [
@@ -13762,47 +13762,21 @@
               },
               {
                 "name": "ignorable",
-                "type": 5,
+                "type": 3,
                 "optional": true
               },
               {
                 "name": "seq",
-                "type": 4,
-                "optional": false
-              },
-              {
-                "name": "time",
-                "type": 4,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 8,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "files",
                 "type": 2,
                 "optional": false
               },
               {
-                "name": "snapshot",
-                "type": 7,
+                "name": "time",
+                "type": 2,
                 "optional": false
               },
               {
-                "name": "total",
-                "type": 4,
-                "optional": false
-              },
-              {
-                "name": "turn",
+                "name": "type",
                 "type": 4,
                 "optional": false
               }
@@ -13810,35 +13784,11 @@
             "indices": []
           },
           {
-            "kind": "array",
-            "element": 3
-          },
-          {
             "kind": "object",
             "properties": [
               {
-                "name": "added",
-                "type": 4,
-                "optional": false
-              },
-              {
-                "name": "binary",
-                "type": 5,
-                "optional": true
-              },
-              {
-                "name": "deleted",
-                "type": 4,
-                "optional": false
-              },
-              {
-                "name": "display",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "path",
-                "type": 6,
+                "name": "turn",
+                "type": 2,
                 "optional": false
               }
             ],
@@ -13851,26 +13801,6 @@
           {
             "kind": "literal",
             "value": true
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "after",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "before",
-                "type": 6,
-                "optional": false
-              }
-            ],
-            "indices": []
           },
           {
             "kind": "literal",
@@ -14720,142 +14650,6 @@
         ]
       },
       "names": [],
-      "sources": []
-    },
-    {
-      "digest": "0a176529351301e438fc4d94ea0c80f0f105e33fd85a256d76178b0a6dda3061",
-      "schema": {
-        "root": 0,
-        "nodes": [
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "data",
-                "type": 1,
-                "optional": false
-              },
-              {
-                "name": "ignorable",
-                "type": 5,
-                "optional": true
-              },
-              {
-                "name": "seq",
-                "type": 4,
-                "optional": false
-              },
-              {
-                "name": "time",
-                "type": 4,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 8,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "files",
-                "type": 2,
-                "optional": false
-              },
-              {
-                "name": "snapshot",
-                "type": 7,
-                "optional": false
-              },
-              {
-                "name": "total",
-                "type": 4,
-                "optional": false
-              },
-              {
-                "name": "turn",
-                "type": 4,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "array",
-            "element": 3
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "added",
-                "type": 4,
-                "optional": false
-              },
-              {
-                "name": "binary",
-                "type": 5,
-                "optional": true
-              },
-              {
-                "name": "deleted",
-                "type": 4,
-                "optional": false
-              },
-              {
-                "name": "display",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "path",
-                "type": 6,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "number"
-          },
-          {
-            "kind": "literal",
-            "value": true
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "after",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "before",
-                "type": 6,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "workspace/changes"
-          }
-        ]
-      },
-      "names": [
-        "event:workspace/changes"
-      ],
       "sources": []
     },
     {
@@ -18044,63 +17838,6 @@
       },
       "names": [],
       "sources": []
-    },
-    {
-      "digest": "14b37f44c06d8820b6601845f2ad7c995522044c58a6e87da04e29718f4835a1",
-      "schema": {
-        "root": 0,
-        "nodes": [
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "added",
-                "type": 1,
-                "optional": false
-              },
-              {
-                "name": "binary",
-                "type": 2,
-                "optional": true
-              },
-              {
-                "name": "deleted",
-                "type": 1,
-                "optional": false
-              },
-              {
-                "name": "display",
-                "type": 3,
-                "optional": false
-              },
-              {
-                "name": "path",
-                "type": 3,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "number"
-          },
-          {
-            "kind": "literal",
-            "value": true
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          }
-        ]
-      },
-      "names": [
-        "packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangedFile"
-      ],
-      "sources": [
-        "packages/deliverables/workspace-changes/src/types.ts:4"
-      ]
     },
     {
       "digest": "15196447222782e773eb943c92b18316ce96b9af0f0cfddb6e57ba8274ecc5ff",
@@ -28325,65 +28062,6 @@
       ]
     },
     {
-      "digest": "39c5a9c9f4688d412c567d287ae6577a3f38a73c3f8ba4deffc563d9ec93b927",
-      "schema": {
-        "root": 0,
-        "nodes": [
-          {
-            "kind": "array",
-            "element": 1
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "added",
-                "type": 2,
-                "optional": false
-              },
-              {
-                "name": "binary",
-                "type": 3,
-                "optional": true
-              },
-              {
-                "name": "deleted",
-                "type": 2,
-                "optional": false
-              },
-              {
-                "name": "display",
-                "type": 4,
-                "optional": false
-              },
-              {
-                "name": "path",
-                "type": 4,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "number"
-          },
-          {
-            "kind": "literal",
-            "value": true
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          }
-        ]
-      },
-      "names": [
-        "event:workspace/changes.data.files"
-      ],
-      "sources": []
-    },
-    {
       "digest": "3aa261c8516b5c955ed12080e6257a56cbe513f6c9f0ac9274c12e96c196ebca",
       "schema": {
         "root": 0,
@@ -38328,109 +38006,6 @@
       },
       "names": [],
       "sources": []
-    },
-    {
-      "digest": "69ef2dbc5ed9134fd8199bf6da90da4bd78de61e9336ef008d1770101aa40ae2",
-      "schema": {
-        "root": 0,
-        "nodes": [
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "files",
-                "type": 1,
-                "optional": false
-              },
-              {
-                "name": "snapshot",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "total",
-                "type": 3,
-                "optional": false
-              },
-              {
-                "name": "turn",
-                "type": 3,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "array",
-            "element": 2
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "added",
-                "type": 3,
-                "optional": false
-              },
-              {
-                "name": "binary",
-                "type": 4,
-                "optional": true
-              },
-              {
-                "name": "deleted",
-                "type": 3,
-                "optional": false
-              },
-              {
-                "name": "display",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "path",
-                "type": 5,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "number"
-          },
-          {
-            "kind": "literal",
-            "value": true
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "after",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "before",
-                "type": 5,
-                "optional": false
-              }
-            ],
-            "indices": []
-          }
-        ]
-      },
-      "names": [
-        "packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangesData"
-      ],
-      "sources": [
-        "packages/deliverables/workspace-changes/src/types.ts:22"
-      ]
     },
     {
       "digest": "6a4f72e2e179e17b922f2a9392c0e1c8f8c707f32494372454850a3eb184a6e7",
@@ -58855,6 +58430,72 @@
       "sources": []
     },
     {
+      "digest": "e308ccf867a5398e316e0af8cb6ce238a8d33a63b9b384c8250a686786285f72",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 4,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "turn",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
+            "value": "workspace/changes"
+          }
+        ]
+      },
+      "names": [
+        "event:workspace/changes"
+      ],
+      "sources": []
+    },
+    {
       "digest": "e31572180d6b28b73f073ad30ae19d5d82982d3daf984723984e23da1e7c459a",
       "schema": {
         "root": 0,
@@ -60318,40 +59959,6 @@
       ]
     },
     {
-      "digest": "f53ef94c56c9b1b890a1eba459ca22023d91f5f50bc829289181961ee052e4f7",
-      "schema": {
-        "root": 0,
-        "nodes": [
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "after",
-                "type": 1,
-                "optional": false
-              },
-              {
-                "name": "before",
-                "type": 1,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          }
-        ]
-      },
-      "names": [
-        "event:workspace/changes.data.snapshot"
-      ],
-      "sources": [
-        "packages/deliverables/workspace-changes/src/types.ts:30"
-      ]
-    },
-    {
       "digest": "f56c5b59ca0161310c338d31dd16cf14287ccd602ff4181058df178c1c286d7f",
       "schema": {
         "root": 0,
@@ -61086,10 +60693,12 @@
         ]
       },
       "names": [
-        "event:turn/start.data"
+        "event:turn/start.data",
+        "event:workspace/changes.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:276"
+        "packages/core/session/src/types.ts:276",
+        "packages/deliverables/workspace-changes/src/types.ts:52"
       ]
     },
     {

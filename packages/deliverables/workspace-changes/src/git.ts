@@ -1,7 +1,5 @@
 /** Git working-tree snapshots, tree diffs, and ignore checks through the subprocess capability. */
-import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { copyFile, mkdir, mkdtemp, readdir, rm, stat } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
@@ -96,18 +94,8 @@ export interface GitWorkspace {
   root: string
   /** Absolute git directory holding the repository's index. */
   gitDir: string
-  /** Directory under the Harness home that receives every snapshot blob and tree. */
-  objectsDir: string
-  /** Environment that routes object writes to {@link objectsDir} and object reads through the repository's store. */
+  /** Environment that routes object writes to the private store and object reads through the repository's store. */
   env: Readonly<Record<string, string>>
-}
-
-/** Placement and bound of the private snapshot object stores. */
-export interface ObjectStoreOptions {
-  /** Directory that holds one object store per repository. */
-  home: string
-  /** Bytes one repository's store may hold; a larger store is discarded before the next snapshot. */
-  maxBytes: number
 }
 
 /** Whether a filesystem error names a missing path. */
@@ -115,39 +103,28 @@ function isMissing(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ENOENT'
 }
 
-/** Total size of the regular files under a directory; zero when it does not exist. */
-async function directoryBytes(directory: string): Promise<number> {
-  if (!existsSync(directory)) return 0
-  let total = 0
-  for (const entry of await readdir(directory, { recursive: true, withFileTypes: true })) {
-    if (entry.isFile()) total += (await stat(join(entry.parentPath, entry.name))).size
-  }
-  return total
-}
-
 /**
- * Locate the repository enclosing a working directory and prepare its snapshot
- * object store. The repository's own object store is attached read-only as an
- * alternate, so snapshots read committed content from it and write nothing
- * into it; a store over its byte bound is discarded and starts empty. A
- * directory outside any repository yields null; any other git failure throws.
+ * Locate the repository enclosing a working directory and prepare the private
+ * object store its snapshots write to. The repository's own object store is
+ * attached read-only as an alternate, so snapshots read committed content from
+ * it and write nothing into it. A directory outside any repository yields
+ * null; any other git failure throws.
  * @param git - command runner.
  * @param cwd - absolute Session working directory.
- * @param store - snapshot object store placement and bound.
+ * @param objectsDir - yields the directory that receives every snapshot blob and tree; called only for a located repository.
  * @param signal - cancellation.
  * @returns the repository, or null when the directory is not inside one.
  */
 export async function locateGitWorkspace(
-  git: GitRunner, cwd: string, store: ObjectStoreOptions, signal: AbortSignal,
+  git: GitRunner, cwd: string, objectsDir: () => Promise<string>, signal: AbortSignal,
 ): Promise<GitWorkspace | null> {
   const found = await git.run(['rev-parse', '--show-toplevel', '--absolute-git-dir', '--git-path', 'objects'], { cwd, signal })
   if (found.exitCode === 128 && /not a git repository/i.test(found.stderr)) return null
   const lines = ok(found, 'git rev-parse').stdout.split('\n').map(line => resolve(cwd, line))
   const [root, gitDir, repositoryObjects] = lines as [string, string, string]
-  const objectsDir = join(store.home, createHash('sha256').update(gitDir).digest('hex').slice(0, 16))
-  if (await directoryBytes(objectsDir) > store.maxBytes) await rm(objectsDir, { recursive: true, force: true })
-  await mkdir(objectsDir, { recursive: true })
-  return { root, gitDir, objectsDir, env: { GIT_OBJECT_DIRECTORY: objectsDir, GIT_ALTERNATE_OBJECT_DIRECTORIES: repositoryObjects } }
+  const objects = await objectsDir()
+  await mkdir(objects, { recursive: true })
+  return { root, gitDir, env: { GIT_OBJECT_DIRECTORY: objects, GIT_ALTERNATE_OBJECT_DIRECTORIES: repositoryObjects } }
 }
 
 /**

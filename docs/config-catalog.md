@@ -3590,22 +3590,18 @@ Source: [`packages/workflow/workflow-ptc/src/index.ts:32`](../packages/workflow/
 Requires: `subprocess`
 
 ```ts config-catalog
-/** Snapshot bounds and object store placement. Invalid values fail plugin load. */
+/** Snapshot bounds. Invalid values fail plugin load. */
 export interface Config {
-  /** Harness home whose `workspace-changes/` directory holds one snapshot object store per repository; `$DSH_HOME`, then `~/.dsh`. */
-  dshHome?: string
-  /** Bytes one repository's snapshot object store may hold before it is discarded and restarted empty. */
-  objectStoreMaxBytes: number
   /** Milliseconds one git command may run before the turn's record is abandoned. */
   timeoutMs: number
   /** Bytes of git output retained per command; a larger diff listing abandons the record. */
   outputMaxBytes: number
-  /** Maximum files carried by one event; `total` still reports the complete count. */
+  /** Maximum files carried by one summary; `total` still reports the complete count. */
   maxFiles: number
 }
 ```
 
-Source: [`packages/deliverables/workspace-changes/src/index.ts:28`](../packages/deliverables/workspace-changes/src/index.ts)
+Source: [`packages/deliverables/workspace-changes/src/index.ts:29`](../packages/deliverables/workspace-changes/src/index.ts)
 
 ## Loadable plugins with no config
 
@@ -3629,7 +3625,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-commands` ([`packages/client/ui-commands/src/index.ts`](../packages/client/ui-commands/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-conversation` ([`packages/client/ui-conversation/src/index.ts`](../packages/client/ui-conversation/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-cordis` ([`packages/extensions/ui-cordis/src/index.ts`](../packages/extensions/ui-cordis/src/index.ts))
-- `@deepseek-ai/dsh-client-ui-deliverables` — requires `systemPrompt` · `connection` · `sessionQuery` · `sessionController` · `workspaceFiles` · `fs` · `sandboxPolicy` ([`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-deliverables` — requires `systemPrompt` · `connection` · `sessionQuery` · `sessionController` · `workspaceFiles` · `fs` · `sandboxPolicy` · `workspaceChanges` ([`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-directory-picker-browse` ([`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-directory-picker-native` ([`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-goal` ([`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts))

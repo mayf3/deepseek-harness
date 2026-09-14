@@ -7,7 +7,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { ToolCallId, createAssistantMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-tools'
-import type { WorkspaceChangesData } from '../src/types.ts'
+import type { WorkspaceChangesSummary } from '../src/types.ts'
 
 let callNumber = 0
 
@@ -61,7 +61,10 @@ export async function settle(ctx: Context, session: Session): Promise<void> {
   await ctx.waterfall('tools/pre-execute', { agent: { session } } as never, () => Promise.resolve(undefined as never))
 }
 
-/** Recorded change events of one session. */
-export function changes(session: Session): WorkspaceChangesData[] {
-  return session.snapshotEvents().filter(event => event.type === 'workspace/changes').map(event => event.data)
+/** The summaries the Host still serves for one session's `workspace/changes` events, in log order. */
+export function changes(ctx: Context, session: Session): WorkspaceChangesSummary[] {
+  return session.snapshotEvents()
+    .filter(event => event.type === 'workspace/changes')
+    .map(event => ctx.workspaceChanges.summary(session.id, event.seq))
+    .filter(summary => summary !== undefined)
 }

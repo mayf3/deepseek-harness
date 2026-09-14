@@ -34,8 +34,6 @@ describe('real Loader composition', () => {
       "- name: '@deepseek-ai/dsh-session'",
       "- name: '@deepseek-ai/dsh-subprocess-local'",
       "- name: '@deepseek-ai/dsh-workspace-changes'",
-      '  config:',
-      `    dshHome: ${JSON.stringify(join(root, 'home'))}`,
       '',
     ].join('\n'))
     context = new Context()
@@ -73,10 +71,8 @@ describe('real Loader composition', () => {
     toolCall(session, 1, 'bash', { command: 'x' })
     endTurn(session, 1)
     await context.waterfall('tools/pre-execute', { agent: { session } } as never, () => Promise.resolve(undefined as never))
-    const [recorded, ...rest] = changes(session)
+    const [recorded, ...rest] = changes(context, session)
     expect(rest).toEqual([])
-    expect(recorded).toMatchObject({ turn: 1, total: 1, files: [{ path: 'tracked.txt', display: 'tracked.txt', added: 1, deleted: 0 }] })
-    expect(recorded!.snapshot.before).toMatch(/^[0-9a-f]+$/)
-    expect(recorded!.snapshot.after).toMatch(/^[0-9a-f]+$/)
+    expect(recorded).toEqual({ turn: 1, cwd, total: 1, files: [{ path: 'tracked.txt', display: 'tracked.txt', added: 1, deleted: 0 }] })
   })
 })

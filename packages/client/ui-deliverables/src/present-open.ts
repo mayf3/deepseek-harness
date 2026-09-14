@@ -1,4 +1,4 @@
-/** Open declared or changed workspace paths verified by the viewed Session's filesystem. */
+/** Serve change summaries and open declared or changed workspace paths verified by the viewed Session's filesystem. */
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
@@ -10,19 +10,24 @@ import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-session-query'
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { WorkspaceChangedFile } from '@deepseek-ai/dsh-workspace-changes/types'
-import { CHANGES_OPEN_PATH, isChangesData } from './changes.ts'
+import { CHANGES_OPEN_PATH, CHANGED_FILES_PATH, type ChangesSummary } from './changes.ts'
 import { isPresentedData, isPresentedFile, PRESENT_OPEN_PATH, PRESENT_HOST_PATH, type PresentedHost } from './presented.ts'
 
 /**
- * Register native opening inside Connection's authentication fence: desktop
- * metadata, declared-file actions, and changed-file or folder opening.
- * @param ctx - Session lookup, native opener, and route lifetime.
+ * Register the deliverables routes inside Connection's authentication fence:
+ * desktop metadata, change summaries, declared-file actions, and changed-file
+ * or folder opening.
+ * @param ctx - Session lookup, change summaries, native opener, and route lifetime.
  */
 export function registerPresentOpen(ctx: Context): void {
   ctx.connection.fetch.register({
     path: PRESENT_HOST_PATH, methods: ['GET'], requestBody: 'buffered',
     fetch: () => Promise.resolve(Response.json(ctx.sessionController.workspaceDesktop() satisfies PresentedHost,
       { headers: { 'cache-control': 'no-store' } })),
+  })
+  ctx.connection.fetch.register({
+    path: CHANGED_FILES_PATH, methods: ['GET'], requestBody: 'buffered',
+    fetch: request => Promise.resolve(handleChangesSummary(ctx, request)),
   })
   const lifetime = new AbortController()
   const pending = new Set<Promise<Response>>()
@@ -135,6 +140,18 @@ export function commonChangedFolder(cwd: string, files: readonly WorkspaceChange
   return rel.startsWith('..') || isAbsolute(rel) ? cwd : common
 }
 
+/** The summary one `workspace/changes` event announced, without the Host working directory; 404 once the Host no longer serves it. */
+function handleChangesSummary(ctx: Context, request: Request): Response {
+  const query = new URL(request.url).searchParams
+  const id = query.get('sessionId')
+  const seq = coordinate(query.get('seq'))
+  if (!id || seq === undefined) return new Response('Invalid change summary coordinates.', { status: 400 })
+  const summary = ctx.workspaceChanges.summary(id as SessionId, seq)
+  if (summary === undefined) return new Response('Change summary unavailable.', { status: 404 })
+  const { turn, files, total } = summary
+  return Response.json({ turn, files, total } satisfies ChangesSummary, { headers: { 'cache-control': 'no-store' } })
+}
+
 async function handleChangesOpen(ctx: Context, request: Request): Promise<Response> {
   const query = new URL(request.url).searchParams
   const id = query.get('sessionId')
@@ -143,13 +160,11 @@ async function handleChangesOpen(ctx: Context, request: Request): Promise<Respon
   const index = rawIndex === null ? null : coordinate(rawIndex)
   if (!id || seq === undefined || index === undefined) return new Response('Invalid changed file coordinates.', { status: 400 })
   try {
-    const read = await readTarget(ctx, request, id, seq)
-    if (read instanceof Response) return read
-    const { target, session } = read
-    const changes = target.type === 'workspace/changes' && isChangesData(target.data) ? target.data : undefined
-    if (changes === undefined) return new Response('Changed files not found in this Session event.', { status: 404 })
-    const workspaceRoot = session.cwd ?? ctx.sandboxPolicy.workspaceRoot
     request.signal.throwIfAborted()
+    if (!ctx.sessionController.workspaceDesktop().available) return new Response('Host desktop unavailable.', { status: 409 })
+    const changes = ctx.workspaceChanges.summary(id as SessionId, seq)
+    if (changes === undefined) return new Response('Change summary unavailable.', { status: 404 })
+    const workspaceRoot = changes.cwd
     if (index === null) {
       const folder = commonChangedFolder(workspaceRoot, changes.files)
       const target = await ctx.fs.resolve(folder, { signal: request.signal })
@@ -157,7 +172,7 @@ async function handleChangesOpen(ctx: Context, request: Request): Promise<Respon
       return await openVerified(ctx, request, ctx.fs.processPath(target), 'open')
     }
     const file = changes.files[index]
-    if (file === undefined) return new Response('Changed file not found in this Session event.', { status: 404 })
+    if (file === undefined) return new Response('Changed file not found in this summary.', { status: 404 })
     const { absolutePath: path } = await ctx.workspaceFiles.stat({ sessionId: id as SessionId, workspaceRoot }, file.path, request.signal)
     return await openVerified(ctx, request, path, 'open')
   } catch (error: unknown) {
