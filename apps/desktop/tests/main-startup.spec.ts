@@ -76,8 +76,11 @@ const harness = await vi.hoisted(async () => {
       if (event.preventDefault.mock.calls.length === 0) quitCompleted.resolve()
     }),
   })
+  const popup = vi.fn()
   return {
     windows, hosts, handlers, app, FakeWindow, FakeHost,
+    popup,
+    menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn(() => ({ popup })) },
     dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn() },
     openExternal: vi.fn(),
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
@@ -106,7 +109,7 @@ vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, handler: (event: { senderFrame: { url: string } }) => unknown) => { harness.handlers.set(channel, handler) },
   },
-  Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn() },
+  Menu: harness.menu,
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
 }))
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: 'desktop-test-profile' }) }))
@@ -158,6 +161,31 @@ afterEach(async () => {
 })
 
 describe('desktop main startup', () => {
+  it('offers native editing actions on right-click and only copy for selected read-only text', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    const editFlags = { canUndo: true, canRedo: false, canCut: true, canCopy: true, canPaste: true, canSelectAll: true }
+    harness.menu.buildFromTemplate.mockClear()
+
+    window.webContents.emit('context-menu', {}, { isEditable: true, selectionText: 'text', editFlags })
+    expect(harness.menu.buildFromTemplate).toHaveBeenLastCalledWith([
+      { role: 'undo', enabled: true, accelerator: '' }, { role: 'redo', enabled: false, accelerator: '' },
+      { type: 'separator', accelerator: '' },
+      { role: 'cut', enabled: true, accelerator: '' }, { role: 'copy', enabled: true, accelerator: '' },
+      { role: 'paste', enabled: true, accelerator: '' }, { type: 'separator', accelerator: '' },
+      { role: 'selectAll', enabled: true, accelerator: '' },
+    ])
+    expect(harness.popup).toHaveBeenCalledWith({ window })
+
+    window.webContents.emit('context-menu', {}, { isEditable: false, selectionText: 'text', editFlags })
+    expect(harness.menu.buildFromTemplate).toHaveBeenLastCalledWith([{ role: 'copy', enabled: true, accelerator: '' }])
+
+    harness.menu.buildFromTemplate.mockClear()
+    window.webContents.emit('context-menu', {}, { isEditable: false, selectionText: '', editFlags })
+    expect(harness.menu.buildFromTemplate).not.toHaveBeenCalled()
+  })
+
   it('navigates to each Host authentication URL when retry replaces a failed backend', async () => {
     await import('../src/main.ts')
     await harness.preparing.promise

@@ -41,6 +41,8 @@ Each nonempty appended `system/message` owns a collapsed prompt row, including a
 
 A completed Turn shows an expandable usage row only when the loaded window includes `turn/start` and every started model attempt reports safe, exact usage. The row omits unavailable optional buckets. Incomplete or contradictory accounting hides the complete disclosure instead of presenting a partial total.
 
+Reply timing survives reopening history: recorded token timestamps supply first-token latency and generation duration, including the Step's first token from an earlier retry attempt. Missing Step starts or token timestamps leave the affected metrics unavailable.
+
 <a id="completed-turn-footer"></a>
 ## Completed-turn footer
 

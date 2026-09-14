@@ -12,6 +12,7 @@ import {
   protocol,
   shell,
   type IpcMainInvokeEvent,
+  type MenuItemConstructorOptions,
 } from 'electron'
 import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
@@ -110,6 +111,25 @@ function createWindow(preload: string, show = false): BrowserWindow {
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (['http:', 'https:'].includes(new URL(url).protocol)) void shell.openExternal(url)
     return { action: 'deny' }
+  })
+  window.webContents.on('context-menu', (_event, { isEditable, selectionText, editFlags }) => {
+    const items: MenuItemConstructorOptions[] = []
+    if (isEditable) {
+      items.push(
+        { role: 'undo', enabled: editFlags.canUndo },
+        { role: 'redo', enabled: editFlags.canRedo },
+        { type: 'separator' },
+        { role: 'cut', enabled: editFlags.canCut },
+        { role: 'copy', enabled: editFlags.canCopy },
+        { role: 'paste', enabled: editFlags.canPaste },
+        { type: 'separator' },
+        { role: 'selectAll', enabled: editFlags.canSelectAll },
+      )
+    } else if (selectionText.length > 0) {
+      items.push({ role: 'copy', enabled: editFlags.canCopy })
+    }
+    // Empty accelerators suppress Electron's default shortcut labels for native roles.
+    if (items.length > 0) Menu.buildFromTemplate(items.map(item => ({ ...item, accelerator: '' }))).popup({ window })
   })
   window.webContents.on('will-navigate', (event, url) => {
     const destination = new URL(url)
@@ -451,7 +471,7 @@ async function main(): Promise<void> {
       { type: 'separator' },
       { role: 'quit' },
     ],
-  }]))
+  }, { role: 'editMenu' }]))
 
   const createMainWindow = (): BrowserWindow => {
     const window = createWindow(appPreload, true)

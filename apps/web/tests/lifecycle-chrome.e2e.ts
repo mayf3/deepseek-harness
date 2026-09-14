@@ -290,7 +290,12 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       try {
         await input.press('Enter')
         if (MODE !== 'record') {
-          const liveTail = page.locator('[data-variant="think"][data-state="running"] [data-follow-end]')
+          const thinking = page.locator('[data-variant="think"][data-state="running"]')
+          const disclosure = thinking.getByRole('button')
+          await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('true')
+          await disclosure.click()
+          await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('false')
+          const liveTail = thinking.locator('[data-follow-end]')
           await expect.poll(async () => {
             if (await liveTail.count() !== 1) return false
             return await liveTail.evaluate((element) => {
@@ -456,24 +461,24 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       expect(await connectionIndicatorTextAlignment(indicator)).toBe('left')
       const snapshot = await captureStableAria(recoveryPage, '[class*="footArea"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(CONNECTION_ERROR_EXPECTED, snapshot, MODE)
-      const style = await indicator.evaluate((element) => {
+      const expectedColors = await recoveryPage.evaluate(() => {
         const probe = document.createElement('span')
         probe.style.color = 'var(--dsw-alias-state-warn-label)'
         probe.style.backgroundColor = 'var(--dsw-alias-state-warn-tertiary)'
         document.body.append(probe)
-        const actual = getComputedStyle(element)
         const reference = getComputedStyle(probe)
         const result = {
-          background: actual.backgroundColor,
-          color: actual.color,
-          referenceBackground: reference.backgroundColor,
-          referenceColor: reference.color,
+          background: reference.backgroundColor,
+          color: reference.color,
         }
         probe.remove()
         return result
       })
-      expect(style.background).toBe(style.referenceBackground)
-      expect(style.color).toBe(style.referenceColor)
+      // CSS transitions use the browser's animation clock independently of the mocked retry timers.
+      await expect.poll(() => indicator.evaluate((element) => {
+        const actual = getComputedStyle(element)
+        return { background: actual.backgroundColor, color: actual.color }
+      })).toEqual(expectedColors)
       expect(await indicator.locator('svg').count()).toBe(1)
       expect(await indicator.getAttribute('title')).toBeNull()
       rejectConnections = false
