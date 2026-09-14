@@ -10,16 +10,18 @@
 
 import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
+import { userInfo } from 'node:os'
 import { delimiter, extname, isAbsolute, resolve } from 'node:path'
 import type { Duplex } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import * as nodePty from 'node-pty'
 import type { IPtyForkOptions } from 'node-pty'
-import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import { SubprocessRuntime, SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
 import type {
   SubprocessHandle,
   SubprocessSpawnSpec,
   SubprocessTerminalHandle,
+  SubprocessTerminalEnvironment,
   SubprocessTerminalSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 import {
@@ -156,7 +158,7 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       }
     }
     signal?.throwIfAborted()
-    throw new Error(absolute
+    throw new SubprocessExecutableNotFoundError(absolute
       ? `subprocess-local: command ${JSON.stringify(command)} is not an executable file`
       : `subprocess-local: command ${JSON.stringify(command)} was not found on PATH`)
   }
@@ -240,6 +242,15 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
     )
   }
 
+  /** @inheritdoc */
+  // oxlint-disable-next-line typescript/require-await -- Keep the provider promise rejection semantics for cancelled inspection.
+  async terminalEnvironment(signal?: AbortSignal): Promise<SubprocessTerminalEnvironment> {
+    signal?.throwIfAborted()
+    const platform = process.platform === 'win32' ? 'windows' : 'posix'
+    const defaultShell = platform === 'windows' ? process.env.ComSpec || undefined : process.env.SHELL || userInfo().shell || undefined
+    return { platform, ...defaultShell === undefined ? {} : { defaultShell } }
+  }
+
   // Local PTY allocation is synchronous, but the provider contract permits remote asynchronous allocation.
   // oxlint-disable-next-line typescript/require-await -- Preserve promise rejection semantics at the async provider contract.
   async spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
@@ -250,11 +261,11 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
     spec.signal?.throwIfAborted()
     const env = targetEnvironment(spec)
     const options: IPtyForkOptions = {
-      name: 'dumb',
+      name: spec.terminalType,
       rows: spec.rows,
       cols: spec.cols,
       cwd: spec.cwd,
-      env,
+      env: { ...env, TERM: spec.terminalType },
     }
     const inspector = this.terminalInspector ?? createProcessInspector()
     const containmentMode = this.selectContainmentMode('terminal')
@@ -262,7 +273,7 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       ? prepareLinuxTerminalScope(spec, {
         ...env,
         PWD: spec.cwd,
-        TERM: 'dumb',
+        TERM: spec.terminalType,
       })
       : undefined
     if (scope !== undefined) {

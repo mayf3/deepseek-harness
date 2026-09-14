@@ -957,6 +957,7 @@ describe('Linux PTY bootstrap reuse', () => {
     env: { TARGET: 'yes' },
     rows: 24,
     cols: 80,
+    terminalType: 'dumb',
     graceMs: 100,
   } as const
 

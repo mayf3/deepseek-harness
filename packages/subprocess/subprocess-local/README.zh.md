@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 挂载提供方
 
-在与消费方相同的组合中加载本提供方。它没有任何配置字段：每项选择都随 spawn 请求到达，因此随部署变化的决策留在调用方的配置里。
+在与消费方相同的组合中加载本提供方。它没有任何配置字段：每项选择都随 spawn 请求到达，因此随部署变化的决策留在调用方的配置里。 `terminalEnvironment()` 在 POSIX 读取非空的 `SHELL`，缺失时使用账户登录 shell；在 Windows 读取非空的 `ComSpec`。空值会被省略，由消费者选择平台回退。
 
 ```yaml
 - name: '@deepseek-ai/dsh-subprocess-local'
@@ -120,6 +120,8 @@ spill 文件以 `0600` 权限、`O_EXCL` 与随机名称在 `0700` 每进程目�
 - [同步子进程退出清理](../../../.agents/notes/archived/bug-fix/2026-08-11-synchronous-subprocess-exit-cleanup.md)——宿主退出最终清理决策及其失败模式。
 
 -----
+
+终端分配通过 TERM 和 node-pty 使用调用者指定的 `terminalType`。动态 resize 更新已有 PTY。输出背压会暂停原生读取，待消费者排空后恢复；显式终止会恢复暂停的读取，以接收退出通知。
 
 <a id="model-experience"></a>
 ## 模型体验

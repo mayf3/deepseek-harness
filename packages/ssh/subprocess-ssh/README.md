@@ -33,6 +33,8 @@ A direct exit reported by `done` does not prove managed-range quiescence; `waitF
 
 -----
 
+Terminal shell facts and executable verification come from the remote helper. Lookup misses remain distinct from SSH failures. PTY creation forwards the caller's `terminalType`, and `resize()` updates the remote terminal without replacing its process.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
