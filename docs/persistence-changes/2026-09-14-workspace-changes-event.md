@@ -40,7 +40,7 @@ A new root in the same Session format version. Existing logs contain no such eve
 <a id="verification"></a>
 ## Verification
 
-pnpm exec vitest run packages/fs/workspace-changes packages/client/ui-deliverables: 165 tests passed; snapshots/web/changed-files-turn replays the recorded event through the Web profile.
+pnpm exec vitest run packages/deliverables/workspace-changes packages/client/ui-deliverables: 165 tests passed; snapshots/web/changed-files-turn replays the recorded event through the Web profile.
 
 <a id="dev-note"></a>
 ## Dev Note

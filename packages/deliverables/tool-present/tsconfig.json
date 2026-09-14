@@ -18,7 +18,7 @@
       "path": "../../core/agent"
     },
     {
-      "path": "../fs"
+      "path": "../../fs/fs"
     },
     {
       "path": "../../llm/llm"

@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-Host 侧的 [workspace-changes](../../../../packages/fs/workspace-changes/README.zh.md) 插件把每个顶层轮次改动的文件记录为 `workspace/changes` Session 事件，[产出物插件](../../../../packages/client/ui-deliverables/README.zh.md)把该事件渲染为改动文件卡片，取代修改调用行。该事件仅写日志，模型永远看不到。
+Host 侧的 [workspace-changes](../../../../packages/deliverables/workspace-changes/README.zh.md) 插件把每个顶层轮次改动的文件记录为 `workspace/changes` Session 事件，[产出物插件](../../../../packages/client/ui-deliverables/README.zh.md)把该事件渲染为改动文件卡片，取代修改调用行。该事件仅写日志，模型永远看不到。
 
 记录器在轮次开始和结束时用 git 对工作树做快照：以仓库 index 为种子在私有 index 上执行 `add --all`，再执行 `write-tree`。两者都写入 Harness home 下的私有对象库，仓库自己的对象库以只读 alternate 挂接，因此用户仓库不会多出任何对象，保留策略由 Harness 掌握；这个放置方式学自工作区变更日志 POC（#2973）把捕获的每个字节都放在工作区外的做法，而且因为 stat 缓存在 index 里，它对耗时没有可测量的影响。两个 tree id 用 `diff-tree -r -M --numstat` 比较，因此摘要恰好只包含本轮的改动——用户此前未提交的工作，无论是否暂存，都属于基线——模型在轮中做的提交也藏不住改动。仓库自己的 index、对象、工作树和 ref 从不被修改。在一万个文件的仓库上，一次快照约 60 ms，比较约 10 ms；基线与首次模型请求并行，工具执行会等待它。
 

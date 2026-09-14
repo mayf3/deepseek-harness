@@ -18096,10 +18096,10 @@
         ]
       },
       "names": [
-        "packages/fs/workspace-changes/src/types.ts#WorkspaceChangedFile"
+        "packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangedFile"
       ],
       "sources": [
-        "packages/fs/workspace-changes/src/types.ts:4"
+        "packages/deliverables/workspace-changes/src/types.ts:4"
       ]
     },
     {
@@ -18262,7 +18262,7 @@
         "event:deliverables/presented.data"
       ],
       "sources": [
-        "packages/fs/tool-present/src/types.ts:15"
+        "packages/deliverables/tool-present/src/types.ts:15"
       ]
     },
     {
@@ -38426,10 +38426,10 @@
         ]
       },
       "names": [
-        "packages/fs/workspace-changes/src/types.ts#WorkspaceChangesData"
+        "packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangesData"
       ],
       "sources": [
-        "packages/fs/workspace-changes/src/types.ts:22"
+        "packages/deliverables/workspace-changes/src/types.ts:22"
       ]
     },
     {
@@ -51497,10 +51497,10 @@
         ]
       },
       "names": [
-        "packages/fs/tool-present/src/types.ts#PresentedFile"
+        "packages/deliverables/tool-present/src/types.ts#PresentedFile"
       ],
       "sources": [
-        "packages/fs/tool-present/src/types.ts:5"
+        "packages/deliverables/tool-present/src/types.ts:5"
       ]
     },
     {
@@ -60348,7 +60348,7 @@
         "event:workspace/changes.data.snapshot"
       ],
       "sources": [
-        "packages/fs/workspace-changes/src/types.ts:30"
+        "packages/deliverables/workspace-changes/src/types.ts:30"
       ]
     },
     {

@@ -40,7 +40,7 @@ changes:
 <a id="verification"></a>
 ## 验证
 
-pnpm exec vitest run packages/fs/workspace-changes packages/client/ui-deliverables：165 个测试通过；snapshots/web/changed-files-turn 通过 Web profile 回放了记录的事件。
+pnpm exec vitest run packages/deliverables/workspace-changes packages/client/ui-deliverables：165 个测试通过；snapshots/web/changed-files-turn 通过 Web profile 回放了记录的事件。
 
 <a id="dev-note"></a>
 ## 开发备注

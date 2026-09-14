@@ -2925,7 +2925,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/fs/tool-present/src/index.ts:15`](../packages/fs/tool-present/src/index.ts)
+Source: [`packages/deliverables/tool-present/src/index.ts:15`](../packages/deliverables/tool-present/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
@@ -3494,7 +3494,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/fs/workspace-changes/src/index.ts:28`](../packages/fs/workspace-changes/src/index.ts)
+Source: [`packages/deliverables/workspace-changes/src/index.ts:28`](../packages/deliverables/workspace-changes/src/index.ts)
 
 ## Loadable plugins with no config
 

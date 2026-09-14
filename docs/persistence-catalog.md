@@ -479,7 +479,7 @@ Source: [`packages/compaction/compaction/src/types.ts:34`](../packages/compactio
 
 Types: [ToolCallId](subsystems/core.md)
 
-Source: [`packages/fs/tool-present/src/types.ts:15`](../packages/fs/tool-present/src/types.ts)
+Source: [`packages/deliverables/tool-present/src/types.ts:15`](../packages/deliverables/tool-present/src/types.ts)
 
 ### `feedback/*`
 
@@ -1252,7 +1252,7 @@ Source: [`packages/web/web-search-deepseek/src/provider.ts:82`](../packages/web/
 'workspace/changes': WorkspaceChangesData
 ```
 
-Source: [`packages/fs/workspace-changes/src/types.ts:36`](../packages/fs/workspace-changes/src/types.ts)
+Source: [`packages/deliverables/workspace-changes/src/types.ts:36`](../packages/deliverables/workspace-changes/src/types.ts)
 
 ## Resolved persistence types
 
@@ -2641,7 +2641,7 @@ SHA-256: `13d3d180f977bf78081d487ffa0ecb75857349bcab29a5a3fb48189fca2a6176`
 
 SHA-256: `1528539c63db8b23506f0209a99ce77d8ad138adfbfcee3d4769b7382d93756c`
 
-Sources: [`packages/fs/tool-present/src/types.ts:15`](../packages/fs/tool-present/src/types.ts)
+Sources: [`packages/deliverables/tool-present/src/types.ts:15`](../packages/deliverables/tool-present/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -2655,7 +2655,7 @@ Sources: [`packages/fs/tool-present/src/types.ts:15`](../packages/fs/tool-presen
 
 SHA-256: `1d9cb3caa96100b18b1911fa3ff8c751ef6992971a03c5f4d9aefc1a0004a345`
 
-Array of [`packages/fs/tool-present/src/types.ts#PresentedFile`](#persistence-type-packagesfstool-presentsrctypestspresentedfile).
+Array of [`packages/deliverables/tool-present/src/types.ts#PresentedFile`](#persistence-type-packagesdeliverablestool-presentsrctypestspresentedfile).
 
 <a id="persistence-type-eventfeedbackmessage-delete"></a>
 
@@ -4045,7 +4045,7 @@ SHA-256: `0a176529351301e438fc4d94ea0c80f0f105e33fd85a256d76178b0a6dda3061`
 
 | Property | Presence | Type |
 |---|---|---|
-| `data` | required | [`packages/fs/workspace-changes/src/types.ts#WorkspaceChangesData`](#persistence-type-packagesfsworkspace-changessrctypestsworkspacechangesdata) |
+| `data` | required | [`packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangesData`](#persistence-type-packagesdeliverablesworkspace-changessrctypestsworkspacechangesdata) |
 | `ignorable` | optional | `true` |
 | `seq` | required | `number` |
 | `time` | required | `number` |
@@ -4057,7 +4057,7 @@ SHA-256: `0a176529351301e438fc4d94ea0c80f0f105e33fd85a256d76178b0a6dda3061`
 
 SHA-256: `39c5a9c9f4688d412c567d287ae6577a3f38a73c3f8ba4deffc563d9ec93b927`
 
-Array of [`packages/fs/workspace-changes/src/types.ts#WorkspaceChangedFile`](#persistence-type-packagesfsworkspace-changessrctypestsworkspacechangedfile).
+Array of [`packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangedFile`](#persistence-type-packagesdeliverablesworkspace-changessrctypestsworkspacechangedfile).
 
 <a id="persistence-type-eventworkspacechangesdatasnapshot"></a>
 
@@ -4065,7 +4065,7 @@ Array of [`packages/fs/workspace-changes/src/types.ts#WorkspaceChangedFile`](#pe
 
 SHA-256: `f53ef94c56c9b1b890a1eba459ca22023d91f5f50bc829289181961ee052e4f7`
 
-Sources: [`packages/fs/workspace-changes/src/types.ts:30`](../packages/fs/workspace-changes/src/types.ts)
+Sources: [`packages/deliverables/workspace-changes/src/types.ts:30`](../packages/deliverables/workspace-changes/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -4719,6 +4719,50 @@ Sources: [`packages/core/tools/src/types.ts:11`](../packages/core/tools/src/type
 | `rootCallId` | required | `string` |
 | `subCallId` | required | `string` |
 
+<a id="persistence-type-packagesdeliverablestool-presentsrctypestspresentedfile"></a>
+
+### `packages/deliverables/tool-present/src/types.ts#PresentedFile`
+
+SHA-256: `b8fc636a2121df9d8423c242e03c9d23b7ab7c6fdce00e45746932c60b730f97`
+
+Sources: [`packages/deliverables/tool-present/src/types.ts:5`](../packages/deliverables/tool-present/src/types.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `description` | optional | `string` |
+| `path` | required | `string` |
+
+<a id="persistence-type-packagesdeliverablesworkspace-changessrctypestsworkspacechangedfile"></a>
+
+### `packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangedFile`
+
+SHA-256: `14b37f44c06d8820b6601845f2ad7c995522044c58a6e87da04e29718f4835a1`
+
+Sources: [`packages/deliverables/workspace-changes/src/types.ts:4`](../packages/deliverables/workspace-changes/src/types.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `added` | required | `number` |
+| `binary` | optional | `true` |
+| `deleted` | required | `number` |
+| `display` | required | `string` |
+| `path` | required | `string` |
+
+<a id="persistence-type-packagesdeliverablesworkspace-changessrctypestsworkspacechangesdata"></a>
+
+### `packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangesData`
+
+SHA-256: `69ef2dbc5ed9134fd8199bf6da90da4bd78de61e9336ef008d1770101aa40ae2`
+
+Sources: [`packages/deliverables/workspace-changes/src/types.ts:22`](../packages/deliverables/workspace-changes/src/types.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `files` | required | [`event:workspace/changes.data.files`](#persistence-type-eventworkspacechangesdatafiles) |
+| `snapshot` | required | [`event:workspace/changes.data.snapshot`](#persistence-type-eventworkspacechangesdatasnapshot) |
+| `total` | required | `number` |
+| `turn` | required | `number` |
+
 <a id="persistence-type-packagesexperimentalagent-teamsrctypeststeammemberphase"></a>
 
 ### `packages/experimental/agent-team/src/types.ts#TeamMemberPhase`
@@ -4886,50 +4930,6 @@ One of:
 
 - `"negative"`
 - `"positive"`
-
-<a id="persistence-type-packagesfstool-presentsrctypestspresentedfile"></a>
-
-### `packages/fs/tool-present/src/types.ts#PresentedFile`
-
-SHA-256: `b8fc636a2121df9d8423c242e03c9d23b7ab7c6fdce00e45746932c60b730f97`
-
-Sources: [`packages/fs/tool-present/src/types.ts:5`](../packages/fs/tool-present/src/types.ts)
-
-| Property | Presence | Type |
-|---|---|---|
-| `description` | optional | `string` |
-| `path` | required | `string` |
-
-<a id="persistence-type-packagesfsworkspace-changessrctypestsworkspacechangedfile"></a>
-
-### `packages/fs/workspace-changes/src/types.ts#WorkspaceChangedFile`
-
-SHA-256: `14b37f44c06d8820b6601845f2ad7c995522044c58a6e87da04e29718f4835a1`
-
-Sources: [`packages/fs/workspace-changes/src/types.ts:4`](../packages/fs/workspace-changes/src/types.ts)
-
-| Property | Presence | Type |
-|---|---|---|
-| `added` | required | `number` |
-| `binary` | optional | `true` |
-| `deleted` | required | `number` |
-| `display` | required | `string` |
-| `path` | required | `string` |
-
-<a id="persistence-type-packagesfsworkspace-changessrctypestsworkspacechangesdata"></a>
-
-### `packages/fs/workspace-changes/src/types.ts#WorkspaceChangesData`
-
-SHA-256: `69ef2dbc5ed9134fd8199bf6da90da4bd78de61e9336ef008d1770101aa40ae2`
-
-Sources: [`packages/fs/workspace-changes/src/types.ts:22`](../packages/fs/workspace-changes/src/types.ts)
-
-| Property | Presence | Type |
-|---|---|---|
-| `files` | required | [`event:workspace/changes.data.files`](#persistence-type-eventworkspacechangesdatafiles) |
-| `snapshot` | required | [`event:workspace/changes.data.snapshot`](#persistence-type-eventworkspacechangesdatasnapshot) |
-| `total` | required | `number` |
-| `turn` | required | `number` |
 
 <a id="persistence-type-packagesgoalgoalsrcdomaintsgoalchangemeta"></a>
 

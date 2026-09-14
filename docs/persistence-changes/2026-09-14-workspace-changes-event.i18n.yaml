@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-09-14-workspace-changes-event.md
-2026-09-14-workspace-changes-event.md: 43f3db2e613976c3217733bd2433434eaa08f54d
-2026-09-14-workspace-changes-event.zh.md: ca9cb8a17bbecd3a324b5488e68c85919e9d79fe
+2026-09-14-workspace-changes-event.md: e204be8e8b3dbad37bee2b9aa428b8cfa1664d74
+2026-09-14-workspace-changes-event.zh.md: 7f7b92a2e0e91e27944f0b858edfc5e8a3a2314e

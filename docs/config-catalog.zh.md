@@ -2927,7 +2927,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/fs/tool-present/src/index.ts:15`](../packages/fs/tool-present/src/index.ts)
+来源：[`packages/deliverables/tool-present/src/index.ts:15`](../packages/deliverables/tool-present/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
@@ -3496,7 +3496,7 @@ export interface Config {
 }
 ```
 
-来源： [`packages/fs/workspace-changes/src/index.ts:28`](../packages/fs/workspace-changes/src/index.ts)
+来源： [`packages/deliverables/workspace-changes/src/index.ts:28`](../packages/deliverables/workspace-changes/src/index.ts)
 
 ## 无配置的可加载插件
 

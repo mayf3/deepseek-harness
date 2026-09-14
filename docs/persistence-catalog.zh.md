@@ -481,7 +481,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[ToolCallId](subsystems/core.zh.md)
 
-来源：[`packages/fs/tool-present/src/types.ts:15`](../packages/fs/tool-present/src/types.ts)
+来源：[`packages/deliverables/tool-present/src/types.ts:15`](../packages/deliverables/tool-present/src/types.ts)
 
 ### `feedback/*`
 
@@ -1254,7 +1254,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'workspace/changes': WorkspaceChangesData
 ```
 
-来源：[`packages/fs/workspace-changes/src/types.ts:36`](../packages/fs/workspace-changes/src/types.ts)
+来源：[`packages/deliverables/workspace-changes/src/types.ts:36`](../packages/deliverables/workspace-changes/src/types.ts)
 
 ## 已解析的持久化类型
 
@@ -2643,7 +2643,7 @@ SHA-256: `13d3d180f977bf78081d487ffa0ecb75857349bcab29a5a3fb48189fca2a6176`
 
 SHA-256: `1528539c63db8b23506f0209a99ce77d8ad138adfbfcee3d4769b7382d93756c`
 
-来源：[`packages/fs/tool-present/src/types.ts:15`](../packages/fs/tool-present/src/types.ts)
+来源：[`packages/deliverables/tool-present/src/types.ts:15`](../packages/deliverables/tool-present/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -2657,7 +2657,7 @@ SHA-256: `1528539c63db8b23506f0209a99ce77d8ad138adfbfcee3d4769b7382d93756c`
 
 SHA-256: `1d9cb3caa96100b18b1911fa3ff8c751ef6992971a03c5f4d9aefc1a0004a345`
 
-[`packages/fs/tool-present/src/types.ts#PresentedFile`](#persistence-type-packagesfstool-presentsrctypestspresentedfile) 的数组。
+[`packages/deliverables/tool-present/src/types.ts#PresentedFile`](#persistence-type-packagesdeliverablestool-presentsrctypestspresentedfile) 的数组。
 
 <a id="persistence-type-eventfeedbackmessage-delete"></a>
 
@@ -4047,7 +4047,7 @@ SHA-256: `0a176529351301e438fc4d94ea0c80f0f105e33fd85a256d76178b0a6dda3061`
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
-| `data` | 必需 | [`packages/fs/workspace-changes/src/types.ts#WorkspaceChangesData`](#persistence-type-packagesfsworkspace-changessrctypestsworkspacechangesdata) |
+| `data` | 必需 | [`packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangesData`](#persistence-type-packagesdeliverablesworkspace-changessrctypestsworkspacechangesdata) |
 | `ignorable` | 可选 | `true` |
 | `seq` | 必需 | `number` |
 | `time` | 必需 | `number` |
@@ -4059,7 +4059,7 @@ SHA-256: `0a176529351301e438fc4d94ea0c80f0f105e33fd85a256d76178b0a6dda3061`
 
 SHA-256: `39c5a9c9f4688d412c567d287ae6577a3f38a73c3f8ba4deffc563d9ec93b927`
 
-[`packages/fs/workspace-changes/src/types.ts#WorkspaceChangedFile`](#persistence-type-packagesfsworkspace-changessrctypestsworkspacechangedfile) 的数组。
+[`packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangedFile`](#persistence-type-packagesdeliverablesworkspace-changessrctypestsworkspacechangedfile) 的数组。
 
 <a id="persistence-type-eventworkspacechangesdatasnapshot"></a>
 
@@ -4067,7 +4067,7 @@ SHA-256: `39c5a9c9f4688d412c567d287ae6577a3f38a73c3f8ba4deffc563d9ec93b927`
 
 SHA-256: `f53ef94c56c9b1b890a1eba459ca22023d91f5f50bc829289181961ee052e4f7`
 
-来源：[`packages/fs/workspace-changes/src/types.ts:30`](../packages/fs/workspace-changes/src/types.ts)
+来源：[`packages/deliverables/workspace-changes/src/types.ts:30`](../packages/deliverables/workspace-changes/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -4721,6 +4721,50 @@ SHA-256: `2fe5026daf14bd4ff2b7bfb7cf9791c302d9cbba06802178b6dfec00b892698f`
 | `rootCallId` | 必需 | `string` |
 | `subCallId` | 必需 | `string` |
 
+<a id="persistence-type-packagesdeliverablestool-presentsrctypestspresentedfile"></a>
+
+### `packages/deliverables/tool-present/src/types.ts#PresentedFile`
+
+SHA-256: `b8fc636a2121df9d8423c242e03c9d23b7ab7c6fdce00e45746932c60b730f97`
+
+来源：[`packages/deliverables/tool-present/src/types.ts:5`](../packages/deliverables/tool-present/src/types.ts)
+
+| 属性 | 存在性 | 类型 |
+|---|---|---|
+| `description` | 可选 | `string` |
+| `path` | 必需 | `string` |
+
+<a id="persistence-type-packagesdeliverablesworkspace-changessrctypestsworkspacechangedfile"></a>
+
+### `packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangedFile`
+
+SHA-256: `14b37f44c06d8820b6601845f2ad7c995522044c58a6e87da04e29718f4835a1`
+
+来源：[`packages/deliverables/workspace-changes/src/types.ts:4`](../packages/deliverables/workspace-changes/src/types.ts)
+
+| 属性 | 存在性 | 类型 |
+|---|---|---|
+| `added` | 必需 | `number` |
+| `binary` | 可选 | `true` |
+| `deleted` | 必需 | `number` |
+| `display` | 必需 | `string` |
+| `path` | 必需 | `string` |
+
+<a id="persistence-type-packagesdeliverablesworkspace-changessrctypestsworkspacechangesdata"></a>
+
+### `packages/deliverables/workspace-changes/src/types.ts#WorkspaceChangesData`
+
+SHA-256: `69ef2dbc5ed9134fd8199bf6da90da4bd78de61e9336ef008d1770101aa40ae2`
+
+来源：[`packages/deliverables/workspace-changes/src/types.ts:22`](../packages/deliverables/workspace-changes/src/types.ts)
+
+| 属性 | 存在性 | 类型 |
+|---|---|---|
+| `files` | 必需 | [`event:workspace/changes.data.files`](#persistence-type-eventworkspacechangesdatafiles) |
+| `snapshot` | 必需 | [`event:workspace/changes.data.snapshot`](#persistence-type-eventworkspacechangesdatasnapshot) |
+| `total` | 必需 | `number` |
+| `turn` | 必需 | `number` |
+
 <a id="persistence-type-packagesexperimentalagent-teamsrctypeststeammemberphase"></a>
 
 ### `packages/experimental/agent-team/src/types.ts#TeamMemberPhase`
@@ -4888,50 +4932,6 @@ SHA-256: `390eed1028aba02774f14408647acec10ec5516e97d4f15ecde2b9989d5a69f2`
 
 - `"negative"`
 - `"positive"`
-
-<a id="persistence-type-packagesfstool-presentsrctypestspresentedfile"></a>
-
-### `packages/fs/tool-present/src/types.ts#PresentedFile`
-
-SHA-256: `b8fc636a2121df9d8423c242e03c9d23b7ab7c6fdce00e45746932c60b730f97`
-
-来源：[`packages/fs/tool-present/src/types.ts:5`](../packages/fs/tool-present/src/types.ts)
-
-| 属性 | 存在性 | 类型 |
-|---|---|---|
-| `description` | 可选 | `string` |
-| `path` | 必需 | `string` |
-
-<a id="persistence-type-packagesfsworkspace-changessrctypestsworkspacechangedfile"></a>
-
-### `packages/fs/workspace-changes/src/types.ts#WorkspaceChangedFile`
-
-SHA-256: `14b37f44c06d8820b6601845f2ad7c995522044c58a6e87da04e29718f4835a1`
-
-来源：[`packages/fs/workspace-changes/src/types.ts:4`](../packages/fs/workspace-changes/src/types.ts)
-
-| 属性 | 存在性 | 类型 |
-|---|---|---|
-| `added` | 必需 | `number` |
-| `binary` | 可选 | `true` |
-| `deleted` | 必需 | `number` |
-| `display` | 必需 | `string` |
-| `path` | 必需 | `string` |
-
-<a id="persistence-type-packagesfsworkspace-changessrctypestsworkspacechangesdata"></a>
-
-### `packages/fs/workspace-changes/src/types.ts#WorkspaceChangesData`
-
-SHA-256: `69ef2dbc5ed9134fd8199bf6da90da4bd78de61e9336ef008d1770101aa40ae2`
-
-来源：[`packages/fs/workspace-changes/src/types.ts:22`](../packages/fs/workspace-changes/src/types.ts)
-
-| 属性 | 存在性 | 类型 |
-|---|---|---|
-| `files` | 必需 | [`event:workspace/changes.data.files`](#persistence-type-eventworkspacechangesdatafiles) |
-| `snapshot` | 必需 | [`event:workspace/changes.data.snapshot`](#persistence-type-eventworkspacechangesdatasnapshot) |
-| `total` | 必需 | `number` |
-| `turn` | 必需 | `number` |
 
 <a id="persistence-type-packagesgoalgoalsrcdomaintsgoalchangemeta"></a>
 

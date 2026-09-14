@@ -31,10 +31,10 @@
       "path": "../../llm/llm"
     },
     {
-      "path": "../../fs/tool-present"
+      "path": "../../deliverables/tool-present"
     },
     {
-      "path": "../../fs/workspace-changes"
+      "path": "../../deliverables/workspace-changes"
     },
     {
       "path": "../../api/session-controller/tsconfig.host.json"

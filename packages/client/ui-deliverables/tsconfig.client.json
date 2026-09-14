@@ -52,10 +52,10 @@
       "path": "../ui-tool"
     },
     {
-      "path": "../../fs/tool-present"
+      "path": "../../deliverables/tool-present"
     },
     {
-      "path": "../../fs/workspace-changes"
+      "path": "../../deliverables/workspace-changes"
     },
     {
       "path": "../../util/workspace-path"
