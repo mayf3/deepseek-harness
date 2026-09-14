@@ -23,8 +23,11 @@ import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/settings-chrome', import.meta.url))
 const DIALOG_EXPECTED = join(SNAPSHOT_DIR, 'dialog.expected.md')
+const PLUGINS_EXPECTED = join(SNAPSHOT_DIR, 'plugins.expected.md')
+const PLUGIN_INSTANCES_EXPECTED = join(SNAPSHOT_DIR, 'plugin-instances.expected.md')
 // The English fallback surface: a browser naming no shipped language.
 const DIALOG_EN_EXPECTED = join(SNAPSHOT_DIR, 'dialog-en.expected.md')
+const PLUGIN_ROW_SELECTOR = '[data-plugin-scope="preset"] [data-plugin-entry="tool-subagent"]'
 const MODE = webSnapshotMode()
 
 describe('web e2e: settings modal and General preferences', () => {
@@ -94,14 +97,75 @@ describe('web e2e: settings modal and General preferences', () => {
     await dialog.getByRole('button', { name: '模型' }).click()
     await expect.poll(() => dialog.getByRole('button', { name: '模型' }).getAttribute('aria-current'), { timeout: 5_000 }).toBe('true')
     expect(await dialog.getByRole('button', { name: '通用设置' }).getAttribute('aria-current')).toBeNull()
-    // Plugins: the section is the configuration page, with no tab strip;
-    // management lives on the sidebar's Plugins panel (its own scenario file
-    // drives that page over a profile runtime).
+    // Plugins: the configuration tab beside the read-only Plugin list, a
+    // projection of the same assembled Loader tree; management lives on the
+    // sidebar's Plugins panel (its own scenario file drives that page over a
+    // profile runtime). Capture one stable shipped row rather than the whole
+    // inventory so adding an unrelated plugin does not rewrite this surface's golden.
     await dialog.getByRole('button', { name: '插件', exact: true }).click()
     await dialog.getByRole('heading', { name: '插件', exact: true }).waitFor({ timeout: 10_000 })
+    await dialog.getByRole('tab', { name: '插件列表', exact: true }).click()
+    // Both groups start collapsed; the preset group's header still carries its display-only switcher.
+    const presetSwitcher = dialog.getByRole('button', { name: '选择要查看的 Agent 预设' })
+    await presetSwitcher.waitFor({ timeout: 10_000 })
+    // The shipped default's zh display name comes from the zh dictionaries.
+    expect(await presetSwitcher.textContent()).toBe('标准模式（默认）')
+    const presetToggle = dialog.getByRole('button', { name: '会话插件', exact: true })
+    expect(await presetToggle.getAttribute('aria-expanded')).toBe('false')
+    expect(await dialog.locator('[data-plugin-scope="preset"] [data-plugin-entry]').count()).toBe(0)
+    await presetToggle.click()
+    await dialog.getByRole('button', { name: /^全局/ }).click()
+    const pluginRow = dialog.locator(PLUGIN_ROW_SELECTOR)
+    await pluginRow.waitFor({ timeout: 10_000 })
+    const expectedPluginCount = [...scaffold.ctx.loader.entries()]
+      .filter(entry => !entry.options.group)
+      .length
+    const pluginSearch = dialog.getByRole('searchbox', { name: '搜索插件' })
+    expect(await pluginSearch.count()).toBe(1)
+    // Every Loader entry appears exactly once in the global group — rows the
+    // presets took over included, preset compositions excluded.
+    expect(await dialog.locator('[data-plugin-scope="global"] [data-plugin-entry]').count())
+      .toBe(expectedPluginCount)
+    expect(await dialog.locator('[data-plugin-count]').getAttribute('data-plugin-count'))
+      .toBe(String(expectedPluginCount))
     expect(await dialog.getByRole('button', { name: '插件', exact: true }).getAttribute('aria-current')).toBe('true')
-    expect(await dialog.getByRole('tab').count()).toBe(0)
+    expect(await dialog.getByRole('tab', { name: '插件列表', exact: true }).getAttribute('aria-selected')).toBe('true')
     expect(await dialog.getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBeNull()
+    const pluginsSnapshot = await captureStableAria(
+      page,
+      PLUGIN_ROW_SELECTOR,
+      scaffold.workspaceCwd,
+    )
+    await compareOrRefreshGolden(PLUGINS_EXPECTED, pluginsSnapshot, MODE)
+    await pluginSearch.fill('tool-subagent')
+    const instanceRows = [
+      ['tool-subagent', '已启用'],
+      ['tool-subagent-fork', '已启用'],
+      ['tool-subagent-codex', '已停用'],
+      ['tool-subagent-claude-code', '已停用'],
+    ] as const
+    for (const [entryId, status] of instanceRows) {
+      const row = dialog.locator(`[data-plugin-scope="preset"] [data-plugin-entry="${entryId}"]`)
+      const trigger = row.getByRole('button', { name: `tool-subagent, ${entryId}, ${status}`, exact: true })
+      await trigger.waitFor({ timeout: 10_000 })
+      expect(await trigger.getAttribute('aria-expanded')).toBe('false')
+      const identity = row.locator('code')
+      expect(await identity.textContent()).toBe(entryId)
+      expect(await identity.getAttribute('title')).toBe(entryId)
+    }
+    const instancesSnapshot = await captureStableAria(
+      page,
+      '[data-plugin-scope="preset"] ul',
+      scaffold.workspaceCwd,
+    )
+    await compareOrRefreshGolden(PLUGIN_INSTANCES_EXPECTED, instancesSnapshot, MODE)
+    await dialog.getByRole('button', {
+      name: 'tool-subagent, tool-subagent-claude-code, 已停用',
+      exact: true,
+    }).click()
+    expect(await dialog.locator('[data-plugin-entry="tool-subagent-claude-code"] button')
+      .getAttribute('aria-expanded')).toBe('true')
+    await pluginSearch.fill('')
     // Close path 1: Escape.
     await page.keyboard.press('Escape')
     await expect.poll(() => page.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
@@ -590,6 +654,13 @@ describe('web e2e: settings modal and General preferences', () => {
       const dialog = enPage.getByRole('dialog', { name: 'Settings' })
       await dialog.waitFor({ timeout: 10_000 })
       await dialog.getByRole('button', { name: 'English' }).waitFor({ timeout: 10_000 })
+      // The plugin list resolves shipped preset names through the en
+      // dictionaries instead of echoing the preset files' Chinese metadata.
+      await dialog.getByRole('button', { name: 'Plugins', exact: true }).click()
+      await dialog.getByRole('tab', { name: 'Plugin list', exact: true }).click()
+      const presetSwitcher = dialog.getByRole('button', { name: 'Choose the agent preset to inspect' })
+      await presetSwitcher.waitFor({ timeout: 10_000 })
+      expect(await presetSwitcher.textContent()).toBe('Standard mode (default)')
       // The plugin manager speaks the en dictionary too: its sidebar entry
       // and the unavailable notice a scaffold without a profile runtime shows.
       await enPage.keyboard.press('Escape')
@@ -644,6 +715,11 @@ describe('web e2e: settings modal and General preferences', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['dialog-en.expected.md', 'dialog.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, [
+      'dialog-en.expected.md',
+      'dialog.expected.md',
+      'plugin-instances.expected.md',
+      'plugins.expected.md',
+    ])
   })
 })

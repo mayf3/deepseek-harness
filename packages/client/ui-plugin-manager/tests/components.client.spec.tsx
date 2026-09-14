@@ -134,36 +134,39 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText(en.statusProblem)).toBeTruthy()
   })
 
-  it('lists every package as a card, tags only restarts, problems, and built-ins, and names what waits for a restart', () => {
-    const { version: _unversioned, ...bundledPackage } = pkg({
-      name: '@deepseek-ai/dsh-bundle-first-party', title: 'First party', installed: false,
-    })
+  it('lists the installed packages as cards, leaves built-in bundles to Settings, tags only restarts and problems, and names what waits for a restart', () => {
+    // A library with no version, as pnpm lists a linked directory.
+    const { version: _unversioned, ...someLib } = pkg({ name: 'some-lib', kind: 'unknown', status: 'plain' })
     const { actions } = renderTab({
       packages: [
         pkg({ description: 'A sidebar.' }),
-        bundledPackage,
+        // The profile template's own bundles and the libraries they carry are not installed by the person: not listed.
+        pkg({ name: '@deepseek-ai/dsh-bundle-first-party', title: 'First party', installed: false }),
         pkg({ name: 'unknown', installed: false, kind: 'unknown', status: 'plain' }),
-        pkg({ name: 'builtin-lib', installed: false, kind: 'unknown', status: 'plain' }),
+        pkg({ name: 'dsh-untitled', enabled: false, status: 'restart-required', installed: false }),
         pkg({ name: 'broken-bundle', enabled: false, status: 'not-enableable', reason: 'foreign cordis' }),
         pkg({ name: 'dsh-tool-foo', kind: 'unknown', status: 'plain' }),
-        pkg({ name: 'some-lib', kind: 'unknown', status: 'plain' }),
+        someLib,
         pkg({ name: 'pending-bundle', title: 'Pending', enabled: true, status: 'restart-required' }),
-        pkg({ name: 'dsh-untitled', enabled: false, status: 'restart-required', installed: false }),
+        pkg({ name: 'dsh-nameless', enabled: false, status: 'restart-required' }),
         pkg({ name: 'off-bundle', enabled: false, status: 'disabled' }),
       ],
     })
-    expect(screen.getByText(en.restartBanner.replace('{names}', 'Pending, untitled'))).toBeTruthy()
+    // The banner names a pack by its title, or by its short name when it has none.
+    expect(screen.getByText(en.restartBanner.replace('{names}', 'Pending, nameless'))).toBeTruthy()
     // Packs and plugins list in their own groups; a library counts among the plugins.
-    expect(document.querySelector('[data-plugin-group="bundles"] [data-plugin-count]')?.getAttribute('data-plugin-count')).toBe('6')
-    expect(document.querySelector('[data-plugin-group="plugins"] [data-plugin-count]')?.getAttribute('data-plugin-count')).toBe('4')
+    expect(document.querySelector('[data-plugin-group="bundles"] [data-plugin-count]')?.getAttribute('data-plugin-count')).toBe('5')
+    expect(document.querySelector('[data-plugin-group="plugins"] [data-plugin-count]')?.getAttribute('data-plugin-count')).toBe('2')
     expect(screen.getByRole('heading', { name: en.bundlesTitle })).toBeTruthy()
     expect(screen.getByRole('heading', { name: en.pluginsTitle })).toBeTruthy()
+    for (const name of ['@deepseek-ai/dsh-bundle-first-party', 'unknown', 'dsh-untitled']) {
+      expect(document.querySelector(`[data-plugin-package="${name}"]`)).toBeNull()
+    }
     // No kind tag, no running or off tag: the switch says that.
     expect(screen.getByText(en.statusProblem)).toBeTruthy()
     expect(screen.getAllByText(en.statusRestart)).toHaveLength(2)
-    expect(screen.getAllByText(en.builtinTag)).toHaveLength(4)
     expect(screen.getByText('A sidebar.')).toBeTruthy()
-    expect(document.querySelectorAll('[data-tone]')).toHaveLength(7)
+    expect(document.querySelectorAll('[data-tone]')).toHaveLength(3)
 
     const sidebar = screen.getByRole('switch', { name: 'Enable better-sidebar' }) as HTMLButtonElement
     expect(sidebar.getAttribute('aria-checked')).toBe('true')
@@ -171,24 +174,16 @@ describe('PluginManagerPage', () => {
     expect(actions.setEnabled).toHaveBeenCalledWith('dsh-better-sidebar', false)
     expect(screen.getByRole('switch', { name: 'Enable broken-bundle' })).toHaveProperty('disabled', true)
     expect(screen.getByRole('switch', { name: 'Enable off-bundle' }).getAttribute('aria-checked')).toBe('false')
-    // A built-in pack keeps a locked switch in the same list; a built-in plugin or library has none.
-    const bundled = screen.getByRole('switch', { name: 'Enable First party' }) as HTMLButtonElement
-    expect(bundled.disabled).toBe(true)
-    expect(bundled.title).toBe(en.builtinLocked)
-    expect(screen.queryByRole('switch', { name: 'Enable unknown' })).toBeNull()
+    // A plugin or library has no switch.
     expect(screen.queryByRole('switch', { name: 'Enable tool-foo' })).toBeNull()
 
-    // Uninstall lives on the package's page, for installed packages the person added.
+    // Uninstall lives on the package's page; a package without a version shows no version fact.
     fireEvent.click(screen.getByRole('button', { name: 'View better-sidebar' }))
     fireEvent.click(screen.getByRole('button', { name: 'Uninstall better-sidebar' }))
     expect(actions.uninstall).toHaveBeenCalledWith('dsh-better-sidebar')
+    expect(screen.getByText(en.versionLabel)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.backToList }))
-    fireEvent.click(screen.getByRole('button', { name: 'View untitled' }))
-    expect(screen.queryByRole('button', { name: 'Uninstall untitled' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: en.backToList }))
-    fireEvent.click(screen.getByRole('button', { name: 'View First party' }))
-    expect(document.querySelector('[data-plugin-detail="@deepseek-ai/dsh-bundle-first-party"] dd')?.textContent).toBe(en.sourceBuiltin)
-    expect(screen.queryByRole('button', { name: 'Uninstall First party' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'View some-lib' }))
     expect(screen.queryByText(en.versionLabel)).toBeNull()
   })
 
@@ -223,6 +218,8 @@ describe('PluginManagerPage', () => {
         }),
       ],
     })
+    // A failing built-in pack is Settings' business, not this page's: no card, no problem tag for it.
+    expect(screen.queryByRole('button', { name: 'View Core' })).toBeNull()
     // A pack whose only trouble is a row waiting for a service is tagged as waiting, not as a problem.
     expect(screen.getByText(en.statusWaiting)).toBeTruthy()
     // The list and its toolbar give way to the page; the crumb leads back.
@@ -231,7 +228,6 @@ describe('PluginManagerPage', () => {
     expect(screen.getByRole('heading', { name: 'better-sidebar' })).toBeTruthy()
     expect(screen.getByText(`${en.reasonLabel}: one row failed`)).toBeTruthy()
     expect(screen.getByText('0.16.0')).toBeTruthy()
-    expect(screen.getByText(en.sourceExternal)).toBeTruthy()
     // Every row in the pack's order: its id over the module it loads, then its state; a failure adds its message.
     expect(screen.getByText('9 total · 2 running · 2 waiting · 2 off · 2 failed')).toBeTruthy()
     const rowText = (id: string): string | undefined => document.querySelector(`[data-plugin-row="include:${id}"]`)?.textContent
@@ -274,8 +270,7 @@ describe('PluginManagerPage', () => {
     expect(screen.queryByText(`${en.reasonLabel}: pending (waiting for service: authorization)`)).toBeNull()
     expect(screen.getByText('1 total · 1 waiting')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.backToList }))
-    // A pack without rows says so; a plugin's page has no rows section; a
-    // built-in pack retries but never uninstalls.
+    // A pack without rows says so; a plugin's page has no rows section.
     fireEvent.click(screen.getByRole('button', { name: 'View no-rows' }))
     expect(screen.getByText(en.partsEmpty)).toBeTruthy()
     expect(screen.getByText(en.noDescription)).toBeTruthy()
@@ -284,11 +279,6 @@ describe('PluginManagerPage', () => {
     expect(screen.queryByText(en.partsLabel)).toBeNull()
     expect(screen.queryByRole('button', { name: en.retryPackage })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.backToList }))
-    fireEvent.click(screen.getByRole('button', { name: 'View Core' }))
-    expect(screen.getByText('1 total · 1 running')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: en.retryPackage }))
-    expect(actions.retry).toHaveBeenLastCalledWith('@deepseek-ai/dsh-core-broken')
-    expect(screen.queryByRole('button', { name: 'Uninstall Core' })).toBeNull()
     // A package that leaves the list while its page is open drops back to the cards.
     set({ packages: [] })
     expect(screen.getByText(en.empty)).toBeTruthy()
@@ -354,8 +344,10 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText(en.partsFilterEmpty)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.backToList }))
     // Rows stay read-only where a switch would not act now: a profile that
-    // applies patches at its next start, a pack that is off, and a built-in pack.
-    for (const [name, rowId] of [['frozen', 'frozen'], ['parked', 'parked'], ['Core', 'core']] as const) {
+    // applies patches at its next start and a pack that is off. The built-in
+    // pack has no page here at all.
+    expect(screen.queryByRole('button', { name: 'View Core' })).toBeNull()
+    for (const [name, rowId] of [['frozen', 'frozen'], ['parked', 'parked']] as const) {
       fireEvent.click(screen.getByRole('button', { name: `View ${name}` }))
       expect(document.querySelector(`[data-plugin-row="include:${rowId}"]`)?.textContent).toContain(en.partDisabledByUser)
       expect(screen.queryByRole('switch', { name: `Enable component ${rowId}` })).toBeNull()

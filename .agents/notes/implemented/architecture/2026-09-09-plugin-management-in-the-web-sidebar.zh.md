@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决定
 
-**管理位于侧栏，配置保留在设置中。** `ui-plugin-manager` 在 `plugins` 下注册 `sidebar.panellist` 入口与它打开的 `main` 面板。页面管理包与全局行、展示安装输出，并确认影响依赖的操作。设置的插件分区保留全局配置卡片，单个标签页直接展示内容，不显示标签栏。
+**管理位于侧栏，配置保留在设置中。** `ui-plugin-manager` 在 `plugins` 下注册 `sidebar.panellist` 入口与它打开的 `main` 面板。页面管理包与全局行、展示安装输出，并确认影响依赖的操作。页面只列出已安装的包。设置的插件分区保留全局配置卡片，旁边是只读的「插件列表」标签页，内置 bundle（`dsh-base`、`dsh-web-app`）在那里查看；该标签页的两个分组默认收起。
 
 **一个 store 跟随 Host 状态。** 管理器控制器读取包视图，在管理操作和重连后刷新，并按所属 job 保存安装进度。配置卡片使用原有全局 settings 绑定。
 
@@ -22,7 +22,7 @@ Status: implemented
 
 ## 后果
 
-web bundle 的面板列表不再为空：**插件**入口位于新建会话与工作区之间。设置的「插件」分区显示没有标签页的配置页。`apps/web/tests/plugin-manager.e2e.ts` 经侧栏到达管理器，`plugin-config` 与 `settings-chrome` 的场景与 golden 随之更新。
+web bundle 的面板列表不再为空：**插件**入口位于新建会话与工作区之间。设置的「插件」分区保留两个标签页：配置页与只读的「插件列表」。`apps/web/tests/plugin-manager.e2e.ts` 经侧栏到达管理器，`plugin-config` 与 `settings-chrome` 的场景与 golden 随之更新。
 
 ## 测试
 

@@ -10,7 +10,7 @@ Installed packages belong to the running profile, while Settings is a modal over
 
 ## Decision
 
-**Management is a sidebar entry; configuration stays in Settings.** `ui-plugin-manager` registers a `sidebar.panellist` entry and the `main` panel it opens under `plugins`. The page manages packages and global rows, displays install output and confirms dependency-sensitive actions. The Settings Plugins section keeps the global configuration cards and renders its single tab without a tab strip.
+**Management is a sidebar entry; configuration stays in Settings.** `ui-plugin-manager` registers a `sidebar.panellist` entry and the `main` panel it opens under `plugins`. The page manages packages and global rows, displays install output and confirms dependency-sensitive actions. The page lists installed packages only. The Settings Plugins section keeps the global configuration cards beside the read-only Plugin list tab, where the built-in bundles (`dsh-base`, `dsh-web-app`) are inspected; both of that tab's groups start collapsed.
 
 **One store follows Host state.** The manager controller reads package views, refreshes after management operations and reconnects, and keeps installation progress under the owning job. Configuration cards use the existing global settings bindings.
 
@@ -22,7 +22,7 @@ Installed packages belong to the running profile, while Settings is a modal over
 
 ## Consequences
 
-The web bundle's panel list is no longer empty: the **Plugins** entry sits between New Session and the workspaces. The Settings Plugins section shows the configuration page without tabs. `apps/web/tests/plugin-manager.e2e.ts` reaches the manager through the sidebar, and the `plugin-config` and `settings-chrome` scenarios and goldens follow.
+The web bundle's panel list is no longer empty: the **Plugins** entry sits between New Session and the workspaces. The Settings Plugins section keeps two tabs: the configuration page and the read-only Plugin list. `apps/web/tests/plugin-manager.e2e.ts` reaches the manager through the sidebar, and the `plugin-config` and `settings-chrome` scenarios and goldens follow.
 
 ## Testing
 

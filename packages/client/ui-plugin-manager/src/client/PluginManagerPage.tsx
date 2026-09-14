@@ -255,13 +255,11 @@ function EnableSwitch({ pkg, title, t, busy, onSetEnabled }: {
   readonly onSetEnabled: (enabled: boolean) => void
 }): ReactNode {
   if (pkg.kind !== 'bundle') return null
-  const builtin = !pkg.installed
   return (
     <Switch
       checked={pkg.enabled}
       label={t('enableToggle', { name: title })}
-      disabled={busy || builtin || (!pkg.enabled && pkg.status === 'not-enableable')}
-      {...builtin ? { title: t('builtinLocked') } : {}}
+      disabled={busy || (!pkg.enabled && pkg.status === 'not-enableable')}
       onChange={onSetEnabled}
     />
   )
@@ -276,7 +274,6 @@ function PackageCard({ pkg, t, busy, onOpen, onSetEnabled }: {
   readonly onSetEnabled: (enabled: boolean) => void
 }): ReactNode {
   const title = pkg.title ?? shortName(pkg.name)
-  const builtin = !pkg.installed
   const status = cardStatus(pkg)
   return (
     <li className={`${css.card} ${css.cardLink}`} data-plugin-package={pkg.name} data-plugin-status={pkg.status}>
@@ -284,7 +281,6 @@ function PackageCard({ pkg, t, busy, onOpen, onSetEnabled }: {
         <div className={css.cardMain}>
           <div className={css.titleRow}>
             <button type="button" className={`${css.cardTitle} ${css.cardOpen}`} aria-label={t('openDetail', { name: title })} onClick={onOpen}>{title}</button>
-            {builtin ? <Tag>{t('builtinTag')}</Tag> : null}
             {status === null ? null : <Tag tone={status === 'problem' ? 'danger' : 'warning'}>{t(STATUS_KEYS[status])}</Tag>}
           </div>
           {pkg.description === undefined ? null : <span className={css.cardDesc}>{pkg.description}</span>}
@@ -320,14 +316,12 @@ function PackageDetail({
 }): ReactNode {
   const title = pkg.title ?? shortName(pkg.name)
   const bundle = pkg.kind === 'bundle'
-  const builtin = !pkg.installed
   const status = cardStatus(pkg)
   const retryable = bundle && pkg.enabled && (pkg.status === 'failed' || pkg.status === 'partial')
-  const removable = pkg.installed
   const affectedIssues = (pkg.issues ?? []).filter(issue => !pkg.rows.some(row => row.entryId === issue.entryId))
-  // A row's switch acts at once only on an external pack composed on a
+  // A row's switch acts at once only on a pack that is on, composed on a
   // profile that applies patches while it runs; elsewhere the rows stay read-only.
-  const switchable = bundle && pkg.installed && pkg.enabled && pkg.liveReload
+  const switchable = bundle && pkg.enabled && pkg.liveReload
   return (
     <div className={css.detail} data-plugin-detail={pkg.name}>
       <button type="button" className={css.crumb} aria-label={t('backToList')} onClick={onBack}>
@@ -340,7 +334,6 @@ function PackageDetail({
         <div className={css.detailMain}>
           <div className={css.titleRow}>
             <h3 className={css.detailTitle}>{title}</h3>
-            {builtin ? <Tag>{t('builtinTag')}</Tag> : null}
             {status === null ? null : <Tag tone={status === 'problem' ? 'danger' : 'warning'}>{t(STATUS_KEYS[status])}</Tag>}
           </div>
           <p className={css.detailDesc}>{pkg.description ?? t('noDescription')}</p>
@@ -349,30 +342,22 @@ function PackageDetail({
           {retryable
             ? <Button variant="outline" size="sm" disabled={busy} onClick={onRetry}>{t('retryPackage')}</Button>
             : null}
-          {removable
-            ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className={css.danger}
-                aria-label={t('uninstallLabel', { name: title })}
-                disabled={busy}
-                onClick={onUninstall}
-              >
-                {t('uninstall')}
-              </Button>
-            )
-            : null}
+          <Button
+            variant="outline"
+            size="sm"
+            className={css.danger}
+            aria-label={t('uninstallLabel', { name: title })}
+            disabled={busy}
+            onClick={onUninstall}
+          >
+            {t('uninstall')}
+          </Button>
           <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
         </div>
       </div>
       {pkg.reason === undefined || status === 'waiting' ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {pkg.reason}</p>}
       {pkg.kind === 'unknown' ? <p className={css.detailDesc}>{t('unknownPackage')}</p> : null}
-      <dl className={css.facts}>
-        {pkg.version === undefined ? null : <><dt>{t('versionLabel')}</dt><dd>{pkg.version}</dd></>}
-        <dt>{t('sourceLabel')}</dt>
-        <dd>{t(builtin ? 'sourceBuiltin' : 'sourceExternal')}</dd>
-      </dl>
+      {pkg.version === undefined ? null : <dl className={css.facts}><dt>{t('versionLabel')}</dt><dd>{pkg.version}</dd></dl>}
       <div className={css.detailSections}>
         {affectedIssues.length === 0 ? null : (
           <section className={css.detailSection} data-plugin-affected-issues>
@@ -601,9 +586,12 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const [openPackage, setOpenPackage] = useState<string | null>(null)
   useEffect(() => { ensure() }, [ensure])
 
-  const restartPending = state.packages.filter(pkg => pkg.status === 'restart-required').map(pkg => pkg.title ?? shortName(pkg.name))
+  // The page manages what the person installed; the bundles the profile
+  // template supplies are inspected in the Settings Plugins section's Plugin list tab.
+  const listed = state.packages.filter(pkg => pkg.installed)
+  const restartPending = listed.filter(pkg => pkg.status === 'restart-required').map(pkg => pkg.title ?? shortName(pkg.name))
   const loaded = state.status === 'ready' || state.status === 'error'
-  const openPkg = openPackage === null ? undefined : state.packages.find(pkg => pkg.name === openPackage)
+  const openPkg = openPackage === null ? undefined : listed.find(pkg => pkg.name === openPackage)
 
   return (
     <section className={css.page} data-plugin-panel aria-busy={state.status === 'loading'}>
@@ -657,10 +645,10 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         )
         : null}
       {loaded && openPkg === undefined
-        ? state.packages.length === 0
+        ? listed.length === 0
           ? <p className={css.empty}>{t('empty')}</p>
           : PACKAGE_GROUPS.map((group) => {
-            const members = state.packages.filter(group.holds)
+            const members = listed.filter(group.holds)
             return members.length === 0
               ? null
               : (
