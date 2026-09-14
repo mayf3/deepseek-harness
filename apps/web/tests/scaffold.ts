@@ -24,7 +24,7 @@
 // assertConsumed for the teardown fixture-consumption check).
 import { existsSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -348,7 +348,7 @@ export interface LaunchOptions {
   /**
    * Tool presentation mode patched onto the shipped `tools` row (`code`
    * collapses the wire to run_code + the SDK prompt section). Omit for the
-   * yml default. The code runtime row is always in the tree, so no extra
+   * yml default. The PTC runtime row is always in the tree, so no extra
    * insertion is needed.
    */
   toolsMode?: 'native' | 'ptc' | 'both'
@@ -644,7 +644,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       }],
     ...maskDeepSeekCredential && !messages ? [] : [
       { id: 'llm-deepseek', disabled: mode !== 'record' && !maskDeepSeekCredential,
-        config: { protocol: messages ? 'messages' : 'chat-completions' } },
+        config: messages ? {} : { protocol: 'chat-completions' } },
     ],
   ]
 
@@ -671,6 +671,11 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         throw new Error(`web scaffold extra install anchor has no package name: ${anchor}`)
       }
       const packageDir = dirname(anchor)
+      // A real profile already has each bundle installed by `dsh plugin add`.
+      // Reproduce that link so a private bundle can import its own plugin.
+      const installedLink = join(profileDir, 'node_modules', manifest.name)
+      await mkdir(dirname(installedLink), { recursive: true })
+      await symlink(packageDir, installedLink, 'junction')
       return {
         packageName: manifest.name,
         packageDir,

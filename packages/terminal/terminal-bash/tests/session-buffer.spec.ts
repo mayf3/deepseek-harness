@@ -22,6 +22,7 @@ class OutputProducer implements SubprocessTerminalHandle {
   }
 
   async write(): Promise<void> {}
+  async resize(): Promise<void> {}
   async inspectForeground() { return undefined }
   async signalForeground(): Promise<number> { return this.pid }
   async terminate(): Promise<void> {

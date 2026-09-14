@@ -86,6 +86,8 @@ class FakeTerminal implements SubprocessTerminalHandle {
     })
   }
 
+  async resize(_cols: number, _rows: number): Promise<void> {}
+
   async write(data: string): Promise<void> {
     if (this.throwWrite) throw new Error('write failed')
     this.writes.push(data)

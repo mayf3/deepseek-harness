@@ -31,8 +31,10 @@ const windowsUnsupportedPackages = process.platform === 'win32'
       'packages/shell/tool-bash',
       'packages/hooks/*',
       'packages/terminal/terminal-bash',
-      'packages/experimental/code-runtime-python',
+      'packages/experimental/ptc-runtime-python',
       'packages/sandbox/sandbox-local',
+      // OpenSSH multiplexing and Unix-socket helper streams require POSIX endpoints.
+      'packages/ssh/*',
     ]
   : []
 
@@ -152,7 +154,7 @@ const processBoundTests = [
   'packages/context/time-context/tests/time-context.spec.ts',
   'packages/llm/llm-pi-ai/tests/adapter.spec.ts',
   'packages/boot/app-boot/tests/app-boot.spec.ts',
-  'packages/workflow/workflow-worker-thread/tests/session.spec.ts',
+  'packages/workflow/workflow-ptc/tests/workflow-ptc.spec.ts',
 ]
 
 export default defineConfig({
@@ -210,6 +212,8 @@ export default defineConfig({
         'packages/*/*/src/types.ts',
         'packages/*/*/src/bin.ts',
         'packages/*/*/src/worker.ts',
+        // The built Node entry invokes the independently covered process bootstrap through fd 7.
+        'packages/ptc-runtime/ptc-runtime-node/src/process-entry.ts',
         // Dynamic Host/Client composition is covered by its focused lifecycle
         // tests and assembled application checks rather than per-file coverage.
         'packages/self-modification/*/src/**/*.{ts,tsx}',
@@ -243,7 +247,6 @@ export default defineConfig({
         'packages/client/ui-chat/src/client/conversation-nodes/*',
         'packages/client/ui-chat/src/client/details/*',
         'packages/client/ui-chat/src/client/model/*',
-        'packages/client/ui-chat/src/client/contract/context-provenance.ts',
         'packages/client/ui-chat/src/client/contract/snapshot.ts',
         'packages/client/ui-chat/src/client/historical-images.ts',
         'packages/client/ui-primitives/src/DisclosureRow.tsx',
@@ -302,7 +305,6 @@ export default defineConfig({
         'packages/experimental/client-ui-agent-team/src/client/index.ts',
         // Slash/command/input round: per-file gaps deferred with the same
         // client-lane debt. TODO(gui): cover and remove with the lane above.
-        'packages/client/connection/src/client/fixture.ts',
         'packages/client/ui-commands/src/index.ts',
         'packages/client/ui-skill/src/index.ts',
         'packages/client/ui-input-trigger/src/index.ts',

@@ -28,7 +28,7 @@ Synchronous ingestion measures the send start and provider callbacks. Completion
 
 ### Local reference measurements
 
-On Apple M5 Pro, macOS arm64, Node v26.5.0, five fresh workers per case compare base `ac8f6f1f228eae84f56856042811162cd00141fe` with incremental retention. The same worker and inputs measure both versions; only the private session implementation differs. Times below are milliseconds in sample order.
+On Apple M5 Pro, macOS arm64, Node v26.5.0, five fresh workers per case compare the eager-retention baseline with incremental retention. The same worker and inputs measure both versions; only the private session implementation differs. Times below are milliseconds in sample order.
 
 | Case / metric | Eager retention samples | Incremental retention samples |
 |---|---|---|
@@ -43,7 +43,7 @@ The large/small steady-ingestion median ratio is 18.88 for eager retention and 0
 
 A separate memory case sends 5 MiB in 16-byte callbacks and samples retained heap once after completion. It retains 5,802,840 bytes with tail aggregation. The same assertion with uncoalesced linked nodes fails at 22,969,720 bytes against the 16 MiB bound. This case has no performance timing verdict.
 
-The filtered-output memory case emits 513 callbacks of 64 KiB each, containing a complete 56 KiB OSC sequence followed by 8 KiB of visible text. This passes through the production sanitizer before filling a 4 MiB visible window and taking a bounded read. With incoming slices retained directly (`0b81fd50e4`), the assertion fails at 36,706,592 bytes. Copying inputs into independent storage reduces retained heap to 7,635,440 bytes, below the unchanged 16 MiB limit. These measurements use Node v26.5.0 and fresh workers.
+The filtered-output memory case emits 513 callbacks of 64 KiB each, containing a complete 56 KiB OSC sequence followed by 8 KiB of visible text. This passes through the production sanitizer before filling a 4 MiB visible window and taking a bounded read. With incoming slices retained directly, the assertion fails at 36,706,592 bytes. Copying inputs into independent storage reduces retained heap to 7,635,440 bytes, below the unchanged 16 MiB limit. These measurements use Node v26.5.0 and fresh workers.
 
 A real PTY diagnostic runs `node -e 'process.stdout.write("x".repeat(5*1024*1024))'` through the built local subprocess provider. One baseline sample takes 106962.523 ms; one final candidate sample takes 249.007 ms. Timing begins before PTY/process spawn and ends after `session_exit` and the bounded read. Both samples exit with code 0, no signal, and truncated 256 KiB viewport/read payloads. This includes native PTY transport and Node startup, but excludes an interactive shell and prompt-readiness round trip.
 
