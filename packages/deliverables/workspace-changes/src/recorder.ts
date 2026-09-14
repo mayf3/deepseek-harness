@@ -1,12 +1,12 @@
 /** Per-Session turn recorder: snapshot at turn start, diff and append at turn end. */
 import { realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { relative } from 'node:path'
+import { relative, resolve } from 'node:path'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { FileDiff } from '@deepseek-ai/dsh-tools'
 import { diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree, type GitRunner, type GitWorkspace, type ObjectStoreOptions } from './git.ts'
 import { argumentHunks, fileDiffsOf, hunkLineCounts } from './numstat.ts'
-import { absolutePathOf, canonicalPath, compareDisplay, displayPathOf, durablePathOf, isInside, isTemporaryPath, temporaryRoots, toPosix } from './paths.ts'
+import { canonicalPath, compareDisplay, displayPathOf, durablePathOf, isInside, isTemporaryPath, temporaryRoots, toPosix } from './paths.ts'
 import type { WorkspaceChangedFile } from './types.ts'
 
 /** Facts shared by every recorder of one plugin instance. */
@@ -180,33 +180,28 @@ export class TurnRecorder {
   private async record(state: TurnState, signal: AbortSignal): Promise<void> {
     if (state.baseline === null || state.lastToolResultSeq < 0) return
     state.attemptedAfterSeq = state.lastToolResultSeq
-    const { git, workspace, tree: before, cwd, home, temporaryRoots: roots } = state.baseline
+    const baseline = state.baseline
+    const { git, workspace, tree: before, cwd } = baseline
+    const root = workspace.root
     const after = await snapshotTree(git, workspace, signal)
     const files = new Map<string, WorkspaceChangedFile>()
     for (const entry of await diffTrees(git, workspace, before, after, signal)) {
-      const absolute = absolutePathOf(workspace.root, entry.path)
-      files.set(absolute, changedFile(absolute, cwd, home, workspace, entry))
+      const absolute = resolve(root, entry.path)
+      files.set(absolute, changedFile(baseline, absolute, entry))
     }
+    // File-tool hunks by canonical absolute path, for the files snapshots do not cover.
     const hunks = new Map<string, FileDiff[]>()
     for (const [path, list] of state.hunks) {
-      const absolute = await canonicalPath(absolutePathOf(cwd, path))
-      hunks.set(absolute, [...hunks.get(absolute) ?? [], ...list])
+      const absolute = await canonicalPath(resolve(cwd, path))
+      if (!files.has(absolute)) hunks.set(absolute, [...hunks.get(absolute) ?? [], ...list])
     }
-    const inside: string[] = []
-    const outside: string[] = []
-    for (const absolute of hunks.keys()) {
-      if (files.has(absolute)) continue
-      // The repository is the user's workspace even when it lives under a temporary root.
-      if (!isInside(workspace.root, absolute) && isTemporaryPath(absolute, roots)) continue
-      if (isInside(workspace.root, absolute)) inside.push(absolute)
-      else outside.push(absolute)
-    }
-    const workTreePath = (absolute: string): string => toPosix(relative(workspace.root, absolute))
-    const ignored = await ignoredPaths(git, workspace, inside.map(workTreePath), signal)
-    const toolOnly = new Set([...outside, ...inside.filter(absolute => ignored.has(workTreePath(absolute)))])
+    const workTreePath = (absolute: string): string => toPosix(relative(root, absolute))
+    const inRepository = [...hunks.keys()].filter(absolute => isInside(root, absolute))
+    const ignored = await ignoredPaths(git, workspace, inRepository.map(workTreePath), signal)
     for (const [absolute, list] of hunks) {
-      if (!toolOnly.has(absolute)) continue
-      files.set(absolute, changedFile(absolute, cwd, home, workspace, { ...hunkLineCounts(list), binary: false }))
+      // Inside the repository only ignored files are uncovered; outside it, scratch files under a temporary root stay out.
+      const uncovered = isInside(root, absolute) ? ignored.has(workTreePath(absolute)) : !isTemporaryPath(absolute, baseline.temporaryRoots)
+      if (uncovered) files.set(absolute, changedFile(baseline, absolute, { ...hunkLineCounts(list), binary: false }))
     }
     const sorted = [...files.values()].sort(compareDisplay)
     // An empty list after an earlier in-turn record supersedes that record.
@@ -219,11 +214,10 @@ export class TurnRecorder {
     })
     state.recordedAfterSeq = event.seq
   }
-
 }
 
 function changedFile(
-  absolute: string, cwd: string, home: string, workspace: GitWorkspace, counts: { added: number; deleted: number; binary: boolean },
+  { cwd, workspace, home }: Baseline, absolute: string, counts: { added: number; deleted: number; binary: boolean },
 ): WorkspaceChangedFile {
   return {
     path: durablePathOf(absolute, cwd),

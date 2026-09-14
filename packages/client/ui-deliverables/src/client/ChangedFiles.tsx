@@ -4,7 +4,6 @@ import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { IconChevronDownOutline14, IconChevronUpOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkspaceChangedFile } from '@deepseek-ai/dsh-workspace-changes/types'
 import { changedFileUrl } from '../changes.ts'
 import type { PresentedHost } from '../presented.ts'
 import { IconCodeBracketsOutline16 } from './icons.tsx'
@@ -19,27 +18,29 @@ const COLLAPSED_ROWS = 3
 const GROUPED = new Intl.NumberFormat('en-US')
 
 /**
- * Row copy for an open gesture while it is pending or failed; a completed open
- * shows the line counts again, which are the row's primary information. The
- * changed-files card never reveals, so only open phases occur.
+ * Gesture state worth showing in place of the counts: pending, or failed. A
+ * completed open shows the counts again. The card never reveals, so only open
+ * phases occur.
  */
-function rowStatus(phase: PresentedOpenPhase | undefined): { key: 'presented.opening' | 'presented.error' | 'presented.nativeUnavailable'; error: boolean } | undefined {
+function gesture(phase: PresentedOpenPhase | undefined): { key: 'presented.opening' | 'presented.error' | 'presented.nativeUnavailable'; failed: boolean } | undefined {
   switch (phase) {
-    case 'opening': return { key: 'presented.opening', error: false }
-    case 'error': return { key: 'presented.error', error: true }
-    case 'nativeUnavailable': return { key: 'presented.nativeUnavailable', error: true }
+    case 'opening': return { key: 'presented.opening', failed: false }
+    case 'error': return { key: 'presented.error', failed: true }
+    case 'nativeUnavailable': return { key: 'presented.nativeUnavailable', failed: true }
     default: return undefined
   }
 }
 
-function totals(files: readonly WorkspaceChangedFile[]): { added: number; deleted: number } {
-  let added = 0
-  let deleted = 0
-  for (const file of files) {
-    added += file.added
-    deleted += file.deleted
-  }
-  return { added, deleted }
+function sum(files: readonly { added: number; deleted: number }[], key: 'added' | 'deleted'): number {
+  return files.reduce((total, file) => total + file[key], 0)
+}
+
+/** Added and deleted line counts in the card's colors. */
+function Counts({ added, deleted, t }: { added: number; deleted: number } & PropsLocale<typeof NS>) {
+  return <>
+    <span className={css.added}>{t('changes.added', { count: GROUPED.format(added) })}</span>
+    <span className={css.deleted}>{t('changes.deleted', { count: GROUPED.format(deleted) })}</span>
+  </>
 }
 
 /**
@@ -62,46 +63,39 @@ export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, op
   const native = host !== null && host.available
   const foldable = changes.files.length > COLLAPSED_ROWS
   const rows = foldable && !expanded ? changes.files.slice(0, COLLAPSED_ROWS) : changes.files
-  const sum = totals(changes.files)
-  const folderPhase = phases[changedFileUrl(sessionId, changes.seq, null)]
-  const folderStatus = folderPhase === 'opening' ? t('changes.folderOpening')
-    : folderPhase === 'error' || folderPhase === 'nativeUnavailable' ? t('changes.folderError') : undefined
+  const folder = gesture(phases[changedFileUrl(sessionId, changes.seq, null)])
   const summary = <>
     <span className={css.tile}><IconCodeBracketsOutline16 size={18} /></span>
     <span className={css.titles}>
       <span className={css.title}>{t('changes.title', { count: String(changes.total) })}</span>
-      <span className={css.stat} role={folderStatus === undefined ? undefined : 'status'} data-error={folderPhase === 'error' || folderPhase === 'nativeUnavailable' ? true : undefined}>
-        {folderStatus ?? <>
-          <span className={css.added}>{t('changes.added', { count: GROUPED.format(sum.added) })}</span>
-          <span className={css.deleted}>{t('changes.deleted', { count: GROUPED.format(sum.deleted) })}</span>
-        </>}
+      <span className={css.stat} role={folder === undefined ? undefined : 'status'} data-error={folder?.failed || undefined}>
+        {folder === undefined
+          ? <Counts t={t} added={sum(changes.files, 'added')} deleted={sum(changes.files, 'deleted')} />
+          : t(folder.failed ? 'changes.folderError' : 'changes.folderOpening')}
       </span>
     </span>
   </>
   return <div className={css.card} data-changed-files>
     {native
       ? <button type="button" className={css.header} aria-label={t('changes.openFolder')}
-        disabled={folderPhase === 'opening'} onClick={() => { onOpen(null) }}>{summary}</button>
+        disabled={folder !== undefined && !folder.failed} onClick={() => { onOpen(null) }}>{summary}</button>
       : <div className={css.header}>{summary}</div>}
     <ul className={css.list}>
       {rows.map((file, index) => {
         const phase = phases[changedFileUrl(sessionId, changes.seq, index)]
-        const status = rowStatus(phase)
+        const status = gesture(phase)
         // A file without a verified Host path falls back to the Sidebar preview the status names.
         const opensNatively = native && phase !== 'nativeUnavailable'
         return <li key={file.display}>
           <button type="button" className={css.row} title={resolveWorkspacePath(cwd, file.path)}
             aria-label={t(opensNatively ? 'changes.openFile' : 'presented.previewButton', { name: file.display })}
-            disabled={phase === 'opening'}
+            disabled={status !== undefined && !status.failed}
             onClick={() => { if (opensNatively) onOpen(index); else openFile(file.path) }}>
             <span className={css.path}>{file.display}</span>
-            <span className={css.counts} role={status === undefined ? undefined : 'status'} data-error={status?.error ? true : undefined}>
+            <span className={css.counts} role={status === undefined ? undefined : 'status'} data-error={status?.failed || undefined}>
               {status !== undefined ? t(status.key)
                 : file.binary === true ? t('changes.binary')
-                  : <>
-                    <span className={css.added}>{t('changes.added', { count: GROUPED.format(file.added) })}</span>
-                    <span className={css.deleted}>{t('changes.deleted', { count: GROUPED.format(file.deleted) })}</span>
-                  </>}
+                  : <Counts t={t} added={file.added} deleted={file.deleted} />}
             </span>
           </button>
         </li>

@@ -1,7 +1,7 @@
 /** Path classification and display forms for changed files. */
 import { realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { isAbsolute, relative, sep } from 'node:path'
 
 /**
  * Slash-separated form of a native relative path.
@@ -64,16 +64,6 @@ export function isTemporaryPath(path: string, roots: readonly string[]): boolean
 }
 
 /**
- * Resolve a file-tool path against the Session working directory.
- * @param cwd - absolute Session working directory.
- * @param path - model-facing path, relative or absolute.
- * @returns the absolute native path.
- */
-export function absolutePathOf(cwd: string, path: string): string {
-  return resolve(cwd, path)
-}
-
-/**
  * Sort key and label of a changed file; see `WorkspaceChangedFile.display`.
  * @param absolute - canonical absolute file path.
  * @param cwd - canonical Session working directory.
@@ -82,9 +72,7 @@ export function absolutePathOf(cwd: string, path: string): string {
  * @returns the slash-separated display path.
  */
 export function displayPathOf(absolute: string, cwd: string, root: string, home: string): string {
-  const rel = relative(cwd, absolute)
-  if (!rel.startsWith('..') && !isAbsolute(rel)) return toPosix(rel)
-  if (isInside(root, absolute)) return toPosix(rel)
+  if (isInside(cwd, absolute) || isInside(root, absolute)) return toPosix(relative(cwd, absolute))
   if (home !== '' && isInside(home, absolute)) return `~/${toPosix(relative(home, absolute))}`
   return toPosix(absolute)
 }
@@ -96,8 +84,7 @@ export function displayPathOf(absolute: string, cwd: string, root: string, home:
  * @returns the path the Web client opens the file through.
  */
 export function durablePathOf(absolute: string, cwd: string): string {
-  const rel = relative(cwd, absolute)
-  return !rel.startsWith('..') && !isAbsolute(rel) ? toPosix(rel) : absolute
+  return isInside(cwd, absolute) ? toPosix(relative(cwd, absolute)) : absolute
 }
 
 /**
