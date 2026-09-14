@@ -172,7 +172,7 @@ export type PluginChangeReason = 'install' | 'uninstall' | 'enable' | 'disable' 
 
 /** One chunk of an install run's output. */
 export interface PluginInstallLogChunk {
-  /** The enclosing installation; absent for standalone package removal. */
+  /** The owning operation identifier when a cancellation controller is present. */
   readonly requestId?: PluginInstallRequestId
   /** The run the chunk belongs to. */
   readonly jobId: string

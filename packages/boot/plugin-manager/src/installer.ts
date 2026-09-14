@@ -32,7 +32,7 @@ import type { PluginInstallLogChunk, PluginInstallRejection, PluginInstallResult
 export interface PluginInstallControl {
   readonly requestId: PluginInstallRequestId
   readonly signal: AbortSignal
-  readonly prepared: () => void
+  readonly prepared?: () => void
 }
 
 /** Check cancellation between subprocesses and before committing the installation. */
@@ -167,7 +167,7 @@ export class PluginInstaller {
    * Undeclared packages remain installed; new bundles are left disabled.
    * @param spec - what to install, in pnpm's own vocabulary: a registry
    * name, a `github:` or git URL, a tarball, or an absolute path.
-   * @param control - cancellation and the handoff to runtime application; omitted by standalone CLI operations.
+   * @param control - optional cancellation and the handoff to runtime application.
    * @returns what the run installed and what it removed again.
    * @throws {PluginOperationError} `plugins/bad-request` for an empty spec,
    * `plugins/install-failed` when pnpm exits non-zero, cannot be spawned, or times out;
@@ -203,7 +203,7 @@ export class PluginInstaller {
         removed.push({ name, reason })
       }
       checkCancelled(control)
-      control?.prepared()
+      control?.prepared?.()
       const kept = new Set(installed)
       return {
         installed,
@@ -225,7 +225,7 @@ export class PluginInstaller {
   /**
    * Run `pnpm remove` and reconcile the layer list.
    * @param packageName - the dependency to remove.
-   * @param control - the enclosing installation when removing a rejected new package.
+   * @param control - optional cancellation for this package operation.
    * @throws {PluginOperationError} `plugins/install-failed` when pnpm fails.
    */
   async remove(packageName: string, control?: PluginInstallControl): Promise<void> {

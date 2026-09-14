@@ -54,6 +54,7 @@ interface ActiveMutation {
   readonly operation: string
   readonly subject: string
   install?: ActiveInstall
+  stopFiles?: () => Promise<void>
 }
 
 /** What {@link PluginManager} needs beyond the Cordis context it reads the tree through. */
@@ -95,6 +96,7 @@ export class PluginManager {
       const install = this.active?.install
       // Runtime application may itself unload this plugin; never join that recompose from its disposer.
       if (install !== undefined && install.phase !== 'applying') await this.cancelInstall(install.requestId)
+      else await this.active?.stopFiles?.()
     })
   }
 
@@ -187,7 +189,7 @@ export class PluginManager {
    * `plugins/install-log` chunks carrying the returned `jobId`.
    * @param spec - what to install, in pnpm's own vocabulary: a registry
    * name, a `github:` or git URL, a tarball, or an absolute path.
-   * @param options - `enable` puts every newly installed bundle into the layer list at once.
+   * @param options - `enable` selects new bundles; `requestId` identifies the install for progress and cancellation.
    * @returns what the run installed and enabled.
    * @throws {PluginOperationError} `plugins/agents-running` while a session
    * runs, `plugins/install-failed` when pnpm exits non-zero or the run times
@@ -271,10 +273,10 @@ export class PluginManager {
    * or `plugins/install-failed` when pnpm exits non-zero.
    */
   async uninstall(packageName: string): Promise<void> {
-    return this.exclusive('uninstall', packageName, () => this.uninstallNow(packageName))
+    return this.exclusive('uninstall', packageName, active => this.uninstallNow(packageName, active))
   }
 
-  private async uninstallNow(packageName: string): Promise<void> {
+  private async uninstallNow(packageName: string, active: ActiveMutation): Promise<void> {
     const runtime = this.runtime()
     const installer = this.installer(runtime)
     installer.assertInstalled(packageName)
@@ -286,7 +288,20 @@ export class PluginManager {
     for (const reference of references) {
       await this.editLayer(runtime, (document) => { document.removeInsert(reference.rowId) })
     }
-    await installer.remove(packageName)
+    if (this.disposed) {
+      throw new PluginOperationError('plugins/unavailable', `${NAME}: manager was disposed before package removal`, { reason: 'manager disposed' })
+    }
+    const controller = new AbortController()
+    const settled = Promise.withResolvers<undefined>()
+    active.stopFiles = async () => { controller.abort(); await settled.promise }
+    try {
+      await installer.remove(packageName, {
+        requestId: randomUUID() as PluginInstallRequestId, signal: controller.signal,
+      })
+    } finally {
+      delete active.stopFiles
+      settled.resolve(undefined)
+    }
     if (references.length > 0 && runtime.patchReload === 'live') {
       await runtime.recompose()
     }

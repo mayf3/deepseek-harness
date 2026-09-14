@@ -84,7 +84,7 @@ console.log(await manager.list())
 
 -----
 
-安装调用方可在 `add` 选项中提供 UUID `requestId`，并调用 `cancelInstall(requestId)`。`plugins/install-state` 通知安装、取消及不可取消的配置应用阶段。取消会等待 pnpm 进程组退出、恢复清单和 `pnpm-lock.yaml`、释放修改锁，然后返回 `cancelled`；原 add 调用报告 `plugins/install-cancelled`。请求不匹配当前操作时返回 `not-running`，已进入应用阶段则返回 `too-late`。插件卸载会停止仍在准备包的安装，不反向等待 runtime 应用过程。下载或解包文件可能留在 `node_modules` 或 pnpm 缓存中。
+安装调用方可在 `add` 选项中提供 UUID `requestId`，并调用 `cancelInstall(requestId)`。`plugins/install-state` 通知安装、取消及不可取消的配置应用阶段。取消会等待 pnpm 进程组退出、恢复清单和 `pnpm-lock.yaml`、释放修改锁，然后返回 `cancelled`；原 add 调用报告 `plugins/install-cancelled`。请求不匹配当前操作时返回 `not-running`，已进入应用阶段则返回 `too-late`。管理器随 Host 卸载时，会等待包准备或移除进程停止，不反向等待 runtime 应用过程。下载或解包文件可能留在 `node_modules` 或 pnpm 缓存中。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现

@@ -929,7 +929,7 @@ The row injects only the Loader; the profile runtime and the agent registry are 
 /**
  * Install a package with pnpm, read its declarations, and leave it disabled unless asked otherwise.
  * @param spec - what to install, in pnpm's own vocabulary.
- * @param options - `enable` puts every newly installed bundle into the layer list at once.
+ * @param options - `enable` selects new bundles; `requestId` identifies the install for progress and cancellation.
  * @returns what the run installed and enabled.
  */
 @Remote('add') async add(spec: string, options?: PluginInstallOptions): Promise<PluginInstallResult>
