@@ -1,4 +1,4 @@
-/** Serialized profile recomposition with declared provenance and observed per-entry outcomes. */
+/** Serialized profile recomposition with declared row ownership and observed per-entry outcomes. */
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
@@ -113,7 +113,7 @@ export class ProfileRuntime extends Service {
   }
 
   /**
-   * Resolve provenance within its Loader tree; nested includes inherit their owning entry.
+   * Resolve the supplying bundle within its Loader tree; nested includes inherit their owning entry.
    * @param entry - the live entry, including an entry inside another Include.
    * @returns its supplying bundle, or undefined for a user-owned entry.
    */

@@ -81,7 +81,7 @@ describe('entry startup policy', () => {
       { ...layer([{ insert: [{ id: 'provider', name: 'cordis:bad' }] }]), packageName: 'ext' },
     ])).rejects.toThrow('webserver')
   })
-  it('preserves anonymous provenance and nested Include provenance without matching unrelated root ids', async () => {
+  it('preserves anonymous row ownership and nested Include ownership without matching unrelated root ids', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-nested-entry-'))
     roots.push(dir)
     const path = join(dir, 'nested.yml')

@@ -71,14 +71,14 @@
     - text: Claude Code 子代理 把任务交给 Claude Code 执行
     - switch "启用 Claude Code 子代理" [disabled]
   - listitem:
-    - text: 工作流引擎 在后台线程运行工作流
+    - text: 工作流引擎 运行多步骤工作流
     - switch "启用 工作流引擎" [checked]
   - listitem:
     - text: 工作流 编排多步骤任务
     - switch "启用 工作流" [checked]
   - listitem:
     - text: Ralph 循环 反复执行直到完成
-    - switch "启用 Ralph 循环" [checked]
+    - switch "启用 Ralph 循环" [disabled]
   - listitem:
     - text: 向用户提问 需要时向你确认
     - switch "启用 向用户提问" [checked]

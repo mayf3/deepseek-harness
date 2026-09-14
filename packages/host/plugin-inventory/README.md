@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Clients call `pluginInventory/list` for a read-only snapshot of non-group Loader entries, their provenance, effective enablement, running phase, and current failures. Deployments with an agent-preset roster also report each preset’s metadata and composition. The snapshot carries no durable history or change subscription.
+Clients call `pluginInventory/list` for a read-only snapshot of non-group Loader entries, their supplying bundle, effective enablement, running phase, and current failures. Deployments with an agent-preset roster also report each preset’s metadata and composition. The snapshot carries no durable history or change subscription.
 
 ## Table of Contents
 
@@ -31,7 +31,7 @@ Call `pluginInventory/list` when a client or settings page needs to show what is
 
 Each row is one non-group Loader entry: its entry id, the exact module specifier, the effective enablement (including disabled ancestor groups), and the current root Fiber phase. `pending` means the entry waits to load, `loading` that it is being read, `active` that it is running, `failed` that its fiber rejected, and `unloading` that it is being torn down; `null` means no live root Fiber exists at all. Structural group rows are skipped.
 
-`package` names the supplying bundle with its version, and `disabledBy` distinguishes a user override from a composition condition. Explicit row ids remain unchanged. Failed entries remain in the Loader tree; `failure` reports import, activation, update, disabled-expression, or missing-service issues. An `active` fiber may still have an update failure and run its previous valid config. Conflicting rows omitted before loading are projected from `ProfileRuntime.conflicts`. Without profile provenance, rows carry no package.
+`package` names the supplying bundle with its version, and `disabledBy` distinguishes a user override from a composition condition. Explicit row ids remain unchanged. Failed entries remain in the Loader tree; `failure` reports import, activation, update, disabled-expression, or missing-service issues. An `active` fiber may still have an update failure and run its previous valid config. Conflicting rows omitted before loading are projected from `ProfileRuntime.conflicts`. Without profile row ownership, rows carry no package.
 
 ### Per-preset compositions
 
@@ -98,7 +98,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define what a point-in-time inventory cannot tell a client. They are current package constraints, not a task backlog.
 
 - **Point-in-time state only** — the result contains no durable failure history or subscription; removing an entry removes its diagnostics.
-- **No mutation** — the service cannot enable, disable, add, or remove plugins in either plane; provenance stops at the bundle layer, so a row a user patch or a `--patch` overlay inserted carries no package.
+- **No mutation** — the service cannot enable, disable, add, or remove plugins in either plane; package attribution stops at the bundle layer, so a row a user patch or a `--patch` overlay inserted carries no package.
 - **Presets appear only with a roster** — a deployment without `dsh-agent-presets` serves Loader entries alone; the `agentPresets` field is absent rather than empty.
 
 <a id="dev-note"></a>
