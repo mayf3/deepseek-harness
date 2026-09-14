@@ -692,7 +692,7 @@ describe('PluginManager', () => {
         setInterval(() => {}, 1000);
       `)
       const ready = Promise.withResolvers<number>()
-      const { ctx, manager } = await bootProfile(staged, {}, {
+      const { ctx, manager, log } = await bootProfile(staged, {}, {
         pnpmCommand: process.execPath, installTimeoutMs: 30_000, installKillGraceMs: 50,
       })
       ctx.on('plugins/install-log', (chunk) => {
@@ -704,6 +704,7 @@ describe('PluginManager', () => {
         expect(pid).toBeGreaterThan(0)
         expect(await manager.cancelInstall(requestId)).toEqual({ status: 'cancelled' })
         expect(await result).toMatchObject({ code: 'plugins/install-cancelled' })
+        expect(log.at(-1)?.exitCode).toBe(0)
         // A reparented Linux child may remain a zombie until init reaps it; it cannot execute or write.
         let status = ''
         try { status = execFileSync('ps', ['-p', String(pid), '-o', 'stat='], { encoding: 'utf8' }).trim() } catch (error) {

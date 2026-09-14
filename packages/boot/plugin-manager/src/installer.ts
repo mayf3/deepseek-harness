@@ -284,7 +284,7 @@ export class PluginInstaller {
     const deadline = new AbortController()
     const signal = control === undefined ? deadline.signal : AbortSignal.any([deadline.signal, control.signal])
     const timer = setTimeout(() => { deadline.abort() }, config.installTimeoutMs)
-    let exitCode: number | null
+    let exitCode: number | null = null
     try {
       checkCancelled(control)
       const child = this.spawn({
@@ -313,9 +313,9 @@ export class PluginInstaller {
     } catch (error) {
       const message = messageOf(error)
       record('stderr', `${message}\n`)
-      this.options.installLog({ ...request, jobId, argv, cwd: profileDir, spec, stream: 'stderr', text: '', exitCode: null })
+      this.options.installLog({ ...request, jobId, argv, cwd: profileDir, spec, stream: 'stderr', text: '', exitCode })
       if (error instanceof PluginOperationError && error.code === 'plugins/install-cancelled') throw error
-      throw new PluginOperationError('plugins/install-failed', `${NAME}: ${message}`, { spec, exitCode: null, log: tail.join('') }, { cause: error })
+      throw new PluginOperationError('plugins/install-failed', `${NAME}: ${message}`, { spec, exitCode, log: tail.join('') }, { cause: error })
     } finally {
       clearTimeout(timer)
     }
