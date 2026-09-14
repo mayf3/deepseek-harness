@@ -3,10 +3,9 @@
  * thin pnpm forwarder: initialize the profile on first use, run
  * `pnpm <args...>` in the profile directory, then reconcile the
  * `dsh.profile.bundles` layer list against the installed state (a dependency
- * resolving to a package that declares `dsh.bundle` joins the layer stack; a
- * removed or bundle-less dependency leaves it). Reconciling by installed
- * state, not by dependency diff, means `update` activates a package that
- * gained its `dsh.bundle` declaration in a newer version.
+ * newly installed with a `dsh.bundle` patch joins the layer stack; a removed
+ * or bundle-less dependency leaves it). Existing dependencies retain their
+ * enabled selection through updates.
  * @module @deepseek-ai/dsh/plugin
  */
 
@@ -40,7 +39,7 @@ function reconcilePlugins(before: ProfileManifest, profileDir: string): void {
   for (const packageName of outcome.plain) {
     process.stderr.write(
       `${NAME}: warning: ${packageName} declares no dsh.bundle — installed as a plain dependency, not a profile layer `
-      + '(a later update that gains one activates it automatically)\n',
+      + '(enable its bundle explicitly if a later update adds one)\n',
     )
   }
 }
