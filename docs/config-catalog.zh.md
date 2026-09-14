@@ -2033,7 +2033,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/session/session-log-deepseek/src/index.ts:51`](../packages/session/session-log-deepseek/src/index.ts)
+来源：[`packages/session/session-log-deepseek/src/index.ts:38`](../packages/session/session-log-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-session-log-export"></a>
 

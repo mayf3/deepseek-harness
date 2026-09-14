@@ -34,19 +34,6 @@ export const name = 'session-log-deepseek'
 /** Services required to resolve sessions and contribute the provider request field. */
 export const inject = ['deepseekLlmApiExtensions', 'sessions']
 
-/** Environment markers that identify a recorded-Session lane. */
-const RECORDED_SESSION_LANE_MARKERS = ['VITEST', 'DSH_SNAPSHOT'] as const
-
-/**
- * Recorded-Session lanes (`test`, `test:snapshot`, `test:web`, and the ACP, SDK,
- * and Web snapshot suites) boot shipped profiles and compare persisted request
- * fields and Session logs against recorded expectations, so they keep this
- * contribution off unless a composition sets `enabled: true`. A deployed
- * process sets neither marker and contributes the field by default.
- */
-const RECORDED_SESSION_LANE = RECORDED_SESSION_LANE_MARKERS
-  .some(marker => process.env[marker] !== undefined)
-
 /** Session-log request contribution configuration. */
 export interface Config {
   /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `true`. */
@@ -55,7 +42,7 @@ export interface Config {
 
 /** Validated Session-log request contribution configuration. */
 export const Config: z<Config> = z.object({
-  enabled: z.boolean().default(!RECORDED_SESSION_LANE),
+  enabled: z.boolean().default(true),
 })
 
 interface AcceptanceFold {

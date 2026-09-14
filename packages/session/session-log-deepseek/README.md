@@ -31,8 +31,6 @@ Incremental canonical session-log upload for official DeepSeek LLM API requests.
 
 Shipped profiles mount the plugin, so the default configuration registers the request field and appends the acceptance watermark; an overlay opts out with `enabled: false`.
 
-Recorded-Session lanes (`test`, `test:snapshot`, `test:web`, and the ACP, SDK, and Web snapshot suites) replace that default with `false`, because their committed fixtures are both replay input and expected output for the persisted log. Such a process is identified by `$VITEST` or `$DSH_SNAPSHOT`; an explicit `enabled: true` still enables upload there. A deployed process sets neither variable.
-
 <a id="request-field"></a>
 ## Request field
 
@@ -71,7 +69,6 @@ None; the model-visible request prefix remains unchanged.
 - **Crash-window duplicates** — a 2xx followed by process loss before the acceptance watermark persists causes conservative replay on resume.
 - **No live Session means no field** — direct or stale-session calls have no canonical log to snapshot; explicit absence semantics remain deferred.
 - **No independent request-size cap** — complete delivery is fail-closed; provider rejection leaves the cursor unchanged instead of truncating the log.
-
 
 <a id="dev-note"></a>
 ### Dev Note
