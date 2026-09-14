@@ -100,35 +100,13 @@ Manage profile files and apply their declared reload lifecycle.
 
 Source: [`packages/boot/plugin-manager/src/index.ts`](../../packages/boot/plugin-manager/src/index.ts)
 
-<a id="ctxprofileruntime--profileruntime"></a>
+<a id="ctxprofilecontext--profilecontext"></a>
 
-### `ctx.profileRuntime` — `ProfileRuntime`
+### `ctx.profileContext` — `ProfileContext`
 
-Current-process profile operations; callbacks run under the shared profile write lock.
+Current profile facts; scheduling and mutation belong to their callers.
 
-```ts cordis-catalog
-/** Read the current manifest and bundle patch layers without initializing a profile.
- * @returns Resolved disk configuration.
- */
-read(): Profile
-
-/** Compose disk configuration with the invocation's higher-priority layers.
- * @returns Effective entry options in composition order.
- */
-entries(): EntryOptions[]
-
-/** Serialize a mutation with file watching and other profile writers.
- * @param operation Work performed while holding the profile manifest lock.
- * @param waitMs Maximum lock acquisition time; omission uses the file writer default.
- * @returns The operation's result.
- */
-mutate<T>(operation: () => Promise<T>, waitMs?: number): Promise<T>
-
-/** Apply the current disk configuration; call only inside mutate. */
-reload(): Promise<void>
-```
-
-Source: [`packages/boot/app-boot/src/profile-runtime.ts`](../../packages/boot/app-boot/src/profile-runtime.ts)
+Source: [`packages/boot/app-boot/src/profile-context.ts`](../../packages/boot/app-boot/src/profile-context.ts)
 
 <a id="hmr-events"></a>
 

@@ -1801,7 +1801,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:64`](../packages/plan/plan-mode/s
 
 ## `@deepseek-ai/dsh-plugin-manager`
 
-Requires: `loader` · `profileRuntime`
+Requires: `loader` · `profileContext`
 
 ```ts config-catalog
 /** Limits for package diagnostics and change notifications. */
@@ -1815,7 +1815,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/boot/plugin-manager/src/index.ts:19`](../packages/boot/plugin-manager/src/index.ts)
+Source: [`packages/boot/plugin-manager/src/index.ts:21`](../packages/boot/plugin-manager/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 

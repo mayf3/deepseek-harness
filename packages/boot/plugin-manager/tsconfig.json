@@ -43,6 +43,12 @@
     },
     {
       "path": "../../util/values"
+    },
+    {
+      "path": "../hmr"
+    },
+    {
+      "path": "../../../vendor/timer"
     }
   ]
 }

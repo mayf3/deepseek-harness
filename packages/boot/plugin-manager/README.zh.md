@@ -25,7 +25,14 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-基于 base 的 profile 提供管理服务。在 Web 设置中打开插件并选择插件列表，即可管理组合包和能唯一定位的全局插件条目。Agent 预设条目保持只读。`plugin_manager` 工具提供相同操作。
+基于 base 的 profile 提供管理服务。在 Web 设置中打开插件并选择插件列表，即可管理组合包和能唯一定位的全局插件条目。Agent 预设条目保持只读。`plugin_manager` 工具提供相同操作，默认禁用。
+
+在 profile patch 中显式启用工具；使用预设的 Agent 还需要启用该预设中的 `tool-plugin-manager` 条目。
+
+```yaml
+- id: tool-plugin-manager
+  disabled: false
+```
 
 插件开关只写入 profile 的 `cordis.patch.yml` 中的 `disabled` 覆盖项。组合包开关修改 `package.json` 的有序 `dsh.profile.bundles` 列表。关闭保留依赖；开启追加到列表末尾，可能改变配置优先级。安装新组合包默认启用。home 和单次启动 patch 保留更高优先级。
 
@@ -99,6 +106,7 @@ kind: "package-reference"
 - 仅启动时加载的 profile 不能删除当前进程启动时使用的包；停止进程后使用 `dsh plugin`。
 - 管理器不能关闭自身所需的管理组件、修改其他 profile 或编辑 agent 预设组合。
 - 包管理失败可能留下部分依赖改动。诊断日志保留在 profile 的 `.plugin-manager/logs` 目录中。
+- 浏览器组合包变化需要刷新页面后才能加载当前 Client 模块图。管理结果描述 Host 激活状态。
 - Desktop 包管理操作仍由 Desktop shell 负责。
 
 <a id="dev-note"></a>

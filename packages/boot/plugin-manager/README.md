@@ -25,7 +25,14 @@ Manage the current profile's plugins without editing configuration by hand. Enab
 <a id="use-this-package"></a>
 ## Use this package
 
-Base-backed profiles provide the manager. In Web Settings, open Plugins and select Plugin list to manage bundles and uniquely addressable global plugin entries. Agent-preset rows remain read-only. The `plugin_manager` tool exposes the same operations.
+Base-backed profiles provide the manager. In Web Settings, open Plugins and select Plugin list to manage bundles and uniquely addressable global plugin entries. Agent-preset rows remain read-only. The `plugin_manager` tool exposes the same operations and is disabled by default.
+
+Enable the tool explicitly in the profile patch; agents using a preset also need its `tool-plugin-manager` entry enabled.
+
+```yaml
+- id: tool-plugin-manager
+  disabled: false
+```
 
 A plugin toggle writes only its `disabled` override in the profile's `cordis.patch.yml`. A bundle toggle changes `package.json`'s ordered `dsh.profile.bundles` list. Disabling retains the dependency; enabling appends the bundle at the end, which can change configuration precedence. Installation enables a new bundle by default. Home and invocation patches retain their higher priority.
 
@@ -99,6 +106,7 @@ Notices append context; they do not rewrite earlier messages.
 - Startup-only profiles cannot remove packages used to start the current process; stop it and use `dsh plugin`.
 - The manager cannot disable its own management components, change another profile, or edit an agent preset's composition.
 - Package failures may leave dependencies partially changed. Diagnostic logs remain under the profile's `.plugin-manager/logs` directory.
+- Browser bundle changes require a page refresh to load the current Client module graph. Management results describe Host activation.
 - Desktop package operations remain owned by the Desktop shell.
 
 <a id="dev-note"></a>

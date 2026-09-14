@@ -276,19 +276,6 @@ class ListAgentsOutput2(TypedDict):
     parent: NotRequired[str]
     depth: NotRequired[float]
 
-class PluginManagerArgs(TypedDict):
-    # Management operation.
-    action: Literal["list_plugins", "list_bundles", "set_plugin", "set_bundle", "install_bundle", "remove_bundle"]
-    # Plugin entry id, bundle package name, or installation spec, according to action.
-    target: NotRequired[str]
-    # Required for set operations; defaults to true for installation.
-    enabled: NotRequired[bool]
-    # Zero-based list offset; defaults to 0.
-    offset: NotRequired[float]
-    # List page size, from 1 to 100; defaults to 25.
-    limit: NotRequired[float]
-    # Additional keys beyond those declared are allowed.
-
 class ReadArgs(TypedDict):
     # Path to read, resolved by the filesystem backend.
     file_path: str
@@ -541,8 +528,6 @@ class Tools(Protocol):
         """Read a background job. Stream jobs return only output since the previous read; final-output jobs return their result after settlement. Every response ends with `[status: ...]`. Reads are non-blocking unless `wait: true`, which waits up to the configured cap."""
     async def list_agents(self, args: ListAgentsArgs) -> list[ListAgentsOutput1 | ListAgentsOutput2]:
         """List your continuable background subagents by durable id and label. Use it to recall which ones you started, not to poll for completion — you are told when one finishes. Status comes from the live registry: running means the agent is working right now, idle means it is loaded but between turns (it may be waiting on agents it started), and ready means it exists only in storage — resumable, not terminal, and not a result waiting to be collected; a `send_message` steers a running child at its nearest step boundary or starts a turn for an idle or ready child, and a direct child remains a `send_message` candidate in every status. The snapshot is not a delivery promise — `send_message` performs the authoritative check and may still fail. Children that could not be read are reported as diagnostics instead of being silently dropped. Scope `descendants` walks the whole tree below you in stable pre-order, annotating each entry with its durable direct-parent session id and depth. You may use `send_message` only for depth-1 entries; deeper entries are candidates for `interrupt_agent` only."""
-    async def plugin_manager(self, args: PluginManagerArgs) -> str:
-        """List plugins or bundles in the current profile, enable or disable them, install a bundle, or remove an installed bundle. Changes affect every session in this profile. List first to obtain exact identifiers. Package installation can execute allowed build scripts. Live profiles apply changes immediately; startup profiles require restart."""
     async def read(self, args: ReadArgs) -> ReadOutput:
         """Read a UTF-8 text file and return line-numbered content."""
     async def read_image(self, args: ReadImageArgs) -> ReadImageOutput:

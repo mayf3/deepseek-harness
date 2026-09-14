@@ -10,13 +10,11 @@ Web 和 Agent 控件需要修改运行中的 profile，同时避免另建包安�
 
 ## 决策
 
-[插件管理器](../../../../packages/boot/plugin-manager/README.zh.md)与 `dsh plugin` 调用同一套异步包操作。launcher 提供当前 profile 和解析位置。CLI 与 service 修改持有 profile manifest 的写锁；[DSH HMR](../../../../packages/boot/hmr/README.zh.md) 通过同一队列串行执行模块替换、Include 刷新、profile 重新组合与 service 修改。launcher 在插件启动前注册 `hmr/before-reload` 文件锁包装。包修改在 `hmr.runExclusive()` 内获取同一文件锁。每次重载重新读取 manifest、组合包层与用户 patch，同时保留调用级 overlay 的优先级。
+[插件管理器](../../../../packages/boot/plugin-manager/README.zh.md)与 `dsh plugin` 调用同一套异步包操作。launcher 通过纯数据 `ctx.profileContext` 提供 profile 与解析位置、启动时组合包、重载策略和调用级 overlay。共享函数组合当前文件；该接口不包含回调或修改方法。CLI 与 service 修改持有 profile manifest 的写锁；[DSH HMR](../../../../packages/boot/hmr/README.zh.md) 通过同一队列串行执行模块替换、Include 刷新、profile 重新组合与 service 修改。launcher 在插件启动前注册 `hmr/before-reload` 文件锁包装。包修改在 `hmr.runExclusive()` 内获取同一文件锁。每次重载重新读取 manifest、组合包层与用户 patch，同时保留调用级 overlay 的优先级。
 
 profile 文件保持为持久状态：条目开关只修改 YAML 文档中的 `disabled`，组合包开关修改有序字符串列表。更新依赖不会重新激活保留的已停用组合包。service 删除组合包时，先应用去掉该组合包的配置，等待旧 fiber 完成卸载后再删除依赖。已保存配置、pnpm 完成状态与运行时激活分别报告；失败保留实际的部分状态与诊断路径。
 
-这扩展了[profile 组合包决策](2026-08-05-profile-plugin-bundles.zh.md)。startup profile 保留进程组合，Desktop 包管理仍由 shell 持有。Web 控件与 Agent 工具调用同一 service；service 合并持久通知，告知存活 Agent 而不唤醒它们。
-
-[Client HMR](../../../../packages/client/hmr/README.zh.md) 将 Host 模块图变化应用到已连接的浏览器：移除条目时，先等待其 effect disposer 完成，再清除缓存工厂和样式；新增条目通过现有 Client 模块系统加载。插件提供的聚合界面跟随其声明的客户端条目，因此停用内部 Host 子插件不意味着移除聚合客户端的一部分。
+这扩展了[profile 组合包决策](2026-08-05-profile-plugin-bundles.zh.md)。startup profile 保留进程组合，Desktop 包管理仍由 shell 持有。Web 控件与显式启用的 Agent 工具调用同一 service；service 合并持久通知，告知存活 Agent 而不唤醒它们。base 组合包和内置预设默认禁用该 Agent 工具。
 
 ## 考虑过的替代方案
 

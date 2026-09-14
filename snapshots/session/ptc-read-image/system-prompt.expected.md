@@ -140,19 +140,6 @@ interface ToolArgsMap {
     /** children (default) lists direct children only; descendants walks the complete tree below you. */
     scope?: "children" | "descendants";
   } & Record<string, JsonValue>;
-  /** List plugins or bundles in the current profile, enable or disable them, install a bundle, or remove an installed bundle. Changes affect every session in this profile. List first to obtain exact identifiers. Package installation can execute allowed build scripts. Live profiles apply changes immediately; startup profiles require restart. */
-  plugin_manager: {
-    /** Management operation. */
-    action: "list_plugins" | "list_bundles" | "set_plugin" | "set_bundle" | "install_bundle" | "remove_bundle";
-    /** Plugin entry id, bundle package name, or installation spec, according to action. */
-    target?: string;
-    /** Required for set operations; defaults to true for installation. */
-    enabled?: boolean;
-    /** Zero-based list offset; defaults to 0. */
-    offset?: number;
-    /** List page size, from 1 to 100; defaults to 25. */
-    limit?: number;
-  } & Record<string, JsonValue>;
   /** Read a UTF-8 text file and return line-numbered content. */
   read: {
     /** Path to read, resolved by the filesystem backend. */
@@ -401,7 +388,6 @@ interface ToolOutputMap {
     parent?: string;
     depth?: number;
   })[];
-  plugin_manager: string;
   read: {
     path: string;
     offset: number;

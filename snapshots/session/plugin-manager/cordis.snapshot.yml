@@ -51,3 +51,6 @@
                 reasoningEfforts: ['off', 'low', 'high', 'max']
                 defaultReasoningEffort: max
               - id: deepseek-v4-pro
+
+- id: tool-plugin-manager
+  disabled: false

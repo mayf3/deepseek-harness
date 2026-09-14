@@ -115,12 +115,12 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Shares profile package operations with the CLI and reports persisted and running state to Web and agent callers.',
   },
   {
-    key: 'profileRuntime',
+    key: 'profileContext',
     pkg: 'app-boot',
-    title: 'Launcher-owned profile reload coordination',
+    title: 'Launcher-owned profile data',
     mode: 'core',
     consumers: ['plugin-manager'],
-    note: 'The dsh launcher supplies profile locations and composition; reload scheduling belongs to dsh-hmr.',
+    note: 'The dsh launcher supplies data-only profile locations and composition inputs; reload scheduling belongs to dsh-hmr.',
   },
   {
     key: 'mcpResources',

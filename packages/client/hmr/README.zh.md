@@ -1,5 +1,5 @@
 ---
-description: "同步 Host 组合中的浏览器插件，并重载重新构建的客户端 bundle。"
+description: "仅用于开发环境的浏览器客户端插件热重载：重建插件 bundle 后原地替换运行中的插件，供开发者迭代 web GUI。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-client-hmr` 让浏览器插件与 Host 模块图保持同步。开启或关闭 bundle 会新增或移除其浏览器贡献，无需刷新页面。开发构建会以全新的组件状态替换现有插件；保留的插件与 Session 状态继续可用。
+`dsh-client-hmr` 会在浏览器客户端插件的 bundle 重建后原地重载该插件，让编辑插件源码的开发者无需整页刷新即可看到变更。如果没有重建 watcher，整条链路保持空闲：只有 `pnpm run dev:web` 之类的进程重写客户端 bundle 时才会产生它所响应的重建。每次重载只替换一个插件并携带全新组件状态，而数据层（连接、运行时与 Session 对象）保持不变。这里的一切都是浏览器侧的开发机制；模型永远看不到它。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-Web profile 自动加载本包。Bundle 变更使用现有的 `/plugins/events` 通道。开发源码时，启用重建目标插件 `lib/client.js` 的进程。
+为正在编辑的插件启用重建 watcher，然后保存：浏览器会从 dev server 拾取重建后的 bundle，并在不重载页面的情况下替换该插件。在客户端开发期间使用它；在生产构建中没有任何可观察行为，因为没有 watcher 会重写 bundle。
 
 ### 启动重载链路
 
@@ -64,8 +64,6 @@ Web profile 自动加载本包。Bundle 变更使用现有的 `/plugins/events` 
 ### 浏览器侧替换
 
 收到 `rebuilt` 帧后，帧内 revision 会让 `invalidate` 选择该插件不可变的单资源 combo URL，而不是初始多资源 URL。`prefetch` 在旧 fiber 仍在服务时加载并注册新 factory。其余顺序是：先从注册表删除，再拆卸（在 fiber 的 disposer 发出 `internal/plugin` 之前执行 `registry.delete`，否则 vendored Loader 会把该 entry 标为禁用）、等待旧 fiber 卸载完成、删除 `entry.fiber`、移除自身拥有的 `<style data-plugin>` 标签，然后 `entry.refresh()` 重新导入并挂载，`fiber.await()` 直接把启动失败重新抛出。替换之所以安全，是因为在惰性 CJS 模型下执行只是注册：每个模块副作用都位于 factory 闭包中，在物化时运行。
-
-Graph 帧与 rebuilt 帧使用同一队列。被移除的 fiber 完成卸载后，才清除模块记录和归属样式。新增条目独立请求其产物，避免再次执行已有工厂。模块系统先校验每个模块图，再更新路由表。
 
 ### 级联与自重载
 
@@ -117,7 +115,7 @@ fiber 的激活 epoch 会串联其服务提供方的 uid，因此替换提供方
 
 - **重载有意保持粗粒度**——全新 fiber 与全新组件；被重载插件内的 React 状态会丢失，而数据层（连接 fiber、运行时 fiber、Session 对象）不受影响。react-refresh 级状态保留与重新执行 bundle 冲突，因此有意排除。
 - **失败时不回滚**——失败的重载会让该 entry 保持 FAILED 并在 loader 状态投影中可见；系统不会自动恢复先前 bundle。
-- **仅同步插件贡献** — 替换 shell 和平台库仍需要刷新页面。
+- **重建帧不会替换启动图**——每个帧都携带单资源 combo 重载所需的插件产物 revision；页面重载时才接收重新组合的启动图。
 
 <a id="dev-note"></a>
 ### 开发备注

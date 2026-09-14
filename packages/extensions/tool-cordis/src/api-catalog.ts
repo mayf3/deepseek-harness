@@ -1477,9 +1477,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
-    key: 'profileRuntime',
-    summary: 'Current-process profile operations; callbacks run under the shared profile write lock.',
-    description: 'Current-process profile operations; callbacks run under the shared profile write lock.',
+    key: 'profileContext',
+    summary: 'Current profile facts; scheduling and mutation belong to their callers.',
+    description: 'Current profile facts; scheduling and mutation belong to their callers.',
     methods: [
       {
         signature: 'readonly startedBundles: readonly string[]',
@@ -1487,26 +1487,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'read(): Profile',
-        description: 'Read the current manifest and bundle patch layers without initializing a profile.',
+        signature: 'readonly overlays: readonly PatchOptions[]',
+        description: 'Parsed command-line overlays, applied above profile and home patches.',
         parameters: [],
-        returns: 'Resolved disk configuration.',
       },
       {
-        signature: 'entries(): EntryOptions[]',
-        description: 'Compose disk configuration with the invocation\'s higher-priority layers.',
-        parameters: [],
-        returns: 'Effective entry options in composition order.',
-      },
-      {
-        signature: 'mutate<T>(operation: () => Promise<T>, waitMs?: number): Promise<T>',
-        description: 'Serialize a mutation with file watching and other profile writers.',
-        parameters: [{ name: 'operation', description: 'Work performed while holding the profile manifest lock.' }, { name: 'waitMs', description: 'Maximum lock acquisition time; omission uses the file writer default.' }],
-        returns: 'The operation\'s result.',
-      },
-      {
-        signature: 'reload(): Promise<void>',
-        description: 'Apply the current disk configuration; call only inside mutate.',
+        signature: 'readonly telemetryDisabledEnv: string | undefined',
+        description: 'Launch-time DSH_TELEMETRY_DISABLED value; any non-empty value opts out.',
         parameters: [],
       },
     ],
@@ -5107,18 +5094,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PreToolDecision',
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n    info?: ToolErrorInfo;\n} | {\n    kind: \'cancel\';\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
-  },
-  {
-    name: 'Profile',
-    declaration: 'export interface Profile {\n    name: string;\n    dir: string;\n    layers: ProfileLayer[];\n    patchPath: string;\n    patches: PatchOptions[];\n    patchReload: ProfilePatchReload;\n}',
-  },
-  {
-    name: 'ProfileLayer',
-    declaration: 'export interface ProfileLayer {\n    packageName: string;\n    packageDir: string;\n    patchPath: string;\n    patches: PatchOptions[];\n}',
-  },
-  {
-    name: 'ProfilePatchReload',
-    declaration: 'export type ProfilePatchReload = \'live\' | \'startup\';',
   },
   {
     name: 'ProjectionChangeListener',

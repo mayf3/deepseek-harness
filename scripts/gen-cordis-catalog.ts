@@ -55,7 +55,7 @@ export { REGION_BEGIN, REGION_END }
  */
 export const SERVICE_PAGE: Record<string, string> = {
   pluginManager: 'boot.md',
-  profileRuntime: 'boot.md',
+  profileContext: 'boot.md',
   hmr: 'boot.md',
   mcpResources: 'mcp.md',
   agentLoop: 'core.md',

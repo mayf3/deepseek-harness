@@ -18,7 +18,7 @@ import Group from '@deepseek-ai/cordis-plugin-group'
 import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/dsh-hmr'
-export type { ProfileRuntime } from './profile-runtime.ts'
+export { readProfilePatches, resolveTelemetryPatch, type ProfileContext } from './profile-context.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
 declare module '@deepseek-ai/cordis' {

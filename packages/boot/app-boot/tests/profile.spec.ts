@@ -21,6 +21,7 @@ import {
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   readProfileManifest,
+  readProfilePatches,
   resolveBundleDir,
   resolveProfileDir,
   writeProfileManifest,
@@ -97,6 +98,29 @@ describe('resolveProfileDir', () => {
       expect(() => resolveProfileDir(bad, home)).toThrow('invalid profile name')
     }
   })
+})
+
+it('composes current files from profile data and retains launch overlay and telemetry precedence', () => {
+  const home = tmp()
+  const installAnchor = stageInstallation({ base: { patch: '- insert:\n  - id: session-telemetry-otel\n    name: telemetry\n' } })
+  const dir = resolveProfileDir('test', home)
+  initProfile(dir, ['base'])
+  const patchPath = join(dir, PROFILE_PATCH_FILENAME)
+  writeFileSync(patchPath, '- id: session-telemetry-otel\n  disabled: true\n')
+  writeFileSync(join(home, PROFILE_PATCH_FILENAME), '- id: session-telemetry-otel\n  disabled: false\n')
+  const context = {
+    name: 'test', dir, patchPath, installAnchor, home, cwd: home,
+    startedBundles: ['base'], patchReload: 'live' as const,
+    overlays: [{ id: 'session-telemetry-otel', disabled: false }], telemetryDisabledEnv: 'false',
+  }
+  expect(composeEntries([readProfilePatches('test', context)])[0]?.disabled).toBe(true)
+  const enabled = { ...context, telemetryDisabledEnv: undefined }
+  expect(composeEntries([readProfilePatches('test', enabled)])[0]?.disabled).toBe(false)
+  const patches = readProfilePatches('test', enabled)
+  patches.at(-1)!.disabled = true
+  expect(context.overlays[0]?.disabled).toBe(false)
+  writeFileSync(join(home, PROFILE_PATCH_FILENAME), '- id: session-telemetry-otel\n  disabled: true\n')
+  expect(composeEntries([readProfilePatches('test', { ...enabled, overlays: [] })])[0]?.disabled).toBe(true)
 })
 
 describe('initProfile', () => {

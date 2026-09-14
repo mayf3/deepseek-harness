@@ -1803,7 +1803,7 @@ export interface PlanModeConfig {
 
 ## `@deepseek-ai/dsh-plugin-manager`
 
-依赖： `loader` · `profileRuntime`
+依赖： `loader` · `profileContext`
 
 ```ts config-catalog
 /** Limits for package diagnostics and change notifications. */

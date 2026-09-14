@@ -20,19 +20,17 @@ import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   boot,
-  composeEntries,
+  readProfilePatches,
   healProfilesModuleFallback,
   initProfile,
   installFailLoud,
-  loadOptionalPatches,
   loadOverlayPatches,
   loadProfile,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   resolveProfileDir,
-  loadProfileDirectory,
   reconcileProfilePatches,
-  type ProfileRuntime,
+  type ProfileContext,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -79,9 +77,6 @@ export function homePatchPath(): string {
 
 /** Absolute path of this dsh installation's package.json (both anchors: src/ and lib/ sit one level under apps/cli). */
 export const INSTALL_ANCHOR = fileURLToPath(new URL('../package.json', import.meta.url))
-
-/** The session-telemetry row id the DSH_TELEMETRY_DISABLED switch targets. */
-const TELEMETRY_ROW_ID = 'session-telemetry-otel'
 
 /** The empty root entry list every profile tree patches over. */
 const PROFILE_ROOT_CONFIG = `# dsh profile root — an empty entry list. The tree is composed as patches:
@@ -155,23 +150,6 @@ export function initializeProfileFromDefault(
     throw error
   }
 }
-
-/**
- * Resolve the telemetry opt-out switch into its boot patch. ANY non-empty
- * value (including `'0'`/`'false'`) disables: a privacy switch prefers
- * off-by-mistake over on-by-mistake. A composition without the telemetry row
- * exports nothing, so the switch is then trivially satisfied and no patch is
- * generated — custom profiles need not mount telemetry to run with the
- * switch set.
- * @param disabledEnv - the raw `DSH_TELEMETRY_DISABLED` value (`undefined` when unset).
- * @param hasRow - whether the composition carries the telemetry row.
- * @returns the disable patch, or `undefined` when no hard-disable patch is required.
- */
-export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: boolean): PatchOptions | undefined {
-  if ((disabledEnv ?? '') === '' || !hasRow) return undefined
-  return { id: TELEMETRY_ROW_ID, disabled: true }
-}
-
 /**
  * Load a resolved profile for `name` and (re)write the empty root config. The
  * root is always rewritten: the whole composition is patch layers, and the
@@ -304,42 +282,16 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     }
   }))
   let lastInputs = readInputs()
-  const composeLive = (): PatchOptions[] => {
-    const profile = loadProfileDirectory(NAME, composed.profile.dir, INSTALL_ANCHOR)
-    const patches = structuredClone([
-      ...profile.layers.flatMap(layer => layer.patches),
-      ...profile.patches,
-      ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
-      ...composed.overlays,
-    ])
-    const telemetryPatch = resolveTelemetryPatch(process.env.DSH_TELEMETRY_DISABLED,
-      composeEntries([patches]).some(row => row.id === TELEMETRY_ROW_ID))
-    if (telemetryPatch !== undefined) patches.push(telemetryPatch)
-    return patches
-  }
-  const runtime: ProfileRuntime = {
-    name: options.profile, dir: composed.profile.dir, installAnchor: INSTALL_ANCHOR,
+  const profileContext: ProfileContext = {
+    name: options.profile,
+    dir: composed.profile.dir, patchPath: composed.profile.patchPath, installAnchor: INSTALL_ANCHOR,
     startedBundles: composed.profile.layers.map(layer => layer.packageName),
     cwd: process.cwd(), home: resolveDshHome(), patchReload: composed.profile.patchReload,
-    read: () => loadProfileDirectory(NAME, composed.profile.dir, INSTALL_ANCHOR),
-    entries: () => composeEntries([composeLive()]),
-    mutate: (operation, waitMs) => {
-      const locked = () => withFileLock(manifestPath, operation, waitMs === undefined ? undefined : { waitMs })
-      const hmr = app.current?.get('hmr')
-      return hmr === undefined ? locked() : hmr.runExclusive(locked)
-    },
-    async reload() {
-      if (composed.profile.patchReload === 'startup') return
-      if (app.current === undefined) throw new Error('dsh: profile is not running')
-      lastInputs = readInputs()
-      await reconcileProfilePatches(app.current, composeLive(), NAME)
-    },
+    overlays: composed.overlays, telemetryDisabledEnv: process.env.DSH_TELEMETRY_DISABLED,
   }
-  // Cloned for the same insert-aliasing reason as composeLive: the boot
-  // application must not mutate the objects later reloads recompose from.
-  const ctx = await boot(NAME, rootConfig, composeLive(), (hostCtx) => {
+  const ctx = await boot(NAME, rootConfig, readProfilePatches(NAME, profileContext), (hostCtx) => {
     app.current = hostCtx
-    hostCtx.provide('profileRuntime', runtime)
+    hostCtx.provide('profileContext', profileContext)
     hostCtx.on('hmr/before-reload', next => withFileLock(manifestPath, next))
     // Before any config-tree entry mounts, so plugins resolve all launch-time
     // environment values from the same immutable launch snapshot.
@@ -378,7 +330,8 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       }
       const refresh = async (): Promise<void> => {
         if (readInputs() === lastInputs) return
-        await runtime.reload()
+        lastInputs = readInputs()
+        await reconcileProfilePatches(ctx, readProfilePatches(NAME, profileContext), NAME)
       }
       const watching = ctx.inject(['hmr'], async (owner) => {
         for (const filename of watchedFiles) {
@@ -387,7 +340,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       })
       await watching.await()
       // Include writes that finished while the file watchers were registering.
-      await runtime.mutate(refresh)
+      await ctx.hmr.runExclusive(() => withFileLock(manifestPath, refresh))
     } catch (error) {
       suppressShutdownError(ctx, signalShutdown.signal, error)
     }

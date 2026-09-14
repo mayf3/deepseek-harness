@@ -7,12 +7,13 @@ import type AgentRegistry from '@deepseek-ai/dsh-agent'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { expect, it, onTestFinished, vi } from 'vitest'
-import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import {
-  boot, composeEntries, initProfile, loadProfileDirectory, readProfileManifest, reconcileProfilePatches,
-  type ProfileRuntime,
+  boot, composeEntries, initProfile, readProfilePatches, readProfileManifest,
+  type ProfileContext,
 } from '@deepseek-ai/dsh-app-boot'
 import PluginManager, { type Config } from '../src/index.ts'
+import Hmr from '@deepseek-ai/dsh-hmr'
+import Timer from '@deepseek-ai/cordis-plugin-timer'
 import { Group } from '@deepseek-ai/cordis-plugin-loader'
 import * as operations from '../src/operations.ts'
 
@@ -34,24 +35,20 @@ async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, pre
   const manifest = readProfileManifest('test', dir)
   manifest.dependencies = { extra: '1.0.0' }
   writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
-  const read = () => loadProfileDirectory('test', dir, anchor)
-  const patches = () => [...read().layers.flatMap(layer => layer.patches), ...read().patches,
-    ...overlay ? [{ id: 'managed', disabled: true }] : []]
   writeFileSync(join(dir, 'cordis.yml'), '[]\n')
-  const runtime: ProfileRuntime = {
+  const profile: ProfileContext = {
+    name: 'test',
     startedBundles: ['core', 'extra'],
-    name: 'test', dir, installAnchor: anchor, cwd: home, home, patchReload: reload, read,
-    entries: () => composeEntries([patches()]),
-    mutate: operation => withFileLock(join(dir, 'package.json'), operation),
-    reload: async () => { if (reload === 'live') await reconcileProfilePatches(ctx, patches(), 'test') },
+    dir, patchPath: join(dir, 'cordis.patch.yml'), installAnchor: anchor, cwd: home, home, patchReload: reload,
+    overlays: overlay ? [{ id: 'managed', disabled: true }] : [], telemetryDisabledEnv: undefined,
   }
-  const ctx = await boot('test', join(dir, 'cordis.yml'), patches(), (ctx) => {
+  const ctx = await boot('test', join(dir, 'cordis.yml'), readProfilePatches('test', profile), (ctx) => {
     prepare?.(ctx)
-    ctx.provide('profileRuntime', runtime)
+    ctx.provide('profileContext', profile)
     ctx.loader.builtins.manager = PluginManager
   })
   onTestFinished(async () => { await ctx.fiber.dispose(); rmSync(home, { recursive: true, force: true }) })
-  return { ctx, dir, manager: ctx.pluginManager, bundle, runtime }
+  return { ctx, dir, manager: ctx.pluginManager, bundle, profile }
 }
 
 it('lists bundle versions and current-profile plugin targets', async () => {
@@ -201,8 +198,8 @@ it('combines concurrent changes into durable notices without waking Agents', asy
 
 
 it('reports plain dependencies, missing versions and invalid selected bundles distinctly', async () => {
-  const { manager, dir, runtime } = await fixture()
-  writeFileSync(runtime.installAnchor, '{}')
+  const { manager, dir, profile } = await fixture()
+  writeFileSync(profile.installAnchor, '{}')
   writeFileSync(join(dir, 'node_modules', 'extra', 'package.json'), '{"name":"extra"}')
   expect((await manager.listBundles()).find(row => row.name === 'extra')).toMatchObject({ enabled: true, error: 'Not a bundle: extra' })
   expect(await manager.setBundleEnabled('extra', false)).toMatchObject({ application: 'applied' })
@@ -213,7 +210,7 @@ it('reports plain dependencies, missing versions and invalid selected bundles di
   writeFileSync(join(dir, 'package.json'), '{}')
   expect(await manager.listBundles()).toEqual([])
   expect(await manager.setBundleEnabled('unknown', false)).toMatchObject({ application: 'failed' })
-  writeFileSync(runtime.installAnchor, '{"dependencies":{"missing-builtin":"1"}}')
+  writeFileSync(profile.installAnchor, '{"dependencies":{"missing-builtin":"1"}}')
   expect(await manager.listBundles()).toEqual([])
 })
 
@@ -224,15 +221,14 @@ it('refuses management bundle disablement and permits repeated bundle selections
 })
 
 it('addresses children inside profile groups and marks ambiguous ids read-only', async () => {
-  const { manager, bundle, runtime } = await fixture('live', false, (ctx) => { ctx.loader.builtins.group = Group })
+  const { manager, bundle, profile } = await fixture('live', false, (ctx) => { ctx.loader.builtins.group = Group })
   bundle('grouped', [{ id: 'group', name: 'cordis:group', group: true,
     config: [{ id: 'child', name: './plugin.mjs', config: { service: 'child' } }] }])
   expect(await manager.setBundleEnabled('grouped', true)).toMatchObject({ application: 'applied' })
   expect((await manager.listPlugins()).find(row => row.patchId === 'child')).toBeDefined()
-  const entries = runtime.entries()
+  const entries = composeEntries([readProfilePatches('test', profile)])
   const duplicate = entries.find(row => row.id === 'managed')!
-  const read = vi.spyOn(runtime, 'entries').mockReturnValue([...entries, duplicate])
-  onTestFinished(() => { read.mockRestore() })
+  writeFileSync(profile.patchPath, JSON.stringify([{ insert: [duplicate] }]))
   expect((await manager.listPlugins()).find(row => row.entryId === 'include:managed')?.readOnlyReason).toContain('not uniquely addressable')
 })
 
@@ -270,13 +266,14 @@ it('reports repeated installs as requiring restart and ambiguous package changes
   expect(await manager.installBundle('unknown')).toMatchObject({ changed: true, application: 'failed' })
 })
 
-it('handles missing patch files and retains non-Error Loader diagnostics', async () => {
-  const { manager, dir, runtime } = await fixture()
+it('handles missing patch files and retains non-Error package diagnostics', async () => {
+  const { manager, dir } = await fixture()
   rmSync(join(dir, 'cordis.patch.yml'))
   const id = (await manager.listPlugins()).find(row => row.patchId === 'managed')!.entryId
-  const reload = vi.spyOn(runtime, 'reload').mockRejectedValueOnce('loader rejected generation')
-  onTestFinished(() => { reload.mockRestore() })
-  expect(await manager.setPluginEnabled(id, false)).toMatchObject({ changed: true, application: 'failed', message: 'loader rejected generation' })
+  expect(await manager.setPluginEnabled(id, false)).toMatchObject({ changed: true, application: 'applied' })
+  const install = vi.spyOn(operations, 'runProfilePnpm').mockRejectedValueOnce('pnpm rejected operation')
+  onTestFinished(() => { install.mockRestore() })
+  expect(await manager.installBundle('new')).toMatchObject({ changed: false, application: 'failed', message: 'pnpm rejected operation' })
   rmSync(join(dir, 'cordis.patch.yml'))
   mkdirSync(join(dir, 'cordis.patch.yml'))
   await expect(manager.setPluginEnabled(id, true)).rejects.toThrow()
@@ -289,4 +286,13 @@ it('bounds batched notices and discloses omitted operation results', async () =>
   }, { outputBytes: 1, notificationDelayMs: 0 })
   await manager.setBundleEnabled('extra', false)
   expect(JSON.stringify(messages)).toContain('1 additional operations omitted')
+})
+
+it('applies a manager change through the active HMR service', async () => {
+  const { ctx, manager } = await fixture()
+  await ctx.plugin(Timer)
+  await ctx.plugin(Hmr, { root: [], ignored: [], debounce: 0 })
+  const id = (await manager.listPlugins()).find(row => row.patchId === 'managed')!.entryId
+  expect(await manager.setPluginEnabled(id, false)).toMatchObject({ changed: true, application: 'applied' })
+  expect((await manager.listPlugins()).find(row => row.entryId === id)?.enabled).toBe(false)
 })

@@ -69,8 +69,6 @@ Node 半侧逐包增量扫描——没有全量重扫路径。每次发出 `inte
 
 Node 半侧会在发布前快照每个客户端 bundle 及其现有 source map。它把资源分组到 `/plugins/??...&rev=...` combo URL：modules row 使用一个 bootstrap combo，其余 row 使用一个或多个 application combo；每个阶段都会在 URL 超过 3 KiB 之前分区。每个 combo map 都是 Indexed Source Map v3，并在可用时使用作者提供的 section，否则为已打包 bundle 生成 identity section。初始逐插件 revision 使用进程 nonce，所以启动时不哈希每个插件；HMR 只哈希被报告为已变化的产物。已公告响应不可变；未知组合或 revision 返回 404。
 
-`updateManifest()` 在 HMR 驱动等待被移除插件的 fiber 完成卸载后，替换已校验的模块图路由。新增条目单独请求 bundle，保留条目的工厂继续注册。被移除条目的工厂和导出缓存被清除。
-
 ### 启动 manifest 注入
 
 bundle 路由随注入的 `webServer` 生命周期注册：服务就绪时注册，服务被替换时移除并重新注册。模块组合与 `fetchBundle()` 在没有 Web server 时仍可用。
