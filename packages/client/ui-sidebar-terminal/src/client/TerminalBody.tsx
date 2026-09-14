@@ -9,6 +9,8 @@ import type { TerminalBodyInjected } from './face.ts'
 import type {} from './locales.ts'
 import '@xterm/xterm/css/xterm.css'
 import css from './TerminalBody.module.css'
+import { TerminalTheme } from './terminal-theme.ts'
+import { observeTerminalCursor } from './terminal-cursor.ts'
 
 /** Standard sidebar owner share plus terminal model and localized copy. */
 export type TerminalBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'sidebarTerminal'> & InjectFace<TerminalBodyInjected>
@@ -60,16 +62,20 @@ function TerminalScreen({ state, model, visible, label, theme }: {
   const element = useRef<HTMLDivElement>(null)
   const terminal = useRef<Terminal>()
   const fit = useRef<FitAddon>()
+  const colors = useRef<TerminalTheme>()
   const lastRevision = useRef(0)
   const current = useRef({ state, visible })
   current.current = { state, visible }
 
   useLayoutEffect(() => {
     const node = element.current!
-    const xterm = new Terminal({ cursorBlink: true, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', scrollback: current.current.state.environment?.scrollback ?? 0 })
+    const xterm = new Terminal({ minimumContrastRatio: 4.5, cursorBlink: true, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', scrollback: current.current.state.environment?.scrollback ?? 0 })
     const addon = new FitAddon()
     xterm.loadAddon(addon)
     xterm.open(node)
+    const palette = new TerminalTheme(xterm)
+    colors.current = palette
+    const cursor = observeTerminalCursor(xterm, node, () => palette.cursor)
     xterm.textarea?.setAttribute('aria-label', label)
     terminal.current = xterm
     fit.current = addon
@@ -84,6 +90,8 @@ function TerminalScreen({ state, model, visible, label, theme }: {
     return () => {
       observer.disconnect()
       input.dispose()
+      cursor.dispose()
+      palette.dispose()
       xterm.dispose()
       terminal.current = undefined
       fit.current = undefined
@@ -92,12 +100,7 @@ function TerminalScreen({ state, model, visible, label, theme }: {
 
   useLayoutEffect(() => {
     const style = getComputedStyle(element.current!)
-    terminal.current!.options.theme = {
-      background: style.backgroundColor, foreground: style.color,
-      cursor: style.color, cursorAccent: style.backgroundColor,
-      selectionBackground: style.color, selectionForeground: style.backgroundColor,
-      selectionInactiveBackground: style.color,
-    }
+    colors.current!.update(style.backgroundColor, style.color)
   }, [theme, model])
 
   useLayoutEffect(() => {
