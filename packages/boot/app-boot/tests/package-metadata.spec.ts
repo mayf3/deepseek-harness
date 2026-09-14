@@ -63,20 +63,18 @@ describe('readPackageMetadata', () => {
     expect(metadata.cordisSameCopy).toBe(kind === 'foreign' ? false : kind === 'proxy' ? true : null)
   })
 
-  it('reads explicit main and subpath entries without importing them or reading a probe cache', () => {
+  it('reads package identity without executing the main export', () => {
     const staged = stage({ pkg: {
       main: "import { writeFileSync } from 'node:fs'; writeFileSync(new URL('./executed', import.meta.url), 'bad'); throw new Error('must never execute')",
-      manifest: { dsh: { title: 'Package', plugins: [{ name: '.', title: 'Main', config: { a: 1 } }, { name: './tools', title: 'Tools' }] } },
+      manifest: { dsh: { title: 'Package' } },
     } })
     const options = { ...staged, binName: NAME, packageName: 'pkg' }
     const result = readPackageMetadata(options)
-    expect(result).toMatchObject({ kind: 'plugin', title: 'Package', version: '1.0.0',
-      addable: [{ name: '.', title: 'Main', config: { a: 1 } }, { name: './tools', title: 'Tools' }],
-    })
+    expect(result).toMatchObject({ kind: 'unknown', title: 'Package', version: '1.0.0' })
     const dir = join(staged.profileDir, 'node_modules/pkg')
     expect(existsSync(join(dir, 'executed'))).toBe(false)
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'pkg', version: '2.0.0' }))
-    expect(readPackageMetadata(options)).toMatchObject({ kind: 'unknown', version: '2.0.0', addable: [] })
+    expect(readPackageMetadata(options)).toMatchObject({ kind: 'unknown', version: '2.0.0' })
   })
   it('lists bundle rows, nested groups, unevaluated gates and external overrides', () => {
     const staged = stage({ pkg: {
@@ -98,7 +96,7 @@ describe('readPackageMetadata', () => {
     expect(readPackageMetadata({ ...staged, binName: NAME, packageName: 'pkg' })).toMatchObject({
       kind: 'bundle', description: 'Bundle', enginesDsh: '>=0.1.0',
       rows: [{ id: 'group', name: 'cordis:group', gated: false }, { id: 'tool', name: 'pkg/tool', gated: true }],
-      overrides: ['webserver'], addable: [],
+      overrides: ['webserver'],
     })
   })
   it.each(['export default () => {}', 'export function apply() {}', 'throw new Error("broken")'])('keeps an undeclared package unknown: %s', (main) => {
@@ -106,11 +104,13 @@ describe('readPackageMetadata', () => {
     expect(readPackageMetadata({ ...staged, binName: NAME, packageName: 'pkg' }).kind).toBe('unknown')
     expect(existsSync(join(staged.profileDir, 'node_modules/pkg/package.json'))).toBe(true)
   })
-  it.each([
-    'invalid', [{}], [{ name: '' }], [{ name: '../outside' }], [{ name: '/absolute' }],
-    [{ name: './tools' }, { name: 'tools' }], [{ name: '.', title: 1 }],
-  ])('rejects malformed or ambiguous plugin declarations: %j', (plugins) => {
-    const staged = stage({ pkg: { manifest: { dsh: { plugins } } } })
-    expect(() => readPackageMetadata({ ...staged, binName: NAME, packageName: 'pkg' })).toThrow()
+  it('ignores unrelated metadata while reading a bundle patch', () => {
+    const staged = stage({ pkg: {
+      manifest: { dsh: { bundle: { patch: './patch.yml' }, plugins: 'unrecognized metadata' } },
+      files: { 'patch.yml': '- insert:\n    - id: tool\n      name: pkg/tool\n' },
+    } })
+    expect(readPackageMetadata({ ...staged, binName: NAME, packageName: 'pkg' })).toMatchObject({
+      kind: 'bundle', rows: [{ id: 'tool', name: 'pkg/tool', gated: false }],
+    })
   })
 })

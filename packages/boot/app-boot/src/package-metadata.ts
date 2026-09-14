@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url'
 import { loadOverlayPatches } from './index.ts'
 import { readProfileManifest, resolveBundleDir } from './profile.ts'
 import { visitPatchRows } from './patch-rows.ts'
-import type { DshPluginDeclaration } from '@deepseek-ai/dsh-package-manifest'
 
 /** One configured bundle row; conditions remain unevaluated until it mounts. */
 export interface PackageMetadataRow {
@@ -21,13 +20,12 @@ export interface PackageMetadata {
   readonly version?: string
   readonly description?: string
   readonly title?: string
-  readonly kind: 'bundle' | 'plugin' | 'unknown'
+  readonly kind: 'bundle' | 'unknown'
   readonly enginesDsh?: string
   /** Physical resolution only; null when unavailable, not an execution guarantee. */
   readonly cordisSameCopy: boolean | null
   readonly rows: readonly PackageMetadataRow[]
   readonly overrides: readonly string[]
-  readonly addable: readonly DshPluginDeclaration[]
 }
 
 /** Locations needed to read one installed package. */
@@ -39,39 +37,15 @@ export interface PackageMetadataOptions {
 }
 
 /**
- * Read package identity, bundle rows and explicitly addable modules without loading code.
+ * Read package identity and bundle rows without loading code.
  * @param options - installation and profile resolution anchors.
- * @returns declared metadata; an undeclared main export remains unknown.
+ * @returns declared metadata; packages without a bundle patch remain unknown.
  * @throws when the package or its declaration cannot be read or parsed.
  */
 export function readPackageMetadata(options: PackageMetadataOptions): PackageMetadata {
   const { binName, packageName, installAnchor, profileDir } = options
   const dir = resolveBundleDir(binName, packageName, installAnchor, profileDir)
   const manifest = readProfileManifest(binName, dir)
-  const declarations: unknown = manifest.dsh?.plugins
-  const addable: DshPluginDeclaration[] = []
-  if (declarations !== undefined) {
-    if (!Array.isArray(declarations)) throw new TypeError(`${packageName}: dsh.plugins must be an array`)
-    const names = new Set<string>()
-    for (const value of declarations as unknown[]) {
-      if (!isRecord(value) || typeof value.name !== 'string' || value.name.length === 0
-        || (value.title !== undefined && typeof value.title !== 'string')) {
-        throw new TypeError(`${packageName}: dsh.plugins entries require a name and an optional string title`)
-      }
-      const name = value.name
-      const subpath = name.replace(/^\.\//, '')
-      if (name !== '.' && (subpath.startsWith('/') || subpath.split('/').some(part => part === '..' || part === '.' || part === '')
-        || /[:\\]/.test(subpath))) throw new TypeError(`${packageName}: invalid plugin subpath ${JSON.stringify(name)}`)
-      const key = name === '.' ? '.' : subpath
-      if (names.has(key)) throw new TypeError(`${packageName}: repeated plugin subpath ${JSON.stringify(name)}`)
-      names.add(key)
-      addable.push({
-        name,
-        ...value.title === undefined ? {} : { title: value.title },
-        ...value.config === undefined ? {} : { config: value.config },
-      })
-    }
-  }
   const rows: PackageMetadataRow[] = []
   const own = new Set<string>()
   const declaredBundle = manifest.dsh?.bundle?.patch
@@ -88,13 +62,9 @@ export function readPackageMetadata(options: PackageMetadataOptions): PackageMet
     ...manifest.description === undefined ? {} : { description: manifest.description },
     ...manifest.dsh?.title === undefined ? {} : { title: manifest.dsh.title },
     ...manifest.engines?.dsh === undefined ? {} : { enginesDsh: manifest.engines.dsh },
-    kind: declaredBundle !== undefined ? 'bundle' : addable.length > 0 ? 'plugin' : 'unknown',
-    cordisSameCopy, rows, overrides, addable,
+    kind: declaredBundle !== undefined ? 'bundle' : 'unknown',
+    cordisSameCopy, rows, overrides,
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** Resolve physical package identity through a packaged-runtime module proxy. */

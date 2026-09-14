@@ -174,7 +174,7 @@ These limits describe when this boot library is a poor fit or needs special care
 - **Overrides retain the target’s owner** — changing a built-in row can make that required row fail; successful updates to other rows remain applied. Disabling the bundle removes its whole patch layer, including overrides.
 - **A conflict is decided by order, not merit** — among external bundles the earlier layer in `dsh.profile.bundles` keeps a contested id, so uninstalling that bundle lets the later one mount on the next boot; the plugin list shows which bundle lost and to whom.
 - **The nested-fiber audit is advisory** — a failed `ctx.inject()` continuation under a built-in entry is reported, not fatal, until shipped compositions are known clean.
-- **Declarations are not activation results** — `readPackageMetadata` reads `dsh.plugins` without importing modules. Declare `plugins: [{ name: "." }]` for a main export, or subpaths such as `./tools`; undeclared packages remain `unknown`. Config validation and execution diagnostics appear only after an actual mount. Physical Cordis resolution cannot detect an inlined copy.
+- **Metadata is not an activation result** — `readPackageMetadata` reads package identity and bundle patch rows without importing modules. Packages without a bundle patch remain `unknown`. Config validation and execution diagnostics appear only after an actual mount. Physical Cordis resolution cannot detect an inlined copy.
 
 <a id="dev-note"></a>
 ### Dev Note

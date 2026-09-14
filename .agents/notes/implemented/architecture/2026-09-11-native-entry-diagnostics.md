@@ -1,8 +1,8 @@
-# Agent Note: Native entry diagnostics and static plugin declarations
+# Agent Note: Native entry diagnostics
 
 Status: implemented
 
-English | [中文](2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.zh.md)
+English | [中文](2026-09-11-native-entry-diagnostics.zh.md)
 
 ## Problem
 
@@ -12,13 +12,13 @@ Third-party plugin failures must leave the application’s management endpoints 
 
 **Startup strictness remains consumer-owned.** App-boot uses the [global required entry ids](2026-09-09-consumer-owned-startup-strictness.md) and the bootstrap Include identity. Package origin does not change the audit: all other rows may fail with a warning. Bundle metadata has no trust or stage policy. Row ownership only attributes diagnostics and management operations; nested Includes inherit their owning entry’s package without matching unrelated root ids.
 
-**Bundle enablement selects a whole patch layer.** Native rows and author-written groups retain their explicit ids and parents. Anonymous bundle rows receive deterministic ids on detached execution copies. Disabling a bundle removes its inserts and overrides across every target group; persistent user row overrides survive re-enablement. Ownership is checked before loading: strict layers claim ids first, optional collisions omit the whole losing bundle, and conflicting user inserts are omitted per row. Prefixing explicit ids would break author expressions and user patches; relying on authors to avoid collisions permits silent Loader reparenting.
+**Bundle enablement selects a whole patch layer.** Native rows and author-written groups retain their explicit ids and parents. Anonymous bundle rows receive deterministic ids on detached execution copies. Disabling a bundle removes its inserts and overrides across every target group; persistent user row overrides survive re-enablement. Ownership is checked before loading: bundle layers claim ids in their listed order, collisions omit the whole losing bundle, and conflicting user inserts are omitted per row. Prefixing explicit ids would break author expressions and user patches; relying on authors to avoid collisions permits silent Loader reparenting.
 
 **Diagnostics describe attempts and running instances separately.** `Entry.lastFailure` passively retains import, activation or update errors where the Loader already catches or propagates them. It does not restore transactions or change native continuation. Asynchronous activation failures come from `fiber.await()`, pending dependencies from injection state, and disabled-expression failures from evaluating the effective gate. An active old fiber can coexist with an update failure. Removed entries need no separate failure registry. Nested continuation failures remain advisory; readiness does not promise every nested plugin callback succeeded.
 
 **Recomposition is serialized and nontransactional.** The launcher provides `ProfileRuntime` before startup auditing. Preparation rejects malformed files before mutation. Accepted updates settle current Loader work and await removed fibers before publishing composition facts and returning issues. Old fiber references are necessary because removed entries are absent from Loader task enumeration. Successful sibling changes remain applied after another entry fails. Fresh patch copies prevent a later override from mutating data reused by another composition. `ProfileRuntime` declares Loader as a required injection so both root and plugin-context handles can reconcile and inspect the tree.
 
-**Discovery reads declarations without executing modules.** `readPackageMetadata` reads package identity, bundle patches and explicit `dsh.plugins` entries. `.` names the main export; subpaths and default configs remain available for composition editors. Undeclared packages remain installed and unknown. A declaration does not certify importability, Config validity or activation. Physical Cordis peer resolution is advisory and cannot detect an inlined copy. Runtime validation belongs to each actual mounted row, including separate mounts of one module in different presets.
+**Metadata discovery does not execute installed code.** `readPackageMetadata` reads package identity and bundle patch rows. A bundle’s metadata describes its declared composition; packages without a bundle patch remain installed and unknown. Physical Cordis peer resolution is advisory and cannot detect an inlined copy. Config validation and execution diagnostics belong to actual mounted rows.
 
 **Unhandled process failures stay fatal.** `installFailLoud` remains until shutdown. Only duplicate rejections already observed by an entry audit are coalesced through its process checkpoint. Unrelated detached rejections retain master’s teardown-and-exit policy. No in-process group protects against `process.exit`, a blocked event loop, native crashes or OOM. Preset generation owners retain their own strict mount-and-cleanup behavior.
 
@@ -26,7 +26,7 @@ Third-party plugin failures must leave the application’s management endpoints 
 
 ## Alternatives considered
 
-**Keep contained groups and child probes.** Contained groups protected against transactional Loader rollback and supplied failure records for removed rows. Native entries retain both siblings and failed rows, so wrapping adds identities without supplying bundle-wide enablement that layer composition lacks. Child probes bounded discovery-time execution and discovered undeclared exports and schemas. Static declarations avoid that execution; automatic main-export detection and pre-mount schemas are given up. A future execution sandbox needs its own process ownership and teardown design, not a discovery probe presented as runtime isolation.
+**Wrap every bundle in a synthetic parent group.** Native entries retain both successful siblings and failed rows. A wrapper adds another entry identity, while whole-bundle enablement already follows the selected patch layers. Preserving author-written ids keeps their expressions and user patches valid.
 
 **Import inside the Host with try/catch.** Rejected because discovery could execute irreversible side effects, exit the Host or block its event loop. Catching exceptions cannot restore that isolation. Parsing source to infer plugin exports would add another JavaScript interpreter with incomplete results.
 
@@ -36,8 +36,8 @@ Third-party plugin failures must leave the application’s management endpoints 
 
 ## Consequences
 
-Installed metadata, enabled layer selection and current runtime health are independent. An enabled bundle may be partially running, pending or failed; updating a row may leave old behavior active with a visible diagnostic. Whole-bundle disable removes its patch effects without requiring a synthetic parent group. Startup can still fail when an optional provider leaves a required consumer pending. Old probe records are not activation evidence, and plugins need explicit `dsh.plugins` declarations for discovery as addable modules.
+Installed metadata, enabled layer selection and current runtime health are independent. An enabled bundle may be partially running, pending or failed; updating a row may leave old behavior active with a visible diagnostic. Whole-bundle disable removes its patch effects without requiring a synthetic parent group. Startup can still fail when an optional provider leaves a required consumer pending.
 
 ## Verification
 
-`packages/boot/app-boot/tests/entry-issues.spec.ts` covers required-id policy, import/config/apply/disabled/pending failures, nested-entry and anonymous-row bundle ownership, active old config after failed updates, recovery, and awaited removed-fiber teardown. Composition tests cover duplicate ownership and unchanged parents. Static metadata tests use an import-time file-writing fixture and assert no execution, retain unknown packages, and reject malformed declarations. Inventory tests verify actual Loader failures and composition conflicts without a historical failure registry. Process-guard and user-patch tests retain fatal detached failures and best-effort live reload diagnostics.
+`packages/boot/app-boot/tests/entry-issues.spec.ts` covers required-id policy, import/config/apply/disabled/pending failures, nested-entry and anonymous-row bundle ownership, active old config after failed updates, recovery, and awaited removed-fiber teardown. Composition tests cover duplicate ownership and unchanged parents. Static metadata tests use an import-time file-writing fixture and assert no execution, retain unknown packages, and ignore unrelated manifest fields. Inventory tests verify actual Loader failures and composition conflicts without a historical failure registry. Process-guard and user-patch tests retain fatal detached failures and best-effort live reload diagnostics.
