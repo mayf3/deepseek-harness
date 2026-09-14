@@ -1,4 +1,4 @@
-/** One-shot MessagePorts carry browser operations and host-owned inference. */
+/** One-shot MessagePorts carry browser operations and their results. */
 
 import { MessageChannel, MessagePort } from 'node:worker_threads'
 import type { Worker } from 'node:worker_threads'

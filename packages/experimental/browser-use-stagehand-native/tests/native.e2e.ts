@@ -15,9 +15,10 @@ import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import BrowserUseRegistry from '@deepseek-ai/dsh-browser-use'
 import { LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
-import * as DeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import * as Provider from '../src/index.ts'
+import { stagehandModelSchema } from '../src/native.ts'
+import { nativeModel } from './fixtures/stagehand.ts'
 
 class ImageCapabilities extends LlmAdapter {
   override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
@@ -51,7 +52,7 @@ it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1')('launches and attaches to insta
     const execute = (suffix: string, args: unknown) => ctx.tools.execute({
       agent, name: `stagehand_${suffix}`, arguments: args, callId: ToolCallId(`live-${suffix}`), signal,
     })
-    const launched = ctx.plugin(Provider, { mode: 'launch', executablePath: executable })
+    const launched = ctx.plugin(Provider, { model: nativeModel, mode: 'launch', executablePath: executable })
     await launched
     const navigation = await execute('navigate', { url })
     expect(navigation.isError, JSON.stringify(navigation.content)).toBe(false)
@@ -76,7 +77,7 @@ it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1')('launches and attaches to insta
       external!.once('error', reject)
       external!.once('exit', (code) => { reject(new Error(`External Chrome exited before readiness (${code}): ${stderr}`)) })
     })
-    const attached = ctx.plugin(Provider, { mode: 'attach', cdpEndpoint: endpoint })
+    const attached = ctx.plugin(Provider, { model: nativeModel, mode: 'attach', cdpEndpoint: endpoint })
     await attached
     const attachedNavigation = await execute('navigate', { url })
     expect(attachedNavigation.isError, JSON.stringify(attachedNavigation.content)).toBe(false)
@@ -94,10 +95,7 @@ it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1')('launches and attaches to insta
     const { stdout } = await promisify(execFile)(process.execPath, [
       fileURLToPath(new URL('./fixtures/built-attachment.mjs', import.meta.url)), endpoint, `${url}built-worker`,
     ], { signal, env: {} })
-    expect(stdout).toContain('Stagehand local smoke')
-    const smoke = JSON.parse(stdout.trim()) as { requests: number; responses: number }
-    expect(smoke.requests).toBeGreaterThan(0)
-    expect(smoke.responses).toBe(smoke.requests)
+    expect(stdout).toContain('Stagehand fixture')
     expect(external.exitCode).toBeNull()
     const afterBuilt = await (await fetch(versionUrl, { signal })).json() as Array<{ url: string }>
     expect(afterBuilt.some(target => target.url === `${url}built-worker`)).toBe(true)
@@ -110,7 +108,7 @@ it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1')('launches and attaches to insta
   }
 })
 
-it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1' || !process.env.DEEPSEEK_API_KEY)('extracts a controlled heading using Stagehand and the real Session model', { timeout: 120_000, retry: 0 }, async ({ signal }) => {
+it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1' || !process.env.DSH_STAGEHAND_MODEL || !process.env.DSH_STAGEHAND_MODEL_API_KEY)('extracts a controlled heading using an independently configured native Stagehand model', { timeout: 120_000, retry: 0 }, async ({ signal }) => {
   const server = createServer((_request, response) => {
     response.setHeader('content-type', 'text/html')
     response.end('<!doctype html><h1>Stagehand structured result</h1>')
@@ -122,10 +120,9 @@ it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1' || !process.env.DEEPSEEK_API_KEY
     if (address === null || typeof address === 'string') throw new Error('Missing fixture address')
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(BrowserUseRegistry)
-    await ctx.plugin(DeepSeek, { reasoningEffort: 'off' })
-    await ctx.plugin(Provider, { mode: 'launch', ...process.env.DSH_BROWSER_EXECUTABLE === undefined ? {} : { executablePath: process.env.DSH_BROWSER_EXECUTABLE } })
+    await ctx.plugin(Provider, { model: stagehandModelSchema.parse({ modelName: process.env.DSH_STAGEHAND_MODEL, apiKey: process.env.DSH_STAGEHAND_MODEL_API_KEY }), mode: 'launch', ...process.env.DSH_BROWSER_EXECUTABLE === undefined ? {} : { executablePath: process.env.DSH_BROWSER_EXECUTABLE } })
     const harness = await mountAgentLoopTestHarness(ctx)
-    const agent = await harness.create(SessionId('stagehand-real-model'), { provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    const agent = await harness.create(SessionId('stagehand-real-model'), {})
     const execute = (suffix: string, args: unknown) => ctx.tools.execute({ agent, name: `stagehand_${suffix}`, arguments: args, callId: ToolCallId(`api-${suffix}`), signal })
     const navigation = await execute('navigate', { url: `http://127.0.0.1:${address.port}` })
     expect(navigation.isError, JSON.stringify(navigation.content)).toBe(false)
@@ -135,7 +132,7 @@ it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1' || !process.env.DEEPSEEK_API_KEY
     })
     expect(result.isError, JSON.stringify(result.content)).toBe(false)
     expect(JSON.stringify(result.content)).toContain('Stagehand structured result')
-    expect(agent.session.snapshotEvents().some(event => event.type === 'browser-use/stagehand-llm-result')).toBe(true)
+    expect(agent.session.snapshotEvents().some(event => event.type.startsWith('browser-use/'))).toBe(false)
   } finally {
     await ctx.fiber.dispose()
     await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
@@ -184,7 +181,7 @@ it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1' || process.platform === 'win32')
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(BrowserUseRegistry)
     await mountAgentLoopTestHarness(ctx)
-    await ctx.plugin(Provider, { mode: 'launch', executablePath: wrapper })
+    await ctx.plugin(Provider, { model: nativeModel, mode: 'launch', executablePath: wrapper })
     const owner = await ctx.agents.create({ sessionId: SessionId('stagehand-stalled-init') })
     const operation = owner.agent.runMaintenance(signal => ctx.tools.execute({
       agent: owner.agent, name: 'stagehand_tabs', arguments: { action: 'list' }, callId: ToolCallId('stalled-init'), signal,
@@ -208,24 +205,20 @@ it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1' || process.platform === 'win32')
   }
 })
 
-it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1')('keeps Chromium state when a canceled model operation reconnects', { timeout: 120_000, retry: 0 }, async () => {
+it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1')('drains canceled navigation before reconnecting to the same Chromium tabs', { timeout: 120_000, retry: 0 }, async () => {
   const executable = process.env.DSH_BROWSER_EXECUTABLE
   if (executable === undefined) throw new Error('DSH_STAGEHAND_E2E requires DSH_BROWSER_EXECUTABLE')
   const entered: PromiseWithResolvers<void> = Promise.withResolvers()
-  const aborted: PromiseWithResolvers<void> = Promise.withResolvers()
   const release: PromiseWithResolvers<void> = Promise.withResolvers()
-  class CanceledModel extends LlmAdapter {
-    async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-      expect(JSON.stringify(options.messages)).toContain('Keep this page')
-      options.signal?.addEventListener('abort', () => { aborted.resolve() }, { once: true })
-      entered.resolve()
-      await release.promise
-      yield { type: 'finish', reason: { kind: 'aborted', failure: { code: 'ABORTED', message: 'Canceled browser inference' } } }
+  const server = createServer((request, response) => {
+    const send = () => {
+      response.setHeader('content-type', 'text/html')
+      response.end('<!doctype html><title>Retained browser</title><h1>Keep this page</h1>')
     }
-  }
-  const server = createServer((_request, response) => {
-    response.setHeader('content-type', 'text/html')
-    response.end('<!doctype html><title>Retained browser</title><h1>Keep this page</h1>')
+    if (request.url === '/pending') {
+      entered.resolve()
+      void release.promise.then(send)
+    } else send()
   })
   const ctx = new Context()
   try {
@@ -233,25 +226,21 @@ it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1')('keeps Chromium state when a ca
     await once(server, 'listening')
     const address = server.address()
     if (address === null || typeof address === 'string') throw new Error('No cancellation fixture listener')
-    const url = `http://127.0.0.1:${address.port}/retained`
+    const url = `http://127.0.0.1:${address.port}/pending`
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(BrowserUseRegistry)
-    ctx.llm.registerAdapter(['cancel-fixture'], new CanceledModel())
     await mountAgentLoopTestHarness(ctx)
-    await ctx.plugin(Provider, { mode: 'launch', executablePath: executable })
-    const owner = await ctx.agents.create({
-      sessionId: SessionId('stagehand-cancel-reconnect'), agentOptions: { provider: 'cancel-fixture', model: 'fixture' },
-    })
+    await ctx.plugin(Provider, { model: nativeModel, mode: 'launch', executablePath: executable })
+    const owner = await ctx.agents.create({ sessionId: SessionId('stagehand-cancel-reconnect') })
     const call = (method: string, args: unknown) => owner.agent.runMaintenance(signal => ctx.tools.execute({
       agent: owner.agent, name: `stagehand_${method}`, arguments: args, callId: ToolCallId(`reconnect-${method}`), signal,
     }))
-    expect((await call('navigate', { url })).isError).toBe(false)
-    const extraction = call('extract', { instruction: 'Read the heading' })
+    expect((await call('navigate', { url: url.replace('/pending', '/retained') })).isError).toBe(false)
+    const navigation = call('navigate', { url })
     await entered.promise
     owner.agent.cancel({ kind: 'user' })
-    await aborted.promise
     release.resolve()
-    expect((await extraction).isError).toBe(true)
+    expect((await navigation).isError).toBe(true)
     const tabs = await call('tabs', { action: 'list' })
     expect(tabs.isError, JSON.stringify(tabs.content)).toBe(false)
     expect(JSON.stringify(tabs.content)).toContain(url)

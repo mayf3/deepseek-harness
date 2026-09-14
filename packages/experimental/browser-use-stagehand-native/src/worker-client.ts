@@ -1,26 +1,23 @@
 /** Isolated Stagehand Workers own CDP connections; the host owns browser processes. */
 
 import { Worker } from 'node:worker_threads'
-import type { ClientLLM } from '@browserbasehq/stagehand'
+import { StagehandDrainError } from './native.ts'
 import type { NativeBrowserConfig, NativeBrowserRuntime } from './native.ts'
-import { answer, request } from './worker-rpc.ts'
+import { request } from './worker-rpc.ts'
 
 /**
  * Connect Stagehand through an isolated Worker that receives no ambient environment.
  * @param config - resolved CDP connection and operation options.
- * @param generate - host-owned, logged inference callback.
  * @param signal - cancellation of lazy browser acquisition.
  * @param warn - report SDK cleanup failures after connection termination.
- * @returns an initialized runtime whose close awaits connection release.
+ * @returns a runtime whose close requires SDK request drainage before releasing ownership.
  */
 export async function openBrowserWorker(
-  config: NativeBrowserConfig, generate: ClientLLM['generate'], signal: AbortSignal, warn: (message: string) => void,
+  config: NativeBrowserConfig, signal: AbortSignal, warn: (message: string) => void,
 ): Promise<NativeBrowserRuntime> {
   signal.throwIfAborted()
-  const { ClientLLMSchema } = await import('@browserbasehq/stagehand')
-  signal.throwIfAborted()
   const entry = new URL('./worker.js', import.meta.url)
-  // The SDK Worker only connects over CDP; host paths, credentials, and proxy variables stay outside it.
+  // Only explicit model credentials cross in workerData; ambient credentials and proxy settings stay outside.
   const env: NodeJS.ProcessEnv = {}
   if (process.env.TSX_TSCONFIG_PATH !== undefined) env.TSX_TSCONFIG_PATH = process.env.TSX_TSCONFIG_PATH
   let worker: Worker
@@ -49,22 +46,13 @@ export async function openBrowserWorker(
       ])
     } catch (error) {
       warn(`Stagehand SDK cleanup did not finish: ${String(error)}`)
+      throw new StagehandDrainError(`Stagehand SDK requests did not drain: ${String(error)}`, { cause: error })
     } finally {
       clearTimeout(timeout)
       await terminate()
+      worker.removeAllListeners()
     }
-    worker.removeAllListeners()
   })()
-  const validatedGenerate = ClientLLMSchema.shape.generate.implementAsync(generate)
-  worker.on('message', (raw: unknown) => {
-    void answer(raw, async (method, args) => {
-      if (method !== 'generate') throw new Error(`Unsupported Stagehand Worker request: ${method}`)
-      return validatedGenerate(args as Parameters<ClientLLM['generate']>[0])
-    }).catch((error: unknown) => {
-      warn(`Stagehand Worker protocol failed: ${String(error)}`)
-      void close().catch((cleanupError: unknown) => { lifetime.abort(cleanupError) })
-    })
-  })
   const abortOpening = () => { void terminate() }
   signal.addEventListener('abort', abortOpening, { once: true })
   try {
@@ -87,7 +75,9 @@ export async function openBrowserWorker(
       const canceled = () => { void close().catch((error: unknown) => { lifetime.abort(error) }) }
       signal?.addEventListener('abort', canceled, { once: true })
       try {
-        return await request(worker, method, args, lifetime.signal)
+        const result = await request(worker, method, args, lifetime.signal)
+        signal?.throwIfAborted()
+        return result
       } catch (error) {
         signal?.throwIfAborted()
         throw error

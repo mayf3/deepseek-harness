@@ -5,6 +5,7 @@ import { access, rm } from 'node:fs/promises'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { NativeBrowserConfig } from '../src/native.ts'
 import { launchChromium } from '../src/launch.ts'
+import { nativeModel } from './fixtures/stagehand.ts'
 
 const state = vi.hoisted(() => ({ launch: vi.fn(), path: vi.fn(() => '/fixture/chrome') }))
 vi.mock('@puppeteer/browsers', () => ({
@@ -14,7 +15,7 @@ vi.mock('@puppeteer/browsers', () => ({
   launch: state.launch,
 }))
 
-const config: NativeBrowserConfig = { mode: 'launch', headless: true, operationTimeoutMs: 5000, shutdownGraceMs: 50 }
+const config: NativeBrowserConfig = { model: nativeModel, mode: 'launch', headless: true, operationTimeoutMs: 5000, shutdownGraceMs: 50 }
 const profiles: string[] = []
 beforeEach(() => { state.launch.mockReset(); state.path.mockClear() })
 afterEach(async () => {

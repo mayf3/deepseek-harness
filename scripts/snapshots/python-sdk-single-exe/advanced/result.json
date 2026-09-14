@@ -2319,104 +2319,8 @@
       }
     },
     {
-      "type": "browser-use/stagehand-llm-request",
-      "seq": 85,
-      "time": 0,
-      "data": {
-        "request": {
-          "provider": "deepseek-official",
-          "model": "deepseek-v4-flash-vision-exp",
-          "maxTokens": 4096,
-          "sessionId": "{{parent}}",
-          "system": "Extract the heading\n\nReturn the requested structured result by calling stagehand_result exactly once. Put the result in its result argument. Do not emit a text answer or call another tool.",
-          "messages": [
-            {
-              "role": "user",
-              "source": {
-                "kind": "plugin",
-                "plugin": "browser-use-stagehand-native"
-              },
-              "content": [
-                {
-                  "type": "text",
-                  "text": "Page heading: Fixture heading"
-                }
-              ],
-              "id": "{{messageId}}"
-            }
-          ],
-          "tools": [
-            {
-              "name": "stagehand_result",
-              "description": "Return the structured result requested by Stagehand.",
-              "parameters": {
-                "type": "object",
-                "properties": {
-                  "result": {
-                    "type": "object",
-                    "properties": {
-                      "extraction": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "extraction"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "required": [
-                  "result"
-                ],
-                "additionalProperties": false
-              }
-            }
-          ]
-        },
-        "responseFormat": {
-          "type": "json_schema",
-          "name": "extract",
-          "schema": {
-            "type": "object",
-            "properties": {
-              "extraction": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "extraction"
-            ],
-            "additionalProperties": false
-          }
-        }
-      }
-    },
-    {
-      "type": "browser-use/stagehand-llm-result",
-      "seq": 86,
-      "time": 0,
-      "data": {
-        "requestSeq": 85,
-        "blocks": [
-          {
-            "type": "tool-call",
-            "id": "structured-result",
-            "name": "stagehand_result",
-            "arguments": "{\"result\":{\"extraction\":\"Fixture heading\"}}"
-          }
-        ],
-        "finish": {
-          "kind": "tool-calls"
-        },
-        "usage": {
-          "inputTokens": 3,
-          "outputTokens": 3
-        }
-      }
-    },
-    {
       "type": "command/run",
-      "seq": 87,
+      "seq": 85,
       "time": 0,
       "data": {
         "commandId": "{{command:1}}",
@@ -2428,7 +2332,7 @@
     },
     {
       "type": "feedback/record",
-      "seq": 88,
+      "seq": 86,
       "time": 0,
       "data": {
         "text": "The session needs a clearer explanation."
@@ -2436,7 +2340,7 @@
     },
     {
       "type": "command/done",
-      "seq": 89,
+      "seq": 87,
       "time": 0,
       "data": {
         "commandId": "{{command:1}}",
@@ -2446,7 +2350,7 @@
     },
     {
       "type": "feedback/record",
-      "seq": 90,
+      "seq": 88,
       "time": 0,
       "data": {
         "category": "other"
@@ -2454,7 +2358,7 @@
     },
     {
       "type": "feedback/message-put",
-      "seq": 91,
+      "seq": 89,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
@@ -2471,7 +2375,7 @@
     },
     {
       "type": "feedback/message-put",
-      "seq": 92,
+      "seq": 90,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
@@ -2487,7 +2391,7 @@
     },
     {
       "type": "feedback/message-delete",
-      "seq": 93,
+      "seq": 91,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
@@ -2496,7 +2400,7 @@
     },
     {
       "type": "turn/end",
-      "seq": 94,
+      "seq": 92,
       "time": 0,
       "data": {
         "turn": 1,
@@ -6400,116 +6304,8 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "browser-use/stagehand-llm-request",
-          "seq": 85,
-          "time": 0,
-          "data": {
-            "request": {
-              "provider": "deepseek-official",
-              "model": "deepseek-v4-flash-vision-exp",
-              "maxTokens": 4096,
-              "sessionId": "{{parent}}",
-              "system": "Extract the heading\n\nReturn the requested structured result by calling stagehand_result exactly once. Put the result in its result argument. Do not emit a text answer or call another tool.",
-              "messages": [
-                {
-                  "role": "user",
-                  "source": {
-                    "kind": "plugin",
-                    "plugin": "browser-use-stagehand-native"
-                  },
-                  "content": [
-                    {
-                      "type": "text",
-                      "text": "Page heading: Fixture heading"
-                    }
-                  ],
-                  "id": "{{messageId}}"
-                }
-              ],
-              "tools": [
-                {
-                  "name": "stagehand_result",
-                  "description": "Return the structured result requested by Stagehand.",
-                  "parameters": {
-                    "type": "object",
-                    "properties": {
-                      "result": {
-                        "type": "object",
-                        "properties": {
-                          "extraction": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "extraction"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "required": [
-                      "result"
-                    ],
-                    "additionalProperties": false
-                  }
-                }
-              ]
-            },
-            "responseFormat": {
-              "type": "json_schema",
-              "name": "extract",
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "extraction": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "extraction"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
-          "type": "browser-use/stagehand-llm-result",
-          "seq": 86,
-          "time": 0,
-          "data": {
-            "requestSeq": 85,
-            "blocks": [
-              {
-                "type": "tool-call",
-                "id": "structured-result",
-                "name": "stagehand_result",
-                "arguments": "{\"result\":{\"extraction\":\"Fixture heading\"}}"
-              }
-            ],
-            "finish": {
-              "kind": "tool-calls"
-            },
-            "usage": {
-              "inputTokens": 3,
-              "outputTokens": 3
-            }
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
           "type": "command/run",
-          "seq": 87,
+          "seq": 85,
           "time": 0,
           "data": {
             "commandId": "{{command:1}}",
@@ -6527,7 +6323,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "feedback/record",
-          "seq": 88,
+          "seq": 86,
           "time": 0,
           "data": {
             "text": "The session needs a clearer explanation."
@@ -6541,7 +6337,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "command/done",
-          "seq": 89,
+          "seq": 87,
           "time": 0,
           "data": {
             "commandId": "{{command:1}}",
@@ -6557,7 +6353,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "feedback/record",
-          "seq": 90,
+          "seq": 88,
           "time": 0,
           "data": {
             "category": "other"
@@ -6571,7 +6367,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "feedback/message-put",
-          "seq": 91,
+          "seq": 89,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
@@ -6594,7 +6390,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "feedback/message-put",
-          "seq": 92,
+          "seq": 90,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
@@ -6616,7 +6412,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "feedback/message-delete",
-          "seq": 93,
+          "seq": 91,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
@@ -6631,7 +6427,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "turn/end",
-          "seq": 94,
+          "seq": 92,
           "time": 0,
           "data": {
             "turn": 1,

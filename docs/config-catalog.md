@@ -600,11 +600,13 @@ Source: [`packages/experimental/browser-use-playwright-mcp/src/index.ts:15`](../
 
 ## `@deepseek-ai/dsh-experimental-browser-use-stagehand-native`
 
-Requires: `browserUse` · `agents` · `sessions` · `llm` · `tools` · `systemPrompt`
+Requires: `browserUse` · `agents` · `tools` · `systemPrompt`
 
 ```ts config-catalog
-/** Profile-owned browser connection and auxiliary inference policy. */
+/** Profile-owned browser connection and independent Stagehand model credentials. */
 export interface Config {
+  /** Native Stagehand model and credentials; independent of the Session model. */
+  model: StagehandModelConfig
   /** Launch a fresh browser or attach to the configured existing endpoint. */
   mode: 'launch' | 'attach'
   /** CDP HTTP or WebSocket endpoint, required only for attach mode. */
@@ -617,14 +619,24 @@ export interface Config {
   headless?: boolean
   /** Deadline for Chromium startup and Stagehand navigation/action operations. */
   operationTimeoutMs?: number
-  /** Maximum output tokens for each auxiliary Session-model generation. */
-  maxOutputTokens?: number
   /** Grace for native SDK cleanup before its connection Worker is terminated. */
   shutdownGraceMs?: number
 }
+
+/** Profile-owned model settings accepted by the pinned Stagehand SDK. */
+export interface StagehandModelConfig {
+  /** Provider-prefixed model name from Stagehand's supported model catalog. */
+  modelName: ModelConfig['modelName']
+  /** Explicit API key sent to Stagehand's browser extension. */
+  apiKey: string
+  /** Additional headers sent with the extension's model requests. */
+  headers?: Record<string, string>
+}
 ```
 
-Source: [`packages/experimental/browser-use-stagehand-native/src/index.ts:30`](../packages/experimental/browser-use-stagehand-native/src/index.ts)
+Depends on: `ModelConfig` (`@browserbasehq/stagehand`)
+
+Source: [`packages/experimental/browser-use-stagehand-native/src/index.ts:28`](../packages/experimental/browser-use-stagehand-native/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-computer-use-cua-driver-mcp"></a>
 

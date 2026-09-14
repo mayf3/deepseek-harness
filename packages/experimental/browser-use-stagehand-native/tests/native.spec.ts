@@ -3,15 +3,17 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { openNativeBrowser } from '../src/native.ts'
 import type { NativeBrowserConfig, NativeBrowserRuntime } from '../src/native.ts'
-import { fixture, resetFixture } from './fixtures/stagehand.ts'
+import { fixture, nativeModel, resetFixture } from './fixtures/stagehand.ts'
 
-vi.mock('@browserbasehq/stagehand', async () => import('./fixtures/stagehand.ts'))
+vi.mock('@browserbasehq/stagehand', async importActual => ({
+  ...await importActual<typeof import('@browserbasehq/stagehand')>(),
+  ...await import('./fixtures/stagehand.ts'),
+}))
 
 const runtimes: NativeBrowserRuntime[] = []
 const config: NativeBrowserConfig = {
-  mode: 'attach', cdpEndpoint: 'http://fixture', headless: true, operationTimeoutMs: 30000, shutdownGraceMs: 5000,
+  model: nativeModel, mode: 'attach', cdpEndpoint: 'http://fixture', headless: true, operationTimeoutMs: 30000, shutdownGraceMs: 5000,
 }
-const generate = async (): Promise<never> => { throw new Error('Unexpected model call in browser cleanup test') }
 
 beforeEach(() => { resetFixture() })
 afterEach(async () => {
@@ -21,7 +23,7 @@ afterEach(async () => {
 
 it('preserves the external browser when attachment initialization fails', async () => {
   fixture.createError = new Error('Extension initialization failed')
-  await expect(openNativeBrowser({ ...config, mode: 'attach', cdpEndpoint: 'http://localhost:9222' }, generate))
+  await expect(openNativeBrowser({ ...config, mode: 'attach', cdpEndpoint: 'http://localhost:9222' }))
     .rejects.toThrow('Extension initialization failed')
   expect(fixture.browsers).toHaveLength(1)
   expect(fixture.browsers[0]?.origin).toBe('connected')
@@ -30,7 +32,7 @@ it('preserves the external browser when attachment initialization fails', async 
 })
 
 it('leaves Chromium owned by the host when Stagehand cleanup fails', async () => {
-  const runtime = await openNativeBrowser(config, generate)
+  const runtime = await openNativeBrowser(config)
   runtimes.push(runtime)
   fixture.stagehandClose = () => { throw new Error('Stagehand cleanup failed') }
   await expect(runtime.close()).rejects.toThrow('Stagehand cleanup failed')
@@ -39,7 +41,7 @@ it('leaves Chromium owned by the host when Stagehand cleanup fails', async () =>
 
 
 it('returns a native screenshot as canonical text and image content', async () => {
-  const runtime = await openNativeBrowser(config, generate)
+  const runtime = await openNativeBrowser(config)
   runtimes.push(runtime)
   expect(await runtime.execute('screenshot', { fullPage: true })).toMatchObject({
     content: [{ type: 'text', text: 'Screenshot of tab tab-1.' }, { type: 'image', mimeType: 'image/png' }],

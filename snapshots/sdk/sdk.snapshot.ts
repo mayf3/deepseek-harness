@@ -124,9 +124,6 @@ interface SdkAssertions {
 }
 
 const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
-  'browser-use-stagehand-native': {
-    expectedFinalResponse: 'DONE',
-  },
   'tool-error-details': {
     patches: [fileURLToPath(new URL('./tool-error-details/runtime.cordis.yml', import.meta.url))],
     expectedFinalResponse: 'ERROR_DETAILS_OK',
@@ -815,22 +812,6 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         assertions.dshSdkChild !== undefined,
       )
       const actualContext = contextOf(ordered, cwd)
-      if (scenario.name === 'browser-use-stagehand-native') {
-        const auxiliary = results.flatMap(result => result.events)
-          .filter(event => event.type.startsWith('browser-use/stagehand-llm-'))
-        expect(auxiliary.map(event => event.type)).toEqual([
-          'browser-use/stagehand-llm-request', 'browser-use/stagehand-llm-result',
-        ])
-        const request = auxiliary[0]!
-        const response = auxiliary[1]!
-        expect(response.data).toHaveProperty('requestSeq', request.seq)
-        expect(request.data).toHaveProperty('request.sessionId', results[0]!.sessionId)
-        expect(auxiliary.every(event => event.surfaceOp === undefined && event.ignorable === undefined)).toBe(true)
-        expect(notifications.flatMap(notification => {
-          const event = notificationEvent(notification)
-          return typeof event?.type === 'string' && event.type.startsWith('browser-use/stagehand-llm-') ? [event] : []
-        })).toEqual(auxiliary)
-      }
       if (scenario.name === 'tool-error-details') {
         const events = results.flatMap(result => result.events)
         const errors = events.filter(event => event.type === 'tool/result' || event.type === 'tool/ptc-dispatch')

@@ -1,11 +1,39 @@
 /** Native Stagehand operations run inside one isolated browser Worker. */
 
-import type { ClientLLM, Page, StagehandBrowser } from '@browserbasehq/stagehand'
+import { StagehandClientCreateConfigSchema } from '@browserbasehq/stagehand'
+import type { ModelConfig, Page, StagehandBrowser } from '@browserbasehq/stagehand'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { z } from 'zod'
 
+/** Profile-owned model settings accepted by the pinned Stagehand SDK. */
+export interface StagehandModelConfig {
+  /** Provider-prefixed model name from Stagehand's supported model catalog. */
+  modelName: ModelConfig['modelName']
+  /** Explicit API key sent to Stagehand's browser extension. */
+  apiKey: string
+  /** Additional headers sent with the extension's model requests. */
+  headers?: Record<string, string>
+}
+
+/** Explicit credentials for one model supported by the pinned Stagehand SDK. */
+export const stagehandModelSchema = z.object({
+  modelName: z.string(),
+  apiKey: z.string().refine(value => value.trim().length > 0, 'Stagehand requires a nonblank model API key'),
+  headers: z.record(z.string(), z.string()).optional(),
+}).strict().transform((model): StagehandModelConfig => {
+  StagehandClientCreateConfigSchema.parse({ model })
+  // The native-only fields above exclude the SDK's callback-model alternative.
+  return {
+    modelName: model.modelName as ModelConfig['modelName'],
+    apiKey: model.apiKey,
+    ...model.headers === undefined ? {} : { headers: model.headers },
+  }
+})
+
 /** Resolved browser options accepted by the native runtime and attachment worker. */
 export interface NativeBrowserConfig {
+  /** Explicit model credentials passed to Stagehand's browser extension. */
+  model: StagehandModelConfig
   /** Whether the runtime owns Chromium or only its connection. */
   mode: 'launch' | 'attach'
   /** Existing browser's configured debugging endpoint. */
@@ -41,6 +69,9 @@ export const browserInputs = {
 /** Closed set of native browser operations. */
 export type BrowserMethod = keyof typeof browserInputs
 
+/** SDK requests did not drain before their connection Worker terminated. */
+export class StagehandDrainError extends Error {}
+
 /** Native browser operations and SDK cleanup owned by one live Session. */
 export interface NativeBrowserRuntime {
   /**
@@ -56,19 +87,18 @@ export interface NativeBrowserRuntime {
 }
 
 /**
- * Open the pinned SDK using its public initialization and custom model APIs.
+ * Open the pinned SDK using its public initialization and native model configuration.
  * The host owns launched Chromium separately; this Worker owns only its CDP connection.
  * @param config - resolved profile-owned browser options.
- * @param generate - host-owned, durably logged structured inference.
  * @returns the native operation runtime after initialization completes.
  */
-export async function openNativeBrowser(config: NativeBrowserConfig, generate: ClientLLM['generate']): Promise<NativeBrowserRuntime> {
+export async function openNativeBrowser(config: NativeBrowserConfig): Promise<NativeBrowserRuntime> {
   const { Stagehand, localBrowser } = await import('@browserbasehq/stagehand')
   const browser = await localBrowser.connect({
     cdpUrl: z.string().parse(config.cdpEndpoint),
     ...config.extensionId === undefined ? {} : { extensionId: config.extensionId },
   })
-  const stagehand = await Stagehand.create({ browser, model: { generate }, logging: { level: 'off' } })
+  const stagehand = await Stagehand.create({ browser, model: config.model, logging: { level: 'off' } })
   return {
     close: () => stagehand.close(),
     async execute(method, rawArgs) {
@@ -109,11 +139,13 @@ export async function openNativeBrowser(config: NativeBrowserConfig, generate: C
         }
         case 'observe': {
           const args = browserInputs.observe.parse(rawArgs)
-          return textResult(await stagehand.observe(args.instruction, { page: await selectPage(browser, args.pageId) }))
+          return textResult(await stagehand.observe(args.instruction, {
+            page: await selectPage(browser, args.pageId), timeout: config.operationTimeoutMs,
+          }))
         }
         case 'extract': {
           const args = browserInputs.extract.parse(rawArgs)
-          const options = { page: await selectPage(browser, args.pageId) }
+          const options = { page: await selectPage(browser, args.pageId), timeout: config.operationTimeoutMs }
           const result = args.schema === undefined
             ? await stagehand.extract(args.instruction, options)
             : await stagehand.extract(args.instruction, z.fromJSONSchema(args.schema), options)

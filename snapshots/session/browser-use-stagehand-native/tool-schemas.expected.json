@@ -339,7 +339,7 @@
     },
     {
       "name": "stagehand_act",
-      "description": "Perform one natural-language browser action using the Session model.",
+      "description": "Perform one natural-language browser action using the configured Stagehand model.",
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -361,7 +361,7 @@
     },
     {
       "name": "stagehand_extract",
-      "description": "Extract page data using the Session model and an optional JSON Schema.",
+      "description": "Extract page data using the configured Stagehand model and an optional JSON Schema.",
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -447,7 +447,7 @@
     },
     {
       "name": "stagehand_observe",
-      "description": "Find browser actions matching an instruction using the Session model.",
+      "description": "Find browser actions matching an instruction using the configured Stagehand model.",
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

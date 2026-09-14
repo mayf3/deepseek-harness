@@ -45,39 +45,6 @@
         "index": 0,
         "block": {
           "type": "tool-call",
-          "id": "structured-result",
-          "name": "stagehand_result",
-          "arguments": "{\"result\":{\"extraction\":\"Fixture heading\"}}"
-        }
-      },
-      {
-        "type": "usage",
-        "usage": {
-          "inputTokens": 3,
-          "outputTokens": 3
-        }
-      },
-      {
-        "type": "finish",
-        "reason": {
-          "kind": "tool-calls"
-        }
-      }
-    ]
-  },
-  {
-    "kind": "chunks",
-    "chunks": [
-      {
-        "type": "block-start",
-        "index": 0,
-        "blockType": "tool-call"
-      },
-      {
-        "type": "block-end",
-        "index": 0,
-        "block": {
-          "type": "tool-call",
           "id": "screenshot",
           "name": "stagehand_screenshot",
           "arguments": "{}"

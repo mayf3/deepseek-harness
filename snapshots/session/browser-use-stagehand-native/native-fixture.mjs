@@ -1,11 +1,11 @@
-/** External browser fixtures around the real provider, Worker, RPC, and model adapter. */
+/** External browser and model fixtures around the real provider, Worker, and RPC. */
 import { registerHooks, syncBuiltinESMExports } from 'node:module'
 import { readFileSync } from 'node:fs'
 import workerThreads from 'node:worker_threads'
 import ts from 'typescript'
 
 export const name = 'browser-use-stagehand-native-fixture'
-export const inject = ['browserUse', 'agents', 'sessions', 'llm', 'tools', 'systemPrompt']
+export const inject = ['browserUse', 'agents', 'tools', 'systemPrompt']
 
 const packageRoot = new URL('../../../packages/experimental/browser-use-stagehand-native/', import.meta.url)
 const sdkFixture = new URL('tests/fixtures/stagehand.ts', packageRoot).href
@@ -18,10 +18,10 @@ export function installExternalBrowserHooks() {
       if (specifier === '@puppeteer/browsers') return { url: chromiumFixture, shortCircuit: true }
       if (specifier !== '@browserbasehq/stagehand') return nextResolve(specifier, context)
       const actual = nextResolve(specifier, context).url
-      const proxy = `export * from ${JSON.stringify(sdkFixture)}; export { ClientLLMSchema } from ${JSON.stringify(actual)};`
+      const proxy = `export * from ${JSON.stringify(sdkFixture)}; export { StagehandClientCreateConfigSchema } from ${JSON.stringify(actual)};`
       return { url: `data:text/javascript,${encodeURIComponent(proxy)}`, shortCircuit: true }
     },
-    // Built SDK snapshots use plain Node; only the external fixtures need transpilation.
+    // Built profiles use plain Node; only the external fixtures need transpilation.
     load(url, context, nextLoad) {
       if (url !== sdkFixture && url !== chromiumFixture) return nextLoad(url, context)
       return {
@@ -72,5 +72,7 @@ export function installBrowserFixtureHooks() {
 export async function apply(ctx) {
   ctx.effect(installBrowserFixtureHooks, 'browser-use-stagehand-native-fixture.module')
   const provider = await import('@deepseek-ai/dsh-experimental-browser-use-stagehand-native')
-  await ctx.plugin(provider, { mode: 'launch' })
+  await ctx.plugin(provider, {
+    mode: 'launch', model: { modelName: 'openai/gpt-5.4-mini', apiKey: 'snapshot-placeholder' },
+  })
 }

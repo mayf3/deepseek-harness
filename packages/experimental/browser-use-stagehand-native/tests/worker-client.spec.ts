@@ -1,12 +1,12 @@
-/** Real Workers pin initialization, inference, crash, and quiescent termination. */
+/** Real Workers pin explicit configuration, initialization, drainage, and termination. */
 
 import { once } from 'node:events'
 import { connect } from 'node:net'
 import type { Worker } from 'node:worker_threads'
-import type { ClientLLM } from '@browserbasehq/stagehand'
 import { afterEach, expect, it, vi } from 'vitest'
 import { openBrowserWorker } from '../src/worker-client.ts'
 import type { NativeBrowserConfig, NativeBrowserRuntime } from '../src/native.ts'
+import { nativeModel } from './fixtures/stagehand.ts'
 
 const state = vi.hoisted(() => ({ workers: [] as Worker[], entries: [] as string[] }))
 vi.mock('node:worker_threads', async (importActual) => {
@@ -23,14 +23,6 @@ vi.mock('node:worker_threads', async (importActual) => {
   }
 })
 
-const result: Awaited<ReturnType<ClientLLM['generate']>> = {
-  role: 'assistant', content: { type: 'text', text: '{"heading":"Fixture"}' }, outputFormat: 'json_schema',
-  structuredContent: { heading: 'Fixture' }, stopReason: 'stop',
-}
-const generation: Parameters<ClientLLM['generate']>[0] = {
-  messages: [{ role: 'user', content: { type: 'text', text: 'Read the heading.' } }],
-  responseFormat: { type: 'json_schema', name: 'heading', schema: { type: 'object' } },
-}
 const runtimes: NativeBrowserRuntime[] = []
 const warn = vi.fn()
 afterEach(async () => {
@@ -42,28 +34,39 @@ afterEach(async () => {
 })
 
 function config(scenario = 'ready'): NativeBrowserConfig {
-  return { mode: 'attach', cdpEndpoint: `fixture://${scenario}`, headless: true, operationTimeoutMs: 30000, shutdownGraceMs: 1000 }
+  return { model: nativeModel, mode: 'attach', cdpEndpoint: `fixture://${scenario}`, headless: true, operationTimeoutMs: 30000, shutdownGraceMs: 1000 }
 }
 
-async function open(scenario = 'ready', generate: ClientLLM['generate'] = async () => result) {
-  const runtime = await openBrowserWorker(config(scenario), generate, new AbortController().signal, warn)
+async function open(scenario = 'ready') {
+  const runtime = await openBrowserWorker(config(scenario), new AbortController().signal, warn)
   runtimes.push(runtime)
   return runtime
 }
 
-it('validates host inference and awaits Worker exit before releasing its listener', async () => {
-  const generate = vi.fn(async () => result)
-  const runtime = await open('ready', generate)
+function event(worker: Worker, name: string): Promise<void> {
+  return new Promise((resolve) => {
+    const receive = (value: { event?: string }) => {
+      if (value.event !== name) return
+      worker.off('message', receive)
+      resolve()
+    }
+    worker.on('message', receive)
+  })
+}
+
+it('passes explicit model credentials without ambient environment and awaits Worker listener release', async () => {
+  vi.stubEnv('STAGEHAND_FIXTURE_TOKEN', 'ambient-secret')
+  vi.stubEnv('HTTP_PROXY', 'https://ambient-proxy.example')
+  const runtime = await open()
   const worker = state.workers[0]!
   expect(decodeURIComponent(state.entries[0]!)).toContain('tsx')
-  const { port } = await runtime.execute('tabs', { action: 'list' }) as { port: number }
+  const { port, model, env } = await runtime.execute('tabs', { action: 'list' }) as { port: number; model: unknown; env: Record<string, string> }
+  expect(model).toEqual(nativeModel)
+  expect(env.STAGEHAND_FIXTURE_TOKEN).toBeUndefined()
+  expect(env.HTTP_PROXY).toBeUndefined()
   const socket = connect(port, '127.0.0.1')
   await once(socket, 'connect')
   socket.destroy()
-  expect(await runtime.execute('act', generation)).toEqual(result)
-  expect(generate).toHaveBeenCalledWith(generation)
-  await expect(runtime.execute('act', { messages: 'invalid' })).rejects.toThrow()
-  expect(generate).toHaveBeenCalledTimes(1)
   const exited = once(worker, 'exit')
   await runtime.close()
   await exited
@@ -80,10 +83,9 @@ it('preserves initialization failures while terminating the failed Worker', asyn
 
 it('terminates a Worker whose initialization overlaps acquisition cancellation', async () => {
   const controller = new AbortController()
-  const opening = openBrowserWorker(config('opening'), async () => result, controller.signal, warn)
+  const opening = openBrowserWorker(config('opening'), controller.signal, warn)
   const observed = expect(opening).rejects.toThrow('Acquisition canceled')
   await vi.waitFor(() => { expect(state.workers).toHaveLength(1) })
-
   controller.abort(new Error('Acquisition canceled'))
   await observed
   expect(state.workers[0]?.threadId).toBe(-1)
@@ -95,91 +97,74 @@ it('fails active and later operations when the Worker exits', async () => {
   await expect(runtime.execute('tabs', { action: 'list' })).rejects.toThrow(/Worker (exited|reply channel closed)/u)
   await exited
   await expect(runtime.execute('tabs', { action: 'list' })).rejects.toThrow('Worker exited (23)')
+  await expect(runtime.close()).rejects.toThrow('Worker exited (23)')
 })
 
-it('releases a connection after stalled SDK cleanup and reports a warning', async () => {
-  const runtime = await openBrowserWorker({ ...config('closing'), shutdownGraceMs: 20 }, async () => result, new AbortController().signal, warn)
+it.each(['closing', 'close-failure'])('rejects cleanup after an undrained extension (%s) even though its Worker terminates', async (scenario) => {
+  const runtime = await openBrowserWorker({ ...config(scenario), shutdownGraceMs: 20 }, new AbortController().signal, warn)
   runtimes.push(runtime)
   const closing = runtime.close()
+  const rejected = expect(closing).rejects.toThrow(/cleanup timed out|did not drain/u)
   await expect(runtime.execute('tabs', { action: 'list' })).rejects.toThrow('Worker is closed')
-  await closing
-  expect(warn).toHaveBeenCalledWith(expect.stringContaining('connection cleanup timed out'))
+  await rejected
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining('SDK cleanup did not finish'))
   expect(state.workers[0]?.threadId).toBe(-1)
+  await expect(runtime.close()).rejects.toThrow()
 })
 
-
-it.each(['error', 'malformed'] as const)('terminates pending operations after a Worker %s', async (scenario) => {
-  const runtime = await open(scenario)
+it('rejects cleanup after a Worker crashes', async () => {
+  const runtime = await open('error')
   await expect(runtime.execute('tabs', { action: 'list' })).rejects.toThrow()
-  await runtime.close()
+  await expect(runtime.close()).rejects.toThrow()
   expect(state.workers[0]?.threadId).toBe(-1)
-})
-
-it('rejects unsupported Worker requests without calling the model', async () => {
-  const generate = vi.fn(async () => result)
-  const runtime = await open('unsupported', generate)
-  await expect(runtime.execute('tabs', { action: 'list' })).rejects.toThrow('Unsupported Stagehand Worker request: unsupported')
-  expect(generate).not.toHaveBeenCalled()
 })
 
 it('preserves the explicit source tsconfig for its Worker', async () => {
   vi.stubEnv('TSX_TSCONFIG_PATH', '/fixture/tsconfig.json')
   const runtime = await open()
-  expect(await runtime.execute('tabs', { action: 'list' })).toHaveProperty('port')
+  expect(await runtime.execute('tabs', { action: 'list' })).toMatchObject({ env: { TSX_TSCONFIG_PATH: '/fixture/tsconfig.json' } })
 })
 
-
-it('reports a failed Worker termination while handling malformed peer messages', async () => {
-  const runtime = await open('malformed')
+it('waits for the active extension request to drain after cancellation', async () => {
+  const runtime = await open()
   const worker = state.workers[0]!
-  const terminate = worker.terminate.bind(worker)
-  const refused = vi.spyOn(worker, 'terminate').mockRejectedValueOnce(new Error('Worker shutdown refused'))
-  try {
-    await expect(runtime.execute('tabs', { action: 'list' })).rejects.toThrow('Worker shutdown refused')
-    await expect(runtime.close()).rejects.toThrow('Worker shutdown refused')
-  } finally {
-    refused.mockRestore()
-    await terminate()
-  }
-})
-
-
-it('closes the Worker connection when an active browser operation is canceled', async () => {
-  const started: PromiseWithResolvers<void> = Promise.withResolvers()
-  const release: PromiseWithResolvers<void> = Promise.withResolvers()
-  const runtime = await open('ready', async () => { started.resolve(); await release.promise; return result })
+  const entered = event(worker, 'operation-started')
+  const closing = event(worker, 'close-started')
   const controller = new AbortController()
-  const operation = runtime.execute('act', generation, controller.signal)
+  const operation = runtime.execute('act', { instruction: 'Read the page' }, controller.signal)
   const canceled = expect(operation).rejects.toThrow('Cancel browser call')
-  await started.promise
+  await entered
   controller.abort(new Error('Cancel browser call'))
+  await closing
+  let closed = false
+  const drainage = runtime.close().then(() => { closed = true })
   try {
-    await canceled
-    await runtime.close()
-    expect(state.workers[0]?.threadId).toBe(-1)
+    expect(closed).toBe(false)
+    expect(worker.threadId).not.toBe(-1)
   } finally {
-    release.resolve()
+    worker.postMessage({ method: 'fixture-release' })
+    await canceled
+    await drainage
   }
+  expect(worker.threadId).toBe(-1)
 })
 
-
-it('reports failed termination when cancellation closes an active Worker', async () => {
-  const started: PromiseWithResolvers<void> = Promise.withResolvers()
-  const release: PromiseWithResolvers<void> = Promise.withResolvers()
-  const runtime = await open('ready', async () => { started.resolve(); await release.promise; return result })
+it('reports failed Worker termination during canceled request cleanup', async () => {
+  const runtime = await open()
   const worker = state.workers[0]!
   const terminate = worker.terminate.bind(worker)
   const refused = vi.spyOn(worker, 'terminate').mockRejectedValueOnce(new Error('Worker shutdown refused'))
+  const entered = event(worker, 'operation-started')
   const controller = new AbortController()
-  const operation = runtime.execute('act', generation, controller.signal)
+  const operation = runtime.execute('act', {}, controller.signal)
   const canceled = expect(operation).rejects.toThrow('Cancel active call')
   try {
-    await started.promise
+    await entered
     controller.abort(new Error('Cancel active call'))
+    worker.postMessage({ method: 'fixture-release' })
     await canceled
     await expect(runtime.close()).rejects.toThrow('Worker shutdown refused')
   } finally {
-    release.resolve()
     refused.mockRestore()
     await terminate()
   }

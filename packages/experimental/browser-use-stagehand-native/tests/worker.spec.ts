@@ -2,7 +2,7 @@
 
 import type { MessagePort } from 'node:worker_threads'
 import { afterEach, expect, it, vi } from 'vitest'
-import { answer, request } from '../src/worker-rpc.ts'
+import { request } from '../src/worker-rpc.ts'
 
 const transport = vi.hoisted(() => ({ port: null as MessagePort | null, data: {} as unknown }))
 vi.mock('node:worker_threads', async importActual => ({
@@ -12,7 +12,7 @@ vi.mock('node:worker_threads', async importActual => ({
 }))
 vi.mock('@browserbasehq/stagehand', async importActual => ({
   ...await import('./fixtures/stagehand.ts'),
-  ClientLLMSchema: (await importActual<typeof import('@browserbasehq/stagehand')>()).ClientLLMSchema,
+  StagehandClientCreateConfigSchema: (await importActual<typeof import('@browserbasehq/stagehand')>()).StagehandClientCreateConfigSchema,
 }))
 
 let peer: MessagePort | undefined
@@ -24,21 +24,14 @@ async function prepare() {
   const channel = new MessageChannel()
   transport.port = channel.port1
   peer = channel.port2
-  transport.data = { mode: 'attach', cdpEndpoint: 'http://fixture', headless: true, operationTimeoutMs: 30000, shutdownGraceMs: 5000 }
+  transport.data = { model: { modelName: 'openai/gpt-5.4-mini', apiKey: 'fixture-model-key' }, mode: 'attach', cdpEndpoint: 'http://fixture', headless: true, operationTimeoutMs: 30000, shutdownGraceMs: 5000 }
   const { fixture, resetFixture } = await import('@browserbasehq/stagehand') as unknown as typeof import('./fixtures/stagehand.ts')
   resetFixture()
   return { fixture, peer }
 }
 
-it('dispatches browser arguments and validates the host inference response', async () => {
+it('dispatches browser arguments using the independently configured native model', async () => {
   const { fixture, peer } = await prepare()
-  const callbacks: Promise<void>[] = []
-  peer.on('message', (raw: unknown) => {
-    callbacks.push(answer(raw, async (method) => {
-      expect(method).toBe('generate')
-      return { role: 'assistant', content: { type: 'text', text: '{"extraction":"Fixture heading"}' }, outputFormat: 'json_schema', structuredContent: { extraction: 'Fixture heading' }, stopReason: 'stop' }
-    }))
-  })
   await import('../src/worker.ts')
   await request(peer, 'ready')
   expect(await request(peer, 'navigate', { url: 'https://fixture.example' })).toMatchObject({ content: [{ type: 'text' }] })
@@ -46,7 +39,7 @@ it('dispatches browser arguments and validates the host inference response', asy
   await expect(request(peer, 'navigate', { url: 'invalid' })).rejects.toThrow()
   await expect(request(peer, 'unavailable')).rejects.toThrow()
   await request(peer, 'close')
-  await Promise.all(callbacks)
+  expect(fixture.models).toEqual([{ modelName: 'openai/gpt-5.4-mini', apiKey: 'fixture-model-key' }])
   expect(fixture.browsers[0]?.stagehandClosed).toBe(true)
   expect(fixture.browsers[0]?.closed).toBe(false)
 })
