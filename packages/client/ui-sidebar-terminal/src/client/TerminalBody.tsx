@@ -5,21 +5,23 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import type { TerminalViewState, TerminalView } from '@deepseek-ai/dsh-api-terminal-controller/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { TerminalInjected } from './face.ts'
+import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
+import type { TerminalBodyInjected } from './face.ts'
 import type {} from './locales.ts'
 import '@xterm/xterm/css/xterm.css'
 import css from './TerminalBody.module.css'
 
 /** Standard sidebar owner share plus terminal model and localized copy. */
-export type TerminalBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'sidebarTerminal'> & InjectFace<TerminalInjected>
+export type TerminalBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'sidebarTerminal'> & InjectFace<TerminalBodyInjected>
 
 /**
- * Offer shell selection for a new terminal or mount a restored screen.
+ * Offer shell selection or render the retained terminal with the application theme.
  * @param props - sidebar occurrence, model lookup and translated copy.
  * @returns the terminal screen and any pending or exceptional state.
  */
-export function TerminalBody({ useTabInfo, useTerminal, view, t }: TerminalBodyProps): ReactNode {
+export function TerminalBody({ useTabInfo, useTerminal, useTheme, view, t }: TerminalBodyProps): ReactNode {
   const { tab } = useTabInfo()
+  const theme = useTheme(value => value)
   const model = view(tab.id)
   const state = useTerminal(tab.id)
   useEffect(() => model.mount(), [model])
@@ -43,7 +45,7 @@ export function TerminalBody({ useTabInfo, useTerminal, view, t }: TerminalBodyP
           ? <button type="button" onClick={() => { void model.refresh() }}>{t('retry')}</button>
           : <button type="button" onClick={() => { model.connect() }}>{t('reconnect')}</button>)}
       </div>}
-      {state.info !== undefined && <TerminalScreen state={state} model={model} visible={tab.visible} label={t('title')} />}
+      {state.info !== undefined && <TerminalScreen state={state} model={model} visible={tab.visible} label={t('title')} theme={theme} />}
       {error !== undefined && <p className={css.error} role="alert">{t('failed', { message: error })}</p>}
     </section>
   )
@@ -81,11 +83,12 @@ function TerminalLauncher({ state, model, t }: {
 }
 
 /* oxlint-disable typescript/no-non-null-assertion -- React sets the DOM ref, then these effects initialize and use the emulator. */
-function TerminalScreen({ state, model, visible, label }: {
+function TerminalScreen({ state, model, visible, label, theme }: {
   state: TerminalViewState
   model: TerminalView
   visible: boolean
   label: string
+  theme: ThemeSnapshot
 }): ReactNode {
   const element = useRef<HTMLDivElement>(null)
   const terminal = useRef<Terminal>()
@@ -96,7 +99,7 @@ function TerminalScreen({ state, model, visible, label }: {
 
   useLayoutEffect(() => {
     const node = element.current!
-    const xterm = new Terminal({ cursorBlink: true, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', scrollback: current.current.state.environment?.scrollback ?? 0, theme: { background: '#17191d', foreground: '#e7e9ee' } })
+    const xterm = new Terminal({ cursorBlink: true, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', scrollback: current.current.state.environment?.scrollback ?? 0 })
     const addon = new FitAddon()
     xterm.loadAddon(addon)
     xterm.open(node)
@@ -119,6 +122,16 @@ function TerminalScreen({ state, model, visible, label }: {
       fit.current = undefined
     }
   }, [model])
+
+  useLayoutEffect(() => {
+    const style = getComputedStyle(element.current!)
+    terminal.current!.options.theme = {
+      background: style.backgroundColor, foreground: style.color,
+      cursor: style.color, cursorAccent: style.backgroundColor,
+      selectionBackground: style.color, selectionForeground: style.backgroundColor,
+      selectionInactiveBackground: style.color,
+    }
+  }, [theme, model])
 
   useLayoutEffect(() => {
     const xterm = terminal.current!

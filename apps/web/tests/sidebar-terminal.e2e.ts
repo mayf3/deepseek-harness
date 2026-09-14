@@ -81,6 +81,63 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     }
   })
 
+  it('follows light, dark and system themes while preserving the running shell and its output', async () => {
+    await page.emulateMedia({ colorScheme: 'light' })
+    await openTerminal(page)
+    const process = processIdentity(0)
+    const terminal = page.locator('[data-sidebar-terminal]')
+    const screen = page.locator('.xterm-rows:visible')
+    await command(page, "DSH_THEME_PROBE=retained; PS1=''; printf '\\033cTHEME_CONTENT_RETAINED\\n'")
+    await expect.poll(() => screen.innerText()).toContain('THEME_CONTENT_RETAINED')
+    const readColors = () => terminal.evaluate((root) => {
+      const xterm = root.querySelector('.xterm')!
+      const rows = root.querySelector('.xterm-rows')!
+      return {
+        surface: getComputedStyle(xterm.parentElement!).backgroundColor,
+        viewport: getComputedStyle(root.querySelector('.xterm-scrollable-element')!).backgroundColor,
+        underlay: getComputedStyle(root.querySelector('.xterm-viewport')!).backgroundColor,
+        foreground: getComputedStyle(rows).color,
+      }
+    })
+    const selectTheme = async (name: string) => {
+      await page.getByRole('button', { name: 'Settings', exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: 'Settings' })
+      const [response] = await Promise.all([
+        page.waitForResponse(candidate => new URL(candidate.url()).pathname === '/api/settings/mutate' && candidate.request().method() === 'POST'),
+        dialog.getByRole('button', { name, exact: true }).click(),
+      ])
+      expect(response.ok()).toBe(true)
+      await page.keyboard.press('Escape')
+      await dialog.waitFor({ state: 'hidden' })
+    }
+    const light = await readColors()
+    expect(light.viewport).toBe(light.surface)
+    expect(light.underlay).toBe(light.surface)
+    await terminal.screenshot({ path: `${shots}/theme-light.png`, animations: 'disabled' })
+    await selectTheme('Dark')
+    await expect.poll(async () => (await readColors()).viewport).not.toBe(light.viewport)
+    const dark = await readColors()
+    expect(dark.viewport).toBe(dark.surface)
+    expect(dark.underlay).toBe(dark.surface)
+    expect(dark.foreground).not.toBe(light.foreground)
+    await terminal.screenshot({ path: `${shots}/theme-dark.png`, animations: 'disabled' })
+    await selectTheme('Light')
+    await expect.poll(readColors).toEqual(light)
+    await selectTheme('System')
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await expect.poll(readColors).toEqual(dark)
+    await page.emulateMedia({ colorScheme: 'light' })
+    await expect.poll(readColors).toEqual(light)
+    await expect.poll(() => screen.innerText()).toContain('THEME_CONTENT_RETAINED')
+    await command(page, 'printf "THEME_STATE:%s\\n" "$DSH_THEME_PROBE"')
+    await expect.poll(() => screen.innerText()).toContain('THEME_STATE:retained')
+    expect(handles).toHaveLength(1)
+    expect(alive(process)).toBe(true)
+    await compareOrRefreshGolden(fileURLToPath(new URL('./expected/sidebar-terminal/theme.expected.md', import.meta.url)),
+      JSON.stringify({ light, dark }, null, 2), webSnapshotMode())
+    expect(tripwire.pageErrors).toEqual([])
+  })
+
   it('completes commands, preserves the process through collapse and reload, resizes, and kills on tab close', async () => {
     onTestFailed(() => saveFailureShot(page, 'sidebar-terminal'))
     await openTerminal(page)
