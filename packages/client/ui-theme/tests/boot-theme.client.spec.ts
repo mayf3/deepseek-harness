@@ -21,6 +21,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   document.documentElement.style.removeProperty('color-scheme')
+  delete document.documentElement.dataset.dsThemeSource
   document.body.removeAttribute(DARK_ATTRIBUTE)
   document.body.style.removeProperty('--dsh-content-font-size')
 })
@@ -32,6 +33,7 @@ describe('theme bootstrap row', () => {
     expect(row).toMatchObject({ kind: 'script', placement: 'body' })
     executeBootstrap('dark')
     expect(document.documentElement.style.colorScheme).toBe('dark')
+    expect(document.documentElement.dataset.dsThemeSource).toBe('dark')
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(true)
   })
 
@@ -50,6 +52,7 @@ describe('theme bootstrap row', () => {
     mockSystemDark(matches)
     executeBootstrap('system')
     expect(document.documentElement.style.colorScheme).toBe(colorScheme)
+    expect(document.documentElement.dataset.dsThemeSource).toBe('system')
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(dark)
   })
 

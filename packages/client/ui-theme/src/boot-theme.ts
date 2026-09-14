@@ -2,7 +2,9 @@
  * Theme bootstrap row for the browser's pre-plugin interval. Each index
  * render embeds the current durable built-in preference and content font size;
  * the browser resolves only `system`, then writes the same DOM fields
- * ui-layout's ThemePresenter owns after the client plugin tree activates.
+ * ui-layout's ThemePresenter owns after the client plugin tree activates,
+ * including `html[data-ds-theme-source]` (the unresolved preference) for
+ * host shells that mirror it into native window chrome.
  */
 
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
@@ -17,6 +19,7 @@ function bootThemeScript(preference: ThemePreference, fontSize: number): string 
     && matchMedia('(prefers-color-scheme: dark)').matches
   const dark = preference === 'dark' || systemDark
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+  document.documentElement.dataset.dsThemeSource = preference
   document.body.toggleAttribute('data-ds-dark-theme', dark)
   document.body.style.setProperty('--dsh-content-font-size', ${JSON.stringify(`${fontSize}px`)})
 })()`
