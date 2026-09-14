@@ -29,7 +29,7 @@ Electron owns `$DSH_HOME/profiles/desktop`. Its `dependencies` contains packages
 
 The local startup page exposes startup status and available recovery actions. The product renderer uses the Web application’s HTTP APIs. The separate plugin window receives structured list, install, remove, update, and update-check operations; neither renderer receives filesystem access, raw Electron IPC, a shell, or arbitrary pnpm arguments.
 
-The product UI retains Web actions, including "Open In..." through the shared authenticated HTTP routes. Desktop supplies its native directory picker as a profile overlay.
+The product UI retains Web actions, including "Open In..." through the shared authenticated HTTP routes. Desktop uses Web's automatic directory-picker selection and initializes new profiles with the shared Web template's bundles and patch-reload policy.
 
 Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, the startup page, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
 

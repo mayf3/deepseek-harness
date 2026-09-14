@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-10-desktop-web-wrapper.md
-2026-09-10-desktop-web-wrapper.md: 98f77df4e4757edc48813f67794e49b4a9804bb9
-2026-09-10-desktop-web-wrapper.zh.md: c740ea56b2c79ca571eb29f934f9acfe7496509f
+2026-09-10-desktop-web-wrapper.md: bc07f32309c62fe75131bbee45d5efd208911a47
+2026-09-10-desktop-web-wrapper.zh.md: 35bc634ef6edc80f68ba7789d47e35f18b3a7e2e
