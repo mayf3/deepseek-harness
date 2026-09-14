@@ -396,6 +396,38 @@ describe('the preset roster', () => {
     expect(packageOf).toHaveBeenCalledWith('profile-package/plugin.js', pathToFileURL(FIXTURES).href + '/')
   })
 
+  it('isolates a package lookup failure to the preset being checked', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-preset-package-failure-'))
+    roots.push(root)
+    await mkdir(join(root, 'healthy'))
+    await writeFile(join(root, 'healthy', COMPOSITION_FILE), '[]\n')
+    await mkdir(join(root, 'lookup-failure'))
+    await writeFile(
+      join(root, 'lookup-failure', COMPOSITION_FILE),
+      '- id: package\n  name: profile-package/plugin.js\n',
+    )
+    const scoped = await harness({
+      default: 'healthy', roots: [{ path: root, trust: 'user' }],
+      includeShippedRoot: false, includeUserRoot: false,
+    })
+    const packageOf = vi.spyOn(scoped.pluginPackages, 'packageOf').mockImplementation(() => {
+      throw new Error('profile package lookup failed')
+    })
+
+    const listed = await scoped.agentPresets.list()
+    expect(listed.find(preset => preset.id === 'lookup-failure')?.broken)
+      .toBe("the composition's plugins cannot be checked: profile package lookup failed")
+    expect(listed.find(preset => preset.id === 'healthy')?.broken).toBeUndefined()
+    await expect(agentOn(scoped, 'sess-after-package-failure')).resolves.toBeDefined()
+
+    packageOf.mockImplementation(() => {
+      throw 'raw profile package lookup failed'
+    })
+    const rawListed = await scoped.agentPresets.list()
+    expect(rawListed.find(preset => preset.id === 'lookup-failure')?.broken)
+      .toBe("the composition's plugins cannot be checked: raw profile package lookup failed")
+  })
+
   it('exposes the configured default id', () => {
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })

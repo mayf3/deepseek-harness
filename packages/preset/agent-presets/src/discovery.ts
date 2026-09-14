@@ -197,6 +197,8 @@ async function unresolvableRows(
  * loadable. Parsed with the loader's own YAML dialect ({@link entryListSchema},
  * the one carrying `!!js`), so health can never call a composition broken
  * that the loader would accept.
+ * A package-lookup failure becomes this composition's broken reason, so one
+ * preset cannot abort discovery of the rest of the roster.
  * @param path - absolute path of the composition file.
  * @param harnessBase - base URL a row's package name resolves against.
  * @returns one human-readable reason, or undefined when the file is loadable.
@@ -227,7 +229,13 @@ async function compositionProblem(
   // The composition's own directory, exactly as `Include` derives it, so a
   // row naming a file the preset ships resolves the way the mount will.
   const presetBase = new URL('.', pathToFileURL(path)).href
-  const unresolvable = await unresolvableRows(rows as readonly unknown[], presetBase, harnessBase, resolves)
+  let unresolvable: UnresolvableRow[]
+  try {
+    unresolvable = await unresolvableRows(rows as readonly unknown[], presetBase, harnessBase, resolves)
+  } catch (error) {
+    const full = error instanceof Error ? error.message : String(error)
+    return `the composition's plugins cannot be checked: ${full.replace(/\n[\s\S]*$/, '')}`
+  }
   const [first] = unresolvable
   if (first === undefined) return undefined
   if (unresolvable.length === 1) {
