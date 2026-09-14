@@ -4,7 +4,7 @@ import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 // Type-only: the optional agent-preset roster resolved through `ctx.get`.
 import type {} from '@deepseek-ai/dsh-agent-presets'
-// Profile provenance and live entry diagnostics share the boot implementation.
+// Profile row ownership and live entry diagnostics share the boot implementation.
 import { inspectEntryIssues } from '@deepseek-ai/dsh-app-boot'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
@@ -80,7 +80,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const failures = new Map((await inspectEntryIssues(this.ctx)).map(issue => [issue.entry, issue]))
     for (const entry of this.ctx.loader.entries()) {
       if (entry.options.group) continue
-      // Provenance and user patches address rows by the id the composition
+      // Bundle ownership and user patches address rows by the id the composition
       // declares; the tree-wide `entry.id` adds the owning include's prefix.
       const origin = runtime?.originOfEntry(entry)
       const failure = failures.get(entry)
