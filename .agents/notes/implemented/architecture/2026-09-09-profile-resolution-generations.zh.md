@@ -54,7 +54,7 @@ resolution generation 列出可用 fallback 包；Loader entries 组成活动插
 
 ### Worker 与 generation 更新
 
-主线程通过 Worker environment data 发布当前 generation 的可结构化克隆表示和 profile scope。每个 Harness 自有 Worker 构建产物通过构建 banner 获取自己的 ESM/CJS Internal 并安装同一适配器，不重新遍历 manifest。bootstrap bundle 不静态导入任何包；在 Windows 上，它会临时暴露一个服务私有的 native cache 目录，并在业务代码启动前恢复环境。服务释放时先恢复 Worker environment data 和进程 resolver，再异步回收该目录，使并发终止的 Worker 能够释放 native handle；若经过有界重试仍被锁定，则输出警告并把这个私有临时目录留给操作系统清理。源码 Worker 入口保持原有自包含依赖；第三方 Worker 保持不变。
+主线程通过 Worker environment data 发布当前 generation 的可结构化克隆表示和 profile scope。每个 Harness 自有 Worker 构建产物通过构建 banner 获取自己的 ESM/CJS Internal 并安装同一适配器，不重新遍历 manifest。bootstrap bundle 不静态导入任何包。源码 Worker 入口保持原有自包含依赖；第三方 Worker 保持不变。
 
 新 Worker 继承最新发布的 generation。已运行的 Worker 保留启动时继承的 generation，因此发布后继 generation 的调用方必须重启它们。ESM bootstrap 无法影响其执行前已链接的静态依赖，因此 Worker bundle 必须保证 bootstrap 之前的静态 import 可由原生 Node 解析，需要 profile resolver 的业务入口在 bootstrap 后通过 dynamic import 启动。
 
