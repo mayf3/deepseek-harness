@@ -177,6 +177,7 @@ export function FilesBody({
   const pathRef = useRef<HTMLDivElement>(null)
   const pathTextRef = useRef<HTMLSpanElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const scrollTopRef = useRef(0)
   usePathClipped(pathRef, pathTextRef, state?.root)
   // Come back where the reader was: loaded levels outlive the body in the
   // store, so a remounted tree lays out at its full height before this runs
@@ -184,8 +185,17 @@ export function FilesBody({
   const seeded = state !== undefined
   useLayoutEffect(() => {
     const body = bodyRef.current
-    if (seeded && body !== null) body.scrollTop = state.scrollTop
+    if (seeded && body !== null) {
+      body.scrollTop = state.scrollTop
+      scrollTopRef.current = body.scrollTop
+    }
   }, [seeded])
+  // Scrolling only moves the ref; the store hears about it once, on unmount,
+  // so a scroll neither re-renders the tree nor writes after the owner's
+  // abort has forgotten the bucket.
+  useEffect(() => () => {
+    if (seeded && !signal.aborted) actions.scrolled(tab.id, scrollTopRef.current)
+  }, [seeded, signal, tab.id, actions])
   useEffect(() => {
     // A bucket gone because the record aborted must not be re-seeded by a
     // component that has not unmounted yet.
@@ -241,7 +251,7 @@ export function FilesBody({
         ref={bodyRef}
         className={css.body}
         data-files-body
-        onScroll={(event) => { actions.scrolled(tab.id, event.currentTarget.scrollTop) }}
+        onScroll={(event) => { scrollTopRef.current = event.currentTarget.scrollTop }}
       >
         <ul className={css.level}><Level path={state.root} tree={tree} /></ul>
       </div>

@@ -76,7 +76,7 @@ export function ImageBody({ content, resourceAddress, t }: ImageBodyProps): Reac
     return <p className={css.status} role="alert">{t('unsupported')}</p>
   }
   if (source?.data !== data || source.mediaType !== mediaType) {
-    return <LoadingIndicator className={css.status} label={t('loading')} iconOnly />
+    return <LoadingIndicator className={css.status} label={t('loading')} />
   }
   if (source.kind === 'failed') return <p className={css.status} role="alert">{t('failed')}</p>
   const { name } = pathPartsOf(path)
@@ -91,7 +91,7 @@ function LoadedImage({ url, name, t }: {
 }): ReactNode {
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
   return <div className={css.frame} data-image-preview>
-    {state === 'loading' && <LoadingIndicator className={css.status} label={t('loading')} iconOnly />}
+    {state === 'loading' && <LoadingIndicator className={css.status} label={t('loading')} />}
     {state === 'failed' && <p className={css.status} role="alert">{t('failed')}</p>}
     <img
       className={css.image}

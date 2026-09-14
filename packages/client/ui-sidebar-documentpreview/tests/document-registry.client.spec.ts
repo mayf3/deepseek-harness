@@ -68,6 +68,15 @@ describe('document preview implementations', () => {
     expect(binaryDocumentPath([text], '/work/photo.png')).toBe(false)
   })
 
+  it('rejects a binary suffix outside the declared extensions without registering', () => {
+    const registry = new DocumentPreviewRegistry()
+    expect(() => registry.register(definition('image', { extensions: ['png', 'svg'], binaryExtensions: ['pdf'] })))
+      .toThrow(/binary suffix "pdf" outside its extensions/u)
+    expect(registry.getSnapshot()).toEqual([])
+    registry.register(definition('image', { extensions: ['PNG', 'svg'], binaryExtensions: ['.png'] }))
+    expect(registry.getSnapshot()).toHaveLength(1)
+  })
+
   it('rejects duplicate ids without replacing the existing registration', () => {
     const registry = new DocumentPreviewRegistry()
     const entry = definition('markdown')

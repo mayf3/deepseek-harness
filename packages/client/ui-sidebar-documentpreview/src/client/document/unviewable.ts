@@ -6,6 +6,7 @@
  * belongs here only when its bytes are never readable text — an uncertain
  * suffix stays out and keeps the plain-text fallback.
  */
+import { documentFileName, matchedSuffixLength } from './suffix.ts'
 const UNVIEWABLE_BINARY_EXTENSIONS: readonly string[] = [
   // video
   'mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v',
@@ -13,8 +14,9 @@ const UNVIEWABLE_BINARY_EXTENSIONS: readonly string[] = [
   'mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac', 'wma', 'opus',
   // archives
   'zip', 'gz', 'tgz', 'bz2', 'xz', 'zst', '7z', 'rar', 'tar', 'jar',
-  // office documents
-  'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'pages', 'key', 'numbers',
+  // office documents — `key` stays out: it collides with key/credential files
+  // that are readable text, and the uncertain suffix keeps the plain-text fallback
+  'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'pages', 'numbers',
   // executables and compiled objects
   'exe', 'dll', 'so', 'dylib', 'bin', 'o', 'class', 'pyc', 'wasm',
   // fonts
@@ -31,7 +33,5 @@ const UNVIEWABLE_BINARY_EXTENSIONS: readonly string[] = [
  * @returns true when the suffix belongs to the unviewable binary list.
  */
 export function unviewableBinaryPath(path: string): boolean {
-  const normalized = path.replaceAll('\\', '/').toLowerCase()
-  const name = normalized.slice(normalized.lastIndexOf('/') + 1)
-  return UNVIEWABLE_BINARY_EXTENSIONS.some(extension => name.endsWith(`.${extension}`))
+  return matchedSuffixLength(documentFileName(path), UNVIEWABLE_BINARY_EXTENSIONS) > 0
 }

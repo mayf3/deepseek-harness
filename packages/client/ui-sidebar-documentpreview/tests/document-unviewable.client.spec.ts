@@ -19,7 +19,7 @@ describe('unviewableBinaryPath', () => {
   it('leaves renderer-claimed, text, and unknown suffixes to their existing paths', () => {
     for (const path of [
       'main.ts', 'README.md', 'photo.png', 'page.html', 'paper.pdf', 'logo.svg',
-      'server.log', 'config.env', 'notes.unknown', 'Makefile', 'mp4',
+      'server.log', 'config.env', 'notes.unknown', 'Makefile', 'mp4', 'private.key',
     ]) expect(unviewableBinaryPath(path), path).toBe(false)
   })
 })

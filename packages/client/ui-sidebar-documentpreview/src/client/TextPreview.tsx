@@ -57,6 +57,23 @@ function usePathClipped(
   }, [box, text, path, shown])
 }
 
+/** The header's path: directories greyed, the final segment in full ink, faded when clipped. */
+function HeaderPath({ pathRef, pathTextRef, path }: {
+  pathRef: RefObject<HTMLDivElement>
+  pathTextRef: RefObject<HTMLSpanElement>
+  path: string
+}): ReactNode {
+  const { directory, name } = pathPartsOf(path)
+  return (
+    <div ref={pathRef} className={css.path} title={path} data-textpreview-path>
+      <span ref={pathTextRef} className={css.pathText}>
+        {directory !== '' && <span className={css.pathDirectory}>{directory}</span>}
+        <span className={css.pathName}>{name}</span>
+      </span>
+    </div>
+  )
+}
+
 /** Private registration inputs; the framework binds the registry source to useDocumentPreviews. */
 export interface TextPreviewInjected extends TextInjected {
   readonly hooks: { readonly documentPreviews: ObservableSnapshot<readonly DocumentPreviewDefinition[]> }
@@ -180,20 +197,15 @@ export function TextPreview({
   // A known binary suffix with no matching renderer never reads: no plain-text
   // fallback, no viewer control, only the path and the unsupported line.
   if (selected === undefined && unviewable) {
-    const parts = pathPartsOf(displayPath)
+    const { name: unsupportedName } = pathPartsOf(displayPath)
     return (
       <div className={css.preview} data-textpreview-state="unsupported" data-textpreview-url={tab.contentId}>
         <div className={css.header}>
-          <div ref={pathRef} className={css.path} title={displayPath} data-textpreview-path>
-            <span ref={pathTextRef} className={css.pathText}>
-              {parts.directory !== '' && <span className={css.pathDirectory}>{parts.directory}</span>}
-              <span className={css.pathName}>{parts.name}</span>
-            </span>
-          </div>
+          <HeaderPath pathRef={pathRef} pathTextRef={pathTextRef} path={displayPath} />
         </div>
         <div className={css.body} data-textpreview-body>
           <div className={css.empty} data-textpreview-unsupported>
-            <FileTypeIcon kind={classifyFileType(parts.name)} size={36} className={css.emptyIcon} />
+            <FileTypeIcon kind={classifyFileType(unsupportedName)} size={36} className={css.emptyIcon} />
             <p className={css.emptyLine}>{t('unsupportedFile')}</p>
           </div>
         </div>
@@ -205,12 +217,12 @@ export function TextPreview({
       <div className={css.status} data-textpreview-state="loading">
         {meta.status === 'none'
           ? <p className={css.statusLine}>{t('resourceUnavailable')}</p>
-          : <LoadingIndicator className={css.statusLine} label={t('loading')} iconOnly />}
+          : <LoadingIndicator className={css.statusLine} label={t('loading')} />}
       </div>
     )
   }
   const next = loadedThrough + 1
-  const { directory, name } = pathPartsOf(displayPath)
+  const { name } = pathPartsOf(displayPath)
   const observedVersion = meta.value?.version
   const changed = current?.version !== undefined && observedVersion !== undefined
     && observedVersion !== current.version && observedVersion !== current.observedVersion
@@ -257,12 +269,7 @@ export function TextPreview({
           </p>
         )}
       <div className={css.header}>
-        <div ref={pathRef} className={css.path} title={displayPath} data-textpreview-path>
-          <span ref={pathTextRef} className={css.pathText}>
-            {directory !== '' && <span className={css.pathDirectory}>{directory}</span>}
-            <span className={css.pathName}>{name}</span>
-          </span>
-        </div>
+        <HeaderPath pathRef={pathRef} pathTextRef={pathTextRef} path={displayPath} />
         {candidates.length > 1
           && (
             <Menu
@@ -325,7 +332,7 @@ export function TextPreview({
         }}
       >
         {!hasContent && current?.failure === undefined && (
-          <LoadingIndicator className={clsx(css.statusLine, css.bodyLoading)} label={t('loading')} iconOnly />
+          <LoadingIndicator className={clsx(css.statusLine, css.bodyLoading)} label={t('loading')} />
         )}
         {content !== undefined && renderSlot('sidebar.right.tab.document', {
           resourceAddress: tab.contentId, content, wrap: state.wrap, scrollportRef: bindScrollport,
@@ -372,7 +379,7 @@ export function TextPreview({
             data-textpreview-more
             onClick={loadNext}
           >
-            {current.loading ? <LoadingIndicator label={t('loading')} iconOnly /> : t('loadMore')}
+            {current.loading ? <LoadingIndicator label={t('loading')} /> : t('loadMore')}
           </button>
         )}
       </div>

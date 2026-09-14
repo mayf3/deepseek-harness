@@ -1,5 +1,6 @@
 /** File-extension preview registrations; component dispatch belongs to the keyed document slot. */
 import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
+import { documentFileName, matchedSuffixLength, normalizeSuffix } from './suffix.ts'
 
 /** How the document owner delivers file contents to a renderer. */
 export type DocumentLoadMode = 'text-pages' | 'bytes-complete'
@@ -13,6 +14,7 @@ export interface DocumentPreviewDefinition {
   /**
    * Suffixes among `extensions` whose bytes are not readable text; a file
    * matching one loses the plain-text fallback among its viewer choices.
+   * Every entry must appear in `extensions`; `register` rejects strays.
    */
   readonly binaryExtensions?: readonly string[]
   /** External implementations win over product implementations; defaults to extension. */
@@ -35,15 +37,11 @@ export function matchingDocumentPreviews(
   definitions: readonly DocumentPreviewDefinition[],
   path: string,
 ): readonly DocumentPreviewDefinition[] {
-  const normalized = path.replaceAll('\\', '/').toLowerCase()
-  const name = normalized.slice(normalized.lastIndexOf('/') + 1)
+  const name = documentFileName(path)
   return definitions.map((definition, order) => ({
     definition, order,
     rank: definition.priority === 'builtin' ? 0 : 1,
-    length: Math.max(0, ...definition.extensions
-      .map(extension => extension.toLowerCase().replace(/^\./u, ''))
-      .filter(extension => name.endsWith(`.${extension}`))
-      .map(extension => extension.length)),
+    length: matchedSuffixLength(name, definition.extensions),
   }))
     .filter(candidate => candidate.length > 0)
     .sort((left, right) => right.rank - left.rank || right.length - left.length || left.order - right.order)
@@ -60,10 +58,8 @@ export function binaryDocumentPath(
   definitions: readonly DocumentPreviewDefinition[],
   path: string,
 ): boolean {
-  const normalized = path.replaceAll('\\', '/').toLowerCase()
-  const name = normalized.slice(normalized.lastIndexOf('/') + 1)
-  return definitions.some(definition => (definition.binaryExtensions ?? [])
-    .some(extension => name.endsWith(`.${extension.toLowerCase().replace(/^\./u, '')}`)))
+  const name = documentFileName(path)
+  return definitions.some(definition => matchedSuffixLength(name, definition.binaryExtensions ?? []) > 0)
 }
 
 /** Observable registry of all live implementations, including lower-priority alternatives. */
@@ -90,12 +86,20 @@ export class DocumentPreviewRegistry {
 
   /**
    * Register metadata separately from the matching keyed slot component.
-   * @param definition - unique implementation and recognized suffixes.
-   * @returns an idempotent disposer; duplicate live implementation names throw.
+   * @param definition - unique implementation and recognized suffixes; every
+   * `binaryExtensions` entry must appear in `extensions`.
+   * @returns an idempotent disposer; duplicate live implementation names and
+   * binary suffixes outside `extensions` throw.
    */
   register(definition: DocumentPreviewDefinition): () => void {
     if (this.registered.has(definition.id)) {
       throw new Error(`documentPreviews: duplicate implementation "${definition.id}"`)
+    }
+    const declared = new Set(definition.extensions.map(normalizeSuffix))
+    for (const extension of definition.binaryExtensions ?? []) {
+      if (!declared.has(normalizeSuffix(extension))) {
+        throw new Error(`documentPreviews: "${definition.id}" declares binary suffix "${extension}" outside its extensions`)
+      }
     }
     this.registered.set(definition.id, definition)
     this.publish()
