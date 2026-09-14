@@ -301,21 +301,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the handle after setup, rollback-covered publication, and loop start complete.',
       },
       {
-        signature: 'register(agent: Agent): () => void',
-        description: 'Register a live agent. Throws if an agent with the same id is already registered. Emits `agent/created` on registration and `agent/disposed` when the calling fiber is disposed — both with the agent\'s scope carrier (`scopeTarget(agent, agent)`): the subject is the agent in hand, so the emits are scope-filtered regardless of which context invoked `register` (calling through `agent.ctx` scopes EFFECTS; dispatch scoping always requires passing the carrier). The entry is a runtime root; factory-backed creation uses `options.parentAgent` for child ownership. Returns the disposer.',
+        signature: 'register(agent: Agent): ReturnType<Context[\'effect\']>',
+        description: 'Register a live agent with source `startup`. Rejects if the id is already registered or a serial `agent/created` listener fails. Emits `agent/disposed` when the calling fiber is disposed — both with the agent\'s scope carrier (`scopeTarget(agent, agent)`): the subject is the agent in hand, so the emits are scope-filtered regardless of which context invoked `register` (calling through `agent.ctx` scopes EFFECTS; dispatch scoping always requires passing the carrier). The entry is a runtime root; factory-backed creation uses `options.parentAgent` for child ownership. Await the registration before using the agent.',
         parameters: [{ name: 'agent', description: 'the already-constructed agent to record in the store.' }],
-        returns: 'the EXACT Cordis effect disposer (single-shot; a repeat call returns undefined without awaiting an in-flight teardown). Exact identity is load-bearing: a composite (generator) effect that owns a teardown ORDER — the agent factory\'s lifecycle chain — must yield THIS function so Cordis nests the unregistration at that yield position; yielding a wrapper would leave it disposing as a concurrent sibling on owner unload, unregistering the agent (and emitting `agent/disposed`) while its final turn is still draining.',
+        returns: 'the awaitable Cordis effect disposer (single-shot; a repeat call returns undefined without awaiting an in-flight teardown). Exact identity is load-bearing: a composite (generator) effect that owns a teardown ORDER — the agent factory\'s lifecycle chain — must yield THIS function so Cordis nests the unregistration at that yield position; yielding a wrapper would leave it disposing as a concurrent sibling on owner unload, unregistering the agent (and emitting `agent/disposed`) while its final turn is still draining.',
       },
       {
         signature: 'enter(agent: Agent, owner: Agent | undefined): () => void',
         description: 'Insert an already-constructed agent without announcing it. This is the advanced ordered-lifecycle primitive used by the async agent factory: it first completes setup while the agent is unpublished, then assigns the returned detach closure into its pre-installed composite teardown before calling announce. Ordinary callers use register.',
         parameters: [{ name: 'agent', description: 'the prepared, unpublished agent.' }, { name: 'owner', description: 'explicitly supplied live runtime owner, or undefined for a top-level runtime root. This is runtime ownership, not the resumed session\'s durable parent lineage.' }],
-        returns: 'an idempotent closure that removes this exact entry and emits `agent/disposed` with listener failures contained. When called from a synchronous `agent/created` listener, removal and disposal wait until that creation dispatch unwinds.',
+        returns: 'an idempotent closure that removes this exact entry and emits `agent/disposed` with listener failures contained. When called from a `agent/created` listener, removal and disposal wait until the serial creation dispatch settles.',
       },
       {
-        signature: 'announce(agent: Agent): void',
+        signature: 'async announce(agent: Agent, source: SessionStartSource, signal?: AbortSignal): Promise<void>',
         description: 'Announce an agent previously inserted with enter.',
-        parameters: [{ name: 'agent', description: 'the live inserted agent to announce.' }],
+        parameters: [{ name: 'agent', description: 'the live inserted agent to announce.' }, { name: 'source', description: 'fresh creation, resume, clear, or compaction source.' }, { name: 'signal', description: 'optional factory initialization cancellation signal passed to listeners.' }],
+        returns: 'completion of the serial creation listeners; a listener failure rejects.',
         throws: ['if `agent` is not the exact live registry entry for its id, or its creation announcement already began (including a reentrant call from a creation listener).'],
       },
       {
@@ -590,6 +591,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'request', description: 'the key, the method, the surface, and the cancel signal.' }],
         returns: '`authorized` once the flow\'s record is committed during this attempt and observed, or `cancelled` when the human declined or the caller withdrew.',
         throws: ['{AuthorizationError} code `NO_FLOW` when nothing claims the key, `UNKNOWN_METHOD` when the named method is not one the flow offers, `ALREADY_IN_FLIGHT` when an attempt is already running for the key, or `NOT_COMMITTED` when the flow resolved without committing a record during the attempt.'],
+      },
+    ],
+  },
+  {
+    key: 'browserUse',
+    summary: 'Owns one optional provider registration in the shared browser-use service.',
+    description: 'Owns one optional provider registration in the shared browser-use service.',
+    methods: [
+      {
+        signature: 'register(name: BrowserUseProviderName): () => Promise<void>',
+        description: 'Reserve the sole provider slot until the contribution is disposed. A second registration fails even when it repeats the current name. Providers must stop their tools and await owned work before releasing this registration.',
+        parameters: [{ name: 'name', description: 'provider-owned name used in registration diagnostics.' }],
+        returns: 'the effect disposer for this exact registration.',
       },
     ],
   },
@@ -2440,6 +2454,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a canonical executable path.',
       },
       {
+        signature: 'abstract terminalEnvironment(signal?: AbortSignal): Promise<SubprocessTerminalEnvironment>',
+        description: 'Inspect shell-selection facts in the provider\'s execution environment.',
+        parameters: [{ name: 'signal', description: 'cancellation of remote environment inspection.' }],
+        returns: 'platform and preferred shell; executable lookup and allocation remain separate operations.',
+      },
+      {
         signature: 'abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle',
         description: 'Start one managed child process from a fully-specified spec; this seam applies no defaults.',
         parameters: [{ name: 'spec', description: 'argv, directory, stdio dispositions, grace, cancellation, and environment.' }],
@@ -2506,6 +2526,66 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Assemble global and scoped providers, detach tool parameters, apply canonical ordering, then run the assembly waterfall. Scoped sections and variables shadow globals. The returned waterfall value is authoritative except that an effective complete section is restored afterwards as the sole prompt section.',
         parameters: [{ name: 'context', description: 'the optional scope and plugin-defined assembly fields.' }],
         returns: 'the post-waterfall assembly with any complete prompt enforced.',
+      },
+    ],
+  },
+  {
+    key: 'terminalController',
+    summary: 'Typed Remote control of transient Session-owned terminal processes.',
+    description: 'Typed Remote control of transient Session-owned terminal processes.',
+    methods: [
+      {
+        signature: '@Remote environment(agent: Agent, signal: AbortSignal): TerminalEnvironment',
+        description: 'Read the Session working directory and terminal limits without resolving a shell.',
+        parameters: [{ name: 'agent', description: 'Session owner supplied by the Gateway.' }, { name: 'signal', description: 'request cancellation.' }],
+        returns: 'the Session workspace directory and terminal limits.',
+      },
+      {
+        signature: '@Remote shells(agent: Agent, signal: AbortSignal): Promise<TerminalShell[]>',
+        description: 'Discover installed shells in the Session\'s execution environment.',
+        parameters: [{ name: 'agent', description: 'Session owner supplied by the Gateway.' }, { name: 'signal', description: 'request cancellation.' }],
+        returns: 'verified profiles, with the configured or system default first.',
+      },
+      {
+        signature: '@Remote list(sessionId: SessionId): WebTerminalInfo[]',
+        description: 'List retained terminals without resolving or activating an Agent.',
+        parameters: [{ name: 'sessionId', description: 'displayed Session identity, including offline history.' }],
+        returns: 'terminals retained for this Host lifetime.',
+      },
+      {
+        signature: '@Remote async create(agent: Agent, request: TerminalCreateRequest, signal: AbortSignal): Promise<WebTerminalInfo>',
+        description: 'Allocate an interactive shell once for a caller-generated identity.',
+        parameters: [{ name: 'agent', description: 'Session owner supplied by the Gateway.' }, { name: 'request', description: 'initial dimensions and idempotency identity.' }, { name: 'signal', description: 'allocation cancellation; committed terminals survive disconnection.' }],
+        returns: 'the existing or newly committed terminal.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) follow(agent: Agent, id: WebTerminalId, attachmentId: TerminalAttachmentId, signal: AbortSignal): AsyncIterable<TerminalFrame>',
+        description: 'Attach to a terminal without binding its process lifetime to the transport.',
+        parameters: [{ name: 'agent', description: 'Session owner supplied by the Gateway.' }, { name: 'id', description: 'terminal identity.' }, { name: 'attachmentId', description: 'new exclusive input attachment.' }, { name: 'signal', description: 'physical stream cancellation.' }],
+        returns: 'screen recovery followed by output and metadata changes.',
+      },
+      {
+        signature: '@Remote async write(agent: Agent, id: WebTerminalId, attachmentId: TerminalAttachmentId, data: string): Promise<void>',
+        description: 'Deliver raw input, including Tab completion and control characters.',
+        parameters: [{ name: 'agent', description: 'Session owner supplied by the Gateway.' }, { name: 'id', description: 'terminal identity.' }, { name: 'attachmentId', description: 'current writable attachment.' }, { name: 'data', description: 'input bytes represented as UTF-8 text.' }],
+        returns: 'after provider input acceptance.',
+      },
+      {
+        signature: '@Remote async resize(agent: Agent, id: WebTerminalId, attachmentId: TerminalAttachmentId, cols: number, rows: number): Promise<void>',
+        description: 'Update the dimensions of the PTY and recovery screen.',
+        parameters: [{ name: 'agent', description: 'Session owner supplied by the Gateway.' }, { name: 'id', description: 'terminal identity.' }, { name: 'attachmentId', description: 'current writable attachment.' }, { name: 'cols', description: 'column count.' }, { name: 'rows', description: 'row count.' }],
+        returns: 'after the resize completes.',
+      },
+      {
+        signature: '@Remote rename(agent: Agent, id: WebTerminalId, title: string): void',
+        description: 'Rename a terminal without changing its shell.',
+        parameters: [{ name: 'agent', description: 'Session owner supplied by the Gateway.' }, { name: 'id', description: 'terminal identity.' }, { name: 'title', description: 'nonempty display title, at most 120 characters.' }],
+      },
+      {
+        signature: '@Remote async close(agent: Agent, id: WebTerminalId): Promise<void>',
+        description: 'Close an identity to future creation and kill its process range; repeated closes succeed.',
+        parameters: [{ name: 'agent', description: 'Session owner supplied by the Gateway.' }, { name: 'id', description: 'terminal identity.' }],
+        returns: 'after provider cleanup succeeds. A failure retains the terminal for retry.',
       },
     ],
   },
@@ -3108,11 +3188,11 @@ export const EVENT_API: readonly EventApiEntry[] = [
   },
   {
     name: 'agent/created',
-    mode: 'emit',
-    signature: '\'agent/created\'(this: Scoped<Agent>, payload: { agent: Agent }): void',
-    summary: 'A fully configured agent and live session were published.',
-    description: 'A fully configured agent and live session were published. Setup is composition-only; `agent/session-start` is the first startup-driving extension point. Synchronous listener failure vetoes publication, while returned-promise rejection is reported. Detach requested during dispatch waits until every creation listener has observed the stable entry.',
-    parameters: [{ name: 'payload', description: '.agent - the newly registered agent with its live session and completed setup. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    mode: 'serial',
+    signature: '\'agent/created\'(this: Scoped<Agent>, payload: { agent: Agent; source: SessionStartSource; signal?: AbortSignal }): undefined | Promise<undefined>',
+    summary: 'An entered agent is ready for per-agent initialization after factory setup.',
+    description: 'An entered agent is ready for per-agent initialization after factory setup. Listeners run in order and are awaited before creation resolves. AgentLoop holds queued input until all listeners finish. A throw or rejection fails creation and skips later listeners. Disposal retains the scope and session until dispatch settles; listeners must not await agent.whenIdle() or their own owner\'s disposal.',
+    parameters: [{ name: 'payload', description: '.signal - factory initialization cancellation signal, when provided. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/disposed',
@@ -3177,14 +3257,6 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Handle one failed model-request attempt before the loop retries or closes its step.',
     description: 'Handle one failed model-request attempt before the loop retries or closes its step. A listener returns `{ kind: \'retry\' }` without calling `next()` when it owns recovery, or calls `next()` to delegate. The default `undefined` leaves the failure terminal.',
     parameters: [{ name: 'payload', description: '.signal - the turn abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
-  },
-  {
-    name: 'agent/session-start',
-    mode: 'emit',
-    signature: '\'agent/session-start\'(this: Scoped<Agent>, payload: { agent: Agent; source: SessionStartSource }): void',
-    summary: 'The session lifecycle began, once before the first turn.',
-    description: 'The session lifecycle began, once before the first turn. Use `agent.inject()` to seed model-facing context. This is a notification, not a veto; disposal requested by a lifecycle owner is rechecked before the driver starts.',
-    parameters: [{ name: 'payload', description: '.source - why the session started (fresh startup, resume, …). Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/status',
@@ -3889,6 +3961,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BrandedNumber',
     declaration: 'export type BrandedNumber<B extends string> = number & {\n    readonly [BRAND]: B;\n};',
+  },
+  {
+    name: 'BrowserUseProviderName',
+    declaration: 'export type BrowserUseProviderName = Branded<\'BrowserUseProviderName\'>;',
   },
   {
     name: 'ClientArtifactBaseline',
@@ -5943,12 +6019,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SubprocessStdio {\n    stdin: SubprocessStdinMode;\n    stdout: SubprocessOutputMode;\n    stderr: SubprocessOutputMode;\n    control?: \'pipe\';\n}',
   },
   {
+    name: 'SubprocessTerminalEnvironment',
+    declaration: 'export interface SubprocessTerminalEnvironment {\n    platform: \'posix\' | \'windows\';\n    defaultShell?: string;\n}',
+  },
+  {
     name: 'SubprocessTerminalForeground',
     declaration: 'export interface SubprocessTerminalForeground {\n    processGroupId: number;\n    inputWaiting: boolean;\n}',
   },
   {
     name: 'SubprocessTerminalHandle',
-    declaration: 'export interface SubprocessTerminalHandle {\n    readonly pid: number;\n    readonly output: Readable;\n    readonly done: Promise<SubprocessOutcome>;\n    write(data: string): Promise<void>;\n    inspectForeground(): Promise<SubprocessTerminalForeground | undefined>;\n    signalForeground(signal: SubprocessTerminalSignal): Promise<number>;\n    terminate(): Promise<void>;\n}',
+    declaration: 'export interface SubprocessTerminalHandle {\n    readonly pid: number;\n    readonly output: Readable;\n    readonly done: Promise<SubprocessOutcome>;\n    write(data: string): Promise<void>;\n    resize(cols: number, rows: number): Promise<void>;\n    inspectForeground(): Promise<SubprocessTerminalForeground | undefined>;\n    signalForeground(signal: SubprocessTerminalSignal): Promise<number>;\n    terminate(): Promise<void>;\n}',
   },
   {
     name: 'SubprocessTerminalSignal',
@@ -5956,7 +6036,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessTerminalSpawnSpec',
-    declaration: 'export interface SubprocessTerminalSpawnSpec {\n    argv: readonly string[];\n    cwd: string;\n    env?: Record<string, string> | undefined;\n    rows: number;\n    cols: number;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n}',
+    declaration: 'export interface SubprocessTerminalSpawnSpec {\n    argv: readonly string[];\n    cwd: string;\n    env?: Record<string, string> | undefined;\n    rows: number;\n    cols: number;\n    terminalType: string;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n}',
   },
   {
     name: 'SurfaceEvent',
@@ -6039,6 +6119,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface TeamWaitResult {\n    readonly timedOut: boolean;\n}',
   },
   {
+    name: 'TerminalAttachmentId',
+    declaration: 'export type TerminalAttachmentId = Branded<\'TerminalAttachmentId\'>;',
+  },
+  {
     name: 'TerminalBackend',
     declaration: 'export interface TerminalBackend {\n    readonly type: string;\n    spawn(spec: TerminalBackendSpawnSpec): Promise<TerminalBackendSession>;\n}',
   },
@@ -6053,6 +6137,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TerminalCallView',
     declaration: 'export interface TerminalCallView {\n    card: \'terminal\';\n    title: string;\n    description?: string;\n    cwd?: string;\n}',
+  },
+  {
+    name: 'TerminalCreateRequest',
+    declaration: 'export interface TerminalCreateRequest {\n    readonly shellPath?: string;\n    readonly id: WebTerminalId;\n    readonly cols: number;\n    readonly rows: number;\n}',
+  },
+  {
+    name: 'TerminalEnvironment',
+    declaration: 'export interface TerminalEnvironment {\n    readonly cwd: string;\n    readonly maxInputBytes: number;\n    readonly maxCols: number;\n    readonly maxRows: number;\n    readonly scrollback: number;\n}',
+  },
+  {
+    name: 'TerminalFrame',
+    declaration: 'export type TerminalFrame = {\n    readonly type: \'snapshot\';\n    readonly sequence: number;\n    readonly screen: string;\n    readonly info: WebTerminalInfo;\n} | {\n    readonly type: \'output\';\n    readonly sequence: number;\n    readonly data: string;\n} | {\n    readonly type: \'state\';\n    readonly info: WebTerminalInfo;\n};',
   },
   {
     name: 'TerminalReadRequest',
@@ -6097,6 +6193,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TerminalSessionStatus',
     declaration: 'export type TerminalSessionStatus = {\n    kind: \'running\';\n} | {\n    kind: \'exited\';\n    exitCode: number | null;\n    signal: NodeJS.Signals | null;\n};',
+  },
+  {
+    name: 'TerminalShell',
+    declaration: 'export interface TerminalShell {\n    readonly path: string;\n    readonly args: readonly string[];\n    readonly name: string;\n}',
   },
   {
     name: 'TerminalSignal',
@@ -6465,6 +6565,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WebSource',
     declaration: 'export interface WebSource {\n    url: string;\n    title?: string;\n    snippet?: string;\n    publishedAt?: string;\n}',
+  },
+  {
+    name: 'WebTerminalId',
+    declaration: 'export type WebTerminalId = Branded<\'WebTerminalId\'>;',
+  },
+  {
+    name: 'WebTerminalInfo',
+    declaration: 'export interface WebTerminalInfo {\n    readonly id: WebTerminalId;\n    readonly title: string;\n    readonly shell: TerminalShell;\n    readonly cwd: string;\n    readonly cols: number;\n    readonly rows: number;\n    readonly state: \'running\' | \'exited\' | \'failed\';\n    readonly exitCode: number | null;\n    readonly error?: string;\n    readonly controllerId?: TerminalAttachmentId;\n}',
   },
   {
     name: 'WebUpgradeRoute',

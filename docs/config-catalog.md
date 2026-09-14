@@ -111,7 +111,7 @@ export interface Config {
 
 Depends on: [`AgentOptions`](subsystems/core.md) · [`SessionId`](subsystems/core.md)
 
-Source: [`packages/core/agent-loop/src/index.ts:318`](../packages/core/agent-loop/src/index.ts)
+Source: [`packages/core/agent-loop/src/index.ts:317`](../packages/core/agent-loop/src/index.ts)
 
 <a id="deepseek-aidsh-agent-presets"></a>
 
@@ -228,6 +228,45 @@ export interface Config {
 ```
 
 Source: [`packages/api/settings-controller/src/index.ts:36`](../packages/api/settings-controller/src/index.ts)
+
+<a id="deepseek-aidsh-api-terminal-controller"></a>
+
+## `@deepseek-ai/dsh-api-terminal-controller`
+
+Requires: `subprocess` · `sandboxPolicy` · `sessionProjections` · `typert`
+
+```ts config-catalog
+/** Deployment limits and an optional shell profile. */
+export interface Config {
+  /** Explicit shell profile; omission uses the execution environment's default shell. */
+  readonly shell?: {
+    /** Executable path or PATH name, verified by the subprocess provider. */
+    path: string
+    /** User-visible profile name. */
+    name: string
+    /** Arguments passed to the interactive shell. */
+    args: string[]
+  } | undefined
+  /** Executable names or paths checked for the new-terminal shell selector. */
+  readonly shellCandidates: string[]
+  /** Maximum retained terminals and pending allocations per Session. */
+  readonly maxTerminals: number
+  /** Maximum terminal width in columns. */
+  readonly maxCols: number
+  /** Maximum terminal height in rows. */
+  readonly maxRows: number
+  /** Screen history rows retained for reconnecting clients. */
+  readonly scrollback: number
+  /** Maximum queued UTF-8 frame bytes per output follower before disconnection. */
+  readonly maxBufferedBytes: number
+  /** Maximum UTF-8 bytes in one input request. */
+  readonly maxInputBytes: number
+  /** Provider process-termination grace period in milliseconds. */
+  readonly disposeGraceMs: number
+}
+```
+
+Source: [`packages/api/terminal-controller/src/index.ts:28`](../packages/api/terminal-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-workspace-files"></a>
 
@@ -526,6 +565,78 @@ export interface Config {
 ```
 
 Source: [`packages/experimental/agent-team/src/types.ts:130`](../packages/experimental/agent-team/src/types.ts)
+
+<a id="deepseek-aidsh-experimental-browser-use-chrome-devtools-mcp"></a>
+
+## `@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp`
+
+Requires: `browserUse` · `agents` · `tools` · `systemPrompt`
+
+```ts config-catalog
+/** Fixed Chromium launch or existing-browser attachment settings. */
+export type Config = BrowserMcpConfig
+```
+
+Depends on: `BrowserMcpConfig` (`@deepseek-ai/dsh-experimental-browser-use-runtime/mcp`)
+
+Source: [`packages/experimental/browser-use-chrome-devtools-mcp/src/index.ts:14`](../packages/experimental/browser-use-chrome-devtools-mcp/src/index.ts)
+
+<a id="deepseek-aidsh-experimental-browser-use-playwright-mcp"></a>
+
+## `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp`
+
+Requires: `browserUse` · `agents` · `tools` · `systemPrompt`
+
+```ts config-catalog
+/** Fixed Chromium launch or existing-browser attachment settings. */
+export type Config = BrowserMcpConfig
+```
+
+Depends on: `BrowserMcpConfig` (`@deepseek-ai/dsh-experimental-browser-use-runtime/mcp`)
+
+Source: [`packages/experimental/browser-use-playwright-mcp/src/index.ts:15`](../packages/experimental/browser-use-playwright-mcp/src/index.ts)
+
+<a id="deepseek-aidsh-experimental-browser-use-stagehand-native"></a>
+
+## `@deepseek-ai/dsh-experimental-browser-use-stagehand-native`
+
+Requires: `browserUse` · `agents` · `tools` · `systemPrompt`
+
+```ts config-catalog
+/** Profile-owned browser connection and independent Stagehand model credentials. */
+export interface Config {
+  /** Native Stagehand model and credentials; independent of the Session model. */
+  model: StagehandModelConfig
+  /** Launch a fresh browser or attach to the configured existing endpoint. */
+  mode: 'launch' | 'attach'
+  /** CDP HTTP or WebSocket endpoint, required only for attach mode. */
+  cdpEndpoint?: string
+  /** Optional Stagehand extension id for an existing browser. */
+  extensionId?: string
+  /** Installed Chrome/Chromium executable used in launch mode. */
+  executablePath?: string
+  /** Hide an owned browser's window. */
+  headless?: boolean
+  /** Deadline for Chromium startup and Stagehand navigation/action operations. */
+  operationTimeoutMs?: number
+  /** Grace for native SDK cleanup before its connection Worker is terminated. */
+  shutdownGraceMs?: number
+}
+
+/** Profile-owned model settings accepted by the pinned Stagehand SDK. */
+export interface StagehandModelConfig {
+  /** Provider-prefixed model name from Stagehand's supported model catalog. */
+  modelName: ModelConfig['modelName']
+  /** Explicit API key sent to Stagehand's browser extension. */
+  apiKey: string
+  /** Additional headers sent with the extension's model requests. */
+  headers?: Record<string, string>
+}
+```
+
+Depends on: `ModelConfig` (`@browserbasehq/stagehand`)
+
+Source: [`packages/experimental/browser-use-stagehand-native/src/index.ts:28`](../packages/experimental/browser-use-stagehand-native/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-computer-use-cua-driver-mcp"></a>
 
@@ -3481,6 +3592,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-api-remotes` — requires `typertGateway` ([`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts))
 - `@deepseek-ai/dsh-api-workspace-controller` — requires `typert` · `workspaceRegistry` ([`packages/api/workspace-controller/src/index.ts`](../packages/api/workspace-controller/src/index.ts))
 - `@deepseek-ai/dsh-authorization` — requires `credentials` ([`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts))
+- `@deepseek-ai/dsh-browser-use` ([`packages/browser-use/browser-use/src/index.ts`](../packages/browser-use/browser-use/src/index.ts))
 - `@deepseek-ai/dsh-client-file-upload` — requires `agents` · `attachments` · `commands` · `connection` ([`packages/client/file-upload/src/index.ts`](../packages/client/file-upload/src/index.ts))
 - `@deepseek-ai/dsh-client-locale` ([`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts))
 - `@deepseek-ai/dsh-client-modules` — requires `loader` ([`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts))
@@ -3519,6 +3631,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-sidebar-documentpreview` ([`packages/client/ui-sidebar-documentpreview/src/index.ts`](../packages/client/ui-sidebar-documentpreview/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-sidebar-files` ([`packages/client/ui-sidebar-files/src/index.ts`](../packages/client/ui-sidebar-files/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-sidebar-right` ([`packages/client/ui-sidebar-right/src/index.ts`](../packages/client/ui-sidebar-right/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-sidebar-terminal` ([`packages/client/ui-sidebar-terminal/src/index.ts`](../packages/client/ui-sidebar-terminal/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-skill` ([`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-subagent` ([`packages/client/ui-subagent/src/index.ts`](../packages/client/ui-subagent/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-theme` ([`packages/client/ui-theme/src/index.ts`](../packages/client/ui-theme/src/index.ts))
@@ -3610,6 +3723,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-deque` ([`packages/util/deque/src/index.ts`](../packages/util/deque/src/index.ts))
 - `@deepseek-ai/dsh-experimental-agent-team-profile` ([`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts))
 - `@deepseek-ai/dsh-experimental-agent-team-web-profile` ([`packages/experimental/agent-team-web-profile/src/index.ts`](../packages/experimental/agent-team-web-profile/src/index.ts))
+- `@deepseek-ai/dsh-experimental-browser-use-runtime` ([`packages/experimental/browser-use-runtime/src/index.ts`](../packages/experimental/browser-use-runtime/src/index.ts))
 - `@deepseek-ai/dsh-experimental-webworker-packer` ([`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts))
 - `@deepseek-ai/dsh-experimental-webworker-runtime` ([`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts))
 - `@deepseek-ai/dsh-home-paths` ([`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts))

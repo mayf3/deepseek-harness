@@ -115,6 +115,7 @@ flowchart TD
     pkg_api_remotes["api-remotes"]
     pkg_api_session_controller["api-session-controller"]
     pkg_api_settings_controller["api-settings-controller"]
+    pkg_api_terminal_controller["api-terminal-controller"]
     pkg_api_workspace_controller["api-workspace-controller"]
     pkg_api_workspace_files["api-workspace-files"]
   end
@@ -125,6 +126,9 @@ flowchart TD
   subgraph group_boot["packages/boot"]
     pkg_app_boot["app-boot"]
     pkg_cmdline["cmdline"]
+  end
+  subgraph group_browser_use["packages/browser-use"]
+    pkg_browser_use["browser-use"]
   end
   subgraph group_bundle["packages/bundle"]
     pkg_acp_app["acp-app"]
@@ -177,6 +181,7 @@ flowchart TD
     pkg_client_ui_sidebar_documentpreview["client-ui-sidebar-documentpreview"]
     pkg_client_ui_sidebar_files["client-ui-sidebar-files"]
     pkg_client_ui_sidebar_right["client-ui-sidebar-right"]
+    pkg_client_ui_sidebar_terminal["client-ui-sidebar-terminal"]
     pkg_client_ui_skill["client-ui-skill"]
     pkg_client_ui_slots["client-ui-slots"]
     pkg_client_ui_subagent["client-ui-subagent"]
@@ -216,6 +221,10 @@ flowchart TD
     pkg_experimental_agent_team_profile["experimental-agent-team-profile"]
     pkg_experimental_agent_team_web_profile["experimental-agent-team-web-profile"]
     pkg_experimental_auto_review["experimental-auto-review"]
+    pkg_experimental_browser_use_chrome_devtools_mcp["experimental-browser-use-chrome-devtools-mcp"]
+    pkg_experimental_browser_use_playwright_mcp["experimental-browser-use-playwright-mcp"]
+    pkg_experimental_browser_use_runtime["experimental-browser-use-runtime"]
+    pkg_experimental_browser_use_stagehand_native["experimental-browser-use-stagehand-native"]
     pkg_experimental_client_ui_agent_team["experimental-client-ui-agent-team"]
     pkg_experimental_computer_use_cua_driver_mcp["experimental-computer-use-cua-driver-mcp"]
     pkg_experimental_computer_use_cua_driver_native["experimental-computer-use-cua-driver-native"]
@@ -388,6 +397,7 @@ flowchart TD
   pkg_scope --> pkg_invariants
   pkg_web --> pkg_llm
   pkg_attachment --> pkg_brand
+  pkg_browser_use --> pkg_brand
   pkg_computer_use --> pkg_brand
   pkg_credentials --> pkg_invariants
   pkg_experimental_inspector --> pkg_client_modules
@@ -426,6 +436,7 @@ flowchart TD
   pkg_web_search_perplexity --> pkg_launch_environment
   pkg_web_search_perplexity --> pkg_web
   pkg_api_remotes --> pkg_scope
+  pkg_api_terminal_controller --> pkg_subprocess
   pkg_attachment_local --> pkg_attachment
   pkg_attachment_local --> pkg_home_paths
   pkg_client_file_upload --> pkg_scope
@@ -803,6 +814,22 @@ flowchart TD
   pkg_file_reference_local --> pkg_file_reference
   pkg_file_reference_local --> pkg_system_prompt
   pkg_file_reference_local --> pkg_tools
+  pkg_experimental_browser_use_chrome_devtools_mcp --> pkg_agent
+  pkg_experimental_browser_use_chrome_devtools_mcp --> pkg_browser_use
+  pkg_experimental_browser_use_chrome_devtools_mcp --> pkg_system_prompt
+  pkg_experimental_browser_use_chrome_devtools_mcp --> pkg_tools
+  pkg_experimental_browser_use_playwright_mcp --> pkg_agent
+  pkg_experimental_browser_use_playwright_mcp --> pkg_browser_use
+  pkg_experimental_browser_use_playwright_mcp --> pkg_system_prompt
+  pkg_experimental_browser_use_playwright_mcp --> pkg_tools
+  pkg_experimental_browser_use_runtime --> pkg_agent
+  pkg_experimental_browser_use_runtime --> pkg_browser_use
+  pkg_experimental_browser_use_runtime --> pkg_system_prompt
+  pkg_experimental_browser_use_runtime --> pkg_tools
+  pkg_experimental_browser_use_stagehand_native --> pkg_agent
+  pkg_experimental_browser_use_stagehand_native --> pkg_browser_use
+  pkg_experimental_browser_use_stagehand_native --> pkg_system_prompt
+  pkg_experimental_browser_use_stagehand_native --> pkg_tools
   pkg_experimental_computer_use_cua_driver_native --> pkg_computer_use
   pkg_experimental_computer_use_cua_driver_native --> pkg_system_prompt
   pkg_experimental_computer_use_cua_driver_native --> pkg_tools
@@ -1311,6 +1338,7 @@ flowchart TD
 | [`client-ui-sidebar-documentpreview`](../packages/client/ui-sidebar-documentpreview) | `client` | — |
 | [`client-ui-sidebar-files`](../packages/client/ui-sidebar-files) | `client` | — |
 | [`client-ui-sidebar-right`](../packages/client/ui-sidebar-right) | `client` | — |
+| [`client-ui-sidebar-terminal`](../packages/client/ui-sidebar-terminal) | `client` | — |
 | [`client-ui-skill`](../packages/client/ui-skill) | `client` | — |
 | [`client-ui-slots`](../packages/client/ui-slots) | `client` | — |
 | [`client-ui-subagent`](../packages/client/ui-subagent) | `client` | — |
@@ -1346,6 +1374,7 @@ flowchart TD
 | [`scope`](../packages/core/scope) | `core` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`web`](../packages/web/web) | `web` | [`llm`](../packages/llm/llm) |
 | [`attachment`](../packages/attachment/attachment) | `attachment` | [`brand`](../packages/util/brand) |
+| [`browser-use`](../packages/browser-use/browser-use) | `browser-use` | [`brand`](../packages/util/brand) |
 | [`computer-use`](../packages/computer-use/computer-use) | `computer-use` | [`brand`](../packages/util/brand) |
 | [`credentials`](../packages/credentials/credentials) | `credentials` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`experimental-inspector`](../packages/experimental/inspector) | `experimental` | [`client-modules`](../packages/client/modules), [`host-webserver`](../packages/host/webserver) |
@@ -1366,6 +1395,7 @@ flowchart TD
 | [`web-search-exa`](../packages/web/web-search-exa) | `web` | [`launch-environment`](../packages/util/launch-environment), [`web`](../packages/web/web) |
 | [`web-search-perplexity`](../packages/web/web-search-perplexity) | `web` | [`launch-environment`](../packages/util/launch-environment), [`web`](../packages/web/web) |
 | [`api-remotes`](../packages/api/remotes) | `api` | [`scope`](../packages/core/scope) |
+| [`api-terminal-controller`](../packages/api/terminal-controller) | `api` | [`subprocess`](../packages/subprocess/subprocess) |
 | [`attachment-local`](../packages/attachment/attachment-local) | `attachment` | [`attachment`](../packages/attachment/attachment), [`home-paths`](../packages/util/home-paths) |
 | [`client-file-upload`](../packages/client/file-upload) | `client` | [`scope`](../packages/core/scope) |
 | [`authorization`](../packages/credentials/authorization) | `credentials` | [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm) |
@@ -1455,6 +1485,10 @@ flowchart TD
 | [`compaction-image-offload`](../packages/compaction/compaction-image-offload) | `compaction` | [`agent`](../packages/core/agent), [`compaction`](../packages/compaction/compaction), [`llm`](../packages/llm/llm), [`session`](../packages/core/session) |
 | [`agent-instructions`](../packages/context/agent-instructions) | `context` | [`agent`](../packages/core/agent), [`fs`](../packages/fs/fs), [`home-paths`](../packages/util/home-paths), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`tools`](../packages/core/tools) |
 | [`file-reference-local`](../packages/context/file-reference-local) | `context` | [`agent`](../packages/core/agent), [`file-reference`](../packages/context/file-reference), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
+| [`experimental-browser-use-chrome-devtools-mcp`](../packages/experimental/browser-use-chrome-devtools-mcp) | `experimental` | [`agent`](../packages/core/agent), [`browser-use`](../packages/browser-use/browser-use), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
+| [`experimental-browser-use-playwright-mcp`](../packages/experimental/browser-use-playwright-mcp) | `experimental` | [`agent`](../packages/core/agent), [`browser-use`](../packages/browser-use/browser-use), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
+| [`experimental-browser-use-runtime`](../packages/experimental/browser-use-runtime) | `experimental` | [`agent`](../packages/core/agent), [`browser-use`](../packages/browser-use/browser-use), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
+| [`experimental-browser-use-stagehand-native`](../packages/experimental/browser-use-stagehand-native) | `experimental` | [`agent`](../packages/core/agent), [`browser-use`](../packages/browser-use/browser-use), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
 | [`experimental-computer-use-cua-driver-native`](../packages/experimental/computer-use-cua-driver-native) | `experimental` | [`computer-use`](../packages/computer-use/computer-use), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
 | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | `extensions` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol) |
 | [`message-feedback`](../packages/feedback/message-feedback) | `feedback` | [`brand`](../packages/util/brand), [`command-feedback`](../packages/feedback/command-feedback), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`typert-protocol`](../packages/typert/protocol) |

@@ -48,7 +48,9 @@ export const spawnSchema = z.object({
     stderr: z.union([z.literal('pipe'), z.literal('inherit'), collection]),
     control: z.literal('pipe').optional(),
   }).strict().optional(),
-  terminal: z.object({ rows: z.number().int().positive(), cols: z.number().int().positive() }).strict().optional(),
+  terminal: z.object({
+    terminalType: z.string().min(1), rows: z.number().int().positive(), cols: z.number().int().positive(),
+  }).strict().optional(),
 }).strict().refine(value => (value.stdio === undefined) !== (value.terminal === undefined), 'select ordinary or terminal execution')
 /** Connection handshake binds sockets and workspace to one helper process. */
 export const helloSchema = z.object({ protocol: z.literal(1), hash: z.string().regex(/^[0-9a-f]{64}$/), platform: z.enum(['linux', 'darwin']), nodeVersion: z.string(), node: remotePath, root: remotePath, workspace: remotePath, bootstrapHash: z.string().regex(/^[0-9a-f]{64}$/).optional() }).strict()
