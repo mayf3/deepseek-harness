@@ -58,7 +58,7 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 插入条目的插件名可以是绝对文件系统路径、文件 URL 或包标识符。patch 加载会把 `insert` 条目及其嵌套分组中的绝对路径以及相对于 patch 文件的 `./` 或 `../` 路径转换为文件 URL；对已有条目名称的断言及替换用的 `config` 值保持原样。
 
-组合包 patch 保留声明的 id、父组和顺序。各层按 manifest 顺序占有行 id；组合包重复声明或使用已占用的 id 时整层被排除并报告，冲突的用户插入则逐行排除。`dependencies` 记录安装；`dsh.profile.bundles` 选择启用的层，包括它们的全部插入和覆盖。包元数据不决定启动严格程度。
+组合包 patch 保留声明的 id、父组和顺序。各层按 manifest 顺序占有行 id；组合包重复声明或使用已占用的 id 时整层被排除并报告，冲突的用户插入则逐行排除。`dependencies` 记录安装；`dsh.profile.bundles` 选择启用的层，包括它们的全部插入和覆盖。安装和更新保留已有依赖的启用选择；不在列表中的组合包即未启用。参见[组合包启用选择](../../../.agents/notes/implemented/architecture/2026-09-14-bundle-activation-selection.zh.md)。包元数据不决定启动严格程度。
 
 launcher 在任何配置行挂载前提供 `ctx.profileRuntime`。该运行时要求注入 Loader，支持从根上下文和插件上下文取得的句柄调用。它拥有行来源、已接受的组合、冲突和用户禁用行信息。文件监听与管理操作共用它的串行重组队列。重组等待当前条目和已移除 fiber 完成后，发布已接受的选项并报告逐行问题；更新失败时，fiber 可能仍使用先前的有效配置运行。`installFailLoud` 保持到应用关闭，处理进程级未处理 rejection。 观测方可等待 `whenIdle()` 后，再发布包含组合归属的刷新视图。
 
