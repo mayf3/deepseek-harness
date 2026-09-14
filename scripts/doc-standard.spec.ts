@@ -44,6 +44,7 @@ const KIND_TEMPLATES: Readonly<Record<string, string>> = {
   'package-bundle': '.agents/skills/dsh-doc/templates/package-bundle.md',
   'persistence-change': '.agents/skills/dsh-doc/templates/persistence-change.md',
   'persistence-release': '.agents/skills/dsh-doc/templates/persistence-release.md',
+  'persistence-format': '.agents/skills/dsh-doc/templates/persistence-format.md',
 }
 
 /**
@@ -53,6 +54,7 @@ const KIND_TEMPLATES: Readonly<Record<string, string>> = {
  * library; the check re-derives the entry shape so a stale entry fails loud.
  */
 const PACKAGE_LIBRARIES: Readonly<Record<string, string>> = {
+  'packages/experimental/browser-use-runtime': 'Provider-owned browser resource management and MCP integration helpers; no plugin entry.',
   'packages/boot/app-boot': 'Boot library the app bins import; plain helper exports.',
   'packages/boot/cmdline': 'Command-line library the app bins import; plain module exports.',
   'packages/client/store': 'Browser-side state primitives; plain function/type exports.',
@@ -364,6 +366,16 @@ describe('dsh-doc skill consolidation', () => {
     for (const file of files) {
       const metadata = readFrontmatter(file)
       expect(metadata.kind, file).toBe('persistence-release')
+      expect(typeof metadata.description === 'string' && metadata.description.trim().length > 0, file).toBe(true)
+    }
+  })
+
+  it('maps historical Session format references to their dedicated document kind', () => {
+    const files = globSync('docs/persistence-changes/historical-formats/v*.md', { cwd: root })
+    expect(files.length).toBe(readCurrentSessionFormatVersion(root) * 2)
+    for (const file of files) {
+      const metadata = readFrontmatter(file)
+      expect(metadata.kind, file).toBe('persistence-format')
       expect(typeof metadata.description === 'string' && metadata.description.trim().length > 0, file).toBe(true)
     }
   })

@@ -1416,7 +1416,7 @@ describe('workspace context request injection', () => {
       await fiber.dispose()
       await mountAgentInstructionsPlugin(ctx, { dshHome: home, maxBytes: 65536 })
       const resumed = await stubAgent(root, original.session.snapshotEvents())
-      agentEvents(ctx, resumed).emit('agent/session-start', { source: 'resume' })
+      await agentEvents(ctx, resumed).serial('agent/created', { source: 'resume' })
       const claimed = claimInbox(resumed, 'next-step')
       const decision = await agentEvents(ctx, resumed).waterfall(
         'agent/pre-step',
@@ -1462,7 +1462,7 @@ describe('workspace context request injection', () => {
       await fiber.dispose()
       await mountAgentInstructionsPlugin(ctx, { dshHome: home, maxBytes: 65536 })
       const resumed = await stubAgent(root, original.session.snapshotEvents())
-      agentEvents(ctx, resumed).emit('agent/session-start', { source: 'resume' })
+      await agentEvents(ctx, resumed).serial('agent/created', { source: 'resume' })
       const staleClaim = claimInbox(resumed, 'next-step')
       const staleDecision = await agentEvents(ctx, resumed).waterfall(
         'agent/pre-step',
@@ -1515,7 +1515,7 @@ describe('workspace context request injection', () => {
       if (provideFs) await resumedCtx.plugin(LocalFileSystem, { cwd: '/' })
       await mountAgentInstructionsPlugin(resumedCtx, { dshHome: home, maxBytes })
       const resumed = await stubAgent(root, original.session.snapshotEvents())
-      agentEvents(resumedCtx, resumed).emit('agent/session-start', { source: 'resume' })
+      await agentEvents(resumedCtx, resumed).serial('agent/created', { source: 'resume' })
       const claimed = claimInbox(resumed, 'next-step')
       const decision = await agentEvents(resumedCtx, resumed).waterfall(
         'agent/pre-step',
@@ -1824,7 +1824,7 @@ describe('workspace context request injection', () => {
       const resumed = await stubAgent(root, original.session.snapshotEvents())
 
       // Resume announces its lifecycle start before the first step.
-      agentEvents(ctx, resumed).emit('agent/session-start', { source: 'resume' })
+      await agentEvents(ctx, resumed).serial('agent/created', { source: 'resume' })
       await composeBaselinePrefix(ctx, resumed)
 
       const baselines = baselineEvents(resumed)

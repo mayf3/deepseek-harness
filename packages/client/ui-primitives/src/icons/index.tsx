@@ -938,6 +938,14 @@ export const IconArchiveOutline20 = ({ size = 20, className }: IconProps) => (
   </svg>
 )
 
+/** Line-wrapping toggle glyph. */
+export const IconWrapLinesOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none"
+    stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true">
+    <path d="M1.5 3.5h13M1.5 7.5h10.25a2.5 2.5 0 0 1 0 5H8m2-2-2 2 2 2M1.5 11.5h3" />
+  </svg>
+)
+
 /**
  * Plan row glyph of the composer menu (#3567): a document with three ruled
  * lines and a pencil over its corner. Drawn on a 14 grid whose content spans

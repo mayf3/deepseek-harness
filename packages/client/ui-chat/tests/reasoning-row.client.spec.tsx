@@ -14,6 +14,26 @@ const t = makeTranslate(zh, commonZh)
 const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
 
 describe('ReasoningRow', () => {
+  it('collapses when body text arrives and preserves a later manual expansion', () => {
+    const reasoning = { kind: 'reasoning' as const, text: 'Inspect the session\nCheck persistence' }
+    const view = render(
+      <AssistantMarkdown t={t} blocks={[reasoning]} streaming renderMessageImages={renderMessageImages} />,
+    )
+    expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('true')
+    view.rerender(
+      <AssistantMarkdown t={t} blocks={[reasoning, { kind: 'text', text: 'Answer' }]}
+        streaming renderMessageImages={renderMessageImages} />,
+    )
+    expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(view.getByText('思考'))
+    view.rerender(
+      <AssistantMarkdown t={t} blocks={[reasoning, { kind: 'text', text: 'Complete answer' }]}
+        streaming={false} renderMessageImages={renderMessageImages} />,
+    )
+    expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('true')
+    expect(view.getByText(/Check persistence/)).toBeTruthy()
+  })
+
   it('follows the latest streaming line, then restores the settled first line', () => {
     const view = render(
       <AssistantMarkdown
@@ -24,6 +44,8 @@ describe('ReasoningRow', () => {
       />,
     )
     expect(view.getByText('运行中')).toBeTruthy()
+    expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(view.getByText('思考'))
     expect(view.getByText('Newest reasoning tokens').parentElement?.getAttribute('data-follow-end'))
       .toBe('true')
 
@@ -62,6 +84,7 @@ describe('ReasoningRow', () => {
     )
     const row = view.getByRole('button')
 
+    fireEvent.click(view.getByText('思考'))
     fireEvent.click(view.getByText('Inspect the session'))
     expect(row.getAttribute('aria-expanded')).toBe('true')
     expect(view.getByText(/Check persistence/)).toBeTruthy()
@@ -91,6 +114,7 @@ describe('ReasoningRow', () => {
       />,
     )
 
+    fireEvent.click(view.getByText('思考'))
     expect(view.getByText('Comparing checkout and merge bases')).toBeTruthy()
     expect(view.queryByText('**Comparing checkout and merge bases**')).toBeNull()
 
@@ -98,7 +122,7 @@ describe('ReasoningRow', () => {
     expect(view.container.querySelector('[class*="thinkBody"]')?.textContent).toBe(text)
   })
 
-  it('expanded Think drops the inline summary and renders plain prose, no IN card', () => {
+  it('opens reasoning-only replies as plain prose and allows manual collapse', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
@@ -107,10 +131,13 @@ describe('ReasoningRow', () => {
         renderMessageImages={renderMessageImages}
       />,
     )
-    fireEvent.click(view.getByText('思考'))
+    expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('true')
     expect(view.getAllByText(/Inspect the session/)).toHaveLength(1)
     expect(view.queryByText('IN')).toBeNull()
     expect(view.container.querySelector('[class*="ioCard"]')).toBeNull()
     expect(view.container.querySelector('[class*="thinkBody"]')).not.toBeNull()
+    fireEvent.click(view.getByText('思考'))
+    expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByText(/Check persistence/)).toBeNull()
   })
 })

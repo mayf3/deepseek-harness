@@ -331,6 +331,19 @@ export class RemoteProcesses {
     return terminal.signalForeground(z.enum(['SIGINT', 'SIGTERM', 'SIGKILL', 'SIGTSTP', 'SIGHUP']).parse(value))
   }
 
+  /**
+   * Resize an allocated terminal without replacing its process.
+   * @param id - terminal reservation.
+   * @param cols - positive terminal width.
+   * @param rows - positive terminal height.
+   * @returns after the local provider accepts the dimensions.
+   */
+  async resizeTerminal(id: SshProcessId, cols: number, rows: number): Promise<void> {
+    const terminal = this.record(id).terminal
+    if (terminal === undefined) throw new Error('SSH handle does not own a terminal')
+    await terminal.resize(cols, rows)
+  }
+
   /** Stop every owned process on lease expiry or disconnect. */
   async close(): Promise<void> {
     if (this.closing) return

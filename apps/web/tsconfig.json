@@ -60,6 +60,7 @@
     "tests/workspace-new-session-folding.e2e.ts",
     "tests/workspace-management.e2e.ts",
     "tests/workspace-recency.e2e.ts",
+    "tests/session-unarchive.e2e.ts",
     "tests/replay-round-trip.e2e.ts",
     "tests/hmr-live.e2e.ts",
     "tests/preview-boot.e2e.ts",
@@ -100,6 +101,7 @@
     "tests/feedback-release.e2e.ts",
     "tests/agent-team-panel.e2e.ts",
     "tests/sidebar-right.e2e.ts",
+    "tests/sidebar-terminal.e2e.ts",
     "tests/startup-auto-selection.e2e.ts",
     "tests/produced-files.e2e.ts",
     "tests/produced-file-mentions.e2e.ts",
@@ -134,6 +136,12 @@
     },
     {
       "path": "../../packages/client/modules"
+    },
+    {
+      "path": "../../packages/test-support/client-runtime"
+    },
+    {
+      "path": "../../packages/test-support/remote-mock"
     }
   ]
 }

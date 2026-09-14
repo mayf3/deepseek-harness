@@ -121,9 +121,11 @@
         - 'button "Request #2"'
         - text: ASSISTANT
       - cell "(tool call only)"
-    - 'row "TOOL, run_code {\"code\":\"try { await tools.bash({command: \"echo hidden-input-ptc\"}) } catch (error) { return \"denial caught\" }\",\"description\":\"Catch an Auto-denied inner call\"}"':
+    - row "TOOL, run_code Catch an Auto-denied inner call":
       - cell "TOOL"
-      - 'cell "run_code{\"code\":\"try { await tools.bash({command: \"echo hidden-input-ptc\"}) } catch (error) { return \"denial caught\" }\",\"description\":\"Catch an Auto-denied inner call\"} → denial caught"'
+      - cell "run_codeCatch an Auto-denied inner call → denial caught":
+        - img
+        - text: run_codeCatch an Auto-denied inner call → denial caught
     - 'row "SUBTOOL, bash {\"command\":\"echo hidden-input-ptc\"}" [selected]':
       - cell "SUBTOOL"
       - 'cell "bash{\"command\":\"echo hidden-input-ptc\"} → AUTO_REVIEW_DENIED"'
