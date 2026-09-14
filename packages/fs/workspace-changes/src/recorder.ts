@@ -58,7 +58,10 @@ export class TurnRecorder {
     private readonly env: RecorderEnvironment,
   ) {}
 
-  /** Open a turn: reset per-turn state and queue the baseline snapshot. */
+  /**
+   * Open a turn: reset per-turn state and queue the baseline snapshot.
+   * @param turn - the turn number from `turn/start`.
+   */
   start(turn: number): void {
     this.turn = turn
     this.baseline = null
@@ -77,7 +80,10 @@ export class TurnRecorder {
     })
   }
 
-  /** Remember a settled tool result and any file-tool hunks it carries. */
+  /**
+   * Remember a settled tool result and any file-tool hunks it carries.
+   * @param event - the appended `tool/result` event.
+   */
   observe(event: SessionEvent<'tool/result'>): void {
     if (event.data.turn !== this.turn) return
     this.lastToolResultSeq = event.seq
@@ -101,7 +107,10 @@ export class TurnRecorder {
     return this.enqueue(signal => this.record(signal))
   }
 
-  /** Record after `turn/end` when the in-turn record is missing or stale. */
+  /**
+   * Record after `turn/end` when the in-turn record is missing or stale.
+   * @param turn - the turn number from `turn/end`.
+   */
   end(turn: number): void {
     if (turn !== this.turn || this.recordedAfterSeq >= this.lastToolResultSeq) return
     void this.enqueue(signal => this.record(signal))

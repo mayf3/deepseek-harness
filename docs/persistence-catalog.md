@@ -3991,7 +3991,7 @@ SHA-256: `0a176529351301e438fc4d94ea0c80f0f105e33fd85a256d76178b0a6dda3061`
 
 | Property | Presence | Type |
 |---|---|---|
-| `data` | required | [`packages/fs/workspace-changes/lib/types/types.d.ts#WorkspaceChangesData`](#persistence-type-packagesfsworkspace-changeslibtypestypesdtsworkspacechangesdata) |
+| `data` | required | [`packages/fs/workspace-changes/src/types.ts#WorkspaceChangesData`](#persistence-type-packagesfsworkspace-changessrctypestsworkspacechangesdata) |
 | `ignorable` | optional | `true` |
 | `seq` | required | `number` |
 | `time` | required | `number` |
@@ -4003,7 +4003,7 @@ SHA-256: `0a176529351301e438fc4d94ea0c80f0f105e33fd85a256d76178b0a6dda3061`
 
 SHA-256: `39c5a9c9f4688d412c567d287ae6577a3f38a73c3f8ba4deffc563d9ec93b927`
 
-Array of [`packages/fs/workspace-changes/lib/types/types.d.ts#WorkspaceChangedFile`](#persistence-type-packagesfsworkspace-changeslibtypestypesdtsworkspacechangedfile).
+Array of [`packages/fs/workspace-changes/src/types.ts#WorkspaceChangedFile`](#persistence-type-packagesfsworkspace-changessrctypestsworkspacechangedfile).
 
 <a id="persistence-type-eventworkspacechangesdatasnapshot"></a>
 
@@ -4011,7 +4011,7 @@ Array of [`packages/fs/workspace-changes/lib/types/types.d.ts#WorkspaceChangedFi
 
 SHA-256: `f53ef94c56c9b1b890a1eba459ca22023d91f5f50bc829289181961ee052e4f7`
 
-Sources: [`packages/fs/workspace-changes/lib/types/types.d.ts:28`](../packages/fs/workspace-changes/lib/types/types.d.ts)
+Sources: [`packages/fs/workspace-changes/src/types.ts:30`](../packages/fs/workspace-changes/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -4825,13 +4825,13 @@ Sources: [`packages/fs/tool-present/src/types.ts:5`](../packages/fs/tool-present
 | `description` | optional | `string` |
 | `path` | required | `string` |
 
-<a id="persistence-type-packagesfsworkspace-changeslibtypestypesdtsworkspacechangedfile"></a>
+<a id="persistence-type-packagesfsworkspace-changessrctypestsworkspacechangedfile"></a>
 
-### `packages/fs/workspace-changes/lib/types/types.d.ts#WorkspaceChangedFile`
+### `packages/fs/workspace-changes/src/types.ts#WorkspaceChangedFile`
 
 SHA-256: `14b37f44c06d8820b6601845f2ad7c995522044c58a6e87da04e29718f4835a1`
 
-Sources: [`packages/fs/workspace-changes/lib/types/types.d.ts:3`](../packages/fs/workspace-changes/lib/types/types.d.ts)
+Sources: [`packages/fs/workspace-changes/src/types.ts:4`](../packages/fs/workspace-changes/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -4841,13 +4841,13 @@ Sources: [`packages/fs/workspace-changes/lib/types/types.d.ts:3`](../packages/fs
 | `display` | required | `string` |
 | `path` | required | `string` |
 
-<a id="persistence-type-packagesfsworkspace-changeslibtypestypesdtsworkspacechangesdata"></a>
+<a id="persistence-type-packagesfsworkspace-changessrctypestsworkspacechangesdata"></a>
 
-### `packages/fs/workspace-changes/lib/types/types.d.ts#WorkspaceChangesData`
+### `packages/fs/workspace-changes/src/types.ts#WorkspaceChangesData`
 
 SHA-256: `69ef2dbc5ed9134fd8199bf6da90da4bd78de61e9336ef008d1770101aa40ae2`
 
-Sources: [`packages/fs/workspace-changes/lib/types/types.d.ts:20`](../packages/fs/workspace-changes/lib/types/types.d.ts)
+Sources: [`packages/fs/workspace-changes/src/types.ts:22`](../packages/fs/workspace-changes/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|

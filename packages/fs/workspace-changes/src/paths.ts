@@ -3,12 +3,21 @@ import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 
-/** Slash-separated form of a native relative path. */
+/**
+ * Slash-separated form of a native relative path.
+ * @param path - native path.
+ * @returns the same path with `/` separators.
+ */
 export function toPosix(path: string): string {
   return path.split(sep).join('/')
 }
 
-/** Whether `path` is `root` or lies under it. */
+/**
+ * Whether `path` is `root` or lies under it.
+ * @param root - absolute directory.
+ * @param path - absolute path to test.
+ * @returns true for the root itself and every descendant.
+ */
 export function isInside(root: string, path: string): boolean {
   const rel = relative(root, path)
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
@@ -54,7 +63,14 @@ export function absolutePathOf(cwd: string, path: string): string {
   return resolve(cwd, path)
 }
 
-/** Sort key and label rules; see `WorkspaceChangedFile.display`. */
+/**
+ * Sort key and label of a changed file; see `WorkspaceChangedFile.display`.
+ * @param absolute - canonical absolute file path.
+ * @param cwd - canonical Session working directory.
+ * @param root - repository top-level directory.
+ * @param home - canonical home directory, or empty to skip the `~` form.
+ * @returns the slash-separated display path.
+ */
 export function displayPathOf(absolute: string, cwd: string, root: string, home: string): string {
   const rel = relative(cwd, absolute)
   if (!rel.startsWith('..') && !isAbsolute(rel)) return toPosix(rel)
@@ -63,7 +79,12 @@ export function displayPathOf(absolute: string, cwd: string, root: string, home:
   return toPosix(absolute)
 }
 
-/** The durable `path` field: relative inside the working directory, absolute elsewhere. */
+/**
+ * The durable `path` field: relative inside the working directory, absolute elsewhere.
+ * @param absolute - canonical absolute file path.
+ * @param cwd - canonical Session working directory.
+ * @returns the path the Web client opens the file through.
+ */
 export function durablePathOf(absolute: string, cwd: string): string {
   const rel = relative(cwd, absolute)
   return !rel.startsWith('..') && !isAbsolute(rel) ? toPosix(rel) : absolute
@@ -72,6 +93,9 @@ export function durablePathOf(absolute: string, cwd: string): string {
 /**
  * Code-unit order of display paths, which places `../` and absolute paths
  * before letters and matches git's own listing order for relative paths.
+ * @param a - first file.
+ * @param b - second file.
+ * @returns negative, zero, or positive as `Array.prototype.sort` expects.
  */
 export function compareDisplay(a: { display: string }, b: { display: string }): number {
   return a.display < b.display ? -1 : a.display > b.display ? 1 : 0
