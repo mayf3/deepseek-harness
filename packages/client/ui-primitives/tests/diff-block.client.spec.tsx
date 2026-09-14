@@ -96,6 +96,35 @@ describe('DiffBlock structure', () => {
 })
 
 describe('DiffBlock local changes', () => {
+  it.each([128, 129])('renders and copies %i replacements with bounded comparison', async (count) => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const oldLines = ['shared context', ...Array.from({ length: count }, (_, i) => `old ${i}`)]
+    const newLines = ['shared context', ...Array.from({ length: count }, (_, i) => `new ${i}`)]
+    const diffs = [{ path: 'large.txt', oldText: oldLines.join('\n'), newText: newLines.join('\n') }]
+    const total = count === 128 ? count : count + 1
+    render(<DiffBlock diffs={diffs} maxLines={1000} />)
+    expect(diffTotals(diffs)).toEqual({ added: total, removed: total })
+    expect(screen.getByText(`└ +${total} -${total} · 1 file`)).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '复制' })) })
+    expect(writeText).toHaveBeenCalledWith(count === 128
+      ? ['large.txt', '  shared context', ...oldLines.slice(1).map(line => `- ${line}`), ...newLines.slice(1).map(line => `+ ${line}`)].join('\n')
+      : ['large.txt', ...oldLines.map(line => `- ${line}`), ...newLines.map(line => `+ ${line}`)].join('\n'))
+  })
+
+  it('keeps a sparse edit exact in a ten-thousand-line fragment', () => {
+    const before = Array.from({ length: 10000 }, (_, i) => `line ${i}`)
+    const after = [...before]
+    after[5000] = 'changed'
+    const diffs = [{ path: 'sparse.txt', oldText: before.join('\n'), newText: after.join('\n') }]
+    const { container } = render(<DiffBlock diffs={diffs} />)
+    expect(diffTotals(diffs)).toEqual({ added: 1, removed: 1 })
+    expect(bodyRows(container)).toEqual([
+      'sparse.txt', 'line 4997', 'line 4998', 'line 4999', 'line 5000', 'changed',
+      'line 5001', 'line 5002', 'line 5003',
+    ])
+  })
+
   it('copies shared context once and counts only a changed line', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })

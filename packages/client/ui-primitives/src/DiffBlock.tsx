@@ -64,15 +64,22 @@ const ROW_CLASS: Record<DiffRow['kind'], string | undefined> = {
   gap: css.gap,
 }
 
-/** Derive local patches with three context lines, using the card's terminator rule. */
+/** Bound synchronous edit-graph search; one replacement consumes two edits. */
+const MAX_DIFF_EDIT_LENGTH = 256
+
+/** Derive exact local patches or a whole-fragment replacement when search exceeds the limit. */
 function localHunks(diff: DiffHunk) {
-  const normalize = (text: string): string => contentLines(text).map(line => `${line}\n`).join('')
-  return structuredPatch('', '', normalize(diff.oldText ?? ''), normalize(diff.newText),
-    undefined, undefined, { context: 3 }).hunks
+  const oldLines = contentLines(diff.oldText ?? '')
+  const newLines = contentLines(diff.newText)
+  const normalize = (lines: string[]): string => lines.map(line => `${line}\n`).join('')
+  return structuredPatch('', '', normalize(oldLines), normalize(newLines),
+    undefined, undefined, { context: 3, maxEditLength: MAX_DIFF_EDIT_LENGTH })?.hunks
+    ?? [{ lines: [...oldLines.map(line => `-${line}`), ...newLines.map(line => `+${line}`)] }]
 }
 
 /**
- * Count actual added and removed lines; shared context contributes to neither total.
+ * Count displayed additions and deletions. Exact patches exclude shared context;
+ * comparisons exceeding the edit limit count both complete fragments as replaced.
  * Text follows {@link contentLines}'s terminator rule.
  * @param diffs - the hunks to count.
  * @returns the +/- totals for summaries and the card footer.
