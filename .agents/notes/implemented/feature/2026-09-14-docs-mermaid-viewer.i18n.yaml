@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-14-docs-mermaid-viewer.md
-2026-09-14-docs-mermaid-viewer.md: 3c014000bccd25908f699333efbcb551c1ee1599
-2026-09-14-docs-mermaid-viewer.zh.md: 48ce642b312cd8881fda437e8cb9ee93e21698ef
+2026-09-14-docs-mermaid-viewer.md: 21d3b0be620d452bfe7024e2eb9e931db4d302b4
+2026-09-14-docs-mermaid-viewer.zh.md: f7400c5e5d1ba9b58ca05eeaaca422a9583a4a47

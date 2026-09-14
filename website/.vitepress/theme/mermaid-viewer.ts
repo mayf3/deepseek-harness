@@ -4,15 +4,23 @@ import Panzoom from '@panzoom/panzoom'
 const messages = {
   en: {
     open: 'View diagram fullscreen', title: 'Diagram viewer',
-    zoomIn: 'Zoom in', zoomOut: 'Zoom out', fit: 'Fit view', close: 'Close',
+    zoomIn: 'Zoom in', zoomOut: 'Zoom out', fit: 'Fit view', close: 'Close', helpLabel: 'Viewer help',
     help: 'Scroll or pinch to zoom · Drag or use arrow keys to pan · Esc to close',
   },
   zh: {
     open: '全屏查看图表', title: '图表查看器',
-    zoomIn: '放大', zoomOut: '缩小', fit: '适应窗口', close: '关闭',
+    zoomIn: '放大', zoomOut: '缩小', fit: '适应窗口', close: '关闭', helpLabel: '查看器帮助',
     help: '滚轮或双指缩放 · 拖动或方向键平移 · Esc 关闭',
   },
 } satisfies Record<string, Record<string, string>>
+
+const icons = {
+  open: 'M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7',
+  zoomIn: 'M5 12h14M12 5v14', zoomOut: 'M5 12h14',
+  fit: 'M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5',
+  close: 'M6 6l12 12M18 6 6 18',
+  help: 'M9.1 8a3 3 0 0 1 5.8 1c0 2-3 2-3 4M12 17v.1',
+}
 
 /** Theme-owned viewer resources; refresh closes the current view before rescanning. */
 export interface MermaidViewer {
@@ -22,10 +30,24 @@ export interface MermaidViewer {
   dispose(): void
 }
 
-function button(doc: Document, label: string): HTMLButtonElement {
+function labelButton(element: HTMLButtonElement, label: string): void {
+  element.setAttribute('aria-label', label)
+  element.title = label
+}
+
+function button(doc: Document, label: string, icon: keyof typeof icons): HTMLButtonElement {
   const element = doc.createElement('button')
   element.type = 'button'
-  element.textContent = label
+  labelButton(element, label)
+  const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.classList.add('dsh-diagram-icon')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('focusable', 'false')
+  const path = doc.createElementNS(svg.namespaceURI, 'path')
+  path.setAttribute('d', icons[icon])
+  svg.append(path)
+  element.append(svg)
   return element
 }
 
@@ -48,16 +70,27 @@ function openDiagram(
   dialog.setAttribute('aria-label', copy.title)
   const toolbar = doc.createElement('div')
   toolbar.className = 'dsh-diagram-toolbar'
-  const title = doc.createElement('strong')
-  title.textContent = copy.title
-  const zoomOut = button(doc, copy.zoomOut)
-  const zoomIn = button(doc, copy.zoomIn)
-  const fit = button(doc, copy.fit)
-  const close = button(doc, copy.close)
+  const title = doc.createElement('span')
+  title.className = 'dsh-diagram-title'
+  title.textContent = doc.querySelector('.vp-doc h1')?.textContent.trim() ?? copy.title
+  const zoomOut = button(doc, copy.zoomOut, 'zoomOut')
+  const zoomIn = button(doc, copy.zoomIn, 'zoomIn')
+  const scaleLabel = doc.createElement('span')
+  scaleLabel.className = 'dsh-diagram-scale'
+  const fit = button(doc, copy.fit, 'fit')
+  fit.className = 'dsh-diagram-fit'
+  const close = button(doc, copy.close, 'close')
+  close.className = 'dsh-diagram-close'
   close.autofocus = true
-  toolbar.append(title, zoomOut, zoomIn, fit, close)
+  toolbar.append(zoomOut, scaleLabel, zoomIn, fit)
+  const helpToggle = button(doc, copy.helpLabel, 'help')
+  helpToggle.className = 'dsh-diagram-help-toggle'
+  helpToggle.setAttribute('aria-expanded', 'false')
+  helpToggle.setAttribute('aria-controls', 'dsh-diagram-help-text')
   const help = doc.createElement('p')
   help.className = 'dsh-diagram-help'
+  help.id = 'dsh-diagram-help-text'
+  help.hidden = true
   help.textContent = copy.help
   const viewport = doc.createElement('div')
   viewport.className = 'dsh-diagram-viewport'
@@ -73,7 +106,7 @@ function openDiagram(
   })
   shadow.append(clone)
   viewport.append(paper)
-  dialog.append(toolbar, help, viewport)
+  dialog.append(viewport, title, close, toolbar, helpToggle, help)
   doc.body.append(dialog)
 
   const overflow = doc.body.style.overflow
@@ -112,6 +145,13 @@ function openDiagram(
       controller.pan(0, 0, { animate: false })
     }
     const options = { signal: listeners.signal }
+    const updateScale = (): void => { scaleLabel.textContent = `${Math.round(controller.getScale() * 100)}%` }
+    updateScale()
+    paper.addEventListener('panzoomchange', updateScale, options)
+    helpToggle.addEventListener('click', () => {
+      help.hidden = !help.hidden
+      helpToggle.setAttribute('aria-expanded', String(!help.hidden))
+    }, options)
     close.addEventListener('click', cleanup, options)
     dialog.addEventListener('close', cleanup, options)
     dialog.addEventListener('cancel', (event) => {
@@ -124,7 +164,7 @@ function openDiagram(
     viewport.addEventListener('wheel', event => controller.zoomWithWheel(event), { ...options, passive: false })
     dialog.addEventListener('keydown', (event) => {
       if (event.key === 'Tab') {
-        const controls = [zoomOut, zoomIn, fit, close]
+        const controls = [close, zoomOut, zoomIn, fit, helpToggle]
         const current = controls.indexOf(doc.activeElement as HTMLButtonElement)
         const next = current < 0 ? (event.shiftKey ? controls.length - 1 : 0)
           : (current + (event.shiftKey ? -1 : 1) + controls.length) % controls.length
@@ -171,7 +211,7 @@ export function installMermaidViewer(doc: Document, language: () => string): Mer
     const copy = language().startsWith('zh') ? messages.zh : messages.en
     const containers = new Set(doc.querySelectorAll('.vp-doc .mermaid'))
     for (const [container, entry] of entries) {
-      if (!containers.has(container) || container.querySelector('svg') !== entry.svg || !entry.button.isConnected) {
+      if (!containers.has(container) || container.querySelector('svg:not(.dsh-diagram-icon)') !== entry.svg || !entry.button.isConnected) {
         if (entry.svg === active) closeActive()
         entry.button.remove()
         entries.delete(container)
@@ -180,12 +220,12 @@ export function installMermaidViewer(doc: Document, language: () => string): Mer
     for (const container of containers) {
       const existing = entries.get(container)
       if (existing) {
-        if (existing.button.textContent !== copy.open) existing.button.textContent = copy.open
+        if (existing.button.getAttribute('aria-label') !== copy.open) labelButton(existing.button, copy.open)
         continue
       }
-      const svg = container.querySelector('svg')
+      const svg = container.querySelector<SVGSVGElement>('svg:not(.dsh-diagram-icon)')
       if (!svg || !dimensions(svg)) continue
-      const trigger = button(doc, copy.open)
+      const trigger = button(doc, copy.open, 'open')
       trigger.className = 'dsh-diagram-open'
       trigger.setAttribute('aria-haspopup', 'dialog')
       trigger.addEventListener('click', () => {

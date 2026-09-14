@@ -9,7 +9,7 @@ import { installMermaidViewer, type MermaidViewer } from '../.vitepress/theme/me
 const panzoom = vi.hoisted(() => ({
   create: vi.fn<(element: HTMLElement, options: PanzoomOptions) => unknown>(),
   destroy: vi.fn(), setOptions: vi.fn(), zoom: vi.fn(), pan: vi.fn(),
-  zoomIn: vi.fn(), zoomOut: vi.fn(), zoomWithWheel: vi.fn(), getScale: () => 2,
+  zoomIn: vi.fn(), zoomOut: vi.fn(), zoomWithWheel: vi.fn(), getScale: vi.fn<() => number>(),
 }))
 vi.mock('@panzoom/panzoom', () => ({ default: panzoom.create }))
 
@@ -24,7 +24,10 @@ const dialogMethods = new Map(['showModal', 'close'].map(name => [
 
 beforeEach(() => {
   vi.clearAllMocks()
-  panzoom.create.mockReturnValue(panzoom)
+  panzoom.create.mockImplementation((_element, options) => {
+    panzoom.getScale.mockReturnValue(options.startScale ?? 1)
+    return panzoom
+  })
   viewportWidth = 1032
   viewportHeight = 632
   document.body.innerHTML = '<main id="VPContent" class="vp-doc"><div class="mermaid"></div></main>'
@@ -94,6 +97,10 @@ describe('documentation Mermaid viewer', () => {
     viewer.refresh()
     expect(queryAllByRole(document.body, 'button')).toHaveLength(1)
     expect(required(document.querySelector('.mermaid')).firstElementChild?.tagName).toBe('BUTTON')
+    const trigger = getByRole(document.body, 'button', { name: 'View diagram fullscreen' })
+    expect(trigger.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+    await new Promise<void>((resolve) => { queueMicrotask(resolve) })
+    expect(getByRole(document.body, 'button', { name: 'View diagram fullscreen' })).toBe(trigger)
   })
 
   it('fits the natural SVG into the viewport and isolates copied styles and fragment IDs', () => {
@@ -130,6 +137,7 @@ describe('documentation Mermaid viewer', () => {
     const wheel = new WheelEvent('wheel', { deltaY: -100 })
     viewport.dispatchEvent(wheel)
     expect(panzoom.zoomWithWheel).toHaveBeenCalledWith(wheel)
+    panzoom.getScale.mockReturnValue(2)
     dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
     expect(panzoom.pan).toHaveBeenLastCalledWith(-32, 0, { relative: true, animate: false })
     getByRole(dialog, 'button', { name: 'Fit view' }).click()
@@ -150,6 +158,36 @@ describe('documentation Mermaid viewer', () => {
     expect(document.activeElement).toBe(zoomOut)
     dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, cancelable: true }))
     expect(document.activeElement).toBe(close)
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, cancelable: true }))
+    expect(document.activeElement).toBe(getByRole(dialog, 'button', { name: 'Viewer help' }))
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', cancelable: true }))
+    expect(document.activeElement).toBe(close)
+  })
+
+  it('shows zoom changes and reveals help on demand without retaining listeners after close', () => {
+    render()
+    viewer = installMermaidViewer(document, () => 'en-US')
+    const dialog = open()
+    const scale = required(dialog.querySelector('.dsh-diagram-scale'))
+    const paper = required(dialog.querySelector('.dsh-diagram-paper'))
+    expect(scale.textContent).toBe('20%')
+    panzoom.getScale.mockReturnValue(0.75)
+    paper.dispatchEvent(new Event('panzoomchange'))
+    expect(scale.textContent).toBe('75%')
+    const toggle = getByRole(dialog, 'button', { name: 'Viewer help' })
+    const help = required(document.getElementById(required(toggle.getAttribute('aria-controls'))))
+    expect(help.hidden).toBe(true)
+    toggle.click()
+    expect(help.hidden).toBe(false)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    toggle.click()
+    expect(help.hidden).toBe(true)
+    getByRole(dialog, 'button', { name: 'Close' }).click()
+    toggle.click()
+    expect(help.hidden).toBe(true)
+    panzoom.getScale.mockReturnValue(1.5)
+    paper.dispatchEvent(new Event('panzoomchange'))
+    expect(scale.textContent).toBe('75%')
   })
 
   it.each(['button', 'cancel', 'refresh', 'dispose'] as const)('releases resources on %s and restores focus and scrolling', (method) => {
