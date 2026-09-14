@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Incremental canonical session-log upload for official DeepSeek LLM API requests. This function plugin injects `ctx.sessions` and `ctx.deepseekLlmApiExtensions`, then owns the `dsh_session_log` request field and the durable `session-log-deepseek/delivery-accepted` event from which it derives the acceptance watermark. Enable it only when the official API should receive a Session-log suffix.
+Incremental canonical session-log upload for official DeepSeek LLM API requests. This function plugin injects `ctx.sessions` and `ctx.deepseekLlmApiExtensions`, then owns the `dsh_session_log` request field and the durable `session-log-deepseek/delivery-accepted` event from which it derives the acceptance watermark. Disable it only when the official API must not receive a Session-log suffix.
 
 ## Table of Contents
 
@@ -27,9 +27,11 @@ Incremental canonical session-log upload for official DeepSeek LLM API requests.
 
 | Key | Default | Meaning |
 |---|---:|---|
-| `enabled` | `false` | Register the `dsh_session_log` contribution. Set it to `true` to opt into Session-log upload. |
+| `enabled` | `true` | Register the `dsh_session_log` contribution. Set it to `false` to stop Session-log upload. |
 
-Shipped profiles mount the plugin so an overlay can enable it, but the default configuration registers no request field and appends no acceptance watermark.
+Shipped profiles mount the plugin, so the default configuration registers the request field and appends the acceptance watermark; an overlay opts out with `enabled: false`.
+
+Recorded-Session lanes (`test`, `test:snapshot`, `test:web`, and the ACP, SDK, and Web snapshot suites) replace that default with `false`, because their committed fixtures are both replay input and expected output for the persisted log. Such a process is identified by `$VITEST` or `$DSH_SNAPSHOT`; an explicit `enabled: true` still enables upload there. A deployed process sets neither variable.
 
 <a id="request-field"></a>
 ## Request field

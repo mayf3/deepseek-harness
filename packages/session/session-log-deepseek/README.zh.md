@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-用于 DeepSeek 官方 LLM（大语言模型）API 请求的增量规范会话日志上传。该函数插件注入 `ctx.sessions` 与 `ctx.deepseekLlmApiExtensions`，并拥有 `dsh_session_log` 请求字段以及用于派生接受水位的持久 `session-log-deepseek/delivery-accepted` 事件。仅当官方 API 需要接收会话日志后缀时才启用它。
+用于 DeepSeek 官方 LLM（大语言模型）API 请求的增量规范会话日志上传。该函数插件注入 `ctx.sessions` 与 `ctx.deepseekLlmApiExtensions`，并拥有 `dsh_session_log` 请求字段以及用于派生接受水位的持久 `session-log-deepseek/delivery-accepted` 事件。仅当官方 API 不得接收会话日志后缀时才禁用它。
 
 ## 目录
 
@@ -27,9 +27,11 @@ kind: "package-reference"
 
 | 配置键 | 默认值 | 含义 |
 |---|---:|---|
-| `enabled` | `false` | 注册 `dsh_session_log` 贡献。将其设为 `true` 可选择启用会话日志上传。 |
+| `enabled` | `true` | 注册 `dsh_session_log` 贡献。将其设为 `false` 可停止会话日志上传。 |
 
-随附 profile 会挂载该插件，让 overlay 可以启用它；默认配置不会注册请求字段，也不会追加接受水位。
+随附 profile 会挂载该插件，因此默认配置会注册请求字段并追加接受水位；overlay 可用 `enabled: false` 选择退出。
+
+录制会话通道（`test`、`test:snapshot`、`test:web`，以及 ACP、SDK 与 Web 快照套件）会把该默认值改为 `false`，因为它们的已提交 fixture 既是回放输入也是持久日志的期望输出。此类进程由 `$VITEST` 或 `$DSH_SNAPSHOT` 标识；显式设置 `enabled: true` 仍可在其中启用上传。已部署进程不会设置这两个变量。
 
 <a id="request-field"></a>
 ## 请求字段

@@ -34,15 +34,24 @@ export const name = 'session-log-deepseek'
 /** Services required to resolve sessions and contribute the provider request field. */
 export const inject = ['deepseekLlmApiExtensions', 'sessions']
 
+/**
+ * Recorded-Session lanes (`test`, `test:snapshot`, `test:web`, and the ACP, SDK,
+ * and Web snapshot suites) boot shipped profiles and compare persisted request
+ * fields and Session logs against recorded expectations, so they keep this
+ * contribution off unless a composition sets `enabled: true`. A deployed
+ * process runs without either variable and contributes the field by default.
+ */
+const RECORDED_SESSION_LANE = process.env.VITEST !== undefined || process.env.DSH_SNAPSHOT !== undefined
+
 /** Session-log request contribution configuration. */
 export interface Config {
-  /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `false`. */
+  /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `true`. */
   enabled?: boolean
 }
 
 /** Validated Session-log request contribution configuration. */
 export const Config: z<Config> = z.object({
-  enabled: z.boolean().default(false),
+  enabled: z.boolean().default(!RECORDED_SESSION_LANE),
 })
 
 interface AcceptanceFold {
@@ -153,7 +162,7 @@ export function acceptedThrough(session: Session): SessionSeqCursor {
 /**
  * Register the incremental `dsh_session_log` request contribution when enabled.
  * @param ctx - plugin context carrying Sessions and the DeepSeek request-extension registry.
- * @param config - validated opt-in configuration.
+ * @param config - validated configuration.
  */
 export function apply(ctx: Context, config: Config): void {
   if (config.enabled !== true) return
