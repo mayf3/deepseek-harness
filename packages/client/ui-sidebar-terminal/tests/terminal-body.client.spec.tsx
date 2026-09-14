@@ -21,6 +21,8 @@ class FakeTerminal {
   textarea: HTMLTextAreaElement | undefined = document.createElement('textarea')
   input: ((data: string) => void) | undefined
   readonly disposeInput = vi.fn()
+  readonly parser = { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) }
+  readonly onRender = vi.fn(() => ({ dispose: vi.fn() }))
   readonly resize = vi.fn()
   readonly reset = vi.fn()
   readonly focus = vi.fn()
@@ -184,6 +186,9 @@ it('updates screen, cursor and selection colors without replacing the terminal o
   expect(terminal.options.theme).toMatchObject({
     background: colors.backgroundColor, foreground: colors.color, cursor: colors.color, selectionForeground: colors.backgroundColor,
   })
+  const appliedTheme = terminal.options.theme
+  h.changeTheme()
+  expect(terminal.options.theme).toBe(appliedTheme)
   colors.backgroundColor = 'rgb(23, 25, 29)'
   colors.color = 'rgb(231, 233, 238)'
   h.changeTheme()
