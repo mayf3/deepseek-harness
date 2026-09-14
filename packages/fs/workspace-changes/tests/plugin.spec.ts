@@ -1,5 +1,5 @@
 /** The plugin records each top-level turn's file changes from real git snapshots. */
-import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -22,8 +22,14 @@ async function boot(config: Partial<WorkspaceChanges.Config> = {}) {
   cleanups.push(() => ctx.fiber.dispose())
   await ctx.plugin(SessionStore)
   await ctx.plugin(LocalSubprocessRuntime)
-  const fiber = await ctx.plugin(WorkspaceChanges, config as WorkspaceChanges.Config)
-  return { ctx, fiber }
+  const dshHome = config.dshHome ?? await scratchDir('dsh-workspace-changes-home-', cleanups)
+  const fiber = await ctx.plugin(WorkspaceChanges, { ...config, dshHome } as WorkspaceChanges.Config)
+  return { ctx, fiber, dshHome }
+}
+
+/** Loose objects the repository itself holds. */
+function looseObjects(cwd: string): number {
+  return Number(git(cwd, 'count-objects').split(' ')[0])
 }
 
 async function repository(): Promise<string> {
@@ -43,7 +49,8 @@ describe('workspace-changes in a repository', () => {
     const cwd = await repository()
     await writeFile(join(cwd, 'b.txt'), 'x user\n')
     await writeFile(join(cwd, 'u.txt'), 'user untracked\n')
-    const { ctx } = await boot()
+    const { ctx, dshHome } = await boot()
+    const repositoryObjects = looseObjects(cwd)
     const session = ctx.sessions.create(SessionId('repo'), { meta: { cwd } })
     startTurn(session, 1)
     await settle(ctx, session)
@@ -84,6 +91,36 @@ describe('workspace-changes in a repository', () => {
     expect(git(cwd, 'status', '--porcelain').split('\n').filter(Boolean).sort()).toEqual([
       ' M a.txt', ' M b.txt', '?? bin.dat', '?? new.txt', '?? sub/', '?? u.txt',
     ])
+    // Snapshot objects live under the Harness home; the repository's own store is untouched.
+    expect(looseObjects(cwd)).toBe(repositoryObjects)
+    const stores = await readdir(join(dshHome, 'workspace-changes'))
+    expect(stores).toHaveLength(1)
+    const objects = await readdir(join(dshHome, 'workspace-changes', stores[0]!), { recursive: true })
+    expect(objects.some(entry => /^[0-9a-f]{2}\/[0-9a-f]{38,}$/.test(entry))).toBe(true)
+  })
+
+  it('discards a snapshot object store that outgrew its bound before the next baseline', async () => {
+    const cwd = await repository()
+    const { ctx, dshHome } = await boot({ objectStoreMaxBytes: 1 })
+    const session = ctx.sessions.create(SessionId('bounded'), { meta: { cwd } })
+    startTurn(session, 1)
+    await settle(ctx, session)
+    const [store] = await readdir(join(dshHome, 'workspace-changes'))
+    const marker = join(dshHome, 'workspace-changes', store!, 'marker')
+    await writeFile(marker, 'old store')
+    await writeFile(join(cwd, 'n.txt'), 'n\n')
+    toolCall(session, 1, 'bash', { command: 'x' })
+    endTurn(session, 1)
+    await settle(ctx, session)
+    expect(changes(session)).toHaveLength(1)
+    startTurn(session, 2)
+    await settle(ctx, session)
+    await expect(stat(marker)).rejects.toThrow()
+    await writeFile(join(cwd, 'm.txt'), 'm\n')
+    toolCall(session, 2, 'bash', { command: 'x' })
+    endTurn(session, 2)
+    await settle(ctx, session)
+    expect(changes(session).at(-1)!.files.map(file => file.display)).toEqual(['m.txt'])
   })
 
   it('places files above the working directory and outside the repository by their display rule', async () => {

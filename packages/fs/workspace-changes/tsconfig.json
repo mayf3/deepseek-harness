@@ -25,6 +25,9 @@
     },
     {
       "path": "../../subprocess/subprocess"
+    },
+    {
+      "path": "../../util/home-paths"
     }
   ]
 }

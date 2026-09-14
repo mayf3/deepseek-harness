@@ -6,8 +6,10 @@
  */
 import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type {} from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-subprocess'
@@ -24,8 +26,12 @@ export const name = 'workspace-changes'
 /** Services used to run git and observe turns. */
 export const inject = ['subprocess']
 
-/** Snapshot bounds. Invalid values fail plugin load. */
+/** Snapshot bounds and object store placement. Invalid values fail plugin load. */
 export interface Config {
+  /** Harness home whose `workspace-changes/` directory holds one snapshot object store per repository; `$DSH_HOME`, then `~/.dsh`. */
+  dshHome?: string
+  /** Bytes one repository's snapshot object store may hold before it is discarded and restarted empty. */
+  objectStoreMaxBytes: number
   /** Milliseconds one git command may run before the turn's record is abandoned. */
   timeoutMs: number
   /** Bytes of git output retained per command; a larger diff listing abandons the record. */
@@ -36,6 +42,8 @@ export interface Config {
 
 /** Schemastery validation for {@link Config}. */
 export const Config: z<Config> = z.object({
+  dshHome: z.string(),
+  objectStoreMaxBytes: z.number().default(1024 * 1024 * 1024),
   timeoutMs: z.number().default(30_000),
   outputMaxBytes: z.number().default(8 * 1024 * 1024),
   maxFiles: z.number().default(500),
@@ -77,7 +85,10 @@ async function resolveGit(ctx: Context, signal: AbortSignal): Promise<string | n
  * @param config - validated bounds and placement.
  */
 export function apply(ctx: Context, config: Config): void {
-  for (const [field, value] of [['timeoutMs', config.timeoutMs], ['outputMaxBytes', config.outputMaxBytes], ['maxFiles', config.maxFiles]] as const) {
+  for (const [field, value] of [
+    ['timeoutMs', config.timeoutMs], ['outputMaxBytes', config.outputMaxBytes], ['maxFiles', config.maxFiles],
+    ['objectStoreMaxBytes', config.objectStoreMaxBytes],
+  ] as const) {
     if (!Number.isSafeInteger(value) || value < 1) throw new Error(`workspace-changes requires a positive integer ${field}`)
   }
   const lifetime = new AbortController()
@@ -89,6 +100,7 @@ export function apply(ctx: Context, config: Config): void {
   })
   const roots = temporaryRoots()
   const home = realpathSync.native(homedir())
+  const objects = { home: join(resolveDshHome(config.dshHome), 'workspace-changes'), maxBytes: config.objectStoreMaxBytes }
   let runner: Promise<GitRunner | null> | undefined
   const gitRunner = (): Promise<GitRunner | null> => {
     runner ??= resolveGit(ctx, lifetime.signal).then((executable) => {
@@ -104,7 +116,7 @@ export function apply(ctx: Context, config: Config): void {
     let recorder = recorders.get(session)
     if (recorder === undefined) {
       recorder = new TurnRecorder(session, cwd, {
-        git: gitRunner(), home, temporaryRoots: roots, maxFiles: config.maxFiles,
+        git: gitRunner(), objects, home, temporaryRoots: roots, maxFiles: config.maxFiles,
         warn: (message) => { ctx.logger.warn(message) },
       })
       recorders.set(session, recorder)

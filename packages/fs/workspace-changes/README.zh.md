@@ -35,11 +35,13 @@ kind: "package-reference"
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
+| `dshHome` | `$DSH_HOME`，其次 `~/.dsh` | Harness home，其 `workspace-changes/` 目录为每个仓库存放一个快照对象库 |
+| `objectStoreMaxBytes` | `1073741824` | 单个仓库的快照对象库允许的字节数，超过后丢弃并从空开始 |
 | `timeoutMs` | `30000` | 单条 git 命令允许运行的毫秒数，超时则放弃本轮记录 |
 | `outputMaxBytes` | `8388608` | 每条命令保留的 git 输出字节数，diff 列表更大时放弃本轮记录 |
 | `maxFiles` | `500` | 单个事件携带的最大文件数；`total` 仍报告完整数量 |
 
-工作目录位于 git 仓库内且不是子代理来源的 Session 都会被记录；子代理 Session 和不在任何仓库内的工作目录不记录。快照通过私有 index 写入仓库的对象库，仓库自己的 index、工作树和 ref 保持不变，用户此前未提交的改动也不会进入摘要。工作目录内的嵌套仓库和 submodule 记录为 gitlink，其内部改动不会出现。没有 git 时——或者 macOS 上只有 `/usr/bin/git` 的开发者工具桩程序时——本插件不记录任何内容，并记录一次日志。
+工作目录位于 git 仓库内且不是子代理来源的 Session 都会被记录；子代理 Session 和不在任何仓库内的工作目录不记录。快照通过私有 index 写入 Harness home 下的私有对象库，仓库自己的对象库以只读 alternate 的方式挂接；仓库的 index、对象、工作树和 ref 保持不变，用户此前未提交的改动也不会进入摘要。对象库超过 `objectStoreMaxBytes` 时在下次快照前被丢弃，从空开始。工作目录内的嵌套仓库和 submodule 记录为 gitlink，其内部改动不会出现。没有 git 时——或者 macOS 上只有 `/usr/bin/git` 的开发者工具桩程序时——本插件不记录任何内容，并记录一次日志。
 
 文件工具改动但快照覆盖不到的文件，由这些工具随结果持久化的 hunk 补入：匹配忽略模式的文件，以及仓库之外的文件。`/tmp` 与平台临时目录下的文件被排除，除非它们位于工作目录内。这些文件的行数按记录的 hunk 累加，因此同一轮内对一个文件的重复编辑可能把一行计算多次。快照覆盖范围之外通过 shell 命令做出的改动不会被记录。
 
@@ -53,7 +55,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-每个 Session 一个 `TurnRecorder`，串行化其 git 工作。`turn/start` 排入基线：`rev-parse` 定位仓库，然后以仓库 index 为种子在临时 index 上执行 `add --all` 与 `write-tree` 得到 tree id。每次 `tools/pre-execute` 都等待该队列，因此没有修改能先于其基线发生。`tool/result` 事件收集文件工具的 hunk。`agent/turn-stopping` 在轮内记录：第二次快照、两棵树之间的 `diff-tree -r -M --numstat`、对工作树内 hunk 路径的 `check-ignore`，以及追加事件。`turn/end` 仅在最后一次记录之后仍有工具结果结束时再次记录，这覆盖了中止、失败和被转向的轮次；早先记录之后的空列表会取代它。仓库的 index 只读取。
+每个 Session 一个 `TurnRecorder`，串行化其 git 工作。`turn/start` 排入基线：`rev-parse` 定位仓库及其对象库，然后以仓库 index 为种子在临时 index 上执行 `add --all` 与 `write-tree` 得到 tree id。每条命令都带 `GIT_OBJECT_DIRECTORY` 指向私有对象库、`GIT_ALTERNATE_OBJECT_DIRECTORIES` 指向仓库的 objects，因此已提交内容从仓库读取，新对象不会落进仓库。每次 `tools/pre-execute` 都等待该队列，因此没有修改能先于其基线发生。`tool/result` 事件收集文件工具的 hunk。`agent/turn-stopping` 在轮内记录：第二次快照、两棵树之间的 `diff-tree -r -M --numstat`、对工作树内 hunk 路径的 `check-ignore`，以及追加事件。`turn/end` 仅在最后一次记录之后仍有工具结果结束时再次记录，这覆盖了中止、失败和被转向的轮次；早先记录之后的空列表会取代它。仓库的 index 只读取。
 
 git 通过 `subprocess` 能力运行，使用净化后的环境、`GIT_TERMINAL_PROMPT=0`、`GIT_OPTIONAL_LOCKS=0`、配置的超时与有界输出。任何步骤失败都会放弃本轮记录并给出警告；下一轮重新开始。Session 释放与插件释放会中止排队的工作。
 
@@ -83,7 +85,7 @@ git 通过 `subprocess` 能力运行，使用净化后的环境、`GIT_TERMINAL_
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 快照树是无引用对象，仓库的垃圾回收会在其过期期限后删除它们；记录的计数保留，而将来做整文件对比所需的树不会保留。
+- 快照树只保留到其私有对象库超过 `objectStoreMaxBytes` 被丢弃为止；记录的计数保留，而将来做整文件对比所需的树不会保留。
 - 用户在轮次进行中自己做的编辑会被算到该轮。
 - 不在任何 git 仓库内的工作目录没有卡片；Harness home 下的影子仓库暂缓，直到其排除规则能可靠地代替缺失的 `.gitignore`。
 - 快照覆盖范围之外的文件按 hunk 累加计数，不是首尾对比，且只覆盖文件工具。

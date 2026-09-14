@@ -3,7 +3,7 @@ import { realpath } from 'node:fs/promises'
 import { relative } from 'node:path'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { FileDiff } from '@deepseek-ai/dsh-tools'
-import { diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree, type GitRunner, type GitWorkspace } from './git.ts'
+import { diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree, type GitRunner, type GitWorkspace, type ObjectStoreOptions } from './git.ts'
 import { fileDiffsOf, hunkLineCounts } from './numstat.ts'
 import { absolutePathOf, compareDisplay, displayPathOf, durablePathOf, isInside, isTemporaryPath, toPosix } from './paths.ts'
 import type { WorkspaceChangedFile } from './types.ts'
@@ -12,6 +12,8 @@ import type { WorkspaceChangedFile } from './types.ts'
 export interface RecorderEnvironment {
   /** Resolves to the runner, or null when git is unavailable and no turn records anything. */
   git: Promise<GitRunner | null>
+  /** Where snapshot objects live and how large one repository's store may grow. */
+  objects: ObjectStoreOptions
   /** Canonical absolute home directory abbreviated as `~` in display paths. */
   home: string
   /** Temporary roots whose files never enter a summary. */
@@ -68,7 +70,7 @@ export class TurnRecorder {
       if (git === null) return
       // git reports symlink-resolved paths; every comparison uses that form.
       const cwd = await realpath(this.cwd)
-      const workspace = await locateGitWorkspace(git, cwd, signal)
+      const workspace = await locateGitWorkspace(git, cwd, this.env.objects, signal)
       if (workspace === null) return
       const tree = await snapshotTree(git, workspace, signal)
       this.baseline = { git, workspace, tree, cwd }

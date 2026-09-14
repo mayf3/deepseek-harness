@@ -56,7 +56,7 @@ describe('snapshots and diffs', () => {
     expect(() => git(cwd, 'merge', 'side')).toThrow()
     expect(git(cwd, 'status', '--porcelain')).toContain('UU f.txt')
     const { git: runnerGit } = await runner()
-    const workspace = await locateGitWorkspace(runnerGit, cwd, signal)
+    const workspace = await locateGitWorkspace(runnerGit, cwd, { home: await scratchDir('dsh-git-store-', cleanups), maxBytes: 1024 * 1024 }, signal)
     expect(workspace?.root).toBe(await realpath(cwd))
     const tree = await snapshotTree(runnerGit, workspace!, signal)
     expect(tree).toMatch(/^[0-9a-f]{40,64}$/)
@@ -66,13 +66,14 @@ describe('snapshots and diffs', () => {
   it('fails loudly when the addressed repository cannot be written or diffed', async () => {
     const cwd = await scratchDir('dsh-git-broken-', cleanups)
     const { git: runnerGit } = await runner()
-    expect(await locateGitWorkspace(runnerGit, cwd, signal)).toBeNull()
-    const broken = { root: cwd, gitDir: join(cwd, 'missing') }
+    const store = { home: await scratchDir('dsh-git-store-', cleanups), maxBytes: 1024 * 1024 }
+    expect(await locateGitWorkspace(runnerGit, cwd, store, signal)).toBeNull()
+    const broken = { root: cwd, gitDir: join(cwd, 'missing'), objectsDir: join(cwd, 'missing-objects'), env: {} }
     await expect(snapshotTree(runnerGit, broken, signal)).rejects.toThrow('git add in')
     await expect(ignoredPaths(runnerGit, broken, ['x'], signal)).rejects.toThrow('git check-ignore failed')
     expect(await ignoredPaths(runnerGit, broken, [], signal)).toEqual(new Set())
     git(cwd, 'init', '-q')
-    const workspace = (await locateGitWorkspace(runnerGit, cwd, signal))!
+    const workspace = (await locateGitWorkspace(runnerGit, cwd, store, signal))!
     await expect(diffTrees(runnerGit, workspace, 'a'.repeat(40), 'b'.repeat(40), signal)).rejects.toThrow('git diff-tree failed')
     await writeFile(join(cwd, 'many.txt'), Array.from({ length: 50 }, (_, index) => `line ${index}`).join('\n'))
     const before = await snapshotTree(runnerGit, workspace, signal)
@@ -94,7 +95,10 @@ describe('TurnRecorder', () => {
     const warnings: string[] = []
     let release!: (runner: GitRunner | null) => void
     const gate = new Promise<GitRunner | null>((resolve) => { release = resolve })
-    const env = { git: gate, home: '', temporaryRoots: temporaryRoots(), maxFiles: 10, warn: (m: string) => { warnings.push(m) } }
+    const env = {
+      git: gate, objects: { home: await scratchDir('dsh-git-store-', cleanups), maxBytes: 1024 * 1024 },
+      home: '', temporaryRoots: temporaryRoots(), maxFiles: 10, warn: (m: string) => { warnings.push(m) },
+    }
     const disposed = new TurnRecorder(session, cwd, env)
     disposed.start(1)
     await new Promise(resolve => setTimeout(resolve, 5))

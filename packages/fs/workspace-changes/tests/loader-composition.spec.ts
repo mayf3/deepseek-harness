@@ -34,6 +34,8 @@ describe('real Loader composition', () => {
       "- name: '@deepseek-ai/dsh-session'",
       "- name: '@deepseek-ai/dsh-subprocess-local'",
       "- name: '@deepseek-ai/dsh-workspace-changes'",
+      '  config:',
+      `    dshHome: ${JSON.stringify(join(root, 'home'))}`,
       '',
     ].join('\n'))
     context = new Context()

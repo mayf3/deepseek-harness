@@ -1,5 +1,6 @@
 /** Git working-tree snapshots, tree diffs, and ignore checks through the subprocess capability. */
-import { copyFile, mkdtemp, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { copyFile, mkdir, mkdtemp, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
@@ -88,33 +89,67 @@ function ok(result: GitRunResult, what: string): GitRunResult {
   return result
 }
 
-/** The repository enclosing a Session working directory. */
+/** The repository enclosing a Session working directory and the private store its snapshots write to. */
 export interface GitWorkspace {
   /** Repository top-level directory, the root every diff path is relative to. */
   root: string
-  /** Absolute git directory holding the index and objects. */
+  /** Absolute git directory holding the repository's index. */
   gitDir: string
+  /** Directory under the Harness home that receives every snapshot blob and tree. */
+  objectsDir: string
+  /** Environment that routes object writes to {@link objectsDir} and object reads through the repository's store. */
+  env: Readonly<Record<string, string>>
+}
+
+/** Placement and bound of the private snapshot object stores. */
+export interface ObjectStoreOptions {
+  /** Directory that holds one object store per repository. */
+  home: string
+  /** Bytes one repository's store may hold; a larger store is discarded before the next snapshot. */
+  maxBytes: number
+}
+
+/** Total size of the regular files under a directory; zero when it does not exist. */
+async function directoryBytes(directory: string): Promise<number> {
+  let total = 0
+  const entries = await readdir(directory, { recursive: true, withFileTypes: true }).catch(() => [])
+  for (const entry of entries) {
+    if (entry.isFile()) total += (await stat(join(entry.parentPath, entry.name))).size
+  }
+  return total
 }
 
 /**
- * Locate the repository enclosing a working directory.
+ * Locate the repository enclosing a working directory and prepare its snapshot
+ * object store. The repository's own object store is attached read-only as an
+ * alternate, so snapshots read committed content from it and write nothing
+ * into it; a store over its byte bound is discarded and starts empty.
  * @param git - command runner.
  * @param cwd - absolute Session working directory.
+ * @param store - snapshot object store placement and bound.
  * @param signal - cancellation.
  * @returns the repository, or null when the directory is not inside one.
  */
-export async function locateGitWorkspace(git: GitRunner, cwd: string, signal: AbortSignal): Promise<GitWorkspace | null> {
-  const found = await git.run(['rev-parse', '--show-toplevel', '--absolute-git-dir'], { cwd, signal })
+export async function locateGitWorkspace(
+  git: GitRunner, cwd: string, store: ObjectStoreOptions, signal: AbortSignal,
+): Promise<GitWorkspace | null> {
+  const found = await git.run([
+    'rev-parse', '--path-format=absolute', '--show-toplevel', '--absolute-git-dir', '--git-path', 'objects',
+  ], { cwd, signal })
   if (found.exitCode !== 0) return null
-  const [root, gitDir] = found.stdout.split('\n') as [string, string]
-  return { root, gitDir }
+  const [root, gitDir, repositoryObjects] = found.stdout.split('\n') as [string, string, string]
+  const objectsDir = join(store.home, createHash('sha256').update(gitDir).digest('hex').slice(0, 16))
+  if (await directoryBytes(objectsDir) > store.maxBytes) await rm(objectsDir, { recursive: true, force: true })
+  await mkdir(objectsDir, { recursive: true })
+  return { root, gitDir, objectsDir, env: { GIT_OBJECT_DIRECTORY: objectsDir, GIT_ALTERNATE_OBJECT_DIRECTORIES: repositoryObjects } }
 }
 
 /**
  * Write the complete work tree, including untracked and modified files but
  * not ignored ones, as a tree object through a private index seeded from the
- * repository's index. That index, the work tree, and every ref stay unchanged;
- * an in-progress merge keeps its unmerged entries.
+ * repository's index. New blobs and the tree land in the private object store;
+ * the repository's index, object store, work tree, and refs stay unchanged,
+ * and an in-progress merge keeps its unmerged entries.
  * @param git - command runner.
  * @param workspace - addressed repository.
  * @param signal - cancellation.
@@ -126,7 +161,7 @@ export async function snapshotTree(git: GitRunner, workspace: GitWorkspace, sign
     const index = join(scratch, 'index')
     // A repository without an index yet (fresh `git init`) starts from scratch.
     await copyFile(join(workspace.gitDir, 'index'), index).then(() => undefined, () => undefined)
-    const env = { GIT_INDEX_FILE: index }
+    const env = { ...workspace.env, GIT_INDEX_FILE: index }
     ok(await git.run(['add', '--all', '--ignore-errors'], { cwd: workspace.root, env, signal }), `git add in ${workspace.root}`)
     return ok(await git.run(['write-tree'], { cwd: workspace.root, env, signal }), 'git write-tree').stdout.trim()
   } finally {
@@ -148,7 +183,9 @@ export async function diffTrees(
   git: GitRunner, workspace: GitWorkspace, before: string, after: string, signal: AbortSignal,
 ): Promise<NumstatEntry[]> {
   if (before === after) return []
-  const result = ok(await git.run(['diff-tree', '-r', '-M', '-z', '--numstat', before, after], { cwd: workspace.root, signal }), 'git diff-tree')
+  const result = ok(await git.run(['diff-tree', '-r', '-M', '-z', '--numstat', before, after], {
+    cwd: workspace.root, env: workspace.env, signal,
+  }), 'git diff-tree')
   if (result.truncated) throw new Error('git diff-tree output exceeded the configured cap')
   return parseNumstat(result.stdout)
 }
@@ -167,7 +204,9 @@ export async function ignoredPaths(
   git: GitRunner, workspace: GitWorkspace, paths: readonly string[], signal: AbortSignal,
 ): Promise<Set<string>> {
   if (paths.length === 0) return new Set()
-  const result = await git.run(['check-ignore', '-z', '--stdin'], { cwd: workspace.root, stdin: `${paths.join('\0')}\0`, signal })
+  const result = await git.run(['check-ignore', '-z', '--stdin'], {
+    cwd: workspace.root, env: workspace.env, stdin: `${paths.join('\0')}\0`, signal,
+  })
   if (result.exitCode === 1) return new Set()
   return new Set(ok(result, 'git check-ignore').stdout.split('\0').filter(path => path !== ''))
 }
