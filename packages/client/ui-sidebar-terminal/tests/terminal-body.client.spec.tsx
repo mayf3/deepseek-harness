@@ -22,7 +22,12 @@ class FakeTerminal {
   input: ((data: string) => void) | undefined
   readonly disposeInput = vi.fn()
   readonly parser = { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) }
-  readonly onRender = vi.fn(() => ({ dispose: vi.fn() }))
+  renderFrame: (() => void) | undefined
+  readonly disposeRender = vi.fn(() => { this.renderFrame = undefined })
+  readonly onRender = vi.fn((listener: () => void) => {
+    this.renderFrame = listener
+    return { dispose: this.disposeRender }
+  })
   readonly resize = vi.fn()
   readonly reset = vi.fn()
   readonly focus = vi.fn()
@@ -201,6 +206,35 @@ it('updates screen, cursor and selection colors without replacing the terminal o
   expect(terminal.dispose).not.toHaveBeenCalled()
   expect(h.model.mount).toHaveBeenCalledOnce()
   expect(h.detach).not.toHaveBeenCalled()
+})
+
+it('reads the current theme on xterm render and releases the cursor listener on unmount', () => {
+  const colors = { backgroundColor: 'rgb(255, 255, 255)', color: 'rgb(23, 25, 29)' }
+  const cursor = document.createElement('span')
+  cursor.className = 'xterm-cursor'
+  cursor.style.backgroundColor = 'black'
+  cursor.style.color = 'cyan'
+  const readStyle = window.getComputedStyle.bind(window)
+  vi.spyOn(window, 'getComputedStyle').mockImplementation(element => element === cursor ? readStyle(element) : colors as CSSStyleDeclaration)
+  const h = mount({ ...idle, info, phase: 'connected', writable: true })
+  const terminal = fake.terminals[0]!
+  const screen = terminal.textarea!.parentElement!
+  screen.append(cursor)
+  const appliedTheme = terminal.options.theme
+  terminal.renderFrame?.()
+  expect(screen.style.getPropertyValue('--terminal-cursor')).toBe('#ffffff')
+  expect(screen.style.getPropertyValue('--terminal-cursor-accent')).toBe('#000000')
+  expect(terminal.options.theme).toBe(appliedTheme)
+
+  colors.backgroundColor = 'rgb(23, 25, 29)'
+  colors.color = 'rgb(231, 233, 238)'
+  h.changeTheme()
+  terminal.renderFrame?.()
+  expect(screen.style.getPropertyValue('--terminal-cursor')).toBe(colors.color)
+  expect(fake.terminals).toEqual([terminal])
+  h.view.unmount()
+  expect(terminal.disposeRender).toHaveBeenCalledOnce()
+  expect(terminal.renderFrame).toBeUndefined()
 })
 
 it('fits only visible writable terminals with measurable dimensions and clamps the provider limits', () => {
