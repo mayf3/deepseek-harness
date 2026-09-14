@@ -33,7 +33,7 @@ kind: "package-reference"
 
 刷新页面后显示某个 Session，会把 Host 保留的终端重新打开为新标签页。恢复失败时可点击**重试恢复终端**。恢复目标进程消失时显示错误，不启动另一个 shell。[侧栏布局仅保存在内存中](../../client/ui-sidebar-right/README.zh.md#state)。
 
-终端背景、默认文字、光标和选区跟随 DSH 主题，包括系统偏好和主题 token 覆盖。切换主题会更新现有屏幕，不清空输出或重启 shell。shell 输出的 ANSI 颜色仍然生效。
+终端背景、默认文字、光标和选区跟随 DSH 主题，包括系统偏好和主题令牌覆盖。切换主题会保留运行中的 shell、输出和应用通过 OSC 设置的颜色。颜色重置命令恢复到当前 DSH 默认值。xterm 将文字对比度调整到 4.5:1；光标与所在单元格背景保持至少 3:1 的对比度，包括 Vim 配色方案。
 
 <a id="understand-the-implementation"></a>
 ## 了解实现
@@ -69,6 +69,7 @@ Session header contribution 查询 Host 终端并打开恢复标签页。导航�
 
 - 默认 shell 或原生 PTY 可能启动失败。标签页显示错误，不启动其他 shell。
 - 补全菜单和内联建议取决于 shell 配置，Web UI 不提供独立补全引擎。
+- 应用的 OSC 颜色覆盖由已挂载的渲染器保留；新打开的渲染器无法从 Host 屏幕快照恢复这些颜色。
 - 终端历史有上限。此功能不向 Agent 发送终端输出，不在单个标签页内拆分终端，也不在 Host 重启后恢复进程。
 
 <a id="dev-note"></a>
