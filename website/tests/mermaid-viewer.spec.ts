@@ -84,6 +84,24 @@ function open(): HTMLDialogElement {
 }
 
 describe('documentation Mermaid viewer', () => {
+  it.each([
+    { heading: 'Agent lifecycle', language: 'en-US', expected: 'Agent lifecycle' },
+    { heading: '  \n  ', language: 'zh-CN', expected: '图表查看器' },
+    { heading: null, language: 'en-US', expected: 'Diagram viewer' },
+  ])('uses the visible title as the dialog name for $heading', ({ heading, language, expected }) => {
+    render()
+    if (heading !== null) {
+      const h1 = document.createElement('h1')
+      h1.textContent = heading
+      required(document.querySelector('.vp-doc')).prepend(h1)
+    }
+    viewer = installMermaidViewer(document, () => language)
+    getByRole(document.body, 'button').click()
+    const dialog = getByRole(document.body, 'dialog', { name: expected })
+    const title = required(document.getElementById(required(dialog.getAttribute('aria-labelledby'))))
+    expect(title.textContent).toBe(expected)
+  })
+
   it('adds one entry only after an SVG with usable dimensions renders', async () => {
     viewer = installMermaidViewer(document, () => 'en-US')
     expect(queryAllByRole(document.body, 'button')).toHaveLength(0)
@@ -118,6 +136,9 @@ describe('documentation Mermaid viewer', () => {
     expect(source.outerHTML).toBe(original)
     expect(document.body.style.overflow).toBe('hidden')
     expect(document.documentElement.style.overflow).toBe('')
+    required(resize)()
+    expect(panzoom.zoom).toHaveBeenLastCalledWith(0.2, { animate: false })
+    expect(panzoom.pan).toHaveBeenLastCalledWith(0, 0, { animate: false })
     viewportWidth = 332
     viewportHeight = 932
     required(resize)()

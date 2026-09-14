@@ -22,7 +22,7 @@ const icons = {
   help: 'M9.1 8a3 3 0 0 1 5.8 1c0 2-3 2-3 4M12 17v.1',
 }
 
-/** Theme-owned viewer resources; refresh closes the current view before rescanning. */
+/** Theme-owned resources; source SVG replacement automatically closes the current view. */
 export interface MermaidViewer {
   /** Close the view and update entries after a route, language, or theme change. */
   refresh(): void
@@ -67,12 +67,13 @@ function openDiagram(
   const doc = svg.ownerDocument
   const dialog = doc.createElement('dialog')
   dialog.className = 'dsh-diagram-viewer'
-  dialog.setAttribute('aria-label', copy.title)
+  dialog.setAttribute('aria-labelledby', 'dsh-diagram-title')
   const toolbar = doc.createElement('div')
   toolbar.className = 'dsh-diagram-toolbar'
   const title = doc.createElement('span')
   title.className = 'dsh-diagram-title'
-  title.textContent = doc.querySelector('.vp-doc h1')?.textContent.trim() ?? copy.title
+  title.id = 'dsh-diagram-title'
+  title.textContent = doc.querySelector('.vp-doc h1')?.textContent.trim() || copy.title
   const zoomOut = button(doc, copy.zoomOut, 'zoomOut')
   const zoomIn = button(doc, copy.zoomIn, 'zoomIn')
   const scaleLabel = doc.createElement('span')
