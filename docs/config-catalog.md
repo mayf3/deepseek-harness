@@ -942,7 +942,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/plugin-manager/src/index.ts:40`](../packages/host/plugin-manager/src/index.ts)
+Source: [`packages/host/plugin-manager/src/index.ts:39`](../packages/host/plugin-manager/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 

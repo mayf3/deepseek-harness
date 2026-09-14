@@ -20,11 +20,10 @@ import {
   type PluginInstallResult,
   type PluginOperationFailure,
   type PluginPackageView,
-  type PluginRowAddition,
   type SpawnLike,
 } from '@deepseek-ai/dsh-plugin-manager'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { assertNever, type JsonValue } from '@deepseek-ai/dsh-util-values'
+import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type {} from './types.ts'
 
 export type * from './types.ts'
@@ -181,30 +180,6 @@ export class PluginManagerRemote extends TypertRemoteService {
   }
 
   /**
-   * Add a row naming one of the package's modules to the profile user layer.
-   * @param packageName - the installed package.
-   * @param options - `module` selects a declared `dsh.plugins[]` name (default `.`),
-   * `id` overrides the derived row id, `config` overrides the declared default.
-   * @returns where the row landed.
-   */
-  @Remote('addRow')
-  async addRow(
-    packageName: string,
-    options?: { module?: string; id?: string; config?: JsonValue },
-  ): Promise<PluginRowAddition> {
-    return relay(() => this.manager.addRow(packageName, options))
-  }
-
-  /**
-   * Remove a row a user layer inserted.
-   * @param rowId - the inserted row's id.
-   */
-  @Remote('removeRow')
-  async removeRow(rowId: string): Promise<void> {
-    return relay(() => this.manager.removeRow(rowId))
-  }
-
-  /**
    * Switch one row off or on in a user layer; deny-only.
    * @param rowId - the row's id as the composition declares it.
    * @param disabled - whether the layer should switch the row off.
@@ -253,7 +228,6 @@ export function remoteErrorOf(failure: PluginOperationFailure): RemoteError {
     case 'plugins/not-enableable': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/enable-failed': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/install-failed': return new RemoteError(failure.code, failure.message, failure.details, options)
-    case 'plugins/row-conflict': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/busy': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/agents-running': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/bad-request': return new RemoteError('gateway/bad-request', failure.message, {}, options)

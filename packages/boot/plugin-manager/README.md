@@ -70,17 +70,17 @@ const manager = new PluginManager(ctx, {
 console.log(await manager.list())
 ```
 
-`list` reports package identity, `bundle` / `plugin` / `unknown` classification, installation and enablement. Runtime rows carry actual phases and failures; disabled bundles show static patch declarations. `addable` comes only from `dsh.plugins`, including `.` for the main export and declared defaults. An active row can retain its previous config after an update fails. Package `issues` also names failed rows its patch overrides, without transferring their ownership.
+`list` reports package identity, `bundle` / `unknown` classification, installation and enablement. Runtime rows carry actual phases and failures; disabled bundles show static patch declarations. An active row can retain its previous config after an update fails. Package `issues` also names failed rows its patch overrides, without transferring their ownership.
 
 `enable` selects the whole bundle layer and recomposes live profiles. Per-row failures retain the enabled choice and successful siblings; results report `issues`, and the list can show `partial` or `failed`. Preparation failures revert the enable selection and raise `plugins/enable-failed`. `disable` removes the whole layer, including overrides. `retry` disables, awaits cleanup, and enables again. Startup-only profiles report `effect: restart`. Unapplied selections on live profiles report `failed`, preserving the rows actually running; `restart-required` is reserved for startup-only profiles. `uninstall` disables the bundle, removes user-inserted references, and runs pnpm remove.
 
-`addRow` writes an explicitly declared `dsh.plugins` module to the profile’s global `cordis.patch.yml`. It preserves declared defaults, checks the target row id, and performs no pre-mount import. `removeRow` removes a user insert. `setRowDisabled` writes or removes `disabled: true`, preserving the bundle’s own condition. Global edits recompose immediately on live profiles. `dependents` reports injection dependents and user-layer module references.
+`setRowDisabled` writes or removes `disabled: true`, preserving the bundle’s own condition. Global edits recompose immediately on live profiles. `dependents` reports injection dependents and user-layer module references.
 
 The manager runs one mutation at a time — a second call while one runs fails with `plugins/busy` naming the operation in flight — and `add` and `uninstall` refuse to change `node_modules` while a session is running, with `plugins/agents-running`. Every change is followed by a `plugins/changed` event on the context, and an install run emits pnpm's output as `plugins/install-log` chunks, each naming the command line it ran and the profile directory it ran in, and, with colour on, carrying pnpm's SGR escapes.
 
 ### Failures
 
-Every refusal or failure is a `PluginOperationError` with a stable `code` and `details` typed by it: `plugins/unavailable` (no profile runtime), `plugins/not-installed`, `plugins/not-enableable`, `plugins/enable-failed`, `plugins/install-failed`, `plugins/row-conflict`, `plugins/busy`, `plugins/agents-running`, and `plugins/bad-request` for a request that names nothing the profile has. `pluginOperationFailureOf` narrows a caught value to the code-discriminated union.
+Every refusal or failure is a `PluginOperationError` with a stable `code` and `details` typed by it: `plugins/unavailable` (no profile runtime), `plugins/not-installed`, `plugins/not-enableable`, `plugins/enable-failed`, `plugins/install-failed`, `plugins/busy`, `plugins/agents-running`, and `plugins/bad-request` for a request that names nothing the profile has. `pluginOperationFailureOf` narrows a caught value to the code-discriminated union.
 
 -----
 
@@ -114,7 +114,6 @@ The manager reads Loader entries, the reflect store and entry-owned diagnostics.
 | [`src/installer.ts`](src/installer.ts) | `PluginInstaller`: pnpm runs with streamed output, static declarations, and the post-install checks |
 | [`src/manager.ts`](src/manager.ts) | `PluginManager`: every operation over the booted profile, the one-at-a-time mutex, user-layer edits, and dependents |
 | [`src/view.ts`](src/view.ts) | The view fold: manifest, declarations, and live-tree rows into one `PluginPackageView`, and the row-ownership walk |
-| [`src/modules.ts`](src/modules.ts) | Declared `dsh.plugins` modules: row naming, derived row ids, and their wire view |
 | [`src/helpers.ts`](src/helpers.ts) | Shared vocabulary: the diagnostic prefix, tooling bounds, the spawn seam, and the manifest readers |
 | [`src/types.ts`](src/types.ts) | Payloads, the `plugins/changed` and `plugins/install-log` events, and the `plugins/*` failure codes with their details |
 | [`src/errors.ts`](src/errors.ts) | `PluginOperationError` and the code-discriminated failure union |

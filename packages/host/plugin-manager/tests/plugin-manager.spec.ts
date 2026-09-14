@@ -249,7 +249,7 @@ describe('PluginManagerRemote', () => {
     const remote = await mount()
     expect(remote.typertRemote).toMatchObject({ serviceKey: 'pluginManager', namespace: 'plugins' })
     expect(remoteMethods(remote).map(marker => marker.method)).toEqual([
-      'list', 'add', 'uninstall', 'enable', 'disable', 'retry', 'addRow', 'removeRow', 'setRowDisabled', 'dependents',
+      'list', 'add', 'uninstall', 'enable', 'disable', 'retry', 'setRowDisabled', 'dependents',
     ])
   })
 
@@ -274,8 +274,6 @@ describe('PluginManagerRemote', () => {
     await remote.enable('pkg')
     await remote.disable('pkg')
     await remote.retry('pkg')
-    await remote.addRow('pkg', { module: './x.js', id: 'x', config: { a: 1 } })
-    await remote.removeRow('x')
     await remote.setRowDisabled('x', true)
     await remote.dependents('pkg')
 
@@ -286,8 +284,6 @@ describe('PluginManagerRemote', () => {
       ['enable', 'pkg'],
       ['disable', 'pkg'],
       ['retry', 'pkg'],
-      ['addRow', 'pkg', { module: './x.js', id: 'x', config: { a: 1 } }],
-      ['removeRow', 'x'],
       ['setRowDisabled', 'x', true],
       ['dependents', 'pkg'],
     ])
@@ -306,7 +302,7 @@ describe('PluginManagerRemote', () => {
       whenIdle: async () => {},
     } as never)
     const metadata: typeof readPackageMetadata = options => ({
-      packageName: options.packageName, kind: 'plugin', cordisSameCopy: null, rows: [], overrides: [], addable: [{ name: '.' }],
+      packageName: options.packageName, kind: 'unknown', cordisSameCopy: null, rows: [], overrides: [],
     })
     const spawn: SpawnLike = () => { throw new Error('this test spawns nothing') }
     class SeamedRemote extends PluginManagerRemote {
@@ -323,7 +319,7 @@ describe('PluginManagerRemote', () => {
       // The agent-count reader: a running session refuses an install before pnpm runs.
       ctx.provide('agents', { list: () => [{ status: 'running' }, { status: 'idle' }] } as never)
       await expect(remote.add('anything')).rejects.toMatchObject({ code: 'plugins/agents-running', details: { operation: 'add', running: 1 } })
-      await expect(remote.addRow('pkg', { module: './unknown' })).rejects.toMatchObject({ code: 'plugins/not-enableable' })
+      await expect(remote.enable('pkg')).rejects.toMatchObject({ code: 'plugins/not-enableable' })
     } finally {
       rmSync(profileDir, { recursive: true, force: true })
     }
@@ -352,7 +348,6 @@ describe('remoteErrorOf', () => {
       new PluginOperationError('plugins/not-enableable', 'm', { packageName: 'p', reason: 'r' }),
       new PluginOperationError('plugins/enable-failed', 'm', { packageName: 'p', reason: 'r' }),
       new PluginOperationError('plugins/install-failed', 'm', { spec: 's', exitCode: 1, log: 'l' }),
-      new PluginOperationError('plugins/row-conflict', 'm', { rowId: 'x' }),
       new PluginOperationError('plugins/busy', 'm', { operation: 'add', subject: 'y', active: { operation: 'add', subject: 'x' } }),
       new PluginOperationError('plugins/agents-running', 'm', { operation: 'add', running: 1 }),
     ]
@@ -368,7 +363,7 @@ describe('remoteErrorOf', () => {
 
 describe('RemoteError codes', () => {
   it('declare their details', () => {
-    const error = new RemoteError('plugins/row-conflict', 'taken', { rowId: 'x' })
-    expect(error.details).toEqual({ rowId: 'x' })
+    const error = new RemoteError('plugins/not-installed', 'absent', { packageName: 'x' })
+    expect(error.details).toEqual({ packageName: 'x' })
   })
 })

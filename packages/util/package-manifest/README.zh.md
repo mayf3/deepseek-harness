@@ -38,7 +38,6 @@ const manifest: DshPackageManifest = {
   dsh: {
     manifestVersion: 1,
     title: 'Example plugin',
-    plugins: [{ name: './tool.js', config: { enabled: true } }],
     bundle: { patch: './cordis.patch.yml' },
     client,
   },

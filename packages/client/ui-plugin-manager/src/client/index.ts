@@ -43,8 +43,8 @@ export const NS = 'pluginManager'
 /** The id shared by the sidebar entry and the main panel it opens. */
 export const PANEL_ID = 'plugins' as MainPanelId
 
-/** Services required by the Settings registration and the two Remote faces. */
-export const inject = ['slots', 'locale', 'remote', 'remote.plugins', 'remote.pluginInventory']
+/** Services required by the Settings registration and the Remote methods. */
+export const inject = ['slots', 'locale', 'remote', 'remote.plugins']
 
 /**
  * Contribute the Plugins entry to the sidebar with the management page it

@@ -70,17 +70,17 @@ const manager = new PluginManager(ctx, {
 console.log(await manager.list())
 ```
 
-`list` 报告包身份、`bundle` / `plugin` / `unknown` 分类、安装与启用状态。运行行携带实际阶段与失败；禁用组合包显示静态 patch 声明。`addable` 只来自 `dsh.plugins`，包括表示主入口的 `.` 和声明的默认配置。行更新失败后，活跃实例可能保留先前配置。包的 `issues` 还报告其 patch 覆盖的失败行，但不转移这些行的归属。
+`list` 报告包身份、`bundle` / `unknown` 分类、安装与启用状态。运行行携带实际阶段与失败；禁用组合包显示静态 patch 声明。行更新失败后，活跃实例可能保留先前配置。包的 `issues` 还报告其 patch 覆盖的失败行，但不转移这些行的归属。
 
 `enable` 选择整份组合包层，并在实时 profile 中重组。逐行失败保留启用选择与成功的其他行；结果报告 `issues`，列表可显示 `partial` 或 `failed`。准备失败会撤销启用选择，并抛出 `plugins/enable-failed`。`disable` 移除整层，包括覆盖。`retry` 先禁用并等待清理，再启用。仅启动时生效的 profile 报告 `effect: restart`。实时 profile 中尚未应用的选择报告 `failed`，并保留实际运行的行；`restart-required` 只用于仅启动时生效的 profile。`uninstall` 禁用组合包、删除用户插入的引用、执行 pnpm remove。
 
-`addRow` 将显式声明的 `dsh.plugins` 模块写入 profile 的全局 `cordis.patch.yml`。它保留声明的默认配置，检查目标行 id，不在挂载前 import。`removeRow` 删除用户插入。`setRowDisabled` 写入或删除 `disabled: true`，保留组合包自己的条件。全局编辑在实时 profile 中立即重组。`dependents` 报告注入依赖方与用户层模块引用。
+`setRowDisabled` 写入或删除 `disabled: true`，保留组合包自己的条件。全局编辑在实时 profile 中立即重组。`dependents` 报告注入依赖方与用户层模块引用。
 
 管理器一次只跑一个变更——上一个还在跑时再调用会以 `plugins/busy` 失败并点名正在进行的操作——`add` 与 `uninstall` 在有会话运行时拒绝改动 `node_modules`，报 `plugins/agents-running`。每次变更之后在上下文上发出 `plugins/changed` 事件，安装运行把 pnpm 的输出以 `plugins/install-log` 分块发出，每块都写明所跑的命令行与所在的 profile 目录，开了颜色时还带着 pnpm 的 SGR 转义。
 
 ### 失败
 
-每次拒绝或失败都是一个 `PluginOperationError`，带稳定的 `code` 与按码定型的 `details`：`plugins/unavailable`（没有 profile runtime）、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/row-conflict`、`plugins/busy`、`plugins/agents-running`，以及请求点名了 profile 没有的东西时的 `plugins/bad-request`。`pluginOperationFailureOf` 把捕获到的值收窄为按码区分的联合。
+每次拒绝或失败都是一个 `PluginOperationError`，带稳定的 `code` 与按码定型的 `details`：`plugins/unavailable`（没有 profile runtime）、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/busy`、`plugins/agents-running`，以及请求点名了 profile 没有的东西时的 `plugins/bad-request`。`pluginOperationFailureOf` 把捕获到的值收窄为按码区分的联合。
 
 -----
 
@@ -114,7 +114,6 @@ subprocess seam 会清洗形似密钥的变量且没有 shell 模式，而 pnpm 
 | [`src/installer.ts`](src/installer.ts) | `PluginInstaller`：pnpm 流式输出、静态声明与装后检查 |
 | [`src/manager.ts`](src/manager.ts) | `PluginManager`：已启动 profile 上的每项操作、一次一个的互斥、用户层编辑与依赖查询 |
 | [`src/view.ts`](src/view.ts) | 将 manifest、声明与实际行状态组合为 `PluginPackageView`，并查询行归属 |
-| [`src/modules.ts`](src/modules.ts) | 声明的 `dsh.plugins` 模块：行命名、派生行 id 及其 wire 视图 |
 | [`src/helpers.ts`](src/helpers.ts) | 共享词汇：诊断前缀、工具边界、spawn 测试缝与 manifest 读取器 |
 | [`src/types.ts`](src/types.ts) | 载荷、`plugins/changed` 与 `plugins/install-log` 事件，以及 `plugins/*` 失败码及其 details |
 | [`src/errors.ts`](src/errors.ts) | `PluginOperationError` 与按码区分的失败联合 |

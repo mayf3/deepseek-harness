@@ -9,7 +9,6 @@ export type {
   DshEnginesManifest,
   DshManifest,
   DshPackageManifest,
-  DshPluginDeclaration,
   DshProfileManifest,
   ProfilePatchReload,
 } from './types.ts'

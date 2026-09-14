@@ -12,7 +12,7 @@ Installed packages belong to the running profile, while Settings is a modal over
 
 **Management is a sidebar entry; configuration stays in Settings.** `ui-plugin-manager` registers a `sidebar.panellist` entry and the `main` panel it opens under `plugins`. The page manages packages and global rows, displays install output and confirms dependency-sensitive actions. The Settings Plugins section keeps the global configuration cards and renders its single tab without a tab strip.
 
-**One store follows Host state.** The manager controller combines package views with global inventory, refreshes after management operations and reconnects, and keeps installation progress under the owning job. Configuration cards use the existing global settings bindings.
+**One store follows Host state.** The manager controller reads package views, refreshes after management operations and reconnects, and keeps installation progress under the owning job. Configuration cards use the existing global settings bindings.
 
 ## Alternatives considered
 

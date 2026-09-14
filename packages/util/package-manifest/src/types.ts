@@ -36,8 +36,6 @@ export interface DshManifest {
   client?: DshClientManifest
   /** Display title of the package, read without executing package code. */
   title?: string
-  /** Agent-plane modules the package declares addable to a composition, read without executing package code. */
-  plugins?: DshPluginDeclaration[]
 }
 
 /** Runtime version requirements under `package.json.engines`. */
@@ -50,16 +48,6 @@ export interface DshEnginesManifest {
   npm?: string
   /** Requirements for additional runtimes or package managers. */
   [engine: string]: string | undefined
-}
-
-/** One agent-plane module a package declares addable to a composition. */
-export interface DshPluginDeclaration {
-  /** The package's export subpath, with `.` naming its main entry and `./tools` a subpath. */
-  name: string
-  /** Display title. */
-  title?: string
-  /** Default row config. */
-  config?: unknown
 }
 
 /** The configuration layer exported by a bundle package. */

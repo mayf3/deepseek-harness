@@ -100,7 +100,6 @@ interface StagedPackage {
   /** `index.js` text, exported as the package main. */
   main?: string
   version?: string
-  plugins?: { name: string; title?: string; config?: unknown }[]
   files?: Record<string, string>
 }
 
@@ -117,7 +116,6 @@ function stagePackage(profileDir: string, name: string, staged: StagedPackage): 
     dsh: {
       title: `Title of ${name}`,
       ...staged.patch === undefined ? {} : { bundle: { patch: './cordis.patch.yml' } },
-      ...staged.plugins === undefined ? {} : { plugins: staged.plugins },
     },
   }, null, 2))
   if (staged.patch !== undefined) writeFileSync(join(dir, 'cordis.patch.yml'), staged.patch)
@@ -331,27 +329,16 @@ describe('PluginManager', () => {
     expect(ctx.loader.resolve('include:hello').fiber?.state).toBe(2)
   })
 
-  it('does not execute a declared main module during install or list and refuses an undeclared entry', async () => {
+  it('installs and lists a non-bundle package without executing its main module', async () => {
     const staged = await stageHome()
     const marker = join(staged.profileDir, 'executed')
-    stagePackage(staged.profileDir, 'declared', {
-      plugins: [{ name: '.', config: { custom: 1 } }],
+    stagePackage(staged.profileDir, 'plain', {
       main: `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'bad'); export function apply() {}`,
     })
-    stagePackage(staged.profileDir, 'unknown', { main: 'export function apply() {}' })
     const { manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir) })
-    await manager.add('declared')
-    await manager.add('unknown')
-    const views = await manager.list()
-    expect(views.find(view => view.name === 'declared')?.addable[0]).toMatchObject({ moduleName: 'declared', config: { custom: 1 } })
+    await manager.add('plain')
+    expect((await manager.list()).find(view => view.name === 'plain')?.kind).toBe('unknown')
     expect(existsSync(marker)).toBe(false)
-    for (const id of ['', 'nested:child']) {
-      await expect(manager.addRow('declared', { id })).rejects.toMatchObject({ code: 'plugins/bad-request' })
-    }
-    const added = await manager.addRow('declared', { config: null })
-    expect(readFileSync(added.file, 'utf8')).toContain('config: null')
-    expect(views.find(view => view.name === 'unknown')?.kind).toBe('unknown')
-    await expect(manager.addRow('unknown')).rejects.toMatchObject({ code: 'plugins/not-enableable' })
   })
 
   it('reports plugins/unavailable without a profile runtime', async () => {
@@ -364,9 +351,9 @@ describe('PluginManager', () => {
   describe('list', () => {
     it('folds installed, enabled, declared and running facts into one view per package', async () => {
       const staged = await stageHome()
-      stagePackage(staged.profileDir, 'ext-bundle', { patch: BUNDLE_ONE_ROW, plugins: [{ name: './extra.js', title: 'Extra' }], files: { 'extra.js': 'export const name = "extra"\nexport function apply() {}\n' } })
+      stagePackage(staged.profileDir, 'ext-bundle', { patch: BUNDLE_ONE_ROW, files: { 'extra.js': 'export const name = "extra"\nexport function apply() {}\n' } })
       stagePackage(staged.profileDir, 'ext-lib', { main: 'export const x = 1\n' })
-      stagePackage(staged.profileDir, 'ext-plugin', { plugins: [{ name: '.' }], main: 'export const name = "p"\nexport function apply() {}\n' })
+      stagePackage(staged.profileDir, 'ext-plugin', { main: 'export const name = "p"\nexport function apply() {}\n' })
       addDependency(staged.profileDir, 'ext-bundle')
       addDependency(staged.profileDir, 'ext-lib')
       addDependency(staged.profileDir, 'ext-plugin')
@@ -377,33 +364,12 @@ describe('PluginManager', () => {
       expect(views.map(view => [view.name, view.kind, view.status, view.installed, view.enabled])).toEqual([
         ['ext-bundle', 'bundle', 'disabled', true, false],
         ['ext-lib', 'unknown', 'plain', true, false],
-        ['ext-plugin', 'plugin', 'plain', true, false],
+        ['ext-plugin', 'unknown', 'plain', true, false],
       ])
       const bundle = views[0]
       expect(bundle).toMatchObject({ version: '1.0.0', title: 'Title of ext-bundle', description: 'staged ext-bundle', liveReload: true })
       // Rows come from static declarations while the bundle is not composed, under the ids the patch declares.
       expect(bundle?.rows).toEqual([{ entryId: 'hello', rowId: 'hello', moduleName: 'cordis:good', enabled: true, phase: null }])
-      expect(bundle?.addable).toEqual([{ moduleName: 'ext-bundle/extra.js', declaredName: './extra.js', title: 'Extra' }])
-    })
-
-    it('lists only declared modules, including an explicitly declared main export', async () => {
-      const staged = await stageHome()
-      const main = 'export const name = "p"\nexport function apply() {}\n'
-      stagePackage(staged.profileDir, 'ext-plugin', {
-        main,
-        plugins: [{ name: './tools/sql.js', title: 'SQL' }],
-        files: { 'tools/sql.js': 'export const name = "sql"\nexport function apply() {}\n' },
-      })
-      stagePackage(staged.profileDir, 'ext-explicit', { main, plugins: [{ name: '.', title: 'Main', config: { dsn: 'sqlite://' } }] })
-      addDependency(staged.profileDir, 'ext-plugin')
-      addDependency(staged.profileDir, 'ext-explicit')
-      const { manager } = await bootProfile(staged)
-
-      const views = await manager.list()
-
-      expect(views.find(view => view.name === 'ext-plugin')?.addable.map(entry => entry.declaredName)).toEqual(['./tools/sql.js'])
-      // A declared "." is the package's own word on its main export; nothing is prepended.
-      expect(views.find(view => view.name === 'ext-explicit')?.addable.map(entry => entry.declaredName)).toEqual(['.'])
     })
 
     it('reads a composed bundle\'s rows from the live tree with their failures', async () => {
@@ -496,7 +462,7 @@ describe('PluginManager', () => {
       const { manager } = await bootProfile(staged, {
         metadata: ({ packageName }) => {
           if (packageName === 'ext-odd') throw new Error('invalid declarations')
-          return { packageName, kind: 'bundle', cordisSameCopy: false, rows: [], overrides: [], addable: [] }
+          return { packageName, kind: 'bundle', cordisSameCopy: false, rows: [], overrides: [] }
         },
       })
 
@@ -898,67 +864,37 @@ describe('PluginManager', () => {
   })
 
   describe('rows in user layers', () => {
-    it('adds, disables, re-enables, and removes a row in the live global layer', async () => {
-      const staged = await stageHome()
-      stagePackage(staged.profileDir, '@acme/ext-plugin', { plugins: [{ name: '.' }], main: 'export const name = "p"\nexport function apply() {}\n' })
-      addDependency(staged.profileDir, '@acme/ext-plugin')
-      const { ctx, manager, changes } = await bootProfile(staged)
-
-      const added = await manager.addRow('@acme/ext-plugin')
-
-      expect(added).toEqual({ rowId: 'acme/ext-plugin', file: join(staged.profileDir, 'cordis.patch.yml') })
-      expect(readFileSync(added.file, 'utf8')).toBe('- insert:\n    - id: acme/ext-plugin\n      name: "@acme/ext-plugin"\n      config: {}\n')
-      // Composed live: the row is in the tree, though its module cannot import from the temp home.
-      expect(entryIds(ctx)).toContain('include:acme/ext-plugin')
-      await expect(manager.addRow('@acme/ext-plugin')).rejects.toMatchObject({ code: 'plugins/row-conflict' })
-
-      await manager.setRowDisabled('acme/ext-plugin', true)
-      expect(ctx.loader.resolve('include:acme/ext-plugin')?.disabled).toBe(true)
-      expect(readFileSync(added.file, 'utf8')).toContain('- id: acme/ext-plugin\n  disabled: true\n')
-      await manager.setRowDisabled('acme/ext-plugin', false)
-      expect(ctx.loader.resolve('include:acme/ext-plugin')?.disabled).toBe(false)
-      expect(readFileSync(added.file, 'utf8')).not.toContain('disabled')
-
-      await manager.removeRow('acme/ext-plugin')
-      expect(entryIds(ctx)).not.toContain('include:acme/ext-plugin')
-      await expect(manager.removeRow('acme/ext-plugin')).rejects.toMatchObject({ code: 'plugins/bad-request' })
-      expect(changes.map(change => change.reason)).toEqual(['row', 'row', 'row', 'row'])
-    })
-
-    it('detects a conflict through the layer file when the tree was not recomposed', async () => {
+    it('persists a startup profile row toggle without changing its mounted tree', async () => {
       const staged = await stageHome('startup')
-      stagePackage(staged.profileDir, 'ext-plugin', { plugins: [{ name: '.' }], main: 'export const name = "p"\nexport function apply() {}\n' })
-      addDependency(staged.profileDir, 'ext-plugin')
+      stagePackage(staged.profileDir, 'ext-bundle', { patch: BUNDLE_ONE_ROW })
+      addDependency(staged.profileDir, 'ext-bundle')
+      const manifest = manifestOf(staged.profileDir)
+      manifest.dsh.profile.bundles.push('ext-bundle')
+      writeFileSync(join(staged.profileDir, 'package.json'), JSON.stringify(manifest))
       const { ctx, manager } = await bootProfile(staged)
 
-      await manager.addRow('ext-plugin')
+      await manager.setRowDisabled('hello', true)
 
-      expect(entryIds(ctx)).not.toContain('include:ext-plugin')
-      await expect(manager.addRow('ext-plugin')).rejects.toMatchObject({ code: 'plugins/row-conflict' })
+      expect(readFileSync(join(staged.profileDir, 'cordis.patch.yml'), 'utf8')).toContain('disabled: true')
+      expect(ctx.loader.resolve('include:hello').disabled).toBe(false)
     })
 
-    it('adds a declared addable module with its default config and an explicit id, and refuses the rest', async () => {
+    it('disables and restores a bundle row through the live user layer', async () => {
       const staged = await stageHome()
-      stagePackage(staged.profileDir, 'ext-bundle', {
-        patch: BUNDLE_ONE_ROW,
-        plugins: [
-          { name: './tools/sql.js', title: 'SQL', config: { dsn: 'sqlite://' } },
-          { name: './missing.js' },
-        ],
-        files: { 'tools/sql.js': 'export const name = "sql"\nexport function apply() {}\n' },
-      })
+      stagePackage(staged.profileDir, 'ext-bundle', { patch: BUNDLE_ONE_ROW })
       addDependency(staged.profileDir, 'ext-bundle')
-      const { manager } = await bootProfile(staged)
+      const { ctx, manager, changes } = await bootProfile(staged)
+      await manager.enable('ext-bundle')
+      const file = join(staged.profileDir, 'cordis.patch.yml')
 
-      const added = await manager.addRow('ext-bundle', { module: './tools/sql.js', id: 'sql' })
-      expect(added.rowId).toBe('sql')
-      expect(readFileSync(added.file, 'utf8')).toContain('- id: sql\n      name: ext-bundle/tools/sql.js\n      config:\n        dsn: sqlite://\n')
-      await expect(manager.addRow('ext-bundle')).rejects.toMatchObject({ code: 'plugins/not-enableable' })
-      await expect(manager.addRow('ext-bundle', { module: './missing.js' })).resolves.toMatchObject({ rowId: 'ext-bundle/missing.js' })
-      await expect(manager.addRow('absent')).rejects.toMatchObject({ code: 'plugins/not-installed' })
+      await manager.setRowDisabled('hello', true)
+      expect(ctx.loader.resolve('include:hello').disabled).toBe(true)
+      expect(readFileSync(file, 'utf8')).toContain('disabled: true')
+      await manager.setRowDisabled('hello', false)
+      expect(ctx.loader.resolve('include:hello').disabled).toBe(false)
+      expect(readFileSync(file, 'utf8')).not.toContain('disabled')
+      expect(changes.map(change => change.reason)).toEqual(['enable', 'row', 'row'])
     })
-
-
   })
 
   describe('dependents and uninstall', () => {
@@ -1007,14 +943,15 @@ describe('PluginManager', () => {
       expect((await manager.dependents('ext-lib')).references).toEqual([])
     })
 
-    it('disables, drops references, removes the package, and forgets its probe', async () => {
+    it('disables a bundle and removes references from a handwritten user patch before uninstalling', async () => {
       const staged = await stageHome()
-      stagePackage(staged.profileDir, 'ext-bundle', { patch: BUNDLE_ONE_ROW, plugins: [{ name: './extra.js' }], files: { 'extra.js': 'export function apply() {}\n' } })
+      stagePackage(staged.profileDir, 'ext-bundle', { patch: BUNDLE_ONE_ROW, files: { 'extra.js': 'export function apply() {}\n' } })
       addDependency(staged.profileDir, 'ext-bundle')
       const calls: string[][] = []
       const { ctx, manager, changes } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
       await manager.enable('ext-bundle')
-      await manager.addRow('ext-bundle', { module: './extra.js' })
+      writeFileSync(join(staged.profileDir, 'cordis.patch.yml'), '- insert:\n    - id: ext-bundle/extra.js\n      name: ext-bundle/extra.js\n')
+      await ctx.profileRuntime.recompose()
       expect(entryIds(ctx)).toEqual(expect.arrayContaining(['include:hello', 'include:ext-bundle/extra.js']))
 
       await manager.uninstall('ext-bundle')
@@ -1024,7 +961,7 @@ describe('PluginManager', () => {
       expect(entryIds(ctx)).not.toContain('include:hello')
       expect(entryIds(ctx)).not.toContain('include:ext-bundle/extra.js')
       expect(readFileSync(join(staged.profileDir, 'cordis.patch.yml'), 'utf8')).toBe('[]\n')
-      expect(changes.map(change => change.reason)).toEqual(['enable', 'row', 'disable', 'uninstall'])
+      expect(changes.map(change => change.reason)).toEqual(['enable', 'disable', 'uninstall'])
       await expect(manager.uninstall('ext-bundle')).rejects.toMatchObject({ code: 'plugins/not-installed' })
     })
   })
@@ -1032,8 +969,8 @@ describe('PluginManager', () => {
 
 describe('PluginOperationError', () => {
   it('carries its code and details, and is what pluginOperationFailureOf narrows to', () => {
-    const failure = new PluginOperationError('plugins/row-conflict', 'taken', { rowId: 'x' })
-    expect(failure).toMatchObject({ name: 'PluginOperationError', code: 'plugins/row-conflict', message: 'taken', details: { rowId: 'x' } })
+    const failure = new PluginOperationError('plugins/not-installed', 'absent', { packageName: 'x' })
+    expect(failure).toMatchObject({ name: 'PluginOperationError', code: 'plugins/not-installed', message: 'absent', details: { packageName: 'x' } })
     expect(pluginOperationFailureOf(failure)).toBe(failure)
     expect(pluginOperationFailureOf(new Error('plain'))).toBeUndefined()
   })

@@ -27,12 +27,10 @@ async function bench() {
   }
   new LocaleHolder(ctx)
   const list = vi.fn(() => Promise.resolve({ ok: true as const, value: [] }))
-  const inventory = vi.fn(() => Promise.resolve({ ok: true as const, value: { entries: [] } }))
   const remote = new TestRemote(ctx, {
     plugins: { list },
-    pluginInventory: { list: inventory },
   })
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, inventory, remote }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, remote }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -50,8 +48,8 @@ describe('ui-plugin-manager browser plugin', () => {
     expect(hostApply).not.toThrow()
   })
 
-  it('declares only the services the page and its two Remote faces use', () => {
-    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.plugins', 'remote.pluginInventory'])
+  it('declares only the services the page and its Remote methods use', () => {
+    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.plugins'])
   })
 
   it('registers the sidebar entry and its page, which reads the Host only once rendered and follows Host changes', async () => {

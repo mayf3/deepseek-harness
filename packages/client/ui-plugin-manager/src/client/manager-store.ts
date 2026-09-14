@@ -1,6 +1,6 @@
 /**
  * The plugin manager's state: the Host's package views
- * and global composition, the action in flight, the install run, and the
+ * the action in flight, the install run, and the
  * confirmation a destructive action waits on. Every fact comes from the Host — the store
  * re-reads after each action and after every `plugins/changed` event, so a
  * change made on another surface shows here without a manual refresh.
@@ -59,7 +59,7 @@ export interface InstallState {
   readonly enabled: readonly string[]
   /** Bundles the run installed and left off. */
   readonly installedOnly: readonly string[]
-  /** Plugin modules the run installed, which join a composition per row. */
+  /** Packages installed without a bundle patch. */
   readonly plain: readonly string[]
   /** Packages pnpm added that the Host removed again, each with its reason. */
   readonly removed: readonly PluginInstallRejection[]
@@ -89,8 +89,6 @@ export interface PluginManagerState {
   /** `unavailable` when the Host runs without a profile runtime; `error` keeps the last packages. */
   readonly status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   readonly packages: readonly PluginPackageView[]
-  /** Module names of the rows the host tree carries, for the **Add to…** menu's "added" marks. */
-  readonly globalModules: readonly string[]
   /** Package names and row keys with an action crossing the wire. */
   readonly busy: readonly string[]
   readonly notice: ManagerNotice | null
@@ -121,9 +119,6 @@ export interface PluginManagerFace {
   uninstall: (packageName: string) => void
   confirm: () => void
   cancelConfirm: () => void
-  /** Add a row naming one of a package's modules — by its declared name, `.` for the main export — to a user layer. */
-  addRow: (packageName: string, declaredName: string) => void
-  removeRow: (rowId: string) => void
   setRowDisabled: (rowId: string, disabled: boolean) => void
   /** Switch one of a package's rows off in the global layer, after asking when other rows inject what it provides. */
   disableRow: (packageName: string, entryId: string, rowId: string) => void
@@ -178,7 +173,7 @@ const IDLE_INSTALL: InstallState = {
   open: false, spec: '', enable: true, phase: 'idle', runs: [], installed: [], enabled: [], installedOnly: [], plain: [], removed: [], failure: null,
 }
 
-/** Reads and mutates the profile's plugins through the `plugins` and `pluginInventory` Remotes. */
+/** Reads and mutates the profile's plugins through the `plugins` Remote. */
 export class PluginManagerController {
   private readonly store: SnapshotStore<PluginManagerState>
   private inFlight: Promise<void> | undefined
@@ -188,14 +183,13 @@ export class PluginManagerController {
   private pendingConfirm: (() => Promise<void>) | undefined
 
   /**
-   * @param ctx - the tab plugin's context, whose `remote.plugins` and
-   * `remote.pluginInventory` namespaces answer.
+   * @param ctx - the tab plugin's context, whose `remote.plugins` namespace answers.
    */
   constructor(
     private readonly ctx: ClientContext,
   ) {
     this.store = createSnapshotStore<PluginManagerState>({
-      status: 'idle', packages: [], globalModules: [], busy: [], notice: null,
+      status: 'idle', packages: [], busy: [], notice: null,
       install: IDLE_INSTALL, confirm: null,
     })
   }
@@ -246,16 +240,6 @@ export class PluginManagerController {
       uninstall: (packageName) => { void this.askConfirm('uninstall', packageName) },
       confirm: () => { void this.confirm() },
       cancelConfirm: () => { this.pendingConfirm = undefined; this.patch({ confirm: null }) },
-      addRow: (packageName, declaredName) => {
-        void this.run(packageName, { packageName }, async () => {
-          this.answer(await this.ctx.remote.plugins.addRow(packageName, { module: declaredName }))
-        })
-      },
-      removeRow: (rowId) => {
-        void this.run(rowKey(rowId), { rowId }, async () => {
-          this.answer(await this.ctx.remote.plugins.removeRow(rowId))
-        })
-      },
       setRowDisabled: (rowId, disabled) => {
         void this.run(rowKey(rowId), { rowId }, async () => {
           this.answer(await this.ctx.remote.plugins.setRowDisabled(rowId, disabled))
@@ -308,10 +292,7 @@ export class PluginManagerController {
         this.rerun = false
         const generation = ++this.generation
         if (this.getSnapshot().status === 'idle') this.patch({ status: 'loading' })
-        const [packages, inventory] = await Promise.all([
-          this.ctx.remote.plugins.list(),
-          this.ctx.remote.pluginInventory.list(),
-        ])
+        const packages = await this.ctx.remote.plugins.list()
         if (generation !== this.generation) return
         if (!packages.ok) {
           this.patch({ status: packages.error.code === 'plugins/unavailable' ? 'unavailable' : 'error' })
@@ -320,7 +301,6 @@ export class PluginManagerController {
         this.patch({
           status: 'ready',
           packages: packages.value,
-          globalModules: inventory.ok ? inventory.value.entries.map(entry => entry.moduleName) : this.getSnapshot().globalModules,
         })
       } while (this.shouldRerun())
     } finally {

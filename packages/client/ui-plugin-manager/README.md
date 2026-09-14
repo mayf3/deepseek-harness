@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use the **Plugins** entry in the Web sidebar to manage installed packages. Switch bundle layers on and off, inspect their rows and failures, add declared modules to the global user layer, and install packages while watching pnpm output. Dependency-sensitive changes and uninstalling ask for confirmation. Global configuration remains in Settings.
+Use the **Plugins** entry in the Web sidebar to manage installed packages. Switch bundle layers on and off, inspect their rows and failures, install packages while watching pnpm output. Dependency-sensitive changes and uninstalling ask for confirmation. Global configuration remains in Settings.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Use the **Plugins** entry in the Web sidebar to manage installed packages. Switc
 <a id="use-this-package"></a>
 ## Use this package
 
-Select **Plugins** in the sidebar. The page reads packages and global composition through `api-remotes` when first opened. Global configuration remains in the Settings **Plugins** section.
+Select **Plugins** in the sidebar. The page reads packages through `api-remotes` when first opened. Global configuration remains in the Settings **Plugins** section.
 
 ### Installing a package
 
@@ -39,13 +39,9 @@ A pack’s switch changes its enabled layer selection. Live profiles recompose b
 
 A row's switch on the pack's page calls `plugins.setRowDisabled` against the profile's global user layer: off writes `disabled: true` for the row's id into the profile's `cordis.patch.yml`, on deletes that key again. The tree recomposes at once, so the row's host half unmounts or mounts while the rest of the pack keeps running; a browser half the pack's own client bundle mounts for every component stays until the page reloads. The switch appears only where it acts at once — an external pack that is switched on, on a profile that applies patches while it runs; built-in packs, packs that are off, and profiles that apply patches at their next start list their rows read-only. A row the pack itself keeps off, by a `disabled: true` row or a `!!js` gate, is locked with the reason, because the user layer only ever denies. A failing row can be switched off; a row another layer already owns has nothing mounted to switch. Switching a row off first asks the Host what other rows inject of what the row provides, with the switch inert meanwhile, and opens a confirmation naming them only when there are any; a row nothing depends on switches off at once, and switching on never asks. A list longer than ten rows gets a filter over the row ids.
 
-### Adding a plugin globally
+### Packages without a bundle
 
-A package with explicit `dsh.plugins` declarations offers **Add globally** for each module. An already-added module has a disabled action. Addition writes the profile's `cordis.patch.yml` without an import precheck. Packages without recognized declarations remain uninstallable and have no Add action.
-
-### Reading a failure
-
-The page separates enablement, running phase and current issues. A missing service reads as *waiting for a dependency*. A row whose old instance remains active after invalid configuration reads *Running; latest update failed* with the actual error. The pack detail also identifies issues in other components its patch affects, preserving their original ownership. Runtime changes refresh the page after Loader and profile recomposition settle. Action refusals retain the Host’s reason.
+Non-bundle dependencies remain installed and appear under **Other installed packages**. Their detail page shows package metadata and uninstall. Modules can be loaded by writing Cordis configuration; this page does not infer module exports.
 
 -----
 
@@ -63,7 +59,7 @@ The browser plugin registers the `plugins` sidebar entry and its `main` panel th
 
 ### The store
 
-`PluginManagerController` owns the package and global-module snapshot, busy keys, notices, install progress and confirmations. It coalesces overlapping reads, refreshes after operations and Host changes, and ignores late results after disposal. Install output is grouped by job id.
+`PluginManagerController` owns the package snapshot, busy keys, notices, install progress and confirmations. It coalesces overlapping reads, refreshes after operations and Host changes, and ignores late results after disposal. Install output is grouped by job id.
 
 ### Confirmation
 
@@ -79,7 +75,7 @@ The browser plugin registers the `plugins` sidebar entry and its `main` panel th
 These pages cover the settings section, the Remote calls, and the Host-side manager.
 
 - [ui-sidebar](../ui-sidebar/README.md) — the panel list the Plugins entry registers into; [ui-layout](../ui-layout/README.md) — the main slot the page occupies.
-- [api-remotes](../../api/remotes/README.md) — the Remote BFF surface behind `plugins.*` and `pluginInventory.list()`.
+- [api-remotes](../../api/remotes/README.md) — the Remote BFF surface behind `plugins.*`.
 - [plugin-manager](../../host/plugin-manager/README.md) — the Host-side manager this page drives.
 
 -----
@@ -100,8 +96,8 @@ None; this package neither assembles nor sends a provider request.
 
 These limits define the reach of the management view; they are current package constraints.
 
-- **Global user-layer rows are not listed per package** — a row added to every session marks that target in the package's **Add to…** menu and shows in its dependents, not on the card; removing it goes through the patch file or a future row list.
-- **Names for harness modules live in this page's dictionary** — a new first-party agent-plane module reads by its short module name until `name.<slug>` and `desc.<slug>` are added here.
+- **User-layer rows are not listed per package** — module references in handwritten patches appear in dependency queries and are cleaned up by uninstall; editing those rows remains a file operation.
+- **Names for harness modules live in this page's dictionary** — a new first-party agent-plane module reads by its short module name until `name.<slug>` are added here.
 - **One install at a time** — the dialog runs one pnpm command; a second spec waits for the first to finish.
 - **No version picker** — the spec is typed as pnpm accepts it; the page neither lists registry versions nor offers upgrades.
 

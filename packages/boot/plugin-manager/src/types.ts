@@ -5,10 +5,8 @@
  * @module @deepseek-ai/dsh-plugin-manager/types
  */
 
-import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-
-/** What an installed package is: a bundle layer, declared plugin modules, or an unknown package. */
-export type PluginPackageKind = 'bundle' | 'plugin' | 'unknown'
+/** What an installed package is: a bundle layer or an unknown package. */
+export type PluginPackageKind = 'bundle' | 'unknown'
 
 /**
  * The state one package is in, folded from the manifest, declarations, and current entries:
@@ -19,7 +17,7 @@ export type PluginPackageKind = 'bundle' | 'plugin' | 'unknown'
  * - `disabled`: installed and not in the layer list;
  * - `not-enableable`: bundle declarations cannot be read;
  * - `restart-required`: its manifest state and the live tree disagree, which a profile without live reload resolves at the next start;
- * - `plain`: a bundle-less package; explicitly declared modules can be added to a composition.
+ * - `plain`: a package without a bundle patch.
  */
 export type PluginPackageStatus =
   | 'running'
@@ -51,19 +49,6 @@ export interface PluginPackageRowView {
   readonly failure?: { readonly stage: string; readonly message: string }
 }
 
-/** One module a package declares addable to the profile. */
-export interface PluginPackageAddableView {
-  /** The module as it is named in a row: the bare package for `.`, else `<package>/<subpath>`. */
-  readonly moduleName: string
-  /** The `dsh.plugins[].name` the package declared. */
-  readonly declaredName: string
-  /** Display title, when declared. */
-  readonly title?: string
-  /** Default row config, when declared. */
-  readonly config?: JsonValue
-
-}
-
 /** One package as the manager sees it. */
 export interface PluginPackageView {
   /** The installed package name. */
@@ -92,8 +77,6 @@ export interface PluginPackageView {
   readonly issues?: readonly PluginRowIssue[]
   /** Ids of built-in rows the bundle's patch overrides. */
   readonly overrides: readonly string[]
-  /** Modules the package declares addable. */
-  readonly addable: readonly PluginPackageAddableView[]
   /** Whether the profile applies user patch files while running; false means changes wait for a restart. */
   readonly liveReload: boolean
 }
@@ -162,14 +145,6 @@ export interface PluginDependents {
   readonly references: readonly PluginRowReference[]
 }
 
-/** Where a row was added. */
-export interface PluginRowAddition {
-  /** The id the row was given. */
-  readonly rowId: string
-  /** The user layer file the row was written to. */
-  readonly file: string
-}
-
 /** Why the manager changed something, for a listener deciding what to refresh. */
 export type PluginChangeReason = 'install' | 'uninstall' | 'enable' | 'disable' | 'retry' | 'row' | 'runtime'
 
@@ -200,14 +175,12 @@ export interface PluginOperationDetailsMap {
   'plugins/unavailable': { readonly reason: string }
   /** The package is not a profile dependency. */
   'plugins/not-installed': { readonly packageName: string }
-  /** The package cannot be enabled or added, with the declaration or request error. */
+  /** The package cannot be enabled, with the declaration or request error. */
   'plugins/not-enableable': { readonly packageName: string; readonly reason: string }
   /** Preparation or the root Include rejected enablement; the layer selection was reverted. */
   'plugins/enable-failed': { readonly packageName: string; readonly reason: string }
   /** pnpm exited non-zero, could not be spawned, or timed out. */
   'plugins/install-failed': { readonly spec: string; readonly exitCode: number | null; readonly log: string }
-  /** The row id is already taken in the target user layer. */
-  'plugins/row-conflict': { readonly rowId: string }
   /** Another mutation is still running; the manager runs one at a time and refuses rather than queues. */
   'plugins/busy': {
     readonly operation: string

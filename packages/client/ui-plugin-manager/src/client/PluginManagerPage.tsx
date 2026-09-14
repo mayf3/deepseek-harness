@@ -1,23 +1,16 @@
 /**
- * The plugin management page behind the sidebar's Plugins entry: the
- * profile's installed packages as cards — a
- * plugin pack with its switch, a plugin with its **Add to…** menu, a built-in
- * pack with a locked switch — each a name, a one-liner, and a tag only when
- * a restart is pending or something is wrong; the install dialog streaming
- * pnpm's output behind a fold; and the confirmation a destructive action
- * waits on, naming what still uses the package. Entry ids, module names,
- * and module names stay in the detail view. A card opens the package's own
- * page: its version and source, its rows — each with its own switch on an
- * external pack composed on a live-reload profile — the built-in rows it
- * changes, the modules it declares addable, and its uninstall.
+ * Global plugin management: installed package cards, bundle component switches,
+ * entry diagnostics, streamed installation output and dependency confirmations.
+ * Package details expose module names and runtime failures; non-bundle packages
+ * retain package information and uninstall without automatic composition actions.
  */
 
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { PluginInstallRejection, PluginPackageView } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   Button, IconChevronDownOutline14, IconCordisPluginOutline14, IconRefreshOutline16,
-  Input, Menu, Modal, StateDot, Switch, Tag, TerminalBlock,
-  type MenuItem, type StateDotState, type TerminalBlockLabels,
+  Input, Modal, StateDot, Switch, Tag, TerminalBlock,
+  type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginManagerLocaleKey } from './locales.ts'
@@ -253,44 +246,6 @@ function OverridesSection({ overrides, t }: { readonly overrides: readonly strin
   )
 }
 
-/** Declared modules with their global composition state and add action. */
-function ModulesSection({ pkg, t, busy, globalModules, onAddRow }: {
-  readonly pkg: PluginPackageView
-  readonly t: Translate
-  readonly busy: boolean
-  readonly globalModules: readonly string[]
-  readonly onAddRow: (declaredName: string) => void
-}): ReactNode {
-  const title = pkg.title ?? shortName(pkg.name)
-  return (
-    <section className={css.detailSection} data-plugin-modules>
-      <div className={css.sectionHead}>
-        <h4 className={css.sectionTitle}>{t('modulesLabel')}</h4>
-      </div>
-      <ul className={css.rows}>
-        {pkg.addable.map((entry) => {
-          const added = globalModules.includes(entry.moduleName)
-          return (
-            <li key={entry.moduleName} className={css.row} data-plugin-module={entry.moduleName}>
-              <div className={css.rowLine}>
-                <span className={css.rowIcon} aria-hidden="true"><IconCordisPluginOutline14 /></span>
-                <div className={css.rowMain}>
-                  <span className={css.rowId}>{entry.title ?? (entry.declaredName === '.' ? title : entry.declaredName)}</span>
-                  <span className={css.rowModule}>{entry.moduleName}</span>
-                  <span className={css.rowNote}>{t(added ? 'joinedGlobal' : 'moduleNotJoined')}</span>
-                </div>
-                <Button variant="outline" size="sm" disabled={busy || added} onClick={() => { onAddRow(entry.declaredName) }}>
-                  {t(added ? 'addToGlobalAdded' : 'addToGlobal')}
-                </Button>
-              </div>
-            </li>
-          )
-        })}
-      </ul>
-    </section>
-  )
-}
-
 /** A bundle's enable switch on its card and its page: locked for a built-in bundle, off and locked for one the profile cannot enable. */
 function EnableSwitch({ pkg, title, t, busy, onSetEnabled }: {
   readonly pkg: PluginPackageView
@@ -312,27 +267,17 @@ function EnableSwitch({ pkg, title, t, busy, onSetEnabled }: {
   )
 }
 
-/** One installed package as a card that opens its page: its name, its one-liner, its tags, and its switch or its **Add to…** menu. */
-function PackageCard({ pkg, t, busy, globalModules, onOpen, onSetEnabled, onAddRow }: {
+/** One installed package as a card that opens its page: its name, its one-liner, its tags, and its bundle switch. */
+function PackageCard({ pkg, t, busy, onOpen, onSetEnabled }: {
   readonly pkg: PluginPackageView
   readonly t: Translate
   readonly busy: boolean
-  readonly globalModules: readonly string[]
   readonly onOpen: () => void
   readonly onSetEnabled: (enabled: boolean) => void
-  readonly onAddRow: (declaredName: string) => void
 }): ReactNode {
-  const [addMenu, setAddMenu] = useState(false)
   const title = pkg.title ?? shortName(pkg.name)
   const builtin = !pkg.installed
   const status = cardStatus(pkg)
-  const addable = pkg.addable
-  const [single] = addable
-  const menuItems: MenuItem[] = addable.map(entry => ({
-    id: entry.declaredName,
-    label: entry.title ?? entry.declaredName,
-    disabled: globalModules.includes(entry.moduleName),
-  }))
   return (
     <li className={`${css.card} ${css.cardLink}`} data-plugin-package={pkg.name} data-plugin-status={pkg.status}>
       <div className={css.cardHead}>
@@ -346,37 +291,7 @@ function PackageCard({ pkg, t, busy, globalModules, onOpen, onSetEnabled, onAddR
         </div>
         <div className={css.cardEnd}>
           <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
-          {menuItems.length === 0
-            ? null
-            : single !== undefined && addable.length === 1 ? (
-              <Button variant="outline" size="sm" disabled={busy || globalModules.includes(single.moduleName)} onClick={() => { onAddRow(single.declaredName) }}>
-                {t(globalModules.includes(single.moduleName) ? 'addToGlobalAdded' : 'addToGlobal')}
-              </Button>
-            ) : (
-              <Menu
-                open={addMenu}
-                onClose={() => { setAddMenu(false) }}
-                items={menuItems}
-                onSelect={(id) => {
-                  setAddMenu(false)
-                  onAddRow(id)
-                }}
-                align="end"
-                portal
-                anchor={(
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    aria-haspopup="menu"
-                    aria-expanded={addMenu}
-                    disabled={busy}
-                    onClick={() => { setAddMenu(current => !current) }}
-                  >
-                    {t('addToGlobal')}
-                  </Button>
-                )}
-              />
-            )}
+
         </div>
       </div>
     </li>
@@ -386,24 +301,21 @@ function PackageCard({ pkg, t, busy, globalModules, onOpen, onSetEnabled, onAddR
 /**
  * One package's page: the crumb back to the list; its name, tags, one-liner,
  * and its switch; the reason when one applies; its version and source; its
- * rows with their switches; the built-in rows it changes; the modules it
- * declares addable with where each is composed; and retry and uninstall.
+ * rows with their switches; the built-in rows it changes; and retry and uninstall.
  */
 function PackageDetail({
-  pkg, t, busy, rowBusy, globalModules,
-  onBack, onSetEnabled, onRetry, onUninstall, onAddRow, onSetRowDisabled,
+  pkg, t, busy, rowBusy,
+  onBack, onSetEnabled, onRetry, onUninstall, onSetRowDisabled,
 }: {
   readonly pkg: PluginPackageView
   readonly t: Translate
   readonly busy: boolean
   /** Whether a row has a write in flight. */
   readonly rowBusy: (rowId: string) => boolean
-  readonly globalModules: readonly string[]
   readonly onBack: () => void
   readonly onSetEnabled: (enabled: boolean) => void
   readonly onRetry: () => void
   readonly onUninstall: () => void
-  readonly onAddRow: (declaredName: string) => void
   readonly onSetRowDisabled: (row: RowView, disabled: boolean) => void
 }): ReactNode {
   const title = pkg.title ?? shortName(pkg.name)
@@ -486,17 +398,7 @@ function PackageDetail({
           )
           : null}
         {pkg.overrides.length === 0 ? null : <OverridesSection overrides={pkg.overrides} t={t} />}
-        {pkg.addable.length === 0
-          ? null
-          : (
-            <ModulesSection
-              pkg={pkg}
-              t={t}
-              busy={busy}
-              globalModules={globalModules}
-              onAddRow={onAddRow}
-            />
-          )}
+
       </div>
     </div>
   )
@@ -742,12 +644,10 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
             t={t}
             busy={state.busy.includes(openPkg.name)}
             rowBusy={rowId => state.busy.includes(rowKey(rowId))}
-            globalModules={state.globalModules}
             onBack={() => { setOpenPackage(null) }}
             onSetEnabled={(enabled) => { props.setEnabled(openPkg.name, enabled) }}
             onRetry={() => { props.retry(openPkg.name) }}
             onUninstall={() => { props.uninstall(openPkg.name) }}
-            onAddRow={(declaredName) => { props.addRow(openPkg.name, declaredName) }}
             onSetRowDisabled={(row, disabled) => {
               // Off asks first when other rows inject what the row provides; on has nothing to ask.
               if (disabled) props.disableRow(openPkg.name, row.entryId, row.rowId)
@@ -776,10 +676,8 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
                         pkg={pkg}
                         t={t}
                         busy={state.busy.includes(pkg.name)}
-                        globalModules={state.globalModules}
                         onOpen={() => { setOpenPackage(pkg.name) }}
                         onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
-                        onAddRow={(declaredName) => { props.addRow(pkg.name, declaredName) }}
                       />
                     ))}
                   </ul>

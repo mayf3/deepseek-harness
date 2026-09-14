@@ -21,9 +21,6 @@
       "path": "../app-boot"
     },
     {
-      "path": "../../util/values"
-    },
-    {
       "path": "../../util/package-manifest"
     }
   ]

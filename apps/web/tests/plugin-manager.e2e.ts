@@ -1,6 +1,5 @@
 // Web e2e scenario: the plugin manager page behind the sidebar's Plugins entry over a scaffold
-// profile runtime — one installed bundle switched on, one plain plugin added to
-// the global user layer. Zero model calls: everything is
+// profile runtime: installed packages and bundle enablement. Zero model calls: everything is
 // client state plus the profile files and the settings document, so there is
 // no fixture and a stray stream would fail loud on the open llm seam.
 import { readFile } from 'node:fs/promises'
@@ -76,17 +75,15 @@ describe('web e2e: plugin manager', () => {
 
     await panel.getByText('示例组合包', { exact: true }).waitFor({ timeout: 20_000 })
     expect(await panel.getByText('示例插件', { exact: true }).count()).toBe(1)
-    // The bundle is installed but not enabled; the plain plugin carries no
-    // switch, only its global add button; uninstall waits on the plugin's page,
-    // which names the module and where it is composed, and the crumb leads back.
+    // Non-bundle packages remain installed and expose their uninstall on the detail page.
     const toggle = panel.getByRole('switch', { name: '启用 示例组合包' })
     expect(await toggle.getAttribute('aria-checked')).toBe('false')
     expect(await panel.getByRole('switch', { name: '启用 示例插件' }).count()).toBe(0)
-    expect(await panel.getByRole('button', { name: '加入全局' }).count()).toBe(1)
+    expect(await panel.getByRole('button', { name: '加入全局' }).count()).toBe(0)
     expect(await panel.getByRole('button', { name: '卸载 示例插件' }).count()).toBe(0)
     await panel.getByRole('button', { name: '查看 示例插件' }).click()
     await panel.getByRole('button', { name: '卸载 示例插件' }).waitFor({ timeout: 5_000 })
-    await panel.getByText('尚未加入', { exact: true }).waitFor({ timeout: 5_000 })
+    await panel.getByText('此包未提供组合包 patch，可通过 Cordis 配置手动加载模块。', { exact: true }).waitFor({ timeout: 5_000 })
     await panel.getByRole('button', { name: '返回插件列表' }).click()
     await expect.poll(() => panel.getByRole('button', { name: '卸载 示例插件' }).count(), { timeout: 5_000 }).toBe(0)
 
@@ -122,14 +119,6 @@ describe('web e2e: plugin manager', () => {
     await panel.getByRole('button', { name: '返回插件列表' }).click()
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
-
-  it('adds a declared plugin to the global user layer', async () => {
-    const panel = await openPluginsPanel()
-    const card = panel.locator('[data-plugin-package="@fixture/plain-plugin"]')
-    await card.getByRole('button', { name: '加入全局', exact: true }).click()
-    await expect.poll(() => homeFile('profiles', 'scaffold', 'cordis.patch.yml')).toContain('@fixture/plain-plugin')
-    expect(tripwire.pageErrors).toEqual([])
-  })
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])

@@ -73,7 +73,6 @@ export function noticeText(notice: ManagerNotice, t: Translate): string {
       switch (notice.code) {
         case 'plugins/not-enableable': return t('notEnableable', { reason: notice.reason })
         case 'plugins/enable-failed': return t('enableFailed', { reason: notice.reason })
-        case 'plugins/row-conflict': return t('rowConflict', { row: notice.rowId ?? '' })
         case 'plugins/not-installed': return t('notInstalled', { name: notice.packageName ?? '' })
         default: return refusalText(notice, t)
       }

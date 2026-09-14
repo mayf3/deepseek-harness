@@ -9,10 +9,9 @@
     - button "查看 示例组合包": 示例组合包
     - text: "Web e2e fixture: a bundle whose one row is an inert plugin."
     - switch "启用 示例组合包"
-- heading "插件" [level=3]
+- heading "其他已安装包" [level=3]
 - text: 1 个
 - list:
   - listitem:
     - button "查看 示例插件": 示例插件
     - text: "Web e2e fixture: a plain plugin module with no bundle, added to a composition per row."
-    - button "加入全局"

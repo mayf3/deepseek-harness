@@ -28,7 +28,6 @@ function pkg(overrides: Partial<PluginPackageView> = {}): PluginPackageView {
     cordisSameCopy: true,
     rows: [],
     overrides: [],
-    addable: [],
     liveReload: true,
     ...overrides,
   }
@@ -41,7 +40,6 @@ const IDLE_INSTALL: InstallState = {
 const READY: PluginManagerState = {
   status: 'ready',
   packages: [],
-  globalModules: [],
   busy: [],
   notice: null,
   install: IDLE_INSTALL,
@@ -63,8 +61,6 @@ function renderTab(state: Partial<PluginManagerState> = {}) {
     uninstall: vi.fn(),
     confirm: vi.fn(),
     cancelConfirm: vi.fn(),
-    addRow: vi.fn(),
-    removeRow: vi.fn(),
     setRowDisabled: vi.fn(),
     disableRow: vi.fn(),
     dismissNotice: vi.fn(),
@@ -134,7 +130,7 @@ describe('PluginManagerPage', () => {
   })
 
   it('shows a problem for a plugin with an invalid declaration', () => {
-    renderTab({ packages: [pkg({ kind: 'plugin', status: 'plain', reason: 'invalid declaration' })] })
+    renderTab({ packages: [pkg({ kind: 'unknown', status: 'plain', reason: 'invalid declaration' })] })
     expect(screen.getByText(en.statusProblem)).toBeTruthy()
   })
 
@@ -146,10 +142,10 @@ describe('PluginManagerPage', () => {
       packages: [
         pkg({ description: 'A sidebar.' }),
         bundledPackage,
-        pkg({ name: 'unknown', installed: false, kind: 'plugin', status: 'plain' }),
+        pkg({ name: 'unknown', installed: false, kind: 'unknown', status: 'plain' }),
         pkg({ name: 'builtin-lib', installed: false, kind: 'unknown', status: 'plain' }),
         pkg({ name: 'broken-bundle', enabled: false, status: 'not-enableable', reason: 'foreign cordis' }),
-        pkg({ name: 'dsh-tool-foo', kind: 'plugin', status: 'plain' }),
+        pkg({ name: 'dsh-tool-foo', kind: 'unknown', status: 'plain' }),
         pkg({ name: 'some-lib', kind: 'unknown', status: 'plain' }),
         pkg({ name: 'pending-bundle', title: 'Pending', enabled: true, status: 'restart-required' }),
         pkg({ name: 'dsh-untitled', enabled: false, status: 'restart-required', installed: false }),
@@ -220,7 +216,7 @@ describe('PluginManagerPage', () => {
           rows: [{ entryId: 'include:w1', rowId: 'w1', moduleName: 'waiting-pack', enabled: true, phase: null, failure: { stage: 'inject-pending', message: 'pending (waiting for service: authorization)' } }],
         }),
         pkg({ name: 'no-rows', enabled: false, status: 'disabled' }),
-        pkg({ name: 'dsh-tool-foo', kind: 'plugin', status: 'plain' }),
+        pkg({ name: 'dsh-tool-foo', kind: 'unknown', status: 'plain' }),
         pkg({
           name: '@deepseek-ai/dsh-core-broken', title: 'Core', installed: false, status: 'failed',
           rows: [{ entryId: 'include:core', rowId: 'core', moduleName: '@deepseek-ai/dsh-core-broken', enabled: true, phase: 'active' }],
@@ -258,7 +254,7 @@ describe('PluginManagerPage', () => {
     // A short list has no filter; the built-in rows the pack changes are named.
     expect(screen.queryByRole('searchbox', { name: en.partsFilter })).toBeNull()
     expect(document.querySelector('[data-plugin-overrides]')?.textContent).toContain('directory-picker')
-    expect(screen.queryByText(en.modulesLabel)).toBeNull()
+    expect(document.querySelector('[data-plugin-modules]')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: en.retryPackage }))
     expect(actions.retry).toHaveBeenCalledWith('dsh-better-sidebar')
@@ -367,43 +363,12 @@ describe('PluginManagerPage', () => {
     }
   })
 
-  it('adds a declared module globally and disables the action once it is present', () => {
-    const mod = { moduleName: 'example/search', declaredName: './search', title: 'Search' }
-    const { actions, set } = renderTab({ packages: [pkg({ name: 'example', kind: 'plugin', status: 'plain', addable: [mod] })] })
-    fireEvent.click(screen.getByRole('button', { name: en.addToGlobal }))
-    expect(actions.addRow).toHaveBeenCalledWith('example', './search')
-    set({ globalModules: ['example/search'] })
-    expect(screen.getByRole('button', { name: en.addToGlobalAdded })).toHaveProperty('disabled', true)
-    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'example') }))
-    expect(screen.getByText(en.joinedGlobal)).toBeTruthy()
-    expect(screen.getByRole('button', { name: en.addToGlobalAdded })).toHaveProperty('disabled', true)
-  })
-
-  it('selects among multiple declared modules and adds one directly to the global layer', () => {
-    const { actions } = renderTab({ packages: [pkg({ name: 'example', kind: 'plugin', status: 'plain', addable: [
-      { moduleName: 'example/search', declaredName: './search', title: 'Search' },
-      { moduleName: 'example/fetch', declaredName: './fetch', title: 'Fetch' },
-    ] })] })
-    fireEvent.click(screen.getByRole('button', { name: en.addToGlobal }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Fetch' }))
-    expect(actions.addRow).toHaveBeenCalledWith('example', './fetch')
-  })
-
-  it('adds untitled main and subpath modules from a package detail page', () => {
-    const { actions, set } = renderTab({ packages: [pkg({ name: '@fixture/modules', kind: 'plugin', status: 'plain', addable: [
-      { moduleName: '@fixture/modules', declaredName: '.' },
-      { moduleName: '@fixture/modules/search', declaredName: './search' },
-    ] })] })
-    fireEvent.click(screen.getByRole('button', { name: en.addToGlobal }))
-    expect(screen.getByRole('menuitem', { name: './search' })).toBeTruthy()
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('menu')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'modules') }))
-    const buttons = screen.getAllByRole('button', { name: en.addToGlobal })
-    fireEvent.click(buttons[1]!)
-    expect(actions.addRow).toHaveBeenCalledWith('@fixture/modules', './search')
-    set({ busy: ['@fixture/modules'] })
-    expect(screen.getAllByRole('button', { name: en.addToGlobal }).every(button => (button as HTMLButtonElement).disabled)).toBe(true)
+  it('shows a scoped non-bundle package with package details and uninstall', () => {
+    renderTab({ packages: [pkg({ name: '@acme/example', kind: 'unknown', status: 'plain' })] })
+    fireEvent.click(screen.getByRole('button', { name: 'View example' }))
+    expect(screen.getByText(en.unknownPackage)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Uninstall example' })).toBeTruthy()
+    expect(screen.queryByRole('switch')).toBeNull()
   })
 
   it('drives the install dialog through its phases and words each outcome', () => {
@@ -563,7 +528,6 @@ describe('PluginManagerPage', () => {
     const failures: [string, string][] = [
       ['plugins/not-enableable', en.notEnableable.replace('{reason}', 'r')],
       ['plugins/enable-failed', en.enableFailed.replace('{reason}', 'r')],
-      ['plugins/row-conflict', en.rowConflict.replace('{row}', 'row-1')],
       ['plugins/not-installed', en.notInstalled.replace('{name}', 'pkg-1')],
       ['plugins/busy', en.busy.replace('{reason}', 'r')],
       ['plugins/agents-running', en.agentsRunning.replace('{reason}', 'r')],
@@ -574,8 +538,6 @@ describe('PluginManagerPage', () => {
       set({ notice: { kind: 'failed', code, reason: 'r', packageName: 'pkg-1', rowId: 'row-1' } })
       expect(screen.getByRole('alert').textContent).toContain(text)
     }
-    set({ notice: { kind: 'failed', code: 'plugins/row-conflict', reason: 'r' } })
-    expect(screen.getByRole('alert').textContent).toContain(en.rowConflict.replace('{row}', ''))
     set({ notice: { kind: 'failed', code: 'plugins/not-installed', reason: 'r' } })
     expect(screen.getByRole('alert').textContent).toContain(en.notInstalled.replace('{name}', ''))
     fireEvent.click(screen.getByRole('button', { name: en.dismiss }))

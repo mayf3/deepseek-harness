@@ -13,25 +13,21 @@ import {
   healProfilesModuleFallback,
   loadProfile,
   readProfileManifest,
-  rootIncludeEntry,
   inspectEntryIssues,
   type EntryIssue,
   type readPackageMetadata,
   type ProfileRuntime,
 } from '@deepseek-ai/dsh-app-boot'
 import { mutatePatchFile, readPatchListFile, type PatchRow } from '@deepseek-ai/dsh-app-boot/patch-file'
-import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { PluginOperationError } from './errors.ts'
 import { bundlesOf, dependenciesOf, messageOf, NAME, optional, type PluginToolingConfig, type SpawnLike } from './helpers.ts'
 import { PluginInstaller } from './installer.ts'
-import { derivedRowId, moduleSpecifier } from './modules.ts'
 import type {
   PluginChangeReason,
   PluginDependents,
   PluginEnableResult,
   PluginInstallResult,
   PluginPackageView,
-  PluginRowAddition,
   PluginRowIssue,
   PluginRowReference,
   PluginServiceDependent,
@@ -329,72 +325,6 @@ export class PluginManager {
   }
 
   /**
-   * Add a row naming one of the package's modules to the profile's `cordis.patch.yml`.
-   * @param packageName - the installed package.
-   * @param options - `module` selects a declared `dsh.plugins[]` name (default `.`),
-   * `id` overrides the derived row id, `config` overrides the declared default.
-   * @returns where the row landed.
-   * @throws {PluginOperationError} `plugins/not-installed`, `plugins/not-enableable`
-   * when the module is absent from `dsh.plugins`, or `plugins/row-conflict`.
-   */
-  async addRow(
-    packageName: string,
-    options?: { module?: string; id?: string; config?: JsonValue },
-  ): Promise<PluginRowAddition> {
-    return this.exclusive('addRow', packageName, () => this.addRowNow(packageName, options))
-  }
-
-  private async addRowNow(
-    packageName: string,
-    options?: { module?: string; id?: string; config?: JsonValue },
-  ): Promise<PluginRowAddition> {
-    const runtime = this.runtime()
-    const installer = this.installer(runtime)
-    installer.assertInstalled(packageName)
-    const metadata = installer.metadata(packageName)
-    const declared = options?.module ?? '.'
-    const addable = metadata.addable.find(entry => entry.name === declared)
-    if (addable === undefined) {
-      const reason = `${declared} is not a module ${packageName} declares addable`
-      throw new PluginOperationError('plugins/not-enableable', `${NAME}: ${reason}`, { packageName, reason })
-    }
-    const moduleName = moduleSpecifier(packageName, declared)
-    const rowId = options?.id ?? derivedRowId(packageName, declared)
-    if (rowId.trim() === '' || rowId.includes(':')) {
-      throw new PluginOperationError('plugins/bad-request', `${NAME}: row ids must be nonempty and cannot contain ':'`, {})
-    }
-    const config = options?.config !== undefined ? options.config : addable.config !== undefined ? addable.config : {}
-    const row: PatchRow = { id: rowId, name: moduleName, config }
-    if (await this.rowExists(runtime, rowId)) {
-      throw new PluginOperationError('plugins/row-conflict', `${NAME}: a row ${JSON.stringify(rowId)} already exists`, { rowId })
-    }
-    const file = await this.editLayer(runtime, (document) => { document.appendInsert(row) })
-    this.changed('row', packageName)
-    return { rowId, file }
-  }
-
-  /**
-   * Remove a row a user layer inserted.
-   * @param rowId - the inserted row's id.
-   * @throws {PluginOperationError} `plugins/bad-request` when the layer inserts no such row.
-   */
-  async removeRow(rowId: string): Promise<void> {
-    return this.exclusive('removeRow', rowId, () => this.removeRowNow(rowId))
-  }
-
-  private async removeRowNow(rowId: string): Promise<void> {
-    const runtime = this.runtime()
-    // A holder rather than a `let`: the assignment happens inside the edit
-    // callback, which control-flow narrowing does not see.
-    const outcome = { removed: false }
-    await this.editLayer(runtime, (document) => { outcome.removed = document.removeInsert(rowId) })
-    if (!outcome.removed) {
-      throw new PluginOperationError('plugins/bad-request', `${NAME}: the layer inserts no row ${JSON.stringify(rowId)}`, {})
-    }
-    this.changed('row')
-  }
-
-  /**
    * Switch one row off or on in a user layer. Deny-only: `true` writes
    * `disabled: true` for the row, `false` removes that key, so a bundle's
    * own `!!js` gate is restored rather than overridden.
@@ -468,13 +398,6 @@ export class PluginManager {
     }
     for (const patch of patches ?? []) if (patch.insert !== undefined) names(patch.insert)
     return found
-  }
-
-  /** Whether the profile's composition already carries a row with `rowId`. */
-  private async rowExists(runtime: ProfileRuntime, rowId: string): Promise<boolean> {
-    const tree = rootIncludeEntry(this.ctx.root)?.subtree
-    return [...this.ctx.loader.entries()].some(entry => entry.parent.tree === tree && entry.options.id === rowId)
-      || (await readPatchListFile(NAME, runtime.patchPath, 'patches') ?? []).some(patch => patch.insert?.some(row => row.id === rowId))
   }
 
   /** Edit one user layer file and, for the live global layer, recompose. */
