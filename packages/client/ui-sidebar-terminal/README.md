@@ -25,13 +25,15 @@ Choose an installed shell from the right sidebar's Start page to run commands in
 <a id="use-this-package"></a>
 ## Use this package
 
-Open the right sidebar and select **New terminal** on the Start page; first select **New tab** when another content tab is open. Choose an installed **Shell** and select **Start terminal**. The last selected shell is preselected from localStorage; first use or an unavailable saved choice selects the current default. Use the sidebar's **New tab** control to open more terminals.
+Open the right sidebar and click **New terminal** to open the remembered available shell immediately. Its adjacent arrow opens the installed-shell menu; selecting an item remembers it and opens that shell directly. Discovery runs when the menu opens and does not allocate a terminal. A failed lookup offers Retry in the menu. Use **New tab** to return to the guide and open another terminal.
 
 Double-click the terminal's tab title to rename it. **Take control** makes the current attachment writable when another page owns input. A failed connection offers **Reconnect**. An exited shell remains visible with its exit code and never restarts automatically. Exited terminals count toward the Session limit; close unused tabs when the limit is reached.
 
 Closing or replacing a terminal tab removes it immediately and ends its process in the background. A cleanup failure shows a small notification with **Retry**; retrying does not reopen the tab. Collapsing, switching tabs or Sessions, floating and fullscreen presentation preserve the process.
 
 Displaying a Session after a page reload reopens its retained Host terminals as new tabs. A recovery failure offers **Retry terminal recovery**. A recovered process that disappears reports an error instead of starting another shell. The [sidebar layout remains memory-only](../../client/ui-sidebar-right/README.md#state).
+
+The terminal background, default text, cursor, and selection follow the DSH theme, including system preference and theme-token overrides. Theme changes preserve the running shell, output, and application OSC color overrides. Reset commands restore colors to the current DSH defaults. xterm adjusts text toward 4.5:1 contrast; the cursor keeps at least 3:1 contrast against its cell background, including Vim colorschemes.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -67,6 +69,7 @@ None; terminal output travels only between the browser and Host.
 
 - Shell discovery or native PTY startup can fail. The tab reports the failure without launching a different shell.
 - Completion menus and inline suggestions depend on shell configuration. The Web UI adds no independent completion engine.
+- Application OSC color overrides are retained by the mounted renderer; a newly opened renderer cannot recover them from the Host screen snapshot.
 - Terminal history is bounded. The feature does not send terminal output to the Agent, provide split terminal panes inside a tab, or restore processes after Host restart.
 
 <a id="dev-note"></a>

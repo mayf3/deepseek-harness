@@ -83,12 +83,18 @@ export function createElectronBuilderConfig(
       'lib/*.cjs',
       'renderer/**/*',
       'package.json',
+      { from: buildPaths.dsh, to: 'dsh', filter: ['**/*'] },
+      // electron-builder excludes a source directory's root node_modules.
+      { from: join(buildPaths.dsh, 'node_modules'), to: 'dsh/node_modules', filter: ['**/*'] },
+    ],
+    asarUnpack: [
+      '**/*.{node,dylib,dll,so,exe}',
+      '**/*.so.*',
+      '**/spawn-helper',
+      '**/@vscode/ripgrep/bin/rg',
     ],
     extraResources: [
       { from: buildPaths.runtime, to: 'runtime' },
-      { from: buildPaths.dsh, to: 'dsh' },
-      // electron-builder excludes a source directory's root node_modules.
-      { from: join(buildPaths.dsh, 'node_modules'), to: 'dsh/node_modules' },
     ],
     mac: {
       icon: fileURLToPath(new URL('./resources/icon-macos.png', import.meta.url)),
@@ -96,8 +102,8 @@ export function createElectronBuilderConfig(
       identity: macOSSigning?.signingIdentity,
       forceCodeSigning: true,
       hardenedRuntime: true,
-      // Native runtime files are pre-signed; PAK resources are sealed by their enclosing bundle.
-      signIgnore: ['/Contents/Resources/dsh(?:/|$)', '/Contents/Resources/runtime/primary-runtime(?:/|$)', '\\.pak$'],
+      // ASAR-unpacked native runtime files are pre-signed; PAK resources are sealed by their enclosing bundle.
+      signIgnore: ['/Contents/Resources/app\\.asar\\.unpacked/dsh(?:/|$)', '/Contents/Resources/runtime/primary-runtime(?:/|$)', '\\.pak$'],
       notarize: true,
       target: ['dmg', 'zip'],
     },
@@ -105,24 +111,8 @@ export function createElectronBuilderConfig(
       sign: true,
       writeUpdateInfo: false,
     },
-    afterPack: async context => {
-      const { verifyDesktopRuntime, writeDesktopRuntime } = await import('./lib/types/runtime-tree.js')
-      const runtimeRoot = join(context.packager.getResourcesDir(context.appOutDir), 'dsh')
-      if (resolvedPlatform === 'win32' && !unsigned) {
-        // Windows signs copied executable resources before afterPack runs.
-        const prepared = await verifyDesktopRuntime(buildPaths.dsh,
-          context.packager.appInfo.version, { platform: resolvedPlatform, arch: resolvedArch })
-        writeDesktopRuntime(runtimeRoot, prepared.release, prepared.sharedPackages.map(entry => entry.name),
-          { platform: resolvedPlatform, arch: resolvedArch })
-      }
-      await verifyDesktopRuntime(runtimeRoot,
-        context.packager.appInfo.version, { platform: resolvedPlatform, arch: resolvedArch })
-    },
     afterSign: async context => {
       if (context.electronPlatformName !== 'darwin') return
-      const { verifyDesktopRuntime } = await import('./lib/types/runtime-tree.js')
-      await verifyDesktopRuntime(join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, 'Contents', 'Resources', 'dsh'),
-        context.packager.appInfo.version, { platform: 'darwin', arch: resolvedArch })
       verifyMacOSSignatureAfterSign(context, macOSSigning ?? resolveMacOSSigningEnvironment(env))
     },
     artifactBuildCompleted: artifact => {

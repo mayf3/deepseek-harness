@@ -19,6 +19,10 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import {
   boot,
+  type ProfileResolutionMode,
+  type ProfileResolutionGeneration,
+  PluginPackages,
+  createProfileResolutionGeneration,
   composeEntries,
   healProfilesModuleFallback,
   healIsolatedProfileModuleFallback,
@@ -194,6 +198,7 @@ export function prepareProfile(name: string, userLayer = true, fromDefaultProfil
 
 /** One profile's patch layers, in application order. */
 interface ComposedProfile {
+  resolution: ProfileResolutionGeneration
   profile: Profile
   /** Bundle layers concatenated — the part below the user layers on a live reload. */
   bundlePatches: PatchOptions[]
@@ -229,13 +234,17 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
 async function composeProfile(
   name: string,
   patchFiles: readonly string[],
+  resolutionMode: ProfileResolutionMode,
   fromDefaultProfile?: string,
   resolvedProfile?: ResolvedProfileRuntime,
 ): Promise<ComposedProfile> {
   const profile = resolvedProfile?.profile ?? prepareProfile(name, true, fromDefaultProfile)
   if (resolvedProfile !== undefined) writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
-  if (resolvedProfile === undefined) await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, profile })
-  else healIsolatedProfileModuleFallback(resolvedProfile)
+  const resolutionOptions = { installAnchor: resolvedProfile?.installAnchor ?? INSTALL_ANCHOR, profile }
+  if (resolvedProfile !== undefined && resolutionMode !== 'runtime') healIsolatedProfileModuleFallback(resolvedProfile)
+  const resolution = resolutionMode === 'runtime' || resolvedProfile !== undefined
+    ? await createProfileResolutionGeneration(resolutionOptions)
+    : await healProfilesModuleFallback(resolutionOptions)
   const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
@@ -246,7 +255,7 @@ async function composeProfile(
   const composedOverlays = [...overlays]
   const telemetryPatch = resolveTelemetryPatch(process.env.DSH_TELEMETRY_DISABLED, rows.has(TELEMETRY_ROW_ID))
   if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
-  return { profile, bundlePatches, homePatches, overlays: composedOverlays }
+  return { profile, resolution, bundlePatches, homePatches, overlays: composedOverlays }
 }
 
 /** An application-owned profile and its independent installation fallback. */
@@ -259,6 +268,8 @@ export interface ResolvedProfileRuntime {
 
 /** Options for {@link runProfile}. */
 export interface RunProfileOptions {
+  /** Package lookup strategy; packaged executables always use runtime resolution. */
+  resolutionMode?: ProfileResolutionMode
   /** This run's frozen environment snapshot, provided before any entry mounts. */
   environment: LaunchEnvironmentSnapshot
   /** The profile name to boot. */
@@ -306,6 +317,8 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     (message) => { process.stderr.write(`${NAME}: ${message}\n`) },
   )
 
+  const packaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
+  const resolutionMode = packaged ? 'runtime' : options.resolutionMode ?? 'link'
   const app: { current?: Context } = {}
   let disposal: Promise<void> | undefined
   const dispose = (): Promise<void> => disposal ??= (async () => {
@@ -318,7 +331,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   })()
   try {
     const composed = await composeProfile(
-      options.profile, options.patchFiles, options.fromDefaultProfile, options.resolvedProfile,
+      options.profile, options.patchFiles, resolutionMode, options.fromDefaultProfile, options.resolvedProfile,
     )
     const appReady = createAppReady()
     const shutdown = createProcessShutdown(dispose)
@@ -359,11 +372,15 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     ])
     // Cloned for the same insert-aliasing reason as composeLive: the boot
     // application must not mutate the objects later reloads recompose from.
-    const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
+    const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), async (hostCtx) => {
       app.current = hostCtx
       // Before any config-tree entry mounts, so plugins resolve all launch-time
       // environment values from the same immutable launch snapshot.
       hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
+      await hostCtx.plugin(PluginPackages, resolutionMode === 'link' ? {} : {
+        generation: composed.resolution,
+        behavior: resolutionMode === 'dual' ? 'verify' : 'enforce',
+      })
       // The command line and bounded exit request are launcher facts available
       // to every app plugin that injects the argument snapshot.
       provideCmdline(hostCtx, {

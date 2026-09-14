@@ -59,7 +59,7 @@ function fixture() {
   return { remote, view, service }
 }
 
-it('waits for shell selection and deduplicates overlapping starts', async () => {
+it('starts automatically and deduplicates overlapping mounts and refreshes', async () => {
   const h = fixture()
   const model = h.view()
   const creation = Promise.withResolvers<RemoteResult<WebTerminalInfo>>()
@@ -67,14 +67,11 @@ it('waits for shell selection and deduplicates overlapping starts', async () => 
   model.mount()
   const loading = model.refresh()
   expect(model.refresh()).toBe(loading)
-  await loading
-  expect(h.remote.create).not.toHaveBeenCalled()
-  const starting = model.start()
+  await expect.poll(() => h.remote.create).toHaveBeenCalledOnce()
   const remounting = model.refresh()
-  void model.start()
   expect(vi.mocked(h.remote.create).mock.calls[0]?.[1]).toEqual({ id: info.id, shellPath: info.shell.path, cols: 80, rows: 24 })
   creation.resolve(success(info))
-  await starting
+  await loading
   await remounting
   await expect.poll(() => model.state.getSnapshot().writable).toBe(true)
   expect(h.remote.create).toHaveBeenCalledOnce()
@@ -111,10 +108,8 @@ it('retries lost create acknowledgements with the saved id and closes after a re
   const model = h.view()
   vi.mocked(h.remote.create).mockResolvedValueOnce(failure('response lost'))
   await model.refresh()
-  await model.start()
   expect(model.state.getSnapshot().error).toBe('response lost')
   await model.refresh()
-  await model.start()
   expect(vi.mocked(h.remote.create).mock.calls.map(call => call[1].id)).toEqual([info.id, info.id])
   await model.close()
   expect(h.remote.close).toHaveBeenCalledWith(sessionId, info.id)
@@ -126,8 +121,7 @@ it('waits for an in-flight creation while close detaches immediately and prevent
   const creation = Promise.withResolvers<RemoteResult<WebTerminalInfo>>()
   vi.mocked(h.remote.create).mockReturnValueOnce(creation.promise)
   const unmount = model.mount()
-  await model.refresh()
-  const starting = model.start()
+  const starting = model.refresh()
   await expect.poll(() => vi.mocked(h.remote.create).mock.calls.length).toBe(1)
   const closing = model.close()
   expect(model.close()).toBe(closing)
@@ -330,14 +324,14 @@ it('saves close intents without persisting any active terminal or sidebar state'
   const model = service.view(sessionId, 'new-tab')
   await model.refresh()
   expect(model.id).toMatch(/^[0-9a-f-]{36}$/)
-  expect(data.size).toBe(0)
+  expect([...data.entries()]).toEqual([['dsh.terminal.shell', info.shell.path]])
   const pending = Promise.withResolvers<RemoteResult<void>>()
   vi.mocked(h.remote.close).mockReturnValueOnce(pending.promise)
   service.close(sessionId, 'new-tab')
-  const request = { sessionId, id: model.id, title: 'new-tab' }
-  expect([...data.entries()]).toEqual([[`dsh.terminal.close.v1.${model.id}`, JSON.stringify(request)]])
+  const request = { sessionId, id: model.id, title: info.title }
+  expect([...data.entries()]).toEqual([['dsh.terminal.shell', info.shell.path], [`dsh.terminal.close.v1.${model.id}`, JSON.stringify(request)]])
   pending.resolve(success(undefined))
-  await expect.poll(() => data.size).toBe(0)
+  await expect.poll(() => [...data.keys()]).toEqual(['dsh.terminal.shell'])
 })
 
 it.each(['{broken', 'null', '{}', '[{}]', '{"sessionId":"s","id":"bad/id","title":"x"}', '{"sessionId":"s","id":"different","title":"x"}'])('discards malformed saved cleanup: %s', (raw) => {
@@ -394,7 +388,7 @@ it.each(['saved', 'view'] as const)('clears a %s close request after the Host co
   }
   await expect.poll(() => vi.mocked(h.remote.close).mock.calls.length).toBe(1)
   await dispose()
-  expect(data.size).toBe(0)
+  expect([...data.entries()]).toEqual(source === 'view' ? [['dsh.terminal.shell', info.shell.path]] : [])
   expect(service.closeFailures.getSnapshot()).toEqual([])
   expect(new TerminalCloseRequests().pending()).toEqual([])
   await h.service()
@@ -426,7 +420,6 @@ it('waits for both active and detached stream finalizers during plugin disposal 
   const model = service.view(sessionId, 'tab')
   model.mount()
   await model.refresh()
-  await model.start()
   await expect.poll(() => model.state.getSnapshot().writable).toBe(true)
   model.connect()
   await started[0]!.promise
@@ -445,53 +438,55 @@ it('waits for both active and detached stream finalizers during plugin disposal 
   expect(h.remote.close).not.toHaveBeenCalled()
 })
 
-it('remembers a shell choice immediately for new views and falls back when that shell is absent', async () => {
+it('discovers menu choices without creating a process and remembers a choice before opening its tab', async () => {
   const data = storage()
   const h = fixture()
   const alternate = { name: 'bash', path: '/bin/bash', args: ['-i'] }
   vi.mocked(h.remote.shells).mockResolvedValue(success([info.shell, alternate]))
-  vi.mocked(h.remote.create).mockImplementation(async (_sessionId, request) => success({ ...info, shell: alternate, id: request.id }))
-  const first = h.view()
-  await first.start()
-  first.selectShell(alternate.path)
-  await first.refresh()
-  expect(first.state.getSnapshot()).toMatchObject({ phase: 'selecting', selectedShell: info.shell.path })
-  first.selectShell('/not-listed')
-  expect(first.state.getSnapshot().selectedShell).toBe(info.shell.path)
-  first.selectShell(alternate.path)
+  const { service } = await h.service()
+  expect(await service.launchShells(sessionId, new AbortController().signal)).toEqual({
+    shells: [info.shell, alternate], selectedShell: info.shell.path,
+  })
+  service.selectShell(alternate.path)
   expect(data.get('dsh.terminal.shell')).toBe(alternate.path)
-  const beforeLaunch = h.view()
-  await beforeLaunch.refresh()
-  expect(beforeLaunch.state.getSnapshot().selectedShell).toBe(alternate.path)
   expect(h.remote.create).not.toHaveBeenCalled()
-  await first.start()
-  expect(data.get('dsh.terminal.shell')).toBe(alternate.path)
-  expect(h.remote.create).toHaveBeenCalledWith(sessionId, expect.objectContaining({ shellPath: alternate.path }), expect.any(AbortSignal))
-  const second = h.view()
-  await second.refresh()
-  expect(second.state.getSnapshot().selectedShell).toBe(alternate.path)
-  await second.dispose()
-  await second.start()
+  expect((await service.launchShells(sessionId, new AbortController().signal)).selectedShell).toBe(alternate.path)
+  const model = service.view(sessionId, 'chosen', undefined, alternate.path)
+  await model.refresh()
+  expect(h.remote.create).toHaveBeenLastCalledWith(
+    sessionId, expect.objectContaining({ shellPath: alternate.path }), expect.any(AbortSignal),
+  )
+  expect(h.remote.shells).toHaveBeenCalledTimes(2)
+  await h.view().refresh()
+  expect(h.remote.create).toHaveBeenLastCalledWith(
+    sessionId, expect.objectContaining({ shellPath: alternate.path }), expect.any(AbortSignal),
+  )
   vi.mocked(h.remote.shells).mockResolvedValue(success([info.shell]))
-  const third = h.view()
-  await third.refresh()
-  expect(third.state.getSnapshot().selectedShell).toBe(info.shell.path)
-  expect(h.remote.create).toHaveBeenCalledOnce()
+  await h.view().refresh()
+  expect(h.remote.create).toHaveBeenLastCalledWith(
+    sessionId, expect.objectContaining({ shellPath: info.shell.path }), expect.any(AbortSignal),
+  )
+  vi.mocked(h.remote.shells).mockResolvedValueOnce(failure('host offline'))
+  await expect(service.launchShells(sessionId, new AbortController().signal)).rejects.toThrow('host offline')
+  vi.mocked(h.remote.shells).mockResolvedValue(success([]))
+  expect((await service.launchShells(sessionId, new AbortController().signal)).selectedShell).toBeUndefined()
+  await h.view().refresh()
+  expect(vi.mocked(h.remote.create).mock.calls.at(-1)?.[1]).not.toHaveProperty('shellPath')
 })
 
-it('retains the last selection across a failed launch', async () => {
+it('retains the last selection across a failed automatic launch', async () => {
   const data = storage()
   const h = fixture()
   vi.mocked(h.remote.create).mockResolvedValueOnce(failure('shell disappeared'))
   const model = h.view()
   await model.refresh()
-  await model.start()
   expect(data.get('dsh.terminal.shell')).toBe(info.shell.path)
+  expect(model.state.getSnapshot().error).toBe('shell disappeared')
   await model.refresh()
-  expect(model.state.getSnapshot().selectedShell).toBe(info.shell.path)
+  expect(h.remote.create).toHaveBeenCalledTimes(2)
   await model.close()
-  await model.start()
-  expect(h.remote.create).toHaveBeenCalledOnce()
+  await model.refresh()
+  expect(h.remote.create).toHaveBeenCalledTimes(2)
 })
 
 it('keeps launch usable when browser storage is denied and stops late shell discovery after close', async () => {
@@ -500,7 +495,6 @@ it('keeps launch usable when browser storage is denied and stops late shell disc
   const h = fixture()
   const model = h.view()
   await model.refresh()
-  await model.start()
   expect(model.state.getSnapshot().info).toBeDefined()
   const delayed = h.view()
   const shells = Promise.withResolvers<Awaited<ReturnType<TerminalRemote['shells']>>>()

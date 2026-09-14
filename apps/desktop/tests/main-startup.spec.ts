@@ -58,6 +58,7 @@ const harness = await vi.hoisted(async () => {
     constructor(
       readonly node: string, readonly runtime: string, readonly profile: string,
       readonly inspectPort?: number, readonly environment?: NodeJS.ProcessEnv, readonly onFailure?: (error: Error) => void,
+      readonly primaryRuntime?: string, readonly profileResolution?: string,
     ) { hosts.push(this) }
   }
   const app = Object.assign(new EventEmitter(), {
@@ -386,7 +387,9 @@ describe('desktop main startup', () => {
     expect(harness.applyRelease).toHaveBeenCalledTimes(1)
     expect(harness.hosts[0]).toMatchObject({
       node: process.execPath,
-      runtime: join('desktop-test-resources', 'dsh'),
+      runtime: join(harness.app.getAppPath(), 'dsh'),
+      primaryRuntime: join('desktop-test-resources', 'runtime', 'primary-runtime'),
+      profileResolution: 'runtime',
       profile: 'desktop-test-profile',
     })
     expect(harness.hosts[0]!.start).toHaveBeenCalledTimes(1)

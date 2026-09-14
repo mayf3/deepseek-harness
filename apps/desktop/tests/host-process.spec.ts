@@ -77,6 +77,17 @@ describe('desktop host process', () => {
     expect(failure).not.toHaveBeenCalled()
   })
 
+  it('passes external dependencies and runtime profile resolution to the Host', async () => {
+    const runtime = projectWithHost(HTTP_HOST.replace('runtime: process.argv[2]',
+      'primaryRuntime: process.argv[4], profileResolution: process.argv[5], runtime: process.argv[2]'))
+    const primaryRuntime = join(runtime, 'external-primary-runtime')
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env,
+      undefined, primaryRuntime, 'runtime')
+    hosts.push(host)
+    const { url } = await host.start()
+    expect(await (await fetch(url)).json()).toMatchObject({ primaryRuntime, profileResolution: 'runtime' })
+  })
+
   it('reports a fatal event after readiness once', async () => {
     const runtime = projectWithHost()
     const failure = vi.fn()

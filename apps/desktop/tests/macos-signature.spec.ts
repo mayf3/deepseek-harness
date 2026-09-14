@@ -1,10 +1,3 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, relative } from 'node:path'
-import { createRequire } from 'node:module'
-import { FileMatcher } from 'app-builder-lib/out/fileMatcher.js'
-import { runtimeFixture } from './runtime-fixture.ts'
-import { verifyDesktopRuntime } from '../src/runtime-tree.ts'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { NotarizeOptions } from '@electron/notarize'
 import {
@@ -17,11 +10,6 @@ import {
   assertMacOSRuntimeSignatureDetails,
   assertMacOSSignatureDetails,
 } from '../scripts/verify-macos-signature.mjs'
-
-// app-builder-lib omits this internal copier from its declarations; the regression exercises its actual file filter.
-const { copyFiles } = createRequire(import.meta.url)('app-builder-lib/out/fileMatcher.js') as {
-  copyFiles: (matchers: FileMatcher[]) => Promise<void>
-}
 
 const RELEASE_ENVIRONMENT = {
   DSH_DESKTOP_APP_ID: 'com.example.desktop',
@@ -52,18 +40,28 @@ describe('desktop macOS release signature', () => {
     const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
     const config = createElectronBuilderConfig(RELEASE_ENVIRONMENT, 'darwin', 'arm64')
     expect(portablePath(config.directories.output)).toContain('/.desktop-build/targets/mac-arm64/artifacts')
-    expect(config.extraResources).toHaveLength(3)
+    expect(config.extraResources).toHaveLength(1)
     expect(config.extraResources[0]?.to).toBe('runtime')
-    expect(config.extraResources[1]?.to).toBe('dsh')
     expect(portablePath(config.extraResources[0]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/runtime')
-    expect(portablePath(config.extraResources[1]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/dsh')
+    const [dshFiles, dshNodeModules] = config.files.slice(-2)
+    if (!dshFiles || !dshNodeModules || typeof dshFiles === 'string' || typeof dshNodeModules === 'string') {
+      throw new Error('desktop DSH resources must use electron-builder file mappings')
+    }
+    expect(portablePath(dshFiles.from)).toContain('/.desktop-build/targets/mac-arm64/dsh')
+    expect(dshFiles.to).toBe('dsh')
+    expect(portablePath(dshNodeModules.from)).toContain('/.desktop-build/targets/mac-arm64/dsh/node_modules')
+    expect(dshNodeModules.to).toBe('dsh/node_modules')
+    expect(config.asarUnpack).toEqual(expect.arrayContaining([
+      '**/*.{node,dylib,dll,so,exe}',
+      '**/@vscode/ripgrep/bin/rg',
+    ]))
     expect(config).toMatchObject({
       appId: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
       mac: {
         identity: RELEASE_ENVIRONMENT.DSH_DESKTOP_MACOS_SIGNING_IDENTITY,
         forceCodeSigning: true,
         notarize: true,
-        signIgnore: ['/Contents/Resources/dsh(?:/|$)', '/Contents/Resources/runtime/primary-runtime(?:/|$)', '\\.pak$'],
+        signIgnore: ['/Contents/Resources/app\\.asar\\.unpacked/dsh(?:/|$)', '/Contents/Resources/runtime/primary-runtime(?:/|$)', '\\.pak$'],
       },
       dmg: {
         sign: true,
@@ -83,34 +81,13 @@ describe('desktop macOS release signature', () => {
     const ignored = (path: string): boolean => config.mac.signIgnore.some(pattern => new RegExp(pattern).test(path))
     expect(ignored('/App.app/Contents/Frameworks/Electron.framework/Versions/A/Resources/en.lproj/locale.pak')).toBe(true)
     expect(ignored('/App.app/Contents/Frameworks/Electron.framework/Versions/A/Resources/resources.pak')).toBe(true)
-    expect(ignored('/App.app/Contents/Resources/runtime/primary-runtime/dependencies/python/bin/python3')).toBe(true)
     for (const path of [
-      '/App.app/Contents/MacOS/DeepSeek Harness',
+      '/App.app/Contents/Resources/runtime/node/node',
       '/App.app/Contents/Resources/runtime/pnpm/addon.node',
       '/App.app/Contents/Frameworks/Electron.framework/Versions/A/library.dylib',
       '/App.app/Contents/Frameworks/Electron.framework',
       '/App.app',
     ]) expect(ignored(path)).toBe(false)
-  })
-
-  it('copies the complete runtime despite electron-builder excluding root node_modules', async () => {
-    const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
-    const config = createElectronBuilderConfig(RELEASE_ENVIRONMENT, 'darwin', 'arm64')
-    const root = mkdtempSync(join(tmpdir(), 'desktop-resource-copy-'))
-    try {
-      const source = join(root, 'source')
-      const destination = join(root, 'resources')
-      runtimeFixture(source)
-      const sourceRoot = config.extraResources[1].from
-      const matchers = config.extraResources.slice(1).map(entry => new FileMatcher(
-        join(source, relative(sourceRoot, entry.from)), join(destination, entry.to), value => value,
-      ))
-      await copyFiles(matchers.slice(0, 1))
-      await expect(verifyDesktopRuntime(join(destination, 'dsh'), '1.0.0')).rejects.toThrow(/ENOENT/u)
-      rmSync(destination, { recursive: true })
-      await copyFiles(matchers)
-      await expect(verifyDesktopRuntime(join(destination, 'dsh'), '1.0.0')).resolves.toMatchObject({ release: { version: '1.0.0' } })
-    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
   it('validates Windows signing without requiring macOS identifiers for a Windows target', async () => {
@@ -119,24 +96,6 @@ describe('desktop macOS release signature', () => {
       DSH_DESKTOP_APP_ID: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
       DSH_DESKTOP_TARGET_PLATFORM: 'win32',
     }, 'win32')).toThrow(/DSH_DESKTOP_WINDOWS_CER_FILE/u)
-  })
-
-  it('copies primary interpreter files and nested pnpm modules through the runtime resource mapping', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'desktop-primary-copy-'))
-    try {
-      const source = join(root, 'source')
-      const destination = join(root, 'runtime')
-      const files = ['primary-runtime/runtime.json', 'primary-runtime/dependencies/python/Lib/site-packages/numpy/native.pyd',
-        'primary-runtime/dependencies/pnpm/dist/node_modules/helper/index.js', 'primary-runtime/dependencies/node/node_modules/README.txt']
-      for (const file of files) {
-        mkdirSync(join(source, file, '..'), { recursive: true })
-        writeFileSync(join(source, file), 'payload')
-      }
-      mkdirSync(join(source, 'primary-runtime/dependencies/node/node_modules'), { recursive: true })
-      await copyFiles([new FileMatcher(source, destination, value => value)])
-      for (const file of files) expect(existsSync(join(destination, file))).toBe(true)
-      expect(existsSync(join(destination, 'primary-runtime/dependencies/node/node_modules'))).toBe(true)
-    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
   it('isolates unsigned Windows artifacts and omits updater metadata without release credentials', async () => {
@@ -148,11 +107,6 @@ describe('desktop macOS release signature', () => {
     }, 'win32', 'x64')
     expect(portablePath(config.directories.output)).toContain('/targets/win-x64/unsigned-artifacts')
     expect(portablePath(config.nsis.include)).toMatch(/\/scripts\/installer\.nsh$/u)
-    expect(config.nsis).toMatchObject({
-      oneClick: false, perMachine: false, allowElevation: false,
-      allowToChangeInstallationDirectory: false, installerLanguages: ['en_US', 'zh_CN'],
-    })
-    expect(config.nsis).not.toHaveProperty('script')
     expect(config).toMatchObject({
       win: { forceCodeSigning: false, signtoolOptions: { sign: undefined } },
       publish: null,

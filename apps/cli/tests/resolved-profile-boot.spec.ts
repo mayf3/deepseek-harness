@@ -1,5 +1,5 @@
 /** Application-owned profiles share the named profile launch lifecycle. */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -30,6 +30,9 @@ describe('runProfile with an application-owned profile', () => {
   it.each(['composition', 'boot', 'watch', 'cleanup', 'tree-cleanup', 'both-cleanups'] as const)('releases startup resources after a %s failure', async (stage) => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-profile-startup-failure-'))
     homes.push(home)
+    mkdirSync(join(home, 'runtime'))
+    writeFileSync(join(home, 'runtime/package.json'), '{"name":"test-runtime","version":"1.0.0"}')
+    writeFileSync(join(home, 'package.json'), '{"name":"test-bundle","version":"1.0.0"}')
     vi.stubEnv('DSH_HOME', home)
     vi.spyOn(process, 'on').mockReturnValue(process)
     const ctx = new Context()
@@ -76,9 +79,12 @@ describe('runProfile with an application-owned profile', () => {
     }
   })
 
-  it.each(['live', 'startup'] as const)('uses shared layers, %s reload, environment, and shutdown', async (patchReload) => {
+  it.each([['live', 'link'], ['startup', 'link'], ['startup', 'runtime']] as const)('uses shared layers, %s reload, %s resolution, and shutdown', async (patchReload, resolutionMode) => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-resolved-profile-'))
     homes.push(home)
+    mkdirSync(join(home, 'runtime'))
+    writeFileSync(join(home, 'runtime/package.json'), '{"name":"test-runtime","version":"1.0.0"}')
+    writeFileSync(join(home, 'package.json'), '{"name":"test-bundle","version":"1.0.0"}')
     vi.stubEnv('DSH_HOME', home)
     vi.stubEnv('DSH_TELEMETRY_DISABLED', '1')
     vi.spyOn(process, 'on').mockReturnValue(process)
@@ -116,13 +122,15 @@ describe('runProfile with an application-owned profile', () => {
     const runtime = { profile, installAnchor: join(home, 'runtime/package.json') }
     try {
       const { shutdown } = await runProfile({
-        environment, profile: 'desktop', resolvedProfile: runtime,
+        environment, profile: 'desktop', resolvedProfile: runtime, resolutionMode,
         patchFiles: [overlay], args: ['--port', '0', '--no-open'],
       })
       expect(installProxyFromEnvironment).toHaveBeenCalledWith(environment, expect.any(Function))
-      expect(healIsolatedProfileModuleFallback).toHaveBeenCalledWith({
-        profile, installAnchor: runtime.installAnchor,
-      })
+      if (resolutionMode === 'link') {
+        expect(healIsolatedProfileModuleFallback).toHaveBeenCalledWith({ profile, installAnchor: runtime.installAnchor })
+      } else {
+        expect(healIsolatedProfileModuleFallback).not.toHaveBeenCalled()
+      }
       expect(readFileSync(join(home, 'cordis.yml'), 'utf8')).not.toContain('stale')
       expect(ctx.cmdlineArgs!.get()).toEqual(['--port', '0', '--no-open'])
       const ready = vi.fn()

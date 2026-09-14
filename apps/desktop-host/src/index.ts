@@ -16,6 +16,7 @@ async function main(): Promise<void> {
   const application = runProfile({
     environment: loadLayeredEnv('dsh'),
     profile: 'desktop',
+    resolutionMode: process.argv[5] === 'runtime' ? 'runtime' : 'link',
     resolvedProfile: { profile, installAnchor },
     patchFiles: [],
     args: ['--no-open', '--port', '19387'],

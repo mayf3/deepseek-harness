@@ -35,6 +35,7 @@ declare module '@deepseek-ai/cordis' {
 
 export {
   composeEntries,
+  createProfileResolutionGeneration,
   DEFAULT_PROFILE_BUNDLES,
   DEFAULT_PROFILE_PATCH_RELOAD,
   healProfilesModuleFallback,
@@ -54,8 +55,16 @@ export {
   type ProfileLayer,
   type ProfileManifest,
   type ProfileModuleFallbackOptions,
+  type ProfileResolutionEntry,
+  type ProfileResolutionGeneration,
+  type ProfileResolutionMode,
   type ProfileTemplate,
 } from './profile.ts'
+export {
+  PluginPackages,
+  type PluginPackage,
+  type PluginPackagesConfig,
+} from './profile-resolution/service.ts'
 
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for
