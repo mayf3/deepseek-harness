@@ -41,6 +41,8 @@ Each nonempty appended `system/message` owns a collapsed prompt row, including a
 
 A completed Turn shows an expandable usage row only when the loaded window includes `turn/start` and every started model attempt reports safe, exact usage. The row omits unavailable optional buckets. Incomplete or contradictory accounting hides the complete disclosure instead of presenting a partial total.
 
+After Assistant replies settle, the completed-turn timing dialog omits TTFT and decoding speed, both after live replies and after reopening history. Elapsed turn time remains available. The Session Stats pill reads timing independently from its durable projection.
+
 <a id="completed-turn-footer"></a>
 ## Completed-turn footer
 
