@@ -69,7 +69,7 @@ export class TerminalController extends TypertRemoteService {
     shell: z.union([z.object({
       path: z.string().required(), name: z.string().required(), args: z.array(z.string()).default([]),
     }), z.const(undefined)]),
-    shellCandidates: z.array(z.string().min(1)).default(['zsh', 'bash', 'fish', 'sh', 'ksh', 'tcsh', 'csh', 'pwsh', 'powershell', 'cmd', 'nu']),
+    shellCandidates: z.array(z.string().min(1)).default(['zsh', 'bash', 'fish', 'pwsh', 'cmd']),
     maxTerminals: z.number().step(1).min(1).default(8),
     maxCols: z.number().step(1).min(2).default(500),
     maxRows: z.number().step(1).min(1).default(200),
