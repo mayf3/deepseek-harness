@@ -77,22 +77,6 @@ Authoring is copy-only: creating a preset copies an existing preset's whole dire
 
 A copy is refused when the id is not `[a-z0-9][a-z0-9-]*` (the id becomes a directory name), when the id is already taken (a copy never overwrites), or when the source is unknown. Deleting removes only locally authored presets; presets that ship with the deployment are not removable. A session already running on a deleted preset keeps running on it.
 
-### Adjusting a preset without editing it
-
-Every preset accepts a user patch layer: a `cordis.patch.yml` in the Loader's patch-list format — the same file a profile's user layer is — that switches rows off, replaces a row's config, or inserts rows, applied over the composition at every mount. For a locally authored preset the file sits beside `agent.cordis.yml`; for a shipped preset it sits alone in `<dshHome>/.agent-presets/<id>/cordis.patch.yml`, so the shipped install stays as it came:
-
-```yaml
-- id: tool-web
-  disabled: true
-- insert:
-    - id: sql
-      name: '@acme/dsh-sql-tool'
-      config:
-        dsn: sqlite://local.db
-```
-
-The layer is judged with the composition: a layer that does not parse, inserts a malformed row, or inserts a row naming a module that cannot resolve makes the preset broken with that reason, and a layer whose id no root supplies is listed as a broken slot. Sessions created after the layer changes compose the new content; running sessions keep theirs. The composition inventory reports each row's `source` (`preset` or `user`) and, for a row that is off, whether the composition or the layer switched it off. A copy carries the layer in beside the new composition, and `removeOverlay` deletes it. The [plugin manager](../../host/plugin-manager/README.md) writes this file through `overlayPathFor`.
-
 ### Switching a session's preset
 
 A session can switch to a different preset only while it has produced nothing — no messages or tool calls. After that, the composition is fixed for the session's life, because swapping tools mid-conversation would leave logged tool calls the new composition cannot make. A committed switch emits `tools/change` because the resolved tool set changed without a registry edit. The switch is also recorded in the session log, so a resumed or forked session rebuilds under the composition it ran.
@@ -114,7 +98,7 @@ This section explains the design behind the roster and the standing mount; obser
 ### Design philosophy
 
 - **One standing composition per preset.** A preset is mounted once per process under a standing scope; agents join by parenting their scope key to the mount, so the mount's registrations and listeners cover every joined agent and no sibling preset's.
-- **Generations keyed on the composition file and the user patch layer.** The mount records the composition file's stamp (mtime and size) and a digest of the layer's text; a session that finds the stamp stale starts the next generation, while sessions already joined keep the generation they run on — a running session outlives its file changing or disappearing. A layer edited back to a content an earlier generation composed returns to that generation instead of composing a third.
+- **Generations keyed on the composition file.** The mount records the composition file's stamp (mtime and size); a session that finds the stamp stale starts the next generation, while sessions already joined keep the generation they run on — a running session outlives its file changing or disappearing.
 - **The preset file is an input, never a persistence target.** The mounted subtree overrides `write()` as a no-op, so a loader-initiated write-back never rewrites a shared preset file.
 - **Discovery owns health.** A directory whose composition is missing or unloadable is a broken roster row with a reason, not a skip — a skipped directory would still occupy its id while no surface shows anything to delete.
 
@@ -123,11 +107,11 @@ This section explains the design behind the roster and the standing mount; obser
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Service entry: `Config` schema, settings namespace, roster API, standing-mount coordination |
-| [`src/discovery.ts`](src/discovery.ts) | Filesystem discovery: root scanning, user patch layer attachment, health checks, id validation, ordering |
-| [`src/composition-inventory.ts`](src/composition-inventory.ts) | Flattened composition rows for plugin-listing surfaces: file reads with evaluated disabled gates and the user patch layer applied, mount reads with fiber states, per-row `source` and `disabledBy` |
+| [`src/discovery.ts`](src/discovery.ts) | Filesystem discovery: root scanning, health checks, id validation, ordering |
+| [`src/composition-inventory.ts`](src/composition-inventory.ts) | Flattened composition rows for plugin-listing surfaces: file reads with evaluated disabled gates, mount reads with fiber states |
 | [`src/preset.ts`](src/preset.ts) | Vocabulary: preset id rule, `AgentPreset` and `PresetRoot`, error types |
-| [`src/mount.ts`](src/mount.ts) | Subtree mounting with the user patch layer as runtime patches, host base-URL handling, mount audit, `write()` suppression |
-| [`src/authoring.ts`](src/authoring.ts) | Copy/delete/read of locally authored presets, user patch layer copy and removal, permission tightening |
+| [`src/mount.ts`](src/mount.ts) | Subtree mounting, host base-URL handling, mount audit, `write()` suppression |
+| [`src/authoring.ts`](src/authoring.ts) | Copy/delete/read of locally authored presets, permission tightening |
 | [`src/metadata.ts`](src/metadata.ts) | `preset.yml` display metadata |
 | [`src/session.ts`](src/session.ts) | `agent-preset/selected` event and the `agentPreset` Session projection |
 | [`src/types.ts`](src/types.ts) | Client-safe wire payloads and cordis event declaration |
@@ -189,7 +173,7 @@ These limits define when the roster is a poor fit or needs special operational c
 
 - **A preset outside the writable root is discoverable but not deletable** — `remove()` refuses anything that does not live under the first `user` root, so a deployment that configures its own writable root while leaving `includeUserRoot` on lists the harness-home presets, mounts them, and answers "it does not live under the writable preset root" for every delete. A deployment that wants only its own presets sets `includeUserRoot: false`.
 - **A session cannot change preset once it has produced anything** — switching re-links a blank session's parent scope to another standing mount, and only a blank one: swapping tools mid-conversation would strand tools the model has called.
-- **A generation is keyed on the composition file and the user patch layer alone** — the stamp check notices `agent.cordis.yml` or `cordis.patch.yml` changing, not an edit to a skill file or asset beside them; those reach new sessions only once one of the two files itself moves or the process restarts.
+- **A generation is keyed on the composition file alone** — the stamp check notices `agent.cordis.yml` changing, not an edit to a skill file or asset beside it; those reach new sessions only once the composition file itself moves or the process restarts.
 - **A superseded generation is never reclaimed** — sessions already joined keep the generation they run on, and the roster holds no join count that could tell when the last one left, so the whole subtree stays mounted until the process ends. The cost is per generation rather than per session, but it is not free: `dsh-skill-filesystem` watches its roots by default, so each edit-then-create cycle adds a live watcher set.
 - **A copy is never mounted to validate** — it is byte-identical to its source, so a source broken on disk yields a copy exactly as broken as the source; discovery's health check marks both rows on the next roster read rather than deferring the failure to a session start.
 - **Health asks what is installed, not what would import** — discovery proves the composition parses in the loader dialect, holds named rows, and that each row it can prove will start names a package present above the harness base or a file that exists; it never imports one, so a package whose own entry file is missing, a plugin that throws on apply, and one waiting forever for a service all still fail at the first session. `disabled` is the one entry field the Loader interpolates, so a row carrying an expression there is left unchecked rather than judged from the file.

@@ -1,7 +1,7 @@
 /**
  * Plugin management over the booted profile: every operation the `plugins`
  * Remote exposes, one mutation at a time, with the tree read through the
- * Cordis context and the profile runtime, the preset roster, and the
+ * Cordis context and the profile runtime and the
  * running-agent count read through per-call readers.
  * @module @deepseek-ai/dsh-plugin-manager/manager
  */
@@ -34,43 +34,15 @@ import type {
   PluginRowAddition,
   PluginRowIssue,
   PluginRowReference,
-  PluginRowTarget,
   PluginServiceDependent,
 } from './types.ts'
 import { ownedEntries, packageView } from './view.ts'
-
-/**
- * The agent-preset roster as row operations see it: where each preset's user
- * patch layer lives and which row ids its composition already carries. The
- * roster service satisfies this structurally; a host passes it in so this
- * package never imports the roster.
- */
-export interface PresetLayers {
-  /**
-   * The user patch layer file of one preset, created on the first write.
-   * @param presetId - the preset id.
-   * @returns the absolute path.
-   */
-  overlayPathFor(presetId: string): Promise<string>
-  /**
-   * Every preset with the path of its user patch layer when it has one.
-   * @returns the presets.
-   */
-  list(): Promise<readonly { readonly id: string; readonly overlayPath?: string }[]>
-  /**
-   * Every preset's composition as rows, under the ids the composition declares; an anonymous row has none.
-   * @returns one composition per preset.
-   */
-  compositionInventory(): Promise<readonly { readonly id: string; readonly rows: readonly { readonly entryId: string | null }[] }[]>
-}
 
 /** What {@link PluginManager} needs beyond the Cordis context it reads the tree through. */
 export interface PluginManagerOptions {
   readonly config: PluginToolingConfig
   /** The booted profile, read per call; `undefined` means no profile is composed in this process. */
   readonly runtime: () => ProfileRuntime | undefined
-  /** The preset roster's layers, read per call; `undefined` when no roster is composed. */
-  readonly presets: () => PresetLayers | undefined
   /** How many agents are running; `add` and `uninstall` refuse while any is. */
   readonly runningAgents: () => number
   /** Test seam: the child spawner; defaults to `node:child_process`. */
@@ -82,7 +54,7 @@ export interface PluginManagerOptions {
 /**
  * Plugin management over the booted profile: every operation the `plugins`
  * Remote exposes, with the tree read through the Cordis context and the
- * profile runtime, the preset roster, and the running-agent count read
+ * profile runtime and the running-agent count read
  * through {@link PluginManagerOptions} per call.
  *
  * Every write touches the profile manifest, the user layers, or
@@ -96,7 +68,7 @@ export class PluginManager {
 
   /**
    * @param ctx - the context whose Loader tree and services the operations read.
-   * @param options - the profile runtime, the roster, the agent count, and the tooling bounds.
+   * @param options - the profile runtime, the agent count, and the tooling bounds.
    */
   constructor(private readonly ctx: Context, private readonly options: PluginManagerOptions) {}
 
@@ -238,10 +210,10 @@ export class PluginManager {
       await this.disableNow(packageName)
     }
     for (const reference of references) {
-      await this.editLayer(runtime, reference.target, (document) => { document.removeInsert(reference.rowId) })
+      await this.editLayer(runtime, (document) => { document.removeInsert(reference.rowId) })
     }
     await installer.remove(packageName)
-    if (references.some(reference => reference.target.kind === 'global') && runtime.patchReload === 'live') {
+    if (references.length > 0 && runtime.patchReload === 'live') {
       await runtime.recompose()
     }
     this.changed('uninstall', packageName)
@@ -357,28 +329,23 @@ export class PluginManager {
   }
 
   /**
-   * Add a row naming one of the package's modules to a user layer: the
-   * profile's global `cordis.patch.yml`, or an agent preset's.
+   * Add a row naming one of the package's modules to the profile's `cordis.patch.yml`.
    * @param packageName - the installed package.
-   * @param target - which layer.
    * @param options - `module` selects a declared `dsh.plugins[]` name (default `.`),
    * `id` overrides the derived row id, `config` overrides the declared default.
    * @returns where the row landed.
    * @throws {PluginOperationError} `plugins/not-installed`, `plugins/not-enableable`
-   * when the module is absent from `dsh.plugins`, `plugins/row-conflict`,
-   * or `plugins/unavailable` for a preset target without a roster.
+   * when the module is absent from `dsh.plugins`, or `plugins/row-conflict`.
    */
   async addRow(
     packageName: string,
-    target: PluginRowTarget,
     options?: { module?: string; id?: string; config?: JsonValue },
   ): Promise<PluginRowAddition> {
-    return this.exclusive('addRow', packageName, () => this.addRowNow(packageName, target, options))
+    return this.exclusive('addRow', packageName, () => this.addRowNow(packageName, options))
   }
 
   private async addRowNow(
     packageName: string,
-    target: PluginRowTarget,
     options?: { module?: string; id?: string; config?: JsonValue },
   ): Promise<PluginRowAddition> {
     const runtime = this.runtime()
@@ -398,30 +365,29 @@ export class PluginManager {
     }
     const config = options?.config !== undefined ? options.config : addable.config !== undefined ? addable.config : {}
     const row: PatchRow = { id: rowId, name: moduleName, config }
-    if (await this.rowExists(runtime, target, rowId)) {
-      throw new PluginOperationError('plugins/row-conflict', `${NAME}: a row ${JSON.stringify(rowId)} already exists`, { rowId, target })
+    if (await this.rowExists(runtime, rowId)) {
+      throw new PluginOperationError('plugins/row-conflict', `${NAME}: a row ${JSON.stringify(rowId)} already exists`, { rowId })
     }
-    const file = await this.editLayer(runtime, target, (document) => { document.appendInsert(row) })
+    const file = await this.editLayer(runtime, (document) => { document.appendInsert(row) })
     this.changed('row', packageName)
-    return { target, rowId, file }
+    return { rowId, file }
   }
 
   /**
    * Remove a row a user layer inserted.
-   * @param target - which layer.
    * @param rowId - the inserted row's id.
    * @throws {PluginOperationError} `plugins/bad-request` when the layer inserts no such row.
    */
-  async removeRow(target: PluginRowTarget, rowId: string): Promise<void> {
-    return this.exclusive('removeRow', rowId, () => this.removeRowNow(target, rowId))
+  async removeRow(rowId: string): Promise<void> {
+    return this.exclusive('removeRow', rowId, () => this.removeRowNow(rowId))
   }
 
-  private async removeRowNow(target: PluginRowTarget, rowId: string): Promise<void> {
+  private async removeRowNow(rowId: string): Promise<void> {
     const runtime = this.runtime()
     // A holder rather than a `let`: the assignment happens inside the edit
     // callback, which control-flow narrowing does not see.
     const outcome = { removed: false }
-    await this.editLayer(runtime, target, (document) => { outcome.removed = document.removeInsert(rowId) })
+    await this.editLayer(runtime, (document) => { outcome.removed = document.removeInsert(rowId) })
     if (!outcome.removed) {
       throw new PluginOperationError('plugins/bad-request', `${NAME}: the layer inserts no row ${JSON.stringify(rowId)}`, {})
     }
@@ -432,17 +398,16 @@ export class PluginManager {
    * Switch one row off or on in a user layer. Deny-only: `true` writes
    * `disabled: true` for the row, `false` removes that key, so a bundle's
    * own `!!js` gate is restored rather than overridden.
-   * @param target - which layer.
    * @param rowId - the row's id as the composition declares it.
    * @param disabled - whether the layer should switch the row off.
    */
-  async setRowDisabled(target: PluginRowTarget, rowId: string, disabled: boolean): Promise<void> {
-    return this.exclusive('setRowDisabled', rowId, () => this.setRowDisabledNow(target, rowId, disabled))
+  async setRowDisabled(rowId: string, disabled: boolean): Promise<void> {
+    return this.exclusive('setRowDisabled', rowId, () => this.setRowDisabledNow(rowId, disabled))
   }
 
-  private async setRowDisabledNow(target: PluginRowTarget, rowId: string, disabled: boolean): Promise<void> {
+  private async setRowDisabledNow(rowId: string, disabled: boolean): Promise<void> {
     const runtime = this.runtime()
-    await this.editLayer(runtime, target, (document) => {
+    await this.editLayer(runtime, (document) => {
       if (disabled) document.setRowField(rowId, 'disabled', true)
       else document.deleteRowField(rowId, 'disabled')
     })
@@ -482,70 +447,47 @@ export class PluginManager {
   /** Every user-layer row naming the package or one of its subpaths. */
   private async rowReferences(runtime: ProfileRuntime, packageName: string): Promise<PluginRowReference[]> {
     const found: PluginRowReference[] = []
-    const names = (target: PluginRowTarget, rows: readonly PatchRow[]): void => {
+    const names = (rows: readonly PatchRow[]): void => {
       for (const row of rows) {
         // A group's config is a row list once the patch parser accepted the file.
         /* v8 ignore next */
-        if (row.group === true) names(target, (row.config ?? []) as PatchRow[])
+        if (row.group === true) names((row.config ?? []) as PatchRow[])
         if (typeof row.id !== 'string') continue
         if (row.name === packageName || row.name.startsWith(`${packageName}/`)) {
-          found.push({ target, rowId: row.id, moduleName: row.name })
+          found.push({ rowId: row.id, moduleName: row.name })
         }
       }
     }
-    const scan = async (target: PluginRowTarget, file: string): Promise<void> => {
-      let patches
-      try {
-        patches = await readPatchListFile(NAME, file, 'patches')
-      } catch {
-        // An unreadable layer names nothing this call can act on; the
-        // launcher and the roster report it as their own failure.
-        return
-      }
-      for (const patch of patches ?? []) if (patch.insert !== undefined) names(target, patch.insert)
+    let patches
+    try {
+      patches = await readPatchListFile(NAME, runtime.patchPath, 'patches')
+    } catch {
+      // An unreadable layer names nothing this call can act on; the
+      // launcher reports it as a composition failure.
+      return found
     }
-    await scan({ kind: 'global' }, runtime.patchPath)
-    const presets = this.options.presets()
-    if (presets !== undefined) {
-      for (const preset of await presets.list()) {
-        if (preset.overlayPath !== undefined) await scan({ kind: 'preset', preset: preset.id }, preset.overlayPath)
-      }
-    }
+    for (const patch of patches ?? []) if (patch.insert !== undefined) names(patch.insert)
     return found
   }
 
-  /** Whether the target layer's composition already carries a row with `rowId`. */
-  private async rowExists(runtime: ProfileRuntime, target: PluginRowTarget, rowId: string): Promise<boolean> {
-    if (target.kind === 'global') {
-      const tree = rootIncludeEntry(this.ctx.root)?.subtree
-      return [...this.ctx.loader.entries()].some(entry => entry.parent.tree === tree && entry.options.id === rowId)
-        || (await readPatchListFile(NAME, runtime.patchPath, 'patches') ?? []).some(patch => patch.insert?.some(row => row.id === rowId))
-    }
-    const composition = (await this.presets().compositionInventory()).find(candidate => candidate.id === target.preset)
-    return composition?.rows.some(row => row.entryId === rowId) ?? false
-  }
-
-  /** The roster's layers, or the failure a preset target without a roster receives. */
-  private presets(): PresetLayers {
-    const presets = this.options.presets()
-    if (presets === undefined) {
-      throw new PluginOperationError('plugins/unavailable', `${NAME}: no agent-preset roster is composed`, { reason: 'no roster' })
-    }
-    return presets
+  /** Whether the profile's composition already carries a row with `rowId`. */
+  private async rowExists(runtime: ProfileRuntime, rowId: string): Promise<boolean> {
+    const tree = rootIncludeEntry(this.ctx.root)?.subtree
+    return [...this.ctx.loader.entries()].some(entry => entry.parent.tree === tree && entry.options.id === rowId)
+      || (await readPatchListFile(NAME, runtime.patchPath, 'patches') ?? []).some(patch => patch.insert?.some(row => row.id === rowId))
   }
 
   /** Edit one user layer file and, for the live global layer, recompose. */
   private async editLayer(
     runtime: ProfileRuntime,
-    target: PluginRowTarget,
     mutate: Parameters<typeof mutatePatchFile>[1],
   ): Promise<string> {
-    const file = target.kind === 'global' ? runtime.patchPath : await this.presets().overlayPathFor(target.preset)
+    const file = runtime.patchPath
     await mutatePatchFile(file, mutate, { binName: NAME, mode: 0o600, dirMode: 0o700 })
     // The profile launcher's watcher reapplies the global file on its own;
     // recomposing here makes the change visible to this call's caller before
     // it returns, and the watcher's later pass composes the same text.
-    if (target.kind === 'global' && runtime.patchReload === 'live') await runtime.recompose()
+    if (runtime.patchReload === 'live') await runtime.recompose()
     return file
   }
 

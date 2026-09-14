@@ -65,7 +65,7 @@ launcher 在任何配置行挂载前提供 `ctx.profileRuntime`。该运行时�
 <a id="patch-files"></a>
 ### 补丁文件
 
-上面的每一层都是一个 `cordis.patch.yml`：一个顶层 YAML 序列，元素是 include 插件的 `PatchOptions`——按 id 定位的覆盖与 `insert` 列表——采用 Loader 的方言，其中 `!!js` 标记一个由该行 fiber 求值的表达式。`./patch-file` 导出是读写这种文件的唯一地方，因此启动接受的文件就是 agent preset roster 与插件管理器接受的文件。
+上面的每一层都是一个 `cordis.patch.yml`：一个顶层 YAML 序列，元素是 include 插件的 `PatchOptions`——按 id 定位的覆盖与 `insert` 列表——采用 Loader 的方言，其中 `!!js` 标记一个由该行 fiber 求值的表达式。`./patch-file` 导出是读写这种文件的唯一地方，因此启动接受的文件就是 插件管理器接受的文件。
 
 用 `parsePatchList`（已有文本）或 `readPatchListFile`（文件不存在时读到 `undefined`）读取一层。两者都把 `insert` 行中相对的名字（如 `./plugin.js`）锚定到文件自己的目录，并对任何不是"映射序列"的内容直接报错，因为一个完全无法施加的补丁文件就是配置错误；而目标行不存在的单条补丁仍然只是 Loader 的逐条警告。
 

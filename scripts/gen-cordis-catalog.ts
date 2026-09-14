@@ -721,7 +721,6 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   PluginPackageView: 'plugin manager package views are owned by packages/host/plugin-manager/README.md',
   PluginInstallResult: 'plugin manager install results are owned by packages/host/plugin-manager/README.md',
   PluginEnableResult: 'plugin manager enable results are owned by packages/host/plugin-manager/README.md',
-  PluginRowTarget: 'plugin manager row targets are owned by packages/host/plugin-manager/README.md',
   PluginRowAddition: 'plugin manager row additions are owned by packages/host/plugin-manager/README.md',
   PluginDependents: 'plugin manager dependents are owned by packages/host/plugin-manager/README.md',
   AgentPresetRoster: 'path-free preset roster is owned by packages/preset/agent-presets/README.md',

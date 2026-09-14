@@ -188,20 +188,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when no configured root supplies that id.'],
       },
       {
-        signature: 'async overlayPathFor(id: string): Promise<string>',
-        description: 'Where one preset\'s user patch layer is, or would be written: the layer discovery attached, else the writable root\'s slot of the same id — beside the composition for a locally authored preset, alone in the slot for a shipped one. The file need not exist yet.',
-        parameters: [{ name: 'id', description: 'the preset id.' }],
-        returns: 'the absolute path of the layer file.',
-        throws: ['when the preset is unknown, or it has no layer and the deployment configures no writable root.'],
-      },
-      {
-        signature: 'async removeOverlay(id: string): Promise<boolean>',
-        description: 'Delete one preset\'s user patch layer, so the next generation composes the preset exactly as its root supplies it. Sessions already joined keep the generation they run on.',
-        parameters: [{ name: 'id', description: 'the preset id.' }],
-        returns: 'true when a layer was removed; false when the preset had none.',
-        throws: ['when the preset is unknown or its layer lies outside the writable root.'],
-      },
-      {
         signature: '@Remote(\'read\') async readDocument(agentPreset: string): Promise<AgentPresetDocument>',
         description: 'One preset\'s composition text with the roster row it belongs to.',
         parameters: [{ name: 'agentPreset', description: 'the preset id.' }],
@@ -1400,7 +1386,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'pluginManager',
     summary: 'The `pluginManager` service and the `plugins` Remote.',
-    description: 'The `pluginManager` service and the `plugins` Remote.\n\nThe row injects only the Loader; the profile runtime, the preset roster, and the agent registry are read off the context per call, so a composition without them (a test, a launcher other than the profile launcher) still mounts this service and every call then reports `plugins/unavailable` rather than the service failing to start.',
+    description: 'The `pluginManager` service and the `plugins` Remote.\n\nThe row injects only the Loader; the profile runtime and the agent registry are read off the context per call, so a composition without them (a test, a launcher other than the profile launcher) still mounts this service and every call then reports `plugins/unavailable` rather than the service failing to start.',
     methods: [
       {
         signature: '@Remote(\'list\') async list(): Promise<PluginPackageView[]>',
@@ -1438,20 +1424,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the enable outcome of the second step.',
       },
       {
-        signature: '@Remote(\'addRow\') async addRow( packageName: string, target: PluginRowTarget, options?: { module?: string; id?: string; config?: JsonValue }, ): Promise<PluginRowAddition>',
-        description: 'Add a row naming one of the package\'s modules to a user layer.',
-        parameters: [{ name: 'packageName', description: 'the installed package.' }, { name: 'target', description: 'which layer.' }, { name: 'options', description: '`module` selects a declared `dsh.plugins[]` name (default `.`), `id` overrides the derived row id, `config` overrides the declared default.' }],
+        signature: '@Remote(\'addRow\') async addRow( packageName: string, options?: { module?: string; id?: string; config?: JsonValue }, ): Promise<PluginRowAddition>',
+        description: 'Add a row naming one of the package\'s modules to the profile user layer.',
+        parameters: [{ name: 'packageName', description: 'the installed package.' }, { name: 'options', description: '`module` selects a declared `dsh.plugins[]` name (default `.`), `id` overrides the derived row id, `config` overrides the declared default.' }],
         returns: 'where the row landed.',
       },
       {
-        signature: '@Remote(\'removeRow\') async removeRow(target: PluginRowTarget, rowId: string): Promise<void>',
+        signature: '@Remote(\'removeRow\') async removeRow(rowId: string): Promise<void>',
         description: 'Remove a row a user layer inserted.',
-        parameters: [{ name: 'target', description: 'which layer.' }, { name: 'rowId', description: 'the inserted row\'s id.' }],
+        parameters: [{ name: 'rowId', description: 'the inserted row\'s id.' }],
       },
       {
-        signature: '@Remote(\'setRowDisabled\') async setRowDisabled(target: PluginRowTarget, rowId: string, disabled: boolean): Promise<void>',
+        signature: '@Remote(\'setRowDisabled\') async setRowDisabled(rowId: string, disabled: boolean): Promise<void>',
         description: 'Switch one row off or on in a user layer; deny-only.',
-        parameters: [{ name: 'target', description: 'which layer.' }, { name: 'rowId', description: 'the row\'s id as the composition declares it.' }, { name: 'disabled', description: 'whether the layer should switch the row off.' }],
+        parameters: [{ name: 'rowId', description: 'the row\'s id as the composition declares it.' }, { name: 'disabled', description: 'whether the layer should switch the row off.' }],
       },
       {
         signature: '@Remote(\'dependents\') async dependents(packageName: string): Promise<PluginDependents>',
@@ -3799,7 +3785,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentPreset',
-    declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly overlayPath?: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly broken?: string;\n}',
+    declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly broken?: string;\n}',
   },
   {
     name: 'AgentPresetComposition',
@@ -3807,7 +3793,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentPresetCompositionRow',
-    declaration: 'export interface AgentPresetCompositionRow {\n    readonly entryId: string | null;\n    readonly moduleName: string;\n    readonly enabled: CompositionRowEnablement;\n    readonly condition?: string;\n    readonly fiberState?: FiberState;\n    readonly source: CompositionRowSource;\n    readonly disabledBy?: CompositionRowDisabledBy;\n}',
+    declaration: 'export interface AgentPresetCompositionRow {\n    readonly entryId: string | null;\n    readonly moduleName: string;\n    readonly enabled: CompositionRowEnablement;\n    readonly condition?: string;\n    readonly fiberState?: FiberState;\n}',
   },
   {
     name: 'AgentPresetDirectoryOpenValue',
@@ -4078,16 +4064,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CompactionTrigger = \'pressure\' | \'context-overflow\';',
   },
   {
-    name: 'CompositionRowDisabledBy',
-    declaration: 'export type CompositionRowDisabledBy = \'composition\' | \'user\';',
-  },
-  {
     name: 'CompositionRowEnablement',
     declaration: 'export type CompositionRowEnablement = boolean | \'conditional\';',
-  },
-  {
-    name: 'CompositionRowSource',
-    declaration: 'export type CompositionRowSource = \'preset\' | \'user\';',
   },
   {
     name: 'ComputerUseProviderName',
@@ -4995,7 +4973,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginRowAddition',
-    declaration: 'export interface PluginRowAddition {\n    readonly target: PluginRowTarget;\n    readonly rowId: string;\n    readonly file: string;\n}',
+    declaration: 'export interface PluginRowAddition {\n    readonly rowId: string;\n    readonly file: string;\n}',
   },
   {
     name: 'PluginRowIssue',
@@ -5007,11 +4985,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginRowReference',
-    declaration: 'export interface PluginRowReference {\n    readonly target: PluginRowTarget;\n    readonly rowId: string;\n    readonly moduleName: string;\n}',
-  },
-  {
-    name: 'PluginRowTarget',
-    declaration: 'export type PluginRowTarget = {\n    readonly kind: \'global\';\n} | {\n    readonly kind: \'preset\';\n    readonly preset: string;\n};',
+    declaration: 'export interface PluginRowReference {\n    readonly rowId: string;\n    readonly moduleName: string;\n}',
   },
   {
     name: 'PluginServiceDependent',

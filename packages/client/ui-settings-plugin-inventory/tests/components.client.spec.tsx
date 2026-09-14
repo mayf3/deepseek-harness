@@ -144,8 +144,8 @@ describe('PluginInventorySettingsTab', () => {
         trust: 'user',
         isDefault: true,
         rows: [
-          { entryId: 'tool-subagent-primary', moduleName: '@deepseek-ai/dsh-tool-subagent', enabled: true, fiberPhase: null, source: 'preset' },
-          { entryId: longId, moduleName: '@deepseek-ai/dsh-tool-subagent', enabled: false, fiberPhase: null, source: 'preset' },
+          { entryId: 'tool-subagent-primary', moduleName: '@deepseek-ai/dsh-tool-subagent', enabled: true, fiberPhase: null },
+          { entryId: longId, moduleName: '@deepseek-ai/dsh-tool-subagent', enabled: false, fiberPhase: null },
         ],
       }],
     })
@@ -338,7 +338,7 @@ describe('PluginInventorySettingsTab', () => {
         id: 'solo',
         trust: 'user',
         isDefault: false,
-        rows: [{ entryId: 'one', moduleName: '@fixture/one', enabled: true, fiberPhase: null, source: 'preset' }],
+        rows: [{ entryId: 'one', moduleName: '@fixture/one', enabled: true, fiberPhase: null }],
       }],
     })
 

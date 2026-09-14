@@ -10,7 +10,7 @@ CLI 与 Web 需要相同的安装检查，而只有运行中的应用才能应�
 
 ## Decision
 
-**一个业务管理器，一个 Remote 适配器。** `dsh-plugin-manager` 位于 app-boot 旁。`PluginInstaller` 操作 profile 文件和 pnpm，不需要运行中的 Loader；`PluginManager` 在其上增加面向运行中 profile 的组合包与行操作。CLI 共用安装器。`dsh-host-plugin-manager` 提供逐次调用的 profile runtime、预设层与运行中 agent 数读取器，转接方法并将 `PluginOperationError` 错误码映射为 Remote 错误。缺少 profile runtime 时在调用处报告 `plugins/unavailable`。管理器依赖预设层接口，不依赖预设或 agent 的实现。
+**一个业务管理器，一个 Remote 适配器。** `dsh-plugin-manager` 位于 app-boot 旁。`PluginInstaller` 操作 profile 文件和 pnpm，不需要运行中的 Loader；`PluginManager` 在其上增加面向运行中 profile 的组合包与行操作。CLI 共用安装器。`dsh-host-plugin-manager` 提供逐次调用的 profile runtime 与运行中 agent 数读取器，转接方法并将 `PluginOperationError` 错误码映射为 Remote 错误。缺少 profile runtime 时在调用处报告 `plugins/unavailable`。管理器读取运行中 agent 的数量，不依赖 agent 实现。
 
 **同时只允许一个变更。** 重叠变更收到 `plugins/busy`，不进入可能携带过期假设的队列。有 agent 运行时，安装与移除以 `plugins/agents-running` 拒绝，因为 pnpm 会重写这些 agent 导入的模块。组合包与行编辑不改 `node_modules`，不使用这一限制。每次操作重新读取 profile 清单：依赖记录安装，`dsh.profile.bundles` 记录启用。
 
@@ -18,7 +18,7 @@ CLI 与 Web 需要相同的安装检查，而只有运行中的应用才能应�
 
 **启用选择层，诊断描述实际行。** 组合包启用、非事务重组和显式 `dsh.plugins` 发现遵循[原生条目诊断与静态声明](2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.zh.md)。管理器区分逐行问题与启用选择。`retry` 移除完整层，等待清理，再将其加入；仅保留不变的行选项不会重启失败插件。`list` 从清单、静态声明和当前 Loader 状态派生每个包的视图。
 
-**行通过 patch-file 写入器修改。** `addRow` 将声明的模块与配置插入 profile 用户 patch 或 roster 返回的预设覆盖层。`setRowDisabled` 写入或移除 `disabled: true`，用户撤销禁用时恢复作者原来的条件。全局修改重组运行中的树；预设修改影响后续常驻代际。
+**行通过 patch-file 写入器修改。** `addRow` 将声明的模块与配置插入 profile 用户 patch。`setRowDisabled` 写入或移除 `disabled: true`，用户撤销禁用时恢复作者原来的条件。全局修改重组运行中的树。
 
 **运行时通知跟随诊断。** 原生条目与 fiber 事件共用一次待完成的读取。读取等待 Loader 和 profile 重组完成，再比较行身份、模块、fiber 阶段、失败阶段与消息。只有诊断集合变化才发送原因是 `runtime` 的 `plugins/changed`；健康状态波动和重复的相同失败保持安静。管理操作仍保留自己的完成通知。读取期间到来的事件请求再次读取，适配器销毁时取消发布。
 

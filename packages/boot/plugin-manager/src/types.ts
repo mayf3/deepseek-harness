@@ -51,7 +51,7 @@ export interface PluginPackageRowView {
   readonly failure?: { readonly stage: string; readonly message: string }
 }
 
-/** One agent-plane module a package declares addable to a composition. */
+/** One module a package declares addable to the profile. */
 export interface PluginPackageAddableView {
   /** The module as it is named in a row: the bare package for `.`, else `<package>/<subpath>`. */
   readonly moduleName: string
@@ -92,16 +92,11 @@ export interface PluginPackageView {
   readonly issues?: readonly PluginRowIssue[]
   /** Ids of built-in rows the bundle's patch overrides. */
   readonly overrides: readonly string[]
-  /** Agent-plane modules the package declares addable. */
+  /** Modules the package declares addable. */
   readonly addable: readonly PluginPackageAddableView[]
   /** Whether the profile applies user patch files while running; false means changes wait for a restart. */
   readonly liveReload: boolean
 }
-
-/** Where a composition row is added or edited: the profile's global user layer, or one preset's. */
-export type PluginRowTarget =
-  | { readonly kind: 'global' }
-  | { readonly kind: 'preset'; readonly preset: string }
 
 /** A package pnpm installed that the run removed again, with the check it failed. */
 export interface PluginInstallRejection {
@@ -157,7 +152,6 @@ export interface PluginServiceDependent {
 
 /** One user-layer row that names a module of the package. */
 export interface PluginRowReference {
-  readonly target: PluginRowTarget
   readonly rowId: string
   readonly moduleName: string
 }
@@ -170,7 +164,6 @@ export interface PluginDependents {
 
 /** Where a row was added. */
 export interface PluginRowAddition {
-  readonly target: PluginRowTarget
   /** The id the row was given. */
   readonly rowId: string
   /** The user layer file the row was written to. */
@@ -214,7 +207,7 @@ export interface PluginOperationDetailsMap {
   /** pnpm exited non-zero, could not be spawned, or timed out. */
   'plugins/install-failed': { readonly spec: string; readonly exitCode: number | null; readonly log: string }
   /** The row id is already taken in the target user layer. */
-  'plugins/row-conflict': { readonly rowId: string; readonly target: PluginRowTarget }
+  'plugins/row-conflict': { readonly rowId: string }
   /** Another mutation is still running; the manager runs one at a time and refuses rather than queues. */
   'plugins/busy': {
     readonly operation: string

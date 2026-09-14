@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-host-plugin-manager` 把 `pluginManager` 挂载为 Typert 服务并暴露 `plugins` Remote——`list`、`add`、`uninstall`、`enable`、`disable`、`retry`、`addRow`、`removeRow`、`setRowDisabled`、`dependents`——每个方法都转给建立在本上下文之上的 [`dsh-plugin-manager`](../../boot/plugin-manager/README.zh.md) `PluginManager`，每个 `plugins/*` 失败以同码的 `RemoteError` 过线。操作做什么、以及随之而来的 `plugins/changed` 与 `plugins/install-log` 事件属于那个包；本包只是从上下文读取 profile runtime、预设名册与 agent 注册表并交给它。客户端经 [`api-remotes`](../../api/remotes/README.zh.md) 装配消费该 Remote。
+`dsh-host-plugin-manager` 把 `pluginManager` 挂载为 Typert 服务并暴露 `plugins` Remote——`list`、`add`、`uninstall`、`enable`、`disable`、`retry`、`addRow`、`removeRow`、`setRowDisabled`、`dependents`——每个方法都转给建立在本上下文之上的 [`dsh-plugin-manager`](../../boot/plugin-manager/README.zh.md) `PluginManager`，每个 `plugins/*` 失败以同码的 `RemoteError` 过线。操作做什么、以及随之而来的 `plugins/changed` 与 `plugins/install-log` 事件属于那个包；本包只是从上下文读取 profile runtime 与 agent 注册表并交给它。客户端经 [`api-remotes`](../../api/remotes/README.zh.md) 装配消费该 Remote。
 
 ## 目录
 
@@ -53,7 +53,7 @@ kind: "package-reference"
 
 ### 转接，不是第二个管理器
 
-适配器为一个 `PluginManager` 提供逐次调用的 profile、预设与 agent 读取器，转接各 Remote 方法并映射领域错误。它将原生条目与状态事件合并到一次读取中，等待 Loader 和已排队的 profile 重组完成后，仅在行诊断变化时发布 `plugins/changed` 通知。管理操作仍保留各自的变更通知。销毁会取消待发通知并移除监听器。测试可替换管理器、pnpm 启动器或静态元信息读取器。
+适配器为一个 `PluginManager` 提供逐次调用的 profile 与 agent 读取器，转接各 Remote 方法并映射领域错误。它将原生条目与状态事件合并到一次读取中，等待 Loader 和已排队的 profile 重组完成后，仅在行诊断变化时发布 `plugins/changed` 通知。管理操作仍保留各自的变更通知。销毁会取消待发通知并移除监听器。测试可替换管理器、pnpm 启动器或静态元信息读取器。
 
 ### 源码地图
 
@@ -96,7 +96,7 @@ Typert 生成 `./typert` 与 `./remote` 暴露的宿主与客户端 Remote 工�
 
 这些限制界定该 Remote 不会为客户端做什么。它们是当前包的约束，不是任务清单。
 
-- **管理器做不到的，Remote 也做不到**——[管理器的限制](../../boot/plugin-manager/README.zh.md#known-limitations-and-deferred-work)原样适用：已加载的包下次重启才更新，依赖检测止于注入，preset 的行供之后的会话组合，`engines.dsh` 只报告不强制。
+- **管理器做不到的，Remote 也做不到**——[管理器的限制](../../boot/plugin-manager/README.zh.md#known-limitations-and-deferred-work)原样适用：已加载的包下次重启才更新，依赖检测止于注入，`engines.dsh` 只报告不强制。
 
 <a id="dev-note"></a>
 ### 开发备注

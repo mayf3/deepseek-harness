@@ -17,7 +17,6 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { expandHomePath } from '@deepseek-ai/dsh-home-paths'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-import { OVERLAY_FILE } from './discovery.ts'
 import { METADATA_FILE, renderPresetMetadata } from './metadata.ts'
 import { PRESET_ID, type AgentPreset, type PresetRoot } from './preset.ts'
 
@@ -117,11 +116,6 @@ async function tightenModes(dir: string): Promise<void> {
  * sorted into the shipped set's declared order, would make the roster stop
  * distinguishing them. With no name given and no description to keep, the
  * file is removed so the copy publishes nothing rather than a blank.
- *
- * The source's user patch layer travels with the copy: a layer beside the
- * composition is copied with the directory, and a shipped preset's layer —
- * kept in the user root's slot of the same id — is copied in beside the new
- * composition, so the copy composes exactly what its source composed.
  * @param roots - the configured roots; the first `user` one receives the copy.
  * @param source - the resolved preset the copy starts from.
  * @param id - the new preset's id, which becomes its directory name.
@@ -150,9 +144,6 @@ export async function copyComposition(
     await cp(dirname(source.path), dir, {
       recursive: true, dereference: true, force: false, errorOnExist: true,
     })
-    if (source.overlayPath !== undefined && dirname(source.overlayPath) !== dirname(source.path)) {
-      await cp(source.overlayPath, join(dir, OVERLAY_FILE), { dereference: true, force: false, errorOnExist: true })
-    }
     await tightenModes(dir)
     const rendered = renderPresetMetadata({
       ...name === undefined ? {} : { name },
@@ -197,30 +188,4 @@ export async function deleteComposition(
     throw notWritable(preset.id, 'it does not live under the writable preset root')
   }
   await rm(dir, { recursive: true, force: true })
-}
-
-/**
- * Delete a preset's user patch layer, restoring the composition as its root
- * supplies it. Only a layer under the writable root is deletable: a layer
- * beside a shipped composition would be part of the deployment.
- * @param roots - the configured roots.
- * @param preset - the resolved preset whose layer to remove.
- * @returns true when a layer was removed; false when the preset had none.
- * @throws when the layer lies outside the writable root.
- */
-export async function deleteOverlay(
-  roots: readonly PresetRoot[],
-  preset: AgentPreset,
-): Promise<boolean> {
-  if (preset.overlayPath === undefined) return false
-  const dir = join(writableRoot(roots, preset.id), preset.id)
-  if (!isAbsolute(preset.overlayPath) || !preset.overlayPath.startsWith(dir)) {
-    throw notWritable(preset.id, 'its user patch layer does not live under the writable preset root')
-  }
-  await rm(preset.overlayPath, { force: true })
-  // A shipped preset's slot exists only to hold the layer; an emptied slot
-  // would otherwise read as a directory missing its composition.
-  const remaining = await readdir(dir)
-  if (remaining.length === 0) await rm(dir, { recursive: true, force: true })
-  return true
 }

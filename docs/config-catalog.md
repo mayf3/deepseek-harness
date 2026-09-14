@@ -157,7 +157,7 @@ export interface PresetRoot {
 export type PresetTrust = 'system' | 'user'
 ```
 
-Source: [`packages/preset/agent-presets/src/preset.ts:60`](../packages/preset/agent-presets/src/preset.ts)
+Source: [`packages/preset/agent-presets/src/preset.ts:52`](../packages/preset/agent-presets/src/preset.ts)
 
 <a id="deepseek-aidsh-agent-tool-presentation"></a>
 
@@ -942,7 +942,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/plugin-manager/src/index.ts:42`](../packages/host/plugin-manager/src/index.ts)
+Source: [`packages/host/plugin-manager/src/index.ts:40`](../packages/host/plugin-manager/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 

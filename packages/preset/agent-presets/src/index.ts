@@ -21,11 +21,8 @@
  * @module @deepseek-ai/dsh-agent-presets
  */
 
-import { createHash } from 'node:crypto'
-import { readFile, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { stat } from 'node:fs/promises'
 import { Context } from '@deepseek-ai/cordis'
-import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { evaluate } from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -40,9 +37,8 @@ import type {} from '@deepseek-ai/dsh-tools'
 import type SettingsService from '@deepseek-ai/dsh-settings'
 import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
-import { readPatchListFile } from '@deepseek-ai/dsh-app-boot/patch-file'
-import { discoverPresets, OVERLAY_FILE, SHIPPED_PRESET_ROOT, USER_PRESET_DIR } from './discovery.ts'
-import { copyComposition, deleteComposition, deleteOverlay, presetExists, readComposition, writableRoot } from './authoring.ts'
+import { discoverPresets, SHIPPED_PRESET_ROOT, USER_PRESET_DIR } from './discovery.ts'
+import { copyComposition, deleteComposition, presetExists, readComposition } from './authoring.ts'
 import { livePresetMounts, mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
 import {
   fileComposition, mountedCompositionRows,
@@ -52,10 +48,8 @@ import type { AgentPreset, Config, PresetRoot } from './preset.ts'
 import { agentPresetProjectionDefinition } from './session.ts'
 export type * from './types.ts'
 export type {
-  AgentPresetComposition, AgentPresetCompositionRow, CompositionRowDisabledBy, CompositionRowEnablement,
-  CompositionRowSource, OverlayFacts,
+  AgentPresetComposition, AgentPresetCompositionRow, CompositionRowEnablement,
 } from './composition-inventory.ts'
-export { overlayFacts } from './composition-inventory.ts'
 
 /** Settings namespace carrying the user's preset-picker preference and chosen default. */
 export const SETTINGS_NAMESPACE = 'agent-presets'
@@ -81,7 +75,7 @@ export const AgentPresetSettingsSchema: z<AgentPresetSettings> = z.object({
   modeSelectionEnabled: z.boolean(),
 })
 
-export { COMPOSITION_FILE, discoverPresets, OVERLAY_FILE, scanRoot, SHIPPED_PRESET_ROOT } from './discovery.ts'
+export { COMPOSITION_FILE, discoverPresets, scanRoot, SHIPPED_PRESET_ROOT } from './discovery.ts'
 export {
   METADATA_FILE, readPresetMetadata, renderPresetMetadata, type PresetMetadata,
 } from './metadata.ts'
@@ -89,7 +83,7 @@ export {
   inactiveRows, leakedServices, livePresetMounts, mountPreset, serviceForAgent, standingMountFor,
   type JoinedPresetMount, type PresetMount,
 } from './mount.ts'
-export { copyComposition, deleteComposition, deleteOverlay, readComposition, writableRoot } from './authoring.ts'
+export { copyComposition, deleteComposition, readComposition, writableRoot } from './authoring.ts'
 export { agentPresetProjectionDefinition } from './session.ts'
 export type { AgentPreset, Config, PresetRoot, PresetTrust } from './preset.ts'
 
@@ -343,14 +337,14 @@ export class AgentPresets extends TypertRemoteService {
       // superseded generation's record precedes its replacement's.
       const mount = livePresetMounts(rootFiber).findLast(candidate => candidate.presetId === preset.id)
       if (mount !== undefined) {
-        found.push({ ...identity, rows: mountedCompositionRows(mount.tree, await readOverlay(preset)) })
+        found.push({ ...identity, rows: mountedCompositionRows(mount.tree) })
         continue
       }
       if (preset.broken !== undefined) {
         found.push({ ...identity, broken: preset.broken, rows: [] })
         continue
       }
-      const read = await fileComposition(preset.path, evaluateExpression, await readOverlay(preset))
+      const read = await fileComposition(preset.path, evaluateExpression)
       found.push('broken' in read
         ? { ...identity, broken: read.broken, rows: [] }
         : { ...identity, rows: read.rows })
@@ -409,23 +403,14 @@ export class AgentPresets extends TypertRemoteService {
    * Standing mounts by preset id, single-flight so two agents racing the
    * first use of one preset share one composition. A settled failure is
    * removed so a later session retries a preset whose file has been fixed; a
-   * settled success serves until the composition FILE or the user patch
-   * layer visibly changes — each generation records its stamp, and a stale
-   * stamp starts the next generation for sessions created afterwards.
-   * Sessions already joined keep the generation they run on; a superseded
-   * one is never disposed while the process lives (reclaimed only by
-   * whole-tree teardown), so editing files is bounded by how often
-   * compositions change, not by session count.
+   * settled success serves until the composition FILE visibly changes — each
+   * generation records its file stamp, and a stale stamp starts the next
+   * generation for sessions created afterwards. Sessions already joined keep
+   * the generation they run on; a superseded one is never disposed while the
+   * process lives (reclaimed only by whole-tree teardown), so editing files
+   * is bounded by how often compositions change, not by session count.
    */
   private readonly standing = new Map<string, Promise<StandingMount>>()
-
-  /**
-   * Superseded generations by preset id and stamp key. A layer edited back
-   * to an earlier content — a row switched off and on again — returns to the
-   * generation that content already composed instead of composing a third,
-   * which keeps a toggle from stacking live subtrees.
-   */
-  private readonly retired = new Map<string, Map<string, StandingMount>>()
 
   /**
    * Parent bindings of the agents this roster composed, keyed by the agent's
@@ -537,33 +522,6 @@ export class AgentPresets extends TypertRemoteService {
    */
   async read(id: string): Promise<string> {
     return await readComposition(await this.resolve(id))
-  }
-
-  /**
-   * Where one preset's user patch layer is, or would be written: the layer
-   * discovery attached, else the writable root's slot of the same id — beside
-   * the composition for a locally authored preset, alone in the slot for a
-   * shipped one. The file need not exist yet.
-   * @param id - the preset id.
-   * @returns the absolute path of the layer file.
-   * @throws when the preset is unknown, or it has no layer and the
-   * deployment configures no writable root.
-   */
-  async overlayPathFor(id: string): Promise<string> {
-    const preset = await this.resolve(id)
-    return preset.overlayPath ?? join(writableRoot(this.resolvedRoots, id), id, OVERLAY_FILE)
-  }
-
-  /**
-   * Delete one preset's user patch layer, so the next generation composes the
-   * preset exactly as its root supplies it. Sessions already joined keep the
-   * generation they run on.
-   * @param id - the preset id.
-   * @returns true when a layer was removed; false when the preset had none.
-   * @throws when the preset is unknown or its layer lies outside the writable root.
-   */
-  async removeOverlay(id: string): Promise<boolean> {
-    return await deleteOverlay(this.resolvedRoots, await this.resolve(id))
   }
 
   /**
@@ -812,13 +770,12 @@ export class AgentPresets extends TypertRemoteService {
     const pending = this.standing.get(preset.id)
     if (pending !== undefined) {
       const mounted = await pending
-      // Files are the only composition editor (authoring is copy/delete, the
-      // user patch layer is a file), so the stamp is what notices an edit: a
-      // changed file starts the next generation here, for this and later
-      // sessions. An unreadable stamp serves the current generation — a
-      // mount must survive its file disappearing, and failing the session
-      // over a stat would not.
-      const current = await compositionStamp(preset)
+      // Files are the only composition editor (authoring is copy/delete), so
+      // the stamp is what notices an edit: a changed file starts the next
+      // generation here, for this and later sessions. An unreadable stamp
+      // serves the current generation — a mount must survive its file
+      // disappearing, and failing the session over a stat would not.
+      const current = await compositionStamp(preset.path)
       if (current === undefined || sameStamp(mounted.stamp, current)) return mounted
       // TODO: reclaim the superseded generation once the last agent joined to
       // it is gone. The subtree is not inert — `dsh-skill-filesystem` watches its
@@ -828,25 +785,17 @@ export class AgentPresets extends TypertRemoteService {
       // decremented when the agent's scope key dies.
       // Guarded delete: a caller that raced this one may have already started
       // the next generation, and dropping THAT pointer would fork a third.
-      if (this.standing.get(preset.id) === pending) {
-        this.standing.delete(preset.id)
-        this.retire(preset.id, mounted)
-      }
+      if (this.standing.get(preset.id) === pending) this.standing.delete(preset.id)
       return this.ensureStanding(preset)
     }
     const created = (async (): Promise<StandingMount> => {
-      // Stamped before the file is read: an edit racing the mount makes the
-      // stamp stale rather than silently current, so the next session
-      // refreshes instead of trusting a composition older than its stamp.
-      const stamp = await compositionStamp(preset)
-      const reused = stamp === undefined ? undefined : this.retired.get(preset.id)?.get(stampKey(stamp))
-      if (reused !== undefined) {
-        this.retired.get(preset.id)?.delete(stampKey(reused.stamp))
-        return reused
-      }
       const key: ScopeKey = { agentPreset: preset.id }
       const scope = createScope(this.selfCtx, key)
       try {
+        // Stamped before the file is read: an edit racing the mount makes the
+        // stamp stale rather than silently current, so the next session
+        // refreshes instead of trusting a composition older than its stamp.
+        const stamp = await compositionStamp(preset.path)
         if (stamp === undefined) {
           const reason = `composition file is unreadable: ${preset.path}`
           throw new RemoteError(
@@ -866,42 +815,21 @@ export class AgentPresets extends TypertRemoteService {
     this.standing.set(preset.id, created)
     return created
   }
-
-  /** File a superseded generation under its stamp, for a later edit that restores its content. */
-  private retire(presetId: string, mount: StandingMount): void {
-    let generations = this.retired.get(presetId)
-    if (generations === undefined) {
-      generations = new Map()
-      this.retired.set(presetId, generations)
-    }
-    generations.set(stampKey(mount.stamp), mount)
-  }
 }
 
-/**
- * The composition identity one standing generation was mounted from: the
- * composition file's stat, and the user patch layer's content — content
- * rather than stat, so a layer edited back to what an earlier generation
- * composed identifies that generation.
- */
+/** The composition file identity one standing generation was mounted from. */
 interface CompositionStamp {
   /** Modification time in milliseconds, as `stat` reports it. */
   readonly mtimeMs: number
   /** File size in bytes, the tiebreak for edits within one mtime tick. */
   readonly size: number
-  /** Digest of the user patch layer's text; empty when the preset has none. */
-  readonly overlay: string
 }
 
-/**
- * Read one preset's stamp, or undefined when its composition cannot be statted.
- * A layer that cannot be read stamps as absent: the mount then composes the
- * bare preset, which is also what an unreadable layer applies.
- */
-async function compositionStamp(preset: AgentPreset): Promise<CompositionStamp | undefined> {
+/** Read one composition file's stamp, or undefined when it cannot be statted. */
+async function compositionStamp(path: string): Promise<CompositionStamp | undefined> {
   try {
-    const { mtimeMs, size } = await stat(preset.path)
-    return { mtimeMs, size, overlay: await overlayDigest(preset.overlayPath) }
+    const { mtimeMs, size } = await stat(path)
+    return { mtimeMs, size }
   } catch {
     // Deleted, replaced by an unreadable entry, or otherwise unstattable all
     // mean the same to the caller: the file offers no identity to compare.
@@ -909,46 +837,9 @@ async function compositionStamp(preset: AgentPreset): Promise<CompositionStamp |
   }
 }
 
-/** Digest of the layer file's text, empty when the preset has none or it cannot be read. */
-async function overlayDigest(overlayPath: string | undefined): Promise<string> {
-  if (overlayPath === undefined) return ''
-  let text: string
-  try {
-    text = await readFile(overlayPath, 'utf8')
-  } catch {
-    // A layer deleted since discovery is a layer that applies nothing.
-    /* v8 ignore next -- a deletion between the layer read and this digest cannot be provoked deterministically */
-    return ''
-  }
-  return createHash('sha1').update(text).digest('hex')
-}
-
-/** Whether two stamps name the same composition state. */
+/** Whether two stamps name the same file state. */
 function sameStamp(a: CompositionStamp, b: CompositionStamp): boolean {
-  return a.mtimeMs === b.mtimeMs && a.size === b.size && a.overlay === b.overlay
-}
-
-/** One stamp as a map key. */
-function stampKey(stamp: CompositionStamp): string {
-  return `${String(stamp.mtimeMs)}:${String(stamp.size)}:${stamp.overlay}`
-}
-
-/**
- * The preset's user patch layer as parsed, or empty when it has none or the
- * layer cannot be read — the inventory then reports the rows the bare
- * composition holds, which is also what such a layer applies.
- */
-async function readOverlay(preset: AgentPreset): Promise<PatchOptions[]> {
-  if (preset.overlayPath === undefined) return []
-  try {
-    // The inventory re-discovers before it reads; a layer deleted between the two is a race no test can provoke.
-    /* v8 ignore next */
-    return await readPatchListFile('agent-presets', preset.overlayPath, 'user patch layer') ?? []
-  } catch {
-    // Discovery already reported an unparsable layer as the preset's health;
-    // the inventory answers with the composition alone.
-    return []
-  }
+  return a.mtimeMs === b.mtimeMs && a.size === b.size
 }
 
 /** One preset's standing composition. */
