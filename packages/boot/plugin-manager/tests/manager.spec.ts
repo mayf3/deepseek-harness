@@ -261,7 +261,8 @@ it('reports repeated installs as requiring restart and ambiguous package changes
   const install = vi.spyOn(operations, 'runProfilePnpm').mockResolvedValue({ exitCode: 0, output: '', truncated: false, logPath: join(dir, 'pnpm.log') })
   onTestFinished(() => { install.mockRestore() })
   expect(await manager.installBundle('extra')).toMatchObject({ changed: false, application: 'restart-required' })
-  expect(await manager.installBundle('extra@1')).toMatchObject({ changed: false, application: 'failed' })
+  expect(await manager.installBundle('extra@1')).toMatchObject({ changed: false, application: 'restart-required' })
+  expect(await manager.installBundle('extra-long@1')).toMatchObject({ changed: false, application: 'failed' })
   install.mockImplementationOnce(async () => {
     writeFileSync(join(dir, 'package.json'), '{}')
     return { exitCode: 0, output: '', truncated: false, logPath: join(dir, 'pnpm.log') }

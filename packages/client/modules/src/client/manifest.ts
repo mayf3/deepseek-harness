@@ -406,6 +406,11 @@ export interface ClientModuleLoader {
    * the graph revision or for page-local modules that register directly.
    */
   invalidate(id: string, rev?: string): void
+  /** Replace graph routing after removed plugin fibers have finished unloading.
+   * Retained factories remain registered; incoming rows use individual bundle requests.
+   * @param manifest Validated current Host graph.
+   */
+  updateManifest(manifest: BootManifest): void
 }
 
 /** Internal construction inputs assembled by the modules bundle's bootstrap export. */

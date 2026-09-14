@@ -69,6 +69,8 @@ The Node half scans incrementally per package — no full-rescan path. Every `in
 
 The Node half snapshots each client bundle and available source map before publication. It groups resources into `/plugins/??...&rev=...` combo URLs, with one bootstrap combo for the modules row and one or more application combos for the other rows; each phase is partitioned before a URL exceeds 3 KiB. Every combo map is Indexed Source Map v3 and uses an authored section when available or an identity section for the packaged bundle. Initial per-plugin revisions use process nonces, so startup does not hash every plugin; HMR hashes only an artifact reported as changed. Advertised responses are immutable, and an unknown combination or revision returns 404.
 
+`updateManifest()` replaces validated graph routing after the HMR driver drains removed plugin fibers. New rows request individual bundles; retained factories stay registered. Removed rows lose their cached factories and exports.
+
 ### Boot manifest injection
 
 The bundle route follows the injected `webServer` lifetime: it registers when the service is ready and is removed and re-registered when that service is replaced. Module composition and `fetchBundle()` remain available without a Web server.

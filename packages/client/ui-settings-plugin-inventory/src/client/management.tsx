@@ -74,7 +74,7 @@ export function BundleManager({ manager, state, t }: {
     {state.busy ? <p role="status">{t('applying')}</p> : null}
     {state.error === undefined ? null : <p role="alert">{state.error}</p>}
     {state.result === undefined ? null : <p role={state.result.application === 'failed' ? 'alert' : 'status'}>
-      {t(state.result.application)} {state.result.message}
+      {t(state.result.application === 'failed' ? 'operationFailed' : state.result.application)} {state.result.message}
       {state.result.packageResult === undefined ? null : <code>{state.result.packageResult.logPath}</code>}
     </p>}
     <ul className={css.bundleList}>{state.bundles.map(bundle => <li key={bundle.name}>

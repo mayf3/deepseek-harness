@@ -33,6 +33,8 @@ const protectedModules = new Set([
   '@deepseek-ai/cordis-plugin-timer', '@deepseek-ai/dsh-client-connection',
   '@deepseek-ai/dsh-host-frontend-static', '@deepseek-ai/dsh-tools',
   '@deepseek-ai/dsh-plugin-manager/tools',
+  '@deepseek-ai/dsh-hmr',
+  '@deepseek-ai/dsh-client-hmr',
 ])
 
 /** Flatten only the groups addressable by the profile's patch composer. */
@@ -189,8 +191,8 @@ export class PluginManager extends TypertRemoteService {
       if (packageResult.exitCode !== 0) throw new Error(packageResult.output)
       const after = readProfileManifest('dsh', this.runtime.dir).dependencies ?? {}
       const installed = Object.keys(after).filter(name => before[name] !== after[name])
-      // An exact package-name request can repeat an installation without changing its saved range.
-      if (installed.length === 0 && Object.hasOwn(after, spec)) installed.push(spec)
+      // Registry retries can retain the saved range after a partial installation.
+      if (installed.length === 0) installed.push(...Object.keys(after).filter(name => spec === name || spec.startsWith(`${name}@`)))
       const name = installed[0]
       if (installed.length !== 1 || name === undefined) throw new Error('Cannot identify one installed bundle from the dependency change')
       const dir = resolveBundleDir('dsh', name, this.runtime.installAnchor, this.runtime.dir)

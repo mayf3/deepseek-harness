@@ -30,11 +30,13 @@ async function findWatchRoot(filename: string): Promise<{ filename: string; root
  * @param filename Absolute patch-file path.
  * @param options Deployment watcher options inherited from the HMR configuration.
  * @param refresh Callback for additions, changes, and removals.
+ * @param inTransaction Whether disposal is running inside the refresh being removed.
  * @returns A disposer that closes the watcher and drains its current refresh.
  * @throws When path resolution, watcher startup, or effect registration fails.
  */
 export async function watchConfig(
   ctx: Context, filename: string, options: ChokidarOptions, refresh: () => Promise<void> | void,
+  inTransaction: () => boolean = () => false,
 ): Promise<() => Promise<void>> {
   const target = await findWatchRoot(filename)
   const paths = registrations.get(ctx) ?? new Set<string>()
@@ -77,11 +79,11 @@ export async function watchConfig(
   const dispose = async () => {
     await watcher.close()
     paths.delete(target.filename)
-    await running
+    if (!inTransaction()) await running
   }
   try {
     await ready.promise
-    return ctx.effect(() => dispose, 'app-boot.watchConfig()')
+    return ctx.effect(() => dispose, 'hmr.watchConfig()')
   } catch (error) {
     await dispose()
     throw error

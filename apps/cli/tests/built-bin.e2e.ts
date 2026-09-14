@@ -16,7 +16,7 @@ import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { execa } from 'execa'
 import * as yaml from 'js-yaml'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /** Published-entry acceptance for argument errors, profile lifecycle, and boot-free config dumps. */
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
@@ -887,6 +887,71 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       await waitForFile(unmounted)
       requestProfileShutdown(child, fixture)
       expect((await child).exitCode).toBe(0)
+    } catch (error) {
+      child.kill('SIGKILL')
+      const result = await child
+      throw new Error(`${String(error)}\n${result.stderr}`, { cause: error })
+    } finally {
+      child.kill('SIGKILL')
+      await child
+      rmSync(fixture.home, { recursive: true, force: true })
+    }
+  }, SPAWN_TIMEOUT_MS + 30_000)
+
+  it('coordinates source-module replacement and profile patches through dsh-hmr', async () => {
+    const fixture = createProfileLifecycleFixture()
+    const dir = join(fixture.home, 'profiles', 'lifecycle')
+    const source = join(fixture.home, 'lifecycle-bundle', 'plugin.mjs')
+    const mounted = join(fixture.home, 'module-reloaded')
+    const echo = join(fixture.home, 'config-echo')
+    const original = readFileSync(source, 'utf8')
+      .replace('void ctx.loader.await().then', 'ctx.appReady.onReady')
+      + "\nexport const inject = ['hmr', 'appReady']\n"
+    writeFileSync(source, original)
+    const hmrPatch = [
+      '- insert:',
+      '    - id: hmr-timer',
+      "      name: '@deepseek-ai/cordis-plugin-timer'",
+      '    - id: hmr',
+      "      name: '@deepseek-ai/dsh-hmr'",
+      '      config:',
+      `        root: [${JSON.stringify(join(fixture.home, 'lifecycle-bundle'))}]`,
+      '        ignored: []',
+      '        usePolling: true',
+      '        debounce: 0',
+      '',
+    ].join('\n')
+    const patch = join(dir, 'cordis.patch.yml')
+    writeFileSync(patch, hmrPatch)
+    const child = startProfileLifecycle(fixture)
+    try {
+      await waitForFile(fixture.settled)
+      await withFileLock(join(dir, 'package.json'), async () => {
+        writeFileSync(source, original.replace('  let active = true',
+          `  writeFileSync(${JSON.stringify(mounted)}, 'mounted')\n  let active = true`))
+        await writeFileAtomic(patch, hmrPatch
+          + '- id: profile-lifecycle-fixture\n  config:\n    generation: configuration-reloaded\n', { mode: 0o600 })
+      })
+      await waitForFile(mounted)
+      await vi.waitFor(() => { expect(readFileSync(echo, 'utf8')).toBe('configuration-reloaded') }, { timeout: SPAWN_TIMEOUT_MS })
+      const replacedAgain = join(fixture.home, 'module-reloaded-again')
+      writeFileSync(source, original.replace('  let active = true',
+        `  writeFileSync(${JSON.stringify(replacedAgain)}, 'mounted')\n  let active = true`))
+      await waitForFile(replacedAgain)
+      expect(readFileSync(echo, 'utf8')).toBe('configuration-reloaded')
+      const reconfiguredHmr = hmrPatch.replace('debounce: 0', 'debounce: 1')
+      await writeFileAtomic(patch, reconfiguredHmr
+        + '- id: profile-lifecycle-fixture\n  config:\n    generation: hmr-reconfigured\n', { mode: 0o600 })
+      await vi.waitFor(() => { expect(readFileSync(echo, 'utf8')).toBe('hmr-reconfigured') }, { timeout: SPAWN_TIMEOUT_MS })
+      await writeFileAtomic(patch, reconfiguredHmr, { mode: 0o600 })
+      await vi.waitFor(() => { expect(readFileSync(echo, 'utf8')).toBe('bundle-default') }, { timeout: SPAWN_TIMEOUT_MS })
+      requestProfileShutdown(child, fixture)
+      const result = await child
+      expect(result.exitCode).toBe(0)
+    } catch (error) {
+      child.kill('SIGKILL')
+      const result = await child
+      throw new Error(`${String(error)}\n${result.stderr}`, { cause: error })
     } finally {
       child.kill('SIGKILL')
       await child

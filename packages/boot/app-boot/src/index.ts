@@ -17,9 +17,7 @@ import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '
 import Group from '@deepseek-ai/cordis-plugin-group'
 import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import type {} from '@deepseek-ai/cordis-plugin-hmr'
-import { watchConfig } from './watch-config.ts'
-export { watchConfig } from './watch-config.ts'
+import type {} from '@deepseek-ai/dsh-hmr'
 export type { ProfileRuntime } from './profile-runtime.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
@@ -256,10 +254,10 @@ export async function watchUserPatches(
 ): Promise<() => Promise<void>> {
   const { binName, filename, compose = (patches: PatchOptions[]) => patches } = options
   const hmr = ctx.get('hmr')
-  if (hmr === undefined) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`)
+  if (hmr === undefined) throw new Error(`${binName}: user patch-layer watching requires the HMR service`)
   const entry = bootstrapIncludes.get(ctx)
   if (entry === undefined) throw new Error(`${binName}: user patch-layer watching requires the root Include entry`)
-  const register = watchConfig(ctx, filename, hmr.config, async () => {
+  const register = hmr.watchConfig(filename, async () => {
     await reconcileProfilePatches(ctx, compose(loadOptionalPatches(binName, filename) ?? []), binName)
   })
   try {

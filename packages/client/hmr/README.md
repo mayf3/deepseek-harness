@@ -1,5 +1,5 @@
 ---
-description: "Development-only hot reload for browser client plugins: rebuilding a plugin bundle swaps the running plugin in place, for developers iterating on the web GUI."
+description: "Synchronize browser plugins with Host composition and reload rebuilt client bundles."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-hmr` reloads a browser client plugin in place when its bundle is rebuilt, so a developer editing plugin source sees the change without a full page reload. The reload chain stays idle without a rebuild watcher: only a `pnpm run dev:web`-style process rewriting client bundles produces the rebuilds it reacts to. Each reload swaps one plugin with fresh component state while the data layer (connection, runtime, and Session objects) stays untouched. Everything here is development machinery in the browser; the model never sees it.
+`dsh-client-hmr` keeps browser plugins synchronized with the Host module graph. Enabling or disabling a bundle adds or removes its browser contributions without a page reload. Development rebuilds replace existing plugins with fresh component state; retained plugins and Session state remain available.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Enable the rebuild watcher for the plugin you are editing, then save: the browser picks up the rebuilt bundle from the dev server and swaps the plugin without reloading the page. Use it during client development; nothing observable happens in a production build, where no watcher rewrites bundles.
+The Web profile loads this package automatically. Bundle changes use the existing `/plugins/events` channel. For source development, enable a process that rebuilds the edited plugin’s `lib/client.js`.
 
 ### Starting the reload chain
 
@@ -64,6 +64,8 @@ The chain is two halves with one contract: the node half owns bundle detection a
 ### The browser swap
 
 On a `rebuilt` frame the revision makes `invalidate` select that plugin's immutable one-resource combo URL instead of its initial multi-resource URL. `prefetch` loads and registers the new factory while the old fiber still serves. The remaining order is registry-first teardown (`registry.delete` before the fiber's disposer emits `internal/plugin`, or the vendored Loader flags the entry disabled), drain the old fiber's unload, delete `entry.fiber`, remove owned `<style data-plugin>` tags, then `entry.refresh()` re-imports and remounts, and `fiber.await()` rethrows startup failures loudly. The swap is safe because execution is pure registration under the lazy-CJS model: every module side effect lives in the factory closure and runs at materialization.
+
+Graph frames use the same queue as rebuilt frames. Removed fibers finish unloading before module records and owned styles are removed. Incoming rows use individual artifact requests, so loading a new plugin does not execute retained factories again. The module system validates each graph before changing its routing table.
 
 ### Cascade and self-reload
 
@@ -115,7 +117,7 @@ These limits define what the reload driver does not preserve or restore. They ar
 
 - **Reload is coarse by design** — a fresh fiber and fresh components; React state inside the reloaded plugin is lost while the data layer (connection/runtime fibers, Session objects) is untouched. react-refresh-grade state preservation conflicts with re-executing the bundle and is deliberately out.
 - **No failure rollback** — a reload that fails leaves the entry FAILED and visible in the loader status projection; the previous bundle is not restored automatically.
-- **Rebuilt frames do not replace the boot graph** — each frame carries the plugin-artifact revision needed for its one-resource combo reload; a page reload receives the recomposed startup graph.
+- **Plugin contributions only** — shell and platform-library replacement still requires a page reload.
 
 <a id="dev-note"></a>
 ### Dev Note

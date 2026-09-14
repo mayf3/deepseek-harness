@@ -7,44 +7,45 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## Summary
+## 概述
 
 管理当前 profile 的插件，无需手动编辑配置。启停单个插件条目、选择已安装的组合包，以及安装或删除外部组合包。live profile 立即应用配置变化；仅启动时加载的 profile 在重启前保留运行中的组合。改动影响使用该 profile 的全部会话。
 
-## Table of Contents
+## 目录
 
-- [Use this package](#use-this-package)
-- [Understand the implementation](#understand-the-implementation)
-- [Further Exploration](#further-exploration)
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
+- [使用本包](#use-this-package)
+- [理解实现](#understand-the-implementation)
+- [进一步探索](#further-exploration)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 -----
 
 <a id="use-this-package"></a>
-## Use this package
+## 使用本包
 
 基于 base 的 profile 提供管理服务。在 Web 设置中打开插件并选择插件列表，即可管理组合包和能唯一定位的全局插件条目。Agent 预设条目保持只读。`plugin_manager` 工具提供相同操作。
 
 插件开关只写入 profile 的 `cordis.patch.yml` 中的 `disabled` 覆盖项。组合包开关修改 `package.json` 的有序 `dsh.profile.bundles` 列表。关闭保留依赖；开启追加到列表末尾，可能改变配置优先级。安装新组合包默认启用。home 和单次启动 patch 保留更高优先级。
 
-### Configuration
+### 配置
 
-| Field | Default | Meaning |
+| 字段 | 默认值 | 含义 |
 |---|---|---|
 | `outputBytes` | `16384` | 每次操作返回的 pnpm 诊断字节上限；完整输出保留在返回的日志路径中。 |
+| `lockWaitMs` | `120000` | 获取 profile 写锁的最长等待毫秒数。 |
 | `notificationDelayMs` | `250` | 合并操作通知的延迟毫秒数。 |
 
 -----
 
 <a id="understand-the-implementation"></a>
-## Understand the implementation
+## 理解实现
 
 <details>
-<summary>Implementation internals — click to expand</summary>
+<summary>实现细节——点击展开</summary>
 
-服务与 `dsh plugin` 共用 [operations.ts](src/operations.ts) 中的包管理操作。启动器提供当前 profile，并串行执行文件监听和管理写入。每次刷新重新读取组合包选择与 patch 层，更新原有根 Include，并等待已移除插件释放资源及剩余 Loader 树稳定。包管理操作持有 profile manifest 锁；文件监听器在锁释放后读取完成的状态。
+服务与 `dsh plugin` 共用 [operations.ts](src/operations.ts) 中的包管理操作。启动器提供当前 profile；[DSH HMR](../hmr/README.zh.md) 串行执行模块重载、文件监听和管理写入。每次刷新重新读取组合包选择与 patch 层，更新原有根 Include，并等待已移除插件释放资源及剩余 Loader 树稳定。包管理操作持有 profile manifest 锁；文件监听器在锁释放后读取完成的状态。
 
 配置保存、包管理器完成和运行时激活分别报告。失败保留部分改动和诊断，不自动恢复文件或包。管理器直接读取文件和 Loader 状态，不维护第二份目标状态注册表，因此不发布单独的运行时不变式伴生入口。
 
@@ -53,44 +54,44 @@ kind: "package-reference"
 -----
 
 <a id="further-exploration"></a>
-## Further Exploration
+## 进一步探索
 
 - [App boot](../app-boot/README.zh.md)——profile 配置层与启动策略。
 - [Plugin inventory](../../host/plugin-inventory/README.zh.md)——当前 Loader 和预设状态。
 - [Plugin settings](../../client/ui-settings-plugin-inventory/README.zh.md)——Web 控件。
 
 <a id="model-experience"></a>
-## Model Experience
+## 模型体验
 
-### Management tool
+### 管理工具
 
-#### What the model sees
+#### 模型看到什么
 
-[`plugin_manager` 工具](../../../docs/tool-catalog.zh.md#plugin-manager) 列出插件条目和组合包，并执行影响整个 profile 的改动。结果包含保存状态变化、应用状态和包管理诊断。
+[`plugin_manager` 工具](../../../docs/tool-catalog.zh.md#deepseek-aidsh-plugin-manager) 列出插件条目和组合包，并执行影响整个 profile 的改动。结果包含保存状态变化、应用状态和包管理诊断。
 
-#### Token effect
+#### Token 影响
 
 装配工具消费者时提供工具声明；每次调用追加返回的清单或改动结果。
 
-#### KV Cache effect
+#### KV Cache 影响
 
 工具结果追加到对话中。启停其他工具可能改变后续工具声明及其缓存复用。
 
-### Configuration change notices
+### 配置变更通知
 
-#### What the model sees
+#### 模型看到什么
 
 连续操作结果在 `notificationDelayMs` 内合并后注入每个受影响的存活 Agent。通知包含应用结果，达到配置的输出上限时标明省略的结果数，不会唤醒空闲 Agent。
 
-#### Token effect
+#### Token 影响
 
 通知按需向每个受影响 Agent 追加用户消息上下文。
 
-#### KV Cache effect
+#### KV Cache 影响
 
 通知追加上下文，不改写先前消息。
 
-## Known Limitations and Deferred Work
+## 已知限制与延期工作
 
 <a id="known-limitations-and-deferred-work"></a>
 
@@ -101,11 +102,11 @@ kind: "package-reference"
 - Desktop 包管理操作仍由 Desktop shell 负责。
 
 <a id="dev-note"></a>
-### Dev Note
+### 开发备注
 
 <details>
-<summary>Working context for maintainers — click to expand</summary>
+<summary>维护者的工作上下文——点击展开</summary>
 
-None.
+无。
 
 </details>

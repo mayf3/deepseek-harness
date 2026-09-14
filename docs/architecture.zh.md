@@ -28,7 +28,7 @@
 
 自定义 profile 默认实时重载 patch。随附的 `web` profile 使用实时重载；`headless`、`sdk`、`sdk-minimal` 和 `acp` 则只在启动时应用一次所有配置层，因为一次性应用或 stdio 应用拥有工作之后，替换其依赖会破坏该生命周期。
 
-base 组合包提供[插件管理器](../packages/boot/plugin-manager/README.zh.md)，通过 Web 设置和 Agent 工具修改当前 profile。实时 profile 将 manifest 与 patch 重载和包操作串行化；仅启动时加载的 profile 在重启前保留运行中的组合。
+base 组合包提供用于 Web 设置和 Agent 的[插件管理器](../packages/boot/plugin-manager/README.zh.md)。
 
 要查看你的机器启动的配置树：
 

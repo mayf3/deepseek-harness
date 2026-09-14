@@ -43,7 +43,7 @@
  *    (vendor/loader/src/index.ts `internal/plugin` case 4: the registry
  *    still holds the runtime at emit time), which flags the entry
  *    `disabled: true` — permanently.
- * vendor/hmr's reload skeleton documents the fix: delete the runtime record
+ * dsh-hmr's module replacement documents the fix: delete the runtime record
  * FIRST (`registry.delete` → case 4 returns early, the entry stays enabled),
  * then rebuild. `entry.fiber` is additionally cleared so
  * `entry.refresh()` re-imports and re-plugins through the Loader's own
@@ -65,6 +65,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Entry, Loader } from '@deepseek-ai/cordis-plugin-loader'
 import type { PluginsEventFrame } from '../events.ts'
 import { EVENTS_ENDPOINT, parsePluginsEventFrame } from '../events.ts'
+import { parseBootManifest } from '@deepseek-ai/dsh-client-modules/client'
+import type { BootManifest } from '@deepseek-ai/dsh-client-modules/client'
 
 export type { PluginsEventFrame } from '../events.ts'
 export { EVENTS_ENDPOINT } from '../events.ts'
@@ -118,6 +120,7 @@ export function apply(ctx: Context): void {
   // client module loader package, `loader` from the vendored Loader).
   const modLoader = ctx.modules
   const loader: Loader = ctx.loader
+  const revisions = new Map(modLoader.manifest.modules.map(row => [row.id, row.rev]))
 
   async function reload(id: string, rev: string): Promise<void> {
     const entry = findEntry(loader, id)
@@ -144,6 +147,38 @@ export function apply(ctx: Context): void {
     await entry.refresh()
     // Surface apply failures loudly (no rollback, FAILED state stays).
     await entry.fiber?.await()
+    revisions.set(id, rev)
+  }
+
+  async function reconcile(manifest: BootManifest): Promise<void> {
+    const incoming = new Set(manifest.plugins.map(row => row.id))
+    for (const row of [...modLoader.manifest.plugins].reverse()) {
+      if (incoming.has(row.id)) continue
+      const entry = findEntry(loader, row.id)
+      if (entry !== undefined) {
+        await tearDownEntryFiber(entry)
+        entry.parent.remove(entry.options.id)
+      }
+      removeOwnedStyles(row.id)
+      revisions.delete(row.id)
+    }
+    modLoader.updateManifest(manifest)
+    const added = []
+    for (const row of manifest.modules) {
+      const entry = findEntry(loader, row.id)
+      if (entry === undefined) {
+        added.push(await loader.create({ name: row.id }))
+      } else if (revisions.get(row.id) !== row.rev) {
+        await reload(row.id, row.rev)
+      }
+      revisions.set(row.id, row.rev)
+    }
+    await loader.await()
+    for (const id of added) {
+      const entry = loader.resolve(id)
+      if (entry.fiber === undefined) throw new Error(`client-hmr: import failed for "${entry.options.name}"`)
+      await entry.fiber.await()
+    }
   }
 
   // Serialize reloads: frames can arrive faster than a swap completes, and
@@ -152,15 +187,21 @@ export function apply(ctx: Context): void {
   const handle = (frame: PluginsEventFrame): void => {
     switch (frame.type) {
       case 'rebuilt':
-        queue = queue.then(() => reload(frame.id, frame.rev)).catch((error: unknown) => {
+        queue = queue.then(async () => {
+          if (revisions.get(frame.id) !== frame.rev) await reload(frame.id, frame.rev)
+        }).catch((error: unknown) => {
           ctx.logger.error(`client-hmr: reload of "${frame.id}" failed`)
           ctx.logger.error(error)
         })
         break
       case 'graph':
-        // Connect-time snapshot, unused. Each rebuilt frame carries the
-        // revision that selects the immutable single-resource combo script; the boot
-        // graph remains the initial-load record until a page reload.
+        queue = queue.then(async () => {
+          const manifest = parseBootManifest(frame.graph)
+          if (manifest.rev !== modLoader.manifest.rev) await reconcile(manifest)
+        }).catch((error: unknown) => {
+          ctx.logger.error('client-hmr: graph update failed')
+          ctx.logger.error(error)
+        })
         break
       default:
         // Merge-extensible frame union: unknown frame types from newer hosts

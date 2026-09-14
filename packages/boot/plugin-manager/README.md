@@ -34,6 +34,7 @@ A plugin toggle writes only its `disabled` override in the profile's `cordis.pat
 | Field | Default | Meaning |
 |---|---|---|
 | `outputBytes` | `16384` | Maximum pnpm diagnostic bytes returned per operation; the full output remains in the returned log path. |
+| `lockWaitMs` | `120000` | Maximum time in milliseconds to acquire the profile write lock. |
 | `notificationDelayMs` | `250` | Delay in milliseconds for combining operation notices. |
 
 -----
@@ -44,9 +45,9 @@ A plugin toggle writes only its `disabled` override in the profile's `cordis.pat
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The service and `dsh plugin` share the package operations in [operations.ts](src/operations.ts). The launcher supplies the current profile and serializes file watching with management writes. Each refresh re-reads bundle selection and patch layers, updates the original root Include, and awaits removed plugin resources as well as the remaining Loader tree. Package operations hold the profile manifest lock; file watchers read the completed state after its release.
+The service and `dsh plugin` share the package operations in [operations.ts](src/operations.ts). The launcher supplies the current profile; [DSH HMR](../hmr/README.md) serializes module reloads, file watching and management writes. Each refresh re-reads bundle selection and patch layers, updates the original root Include, and awaits removed plugin resources as well as the remaining Loader tree. Package operations hold the profile manifest lock; file watchers read the completed state after its release.
 
-Saved configuration, package-manager completion and runtime activation are separate outcomes. Failures retain partial changes and diagnostics rather than automatically restoring files or packages. The manager reads files and Loader state directly instead of maintaining a second desired-state registry; it therefore publishes no separate runtime invariant companion.
+Saved configuration, package-manager completion and runtime activation are separate outcomes. Failures retain partial changes and diagnostics rather than automatically restoring files or packages. No invariant companion is published because the manager reads files and Loader state directly and owns no independent state projection.
 
 </details>
 
@@ -66,7 +67,7 @@ Saved configuration, package-manager completion and runtime activation are separ
 
 #### What the model sees
 
-The [`plugin_manager` tool](../../../docs/tool-catalog.md#plugin-manager) lists plugin entries and bundles and performs profile-wide changes. Its results include saved-state changes, application status and package diagnostics.
+The [`plugin_manager` tool](../../../docs/tool-catalog.md#deepseek-aidsh-plugin-manager) lists plugin entries and bundles and performs profile-wide changes. Its results include saved-state changes, application status and package diagnostics.
 
 #### Token effect
 

@@ -6,7 +6,7 @@ import { join, parse } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { watchConfig } from '../src/watch-config.ts'
-import Hmr from '@deepseek-ai/cordis-plugin-hmr'
+import Hmr from '../src/index.ts'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -15,7 +15,7 @@ import { FSWatcher, type ChokidarOptions } from 'chokidar'
 const configWatch = vi.hoisted(() => ({ create: undefined as ((options?: ChokidarOptions) => FSWatcher) | undefined }))
 vi.mock('node:fs/promises', async (importOriginal) => {
   const native = await importOriginal<typeof import('node:fs/promises')>()
-  return { ...native, stat: vi.fn(native.stat) }
+  return { ...native, stat: vi.fn(native.stat), realpath: vi.fn(native.realpath) }
 })
 vi.mock('chokidar', async (importOriginal) => {
   const native = await importOriginal<typeof import('chokidar')>()
@@ -53,7 +53,7 @@ describe('HMR exact config paths', () => {
     for (const root of hmrRoots.splice(0)) rmSync(root, { recursive: true, force: true })
   })
 
-  it('observes module changes when its watch base is a filesystem alias', { timeout: 30_000 }, async () => {
+  it.each(['relative', 'absolute'])('observes %s module roots through a filesystem alias', { timeout: 30_000 }, async (rootKind) => {
     const target = mkdtempSync(join(tmpdir(), 'dsh-hmr-module-canonical-'))
     const alias = `${target}-alias`
     const aliasFilename = join(alias, 'module.ts')
@@ -61,7 +61,7 @@ describe('HMR exact config paths', () => {
     writeFileSync(aliasFilename, 'export const generation = 0\n')
     // This acceptance owns alias-to-cache identity. Other cases below exercise
     // native events; polling keeps Windows fs.watch queue pressure out of it.
-    const ctx = await bootHmr(alias, ['.'], true)
+    const ctx = await bootHmr(alias, [rootKind === 'relative' ? '.' : alias], true)
     const filename = join(await realpath(target), 'module.ts')
     const expected = pathToFileURL(filename).href
     const cacheHas = vi.spyOn(ctx.loader.internal!.loadCache, 'has').mockReturnValue(false)
@@ -283,4 +283,22 @@ describe('HMR exact config paths', () => {
     await recovered.promise
     expect(calls).toBe(2)
   })
+})
+
+
+it('reports inaccessible configuration paths and missing filesystem roots', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-path-error-'))
+  const ctx = await bootHmr(dir)
+  onTestFinished(async () => { await ctx.fiber.dispose(); rmSync(dir, { recursive: true, force: true }) })
+  const native = fsPromises.realpath
+  const target = join(dir, 'denied.yml')
+  const root = parse(dir).root
+  const mocked = vi.spyOn(fsPromises, 'realpath').mockImplementation(async (path, options) => {
+    if (path === target) throw Object.assign(new Error('denied'), { code: 'EACCES' })
+    if (path === root) throw Object.assign(new Error('root missing'), { code: 'ENOENT' })
+    return native(path, options)
+  })
+  onTestFinished(() => { mocked.mockRestore() })
+  await expect(ctx.hmr.watchConfig(target, async () => {})).rejects.toThrow('denied')
+  await expect(ctx.hmr.watchConfig(root, async () => {})).rejects.toThrow('root missing')
 })

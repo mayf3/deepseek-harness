@@ -11,7 +11,7 @@ import { pathToFileURL } from 'node:url'
 import { afterAll, afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { FSWatcher, type ChokidarOptions } from 'chokidar'
 import { Context } from '@deepseek-ai/cordis'
-import Hmr from '@deepseek-ai/cordis-plugin-hmr'
+import Hmr from '@deepseek-ai/dsh-hmr'
 import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
@@ -357,6 +357,27 @@ describe('Loader entry disabled interpolation', () => {
 })
 
 describe('profile reconciliation settlement', () => {
+  it('rejects a context without the launcher root Include', async () => {
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    await expect(reconcileProfilePatches(ctx, [], NAME)).rejects.toThrow('profile reload requires the root Include entry')
+  })
+
+  it('reports a retained activation failure even when the failed entry is removed', async () => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+    writeFileSync(join(dir, 'candidate.mjs'), 'export function apply(_ctx, config) { if (config.fail) throw new Error("candidate activation failed") }\n')
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'), [{ insert: [{ id: 'candidate', name: './candidate.mjs', config: { fail: false } }] }])
+    onTestFinished(() => ctx.fiber.dispose())
+    const entry = [...ctx.loader.entries()].find(row => row.options.id === 'candidate')
+    if (entry === undefined) throw new Error('candidate entry missing')
+    await entry.update({ config: { fail: true } })
+    await ctx.loader.await()
+    await expect(reconcileProfilePatches(ctx, [], NAME)).rejects.toThrow('candidate activation failed')
+    expect([...ctx.loader.entries()].some(row => row.options.id === 'candidate')).toBe(false)
+    await reconcileProfilePatches(ctx, [], NAME)
+  })
+
   it('waits for a removed plugin to release its resources', async () => {
     const dir = tmp()
     const started = Promise.withResolvers<undefined>()
@@ -372,7 +393,7 @@ describe('profile reconciliation settlement', () => {
       '',
     ].join('\n'))
     const ctx = await boot(NAME, join(dir, 'cordis.yml'), [{ insert: [{ id: 'held', name: './held.mjs' }] }], (host) => {
-      host.provide('reloadProbe', { started: () => started.resolve(undefined), release: release.promise })
+      host.provide('reloadProbe', { started: () => { started.resolve(undefined) }, release: release.promise })
     })
     onTestFinished(async () => { release.resolve(undefined); await ctx.fiber.dispose() })
     let settled = false
@@ -529,7 +550,7 @@ describe('boot with user patches', () => {
   it('fails loud when the exact watcher lacks HMR or a root Include', async () => {
     const dir = tmp()
     const withoutHmr = await boot(NAME, writeTree(dir))
-    await expect(watchUserPatches(withoutHmr, { binName: NAME, filename: join(tmp(), PROFILE_PATCH_FILENAME) })).rejects.toThrow('requires the Cordis HMR service')
+    await expect(watchUserPatches(withoutHmr, { binName: NAME, filename: join(tmp(), PROFILE_PATCH_FILENAME) })).rejects.toThrow('requires the HMR service')
     await withoutHmr.fiber.dispose()
 
     const withoutInclude = new Context()

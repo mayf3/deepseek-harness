@@ -14,6 +14,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type {} from '@deepseek-ai/dsh-hmr'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -29,7 +30,6 @@ import {
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   resolveProfileDir,
-  watchConfig,
   loadProfileDirectory,
   reconcileProfilePatches,
   type ProfileRuntime,
@@ -293,7 +293,6 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   })
 
   const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
-  let operations: Promise<unknown> = Promise.resolve()
   const manifestPath = join(composed.profile.dir, 'package.json')
   const watchedFiles = [composed.profile.patchPath, homePatchPath(), manifestPath]
   const readInputs = (): string => JSON.stringify(watchedFiles.map((filename) => {
@@ -305,11 +304,6 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     }
   }))
   let lastInputs = readInputs()
-  const enqueue = <T>(operation: () => Promise<T>): Promise<T> => {
-    const task = operations.then(operation)
-    operations = task.catch(() => {})
-    return task
-  }
   const composeLive = (): PatchOptions[] => {
     const profile = loadProfileDirectory(NAME, composed.profile.dir, INSTALL_ANCHOR)
     const patches = structuredClone([
@@ -329,7 +323,11 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     cwd: process.cwd(), home: resolveDshHome(), patchReload: composed.profile.patchReload,
     read: () => loadProfileDirectory(NAME, composed.profile.dir, INSTALL_ANCHOR),
     entries: () => composeEntries([composeLive()]),
-    mutate: (operation, waitMs) => enqueue(() => withFileLock(manifestPath, operation, waitMs === undefined ? undefined : { waitMs })),
+    mutate: (operation, waitMs) => {
+      const locked = () => withFileLock(manifestPath, operation, waitMs === undefined ? undefined : { waitMs })
+      const hmr = app.current?.get('hmr')
+      return hmr === undefined ? locked() : hmr.runExclusive(locked)
+    },
     async reload() {
       if (composed.profile.patchReload === 'startup') return
       if (app.current === undefined) throw new Error('dsh: profile is not running')
@@ -342,6 +340,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   const ctx = await boot(NAME, rootConfig, composeLive(), (hostCtx) => {
     app.current = hostCtx
     hostCtx.provide('profileRuntime', runtime)
+    hostCtx.on('hmr/before-reload', next => withFileLock(manifestPath, next))
     // Before any config-tree entry mounts, so plugins resolve all launch-time
     // environment values from the same immutable launch snapshot.
     hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
@@ -374,22 +373,21 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
         if (ctx.get('timer') === undefined) {
           await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-timer' })
         }
-        await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-hmr', config: { root: [] } })
+        await ctx.loader.create({ name: '@deepseek-ai/dsh-hmr', config: { root: [] } })
         await ctx.loader.await()
       }
-      const hmr = ctx.get('hmr')
-      if (hmr === undefined) throw new Error('dsh: configuration watcher did not start')
       const refresh = async (): Promise<void> => {
-        // Package writers hold this file across pnpm and manifest reconciliation.
-        // Its removal triggers another refresh after the complete write finishes.
-        if (existsSync(`${manifestPath}.lock`) || readInputs() === lastInputs) return
-        await runtime.mutate(async () => {
-          if (readInputs() !== lastInputs) await runtime.reload()
-        })
+        if (readInputs() === lastInputs) return
+        await runtime.reload()
       }
-      for (const filename of [...watchedFiles, `${manifestPath}.lock`]) {
-        await watchConfig(ctx, filename, hmr.config, refresh)
-      }
+      const watching = ctx.inject(['hmr'], async (owner) => {
+        for (const filename of watchedFiles) {
+          await owner.effect(() => owner.hmr.watchConfig(filename, refresh))
+        }
+      })
+      await watching.await()
+      // Include writes that finished while the file watchers were registering.
+      await runtime.mutate(refresh)
     } catch (error) {
       suppressShutdownError(ctx, signalShutdown.signal, error)
     }

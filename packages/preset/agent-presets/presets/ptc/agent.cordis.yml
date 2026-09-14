@@ -284,4 +284,4 @@
 
 - id: tool-plugin-manager
   name: '@deepseek-ai/dsh-plugin-manager/tools'
-  disabled: !!js !ctx.get('profileRuntime')
+  disabled: !!js "!ctx.get('profileRuntime')"

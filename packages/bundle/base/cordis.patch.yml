@@ -15,11 +15,11 @@
 - insert:
     - id: tool-plugin-manager
       name: '@deepseek-ai/dsh-plugin-manager/tools'
-      disabled: !!js !ctx.get('profileRuntime')
+      disabled: !!js "!ctx.get('profileRuntime')"
 
     - id: plugin-manager
       name: '@deepseek-ai/dsh-plugin-manager'
-      disabled: !!js !ctx.get('profileRuntime')
+      disabled: !!js "!ctx.get('profileRuntime')"
 
     - id: timer
       name: '@deepseek-ai/cordis-plugin-timer'
@@ -27,7 +27,7 @@
     # Module reload is opt-in per profile. `patchReload: live` config watching
     # uses the launcher's watch-only fallback and does not require this row.
     - id: hmr
-      name: '@deepseek-ai/cordis-plugin-hmr'
+      name: '@deepseek-ai/dsh-hmr'
       disabled: true
       config:
         root: ['.']

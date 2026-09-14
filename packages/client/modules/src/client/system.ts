@@ -60,7 +60,7 @@ const claimStyles = (id: string): string[] => {
  */
 export class ClientModuleSystem implements ClientModuleLoader {
   readonly version = 'client'
-  readonly manifest: BootManifest
+  manifest: BootManifest
   readonly loadCache = new Map<string, ClientModuleRecord>()
 
   private readonly seed: Map<string, unknown>
@@ -235,6 +235,17 @@ export class ClientModuleSystem implements ClientModuleLoader {
     const row = this.graphRows.get(normalized)
     if (row === undefined) throw new Error(`client-modules: prefetch("${id}") — not a graph entry`)
     await this.arriveGraphRow(row)
+  }
+
+  updateManifest(manifest: BootManifest): void {
+    const incoming = new Set(manifest.modules.map(row => row.id))
+    for (const id of this.graphRows.keys()) {
+      if (incoming.has(id)) continue
+      this.graphRows.delete(id)
+      this.invalidate(id)
+    }
+    for (const row of manifest.modules) this.graphRows.set(row.id, { ...row, initialUrl: row.url })
+    this.manifest = manifest
   }
 
   invalidate(id: string, rev?: string): void {

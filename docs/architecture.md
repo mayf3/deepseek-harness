@@ -28,7 +28,7 @@ Layers apply to an empty entry list in this order: each bundle in the profile's 
 
 Custom profiles default to live patch reload. The shipped `web` profile is live; `headless`, `sdk`, `sdk-minimal`, and `acp` apply all layers once at startup because replacing a one-shot or stdio application's dependencies after it owns work would invalidate that lifecycle.
 
-The base bundle provides [Plugin Manager](../packages/boot/plugin-manager/README.md) for current-profile changes from Web settings and agent tools. Live profiles serialize manifest and patch reloads with package operations; startup profiles retain their running composition until restart.
+The base bundle includes [Plugin Manager](../packages/boot/plugin-manager/README.md) for Web settings and agents.
 
 To see the tree your machine boots:
 
