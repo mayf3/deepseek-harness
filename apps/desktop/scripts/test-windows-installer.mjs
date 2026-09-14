@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { createWindowsTokenSigner, installWindowsNsisBootstrapSigner, scrubWindowsSigningEnvironment } from './windows-sign.mjs'
+import { loadDesktopPackageEnvironment } from './desktop-package-environment.mjs'
 
 if (process.platform !== 'win32' || process.arch !== 'x64') {
   throw new Error('Installer UI checks require an interactive Windows x64 desktop')
@@ -25,11 +26,12 @@ const output = await mkdtemp(join(outputRoot, 'run-'))
 const payload = join(output, 'payload')
 await mkdir(join(payload, 'resources'), { recursive: true })
 const previousEnvironment = { ...process.env }
+const signingEnvironment = process.argv.includes('--signed') ? loadDesktopPackageEnvironment('win32') : {}
 const sign = process.argv.includes('--signed') ? createWindowsTokenSigner({
-  certificateFile: process.env.DSH_DESKTOP_WINDOWS_CER_FILE,
-  signTool: process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
-  tokenPin: process.env.DSH_DESKTOP_WINDOWS_TOKEN_PIN,
-  keyContainer: process.env.DSH_DESKTOP_WINDOWS_KEY_CONTAINER,
+  certificateFile: signingEnvironment.DSH_DESKTOP_WINDOWS_CER_FILE,
+  signTool: signingEnvironment.DSH_DESKTOP_WINDOWS_SIGNTOOL,
+  tokenPin: signingEnvironment.DSH_DESKTOP_WINDOWS_TOKEN_PIN,
+  keyContainer: signingEnvironment.DSH_DESKTOP_WINDOWS_KEY_CONTAINER,
 }) : undefined
 try {
   Object.assign(process.env, {
@@ -72,14 +74,18 @@ SectionEnd
     config.win.forceCodeSigning = true
     config.win.signtoolOptions.sign = sign
   }
-  await build({ projectDir: appRoot, prepackaged: payload, targets: Platform.WINDOWS.createTarget(['nsis'], Arch.x64), publish: 'never',
-    config: { ...config, productName, artifactName: 'installer-test.exe', directories: { output },
-      nsis: { ...config.nsis, guid, include }, beforeBuild: undefined, afterPack: undefined, afterSign: undefined, artifactBuildCompleted: undefined },
-  })
-  const result = await execute('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-    join(appRoot, 'tests', 'windows-installer-smoke.ps1'), '-Installer', join(output, 'installer-test.exe'),
-    '-ProductName', productName, '-RegistryKey', guid, '-OutputDirectory', output], childOptions)
-  process.stdout.write(result.stdout)
+  for (const language of ['en_US', 'zh_CN']) {
+    const languageOutput = join(output, language)
+    await mkdir(languageOutput)
+    await build({ projectDir: appRoot, prepackaged: payload, targets: Platform.WINDOWS.createTarget(['nsis'], Arch.x64), publish: 'never',
+      config: { ...config, productName, artifactName: 'installer-test.exe', directories: { output: languageOutput },
+        nsis: { ...config.nsis, guid, include, installerLanguages: [language] }, beforeBuild: undefined, afterPack: undefined, afterSign: undefined, artifactBuildCompleted: undefined },
+    })
+    const result = await execute('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+      join(appRoot, 'tests', 'windows-installer-smoke.ps1'), '-Installer', join(languageOutput, 'installer-test.exe'),
+      '-ProductName', productName, '-RegistryKey', guid, '-OutputDirectory', languageOutput], childOptions)
+    process.stdout.write(`${language}\n${result.stdout}`)
+  }
 } finally {
   for (const name of Object.keys(process.env)) if (!(name in previousEnvironment)) delete process.env[name]
   Object.assign(process.env, previousEnvironment)

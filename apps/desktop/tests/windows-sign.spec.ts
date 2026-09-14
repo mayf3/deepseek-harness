@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { validateDesktopPackageEnvironment } from '../scripts/desktop-package-environment.mjs'
 import {
   buildWindowsSigningEnvironment,
   createRedactedWindowsSigningError,
@@ -43,6 +44,12 @@ describe('Windows token signing', () => {
       await writeFile(certificateFile, 'code-signing-certificate-fixture')
       await writeFile(signTool, 'fixture')
       await writeFile(path, 'fixture')
+      validateDesktopPackageEnvironment({
+        DSH_DESKTOP_APP_ID: 'com.example.desktop', DOWNLOAD_TEST_ORIGIN: 'https://updates.example.com',
+        DSH_DESKTOP_WINDOWS_CER_FILE: certificateFile, DSH_DESKTOP_WINDOWS_SIGNTOOL: signTool,
+        DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'fixture-pin', DSH_DESKTOP_WINDOWS_KEY_CONTAINER: 'fixture-container',
+      }, { platform: 'win32', arch: 'x64' })
+      expect(execFile).not.toHaveBeenCalled()
       vi.mocked(execFile).mockImplementationOnce((...args: unknown[]) => {
         const callback = args.at(-1) as (error: Error) => void
         callback(Object.assign(new Error('signing failed'), { stderr: 'SignTool Error: No private key is available.', code: 1 }))

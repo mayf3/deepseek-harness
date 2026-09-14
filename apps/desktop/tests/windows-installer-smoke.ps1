@@ -13,10 +13,11 @@ $uninstaller = Join-Path $installPath ('Uninstall ' + $ProductName + '.exe')
 $processes = [Collections.Generic.List[Diagnostics.Process]]::new()
 $results = [Collections.Generic.List[string]]::new()
 $expected = Get-Content (Join-Path $PSScriptRoot 'expected/windows-installer.json') -Raw | ConvertFrom-Json
-$copy = @{}
-$locale = if ([Globalization.CultureInfo]::InstalledUICulture.TwoLetterISOLanguageName -eq 'zh') { 'SIMPCHINESE' } else { 'ENGLISH' }
+$localizedCopy = @{ ENGLISH = @{}; SIMPCHINESE = @{} }
 Get-Content (Join-Path $PSScriptRoot '../installer/strings.nsh') -Encoding UTF8 | ForEach-Object {
-    if ($_ -match ('^LangString (INSTALLER_\w+) \$\{LANG_' + $locale + '\} "(.*)"$')) { $copy[$Matches[1]] = $Matches[2] }
+    if ($_ -match '^LangString (INSTALLER_\w+) \$\{LANG_(ENGLISH|SIMPCHINESE)\} "(.*)"$') {
+        $localizedCopy[$Matches[2]][$Matches[1]] = $Matches[3]
+    }
 }
 function Wait-Control([Diagnostics.Process]$Process, [string]$Text, [switch]$Dialog) {
     $timer = [Diagnostics.Stopwatch]::StartNew()
@@ -41,7 +42,13 @@ function Start-Setup([string]$Theme, [string]$Path = $installPath) {
         if ($window -ne [IntPtr]::Zero) { break }
         Start-Sleep -Milliseconds 5
     } while ($timer.Elapsed.TotalSeconds -lt 30)
+    if ($window -eq [IntPtr]::Zero) { throw 'Installer welcome window did not appear' }
     [InstallerCapture]::Reveal($window)
+    $languages = @($localizedCopy.Keys | Where-Object {
+        [InstallerCapture]::FindButton($process.Id, $localizedCopy[$_].INSTALLER_INSTALL) -ne [IntPtr]::Zero
+    })
+    if ($languages.Count -ne 1) { throw "Cannot identify installer language: $([InstallerCapture]::VisibleText($process.Id))" }
+    $script:copy = $localizedCopy[$languages[0]]
     [void](Wait-Control $process $copy.INSTALLER_INSTALL)
     return $process
 }
@@ -128,9 +135,11 @@ try {
     Click-Control $process $copy.INSTALLER_BROWSE
     Dismiss $process $copy.INSTALLER_CHOOSE_PATH
     [void][InstallerCapture]::SendMessage($window, 0x28, $edit, [IntPtr]1)
-    [void][InstallerCapture]::SendMessage($edit, 0xC, [IntPtr]::Zero, 'C:\Windows\Harness Installer Test')
-    [void][InstallerCapture]::PostMessage($edit, 0x100, [IntPtr]13, [IntPtr]::Zero)
-    Dismiss $process $copy.INSTALLER_PATH_INVALID
+    foreach ($invalidPath in @('C:\Windows\Harness Installer Test', [IO.Path]::GetPathRoot($installPath), ([IO.Path]::GetPathRoot($installPath) + '\'))) {
+        [void][InstallerCapture]::SendMessage($edit, 0xC, [IntPtr]::Zero, $invalidPath)
+        [void][InstallerCapture]::PostMessage($edit, 0x100, [IntPtr]13, [IntPtr]::Zero)
+        Dismiss $process $copy.INSTALLER_PATH_INVALID
+    }
     [void][InstallerCapture]::SendMessage($edit, 0xC, [IntPtr]::Zero, $installPath)
     [InstallerCapture]::MoveBy($window, 73, -41)
     $bounds = [InstallerCapture]::Bounds($window)
@@ -144,11 +153,17 @@ try {
 
     $process = Start-Setup dark ''
     Click-Control $process $copy.INSTALLER_CHOOSE_PATH
-    [void](Wait-Control $process $installPath)
+    $edit = Wait-Control $process $installPath
+    [void][InstallerCapture]::SendMessage($edit, 0xC, [IntPtr]::Zero, ($installPath + '\\'))
     [void][InstallerCapture]::Save([InstallerCapture]::Find($process.Id), (Join-Path $OutputDirectory 'dark-welcome.png'))
     $bounds = [InstallerCapture]::Bounds([InstallerCapture]::Find($process.Id))
     Click-Control $process $copy.INSTALLER_INSTALL
     Finish-Setup $process $true dark $bounds
+    $registration = Get-ItemProperty ('HKCU:\Software\' + $RegistryKey)
+    if ($registration.InstallLocation.TrimEnd('\') -ne $installPath -or -not (Test-Path -LiteralPath $appPath)) {
+        throw 'Trailing separators changed the registered installation directory'
+    }
+    $results.Add('registered-directory-with-trailing-separators')
     $timer = [Diagnostics.Stopwatch]::StartNew()
     do {
         $app = Get-Process -Name $ProductName -ErrorAction SilentlyContinue
