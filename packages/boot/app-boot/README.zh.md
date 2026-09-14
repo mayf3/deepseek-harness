@@ -142,7 +142,7 @@ Loader 结算后，app-boot 将 optional 失败报告为警告；若已启用的
 
 ### Helper 行为
 
-每个导出各负责启动的一个阶段：配置解析与快照回放、分层环境加载、明确报错的保护机制、激活审计、patch 解析、根 include 挂载、配置 dump 渲染、活动 patch 监视、profile 组合，以及 harness 源码段落。各导出的约定在代码中，不在本 README——见 [`src/index.ts`](src/index.ts) 与 [`src/profile.ts`](src/profile.ts)。
+包根导出启动、组合、诊断和包管理操作及其输入与结果类型。单行诊断 helper 和组合包分析中间数据保留在包内。各导出的约定见 [`src/index.ts`](src/index.ts) 与 [`src/profile.ts`](src/profile.ts)。
 
 ### 源码地图
 
