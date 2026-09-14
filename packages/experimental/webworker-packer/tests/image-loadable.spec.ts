@@ -305,6 +305,10 @@ const archive = async (): Promise<Uint8Array> =>
     inventory.apply({
       baseUrl,
       loader: tree,
+      get: (name: string): undefined => {
+        expect(name).toBe('pluginPackages')
+        return undefined
+      },
       deepseekLlmApiExtensions: {
         register: (field: string, contribution: { readonly prepare: Prepare }): void => {
           expect(field).toBe('dsh_plugin_packages')
