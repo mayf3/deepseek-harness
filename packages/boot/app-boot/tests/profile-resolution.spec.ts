@@ -367,6 +367,71 @@ describe('profile resolution generation', { concurrent: false }, () => {
       .toThrow(/Invalid package config/u)
   })
 
+  it('keeps a missing legacy main before a managed explicit CommonJS path', async () => {
+    const f = fixture()
+    const invalid = join(f.root, 'invalid')
+    const selected = join(invalid, 'node_modules', 'resolution-lib')
+    file(join(selected, 'package.json'), JSON.stringify({ name: 'resolution-lib', main: './missing.cjs' }))
+    const require = createRequire(join(f.profile.dir, 'entry.cjs'))
+    const paths = [invalid, f.profile.dir]
+    const linkError = thrownError(() => require.resolve('resolution-lib', { paths }))
+    const registration = installProfileResolution(await generationOf(f))
+    registrations.push(registration)
+    const runtimeError = thrownError(() => require.resolve('resolution-lib', { paths }))
+
+    expect(runtimeError).toMatchObject({
+      code: linkError.code,
+      path: linkError.path,
+      requestPath: linkError.requestPath,
+    })
+    expect(runtimeError.message).toBe(linkError.message)
+  })
+
+  it('keeps a missing fallback legacy main before later explicit CommonJS paths', async () => {
+    const f = fixture()
+    const name = 'fallback-invalid-main'
+    const selected = join(f.root, 'node_modules', name)
+    file(join(selected, 'package.json'), JSON.stringify({ name, main: './missing.cjs' }))
+    const alternative = join(f.root, 'alternative')
+    pkg(join(alternative, 'node_modules', name), name, 2)
+    const require = createRequire(join(f.profile.dir, 'entry.cjs'))
+    const paths = [f.profile.dir, alternative]
+    const linkError = thrownError(() => require.resolve(name, { paths }))
+    const registration = installProfileResolution(await generationOf(f))
+    registrations.push(registration)
+    const runtimeError = thrownError(() => require.resolve(name, { paths }))
+
+    expect(runtimeError).toMatchObject({
+      code: linkError.code,
+      path: linkError.path,
+      requestPath: linkError.requestPath,
+    })
+    expect(runtimeError.message).toBe(linkError.message)
+  })
+
+  it('keeps a missing fallback legacy main after a generation miss', async () => {
+    const f = fixture()
+    const selected = join(f.root, 'node_modules', 'resolution-lib')
+    file(join(selected, 'package.json'), JSON.stringify({ name: 'resolution-lib', main: './missing.cjs' }))
+    const alternative = join(f.root, 'alternative')
+    pkg(join(alternative, 'node_modules', 'resolution-lib'), 'resolution-lib', 2)
+    const generation = await generationOf(f)
+    rmSync(f.installed, { recursive: true })
+    const require = createRequire(join(f.profile.dir, 'entry.cjs'))
+    const paths = [f.profile.dir, alternative]
+    const linkError = thrownError(() => require.resolve('resolution-lib', { paths }))
+    const registration = installProfileResolution(generation)
+    registrations.push(registration)
+    const runtimeError = thrownError(() => require.resolve('resolution-lib', { paths }))
+
+    expect(runtimeError).toMatchObject({
+      code: linkError.code,
+      path: linkError.path,
+      requestPath: linkError.requestPath,
+    })
+    expect(runtimeError.message).toBe(linkError.message)
+  })
+
   it('keeps a profile-local package ahead of the generation', async () => {
     const f = fixture()
     file(join(f.profile.dir, 'package.json'), JSON.stringify({

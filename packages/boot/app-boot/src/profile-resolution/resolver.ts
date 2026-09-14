@@ -802,7 +802,7 @@ export function installProfileResolution(
           paths: explicitPaths.slice(0, explicit.index),
         })
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND') throw error
+        if (!isUnselectedPackageMiss(error)) throw error
       }
     }
     const state = explicit?.state ?? router.routePath(
@@ -842,7 +842,7 @@ export function installProfileResolution(
           paths: [dirname(route.parent)],
         })
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND') throw error
+        if (!isUnselectedPackageMiss(error)) throw error
         const remaining = explicitPaths.slice(explicit.index + 1)
         if (remaining.length === 0) throw error
         return wrappedFilename(request, parent, main, { ...options, paths: remaining })
@@ -864,7 +864,7 @@ export function installProfileResolution(
           const remaining = explicit === undefined || explicitPaths === undefined
             ? []
             : explicitPaths.slice(explicit.index + 1)
-          if ((afterError as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND' || remaining.length === 0) {
+          if (!isUnselectedPackageMiss(afterError) || remaining.length === 0) {
             throw afterError
           }
           delegatedCjs--
