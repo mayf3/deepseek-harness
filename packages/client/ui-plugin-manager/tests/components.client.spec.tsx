@@ -56,6 +56,7 @@ function renderTab(state: Partial<PluginManagerState> = {}) {
     editInstallSpec: vi.fn(),
     toggleInstallEnable: vi.fn(),
     runInstall: vi.fn(),
+    cancelInstall: vi.fn(),
     setEnabled: vi.fn(),
     retry: vi.fn(),
     uninstall: vi.fn(),
@@ -363,6 +364,22 @@ describe('PluginManagerPage', () => {
     expect(screen.queryByRole('switch')).toBeNull()
   })
 
+  it('shows pending cancellation and lets a stopped installation be retried', () => {
+    const { actions, set } = renderTab({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'starting' } })
+    expect(screen.getByText(en.installStarting)).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.installCancel })).toHaveProperty('disabled', true)
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'cancelling' } })
+    expect(screen.getByRole('button', { name: en.installCancelling })).toHaveProperty('disabled', true)
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'applying' } })
+    expect(screen.getByText(en.installApplying)).toBeTruthy()
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'cancelled', runs: [{ jobId: 'j', command: 'pnpm add slow', cwd: '/p', output: '', exitCode: null }] } })
+    expect(screen.getByText(en.installCancelled)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.installRetry }))
+    expect(actions.runInstall).toHaveBeenCalledOnce()
+    set({ install: { ...IDLE_INSTALL, open: true, phase: 'running', failure: { code: 'client/cancel-unconfirmed', reason: 'offline' } } })
+    expect(screen.getByRole('alert').textContent).toContain('offline')
+  })
+
   it('drives the install dialog through its phases and words each outcome', () => {
     const { actions, set } = renderTab({ install: { ...IDLE_INSTALL, open: true } })
     expect(screen.getByText(en.installExample)).toBeTruthy()
@@ -396,7 +413,8 @@ describe('PluginManagerPage', () => {
     expect(terminal.hasAttribute('data-running')).toBe(true)
     expect(within(terminal).getByText('1').getAttribute('style')).toContain('--dsw-static-blue-500')
     expect(within(terminal).getByText(en.terminalRunning)).toBeTruthy()
-    expect(screen.getByRole('button', { name: en.installRun })).toHaveProperty('disabled', true)
+    fireEvent.click(screen.getByRole('button', { name: en.installCancel }))
+    expect(actions.cancelInstall).toHaveBeenCalledOnce()
     // A long log folds its middle behind an expand control, so the dialog keeps its height while pnpm talks.
     const lines = Array.from({ length: 15 }, (_line, index) => `line ${index + 1}`).join('\n')
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'running', runs: [{ jobId: 'j1', command: 'pnpm add dsh-x', cwd: '/p', output: `${lines}\n` }] } })

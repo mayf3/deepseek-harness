@@ -14,6 +14,8 @@ Installed packages belong to the running profile, while Settings is a modal over
 
 **One store follows Host state.** The manager controller reads package views, refreshes after management operations and reconnects, and keeps installation progress under the owning job. Configuration cards use the existing global settings bindings.
 
+**Installation results belong to a request.** The dialog generates a fresh request id for every install or retry and filters Host progress, logs, and responses by that id. A cancellation acknowledgement can arrive before the original add response, so that response cannot settle a subsequent retry. Cancellation uses the manager's explicit cleanup acknowledgement; local RPC cancellation and connection loss never imply that pnpm has stopped. The application phase closes the cancellation window.
+
 ## Alternatives considered
 
 **A settings section that opens the management page.** Rejected: the dialog covers the main column, so such an entry would have to close Settings to show the page.

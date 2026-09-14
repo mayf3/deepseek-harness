@@ -47,6 +47,7 @@
     "tests/document-preview.e2e.ts",
     "tests/plugin-config.e2e.ts",
     "tests/plugin-manager.e2e.ts",
+    "tests/plugin-install-cancel.e2e.ts",
     "tests/settings-chrome.e2e.ts",
     "tests/models-settings.e2e.ts",
     "tests/deepseek-messages-settings.e2e.ts",

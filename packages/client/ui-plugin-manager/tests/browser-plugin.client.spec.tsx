@@ -90,6 +90,7 @@ describe('ui-plugin-manager browser plugin', () => {
     face.openInstall()
     face.editInstallSpec('pkg')
     b.remote.emit('plugins/install-log', [{ jobId: 'j', argv: ['pnpm', 'add', 'pkg'], cwd: '/p', spec: 'pkg', stream: 'stdout', text: 'early' }])
+    b.remote.emit('plugins/install-state', [{ requestId: 'foreign', phase: 'installing' }])
     expect(face.hooks.pluginManager.getSnapshot().install.runs).toEqual([])
 
     await fiber.dispose()

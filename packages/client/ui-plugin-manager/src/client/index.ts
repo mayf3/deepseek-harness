@@ -66,6 +66,7 @@ export function apply(ctx: ClientContext): void {
     const disposers = [
       ctx.remote.$on('plugins/changed', refresh),
       ctx.remote.$on('plugins/install-log', (chunk) => { controller.appendLog(chunk) }),
+      ctx.remote.$on('plugins/install-state', (progress) => { controller.installProgress(progress) }),
       ctx.on('connection/reset', refresh),
     ]
     return () => { for (const dispose of disposers) dispose() }

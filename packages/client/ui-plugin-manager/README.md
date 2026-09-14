@@ -45,6 +45,8 @@ Non-bundle dependencies remain installed and appear under **Other installed pack
 
 -----
 
+During installation, **Cancel installation** requests Host cleanup and shows **Stopping installation** until it is confirmed. Configuration application cannot be cancelled. A cancelled dialog keeps the package spec and logs and offers retry; downloaded or unpacked files can remain. Closing the dialog is blocked while the Host owns the operation. A connection error does not confirm cancellation.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

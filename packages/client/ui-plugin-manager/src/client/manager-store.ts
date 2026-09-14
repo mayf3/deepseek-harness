@@ -6,6 +6,7 @@
  * change made on another surface shows here without a manual refresh.
  */
 
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {
   PluginDependents,
@@ -13,6 +14,8 @@ import type {
   PluginInstallLogChunk,
   PluginInstallRejection,
   PluginInstallResult,
+  PluginInstallRequestId,
+  PluginInstallProgress,
   PluginPackageView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -50,7 +53,9 @@ export interface InstallState {
   readonly spec: string
   /** Whether a newly installed bundle is enabled right away. */
   readonly enable: boolean
-  readonly phase: 'idle' | 'running' | 'done' | 'failed'
+  readonly phase: 'idle' | 'starting' | 'running' | 'cancelling' | 'applying' | 'cancelled' | 'done' | 'failed'
+  /** Identifies this dialog's installation, including log and cancellation messages. */
+  readonly requestId?: PluginInstallRequestId
   /** The pnpm runs of the open install, in the order they started. */
   readonly runs: readonly InstallRun[]
   /** Dependencies the last run added and kept, once it finished. */
@@ -65,6 +70,15 @@ export interface InstallState {
   readonly removed: readonly PluginInstallRejection[]
   /** The Host's refusal, when the run failed before or after pnpm. */
   readonly failure: { readonly code: string; readonly reason: string } | null
+}
+
+/**
+ * Whether an installation is still owned by the Host.
+ * @param phase - the dialog's current installation phase.
+ * @returns true until an authoritative result settles the installation.
+ */
+export function isInstallPending(phase: InstallState['phase']): boolean {
+  return phase === 'starting' || phase === 'running' || phase === 'cancelling' || phase === 'applying'
 }
 
 /** A destructive action waiting for the user's confirmation: a package's uninstall or disable, or one row's switch-off. */
@@ -111,6 +125,8 @@ export interface PluginManagerFace {
   editInstallSpec: (text: string) => void
   toggleInstallEnable: () => void
   runInstall: () => void
+  /** Request cancellation and wait for Host cleanup. */
+  cancelInstall: () => void
   /** Put a bundle into, or take it out of, the profile's layer list. */
   setEnabled: (packageName: string, enabled: boolean) => void
   /** Compose an enabled bundle again from scratch. */
@@ -217,20 +233,23 @@ export class PluginManagerController {
       hooks: { pluginManager: this.store },
       ensure: () => { if (this.getSnapshot().status === 'idle') void this.load() },
       refresh: () => { void this.load() },
-      openInstall: () => { this.patch({ install: { ...IDLE_INSTALL, open: true } }) },
+      openInstall: () => {
+        if (!isInstallPending(this.getSnapshot().install.phase)) this.patch({ install: { ...IDLE_INSTALL, open: true } })
+      },
       closeInstall: () => {
-        if (this.getSnapshot().install.phase === 'running') return
+        if (isInstallPending(this.getSnapshot().install.phase)) return
         this.patch({ install: IDLE_INSTALL })
       },
       editInstallSpec: (text) => {
         const install = this.getSnapshot().install
         // A new spec after a settled run starts over: the outcome on screen belongs to the old spec.
-        this.patchInstall(install.phase === 'done' || install.phase === 'failed'
+        this.patchInstall(install.phase === 'done' || install.phase === 'failed' || install.phase === 'cancelled'
           ? { ...IDLE_INSTALL, open: true, enable: install.enable, spec: text }
           : { spec: text })
       },
       toggleInstallEnable: () => { this.patchInstall({ enable: !this.getSnapshot().install.enable }) },
       runInstall: () => { void this.runInstall() },
+      cancelInstall: () => { void this.cancelInstall() },
       setEnabled: (packageName, enabled) => { void this.setEnabled(packageName, enabled) },
       retry: (packageName) => {
         void this.run(packageName, { packageName }, async () => {
@@ -251,18 +270,27 @@ export class PluginManagerController {
   }
 
   /**
-   * Fold one install-log chunk into its pnpm run. The Host runs one mutation
-   * at a time, so while this dialog's install is in flight every chunk is its
-   * own: the `add` run, then the removals that follow it under the removed
-   * packages' names. A run's last chunk may trail the answer that settled the
-   * dialog and still lands on its run; a chunk for a run the dialog has not
-   * seen counts only while the install is in flight.
+   * Follow the Host's cancellation window for this dialog's installation.
+   * @param progress - a request id and phase received from the Host.
+   */
+  installProgress(progress: PluginInstallProgress): void {
+    const install = this.getSnapshot().install
+    if (install.requestId !== progress.requestId || !isInstallPending(install.phase)) return
+    // A queued start notification cannot undo the local user's cancellation request.
+    if (install.phase === 'cancelling' && progress.phase === 'installing') return
+    this.patchInstall({ phase: progress.phase === 'installing' ? 'running' : progress.phase })
+  }
+
+  /**
+   * Fold a chunk belonging to this installation into its pnpm command.
+   * A final chunk may arrive after the add response and still updates an existing run.
    * @param chunk - the chunk the Host forwarded.
    */
   appendLog(chunk: PluginInstallLogChunk): void {
     const install = this.getSnapshot().install
+    if (chunk.requestId !== install.requestId) return
     const index = install.runs.findIndex(run => run.jobId === chunk.jobId)
-    if (index === -1 && install.phase !== 'running') return
+    if (index === -1 && !isInstallPending(install.phase)) return
     const settled = chunk.exitCode === undefined ? {} : { exitCode: chunk.exitCode }
     const runs = index === -1
       ? [...install.runs, { jobId: chunk.jobId, command: chunk.argv.join(' '), cwd: chunk.cwd, output: chunk.text, ...settled }]
@@ -410,26 +438,51 @@ export class PluginManagerController {
   private async runInstall(): Promise<void> {
     const install = this.getSnapshot().install
     const spec = install.spec.trim()
-    if (install.phase === 'running' || spec === '') return
-    this.patchInstall({ phase: 'running', runs: [], installed: [], enabled: [], installedOnly: [], plain: [], removed: [], failure: null })
+    if (isInstallPending(install.phase) || spec === '') return
+    const requestId = randomUUID() as PluginInstallRequestId
+    this.patchInstall({ phase: 'starting', requestId, runs: [], installed: [], enabled: [], installedOnly: [], plain: [], removed: [], failure: null })
     // The Host announces `plugins/changed` while the run is still on the
     // wire — enabling recomposes before the call answers — and every such
     // event reads again; those reads must not cancel the run's settlement.
-    const result = await this.ctx.remote.plugins.add(spec, { enable: install.enable })
-    if (this.disposed) return
+    const result = await this.ctx.remote.plugins.add(spec, { enable: install.enable, requestId })
+    if (this.disposed || this.getSnapshot().install.requestId !== requestId) return
     // A run whose last chunk never reached the dialog settles from the answer:
     // a finished install, and a refusal that followed pnpm — a bundle the tree
-    // rejected, a probe that refused it — both mean every run exited 0, and a
+    // rejected, a package check that refused it — both mean every run exited 0, and a
     // pnpm failure names the code the failing run exited with.
     const runs = this.getSnapshot().install.runs
     if (result.ok) {
       this.patchInstall({ phase: 'done', runs: settledRuns(runs, 0), ...outcomeOf(result.value) })
+    } else if (result.error.code === 'plugins/install-cancelled') {
+      this.patchInstall({ phase: 'cancelled', runs: settledRuns(runs, null), failure: null })
     } else {
       const reason = detailOf(result.error, 'reason') ?? detailOf(result.error, 'log') ?? result.error.message
       const exitCode = result.error.code === 'plugins/install-failed' ? exitCodeOf(result.error) ?? null : 0
       this.patchInstall({ phase: 'failed', runs: settledRuns(runs, exitCode), failure: { code: result.error.code, reason } })
     }
     void this.load()
+  }
+
+  private async cancelInstall(): Promise<void> {
+    const install = this.getSnapshot().install
+    if (install.phase !== 'running' || install.requestId === undefined) return
+    const requestId = install.requestId
+    this.patchInstall({ phase: 'cancelling', failure: null })
+    const result = await this.ctx.remote.plugins.cancelInstall(requestId)
+    const current = this.getSnapshot().install
+    if (this.disposed || current.requestId !== requestId || !isInstallPending(current.phase)) return
+    if (!result.ok) {
+      this.patchInstall({ phase: 'running', failure: { code: 'client/cancel-unconfirmed', reason: result.error.message } })
+      return
+    }
+    if (result.value.status === 'cancelled') {
+      this.patchInstall({ phase: 'cancelled', runs: settledRuns(current.runs, null), failure: null })
+      void this.load()
+    } else if (result.value.status === 'too-late') {
+      this.patchInstall({ phase: 'applying' })
+    } else {
+      this.patchInstall({ phase: 'running', failure: { code: 'client/cancel-unconfirmed', reason: '' } })
+    }
   }
 
   /**

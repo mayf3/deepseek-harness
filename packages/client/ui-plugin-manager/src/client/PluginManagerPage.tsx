@@ -5,6 +5,7 @@
  * retain package information and uninstall without automatic composition actions.
  */
 
+import { isInstallPending } from './manager-store.ts'
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { PluginInstallRejection, PluginPackageView } from '@deepseek-ai/dsh-api-remotes/client'
 import {
@@ -433,15 +434,16 @@ function failureText(install: InstallState, t: Translate): string {
 }
 
 /** The install dialog: the spec, the enable choice, the run's progress, and a terminal per pnpm run. */
-function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun }: {
+function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun, onCancel }: {
   readonly install: InstallState
   readonly t: Translate
   readonly onClose: () => void
   readonly onEditSpec: (text: string) => void
   readonly onToggleEnable: () => void
   readonly onRun: () => void
+  readonly onCancel: () => void
 }): ReactNode {
-  const running = install.phase === 'running'
+  const running = isInstallPending(install.phase)
   const exampleId = useId()
   const firstRun = install.runs[0]
   const outcomes: string[] = install.phase !== 'done'
@@ -464,14 +466,16 @@ function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun 
       className={css.installDialog as string}
       footer={install.phase === 'done'
         ? <Button variant="primary" onClick={onClose}>{t('installClose')}</Button>
-        : (
-          <>
-            <Button variant="outline" disabled={running} onClick={onClose}>{t(install.phase === 'idle' ? 'cancel' : 'installClose')}</Button>
-            <Button variant="primary" disabled={running || install.spec.trim() === ''} onClick={onRun}>
-              {t(install.phase === 'failed' ? 'installRetry' : 'installRun')}
-            </Button>
-          </>
-        )}
+        : running
+          ? <Button variant="outline" disabled={install.phase !== 'running'} onClick={onCancel}>{t(install.phase === 'cancelling' ? 'installCancelling' : 'installCancel')}</Button>
+          : (
+            <>
+              <Button variant="outline" disabled={running} onClick={onClose}>{t(install.phase === 'idle' ? 'cancel' : 'installClose')}</Button>
+              <Button variant="primary" disabled={install.spec.trim() === ''} onClick={onRun}>
+                {t(install.phase === 'failed' || install.phase === 'cancelled' ? 'installRetry' : 'installRun')}
+              </Button>
+            </>
+          )}
     >
       <div className={css.installBody}>
         <label className={css.installField}>
@@ -491,12 +495,14 @@ function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun 
           <span>{t('installEnable')}</span>
         </label>
         {running
-          ? <p className={css.progress} role="status"><span className={css.spinner} aria-hidden="true" />{t('installRunning', { spec: install.spec.trim() })}</p>
+          ? <p className={css.progress} role="status"><span className={css.spinner} aria-hidden="true" />{install.phase === 'starting' ? t('installStarting') : install.phase === 'cancelling' ? t('installCancelling') : install.phase === 'applying' ? t('installApplying') : t('installRunning', { spec: install.spec.trim() })}</p>
           : null}
         {outcomes.map(line => <p key={line} className={css.result} role="status">{line}</p>)}
         {install.phase === 'done'
           ? install.removed.map(entry => <p key={entry.name} className={css.resultWarn} role="status">{removedText(entry, t)}</p>)
           : null}
+        {install.phase === 'cancelled' ? <p className={css.result} role="status">{t('installCancelled')}</p> : null}
+        {install.failure?.code === 'client/cancel-unconfirmed' ? <p className={css.reason} role="alert">{t('installCancelUnconfirmed', { reason: install.failure.reason })}</p> : null}
         {install.phase === 'failed'
           ? <p className={css.reason} role="alert">{failureText(install, t)}</p>
           : null}
@@ -511,7 +517,7 @@ function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun 
             running={run.exitCode === undefined}
             exitCode={run.exitCode}
             maxLines={INSTALL_TERMINAL_LINES}
-            labels={terminalLabels(t)}
+            labels={{ ...terminalLabels(t), ...(install.phase === 'cancelled' || install.phase === 'cancelling' ? { failed: t('installCancelledShort') } : {}) }}
             className={css.terminal}
           />
         ))}
@@ -680,6 +686,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         onEditSpec={props.editInstallSpec}
         onToggleEnable={props.toggleInstallEnable}
         onRun={props.runInstall}
+        onCancel={props.cancelInstall}
       />
       {state.confirm === null
         ? null
