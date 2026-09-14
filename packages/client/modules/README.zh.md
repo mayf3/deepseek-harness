@@ -71,7 +71,9 @@ Node 半侧会在发布前快照每个客户端 bundle 及其现有 source map�
 
 ### 启动 manifest 注入
 
-宿主贡献结构化 index 行，并向 `<head>` 注入：`window.__ModuleLoader__` queue facade、每个 application combo 的提示性 preload、阻塞 parser 的 bootstrap combo 脚本，然后才是外壳读取前的启动图。Web 载体把这些行渲染进 index 响应；由 shell 持有的载体则可以在没有 Web server 时渲染同一批行。facade 的 `create()` 物化 modules bundle、把构造委托给其 `createClientModuleSystem` 导出，并让同一 facade 进入 live registration 模式。
+bundle 路由随注入的 `webServer` 生命周期注册：服务就绪时注册，服务被替换时移除并重新注册。模块组合与 `fetchBundle()` 在没有 Web server 时仍可用。
+
+宿主贡献结构化 index 行，并向 `<head>` 注入：`window.__ModuleLoader__` queue facade、每个 application combo 的提示性 preload、阻塞 parser 的 bootstrap combo 脚本，然后才是外壳读取前的启动图。Web 载体把这些行渲染进 index 响应；由 shell 持有的载体则可以在没有 Web server 时渲染同一批行。facade 的 `create()` 物化 modules bundle、把构造委托给其 `createClientModuleSystem` 导出，并让同一 facade 进入 live registration 模式。外壳把返回的系统装成自身 Loader 的 `internal`；modules 插件将该实例发布为 `ctx.modules`，因此不同 Cordis 树不会通过模块级全局状态选择实例。
 
 ### 源码索引
 
@@ -80,7 +82,7 @@ Node 半侧会在发布前快照每个客户端 bundle 及其现有 source map�
 | [`src/index.ts`](src/index.ts) | Node 半侧：`ClientModuleRegistry`、扫描、产物快照、可选 combo 路由、结构化 index 行 |
 | [`src/client/index.ts`](src/client/index.ts) | 浏览器半侧：bootstrap 导出、`ctx.modules` 登记 |
 | [`src/client/system.ts`](src/client/system.ts) | `ClientModuleSystem`：加载／物化／失效机制 |
-| [`src/client/manifest.ts`](src/client/manifest.ts) | 协议类型与启动 manifest 解析 |
+| [`src/client/manifest.ts`](src/client/manifest.ts) | 协议类型、启动清单解析与 `dsh.client` 声明解析器 |
 
 </details>
 

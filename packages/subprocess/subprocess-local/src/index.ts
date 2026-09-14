@@ -12,6 +12,7 @@ import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
 import { userInfo } from 'node:os'
 import { delimiter, extname, isAbsolute, resolve } from 'node:path'
+import type { Duplex } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import * as nodePty from 'node-pty'
 import type { IPtyForkOptions } from 'node-pty'
@@ -26,16 +27,17 @@ import type {
 import {
   bindManagedProcess,
   childEnv,
-  prepareManagedProcessBinding,
   spawnSubprocess,
   validateSubprocessSpec,
 } from './spawn.ts'
+import { prepareManagedProcessBinding } from './output.ts'
 import type { LocalSubprocessHandle, SpawnInternals } from './spawn.ts'
 import {
   launchLinuxScope,
   prepareLinuxTerminalScope,
   probeLinuxManager,
   probeLinuxNative,
+  signalLinuxDirectProcess,
 } from './linux-scope.ts'
 import { launchWindowsJob, probeWindowsJob } from './windows-job.ts'
 import { targetEnvironment } from './runner-launch.ts'
@@ -55,6 +57,8 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
   private live = new Set<LocalSubprocessHandle>()
   /** Live terminals retained through normal quiescence or host-exit finalization. */
   private terminals = new Set<LocalTerminalHandle>()
+  /** Caller endpoints retained until close, independently of managed process lifetime. */
+  private controlChannels = new Set<Duplex>()
   /** Test hook: process, spill, and platform operations forwarded to spawnSubprocess. */
   internals: SpawnInternals = {}
   /** Provider-lifetime latch suppressing repeated weaker-containment warnings. */
@@ -112,6 +116,11 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       pending.push(terminal.terminate().then(() => { this.terminals.delete(terminal) }))
     }
     const outcomes = await Promise.allSettled(pending)
+    await Promise.all([...this.controlChannels].map(control => new Promise<void>((resolveClose) => {
+      control.once('close', () => { resolveClose() })
+      control.destroy()
+    })))
+    this.controlChannels.clear()
     const failures: unknown[] = []
     for (const outcome of outcomes) {
       if (outcome.status === 'rejected') failures.push(outcome.reason)
@@ -178,6 +187,11 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       handle = bindManagedProcess(spec, launch, binding)
     }
     this.live.add(handle)
+    const control = handle.control
+    if (control !== undefined) {
+      this.controlChannels.add(control)
+      control.once('close', () => { this.controlChannels.delete(control) })
+    }
     // Release ownership only once the whole managed range is gone, not at direct-child
     // settlement — a TERM-trapping helper that outlives the leader must stay
     // owned so teardown can still escalate it. For the common no-survivor
@@ -279,11 +293,12 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
     }
     // oxlint-disable-next-line eslint/prefer-const -- The owner can query readiness before the handle is published.
     let handle: LocalTerminalHandle | undefined
+    const directSettlement = Promise.withResolvers<void>()
     const owner = scope?.bindOwner({
       running: () => handle?.running ?? true,
-      signal: (signal) => {
-        try { terminal.kill(signal) } catch { /* Direct process already exited. */ }
-      },
+      settled: directSettlement.promise,
+      // node-pty swallows signal errors; the scope owner requires their delivery result.
+      signal: signal => signalLinuxDirectProcess(terminal.pid, () => process.kill(terminal.pid, signal)),
     })
     handle = new LocalTerminalHandle(
       terminal,
@@ -295,6 +310,8 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
     )
     this.terminals.add(handle)
     const release = async (): Promise<void> => {
+      // terminate() can wait on this direct-exit promise.
+      directSettlement.resolve()
       await handle.terminate()
       this.terminals.delete(handle)
     }

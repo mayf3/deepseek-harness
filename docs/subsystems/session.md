@@ -99,7 +99,9 @@ interface SessionEventMap {
   'tool/call': { turn: number; step: number; callId: ToolCallId; name: string; arguments: string }
   /**
    * A completed tool call's model-facing result, optional internal failure
-   * identity, and optional tool-private `meta` presentation payload. `meta` is
+   * identity and user-facing reason, and optional tool-private `meta`
+   * presentation payload. The reason remains outside the model-facing message.
+   * `meta` is
    * opaque to the core (the producing tool owns its shape and reads it back in
    * `presentResult`) but MUST be JSON-serializable: `Session.append`
    * runtime-validates all event data with `isJsonValue`, so a non-serializable
@@ -112,8 +114,11 @@ interface SessionEventMap {
     turn: number
     step: number
     message: ToolResultMessage
-    /** Optional failure identity; allowed only when the tool-result block has `isError: true`. */
-    error?: { name: string; code: string }
+    /**
+     * Optional failure identity and raw user-facing reason, outside model content;
+     * allowed only when the tool-result block has `isError: true`.
+     */
+    error?: { name: string; code: string; reason?: string }
     meta?: JsonValue
   }
   /**
@@ -272,7 +277,7 @@ type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 `SessionEventType = keyof SessionEventMap`. Because `SessionEventMap` is merge-extensible, switches over `SessionEvent` must NOT use `assertNever` — a plugin-added variant is a valid unknown value; handle the known cases and fall through `default`.
 
-Every surface event requires `surfaceOp`; known log-only events forbid both surface metadata fields. Native unknown or obsolete ignorable envelopes remain opaque. `assistant/message` embeds its provider stream and forbids `sourceEventSeqs`. System, user, and tool surface events may cite a complete non-empty set of unique earlier events when their provenance or replacement operation requires it. A `tool/result` may carry `data.error` only when its tool-result block has `isError: true`; failure identity remains optional for failed results.
+Every surface event requires `surfaceOp`; known log-only events forbid both surface metadata fields. Native unknown or obsolete ignorable envelopes remain opaque. `assistant/message` embeds its provider stream and forbids `sourceEventSeqs`. System, user, and tool surface events may cite a complete non-empty set of unique earlier events when source attribution or replacement coverage requires it. A `tool/result` may carry `data.error` only when its tool-result block has `isError: true`; failure identity remains optional for failed results.
 
 ## Surface types
 
@@ -473,6 +478,8 @@ declare class Session {
   ): Session;
   /**
    * Return the immutable event stored at one exact sequence number.
+   * @deprecated Existing logic may remain unmigrated for now, but new calls are prohibited.
+   * See the [Agent Note](../../../../.agents/notes/implemented/architecture/2026-09-09-deprecate-synchronous-session-event-reads.md).
    * @param seq - event sequence number.
    * @returns the accepted event, or undefined when the log does not contain it.
    */
@@ -481,6 +488,8 @@ declare class Session {
    * Materialize an immutable snapshot of a half-open event sequence range.
    * A full current snapshot is reused until the next append; every previously
    * returned snapshot remains stable after later appends.
+   * @deprecated Existing logic may remain unmigrated for now, but new calls are prohibited.
+   * See the [Agent Note](../../../../.agents/notes/implemented/architecture/2026-09-09-deprecate-synchronous-session-event-reads.md).
    * @param fromSeq - non-negative inclusive sequence number; defaults to the log start.
    * @param toSeqExclusive - non-negative exclusive sequence number; defaults to the current end.
    * @returns a frozen array of the selected deeply frozen events.
@@ -491,6 +500,8 @@ declare class Session {
   ): readonly SessionEvent[];
   /**
    * Return this Session's events after its fork-inherited prefix.
+   * @deprecated Existing logic may remain unmigrated for now, but new calls are prohibited.
+   * See the [Agent Note](../../../../.agents/notes/implemented/architecture/2026-09-09-deprecate-synchronous-session-event-reads.md).
    * @returns a fresh array containing child-owned events in log order.
    */
   ownEvents(): readonly SessionEvent[];
