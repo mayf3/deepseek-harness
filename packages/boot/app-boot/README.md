@@ -60,7 +60,7 @@ Inserted plugin names may be absolute filesystem paths, file URLs, or package sp
 
 Bundle patches retain their declared ids, parents, and ordering. Layers claim row ids in manifest order; a bundle with a repeated or already claimed id is omitted whole and reported, while a conflicting user insert is omitted per row. `dependencies` records installation; `dsh.profile.bundles` selects enabled layers, including all their inserts and overrides. Package metadata does not select startup strictness.
 
-The launcher provides `ctx.profileRuntime` before any configuration entry mounts. The runtime requires Loader and supports calls through both root and plugin contexts. It owns row provenance, accepted composition, conflicts, and user-disabled rows. Watchers and management operations share its serial recomposition queue. Recomposition waits for current entries and removed fibers, then publishes accepted options and reports per-entry issues; a failed update can leave a fiber running its previous valid config. `installFailLoud` remains installed until shutdown for process-level unhandled rejections. Observers can await `whenIdle()` before publishing a refreshed view of composition ownership.
+The launcher provides `ctx.profileRuntime` before any configuration entry mounts. The runtime requires Loader and supports calls through both root and plugin contexts. It owns row ownership, accepted composition, conflicts, and user-disabled rows. Watchers and management operations share its serial recomposition queue. Recomposition waits for current entries and removed fibers, then publishes accepted options and reports per-entry issues; a failed update can leave a fiber running its previous valid config. `installFailLoud` remains installed until shutdown for process-level unhandled rejections. Observers can await `whenIdle()` before publishing a refreshed view of composition ownership.
 
 <a id="patch-files"></a>
 ### Patch files
@@ -153,7 +153,7 @@ The exports each own one stage of the boot: config resolution and snapshot repla
 | [`src/external-bundles.ts`](src/external-bundles.ts) | Bundle ownership analysis and installed/enabled manifest lists |
 | [`src/compose-stack.ts`](src/compose-stack.ts) | Row-id ownership across the stack: `claimLayerIds`, `composeProfileStack`, conflict records |
 | [`src/entry-issues.ts`](src/entry-issues.ts) | Current entry failures, unresolved services, and diagnostic formatting |
-| [`src/profile-runtime.ts`](src/profile-runtime.ts) | The `profileRuntime` service: the committed composition (profile, row provenance, conflicts), user-disabled rows, recomposition |
+| [`src/profile-runtime.ts`](src/profile-runtime.ts) | The `profileRuntime` service: the committed composition (profile, row ownership, conflicts), user-disabled rows, recomposition |
 | [`src/package-metadata.ts`](src/package-metadata.ts) | Static manifest and patch declarations; no module execution or probe cache |
 | [`src/patch-file.ts`](src/patch-file.ts) | Public patch-file parser and atomic user-layer editor |
 | — | No runtime invariant companion is published; this presentation adapter owns no durable package-local event stream; boundary and replay tests cover its protocol mapping. |
@@ -213,6 +213,6 @@ This Dev Note is working context for maintainers: open design questions and dire
 
 #### Open: config dump stability
 
-`renderConfigDump` output is a loadable YAML document whose `# ==` provenance comments and `!!js`-verbatim rendering serve the `--dump-config` diagnostic. Nothing promises byte stability across package versions; decide whether the dump becomes a serialization contract before anything consumes it programmatically.
+`renderConfigDump` output is a loadable YAML document whose `# ==` source comments and `!!js`-verbatim rendering serve the `--dump-config` diagnostic. Nothing promises byte stability across package versions; decide whether the dump becomes a serialization contract before anything consumes it programmatically.
 
 </details>

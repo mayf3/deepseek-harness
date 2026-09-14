@@ -33,7 +33,7 @@ const ROW_PHASE = {
   [FIBER_STATE.UNLOADING]: 'unloading',
 } as const satisfies Record<FiberState, PluginRowPhase>
 
-/** Fields of one row's provenance a package view needs. */
+/** Fields of one row's package ownership a package view needs. */
 export interface RowFacts {
   readonly entry: Entry
   readonly rowId: string

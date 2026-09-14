@@ -132,7 +132,7 @@ export function composeProfileStack(
   layers: readonly ProfileLayer[], userLayers: readonly StackUserLayer[],
 ): ComposedStack {
   // Only anonymous bundle rows need an assigned id. The execution copy keeps
-  // provenance available after loading without modifying author-owned patches.
+  // bundle ownership available after loading without modifying author-owned patches.
   layers = layers.map((layer) => {
     const patches = structuredClone(layer.patches)
     let anonymous = 0

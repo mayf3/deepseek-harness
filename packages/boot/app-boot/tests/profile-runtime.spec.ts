@@ -1,5 +1,5 @@
 /**
- * The `profileRuntime` service: profile facts, row provenance, user-disabled
+ * The `profileRuntime` service: profile facts, row ownership, user-disabled
  * rows, and recomposition through the root include entry.
  */
 
@@ -129,7 +129,7 @@ describe('ProfileRuntime', () => {
     await runtime.recompose({ reloadBundles: true })
     expect(runtime.layers).toHaveLength(2)
     expect(update).toHaveBeenLastCalledWith({ config: { path: 'file:///root/cordis.yml', patches: [{ id: 'composed-for-2' }] } })
-    // Provenance, conflicts, and the user-disabled rows follow the reloaded profile once the update holds.
+    // Row ownership, conflicts, and the user-disabled rows follow the reloaded profile once the update holds.
     expect(runtime.originOf('bundle/b')).toBeUndefined()
     expect(runtime.conflicts).toEqual(conflicts)
     expect([...runtime.userDisabledRowIds()]).toEqual(['reloaded-off'])
@@ -193,7 +193,7 @@ describe('ProfileRuntime', () => {
     await expect(runtime.whenIdle()).resolves.toBeUndefined()
   })
 
-  it('keeps the committed profile, provenance, and conflicts when the root include rejects the update', async () => {
+  it('keeps the committed profile, row ownership, and conflicts when the root include rejects the update', async () => {
     const entry = { options: { config: { path: 'file:///root/cordis.yml' } }, update: vi.fn(async () => { throw new Error('rejected') }) } as unknown as Entry
     const reloaded = profile([layer('a', []), layer('b', [])])
     const conflicts = [{ rowId: 'x', moduleName: 'm', layer: 'late', packageName: 'late', declaredBy: 'a', message: 'row "x" is already declared by a' }]
