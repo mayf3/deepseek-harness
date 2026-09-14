@@ -127,6 +127,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   workspaceRegistry: 'workspace.md',
   workspaceController: 'workspace.md',
   workspaceFiles: 'workspace.md',
+  terminalController: 'workspace.md',
   directoryPickerController: 'workspace.md',
 }
 
@@ -149,6 +150,7 @@ export const SERVICE_PAGE: Record<string, string> = {
  * to a model as `cordis_runtime_inspect what:"client"`).
  */
 export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
+  webTerminals: 'client-side terminal view models — packages/api/terminal-controller/README.md owns the API',
   appReady: 'not a service: launcher-provided successful-startup signal — packages/boot/cmdline/README.md owns the launcher contract',
   appExit: 'not a service: launcher-provided bounded process-exit callback — packages/boot/cmdline/README.md owns the launcher contract',
   cmdlineArgs: 'not a service: launcher-provided immutable app argument accessor — packages/boot/cmdline/README.md owns the launcher contract',
@@ -401,6 +403,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SubprocessOutputReader: 'subprocess.md',
   SubprocessSpawnSpec: 'subprocess.md',
   SubprocessTerminalHandle: 'subprocess.md',
+  SubprocessTerminalEnvironment: 'subprocess.md',
   SubprocessTerminalSpawnSpec: 'subprocess.md',
   PtcRunRequest: 'ptc-runtime.md',
   PtcRunSpec: 'ptc-runtime.md',
@@ -786,6 +789,13 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   WorkspaceFileRange: 'Host workspace file endpoint contract is owned by packages/api/workspace-files/README.md',
   WorkspaceFileStat: 'Host workspace file endpoint contract is owned by packages/api/workspace-files/README.md',
   WorkspaceFileText: 'Host workspace file endpoint contract is owned by packages/api/workspace-files/README.md',
+  TerminalShell: 'Browser terminal shell profiles are owned by packages/api/terminal-controller/README.md',
+  TerminalEnvironment: 'Browser terminal environment fields are owned by packages/api/terminal-controller/README.md',
+  WebTerminalInfo: 'Browser terminal metadata is owned by packages/api/terminal-controller/README.md',
+  TerminalCreateRequest: 'Browser terminal allocation fields are owned by packages/api/terminal-controller/README.md',
+  TerminalAttachmentId: 'Browser terminal input ownership is owned by packages/api/terminal-controller/README.md',
+  TerminalFrame: 'Browser terminal stream frames are owned by packages/api/terminal-controller/README.md',
+  WebTerminalId: 'Browser terminal identity is owned by packages/api/terminal-controller/README.md',
 }
 
 /** Repository data policy consumed by the Cordis catalog projector. */

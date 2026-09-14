@@ -29,7 +29,7 @@ Mount the provider beside its consumers and start processes exactly as the subpr
 
 ### Mounting the provider
 
-Load the provider in the same composition as its consumers. It has no config fields: every choice arrives on the spawn request, so deployment-varying decisions stay with the caller's configuration.
+Load the provider in the same composition as its consumers. It has no config fields: every choice arrives on the spawn request, so deployment-varying decisions stay with the caller's configuration. `terminalEnvironment()` reads a nonempty `SHELL` on POSIX, falling back to the account login shell, or a nonempty `ComSpec` on Windows. Empty values are omitted so the consumer can choose its platform fallback.
 
 ```yaml
 - name: '@deepseek-ai/dsh-subprocess-local'
@@ -120,6 +120,8 @@ Read these pages when the provider-level contract is not enough. They move from 
 - [Synchronous subprocess exit cleanup](../../../.agents/notes/archived/bug-fix/2026-08-11-synchronous-subprocess-exit-cleanup.md) — the host-exit finalization decision and its failure modes.
 
 -----
+
+Terminal allocation advertises the caller-provided `terminalType` through TERM and node-pty. Dynamic resize updates the existing PTY. Output backpressure pauses native reads until the consumer drains; explicit termination resumes a paused reader to receive the exit notification.
 
 <a id="model-experience"></a>
 ## Model Experience
