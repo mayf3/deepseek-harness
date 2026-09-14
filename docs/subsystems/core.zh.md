@@ -932,7 +932,14 @@ The row injects only the Loader; the profile runtime and the agent registry are 
  * @param options - `enable` puts every newly installed bundle into the layer list at once.
  * @returns what the run installed and enabled.
  */
-@Remote('add') async add(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult>
+@Remote('add') async add(spec: string, options?: PluginInstallOptions): Promise<PluginInstallResult>
+
+/**
+ * Stop this installation and wait for process exit and file recovery.
+ * @param requestId - the id supplied to add.
+ * @returns whether cancellation completed, application already began, or no matching installation exists.
+ */
+@Remote('cancelInstall') async cancelInstall(requestId: PluginInstallRequestId): Promise<PluginInstallCancellation>
 
 /**
  * Remove a package from the profile with its user-layer rows.
@@ -1426,6 +1433,23 @@ One chunk of an install run's output, in order; the last chunk carries the exit 
  * @param chunk - the chunk.
  */
 'plugins/install-log'(chunk: PluginInstallLogChunk): void
+```
+
+Source: [`packages/boot/plugin-manager/src/types.ts`](../../packages/boot/plugin-manager/src/types.ts)
+
+<a id="pluginsinstall-state--emit"></a>
+
+#### `plugins/install-state` — emit
+
+The installation started, is stopping, or crossed into non-cancellable application.
+
+```ts cordis-catalog
+/**
+ * The installation started, is stopping, or crossed into non-cancellable application.
+ * @mode emit
+ * @param progress - the request and its current phase.
+ */
+'plugins/install-state'(progress: PluginInstallProgress): void
 ```
 
 Source: [`packages/boot/plugin-manager/src/types.ts`](../../packages/boot/plugin-manager/src/types.ts)

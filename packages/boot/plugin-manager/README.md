@@ -39,7 +39,7 @@ declare const installAnchor: string
 const installer = new PluginInstaller({
   profileDir, profileName: 'web', installAnchor,
   loadProfile: () => loadProfile('dsh', 'web', installAnchor, undefined, { userLayer: false }),
-  config: { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installLogTailBytes: 16_384 },
+  config: { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installKillGraceMs: 5_000, installLogTailBytes: 16_384 },
   installLog: (chunk) => process.stdout.write(chunk.text),
   color: process.stdout.isTTY,
 })
@@ -47,7 +47,7 @@ const outcome = await installer.add('@acme/dsh-sql-tool')
 console.log(outcome.installed, outcome.removed)
 ```
 
-`add` runs pnpm in the profile, reconciles `dependencies`, and statically checks new bundle declarations against current row ownership. Conflicting bundles are removed with a reason; undeclared and unreadable packages remain installed. New bundles stay disabled unless the caller enables them. A failed pnpm run restores the pre-run manifest and reports `plugins/install-failed` with the log tail.
+`add` runs pnpm in the profile, reconciles `dependencies`, and statically checks new bundle declarations against current row ownership. Conflicting bundles are removed with a reason; undeclared and unreadable packages remain installed. New bundles stay disabled unless the caller enables them. Failed installation restores the saved manifest and `pnpm-lock.yaml`; downloaded and unpacked files may remain in `node_modules` or the pnpm store. Failures report `plugins/install-failed` with the log tail.
 
 ### Managing the booted profile
 
@@ -80,9 +80,11 @@ The manager runs one mutation at a time — a second call while one runs fails w
 
 ### Failures
 
-Every refusal or failure is a `PluginOperationError` with a stable `code` and `details` typed by it: `plugins/unavailable` (no profile runtime), `plugins/not-installed`, `plugins/not-enableable`, `plugins/enable-failed`, `plugins/install-failed`, `plugins/busy`, `plugins/agents-running`, and `plugins/bad-request` for a request that names nothing the profile has. `pluginOperationFailureOf` narrows a caught value to the code-discriminated union.
+Every refusal or failure is a `PluginOperationError` with a stable `code` and `details` typed by it: `plugins/unavailable` (no profile runtime), `plugins/not-installed`, `plugins/not-enableable`, `plugins/enable-failed`, `plugins/install-failed`, `plugins/install-cancelled`, `plugins/busy`, `plugins/agents-running`, and `plugins/bad-request` for a request that names nothing the profile has. `pluginOperationFailureOf` narrows a caught value to the code-discriminated union.
 
 -----
+
+Installation callers may supply a UUID `requestId` in `add` options and call `cancelInstall(requestId)`. `plugins/install-state` announces installation, cancellation, and the non-cancellable application phase. Cancellation waits for pnpm's process range to exit, restores the manifest and lockfile, and releases the mutation lock before returning `cancelled`; the original add reports `plugins/install-cancelled`. A request for another operation returns `not-running`, and application returns `too-late`. Plugin disposal stops an installation still preparing packages without waiting recursively on runtime application.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -94,9 +96,9 @@ Every refusal or failure is a `PluginOperationError` with a stable `code` and `d
 
 Every change reads the profile manifest afresh and writes it through the same app-boot helpers the `dsh plugin` command's forwarded verbs use (`reconcileInstalledBundles`, `enableBundle`, `disableBundle`), so the CLI and the Web host never disagree on the file. `dependencies` records what is installed; `dsh.profile.bundles` records what is enabled.
 
-### pnpm runs through `node:child_process`
+### pnpm process ownership
 
-The subprocess seam scrubs secret-shaped variables and has no shell mode, and pnpm needs both the user's registry, proxy, and auth settings and, on Windows, the shell that resolves its `.cmd` shim. The installer therefore spawns pnpm the way the CLI always did, with the parent environment and `shell` on Windows, and streams the child's output itself.
+The standalone `subprocess-local/spawn` entry owns process-group termination and exit observation without requiring a booted service. The installer explicitly forwards the parent's registry, proxy and authentication environment, uses a Windows shell for pnpm's `.cmd` shim, and streams the piped output. Cancellation and timeouts wait for the process range before restoring files; POSIX descendants that escape the group and Windows taskkill limitations remain the subprocess provider's documented limits.
 
 ### Retry is disable then enable
 

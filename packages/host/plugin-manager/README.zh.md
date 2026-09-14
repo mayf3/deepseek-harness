@@ -33,7 +33,7 @@ kind: "package-reference"
 
 ### 失败码
 
-管理器的失败以同样的 `code` 与 `details` 作为 `RemoteError` 到达客户端：`plugins/unavailable`、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/busy` 与 `plugins/agents-running`，各自以管理器的 details 类型声明在 Remote 失败表里。管理器的通用拒绝 `plugins/bad-request` 以 Gateway 的 `gateway/bad-request` 过线。管理器抛出的其他错误原样传播，由 Gateway 报为 `gateway/internal`。
+管理器的失败以同样的 `code` 与 `details` 作为 `RemoteError` 到达客户端：`plugins/unavailable`、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/install-cancelled`、`plugins/busy` 与 `plugins/agents-running`，各自以管理器的 details 类型声明在 Remote 失败表里。管理器的通用拒绝 `plugins/bad-request` 以 Gateway 的 `gateway/bad-request` 过线。管理器抛出的其他错误原样传播，由 Gateway 报为 `gateway/internal`。
 
 ### 配置
 
@@ -41,9 +41,12 @@ kind: "package-reference"
 |---|---|---|
 | `pnpmCommand` | `pnpm` | 可执行文件，与 `dsh plugin` 命令一样经 `PATH` 解析。 |
 | `installTimeoutMs` | `600000` | 单次安装或移除运行的上限。 |
+| `installKillGraceMs` | `5000` | 强制终止前的宽限期。 |
 | `installLogTailBytes` | `16384` | 安装失败时报告多少尾部输出。 |
 
 -----
+
+`plugins.cancelInstall(requestId)` 仅停止匹配的安装，并在清理完成后返回。`plugins/install-state` 区分准备、取消及应用阶段；应用阶段不可取消。`installKillGraceMs` 配置终止宽限期（默认 5,000 毫秒），独立于 `installTimeoutMs`。恢复限制见[安装器](../../boot/plugin-manager/README.zh.md)。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现

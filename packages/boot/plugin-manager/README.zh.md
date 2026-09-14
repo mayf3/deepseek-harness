@@ -39,7 +39,7 @@ declare const installAnchor: string
 const installer = new PluginInstaller({
   profileDir, profileName: 'web', installAnchor,
   loadProfile: () => loadProfile('dsh', 'web', installAnchor, undefined, { userLayer: false }),
-  config: { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installLogTailBytes: 16_384 },
+  config: { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installKillGraceMs: 5_000, installLogTailBytes: 16_384 },
   installLog: (chunk) => process.stdout.write(chunk.text),
   color: process.stdout.isTTY,
 })
@@ -47,7 +47,7 @@ const outcome = await installer.add('@acme/dsh-sql-tool')
 console.log(outcome.installed, outcome.removed)
 ```
 
-`add` 在 profile 中执行 pnpm，核对 `dependencies`，并按当前行归属静态检查新组合包声明。冲突组合包会被移除并给出原因；未声明或声明不可读的包保持已安装。新组合包保持禁用，除非调用方启用。pnpm 执行失败会恢复运行前的 manifest，并通过 `plugins/install-failed` 报告日志尾部。
+`add` 在 profile 中执行 pnpm，核对 `dependencies`，并按当前行归属静态检查新组合包声明。冲突组合包会被移除并给出原因；未声明或声明不可读的包保持已安装。新组合包保持禁用，除非调用方启用。安装失败会恢复运行前的 manifest 与 `pnpm-lock.yaml`，并通过 `plugins/install-failed` 报告日志尾部。
 
 ### 管理已启动的 profile
 
@@ -80,9 +80,11 @@ console.log(await manager.list())
 
 ### 失败
 
-每次拒绝或失败都是一个 `PluginOperationError`，带稳定的 `code` 与按码定型的 `details`：`plugins/unavailable`（没有 profile runtime）、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/busy`、`plugins/agents-running`，以及请求点名了 profile 没有的东西时的 `plugins/bad-request`。`pluginOperationFailureOf` 把捕获到的值收窄为按码区分的联合。
+每次拒绝或失败都是一个 `PluginOperationError`，带稳定的 `code` 与按码定型的 `details`：`plugins/unavailable`（没有 profile runtime）、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/install-cancelled`、`plugins/busy`、`plugins/agents-running`，以及请求点名了 profile 没有的东西时的 `plugins/bad-request`。`pluginOperationFailureOf` 把捕获到的值收窄为按码区分的联合。
 
 -----
+
+安装调用方可在 `add` 选项中提供 UUID `requestId`，并调用 `cancelInstall(requestId)`。`plugins/install-state` 通知安装、取消及不可取消的配置应用阶段。取消会等待 pnpm 进程组退出、恢复清单和 `pnpm-lock.yaml`、释放修改锁，然后返回 `cancelled`；原 add 调用报告 `plugins/install-cancelled`。请求不匹配当前操作时返回 `not-running`，已进入应用阶段则返回 `too-late`。插件卸载会停止仍在准备包的安装，不反向等待 runtime 应用过程。下载或解包文件可能留在 `node_modules` 或 pnpm 缓存中。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
@@ -94,9 +96,9 @@ console.log(await manager.list())
 
 每次变更都重新读取 profile manifest，并通过 `dsh plugin` 命令转发的动词所用的同一组 app-boot 助手（`reconcileInstalledBundles`、`enableBundle`、`disableBundle`）写回，因此 CLI 与 Web 宿主对这个文件永远不会有分歧。`dependencies` 记录装了什么；`dsh.profile.bundles` 记录启用了什么。
 
-### pnpm 经 `node:child_process` 运行
+### pnpm 进程管理
 
-subprocess seam 会清洗形似密钥的变量且没有 shell 模式，而 pnpm 既需要用户的 registry、代理与鉴权设置，在 Windows 上又需要解析其 `.cmd` shim 的 shell。于是安装器按 CLI 一直以来的方式生成 pnpm：带父进程环境、Windows 上开 `shell`，并自己流式读取子进程的输出。
+独立的 `subprocess-local/spawn` 入口负责进程组终止和退出确认，无需启动服务。安装器显式转发父进程中的 registry、代理和鉴权环境，在 Windows 上通过 shell 运行 pnpm 的 `.cmd` shim，并流式读取管道输出。取消和超时均先等待进程组停止，再恢复文件；主动脱离 POSIX 进程组的后代及 Windows taskkill 的限制仍遵循 subprocess 提供方的说明。
 
 ### 重试即先停用再启用
 

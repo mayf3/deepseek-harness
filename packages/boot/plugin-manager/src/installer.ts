@@ -7,10 +7,12 @@
 
 import { spawn as spawnChild } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, rmSync } from 'node:fs'
+import type { Readable } from 'node:stream'
+import { finished } from 'node:stream/promises'
+import { spawnSubprocess } from '@deepseek-ai/dsh-subprocess-local/spawn'
 import { join } from 'node:path'
 import {
-  awaitChildClose,
   claimLayerIds,
   healProfilesModuleFallback,
   readPackageMetadata,
@@ -24,7 +26,29 @@ import {
 } from '@deepseek-ai/dsh-app-boot'
 import { PluginOperationError } from './errors.ts'
 import { dependenciesOf, messageOf, NAME, type PluginToolingConfig, type SpawnLike } from './helpers.ts'
-import type { PluginInstallLogChunk, PluginInstallRejection, PluginInstallResult } from './types.ts'
+import type { PluginInstallLogChunk, PluginInstallRejection, PluginInstallResult, PluginInstallRequestId } from './types.ts'
+
+/** The manager owns cancellation until prepared transfers control to runtime application. */
+export interface PluginInstallControl {
+  readonly requestId: PluginInstallRequestId
+  readonly signal: AbortSignal
+  readonly prepared: () => void
+}
+
+/** Check cancellation between subprocesses and before committing the installation. */
+function checkCancelled(control?: PluginInstallControl): void {
+  if (control?.signal.aborted) {
+    throw new PluginOperationError('plugins/install-cancelled', `${NAME}: installation cancelled`, { requestId: control.requestId })
+  }
+}
+
+/** Read an optional pnpm lockfile without hiding unreadable-file failures. */
+function readLockfile(path: string): Buffer | undefined {
+  try { return readFileSync(path) } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
+}
 
 /** What one install run changed before any newly installed bundle was enabled. */
 export type PluginInstallOutcome = Omit<PluginInstallResult, 'enabled'>
@@ -78,7 +102,10 @@ export class PluginInstaller {
    * @param options - the profile, the tooling bounds, and the output sink.
    */
   constructor(private readonly options: PluginInstallerOptions) {
-    this.spawn = options.spawn ?? spawnChild
+    this.spawn = options.spawn ?? (spec => spawnSubprocess(spec, {
+      // Windows pnpm is normally a .cmd shim; retain the CLI's shell resolution.
+      spawn: (command, args, options) => spawnChild(command, [...args], { ...options, shell: process.platform === 'win32' }),
+    }))
     this.metadataReader = options.metadata ?? readPackageMetadata
   }
 
@@ -140,62 +167,71 @@ export class PluginInstaller {
    * Undeclared packages remain installed; new bundles are left disabled.
    * @param spec - what to install, in pnpm's own vocabulary: a registry
    * name, a `github:` or git URL, a tarball, or an absolute path.
+   * @param control - cancellation and the handoff to runtime application; omitted by standalone CLI operations.
    * @returns what the run installed and what it removed again.
    * @throws {PluginOperationError} `plugins/bad-request` for an empty spec,
-   * `plugins/install-failed` when pnpm exits non-zero, cannot be spawned, or times out.
+   * `plugins/install-failed` when pnpm exits non-zero, cannot be spawned, or times out;
+   * `plugins/install-cancelled` after cancellation and manifest/lockfile restoration.
    */
-  async add(spec: string): Promise<PluginInstallOutcome> {
+  async add(spec: string, control?: PluginInstallControl): Promise<PluginInstallOutcome> {
     if (spec.trim().length === 0) {
       throw new PluginOperationError('plugins/bad-request', `${NAME}: the package spec must not be empty`, {})
     }
     const { profileDir, installAnchor } = this.options
     const manifestPath = join(profileDir, 'package.json')
-    const snapshot = readFileSync(manifestPath, 'utf8')
+    const snapshot = readFileSync(manifestPath)
+    const lockPath = join(profileDir, 'pnpm-lock.yaml')
+    const lock = readLockfile(lockPath)
     const before = readProfileManifest(NAME, profileDir)
-    let jobId: string
     try {
-      jobId = await this.runPnpm(['add', spec], spec)
-    } catch (error) {
-      // pnpm may have written the manifest before failing; the profile keeps
-      // the manifest it had, and what pnpm left under node_modules is not a
-      // dependency until a manifest names it.
-      if (readFileSync(manifestPath, 'utf8') !== snapshot) writeFileSync(manifestPath, snapshot)
-      throw error
-    }
-    const outcome = reconcileInstalledBundles(NAME, profileDir, installAnchor, before, { autoEnable: false })
-    const after = readProfileManifest(NAME, profileDir)
-    const added = Object.keys(dependenciesOf(after)).filter(name => !(name in dependenciesOf(before)))
-    await healProfilesModuleFallback({ installAnchor, profile: this.options.loadProfile() })
-    const installed: string[] = []
-    const removed: PluginInstallRejection[] = []
-    for (const name of added) {
-      const reason = this.rejection(name)
-      if (reason === undefined) {
-        installed.push(name)
-        continue
+      checkCancelled(control)
+      const jobId = await this.runPnpm(['add', spec], spec, control)
+      const outcome = reconcileInstalledBundles(NAME, profileDir, installAnchor, before, { autoEnable: false })
+      const after = readProfileManifest(NAME, profileDir)
+      const added = Object.keys(dependenciesOf(after)).filter(name => !(name in dependenciesOf(before)))
+      await healProfilesModuleFallback({ installAnchor, profile: this.options.loadProfile() })
+      checkCancelled(control)
+      const installed: string[] = []
+      const removed: PluginInstallRejection[] = []
+      for (const name of added) {
+        const reason = this.rejection(name)
+        if (reason === undefined) {
+          installed.push(name)
+          continue
+        }
+        await this.remove(name, control)
+        removed.push({ name, reason })
       }
-      await this.remove(name)
-      removed.push({ name, reason })
-    }
-    const kept = new Set(installed)
-    return {
-      installed,
-      removed,
-      installedOnly: outcome.installedOnly.filter(name => kept.has(name)),
-      plain: outcome.plain.filter(name => kept.has(name)),
-      jobId,
+      checkCancelled(control)
+      control?.prepared()
+      const kept = new Set(installed)
+      return {
+        installed,
+        removed,
+        installedOnly: outcome.installedOnly.filter(name => kept.has(name)),
+        plain: outcome.plain.filter(name => kept.has(name)),
+        jobId,
+      }
+    } catch (error) {
+      // The child and its process group have stopped before these files are restored.
+      // node_modules and the pnpm store are not a transactional snapshot.
+      writeFileSync(manifestPath, snapshot)
+      if (lock === undefined) rmSync(lockPath, { force: true })
+      else writeFileSync(lockPath, lock)
+      throw error
     }
   }
 
   /**
    * Run `pnpm remove` and reconcile the layer list.
    * @param packageName - the dependency to remove.
+   * @param control - the enclosing installation when removing a rejected new package.
    * @throws {PluginOperationError} `plugins/install-failed` when pnpm fails.
    */
-  async remove(packageName: string): Promise<void> {
+  async remove(packageName: string, control?: PluginInstallControl): Promise<void> {
     const { profileDir, installAnchor } = this.options
     const before = readProfileManifest(NAME, profileDir)
-    await this.runPnpm(['remove', packageName], packageName)
+    await this.runPnpm(['remove', packageName], packageName, control)
     reconcileInstalledBundles(NAME, profileDir, installAnchor, before, { autoEnable: false })
   }
 
@@ -229,10 +265,11 @@ export class PluginInstaller {
    * @returns the run's job id.
    * @throws {PluginOperationError} `plugins/install-failed` on a non-zero exit, a signal, or the timeout.
    */
-  private async runPnpm(args: readonly string[], spec: string): Promise<string> {
+  private async runPnpm(args: readonly string[], spec: string, control?: PluginInstallControl): Promise<string> {
     const { color, config, profileDir } = this.options
     const jobId = randomUUID()
     const argv = [config.pnpmCommand, ...args]
+    const request = control === undefined ? {} : { requestId: control.requestId }
     const tail: string[] = []
     let tailBytes = 0
     const record = (stream: 'stdout' | 'stderr', chunk: string): void => {
@@ -242,35 +279,47 @@ export class PluginInstaller {
       while (tailBytes > config.installLogTailBytes && tail.length > 1) {
         tailBytes -= Buffer.byteLength(tail.shift() as string)
       }
-      this.options.installLog({ jobId, argv, cwd: profileDir, spec, stream, text })
+      this.options.installLog({ ...request, jobId, argv, cwd: profileDir, spec, stream, text })
     }
-    // Windows resolves pnpm through its .cmd shim, which spawn() refuses
-    // without a shell since the CVE-2024-27980 hardening. The parent
-    // environment is passed whole, as the `dsh plugin` command does: pnpm
-    // needs the user's registry, proxy, and auth settings. pnpm writes to a
-    // pipe and would decide against colour on its own, so `FORCE_COLOR`
-    // decides for it either way: a parent forcing colours for its own
-    // terminal cannot leak escapes into a plain log.
-    const child = this.spawn(config.pnpmCommand, args, {
-      cwd: profileDir,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      shell: process.platform === 'win32',
-      env: { ...process.env, FORCE_COLOR: color ? '1' : '0' },
-    })
-    child.stdout?.setEncoding('utf8')
-    child.stderr?.setEncoding('utf8')
-    child.stdout?.on('data', (text: string) => { record('stdout', text) })
-    child.stderr?.on('data', (text: string) => { record('stderr', text) })
-    const exitCode = await awaitChildClose(
-      child, config.installTimeoutMs,
-      () => new Error(`${NAME}: pnpm ${args.join(' ')} timed out after ${String(config.installTimeoutMs)}ms`),
-    ).catch((error: unknown) => {
+    const deadline = new AbortController()
+    const signal = control === undefined ? deadline.signal : AbortSignal.any([deadline.signal, control.signal])
+    const timer = setTimeout(() => { deadline.abort() }, config.installTimeoutMs)
+    let exitCode: number | null
+    try {
+      checkCancelled(control)
+      const child = this.spawn({
+        argv, cwd: profileDir, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
+        graceMs: config.installKillGraceMs, signal,
+        // Preserve registry, proxy and authentication settings, including pnpm credentials.
+        env: { ...process.env, FORCE_COLOR: color ? '1' : '0' },
+      })
+      // Both outputs were requested as pipes; their presence follows the subprocess contract.
+      const stdout = child.stdout as Readable
+      const stderr = child.stderr as Readable
+      const drains = [finished(stdout), finished(stderr)]
+      stdout.setEncoding('utf8')
+      stderr.setEncoding('utf8')
+      stdout.on('data', (text: string) => { record('stdout', text) })
+      stderr.on('data', (text: string) => { record('stderr', text) })
+      try {
+        const [outcome] = await Promise.all([child.done, ...drains])
+        exitCode = outcome.exitCode
+      } finally {
+        // Cancellation starts termination; this separate wait confirms the owned range is empty.
+        await child.waitForExit()
+      }
+      checkCancelled(control)
+      if (deadline.signal.aborted) throw new Error(`${NAME}: pnpm ${args.join(' ')} timed out after ${String(config.installTimeoutMs)}ms`)
+    } catch (error) {
       const message = messageOf(error)
       record('stderr', `${message}\n`)
-      this.options.installLog({ jobId, argv, cwd: profileDir, spec, stream: 'stderr', text: '', exitCode: null })
+      this.options.installLog({ ...request, jobId, argv, cwd: profileDir, spec, stream: 'stderr', text: '', exitCode: null })
+      if (error instanceof PluginOperationError && error.code === 'plugins/install-cancelled') throw error
       throw new PluginOperationError('plugins/install-failed', `${NAME}: ${message}`, { spec, exitCode: null, log: tail.join('') }, { cause: error })
-    })
-    this.options.installLog({ jobId, argv, cwd: profileDir, spec, stream: 'stdout', text: '', exitCode })
+    } finally {
+      clearTimeout(timer)
+    }
+    this.options.installLog({ ...request, jobId, argv, cwd: profileDir, spec, stream: 'stdout', text: '', exitCode })
     if (exitCode !== 0) {
       throw new PluginOperationError(
         'plugins/install-failed',

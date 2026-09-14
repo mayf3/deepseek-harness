@@ -1050,6 +1050,8 @@ export interface Config {
   pnpmCommand: string
   /** Bound on one install or remove run, in milliseconds. */
   installTimeoutMs: number
+  /** Grace before forcibly terminating the installation process group, in milliseconds. */
+  installKillGraceMs: number
   /** How many trailing bytes of an install run's output an install failure reports. */
   installLogTailBytes: number
 }

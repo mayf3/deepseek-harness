@@ -66,6 +66,8 @@ An executable that cannot be resolved fails loud with a stable error. `done` rej
 
 -----
 
+The `./spawn` export provides `spawnSubprocess` without mounting a Cordis service, for package installation before a profile starts. It uses the detached POSIX process-group / Windows taskkill fallback, not the service's stronger platform owners. Callers own cancellation, await `waitForExit()` before reporting cleanup, and retain the documented fallback limits for escaping descendants.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

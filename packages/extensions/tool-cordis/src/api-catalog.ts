@@ -1409,10 +1409,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the views, bundles first in layer order.',
       },
       {
-        signature: '@Remote(\'add\') async add(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult>',
+        signature: '@Remote(\'add\') async add(spec: string, options?: PluginInstallOptions): Promise<PluginInstallResult>',
         description: 'Install a package with pnpm, read its declarations, and leave it disabled unless asked otherwise.',
         parameters: [{ name: 'spec', description: 'what to install, in pnpm\'s own vocabulary.' }, { name: 'options', description: '`enable` puts every newly installed bundle into the layer list at once.' }],
         returns: 'what the run installed and enabled.',
+      },
+      {
+        signature: '@Remote(\'cancelInstall\') async cancelInstall(requestId: PluginInstallRequestId): Promise<PluginInstallCancellation>',
+        description: 'Stop this installation and wait for process exit and file recovery.',
+        parameters: [{ name: 'requestId', description: 'the id supplied to add.' }],
+        returns: 'whether cancellation completed, application already began, or no matching installation exists.',
       },
       {
         signature: '@Remote(\'uninstall\') async uninstall(packageName: string): Promise<void>',
@@ -3604,6 +3610,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'chunk', description: 'the chunk.' }],
   },
   {
+    name: 'plugins/install-state',
+    mode: 'emit',
+    signature: '\'plugins/install-state\'(progress: PluginInstallProgress): void',
+    summary: 'The installation started, is stopping, or crossed into non-cancellable application.',
+    description: 'The installation started, is stopping, or crossed into non-cancellable application.',
+    parameters: [{ name: 'progress', description: 'the request and its current phase.' }],
+  },
+  {
     name: 'session-telemetry/record',
     mode: 'waterfall',
     signature: '\'session-telemetry/record\'(record: SessionTelemetryRecord, next: () => SessionTelemetryRecord): SessionTelemetryRecord',
@@ -5020,12 +5034,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PluginEnableResult {\n    readonly changed: boolean;\n    readonly effect: \'live\' | \'restart\';\n    readonly issues?: readonly PluginRowIssue[];\n}',
   },
   {
+    name: 'PluginInstallCancellation',
+    declaration: 'export interface PluginInstallCancellation {\n    readonly status: \'cancelled\' | \'too-late\' | \'not-running\';\n}',
+  },
+  {
     name: 'PluginInstallLogChunk',
-    declaration: 'export interface PluginInstallLogChunk {\n    readonly jobId: string;\n    readonly argv: readonly string[];\n    readonly cwd: string;\n    readonly spec: string;\n    readonly stream: \'stdout\' | \'stderr\';\n    readonly text: string;\n    readonly exitCode?: number | null;\n}',
+    declaration: 'export interface PluginInstallLogChunk {\n    readonly requestId?: PluginInstallRequestId;\n    readonly jobId: string;\n    readonly argv: readonly string[];\n    readonly cwd: string;\n    readonly spec: string;\n    readonly stream: \'stdout\' | \'stderr\';\n    readonly text: string;\n    readonly exitCode?: number | null;\n}',
+  },
+  {
+    name: 'PluginInstallOptions',
+    declaration: 'export interface PluginInstallOptions {\n    readonly enable?: boolean;\n    readonly requestId?: PluginInstallRequestId;\n}',
+  },
+  {
+    name: 'PluginInstallProgress',
+    declaration: 'export interface PluginInstallProgress {\n    readonly requestId: PluginInstallRequestId;\n    readonly phase: \'installing\' | \'cancelling\' | \'applying\';\n}',
   },
   {
     name: 'PluginInstallRejection',
     declaration: 'export interface PluginInstallRejection {\n    readonly name: string;\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'PluginInstallRequestId',
+    declaration: 'export type PluginInstallRequestId = Branded<\'PluginInstallRequestId\'>;',
   },
   {
     name: 'PluginInstallResult',

@@ -5,7 +5,7 @@
  * @module @deepseek-ai/dsh-plugin-manager/helpers
  */
 
-import type { ChildProcess, SpawnOptions } from 'node:child_process'
+import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { ProfileManifest } from '@deepseek-ai/dsh-app-boot'
 
 /** Diagnostic prefix on errors this package raises and on the app-boot helpers it calls. */
@@ -39,7 +39,7 @@ export function bundlesOf(manifest: ProfileManifest): readonly string[] {
 }
 
 /** The spawn function, replaceable in tests so no pnpm runs. */
-export type SpawnLike = (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess
+export type SpawnLike = (spec: SubprocessSpawnSpec) => SubprocessHandle
 
 /** The pnpm command and the bounds on the child processes plugin management runs. */
 export interface PluginToolingConfig {
@@ -47,6 +47,8 @@ export interface PluginToolingConfig {
   readonly pnpmCommand: string
   /** Bound on one install or remove run, in milliseconds. */
   readonly installTimeoutMs: number
+  /** Grace before forced termination of the installation process group, in milliseconds. */
+  readonly installKillGraceMs: number
   /** How many trailing bytes of an install run's output an install failure reports. */
   readonly installLogTailBytes: number
 }

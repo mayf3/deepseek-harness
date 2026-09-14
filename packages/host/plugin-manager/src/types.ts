@@ -22,6 +22,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'plugins/enable-failed': PluginOperationDetailsMap['plugins/enable-failed']
     /** pnpm exited non-zero, could not be spawned, or timed out. */
     'plugins/install-failed': PluginOperationDetailsMap['plugins/install-failed']
+    /** The installation stopped and its manifest and lockfile were restored. */
+    'plugins/install-cancelled': PluginOperationDetailsMap['plugins/install-cancelled']
     /** Another mutation is still running; the manager runs one at a time and refuses rather than queues. */
     'plugins/busy': PluginOperationDetailsMap['plugins/busy']
     /** `node_modules` cannot change while a session runs; `running` counts the agents in `running` status. */

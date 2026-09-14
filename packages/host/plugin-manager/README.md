@@ -33,7 +33,7 @@ Mount the row in a host composition beside the plugin inventory; the web bundle 
 
 ### Failure codes
 
-A manager failure reaches the client as a `RemoteError` with the same `code` and `details`: `plugins/unavailable`, `plugins/not-installed`, `plugins/not-enableable`, `plugins/enable-failed`, `plugins/install-failed`, `plugins/busy`, and `plugins/agents-running`, each declared in the Remote failure map with the manager's details type. The manager's generic refusal, `plugins/bad-request`, crosses as the Gateway's `gateway/bad-request`. Any other error the manager throws propagates untouched, which the Gateway reports as `gateway/internal`.
+A manager failure reaches the client as a `RemoteError` with the same `code` and `details`: `plugins/unavailable`, `plugins/not-installed`, `plugins/not-enableable`, `plugins/enable-failed`, `plugins/install-failed`, `plugins/install-cancelled`, `plugins/busy`, and `plugins/agents-running`, each declared in the Remote failure map with the manager's details type. The manager's generic refusal, `plugins/bad-request`, crosses as the Gateway's `gateway/bad-request`. Any other error the manager throws propagates untouched, which the Gateway reports as `gateway/internal`.
 
 ### Configuration
 
@@ -41,9 +41,12 @@ A manager failure reaches the client as a `RemoteError` with the same `code` and
 |---|---|---|
 | `pnpmCommand` | `pnpm` | The executable, resolved through `PATH` like the `dsh plugin` command. |
 | `installTimeoutMs` | `600000` | Bound on one install or remove run. |
+| `installKillGraceMs` | `5000` | Grace before forced termination. |
 | `installLogTailBytes` | `16384` | How much trailing output an install failure reports. |
 
 -----
+
+`plugins.cancelInstall(requestId)` stops only the matching installation and confirms cleanup before returning. `plugins/install-state` distinguishes preparation, cancellation, and application; application cannot be cancelled. `installKillGraceMs` configures the termination grace (default 5,000 ms), separately from `installTimeoutMs`. See the [installer](../../boot/plugin-manager/README.md) for recovery limits.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

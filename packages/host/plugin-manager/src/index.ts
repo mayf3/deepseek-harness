@@ -18,6 +18,9 @@ import {
   type PluginDependents,
   type PluginEnableResult,
   type PluginInstallResult,
+  type PluginInstallOptions,
+  type PluginInstallRequestId,
+  type PluginInstallCancellation,
   type PluginOperationFailure,
   type PluginPackageView,
   type SpawnLike,
@@ -41,6 +44,8 @@ export interface Config {
   pnpmCommand: string
   /** Bound on one install or remove run, in milliseconds. */
   installTimeoutMs: number
+  /** Grace before forcibly terminating the installation process group, in milliseconds. */
+  installKillGraceMs: number
   /** How many trailing bytes of an install run's output an install failure reports. */
   installLogTailBytes: number
 }
@@ -67,6 +72,7 @@ export class PluginManagerRemote extends TypertRemoteService {
   static Config: z<Config> = z.object({
     pnpmCommand: z.string().default('pnpm'),
     installTimeoutMs: z.number().min(1_000).default(600_000),
+    installKillGraceMs: z.number().min(1).default(5_000),
     installLogTailBytes: z.number().min(256).default(16_384),
   })
 
@@ -136,8 +142,20 @@ export class PluginManagerRemote extends TypertRemoteService {
    * @returns what the run installed and enabled.
    */
   @Remote('add')
-  async add(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult> {
+  async add(spec: string, options?: PluginInstallOptions): Promise<PluginInstallResult> {
+    if (options?.requestId !== undefined) validateRequestId(options.requestId)
     return relay(() => this.manager.add(spec, options))
+  }
+
+  /**
+   * Stop this installation and wait for process exit and file recovery.
+   * @param requestId - the id supplied to add.
+   * @returns whether cancellation completed, application already began, or no matching installation exists.
+   */
+  @Remote('cancelInstall')
+  async cancelInstall(requestId: PluginInstallRequestId): Promise<PluginInstallCancellation> {
+    validateRequestId(requestId)
+    return relay(() => this.manager.cancelInstall(requestId))
   }
 
   /**
@@ -200,6 +218,13 @@ export class PluginManagerRemote extends TypertRemoteService {
   }
 }
 
+/** Validate the caller-generated cancellation identifier at the Remote entry. */
+function validateRequestId(requestId: PluginInstallRequestId): void {
+  if (!/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(requestId)) {
+    throw new RemoteError('gateway/bad-request', 'plugin-manager: requestId must be a UUID', {})
+  }
+}
+
 /**
  * Run one manager call and turn its failure into the Remote error of the
  * same code; anything else propagates untouched.
@@ -227,6 +252,7 @@ export function remoteErrorOf(failure: PluginOperationFailure): RemoteError {
     case 'plugins/not-installed': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/not-enableable': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/enable-failed': return new RemoteError(failure.code, failure.message, failure.details, options)
+    case 'plugins/install-cancelled': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/install-failed': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/busy': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/agents-running': return new RemoteError(failure.code, failure.message, failure.details, options)
