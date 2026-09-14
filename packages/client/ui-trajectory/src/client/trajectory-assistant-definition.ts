@@ -267,7 +267,7 @@ function finalNode(
       step: state.step,
       blocks: toAssistantBlocks(event.data.message.content),
       usage: event.data.usage,
-      provenance: {
+      providerMetadata: {
         provider: event.data.message.source.provider,
         model: event.data.message.source.model,
       },
@@ -324,7 +324,7 @@ function assistantRequest(
       ? {}
       : {
         resultSeq: node.seq,
-        ...(node.provenance === undefined ? {} : { provenance: node.provenance }),
+        ...(node.providerMetadata === undefined ? {} : { providerMetadata: node.providerMetadata }),
       }),
     ...(state.usage === undefined ? {} : { usage: state.usage }),
   }

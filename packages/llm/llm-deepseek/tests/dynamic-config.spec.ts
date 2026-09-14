@@ -8,7 +8,7 @@ import AttachmentStore, { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
-  ImageRequestPolicy,
+  ImageRequestTarget,
   RequestImageAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
@@ -70,7 +70,7 @@ class StaticAttachmentStore extends AttachmentStore {
 
   override readImageRequest(
     ref: ImageAttachmentRef,
-    _policy: ImageRequestPolicy,
+    _target: ImageRequestTarget,
     _signal?: AbortSignal,
   ): Promise<RequestImageAttachment> {
     return Promise.resolve({
@@ -124,7 +124,7 @@ async function boot(dir: string, config: object): Promise<Harness> {
   const settingsFiber = ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
   await settingsFiber
   await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
-  await ctx.plugin(LlmDeepSeek, config)
+  await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', ...config })
   return { ctx, settingsFiber }
 }
 
