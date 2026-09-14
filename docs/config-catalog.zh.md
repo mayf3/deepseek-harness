@@ -231,6 +231,45 @@ export interface Config {
 
 来源：[`packages/api/settings-controller/src/index.ts:36`](../packages/api/settings-controller/src/index.ts)
 
+<a id="deepseek-aidsh-api-terminal-controller"></a>
+
+## `@deepseek-ai/dsh-api-terminal-controller`
+
+Requires: `subprocess` · `sandboxPolicy` · `sessionProjections` · `typert`
+
+```ts config-catalog
+/** Deployment limits and an optional shell profile. */
+export interface Config {
+  /** Explicit shell profile; omission uses the execution environment's default shell. */
+  readonly shell?: {
+    /** Executable path or PATH name, verified by the subprocess provider. */
+    path: string
+    /** User-visible profile name. */
+    name: string
+    /** Arguments passed to the interactive shell. */
+    args: string[]
+  } | undefined
+  /** Executable names or paths checked for the new-terminal shell selector. */
+  readonly shellCandidates: string[]
+  /** Maximum retained terminals and pending allocations per Session. */
+  readonly maxTerminals: number
+  /** Maximum terminal width in columns. */
+  readonly maxCols: number
+  /** Maximum terminal height in rows. */
+  readonly maxRows: number
+  /** Screen history rows retained for reconnecting clients. */
+  readonly scrollback: number
+  /** Maximum queued UTF-8 frame bytes per output follower before disconnection. */
+  readonly maxBufferedBytes: number
+  /** Maximum UTF-8 bytes in one input request. */
+  readonly maxInputBytes: number
+  /** Provider process-termination grace period in milliseconds. */
+  readonly disposeGraceMs: number
+}
+```
+
+来源： [`packages/api/terminal-controller/src/index.ts:28`](../packages/api/terminal-controller/src/index.ts)
+
 <a id="deepseek-aidsh-api-workspace-files"></a>
 
 ## `@deepseek-ai/dsh-api-workspace-files`
@@ -1491,7 +1530,7 @@ export interface ReplayModelConfig {
 
 依赖：[`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · [`SystemPromptUpdate`](../packages/llm/llm/src/index.ts)
 
-来源：[`packages/test-support/llm-replay/src/index.ts:1123`](../packages/test-support/llm-replay/src/index.ts)
+来源：[`packages/test-support/llm-replay/src/index.ts:1122`](../packages/test-support/llm-replay/src/index.ts)
 
 <a id="deepseek-aidsh-llm-retry"></a>
 
@@ -3582,6 +3621,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-sidebar-documentpreview`（[`packages/client/ui-sidebar-documentpreview/src/index.ts`](../packages/client/ui-sidebar-documentpreview/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-sidebar-files`（[`packages/client/ui-sidebar-files/src/index.ts`](../packages/client/ui-sidebar-files/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-sidebar-right`（[`packages/client/ui-sidebar-right/src/index.ts`](../packages/client/ui-sidebar-right/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-sidebar-terminal`（[`packages/client/ui-sidebar-terminal/src/index.ts`](../packages/client/ui-sidebar-terminal/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-skill`（[`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-subagent`（[`packages/client/ui-subagent/src/index.ts`](../packages/client/ui-subagent/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-theme`（[`packages/client/ui-theme/src/index.ts`](../packages/client/ui-theme/src/index.ts)）
@@ -3594,6 +3634,7 @@ export interface Config {
 - `@deepseek-ai/dsh-command-feedback` — 需要 `commands`（[`packages/feedback/command-feedback/src/index.ts`](../packages/feedback/command-feedback/src/index.ts)）
 - `@deepseek-ai/dsh-command-goal` — 需要 `commands` · `goals`（[`packages/goal/command-goal/src/index.ts`](../packages/goal/command-goal/src/index.ts)）
 - `@deepseek-ai/dsh-commands`（[`packages/interaction/commands/src/index.ts`](../packages/interaction/commands/src/index.ts)）
+- `@deepseek-ai/dsh-compaction-image-offload`，需要 `agents` 和 `sessions`（[`packages/compaction/compaction-image-offload/src/index.ts`](../packages/compaction/compaction-image-offload/src/index.ts)）
 - `@deepseek-ai/dsh-computer-use` ([`packages/computer-use/computer-use/src/index.ts`](../packages/computer-use/computer-use/src/index.ts))
 - `@deepseek-ai/dsh-cordis-client-runner`（[`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts)）
 - `@deepseek-ai/dsh-deepseek-llm-api-extensions`（[`packages/llm/deepseek-llm-api-extensions/src/index.ts`](../packages/llm/deepseek-llm-api-extensions/src/index.ts)）

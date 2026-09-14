@@ -585,3 +585,22 @@ describe('intentsFor — the kit\'s gestures as one session\'s store actions', (
     expect(openTab).toHaveBeenCalledWith('guide', { paneId: PANE_1, revealIfOpened: false })
   })
 })
+
+it('keeps a resource tab and reports a synchronous cleanup failure from its close button', async () => {
+  const h = await mountSeat()
+  const tab = h.open('terminal')
+  const failure = new Error('process still running')
+  const release = h.controller.registerCloseHandler('text', () => { throw failure })
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    fireEvent.click(element(h.view.container, `[data-dockkit-tab-close="${tab.id}"]`))
+    await expect.poll(() => logged.mock.calls).toEqual([['Sidebar tab close failed:', failure]])
+    expect(h.layout().tabs[tab.id]).toBeDefined()
+    release()
+    fireEvent.click(element(h.view.container, `[data-dockkit-tab-close="${tab.id}"]`))
+    expect(h.layout().tabs[tab.id]).toBeUndefined()
+  } finally {
+    logged.mockRestore()
+    release()
+  }
+})
