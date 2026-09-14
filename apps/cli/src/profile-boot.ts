@@ -265,7 +265,7 @@ export interface RunProfileOptions {
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
-  /** Module fallback backend; production launchers omit it and retain link materialization. */
+  /** Module fallback backend; pkg executables always use runtime resolution. */
   resolutionMode?: ProfileResolutionMode
 }
 
@@ -301,7 +301,8 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     (message) => { process.stderr.write(`${NAME}: ${message}\n`) },
   )
 
-  const resolutionMode = options.resolutionMode ?? 'link'
+  const packaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
+  const resolutionMode = packaged ? 'runtime' : options.resolutionMode ?? 'link'
   const composed = await composeProfile(
     options.profile, options.patchFiles, resolutionMode, options.fromDefaultProfile,
   )
