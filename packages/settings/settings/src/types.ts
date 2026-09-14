@@ -14,13 +14,6 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 /** Nominal id of one registered settings namespace. */
 export type SettingsNamespace = Branded<'SettingsNamespace'>
 
-/**
- * Nominal id of one named scope a namespace resolves under — the id
- * `dsh-scope` gave the scope, such as `preset/standard`. The global scope has
- * no id: it is the absence of one.
- */
-export type SettingsScopeId = Branded<'SettingsScopeId'>
-
 /** Origin of one committed settings change. */
 export type SettingsUpdateSource = 'update' | 'provider'
 
@@ -40,21 +33,6 @@ export interface SettingsSecretView {
 export interface SettingsNamespaceView {
   /** Namespace key (`llm-deepseek`, `llm-pi-ai`, …). */
   ns: string
-  /** The named scope this view resolves under; absent for the global scope. */
-  scope?: string
-  /**
-   * Whether an owner registered the namespace under this scope. A scoped view
-   * of a namespace no owner registered under it — a preset no session has
-   * composed yet — is described from the namespace kind alone: it has no
-   * composition `base`, and a write to it takes effect when an owner mounts.
-   */
-  registered: boolean
-  /**
-   * For a scoped view: the redacted value the scope resolves without its own
-   * user section (schema defaults → composition base → global user section),
-   * so a surface can tell a field the scope overrode from one it inherits.
-   */
-  inherited?: JsonValue
   /** Serialized schemastery schema envelope (`schema.toJSON()`); rehydrate with `new Schema(json)`. */
   schema: JsonValue
   /** Redacted resolved value (schema defaults → composition base → user layer). */
@@ -90,16 +68,8 @@ export interface SettingsDescribeValue {
   writable: boolean
   /** Whether a file-backed provider owns a local document, without exposing its Host path. */
   hasDocument: boolean
-  /**
-   * One view per namespace kind under the requested scope: the global scope
-   * when the read named none, else the named scope, with `registered` saying
-   * whether an owner registered the namespace there.
-   */
+  /** One view per registered namespace. */
   namespaces: SettingsNamespaceView[]
-  /** The scope the views resolve under; absent for the global scope. */
-  scope?: string
-  /** Every named scope some namespace is registered under, for a surface offering a scope switch. */
-  scopes: string[]
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -117,10 +87,9 @@ declare module '@deepseek-ai/cordis' {
      * @param next - the new resolved value.
      * @param prev - the previous resolved value.
      * @param source - whether the change entered through `update()` or the provider.
-     * @param scope - the named scope whose registration changed; absent for the global scope.
      * @mode emit
      */
-    'settings/updated'(ns: SettingsNamespace, next: unknown, prev: unknown, source: SettingsUpdateSource, scope?: SettingsScopeId): void
+    'settings/updated'(ns: SettingsNamespace, next: unknown, prev: unknown, source: SettingsUpdateSource): void
 
     /**
      * One registered namespace's RAW user section changed, whether or not the
@@ -130,10 +99,9 @@ declare module '@deepseek-ai/cordis' {
      * resolved value, different meaning) and that their held revision is
      * stale. Listener containment matches `settings/updated`.
      * @param ns - the namespace whose stored section changed.
-     * @param revision - the section's new revision.
-     * @param scope - the named scope whose section changed; absent for the global section.
+     * @param revision - the namespace's new revision.
      * @mode emit
      */
-    'settings/document-updated'(ns: SettingsNamespace, revision: number, scope?: SettingsScopeId): void
+    'settings/document-updated'(ns: SettingsNamespace, revision: number): void
   }
 }

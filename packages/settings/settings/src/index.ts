@@ -2,38 +2,22 @@
  * Service Definition for the user-settings capability seam (`ctx.settings`). Providers store one raw document of
  * per-namespace sections; plugins register a namespace schema and read the
  * resolved value, which layers schema defaults, the registrant's composition
- * `base`, the user document's global section, and — for a registrant inside
- * a named scope — that scope's own section, in that order.
- *
- * A namespace is one KIND of setting: every registrant of a namespace shares
- * its schema, and each registers one INSTANCE under the scope its context
- * belongs to (`dsh-scope`'s nearest named scope, or the global scope when
- * none is named). Two agent presets mounting the same plugin therefore hold
- * two instances of one kind, each resolving the document's global section
- * plus its own `scopes.<id>.<ns>` section.
+ * `base`, and the user document section, in that order.
  * @module @deepseek-ai/dsh-settings
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type z from '@deepseek-ai/schemastery'
-import { scopeIdOf } from '@deepseek-ai/dsh-scope'
 import { deepEqualJson, deepFreeze } from '@deepseek-ai/dsh-util-values'
 import { redactSecrets } from './redact.ts'
 import type { RedactedSecret } from './redact.ts'
-import type { SettingsNamespace, SettingsScopeId, SettingsUpdateSource } from './types.ts'
+import type { SettingsNamespace, SettingsUpdateSource } from './types.ts'
 
 export { redactSecrets } from './redact.ts'
 export type { RedactedSecret, RedactedValue } from './redact.ts'
-export type { SettingsNamespace, SettingsScopeId, SettingsUpdateSource } from './types.ts'
+export type { SettingsNamespace, SettingsUpdateSource } from './types.ts'
 
 const NAMESPACE_PATTERN = /^[a-z][a-z0-9-]*$/
-/**
- * Top-level document keys that are not namespaces. `scopes` holds the
- * per-scope sections, so a namespace of that name would collide with them.
- */
-const RESERVED_NAMESPACES: ReadonlySet<string> = new Set(['scopes'])
-/** The grammar of a scope id as a document key: `preset/standard`, `preset/my-preset`. */
-const SCOPE_PATTERN = /^[a-z][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*$/
 type LowercaseLetter = 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j' | 'k' | 'l' | 'm'
   | 'n' | 'o' | 'p' | 'q' | 'r' | 's' | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z'
 type DecimalDigit = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9'
@@ -55,29 +39,7 @@ function parseSettingsNamespace(value: string): SettingsNamespace {
   if (!NAMESPACE_PATTERN.test(value)) {
     throw new TypeError(`settings namespace "${value}" must match ${String(NAMESPACE_PATTERN)}`)
   }
-  if (RESERVED_NAMESPACES.has(value)) {
-    throw new TypeError(`settings namespace "${value}" is reserved for the document's per-scope sections`)
-  }
   return value as SettingsNamespace
-}
-
-/**
- * Validate one scope id at the seam boundary.
- * @param value - the id a caller or a named scope supplied.
- * @returns the branded id.
- * @throws {TypeError} when the id is not a `/`-separated lowercase path.
- */
-export function parseSettingsScopeId(value: string): SettingsScopeId {
-  if (!SCOPE_PATTERN.test(value)) {
-    throw new TypeError(`settings scope "${value}" must match ${String(SCOPE_PATTERN)}`)
-  }
-  return value as SettingsScopeId
-}
-
-/** The named scope of a registrant's context, validated for use as a document key. */
-function scopeOfContext(ctx: Context): SettingsScopeId | undefined {
-  const id = scopeIdOf(ctx)
-  return id === undefined ? undefined : parseSettingsScopeId(id)
 }
 
 /** When a namespace's changes take effect for its owner. */
@@ -106,9 +68,6 @@ export interface SettingsRegisterOptions<T> {
    * registration there is no last good value yet, so a stored section that
    * already fails rejects the registration itself — again exactly as a schema
    * failure does.
-   *
-   * The check belongs to the namespace kind: the first registrant's check
-   * judges every instance, because every instance is the same plugin.
    * @param value - the resolved section, schema-valid by construction.
    */
   validate?: (value: T) => void
@@ -120,14 +79,6 @@ export interface SettingsDescriptor {
   // public API, provider contract, implementations, tests, and consumers.
   /** The registered namespace. */
   ns: SettingsNamespace
-  /** The named scope the descriptor resolves under; absent for the global scope. */
-  scope?: SettingsScopeId
-  /**
-   * Whether an owner registered the namespace under this scope. False for a
-   * scope no session composed yet, whose value carries no `base` of its own
-   * and resolves over the global instance's composition when one is registered.
-   */
-  registered: boolean
   /** Serialized schemastery schema (`schema.toJSON()`). */
   schema: unknown
   /** Current resolved value. */
@@ -142,15 +93,8 @@ export interface SettingsDescriptor {
   /**
    * Raw user section from the stored document (detached), when one exists and
    * is well-formed; a field's presence here is what marks it user-overridden.
-   * For a scoped descriptor this is the scope's own section, not the global one.
    */
   user?: unknown
-  /**
-   * For a scoped descriptor: the value the scope resolves without its own
-   * user section — defaults, base, and the global section — so a surface can
-   * tell a field the scope overrides from one it inherits.
-   */
-  inherited?: unknown
   /** Owner's declared effect timing. */
   applies: SettingsApplies
   /** Schema-declared secret positions; present only under `redactSecrets`. */
@@ -165,18 +109,11 @@ export interface SettingsDescribeOptions {
    * the verbatim default exists for same-process configuration UIs only.
    */
   redactSecrets?: boolean
-  /**
-   * Describe every namespace kind under this named scope instead of the
-   * global scope. A kind with no registration under the scope is described
-   * over the global instance's composition, else from the kind alone,
-   * `registered: false`.
-   */
-  scope?: string
 }
 
 /** Owner-facing handle for one registered namespace. */
 export interface SettingsScope<T> {
-  /** Current resolved value: schema defaults, then `base`, then the user layers. */
+  /** Current resolved value: schema defaults, then `base`, then the user layer. */
   get(): T
   /**
    * Observe committed changes to this namespace's resolved value. Invocations
@@ -189,15 +126,14 @@ export interface SettingsScope<T> {
    */
   watch(callback: (next: T, prev: T) => void | Promise<void>): () => void
   /**
-   * Merge a partial patch into this registration's user section — the scope's
-   * own section for a scoped registration — and persist it.
+   * Merge a partial patch into this namespace's user layer and persist it.
    * @param patch - plain-object patch over the user section; JSON-compatible data
    * only (non-JSON values reject with their path before anything persists).
    */
   update(patch: object): Promise<void>
   /**
-   * Replace this registration's user section wholesale; absent keys re-inherit
-   * the layers below (`replace({})` resets the section).
+   * Replace this namespace's user section wholesale; absent keys re-inherit
+   * the composition `base` and schema defaults (`replace({})` resets all).
    * @param section - the complete next user section; JSON-compatible data only,
    * as for {@link update}.
    */
@@ -209,9 +145,6 @@ declare module '@deepseek-ai/cordis' {
     settings: SettingsProvider
   }
 }
-
-/** The listeners `ctx.events.dispatch('emit', …)` returns for one event, called with its payload. */
-type EmitListeners = Array<(...listenerArgs: unknown[]) => unknown>
 
 /**
  * A write refused because the namespace moved since the caller read it. The
@@ -370,35 +303,25 @@ interface SettingsWatcher {
   active: boolean
 }
 
-/**
- * One namespace kind: the schema every registrant shares, and the instances
- * registered under each scope. The kind exists while at least one instance
- * does.
- */
-interface SettingsKind {
+/** One live namespace registration owned by a registrant fiber. */
+interface SettingsRegistration {
   ns: SettingsNamespace
   schema: z<unknown>
-  /** `schema.toJSON()`, the envelope a later registrant must match. */
-  schemaJson: unknown
-  applies: SettingsApplies
-  /** The first registrant's check, judging every instance. */
-  validate?: (value: unknown) => void
-  /** Instances by scope id; the global scope is the empty key. */
-  instances: Map<string, SettingsRegistration>
-}
-
-/** One live registration of a namespace under one scope, owned by a registrant fiber. */
-interface SettingsRegistration {
-  kind: SettingsKind
-  scope: SettingsScopeId | undefined
   base: unknown
+  applies: SettingsApplies
+  /** Owner-supplied check for constraints the schema cannot express. */
+  validate?: (value: unknown) => void
   resolved: unknown
+  /**
+   * Monotonic counter over this namespace's RAW user section — bumped by any
+   * change to what is stored, including one whose resolved value is
+   * unchanged (adding an override equal to the composition base). Editors
+   * carry it as `expectedRevision` to detect a concurrent write, and the
+   * document event carries it so another tab learns a field went from
+   * inherited to overridden.
+   */
+  revision: number
   watchers: Set<SettingsWatcher>
-}
-
-/** The map key of one instance: its scope id, or the empty key for the global scope. */
-function instanceKey(scope: SettingsScopeId | undefined): string {
-  return scope ?? ''
 }
 
 /**
@@ -408,21 +331,11 @@ function instanceKey(scope: SettingsScopeId | undefined): string {
  * detection, and the `settings/updated` commit event.
  */
 export abstract class SettingsProvider extends Service {
-  private readonly kinds = new Map<SettingsNamespace, SettingsKind>()
+  private readonly registrations = new Map<SettingsNamespace, SettingsRegistration>()
   /** Latest published raw document; empty until the provider's first publish. */
   private document: Record<string, unknown> = {}
-  /**
-   * Monotonic counter per stored section (namespace and scope) — bumped by
-   * any change to what is stored, including one whose resolved value is
-   * unchanged (adding an override equal to the composition base). Editors
-   * carry it as `expectedRevision` to detect a concurrent write, and the
-   * document event carries it so another tab learns a field went from
-   * inherited to overridden. Kept off the registrations so a section written
-   * for a scope nothing has registered yet is versioned the same way.
-   */
-  private readonly revisions = new Map<string, number>()
-  /** Per-section write chains; settled tails, so a failure never poisons the queue. */
-  private readonly writeQueues = new Map<string, Promise<unknown>>()
+  /** Per-namespace write chains; settled tails, so a failure never poisons the queue. */
+  private readonly writeQueues = new Map<SettingsNamespace, Promise<unknown>>()
   /** In-flight watcher invocation segments, drained by the dispose teardown. */
   private readonly pendingTails = new Set<Promise<void>>()
   /** Set at service dispose: refuse new writes while queued ones drain. */
@@ -480,39 +393,28 @@ export abstract class SettingsProvider extends Service {
   }
 
   /**
-   * Read the provider's current raw document (namespace to raw section, with
-   * per-scope sections under `scopes.<scope id>.<namespace>`).
+   * Read the provider's current raw document (namespace to raw section).
    * @returns the detached raw document.
    */
   protected abstract load(): Promise<Record<string, unknown>>
 
   /**
-   * Durably store one section's merged user content.
+   * Durably store one namespace's merged user section.
    * @param ns - the namespace being written.
    * @param section - the complete merged user section to store.
-   * @param scope - the named scope whose section is written; `undefined` for
-   * the global section. A provider that predates scopes and ignores the
-   * argument stores every write in the global section.
    */
-  protected abstract persist(ns: SettingsNamespace, section: Record<string, unknown>, scope: SettingsScopeId | undefined): Promise<void>
+  protected abstract persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void>
 
   /**
    * Register a namespace schema and receive its owner scope. The registration
    * is an effect on the calling plugin's fiber: disposing that fiber removes
-   * the instance and its observers. An invalid stored section fails the
+   * the namespace and its observers. An invalid stored section fails the
    * registration itself — the earliest point where the schema can judge it.
-   *
-   * The instance registers under the caller's nearest named scope: a plugin
-   * mounted inside an agent preset resolves that preset's section over the
-   * global one, and two presets mounting the same plugin hold two instances
-   * of one kind. A second registrant of a namespace must carry the same
-   * schema envelope; a different one is a different setting under a taken
-   * name and fails loud.
-   * @param ns - the namespace; a second registration under the same scope fails loud.
+   * @param ns - unique namespace; duplicate registration fails loud.
    * @param schema - schemastery schema resolving this namespace's value.
    * @param options - composition `base` layer and effect timing.
    * @returns the owner scope for reads, observation, and updates.
-   * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier or is reserved.
+   * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
    */
   register<const Namespace extends string, T>(
     ns: Namespace & SettingsNamespaceInput<Namespace>,
@@ -520,48 +422,27 @@ export abstract class SettingsProvider extends Service {
     options?: SettingsRegisterOptions<T>,
   ): SettingsScope<T> {
     const parsedNs = parseSettingsNamespace(ns)
-    const scope = scopeOfContext(this.ctx)
-    const key = instanceKey(scope)
-    const schemaJson: unknown = schema.toJSON()
-    const existing = this.kinds.get(parsedNs)
-    if (existing?.instances.has(key) === true) {
-      throw new Error(`settings namespace "${parsedNs}" is already registered${scope === undefined ? '' : ` under scope "${scope}"`}`)
+    if (this.registrations.has(parsedNs)) {
+      throw new Error(`settings namespace "${parsedNs}" is already registered`)
     }
-    if (existing !== undefined && !deepEqualJson(existing.schemaJson, schemaJson)) {
-      throw new Error(
-        `settings namespace "${parsedNs}" is already registered with a different schema; `
-        + 'a namespace is one kind of setting, so every registrant of it must share the schema',
-      )
-    }
-    const kind: SettingsKind = existing ?? {
+    const registration: SettingsRegistration = {
       ns: parsedNs,
       schema: schema as z<unknown>,
-      schemaJson,
+      base: options?.base,
       applies: options?.applies ?? 'live',
       ...options?.validate === undefined
         ? {}
         : { validate: options.validate as (value: unknown) => void },
-      instances: new Map(),
-    }
-    const registration: SettingsRegistration = {
-      kind,
-      scope,
-      base: options?.base,
-      resolved: deepFreeze(this.resolve(kind.schema, options?.base, this.userLayer(parsedNs, scope), kind.validate)),
+      resolved: deepFreeze(this.resolve(schema, options?.base, this.section(parsedNs), options?.validate)),
+      revision: 0,
       watchers: new Set(),
     }
     this.ctx.effect(() => {
-      this.kinds.set(parsedNs, kind)
-      kind.instances.set(key, registration)
+      this.registrations.set(parsedNs, registration)
       // TODO(settings-registration-quiescence): Deactivate every watcher and await
       // its tail on disposal so callbacks cannot outlive the registrant fiber.
-      return () => {
-        // The kind lives while an instance does: a later registrant of the
-        // namespace finds this kind until its last instance is gone.
-        kind.instances.delete(key)
-        if (kind.instances.size === 0) this.kinds.delete(parsedNs)
-      }
-    }, `settings.register(${JSON.stringify(String(parsedNs))}${scope === undefined ? '' : `, ${JSON.stringify(String(scope))}`})`)
+      return () => this.registrations.delete(parsedNs)
+    }, `settings.register(${JSON.stringify(String(parsedNs))})`)
     return {
       get: () => registration.resolved as T,
       watch: (callback) => {
@@ -572,9 +453,8 @@ export abstract class SettingsProvider extends Service {
           registration.watchers.delete(watcher)
         }
       },
-      // Through the async verbs, so a refused input rejects instead of throwing.
-      update: patch => this.update(parsedNs, patch, undefined, scope),
-      replace: section => this.replace(parsedNs, section, undefined, scope),
+      update: patch => this.update(parsedNs, patch),
+      replace: section => this.replace(parsedNs, section),
     }
   }
 
@@ -616,174 +496,113 @@ export abstract class SettingsProvider extends Service {
   }
 
   /**
-   * Describe every namespace kind for configuration surfaces, under the
-   * global scope or one named scope: the composition `base` and raw user
-   * layers so a form can mark which fields the user overrode (presence in
-   * `user`) and what a reset returns to, and for a scoped read the
-   * `inherited` value the scope's own section is layered over. A kind with
-   * no instance under the requested scope is described from the kind alone.
-   * @param options - redaction switch (wire surfaces must redact) and scope.
-   * @returns one descriptor per namespace kind, in registration order.
-   * @throws {TypeError} when `scope` is not a well-formed scope id.
+   * Describe every registered namespace for configuration surfaces, including
+   * the composition `base` and raw user layers so a form can mark which fields
+   * the user overrode (presence in `user`) and what a reset returns to.
+   * @param options - redaction switch; wire surfaces must redact.
+   * @returns one descriptor per registered namespace, in registration order.
    */
   describe(options?: SettingsDescribeOptions): SettingsDescriptor[] {
-    const scope = options?.scope === undefined ? undefined : parseSettingsScopeId(options.scope)
-    return [...this.kinds.values()].map(kind => this.describeKind(kind, scope, options?.redactSecrets === true))
-  }
-
-  /**
-   * Every named scope some namespace is registered under, in first-seen order.
-   * @returns the scope ids.
-   */
-  scopes(): SettingsScopeId[] {
-    const found = new Set<SettingsScopeId>()
-    for (const kind of this.kinds.values()) {
-      for (const instance of kind.instances.values()) {
-        if (instance.scope !== undefined) found.add(instance.scope)
+    return [...this.registrations.values()].map((registration) => {
+      let user: Record<string, unknown> | undefined
+      try {
+        user = this.section(registration.ns)
+      } catch {
+        // A malformed stored section already warned at publish and kept the
+        // last good resolved value; only that malformed shape can throw here,
+        // and describing it as "no user layer" keeps this read total.
+        user = undefined
       }
-    }
-    return [...found]
-  }
-
-  /** One kind's descriptor under one scope. */
-  private describeKind(kind: SettingsKind, scope: SettingsScopeId | undefined, redact: boolean): SettingsDescriptor {
-    const registration = kind.instances.get(instanceKey(scope))
-    const user = this.sectionOrUndefined(kind.ns, scope)
-    // An unregistered scope resolves over the composition layer it inherits
-    // — the global instance's, when one is registered — because a schema may
-    // require what only a composition supplies; without one it resolves from
-    // the kind alone. A stored section the schema refuses, or a malformed one,
-    // is described as the layers below it, so the read stays total the way a
-    // registered kind's last good value keeps it.
-    const composed = registration ?? kind.instances.get(instanceKey(undefined))
-    const value = registration?.resolved ?? this.resolveSafely(kind, composed?.base, this.userLayerOrUndefined(kind.ns, scope))
-    const inherited = scope === undefined
-      ? undefined
-      : this.resolveSafely(kind, composed?.base, this.userLayerOrUndefined(kind.ns, undefined))
-    const base = registration?.base === undefined ? undefined : structuredClone(registration.base)
-    const detachedUser = user === undefined ? undefined : structuredClone(user)
-    const descriptor: SettingsDescriptor = {
-      ns: kind.ns,
-      ...scope === undefined ? {} : { scope },
-      registered: registration !== undefined,
-      schema: kind.schemaJson,
-      value,
-      revision: this.revisionOf(kind.ns, scope),
-      ...base === undefined ? {} : { base },
-      ...detachedUser === undefined ? {} : { user: detachedUser },
-      ...inherited === undefined ? {} : { inherited },
-      applies: kind.applies,
-    }
-    if (!redact) return descriptor
-    const schema = kind.schema as z<never>
-    const redacted = redactSecrets(schema, value)
-    return {
-      ...descriptor,
-      value: redacted.value,
-      ...base === undefined ? {} : { base: redactSecrets(schema, base).value },
-      ...detachedUser === undefined ? {} : { user: redactSecrets(schema, detachedUser).value },
-      ...inherited === undefined ? {} : { inherited: redactSecrets(schema, inherited).value },
-      secrets: redacted.secrets,
-    }
-  }
-
-  /** Resolve through the kind, falling back to the layers below a section the schema refuses. */
-  private resolveSafely(kind: SettingsKind, base: unknown, layer: unknown): unknown {
-    try {
-      return deepFreeze(this.resolve(kind.schema, base, layer, kind.validate))
-    } catch {
-      // The stored section is malformed for this schema; `publish` already
-      // warned. Describing the layers beneath it keeps the read total.
-    }
-    try {
-      return deepFreeze(this.resolve(kind.schema, base, undefined, undefined))
-    } catch {
-      // Not even the composition layer satisfies the schema — a required
-      // field no instance supplies. The defaults alone are the last total
-      // answer; a schema that refuses those describes as an empty section.
-    }
-    try {
-      return deepFreeze(this.resolve(kind.schema, undefined, undefined, undefined))
-    } catch {
-      return deepFreeze({})
-    }
+      const base = registration.base === undefined ? undefined : structuredClone(registration.base)
+      const detachedUser = user === undefined ? undefined : structuredClone(user)
+      const descriptor: SettingsDescriptor = {
+        ns: registration.ns,
+        schema: registration.schema.toJSON(),
+        value: registration.resolved,
+        revision: registration.revision,
+        ...base === undefined ? {} : { base },
+        ...detachedUser === undefined ? {} : { user: detachedUser },
+        applies: registration.applies,
+      }
+      if (options?.redactSecrets !== true) return descriptor
+      const schema = registration.schema as z<never>
+      const redacted = redactSecrets(schema, registration.resolved)
+      return {
+        ...descriptor,
+        value: redacted.value,
+        ...base === undefined ? {} : { base: redactSecrets(schema, base).value },
+        ...detachedUser === undefined ? {} : { user: redactSecrets(schema, detachedUser).value },
+        secrets: redacted.secrets,
+      }
+    })
   }
 
   /**
    * Read one registered namespace's resolved value.
    * @param ns - the namespace to read.
-   * @param scope - the named scope of the instance; the global instance when omitted.
-   * @returns the resolved value, or `undefined` while unregistered under that scope.
+   * @returns the resolved value, or `undefined` while unregistered.
    * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
    */
-  get<const Namespace extends string>(ns: Namespace & SettingsNamespaceInput<Namespace>, scope?: string): unknown {
-    const parsedScope = scope === undefined ? undefined : parseSettingsScopeId(scope)
-    return this.kinds.get(parseSettingsNamespace(ns))?.instances.get(instanceKey(parsedScope))?.resolved
+  get<const Namespace extends string>(ns: Namespace & SettingsNamespaceInput<Namespace>): unknown {
+    return this.registrations.get(parseSettingsNamespace(ns))?.resolved
   }
 
   /**
-   * Merge a patch into one namespace's user section, validate the resolved
-   * candidates, persist through the provider, then commit and emit. A
-   * validation failure rejects before anything is persisted. Writes to one
-   * section are serialized: concurrent updates apply in call order, each
-   * merging over the previous write's committed section. A global write
-   * re-resolves every instance of the kind; a scoped write only that scope's.
+   * Merge a patch into one registered namespace's user layer, validate the
+   * resolved candidate, persist through the provider, then commit and emit.
+   * A validation failure rejects before anything is persisted. Writes to one
+   * namespace are serialized: concurrent updates apply in call order, each
+   * merging over the previous write's committed section.
    * @param ns - the registered namespace to update.
    * @param patch - plain-object patch over the user section.
    * @param expectedRevision - the descriptor `revision` the caller read; a
-   *   section that moved past it rejects with {@link SettingsConflictError}.
-   * @param scope - the named scope whose section to write; the global section when omitted.
+   *   namespace that moved past it rejects with {@link SettingsConflictError}.
    * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
    */
   async update<const Namespace extends string>(
     ns: Namespace & SettingsNamespaceInput<Namespace>,
     patch: object,
     expectedRevision?: number,
-    scope?: string,
   ): Promise<void> {
-    return this.write(parseSettingsNamespace(ns), patch, 'merge', expectedRevision, scope === undefined ? undefined : parseSettingsScopeId(scope))
+    return this.write(parseSettingsNamespace(ns), patch, 'merge', expectedRevision)
   }
 
   /**
-   * Replace one namespace's user section wholesale, validate, persist, then
-   * commit and emit. Keys absent from `section` fall back to the layers
-   * below — this is the removal/reset path a merge-only patch cannot express
-   * (`replace({})` re-inherits everything).
+   * Replace one registered namespace's user section wholesale, validate,
+   * persist, then commit and emit. Keys absent from `section` fall back to the
+   * composition `base` and schema defaults — this is the removal/reset path a
+   * merge-only patch cannot express (`replace({})` re-inherits everything).
    * @param ns - the registered namespace to replace.
    * @param section - the complete next user section.
    * @param expectedRevision - the descriptor `revision` the caller read; a
-   *   section that moved past it rejects with {@link SettingsConflictError}.
-   * @param scope - the named scope whose section to write; the global section when omitted.
+   *   namespace that moved past it rejects with {@link SettingsConflictError}.
    * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
    */
   async replace<const Namespace extends string>(
     ns: Namespace & SettingsNamespaceInput<Namespace>,
     section: object,
     expectedRevision?: number,
-    scope?: string,
   ): Promise<void> {
-    return this.write(parseSettingsNamespace(ns), section, 'replace', expectedRevision, scope === undefined ? undefined : parseSettingsScopeId(scope))
+    return this.write(parseSettingsNamespace(ns), section, 'replace', expectedRevision)
   }
 
   /**
-   * Apply path-addressed edits to one namespace's user section, validate,
-   * persist, then commit and emit. The ops are applied to the section as it
-   * stands when the write reaches the front of the queue, so a caller never
-   * has to restate fields it did not touch — and, crucially, cannot delete
-   * fields it never saw. This is the write path for any caller holding a
-   * redacted view; `replace` remains the wholesale reset.
+   * Apply path-addressed edits to one registered namespace's user section,
+   * validate, persist, then commit and emit. The ops are applied to the
+   * section as it stands when the write reaches the front of the queue, so a
+   * caller never has to restate fields it did not touch — and, crucially,
+   * cannot delete fields it never saw. This is the write path for any caller
+   * holding a redacted view; `replace` remains the wholesale reset.
    * @param ns - the registered namespace to edit.
    * @param ops - ordered path edits; later ops observe earlier ones.
    * @param expectedRevision - the descriptor `revision` the caller read; a
-   *   section that moved past it rejects with {@link SettingsConflictError}.
-   * @param scope - the named scope whose section to write; the global section when omitted.
+   *   namespace that moved past it rejects with {@link SettingsConflictError}.
    * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
    */
   async mutate<const Namespace extends string>(
     ns: Namespace & SettingsNamespaceInput<Namespace>,
     ops: readonly SettingsPathOp[],
     expectedRevision?: number,
-    scope?: string,
   ): Promise<void> {
     const parsedNs = parseSettingsNamespace(ns)
     if (!Array.isArray(ops)) throw new TypeError(`settings mutate for "${parsedNs}" must be an array of path ops`)
@@ -795,20 +614,19 @@ export abstract class SettingsProvider extends Service {
         throw new TypeError(`settings mutate for "${parsedNs}" op paths must be arrays of strings`)
       }
     }
-    return this.write(parsedNs, ops, 'mutate', expectedRevision, scope === undefined ? undefined : parseSettingsScopeId(scope))
+    return this.write(parsedNs, ops, 'mutate', expectedRevision)
   }
 
-  /** Validate a write, then queue it on the section's serialized write chain. */
+  /** Validate a write, then queue it on the namespace's serialized write chain. */
   private write(
     ns: SettingsNamespace,
     input: object,
     mode: 'merge' | 'replace' | 'mutate',
-    expectedRevision: number | undefined,
-    scope: SettingsScopeId | undefined,
+    expectedRevision?: number,
   ): Promise<void> {
     const verb = mode === 'merge' ? 'update' : mode === 'replace' ? 'replace' : 'mutate'
-    const kind = this.kinds.get(ns)
-    if (kind === undefined) {
+    const registration = this.registrations.get(ns)
+    if (registration === undefined) {
       throw new Error(`settings namespace "${ns}" is not registered`)
     }
     if (this.isStopped()) {
@@ -831,93 +649,51 @@ export abstract class SettingsProvider extends Service {
     // walk rejects values that JSON cannot preserve (see cloneJsonShaped).
     const snapshot = cloneJsonShaped(payload, (label, path) =>
       new TypeError(`settings ${verb} for "${ns}" must contain only JSON-compatible data (found ${label} at ${path})`))
-    const queueKey = this.sectionKey(ns, scope)
-    const previous = this.writeQueues.get(queueKey) ?? Promise.resolve()
+    const previous = this.writeQueues.get(ns) ?? Promise.resolve()
     // Chain past a failed predecessor: one rejected write must not poison the
-    // section queue for every later caller.
+    // namespace queue for every later caller.
     const run = previous.catch(() => undefined).then(async () => {
       if (this.isStopped()) {
         throw new Error(`settings service was disposed before the queued "${ns}" ${verb} ran`)
       }
-      if (this.kinds.get(ns) !== kind) {
+      if (this.registrations.get(ns) !== registration) {
         throw new Error(`settings namespace "${ns}" registration was disposed before the queued ${verb} ran`)
       }
       // Every mode derives from the section as it stands NOW, at the front of
       // the queue — never from whatever the caller last saw.
-      const current = this.section(ns, scope) ?? {}
+      const current = this.section(ns) ?? {}
       // The revision check belongs HERE, not at call time: the queue orders
       // writes but cannot tell a fresh writer from one holding a snapshot
       // that a predecessor already superseded.
-      const revision = this.revisionOf(ns, scope)
-      if (expectedRevision !== undefined && expectedRevision !== revision) {
-        throw new SettingsConflictError(ns, expectedRevision, revision)
+      if (expectedRevision !== undefined && expectedRevision !== registration.revision) {
+        throw new SettingsConflictError(ns, expectedRevision, registration.revision)
       }
       const section = mode === 'merge'
         ? mergeLayers(current, snapshot) as Record<string, unknown>
         : mode === 'replace'
           ? snapshot
           : (snapshot['ops'] as SettingsPathOp[]).reduce(applyPathOp, current)
-      // Validate before persisting: every instance the section feeds resolves
-      // the candidate, and a scope nothing registered yet is judged by the
-      // schema alone so a malformed section never reaches the document.
-      const affected = this.affectedInstances(kind, scope)
-      const candidates = new Map<SettingsRegistration, unknown>()
-      for (const instance of affected) {
-        const layer = this.candidateLayer(ns, instance.scope, scope, section)
-        candidates.set(instance, deepFreeze(this.resolve(kind.schema, instance.base, layer, kind.validate)))
-      }
-      if (affected.length === 0) {
-        this.resolve(kind.schema, undefined, this.candidateLayer(ns, scope, scope, section), kind.validate)
-      }
-      await this.persist(ns, section, scope)
+      const next = deepFreeze(this.resolve(registration.schema, registration.base, section, registration.validate))
+      await this.persist(ns, section)
       // The write reached storage either way; the cache must say so. Commit
-      // only when this kind is still the namespace owner — a fiber disposed
-      // (or replaced) mid-persist must not receive the notification.
-      this.setSection(ns, scope, section)
+      // only when this registration is still the namespace owner — a fiber
+      // disposed (or replaced) mid-persist must not receive the notification.
+      this.document[ns] = section
       // TODO(settings-replacement-resync): Re-resolve any replacement registration
       // from this persisted section so an old in-flight write cannot leave it stale.
-      if (this.kinds.get(ns) === kind && !this.isStopped()) {
-        this.bumpRevision(ns, scope, current, section)
-        for (const [instance, next] of candidates) {
-          // An instance disposed while the write persisted must not receive
-          // the notification; the kind itself is still the owner (checked above).
-          /* v8 ignore next */
-          if (kind.instances.get(instanceKey(instance.scope)) === instance) this.commit(instance, next, 'update')
-        }
+      if (this.registrations.get(ns) === registration && !this.isStopped()) {
+        this.bumpRevision(registration, current, section)
+        this.commit(registration, next, 'update')
       }
     })
-    this.writeQueues.set(queueKey, run)
+    this.writeQueues.set(ns, run)
     return run
-  }
-
-  /** The instances a write to one section feeds: every instance for the global section, one for a scoped one. */
-  private affectedInstances(kind: SettingsKind, scope: SettingsScopeId | undefined): SettingsRegistration[] {
-    if (scope === undefined) return [...kind.instances.values()]
-    const instance = kind.instances.get(instanceKey(scope))
-    return instance === undefined ? [] : [instance]
-  }
-
-  /**
-   * The user layer one instance would resolve if `candidate` replaced the
-   * section at `writtenScope`: the global section, then the instance's own
-   * scoped section, with the written one substituted.
-   */
-  private candidateLayer(
-    ns: SettingsNamespace,
-    instanceScope: SettingsScopeId | undefined,
-    writtenScope: SettingsScopeId | undefined,
-    candidate: Record<string, unknown>,
-  ): unknown {
-    const global = writtenScope === undefined ? candidate : this.section(ns, undefined)
-    if (instanceScope === undefined) return global
-    const scoped = writtenScope === instanceScope ? candidate : this.section(ns, instanceScope)
-    return mergeLayers(global, scoped)
   }
 
   /**
    * Provider hook: commit a complete raw document observed in storage. Each
-   * registered instance re-resolves; an invalid section keeps that instance's
-   * last good value and warns, other instances still commit.
+   * registered namespace re-resolves; an invalid section keeps that
+   * namespace's last good value and warns, other namespaces still commit.
    * @param doc - the detached raw document (unregistered sections preserved).
    * @param source - change origin; defaults to `provider`.
    */
@@ -925,149 +701,51 @@ export abstract class SettingsProvider extends Service {
     // Read every raw section BEFORE swapping the document, so the revision
     // bump below compares what was stored with what now is — an external edit
     // moves the revision exactly like an in-process write.
-    const keys = this.sectionKeys(doc)
-    const before = new Map<string, unknown>()
-    for (const [key, ns, scope] of keys) before.set(key, this.sectionOrUndefined(ns, scope))
+    const before = new Map<SettingsNamespace, unknown>()
+    for (const registration of this.registrations.values()) {
+      try {
+        before.set(registration.ns, this.section(registration.ns))
+      } catch {
+        // A malformed stored section is not a readable "before"; treating it
+        // as absent still bumps against any well-formed replacement.
+        before.set(registration.ns, undefined)
+      }
+    }
     this.document = doc
-    for (const kind of this.kinds.values()) {
-      for (const instance of kind.instances.values()) {
-        let next: unknown
-        try {
-          next = deepFreeze(this.resolve(kind.schema, instance.base, this.userLayer(kind.ns, instance.scope), kind.validate))
-        } catch (error) {
-          this.ctx.logger.warn(
-            'settings: keeping last good "%s"%s after invalid stored section',
-            kind.ns,
-            instance.scope === undefined ? '' : ` under scope "${instance.scope}"`,
-          )
-          this.ctx.logger.warn(error)
-          continue
-        }
-        this.commit(instance, next, source)
+    for (const registration of this.registrations.values()) {
+      let next: unknown
+      try {
+        next = deepFreeze(this.resolve(registration.schema, registration.base, this.section(registration.ns), registration.validate))
+      } catch (error) {
+        this.ctx.logger.warn('settings: keeping last good "%s" after invalid stored section', registration.ns)
+        this.ctx.logger.warn(error)
+        continue
       }
+      this.bumpRevision(registration, before.get(registration.ns), this.section(registration.ns))
+      this.commit(registration, next, source)
     }
-    for (const [key, ns, scope] of keys) this.bumpRevision(ns, scope, before.get(key), this.sectionOrUndefined(ns, scope))
   }
 
-  /**
-   * Every section a publish must version: each kind's global section and
-   * every scoped section an instance registered or either document holds.
-   */
-  private sectionKeys(next: Record<string, unknown>): [string, SettingsNamespace, SettingsScopeId | undefined][] {
-    const scopeIds = new Set<string>()
-    for (const document of [this.document, next]) {
-      const scopes = document['scopes']
-      if (isPlainObject(scopes)) for (const id of Object.keys(scopes)) scopeIds.add(id)
-    }
-    const found: [string, SettingsNamespace, SettingsScopeId | undefined][] = []
-    for (const kind of this.kinds.values()) {
-      const ids = new Set<string>(scopeIds)
-      for (const instance of kind.instances.values()) if (instance.scope !== undefined) ids.add(instance.scope)
-      found.push([this.sectionKey(kind.ns, undefined), kind.ns, undefined])
-      for (const id of ids) {
-        // A malformed scope id in the document names no section this seam
-        // reads; it stays where it is and versions nothing.
-        if (!SCOPE_PATTERN.test(id)) continue
-        const scope = id as SettingsScopeId
-        found.push([this.sectionKey(kind.ns, scope), kind.ns, scope])
-      }
-    }
-    return found
-  }
-
-  /** The stored `scopes` map, rejecting a non-object value. */
-  private scopesContainer(): Record<string, unknown> | undefined {
-    const scopes = this.document['scopes']
-    if (scopes === undefined) return undefined
-    if (!isPlainObject(scopes)) {
-      throw new TypeError('settings section "scopes" must be an object of scope ids')
-    }
-    return scopes
-  }
-
-  /** Read one raw user section, rejecting non-object sections. */
-  private section(ns: SettingsNamespace, scope: SettingsScopeId | undefined): Record<string, unknown> | undefined {
-    let container: Record<string, unknown> | undefined = this.document
-    if (scope !== undefined) {
-      const entry = this.scopesContainer()?.[scope]
-      if (entry === undefined) return undefined
-      if (!isPlainObject(entry)) {
-        throw new TypeError(`settings scope "${scope}" must be an object of namespace sections`)
-      }
-      container = entry
-    }
-    const section = container[ns]
+  /** Read one namespace's raw user section, rejecting non-object sections. */
+  private section(ns: SettingsNamespace): Record<string, unknown> | undefined {
+    const section = this.document[ns]
     if (section === undefined) return undefined
     if (!isPlainObject(section)) {
-      throw new TypeError(`settings section "${ns}"${scope === undefined ? '' : ` under scope "${scope}"`} must be an object of keys`)
+      throw new TypeError(`settings section "${ns}" must be an object of keys`)
     }
     return section
   }
 
-  /** {@link section} for readers that treat a malformed section as absent. */
-  private sectionOrUndefined(ns: SettingsNamespace, scope: SettingsScopeId | undefined): Record<string, unknown> | undefined {
-    try {
-      return this.section(ns, scope)
-    } catch {
-      // A malformed stored section already warned at publish and kept the
-      // last good resolved value; only that malformed shape can throw here,
-      // and reading it as "no user layer" keeps the caller total.
-      return undefined
-    }
-  }
-
-  /**
-   * The user layer one instance resolves: the global section for the global
-   * instance, the global section with the scope's own section layered over
-   * it for a scoped one.
-   */
-  private userLayer(ns: SettingsNamespace, scope: SettingsScopeId | undefined): unknown {
-    const global = this.section(ns, undefined)
-    if (scope === undefined) return global
-    return mergeLayers(global, this.section(ns, scope))
-  }
-
-  /** {@link userLayer} for readers that treat a malformed section as absent. */
-  private userLayerOrUndefined(ns: SettingsNamespace, scope: SettingsScopeId | undefined): unknown {
-    const global = this.sectionOrUndefined(ns, undefined)
-    if (scope === undefined) return global
-    return mergeLayers(global, this.sectionOrUndefined(ns, scope))
-  }
-
-  /** Store one section in the cached document, creating the scope entry it lives in. */
-  private setSection(ns: SettingsNamespace, scope: SettingsScopeId | undefined, section: Record<string, unknown>): void {
-    if (scope === undefined) {
-      this.document[ns] = section
-      return
-    }
-    const scopes = this.scopesContainer() ?? {}
-    this.document['scopes'] = scopes
-    const entry = scopes[scope]
-    const container = isPlainObject(entry) ? entry : {}
-    scopes[scope] = container
-    container[ns] = section
-  }
-
-  /** The revision map key of one section. */
-  private sectionKey(ns: SettingsNamespace, scope: SettingsScopeId | undefined): string {
-    return scope === undefined ? ns : `${ns}@${scope}`
-  }
-
-  /** The current revision of one section; zero until it first changes. */
-  private revisionOf(ns: SettingsNamespace, scope: SettingsScopeId | undefined): number {
-    return this.revisions.get(this.sectionKey(ns, scope)) ?? 0
-  }
-
-  /** Resolve one instance value: schema defaults, then `base`, then the user layer. */
+  /** Resolve one namespace value: schema defaults, then `base`, then the user layer. */
   private resolve<T>(
     schema: z<T>,
     base: unknown,
-    layer: unknown,
+    section: Record<string, unknown> | undefined,
     validate?: (value: T) => void,
   ): T {
     // The merged candidate is untyped by construction; the schema call is the
     // runtime validation that admits it into T.
-    const value = schema(mergeLayers(base, layer) as never)
+    const value = schema(mergeLayers(base, section) as never)
     // The owner's own check runs on the admitted value, so it sees defaults
     // and the composition base exactly as the owner will.
     validate?.(value)
@@ -1075,25 +753,39 @@ export abstract class SettingsProvider extends Service {
   }
 
   /**
-   * Advance a section's revision when its RAW content changed, and announce
+   * Advance a namespace's revision when its RAW section changed, and announce
    * it. Deliberately independent of {@link commit}'s resolved-value equality:
    * storing an override equal to the composition base leaves the resolved
    * value alone but changes what the document says, which is exactly what a
    * configuration surface must re-read.
    */
-  private bumpRevision(ns: SettingsNamespace, scope: SettingsScopeId | undefined, before: unknown, after: unknown): void {
+  private bumpRevision(registration: SettingsRegistration, before: unknown, after: unknown): void {
     if (deepEqualJson(before, after)) return
-    const key = this.sectionKey(ns, scope)
-    const revision = (this.revisions.get(key) ?? 0) + 1
-    this.revisions.set(key, revision)
-    this.emitDocumentUpdated(ns, revision, scope)
+    registration.revision += 1
+    this.emitDocumentUpdated(registration.ns, registration.revision)
   }
 
-  /** Contained fan-out of `settings/document-updated`, the way {@link commit} emits `settings/updated`. */
-  private emitDocumentUpdated(ns: SettingsNamespace, revision: number, scope: SettingsScopeId | undefined): void {
-    const payload: unknown[] = scope === undefined ? [ns, revision] : [ns, revision, scope]
-    const args = ['settings/document-updated', ...payload]
-    this.deliver(ns, this.ctx.events.dispatch('emit', args) as EmitListeners, payload)
+  /** Contained fan-out of `settings/document-updated`, mirroring {@link commit}'s. */
+  private emitDocumentUpdated(ns: SettingsNamespace, revision: number): void {
+    let invariantFailure: unknown
+    const args = ['settings/document-updated', ns, revision]
+    for (const listener of this.ctx.events.dispatch('emit', args) as Array<(...listenerArgs: unknown[]) => unknown>) {
+      try {
+        const returned = listener(ns, revision)
+        if (returned != null && typeof (returned as PromiseLike<unknown>).then === 'function') {
+          void Promise.resolve(returned as PromiseLike<unknown>).then(undefined, (error: unknown) => {
+            this.warnListenerFailure(ns, error)
+          })
+        }
+      } catch (error) {
+        if ((error as { code?: unknown } | null)?.code === 'INVARIANT') {
+          invariantFailure ??= error
+          continue
+        }
+        this.warnListenerFailure(ns, error)
+      }
+    }
+    if (invariantFailure !== undefined) throw invariantFailure as Error
   }
 
   /** Commit a resolved value when changed: swap, notify watchers, emit the event. */
@@ -1101,7 +793,6 @@ export abstract class SettingsProvider extends Service {
     const prev = registration.resolved
     if (deepEqualJson(next, prev)) return
     registration.resolved = next
-    const { ns } = registration.kind
     for (const watcher of [...registration.watchers]) {
       // Serialize per watcher: invocations of one callback run one at a time
       // in commit order, so a slow stale invocation can never apply after a
@@ -1115,7 +806,7 @@ export abstract class SettingsProvider extends Service {
           return watcher.callback(next as never, prev as never)
         })
         .then(() => undefined, (error: unknown) => {
-          this.warnWatcherFailure(ns, error)
+          this.warnWatcherFailure(registration.ns, error)
         })
       watcher.tail = segment
       this.pendingTails.add(segment)
@@ -1126,28 +817,17 @@ export abstract class SettingsProvider extends Service {
     // harness-fatal by design and rethrow after every listener ran; any other
     // failure is contained so one broken observer cannot wedge the commit
     // path (and, through it, a provider's reload loop).
-    const payload: unknown[] = registration.scope === undefined
-      ? [ns, next, prev, source]
-      : [ns, next, prev, source, registration.scope]
-    const args = ['settings/updated', ...payload]
-    this.deliver(ns, this.ctx.events.dispatch('emit', args) as EmitListeners, payload)
-  }
-
-  /**
-   * Call each listener of one settings event in turn: an invariant violation
-   * rethrows after the rest ran, any other failure is contained.
-   */
-  private deliver(ns: SettingsNamespace, listeners: EmitListeners, payload: unknown[]): void {
     let invariantFailure: unknown
-    for (const listener of listeners) {
+    const args = ['settings/updated', registration.ns, next, prev, source]
+    for (const listener of this.ctx.events.dispatch('emit', args) as Array<(...listenerArgs: unknown[]) => unknown>) {
       try {
-        const returned = listener(...payload)
+        const returned = listener(registration.ns, next, prev, source)
         if (returned != null && typeof (returned as PromiseLike<unknown>).then === 'function') {
           // An emit listener may still be an async function; its rejection
           // cannot reach the synchronous INVARIANT rethrow below, so it is
           // contained here instead of becoming an unhandled rejection.
           void Promise.resolve(returned as PromiseLike<unknown>).then(undefined, (error: unknown) => {
-            this.warnListenerFailure(ns, error)
+            this.warnListenerFailure(registration.ns, error)
           })
         }
       } catch (error) {
@@ -1155,7 +835,7 @@ export abstract class SettingsProvider extends Service {
           invariantFailure ??= error
           continue
         }
-        this.warnListenerFailure(ns, error)
+        this.warnListenerFailure(registration.ns, error)
       }
     }
     if (invariantFailure !== undefined) throw invariantFailure as Error

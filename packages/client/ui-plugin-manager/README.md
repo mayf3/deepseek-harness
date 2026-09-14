@@ -1,5 +1,5 @@
 ---
-description: "Plugin management behind the Web sidebar's Plugins entry for the dsh web client: install packages through pnpm, enable and disable bundles, retry failed ones, and compose rows into the global user layer or one agent preset's."
+description: "Manage installed plugin packages and global rows from the Web sidebar."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use the **Plugins** entry in the Web sidebar to see the profile's installed packages in two groups — plugin packs, switched on and off as a whole, and plugins, added to a preset or every session through **Add to…** — open a pack's own page to switch its rows and uninstall it, and install a package by name, path, or Git URL, watching each pnpm run in a terminal. Dependents and every uninstall ask for confirmation. The same store contributes the **Capabilities** section to each preset's detail page; configuring a plugin stays in the Settings **Plugins** section.
+Use the **Plugins** entry in the Web sidebar to manage installed packages. Switch bundle layers on and off, inspect their rows and failures, add declared modules to the global user layer, and install packages while watching pnpm output. Dependency-sensitive changes and uninstalling ask for confirmation. Global configuration remains in Settings.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Use the **Plugins** entry in the Web sidebar to see the profile's installed pack
 <a id="use-this-package"></a>
 ## Use this package
 
-Select **Plugins** in the sidebar. The page reads no Remote during plugin activation — selecting the entry mounts it, and it then reads the packages and the preset compositions through `api-remotes`. Configuring a plugin stays in the Settings **Plugins** section.
+Select **Plugins** in the sidebar. The page reads packages and global composition through `api-remotes` when first opened. Global configuration remains in the Settings **Plugins** section.
 
 ### Installing a package
 
@@ -39,9 +39,9 @@ A pack’s switch changes its enabled layer selection. Live profiles recompose b
 
 A row's switch on the pack's page calls `plugins.setRowDisabled` against the profile's global user layer: off writes `disabled: true` for the row's id into the profile's `cordis.patch.yml`, on deletes that key again. The tree recomposes at once, so the row's host half unmounts or mounts while the rest of the pack keeps running; a browser half the pack's own client bundle mounts for every component stays until the page reloads. The switch appears only where it acts at once — an external pack that is switched on, on a profile that applies patches while it runs; built-in packs, packs that are off, and profiles that apply patches at their next start list their rows read-only. A row the pack itself keeps off, by a `disabled: true` row or a `!!js` gate, is locked with the reason, because the user layer only ever denies. A failing row can be switched off; a row another layer already owns has nothing mounted to switch. Switching a row off first asks the Host what other rows inject of what the row provides, with the switch inert meanwhile, and opens a confirmation naming them only when there are any; a row nothing depends on switches off at once, and switching on never asks. A list longer than ten rows gets a filter over the row ids.
 
-### Adding a plugin to a preset
+### Adding a plugin globally
 
-A package with explicit plugin declarations offers **Add to…** for every declared entry, including a declared main export. The menu marks targets already joined. Addition writes a global or preset user patch; it performs no import precheck. A package with no recognized declaration has no Add action and remains uninstallable. Preset rows are managed in the preset detail page’s **Capabilities** section, where switches write or remove the user’s `disabled: true` override and **Delete** removes a user insert.
+A package with explicit `dsh.plugins` declarations offers **Add globally** for each module. An already-added module has a disabled action. Addition writes the profile's `cordis.patch.yml` without an import precheck. Packages without recognized declarations remain uninstallable and have no Add action.
 
 ### Reading a failure
 
@@ -59,11 +59,11 @@ Package management uses the profile’s dependency records: installed bundles ca
 
 ### Registration
 
-The browser plugin registers the `plugins` panel under one id twice: a `sidebar.panellist` entry with order 0, whose localized label the sidebar renders and whose icon this package supplies, and the `main` keyed entry it opens — the management page, root-scoped and bound to no Session; plus one `settings.agentPreset.detail` contribution with id `plugins` — the Capabilities section of every preset's detail page, over the same store. Registration uses `ctx.slots.inject()`, so it follows late slot declaration, redeclaration, locale changes, and teardown without importing the sidebar or layout owner. Preset names resolve through the shared `presetDisplayText` fold over [`ui-agent-preset`](../ui-agent-preset/README.md)'s dictionaries. Harness modules in a preset resolve their display name and one-liner through the page's own dictionary — `name.<slug>` and `desc.<slug>`, tried by the composition row id first (four subagent rows share one module) and then by the unscoped module name without its `dsh-` prefix — and only for modules under the `@deepseek-ai/` scope; a third-party module reads its installed package's `dsh.title` and `description`, or an addable module's own title.
+The browser plugin registers the `plugins` sidebar entry and its `main` panel through `ctx.slots.inject()`, so both follow late slot declaration, locale changes and teardown. The page is global and belongs to no Session. Shipped module labels come from its dictionary; third-party display text comes from package metadata.
 
 ### The store
 
-`PluginManagerController` holds one snapshot: the read status, the packages, the preset groups, the busy keys, the notice, the install dialog, and the pending confirmation. `load` folds concurrent reads into one in-flight read plus one rerun, so an invalidation landing mid-read is never lost. Every action runs under a busy key — the package name, or `<target>:<rowId>` for a row — turns a refused answer into the notice with the Host's code and reason, and re-reads afterwards whatever happened. The plugin's `apply` subscribes `plugins/changed` and `connection/reset` to reload a page that has rendered once, and `plugins/install-log` to fold chunks into the open install's runs by job, the `add` run and the removals that follow it alike, since the Host runs one mutation at a time.
+`PluginManagerController` owns the package and global-module snapshot, busy keys, notices, install progress and confirmations. It coalesces overlapping reads, refreshes after operations and Host changes, and ignores late results after disposal. Install output is grouped by job id.
 
 ### Confirmation
 

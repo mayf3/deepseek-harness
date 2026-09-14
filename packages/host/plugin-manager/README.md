@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-host-plugin-manager` mounts `pluginManager` as a Typert service and exposes the `plugins` Remote — `list`, `add`, `uninstall`, `enable`, `disable`, `retry`, `addRow`, `removeRow`, `setRowDisabled`, `dependents` — each relaying to the [`dsh-plugin-manager`](../../boot/plugin-manager/README.md) `PluginManager` built over this context, with every `plugins/*` failure crossing the wire as a `RemoteError` of the same code. What the operations do, and the `plugins/changed` and `plugins/install-log` events that follow them, belong to that package; this one reads the profile runtime, the preset roster, and the agent registry off the context and hands them over. Clients consume the Remote through the [`api-remotes`](../../api/remotes/README.md) assembly.
+`dsh-host-plugin-manager` mounts `pluginManager` as a Typert service and exposes the `plugins` Remote — `list`, `add`, `uninstall`, `enable`, `disable`, `retry`, `addRow`, `removeRow`, `setRowDisabled`, `dependents` — each relaying to the [`dsh-plugin-manager`](../../boot/plugin-manager/README.md) `PluginManager` built over this context, with every `plugins/*` failure crossing the wire as a `RemoteError` of the same code. What the operations do, and the `plugins/changed` and `plugins/install-log` events that follow them, belong to that package; this one reads the profile runtime and the agent registry off the context and hands them over. Clients consume the Remote through the [`api-remotes`](../../api/remotes/README.md) assembly.
 
 ## Table of Contents
 
@@ -53,7 +53,7 @@ A manager failure reaches the client as a `RemoteError` with the same `code` and
 
 ### A relay, not a second manager
 
-The adapter supplies per-call profile, preset and agent readers to one `PluginManager`, relays each Remote method, and maps domain errors. It coalesces native entry/status events into one reader, waits for Loader and queued profile recomposition to settle, and publishes `plugins/changed` only when the row diagnostics change. Management operations retain their own change notifications. Disposal cancels pending notifications and removes the listeners. Tests may replace the manager, pnpm spawner or static metadata reader.
+The adapter supplies per-call profile and agent readers to one `PluginManager`, relays each Remote method, and maps domain errors. It coalesces native entry/status events into one reader, waits for Loader and queued profile recomposition to settle, and publishes `plugins/changed` only when the row diagnostics change. Management operations retain their own change notifications. Disposal cancels pending notifications and removes the listeners. Tests may replace the manager, pnpm spawner or static metadata reader.
 
 ### Source map
 
@@ -96,7 +96,7 @@ None; this package neither assembles nor sends a provider request.
 
 These limits define what the Remote will not do for a client. They are current package constraints, not a task backlog.
 
-- **What the manager cannot do, the Remote cannot either** — the [manager's limits](../../boot/plugin-manager/README.md#known-limitations-and-deferred-work) apply unchanged: a loaded package updates at the next restart, dependents stop at injection, a preset row composes for later sessions, `engines.dsh` is reported and not enforced.
+- **What the manager cannot do, the Remote cannot either** — the [manager's limits](../../boot/plugin-manager/README.md#known-limitations-and-deferred-work) apply unchanged: a loaded package updates at the next restart, dependents stop at injection, `engines.dsh` is reported and not enforced.
 
 <a id="dev-note"></a>
 ### Dev Note

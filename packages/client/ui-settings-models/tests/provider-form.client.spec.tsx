@@ -80,7 +80,6 @@ function piAiNamespace(
 ): SettingsNamespaceView {
   return {
     ns: 'llm-pi-ai',
-    registered: true,
     schema: JSON.parse(JSON.stringify(PiAiConfig.toJSON())) as JsonValue,
     // `value` is the effective section; `user` is only the layer this page
     // writes. They differ whenever a composition `base` supplies something.

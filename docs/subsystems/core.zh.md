@@ -611,28 +611,6 @@ composedPreset(agentCtx: Context): string | undefined
 async read(id: string): Promise<string>
 
 /**
- * Where one preset's user patch layer is, or would be written: the layer
- * discovery attached, else the writable root's slot of the same id — beside
- * the composition for a locally authored preset, alone in the slot for a
- * shipped one. The file need not exist yet.
- * @param id - the preset id.
- * @returns the absolute path of the layer file.
- * @throws when the preset is unknown, or it has no layer and the
- * deployment configures no writable root.
- */
-async overlayPathFor(id: string): Promise<string>
-
-/**
- * Delete one preset's user patch layer, so the next generation composes the
- * preset exactly as its root supplies it. Sessions already joined keep the
- * generation they run on.
- * @param id - the preset id.
- * @returns true when a layer was removed; false when the preset had none.
- * @throws when the preset is unknown or its layer lies outside the writable root.
- */
-async removeOverlay(id: string): Promise<boolean>
-
-/**
  * One preset's composition text with the roster row it belongs to.
  * @param agentPreset - the preset id.
  * @returns the composition beside its trust and published metadata.
@@ -936,7 +914,7 @@ Source: [`packages/core/agent/src/index.ts`](../../packages/core/agent/src/index
 
 The `pluginManager` service and the `plugins` Remote.
 
-The row injects only the Loader; the profile runtime, the preset roster, and the agent registry are read off the context per call, so a composition without them (a test, a launcher other than the profile launcher) still mounts this service and every call then reports `plugins/unavailable` rather than the service failing to start.
+The row injects only the Loader; the profile runtime and the agent registry are read off the context per call, so a composition without them (a test, a launcher other than the profile launcher) still mounts this service and every call then reports `plugins/unavailable` rather than the service failing to start.
 
 ```ts cordis-catalog
 /**
@@ -981,29 +959,26 @@ The row injects only the Loader; the profile runtime, the preset roster, and the
 @Remote('retry') async retry(packageName: string): Promise<PluginEnableResult>
 
 /**
- * Add a row naming one of the package's modules to a user layer.
+ * Add a row naming one of the package's modules to the profile user layer.
  * @param packageName - the installed package.
- * @param target - which layer.
  * @param options - `module` selects a declared `dsh.plugins[]` name (default `.`),
  * `id` overrides the derived row id, `config` overrides the declared default.
  * @returns where the row landed.
  */
-@Remote('addRow') async addRow( packageName: string, target: PluginRowTarget, options?: { module?: string; id?: string; config?: JsonValue }, ): Promise<PluginRowAddition>
+@Remote('addRow') async addRow( packageName: string, options?: { module?: string; id?: string; config?: JsonValue }, ): Promise<PluginRowAddition>
 
 /**
  * Remove a row a user layer inserted.
- * @param target - which layer.
  * @param rowId - the inserted row's id.
  */
-@Remote('removeRow') async removeRow(target: PluginRowTarget, rowId: string): Promise<void>
+@Remote('removeRow') async removeRow(rowId: string): Promise<void>
 
 /**
  * Switch one row off or on in a user layer; deny-only.
- * @param target - which layer.
  * @param rowId - the row's id as the composition declares it.
  * @param disabled - whether the layer should switch the row off.
  */
-@Remote('setRowDisabled') async setRowDisabled(target: PluginRowTarget, rowId: string, disabled: boolean): Promise<void>
+@Remote('setRowDisabled') async setRowDisabled(rowId: string, disabled: boolean): Promise<void>
 
 /**
  * What disabling or removing a package would strand.

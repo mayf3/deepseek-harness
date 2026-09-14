@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-plugin-manager` 通过 CLI 与 Web 宿主安装包并管理它们声明的插件行。安装读取元信息，不执行模块。管理器启停整份组合包层，编辑全局或预设用户 patch，重试失败并报告当前运行问题。失败携带 `plugins/*` 错误码；[Host 适配器](../../host/plugin-manager/README.zh.md) 通过 Remote 暴露这些操作。
+`dsh-plugin-manager` 通过 CLI 与 Web 宿主安装包并管理它们声明的插件行。安装读取元信息，不执行模块。管理器启停整份组合包层，编辑profile 用户 patch，重试失败并报告当前运行问题。失败携带 `plugins/*` 错误码；[Host 适配器](../../host/plugin-manager/README.zh.md) 通过 Remote 暴露这些操作。
 
 ## 目录
 
@@ -51,12 +51,11 @@ console.log(outcome.installed, outcome.removed)
 
 ### 管理已启动的 profile
 
-在 Cordis 上下文之上构造 `PluginManager`，并交给它按调用读取所需之物的读取器——profile runtime、preset roster 的层、运行中的 agent 数——这样一个后来才有或始终没有其中之一的组合在调用时得到回答，而不是在挂载时：
+在 Cordis 上下文之上构造 `PluginManager`，并交给它按调用读取所需之物的读取器——profile runtime 和运行中的 agent 数——这样一个后来才有或始终没有其中之一的组合在调用时得到回答，而不是在挂载时：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-app-boot'
 import { PluginManager, type PluginToolingConfig } from '@deepseek-ai/dsh-plugin-manager'
 
@@ -66,7 +65,6 @@ declare const config: PluginToolingConfig
 const manager = new PluginManager(ctx, {
   config,
   runtime: () => ctx.get('profileRuntime'),
-  presets: () => ctx.get('agentPresets'),
   runningAgents: () => (ctx.get('agents')?.list() ?? []).filter(agent => agent.status === 'running').length,
 })
 console.log(await manager.list())
@@ -76,13 +74,13 @@ console.log(await manager.list())
 
 `enable` 选择整份组合包层，并在实时 profile 中重组。逐行失败保留启用选择与成功的其他行；结果报告 `issues`，列表可显示 `partial` 或 `failed`。准备失败会撤销启用选择，并抛出 `plugins/enable-failed`。`disable` 移除整层，包括覆盖。`retry` 先禁用并等待清理，再启用。仅启动时生效的 profile 报告 `effect: restart`。实时 profile 中尚未应用的选择报告 `failed`，并保留实际运行的行；`restart-required` 只用于仅启动时生效的 profile。`uninstall` 禁用组合包、删除用户插入的引用、执行 pnpm remove。
 
-`addRow` 将显式声明的 `dsh.plugins` 模块写入 profile 的全局 `cordis.patch.yml` 或预设用户层。它保留声明的默认配置，检查目标行 id，不在挂载前 import。`removeRow` 删除用户插入。`setRowDisabled` 写入或删除 `disabled: true`，保留组合包自己的条件。全局编辑在实时 profile 中立即重组；预设编辑应用于后续代际。`dependents` 报告注入依赖方与用户层模块引用。
+`addRow` 将显式声明的 `dsh.plugins` 模块写入 profile 的全局 `cordis.patch.yml`。它保留声明的默认配置，检查目标行 id，不在挂载前 import。`removeRow` 删除用户插入。`setRowDisabled` 写入或删除 `disabled: true`，保留组合包自己的条件。全局编辑在实时 profile 中立即重组。`dependents` 报告注入依赖方与用户层模块引用。
 
 管理器一次只跑一个变更——上一个还在跑时再调用会以 `plugins/busy` 失败并点名正在进行的操作——`add` 与 `uninstall` 在有会话运行时拒绝改动 `node_modules`，报 `plugins/agents-running`。每次变更之后在上下文上发出 `plugins/changed` 事件，安装运行把 pnpm 的输出以 `plugins/install-log` 分块发出，每块都写明所跑的命令行与所在的 profile 目录，开了颜色时还带着 pnpm 的 SGR 转义。
 
 ### 失败
 
-每次拒绝或失败都是一个 `PluginOperationError`，带稳定的 `code` 与按码定型的 `details`：`plugins/unavailable`（没有 profile runtime，或 preset 目标没有 roster）、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/row-conflict`、`plugins/busy`、`plugins/agents-running`，以及请求点名了 profile 没有的东西时的 `plugins/bad-request`。`pluginOperationFailureOf` 把捕获到的值收窄为按码区分的联合。
+每次拒绝或失败都是一个 `PluginOperationError`，带稳定的 `code` 与按码定型的 `details`：`plugins/unavailable`（没有 profile runtime）、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/row-conflict`、`plugins/busy`、`plugins/agents-running`，以及请求点名了 profile 没有的东西时的 `plugins/bad-request`。`pluginOperationFailureOf` 把捕获到的值收窄为按码区分的联合。
 
 -----
 
@@ -106,7 +104,7 @@ subprocess seam 会清洗形似密钥的变量且没有 shell 模式，而 pnpm 
 
 ### 管理器自己读什么，别人交给它什么
 
-管理器读取 Loader 条目、reflect 存储与条目自身诊断。profile、预设和 agent 信息通过逐次调用的读取器提供。[Host 适配器](../../host/plugin-manager/README.zh.md) 在状态稳定后将 Loader 生命周期变化转换为 `plugins/changed` 通知，包括等待中的行在提供方出现后恢复运行。
+管理器读取 Loader 条目、reflect 存储与条目自身诊断。profile 和 agent 信息通过逐次调用的读取器提供。[Host 适配器](../../host/plugin-manager/README.zh.md) 在状态稳定后将 Loader 生命周期变化转换为 `plugins/changed` 通知，包括等待中的行在提供方出现后恢复运行。
 
 ### 源码地图
 
@@ -133,7 +131,6 @@ subprocess seam 会清洗形似密钥的变量且没有 shell 模式，而 pnpm 
 
 - [App boot](../app-boot/README.zh.md)——profile runtime、外部组合包隔离与静态包声明。
 - [补丁文件](../app-boot/README.zh.md#patch-files)——用户层的行如何读写。
-- [Agent presets](../../preset/agent-presets/README.zh.md)——preset 目标所写的每预设用户层。
 - [宿主插件管理器](../../host/plugin-manager/README.zh.md)——本管理器之上的 `plugins` Remote。
 - [dsh 应用](../../../apps/cli/README.zh.md)——安装器之上的 `dsh plugin` 命令。
 
@@ -157,7 +154,6 @@ subprocess seam 会清洗形似密钥的变量且没有 shell 模式，而 pnpm 
 
 - **更新已加载的包需要重启**——Node 按 URL 缓存 ESM 模块，hoisted 安装下路径不变；经 `add` 做的 `pnpm update` 改写了文件，但运行中的树在进程重启前一直用旧模块。
 - **依赖检测止于注入**——注册型依赖（工具、LLM 适配器）没有 `inject` 边，因此 `dependents` 无法点名只读取该包所注册内容的行。
-- **preset 的行不在线组合**——管理器写入 preset 的层；之后创建的会话组合它，已在运行的会话保持其代际。
 - **尚无 `engines.dsh` 检查**——该范围只被报告，不对运行中的 harness 版本强制执行。
 - **一次只有一个进程**——互斥在进程内，补丁文件写入器持文件锁，但 profile manifest 没有锁：CLI 与运行中的 Web 宿主同时编辑同一个 profile 不受支持。
 

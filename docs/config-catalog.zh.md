@@ -159,7 +159,7 @@ export interface PresetRoot {
 export type PresetTrust = 'system' | 'user'
 ```
 
-来源：[`packages/preset/agent-presets/src/preset.ts:60`](../packages/preset/agent-presets/src/preset.ts)
+来源：[`packages/preset/agent-presets/src/preset.ts:52`](../packages/preset/agent-presets/src/preset.ts)
 
 <a id="deepseek-aidsh-agent-tool-presentation"></a>
 
@@ -944,7 +944,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/host/plugin-manager/src/index.ts:42`](../packages/host/plugin-manager/src/index.ts)
+来源：[`packages/host/plugin-manager/src/index.ts:40`](../packages/host/plugin-manager/src/index.ts)
 
 
 <a id="deepseek-aidsh-host-webserver"></a>
@@ -2262,7 +2262,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/skill/skill-filesystem/src/index.ts:68`](../packages/skill/skill-filesystem/src/index.ts)
+来源：[`packages/skill/skill-filesystem/src/index.ts:49`](../packages/skill/skill-filesystem/src/index.ts)
 
 <a id="deepseek-aidsh-spill-local"></a>
 

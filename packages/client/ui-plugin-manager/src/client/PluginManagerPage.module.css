@@ -1,4 +1,4 @@
-/* Plugin manager page: a centred column with its header, notices, and the package and preset cards. */
+/* Plugin manager page: a centred column with its header, notices, and the package cards. */
 
 .page {
   display: flex;
@@ -250,7 +250,6 @@
   white-space: nowrap;
 }
 
-/* The pill the Agent preset section marks its cards with. */
 .cardEnd {
   position: relative;
   z-index: 1;

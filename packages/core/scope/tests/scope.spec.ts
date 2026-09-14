@@ -220,30 +220,3 @@ describe('scope parent chain', () => {
     expect(seen.sort()).toEqual(['preset', 'untagged'])
   })
 })
-
-describe('named scopes', () => {
-  it('names a scope and resolves the nearest named scope along the chain', async () => {
-    const { createScope: mint, scopeIdOf: idOf, scopeIdOfKey: idOfKey } = await import('@deepseek-ai/dsh-scope')
-    const ctx = new Context()
-    const presetKey = { name: 'preset' }
-    const agentKey = { name: 'agent' }
-    const nestedKey = { name: 'nested' }
-    let preset!: Scope
-    await ctx.plugin((inner: Context) => { preset = mint(inner, presetKey, { id: 'preset/standard' }) })
-    const agent = mint(preset.ctx, agentKey, { parent: presetKey })
-    const nested = mint(agent.ctx, nestedKey, { parent: agentKey, id: 'session/one' })
-
-    expect(idOfKey(presetKey)).toBe('preset/standard')
-    expect(idOfKey(agentKey)).toBeUndefined()
-    expect(idOf(ctx)).toBeUndefined()
-    expect(idOf(preset.ctx)).toBe('preset/standard')
-    // An unnamed scope resolves to its nearest named ancestor; a named one to itself.
-    expect(idOf(agent.ctx)).toBe('preset/standard')
-    expect(idOf(nested.ctx)).toBe('session/one')
-    expect(() => mint(ctx, { name: 'empty' }, { id: '' })).toThrow('must not be empty')
-
-    await nested.dispose()
-    await agent.dispose()
-    await preset.dispose()
-  })
-})

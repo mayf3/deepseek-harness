@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use the **Plugins** settings section to configure the plugins exposed by the current deployment and to open the pages feature plugins contribute through `settings.plugins.tab`. The **Plugin configuration** tab presents one expandable card for each supported plugin, shows which values the user overrode, and lets the user reset them to deployment defaults; the same cards form the **Settings** section of every preset's detail page, editing that preset's own values and marking which ones it inherits. Cards keep edits local until save. If the configuration changed after the card loaded, the save is rejected instead of overwriting the newer values.
+Use the **Plugins** settings section to configure the plugins exposed by the current deployment and to open feature-specific plugin pages. The **Plugin configuration** tab presents one expandable card for each supported plugin, shows which values the user overrode, and lets the user reset them to deployment defaults. Cards keep edits local until save. If the configuration changed after the card loaded, the save is rejected instead of overwriting the newer values.
 
 ## Table of Contents
 
@@ -25,11 +25,7 @@ Use the **Plugins** settings section to configure the plugins exposed by the cur
 <a id="use-this-package"></a>
 ## Use this package
 
-Open the Plugins section in Settings and select the **Plugin configuration** tab to edit the host-plane plugins this deployment composes. The cards appear in this order: the shell executor (`bash`), the agent loop's tool-call parallelism (`agent-loop`), subagent model selection (`subagent-model-selection`), the DeepSeek search provider (`web-search-deepseek`), and the filesystem skill provider's extra roots (`skill-filesystem`).
-
-### A preset's own values
-
-A preset's detail page — behind the gear on its card in the Agent presets section — carries a **Settings** section with the same cards, editing that preset's named scope (`preset/<id>`). There a field the preset does not override shows **Inherited** when the shared user layer carries it, and a reset stages the inherited value rather than the composition default. Saved values land in the preset's own section: a running session composed from the preset picks them up at once, and later sessions read them when they start. Drafts belong to the scope they were typed under and survive leaving the page. The configuration tab always edits the shared values.
+Open the Plugins section in Settings and select the **Plugin configuration** tab to edit the host-plane plugins this deployment composes. The cards appear in this order: the shell executor (`bash`), the agent loop's tool-call parallelism (`agent-loop`), subagent model selection (`subagent-model-selection`), and the DeepSeek search provider (`web-search-deepseek`).
 
 ### What appears here
 
@@ -57,7 +53,7 @@ The section is one extension point and one dispatch rule: feature plugins own th
 
 ### The tab extension point
 
-The section declares `settings.plugins.tab`, a root list slot whose labels become ordered tabs — a single contribution shows as the page itself, without a tab strip; a tab stays mounted after its first selection so local drafts and read-only snapshots survive tab switches. The package registers its own `configurable` contribution, which declares the nested `settings.plugin.item` slot — keyed on the settings namespace a card edits. A plugin that ships a browser half registers its own card under its own namespace and owns every part of it: chrome, controls, and copy. Tabs follow the contribution's `order`; cards follow registration order. The preset settings section registers into the roster's `settings.agentPreset.detail` slot and declares `settings.agentPreset.plugin.item`, keyed the same way; a card registers under both slots to appear on both surfaces. One scope selection serves every card — the global instance while the configuration tab shows, the preset's scope while its detail page is open; the settings shell mounts one section at a time, so the two never compete.
+The section declares `settings.plugins.tab`, a root list slot whose labels become ordered tabs; a tab stays mounted after its first selection so local drafts and read-only snapshots survive tab switches. The package registers its own `configurable` contribution, which declares the nested `settings.plugin.item` slot — keyed on the settings namespace a card edits. A plugin that ships a browser half registers its own card under its own namespace and owns every part of it: chrome, controls, and copy. Tabs follow the contribution's `order`; cards follow registration order.
 
 ### The write path
 
@@ -73,6 +69,7 @@ Saving writes staged fields through the client settings scope, which fences each
 These pages cover the settings base, the inventory tab, and the durable seams behind the cards.
 
 - [ui-settings](../ui-settings/README.md) — the domain base declaring `settings.plugins.tab` and the settings scope.
+- [ui-plugin-manager](../ui-plugin-manager/README.md) — the sidebar page for installed packages and global rows.
 - [settings](../../settings/README.md) — the durable user-settings seam and its file provider.
 - [credentials](../../credentials/README.md) — the credential-reference seam secret fields write through.
 - [ui-settings-general](../ui-settings-general/README.md) — the settings shell hosting this section.
@@ -98,7 +95,6 @@ These limits define which plugins appear and how fresh the list is; they are cur
 - **Only host-plane plugins appear** — a plugin an agent preset mounts carries its configuration inline in that preset's `agent.cordis.yml` and cannot register a settings namespace at all, so this section lists nothing for it. Editing those values remains the preset editor's job.
 - **A card still needs a browser bundle** — the browser half must be a `dsh.client` package built in the client module system's lazy-CJS factory format, and the `clientBundle` preset that emits it lives in `../../../packages/client/tsdown.client.ts` rather than a published package, so a plugin outside this repository has to reproduce that build itself.
 - **The served namespaces re-read on two signals only** — the wire announces settings-document commits and connection resets, not registrations, so a namespace whose owner registers after the tab's read joins the list on the next document commit or reconnect.
-- **An orphaned scope section has no surface** — a `scopes.<id>` section whose preset was deleted is edited nowhere: the detail page that would show it is gone, and the configuration tab edits only the shared values, so the section stays in the document until edited by hand.
 - **The shell card follows the composed executor** — the POSIX and PowerShell executor families share the `bash` namespace because a host composes exactly one of them, so the served schema differs by platform (PowerShell adds `pwshPath`) even though the card edits the same two fields on both.
 
 <a id="dev-note"></a>

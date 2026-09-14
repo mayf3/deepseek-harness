@@ -61,8 +61,6 @@ function renderSection(
     confirmDelete: vi.fn(),
     remove: vi.fn(() => Promise.resolve()),
     makeDefault: vi.fn(() => Promise.resolve()),
-    // The detail page's child slot, rendered by the shell in the real tree.
-    renderSlot: vi.fn(() => <p>detail-slot</p>),
     setPickerVisible: vi.fn(() => Promise.resolve()),
   }
   const props = {
@@ -71,7 +69,7 @@ function renderSection(
     t: (key: keyof typeof en) => en[key],
   } as unknown as AgentPresetSectionProps
   render(<AgentPresetSection {...props} />)
-  return { ...actions, store }
+  return actions
 }
 
 /** Locate a card by the id it prints, not by its display name. */
@@ -569,41 +567,5 @@ describe('a long card description', () => {
     }).not.toThrow()
     // The first measurement does not depend on the observer.
     expect(within(rowFor('zh')).getByText(LONG).getAttribute('title')).toBe('')
-  })
-})
-
-describe('preset detail', () => {
-  it('opens a preset from its gear, names it, renders the contributed sections, and returns through the breadcrumb', () => {
-    const actions = renderSection()
-
-    fireEvent.click(within(rowFor('standard')).getByRole('button', { name: `${en.configure}: ${en.presetStandardName}` }))
-    expect(screen.getByRole('heading', { name: en.presetStandardName })).toBeTruthy()
-    expect(screen.getByText(en.presetStandardDescription)).toBeTruthy()
-    expect(screen.getByText(en.inUse)).toBeTruthy()
-    expect(screen.getByText('detail-slot')).toBeTruthy()
-    expect(actions.renderSlot).toHaveBeenCalledWith('settings.agentPreset.detail', { presetId: 'standard', presetName: en.presetStandardName })
-    // The roster is off screen while a detail is open.
-    expect(screen.queryByText(en.sectionIntro)).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: en.backToRoster }))
-    expect(screen.getByText(en.sectionIntro)).toBeTruthy()
-    expect(screen.queryByText('detail-slot')).toBeNull()
-  })
-
-  it('shows a custom preset without a description as such, drops back to the roster when it leaves, and withholds the gear on a broken one', () => {
-    const { store } = renderSection({
-      rows: [...READY.rows, { id: 'broken', trust: 'user', isDefault: false, broken: 'bad yaml' }],
-    })
-    expect(within(rowFor('broken')).getByRole('button', { name: `${en.configure}: broken` })).toHaveProperty('disabled', true)
-
-    fireEvent.click(within(rowFor('mine')).getByRole('button', { name: `${en.configure}: mine` }))
-    expect(screen.getByRole('heading', { name: 'mine' })).toBeTruthy()
-    expect(screen.getByText(en.noDescription)).toBeTruthy()
-    expect(screen.getByText(en.userTrust)).toBeTruthy()
-    expect(screen.queryByText(en.inUse)).toBeNull()
-
-    act(() => { store.set({ ...store.getSnapshot(), rows: [READY.rows[0]!] }) })
-    expect(screen.getByText(en.sectionIntro)).toBeTruthy()
-    expect(screen.queryByText('detail-slot')).toBeNull()
   })
 })

@@ -1,7 +1,4 @@
-/**
- * The outcome line of the last plugin operation, shared by the package list
- * and a preset's section.
- */
+/** One operation notice on the plugin management page. */
 
 import type { ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'

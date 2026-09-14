@@ -2,8 +2,8 @@
 
 /** Locale keys these surfaces render. */
 export type PluginsSettingsLocaleKey =
-  | 'nav' | 'title' | 'intro' | 'tabs' | 'configurableTab' | 'empty' | 'presetSettingsTitle'
-  | 'overridden' | 'inherited' | 'reset' | 'readOnly' | 'expand' | 'collapse'
+  | 'nav' | 'title' | 'intro' | 'tabs' | 'configurableTab' | 'empty'
+  | 'overridden' | 'reset' | 'readOnly' | 'expand' | 'collapse'
   | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed' | 'invalidNumber'
   | 'bashTitle' | 'bashDescription' | 'bashTimeoutMs' | 'bashTimeoutMsHint'
   | 'bashMaxOutputBytes' | 'bashMaxOutputBytesHint'
@@ -17,8 +17,6 @@ export type PluginsSettingsLocaleKey =
   | 'subagentModelSelectionPartial' | 'subagentModelSelectionUnavailable'
   | 'subagentModelSelectionUnavailableGroup' | 'subagentModelSelectionEmpty'
   | 'subagentModelSelectionRequired' | 'subagentModelSelectionConflict' | 'subagentModelSelectionOff'
-  | 'skillFilesystemTitle' | 'skillFilesystemDescription'
-  | 'skillFilesystemCustomSkillDirs' | 'skillFilesystemCustomSkillDirsHint'
 
 /** English copy. */
 export const en: Record<PluginsSettingsLocaleKey, string> = {
@@ -28,9 +26,7 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   tabs: 'Plugin views',
   configurableTab: 'Plugin configuration',
   empty: 'This deployment exposes no plugin settings.',
-  presetSettingsTitle: 'Settings',
   overridden: 'Overridden',
-  inherited: 'Inherited',
   reset: 'Reset to default',
   readOnly: 'This deployment stores settings read-only.',
   expand: 'Show settings',
@@ -76,10 +72,6 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   subagentModelSelectionRequired: 'Select at least one model before saving.',
   subagentModelSelectionConflict: 'Settings changed elsewhere. Discard your draft and try again.',
   subagentModelSelectionOff: 'Subagents use configured defaults or inherit the parent agent\'s model. Saved model choices are retained.',
-  skillFilesystemTitle: 'Skills',
-  skillFilesystemDescription: 'Where the agent discovers skills.',
-  skillFilesystemCustomSkillDirs: 'Extra skill directories',
-  skillFilesystemCustomSkillDirsHint: 'One absolute path per line, scanned after the built-in roots. Leave blank to use only the built-in roots.',
 }
 
 /** Simplified Chinese copy. */
@@ -90,9 +82,7 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   tabs: '插件视图',
   configurableTab: '插件配置',
   empty: '本部署没有开放任何插件设置。',
-  presetSettingsTitle: '设置',
   overridden: '已覆盖',
-  inherited: '继承',
   reset: '恢复默认',
   readOnly: '本部署的设置为只读。',
   expand: '展开设置',
@@ -138,8 +128,4 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   subagentModelSelectionRequired: '保存前请至少选择一个模型。',
   subagentModelSelectionConflict: '设置已在其他位置更新。请放弃修改后重试。',
   subagentModelSelectionOff: '关闭后，Subagent 使用配置的默认模型或继承父 Agent 的模型；已选模型会保留。',
-  skillFilesystemTitle: '技能',
-  skillFilesystemDescription: 'Agent 从哪些目录发现技能。',
-  skillFilesystemCustomSkillDirs: '额外技能目录',
-  skillFilesystemCustomSkillDirsHint: '每行一个绝对路径，在内置目录之后扫描。留空表示只用内置目录。',
 }

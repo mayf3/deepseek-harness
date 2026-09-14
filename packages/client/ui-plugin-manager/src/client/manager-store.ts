@@ -1,7 +1,6 @@
 /**
- * The plugin manager's state, shared by the Manage plugins tab and the
- * capabilities section of a preset's detail page: the Host's package views
- * and preset compositions, the action in flight, the install run, and the
+ * The plugin manager's state: the Host's package views
+ * and global composition, the action in flight, the install run, and the
  * confirmation a destructive action waits on. Every fact comes from the Host — the store
  * re-reads after each action and after every `plugins/changed` event, so a
  * change made on another surface shows here without a manual refresh.
@@ -14,17 +13,9 @@ import type {
   PluginInstallLogChunk,
   PluginInstallRejection,
   PluginInstallResult,
-  PluginInventorySnapshot,
   PluginPackageView,
-  PluginRowTarget,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
-
-/** One preset composition as the inventory reports it, with its rows. */
-export type PresetGroup = NonNullable<PluginInventorySnapshot['agentPresets']>[number]
-
-/** One row of a preset composition. */
-export type PresetRow = PresetGroup['rows'][number]
 
 /** What the last action left to say. */
 export type ManagerNotice =
@@ -98,7 +89,6 @@ export interface PluginManagerState {
   /** `unavailable` when the Host runs without a profile runtime; `error` keeps the last packages. */
   readonly status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   readonly packages: readonly PluginPackageView[]
-  readonly presets: readonly PresetGroup[]
   /** Module names of the rows the host tree carries, for the **Add to…** menu's "added" marks. */
   readonly globalModules: readonly string[]
   /** Package names and row keys with an action crossing the wire. */
@@ -132,14 +122,12 @@ export interface PluginManagerFace {
   confirm: () => void
   cancelConfirm: () => void
   /** Add a row naming one of a package's modules — by its declared name, `.` for the main export — to a user layer. */
-  addRow: (packageName: string, declaredName: string, target: PluginRowTarget) => void
-  removeRow: (target: PluginRowTarget, rowId: string) => void
-  setRowDisabled: (target: PluginRowTarget, rowId: string, disabled: boolean) => void
+  addRow: (packageName: string, declaredName: string) => void
+  removeRow: (rowId: string) => void
+  setRowDisabled: (rowId: string, disabled: boolean) => void
   /** Switch one of a package's rows off in the global layer, after asking when other rows inject what it provides. */
   disableRow: (packageName: string, entryId: string, rowId: string) => void
   dismissNotice: () => void
-  /** Display name for one preset, resolved through the agent-preset dictionaries. */
-  presetName: (preset: PresetGroup) => string
 }
 
 /** A Remote answer as the generated client returns it. */
@@ -179,12 +167,11 @@ function reasonOf(error: { message: string; details?: unknown }): string {
 
 /**
  * The key one row occupies in the busy list.
- * @param target - the layer the row lives in.
  * @param rowId - the row's id in that layer.
  * @returns the busy key.
  */
-export function rowKey(target: PluginRowTarget, rowId: string): string {
-  return `${target.kind === 'global' ? 'global' : `preset:${target.preset}`}:${rowId}`
+export function rowKey(rowId: string): string {
+  return `global:${rowId}`
 }
 
 const IDLE_INSTALL: InstallState = {
@@ -203,14 +190,12 @@ export class PluginManagerController {
   /**
    * @param ctx - the tab plugin's context, whose `remote.plugins` and
    * `remote.pluginInventory` namespaces answer.
-   * @param presetName - display name for one preset.
    */
   constructor(
     private readonly ctx: ClientContext,
-    private readonly presetName: (preset: PresetGroup) => string,
   ) {
     this.store = createSnapshotStore<PluginManagerState>({
-      status: 'idle', packages: [], presets: [], globalModules: [], busy: [], notice: null,
+      status: 'idle', packages: [], globalModules: [], busy: [], notice: null,
       install: IDLE_INSTALL, confirm: null,
     })
   }
@@ -261,24 +246,23 @@ export class PluginManagerController {
       uninstall: (packageName) => { void this.askConfirm('uninstall', packageName) },
       confirm: () => { void this.confirm() },
       cancelConfirm: () => { this.pendingConfirm = undefined; this.patch({ confirm: null }) },
-      addRow: (packageName, declaredName, target) => {
+      addRow: (packageName, declaredName) => {
         void this.run(packageName, { packageName }, async () => {
-          this.answer(await this.ctx.remote.plugins.addRow(packageName, target, { module: declaredName }))
+          this.answer(await this.ctx.remote.plugins.addRow(packageName, { module: declaredName }))
         })
       },
-      removeRow: (target, rowId) => {
-        void this.run(rowKey(target, rowId), { rowId }, async () => {
-          this.answer(await this.ctx.remote.plugins.removeRow(target, rowId))
+      removeRow: (rowId) => {
+        void this.run(rowKey(rowId), { rowId }, async () => {
+          this.answer(await this.ctx.remote.plugins.removeRow(rowId))
         })
       },
-      setRowDisabled: (target, rowId, disabled) => {
-        void this.run(rowKey(target, rowId), { rowId }, async () => {
-          this.answer(await this.ctx.remote.plugins.setRowDisabled(target, rowId, disabled))
+      setRowDisabled: (rowId, disabled) => {
+        void this.run(rowKey(rowId), { rowId }, async () => {
+          this.answer(await this.ctx.remote.plugins.setRowDisabled(rowId, disabled))
         })
       },
       disableRow: (packageName, entryId, rowId) => { void this.askRowConfirm(packageName, entryId, rowId) },
       dismissNotice: () => { this.patch({ notice: null }) },
-      presetName: this.presetName,
     }
   }
 
@@ -303,7 +287,7 @@ export class PluginManagerController {
   }
 
   /**
-   * Read the packages and the preset compositions. A call during an
+   * Read the packages and the global composition. A call during an
    * in-flight read marks one rerun after it settles.
    * @returns settlement after this call's freshness is reflected.
    */
@@ -336,7 +320,6 @@ export class PluginManagerController {
         this.patch({
           status: 'ready',
           packages: packages.value,
-          presets: inventory.ok ? inventory.value.agentPresets ?? [] : this.getSnapshot().presets,
           globalModules: inventory.ok ? inventory.value.entries.map(entry => entry.moduleName) : this.getSnapshot().globalModules,
         })
       } while (this.shouldRerun())
@@ -405,10 +388,9 @@ export class PluginManagerController {
    * once, and only a row something depends on opens the dialog.
    */
   private async askRowConfirm(packageName: string, entryId: string, rowId: string): Promise<void> {
-    const target: PluginRowTarget = { kind: 'global' }
-    const key = rowKey(target, rowId)
+    const key = rowKey(rowId)
     const commit = (): Promise<void> => this.run(key, { rowId }, async () => {
-      this.answer(await this.ctx.remote.plugins.setRowDisabled(target, rowId, true))
+      this.answer(await this.ctx.remote.plugins.setRowDisabled(rowId, true))
     })
     const value = await this.dependentsOf(packageName, key)
     if (value === undefined) return

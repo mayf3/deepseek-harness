@@ -6,13 +6,13 @@ English | [中文](2026-09-09-plugin-management-in-the-web-sidebar.zh.md)
 
 ## Problem
 
-[Plugin management in Web settings](2026-09-04-plugin-management-in-web-settings.md) put the manager on a tab of the Settings dialog's Plugins section, beside the configuration tab. Settings is a modal over the current Session, while a person managing what is installed has no Session in mind; the dialog's width and its one-section-at-a-time shell also leave no room for a package page, an install run, and the list side by side. The layout has since gained root-scoped main panels behind sidebar entries ([global main panels](2026-09-08-global-main-panels.md)), which is the lifetime and the room the manager needs.
+Installed packages belong to the running profile, while Settings is a modal over a Session. The management page needs room for package details and installation output. The layout's [global main panels](2026-09-08-global-main-panels.md) provide that lifetime and space.
 
 ## Decision
 
-**Management is a sidebar entry; configuration stays in Settings.** `ui-plugin-manager` registers a `sidebar.panellist` entry and the `main` panel it opens under one id, `plugins`: the sidebar renders the localized **Plugins** label, this package the icon and the page. The page is root-scoped and bound to no Session; it carries its own heading, intro, refresh, and **Add plugin**, and scrolls inside the main column. What the page shows did not change: the packs and plugins, each package's page, the install dialog, and the confirmations are the former tab's. The Settings **Plugins** section keeps plugin configuration, and `ui-settings-plugins` renders a single `settings.plugins.tab` contribution as the page itself, without a tab strip, so the section reads as the configuration page it now is. The preset detail page in Settings keeps its **Capabilities** section over the same store.
+**Management is a sidebar entry; configuration stays in Settings.** `ui-plugin-manager` registers a `sidebar.panellist` entry and the `main` panel it opens under `plugins`. The page manages packages and global rows, displays install output and confirms dependency-sensitive actions. The Settings Plugins section keeps the global configuration cards and renders its single tab without a tab strip.
 
-**Configuration does not move.** A plugin's configuration binds a settings namespace under a scope — the global instance or one preset's — and the Settings shell owns that scope machinery, one selection serving the section and every preset's detail page. Moving the cards onto the management page would duplicate the shell's scope selection and split settings across two entry points, while a person looks for a value in Settings. The plugin's own page will instead point at its configurable sections once Settings can be opened on one section, which needs only a deep link.
+**One store follows Host state.** The manager controller combines package views with global inventory, refreshes after management operations and reconnects, and keeps installation progress under the owning job. Configuration cards use the existing global settings bindings.
 
 ## Alternatives considered
 

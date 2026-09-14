@@ -9,7 +9,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {
-  BashCardFace, ConfigurablePluginsTabFace, PluginsSettingsSectionInjected, PresetSettingsFace,
+  ConfigurablePluginsTabFace, PluginsSettingsSectionInjected,
 } from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import { SubagentModelSelectionCardController } from '../src/client/subagent-model-selection-card-controller.ts'
 import { apply as hostApply } from '../src/index.ts'
@@ -34,17 +34,15 @@ async function bench(served?: string[]) {
   const models = vi.fn(() => Promise.resolve({
     ok: true as const, value: { groups: [], failures: [] },
   }))
-  const describeSettings = vi.fn((scope?: string) => Promise.resolve(served === undefined
+  const describeSettings = vi.fn(() => Promise.resolve(served === undefined
     ? { ok: false, error: new RemoteError('gateway/internal', 'no provider', {}) }
     : {
       ok: true,
       value: {
         writable: true,
         hasDocument: true,
-        ...scope === undefined ? { scopes: [] } : { scope, scopes: [scope] },
         namespaces: served.map(ns => ({
-          ns, registered: scope === undefined, schema: {}, value: {}, applies: 'live', secrets: [], revision: 0,
-          ...scope === undefined ? {} : { scope, inherited: {} },
+          ns, schema: {}, value: {}, applies: 'live', secrets: [], revision: 0,
         })),
       },
     }))
@@ -62,10 +60,7 @@ async function bench(served?: string[]) {
 function declareRoot(slots: SlotRegistry): () => void {
   return slots.register({
     name: 'root',
-    children: {
-      'settings.section': { kind: 'list', scope: 'root' },
-      'settings.agentPreset.detail': { kind: 'list', scope: 'root' },
-    },
+    children: { 'settings.section': { kind: 'list', scope: 'root' } },
   } as never, () => null)
 }
 
@@ -75,10 +70,12 @@ describe('ui-settings-plugins apply', () => {
   })
 
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'settingsScope'])
+    expect(inject).toEqual([
+      'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'settingsScope',
+    ])
   })
 
-  it('registers one Plugins section and one preset detail section, and declares the tab and card slots', async () => {
+  it('registers one Plugins section and declares the tab and card slots', async () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
 
@@ -93,10 +90,6 @@ describe('ui-settings-plugins apply', () => {
     expect(tab.options).toMatchObject({ id: 'configurable', order: 0 })
     expect(resolveSlotLabel(tab.options.label)).toBe('插件配置')
     expect(slots.spec('settings.plugin.item')).toMatchObject({ kind: 'keyed', scope: 'root' })
-    // The preset detail section follows the plugin manager's capabilities section.
-    const detail = slots.entries('settings.agentPreset.detail')[0]!
-    expect(detail.options).toMatchObject({ id: 'settings', order: 10 })
-    expect(slots.spec('settings.agentPreset.plugin.item')).toMatchObject({ kind: 'keyed', scope: 'root' })
   })
 
 
@@ -138,9 +131,8 @@ describe('ui-settings-plugins apply', () => {
 
     await ctx.plugin({ inject: [...inject], apply }).await()
 
-    const keys = ['shell', 'agent-loop', 'subagent-model-selection', 'web-search-deepseek', 'skill-filesystem']
-    expect(slots.entries('settings.plugin.item').map(entry => entry.options.key)).toEqual(keys)
-    expect(slots.entries('settings.agentPreset.plugin.item').map(entry => entry.options.key)).toEqual(keys)
+    expect(slots.entries('settings.plugin.item').map(entry => entry.options.key))
+      .toEqual(['shell', 'agent-loop', 'subagent-model-selection', 'web-search-deepseek'])
   })
 
   it('dispatches the served namespaces its cards claim, and no others', async () => {
@@ -229,37 +221,6 @@ describe('ui-settings-plugins apply', () => {
     expect(describeCredentials).not.toHaveBeenCalled()
   })
 
-  it('switches every card to a preset scope while its detail page holds the selection', async () => {
-    const { ctx, slots, describeSettings, remote } = await bench(['shell'])
-    declareRoot(slots)
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    const section = slots.entries('settings.agentPreset.detail')[0]!
-    const face = (section.inject as unknown as () => PresetSettingsFace)()
-    await vi.waitFor(() => { expect(face.hooks.configurablePlugins.getSnapshot().namespaces).toEqual(['shell']) })
-
-    // One controller serves both slots: the card under the preset slot is the tab's card.
-    const bash = slots.entries('settings.agentPreset.plugin.item')[0]!
-    const bashFace = (bash.inject as unknown as () => BashCardFace)()
-    const tabBash = slots.entries('settings.plugin.item')[0]!
-    expect((tabBash.inject as unknown as () => BashCardFace)().hooks.bashCard).toBe(bashFace.hooks.bashCard)
-    await vi.waitFor(() => { expect(bashFace.hooks.bashCard.getSnapshot()).toMatchObject({ scope: undefined }) })
-    describeSettings.mockClear()
-    face.selectScope('preset/standard')
-    // The scoped mirror is read on first selection, and the card follows it.
-    await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalledWith('preset/standard') })
-    await vi.waitFor(() => {
-      expect(bashFace.hooks.bashCard.getSnapshot()).toMatchObject({ scope: 'preset/standard' })
-    })
-    // A scoped commit reloads the scoped mirror only.
-    describeSettings.mockClear()
-    remote.emit('settings/document-updated', ['shell', 1, 'preset/standard'])
-    await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalledTimes(1) })
-    expect(describeSettings).toHaveBeenCalledWith('preset/standard')
-    // Leaving the page returns every card to the global instance.
-    face.selectScope(null)
-    expect(bashFace.hooks.bashCard.getSnapshot()).toMatchObject({ scope: undefined })
-  })
-
   it('registers into a declaration that arrives after apply', async () => {
     const { ctx, slots } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
@@ -274,15 +235,12 @@ describe('ui-settings-plugins apply', () => {
     declareRoot(slots)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(slots.entries('settings.plugin.item')).toHaveLength(5)
-    expect(slots.entries('settings.agentPreset.plugin.item')).toHaveLength(5)
+    expect(slots.entries('settings.plugin.item')).toHaveLength(4)
 
     await fiber.dispose()
 
     expect(slots.entries('settings.section')).toHaveLength(0)
-    expect(slots.entries('settings.agentPreset.detail')).toHaveLength(0)
     expect(slots.spec('settings.plugins.tab')).toBeUndefined()
     expect(slots.spec('settings.plugin.item')).toBeUndefined()
-    expect(slots.spec('settings.agentPreset.plugin.item')).toBeUndefined()
   })
 })

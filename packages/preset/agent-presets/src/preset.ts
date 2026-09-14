@@ -25,14 +25,6 @@ export interface AgentPreset {
   readonly trust: PresetTrust
   /** Absolute path of the preset's agent composition file. */
   readonly path: string
-  /**
-   * Absolute path of the preset's user patch layer (`cordis.patch.yml`), when
-   * one exists: beside the composition for a locally authored preset, or in
-   * the user root's directory of the same id for a shipped one. Applied over
-   * the composition at every mount, so a person can disable or add a row
-   * without editing the file the deployment ships.
-   */
-  readonly overlayPath?: string
   /** Display name from the preset's own metadata; absent falls back to {@link id}. */
   readonly name?: string
   /** One sentence on what this preset is for, when it published one. */

@@ -49,11 +49,9 @@
               "set": false
             }
           ],
-          "revision": 0,
-          "registered": true
+          "revision": 0
         }
-      ],
-      "scopes": []
+      ]
     }
   },
   "credentialsDescribe": {

@@ -22,7 +22,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/types'
 import type {} from '@deepseek-ai/dsh-settings/types'
 import { SettingsSchemaService } from './schema.ts'
 import { SettingsScopeBinder } from './settings-scope.ts'
-import { SettingsMirrorRegistry } from './settings-mirror.ts'
+import { SettingsDescribeMirror } from './settings-mirror.ts'
 
 export type {
   SettingsGeneralItemOwnerProps, SettingsHeaderOwnerProps, SettingsOnboardingOwnerProps,
@@ -33,7 +33,7 @@ export type { SettingsScope, SettingsScopeSnapshot, SettingsScopeSpec } from './
 export type { SettingsSchemaService } from './schema.ts'
 export type { SchemaNode } from './schema.ts'
 export type {
-  SettingsDescribeFace, SettingsDescribeView, SettingsMirrorRegistry, SettingsMirrorSnapshot,
+  SettingsDescribeFace, SettingsDescribeView, SettingsMirrorSnapshot,
 } from './settings-mirror.ts'
 
 /**
@@ -43,12 +43,9 @@ export type {
 export const inject = ['remote', 'remote.settings']
 
 /**
- * Provide the settings-namespace scope service over one describe mirror per
- * scope, and keep those mirrors fresh on the two signals that can move the
- * settings document: a document commit and a (re)connect. A commit names the
- * scope it landed in: a global commit reloads every mirror, because a named
- * scope resolves over the global section; a scoped commit reloads that
- * scope's mirror alone.
+ * Provide the settings-namespace scope service over one shared describe
+ * mirror, and keep that mirror fresh on the two signals that can move the
+ * settings document: a document commit and a (re)connect.
  *
  * Constructing the service in this plugin's fiber keeps its traced methods
  * bound to each consuming plugin's context.
@@ -59,18 +56,18 @@ export function apply(ctx: Context): void {
   // Resolved once here, where `remote` is declared in this plugin's own
   // `inject`; the binder hands the same answer to every scope it binds.
   const persistence = ctx.remote.$host.isLoopback ? 'host' : 'memory'
-  const mirrors = new SettingsMirrorRegistry(ctx, persistence)
+  const mirror = new SettingsDescribeMirror(ctx, persistence)
   ctx.effect(() => {
     const disposers = [
-      ctx.remote.$on('settings/document-updated', (_ns, _revision, scope) => { void mirrors.invalidate(scope) }),
-      ctx.on('connection/reset', () => { void mirrors.reload() }),
+      ctx.remote.$on('settings/document-updated', () => { void mirror.load() }),
+      ctx.on('connection/reset', () => { void mirror.load() }),
     ]
     // The first connection also emits connection/reset, so startup normally
     // costs two reads (budgeted in startup-rpc-budget.e2e.ts). The in-flight
     // fold does not merge them into one; it guarantees at most one pending
     // read at a time and that no invalidation arriving mid-read is lost.
-    void mirrors.global.ensure()
+    void mirror.ensure()
     return () => { for (const dispose of disposers) dispose() }
   }, 'ui-settings: describe mirror invalidations')
-  new SettingsScopeBinder(ctx, { mirrors, schema, persistence })
+  new SettingsScopeBinder(ctx, { mirror, schema, persistence })
 }

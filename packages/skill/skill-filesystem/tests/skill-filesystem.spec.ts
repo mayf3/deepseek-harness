@@ -919,32 +919,3 @@ describe('FileSystemSkillProvider', () => {
     }
   })
 })
-
-describe('the skill-filesystem settings section', () => {
-  it('exposes customSkillDirs through settings with the composition value as base, and re-lists on change', async () => {
-    const { MemorySettings } = await import('../../../settings/settings/tests/memory.ts')
-    const home = await tempDir('skill-settings')
-    const composed = join(home, 'composed')
-    const added = join(home, 'added')
-    await writeSkill(composed, 'composed-skill', 'From the composition.')
-    await writeSkill(added, 'added-skill', 'From the user document.')
-    const ctx = new Context()
-    await ctx.plugin(MemorySettings)
-    await ctx.plugin(SkillRegistry)
-    await ctx.plugin(SkillFileSystem, { dshHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false, includeDefaultRoots: false, customSkillDirs: [composed] })
-
-    const [descriptor] = ctx.settings.describe()
-    expect(descriptor).toMatchObject({ ns: 'skill-filesystem', base: { customSkillDirs: [composed] }, value: { customSkillDirs: [composed] } })
-    expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['composed-skill'])
-
-    await ctx.settings.update('skill-filesystem', { customSkillDirs: [added] })
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['added-skill'])
-
-    // The same roots again change nothing; a reset restores the composition's.
-    await ctx.settings.update('skill-filesystem', { customSkillDirs: [added] })
-    await ctx.settings.replace('skill-filesystem', {})
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['composed-skill'])
-  })
-})

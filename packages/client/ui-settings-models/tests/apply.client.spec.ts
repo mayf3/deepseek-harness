@@ -262,14 +262,13 @@ describe('pushed invalidations', () => {
     const mock = RemoteMock.create().load(remoteDefaultResponses)
     const namespace = {
       ns: WELCOME_NOTICE_SETTINGS_NAMESPACE,
-      registered: true,
       schema: {},
       value: {},
       applies: 'live' as const,
       secrets: [],
       revision: 0,
     }
-    const document = { writable: true, hasDocument: false, namespaces: [namespace], scopes: [] }
+    const document = { writable: true, hasDocument: false, namespaces: [namespace] }
     mock.remote.settings.describe.mockResolvedValue(ok(document))
     const b = await bench(true, mock)
     declare(b.slots)
@@ -296,8 +295,8 @@ describe('pushed invalidations', () => {
 
   it('joins the refreshed mirror view on a settings invalidation', async () => {
     const mock = RemoteMock.create().load(remoteDefaultResponses)
-    const namespace = { ns: 'llm-test', registered: true, schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 1 }
-    const document = { writable: true, hasDocument: false, namespaces: [namespace], scopes: [] }
+    const namespace = { ns: 'llm-test', schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 1 }
+    const document = { writable: true, hasDocument: false, namespaces: [namespace] }
     const describe = mock.remote.settings.describe
     describe.mockResolvedValue(ok(document))
     const listProviders = vi.fn(() => Promise.resolve({ ok: true as const, value: [] }))

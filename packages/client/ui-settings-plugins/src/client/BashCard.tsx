@@ -35,7 +35,6 @@ export function BashCard(props: BashCardProps) {
         label={t('bashTimeoutMs')}
         hint={t('bashTimeoutMsHint')}
         overriddenLabel={t('overridden')}
-        inheritedLabel={t('inherited')}
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}
         numeric
@@ -49,7 +48,6 @@ export function BashCard(props: BashCardProps) {
         label={t('bashMaxOutputBytes')}
         hint={t('bashMaxOutputBytesHint')}
         overriddenLabel={t('overridden')}
-        inheritedLabel={t('inherited')}
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}
         numeric

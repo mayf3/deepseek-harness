@@ -4,7 +4,7 @@
  * through `boot()` with the profile runtime the launcher provides, and a
  * fake pnpm that edits the profile the way the real one does. The manager
  * is built the way the Web host's adapter builds it, reading the runtime,
- * the roster, and the agent registry off the context per call.
+ * the agent registry off the context per call.
  */
 
 import { EventEmitter } from 'node:events'
@@ -26,7 +26,6 @@ import {
   type PluginInstallLogChunk, type PluginToolingConfig, type SpawnLike,
 } from '@deepseek-ai/dsh-plugin-manager'
 import type {} from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-agent-presets'
 
 const NAME = 'dsh-test'
 
@@ -233,12 +232,11 @@ async function bootProfile(staged: StagedHome, internals: Internals = {}, config
   return { ctx, manager, runtime: ctx.profileRuntime, changes, log }
 }
 
-/** The manager as the Web host's adapter builds it: runtime, roster, and agent count read off the context per call. */
+/** The manager as the Web host's adapter builds it: runtime and agent count read off the context per call. */
 function managerOver(ctx: Context, internals: Internals = {}, config: Partial<PluginToolingConfig> = {}): PluginManager {
   return new PluginManager(ctx, {
     config: managerConfig(config),
     runtime: () => ctx.get('profileRuntime'),
-    presets: () => ctx.get('agentPresets'),
     runningAgents: () => (ctx.get('agents')?.list() ?? []).filter(agent => agent.status === 'running').length,
     ...internals,
   })
@@ -348,12 +346,12 @@ describe('PluginManager', () => {
     expect(views.find(view => view.name === 'declared')?.addable[0]).toMatchObject({ moduleName: 'declared', config: { custom: 1 } })
     expect(existsSync(marker)).toBe(false)
     for (const id of ['', 'nested:child']) {
-      await expect(manager.addRow('declared', { kind: 'global' }, { id })).rejects.toMatchObject({ code: 'plugins/bad-request' })
+      await expect(manager.addRow('declared', { id })).rejects.toMatchObject({ code: 'plugins/bad-request' })
     }
-    const added = await manager.addRow('declared', { kind: 'global' }, { config: null })
+    const added = await manager.addRow('declared', { config: null })
     expect(readFileSync(added.file, 'utf8')).toContain('config: null')
     expect(views.find(view => view.name === 'unknown')?.kind).toBe('unknown')
-    await expect(manager.addRow('unknown', { kind: 'global' })).rejects.toMatchObject({ code: 'plugins/not-enableable' })
+    await expect(manager.addRow('unknown')).rejects.toMatchObject({ code: 'plugins/not-enableable' })
   })
 
   it('reports plugins/unavailable without a profile runtime', async () => {
@@ -543,7 +541,7 @@ describe('PluginManager', () => {
       const { manager } = await bootProfile(staged)
       await manager.enable('ext-off')
       await manager.enable('ext-waiting')
-      await manager.setRowDisabled({ kind: 'global' }, 'b', true)
+      await manager.setRowDisabled('b', true)
 
       const views = await manager.list()
 
@@ -553,7 +551,7 @@ describe('PluginManager', () => {
         ['a', false, 'composition', null],
         ['b', false, 'user', null],
       ])
-      await manager.setRowDisabled({ kind: 'global' }, 'b', true)
+      await manager.setRowDisabled('b', true)
       const waiting = views.find(view => view.name === 'ext-waiting')
       expect(waiting).toMatchObject({ status: 'failed', reason: expect.stringContaining('fixtureSvc') as string })
       expect(waiting?.rows).toEqual([expect.objectContaining({ entryId: 'include:w', phase: 'pending', failure: expect.objectContaining({ stage: 'inject-pending' }) as object })])
@@ -906,24 +904,24 @@ describe('PluginManager', () => {
       addDependency(staged.profileDir, '@acme/ext-plugin')
       const { ctx, manager, changes } = await bootProfile(staged)
 
-      const added = await manager.addRow('@acme/ext-plugin', { kind: 'global' })
+      const added = await manager.addRow('@acme/ext-plugin')
 
-      expect(added).toEqual({ target: { kind: 'global' }, rowId: 'acme/ext-plugin', file: join(staged.profileDir, 'cordis.patch.yml') })
+      expect(added).toEqual({ rowId: 'acme/ext-plugin', file: join(staged.profileDir, 'cordis.patch.yml') })
       expect(readFileSync(added.file, 'utf8')).toBe('- insert:\n    - id: acme/ext-plugin\n      name: "@acme/ext-plugin"\n      config: {}\n')
       // Composed live: the row is in the tree, though its module cannot import from the temp home.
       expect(entryIds(ctx)).toContain('include:acme/ext-plugin')
-      await expect(manager.addRow('@acme/ext-plugin', { kind: 'global' })).rejects.toMatchObject({ code: 'plugins/row-conflict' })
+      await expect(manager.addRow('@acme/ext-plugin')).rejects.toMatchObject({ code: 'plugins/row-conflict' })
 
-      await manager.setRowDisabled({ kind: 'global' }, 'acme/ext-plugin', true)
+      await manager.setRowDisabled('acme/ext-plugin', true)
       expect(ctx.loader.resolve('include:acme/ext-plugin')?.disabled).toBe(true)
       expect(readFileSync(added.file, 'utf8')).toContain('- id: acme/ext-plugin\n  disabled: true\n')
-      await manager.setRowDisabled({ kind: 'global' }, 'acme/ext-plugin', false)
+      await manager.setRowDisabled('acme/ext-plugin', false)
       expect(ctx.loader.resolve('include:acme/ext-plugin')?.disabled).toBe(false)
       expect(readFileSync(added.file, 'utf8')).not.toContain('disabled')
 
-      await manager.removeRow({ kind: 'global' }, 'acme/ext-plugin')
+      await manager.removeRow('acme/ext-plugin')
       expect(entryIds(ctx)).not.toContain('include:acme/ext-plugin')
-      await expect(manager.removeRow({ kind: 'global' }, 'acme/ext-plugin')).rejects.toMatchObject({ code: 'plugins/bad-request' })
+      await expect(manager.removeRow('acme/ext-plugin')).rejects.toMatchObject({ code: 'plugins/bad-request' })
       expect(changes.map(change => change.reason)).toEqual(['row', 'row', 'row', 'row'])
     })
 
@@ -933,10 +931,10 @@ describe('PluginManager', () => {
       addDependency(staged.profileDir, 'ext-plugin')
       const { ctx, manager } = await bootProfile(staged)
 
-      await manager.addRow('ext-plugin', { kind: 'global' })
+      await manager.addRow('ext-plugin')
 
       expect(entryIds(ctx)).not.toContain('include:ext-plugin')
-      await expect(manager.addRow('ext-plugin', { kind: 'global' })).rejects.toMatchObject({ code: 'plugins/row-conflict' })
+      await expect(manager.addRow('ext-plugin')).rejects.toMatchObject({ code: 'plugins/row-conflict' })
     })
 
     it('adds a declared addable module with its default config and an explicit id, and refuses the rest', async () => {
@@ -952,47 +950,15 @@ describe('PluginManager', () => {
       addDependency(staged.profileDir, 'ext-bundle')
       const { manager } = await bootProfile(staged)
 
-      const added = await manager.addRow('ext-bundle', { kind: 'global' }, { module: './tools/sql.js', id: 'sql' })
+      const added = await manager.addRow('ext-bundle', { module: './tools/sql.js', id: 'sql' })
       expect(added.rowId).toBe('sql')
       expect(readFileSync(added.file, 'utf8')).toContain('- id: sql\n      name: ext-bundle/tools/sql.js\n      config:\n        dsn: sqlite://\n')
-      await expect(manager.addRow('ext-bundle', { kind: 'global' })).rejects.toMatchObject({ code: 'plugins/not-enableable' })
-      await expect(manager.addRow('ext-bundle', { kind: 'global' }, { module: './missing.js' })).resolves.toMatchObject({ rowId: 'ext-bundle/missing.js' })
-      await expect(manager.addRow('absent', { kind: 'global' })).rejects.toMatchObject({ code: 'plugins/not-installed' })
+      await expect(manager.addRow('ext-bundle')).rejects.toMatchObject({ code: 'plugins/not-enableable' })
+      await expect(manager.addRow('ext-bundle', { module: './missing.js' })).resolves.toMatchObject({ rowId: 'ext-bundle/missing.js' })
+      await expect(manager.addRow('absent')).rejects.toMatchObject({ code: 'plugins/not-installed' })
     })
 
-    it('writes a preset\'s layer through the roster, and refuses a preset target without one', async () => {
-      const staged = await stageHome()
-      stagePackage(staged.profileDir, 'ext-plugin', { plugins: [{ name: '.' }], main: 'export const name = "p"\nexport function apply() {}\n' })
-      addDependency(staged.profileDir, 'ext-plugin')
-      const { ctx, manager } = await bootProfile(staged)
-      await expect(manager.addRow('ext-plugin', { kind: 'preset', preset: 'standard' })).rejects.toMatchObject({ code: 'plugins/unavailable' })
 
-      const overlay = join(staged.home, '.agent-presets', 'standard', 'cordis.patch.yml')
-      const roster = {
-        overlayPathFor: (id: string) => Promise.resolve(join(staged.home, '.agent-presets', id, 'cordis.patch.yml')),
-        compositionInventory: () => Promise.resolve([{ id: 'standard', rows: [{ entryId: 'tool-web' }] }]),
-        list: () => Promise.resolve([{ id: 'standard', overlayPath: existsSync(overlay) ? overlay : undefined }]),
-      }
-      ctx.provide('agentPresets', roster)
-      // No layer exists yet: nothing references the package.
-      expect((await manager.dependents('ext-plugin')).references).toEqual([])
-      // A preset the inventory does not know has no rows to conflict with.
-      const elsewhere = await manager.addRow('ext-plugin', { kind: 'preset', preset: 'other' })
-      expect(elsewhere.file).toBe(join(staged.home, '.agent-presets', 'other', 'cordis.patch.yml'))
-
-      const added = await manager.addRow('ext-plugin', { kind: 'preset', preset: 'standard' })
-      expect(added).toEqual({ target: { kind: 'preset', preset: 'standard' }, rowId: 'ext-plugin', file: overlay })
-      await expect(manager.addRow('ext-plugin', { kind: 'preset', preset: 'standard' }, { id: 'tool-web' })).rejects.toMatchObject({ code: 'plugins/row-conflict' })
-      await manager.setRowDisabled({ kind: 'preset', preset: 'standard' }, 'tool-web', true)
-      expect(readFileSync(overlay, 'utf8')).toBe('- insert:\n    - id: ext-plugin\n      name: ext-plugin\n      config: {}\n- id: tool-web\n  disabled: true\n')
-      // The preset's layer is not part of the host tree.
-      expect(entryIds(ctx)).not.toContain('include:ext-plugin')
-
-      const dependents = await manager.dependents('ext-plugin')
-      expect(dependents.references).toEqual([{ target: { kind: 'preset', preset: 'standard' }, rowId: 'ext-plugin', moduleName: 'ext-plugin' }])
-      await manager.removeRow({ kind: 'preset', preset: 'standard' }, 'ext-plugin')
-      expect(readFileSync(overlay, 'utf8')).toBe('- id: tool-web\n  disabled: true\n')
-    })
   })
 
   describe('dependents and uninstall', () => {
@@ -1021,14 +987,14 @@ describe('PluginManager', () => {
       await manager.enable('ext-provider')
       // A built-in row injecting the bundle's service, composed once the
       // provider is up (a boot would refuse a row left waiting).
-      writeFileSync(join(staged.profileDir, 'cordis.patch.yml'), `${readFileSync(join(staged.profileDir, 'cordis.patch.yml'), 'utf8')}- insert:\n    - id: needs-svc\n      name: cordis:consumer\n`)
+      writeFileSync(join(staged.profileDir, 'cordis.patch.yml'), `${readFileSync(join(staged.profileDir, 'cordis.patch.yml'), 'utf8')}- id: svc\n  disabled: false\n- insert:\n    - id: needs-svc\n      name: cordis:consumer\n`)
       await runtime.recompose()
 
       const dependents = await manager.dependents('ext-provider')
 
       expect(dependents.services).toEqual([{ service: 'fixtureSvc', providedBy: 'include:svc', injectedBy: ['include:needs-svc'] }])
       expect(dependents.references.map(reference => reference.rowId)).toEqual(['ref', 'nested-ref'])
-      expect(dependents.references[0]).toEqual({ target: { kind: 'global' }, rowId: 'ref', moduleName: 'ext-provider/tools/x.js' })
+      expect(dependents.references[0]).toEqual({ rowId: 'ref', moduleName: 'ext-provider/tools/x.js' })
     })
 
     it('ignores an unreadable user layer while collecting references', async () => {
@@ -1048,7 +1014,7 @@ describe('PluginManager', () => {
       const calls: string[][] = []
       const { ctx, manager, changes } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
       await manager.enable('ext-bundle')
-      await manager.addRow('ext-bundle', { kind: 'global' }, { module: './extra.js' })
+      await manager.addRow('ext-bundle', { module: './extra.js' })
       expect(entryIds(ctx)).toEqual(expect.arrayContaining(['include:hello', 'include:ext-bundle/extra.js']))
 
       await manager.uninstall('ext-bundle')
@@ -1066,8 +1032,8 @@ describe('PluginManager', () => {
 
 describe('PluginOperationError', () => {
   it('carries its code and details, and is what pluginOperationFailureOf narrows to', () => {
-    const failure = new PluginOperationError('plugins/row-conflict', 'taken', { rowId: 'x', target: { kind: 'global' } })
-    expect(failure).toMatchObject({ name: 'PluginOperationError', code: 'plugins/row-conflict', message: 'taken', details: { rowId: 'x', target: { kind: 'global' } } })
+    const failure = new PluginOperationError('plugins/row-conflict', 'taken', { rowId: 'x' })
+    expect(failure).toMatchObject({ name: 'PluginOperationError', code: 'plugins/row-conflict', message: 'taken', details: { rowId: 'x' } })
     expect(pluginOperationFailureOf(failure)).toBe(failure)
     expect(pluginOperationFailureOf(new Error('plain'))).toBeUndefined()
   })

@@ -9,7 +9,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { SettingsSchemaService } from '../src/client/schema.ts'
 import { SettingsScopeController, SettingsScopeBinder } from '../src/client/settings-scope.ts'
-import { SettingsDescribeMirror, SettingsMirrorRegistry } from '../src/client/settings-mirror.ts'
+import { SettingsDescribeMirror } from '../src/client/settings-mirror.ts'
 
 const settingsSchema = new SettingsSchemaService(new Context())
 
@@ -42,7 +42,6 @@ function ctxWith(settings: object) {
 function view(value: JsonValue, revision = 0): SettingsNamespaceView {
   return {
     ns: 'ui-test',
-    registered: true,
     // `toJSON()` already produced the wire envelope; its declared type is the
     // schema builder's, so one cast names what the Host actually sends.
     schema: ENVELOPE as unknown as JsonValue,
@@ -54,18 +53,7 @@ function view(value: JsonValue, revision = 0): SettingsNamespaceView {
 }
 
 function described(value: JsonValue, revision = 0) {
-  return ok({ writable: true, hasDocument: true, scopes: [], namespaces: [view(value, revision)] })
-}
-
-/** A named scope's answer: the instance flagged as registered or not, with its inherited value. */
-function describedScoped(value: JsonValue, inherited: JsonValue, registered: boolean, revision = 0) {
-  return ok({
-    writable: true,
-    hasDocument: true,
-    scope: 'preset/research',
-    scopes: ['preset/research'],
-    namespaces: [{ ...view(value, revision), scope: 'preset/research', registered, inherited }],
-  })
+  return ok({ writable: true, hasDocument: true, namespaces: [view(value, revision)] })
 }
 
 function deferred<T>() {
@@ -101,11 +89,11 @@ describe('SettingsScopeController', () => {
     const describeCall = vi.fn().mockResolvedValueOnce(described({ preference: 'dark' }, 3))
     const { mirror, scope } = derivedScope({ describe: describeCall })
     expect(scope.getSnapshot()).toEqual({
-      status: 'loading', value: undefined, revision: undefined, writable: false, mode: 'host', registered: false,
+      status: 'loading', value: undefined, revision: undefined, writable: false, mode: 'host',
     })
     await mirror.load()
     expect(scope.getSnapshot()).toEqual({
-      status: 'ready', value: { preference: 'dark' }, revision: 3, writable: true, mode: 'host', registered: true,
+      status: 'ready', value: { preference: 'dark' }, revision: 3, writable: true, mode: 'host',
     })
   })
 
@@ -455,7 +443,7 @@ describe('SettingsScopeController', () => {
     const scope = new SettingsScopeController<UiTestSettings>(
       ctx, { namespace: 'ui-test' }, mirror, 'memory', settingsSchema)
     expect(scope.getSnapshot()).toEqual({
-      status: 'unavailable', value: undefined, revision: undefined, writable: false, mode: 'memory', registered: false,
+      status: 'unavailable', value: undefined, revision: undefined, writable: false, mode: 'memory',
     })
     await mirror.load()
     await scope.set('preference', 'dark')
@@ -527,13 +515,12 @@ describe('SettingsScopeController', () => {
 describe('SettingsScopeBinder.bind', () => {
   it('shares one mirror read across bound scopes and disposes each with its fiber', async () => {
     const describeCall = vi.fn().mockResolvedValue(described({ preference: 'dark' }, 1))
-    const mirrors = new SettingsMirrorRegistry(ctxWith({ describe: describeCall }), 'host')
-    const mirror = mirrors.global
+    const mirror = new SettingsDescribeMirror(ctxWith({ describe: describeCall }))
     const ctx = new Context()
     let theme!: SettingsScope<UiTestSettings>
     let locale!: SettingsScope<UiTestSettings>
     new TestRemote(ctx, { settings: { describe: describeCall } })
-    await ctx.plugin(SettingsScopeBinder, { mirrors, schema: settingsSchema, persistence: 'host' }).await()
+    await ctx.plugin(SettingsScopeBinder, { mirror, schema: settingsSchema, persistence: 'host' }).await()
     expect(ctx.settingsScope.describe()).toBe(mirror)
     const fiber = ctx.plugin({
       inject: ['remote', 'settingsScope'],
@@ -555,11 +542,11 @@ describe('SettingsScopeBinder.bind', () => {
 
   it('binds a remote browser in memory mode without starting a settings read', async () => {
     const describeCall = vi.fn()
-    const mirrors = new SettingsMirrorRegistry(ctxWith({ describe: describeCall }), 'memory')
+    const mirror = new SettingsDescribeMirror(ctxWith({ describe: describeCall }), 'memory')
     const ctx = new Context()
     let scope!: SettingsScope<UiTestSettings>
     new TestRemote(ctx, { settings: { describe: describeCall } })
-    await ctx.plugin(SettingsScopeBinder, { mirrors, schema: settingsSchema, persistence: 'memory' }).await()
+    await ctx.plugin(SettingsScopeBinder, { mirror, schema: settingsSchema, persistence: 'memory' }).await()
     const fiber = ctx.plugin({
       inject: ['remote', 'settingsScope'],
       apply: (plugin: Context) => {
@@ -570,43 +557,5 @@ describe('SettingsScopeBinder.bind', () => {
     expect(scope.getSnapshot()).toMatchObject({ status: 'unavailable', mode: 'memory', writable: false })
     await fiber.dispose()
     expect(describeCall).not.toHaveBeenCalled()
-  })
-
-  it('binds a named scope over that scope\'s own mirror and writes with the scope', async () => {
-    const describeCall = vi.fn((scope?: string) => Promise.resolve(scope === undefined
-      ? described({ preference: 'dark' }, 1)
-      : describedScoped({ preference: 'light' }, { preference: 'dark' }, false, 4)))
-    const mutate = vi.fn().mockResolvedValue(ok({
-      ...view({ preference: 'system' }, 5), scope: 'preset/research', registered: false, inherited: { preference: 'dark' },
-    }))
-    const mirrors = new SettingsMirrorRegistry(ctxWith({ describe: describeCall, mutate }), 'host')
-    const ctx = new Context()
-    let research!: SettingsScope<UiTestSettings>
-    new TestRemote(ctx, { settings: { describe: describeCall, mutate } })
-    await ctx.plugin(SettingsScopeBinder, { mirrors, schema: settingsSchema, persistence: 'host' }).await()
-    const fiber = ctx.plugin({
-      inject: ['remote', 'settingsScope'],
-      apply: (plugin: Context) => {
-        research = plugin.settingsScope.bind<UiTestSettings>({ namespace: 'ui-test', scope: 'preset/research' })
-      },
-    })
-    await fiber.await()
-    // The scoped mirror is the one the binder's describe face answers for that scope.
-    expect(ctx.settingsScope.describe('preset/research')).toBe(mirrors.mirrorFor('preset/research'))
-    await vi.waitFor(() => {
-      expect(research.getSnapshot()).toMatchObject({
-        status: 'ready', scope: 'preset/research', registered: false,
-        value: { preference: 'light' }, inherited: { preference: 'dark' }, revision: 4,
-      })
-    })
-    expect(describeCall).toHaveBeenCalledWith('preset/research')
-    // The global mirror stays idle: nothing bound it.
-    expect(mirrors.global.getSnapshot().status).toBe('idle')
-
-    await research.set('preference', 'system')
-    expect(mutate).toHaveBeenCalledWith(
-      'ui-test', [{ op: 'set', path: ['preference'], value: 'system' }], 4, 'preset/research')
-    expect(research.getSnapshot()).toMatchObject({ value: { preference: 'system' }, revision: 5 })
-    await fiber.dispose()
   })
 })

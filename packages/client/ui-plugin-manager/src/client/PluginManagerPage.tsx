@@ -9,12 +9,11 @@
  * and module names stay in the detail view. A card opens the package's own
  * page: its version and source, its rows — each with its own switch on an
  * external pack composed on a live-reload profile — the built-in rows it
- * changes, the modules it declares addable, and its uninstall. A preset's
- * composition lives on the preset's own detail page (`PresetPluginsSection`).
+ * changes, the modules it declares addable, and its uninstall.
  */
 
 import { useEffect, useId, useState, type ReactNode } from 'react'
-import type { PluginInstallRejection, PluginPackageView, PluginRowTarget } from '@deepseek-ai/dsh-api-remotes/client'
+import type { PluginInstallRejection, PluginPackageView } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   Button, IconChevronDownOutline14, IconCordisPluginOutline14, IconRefreshOutline16,
   Input, Menu, Modal, StateDot, Switch, Tag, TerminalBlock,
@@ -22,7 +21,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginManagerLocaleKey } from './locales.ts'
-import { rowKey, type ConfirmState, type InstallState, type PluginManagerFace, type PresetGroup } from './manager-store.ts'
+import { rowKey, type ConfirmState, type InstallState, type PluginManagerFace } from './manager-store.ts'
 import { NoticeLine } from './NoticeLine.tsx'
 import { packageOf, refusalText, rowLabel, shortName, type Translate } from './presentation.ts'
 import css from './PluginManagerPage.module.css'
@@ -37,7 +36,6 @@ type RowView = PluginPackageView['rows'][number]
 type RowPhase = NonNullable<RowView['phase']>
 
 /** The layer a pack's components are switched in: a row override always lands in the profile's global user layer. */
-const GLOBAL: PluginRowTarget = { kind: 'global' }
 
 /** The list's two groups: packs, which switch as a whole, and everything else, which joins a composition per row. */
 const PACKAGE_GROUPS = [
@@ -255,28 +253,14 @@ function OverridesSection({ overrides, t }: { readonly overrides: readonly strin
   )
 }
 
-/** Where one module is composed already: every session, then the presets that carry it. */
-function joinedTargets(
-  entry: PluginPackageView['addable'][number], presets: readonly PresetGroup[], globalModules: readonly string[],
-  t: Translate, presetName: (preset: PresetGroup) => string,
-): string[] {
-  return [
-    ...globalModules.includes(entry.moduleName) ? [t('joinedGlobal')] : [],
-    ...presets.filter(preset => preset.rows.some(row => row.moduleName === entry.moduleName)).map(presetName),
-  ]
-}
-
-/** The modules a package declares addable: each with where it is composed, or why it cannot be, and its **Add to…** menu. */
-function ModulesSection({ pkg, t, busy, presets, globalModules, presetName, onAddRow }: {
+/** Declared modules with their global composition state and add action. */
+function ModulesSection({ pkg, t, busy, globalModules, onAddRow }: {
   readonly pkg: PluginPackageView
   readonly t: Translate
   readonly busy: boolean
-  readonly presets: readonly PresetGroup[]
   readonly globalModules: readonly string[]
-  readonly presetName: (preset: PresetGroup) => string
-  readonly onAddRow: (declaredName: string, target: PluginRowTarget) => void
+  readonly onAddRow: (declaredName: string) => void
 }): ReactNode {
-  const [openMenu, setOpenMenu] = useState<string | null>(null)
   const title = pkg.title ?? shortName(pkg.name)
   return (
     <section className={css.detailSection} data-plugin-modules>
@@ -285,8 +269,7 @@ function ModulesSection({ pkg, t, busy, presets, globalModules, presetName, onAd
       </div>
       <ul className={css.rows}>
         {pkg.addable.map((entry) => {
-          const joined = joinedTargets(entry, presets, globalModules, t, presetName)
-          const open = openMenu === entry.moduleName
+          const added = globalModules.includes(entry.moduleName)
           return (
             <li key={entry.moduleName} className={css.row} data-plugin-module={entry.moduleName}>
               <div className={css.rowLine}>
@@ -294,34 +277,11 @@ function ModulesSection({ pkg, t, busy, presets, globalModules, presetName, onAd
                 <div className={css.rowMain}>
                   <span className={css.rowId}>{entry.title ?? (entry.declaredName === '.' ? title : entry.declaredName)}</span>
                   <span className={css.rowModule}>{entry.moduleName}</span>
-                  <span className={css.rowNote}>
-                    {joined.length > 0 ? t('moduleJoined', { targets: joined.join(t('joinedSeparator')) }) : t('moduleNotJoined')}
-                  </span>
+                  <span className={css.rowNote}>{t(added ? 'joinedGlobal' : 'moduleNotJoined')}</span>
                 </div>
-                <Menu
-                  open={open}
-                  onClose={() => { setOpenMenu(null) }}
-                  items={addTargets(entry, presets, globalModules, t, presetName)}
-                  onSelect={(id) => {
-                    setOpenMenu(null)
-                    const choice = JSON.parse(id) as AddChoice
-                    onAddRow(choice.declaredName, choice.target)
-                  }}
-                  align="end"
-                  portal
-                  anchor={(
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      aria-haspopup="menu"
-                      aria-expanded={open}
-                      disabled={busy}
-                      onClick={() => { setOpenMenu(open ? null : entry.moduleName) }}
-                    >
-                      {t('addTo')}
-                    </Button>
-                  )}
-                />
+                <Button variant="outline" size="sm" disabled={busy || added} onClick={() => { onAddRow(entry.declaredName) }}>
+                  {t(added ? 'addToGlobalAdded' : 'addToGlobal')}
+                </Button>
               </div>
             </li>
           )
@@ -329,32 +289,6 @@ function ModulesSection({ pkg, t, busy, presets, globalModules, presetName, onAd
       </ul>
     </section>
   )
-}
-
-/** One **Add to…** choice, carried through the menu as its item id. */
-interface AddChoice {
-  readonly declaredName: string
-  readonly target: PluginRowTarget
-}
-
-/** The **Add to…** menu entries of one addable module; each id carries the choice it makes. */
-function addTargets(
-  entry: PluginPackageView['addable'][number], presets: readonly PresetGroup[], globalModules: readonly string[],
-  t: Translate, presetName: (preset: PresetGroup) => string,
-): MenuItem[] {
-  const choice = (target: PluginRowTarget): string => JSON.stringify({ declaredName: entry.declaredName, target } satisfies AddChoice)
-  const inGlobal = globalModules.includes(entry.moduleName)
-  return [
-    { id: choice({ kind: 'global' }), label: t(inGlobal ? 'addToGlobalAdded' : 'addToGlobal'), disabled: inGlobal },
-    ...presets.map((preset) => {
-      const added = preset.rows.some(row => row.source === 'user' && row.moduleName === entry.moduleName)
-      return {
-        id: choice({ kind: 'preset', preset: preset.id }),
-        label: t(added ? 'addToPresetAdded' : 'addToPreset', { name: presetName(preset) }),
-        disabled: added || preset.broken !== undefined,
-      }
-    }),
-  ]
 }
 
 /** A bundle's enable switch on its card and its page: locked for a built-in bundle, off and locked for one the profile cannot enable. */
@@ -379,16 +313,14 @@ function EnableSwitch({ pkg, title, t, busy, onSetEnabled }: {
 }
 
 /** One installed package as a card that opens its page: its name, its one-liner, its tags, and its switch or its **Add to…** menu. */
-function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen, onSetEnabled, onAddRow }: {
+function PackageCard({ pkg, t, busy, globalModules, onOpen, onSetEnabled, onAddRow }: {
   readonly pkg: PluginPackageView
   readonly t: Translate
   readonly busy: boolean
-  readonly presets: readonly PresetGroup[]
   readonly globalModules: readonly string[]
-  readonly presetName: (preset: PresetGroup) => string
   readonly onOpen: () => void
   readonly onSetEnabled: (enabled: boolean) => void
-  readonly onAddRow: (declaredName: string, target: PluginRowTarget) => void
+  readonly onAddRow: (declaredName: string) => void
 }): ReactNode {
   const [addMenu, setAddMenu] = useState(false)
   const title = pkg.title ?? shortName(pkg.name)
@@ -396,13 +328,11 @@ function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen,
   const status = cardStatus(pkg)
   const addable = pkg.addable
   const [single] = addable
-  const menuItems: MenuItem[] = single !== undefined && addable.length === 1
-    ? addTargets(single, presets, globalModules, t, presetName)
-    : addable.map(entry => ({
-      id: entry.moduleName,
-      label: entry.title ?? entry.declaredName,
-      submenu: addTargets(entry, presets, globalModules, t, presetName),
-    }))
+  const menuItems: MenuItem[] = addable.map(entry => ({
+    id: entry.declaredName,
+    label: entry.title ?? entry.declaredName,
+    disabled: globalModules.includes(entry.moduleName),
+  }))
   return (
     <li className={`${css.card} ${css.cardLink}`} data-plugin-package={pkg.name} data-plugin-status={pkg.status}>
       <div className={css.cardHead}>
@@ -418,16 +348,18 @@ function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen,
           <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
           {menuItems.length === 0
             ? null
-            : (
+            : single !== undefined && addable.length === 1 ? (
+              <Button variant="outline" size="sm" disabled={busy || globalModules.includes(single.moduleName)} onClick={() => { onAddRow(single.declaredName) }}>
+                {t(globalModules.includes(single.moduleName) ? 'addToGlobalAdded' : 'addToGlobal')}
+              </Button>
+            ) : (
               <Menu
                 open={addMenu}
                 onClose={() => { setAddMenu(false) }}
                 items={menuItems}
                 onSelect={(id) => {
                   setAddMenu(false)
-                  // Only a leaf carries a choice; a submenu parent's id is its module name.
-                  const choice = JSON.parse(id) as AddChoice
-                  onAddRow(choice.declaredName, choice.target)
+                  onAddRow(id)
                 }}
                 align="end"
                 portal
@@ -440,7 +372,7 @@ function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen,
                     disabled={busy}
                     onClick={() => { setAddMenu(current => !current) }}
                   >
-                    {t('addTo')}
+                    {t('addToGlobal')}
                   </Button>
                 )}
               />
@@ -458,7 +390,7 @@ function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen,
  * declares addable with where each is composed; and retry and uninstall.
  */
 function PackageDetail({
-  pkg, t, busy, rowBusy, presets, globalModules, presetName,
+  pkg, t, busy, rowBusy, globalModules,
   onBack, onSetEnabled, onRetry, onUninstall, onAddRow, onSetRowDisabled,
 }: {
   readonly pkg: PluginPackageView
@@ -466,14 +398,12 @@ function PackageDetail({
   readonly busy: boolean
   /** Whether a row has a write in flight. */
   readonly rowBusy: (rowId: string) => boolean
-  readonly presets: readonly PresetGroup[]
   readonly globalModules: readonly string[]
-  readonly presetName: (preset: PresetGroup) => string
   readonly onBack: () => void
   readonly onSetEnabled: (enabled: boolean) => void
   readonly onRetry: () => void
   readonly onUninstall: () => void
-  readonly onAddRow: (declaredName: string, target: PluginRowTarget) => void
+  readonly onAddRow: (declaredName: string) => void
   readonly onSetRowDisabled: (row: RowView, disabled: boolean) => void
 }): ReactNode {
   const title = pkg.title ?? shortName(pkg.name)
@@ -563,9 +493,7 @@ function PackageDetail({
               pkg={pkg}
               t={t}
               busy={busy}
-              presets={presets}
               globalModules={globalModules}
-              presetName={presetName}
               onAddRow={onAddRow}
             />
           )}
@@ -713,12 +641,10 @@ const CONFIRM_KEYS = {
 } as const satisfies Record<ConfirmState['action'], Record<'titleKey' | 'descriptionKey' | 'actionKey', PluginManagerLocaleKey>>
 
 /** The confirmation a destructive action waits on, naming what still uses the package or the row. */
-function ConfirmDialog({ confirm, t, packages, presets, presetName, onConfirm, onCancel }: {
+function ConfirmDialog({ confirm, t, packages, onConfirm, onCancel }: {
   readonly confirm: ConfirmState
   readonly t: Translate
   readonly packages: readonly PluginPackageView[]
-  readonly presets: readonly PresetGroup[]
-  readonly presetName: (preset: PresetGroup) => string
   readonly onConfirm: () => void
   readonly onCancel: () => void
 }): ReactNode {
@@ -733,10 +659,7 @@ function ConfirmDialog({ confirm, t, packages, presets, presetName, onConfirm, o
       ...dependents.references.map((reference) => {
         const owner = packageOf(reference.moduleName, packages)
         const row = owner === undefined ? reference.rowId : owner.title ?? shortName(owner.name)
-        if (reference.target.kind === 'global') return t('dependentReferenceGlobal', { row })
-        const target = reference.target.preset
-        const preset = presets.find(candidate => candidate.id === target)
-        return t('dependentReferencePreset', { name: preset === undefined ? target : presetName(preset), row })
+        return t('dependentReferenceGlobal', { row })
       }),
     ]
   return (
@@ -770,7 +693,7 @@ function ConfirmDialog({ confirm, t, packages, presets, presetName, onConfirm, o
 
 /** Render the plugin manager: the installed packages, the install dialog, and the confirmation. */
 export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
-  const { t, presetName, ensure } = props
+  const { t, ensure } = props
   const state = props.usePluginManager(snapshot => snapshot)
   // The package whose page is open; one that leaves the list (uninstalled) drops back to the cards.
   const [openPackage, setOpenPackage] = useState<string | null>(null)
@@ -818,19 +741,17 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
             pkg={openPkg}
             t={t}
             busy={state.busy.includes(openPkg.name)}
-            rowBusy={rowId => state.busy.includes(rowKey(GLOBAL, rowId))}
-            presets={state.presets}
+            rowBusy={rowId => state.busy.includes(rowKey(rowId))}
             globalModules={state.globalModules}
-            presetName={presetName}
             onBack={() => { setOpenPackage(null) }}
             onSetEnabled={(enabled) => { props.setEnabled(openPkg.name, enabled) }}
             onRetry={() => { props.retry(openPkg.name) }}
             onUninstall={() => { props.uninstall(openPkg.name) }}
-            onAddRow={(declaredName, target) => { props.addRow(openPkg.name, declaredName, target) }}
+            onAddRow={(declaredName) => { props.addRow(openPkg.name, declaredName) }}
             onSetRowDisabled={(row, disabled) => {
               // Off asks first when other rows inject what the row provides; on has nothing to ask.
               if (disabled) props.disableRow(openPkg.name, row.entryId, row.rowId)
-              else props.setRowDisabled(GLOBAL, row.rowId, false)
+              else props.setRowDisabled(row.rowId, false)
             }}
           />
         )
@@ -855,12 +776,10 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
                         pkg={pkg}
                         t={t}
                         busy={state.busy.includes(pkg.name)}
-                        presets={state.presets}
                         globalModules={state.globalModules}
-                        presetName={presetName}
                         onOpen={() => { setOpenPackage(pkg.name) }}
                         onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
-                        onAddRow={(declaredName, target) => { props.addRow(pkg.name, declaredName, target) }}
+                        onAddRow={(declaredName) => { props.addRow(pkg.name, declaredName) }}
                       />
                     ))}
                   </ul>
@@ -883,8 +802,6 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
             confirm={state.confirm}
             t={t}
             packages={state.packages}
-            presets={state.presets}
-            presetName={presetName}
             onConfirm={props.confirm}
             onCancel={props.cancelConfirm}
           />

@@ -15,8 +15,6 @@ const frame = {
   invalidLabel: 'Enter a number.',
   disabled: false,
   overridden: false,
-  inherited: false,
-  inheritedLabel: 'Inherited',
   invalid: false,
 }
 

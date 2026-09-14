@@ -1,8 +1,8 @@
 /** The agent-loop card's staged form over the `agent-loop` settings namespace. */
 
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { numberField, type CardActions, type CardFieldState, type CardShell } from './card-form.ts'
-import { ScopedCardForms, type BindScope, type ScopeSelection } from './scoped-form.ts'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { CardForm, numberField, type CardActions, type CardFieldState, type CardShell } from './card-form.ts'
 
 /**
  * Namespace of the agent loop's user-owned settings. Spelled here rather than
@@ -33,17 +33,14 @@ export interface AgentLoopCardFace extends CardActions {
   }
 }
 
-/** Bridges the `agent-loop` namespace, under the selected scope, onto the card's staged form. */
+/** Bridges the `agent-loop` scope onto the card's staged form. */
 export class AgentLoopCardController {
-  private readonly form: ScopedCardForms<AgentLoopSettings>
+  private readonly form: CardForm<AgentLoopSettings>
   private readonly store: SnapshotStore<AgentLoopCardState>
 
-  /**
-   * @param selection - the scope selection shared with the card surfaces.
-   * @param bindScope - binds the `agent-loop` namespace under one scope.
-   */
-  constructor(selection: ScopeSelection, bindScope: BindScope<AgentLoopSettings>) {
-    this.form = new ScopedCardForms(selection, bindScope, [numberField('maxParallelToolCalls')])
+  /** @param scope - the bound settings scope for the `agent-loop` namespace. */
+  constructor(scope: SettingsScope<AgentLoopSettings>) {
+    this.form = new CardForm(scope, [numberField('maxParallelToolCalls')])
     this.store = this.form.bind(() => this.projection())
   }
 

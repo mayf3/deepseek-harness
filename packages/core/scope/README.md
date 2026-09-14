@@ -28,7 +28,7 @@ Plugin authors use `dsh-scope` to give one agent (or one group) its own registra
 
 ### Mint a scope
 
-`createScope(ctx, key)` creates a scope under `ctx`'s fiber: its `ctx` carries the scope tag, and everything registered through it is both scope-visible and scope-lifetime. `dispose()` unwinds every registration through the scope; `rawDispose` is the exact Cordis disposer for nesting the teardown in an ordered composite effect. Pass `id` (`createScope(ctx, key, { id: 'preset/standard' })`) to name the scope: `scopeIdOf(ctx)` then answers the nearest named scope along a context's parent chain — an agent's context resolves to the preset it joined — which is the name consumers keeping per-scope state outside the process, such as the settings document, address it by; `scopeIdOfKey(key)` reads one key's own name.
+`createScope(ctx, key)` creates a scope under `ctx`'s fiber: its `ctx` carries the scope tag, and everything registered through it is both scope-visible and scope-lifetime. `dispose()` unwinds every registration through the scope; `rawDispose` is the exact Cordis disposer for nesting the teardown in an ordered composite effect.
 
 ```text
 const scope = createScope(ctx, agent)
@@ -63,7 +63,7 @@ The registration context determines both visibility and ownership: a registratio
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `createScope` (with named scopes), `scopeOf`, `scopeIdOf`/`scopeIdOfKey`, `scopeTarget`, `bindScopeParent`/`scopeParentOf`/`scopeChainOf`, carrier marks |
+| [`src/index.ts`](src/index.ts) | `createScope`, `scopeOf`, `scopeTarget`, `bindScopeParent`/`scopeParentOf`/`scopeChainOf`, carrier marks |
 | [`src/store.ts`](src/store.ts) | `ScopedLayers`, `NamedEntries`, `AnonymousEntries`, `ScopeLayer` |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion over the generated scoped-event map |
 | [`src/scoped-events.generated.ts`](src/scoped-events.generated.ts) | Generated resolver map of declared scoped events |

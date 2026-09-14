@@ -31,9 +31,6 @@
       - 'button "新任务默认: 标准模式" [disabled] [pressed]':
         - text: 标准模式 内置 新任务默认 功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。
         - code: standard
-      - 'button "配置: 标准模式"':
-        - img
-        - text: 配置
       - 'button "查看: 标准模式"':
         - img
         - text: 查看
@@ -44,9 +41,6 @@
       - 'button "设为默认: PTC 模式"':
         - text: PTC 模式 内置 功能完整的编码 Agent，但默认不提供 workflow 工具；其他工具通过 PTC 模式 SDK 呈现，让模型用一个 TypeScript 程序组合多步操作。
         - code: ptc
-      - 'button "配置: PTC 模式"':
-        - img
-        - text: 配置
       - 'button "查看: PTC 模式"':
         - img
         - text: 查看
@@ -57,9 +51,6 @@
       - 'button "设为默认: 极简模式"':
         - text: 极简模式 内置 仅提供持久 shell 的单工具编码 Agent。
         - code: minimal
-      - 'button "配置: 极简模式"':
-        - img
-        - text: 配置
       - 'button "查看: 极简模式"':
         - img
         - text: 查看
@@ -70,9 +61,6 @@
       - 'button "设为默认: 创造模式"':
         - text: 创造模式 内置 用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导。
         - code: cordis
-      - 'button "配置: 创造模式"':
-        - img
-        - text: 配置
       - 'button "查看: 创造模式"':
         - img
         - text: 查看
@@ -85,9 +73,6 @@
       - 'button "设为默认: 我的模式"':
         - text: 我的模式 自定义 仅提供持久 shell 的单工具编码 Agent。
         - code: my-agent
-      - 'button "配置: 我的模式"':
-        - img
-        - text: 配置
       - 'button "查看路径: 我的模式"':
         - img
         - text: 查看路径

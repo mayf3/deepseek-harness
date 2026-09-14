@@ -13,12 +13,11 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only: pulls the ctx.remote merge into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
-  numberField, textField,
+  CardForm, numberField, textField,
   type CardActions, type CardFieldState, type CardShell,
 } from './card-form.ts'
-import { ScopedCardForms, type BindScope, type ScopeSelection } from './scoped-form.ts'
 
 /**
  * Namespace of the DeepSeek search provider. Spelled here rather than
@@ -74,32 +73,28 @@ export interface WebSearchCardFace extends CardActions {
   }
 }
 
-/** Bridges the `web-search-deepseek` namespace, under the selected scope, and the credentials domain onto the card. */
+/** Bridges the `web-search-deepseek` scope and the credentials domain onto the card. */
 export class WebSearchCardController {
-  private readonly form: ScopedCardForms<WebSearchSettings>
+  private readonly form: CardForm<WebSearchSettings>
   private readonly store: SnapshotStore<WebSearchCardState>
   private credential: CredentialState = { ref: '', configured: false, writable: true }
 
   /**
-   * @param selection - the scope selection shared with the card surfaces.
-   * @param bindScope - binds the `web-search-deepseek` namespace under one scope.
+   * @param scope - the bound settings scope for the `web-search-deepseek` namespace.
    * @param ctx - the card plugin's context, whose `remote.credentials` namespace
    * answers for the credential the section references.
    */
   constructor(
-    selection: ScopeSelection,
-    bindScope: BindScope<WebSearchSettings>,
+    private readonly scope: SettingsScope<WebSearchSettings>,
     private readonly ctx: ClientContext,
   ) {
-    this.form = new ScopedCardForms(
-      selection,
-      bindScope,
+    this.form = new CardForm(
+      scope,
       [textField('baseURL'), numberField('maxUses')],
       [{ field: API_KEY_FIELD, write: text => this.writeKey(text) }],
     )
     this.store = this.form.bind(() => this.projection())
-    // The selected scope's section names the reference; a switch re-reads it.
-    this.form.subscribe(() => { void this.readCredential() })
+    scope.subscribe(() => { void this.readCredential() })
     void this.readCredential()
   }
 
@@ -123,7 +118,7 @@ export class WebSearchCardController {
    * reference in force.
    */
   private async readCredential(): Promise<void> {
-    const ref = refOf(this.form.scope().getSnapshot())
+    const ref = refOf(this.scope.getSnapshot())
     if (ref !== this.credential.ref) {
       // A new reference knows nothing yet; keeping the old answer would claim
       // the key is configured under a name nobody has checked.
@@ -131,7 +126,7 @@ export class WebSearchCardController {
       this.store.set(this.projection())
     }
     const response = await this.ctx.remote.credentials.describe([ref])
-    if (!response.ok || ref !== refOf(this.form.scope().getSnapshot())) return
+    if (!response.ok || ref !== refOf(this.scope.getSnapshot())) return
     const view = response.value[ref]
     const next: CredentialState = {
       ref,
@@ -174,7 +169,7 @@ export class WebSearchCardController {
   private async writeKey(value: string): Promise<boolean> {
     // Refusals surface through the re-read below: the Host is the only
     // authority on whether the key now exists.
-    await this.ctx.remote.credentials.set(refOf(this.form.scope().getSnapshot()), value)
+    await this.ctx.remote.credentials.set(refOf(this.scope.getSnapshot()), value)
     await this.readCredential()
     return this.credential.configured
   }

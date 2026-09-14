@@ -17,7 +17,6 @@ export type AgentPresetSettingsKey =
   | 'openLocation' | 'showLocation' | 'revealedPathLabel'
   | 'idRequired' | 'idInvalid' | 'idTaken'
   | 'deleteTitle' | 'deleteDescription' | 'deleteConfirm' | 'deleting'
-  | 'configure' | 'backToRoster'
   | 'showPicker' | 'showPickerBeta' | 'showPickerDescription'
   | 'enablePickerToSetDefault' | 'enablePickerToCreate'
 
@@ -84,8 +83,6 @@ export const en: Record<AgentPresetSettingsKey, string> = {
     'The preset directory is deleted. Sessions already running on it keep working; new sessions cannot select it.',
   deleteConfirm: 'Delete',
   deleting: 'Deleting…',
-  configure: 'Configure',
-  backToRoster: 'Back to agent presets',
   showPicker: 'Allow switching Agent modes',
   showPickerBeta: 'Beta',
   showPickerDescription:
@@ -148,8 +145,6 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   deleteDescription: '预设目录将被删除。已在其上运行的会话不受影响；新会话将无法再选择它。',
   deleteConfirm: '删除',
   deleting: '正在删除…',
-  configure: '配置',
-  backToRoster: '返回 Agent 预设',
   showPicker: '允许切换agent模式',
   showPickerBeta: 'beta',
   showPickerDescription: '开启后，新任务可选择标准、PTC、创造、极简及自定义模式；关闭后统一使用默认模式（默认为标准模式，可自定义）。仅影响新任务。',

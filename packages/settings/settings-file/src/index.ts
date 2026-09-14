@@ -15,7 +15,7 @@ import { dirname, extname, join, resolve } from 'node:path'
 import { Document, parseDocument } from 'yaml'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { canonicalizeWatchPath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { SettingsProvider, type SettingsNamespace, type SettingsScopeId } from '@deepseek-ai/dsh-settings'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 
 /** Plugin config: file location and hot-reload behavior. */
@@ -90,21 +90,6 @@ function patchNode(document: Document, path: readonly string[], current: unknown
     return
   }
   if (!deepEqualJson(current, next)) document.setIn([...path], next)
-}
-
-/** The value at `path` inside a parsed document, or undefined when any step is not a map. */
-function valueAt(root: unknown, path: readonly string[]): unknown {
-  let current: unknown = root
-  for (const key of path) {
-    if (!isMapLike(current)) return undefined
-    current = current[key]
-  }
-  return current
-}
-
-/** One section nested under its path, for a document that has nothing yet. */
-function nestAt(path: readonly string[], section: Record<string, unknown>): Record<string, unknown> {
-  return path.reduceRight<Record<string, unknown>>((inner, key) => ({ [key]: inner }), section)
 }
 
 /** Whether a filesystem error means absence; every non-ENOENT failure must surface. */
@@ -197,12 +182,12 @@ export class FileSettingsProvider extends SettingsProvider {
     return doc
   }
 
-  protected persist(ns: SettingsNamespace, section: Record<string, unknown>, scope: SettingsScopeId | undefined): Promise<void> {
+  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
     // One document backs every namespace, so writes from different namespace
     // queues serialize with each other and with watcher reloads on the one
     // operation chain: each render must see the text the previous operation
     // committed, or a sibling section silently vanishes from disk.
-    return this.enqueue(() => this.persistSection(scope === undefined ? [ns] : ['scopes', scope, ns], section))
+    return this.enqueue(() => this.persistSection(ns, section))
   }
 
   /** Queue one exclusive document operation behind every earlier one. */
@@ -223,11 +208,7 @@ export class FileSettingsProvider extends SettingsProvider {
     })
   }
 
-  /**
-   * Write one section at `path` — `[ns]` for a global section, `['scopes',
-   * scope, ns]` for a scoped one — into the document on disk.
-   */
-  private async persistSection(path: readonly string[], section: Record<string, unknown>): Promise<void> {
+  private async persistSection(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
     // The writer lock's exclusive create needs the parent to exist before
     // writeFileAtomic gets its own chance to create it.
     // 0700: the harness home holds user-private documents.
@@ -241,8 +222,8 @@ export class FileSettingsProvider extends SettingsProvider {
       // a user's manual edit.
       await this.reconcileFromDisk()
       const output = this.spec.format === 'yaml'
-        ? this.renderYaml(path, section)
-        : this.renderJson(path, section)
+        ? this.renderYaml(ns, section)
+        : this.renderJson(ns, section)
       // 0600: a document that may hold personal values is never world-readable.
       await writeFileAtomic(this.spec.filename, output, { mode: 0o600, dirMode: 0o700 })
       this.text = output
@@ -358,38 +339,31 @@ export class FileSettingsProvider extends SettingsProvider {
   }
 
   /**
-   * Render the next YAML text by patching one section in the
+   * Render the next YAML text by patching one namespace in the
    * comment-preserving document. The next section lands as a leaf-level diff
    * against the stored one — only changed values set, only removed keys
    * delete — so comments inside the section survive edits to their siblings,
-   * not just comments outside it. A scoped section's `scopes.<scope>` map is
-   * created on the way when the document has none.
+   * not just comments outside it.
    */
-  private renderYaml(path: readonly string[], section: Record<string, unknown>): string {
+  private renderYaml(ns: SettingsNamespace, section: Record<string, unknown>): string {
     if (this.text === undefined) {
-      return new Document(nestAt(path, section)).toString()
+      return new Document({ [ns]: section }).toString()
     }
     // this.text only ever caches content that parsed successfully, so this
     // re-parse (for the mutable comment-preserving tree) cannot fail, and
     // parse() already rejected any non-map root.
     const document = parseDocument(this.text)
-    patchNode(document, path, valueAt(document.toJS(), path), section)
+    const root: unknown = document.toJS()
+    patchNode(document, [ns], isMapLike(root) ? root[ns] : undefined, section)
     return document.toString()
   }
 
-  /** Render the next JSON text by replacing one section at its path. */
-  private renderJson(path: readonly string[], section: Record<string, unknown>): string {
+  /** Render the next JSON text by replacing one namespace key. */
+  private renderJson(ns: SettingsNamespace, section: Record<string, unknown>): string {
     const root = this.text === undefined
       ? {}
       : this.parse(this.text)
-    let container: Record<string, unknown> = root
-    for (const key of path.slice(0, -1)) {
-      const child = container[key]
-      const next = isMapLike(child) ? child : {}
-      container[key] = next
-      container = next
-    }
-    container[path[path.length - 1] as string] = section
+    root[ns] = section
     return `${JSON.stringify(root, null, 2)}\n`
   }
 }

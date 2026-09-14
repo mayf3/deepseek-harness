@@ -28,7 +28,7 @@ kind: "package-library"
 
 ### 创建作用域
 
-`createScope(ctx, key)` 在 `ctx` 的 fiber 下创建作用域：其 `ctx` 携带作用域标签，通过它进行的每项注册既具备作用域可见性，也服从作用域生命周期。`dispose()` 撤销通过该作用域进行的每项注册；`rawDispose` 是确切 Cordis disposer，用于把 teardown 嵌套进有序组合 effect。传入 `id`（`createScope(ctx, key, { id: 'preset/standard' })`）给作用域起名：此后 `scopeIdOf(ctx)` 沿上下文的父链回答最近的具名作用域——agent 的上下文解析到它加入的 preset——这正是把按作用域状态放在进程之外（如 settings 文档）的消费方用来寻址它的名字；`scopeIdOfKey(key)` 读取单个 key 自己的名字。
+`createScope(ctx, key)` 在 `ctx` 的 fiber 下创建作用域：其 `ctx` 携带作用域标签，通过它进行的每项注册既具备作用域可见性，也服从作用域生命周期。`dispose()` 撤销通过该作用域进行的每项注册；`rawDispose` 是确切 Cordis disposer，用于把 teardown 嵌套进有序组合 effect。
 
 ```text
 const scope = createScope(ctx, agent)
@@ -63,7 +63,7 @@ await scope.dispose()   // unwinds every registration made through scope.ctx
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `createScope`（含具名作用域）、`scopeOf`、`scopeIdOf`/`scopeIdOfKey`、`scopeTarget`、`bindScopeParent`/`scopeParentOf`/`scopeChainOf`、载体标记 |
+| [`src/index.ts`](src/index.ts) | `createScope`、`scopeOf`、`scopeTarget`、`bindScopeParent`/`scopeParentOf`/`scopeChainOf`、载体标记 |
 | [`src/store.ts`](src/store.ts) | `ScopedLayers`、`NamedEntries`、`AnonymousEntries`、`ScopeLayer` |
 | [`src/invariant.ts`](src/invariant.ts) | 基于生成的作用域事件映射的不变式配套 |
 | [`src/scoped-events.generated.ts`](src/scoped-events.generated.ts) | 已声明带作用域事件的生成解析器映射 |

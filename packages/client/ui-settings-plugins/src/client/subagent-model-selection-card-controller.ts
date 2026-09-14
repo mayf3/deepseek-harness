@@ -5,7 +5,6 @@ import type { ModelProviderGroup } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { CardShell } from './card-form.ts'
-import { ScopedCardForms, type BindScope, type ScopeSelection } from './scoped-form.ts'
 
 /** Namespace of the Host-owned subagent model-selection preference. */
 export const SUBAGENT_MODEL_SELECTION_NS = 'subagent-model-selection'
@@ -125,14 +124,8 @@ function sameRoutes(left: readonly AllowedSubagentModel[], right: readonly Allow
   return left.every(route => rightKeys.has(subagentModelKey(route)))
 }
 
-/**
- * Bridges the `subagent-model-selection` namespace, under the selected scope,
- * and the live adapter directory onto a staged card. The draft belongs to
- * the scope it began under: a scope switch drops it.
- */
+/** Bridges one settings scope and the live adapter directory onto a staged card. */
 export class SubagentModelSelectionCardController {
-  private readonly forms: ScopedCardForms<SubagentModelSelectionSettings>
-  private draftScope: string | undefined
   private catalogGroups: readonly ModelProviderGroup[] = []
   private catalogPartial = false
   private catalogStatus: SubagentModelSelectionCardState['catalogStatus'] = 'idle'
@@ -149,25 +142,16 @@ export class SubagentModelSelectionCardController {
   private readonly unsubscribe: () => void
 
   /**
-   * @param selection - the scope selection shared with the card surfaces.
-   * @param bindScope - binds the `subagent-model-selection` namespace under one scope.
+   * @param scope - bound `subagent-model-selection` settings scope.
    * @param ctx - the card plugin's context, whose `remote.session` namespace
    * answers the Host model catalog.
    */
   constructor(
-    selection: ScopeSelection,
-    bindScope: BindScope<SubagentModelSelectionSettings>,
+    private readonly scope: SettingsScope<SubagentModelSelectionSettings>,
     private readonly ctx: ClientContext,
   ) {
-    this.forms = new ScopedCardForms(selection, bindScope, [])
     this.store = createSnapshotStore(this.projection())
-    this.unsubscribe = this.forms.subscribe(() => {
-      if (this.draftRoutes !== undefined && this.forms.scopeId() !== this.draftScope) {
-        // A draft typed under another scope must not be written into this one.
-        this.saveGeneration += 1
-        this.saving = false
-        this.clearDraft()
-      }
+    this.unsubscribe = scope.subscribe(() => {
       if (!this.saving && this.draftRoutes !== undefined
         && this.scope.getSnapshot().revision !== this.draftRevision) {
         if (this.currentEnabled() === this.enabled()
@@ -203,11 +187,6 @@ export class SubagentModelSelectionCardController {
     }
   }
 
-  /** The selected scope's settings scope. */
-  private get scope(): SettingsScope<SubagentModelSelectionSettings> {
-    return this.forms.scope()
-  }
-
   private currentRoutes(): AllowedSubagentModel[] {
     return this.scope.getSnapshot().value?.allowedModels.map(route => ({ ...route })) ?? []
   }
@@ -232,7 +211,6 @@ export class SubagentModelSelectionCardController {
         snapshot.value?.allowedModels.map(route => [subagentModelKey(route), { ...route }]) ?? [],
       )
       this.draftRevision = snapshot.revision
-      this.draftScope = this.forms.scopeId()
     }
     return this.draftRoutes
   }
@@ -262,7 +240,6 @@ export class SubagentModelSelectionCardController {
     this.draftEnabled = undefined
     this.draftRoutes = undefined
     this.draftRevision = undefined
-    this.draftScope = undefined
     this.failed = false
     this.conflicted = false
   }
@@ -361,7 +338,6 @@ export class SubagentModelSelectionCardController {
     const enabled = this.enabled()
     return {
       available: snapshot.status === 'ready',
-      scope: snapshot.scope,
       writable: snapshot.writable,
       dirty: this.currentEnabled() !== enabled || !sameRoutes(current, desired),
       invalid: enabled && desired.length === 0,

@@ -55,27 +55,25 @@ const theme = scope.get()              // deep-frozen resolved snapshot
 scope.update({ density: 'compact' })   // merges into the user section and persists
 ```
 
-TypeScript 会按小写字母、数字与连字符文法检查字面量 namespace 参数；运行时动态传入的字符串接受相同校验，`scopes` 保留给文档的按 scope 分节。`ctx.settings.installSection(owner, ns, schema, entry, hooks)` 为消费方插件封装可选服务接线：只要设置服务存在，它就用插件的组合配置作为 `base` 注册 namespace；服务消失时插件回退到组合配置，行为与原先完全一致。
-
-namespace 是一种设置的 kind，一次注册是它在某个 scope 下的一个 instance。instance 注册在调用者最近的具名 `dsh-scope` 作用域之下——挂在 agent preset 内的插件注册在 `preset/<id>` 下，宿主行注册在全局 scope 下——并以该 scope 自己的分节（`scopes.preset/<id>.<ns>`）叠加在文档的全局分节之上来解析。因此挂同一插件的两个 preset 持有同一 kind 的两个 instance，各自带自己的组合 `base`；同一 namespace 的每个注册者必须携带相同的 schema 信封，同一 scope 下的第二次注册大声失败。
+TypeScript 会按小写字母、数字与连字符文法检查字面量 namespace 参数；运行时动态传入的字符串接受相同校验。`ctx.settings.installSection(owner, ns, schema, entry, hooks)` 为消费方插件封装可选服务接线：只要设置服务存在，它就用插件的组合配置作为 `base` 注册 namespace；服务消失时插件回退到组合配置，行为与原先完全一致。
 
 ### 读取与观察值
 
-`get(ns, scope?)` 以深冻结快照返回某个 instance 的解析值——未指名 scope 时为全局 instance——该 scope 下 namespace 未注册时为 `undefined`。`watch(callback)` 在每次已提交变更后以 `(next, prev)` 调用回调：同一回调的调用按提交顺序逐个执行，异常被隔离并记入日志，因此慢或抛错的观察者绝不会阻塞或破坏其他观察者。
+`get(ns)` 以深冻结快照返回解析值，namespace 未注册时为 `undefined`。`watch(callback)` 在每次已提交变更后以 `(next, prev)` 调用回调：同一回调的调用按提交顺序逐个执行，异常被隔离并记入日志，因此慢或抛错的观察者绝不会阻塞或破坏其他观察者。
 
 ### 写入值
 
-`update(ns, patch)` 把普通对象 patch 深合并进用户分节——绝不进 `base`——校验解析候选值、经提供方持久化后提交。每个写入动词都接受可选的尾随 `scope`：scoped 写入编辑 `scopes.<scope>.<ns>` 并只提交该 scope 的 instance，全局写入编辑顶层分节并重新解析该 kind 的每个 instance，各自按自身解析值门控，因此覆盖了被改字段的 scope 不会被打扰。尚无注册的 scope 只要该 namespace 在别处已注册就仍接受写入——分节由共享 schema 判定，并在有 owner 挂到那里时生效。owner 句柄的 `update`/`replace` 写入句柄自己的 scope。`replace(ns, section)` 整体替换用户分节，是删除/重置路径：`replace({})` 重新继承 `base` 与 schema 默认值。`mutate(ns, ops)` 在写入排到队首那一刻的分节上按序施加 `{ op: 'set' | 'unset', path }` 编辑——这是持有不完整（例如脱敏后）视图的调用方的删除路径，因为按协议接口返回的内容重建分节再整体替换，会删掉协议从未回传的每个字段。
+`update(ns, patch)` 把普通对象 patch 深合并进用户分节——绝不进 `base`——校验解析候选值、经提供方持久化后提交。`replace(ns, section)` 整体替换用户分节，是删除/重置路径：`replace({})` 重新继承 `base` 与 schema 默认值。`mutate(ns, ops)` 在写入排到队首那一刻的分节上按序施加 `{ op: 'set' | 'unset', path }` 编辑——这是持有不完整（例如脱敏后）视图的调用方的删除路径，因为按协议接口返回的内容重建分节再整体替换，会删掉协议从未回传的每个字段。
 
 每次写入都会拒绝与 JSON 不兼容的数据（`Date`、`Map`、`BigInt`、非有限数或循环引用会在任何内容持久化前以 `$` 为根的路径报错）、拒绝只读提供方上的写入，并可接受可选的 `expectedRevision`：把 descriptor 中的 `revision` 传回，namespace 已越过该值时写入会被 `SettingsConflictError` 拒绝，而不是覆盖先完成写入的一方。
 
 ### 配置界面
 
-`describe()` 在全局 scope 下为每个 namespace kind 返回一条 descriptor，`describe({ scope })` 在某个具名 scope 下为每个 kind 返回一条：序列化 schema、解析值、分离的 `base` 与 `user` 层（字段出现在 `user` 中即标记为用户覆盖；scoped descriptor 的 `user` 是该 scope 自己的分节）、生效时机、该分节的 revision、`registered`（该 scope 下是否有 owner 注册了此 namespace——尚无会话组合过的 scope 没有自己的 `base`，有全局实例时在其组合之上解析，否则仅由 kind 描述；描述从不抛错，各层都无法满足 schema 时描述为空分节），以及 scoped descriptor 的 `inherited`——该 scope 不带自己分节时解析出的值。`scopes()` 列出所有有 namespace 注册于其下的具名 scope。每个协议接口都必须传入 `redactSecrets: true`：它从每一层剥离 `role('secret')` 字段，并把它们枚举为 `{ path, set }` slot，让页面可以渲染只写输入而不接触任何机密。`documentPath` 与 `prepareDocument()` 在提供方拥有用户可编辑文件时把它暴露给原生编辑器。
+`describe()` 为每个已注册 namespace 返回一条 descriptor：序列化 schema、解析值、分离的 `base` 与 `user` 层（字段出现在 `user` 中即标记为用户覆盖）、生效时机与 namespace 的 revision。每个协议接口都必须传入 `redactSecrets: true`：它从每一层剥离 `role('secret')` 字段，并把它们枚举为 `{ path, set }` slot，让页面可以渲染只写输入而不接触任何机密。`documentPath` 与 `prepareDocument()` 在提供方拥有用户可编辑文件时把它暴露给原生编辑器。
 
 ### 事件与失败
 
-`settings/updated (ns, next, prev, source, scope?)` 在某个 instance 每次已提交变更后触发——进程内写入（`source: 'update'`）或外部观察到的编辑（`source: 'provider'`）——解析值深相等时绝不触发；全局 instance 时 `scope` 缺席。`settings/document-updated (ns, revision, scope?)` 在某个原始分节发生变化时触发，即使解析值没有变——已打开的编辑器正需要它来得知字段从继承变为覆盖；每个分节，无论全局或 scoped、已注册或尚未，都各自版本化。schema 拒绝的存量分节在重载时保留该 namespace 的最后可用值并告警；注册时同样的失败会直接拒绝注册。
+`settings/updated (ns, next, prev, source)` 在每次已提交变更后触发——进程内写入（`source: 'update'`）或外部观察到的编辑（`source: 'provider'`）——解析值深相等时绝不触发。`settings/document-updated (ns, revision)` 在原始用户分节发生变化时触发，即使解析值没有变——已打开的编辑器正需要它来得知字段从继承变为覆盖。schema 拒绝的存量分节在重载时保留该 namespace 的最后可用值并告警；注册时同样的失败会直接拒绝注册。
 
 -----
 
@@ -99,14 +97,14 @@ namespace 是一种设置的 kind，一次注册是它在某个 scope 下的一�
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Service Definition：namespace 与 scope 校验、kind 与 instance 注册、按 scope 解析、按分节的写队列与 revision、describe/脱敏、事件、`installSection` |
+| [`src/index.ts`](src/index.ts) | Service Definition：namespace 校验、注册、解析、写队列、describe/脱敏、事件、`installSection` |
 | [`src/redact.ts`](src/redact.ts) | `redactSecrets` 遍历器：剥离 `role('secret')` 字段并枚举其 slot |
-| [`src/types.ts`](src/types.ts) | 客户端安全类型面：事件声明、`SettingsNamespace`、`SettingsScopeId`、`SettingsUpdateSource`、wire 视图 |
+| [`src/types.ts`](src/types.ts) | 客户端安全类型面：事件声明、`SettingsNamespace`、`SettingsUpdateSource` |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：`settings/updated` 只对已注册 namespace、只在解析值变化时、且携带权威值触发 |
 
 ### 解析与写入路径
 
-每次写入都在调用时对输入做快照（分离并校验 JSON 形状的数据），然后排上该分节的串行链——每个 namespace 与 scope 各一条。在队首，服务按当前状态重读分节、检查 `expectedRevision`、合并/替换/编辑、为该分节供给的每个 instance（全局分节是该 kind 的全部，scoped 分节是那一个）经 schema 与 kind 的 `validate` 解析并校验候选值、带着 scope 经提供方持久化，然后才提交并发出事件。解析按顺序叠加 schema 默认值、instance 的 `base`、全局分节与 instance 的 scoped 分节。registrant fiber 在写入途中被 dispose 的写入仍到达存储，但不会提交、也不会通知任何人；卸载先拒绝新写入，并排干排队写入与已启动的 watcher 调用后才完成。
+每次写入都在调用时对输入做快照（分离并校验 JSON 形状的数据），然后排上该 namespace 的串行链。在队首，服务按当前状态重读分节、检查 `expectedRevision`、合并/替换/编辑、经 schema 与 owner 的可选 `validate` 解析并校验候选值、经提供方持久化，然后才提交并发出事件。registrant fiber 在写入途中被 dispose 的写入仍到达存储，但不会提交、也不会通知任何人；卸载先拒绝新写入，并排干排队写入与已启动的 watcher 调用后才完成。
 
 ### 变更检测与事件
 
@@ -148,8 +146,7 @@ namespace 是一种设置的 kind，一次注册是它在某个 scope 下的一�
 
 这些限制说明本服务何时不合适或需要特别注意。它们是当前包约束，不是任务积压。
 
-- **两个用户层，无逐字段来源**——解析只认识 schema 默认值、每个 instance 一个组合 `base`、全局分节与一个 scoped 分节；descriptor 的 `user` 与 `inherited` 让界面分辨覆盖与继承，但服务不记录每个解析字段由哪一层提供。
-- **kind 的 `validate` 与 `applies` 取自第一个注册者**——后来 instance 不同的检查或生效时机被忽略，因为每个 instance 都是同一个插件。
+- **单一用户层**——解析只认识 schema 默认值、一个组合 `base` 与一个用户文档；它不记录每个解析值由哪一层提供。
 - **`redactSecrets` 并非一条可被证明的协议边界**——遍历器只跟随 `object`/`dict`/`array` 容器，因此只能经由 union、intersection 或 transform 抵达的 `role('secret')` 字段会被原样返回，且 `secrets` 列表为空；序列化 schema 还会把 secret 字段的默认值带给每个客户端。两种情况都不会被拒绝；机密无法经由被遍历的容器抵达的 schema，绝不可注册到暴露于协议的 namespace 上。fail-closed 的 `describeForWire()`——拒绝自己无法证明安全的 schema，并对序列化封装与错误文本做净化——是暂缓的答案。
 - **跨进程并发由提供方定义**——服务仅在进程内按 namespace 串行写入；跨进程并发按提供方行为收敛（文件提供方在写锁下读-改-写，因此并发写入者不会丢掉彼此的 namespace，同 namespace 冲突按后写胜出解决）。
 

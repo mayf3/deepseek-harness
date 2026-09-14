@@ -274,9 +274,9 @@ describe('PluginManagerRemote', () => {
     await remote.enable('pkg')
     await remote.disable('pkg')
     await remote.retry('pkg')
-    await remote.addRow('pkg', { kind: 'global' }, { module: './x.js', id: 'x', config: { a: 1 } })
-    await remote.removeRow({ kind: 'preset', preset: 'standard' }, 'x')
-    await remote.setRowDisabled({ kind: 'global' }, 'x', true)
+    await remote.addRow('pkg', { module: './x.js', id: 'x', config: { a: 1 } })
+    await remote.removeRow('x')
+    await remote.setRowDisabled('x', true)
     await remote.dependents('pkg')
 
     expect(calls).toEqual([
@@ -286,14 +286,14 @@ describe('PluginManagerRemote', () => {
       ['enable', 'pkg'],
       ['disable', 'pkg'],
       ['retry', 'pkg'],
-      ['addRow', 'pkg', { kind: 'global' }, { module: './x.js', id: 'x', config: { a: 1 } }],
-      ['removeRow', { kind: 'preset', preset: 'standard' }, 'x'],
-      ['setRowDisabled', { kind: 'global' }, 'x', true],
+      ['addRow', 'pkg', { module: './x.js', id: 'x', config: { a: 1 } }],
+      ['removeRow', 'x'],
+      ['setRowDisabled', 'x', true],
       ['dependents', 'pkg'],
     ])
   })
 
-  it('hands the manager readers into the context: the runtime, the agent count, the roster, and the seams', async () => {
+  it('hands the manager readers into the context: the runtime, the agent count, and the seams', async () => {
     const profileDir = mkdtempSync(join(tmpdir(), 'dsh-host-plugin-manager-'))
     writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
       name: 'dsh-profile-web', private: true, dependencies: { pkg: '1.0.0' }, dsh: { profile: { bundles: [], patchReload: 'startup' } },
@@ -323,8 +323,7 @@ describe('PluginManagerRemote', () => {
       // The agent-count reader: a running session refuses an install before pnpm runs.
       ctx.provide('agents', { list: () => [{ status: 'running' }, { status: 'idle' }] } as never)
       await expect(remote.add('anything')).rejects.toMatchObject({ code: 'plugins/agents-running', details: { operation: 'add', running: 1 } })
-      // The static reader answers for the package, then the roster reader finds no roster for a preset target.
-      await expect(remote.addRow('pkg', { kind: 'preset', preset: 'standard' })).rejects.toMatchObject({ code: 'plugins/unavailable', details: { reason: 'no roster' } })
+      await expect(remote.addRow('pkg', { module: './unknown' })).rejects.toMatchObject({ code: 'plugins/not-enableable' })
     } finally {
       rmSync(profileDir, { recursive: true, force: true })
     }
@@ -353,7 +352,7 @@ describe('remoteErrorOf', () => {
       new PluginOperationError('plugins/not-enableable', 'm', { packageName: 'p', reason: 'r' }),
       new PluginOperationError('plugins/enable-failed', 'm', { packageName: 'p', reason: 'r' }),
       new PluginOperationError('plugins/install-failed', 'm', { spec: 's', exitCode: 1, log: 'l' }),
-      new PluginOperationError('plugins/row-conflict', 'm', { rowId: 'x', target: { kind: 'global' } }),
+      new PluginOperationError('plugins/row-conflict', 'm', { rowId: 'x' }),
       new PluginOperationError('plugins/busy', 'm', { operation: 'add', subject: 'y', active: { operation: 'add', subject: 'x' } }),
       new PluginOperationError('plugins/agents-running', 'm', { operation: 'add', running: 1 }),
     ]
@@ -369,7 +368,7 @@ describe('remoteErrorOf', () => {
 
 describe('RemoteError codes', () => {
   it('declare their details', () => {
-    const error = new RemoteError('plugins/row-conflict', 'taken', { rowId: 'x', target: { kind: 'global' } })
-    expect(error.details).toEqual({ rowId: 'x', target: { kind: 'global' } })
+    const error = new RemoteError('plugins/row-conflict', 'taken', { rowId: 'x' })
+    expect(error.details).toEqual({ rowId: 'x' })
   })
 })

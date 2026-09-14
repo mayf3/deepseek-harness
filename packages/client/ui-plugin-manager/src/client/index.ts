@@ -1,9 +1,8 @@
 /**
  * Plugin manager, browser half: the **Plugins** entry of the sidebar and the
- * management page it opens in the main column, and the capabilities section
- * of every agent preset's detail page. The page installs, enables, disables,
+ * management page it opens in the main column. The page installs, enables, disables,
  * retries, and uninstalls the packages of the Host's profile through the
- * `plugins` Remote; the section composes rows into one preset's user layer.
+ * `plugins` Remote and edits global rows in the profile's user layer.
  * Configuring a plugin stays in Settings.
  */
 
@@ -20,22 +19,14 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: the forwarded events' own declaration (`$on`'s key face resolves
 // through the owning package's client-safe types subpath).
 import type {} from '@deepseek-ai/dsh-host-plugin-manager/types'
-// Type-only: the 'settings.agentPreset' LocaleNamespaceMap merge the
-// shipped-preset name resolution reads, and the `settings.agentPreset.detail`
-// slot the capabilities section registers into.
-import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
-// Inline-safe shared fold: shipped ids map to dictionary keys in one home.
-import { presetDisplayText } from '@deepseek-ai/dsh-agent-presets/display'
 import { PluginManagerPage } from './PluginManagerPage.tsx'
 import { PluginsPanelIcon } from './PluginsPanelIcon.tsx'
-import { PresetPluginsSection } from './PresetPluginsSection.tsx'
 import { PluginManagerController } from './manager-store.ts'
 import { en, zh, type PluginManagerLocaleKey } from './locales.ts'
 
 export type { PluginManagerPageProps } from './PluginManagerPage.tsx'
-export type { PresetPluginsSectionProps } from './PresetPluginsSection.tsx'
 export type {
-  ConfirmState, InstallState, ManagerNotice, PluginManagerFace, PluginManagerState, PresetGroup, PresetRow,
+  ConfirmState, InstallState, ManagerNotice, PluginManagerFace, PluginManagerState,
 } from './manager-store.ts'
 export type { PluginManagerLocaleKey } from './locales.ts'
 
@@ -57,15 +48,13 @@ export const inject = ['slots', 'locale', 'remote', 'remote.plugins', 'remote.pl
 
 /**
  * Contribute the Plugins entry to the sidebar with the management page it
- * opens, and the capabilities section to every preset's detail page, and
- * keep both current on the Host's change events.
+ * opens, and keep it current on the Host's change events.
  * @param ctx - the browser plugin context.
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-plugin-manager: dictionaries')
   const t = ctx.locale.bind(NS)
-  const agentPresetCopy = ctx.locale.bind('settings.agentPreset')
-  const controller = new PluginManagerController(ctx, preset => presetDisplayText(preset, agentPresetCopy).name)
+  const controller = new PluginManagerController(ctx)
   ctx.effect(() => () => { controller.dispose() }, 'ui-plugin-manager: controller')
   // The Host says when what is installed, enabled, or composed changed — from
   // this page, the CLI, or another browser — and streams install output.
@@ -99,11 +88,4 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
   }, PluginsPanelIcon))
 
-  ctx.slots.inject('settings.agentPreset.detail', () => ctx.slots.register({
-    name: 'settings.agentPreset.detail',
-    id: 'plugins',
-    order: 0,
-    locale: NS,
-    inject: () => controller.inject(),
-  }, PresetPluginsSection))
 }

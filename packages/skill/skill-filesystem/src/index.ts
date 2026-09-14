@@ -20,8 +20,6 @@ import type Schema from '@deepseek-ai/schemastery'
 import { parse as parseYaml } from 'yaml'
 import type { FileSystem, FsDirEntry, FsTarget } from '@deepseek-ai/dsh-fs'
 import { canonicalizeWatchPath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-// Type-only: resolves `ctx.settings` for the optional settings injection.
-import type {} from '@deepseek-ai/dsh-settings'
 import {
   BUNDLED_SKILL_RANK,
   isSkillName,
@@ -46,23 +44,6 @@ const DEFAULT_WATCH_MAX_PROJECTS = 128
 
 export const name = 'skill-filesystem'
 export const inject = ['skills']
-
-/** Settings namespace carrying the user-writable subset of this provider's config. */
-export const SETTINGS_NAMESPACE = 'skill-filesystem'
-
-/**
- * The user-writable subset: the roots a person adds to their own catalog.
- * Every other field is a deployment choice a composition sets.
- */
-export interface SkillFilesystemSettings {
-  /** Additional skill roots scanned after project roots and before user roots. */
-  customSkillDirs: string[]
-}
-
-/** Runtime schema for the user-writable subset. */
-export const SkillFilesystemSettingsSchema: z<SkillFilesystemSettings> = z.object({
-  customSkillDirs: z.array(z.string()).default([]),
-})
 
 /** Local filesystem skill provider configuration. */
 export interface Config {
@@ -149,17 +130,7 @@ interface ResolvedWatchConfig {
   followSymlinks: boolean
 }
 
-/**
- * Register the local filesystem skill provider on `ctx.skills`. While a
- * settings provider is composed, the user-writable subset of the config —
- * `customSkillDirs` — resolves through the `skill-filesystem` settings
- * namespace with the composition value as its base, under the scope this
- * row is mounted in: a row inside an agent preset reads that preset's
- * section over the global one. Without a settings provider the composition
- * value stands alone.
- * @param ctx - the mounting context.
- * @param config - the provider config; `customSkillDirs` is the settings base.
- */
+/** Register the local filesystem skill provider on `ctx.skills`. */
 export function apply(ctx: Context, config: Config = {}): void {
   let provider!: FileSystemSkillProvider
   ctx.skills.registerProvider((control) => {
@@ -169,15 +140,6 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.effect(function* () {
     yield async () => { await provider.dispose() }
   }, 'skill-filesystem watcher')
-  const entry: SkillFilesystemSettings = { customSkillDirs: config.customSkillDirs ?? [] }
-  ctx.inject(['settings'], (settingsCtx) => {
-    // Assigned by `setSource` before the first `onChange`, per the hooks contract.
-    let source!: () => SkillFilesystemSettings
-    settingsCtx.settings.installSection(ctx, SETTINGS_NAMESPACE, SkillFilesystemSettingsSchema, entry, {
-      setSource: (current) => { source = current },
-      onChange: () => { provider.setCustomSkillDirs(source().customSkillDirs) },
-    })
-  })
   ctx.on('fs/observed', (target, _observation, actor) => {
     if (mutationToolName(actor) === undefined) return
     provider.observeHostMutation(target.displayPath)
@@ -190,8 +152,7 @@ export class FileSystemSkillProvider implements SkillProvider {
   private readonly includeDefaultRoots: boolean
   private readonly dshHome: string
   private readonly agentsHome: string
-  private customSkillDirs: string[]
-  private readonly control: SkillProviderControl
+  private readonly customSkillDirs: string[]
   private readonly watchManager: SkillWatchManager
   private readonly bundledSkillDir: string | undefined
   private disposal: Promise<void> | undefined
@@ -206,7 +167,6 @@ export class FileSystemSkillProvider implements SkillProvider {
     this.dshHome = resolveDshHome(config.dshHome)
     this.agentsHome = resolve(config.agentsHome ?? process.env.DSH_AGENTS_HOME ?? join(homedir(), '.agents'))
     this.customSkillDirs = (config.customSkillDirs ?? []).map(root => resolve(root))
-    this.control = control
     this.watchManager = new SkillWatchManager(ctx, control.invalidate, resolveWatchConfig(config))
     control.signal.addEventListener('abort', () => { void this.dispose() }, { once: true })
     // The environment bundled root is a default root: an isolated provider
@@ -263,20 +223,6 @@ export class FileSystemSkillProvider implements SkillProvider {
       ...parsed.metadata !== undefined ? { metadata: parsed.metadata } : {},
       content: parsed.content,
     }
-  }
-
-  /**
-   * Replace the custom roots and invalidate the catalog when they changed —
-   * the settings path for a person adding a root to their own catalog while
-   * the process runs. Watching follows on the next listing, which observes
-   * the roots it scans.
-   * @param dirs - the roots, relative paths resolved against the process cwd.
-   */
-  setCustomSkillDirs(dirs: readonly string[]): void {
-    const next = dirs.map(root => resolve(root))
-    if (next.length === this.customSkillDirs.length && next.every((root, index) => root === this.customSkillDirs[index])) return
-    this.customSkillDirs = next
-    this.control.invalidate()
   }
 
   /**

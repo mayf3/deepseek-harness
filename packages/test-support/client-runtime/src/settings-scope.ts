@@ -33,7 +33,6 @@ export function stubSettingsScope<T>(): StubSettingsScope<T> {
   let snapshot: SettingsScopeSnapshot<T> = {
     status: 'loading', value: undefined, base: undefined, user: undefined,
     revision: undefined, writable: false, mode: 'host',
-    scope: undefined, registered: false, inherited: undefined,
   }
   const listeners = new Set<() => void>()
   const set = vi.fn(() => Promise.resolve())

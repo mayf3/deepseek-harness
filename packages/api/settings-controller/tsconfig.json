@@ -27,9 +27,6 @@
       "path": "../../util/native-command"
     },
     {
-      "path": "../../core/scope"
-    },
-    {
       "path": "../../settings/settings"
     },
     {

@@ -50,7 +50,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Editing the document
 
-The document is a YAML or JSON mapping of namespace to user section, plus a reserved `scopes` map holding each named scope's own sections — `scopes.preset/standard.skill-filesystem` is the section the `standard` preset resolves over the global `skill-filesystem` one. Users can edit it directly: any change takes effect automatically, and deleting the file resets every namespace to defaults and `base`. A document that exists but is invalid fails plugin load at boot — the provider never silently ignores or overwrites it. Once live, an unreadable or unparsable edit warns and keeps the last good sections, so a hand-edit mistake cannot take the process down.
+The document is a YAML or JSON mapping of namespace to user section. Users can edit it directly: any change takes effect automatically, and deleting the file resets every namespace to defaults and `base`. A document that exists but is invalid fails plugin load at boot — the provider never silently ignores or overwrites it. Once live, an unreadable or unparsable edit warns and keeps the last good sections, so a hand-edit mistake cannot take the process down.
 
 ### Writing through the service
 

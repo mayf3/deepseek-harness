@@ -3,7 +3,7 @@
  * Typert service that relays each call to the shared plugin manager over the
  * booted profile and maps its `plugins/*` failures onto Remote errors of the
  * same code. What plugin management does lives in `dsh-plugin-manager`; this
- * row only reads the profile runtime, the preset roster, and the agent
+ * row only reads the profile runtime and the agent
  * registry off the context and hands them over.
  * @module @deepseek-ai/dsh-host-plugin-manager
  */
@@ -12,7 +12,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { inspectEntryIssues, type readPackageMetadata } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-agent-presets'
 import {
   PluginManager,
   pluginOperationFailureOf,
@@ -22,7 +21,6 @@ import {
   type PluginOperationFailure,
   type PluginPackageView,
   type PluginRowAddition,
-  type PluginRowTarget,
   type SpawnLike,
 } from '@deepseek-ai/dsh-plugin-manager'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -59,8 +57,7 @@ export interface PluginManagerInternals {
 /**
  * The `pluginManager` service and the `plugins` Remote.
  *
- * The row injects only the Loader; the profile runtime, the preset roster,
- * and the agent registry are read off the context per call, so a
+ * The row injects only the Loader; the profile runtime and the agent registry are read off the context per call, so a
  * composition without them (a test, a launcher other than the profile
  * launcher) still mounts this service and every call then reports
  * `plugins/unavailable` rather than the service failing to start.
@@ -81,7 +78,6 @@ export class PluginManagerRemote extends TypertRemoteService {
     this.manager = internals.manager ?? new PluginManager(ctx, {
       config,
       runtime: () => ctx.get('profileRuntime'),
-      presets: () => ctx.get('agentPresets'),
       runningAgents: () => (ctx.get('agents')?.list() ?? []).filter(agent => agent.status === 'running').length,
       ...internals.spawn === undefined ? {} : { spawn: internals.spawn },
       ...internals.metadata === undefined ? {} : { metadata: internals.metadata },
@@ -185,9 +181,8 @@ export class PluginManagerRemote extends TypertRemoteService {
   }
 
   /**
-   * Add a row naming one of the package's modules to a user layer.
+   * Add a row naming one of the package's modules to the profile user layer.
    * @param packageName - the installed package.
-   * @param target - which layer.
    * @param options - `module` selects a declared `dsh.plugins[]` name (default `.`),
    * `id` overrides the derived row id, `config` overrides the declared default.
    * @returns where the row landed.
@@ -195,31 +190,28 @@ export class PluginManagerRemote extends TypertRemoteService {
   @Remote('addRow')
   async addRow(
     packageName: string,
-    target: PluginRowTarget,
     options?: { module?: string; id?: string; config?: JsonValue },
   ): Promise<PluginRowAddition> {
-    return relay(() => this.manager.addRow(packageName, target, options))
+    return relay(() => this.manager.addRow(packageName, options))
   }
 
   /**
    * Remove a row a user layer inserted.
-   * @param target - which layer.
    * @param rowId - the inserted row's id.
    */
   @Remote('removeRow')
-  async removeRow(target: PluginRowTarget, rowId: string): Promise<void> {
-    return relay(() => this.manager.removeRow(target, rowId))
+  async removeRow(rowId: string): Promise<void> {
+    return relay(() => this.manager.removeRow(rowId))
   }
 
   /**
    * Switch one row off or on in a user layer; deny-only.
-   * @param target - which layer.
    * @param rowId - the row's id as the composition declares it.
    * @param disabled - whether the layer should switch the row off.
    */
   @Remote('setRowDisabled')
-  async setRowDisabled(target: PluginRowTarget, rowId: string, disabled: boolean): Promise<void> {
-    return relay(() => this.manager.setRowDisabled(target, rowId, disabled))
+  async setRowDisabled(rowId: string, disabled: boolean): Promise<void> {
+    return relay(() => this.manager.setRowDisabled(rowId, disabled))
   }
 
   /**

@@ -229,11 +229,6 @@ describe('ui-agent-preset apply', () => {
     expect(section.options).toMatchObject({ id: 'agent-presets', order: 20 })
     // The nav label is a locale-following thunk; owners resolve it at read time.
     expect(resolveSlotLabel(section.options.label)).toBe('Agent 预设')
-    // The section declares the detail page's child slot: a contribution to it
-    // registers instead of throwing for an undeclared key.
-    const probe = slots.register({ name: 'settings.agentPreset.detail', id: 'probe' } as never, () => null)
-    expect(slots.entries('settings.agentPreset.detail')).toHaveLength(1)
-    probe()
   })
 
   it('registers into a declaration that arrives after apply', async () => {

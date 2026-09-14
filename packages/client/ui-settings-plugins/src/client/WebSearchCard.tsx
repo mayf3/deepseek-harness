@@ -53,7 +53,6 @@ export function WebSearchCard(props: WebSearchCardProps) {
         label={t('webSearchBaseUrl')}
         hint={t('webSearchBaseUrlHint')}
         overriddenLabel={t('overridden')}
-        inheritedLabel={t('inherited')}
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}
         disabled={disabled}
@@ -66,7 +65,6 @@ export function WebSearchCard(props: WebSearchCardProps) {
         label={t('webSearchMaxUses')}
         hint={t('webSearchMaxUsesHint')}
         overriddenLabel={t('overridden')}
-        inheritedLabel={t('inherited')}
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}
         numeric

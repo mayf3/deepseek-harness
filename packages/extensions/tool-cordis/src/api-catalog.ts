@@ -188,20 +188,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when no configured root supplies that id.'],
       },
       {
-        signature: 'async overlayPathFor(id: string): Promise<string>',
-        description: 'Where one preset\'s user patch layer is, or would be written: the layer discovery attached, else the writable root\'s slot of the same id — beside the composition for a locally authored preset, alone in the slot for a shipped one. The file need not exist yet.',
-        parameters: [{ name: 'id', description: 'the preset id.' }],
-        returns: 'the absolute path of the layer file.',
-        throws: ['when the preset is unknown, or it has no layer and the deployment configures no writable root.'],
-      },
-      {
-        signature: 'async removeOverlay(id: string): Promise<boolean>',
-        description: 'Delete one preset\'s user patch layer, so the next generation composes the preset exactly as its root supplies it. Sessions already joined keep the generation they run on.',
-        parameters: [{ name: 'id', description: 'the preset id.' }],
-        returns: 'true when a layer was removed; false when the preset had none.',
-        throws: ['when the preset is unknown or its layer lies outside the writable root.'],
-      },
-      {
         signature: '@Remote(\'read\') async readDocument(agentPreset: string): Promise<AgentPresetDocument>',
         description: 'One preset\'s composition text with the roster row it belongs to.',
         parameters: [{ name: 'agentPreset', description: 'the preset id.' }],
@@ -1400,7 +1386,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'pluginManager',
     summary: 'The `pluginManager` service and the `plugins` Remote.',
-    description: 'The `pluginManager` service and the `plugins` Remote.\n\nThe row injects only the Loader; the profile runtime, the preset roster, and the agent registry are read off the context per call, so a composition without them (a test, a launcher other than the profile launcher) still mounts this service and every call then reports `plugins/unavailable` rather than the service failing to start.',
+    description: 'The `pluginManager` service and the `plugins` Remote.\n\nThe row injects only the Loader; the profile runtime and the agent registry are read off the context per call, so a composition without them (a test, a launcher other than the profile launcher) still mounts this service and every call then reports `plugins/unavailable` rather than the service failing to start.',
     methods: [
       {
         signature: '@Remote(\'list\') async list(): Promise<PluginPackageView[]>',
@@ -1438,20 +1424,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the enable outcome of the second step.',
       },
       {
-        signature: '@Remote(\'addRow\') async addRow( packageName: string, target: PluginRowTarget, options?: { module?: string; id?: string; config?: JsonValue }, ): Promise<PluginRowAddition>',
-        description: 'Add a row naming one of the package\'s modules to a user layer.',
-        parameters: [{ name: 'packageName', description: 'the installed package.' }, { name: 'target', description: 'which layer.' }, { name: 'options', description: '`module` selects a declared `dsh.plugins[]` name (default `.`), `id` overrides the derived row id, `config` overrides the declared default.' }],
+        signature: '@Remote(\'addRow\') async addRow( packageName: string, options?: { module?: string; id?: string; config?: JsonValue }, ): Promise<PluginRowAddition>',
+        description: 'Add a row naming one of the package\'s modules to the profile user layer.',
+        parameters: [{ name: 'packageName', description: 'the installed package.' }, { name: 'options', description: '`module` selects a declared `dsh.plugins[]` name (default `.`), `id` overrides the derived row id, `config` overrides the declared default.' }],
         returns: 'where the row landed.',
       },
       {
-        signature: '@Remote(\'removeRow\') async removeRow(target: PluginRowTarget, rowId: string): Promise<void>',
+        signature: '@Remote(\'removeRow\') async removeRow(rowId: string): Promise<void>',
         description: 'Remove a row a user layer inserted.',
-        parameters: [{ name: 'target', description: 'which layer.' }, { name: 'rowId', description: 'the inserted row\'s id.' }],
+        parameters: [{ name: 'rowId', description: 'the inserted row\'s id.' }],
       },
       {
-        signature: '@Remote(\'setRowDisabled\') async setRowDisabled(target: PluginRowTarget, rowId: string, disabled: boolean): Promise<void>',
+        signature: '@Remote(\'setRowDisabled\') async setRowDisabled(rowId: string, disabled: boolean): Promise<void>',
         description: 'Switch one row off or on in a user layer; deny-only.',
-        parameters: [{ name: 'target', description: 'which layer.' }, { name: 'rowId', description: 'the row\'s id as the composition declares it.' }, { name: 'disabled', description: 'whether the layer should switch the row off.' }],
+        parameters: [{ name: 'rowId', description: 'the row\'s id as the composition declares it.' }, { name: 'disabled', description: 'whether the layer should switch the row off.' }],
       },
       {
         signature: '@Remote(\'dependents\') async dependents(packageName: string): Promise<PluginDependents>',
@@ -2152,10 +2138,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'register<const Namespace extends string, T>( ns: Namespace & SettingsNamespaceInput<Namespace>, schema: z<T>, options?: SettingsRegisterOptions<T>, ): SettingsScope<T>',
-        description: 'Register a namespace schema and receive its owner scope. The registration is an effect on the calling plugin\'s fiber: disposing that fiber removes the instance and its observers. An invalid stored section fails the registration itself — the earliest point where the schema can judge it.\n\nThe instance registers under the caller\'s nearest named scope: a plugin mounted inside an agent preset resolves that preset\'s section over the global one, and two presets mounting the same plugin hold two instances of one kind. A second registrant of a namespace must carry the same schema envelope; a different one is a different setting under a taken name and fails loud.',
-        parameters: [{ name: 'ns', description: 'the namespace; a second registration under the same scope fails loud.' }, { name: 'schema', description: 'schemastery schema resolving this namespace\'s value.' }, { name: 'options', description: 'composition `base` layer and effect timing.' }],
+        description: 'Register a namespace schema and receive its owner scope. The registration is an effect on the calling plugin\'s fiber: disposing that fiber removes the namespace and its observers. An invalid stored section fails the registration itself — the earliest point where the schema can judge it.',
+        parameters: [{ name: 'ns', description: 'unique namespace; duplicate registration fails loud.' }, { name: 'schema', description: 'schemastery schema resolving this namespace\'s value.' }, { name: 'options', description: 'composition `base` layer and effect timing.' }],
         returns: 'the owner scope for reads, observation, and updates.',
-        throws: ['{TypeError} when `ns` is not a lowercase hyphenated identifier or is reserved.'],
+        throws: ['{TypeError} when `ns` is not a lowercase hyphenated identifier.'],
       },
       {
         signature: 'installSection<const Namespace extends string, T>( owner: Context, ns: Namespace & SettingsNamespaceInput<Namespace>, schema: z<T>, entry: T, hooks: SettingsSectionHooks<T>, ): void',
@@ -2165,40 +2151,33 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'describe(options?: SettingsDescribeOptions): SettingsDescriptor[]',
-        description: 'Describe every namespace kind for configuration surfaces, under the global scope or one named scope: the composition `base` and raw user layers so a form can mark which fields the user overrode (presence in `user`) and what a reset returns to, and for a scoped read the `inherited` value the scope\'s own section is layered over. A kind with no instance under the requested scope is described from the kind alone.',
-        parameters: [{ name: 'options', description: 'redaction switch (wire surfaces must redact) and scope.' }],
-        returns: 'one descriptor per namespace kind, in registration order.',
-        throws: ['{TypeError} when `scope` is not a well-formed scope id.'],
+        description: 'Describe every registered namespace for configuration surfaces, including the composition `base` and raw user layers so a form can mark which fields the user overrode (presence in `user`) and what a reset returns to.',
+        parameters: [{ name: 'options', description: 'redaction switch; wire surfaces must redact.' }],
+        returns: 'one descriptor per registered namespace, in registration order.',
       },
       {
-        signature: 'scopes(): SettingsScopeId[]',
-        description: 'Every named scope some namespace is registered under, in first-seen order.',
-        parameters: [],
-        returns: 'the scope ids.',
-      },
-      {
-        signature: 'get<const Namespace extends string>(ns: Namespace & SettingsNamespaceInput<Namespace>, scope?: string): unknown',
+        signature: 'get<const Namespace extends string>(ns: Namespace & SettingsNamespaceInput<Namespace>): unknown',
         description: 'Read one registered namespace\'s resolved value.',
-        parameters: [{ name: 'ns', description: 'the namespace to read.' }, { name: 'scope', description: 'the named scope of the instance; the global instance when omitted.' }],
-        returns: 'the resolved value, or `undefined` while unregistered under that scope.',
+        parameters: [{ name: 'ns', description: 'the namespace to read.' }],
+        returns: 'the resolved value, or `undefined` while unregistered.',
         throws: ['{TypeError} when `ns` is not a lowercase hyphenated identifier.'],
       },
       {
-        signature: 'async update<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, patch: object, expectedRevision?: number, scope?: string, ): Promise<void>',
-        description: 'Merge a patch into one namespace\'s user section, validate the resolved candidates, persist through the provider, then commit and emit. A validation failure rejects before anything is persisted. Writes to one section are serialized: concurrent updates apply in call order, each merging over the previous write\'s committed section. A global write re-resolves every instance of the kind; a scoped write only that scope\'s.',
-        parameters: [{ name: 'ns', description: 'the registered namespace to update.' }, { name: 'patch', description: 'plain-object patch over the user section.' }, { name: 'expectedRevision', description: 'the descriptor `revision` the caller read; a section that moved past it rejects with {@link SettingsConflictError}.' }, { name: 'scope', description: 'the named scope whose section to write; the global section when omitted.' }],
+        signature: 'async update<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, patch: object, expectedRevision?: number, ): Promise<void>',
+        description: 'Merge a patch into one registered namespace\'s user layer, validate the resolved candidate, persist through the provider, then commit and emit. A validation failure rejects before anything is persisted. Writes to one namespace are serialized: concurrent updates apply in call order, each merging over the previous write\'s committed section.',
+        parameters: [{ name: 'ns', description: 'the registered namespace to update.' }, { name: 'patch', description: 'plain-object patch over the user section.' }, { name: 'expectedRevision', description: 'the descriptor `revision` the caller read; a namespace that moved past it rejects with {@link SettingsConflictError}.' }],
         throws: ['{TypeError} when `ns` is not a lowercase hyphenated identifier.'],
       },
       {
-        signature: 'async replace<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, section: object, expectedRevision?: number, scope?: string, ): Promise<void>',
-        description: 'Replace one namespace\'s user section wholesale, validate, persist, then commit and emit. Keys absent from `section` fall back to the layers below — this is the removal/reset path a merge-only patch cannot express (`replace({})` re-inherits everything).',
-        parameters: [{ name: 'ns', description: 'the registered namespace to replace.' }, { name: 'section', description: 'the complete next user section.' }, { name: 'expectedRevision', description: 'the descriptor `revision` the caller read; a section that moved past it rejects with {@link SettingsConflictError}.' }, { name: 'scope', description: 'the named scope whose section to write; the global section when omitted.' }],
+        signature: 'async replace<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, section: object, expectedRevision?: number, ): Promise<void>',
+        description: 'Replace one registered namespace\'s user section wholesale, validate, persist, then commit and emit. Keys absent from `section` fall back to the composition `base` and schema defaults — this is the removal/reset path a merge-only patch cannot express (`replace({})` re-inherits everything).',
+        parameters: [{ name: 'ns', description: 'the registered namespace to replace.' }, { name: 'section', description: 'the complete next user section.' }, { name: 'expectedRevision', description: 'the descriptor `revision` the caller read; a namespace that moved past it rejects with {@link SettingsConflictError}.' }],
         throws: ['{TypeError} when `ns` is not a lowercase hyphenated identifier.'],
       },
       {
-        signature: 'async mutate<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, ops: readonly SettingsPathOp[], expectedRevision?: number, scope?: string, ): Promise<void>',
-        description: 'Apply path-addressed edits to one namespace\'s user section, validate, persist, then commit and emit. The ops are applied to the section as it stands when the write reaches the front of the queue, so a caller never has to restate fields it did not touch — and, crucially, cannot delete fields it never saw. This is the write path for any caller holding a redacted view; `replace` remains the wholesale reset.',
-        parameters: [{ name: 'ns', description: 'the registered namespace to edit.' }, { name: 'ops', description: 'ordered path edits; later ops observe earlier ones.' }, { name: 'expectedRevision', description: 'the descriptor `revision` the caller read; a section that moved past it rejects with {@link SettingsConflictError}.' }, { name: 'scope', description: 'the named scope whose section to write; the global section when omitted.' }],
+        signature: 'async mutate<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, ops: readonly SettingsPathOp[], expectedRevision?: number, ): Promise<void>',
+        description: 'Apply path-addressed edits to one registered namespace\'s user section, validate, persist, then commit and emit. The ops are applied to the section as it stands when the write reaches the front of the queue, so a caller never has to restate fields it did not touch — and, crucially, cannot delete fields it never saw. This is the write path for any caller holding a redacted view; `replace` remains the wholesale reset.',
+        parameters: [{ name: 'ns', description: 'the registered namespace to edit.' }, { name: 'ops', description: 'ordered path edits; later ops observe earlier ones.' }, { name: 'expectedRevision', description: 'the descriptor `revision` the caller read; a namespace that moved past it rejects with {@link SettingsConflictError}.' }],
         throws: ['{TypeError} when `ns` is not a lowercase hyphenated identifier.'],
       },
     ],
@@ -2209,11 +2188,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Host service backing the generated `ctx.remote.settings` namespace. Every remote read uses `redactSecrets: true`, so a `role(\'secret\')` field cannot ride a response. Writes expose the settings service\'s merge, replacement, and path-addressed operations, and classify every provider refusal as `settings/conflict` or `settings/rejected` with the service\'s message.',
     methods: [
       {
-        signature: '@Remote describe(scope?: string): SettingsDescribeValue',
-        description: 'Describe every namespace kind for a configuration page: redacted layered values plus the serialized schema the page renders its form from, under the global scope or one named scope (an agent preset\'s `preset/<id>`).',
-        parameters: [{ name: 'scope', description: 'the named scope to describe; the global scope when omitted.' }],
-        returns: 'provider writability, local-document presence, one view per namespace kind, and every scope some namespace is registered under.',
-        throws: ['RemoteError when no settings provider is mounted or the scope id is malformed.'],
+        signature: '@Remote describe(): SettingsDescribeValue',
+        description: 'Describe every registered namespace for a configuration page: redacted layered values plus the serialized schema the page renders its form from.',
+        parameters: [],
+        returns: 'provider writability, local-document presence, and one view per namespace.',
+        throws: ['RemoteError when no settings provider is mounted.'],
       },
       {
         signature: '@Remote canOpenAgentPresetDirectory(): boolean',
@@ -2222,24 +2201,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'true when the matching open operation is available.',
       },
       {
-        signature: '@Remote update( ns: string, patch: Record<string, JsonValue>, expectedRevision: number | undefined, scope?: string, ): Promise<SettingsNamespaceView>',
+        signature: '@Remote update( ns: string, patch: Record<string, JsonValue>, expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>',
         description: 'Merge a patch into one namespace\'s stored user section.',
-        parameters: [{ name: 'ns', description: 'namespace key to write.' }, { name: 'patch', description: 'fields to merge into the user section.' }, { name: 'expectedRevision', description: 'revision the caller read; `undefined` writes unconditionally.' }, { name: 'scope', description: 'the named scope whose section to write; the global section when omitted.' }],
-        returns: 'the namespace\'s redacted view under that scope after the write.',
+        parameters: [{ name: 'ns', description: 'namespace key to write.' }, { name: 'patch', description: 'fields to merge into the user section.' }, { name: 'expectedRevision', description: 'revision the caller read; `undefined` writes unconditionally.' }],
+        returns: 'the namespace\'s redacted view after the write.',
         throws: ['RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.'],
       },
       {
-        signature: '@Remote replace( ns: string, section: Record<string, JsonValue>, expectedRevision: number | undefined, scope?: string, ): Promise<SettingsNamespaceView>',
+        signature: '@Remote replace( ns: string, section: Record<string, JsonValue>, expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>',
         description: 'Replace one namespace\'s stored user section wholesale.',
-        parameters: [{ name: 'ns', description: 'namespace key to write.' }, { name: 'section', description: 'complete replacement user section.' }, { name: 'expectedRevision', description: 'revision the caller read; `undefined` writes unconditionally.' }, { name: 'scope', description: 'the named scope whose section to write; the global section when omitted.' }],
-        returns: 'the namespace\'s redacted view under that scope after the write.',
+        parameters: [{ name: 'ns', description: 'namespace key to write.' }, { name: 'section', description: 'complete replacement user section.' }, { name: 'expectedRevision', description: 'revision the caller read; `undefined` writes unconditionally.' }],
+        returns: 'the namespace\'s redacted view after the write.',
         throws: ['RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.'],
       },
       {
-        signature: '@Remote async mutate( ns: string, ops: SettingsPathOpView[], expectedRevision: number | undefined, scope?: string, ): Promise<SettingsNamespaceView>',
+        signature: '@Remote async mutate( ns: string, ops: SettingsPathOpView[], expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>',
         description: 'Apply path-addressed edits to one namespace\'s user section, resolved against the section as stored rather than against whatever the caller last read, then answer with that namespace\'s new redacted view.',
-        parameters: [{ name: 'ns', description: 'namespace key to write.' }, { name: 'ops', description: 'the edits to apply, in order.' }, { name: 'expectedRevision', description: 'revision the caller read; `undefined` writes unconditionally.' }, { name: 'scope', description: 'the named scope whose section to write; the global section when omitted.' }],
-        returns: 'the namespace\'s redacted view under that scope after the write.',
+        parameters: [{ name: 'ns', description: 'namespace key to write.' }, { name: 'ops', description: 'the edits to apply, in order.' }, { name: 'expectedRevision', description: 'revision the caller read; `undefined` writes unconditionally.' }],
+        returns: 'the namespace\'s redacted view after the write.',
         throws: ['RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.'],
       },
       {
@@ -3591,18 +3570,18 @@ export const EVENT_API: readonly EventApiEntry[] = [
   {
     name: 'settings/document-updated',
     mode: 'emit',
-    signature: '\'settings/document-updated\'(ns: SettingsNamespace, revision: number, scope?: SettingsScopeId): void',
+    signature: '\'settings/document-updated\'(ns: SettingsNamespace, revision: number): void',
     summary: 'One registered namespace\'s RAW user section changed, whether or not the resolved value did.',
     description: 'One registered namespace\'s RAW user section changed, whether or not the resolved value did. `settings/updated` is the consumer-facing event and stays deep-equal-gated; this one exists for configuration surfaces, which must learn that a field went from inherited to overridden (same resolved value, different meaning) and that their held revision is stale. Listener containment matches `settings/updated`.',
-    parameters: [{ name: 'ns', description: 'the namespace whose stored section changed.' }, { name: 'revision', description: 'the section\'s new revision.' }, { name: 'scope', description: 'the named scope whose section changed; absent for the global section.' }],
+    parameters: [{ name: 'ns', description: 'the namespace whose stored section changed.' }, { name: 'revision', description: 'the namespace\'s new revision.' }],
   },
   {
     name: 'settings/updated',
     mode: 'emit',
-    signature: '\'settings/updated\'(ns: SettingsNamespace, next: unknown, prev: unknown, source: SettingsUpdateSource, scope?: SettingsScopeId): void',
+    signature: '\'settings/updated\'(ns: SettingsNamespace, next: unknown, prev: unknown, source: SettingsUpdateSource): void',
     summary: 'Committed change to one registered namespace\'s resolved value.',
     description: 'Committed change to one registered namespace\'s resolved value. Emitted after the provider persisted (for `update`) or published (`provider`) the change; never emitted when the resolved value is deep-equal. Listener failures are contained and logged — a sync throw and an async rejection alike — except `INVARIANT`-coded failures, which rethrow after every listener ran; that rethrow reaches the emitter only from synchronous listeners, so invariant checks on this event must not be async functions.',
-    parameters: [{ name: 'ns', description: 'the namespace whose resolved value changed.' }, { name: 'next', description: 'the new resolved value.' }, { name: 'prev', description: 'the previous resolved value.' }, { name: 'source', description: 'whether the change entered through `update()` or the provider.' }, { name: 'scope', description: 'the named scope whose registration changed; absent for the global scope.' }],
+    parameters: [{ name: 'ns', description: 'the namespace whose resolved value changed.' }, { name: 'next', description: 'the new resolved value.' }, { name: 'prev', description: 'the previous resolved value.' }, { name: 'source', description: 'whether the change entered through `update()` or the provider.' }],
   },
   {
     name: 'skills/change',
@@ -3806,7 +3785,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentPreset',
-    declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly overlayPath?: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly broken?: string;\n}',
+    declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly broken?: string;\n}',
   },
   {
     name: 'AgentPresetComposition',
@@ -3814,7 +3793,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentPresetCompositionRow',
-    declaration: 'export interface AgentPresetCompositionRow {\n    readonly entryId: string | null;\n    readonly moduleName: string;\n    readonly enabled: CompositionRowEnablement;\n    readonly condition?: string;\n    readonly fiberState?: FiberState;\n    readonly source: CompositionRowSource;\n    readonly disabledBy?: CompositionRowDisabledBy;\n}',
+    declaration: 'export interface AgentPresetCompositionRow {\n    readonly entryId: string | null;\n    readonly moduleName: string;\n    readonly enabled: CompositionRowEnablement;\n    readonly condition?: string;\n    readonly fiberState?: FiberState;\n}',
   },
   {
     name: 'AgentPresetDirectoryOpenValue',
@@ -4085,16 +4064,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CompactionTrigger = \'pressure\' | \'context-overflow\';',
   },
   {
-    name: 'CompositionRowDisabledBy',
-    declaration: 'export type CompositionRowDisabledBy = \'composition\' | \'user\';',
-  },
-  {
     name: 'CompositionRowEnablement',
     declaration: 'export type CompositionRowEnablement = boolean | \'conditional\';',
-  },
-  {
-    name: 'CompositionRowSource',
-    declaration: 'export type CompositionRowSource = \'preset\' | \'user\';',
   },
   {
     name: 'ComputerUseProviderName',
@@ -5002,7 +4973,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginRowAddition',
-    declaration: 'export interface PluginRowAddition {\n    readonly target: PluginRowTarget;\n    readonly rowId: string;\n    readonly file: string;\n}',
+    declaration: 'export interface PluginRowAddition {\n    readonly rowId: string;\n    readonly file: string;\n}',
   },
   {
     name: 'PluginRowIssue',
@@ -5014,11 +4985,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginRowReference',
-    declaration: 'export interface PluginRowReference {\n    readonly target: PluginRowTarget;\n    readonly rowId: string;\n    readonly moduleName: string;\n}',
-  },
-  {
-    name: 'PluginRowTarget',
-    declaration: 'export type PluginRowTarget = {\n    readonly kind: \'global\';\n} | {\n    readonly kind: \'preset\';\n    readonly preset: string;\n};',
+    declaration: 'export interface PluginRowReference {\n    readonly rowId: string;\n    readonly moduleName: string;\n}',
   },
   {
     name: 'PluginServiceDependent',
@@ -5842,15 +5809,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SettingsDescribeOptions',
-    declaration: 'export interface SettingsDescribeOptions {\n    redactSecrets?: boolean;\n    scope?: string;\n}',
+    declaration: 'export interface SettingsDescribeOptions {\n    redactSecrets?: boolean;\n}',
   },
   {
     name: 'SettingsDescribeValue',
-    declaration: 'export interface SettingsDescribeValue {\n    writable: boolean;\n    hasDocument: boolean;\n    namespaces: SettingsNamespaceView[];\n    scope?: string;\n    scopes: string[];\n}',
+    declaration: 'export interface SettingsDescribeValue {\n    writable: boolean;\n    hasDocument: boolean;\n    namespaces: SettingsNamespaceView[];\n}',
   },
   {
     name: 'SettingsDescriptor',
-    declaration: 'export interface SettingsDescriptor {\n    ns: SettingsNamespace;\n    scope?: SettingsScopeId;\n    registered: boolean;\n    schema: unknown;\n    value: unknown;\n    revision: number;\n    base?: unknown;\n    user?: unknown;\n    inherited?: unknown;\n    applies: SettingsApplies;\n    secrets?: RedactedSecret[];\n}',
+    declaration: 'export interface SettingsDescriptor {\n    ns: SettingsNamespace;\n    schema: unknown;\n    value: unknown;\n    revision: number;\n    base?: unknown;\n    user?: unknown;\n    applies: SettingsApplies;\n    secrets?: RedactedSecret[];\n}',
   },
   {
     name: 'SettingsDocumentOpenValue',
@@ -5862,7 +5829,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SettingsNamespaceView',
-    declaration: 'export interface SettingsNamespaceView {\n    ns: string;\n    scope?: string;\n    registered: boolean;\n    inherited?: JsonValue;\n    schema: JsonValue;\n    value: JsonValue;\n    base?: JsonValue;\n    user?: JsonValue;\n    applies: \'live\' | \'restart\';\n    secrets: SettingsSecretView[];\n    revision: number;\n}',
+    declaration: 'export interface SettingsNamespaceView {\n    ns: string;\n    schema: JsonValue;\n    value: JsonValue;\n    base?: JsonValue;\n    user?: JsonValue;\n    applies: \'live\' | \'restart\';\n    secrets: SettingsSecretView[];\n    revision: number;\n}',
   },
   {
     name: 'SettingsPathOp',
@@ -5875,10 +5842,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SettingsRegisterOptions',
     declaration: 'export interface SettingsRegisterOptions<T> {\n    base?: Partial<T>;\n    applies?: SettingsApplies;\n    validate?: (value: T) => void;\n}',
-  },
-  {
-    name: 'SettingsScopeId',
-    declaration: 'export type SettingsScopeId = Branded<\'SettingsScopeId\'>;',
   },
   {
     name: 'SettingsSecretView',

@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { PluginPackageView } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
-import { PluginManagerController, rowKey, type PresetGroup } from '../src/client/manager-store.ts'
+import { PluginManagerController, rowKey } from '../src/client/manager-store.ts'
 
 const BUNDLE: PluginPackageView = {
   name: 'dsh-better-sidebar',
@@ -20,13 +20,6 @@ const BUNDLE: PluginPackageView = {
   overrides: [],
   addable: [],
   liveReload: true,
-}
-
-const STANDARD: PresetGroup = {
-  id: 'standard',
-  trust: 'system',
-  isDefault: true,
-  rows: [{ entryId: 'bash', moduleName: '@deepseek-ai/dsh-tool-bash', enabled: true, fiberPhase: null, source: 'preset' }],
 }
 
 /** One host-tree row the inventory lists, as far as the store reads it. */
@@ -67,21 +60,21 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
     enable: vi.fn(() => Promise.resolve(ok({ changed: true, effect: 'live' }))),
     disable: vi.fn(() => Promise.resolve(ok({ changed: true, effect: 'restart' }))),
     retry: vi.fn(() => Promise.resolve(ok({ changed: true, effect: 'live' }))),
-    addRow: vi.fn(() => Promise.resolve(ok({ target: { kind: 'global' }, rowId: 'r', file: '/f' }))),
+    addRow: vi.fn(() => Promise.resolve(ok({ rowId: 'r', file: '/f' }))),
     removeRow: vi.fn(() => Promise.resolve(ok(undefined))),
     setRowDisabled: vi.fn(() => Promise.resolve(ok(undefined))),
     dependents: vi.fn(() => Promise.resolve(ok({ services: [], references: [] }))),
     ...overrides,
   }
-  const inventory = { list: vi.fn(() => Promise.resolve(ok({ entries: [GLOBAL_ENTRY], agentPresets: [STANDARD] }))) }
+  const inventory = { list: vi.fn(() => Promise.resolve(ok({ entries: [GLOBAL_ENTRY] }))) }
   const ctx = { remote: { plugins, pluginInventory: inventory } } as never
-  const controller = new PluginManagerController(ctx, preset => preset.name ?? preset.id)
+  const controller = new PluginManagerController(ctx)
   const face = controller.inject()
   return { plugins, inventory, controller, face, state: () => controller.getSnapshot() }
 }
 
 describe('PluginManagerController', () => {
-  it('starts idle, reads packages and presets on first use, and folds concurrent loads', async () => {
+  it('starts idle, reads packages and global modules on first use, and folds concurrent loads', async () => {
     const gate = deferred<ReturnType<typeof ok<PluginPackageView[]>>>()
     const { plugins, face, state, controller } = bench({ list: vi.fn().mockReturnValueOnce(gate.promise).mockResolvedValue(ok([BUNDLE])) })
     expect(state().status).toBe('idle')
@@ -94,13 +87,12 @@ describe('PluginManagerController', () => {
     await mid
     // The in-flight read reran once for the load that landed mid-read.
     expect(plugins.list).toHaveBeenCalledTimes(2)
-    expect(state()).toMatchObject({ status: 'ready', packages: [BUNDLE], presets: [STANDARD], globalModules: [GLOBAL_ENTRY.moduleName] })
+    expect(state()).toMatchObject({ status: 'ready', packages: [BUNDLE], globalModules: [GLOBAL_ENTRY.moduleName] })
     face.ensure()
     expect(plugins.list).toHaveBeenCalledTimes(2)
     face.refresh()
     await controller.load()
     expect(plugins.list).toHaveBeenCalledTimes(3)
-    expect(face.presetName(STANDARD)).toBe('standard')
   })
 
   it('reports an unavailable profile runtime and keeps the last packages across a failed read', async () => {
@@ -119,12 +111,11 @@ describe('PluginManagerController', () => {
     expect(plugins.list).toHaveBeenCalledTimes(3)
   })
 
-  it('keeps the held presets and host-tree modules when the inventory read is refused', async () => {
+  it('keeps the held host-tree modules when the inventory read is refused', async () => {
     const { inventory, controller, state } = bench()
     await controller.load()
     inventory.list.mockResolvedValueOnce(refused('gateway/internal', 'boom') as never)
     await controller.load()
-    expect(state().presets).toEqual([STANDARD])
     expect(state().globalModules).toEqual([GLOBAL_ENTRY.moduleName])
   })
 
@@ -193,7 +184,7 @@ describe('PluginManagerController', () => {
     await controller.load()
     face.disableRow(BUNDLE.name, 'include:seam', 'seam')
     // The row is inert while the Host is asked, and no dialog opens before the answer.
-    expect(state().busy).toEqual([rowKey({ kind: 'global' }, 'seam')])
+    expect(state().busy).toEqual([rowKey('seam')])
     expect(state().confirm).toBeNull()
     // Of the package's dependents, only the services this row provides are the row's.
     await vi.waitFor(() => {
@@ -201,20 +192,20 @@ describe('PluginManagerController', () => {
     })
     expect(plugins.setRowDisabled).not.toHaveBeenCalled()
     face.confirm()
-    await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith({ kind: 'global' }, 'seam', true) })
+    await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith('seam', true) })
     await vi.waitFor(() => { expect(state().busy).toEqual([]) })
     // A row nothing depends on switches off without asking; so does one whose dependents the Host refused to name.
     face.disableRow(BUNDLE.name, 'include:lonely', 'lonely')
-    await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith({ kind: 'global' }, 'lonely', true) })
+    await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith('lonely', true) })
     expect(state().confirm).toBeNull()
     plugins.dependents.mockResolvedValueOnce(refused('gateway/internal', 'boom') as never)
     face.disableRow(BUNDLE.name, 'include:unknown', 'unknown')
-    await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith({ kind: 'global' }, 'unknown', true) })
+    await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith('unknown', true) })
     expect(state().confirm).toBeNull()
     // A check that fails on the wire does not stand between the person and the switch.
     plugins.dependents.mockRejectedValueOnce(new Error('down'))
     face.disableRow(BUNDLE.name, 'include:offline', 'offline')
-    await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith({ kind: 'global' }, 'offline', true) })
+    await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith('offline', true) })
     expect(state().confirm).toBeNull()
   })
 
@@ -280,39 +271,38 @@ describe('PluginManagerController', () => {
     await vi.waitFor(() => { expect(state().busy).toEqual([]) })
     expect(state().notice).toBeNull()
 
-    face.addRow('@fixture/tool', '.', { kind: 'preset', preset: 'standard' })
+    face.addRow('@fixture/tool', '.')
     await vi.waitFor(() => {
-      expect(plugins.addRow).toHaveBeenCalledWith('@fixture/tool', { kind: 'preset', preset: 'standard' }, { module: '.' })
+      expect(plugins.addRow).toHaveBeenCalledWith('@fixture/tool', { module: '.' })
     })
     await vi.waitFor(() => { expect(state().busy).toEqual([]) })
     expect(state().notice).toBeNull()
 
-    const target = { kind: 'preset', preset: 'standard' } as const
-    face.setRowDisabled(target, 'bash', true)
-    expect(state().busy).toEqual([rowKey(target, 'bash')])
-    await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith(target, 'bash', true) })
+    face.setRowDisabled('bash', true)
+    expect(state().busy).toEqual([rowKey('bash')])
+    await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith('bash', true) })
     await vi.waitFor(() => { expect(state().busy).toEqual([]) })
-    face.removeRow(target, 'extra')
-    await vi.waitFor(() => { expect(plugins.removeRow).toHaveBeenCalledWith(target, 'extra') })
+    face.removeRow('extra')
+    await vi.waitFor(() => { expect(plugins.removeRow).toHaveBeenCalledWith('extra') })
     await vi.waitFor(() => { expect(state().busy).toEqual([]) })
   })
 
   it('reports a row conflict with the row id and a thrown transport failure generically', async () => {
     const { face, state, controller } = bench({
-      addRow: vi.fn(() => Promise.resolve(refused('plugins/row-conflict', 'taken', { rowId: 'r', target: { kind: 'global' } }))),
+      addRow: vi.fn(() => Promise.resolve(refused('plugins/row-conflict', 'taken', { rowId: 'r' }))),
       removeRow: vi.fn(() => Promise.reject(new Error('offline'))),
       // A rejection that is not an Error reaches the notice by its string form.
       setRowDisabled: vi.fn().mockRejectedValueOnce('plain text'),
     })
     await controller.load()
-    face.addRow('p', 'p', { kind: 'global' })
+    face.addRow('p', 'p')
     await vi.waitFor(() => { expect(state().notice).toMatchObject({ kind: 'failed' }) })
     expect(state().notice).toEqual({ kind: 'failed', code: 'plugins/row-conflict', reason: 'taken', packageName: 'p' })
-    face.removeRow({ kind: 'global' }, 'r')
+    face.removeRow('r')
     await vi.waitFor(() => {
       expect(state().notice).toEqual({ kind: 'failed', code: 'gateway/internal', reason: 'offline', rowId: 'r' })
     })
-    face.setRowDisabled({ kind: 'global' }, 'r', true)
+    face.setRowDisabled('r', true)
     await vi.waitFor(() => { expect(state().notice).toMatchObject({ reason: 'plain text' }) })
   })
 

@@ -34,9 +34,6 @@
     },
     {
       "path": "../ui-slots"
-    },
-    {
-      "path": "../ui-agent-preset"
     }
   ]
 }

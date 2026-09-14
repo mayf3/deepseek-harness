@@ -31,9 +31,6 @@
       - 'button "新任务默认: 标准模式" [disabled] [pressed]':
         - text: 标准模式 内置 新任务默认 功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。
         - code: standard
-      - 'button "配置: 标准模式"':
-        - img
-        - text: 配置
       - 'button "查看: 标准模式"':
         - img
         - text: 查看
@@ -44,9 +41,6 @@
       - 'button "设为默认: PTC 模式"':
         - text: PTC 模式 内置 功能完整的编码 Agent，但默认不提供 workflow 工具；其他工具通过 PTC 模式 SDK 呈现，让模型用一个 TypeScript 程序组合多步操作。
         - code: ptc
-      - 'button "配置: PTC 模式"':
-        - img
-        - text: 配置
       - 'button "查看: PTC 模式"':
         - img
         - text: 查看
@@ -57,9 +51,6 @@
       - 'button "设为默认: 极简模式"':
         - text: 极简模式 内置 仅提供持久 shell 的单工具编码 Agent。
         - code: minimal
-      - 'button "配置: 极简模式"':
-        - img
-        - text: 配置
       - 'button "查看: 极简模式"':
         - img
         - text: 查看
@@ -70,9 +61,6 @@
       - 'button "设为默认: 创造模式"':
         - text: 创造模式 内置 用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导。
         - code: cordis
-      - 'button "配置: 创造模式"':
-        - img
-        - text: 配置
       - 'button "查看: 创造模式"':
         - img
         - text: 查看
@@ -86,9 +74,6 @@
         - text: broken-yaml 加载失败 自定义 暂无描述。
         - alert: "the composition is not valid YAML: unexpected end of the stream within a flow collection (3:1)"
         - code: broken-yaml
-      - 'button "配置: broken-yaml" [disabled]':
-        - img
-        - text: 配置
       - 'button "查看路径: broken-yaml"':
         - img
         - text: 查看路径
@@ -103,9 +88,6 @@
         - text: 幽灵预设 加载失败 自定义 composition 已被手动删除。
         - alert: the composition file agent.cordis.yml is missing — the directory still occupies the id; delete it or restore the file
         - code: ghost
-      - 'button "配置: 幽灵预设" [disabled]':
-        - img
-        - text: 配置
       - 'button "查看路径: 幽灵预设"':
         - img
         - text: 查看路径

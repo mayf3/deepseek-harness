@@ -27,9 +27,6 @@
       "path": "../../boot/plugin-manager"
     },
     {
-      "path": "../../preset/agent-presets"
-    },
-    {
       "path": "../../typert/protocol"
     },
     {

@@ -15,4 +15,4 @@
   - listitem:
     - button "查看 示例插件": 示例插件
     - text: "Web e2e fixture: a plain plugin module with no bundle, added to a composition per row."
-    - button "加入到…"
+    - button "加入全局"

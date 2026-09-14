@@ -65,7 +65,7 @@ The launcher provides `ctx.profileRuntime` before any configuration entry mounts
 <a id="patch-files"></a>
 ### Patch files
 
-Every layer above is a `cordis.patch.yml`: a top-level YAML sequence of the include plugin's `PatchOptions` — id-targeted overrides and `insert` lists — in the Loader's dialect, where `!!js` marks an expression the row's fiber evaluates. The `./patch-file` export is the one place that reads and writes such a file, so a file the boot accepts is a file the agent-preset roster and the plugin manager accept.
+Every layer above is a `cordis.patch.yml`: a top-level YAML sequence of the include plugin's `PatchOptions` — id-targeted overrides and `insert` lists — in the Loader's dialect, where `!!js` marks an expression the row's fiber evaluates. The `./patch-file` export is the one place that reads and writes such a file, so a file the boot accepts is a file the plugin manager accepts.
 
 Read a layer with `parsePatchList` (text in hand) or `readPatchListFile` (an absent file reads as `undefined`). Both anchor a relative `insert` row name such as `./plugin.js` to the file's own directory and fail loud on anything that is not a sequence of mappings, because a patch file that cannot be applied at all is a misconfiguration; a patch whose target row is absent stays a per-entry Loader warning.
 

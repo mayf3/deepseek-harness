@@ -30,7 +30,7 @@ import type { AgentPresetDirectoryOpenValue, SettingsDocumentOpenValue } from '.
 export { CredentialsController } from './credentials.ts'
 export type * from './types.ts'
 
-const settingsNamespaceRequestSchema = z.object({ ns: z.string().min(1), scope: z.string().min(1).optional() })
+const settingsNamespaceRequestSchema = z.object({ ns: z.string().min(1) })
 
 /** Native document-opening policy. */
 export interface Config {
@@ -61,13 +61,10 @@ export interface SettingsControllerInternals {
 function namespaceView(descriptor: SettingsDescriptor): SettingsNamespaceView {
   return {
     ns: String(descriptor.ns),
-    ...descriptor.scope === undefined ? {} : { scope: String(descriptor.scope) },
-    registered: descriptor.registered,
     schema: descriptor.schema as JsonValue,
     value: descriptor.value as JsonValue,
     ...descriptor.base === undefined ? {} : { base: descriptor.base as JsonValue },
     ...descriptor.user === undefined ? {} : { user: descriptor.user as JsonValue },
-    ...descriptor.inherited === undefined ? {} : { inherited: descriptor.inherited as JsonValue },
     applies: descriptor.applies,
     secrets: (descriptor.secrets ?? []).map(secret => ({ path: [...secret.path], set: secret.set })),
     revision: descriptor.revision,
@@ -111,29 +108,18 @@ export class SettingsController extends TypertRemoteService {
   }
 
   /**
-   * Describe every namespace kind for a configuration page: redacted layered
-   * values plus the serialized schema the page renders its form from, under
-   * the global scope or one named scope (an agent preset's `preset/<id>`).
-   * @param scope - the named scope to describe; the global scope when omitted.
-   * @returns provider writability, local-document presence, one view per
-   * namespace kind, and every scope some namespace is registered under.
-   * @throws RemoteError when no settings provider is mounted or the scope id is malformed.
+   * Describe every registered namespace for a configuration page: redacted
+   * layered values plus the serialized schema the page renders its form from.
+   * @returns provider writability, local-document presence, and one view per namespace.
+   * @throws RemoteError when no settings provider is mounted.
    */
   @Remote
-  describe(scope?: string): SettingsDescribeValue {
+  describe(): SettingsDescribeValue {
     const settings = this.provider()
-    let views: SettingsNamespaceView[]
-    try {
-      views = settings.describe({ redactSecrets: true, ...scope === undefined ? {} : { scope } }).map(namespaceView)
-    } catch (error: unknown) {
-      throw new RemoteError('gateway/bad-request', `invalid scope for settings.describe: ${messageOf(error)}`, {}, { cause: error })
-    }
     return {
       writable: settings.writable,
       hasDocument: settings.documentPath !== undefined,
-      namespaces: views,
-      ...scope === undefined ? {} : { scope },
-      scopes: settings.scopes().map(String),
+      namespaces: settings.describe({ redactSecrets: true }).map(namespaceView),
     }
   }
 
@@ -151,8 +137,7 @@ export class SettingsController extends TypertRemoteService {
    * @param ns - namespace key to write.
    * @param patch - fields to merge into the user section.
    * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
-   * @param scope - the named scope whose section to write; the global section when omitted.
-   * @returns the namespace's redacted view under that scope after the write.
+   * @returns the namespace's redacted view after the write.
    * @throws RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.
    */
   @Remote
@@ -160,9 +145,8 @@ export class SettingsController extends TypertRemoteService {
     ns: string,
     patch: Record<string, JsonValue>,
     expectedRevision: number | undefined,
-    scope?: string,
   ): Promise<SettingsNamespaceView> {
-    return this.write(ns, 'update', patch, expectedRevision, scope)
+    return this.write(ns, 'update', patch, expectedRevision)
   }
 
   /**
@@ -170,8 +154,7 @@ export class SettingsController extends TypertRemoteService {
    * @param ns - namespace key to write.
    * @param section - complete replacement user section.
    * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
-   * @param scope - the named scope whose section to write; the global section when omitted.
-   * @returns the namespace's redacted view under that scope after the write.
+   * @returns the namespace's redacted view after the write.
    * @throws RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.
    */
   @Remote
@@ -179,9 +162,8 @@ export class SettingsController extends TypertRemoteService {
     ns: string,
     section: Record<string, JsonValue>,
     expectedRevision: number | undefined,
-    scope?: string,
   ): Promise<SettingsNamespaceView> {
-    return this.write(ns, 'replace', section, expectedRevision, scope)
+    return this.write(ns, 'replace', section, expectedRevision)
   }
 
   /**
@@ -191,8 +173,7 @@ export class SettingsController extends TypertRemoteService {
    * @param ns - namespace key to write.
    * @param ops - the edits to apply, in order.
    * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
-   * @param scope - the named scope whose section to write; the global section when omitted.
-   * @returns the namespace's redacted view under that scope after the write.
+   * @returns the namespace's redacted view after the write.
    * @throws RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.
    */
   @Remote
@@ -200,9 +181,8 @@ export class SettingsController extends TypertRemoteService {
     ns: string,
     ops: SettingsPathOpView[],
     expectedRevision: number | undefined,
-    scope?: string,
   ): Promise<SettingsNamespaceView> {
-    return this.write(ns, 'mutate', ops, expectedRevision, scope)
+    return this.write(ns, 'mutate', ops, expectedRevision)
   }
 
   /**
@@ -282,24 +262,21 @@ export class SettingsController extends TypertRemoteService {
     mode: 'update' | 'replace' | 'mutate',
     input: Record<string, JsonValue> | SettingsPathOpView[],
     expectedRevision: number | undefined,
-    scope: string | undefined,
   ): Promise<SettingsNamespaceView> {
-    const parsed = settingsNamespaceRequestSchema.safeParse({ ns, ...scope === undefined ? {} : { scope } })
+    const parsed = settingsNamespaceRequestSchema.safeParse({ ns })
     if (!parsed.success) {
       throw new RemoteError('gateway/bad-request', `invalid payload for settings.${mode}`, { issues: parsed.error.issues })
     }
     const settings = this.provider()
     const namespace = parsed.data.ns
     try {
-      if (mode === 'update') await settings.update(namespace, input, expectedRevision, scope)
-      else if (mode === 'replace') await settings.replace(namespace, input, expectedRevision, scope)
-      else await settings.mutate(namespace, input as SettingsPathOp[], expectedRevision, scope)
+      if (mode === 'update') await settings.update(namespace, input, expectedRevision)
+      else if (mode === 'replace') await settings.replace(namespace, input, expectedRevision)
+      else await settings.mutate(namespace, input as SettingsPathOp[], expectedRevision)
     } catch (error: unknown) {
       throw rejected(ns, error)
     }
-    const descriptor = settings
-      .describe({ redactSecrets: true, ...scope === undefined ? {} : { scope } })
-      .find(candidate => candidate.ns === namespace)
+    const descriptor = settings.describe({ redactSecrets: true }).find(candidate => candidate.ns === namespace)
     if (descriptor === undefined) {
       // The write committed but the namespace vanished before this read: only a
       // concurrent registrant disposal can produce it.

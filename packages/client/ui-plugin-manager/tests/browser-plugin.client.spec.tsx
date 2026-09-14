@@ -9,7 +9,6 @@ import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-t
 import { apply, inject, NS, PANEL_ID } from '../src/client/index.ts'
 import { PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
 import { PluginsPanelIcon } from '../src/client/PluginsPanelIcon.tsx'
-import { PresetPluginsSection } from '../src/client/PresetPluginsSection.tsx'
 import type { PluginManagerFace } from '../src/client/manager-store.ts'
 import { apply as hostApply } from '../src/index.ts'
 
@@ -42,7 +41,6 @@ function declare(slots: SlotRegistry): () => void {
     children: {
       'main': { kind: 'keyed', scope: 'root' },
       'sidebar.panellist': { kind: 'list', scope: 'root' },
-      'settings.agentPreset.detail': { kind: 'list', scope: 'root' },
     },
   } as never, () => null)
 }
@@ -76,16 +74,7 @@ describe('ui-plugin-manager browser plugin', () => {
     expect(icon.options).toMatchObject({ id: PANEL_ID, order: 0 })
     expect(icon.locale).toBe(NS)
     expect(resolveSlotLabel(icon.options.label)).toBe('插件')
-    // The same store feeds the capabilities section of every preset's detail page.
-    const section = b.slots.entries('settings.agentPreset.detail')[0]!
-    expect(section.component).toBe(PresetPluginsSection)
-    expect(section.options).toMatchObject({ id: 'plugins', order: 0 })
-    expect(section.locale).toBe(NS)
-    const sectionFace = (section.inject as unknown as () => PluginManagerFace)()
-    expect(b.list).not.toHaveBeenCalled()
-
     const face = (entry.inject as unknown as () => PluginManagerFace)()
-    expect(sectionFace.hooks.pluginManager).toBe(face.hooks.pluginManager)
     // A Host change before the first render is not a reason to read.
     b.remote.emit('plugins/changed', [{ reason: 'install' }])
     b.ctx.emit('connection/reset')
@@ -105,16 +94,9 @@ describe('ui-plugin-manager browser plugin', () => {
     b.remote.emit('plugins/install-log', [{ jobId: 'j', argv: ['pnpm', 'add', 'pkg'], cwd: '/p', spec: 'pkg', stream: 'stdout', text: 'early' }])
     expect(face.hooks.pluginManager.getSnapshot().install.runs).toEqual([])
 
-    // Shipped preset names resolve over the agent-preset dictionaries the
-    // real plugin registers; user-authored metadata stays untranslated.
-    b.locale.register('settings.agentPreset', 'zh', { presetStandardName: '标准模式' } as never)
-    expect(face.presetName({ id: 'standard', trust: 'system', isDefault: true, rows: [] })).toBe('标准模式')
-    expect(face.presetName({ id: 'mine', trust: 'user', name: '我自己的', isDefault: false, rows: [] })).toBe('我自己的')
-
     await fiber.dispose()
     expect(b.slots.entries('main')).toHaveLength(0)
     expect(b.slots.entries('sidebar.panellist')).toHaveLength(0)
-    expect(b.slots.entries('settings.agentPreset.detail')).toHaveLength(0)
     b.remote.emit('plugins/changed', [{ reason: 'install' }])
     await Promise.resolve()
     expect(b.list).toHaveBeenCalledTimes(3)

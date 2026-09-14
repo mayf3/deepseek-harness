@@ -6,8 +6,8 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
 import type { PluginManagerPageProps } from '../src/client/PluginManagerPage.tsx'
-import { rowKey, type InstallState, type PluginManagerState, type PresetGroup } from '../src/client/manager-store.ts'
-import { en, zh, type PluginManagerLocaleKey } from '../src/client/locales.ts'
+import { rowKey, type InstallState, type PluginManagerState } from '../src/client/manager-store.ts'
+import { en, type PluginManagerLocaleKey } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
@@ -34,10 +34,6 @@ function pkg(overrides: Partial<PluginPackageView> = {}): PluginPackageView {
   }
 }
 
-function preset(overrides: Partial<PresetGroup> = {}): PresetGroup {
-  return { id: 'standard', trust: 'system', name: '标准', isDefault: true, rows: [], ...overrides }
-}
-
 const IDLE_INSTALL: InstallState = {
   open: false, spec: '', enable: true, phase: 'idle', runs: [], installed: [], enabled: [], installedOnly: [], plain: [], removed: [], failure: null,
 }
@@ -45,7 +41,6 @@ const IDLE_INSTALL: InstallState = {
 const READY: PluginManagerState = {
   status: 'ready',
   packages: [],
-  presets: [],
   globalModules: [],
   busy: [],
   notice: null,
@@ -77,24 +72,11 @@ function renderTab(state: Partial<PluginManagerState> = {}) {
   const props = {
     t,
     ...actions,
-    presetName: (candidate: PresetGroup) => candidate.name ?? candidate.id,
     usePluginManager: bindSnapshotSelector(store),
   } as unknown as PluginManagerPageProps
   render(<PluginManagerPage {...props} />)
   return { store, actions, set: (next: Partial<PluginManagerState>) => { act(() => { store.set({ ...store.getSnapshot(), ...next }) }) } }
 }
-
-describe('locale dictionaries', () => {
-  it('pair every harness module name with its description in both languages', () => {
-    const names = Object.keys(zh).filter(key => key.startsWith('name.'))
-    expect(names.length).toBeGreaterThan(20)
-    for (const key of names) {
-      const partner = key.replace(/^name\./, 'desc.') as PluginManagerLocaleKey
-      expect(zh[partner]).toBeTypeOf('string')
-      expect(en[partner]).toBeTypeOf('string')
-    }
-  })
-})
 
 describe('PluginManagerPage', () => {
   it('keeps a non-dependency override failure visible even when owned rows are waiting', () => {
@@ -149,6 +131,11 @@ describe('PluginManagerPage', () => {
     fireEvent.click(screen.getByRole('button', { name: en.addPlugin }))
     expect(actions.refresh).toHaveBeenCalledTimes(2)
     expect(actions.openInstall).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a problem for a plugin with an invalid declaration', () => {
+    renderTab({ packages: [pkg({ kind: 'plugin', status: 'plain', reason: 'invalid declaration' })] })
+    expect(screen.getByText(en.statusProblem)).toBeTruthy()
   })
 
   it('lists every package as a card, tags only restarts, problems, and built-ins, and names what waits for a restart', () => {
@@ -334,13 +321,12 @@ describe('PluginManagerPage', () => {
         pkg({ name: '@deepseek-ai/dsh-core', title: 'Core', installed: false, rows: [{ entryId: 'include:core', rowId: 'core', moduleName: '@deepseek-ai/dsh-core', ...userOff }] }),
       ],
     })
-    const target = { kind: 'global' } as const
     fireEvent.click(screen.getByRole('button', { name: 'View better-sidebar' }))
     // A row the person switched off switches back on at once; one the pack itself keeps off is locked and says why.
     const off = screen.getByRole('switch', { name: 'Enable component off' })
     expect(off.getAttribute('aria-checked')).toBe('false')
     fireEvent.click(off)
-    expect(actions.setRowDisabled).toHaveBeenLastCalledWith(target, 'off', false)
+    expect(actions.setRowDisabled).toHaveBeenLastCalledWith('off', false)
     expect(actions.disableRow).not.toHaveBeenCalled()
     const gated = screen.getByRole('switch', { name: 'Enable component gated' })
     expect(gated).toHaveProperty('disabled', true)
@@ -356,7 +342,7 @@ describe('PluginManagerPage', () => {
     expect(actions.disableRow).toHaveBeenLastCalledWith('dsh-better-sidebar', 'include:better-sidebar', 'better-sidebar')
     expect(actions.setRowDisabled).toHaveBeenCalledTimes(1)
     // Only the row with a write in flight goes inert; a busy package takes every row with it.
-    set({ busy: [rowKey(target, 'better-sidebar')] })
+    set({ busy: [rowKey('better-sidebar')] })
     expect(screen.getByRole('switch', { name: 'Enable component better-sidebar' })).toHaveProperty('disabled', true)
     expect(screen.getByRole('switch', { name: 'Enable component off' })).toHaveProperty('disabled', false)
     set({ busy: ['dsh-better-sidebar'] })
@@ -381,107 +367,43 @@ describe('PluginManagerPage', () => {
     }
   })
 
-  it('opens a plugin\'s page with its modules, where each is composed, and an Add to… per module', () => {
-    const { actions } = renderTab({
-      packages: [
-        pkg({
-          name: 'dsh-tool-foo', kind: 'plugin', status: 'plain', title: 'Foo tools', reason: 'one module refused',
-          addable: [
-            { moduleName: 'dsh-tool-foo', declaredName: '.' },
-            { moduleName: 'dsh-tool-foo/bar', declaredName: 'bar', title: 'Bar' },
-            { moduleName: 'dsh-tool-foo/broken', declaredName: 'broken' },
-            { moduleName: 'dsh-tool-foo/silent', declaredName: 'silent' },
-          ],
-        }),
-        pkg({ name: 'dsh-tool-bare', kind: 'plugin', status: 'plain', addable: [{ moduleName: 'dsh-tool-bare', declaredName: '.' }] }),
-      ],
-      presets: [
-        preset({ rows: [{ entryId: 'preset:foo', moduleName: 'dsh-tool-foo', source: 'user', enabled: true, fiberPhase: null }] }),
-        preset({ id: 'other', name: 'Other', isDefault: false }),
-      ],
-      globalModules: ['dsh-tool-foo'],
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'View Foo tools' }))
-    expect(screen.getByText(en.statusProblem)).toBeTruthy()
-    expect(screen.getByText(`${en.reasonLabel}: one module refused`)).toBeTruthy()
-    // The main export reads by the package title; a module by its own title;
-    // each names where it is composed, or why it cannot be.
-    const moduleText = (name: string): string | undefined => document.querySelector(`[data-plugin-module="${name}"]`)?.textContent
-    expect(moduleText('dsh-tool-foo')).toBe(`Foo toolsdsh-tool-foo${en.moduleJoined.replace('{targets}', `${en.joinedGlobal}, 标准`)}${en.addTo}`)
-    expect(moduleText('dsh-tool-foo/bar')).toBe(`Bardsh-tool-foo/bar${en.moduleNotJoined}${en.addTo}`)
-    expect(document.querySelector('[data-plugin-module="dsh-tool-foo/broken"]')?.getAttribute('data-state')).toBeNull()
-    expect(moduleText('dsh-tool-foo/broken')).toContain(en.moduleNotJoined)
-    expect(moduleText('dsh-tool-foo/silent')).toContain(en.moduleNotJoined)
-    // Every declared module offers Add to…; targets already joined stay marked.
-    const menus = screen.getAllByRole('button', { name: en.addTo })
-    expect(menus).toHaveLength(4)
-    fireEvent.click(menus[0] as HTMLElement)
-    expect(screen.getByRole('menuitem', { name: en.addToGlobalAdded })).toBeTruthy()
-    expect(screen.getByRole('menuitem', { name: en.addToPresetAdded.replace('{name}', '标准') })).toBeTruthy()
-    fireEvent.click(screen.getByRole('menuitem', { name: en.addToPreset.replace('{name}', 'Other') }))
-    expect(actions.addRow).toHaveBeenLastCalledWith('dsh-tool-foo', '.', { kind: 'preset', preset: 'other' })
-    fireEvent.click(menus[1] as HTMLElement)
-    fireEvent.click(screen.getByRole('menuitem', { name: en.addToGlobal }))
-    expect(actions.addRow).toHaveBeenLastCalledWith('dsh-tool-foo', 'bar', { kind: 'global' })
-    // The anchor closes its own menu; so does Escape.
-    fireEvent.click(menus[1] as HTMLElement)
-    fireEvent.click(menus[1] as HTMLElement)
-    expect(screen.queryByRole('menuitem', { name: en.addToGlobal })).toBeNull()
-    fireEvent.click(menus[1] as HTMLElement)
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('menuitem', { name: en.addToGlobal })).toBeNull()
-    // A package without a title reads by its short name.
-    fireEvent.click(screen.getByRole('button', { name: en.backToList }))
-    fireEvent.click(screen.getByRole('button', { name: 'View tool-bare' }))
-    expect(moduleText('dsh-tool-bare')).toContain(`tool-baredsh-tool-bare${en.moduleNotJoined}`)
+  it('adds a declared module globally and disables the action once it is present', () => {
+    const mod = { moduleName: 'example/search', declaredName: './search', title: 'Search' }
+    const { actions, set } = renderTab({ packages: [pkg({ name: 'example', kind: 'plugin', status: 'plain', addable: [mod] })] })
+    fireEvent.click(screen.getByRole('button', { name: en.addToGlobal }))
+    expect(actions.addRow).toHaveBeenCalledWith('example', './search')
+    set({ globalModules: ['example/search'] })
+    expect(screen.getByRole('button', { name: en.addToGlobalAdded })).toHaveProperty('disabled', true)
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'example') }))
+    expect(screen.getByText(en.joinedGlobal)).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.addToGlobalAdded })).toHaveProperty('disabled', true)
   })
 
-  it('offers Add to… for a plugin with importable modules, marking the targets it already joined', () => {
-    const { actions } = renderTab({
-      packages: [
-        pkg({ name: 'dsh-tool-foo', kind: 'plugin', status: 'plain', addable: [{ moduleName: 'dsh-tool-foo', declaredName: '.' }] }),
-        pkg({
-          name: 'multi',
-          kind: 'plugin',
-          status: 'plain',
-          addable: [
-            { moduleName: 'multi/a', declaredName: './a', title: 'A tool' },
-            { moduleName: 'multi/b', declaredName: './b' },
-            { moduleName: 'multi/c', declaredName: './c' },
-          ],
-        }),
-        pkg({ name: 'unloadable', kind: 'plugin', status: 'plain', reason: 'the package failed to import: x' }),
-      ],
-      presets: [
-        preset({ rows: [{ entryId: 'fixture', moduleName: 'dsh-tool-foo', enabled: true, fiberPhase: null, source: 'user' }] }),
-        preset({ id: 'research', trust: 'user', name: 'Research', isDefault: false }),
-        preset({ id: 'broken', trust: 'user', name: 'Broken', isDefault: false, broken: 'bad yaml' }),
-      ],
-      globalModules: ['multi/a'],
-    })
-    // A plugin whose import failed offers nothing and reads as a problem.
-    expect(screen.getAllByRole('button', { name: en.addTo })).toHaveLength(2)
-    expect(screen.getByText(en.statusProblem)).toBeTruthy()
+  it('selects among multiple declared modules and adds one directly to the global layer', () => {
+    const { actions } = renderTab({ packages: [pkg({ name: 'example', kind: 'plugin', status: 'plain', addable: [
+      { moduleName: 'example/search', declaredName: './search', title: 'Search' },
+      { moduleName: 'example/fetch', declaredName: './fetch', title: 'Fetch' },
+    ] })] })
+    fireEvent.click(screen.getByRole('button', { name: en.addToGlobal }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Fetch' }))
+    expect(actions.addRow).toHaveBeenCalledWith('example', './fetch')
+  })
 
-    const [foo, multi] = screen.getAllByRole('button', { name: en.addTo })
-    fireEvent.click(foo!)
-    expect(screen.getByRole('menuitem', { name: en.addToGlobal })).toBeTruthy()
-    expect(screen.getByRole('menuitem', { name: 'Preset: 标准 (added)' })).toBeTruthy()
-    expect(screen.getByRole('menuitem', { name: 'Preset: Broken' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Preset: Research' }))
-    expect(actions.addRow).toHaveBeenCalledWith('dsh-tool-foo', '.', { kind: 'preset', preset: 'research' })
-    fireEvent.click(foo!)
-    fireEvent.click(screen.getByRole('menuitem', { name: en.addToGlobal }))
-    expect(actions.addRow).toHaveBeenLastCalledWith('dsh-tool-foo', '.', { kind: 'global' })
-    fireEvent.click(foo!)
+  it('adds untitled main and subpath modules from a package detail page', () => {
+    const { actions, set } = renderTab({ packages: [pkg({ name: '@fixture/modules', kind: 'plugin', status: 'plain', addable: [
+      { moduleName: '@fixture/modules', declaredName: '.' },
+      { moduleName: '@fixture/modules/search', declaredName: './search' },
+    ] })] })
+    fireEvent.click(screen.getByRole('button', { name: en.addToGlobal }))
+    expect(screen.getByRole('menuitem', { name: './search' })).toBeTruthy()
     fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('menuitem')).toBeNull()
-
-    // Several importable modules nest their targets under the module.
-    fireEvent.click(multi!)
-    expect(screen.getByText('A tool')).toBeTruthy()
-    expect(screen.getByText('./b')).toBeTruthy()
-    expect(screen.getByText('./c')).toBeTruthy()
+    expect(screen.queryByRole('menu')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'modules') }))
+    const buttons = screen.getAllByRole('button', { name: en.addToGlobal })
+    fireEvent.click(buttons[1]!)
+    expect(actions.addRow).toHaveBeenCalledWith('@fixture/modules', './search')
+    set({ busy: ['@fixture/modules'] })
+    expect(screen.getAllByRole('button', { name: en.addToGlobal }).every(button => (button as HTMLButtonElement).disabled)).toBe(true)
   })
 
   it('drives the install dialog through its phases and words each outcome', () => {
@@ -598,7 +520,6 @@ describe('PluginManagerPage', () => {
   it('names what still uses a package in the confirmation and runs the action through it', () => {
     const { actions, set } = renderTab({
       packages: [pkg(), pkg({ name: 'dsh-other', title: 'Other' })],
-      presets: [preset()],
       confirm: { action: 'uninstall', packageName: 'dsh-better-sidebar', dependents: undefined },
     })
     // An uninstall is always confirmed, so its dialog opens while the Host is still asked.
@@ -613,17 +534,17 @@ describe('PluginManagerPage', () => {
         dependents: {
           services: [{ service: 'sidebar', providedBy: 'include:sidebar', injectedBy: ['include:tool-bash', 'include:custom'] }],
           references: [
-            { target: { kind: 'global' }, rowId: 'r1', moduleName: 'dsh-other/x' },
-            { target: { kind: 'preset', preset: 'standard' }, rowId: 'r2', moduleName: '@fixture/other' },
-            { target: { kind: 'preset', preset: 'ghost' }, rowId: 'r3', moduleName: 'dsh-better-sidebar' },
+            { rowId: 'r1', moduleName: 'dsh-other/x' },
+            { rowId: 'r2', moduleName: '@fixture/other' },
+            { rowId: 'r3', moduleName: 'dsh-better-sidebar' },
           ],
         },
       },
     })
     expect(screen.getByText(en.dependentService.replace('{rows}', `${en['name.tool-bash']}, custom`))).toBeTruthy()
     expect(screen.getByText(en.dependentReferenceGlobal.replace('{row}', 'Other'))).toBeTruthy()
-    expect(screen.getByText(en.dependentReferencePreset.replace('{name}', '标准').replace('{row}', 'r2'))).toBeTruthy()
-    expect(screen.getByText(en.dependentReferencePreset.replace('{name}', 'ghost').replace('{row}', 'better-sidebar'))).toBeTruthy()
+    expect(screen.getByText(en.dependentReferenceGlobal.replace('{row}', 'r2'))).toBeTruthy()
+    expect(screen.getByText(en.dependentReferenceGlobal.replace('{row}', 'better-sidebar'))).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.confirmDisable }))
     expect(actions.confirm).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: en.cancel }))

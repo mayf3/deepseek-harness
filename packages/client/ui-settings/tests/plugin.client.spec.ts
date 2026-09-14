@@ -7,10 +7,9 @@ import { SettingsScopeBinder } from '../src/client/settings-scope.ts'
 import { apply as hostApply } from '../src/index.ts'
 
 function bench() {
-  const describeCall = vi.fn((scope?: string) => Promise.resolve({
-    ok: true,
-    value: { writable: true, hasDocument: true, namespaces: [], ...scope === undefined ? { scopes: [] } : { scope, scopes: [scope] } },
-  }))
+  const describeCall = vi.fn().mockResolvedValue({
+    ok: true, value: { writable: true, hasDocument: true, namespaces: [] },
+  })
   const ctx = new Context()
   const remote = new TestRemote(ctx, { settings: { describe: describeCall } })
   return { ctx, describeCall, remote, fiber: ctx.plugin({ inject: [...inject], apply }) }
@@ -37,27 +36,6 @@ describe('settings domain base plugin', () => {
     await vi.waitFor(() => { expect(describeCall).toHaveBeenCalledTimes(2) })
     ctx.emit('connection/reset')
     await vi.waitFor(() => { expect(describeCall).toHaveBeenCalledTimes(3) })
-  })
-
-  it('routes a scoped commit to the scope\'s mirror and a global commit to every mirror', async () => {
-    const { ctx, describeCall, remote, fiber } = bench()
-    await fiber.await()
-    await vi.waitFor(() => { expect(describeCall).toHaveBeenCalledTimes(1) })
-    // A scoped commit before any scoped bind touches nothing: no mirror exists for it.
-    remote.emit('settings/document-updated', ['ui-test', 0, 'preset/research'])
-    await Promise.resolve()
-    expect(describeCall).toHaveBeenCalledTimes(1)
-    ctx.settingsScope.describe('preset/research')
-    remote.emit('settings/document-updated', ['ui-test', 1, 'preset/research'])
-    await vi.waitFor(() => { expect(describeCall).toHaveBeenCalledTimes(2) })
-    expect(describeCall.mock.calls[1]).toEqual(['preset/research'])
-    // A global commit reaches the scoped instance too: it inherits the global section.
-    remote.emit('settings/document-updated', ['ui-test', 2])
-    await vi.waitFor(() => { expect(describeCall).toHaveBeenCalledTimes(4) })
-    expect(describeCall.mock.calls.slice(2).map(call => call[0])).toEqual([undefined, 'preset/research'])
-    ctx.emit('connection/reset')
-    await vi.waitFor(() => { expect(describeCall).toHaveBeenCalledTimes(6) })
-    await fiber.dispose()
   })
 
   it('fiber disposal retires the service and its invalidation subscriptions', async () => {
