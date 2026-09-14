@@ -18,13 +18,14 @@ import { connectFreshWorkspaceZh, ZH_BROWSER_LOCALE } from './support.ts'
 const DIR = fileURLToPath(new URL('../../../snapshots/web/changed-files-turn', import.meta.url))
 const FIXTURE = join(DIR, 'session.v3.jsonl')
 const MODE = webSnapshotMode()
-const PROMPT = '不用先查看目录，直接做三件事：把 intro.md 里的标题「示例项目」改成「项目说明」，新建 src/util.ts 导出一个两数相加的 add 函数，然后用 bash 在 notes.txt 末尾追加一行 done。'
+const PROMPT = '不用先查看目录，直接做四件事：把 intro.md 里的标题「示例项目」改成「项目说明」，新建 src/util.ts 导出一个两数相加的 add 函数，新建 app.local 写一行 mode=demo，最后用 bash 在 notes.txt 末尾追加一行 done。'
 
-/** Seed a committed repository so the turn's own edits are the only difference between its snapshots. */
+/** Seed a committed repository so the turn's own edits are the only difference between its snapshots; `*.local` stays ignored. */
 async function seedRepository(cwd: string): Promise<void> {
   await mkdir(cwd, { recursive: true })
   await writeFile(join(cwd, 'intro.md'), '# 示例项目\n\n一个用于演示的仓库。\n')
   await writeFile(join(cwd, 'notes.txt'), 'start\n')
+  await writeFile(join(cwd, '.gitignore'), '*.local\n')
   const git = (...args: string[]) => execFileSync('git', ['-c', 'user.email=seed@example.com', '-c', 'user.name=seed', '-c', 'commit.gpgsign=false', ...args], { cwd, stdio: 'ignore' })
   git('init', '-q', '-b', 'main')
   git('add', '-A')
@@ -93,16 +94,19 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     const summary = summaries.at(-1)
     expect(summary, 'the turn must record its changed files').toBeDefined()
     if (summary === undefined) throw new Error('no changed-files summary')
-    expect(summary.data.files.map(file => file.display)).toEqual(['intro.md', 'notes.txt', 'src/util.ts'])
-    expect(summary.data.total).toBe(3)
+    // app.local is ignored by the repository, so its counts come from the write call rather than git.
+    expect(summary.data.files.map(file => file.display)).toEqual(['app.local', 'intro.md', 'notes.txt', 'src/util.ts'])
+    expect(summary.data.total).toBe(4)
     for (const file of summary.data.files) expect(file.added).toBeGreaterThan(0)
-    expect(summary.data.files[1]).toMatchObject({ path: 'notes.txt', added: 1, deleted: 0 })
+    expect(summary.data.files[0]).toMatchObject({ path: 'app.local', added: 1, deleted: 0 })
+    expect(summary.data.files[2]).toMatchObject({ path: 'notes.txt', added: 1, deleted: 0 })
     expect(await readFile(join(cwd, 'notes.txt'), 'utf8')).toBe('start\ndone\n')
 
     const card = page.locator('[data-changed-files]')
     await card.waitFor({ state: 'visible' })
-    expect(await card.getByText('已编辑 3 个文件', { exact: true }).count()).toBe(1)
+    expect(await card.getByText('已编辑 4 个文件', { exact: true }).count()).toBe(1)
     expect(await card.getByRole('listitem').count()).toBe(3)
+    expect(await card.getByRole('button', { name: '展开全部 4 个改动文件' }).count()).toBe(1)
     // Without a Host desktop the header is a label and rows preview in the Sidebar.
     expect(await card.getByRole('button', { name: '打开改动文件所在的文件夹' }).count()).toBe(0)
     expect(await card.getByRole('button', { name: '在侧边栏打开 notes.txt' }).count()).toBe(1)

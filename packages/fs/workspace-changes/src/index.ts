@@ -129,7 +129,8 @@ export function apply(ctx: Context, config: Config): void {
       if (cwd !== undefined) recorderFor(session, cwd).start(event.data.turn)
       return
     }
-    if (event.type === 'tool/result') recorders.get(session)?.observe(event)
+    if (event.type === 'tool/call') recorders.get(session)?.observeCall(event)
+    else if (event.type === 'tool/result') recorders.get(session)?.observe(event)
     else if (event.type === 'turn/end') recorders.get(session)?.end(event.data.turn)
   })
   ctx.on('session/disposed', (session) => {

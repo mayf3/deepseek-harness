@@ -1,6 +1,6 @@
 /** Numstat parsing and hunk line counting. */
 import { describe, expect, it } from 'vitest'
-import { fileDiffsOf, hunkLineCounts, parseNumstat } from '../src/numstat.ts'
+import { argumentHunks, fileDiffsOf, hunkLineCounts, parseNumstat } from '../src/numstat.ts'
 
 describe('parseNumstat', () => {
   it('reads plain, binary, and rename records', () => {
@@ -42,5 +42,32 @@ describe('fileDiffsOf', () => {
     expect(fileDiffsOf({ diffs: [{ path: 1, oldText: null, newText: '' }] })).toBeUndefined()
     expect(fileDiffsOf({ diffs: [{ path: 'a', oldText: 2, newText: '' }] })).toBeUndefined()
     expect(fileDiffsOf({ diffs: [{ path: 'a', oldText: 'x', newText: 3 }] })).toBeUndefined()
+  })
+})
+
+describe('argumentHunks', () => {
+  const call = (name: string, args: unknown) => argumentHunks(name, JSON.stringify(args))
+
+  it('derives hunks from write, edit, and editor mutations', () => {
+    expect(call('write', { file_path: 'a.txt', content: 'x\n' })).toEqual([{ path: 'a.txt', oldText: null, newText: 'x\n' }])
+    expect(call('edit', { file_path: 'a.txt', old_string: 'x', new_string: 'y' })).toEqual([{ path: 'a.txt', oldText: 'x', newText: 'y' }])
+    expect(call('str_replace_editor', { command: 'create', path: 'b.txt', file_text: 'b' })).toEqual([{ path: 'b.txt', oldText: null, newText: 'b' }])
+    expect(call('str_replace_editor', { command: 'str_replace', path: 'b.txt', old_str: 'b' })).toEqual([{ path: 'b.txt', oldText: 'b', newText: '' }])
+    expect(call('str_replace_editor', { command: 'str_replace', path: 'b.txt', old_str: 'b', new_str: 'c' })).toEqual([{ path: 'b.txt', oldText: 'b', newText: 'c' }])
+    expect(call('str_replace_editor', { command: 'insert', path: 'b.txt', insert_line: 1, new_str: 'i' })).toEqual([{ path: 'b.txt', oldText: null, newText: 'i' }])
+  })
+
+  it('yields null for reads, unknown tools, and malformed arguments', () => {
+    expect(argumentHunks('write', '{')).toBeNull()
+    expect(argumentHunks('write', '[]')).toBeNull()
+    expect(call('read', { file_path: 'a.txt' })).toBeNull()
+    expect(call('write', { file_path: ' ', content: 'x' })).toBeNull()
+    expect(call('write', { file_path: 'a.txt' })).toBeNull()
+    expect(call('edit', { file_path: 'a.txt', old_string: '', new_string: 'y' })).toBeNull()
+    expect(call('str_replace_editor', { command: 'view', path: 'b.txt' })).toBeNull()
+    expect(call('str_replace_editor', { command: 'create', path: '' })).toBeNull()
+    expect(call('str_replace_editor', { command: 'create', path: 'b.txt' })).toBeNull()
+    expect(call('str_replace_editor', { command: 'str_replace', path: 'b.txt', old_str: 'b', new_str: 1 })).toBeNull()
+    expect(call('str_replace_editor', { command: 'insert', path: 'b.txt', insert_line: 1 })).toBeNull()
   })
 })

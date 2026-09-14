@@ -85,11 +85,13 @@ export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, op
       {rows.map((file, index) => {
         const phase = phases[changedFileUrl(sessionId, changes.seq, index)]
         const status = rowStatus(phase)
+        // A file without a verified Host path falls back to the Sidebar preview the status names.
+        const opensNatively = native && phase !== 'nativeUnavailable'
         return <li key={file.display}>
           <button type="button" className={css.row} title={resolveWorkspacePath(cwd, file.path)}
-            aria-label={t(native ? 'changes.openFile' : 'presented.previewButton', { name: file.display })}
+            aria-label={t(opensNatively ? 'changes.openFile' : 'presented.previewButton', { name: file.display })}
             disabled={phase === 'opening'}
-            onClick={() => { if (native) onOpen(index); else openFile(file.path) }}>
+            onClick={() => { if (opensNatively) onOpen(index); else openFile(file.path) }}>
             <span className={css.path}>{file.display}</span>
             <span className={css.counts} role={status === undefined ? undefined : 'status'} data-error={status?.error ? true : undefined}>
               {status !== undefined ? t(status.key)

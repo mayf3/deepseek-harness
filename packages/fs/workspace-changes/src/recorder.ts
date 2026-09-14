@@ -4,7 +4,7 @@ import { relative } from 'node:path'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { FileDiff } from '@deepseek-ai/dsh-tools'
 import { diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree, type GitRunner, type GitWorkspace, type ObjectStoreOptions } from './git.ts'
-import { fileDiffsOf, hunkLineCounts } from './numstat.ts'
+import { argumentHunks, fileDiffsOf, hunkLineCounts } from './numstat.ts'
 import { absolutePathOf, compareDisplay, displayPathOf, durablePathOf, isInside, isTemporaryPath, toPosix } from './paths.ts'
 import type { WorkspaceChangedFile } from './types.ts'
 
@@ -26,6 +26,25 @@ export interface RecorderEnvironment {
 
 interface Baseline { git: GitRunner; workspace: GitWorkspace; tree: string; cwd: string }
 
+/** Everything one turn accumulates; a new turn gets a new object so queued work for an older turn keeps its own. */
+interface TurnState {
+  readonly turn: number
+  baseline: Baseline | null
+  /** Hunks derived from each mutation call's arguments, or null for a call that changes no file. */
+  readonly calls: Map<string, FileDiff[] | null>
+  /** File-tool hunks by their model-facing path; canonicalized when the record is built. */
+  readonly hunks: Map<string, FileDiff[]>
+  lastToolResultSeq: number
+  /** Log length when the latest record attempt started; `end()` skips a turn already attempted after its last tool result. */
+  attemptedAfterSeq: number
+  /** Sequence of the latest appended event, or -1. */
+  recordedAfterSeq: number
+}
+
+function freshState(turn: number): TurnState {
+  return { turn, baseline: null, calls: new Map(), hunks: new Map(), lastToolResultSeq: -1, attemptedAfterSeq: -1, recordedAfterSeq: -1 }
+}
+
 /** Symlink-resolved path when the target exists, otherwise the lexical path. */
 async function canonicalPath(path: string): Promise<string> {
   try {
@@ -44,12 +63,10 @@ async function canonicalPath(path: string): Promise<string> {
  */
 export class TurnRecorder {
   private chain: Promise<void> = Promise.resolve()
-  private baseline: Baseline | null = null
-  private turn = 0
-  /** File-tool hunks by their model-facing path; canonicalized when the record is built. */
-  private hunks = new Map<string, FileDiff[]>()
-  private lastToolResultSeq = -1
-  private recordedAfterSeq = -1
+  /** The open turn; before the first `turn/start` it is an empty placeholder no event can match. */
+  private state = freshState(0)
+  /** The located repository, reused across turns once found; null keeps retrying each turn. */
+  private workspace: { git: GitRunner; cwd: string; workspace: GitWorkspace } | null = null
   private readonly lifetime = new AbortController()
 
   constructor(
@@ -59,40 +76,43 @@ export class TurnRecorder {
   ) {}
 
   /**
-   * Open a turn: reset per-turn state and queue the baseline snapshot.
+   * Open a turn with fresh per-turn state and queue its baseline snapshot.
    * @param turn - the turn number from `turn/start`.
    */
   start(turn: number): void {
-    this.turn = turn
-    this.baseline = null
-    this.hunks = new Map()
-    this.lastToolResultSeq = -1
-    this.recordedAfterSeq = -1
+    const state = freshState(turn)
+    this.state = state
     void this.enqueue(async (signal) => {
-      const git = await this.env.git
-      if (git === null) return
-      // git reports symlink-resolved paths; every comparison uses that form.
-      const cwd = await realpath(this.cwd)
-      const workspace = await locateGitWorkspace(git, cwd, this.env.objects, signal)
-      if (workspace === null) return
-      const tree = await snapshotTree(git, workspace, signal)
-      this.baseline = { git, workspace, tree, cwd }
+      const located = await this.locate(signal)
+      if (located === null) return
+      const tree = await snapshotTree(located.git, located.workspace, signal)
+      state.baseline = { ...located, tree }
     })
   }
 
   /**
-   * Remember a settled tool result and any file-tool hunks it carries.
+   * Remember a mutation call's arguments so a result without persisted hunks can still count its lines.
+   * @param event - the appended `tool/call` event.
+   */
+  observeCall(event: SessionEvent<'tool/call'>): void {
+    const state = this.state
+    if (event.data.turn !== state.turn) return
+    state.calls.set(String(event.data.callId), argumentHunks(event.data.name, event.data.arguments))
+  }
+
+  /**
+   * Remember a settled tool result and the hunks it carries, falling back to the call's arguments.
    * @param event - the appended `tool/result` event.
    */
   observe(event: SessionEvent<'tool/result'>): void {
-    if (event.data.turn !== this.turn) return
-    this.lastToolResultSeq = event.seq
+    const state = this.state
+    if (event.data.turn !== state.turn) return
+    state.lastToolResultSeq = event.seq
     if (event.data.message.content[0].isError === true) return
-    const diffs = fileDiffsOf(event.data.meta)
-    if (diffs === undefined) return
+    const diffs = fileDiffsOf(event.data.meta) ?? state.calls.get(String(event.data.message.source.callId)) ?? []
     for (const diff of diffs) {
-      const list = this.hunks.get(diff.path)
-      if (list === undefined) this.hunks.set(diff.path, [diff])
+      const list = state.hunks.get(diff.path)
+      if (list === undefined) state.hunks.set(diff.path, [diff])
       else list.push(diff)
     }
   }
@@ -103,17 +123,19 @@ export class TurnRecorder {
    * @returns after the event is appended or the attempt failed.
    */
   stopping(turn: number): Promise<void> {
-    if (turn !== this.turn) return Promise.resolve()
-    return this.enqueue(signal => this.record(signal))
+    const state = this.state
+    if (turn !== state.turn) return Promise.resolve()
+    return this.enqueue(signal => this.record(state, signal))
   }
 
   /**
-   * Record after `turn/end` when the in-turn record is missing or stale.
+   * Record after `turn/end` unless a record was already attempted after the turn's last tool result.
    * @param turn - the turn number from `turn/end`.
    */
   end(turn: number): void {
-    if (turn !== this.turn || this.recordedAfterSeq >= this.lastToolResultSeq) return
-    void this.enqueue(signal => this.record(signal))
+    const state = this.state
+    if (turn !== state.turn || state.attemptedAfterSeq >= state.lastToolResultSeq) return
+    void this.enqueue(signal => this.record(state, signal))
   }
 
   /** Resolves once every queued snapshot and record has settled. */
@@ -144,9 +166,22 @@ export class TurnRecorder {
     if (!this.lifetime.signal.aborted) this.env.warn(`workspace-changes: ${String(error)}`)
   }
 
-  private async record(signal: AbortSignal): Promise<void> {
-    if (this.baseline === null || this.lastToolResultSeq < 0) return
-    const { git, workspace, tree: before, cwd } = this.baseline
+  /** The repository for this Session, located once; git reports symlink-resolved paths, so every comparison uses that form. */
+  private async locate(signal: AbortSignal): Promise<{ git: GitRunner; cwd: string; workspace: GitWorkspace } | null> {
+    if (this.workspace !== null) return this.workspace
+    const git = await this.env.git
+    if (git === null) return null
+    const cwd = await realpath(this.cwd)
+    const workspace = await locateGitWorkspace(git, cwd, this.env.objects, signal)
+    if (workspace === null) return null
+    this.workspace = { git, cwd, workspace }
+    return this.workspace
+  }
+
+  private async record(state: TurnState, signal: AbortSignal): Promise<void> {
+    if (state.baseline === null || state.lastToolResultSeq < 0) return
+    state.attemptedAfterSeq = state.lastToolResultSeq
+    const { git, workspace, tree: before, cwd } = state.baseline
     const after = await snapshotTree(git, workspace, signal)
     const files = new Map<string, WorkspaceChangedFile>()
     for (const entry of await diffTrees(git, workspace, before, after, signal)) {
@@ -154,7 +189,7 @@ export class TurnRecorder {
       files.set(absolute, this.changedFile(absolute, cwd, workspace, entry))
     }
     const hunks = new Map<string, FileDiff[]>()
-    for (const [path, list] of this.hunks) {
+    for (const [path, list] of state.hunks) {
       const absolute = await canonicalPath(absolutePathOf(cwd, path))
       hunks.set(absolute, [...hunks.get(absolute) ?? [], ...list])
     }
@@ -162,8 +197,8 @@ export class TurnRecorder {
     const outside: string[] = []
     for (const absolute of hunks.keys()) {
       if (files.has(absolute)) continue
-      // The working directory is the user's workspace even when it lives under a temporary root.
-      if (!isInside(cwd, absolute) && isTemporaryPath(absolute, this.env.temporaryRoots)) continue
+      // The repository is the user's workspace even when it lives under a temporary root.
+      if (!isInside(workspace.root, absolute) && isTemporaryPath(absolute, this.env.temporaryRoots)) continue
       if (isInside(workspace.root, absolute)) inside.push(absolute)
       else outside.push(absolute)
     }
@@ -176,14 +211,14 @@ export class TurnRecorder {
     }
     const sorted = [...files.values()].sort(compareDisplay)
     // An empty list after an earlier in-turn record supersedes that record.
-    if (sorted.length === 0 && this.recordedAfterSeq < 0) return
+    if (sorted.length === 0 && state.recordedAfterSeq < 0) return
     const event = this.session.append('workspace/changes', {
-      turn: this.turn,
+      turn: state.turn,
       files: sorted.slice(0, this.env.maxFiles),
       total: sorted.length,
       snapshot: { before, after },
     })
-    this.recordedAfterSeq = event.seq
+    state.recordedAfterSeq = event.seq
   }
 
   private changedFile(

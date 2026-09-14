@@ -64,7 +64,7 @@ export function hunkLineCounts(diffs: readonly FileDiff[]): { added: number; del
 /**
  * Narrow a tool result's opaque `meta` to the file-tool hunk list.
  * @param meta - persisted result metadata.
- * @returns the hunks, or undefined when the metadata carries none.
+ * @returns the hunks, or undefined when the metadata carries none; `write` persists an empty list for a created file.
  */
 export function fileDiffsOf(meta: unknown): FileDiff[] | undefined {
   if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return undefined
@@ -78,4 +78,58 @@ export function fileDiffsOf(meta: unknown): FileDiff[] | undefined {
     out.push({ path, oldText, newText })
   }
   return out
+}
+
+/** Non-blank string argument, or undefined. */
+function text(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined
+}
+
+/**
+ * Hunks a first-party mutation call implies from its own arguments, for
+ * results that persist no hunks: `write` creates, and every
+ * `str_replace_editor` mutation. Malformed or non-mutating calls yield null.
+ * @param name - wire tool name.
+ * @param argumentsRaw - model-produced JSON arguments.
+ * @returns the implied hunks, or null.
+ */
+export function argumentHunks(name: string, argumentsRaw: string): FileDiff[] | null {
+  let args: unknown
+  try {
+    args = JSON.parse(argumentsRaw) as unknown
+  } catch {
+    return null
+  }
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) return null
+  const record = args as Record<string, unknown>
+  switch (name) {
+    case 'write': {
+      const path = text(record.file_path)
+      return path !== undefined && typeof record.content === 'string' ? [{ path, oldText: null, newText: record.content }] : null
+    }
+    case 'edit': {
+      const path = text(record.file_path)
+      return path !== undefined && typeof record.old_string === 'string' && record.old_string !== '' && typeof record.new_string === 'string'
+        ? [{ path, oldText: record.old_string, newText: record.new_string }]
+        : null
+    }
+    case 'str_replace_editor': {
+      const path = text(record.path)
+      if (path === undefined) return null
+      switch (record.command) {
+        case 'create':
+          return typeof record.file_text === 'string' ? [{ path, oldText: null, newText: record.file_text }] : null
+        case 'str_replace':
+          return typeof record.old_str === 'string' && record.old_str !== '' && (record.new_str === undefined || typeof record.new_str === 'string')
+            ? [{ path, oldText: record.old_str, newText: record.new_str ?? '' }]
+            : null
+        case 'insert':
+          return typeof record.new_str === 'string' ? [{ path, oldText: null, newText: record.new_str }] : null
+        default:
+          return null
+      }
+    }
+    default:
+      return null
+  }
 }

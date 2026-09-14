@@ -1,5 +1,5 @@
 /** Git command bounds, snapshot recovery, and diff failure reporting. */
-import { realpath, writeFile } from 'node:fs/promises'
+import { chmod, readFile, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -85,6 +85,40 @@ describe('snapshots and diffs', () => {
     expect((await diffTrees(runnerGit, workspace, before, after, signal)).length).toBe(21)
   })
 
+})
+
+describe('repository edge cases', () => {
+  it.skipIf(process.platform === 'win32')('snapshots past an unreadable file and refuses an unreadable index', async () => {
+    const cwd = await scratchDir('dsh-git-unreadable-', cleanups)
+    git(cwd, 'init', '-q', '-b', 'main')
+    await writeFile(join(cwd, 'ok.txt'), 'ok\n')
+    await writeFile(join(cwd, 'locked.txt'), 'locked\n')
+    await chmod(join(cwd, 'locked.txt'), 0o000)
+    cleanups.push(() => chmod(join(cwd, 'locked.txt'), 0o644))
+    const { git: runnerGit } = await runner()
+    const store = { home: await scratchDir('dsh-git-store-', cleanups), maxBytes: 1024 * 1024 }
+    const workspace = (await locateGitWorkspace(runnerGit, cwd, store, signal))!
+    expect(await snapshotTree(runnerGit, workspace, signal)).toMatch(/^[0-9a-f]{40,64}$/)
+    git(cwd, 'add', 'ok.txt')
+    await chmod(join(workspace.gitDir, 'index'), 0o000)
+    cleanups.push(() => chmod(join(workspace.gitDir, 'index'), 0o644))
+    await expect(snapshotTree(runnerGit, workspace, signal)).rejects.toThrow(/EACCES/)
+  })
+
+  it('reports a repository git cannot read instead of treating it as absent', async () => {
+    const cwd = await scratchDir('dsh-git-unsupported-', cleanups)
+    git(cwd, 'init', '-q')
+    const config = join(cwd, '.git', 'config')
+    const original = await readFile(config, 'utf8')
+    await writeFile(config, original.replace(/repositoryformatversion = \d+/, 'repositoryformatversion = 99'))
+    const { git: runnerGit } = await runner()
+    const store = { home: await scratchDir('dsh-git-store-', cleanups), maxBytes: 1024 * 1024 }
+    await expect(locateGitWorkspace(runnerGit, cwd, store, signal)).rejects.toThrow('git rev-parse failed')
+    await writeFile(config, original)
+    const blocked = join(cwd, 'store-file')
+    await writeFile(blocked, 'not a directory')
+    await expect(locateGitWorkspace(runnerGit, cwd, { home: blocked, maxBytes: 1 }, signal)).rejects.toThrow(/ENOTDIR/)
+  })
 })
 
 describe('TurnRecorder', () => {

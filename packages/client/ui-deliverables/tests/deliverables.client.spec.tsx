@@ -529,12 +529,16 @@ describe('ChangedFiles card', () => {
       '/api/changes.open?sessionId=child-session&seq=5&index=2': 'nativeUnavailable',
       '/api/changes.open?sessionId=child-session&seq=5': 'opened',
     })
-    const { view } = renderCard(controller)
+    const { view, openFile, props } = renderCard(controller)
     expect(view.getByText(en['presented.opening'])).toBeTruthy()
     expect((view.getByRole('button', { name: 'Open config/design-token in default app' }) as HTMLButtonElement).disabled).toBe(true)
     expect(view.getByText(en['presented.error']).closest('[data-error]')).toBeTruthy()
     expect(view.getByText(en['presented.nativeUnavailable'])).toBeTruthy()
     expect(view.getByText(en['changes.folderOpened'])).toBeTruthy()
+    // A row without a verified Host path previews in the Sidebar instead of retrying the native open.
+    fireEvent.click(view.getByRole('button', { name: 'Open config/launch-plan.yaml in sidebar' }))
+    expect(openFile).toHaveBeenCalledWith('config/launch-plan.yaml')
+    expect(props.openChanged).not.toHaveBeenCalled()
     view.unmount()
     controller.state.set({ '/api/changes.open?sessionId=child-session&seq=5': 'opening', '/api/changes.open?sessionId=child-session&seq=5&index=0': 'opened' })
     const { view: pending } = renderCard(controller)

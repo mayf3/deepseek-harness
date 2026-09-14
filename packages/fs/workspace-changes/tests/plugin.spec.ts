@@ -63,14 +63,18 @@ describe('workspace-changes in a repository', () => {
     await writeFile(join(cwd, 'bin.dat'), Uint8Array.of(0, 1, 2, 255))
     toolCall(session, 1, 'bash', { command: 'printf > files' })
     await writeFile(join(cwd, '.env'), 'A=1\nB=2\n')
-    toolCall(session, 1, 'write', { file_path: '.env' }, { meta: { diffs: [{ path: '.env', oldText: null, newText: 'A=1\n' }] } })
-    toolCall(session, 1, 'edit', { file_path: '.env' }, { meta: { diffs: [{ path: '.env', oldText: 'A=1\n', newText: 'A=1\nB=2\n' }] } })
-    toolCall(session, 1, 'write', { file_path: join(tmpdir(), 'scratch.txt') }, {
-      meta: { diffs: [{ path: join(tmpdir(), 'scratch.txt'), oldText: null, newText: 'scratch\n' }] },
+    // A created file persists an empty hunk list; its arguments supply the content.
+    toolCall(session, 1, 'write', { file_path: '.env', content: 'A=1\n' }, { meta: { diffs: [] } })
+    toolCall(session, 1, 'edit', { file_path: '.env', old_string: 'A=1', new_string: 'A=1\nB=2' }, {
+      meta: { diffs: [{ path: '.env', oldText: 'A=1\n', newText: 'A=1\nB=2\n' }] },
     })
-    toolCall(session, 1, 'write', { file_path: 'ignored-error' }, { isError: true, meta: { diffs: [{ path: 'failed.txt', oldText: null, newText: 'x' }] } })
-    toolCall(session, 1, 'write', { file_path: '.env.gone' }, { meta: { diffs: [{ path: '.env.gone', oldText: null, newText: 'x' }] } })
-    toolCall(session, 1, 'write', { file_path: 'same.txt' }, { meta: { diffs: [{ path: 'same.txt', oldText: 'same', newText: 'same' }] } })
+    toolCall(session, 1, 'write', { file_path: join(tmpdir(), 'scratch.txt'), content: 'scratch\n' }, { meta: { diffs: [] } })
+    toolCall(session, 1, 'write', { file_path: 'failed.txt', content: 'x' }, { isError: true, meta: { diffs: [] } })
+    // The editor persists no hunks at all; its create arguments count, and the file may already be gone.
+    toolCall(session, 1, 'str_replace_editor', { command: 'create', path: '.env.gone', file_text: 'x' })
+    toolCall(session, 1, 'edit', { file_path: 'same.txt', old_string: 'same', new_string: 'same' }, {
+      meta: { diffs: [{ path: 'same.txt', oldText: 'same', newText: 'same' }] },
+    })
     toolCall(session, 2, 'write', { file_path: 'other-turn' }, { meta: { diffs: [{ path: 'other.txt', oldText: null, newText: 'x' }] } })
     endTurn(session, 1)
     await settle(ctx, session)
@@ -99,28 +103,34 @@ describe('workspace-changes in a repository', () => {
     expect(objects.some(entry => /^[0-9a-f]{2}\/[0-9a-f]{38,}$/.test(entry))).toBe(true)
   })
 
-  it('discards a snapshot object store that outgrew its bound before the next baseline', async () => {
+  it('discards a snapshot object store that outgrew its bound when the next Session locates the repository', async () => {
     const cwd = await repository()
     const { ctx, dshHome } = await boot({ objectStoreMaxBytes: 1 })
-    const session = ctx.sessions.create(SessionId('bounded'), { meta: { cwd } })
-    startTurn(session, 1)
-    await settle(ctx, session)
+    const first = ctx.sessions.create(SessionId('bounded-1'), { meta: { cwd } })
+    startTurn(first, 1)
+    await settle(ctx, first)
     const [store] = await readdir(join(dshHome, 'workspace-changes'))
     const marker = join(dshHome, 'workspace-changes', store!, 'marker')
     await writeFile(marker, 'old store')
     await writeFile(join(cwd, 'n.txt'), 'n\n')
-    toolCall(session, 1, 'bash', { command: 'x' })
-    endTurn(session, 1)
-    await settle(ctx, session)
-    expect(changes(session)).toHaveLength(1)
-    startTurn(session, 2)
-    await settle(ctx, session)
+    toolCall(first, 1, 'bash', { command: 'x' })
+    endTurn(first, 1)
+    await settle(ctx, first)
+    expect(changes(first)).toHaveLength(1)
+    // The located repository is reused within a Session, so the bound is checked once per Session.
+    startTurn(first, 2)
+    await settle(ctx, first)
+    expect((await stat(marker)).isFile()).toBe(true)
+    endTurn(first, 2)
+    const second = ctx.sessions.create(SessionId('bounded-2'), { meta: { cwd } })
+    startTurn(second, 1)
+    await settle(ctx, second)
     await expect(stat(marker)).rejects.toThrow()
     await writeFile(join(cwd, 'm.txt'), 'm\n')
-    toolCall(session, 2, 'bash', { command: 'x' })
-    endTurn(session, 2)
-    await settle(ctx, session)
-    expect(changes(session).at(-1)!.files.map(file => file.display)).toEqual(['m.txt'])
+    toolCall(second, 1, 'bash', { command: 'x' })
+    endTurn(second, 1)
+    await settle(ctx, second)
+    expect(changes(second).at(-1)!.files.map(file => file.display)).toEqual(['m.txt'])
   })
 
   it('places files above the working directory and outside the repository by their display rule', async () => {
@@ -135,9 +145,7 @@ describe('workspace-changes in a repository', () => {
     await settle(ctx, session)
     await writeFile(join(root, 'a.txt'), 'changed\n')
     await writeFile(join(cwd, 'inner.txt'), 'inner\n')
-    toolCall(session, 1, 'write', { file_path: join(outside, 'note.txt') }, {
-      meta: { diffs: [{ path: join(outside, 'note.txt'), oldText: null, newText: 'one\ntwo\nthree\n' }] },
-    })
+    toolCall(session, 1, 'str_replace_editor', { command: 'insert', path: join(outside, 'note.txt'), insert_line: 0, new_str: 'one\ntwo\nthree\n' })
     endTurn(session, 1, 'blocked')
     await settle(ctx, session)
     const [recorded] = changes(session)
@@ -187,6 +195,24 @@ describe('workspace-changes in a repository', () => {
     endTurn(session, 3)
     await settle(ctx, session)
     expect(changes(session).filter(data => data.turn === 3)).toEqual([])
+  })
+
+  it('keeps an interrupted turn’s record when the next turn starts before it settles', async () => {
+    const cwd = await repository()
+    const { ctx } = await boot()
+    const session = ctx.sessions.create(SessionId('interleaved'), { meta: { cwd } })
+    startTurn(session, 1)
+    await settle(ctx, session)
+    await writeFile(join(cwd, 'one.txt'), '1\n')
+    toolCall(session, 1, 'bash', { command: 'x' })
+    endTurn(session, 1, 'blocked')
+    startTurn(session, 2)
+    await settle(ctx, session)
+    await writeFile(join(cwd, 'two.txt'), '2\n')
+    toolCall(session, 2, 'bash', { command: 'x' })
+    endTurn(session, 2)
+    await settle(ctx, session)
+    expect(changes(session).map(data => [data.turn, data.files.map(file => file.display)])).toEqual([[1, ['one.txt']], [2, ['two.txt']]])
   })
 
   it('caps the file list while reporting the complete count', async () => {
@@ -242,7 +268,7 @@ describe('workspace-changes without a repository', () => {
     startTurn(session, 1)
     await settle(ctx, session)
     await writeFile(join(cwd, 'existing.txt'), 'after\nmore\n')
-    toolCall(session, 1, 'write', { file_path: 'existing.txt' }, {
+    toolCall(session, 1, 'write', { file_path: 'existing.txt', content: 'after\nmore\n' }, {
       meta: { diffs: [{ path: 'existing.txt', oldText: 'before', newText: 'after\nmore' }] },
     })
     endTurn(session, 1)

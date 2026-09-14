@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 import { copyFile, mkdir, mkdtemp, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { parseNumstat, type NumstatEntry } from './numstat.ts'
 
@@ -109,10 +109,18 @@ export interface ObjectStoreOptions {
   maxBytes: number
 }
 
+/** Whether a filesystem error names a missing path. */
+function isMissing(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ENOENT'
+}
+
 /** Total size of the regular files under a directory; zero when it does not exist. */
 async function directoryBytes(directory: string): Promise<number> {
   let total = 0
-  const entries = await readdir(directory, { recursive: true, withFileTypes: true }).catch(() => [])
+  const entries = await readdir(directory, { recursive: true, withFileTypes: true }).catch((error: unknown) => {
+    if (isMissing(error)) return []
+    throw error
+  })
   for (const entry of entries) {
     if (entry.isFile()) total += (await stat(join(entry.parentPath, entry.name))).size
   }
@@ -123,7 +131,8 @@ async function directoryBytes(directory: string): Promise<number> {
  * Locate the repository enclosing a working directory and prepare its snapshot
  * object store. The repository's own object store is attached read-only as an
  * alternate, so snapshots read committed content from it and write nothing
- * into it; a store over its byte bound is discarded and starts empty.
+ * into it; a store over its byte bound is discarded and starts empty. A
+ * directory outside any repository yields null; any other git failure throws.
  * @param git - command runner.
  * @param cwd - absolute Session working directory.
  * @param store - snapshot object store placement and bound.
@@ -133,11 +142,10 @@ async function directoryBytes(directory: string): Promise<number> {
 export async function locateGitWorkspace(
   git: GitRunner, cwd: string, store: ObjectStoreOptions, signal: AbortSignal,
 ): Promise<GitWorkspace | null> {
-  const found = await git.run([
-    'rev-parse', '--path-format=absolute', '--show-toplevel', '--absolute-git-dir', '--git-path', 'objects',
-  ], { cwd, signal })
-  if (found.exitCode !== 0) return null
-  const [root, gitDir, repositoryObjects] = found.stdout.split('\n') as [string, string, string]
+  const found = await git.run(['rev-parse', '--show-toplevel', '--absolute-git-dir', '--git-path', 'objects'], { cwd, signal })
+  if (found.exitCode === 128 && /not a git repository/i.test(found.stderr)) return null
+  const lines = ok(found, 'git rev-parse').stdout.split('\n').map(line => resolve(cwd, line))
+  const [root, gitDir, repositoryObjects] = lines as [string, string, string]
   const objectsDir = join(store.home, createHash('sha256').update(gitDir).digest('hex').slice(0, 16))
   if (await directoryBytes(objectsDir) > store.maxBytes) await rm(objectsDir, { recursive: true, force: true })
   await mkdir(objectsDir, { recursive: true })
@@ -160,9 +168,13 @@ export async function snapshotTree(git: GitRunner, workspace: GitWorkspace, sign
   try {
     const index = join(scratch, 'index')
     // A repository without an index yet (fresh `git init`) starts from scratch.
-    await copyFile(join(workspace.gitDir, 'index'), index).then(() => undefined, () => undefined)
+    await copyFile(join(workspace.gitDir, 'index'), index).catch((error: unknown) => {
+      if (!isMissing(error)) throw error
+    })
     const env = { ...workspace.env, GIT_INDEX_FILE: index }
-    ok(await git.run(['add', '--all', '--ignore-errors'], { cwd: workspace.root, env, signal }), `git add in ${workspace.root}`)
+    // `--ignore-errors` skips unreadable files and reports them through exit code 1; the index is still complete.
+    const added = await git.run(['add', '--all', '--ignore-errors'], { cwd: workspace.root, env, signal })
+    if (added.exitCode !== 1) ok(added, `git add in ${workspace.root}`)
     return ok(await git.run(['write-tree'], { cwd: workspace.root, env, signal }), 'git write-tree').stdout.trim()
   } finally {
     await rm(scratch, { recursive: true, force: true })
