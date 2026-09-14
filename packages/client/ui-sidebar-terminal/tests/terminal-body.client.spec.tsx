@@ -3,6 +3,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import type { ReactNode } from 'react'
+import type { ITheme } from '@xterm/xterm'
+import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { TerminalViewState } from '@deepseek-ai/dsh-api-terminal-controller/client'
 import type { WebTerminalId } from '@deepseek-ai/dsh-api-terminal-controller/types'
@@ -15,7 +17,7 @@ const fake = vi.hoisted(() => ({
   dimensions: { cols: 120, rows: 40 } as { cols: number; rows: number } | undefined,
 }))
 class FakeTerminal {
-  options: { disableStdin?: boolean }
+  options: { disableStdin?: boolean; theme?: ITheme }
   textarea: HTMLTextAreaElement | undefined = document.createElement('textarea')
   input: ((data: string) => void) | undefined
   readonly disposeInput = vi.fn()
@@ -63,6 +65,7 @@ const titleSurfaces = [
 function mount(initial: TerminalViewState | undefined = idle, dictionary = en) {
   let state: TerminalViewState | undefined = initial
   let visible = true
+  let theme: ThemeSnapshot = { preference: 'light', fontSize: 14, active: { id: 'light', colorScheme: 'light', tokens: {} }, themes: [], revision: 0 }
   const detach = vi.fn()
   const model = {
     start: vi.fn(async () => {}), selectShell: vi.fn(),
@@ -75,11 +78,13 @@ function mount(initial: TerminalViewState | undefined = idle, dictionary = en) {
   const props = {
     view: () => model,
     useTerminal: (_key: string, select?: (value: TerminalViewState | undefined) => unknown) => select === undefined ? state : select(state),
+    useTheme: (select: (value: ThemeSnapshot) => unknown) => select(theme),
     useTabInfo: tab, t: makeTranslate(dictionary),
   } as unknown as TerminalBodyProps
   const view = render(<TerminalBody {...props} />)
   return {
     view, props, model, detach, openTab,
+    changeTheme() { theme = { ...theme, revision: theme.revision + 1 }; view.rerender(<TerminalBody {...props} />) },
     update(next: TerminalViewState | undefined, shown = visible) {
       state = next; visible = shown; view.rerender(<TerminalBody {...props} />)
     },
@@ -170,6 +175,28 @@ it('displays disconnect, close and exit states and offers explicit reconnection 
   expect(h.view.getByRole('alert').textContent).toContain('provider stopped')
   h.update({ ...idle, info: { ...info, state: 'failed', error: 'provider unreachable' }, phase: 'connected' })
   expect(h.view.getByRole('status').textContent).toBe(en.unavailable)
+})
+
+it('updates screen, cursor and selection colors without replacing the terminal or clearing output', () => {
+  const colors = { backgroundColor: 'rgb(255, 255, 255)', color: 'rgb(23, 25, 29)' }
+  vi.spyOn(window, 'getComputedStyle').mockImplementation(() => colors as CSSStyleDeclaration)
+  const h = mount({ ...idle, info, phase: 'connected', writable: true })
+  const terminal = fake.terminals[0]!
+  expect(terminal.options.theme).toMatchObject({
+    background: colors.backgroundColor, foreground: colors.color, cursor: colors.color, selectionForeground: colors.backgroundColor,
+  })
+  colors.backgroundColor = 'rgb(23, 25, 29)'
+  colors.color = 'rgb(231, 233, 238)'
+  h.changeTheme()
+  expect(terminal.options.theme).toEqual({
+    background: colors.backgroundColor, foreground: colors.color, cursor: colors.color, cursorAccent: colors.backgroundColor,
+    selectionBackground: colors.color, selectionForeground: colors.backgroundColor, selectionInactiveBackground: colors.color,
+  })
+  expect(fake.terminals).toEqual([terminal])
+  expect(terminal.reset).not.toHaveBeenCalled()
+  expect(terminal.dispose).not.toHaveBeenCalled()
+  expect(h.model.mount).toHaveBeenCalledOnce()
+  expect(h.detach).not.toHaveBeenCalled()
 })
 
 it('fits only visible writable terminals with measurable dimensions and clamps the provider limits', () => {

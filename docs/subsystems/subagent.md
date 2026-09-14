@@ -199,7 +199,7 @@ interface ContinuableStart {
 }
 ```
 
-When a resident Activation settles, the manager delivers one notice to the child's durable direct parent describing how that epoch ended and carrying its final assistant content. That delivery is unconditional for every child whose id a caller received, happens before the ownership release that would let the parent be judged settled, and reaches a resident parent through the same waking Agent delivery as an Agent message. A parent whose own lineage is already tearing down receives it without a wake, because waking an idle Agent starts a turn rather than queueing work. Its source has a distinct kind so a transcript never presents a runtime account as something the child wrote.
+When a resident Activation settles, the manager delivers one notice to the child's durable direct parent describing how that epoch ended and carrying the nonempty text blocks from its final assistant output, or `It left no closing message.` when none remain. That delivery is unconditional for every child whose id a caller received, happens before the ownership release that would let the parent be judged settled, and reaches a resident parent through the same waking Agent delivery as an Agent message. A parent whose own lineage is already tearing down receives it without a wake, because waking an idle Agent starts a turn rather than queueing work. Its source has a distinct kind so a transcript never presents a runtime account as something the child wrote.
 
 ```ts type-equiv
 /**

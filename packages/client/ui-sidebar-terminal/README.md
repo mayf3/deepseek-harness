@@ -33,6 +33,8 @@ Closing or replacing a terminal tab removes it immediately and ends its process 
 
 Displaying a Session after a page reload reopens its retained Host terminals as new tabs. A recovery failure offers **Retry terminal recovery**. A recovered process that disappears reports an error instead of starting another shell. The [sidebar layout remains memory-only](../../client/ui-sidebar-right/README.md#state).
 
+The terminal background, default text, cursor, and selection follow the DSH theme, including system preference and theme-token overrides. Theme changes update the existing screen without clearing output or restarting the shell. Shell-provided ANSI colors remain in effect.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

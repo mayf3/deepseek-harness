@@ -31,6 +31,7 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   skill/                skill loading
   web/                  search/fetch tools
   computer-use/         computer interaction
+  browser-use/          browser interaction
   compaction/           context compaction
   context/              request context
   subagent/             delegated agents

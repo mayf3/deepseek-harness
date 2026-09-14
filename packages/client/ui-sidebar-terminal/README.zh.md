@@ -33,6 +33,8 @@ kind: "package-reference"
 
 刷新页面后显示某个 Session，会把 Host 保留的终端重新打开为新标签页。恢复失败时可点击**重试恢复终端**。恢复目标进程消失时显示错误，不启动另一个 shell。[侧栏布局仅保存在内存中](../../client/ui-sidebar-right/README.zh.md#state)。
 
+终端背景、默认文字、光标和选区跟随 DSH 主题，包括系统偏好和主题 token 覆盖。切换主题会更新现有屏幕，不清空输出或重启 shell。shell 输出的 ANSI 颜色仍然生效。
+
 <a id="understand-the-implementation"></a>
 ## 了解实现
 

@@ -144,6 +144,11 @@
     "scripts/client-bundle-purity.spec.ts"
   ],
   "references": [
+    { "path": "./packages/browser-use/browser-use" },
+    { "path": "./packages/experimental/browser-use-runtime" },
+    { "path": "./packages/experimental/browser-use-playwright-mcp" },
+    { "path": "./packages/experimental/browser-use-chrome-devtools-mcp" },
+    { "path": "./packages/experimental/browser-use-stagehand-native" },
     { "path": "./packages/api/terminal-controller/tsconfig.host.json" },
     { "path": "./packages/computer-use/computer-use" },
     { "path": "./packages/experimental/computer-use-cua-driver-mcp" },

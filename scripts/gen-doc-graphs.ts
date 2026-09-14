@@ -108,6 +108,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Connection-owned providers serve shared resource tools in the calling agent scope.',
   },
   {
+    key: 'browserUse',
+    pkg: 'browser-use',
+    title: 'Browser-use provider registration',
+    mode: 'seam',
+    implementations: ['experimental-browser-use-playwright-mcp', 'experimental-browser-use-chrome-devtools-mcp', 'experimental-browser-use-stagehand-native'],
+    consumers: ['experimental-browser-use-playwright-mcp', 'experimental-browser-use-chrome-devtools-mcp', 'experimental-browser-use-stagehand-native'],
+    note: 'One provider-owned name per service instance. Providers own their tools and browser resources per live Session; the shared service has no browser operation API.',
+  },
+  {
     key: 'computerUse',
     pkg: 'computer-use',
     title: 'Computer-use provider registration',
