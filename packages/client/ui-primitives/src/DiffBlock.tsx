@@ -92,12 +92,9 @@ export function diffTotals(diffs: DiffHunk[]): { added: number; removed: number 
 }
 
 /**
- * Flatten the hunks into the body's rows plus the footer counts. A path header
- * opens each new file; a same-file second hunk (a scattered edit) opens with a
- * `⋯` gap instead of repeating the path. The +/- totals are
- * {@link diffTotals}'s. The file count is of DISTINCT paths, matching the TUI
- * diff card's footer, so two hunks in one file read as `1 file` on both front
- * ends.
+ * Flatten local patches into rows and count only added and removed lines.
+ * A path header opens each new file. A `⋯` gap separates consecutive same-file
+ * fragments and distant patches within a fragment. File counts use distinct paths.
  * @param diffs - the hunks to render.
  * @returns the body rows, the +/- totals, and the distinct-file count.
  */
@@ -142,9 +139,8 @@ function contentLines(text: string): string[] {
 }
 
 /**
- * The diff text a reader copies: each row's `-`/`+`/path/gap prefix and its
- * content, exactly what the card shows. The removed and added blocks are the
- * change; the path headers keep a multi-file copy attributable.
+ * Copy the full local diff, including folded rows: removed/added lines have
+ * `- `/`+ ` prefixes, context has two spaces, and paths and gaps stay verbatim.
  * @param rows - the flattened body rows.
  * @returns the diff as plain text.
  */

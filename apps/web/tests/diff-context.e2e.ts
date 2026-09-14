@@ -2,12 +2,12 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
-  launchWebScaffold, seedSession, webSnapshotMode, type WebScaffold,
+  launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { expandTurnProcesses, newEnglishPage } from './support.ts'
+import { expandTurnProcesses, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/diff-context', import.meta.url))
 const SOURCE = fileURLToPath(new URL('../../../snapshots/session/fs-edit/session.v3.jsonl', import.meta.url))
@@ -17,12 +17,14 @@ describe.skipIf(MODE === 'record')('web e2e: contextual edit diff', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
+  let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
     await seedSession(scaffold, await readFile(SOURCE, 'utf8'), 'diff-context')
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
+    tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
   })
 
@@ -35,6 +37,7 @@ describe.skipIf(MODE === 'record')('web e2e: contextual edit diff', () => {
   })
 
   it('shows true totals before expansion and neutral shared context after expansion', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-diff-context'))
     const group = page.locator('[role="treeitem"]').first()
     await group.waitFor({ timeout: 15_000 })
     await group.click()
@@ -52,5 +55,7 @@ describe.skipIf(MODE === 'record')('web e2e: contextual edit diff', () => {
     await compareOrRefreshGolden(`${SNAPSHOT_DIR}/ui.expected.md`,
       await captureStableAria(page, '[data-variant="edit"]', scaffold.workspaceCwd), MODE)
     await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md'])
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
   })
 })
