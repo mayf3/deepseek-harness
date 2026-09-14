@@ -104,8 +104,8 @@ const fakeMetadata: typeof readPackageMetadata = (options) => {
 }
 
 describe('dsh plugin', () => {
-  it('waits for its interrupted install and removes its signal listeners', async () => {
-    const before = process.listeners('SIGINT')
+  it.each(['SIGINT', 'SIGTERM'] as const)('waits for an install interrupted by %s and removes its listener', async (signal) => {
+    const before = process.listeners(signal)
     const done = Promise.withResolvers<{ exitCode: null; signal: 'SIGTERM' }>()
     const started = Promise.withResolvers<undefined>()
     const stdout = new PassThrough()
@@ -119,12 +119,12 @@ describe('dsh plugin', () => {
       }
     } })
     await started.promise
-    const owned = process.listeners('SIGINT').find(listener => !before.includes(listener))
+    const owned = process.listeners(signal).find(listener => !before.includes(listener))
     expect(owned).toBeDefined()
     // Invoke only this command's listener; do not signal the test runner or other listeners.
-    owned?.('SIGINT')
-    expect(await run).toBe(130)
-    expect(process.listeners('SIGINT')).toEqual(before)
+    owned?.(signal)
+    expect(await run).toBe(signal === 'SIGINT' ? 130 : 143)
+    expect(process.listeners(signal)).toEqual(before)
   })
 
   it('lets pnpm colour its output when stdout is a terminal', async () => {
