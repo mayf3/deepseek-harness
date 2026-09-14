@@ -6,13 +6,14 @@ import type { Readable, Writable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { FsError, type FsTarget, type FsWriteIntent, type FsVersion } from '@deepseek-ai/dsh-fs'
 import { SandboxedFileSystem } from '@deepseek-ai/dsh-fs-sandbox'
+import { SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
 import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local'
 import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 import { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import type { SandboxExecutionPolicy, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import { z } from 'zod'
-import { SshRpcPeer, SSH_MAX_PROCESS_HANDLES, SSH_MAX_TEXT_STREAMS, SSH_PROTOCOL_VERSION } from './protocol.ts'
+import { SshRpcPeer, RemoteOperationError, SSH_MAX_PROCESS_HANDLES, SSH_MAX_TEXT_STREAMS, SSH_PROTOCOL_VERSION } from './protocol.ts'
 import { RemoteProcesses } from './helper-processes.ts'
 import { editSchema, environmentSchema, intentSchema, policySchema, processIdSchema, remotePath, targetSchema, textStreamIdSchema } from './schemas.ts'
 import type { SshTextStreamId } from './schemas.ts'
@@ -114,6 +115,14 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
     if (method === 'process.done') return processes.done(processIdRequest.parse(raw).id)
     if (method === 'process.wait') return processes.wait(processIdRequest.parse(raw).id, signal)
     if (method === 'process.terminate') { await processes.terminate(processIdRequest.parse(raw).id); return null }
+    if (method === 'terminal.environment') { object.parse(raw); return ctx.subprocess.terminalEnvironment(signal) }
+    if (method === 'terminal.resize') {
+      const input = z.object({
+        id: processIdSchema, cols: z.number().int().positive(), rows: z.number().int().positive(),
+      }).strict().parse(raw)
+      await processes.resizeTerminal(input.id, input.cols, input.rows)
+      return null
+    }
     if (method === 'terminal.write' || method === 'terminal.inspect' || method === 'terminal.signal') {
       const input = z.object({ id: processIdSchema, value: z.string().optional() }).strict().parse(raw)
       return processes.terminal(input.id, method === 'terminal.write' ? 'write' : method === 'terminal.inspect' ? 'inspect' : 'signal', input.value)
@@ -123,7 +132,12 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       const env = input.env === undefined ? undefined : Object.fromEntries(
         Object.entries(input.env).filter((entry): entry is [string, string] => entry[1] !== null),
       )
-      return ctx.subprocess.resolveExecutable(input.command, env, signal)
+      try {
+        return await ctx.subprocess.resolveExecutable(input.command, env, signal)
+      } catch (error) {
+        if (error instanceof SubprocessExecutableNotFoundError) throw new RemoteOperationError(error.message, 'SUBPROCESS_EXECUTABLE_NOT_FOUND')
+        throw error
+      }
     }
     if (method === 'sandbox') {
       const input = z.object({ argv: z.array(z.string()).min(1), policy: policySchema }).strict().parse(raw)

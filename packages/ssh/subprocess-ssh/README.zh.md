@@ -33,6 +33,8 @@ kind: "package-reference"
 
 -----
 
+终端 shell 信息与可执行文件验证来自远端 helper。查找未命中与 SSH 故障分别报告。PTY 创建传递调用方的 `terminalType`，`resize()` 更新远端终端尺寸，不替换进程。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
