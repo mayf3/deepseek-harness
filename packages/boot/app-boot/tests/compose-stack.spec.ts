@@ -110,22 +110,19 @@ describe('claimLayerIds', () => {
       { insert: [{ id: 'self-group', name: 'cordis:group', group: true, config: [{ id: 'row', name: 'self/row' }] }] },
       { id: 'self-group', config: [{ id: 'row', name: 'self/row' }, { id: 'row', name: 'self/row-again' }] },
     ])
-    const { skipped, composed } = claimLayerIds([base, self])
+    const { skipped } = claimLayerIds([base, self])
     expect(skipped.get('self')?.map(conflict => conflict.message)).toEqual(['row "row" is declared twice by self'])
-    expect(composed.has('self')).toBe(false)
   })
 
-  it('leaves out a bundle that declares one of its own ids twice and composes each mounted bundle once', () => {
+  it('leaves out a bundle that declares one of its own ids twice while accepting other bundles', () => {
     const stutter = layer('stutter', [{ insert: [{ id: 'x', name: 'stutter/a' }, { id: 'x', name: 'stutter/b' }] }])
     const clean = layer('clean', [{ insert: [{ id: 'y', name: 'clean' }] }])
-    const { owners, skipped, composed } = claimLayerIds([base, stutter, clean])
+    const { owners, skipped } = claimLayerIds([base, stutter, clean])
     expect(skipped.get('stutter')).toEqual([
       { rowId: 'x', moduleName: 'stutter/b', layer: 'stutter', packageName: 'stutter', declaredBy: 'stutter', message: 'row "x" is declared twice by stutter' },
     ])
     expect(owners.has('x')).toBe(false)
     expect(owners.get('y')?.packageName).toBe('clean')
-    expect([...composed.keys()]).toEqual(['@deepseek-ai/dsh-base', 'clean'])
-    expect(composed.get('clean')?.patches[0]).toEqual({ insert: [{ id: 'y', name: 'clean' }] })
   })
 
   it('gives the earlier external bundle the id and leaves the later one out whole', () => {

@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import Loader, { type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import { boot, composeProfileStack, entryIssue, inspectEntryIssues, ProfileRuntime, rootIncludeEntry, warnNestedFiberFailures, type Profile, type ProfileLayer } from '../src/index.ts'
+import { boot, composeProfileStack, inspectEntryIssues, ProfileRuntime, rootIncludeEntry, warnNestedFiberFailures, type Profile, type ProfileLayer } from '../src/index.ts'
+import { entryIssue } from '../src/entry-issues.ts'
 
 const roots: string[] = []
 const contexts: Context[] = []

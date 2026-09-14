@@ -1,7 +1,6 @@
 /** Bundle patch ownership and the profile manifest's installed/enabled layer lists. */
 
 import { join } from 'node:path'
-import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { DshProfileManifest } from '@deepseek-ai/dsh-package-manifest'
 import { visitIdentifiedRows } from './patch-rows.ts'
 import {
@@ -9,23 +8,21 @@ import {
 } from './profile.ts'
 
 /** One row declared twice within a bundle layer. */
-export interface DuplicateRow {
+interface DuplicateRow {
   readonly rowId: string
   readonly moduleName: string
 }
 
-/** Static row ownership and overrides of one unmodified bundle patch list. */
-export interface AnalyzedBundleLayer {
-  readonly patches: PatchOptions[]
+/** Declared row ids and duplicates within one bundle patch list. */
+interface AnalyzedBundleLayer {
   readonly rows: Map<string, string>
   readonly duplicates: DuplicateRow[]
-  readonly overrides: string[]
 }
 
 /**
  * Inspect the rows a layer introduces without changing their ids or parents.
  * @param layer - the bundle patch list.
- * @returns its declared rows, duplicates, and external override targets.
+ * @returns its declared rows and duplicates.
  */
 export function analyzeBundleLayer(layer: ProfileLayer): AnalyzedBundleLayer {
   const rows = new Map<string, string>()
@@ -41,10 +38,7 @@ export function analyzeBundleLayer(layer: ProfileLayer): AnalyzedBundleLayer {
       declaredUnder.set(id, place.target)
     }
   })
-  const overrides = layer.patches.flatMap(patch => (
-    patch.insert === undefined && patch.id !== undefined && !rows.has(patch.id) ? [patch.id] : []
-  ))
-  return { patches: layer.patches, rows, duplicates, overrides }
+  return { rows, duplicates }
 }
 
 /**
