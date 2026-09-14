@@ -563,7 +563,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
         tryMembership: (candidate: Agent) => candidate === agent ? membership : undefined,
         membership: () => membership,
       } as unknown as TeamService)
-      await ctx.plugin(Object.assign((inner: Context) => {
+      await ctx.plugin(Object.assign(async (inner: Context) => {
         agent = {
           id: session.id,
           session,
@@ -571,7 +571,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
           status: 'idle',
         } as unknown as Agent
         Object.assign(agent, { ctx: createScope(inner, agent).ctx })
-        inner.agents.register(agent)
+        await inner.agents.register(agent)
       }, { inject: ['tools', 'systemPrompt', 'agents', 'agentTeams'] }))
       await ctx.plugin(ToolTeam)
       catalogChildScopes.set(ctx, agent)
