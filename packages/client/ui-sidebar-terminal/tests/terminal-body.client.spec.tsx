@@ -65,6 +65,7 @@ function mount(initial: TerminalViewState | undefined = idle, dictionary = en) {
   let visible = true
   const detach = vi.fn()
   const model = {
+    start: vi.fn(async () => {}), selectShell: vi.fn(),
     mount: vi.fn(() => detach), refresh: vi.fn(async () => {}),
     rename: vi.fn(async () => {}), connect: vi.fn(), write: vi.fn(), resize: vi.fn(), acknowledge: vi.fn(),
   }
@@ -308,4 +309,17 @@ it.each([en, zh])('translates known terminal failures while retaining unknown Ho
   }
   h.update({ ...idle, phase: 'failed', error: 'Host permission denied' })
   expect(h.view.getByRole('alert').textContent).toContain('Host permission denied')
+})
+
+it('lets the user select an installed shell and start it before rendering a screen', () => {
+  const other = { path: '/bin/zsh', name: 'zsh', args: ['-i'] }
+  const h = mount({ phase: 'selecting', writable: false, environment, shells: [info.shell, other], selectedShell: other.path })
+  expect(h.view.getByRole('combobox', { name: 'Shell' })).toHaveProperty('value', other.path)
+  expect(fake.terminals).toHaveLength(0)
+  fireEvent.change(h.view.getByRole('combobox'), { target: { value: info.shell.path } })
+  expect(h.model.selectShell).toHaveBeenCalledWith(info.shell.path)
+  fireEvent.click(h.view.getByRole('button', { name: 'Start terminal' }))
+  expect(h.model.start).toHaveBeenCalledOnce()
+  h.update({ phase: 'selecting', writable: false, environment })
+  expect(h.view.getByRole('button', { name: 'Start terminal' })).toHaveProperty('disabled', true)
 })

@@ -8,6 +8,7 @@
   "files": [
     "src/client/index.ts",
     "src/client/model.ts",
+    "src/client/shell-preference.ts",
     "src/types.ts",
     "src/client/close-requests.ts"
   ],

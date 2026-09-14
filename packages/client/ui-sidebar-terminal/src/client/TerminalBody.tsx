@@ -13,7 +13,7 @@ import css from './TerminalBody.module.css'
 export type TerminalBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'sidebarTerminal'> & InjectFace<TerminalInjected>
 
 /**
- * Mount an automatically started or restored terminal.
+ * Offer shell selection for a new terminal or mount a restored screen.
  * @param props - sidebar occurrence, model lookup and translated copy.
  * @returns the terminal screen and any pending or exceptional state.
  */
@@ -34,6 +34,15 @@ export function TerminalBody({ useTabInfo, useTerminal, view, t }: TerminalBodyP
   const readOnly = state.phase === 'connected' && state.info?.state === 'running' && !state.writable
   return (
     <section className={css.root} data-sidebar-terminal>
+      {state.phase === 'selecting' && <form className={css.launch} onSubmit={(event) => { event.preventDefault(); void model.start() }}>
+        <label className={css.shellLabel}>
+          {t('shell')}
+          <select aria-label={t('shell')} value={state.selectedShell ?? ''} onChange={(event) => { model.selectShell(event.currentTarget.value) }}>
+            {state.shells?.map(shell => <option key={shell.path} value={shell.path}>{shell.name} — {shell.path}</option>)}
+          </select>
+        </label>
+        <button type="submit" disabled={state.selectedShell === undefined}>{t('start')}</button>
+      </form>}
       {(status !== undefined || retry || readOnly) && <div className={css.status} role="status">
         {status}
         {readOnly && <>{t('readonly')} <button type="button" onClick={() => { model.connect() }}>{t('control')}</button></>}

@@ -199,6 +199,14 @@ Typed Remote control of transient Session-owned terminal processes.
 @Remote environment(agent: Agent, signal: AbortSignal): TerminalEnvironment
 
 /**
+ * Discover installed shells in the Session's execution environment.
+ * @param agent - Session owner supplied by the Gateway.
+ * @param signal - request cancellation.
+ * @returns verified profiles, with the configured or system default first.
+ */
+@Remote shells(agent: Agent, signal: AbortSignal): Promise<TerminalShell[]>
+
+/**
  * List retained terminals without resolving or activating an Agent.
  * @param sessionId - displayed Session identity, including offline history.
  * @returns terminals retained for this Host lifetime.

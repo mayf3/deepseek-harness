@@ -247,6 +247,8 @@ export interface Config {
     /** Arguments passed to the interactive shell. */
     args: string[]
   } | undefined
+  /** Executable names or paths checked for the new-terminal shell selector. */
+  readonly shellCandidates: string[]
   /** Maximum retained terminals and pending allocations per Session. */
   readonly maxTerminals: number
   /** Maximum terminal width in columns. */

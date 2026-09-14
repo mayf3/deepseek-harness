@@ -2520,6 +2520,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the Session workspace directory and terminal limits.',
       },
       {
+        signature: '@Remote shells(agent: Agent, signal: AbortSignal): Promise<TerminalShell[]>',
+        description: 'Discover installed shells in the Session\'s execution environment.',
+        parameters: [{ name: 'agent', description: 'Session owner supplied by the Gateway.' }, { name: 'signal', description: 'request cancellation.' }],
+        returns: 'verified profiles, with the configured or system default first.',
+      },
+      {
         signature: '@Remote list(sessionId: SessionId): WebTerminalInfo[]',
         description: 'List retained terminals without resolving or activating an Agent.',
         parameters: [{ name: 'sessionId', description: 'displayed Session identity, including offline history.' }],
@@ -6101,7 +6107,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TerminalCreateRequest',
-    declaration: 'export interface TerminalCreateRequest {\n    readonly id: WebTerminalId;\n    readonly cols: number;\n    readonly rows: number;\n}',
+    declaration: 'export interface TerminalCreateRequest {\n    readonly shellPath?: string;\n    readonly id: WebTerminalId;\n    readonly cols: number;\n    readonly rows: number;\n}',
   },
   {
     name: 'TerminalEnvironment',

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Open the execution environment's default shell beside a conversation without leaving the Web app. Rename terminals in their tabs and recover retained processes after reloading the page. Collapse the sidebar to keep commands running; close a terminal tab to request process termination. Tab completion follows the shell configuration.
+Choose an installed shell beside a conversation without leaving the Web app. Rename terminals in their tabs and recover retained processes after reloading the page. Collapse the sidebar to keep commands running; close a terminal tab to request process termination. Tab completion follows the shell configuration.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Open the execution environment's default shell beside a conversation without lea
 <a id="use-this-package"></a>
 ## Use this package
 
-Open the right sidebar and select **New terminal** on the Start page; first select **New tab** when another content tab is open. The default shell starts immediately. Use the sidebar's **New tab** control to open more terminals.
+Open the right sidebar and select **New terminal** on the Start page; first select **New tab** when another content tab is open. Choose an installed **Shell** and select **Start terminal**. The last successfully started shell is preselected from localStorage; first use or an unavailable saved choice selects the current default. Use the sidebar's **New tab** control to open more terminals.
 
 Double-click the terminal's tab title to rename it. **Take control** makes the current attachment writable when another page owns input. A failed connection offers **Reconnect**. An exited shell remains visible with its exit code and never restarts automatically. Exited terminals count toward the Session limit; close unused tabs when the limit is reached.
 
@@ -65,7 +65,7 @@ None; terminal output travels only between the browser and Host.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- The default shell or native PTY startup can fail. The tab reports the failure without launching a different shell.
+- Shell discovery or native PTY startup can fail. The tab reports the failure without launching a different shell.
 - Completion menus and inline suggestions depend on shell configuration. The Web UI adds no independent completion engine.
 - Terminal history is bounded. The feature does not send terminal output to the Agent, provide split terminal panes inside a tab, or restore processes after Host restart.
 

@@ -8,10 +8,10 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { resolveShell } from './shells.ts'
+import { discoverShells, resolveShell } from './shells.ts'
 import { BrowserTerminal } from './terminal.ts'
 import type {
-  TerminalAttachmentId, TerminalCreateRequest, TerminalEnvironment, TerminalFrame,
+  TerminalShell, TerminalAttachmentId, TerminalCreateRequest, TerminalEnvironment, TerminalFrame,
   WebTerminalId, WebTerminalInfo,
 } from './types.ts'
 
@@ -35,6 +35,8 @@ export interface Config {
     /** Arguments passed to the interactive shell. */
     args: string[]
   } | undefined
+  /** Executable names or paths checked for the new-terminal shell selector. */
+  readonly shellCandidates: string[]
   /** Maximum retained terminals and pending allocations per Session. */
   readonly maxTerminals: number
   /** Maximum terminal width in columns. */
@@ -67,6 +69,7 @@ export class TerminalController extends TypertRemoteService {
     shell: z.union([z.object({
       path: z.string().required(), name: z.string().required(), args: z.array(z.string()).default([]),
     }), z.const(undefined)]),
+    shellCandidates: z.array(z.string().min(1)).default(['zsh', 'bash', 'fish', 'sh', 'ksh', 'tcsh', 'csh', 'pwsh', 'powershell', 'cmd', 'nu']),
     maxTerminals: z.number().step(1).min(1).default(8),
     maxCols: z.number().step(1).min(2).default(500),
     maxRows: z.number().step(1).min(1).default(200),
@@ -115,6 +118,18 @@ export class TerminalController extends TypertRemoteService {
     return { cwd: sandboxPolicy.resolve({ session: agent.session }).workspaceRoot,
       maxInputBytes: this.config.maxInputBytes, maxCols: this.config.maxCols,
       maxRows: this.config.maxRows, scrollback: this.config.scrollback }
+  }
+
+  /**
+   * Discover installed shells in the Session's execution environment.
+   * @param agent - Session owner supplied by the Gateway.
+   * @param signal - request cancellation.
+   * @returns verified profiles, with the configured or system default first.
+   */
+  @Remote
+  shells(agent: Agent, signal: AbortSignal): Promise<TerminalShell[]> {
+    signal.throwIfAborted()
+    return discoverShells(this.execution(agent).subprocess, this.config.shell, this.config.shellCandidates, signal)
   }
 
   /**
@@ -301,13 +316,16 @@ export class TerminalController extends TypertRemoteService {
   private async spawn(agent: Agent, owner: OwnedSession, request: TerminalCreateRequest, signal: AbortSignal): Promise<BrowserTerminal> {
     const environment = this.environment(agent, signal)
     const { subprocess, sandboxPolicy } = this.execution(agent)
-    const shell = await resolveShell(subprocess, this.config.shell, signal)
+    const shell = request.shellPath === undefined
+      ? await resolveShell(subprocess, this.config.shell, signal)
+      : (await this.shells(agent, signal)).find(candidate => candidate.path === request.shellPath)
+    if (shell === undefined) throw new Error('Selected shell is not available in this execution environment')
     const policy = sandboxPolicy.resolve({ session: agent.session })
     let argv = [shell.path, ...shell.args]
     if (policy.mode !== 'danger-full-access') {
       const sandbox = agent.ctx.get('sandbox')
       if (sandbox === undefined) throw new Error('The Session sandbox mode requires an execution sandbox provider')
-      argv = sandbox.confine(argv, { ...policy, mode: policy.mode }).argv
+      argv = (await sandbox.confine(argv, { ...policy, mode: policy.mode }, signal)).argv
     }
     const handle = await subprocess.spawnTerminal({
       argv, cwd: environment.cwd, cols: request.cols, rows: request.rows,

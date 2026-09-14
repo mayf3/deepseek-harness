@@ -31,6 +31,7 @@ function failure(message: string): RemoteResult<never> {
 
 function fixture(prepareStream?: <Item>(stream: RemoteStream<Item>) => void) {
   const remote: TerminalRemote = {
+    shells: vi.fn<TerminalRemote['shells']>(async () => success([info.shell])),
     environment: vi.fn<TerminalRemote['environment']>(async () => success(environment)), list: vi.fn<TerminalRemote['list']>(async () => success([])),
     create: vi.fn<TerminalRemote['create']>(async (_sessionId, request) => success({ ...info, id: request.id })),
     close: vi.fn<TerminalRemote['close']>(async () => success(undefined)), rename: vi.fn<TerminalRemote['rename']>(async () => success(undefined)),
@@ -61,6 +62,7 @@ function fixture(prepareStream?: <Item>(stream: RemoteStream<Item>) => void) {
 async function mount(model: TerminalView) {
   const detach = model.mount()
   await model.refresh()
+  await model.start()
   return detach
 }
 
@@ -434,6 +436,7 @@ it('classifies a discovery carrier failure as disconnected and supports explicit
   expect(model.state.getSnapshot()).toMatchObject({ phase: 'disconnected', error: 'offline' })
   expect(remote.create).not.toHaveBeenCalled()
   await model.refresh()
+  await model.start()
   expect(model.state.getSnapshot().info?.id).toBe(info.id)
   expect(remote.create).toHaveBeenCalledOnce()
 })
@@ -446,12 +449,14 @@ it('retains state when disposal overtakes successful allocation or a failed disc
     if (operation === 'creation') vi.mocked(remote.create).mockReturnValueOnce(creation.promise)
     else vi.mocked(remote.environment).mockReturnValueOnce(discovery.promise)
     const loading = model.refresh()
+    const starting = operation === 'creation' ? loading.then(() => model.start()) : undefined
     if (operation === 'creation') await expect.poll(() => remote.create).toHaveBeenCalledOnce()
     await model.dispose()
     const before = model.state.getSnapshot()
     if (operation === 'creation') creation.resolve(success(info))
     else discovery.reject(new Error('late discovery failure'))
     await loading
+    await starting
     expect(model.state.getSnapshot()).toBe(before)
     expect(remote.follow).not.toHaveBeenCalled()
   }
@@ -555,6 +560,7 @@ it('exposes a localized quota error and clears it after a successful retry', asy
   const { model, remote } = fixture()
   vi.mocked(remote.create).mockResolvedValueOnce({ ok: false, error: new RemoteError('terminal/limit-reached', 'Session terminal limit reached', { limit: 8 }) })
   await model.refresh()
+  await model.start()
   expect(model.state.getSnapshot()).toMatchObject({ phase: 'failed', issue: 'terminalLimit' })
   await connected(model)
   expect(model.state.getSnapshot()).toMatchObject({ phase: 'connected', issue: undefined, error: undefined })

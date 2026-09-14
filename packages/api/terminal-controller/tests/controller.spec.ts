@@ -16,7 +16,7 @@ import type { TerminalAttachmentId, WebTerminalId } from '../src/types.ts'
 
 const roots: Context[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(ctx => ctx.fiber.dispose())) })
-const config: Config = { shell: { path: '/bin/bash', name: 'bash', args: ['--noprofile', '--norc', '-i'] }, maxTerminals: 2, maxCols: 200, maxRows: 100, scrollback: 100, maxBufferedBytes: 100_000, maxInputBytes: 1000, disposeGraceMs: 100 }
+const config: Config = { shellCandidates: ['zsh', 'bash', 'sh'], shell: { path: '/bin/bash', name: 'bash', args: ['--noprofile', '--norc', '-i'] }, maxTerminals: 2, maxCols: 200, maxRows: 100, scrollback: 100, maxBufferedBytes: 100_000, maxInputBytes: 1000, disposeGraceMs: 100 }
 const id = 'test-terminal' as WebTerminalId
 const request = { id, cols: 80, rows: 24 }
 const signal = (): AbortSignal => new AbortController().signal
@@ -288,7 +288,7 @@ describe('TerminalController', () => {
     const confine = vi.fn((argv: readonly string[]) => ({ argv: ['sandbox-runner', ...argv] }))
     ctx.provide('sandbox', { confine } as never)
     await controller.create(agent, request, signal())
-    expect(confine).toHaveBeenCalledWith(['/bin/bash', '--noprofile', '--norc', '-i'], policy)
+    expect(confine).toHaveBeenCalledWith(['/bin/bash', '--noprofile', '--norc', '-i'], policy, expect.any(AbortSignal))
     expect(subprocess.spawnTerminal).toHaveBeenCalledWith(expect.objectContaining({ argv: ['sandbox-runner', '/bin/bash', '--noprofile', '--norc', '-i'], env: { DSH_SESSION_ID: agent.id }, graceMs: 100 }))
   })
 
@@ -505,4 +505,39 @@ it.skipIf(process.platform === 'win32')('runs a real interactive shell with comp
     await ctx.fiber.dispose()
     await rm(cwd, { recursive: true, force: true })
   }
+})
+
+it('discovers installed shells once per path, preserves default arguments, and refuses unlisted paths', async () => {
+  const h = fixture({ shellCandidates: ['bash', 'zsh', 'missing'] })
+  h.subprocess.resolveExecutable.mockImplementation(async (path) => {
+    if (path === 'missing') throw new SubprocessExecutableNotFoundError('absent')
+    return path.startsWith('/') ? path : `/bin/${path}`
+  })
+  const shells = await h.controller.shells(h.agent, signal())
+  expect(shells).toEqual([config.shell, { path: '/bin/zsh', name: 'zsh', args: ['-i'] }])
+  expect(h.subprocess.spawnTerminal).not.toHaveBeenCalled()
+  await expect(h.controller.create(h.agent, { ...request, shellPath: '/bin/unlisted' }, signal())).rejects.toThrow('Selected shell is not available')
+  expect(h.subprocess.spawnTerminal).not.toHaveBeenCalled()
+  const created = await h.controller.create(h.agent, { ...request, shellPath: '/bin/zsh' }, signal())
+  expect(created.shell.path).toBe('/bin/zsh')
+  expect(h.subprocess.spawnTerminal).toHaveBeenCalledWith(expect.objectContaining({ argv: ['/bin/zsh', '-i'] }))
+  h.subprocess.resolveExecutable.mockRejectedValue(new Error('SSH disconnected'))
+  await expect(h.controller.shells(h.agent, signal())).rejects.toThrow('SSH disconnected')
+  expect(await h.controller.create(h.agent, { ...request, shellPath: '/bin/bash' }, signal())).toBe(created)
+})
+
+it('propagates optional-shell discovery transport errors and cancellation', async () => {
+  const h = fixture({ shellCandidates: ['fish'] })
+  h.subprocess.resolveExecutable.mockImplementation(async (path) => {
+    if (path === 'fish') throw new Error('lookup transport failed')
+    return path
+  })
+  await expect(h.controller.shells(h.agent, signal())).rejects.toThrow('lookup transport failed')
+  const cancelled = AbortSignal.abort(new Error('cancelled discovery'))
+  expect(() => h.controller.shells(h.agent, cancelled)).toThrow('cancelled discovery')
+})
+
+it('deduplicates Windows executable paths regardless of letter case', async () => {
+  const h = fixture({ shell: { path: 'C:\\Windows\\cmd.exe', name: 'Command Prompt', args: [] }, shellCandidates: ['c:\\windows\\cmd.exe'] })
+  expect(await h.controller.shells(h.agent, signal())).toEqual([{ path: 'C:\\Windows\\cmd.exe', name: 'Command Prompt', args: [] }])
 })

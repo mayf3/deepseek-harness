@@ -49,6 +49,8 @@ export interface WebTerminalInfo {
 
 /** Create is idempotent for an open identity; closed identities cannot be recreated. */
 export interface TerminalCreateRequest {
+  /** A path returned by shell discovery; absent selects the execution default. */
+  readonly shellPath?: string
   readonly id: WebTerminalId
   readonly cols: number
   readonly rows: number
