@@ -299,6 +299,25 @@ describe('ToolRow', () => {
     expect(view.getByText('List files')).toBeTruthy()
   })
 
+  it('excludes shared context from collapsed edit totals and the expanded card', () => {
+    const view = render(<ToolRow {...rowProps} variant="edit" title="Edit" summary="settings.ts" diff={{
+      card: { diffs: [{
+        path: 'settings.ts',
+        oldText: 'start\nsecond\nthird\nold\nfourth\nfifth\nend',
+        newText: 'start\nsecond\nthird\nnew\nfourth\nfifth\nend',
+      }] },
+    }} />)
+    expect(view.getByText('+1 -1')).toBeTruthy()
+    expect(view.container.querySelector('[data-diff]')).toBeNull()
+    fireEvent.click(view.getByRole('button'))
+    expect(view.getByText(/└ \+1 -1/)).toBeTruthy()
+    expect(view.getAllByText('start')).toHaveLength(1)
+    expect(view.getAllByText('end')).toHaveLength(1)
+    expect(view.getByText('old', { exact: true })).toBeTruthy()
+    expect(view.getByText('new', { exact: true })).toBeTruthy()
+    expect(view.queryByRole('button', { name: /展开其余/ })).toBeNull()
+  })
+
   it('formats the argument body only while expanding it', () => {
     const stringify = vi.spyOn(JSON, 'stringify')
     const bodyFormatCalls = () => stringify.mock.calls.filter(

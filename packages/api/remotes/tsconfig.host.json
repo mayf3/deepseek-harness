@@ -73,6 +73,9 @@
     },
     {
       "path": "../../typert/protocol"
+    },
+    {
+      "path": "../terminal-controller/tsconfig.host.json"
     }
   ]
 }

@@ -165,7 +165,7 @@ async function bench(script: Script, options: BenchOptions = {}): Promise<{
       },
     }
     await createOptions.setup?.(ownerCtx, agent)
-    ctx.agents.register(agent)
+    await ctx.agents.register(agent)
     return agent
   }
 
