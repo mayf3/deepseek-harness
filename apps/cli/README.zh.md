@@ -23,6 +23,8 @@
 
 启动器只解析自身的 flag，并将其后的所有内容交给已启动的 profile；注入该 profile 的任意应用插件都可以解析这份共享的不可变快照（[`dsh-cmdline`](../../packages/boot/cmdline/README.zh.md)）。启动器无法识别的第一个 token 标志着应用参数的开始：
 
+由安装器处理的 `dsh plugin add/remove` 会将中断传给包管理进程，并等待它停止。被中断的 add 会恢复 `package.json` 与 `pnpm-lock.yaml`；下载或解包文件可能保留。SIGINT 返回退出码 130，SIGTERM 返回 143。
+
 ```sh
 dsh --profile web --port 8080       # --port belongs to the web app
 dsh --profile tui --resume <id>     # example, assuming the tui profile is installed; --resume belongs to the terminal app

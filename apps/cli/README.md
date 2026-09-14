@@ -23,6 +23,8 @@ The invoking directory is the default workspace root. The `web`, `headless`, `sd
 
 The launcher parses only its own flags and hands everything after them to the booted profile, where any injected app plugin may parse the shared immutable snapshot ([`dsh-cmdline`](../../packages/boot/cmdline/README.md)). The first token the launcher does not recognize starts the app's arguments:
 
+Managed `dsh plugin add/remove` commands forward interruption to their package process and wait for it to stop. An interrupted add restores `package.json` and `pnpm-lock.yaml`; downloaded or unpacked files may remain. SIGINT returns exit code 130 and SIGTERM returns 143.
+
 ```sh
 dsh --profile web --port 8080       # --port belongs to the web app
 dsh --profile tui --resume <id>     # example, assuming the tui profile is installed; --resume belongs to the terminal app
