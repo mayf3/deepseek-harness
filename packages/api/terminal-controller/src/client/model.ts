@@ -125,12 +125,15 @@ export class TerminalView {
   }
 
   /**
-   * Select one verified shell before starting the terminal.
+   * Select and remember one verified shell before starting the terminal.
    * @param path - executable path offered by Host discovery.
    */
   selectShell(path: string): void {
     const state = this.state.getSnapshot()
-    if (state.phase === 'selecting' && state.shells?.some(shell => shell.path === path)) this.patch({ selectedShell: path })
+    if (state.phase === 'selecting' && state.shells?.some(shell => shell.path === path)) {
+      this.patch({ selectedShell: path })
+      rememberShell(path)
+    }
   }
 
   /**
@@ -142,6 +145,7 @@ export class TerminalView {
     const state = this.state.getSnapshot()
     if (state.phase !== 'selecting' || state.environment === undefined || state.selectedShell === undefined
       || this.closing !== undefined || this.lifetime.signal.aborted) return Promise.resolve()
+    rememberShell(state.selectedShell)
     return this.create(state.environment, state.selectedShell)
   }
 
@@ -154,7 +158,6 @@ export class TerminalView {
         id: this.id, shellPath, cols: Math.min(80, environment.maxCols), rows: Math.min(24, environment.maxRows),
       }, this.lifetime.signal))
       if (!this.lifetime.signal.aborted) {
-        rememberShell(info.shell.path)
         this.adopt(info)
       }
     })().catch((error: unknown) => { this.fail(error) }).finally(() => { this.creation = undefined })

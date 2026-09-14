@@ -25,7 +25,7 @@ Choose an installed shell beside a conversation without leaving the Web app. Ren
 <a id="use-this-package"></a>
 ## Use this package
 
-Open the right sidebar and select **New terminal** on the Start page; first select **New tab** when another content tab is open. Choose an installed **Shell** and select **Start terminal**. The last successfully started shell is preselected from localStorage; first use or an unavailable saved choice selects the current default. Use the sidebar's **New tab** control to open more terminals.
+Open the right sidebar and select **New terminal** on the Start page; first select **New tab** when another content tab is open. Choose an installed **Shell** and select **Start terminal**. The last selected shell is preselected from localStorage; first use or an unavailable saved choice selects the current default. Use the sidebar's **New tab** control to open more terminals.
 
 Double-click the terminal's tab title to rename it. **Take control** makes the current attachment writable when another page owns input. A failed connection offers **Reconnect**. An exited shell remains visible with its exit code and never restarts automatically. Exited terminals count toward the Session limit; close unused tabs when the limit is reached.
 

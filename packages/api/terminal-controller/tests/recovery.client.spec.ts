@@ -445,7 +445,7 @@ it('waits for both active and detached stream finalizers during plugin disposal 
   expect(h.remote.close).not.toHaveBeenCalled()
 })
 
-it('remembers a successful shell choice for new views and falls back when that shell is absent', async () => {
+it('remembers a shell choice immediately for new views and falls back when that shell is absent', async () => {
   const data = storage()
   const h = fixture()
   const alternate = { name: 'bash', path: '/bin/bash', args: ['-i'] }
@@ -459,7 +459,11 @@ it('remembers a successful shell choice for new views and falls back when that s
   first.selectShell('/not-listed')
   expect(first.state.getSnapshot().selectedShell).toBe(info.shell.path)
   first.selectShell(alternate.path)
-  expect(data.size).toBe(0)
+  expect(data.get('dsh.terminal.shell')).toBe(alternate.path)
+  const beforeLaunch = h.view()
+  await beforeLaunch.refresh()
+  expect(beforeLaunch.state.getSnapshot().selectedShell).toBe(alternate.path)
+  expect(h.remote.create).not.toHaveBeenCalled()
   await first.start()
   expect(data.get('dsh.terminal.shell')).toBe(alternate.path)
   expect(h.remote.create).toHaveBeenCalledWith(sessionId, expect.objectContaining({ shellPath: alternate.path }), expect.any(AbortSignal))
@@ -475,14 +479,14 @@ it('remembers a successful shell choice for new views and falls back when that s
   expect(h.remote.create).toHaveBeenCalledOnce()
 })
 
-it('retains a selection across a failed launch without remembering the failed shell', async () => {
+it('retains the last selection across a failed launch', async () => {
   const data = storage()
   const h = fixture()
   vi.mocked(h.remote.create).mockResolvedValueOnce(failure('shell disappeared'))
   const model = h.view()
   await model.refresh()
   await model.start()
-  expect(data.size).toBe(0)
+  expect(data.get('dsh.terminal.shell')).toBe(info.shell.path)
   await model.refresh()
   expect(model.state.getSnapshot().selectedShell).toBe(info.shell.path)
   await model.close()

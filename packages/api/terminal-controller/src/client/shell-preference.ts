@@ -3,7 +3,7 @@ const KEY = 'dsh.terminal.shell'
 
 /**
  * Read the browser preference.
- * @returns the last successfully started shell path, or null when storage is unavailable.
+ * @returns the last selected shell path, or null when storage is unavailable.
  */
 export function preferredShell(): string | null {
   try { return typeof localStorage === 'undefined' ? null : localStorage.getItem(KEY) }
@@ -11,8 +11,8 @@ export function preferredShell(): string | null {
 }
 
 /**
- * Remember a successful shell launch without making storage a startup dependency.
- * @param path - verified executable path returned by the Host.
+ * Remember the selected shell without making storage a startup dependency.
+ * @param path - verified executable path offered by the Host.
  */
 export function rememberShell(path: string): void {
   try { if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, path) }

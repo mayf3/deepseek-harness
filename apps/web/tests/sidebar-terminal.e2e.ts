@@ -169,6 +169,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     await compareOrRefreshGolden(fileURLToPath(new URL('./expected/sidebar-terminal/selection.expected.md', import.meta.url)),
       await page.locator('[data-sidebar-terminal]').ariaSnapshot(), webSnapshotMode())
     await selector.selectOption('/bin/sh')
+    expect(await page.evaluate(() => localStorage.getItem('dsh.terminal.shell'))).toBe('/bin/sh')
     await page.screenshot({ path: `${shots}/shell-choice.png`, fullPage: true })
     await page.getByRole('button', { name: 'Start terminal', exact: true }).click()
     await command(page, "printf 'CHOSEN_SHELL:%s\\n' \"$0\"")
