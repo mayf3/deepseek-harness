@@ -39,6 +39,8 @@ kind: "package-reference"
 
 读取失败会在标签页内渲染通用失败状态；重试会重新执行懒 `list()` 调用，且不会暴露传输细节。
 
+插件列表还显示当前页面的同步失败。重试会重新应用最新客户端图，不改变 Host 启用状态，也不刷新页面。
+
 -----
 
 <a id="understand-the-implementation"></a>

@@ -428,7 +428,7 @@ Source: [`packages/client/connection/src/index.ts:72`](../packages/client/connec
 
 ## `@deepseek-ai/dsh-client-hmr`
 
-Requires: `clientModules` · `webServer`
+Requires: `clientModules` · `webServer` · `loader`
 
 ```ts config-catalog
 /** Plugin config, validated by the same-named schemastery schema. */

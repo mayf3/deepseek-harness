@@ -10,7 +10,7 @@
  */
 import { statSync } from 'node:fs'
 import type { ServerResponse } from 'node:http'
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Fiber } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 // Type imports carry the clientModules/webServer Context merges.
 import type { ClientArtifactBaseline } from '@deepseek-ai/dsh-client-modules'
@@ -24,8 +24,8 @@ export { EVENTS_ENDPOINT } from './events.ts'
 /** Cordis plugin name. */
 export const name = 'client-hmr'
 
-/** Required services: the web plugin table and the route registry. */
-export const inject = ['clientModules', 'webServer']
+/** Required services: the client graph, Web route registry and Loader settlement. */
+export const inject = ['clientModules', 'webServer', 'loader']
 
 /** Plugin config, validated by the same-named schemastery schema. */
 export interface Config {
@@ -158,6 +158,39 @@ export function apply(ctx: Context, config: Config): void {
   // --- /plugins/events SSE channel ----------------------------------------
   const connections = new Set<ServerResponse>()
 
+  const disposing = new Set<Fiber>()
+  let closed = false
+  let publishing: Promise<void> | undefined
+  let dirty = false
+  const publishGraph = (): void => {
+    dirty = true
+    if (publishing !== undefined) return
+    publishing = (async () => {
+      do {
+        dirty = false
+        await ctx.loader.await()
+        for (const fiber of disposing) {
+          while (fiber.inertia !== undefined) await fiber.inertia
+          disposing.delete(fiber)
+        }
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- graph callbacks set dirty while Loader settlement yields.
+      } while (dirty && !closed)
+      if (closed) return
+      const line = sseData({ type: 'graph', graph: ctx.clientModules.graph() })
+      for (const res of connections) res.write(line)
+    })().catch((error: unknown) => { ctx.logger.error(error) }).finally(() => {
+      publishing = undefined
+      if (dirty && !closed) publishGraph()
+    })
+  }
+
+  ctx.on('internal/plugin', (fiber) => {
+    if (fiber.entry === undefined || fiber.uid !== null) return
+    // Removed fibers disappear from Loader.getTasks() before their effects finish.
+    disposing.add(fiber)
+    publishGraph()
+  })
+
   const connect = (res: ServerResponse): void => {
     res.writeHead(200, {
       'content-type': 'text/event-stream',
@@ -167,8 +200,8 @@ export function apply(ctx: Context, config: Config): void {
     // Comment line on open so clients/proxies see a live channel even when
     // no rebuild ever happens; EventSource frame parsing skips it naturally.
     res.write(': connected\n\n')
-    res.write(sseData({ type: 'graph', graph: ctx.clientModules.graph() }))
     connections.add(res)
+    publishGraph()
     res.on('close', () => { connections.delete(res) })
   }
 
@@ -187,11 +220,14 @@ export function apply(ctx: Context, config: Config): void {
         connect(res)
       },
     })
+    const unsubscribeGraph = ctx.clientModules.onGraphChanged(publishGraph)
     const unsubscribe = ctx.clientModules.onRebuilt((id, rev) => {
       const line = sseData({ type: 'rebuilt', id, rev })
       for (const res of connections) res.write(line)
     })
     return () => {
+      closed = true
+      unsubscribeGraph()
       unsubscribe()
       disposeRoute()
       for (const res of connections) res.destroy()

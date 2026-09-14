@@ -430,7 +430,7 @@ export interface ConnectionRecoveryConfig {
 
 ## `@deepseek-ai/dsh-client-hmr`
 
-需要：`clientModules` · `webServer`
+需要：`clientModules` · `webServer` · `loader`
 
 ```ts config-catalog
 /** Plugin config, validated by the same-named schemastery schema. */

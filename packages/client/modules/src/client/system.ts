@@ -5,6 +5,8 @@
  * state tables and the load/materialize machinery.
  */
 import { stripClientSuffix } from './manifest.ts'
+import { ClientEntries } from './entries.ts'
+import { removeOwnedStyles } from './entry-lifecycle.ts'
 import type {
   BootManifest, BootModuleRow, ClientBundleRegistration, ClientModuleLoader, ClientModuleRecord,
   ClientModuleSystemOptions,
@@ -60,7 +62,8 @@ const claimStyles = (id: string): string[] => {
  */
 export class ClientModuleSystem implements ClientModuleLoader {
   readonly version = 'client'
-  readonly manifest: BootManifest
+  manifest: BootManifest
+  readonly entries: ClientEntries
   readonly loadCache = new Map<string, ClientModuleRecord>()
 
   private readonly seed: Map<string, unknown>
@@ -81,11 +84,14 @@ export class ClientModuleSystem implements ClientModuleLoader {
    */
   constructor(options: ClientModuleSystemOptions) {
     this.manifest = options.manifest
+    this.entries = new ClientEntries(this, {
+      update: (manifest) => { this.updateManifest(manifest) },
+      prune: (roots) => { this.prune(roots) },
+    })
     this.seed = new Map(Object.entries(options.staticModules))
     this.loadBundle = options.loadBundle ?? defaultLoadBundle
 
     for (const row of options.manifest.modules) {
-      if (this.graphRows.has(row.id)) throw new Error(`client-modules: duplicate graph entry "${row.id}"`)
       this.graphRows.set(row.id, row)
     }
 
@@ -186,6 +192,9 @@ export class ClientModuleSystem implements ClientModuleLoader {
       const record: ClientModuleRecord = { id, exports, styles: claimStyles(id), edges }
       this.loadCache.set(id, record)
       return record
+    } catch (error) {
+      removeOwnedStyles(id)
+      throw error
     } finally {
       this.materializing.delete(id)
     }
@@ -235,6 +244,39 @@ export class ClientModuleSystem implements ClientModuleLoader {
     const row = this.graphRows.get(normalized)
     if (row === undefined) throw new Error(`client-modules: prefetch("${id}") — not a graph entry`)
     await this.arriveGraphRow(row)
+  }
+
+  /** Replace descriptors without invalidating live factories; subsequent arrivals use individual resources. */
+  private updateManifest(manifest: BootManifest): void {
+    for (const id of this.bootstrapIds) {
+      if (this.manifest.modules.some(row => row.id === id) && !manifest.modules.some(row => row.id === id)) {
+        throw new Error(`client-modules: removing bootstrap module ${id} requires a page reload`)
+      }
+    }
+    for (const row of manifest.modules) this.graphRows.set(row.id, { ...row, initialUrl: row.url })
+    this.manifest = manifest
+  }
+
+  /** Retain live Loader modules and their transitive requests before evicting unreferenced graph records. */
+  private prune(roots: Iterable<string>): void {
+    const retained = new Set<string>(this.bootstrapIds)
+    const visit = (specifier: string): void => {
+      const id = stripClientSuffix(specifier)
+      if (retained.has(id)) return
+      retained.add(id)
+      const row = this.graphRows.get(id)
+      for (const request of [...row?.external ?? [], ...row?.inject ?? [], ...this.loadCache.get(id)?.edges ?? []]) {
+        visit(request)
+      }
+    }
+    for (const row of this.manifest.modules) visit(row.id)
+    for (const id of roots) visit(id)
+    for (const id of this.graphRows.keys()) {
+      if (retained.has(id)) continue
+      this.graphRows.delete(id)
+      this.invalidate(id)
+      removeOwnedStyles(id)
+    }
   }
 
   invalidate(id: string, rev?: string): void {

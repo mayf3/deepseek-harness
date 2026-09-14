@@ -46,6 +46,7 @@
     "tests/details-session-lifecycle.e2e.ts",
     "tests/document-preview.e2e.ts",
     "tests/plugin-config.e2e.ts",
+    "tests/client-plugin-live.e2e.ts",
     "tests/settings-chrome.e2e.ts",
     "tests/models-settings.e2e.ts",
     "tests/deepseek-messages-settings.e2e.ts",

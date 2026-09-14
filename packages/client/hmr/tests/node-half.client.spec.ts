@@ -2,9 +2,12 @@
  * Node half of the HMR plugin: bundle watches follow the graph, stat changes
  * report through clientModuleHost.rebuilt, and everything dies with the fiber.
  */
+import { EventEmitter } from 'node:events'
+import type { ServerResponse, IncomingMessage } from 'node:http'
 import { mkdtempSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ClientArtifactBaseline, ClientModuleRegistry, WebBootGraph } from '@deepseek-ai/dsh-client-modules'
@@ -88,6 +91,7 @@ function fakeHttpServer(routes: WebRoute[]): WebServer {
 
 async function mount(clientModuleHost: FakeHost, webServer: WebServer) {
   const ctx = new Context()
+  await ctx.plugin(Loader)
   ctx.provide('clientModules', clientModuleHost)
   ctx.provide('webServer', webServer)
   const fiber = ctx.plugin(
@@ -225,4 +229,80 @@ describe('hmr node half', () => {
     await vi.waitFor(() => { expect(clientModuleHost.rebuiltCalls).toEqual(['pkg-a', 'pkg-a']) }, { timeout: 3_000 })
     await fiber.dispose()
   })
+})
+
+
+it('publishes settled graphs, drains removed fibers and reconnects without intermediate rosters', async () => {
+  const ctx = new Context()
+  await ctx.plugin(Loader)
+  const bundle = join(dir, 'a.js')
+  writeFileSync(bundle, 'a')
+  const rows = new Map([['a', bundle]])
+  const host = fakeClientModuleHost(rows)
+  const routes: WebRoute[] = []
+  ctx.provide('clientModules', host)
+  ctx.provide('webServer', fakeHttpServer(routes))
+  let release!: () => void
+  let cleaned!: () => void
+  let started!: () => void
+  const starting = new Promise<void>((resolve) => { started = resolve })
+  const activation = new Promise<void>((resolve) => { release = resolve })
+  const cleanup = new Promise<void>((resolve) => { cleaned = resolve })
+  ctx.loader.internal = { version: 'client', import: async () => ({
+    apply: async (pluginCtx: Context) => {
+      pluginCtx.effect(() => () => cleanup)
+      started()
+      await activation
+    },
+  }) } as never
+  const entryId = await ctx.loader.create({ name: 'owned' })
+  await starting
+  const fiber = ctx.plugin({ inject, Config, apply }, { pollIntervalMs: POLL_MS })
+  await fiber.await()
+  const route = routes[0]!
+  const connect = async () => {
+    const lines: string[] = []
+    const response = Object.assign(new EventEmitter(), {
+      writeHead: vi.fn(), write: (line: string) => { lines.push(line) },
+      destroy: vi.fn(), end: vi.fn(),
+    })
+    await route.handler({ method: 'GET' } as IncomingMessage, response as unknown as ServerResponse)
+    return { lines, response }
+  }
+  try {
+    const first = await connect()
+    rows.clear()
+    host.fireGraphChanged()
+    await Promise.resolve()
+    rows.set('a', bundle)
+    host.fireGraphChanged()
+    expect(first.lines).toEqual([': connected\n\n'])
+    release()
+    await vi.waitFor(() => { expect(first.lines).toHaveLength(2) })
+    const frame = JSON.parse(first.lines[1]!.slice(6)) as { graph: WebBootGraph }
+    expect(frame.graph.entries.map(row => row.id)).toEqual(['a'])
+    const second = await connect()
+    await vi.waitFor(() => { expect(second.lines).toHaveLength(2) })
+    expect(second.lines[1]).toBe(first.lines[1])
+    first.response.emit('close')
+    ctx.loader.remove(entryId)
+    rows.clear()
+    host.fireGraphChanged()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(second.lines).toHaveLength(2)
+    cleaned()
+    await vi.waitFor(() => { expect(second.lines).toHaveLength(3) })
+    expect((JSON.parse(second.lines[2]!.slice(6)) as { graph: WebBootGraph }).graph.entries).toEqual([])
+    await fiber.dispose()
+    host.fireGraphChanged()
+    await Promise.resolve()
+    expect(second.lines).toHaveLength(3)
+    expect(second.response.destroy).toHaveBeenCalledOnce()
+  } finally {
+    release()
+    cleaned()
+    await fiber.dispose()
+    await ctx.fiber.dispose()
+  }
 })

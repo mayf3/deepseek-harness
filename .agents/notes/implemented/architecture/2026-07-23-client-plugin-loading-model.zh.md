@@ -68,25 +68,31 @@ Host 会快照每个已构建插件产物，并把每个调度阶段的有序 ro
 4. `settled` = 每个 entry 已创建 + `loader.await()` 完全停稳 + 一次全 ACTIVE 扫描。扫描列出每个 import 失败、FAILED 或 PENDING 的 fiber 及其缺失的服务。它存在的理由：cordis 的 inject 等待没有超时——这次扫描就是大声失败的兜底线。
 5. 不依赖框架的 loading 页经 `internal/status` 投影真实 fiber 状态。检查完成后，内核调用 `ctx.uiRenderer.mount(container)`，一次切换到真实 UI。
 
+### 动态图对账
+
+modules 控制器只持有从启动清单创建的 Loader 条目。Host 的完整快照更新模块描述并对账这些条目；其他 Loader 贡献方保留自身所有权。新增模块通过单资源 URL 到达，因为重放启动 batch 可能重复注册现有 factory。移除使用 Loader 删除语义，随后等待已捕获 fiber 清理完毕，再移除未使用的模块与样式。已声明及已观察到的传递依赖使共享模块保持存活。
+
+Host SSE 适配器等待 Loader 导入、激活及已捕获的被移除 fiber 清理完成后发送当前完整图，重连也使用同一路径。图对账与代码重建共用一个页面队列。本地代际阻止过期下载挂载；不透明 revision 只比较相等。失败页面报告本地错误，并可重试同一张图而不改变 Host 启用状态。这保留了无关页面状态，也无需重启应用或引入第二套插件执行器。Electron 的独立安装流程不属于此机制。
+
 ### 热重载：一个驱动插件，自行监视的 bundle
 
 热重载是一项组合决策：web 组合包无条件挂载 `client-hmr` 行（一个常规的插件包），其 node 半带来 bundle 监视与 SSE（Server-Sent Events）通道；没有重建 watcher 改写客户端 bundle 时链路保持空闲。不应暴露它的组合可以禁用该行。
 
 重建好的 bundle 怎么变成重载信号？hmr 的 node 半自己观察——没有构建器来通知它。模块 host 在读取每份启动快照前捕获 bundle 的 stat 基线，并通过 `ctx.clientModules.artifactBaseline(id)` 暴露它。HMR 自持的单个定时器把当前图的每个 row 与这份基线比较：未变化的 row 直接开始监视，不读取内容也不求哈希；基线捕获后的写入已经形成 stat 差异，只有该 row 会进入 `rebuilt(id)`。这同时消除了启动期的全量重哈希，并避开 `fs.watchFile` 以异步首次 stat 建立基线、可能静默吸收构造期重建的问题。监视集合的成员随 `onGraphChanged` 更新；消失的 row 撤下监视，轮询时缺失的 bundle 则让对应 row 保持标脏状态，文件重现时即使元数据相同也强制重哈希。Bundle 的 mtime 或 size 变化，或 row 处于标脏状态时，`rebuilt(id)` 是重哈希的唯一入口；它会在新产物快照中一并读取当前 source map，而仅写入 map 不会重新挂载未变化的可执行代码。`rev` 真正变化时，node 半才在 `GET /plugins/events` 上广播 `rebuilt` 帧——这是一条系统级 SSE 通道，连接即发全量图，变更时发 `rebuilt` 帧，仅供呈现的 wire，永不进会话日志。轮询是刻意选择：inotify 在 weka 网络挂载上不触发，构建侧监视器需要 `--poll` 也是同一原因；每个 row 每个间隔只需一次 bundle stat，轮询间隔是一个经校验的配置字段（默认 500ms），dispose（资源释放）会清掉那一个定时器。重建产物是任意一个 tsdown watch 进程的事——`scripts/dev-web.ts` 仍作为 watch 构建入口保留，其包清单在启动时扫描 `packages/*/*/package.json` 按 dsh.client 发现——构建器与 host 共享零协议。写一半的 bundle 被撕裂读取会自愈：写入完成期间 stat 持续变化，下一个轮询节拍会再次重哈希并广播最终的 rev。
 
-浏览器侧，驱动插件每帧重载一个插件，串行执行：
+浏览器侧的传输把代码替换交给负责图对账的同一个 modules 控制器：
 
 1. `invalidate`——丢弃陈旧的 factory 与记录，并把 rebuilt 帧的 revision 绑定到该 row 的单资源 combo URL。Factory 还活着会让下一步变成 no-op。
 2. `prefetch`——加载该单资源外部脚本并登记新 factory，旧 fiber 此刻仍在服役。初始多资源脚本不会再次执行。
 3. `registry.delete`——先于任何 fiber 操作。裸做 fiber dispose 会触发 vendored Loader 的自 dispose 分支，把 entry 永久停用。
 4. 排空旧 fiber 的各 disposer。
 5. 移除名下的 `<style data-plugin>` 标签。
-6. `entry.refresh()`——重新 import，物化新工厂。CSS 在这里重新注入，沿用同一批稳定标签 id。
+6. 通过模块系统物化新导出，再调用 `entry.refresh()` 由 Loader 挂载。CSS 在旧 disposer 清理完成后重新注入；显式物化使导入错误能够被捕获，而不只留下 Loader 的控制台日志。
 7. `fiber.await()`——让失败大声重抛。
 
 每个插件都共享同一套语义；`immediately` 行的重载与 lazy 行分毫不差。依赖级联不花一行 client 代码：fiber 的激活纪元串接着它各服务提供方的 uid，因此替换 connection 等基础 provider 的 fiber 时，每个依赖方都会经 cordis 本身重新装载——行为正确，但代价较高。
 
-支持边界，如实陈述。重载粒度刻意做粗：全新 fiber、全新组件、React 状态丢失、数据层不动——react-refresh 级的状态保留与「重执行 bundle 即重跑 factory」相冲突，属刻意不做。静态装配包与外壳内核不是 entry：改动它们意味着外壳重建加整页刷新。重载不做回滚：import 失败让 entry 失去 fiber，下一个 rebuilt 帧从头重试；apply 失败留下 FAILED fiber 交给状态投影；两者都大声记录。自我重载可行——在途的重载在旧 bundle 的闭包里跑完，新的 apply 再开一条新 SSE 通道——但空窗期到达的帧会丢失，下次重建会再次通知。一处已知的仅限 dev 竞态：rebuilt 帧与仍在途的 boot 到达重叠时共享那次到达的任务，可能物化重建前的字节；下一帧自愈。
+重载会创建新的 fiber 和组件状态，不保留被替换插件内部的 React 状态。静态组装库与应用壳需要重建后的页面。导入或激活失败仍可诊断和重试，不会回滚无关插件。自重载关闭旧 SSE 通道并打开新通道；其完整快照补齐遗漏的图变更。启动、图更新和重建帧共用同一队列，因此代码替换不会与初始模块到达重叠。
 
 ## 包归属
 

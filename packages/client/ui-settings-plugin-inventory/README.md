@@ -39,6 +39,8 @@ The switcher is the same selector-pill-plus-menu control the General settings ro
 
 A failed read renders a generic failure state inside the tab; retrying re-runs the lazy `list()` call without exposing transport details.
 
+The Plugin list also shows synchronization failures on the current page. Its retry reapplies the latest client graph without changing Host enablement or refreshing the page.
+
 -----
 
 <a id="understand-the-implementation"></a>
