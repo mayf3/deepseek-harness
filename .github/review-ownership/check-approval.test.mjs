@@ -30,7 +30,7 @@ const pullRequestEvent = ({ author = 'author', draft = false } = {}) => ({
   },
 })
 
-const review = (login, state, submitted_at = '2026-09-14T00:00:00Z') => ({ user: { login }, state, submitted_at })
+const review = (login, state, submitted_at = '2026-09-14T00:00:00Z', id = 10) => ({ user: { login }, state, submitted_at, id })
 
 test('loads the repository approval score policy', () => {
   const policy = parseApprovalPolicy(policySource)
@@ -828,7 +828,7 @@ test('inactive commands, drafts, and non-comment events do not request review', 
     { permissions: { writer: 'read' } },
     { draft: true },
   ]) {
-    const api = delegationApi({ comments: [command], ...scenario })
+    const api = delegationApi({ comments: [command], reviews: [review('turtle1999', 'CHANGES_REQUESTED')], ...scenario })
     await runWithHistory({
       event: { ...pullRequestEvent({ draft: scenario.draft }),
         ...(scenario.event ?? { issue: { number: 42, pull_request: {} }, action: 'created', comment: { id: 1 } }),
@@ -860,6 +860,93 @@ test('failed review requests publish an error status', async () => {
       },
     }), failedRead ? /no users array/u : /request rejected/u)
     assert.deepEqual(statuses, ['pending', 'error'])
+  }
+})
+
+test('delegation dismisses only the sender old decisions and stays active across dismissal events', async () => {
+  const reviews = [review('turtle1999', 'APPROVED', undefined, 10), review('turtle1999', 'CHANGES_REQUESTED', undefined, 11),
+    review('turtle1999', 'COMMENTED', undefined, 12), review('turtle1999', 'PENDING', null, 13),
+    review('writer', 'APPROVED', undefined, 20), review('other', 'CHANGES_REQUESTED', undefined, 21)]
+  const calls = []
+  const states = []
+  const read = delegationApi({ comments: [comment('turtle1999', '/delegate @writer')], reviews })
+  const api = async (path, options) => {
+    if (path.includes('/statuses/')) { states.push(options.body.state); return {} }
+    if (path.endsWith('/dismissals')) {
+      calls.push(options)
+      const id = Number(path.split('/').at(-2))
+      const dismissed = reviews.find(review => review.id === id)
+      assert.ok([10, 11].includes(id))
+      dismissed.state = 'DISMISSED'
+      return dismissed
+    }
+    if (path.endsWith('/requested_reviewers')) {
+      if (options?.method === 'POST') calls.push(options)
+      return { users: [] }
+    }
+    return read(path)
+  }
+  const result = await runWithHistory({ event: { ...pullRequestEvent(), issue: { number: 42, pull_request: {} }, action: 'created', comment: { id: 1 } },
+    policySource, api, runUrl: 'https://github.example/run/1', write: () => {}, getMergedCount: async () => 0,
+  })
+  assert.deepEqual(calls.map(call => call.method), ['PUT', 'PUT', 'POST'])
+  assert.equal(calls[0].body.event, 'DISMISS')
+  assert.equal(calls[0].body.message, 'This is by automated Angry Turtle Cyborg, not a human. @turtle1999 delegated approval to @writer via /delegate.')
+  assert.deepEqual(result.blockers, ['other'])
+  assert.equal(result.delegations.length, 1)
+  assert.deepEqual(result.delegations[0].reviewIds, [])
+  assert.deepEqual(states, ['pending', 'pending'])
+  reviews.find(review => review.id === 21).state = 'DISMISSED'
+  for (const state of ['APPROVED', 'DISMISSED', 'COMMENTED', 'APPROVED']) {
+    reviews.find(review => review.id === 20).state = state
+    const next = await evaluateDelegation({ api })
+    assert.equal(next.delegations.length, 1)
+    assert.equal(next.state, state === 'APPROVED' ? 'success' : 'pending')
+  }
+  reviews.push(review('turtle1999', 'COMMENTED', '2026-09-16T00:00:00Z', 30))
+  const reclaimed = await evaluateDelegation({ api })
+  assert.deepEqual(reclaimed.delegations, [])
+  assert.equal(reclaimed.points, 1)
+})
+
+test('a new sender review arriving during dismissal is not dismissed or delegated', async () => {
+  const reviews = [review('turtle1999', 'CHANGES_REQUESTED')]
+  const read = delegationApi({ comments: [comment('turtle1999', '/delegate @writer')], reviews })
+  const result = await runWithHistory({ event: { ...pullRequestEvent(), issue: { number: 42, pull_request: {} }, action: 'created', comment: { id: 1 } },
+    policySource, runUrl: 'https://github.example/run/1', write: () => {}, getMergedCount: async () => 0,
+    api: async (path, options) => {
+      if (path.includes('/statuses/')) return {}
+      if (path.endsWith('/dismissals')) {
+        assert.ok(path.endsWith('/reviews/10/dismissals'))
+        reviews[0].state = 'DISMISSED'
+        reviews.push(review('turtle1999', 'CHANGES_REQUESTED', '2026-09-16T00:00:00Z', 11))
+        return reviews[0]
+      }
+      assert.ok(!path.endsWith('/requested_reviewers'))
+      return read(path, options)
+    },
+  })
+  assert.deepEqual(result.delegations, [])
+  assert.deepEqual(result.blockers, ['turtle1999'])
+})
+
+test('a failed or unconfirmed dismissal prevents review requests and publishes error', async () => {
+  for (const rejected of [false, true]) {
+    const states = []
+    const read = delegationApi({ comments: [comment('turtle1999', '/delegate @writer')], reviews: [review('turtle1999', 'CHANGES_REQUESTED')] })
+    await assert.rejects(runWithHistory({ event: { ...pullRequestEvent(), issue: { number: 42, pull_request: {} }, action: 'created', comment: { id: 1 } },
+      policySource, runUrl: 'https://github.example/run/1', write: () => {},
+      api: async (path, options) => {
+        if (path.includes('/statuses/')) { states.push(options.body.state); return {} }
+        if (path.endsWith('/dismissals')) {
+          if (rejected) throw new Error('dismissal denied')
+          return { id: 10, state: 'CHANGES_REQUESTED' }
+        }
+        assert.ok(!path.endsWith('/requested_reviewers'))
+        return read(path)
+      },
+    }), rejected ? /dismissal denied/u : /dismissal was not confirmed/u)
+    assert.deepEqual(states, ['pending', 'error'])
   }
 })
 
