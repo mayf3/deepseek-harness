@@ -79,7 +79,7 @@ describe('desktop development project', () => {
     expect(manager.listPlugins()).toEqual([{ name: 'development-plugin', version: '1.0.0', enabled: true }])
     await manager.mutate({ type: 'plugin-remove', name: 'development-plugin' }, hooks)
     expect(manager.listPlugins()).toEqual([])
-    await manager.resetConfiguration(hooks)
+    await manager.disableAllPlugins()
     expect(readFileSync(join(cli, 'package.json'), 'utf8')).toBe('{"name":"@deepseek-ai/dsh","version":"1.2.3"}\n')
     expect(readFileSync(join(host, 'lib', 'index.js'), 'utf8')).toBe('')
 

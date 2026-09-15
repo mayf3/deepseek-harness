@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-desktop-immediate-window-and-direct-start.md
-2026-09-09-desktop-immediate-window-and-direct-start.md: 461f82719fabba67bd93c4c1f2a37d02fac1c06b
-2026-09-09-desktop-immediate-window-and-direct-start.zh.md: efbeeb20993fdc6baeb11ca1ea1d1af5501567dc
+2026-09-09-desktop-immediate-window-and-direct-start.md: 2d325d5c9f9c3fc8dd83816538d0a1b4b4c5480b
+2026-09-09-desktop-immediate-window-and-direct-start.zh.md: 8aebe6bc8c86cc14b78d9dc979eeb902493de8ae
