@@ -2,11 +2,12 @@
 
 ## Summary
 
-The [`weighted-approval` workflow](../workflows/weighted-approval.yml) publishes an approval score for branch rules. Reviewer selection and review requests remain manual.
+The [`weighted-approval` workflow](../workflows/weighted-approval.yml) publishes an approval score for branch rules. Reviewers are chosen manually; an eligible delegation command requests review from its recipient.
 
 ## Table of Contents
 
 - [Approval scoring](#approval-scoring)
+- [Delegating points](#delegating-points)
 - [Security](#security)
 - [Verification](#verification)
 - [Dev Note](#dev-note)
@@ -27,13 +28,23 @@ Production source means supported code files under `src/` in `packages/`, `apps/
 
 Each reviewer contributes only the current `APPROVED` or `CHANGES_REQUESTED` decision that GitHub returns. A `DISMISSED` record clears that reviewer's standing decision, including earlier approvals. Comment-only and pending records do not replace a decision. Reviews from deleted accounts and reviewers without current repository access do not count. The workflow does not invalidate an approval by its review commit; the repository's native pull-request rules own stale-review and latest-push requirements.
 
-The publisher runs when a pull request opens, synchronizes, reopens, becomes ready, becomes a draft, or is edited, including a base-branch change. Pull-request and review events share one concurrency group per PR. Review submissions, edits, and dismissals run the no-permission [`weighted-approval-review-event` workflow](../workflows/weighted-approval-review-event.yml); its validated run title supplies the pull-request number to the default-branch publisher. The publisher validates the current head, fetches every review, and resolves current repository permission before publishing the status. Permission changes take effect on the next subscribed pull-request or review event.
+The publisher runs when a pull request opens, synchronizes, reopens, becomes ready, becomes a draft, or is edited, including a base-branch change. It also runs when a PR conversation comment is created, edited, or deleted. Pull-request, review, and comment events share one concurrency group per PR. Review submissions, edits, and dismissals run the no-permission [`weighted-approval-review-event` workflow](../workflows/weighted-approval-review-event.yml); its validated run title supplies the pull-request number to the default-branch publisher. The publisher validates the current head, fetches every review and conversation comment, and resolves current repository permission before publishing the status. Permission changes take effect on the next subscribed event.
+
+<a id="delegating-points"></a>
+
+## Delegating points
+
+Post `/delegate @username` as the entire text of a PR conversation comment to transfer your reviewer points to that user's effective `APPROVED` decision on this PR. For example, `/delegate @turtle1999` lets @turtle1999's approval count your points alongside their own. Until they approve, your points do not count, even if your own approval remains active. Creating or editing an active command also requests review from its recipient unless that user is already requested. Other requested reviewers remain unchanged. The command does not submit or dismiss a GitHub review; drafts do not request reviews.
+
+Both accounts must currently have write or admin permission, and neither may be the PR author. Commands involving ineligible accounts are ignored. A sender's newest surviving syntactically valid command wins, in comment creation order; editing an older comment does not move it after newer comments. Submitting any review after delegation automatically takes the points back, including an approval, change request, or comment-only review. Pending reviews do not count; a later dismissal does not restore the delegation. When timestamps are equal, the review takes precedence. A new command after the review can delegate again; editing an older command cannot reactivate it. Post `/delegate @your-own-username` to restore your own review decision. Editing or deleting a command recomputes delegation from remaining comments, so deleting the latest command can restore an older one. Quoted commands, code blocks, review bodies, inline review comments, and commands mixed with other text do not count. Surrounding whitespace is allowed; account matching is case-insensitive.
+
+Each sender contributes at most once, using their own fixed weight or production-line ownership. A delegate can receive points from multiple senders, but can transfer only their own points: delegated points are not forwarded through another delegation. Author credit cannot be delegated. Every write-capable reviewer's effective `CHANGES_REQUESTED` still blocks the PR, including the sender's. Dismissing or replacing the delegate's approval removes the delegated points. Logs identify each counted score owner and their delegate. Comment history failures or the 3,000-record limit fail evaluation instead of accepting a partial history.
 
 <a id="security"></a>
 
 ## Security
 
-All actions in the status-writing job are pinned to commit SHAs. The job checks out only the repository default branch. It does not check out or execute pull-request code and does not use repository secrets. Only when there is no blocker, reviewer points plus author credit are insufficient, and an approval has the policy’s default weight, it fetches complete history using the job token, passes Git objects to the trusted classifier as data, and resolves commit authors in batches of 50. Fetch credentials exist only in the Git child environment. Missing history, parsing failures, or incomplete author queries fail evaluation rather than producing a partial score. The review-event workflow has no `GITHUB_TOKEN` permissions and passes only a decimal pull-request number in its run title. The publisher accepts only successful `pull_request_review` runs from the review-event workflow file, identified by `workflow_run.path`; GitHub can populate `workflow_run.name` with the expanded run title. The publisher rejects an invalid run title and a number that does not resolve to the workflow run's current pull-request head. Pull-request reviews are treated as API data and escaped in logs.
+All actions in the status-writing job are pinned to commit SHAs. The job checks out only the repository default branch. It does not check out or execute pull-request code and does not use repository secrets. Only when there is no blocker, reviewer points plus author credit are insufficient, and an approval has the policy’s default weight, it fetches complete history using the job token, passes Git objects to the trusted classifier as data, and resolves commit authors in batches of 50. Fetch credentials exist only in the Git child environment. Missing history, parsing failures, or incomplete author queries fail evaluation rather than producing a partial score. The review-event workflow has no `GITHUB_TOKEN` permissions and passes only a decimal pull-request number in its run title. The publisher accepts only successful `pull_request_review` runs from the review-event workflow file, identified by `workflow_run.path`; GitHub can populate `workflow_run.name` with the expanded run title. The publisher rejects an invalid run title and a number that does not resolve to the workflow run's current pull-request head. Pull-request reviews and comments are treated as API data and escaped in logs. Pull-request write permission allows requesting the validated delegate as a reviewer. Only a created or edited comment that is still the active eligible command can request review; deletion, review events, and superseded or revoked commands cannot. A failed request fails the publisher and writes an error status.
 
 Approval policy changes take effect only after they merge into the default branch. This prevents an untrusted pull request from changing the program or policy for its own run.
 
@@ -48,3 +59,5 @@ Run `pnpm run test:approval-policy` for policy parsing, effective review decisio
 ## Dev Note
 
 [Production blame weighting](../../.agents/notes/implemented/process/2026-09-11-production-blame-approval-weight.md) records the scoring rationale and measured costs.
+
+[PR-scoped delegation](../../.agents/notes/implemented/process/2026-09-15-pr-approval-delegation.md) records score ownership and revocation choices.

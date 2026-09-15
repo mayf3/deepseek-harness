@@ -8,7 +8,7 @@ import { productionOwnership, LOGIN } from './blame-ownership.mjs'
 import { authorCreditPoints, countMergedAuthorPulls } from './author-weight.mjs'
 
 const API_VERSION = '2026-03-10'
-const MAX_PULL_REQUEST_REVIEWS = 3_000
+const MAX_PULL_REQUEST_RECORDS = 3_000
 const PAGE_SIZE = 100
 const STATUS_CONTEXT = 'weighted approval'
 const WRITABLE_PERMISSIONS = new Set(['admin', 'write'])
@@ -116,22 +116,60 @@ export function createGitHubApi({ token, apiUrl = 'https://api.github.com', fetc
  * @returns {Promise<unknown[]>} Complete review list within the supported limit.
  */
 export async function listPullRequestReviews(api, repository, pullNumber) {
-  const reviews = []
+  return listRecords(api, `/repos/${repository}/pulls/${pullNumber}/reviews`, 'pull-request reviews')
+}
+
+async function listRecords(api, path, subject) {
+  const records = []
   for (let page = 1; ; page++) {
-    const response = await api(`/repos/${repository}/pulls/${pullNumber}/reviews?per_page=${PAGE_SIZE}&page=${page}`)
-    if (!Array.isArray(response)) throw new Error('pull-request reviews response is not an array')
-    reviews.push(...response)
-    if (response.length < PAGE_SIZE) return reviews
-    if (reviews.length >= MAX_PULL_REQUEST_REVIEWS) {
-      throw new Error(`pull-request reviews exceed ${MAX_PULL_REQUEST_REVIEWS} records`)
+    const response = await api(`${path}?per_page=${PAGE_SIZE}&page=${page}`)
+    if (!Array.isArray(response)) throw new Error(`${subject} response is not an array`)
+    records.push(...response)
+    if (response.length < PAGE_SIZE) return records
+    if (records.length >= MAX_PULL_REQUEST_RECORDS) {
+      throw new Error(`${subject} exceed ${MAX_PULL_REQUEST_RECORDS} records`)
     }
   }
+}
+
+// The API orders comments by creation ID; edits do not reorder commands.
+function effectiveDelegations(comments, reviews) {
+  const delegations = new Map()
+  for (const comment of comments) {
+    if (!isRecord(comment)) throw new Error('pull-request comment is not an object')
+    if (comment.user === null) continue
+    if (typeof comment.body !== 'string') throw new Error('pull-request comment has no body')
+    const match = /^\/delegate @([^\s]+)$/u.exec(comment.body.trim())
+    if (!match || !LOGIN.test(match[1])) continue
+    const login = validateLogin(comment.user?.login, 'delegation author').toLowerCase()
+    const delegate = match[1].toLowerCase()
+    if (login === delegate) delegations.delete(login)
+    else {
+      if (!Number.isSafeInteger(comment.id) || comment.id <= 0) throw new Error('delegation comment has no valid ID')
+      delegations.set(login, { delegate, commentId: comment.id, createdAt: timestamp(comment.created_at, 'delegation comment') })
+    }
+  }
+  for (const review of reviews) {
+    if (review.user === null || review.state.toUpperCase() === 'PENDING') continue
+    const login = review.user.login.toLowerCase()
+    const delegation = delegations.get(login)
+    if (delegation && timestamp(review.submitted_at, 'submitted review') >= delegation.createdAt) {
+      delegations.delete(login)
+    }
+  }
+  return delegations
+}
+
+function timestamp(value, subject) {
+  const time = typeof value === 'string' ? Date.parse(value) : NaN
+  if (!Number.isFinite(time)) throw new Error(`${subject} has no valid timestamp`)
+  return time
 }
 
 /**
  * Evaluate approval points from current reviews and repository permissions.
  * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, getOwnership?: typeof productionOwnership, getMergedCount?: typeof countMergedAuthorPulls}} options Runtime inputs.
- * @returns {Promise<{pull: {repository: string, number: number, headSha: string}, state: 'pending' | 'success', description: string, points: number, authorCredit: {mergedCount: number, points: number} | null, requiredPoints: number, approvals: Array<{login: string, points: number, ownership?: {ownedLines: number, totalLines: number}}>, blockers: string[], ignoredReviewers: string[]}>} Approval decision and status payload fields; null author credit means history was not evaluated.
+ * @returns {Promise<{pull: {repository: string, number: number, headSha: string}, state: 'pending' | 'success', description: string, points: number, authorCredit: {mergedCount: number, points: number} | null, requiredPoints: number, approvals: Array<{login: string, points: number, delegatedTo?: string, ownership?: {ownedLines: number, totalLines: number}}>, delegations: Array<{login: string, delegatedTo: string, commentId: number}>, blockers: string[], ignoredReviewers: string[]}>} Approval decision and status payload fields; approval login owns the points, delegatedTo supplies its decision, delegations contains eligible active commands, and null author credit means history was not evaluated.
  */
 export async function evaluateApproval({ event, policySource, api, getOwnership = productionOwnership, getMergedCount = countMergedAuthorPulls }) {
   const pull = pullRequestFromEvent(event)
@@ -143,24 +181,39 @@ export async function evaluateApproval({ event, policySource, api, getOwnership 
   const reviews = await listPullRequestReviews(api, pull.repository, pull.number)
   const decisions = effectiveReviewDecisions(reviews)
     .filter(({ login }) => login.toLowerCase() !== pull.author.toLowerCase())
-  const permissions = []
-  for (const { login, state } of decisions) {
-    permissions.push({ login, state, permission: await reviewerPermission(api, pull.repository, login) })
+  const comments = await listRecords(api, `/repos/${pull.repository}/issues/${pull.number}/comments`, 'pull-request comments')
+  const delegations = effectiveDelegations(comments, reviews)
+  const participants = new Map(decisions.map(({ login }) => [login.toLowerCase(), login]))
+  for (const [login, { delegate }] of delegations) {
+    participants.set(login, participants.get(login) ?? login)
+    participants.set(delegate, participants.get(delegate) ?? delegate)
+  }
+  participants.delete(pull.author.toLowerCase())
+  const writers = new Set()
+  const ignoredReviewers = []
+  for (const [key, login] of participants) {
+    const permission = await reviewerPermission(api, pull.repository, login)
+    if (WRITABLE_PERMISSIONS.has(permission)) writers.add(key)
+    else ignoredReviewers.push(login)
   }
   const approvals = []
-  const blockers = []
-  const ignoredReviewers = []
-  for (const { login, state, permission } of permissions) {
-    if (!WRITABLE_PERMISSIONS.has(permission)) {
-      ignoredReviewers.push(login)
-    } else if (state === 'CHANGES_REQUESTED') {
-      blockers.push(login)
-    } else {
-      approvals.push({
-        login,
-        points: policy.reviewerPoints.get(login.toLowerCase()) ?? policy.defaultPoints,
-      })
-    }
+  const activeDelegations = []
+  const blockers = decisions.filter(({ login, state }) => writers.has(login.toLowerCase()) && state === 'CHANGES_REQUESTED')
+    .map(({ login }) => login)
+  const approved = new Set(decisions.filter(({ state }) => state === 'APPROVED').map(({ login }) => login.toLowerCase()))
+  for (const key of writers) {
+    const delegation = delegations.get(key)
+    const target = delegation?.delegate
+    const delegatedTo = writers.has(target) ? target : undefined
+    if (delegatedTo) activeDelegations.push({
+      login: participants.get(key), delegatedTo: participants.get(delegatedTo), commentId: delegation.commentId,
+    })
+    if (!approved.has(delegatedTo ?? key)) continue
+    approvals.push({
+      login: participants.get(key),
+      points: policy.reviewerPoints.get(key) ?? policy.defaultPoints,
+      ...(delegatedTo ? { delegatedTo: participants.get(delegatedTo) } : {}),
+    })
   }
   let authorCredit = null
   const reviewerPoints = approvals.reduce((sum, approval) => sum + approval.points, 0)
@@ -190,7 +243,7 @@ export async function evaluateApproval({ event, policySource, api, getOwnership 
   }, authorCredit?.points ?? 0)
   if (blockers.length > 0) {
     return approvalResult(pull, policy.requiredPoints, approvals, blockers, ignoredReviewers, 'pending',
-      `${blockers.length} blocking change request${blockers.length === 1 ? '' : 's'}`, authorCredit)
+      `${blockers.length} blocking change request${blockers.length === 1 ? '' : 's'}`, authorCredit, activeDelegations)
   }
   // Tolerate floating-point addition error without rounding approval scores.
   const state = points + 1e-12 >= policy.requiredPoints ? 'success' : 'pending'
@@ -203,6 +256,7 @@ export async function evaluateApproval({ event, policySource, api, getOwnership 
     state,
     `${Number(points.toFixed(3))}/${policy.requiredPoints} approval points${authorCredit ? ` (author ${authorCredit.points})` : ''}`,
     authorCredit,
+    activeDelegations,
   )
 }
 
@@ -217,6 +271,7 @@ export async function runApprovalCheck({ event, policySource, api, runUrl, getOw
   let result
   try {
     result = await evaluateApproval({ event, policySource, api, getOwnership, getMergedCount })
+    await requestDelegatedReview(event, result, api, write)
   } catch (error) {
     await publishStatus(api, pull, 'error', 'Approval evaluation failed.', runUrl)
     throw error
@@ -225,8 +280,8 @@ export async function runApprovalCheck({ event, policySource, api, runUrl, getOw
     ? `Author credit: ${result.authorCredit.points} (${result.authorCredit.mergedCount} merged PRs).`
     : `Author credit: not evaluated (${pull.draft ? 'draft' : result.blockers.length ? 'blocking review' : 'reviewer points suffice'}).`)
   write(`Approval score: ${result.points}/${result.requiredPoints}.`)
-  writeList(write, 'Counted approvals', result.approvals.map(({ login, points, ownership }) =>
-    `@${login}: ${points}${ownership ? ` (${ownership.ownedLines}/${ownership.totalLines} old production lines)` : ''}`))
+  writeList(write, 'Counted approvals', result.approvals.map(({ login, points, ownership, delegatedTo }) =>
+    `@${login}: ${points}${delegatedTo ? ` (delegated to @${delegatedTo})` : ''}${ownership ? ` (${ownership.ownedLines}/${ownership.totalLines} old production lines)` : ''}`))
   writeList(write, 'Blocking change requests', result.blockers.map(login => `@${login}`))
   writeList(write, 'Ignored reviewers without write access', result.ignoredReviewers.map(login => `@${login}`))
   await publishStatus(api, pull, result.state, result.description, runUrl)
@@ -273,7 +328,41 @@ export async function approvalEventFromWorkflowRun({ event, api }) {
   return { ...event, pull_request: pull }
 }
 
-function approvalResult(pull, requiredPoints, approvals, blockers, ignoredReviewers, state, detail, authorCredit = null) {
+/**
+ * Resolve a PR conversation comment to the current pull request; ordinary issues are skipped.
+ * @param {{event: unknown, api: (path: string) => Promise<unknown>}} options Comment event and API caller.
+ * @returns {Promise<Record<string, unknown> | null>} Current PR event, or null for an issue or closed PR.
+ */
+export async function approvalEventFromComment({ event, api }) {
+  const repository = repositoryFromEvent(event)
+  if (!isRecord(event.issue)) throw new Error('comment event has no issue')
+  if (!isRecord(event.issue.pull_request)) return null
+  const number = event.issue.number
+  if (!Number.isSafeInteger(number) || number <= 0) throw new Error('comment event has no valid pull-request number')
+  const pull = await api(`/repos/${repository}/pulls/${number}`)
+  if (!isRecord(pull) || pull.number !== number || !['open', 'closed'].includes(pull.state)) {
+    throw new Error('comment pull-request response is invalid')
+  }
+  if (pull.state === 'closed') return null
+  const resolved = { ...event, pull_request: pull }
+  pullRequestFromEvent(resolved)
+  return resolved
+}
+
+async function requestDelegatedReview(event, result, api, write) {
+  if (!isRecord(event.issue) || !['created', 'edited'].includes(event.action) || !isRecord(event.comment)) return
+  const delegation = result.delegations.find(({ commentId }) => commentId === event.comment.id)
+  if (!delegation) return
+  const path = `/repos/${result.pull.repository}/pulls/${result.pull.number}/requested_reviewers`
+  const requested = await api(path)
+  if (!isRecord(requested) || !Array.isArray(requested.users)) throw new Error('requested reviewers response has no users array')
+  const logins = requested.users.map(user => validateLogin(user?.login, 'requested reviewer').toLowerCase())
+  if (logins.includes(delegation.delegatedTo.toLowerCase())) return
+  await api(path, { method: 'POST', body: { reviewers: [delegation.delegatedTo] } })
+  write(`Requested review from @${delegation.delegatedTo} for @${delegation.login}'s delegation.`)
+}
+
+function approvalResult(pull, requiredPoints, approvals, blockers, ignoredReviewers, state, detail, authorCredit = null, delegations = []) {
   return {
     pull: { repository: pull.repository, number: pull.number, headSha: pull.headSha },
     state,
@@ -282,6 +371,7 @@ function approvalResult(pull, requiredPoints, approvals, blockers, ignoredReview
     authorCredit,
     requiredPoints,
     approvals,
+    delegations,
     blockers,
     ignoredReviewers,
   }
@@ -391,6 +481,10 @@ async function main() {
     token: process.env.GITHUB_TOKEN ?? '',
     apiUrl: process.env.GITHUB_API_URL,
   })
+  if (isRecord(event) && isRecord(event.issue)) {
+    event = await approvalEventFromComment({ event, api })
+    if (event === null) return
+  }
   if (isRecord(event) && isRecord(event.workflow_run)) {
     const resolved = await approvalEventFromWorkflowRun({
       event,

@@ -3,28 +3,30 @@ name: weighted-approval
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited]
+  issue_comment:
+    types: [created, edited, deleted]
   workflow_run:
     workflows: [weighted-approval-review-event]
     types: [completed]
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
   statuses: write
 
 concurrency:
-  group: weighted-approval-${{ github.event.pull_request.number && format('weighted-approval-review-event:{0}', github.event.pull_request.number) || github.event.workflow_run.display_title }}
+  group: weighted-approval-${{ (github.event.pull_request.number || github.event.issue.number) && format('weighted-approval-review-event:{0}', github.event.pull_request.number || github.event.issue.number) || github.event.workflow_run.display_title }}
   cancel-in-progress: false
 
 jobs:
   publish-status:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') && (github.event_name != 'issue_comment' || github.event.issue.pull_request)
     name: weighted approval publisher
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       # SECURITY: the status-writing job executes policy from the trusted default
-      # branch and reads pull-request reviews only as API data.
+      # branch and reads pull-request reviews and comments only as API data.
       - name: Check out trusted approval policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

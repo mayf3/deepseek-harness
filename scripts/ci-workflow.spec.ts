@@ -916,7 +916,8 @@ describe('Weighted approval workflow', () => {
     const record = recordSteps.find(step => step.name === 'Record review event')
 
     expect(publisher.name).toBe('weighted-approval')
-    expect(Object.keys(publisher.on)).toEqual(['pull_request_target', 'workflow_run'])
+    expect(Object.keys(publisher.on)).toEqual(['pull_request_target', 'issue_comment', 'workflow_run'])
+    expect(workflowEvent(publisher, 'issue_comment').types).toEqual(['created', 'edited', 'deleted'])
     expect(pullRequest.types).toEqual(['opened', 'synchronize', 'reopened', 'ready_for_review', 'converted_to_draft', 'edited'])
     expect(workflowRun).toEqual({ workflows: ['weighted-approval-review-event'], types: ['completed'] })
     expect(reviewEvent.name).toBe('weighted-approval-review-event')
@@ -926,15 +927,15 @@ describe('Weighted approval workflow', () => {
     expect(reviewEvent.permissions).toEqual({})
     expect(publisher.permissions).toEqual({
       contents: 'read',
-      'pull-requests': 'read',
+      'pull-requests': 'write',
       statuses: 'write',
     })
     expect(publisher.concurrency).toEqual({
-      group: "weighted-approval-${{ github.event.pull_request.number && format('weighted-approval-review-event:{0}', github.event.pull_request.number) || github.event.workflow_run.display_title }}",
+      group: "weighted-approval-${{ (github.event.pull_request.number || github.event.issue.number) && format('weighted-approval-review-event:{0}', github.event.pull_request.number || github.event.issue.number) || github.event.workflow_run.display_title }}",
       'cancel-in-progress': false,
     })
     expect(job).toMatchObject({
-      if: "github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'",
+      if: "(github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') && (github.event_name != 'issue_comment' || github.event.issue.pull_request)",
       name: 'weighted approval publisher',
       'runs-on': 'ubuntu-latest',
       'timeout-minutes': 5,
