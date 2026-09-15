@@ -138,6 +138,7 @@ export const zh = {
   reasonNotRemovable: '这个包不属于当前 profile，或者是插件管理所需的组件',
   reasonStopProfile: '这个 profile 没有启用 HMR，正在使用的包要停止后用 dsh plugin 卸载',
   reasonBundleInUse: '其他配置仍在使用这个组合包的组件，请先停用它们',
+  reasonStaleApproval: '待允许的安装脚本列表已变化，请重新安装以刷新',
   reasonOperationError: 'Host 报告了一个错误',
 } satisfies Record<string, string>
 
@@ -282,5 +283,6 @@ export const en = {
   reasonNotRemovable: 'This package is not owned by the profile, or plugin management needs it.',
   reasonStopProfile: 'This profile runs without HMR; stop it and uninstall the package with dsh plugin.',
   reasonBundleInUse: 'Other configuration still uses this bundle\'s components; switch them off first.',
+  reasonStaleApproval: 'The pending script approvals changed; install again to refresh them.',
   reasonOperationError: 'The Host reported an error.',
 } satisfies Record<PluginManagerLocaleKey, string>

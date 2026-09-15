@@ -1810,14 +1810,12 @@ Source: [`packages/plan/plan-mode/src/index.ts:64`](../packages/plan/plan-mode/s
 Requires: `loader` · `profileContext`
 
 ```ts config-catalog
-/** The pnpm executable and the limits for package diagnostics, registry lookups, and change notifications. */
+/** The pnpm executable and the limits for package diagnostics and registry lookups. */
 export interface Config {
   /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
   pnpmCommand?: string
   /** Maximum retained pnpm diagnostic bytes per operation. */
   outputBytes?: number
-  /** Delay for combining consecutive management notices in one durable injection. */
-  notificationDelayMs?: number
   /** Maximum time to wait for another process's profile package operation. */
   lockWaitMs?: number
   /** Bound on one registry lookup an inspection runs, in milliseconds. */

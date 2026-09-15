@@ -10,15 +10,11 @@
 
 `PluginInfo` 包含模块标识、实际启停状态和 fiber 阶段，以及唯一的 `patchId` 或 `readOnlyReason`。
 
-`BundleInfo` 包含包名、可选的安装版本、标题与描述、profile 自身依赖是否持有该包、组合层选择状态、删除可用性、可选的解析错误、其 patch 声明的行（`BundleRowInfo`：行 id、模块，以及组合包生效期间的存活条目 id），以及其 patch 覆盖的已有行 id。
+`BundleInfo` 包含包名、可选的安装版本、组合层选择状态、删除可用性及可选的解析错误。
 
-`InstallBundleOptions.enabled` 默认为 true。False 表示安装但不选择该组合包层。`requestId`（`PluginInstallRequestId`，调用方生成的 UUID）标识这次安装，用于其日志与状态事件以及 `cancelInstall`，后者答复 `PluginInstallCancellation`：`cancelled`、`too-late` 或 `not-running`。
+`InstallBundleOptions.enabled` 默认为 true，false 表示安装但不选择组合包层。`approvedBuilds` 在安装前向指定的待审批包名授予持久脚本权限。
 
-`PluginSpecInspection` 是 `inspect` 在安装前的答复：被接受的 spec 的形式、名称、版本、描述、标题与组合包声明，或拒绝的问题与原因。
-
-`PluginInstallLogChunk` 是 pnpm 运行输出的一块，归于其 request id 与 job id 之下，带命令行、目录、流，以及运行最后一块上的退出码；`PluginInstallProgress` 是一次安装的 request id 与 Host 阶段；`PluginChange` 给出 `plugin-manager/changed` 事件背后的操作，管理器之外应用的一代 patch 记为 `reload`。
-
-`ChangeResult.changed` 独立报告磁盘修改，`application` 为 `applied`、`restart-required`、`overridden`、`failed` 或 `cancelled`。`message` 描述结果。可选的 `packageResult` 记录 pnpm 退出码、有界输出、截断标记、完整诊断日志路径，以及失败运行的失败类别；可选的 `bundle` 给出安装新增的包。
+`ChangeResult.changed` 报告磁盘修改，独立于 `application`：`applied`、`restart-required`、`overridden` 或 `failed`。可选的 `error` 包含可本地化的错误码和外部诊断。`packageResult` 记录 pnpm 退出码、有界输出、截断标志及完整诊断日志路径。`pendingBuilds` 列出整个 profile 尚未决定的包；`approvedBuilds` 记录本次操作授予权限的包名。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -102,7 +98,8 @@ Manage profile files and apply their declared reload lifecycle.
  * that fails, is cancelled, or adds a package without a bundle patch restores
  * `package.json` and `pnpm-lock.yaml` as they were; downloaded files can stay.
  * @param spec One package spec, including local paths relative to the invocation directory.
- * @param options Whether to activate the installed bundle (defaults to true) and the request id a cancellation names.
+ * @param options Whether to activate the installed bundle (defaults to true), the request id a cancellation names, and
+ * the pending build scripts to allow for this profile before pnpm runs.
  * @returns Package-manager diagnostics and observed activation outcome.
  */
 @Remote installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>

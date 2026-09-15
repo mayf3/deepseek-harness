@@ -41,6 +41,8 @@ kind: "package-reference"
 
 `installBundle` 接受调用方生成的 `requestId`，`plugin-manager/install-log` 在其下流式转发每次 pnpm 运行的输出，`plugin-manager/install-state` 通告 `installing`、`cancelling` 与 `applying`。`cancelInstall(requestId)` 停止运行，只在 pnpm 退出且文件恢复后答复 `cancelled`，组合包已在应用时答复 `too-late`，其他 id 答复 `not-running`；安装调用随后报告 `application: 'cancelled'`。失败、被取消或装入了没有组合包 patch 的包的运行，会把 `package.json` 与 `pnpm-lock.yaml` 恢复原样；`packageResult.kind` 按退出方式与输出对失败运行分类，`bundle` 给出完成的运行新增的包。`listBundles` 携带每个组合包的标题与一句话简介（`dsh.title` 与 `dsh.description`，没有则用包的 `description`）、其 patch 声明的行及其存活条目，以及它覆盖的内置行；它列出 profile 自己的组合包、安装提供的组合包，以及被选中却没有组合包 patch 的名字（作为 `not-bundle` 问题），未选中的普通依赖不列出。安装的 manifest 在 `dsh.optionalBundles` 下点名的组合包是 `optional`：随安装提供、默认关闭、由用户开启，永不可卸载，也不被任何随附模板选中（[理由](../../../.agents/notes/implemented/process/2026-09-15-shipped-optional-bundles.zh.md)）。每个完成的操作，以及在管理器之外应用的每一代 patch，都会发出 `plugin-manager/changed`。
 
+pnpm 11 拦下依赖脚本时，失败的安装在 `pendingBuilds` 里报告 profile 中所有待决定的包名，包括先前尝试留下的；失败的运行会恢复 `package.json` 与 `pnpm-lock.yaml`，但有意不恢复 pnpm 记录这些名字的 `pnpm-workspace.yaml`。Web 插件页提供**允许这些脚本并重试**；工具可以在用户于对话中批准这些脚本后，通过 `install_bundle` 的 `approvedBuilds` 代为授权。服务只校验待决定的名字，不核实对话中的批准。授权按包名保存在当前 profile，允许以宿主用户的权限执行命令，并在再次安装失败后保留。只能批准当前未决定的名字；已有的拒绝与通配规则不能通过此操作覆盖。`allowBuilds` 里出现 YAML 锚点或别名时拒绝授权。重试保留原来的启用选择。
+
 ### 配置
 
 | 字段 | 默认值 | 含义 |
@@ -49,7 +51,6 @@ kind: "package-reference"
 | `inspectTimeoutMs` | `20000` | 单次检查所做注册表查询的上限，单位毫秒。 |
 | `outputBytes` | `16384` | 每次操作返回的 pnpm 诊断字节上限；完整输出保留在返回的日志路径中。 |
 | `lockWaitMs` | `120000` | 获取 profile 写锁的最长等待毫秒数。 |
-| `notificationDelayMs` | `250` | 合并操作通知的延迟毫秒数。 |
 
 -----
 
@@ -82,7 +83,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-[`plugin_manager` 工具](../../../docs/tool-catalog.zh.md#deepseek-aidsh-plugin-manager) 列出插件条目和组合包，并执行影响整个 profile 的改动。结果包含保存状态变化、应用状态和包管理诊断。
+[`plugin_manager` 工具](../../../docs/tool-catalog.zh.md#deepseek-aidsh-plugin-manager) 列出插件条目和组合包，并执行影响整个 profile 的改动。结果包含保存状态变化、应用状态和包管理诊断。管理操作不会向 Agent 注入消息。
 
 #### Token 影响
 
@@ -92,24 +93,11 @@ kind: "package-reference"
 
 工具结果追加到对话中。启停其他工具可能改变后续工具声明及其缓存复用。
 
-### 配置变更通知
-
-#### 模型看到什么
-
-连续操作结果在 `notificationDelayMs` 内合并后注入每个受影响的存活 Agent。通知包含应用结果，达到配置的输出上限时标明省略的结果数，不会唤醒空闲 Agent。
-
-#### Token 影响
-
-通知按需向每个受影响 Agent 追加用户消息上下文。
-
-#### KV Cache 影响
-
-通知追加上下文，不改写先前消息。
-
 ## 已知限制与延期工作
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- Web 一次批准显示出来的整组待决定包，没有逐包选择。
 - 替换已有包后需要重启进程，以加载新的 JavaScript 模块版本。
 - 仅启动时加载的 profile 不能删除当前进程启动时使用的包；停止进程后使用 `dsh plugin`。
 - 管理器不能关闭自身所需的管理组件、修改其他 profile 或编辑 agent 预设组合。

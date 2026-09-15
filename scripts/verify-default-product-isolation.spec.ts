@@ -61,6 +61,14 @@ describe('default product isolation', () => {
     expect(verifyDefaultProductIsolation(root)).toMatchObject({ failures: [], packageCount: 5, configCount: 2 })
   })
 
+  it('ignores dependency trees and directories whose names end in a source extension', () => {
+    const root = fixture()
+    mkdirSync(join(root, 'python/sdk-runtime/src/vendor.js'), { recursive: true })
+    write(root, 'python/sdk-runtime/src/node_modules/vendor/index.js', `import '${experimental}'\n`)
+
+    expect(verifyDefaultProductIsolation(root).failures).toEqual([])
+  })
+
   it('ships an optional bundle switched off: its graph is outside the product, its name stays out of imports and defaults', () => {
     const root = fixture()
     const layer = '@deepseek-ai/dsh-experimental-layer'

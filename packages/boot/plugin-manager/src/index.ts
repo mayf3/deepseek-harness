@@ -13,12 +13,12 @@ import { pluginEntryId, readPluginInventory } from '@deepseek-ai/dsh-host-plugin
 import { readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries, reconcileProfilePatches, readProfilePatches } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-hmr'
 import type { ProfileContext, ProfileManifest } from '@deepseek-ai/dsh-app-boot'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { bundleManifest, runProfilePnpm, saveManifest, viewProfilePackage } from './operations.ts'
 import { classifyInstallFailure } from './install-failure.ts'
 import { InvalidInstallSpecError, parseInstallSpec } from './install-spec.ts'
 import { writePluginEnabled } from './patch.ts'
+import { ManagementFailure } from './failure.ts'
+import { approveBuilds, readPendingBuilds } from './build-approval.ts'
 import type {
   BundleInfo, BundleRowInfo, ChangeResult, InstallBundleOptions, ManagementError, PackageResult, PluginChange, PluginEntryId, PluginInfo,
   PluginInspectProblem, PluginInstallCancellation, PluginInstallProgress, PluginInstallRequestId, PluginSpecInspection,
@@ -27,14 +27,12 @@ export type * from './types.ts'
 export { classifyInstallFailure, type InstallFailureFacts } from './install-failure.ts'
 export { InvalidInstallSpecError, parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts'
 
-/** The pnpm executable and the limits for package diagnostics, registry lookups, and change notifications. */
+/** The pnpm executable and the limits for package diagnostics and registry lookups. */
 export interface Config {
   /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
   pnpmCommand?: string
   /** Maximum retained pnpm diagnostic bytes per operation. */
   outputBytes?: number
-  /** Delay for combining consecutive management notices in one durable injection. */
-  notificationDelayMs?: number
   /** Maximum time to wait for another process's profile package operation. */
   lockWaitMs?: number
   /** Bound on one registry lookup an inspection runs, in milliseconds. */
@@ -70,12 +68,6 @@ function messageOf(error: unknown): string { return error instanceof Error ? err
 /** An expected refusal keeps its code; anything else becomes an operation error carrying its exact diagnostic. */
 function managementError(error: unknown): ManagementError {
   return error instanceof ManagementFailure ? { code: error.code } : { code: 'operation-error', diagnostic: messageOf(error) }
-}
-
-/** Expected management rejection; presentation belongs to the caller's locale. */
-class ManagementFailure extends Error {
-  readonly code: ManagementError['code']
-  constructor(code: ManagementError['code']) { super(code); this.code = code }
 }
 
 /** The caller stopped an installation; its files are restored before this is thrown. */
@@ -142,7 +134,6 @@ export class PluginManager extends TypertRemoteService {
   static Config: z<Config> = z.object({
     pnpmCommand: z.string().default('pnpm'),
     outputBytes: z.number().step(1).min(1).default(16384),
-    notificationDelayMs: z.number().step(1).min(0).default(250),
     lockWaitMs: z.number().step(1).min(0).default(120000),
     inspectTimeoutMs: z.number().step(1).min(1000).default(20000),
   })
@@ -150,16 +141,10 @@ export class PluginManager extends TypertRemoteService {
   private readonly packageOperations = new Set<Promise<unknown>>()
   private readonly profile: ProfileContext
   private readonly outputBytes: number
-  private readonly notificationDelayMs: number
   private readonly lockWaitMs: number
   private readonly inspectTimeoutMs: number
   private readonly pnpmCommand: string
   private readonly ownerContext: Context
-  private pendingNotice = ''
-  private omittedNotices = 0
-  private noticeTimer: ReturnType<typeof setTimeout> | undefined
-  private noticeDelivered: PromiseWithResolvers<void> | undefined
-  private readonly noticeAgents = new Set<Agent>()
   private readonly abort = new AbortController()
   /** Installations by request id, from their call until it settles. */
   private readonly installs = new Map<PluginInstallRequestId, InstallControl>()
@@ -172,15 +157,12 @@ export class PluginManager extends TypertRemoteService {
     this.ownerContext = ctx
     this.profile = ctx.profileContext
     this.outputBytes = (config as Required<Config>).outputBytes
-    this.notificationDelayMs = (config as Required<Config>).notificationDelayMs
     this.lockWaitMs = (config as Required<Config>).lockWaitMs
     this.inspectTimeoutMs = (config as Required<Config>).inspectTimeoutMs
     this.pnpmCommand = (config as Required<Config>).pnpmCommand
     ctx.effect(() => async () => {
       this.abort.abort()
       await Promise.allSettled([...this.packageOperations])
-      clearTimeout(this.noticeTimer)
-      this.flushNotice()
     }, 'plugin-manager: package cancellation')
     // A patch generation applied outside a manager operation — HMR's file
     // watcher after a CLI or hand edit — changes what the lists show.
@@ -359,7 +341,8 @@ export class PluginManager extends TypertRemoteService {
    * that fails, is cancelled, or adds a package without a bundle patch restores
    * `package.json` and `pnpm-lock.yaml` as they were; downloaded files can stay.
    * @param spec One package spec, including local paths relative to the invocation directory.
-   * @param options Whether to activate the installed bundle (defaults to true) and the request id a cancellation names.
+   * @param options Whether to activate the installed bundle (defaults to true), the request id a cancellation names, and
+   * the pending build scripts to allow for this profile before pnpm runs.
    * @returns Package-manager diagnostics and observed activation outcome.
    */
   @Remote
@@ -374,6 +357,10 @@ export class PluginManager extends TypertRemoteService {
     const result = this.change(async (result) => {
       if (spec.trim() === '' || spec.startsWith('-')) throw new ManagementFailure('invalid-spec')
       if (stopped()) throw new InstallCancelledError()
+      if (options?.approvedBuilds !== undefined) {
+        await approveBuilds(this.profile.dir, options.approvedBuilds)
+        result.approvedBuilds = options.approvedBuilds
+      }
       const files = await this.readRestoredFiles()
       const before = readProfileManifest('dsh', this.profile.dir).dependencies ?? {}
       announce('installing')
@@ -381,7 +368,14 @@ export class PluginManager extends TypertRemoteService {
       try {
         result.packageResult = await this.runPnpm(['add', spec], control.abort.signal, requestId)
         if (stopped()) throw new InstallCancelledError()
-        if (result.packageResult.exitCode !== 0) throw new Error(result.packageResult.output)
+        if (result.packageResult.exitCode !== 0) {
+          // pnpm-workspace.yaml is not restored, so the names pnpm left undecided there can be offered for approval.
+          try { result.pendingBuilds = await readPendingBuilds(this.profile.dir) }
+          catch (error) {
+            this.ownerContext.logger.warn('Could not read pending build approvals after pnpm failed', error)
+          }
+          throw new Error(result.packageResult.output)
+        }
         const after = readProfileManifest('dsh', this.profile.dir).dependencies ?? {}
         const installed = Object.keys(after).filter(name => before[name] !== after[name])
         // Registry retries can retain the saved range after a partial installation.
@@ -576,8 +570,7 @@ export class PluginManager extends TypertRemoteService {
     request: Pick<ChangeResult, 'stage' | 'target' | 'enabled'>,
     reason: PluginChange['reason'],
   ): Promise<ChangeResult> {
-    let notice: Promise<void> | undefined
-    const locked = () => withFileLock(join(this.profile.dir, 'package.json'), async () => {
+    return withFileLock(join(this.profile.dir, 'package.json'), async () => {
       this.abort.signal.throwIfAborted()
       this.operating = true
       const before = this.diskState()
@@ -596,63 +589,19 @@ export class PluginManager extends TypertRemoteService {
         this.operating = false
       }
       result.changed = before !== this.diskState()
-      notice = this.notify(result)
       this.ownerContext.emit('plugin-manager/changed', { reason })
       return result
     }, { waitMs: this.lockWaitMs })
-    const result = await locked()
-    await notice
-    return result
   }
 
   private diskState(): string {
-    return ['package.json', 'cordis.patch.yml'].map((file) => {
+    return ['package.json', 'cordis.patch.yml', 'pnpm-workspace.yaml'].map((file) => {
       try { return readFileSync(join(this.profile.dir, file), 'utf8') }
       catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
         throw error
       }
     }).join('\0')
-  }
-
-  private notify(result: ChangeResult): Promise<void> {
-    const agents = this.ownerContext.get('agents')?.list() ?? []
-    if (agents.length === 0) return Promise.resolve()
-    for (const agent of agents) this.noticeAgents.add(agent)
-    this.noticeDelivered ??= Promise.withResolvers<void>()
-    const delivered = this.noticeDelivered.promise
-    const notice = JSON.stringify({ profile: this.profile.name, ...result })
-    if (Buffer.byteLength(this.pendingNotice + notice) > this.outputBytes) {
-      this.omittedNotices += 1
-    } else {
-      this.pendingNotice += `${notice}\n`
-    }
-    if (this.noticeTimer !== undefined) return delivered
-    this.noticeTimer = setTimeout(() => { this.flushNotice() }, this.notificationDelayMs)
-    return delivered
-  }
-
-  private flushNotice(): void {
-    this.noticeTimer = undefined
-    const text = this.pendingNotice + (this.omittedNotices === 0 ? '' : JSON.stringify({ omitted: this.omittedNotices, refresh: 'plugin_manager' }) + '\n')
-    this.pendingNotice = ''
-    this.omittedNotices = 0
-    const delivered = this.noticeDelivered
-    this.noticeDelivered = undefined
-    if (delivered === undefined) return
-    const agents = [...this.noticeAgents]
-    this.noticeAgents.clear()
-    for (const agent of agents) {
-      try {
-        agent.inject(createUserMessage({
-          content: [{ type: 'text', text }],
-          source: { kind: 'plugin', plugin: 'plugin-manager' },
-        }))
-      } catch (error) {
-        this.ownerContext.logger.warn('Plugin management notification could not reach an Agent', error)
-      }
-    }
-    delivered.resolve()
   }
 }
 

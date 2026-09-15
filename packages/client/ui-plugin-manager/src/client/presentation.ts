@@ -19,6 +19,7 @@ const CODE_KEYS = {
   'not-removable': 'reasonNotRemovable',
   'stop-profile': 'reasonStopProfile',
   'bundle-in-use': 'reasonBundleInUse',
+  'stale-approval': 'reasonStaleApproval',
   'operation-error': 'reasonOperationError',
 } satisfies Record<ManagementError['code'], PluginManagerLocaleKey>
 

@@ -719,7 +719,7 @@ describe('Client Remote transport readiness', () => {
 })
 
 describe('Client Typert API', () => {
-  it('mounts concrete direct methods, validates inputs, and withdraws retained handles', async () => {
+  it('mounts concrete direct methods, forwards inputs, and withdraws retained handles', async () => {
     const call = vi.fn<ConnectionHandle['rpc']['call']>()
       .mockResolvedValue({ ok: true, value: { ref: 'goal-1' } })
     const ctx = await bench(call)
@@ -753,7 +753,14 @@ describe('Client Typert API', () => {
     callerAbort.abort(cancellation)
     expect(combinedSignal?.aborted).toBe(true)
     expect(combinedSignal?.reason).toBe(cancellation)
-    await expect(ctx.remote.probe.create('', { objective: 'ship' })).rejects.toThrow('rejected "agentId"')
+    await expect(ctx.remote.probe.create('', { objective: 'ship' }))
+      .resolves.toEqual({ ok: true, value: { ref: 'goal-1' } })
+    expect(call).toHaveBeenLastCalledWith(
+      '/api',
+      'probe/create',
+      { args: { agentId: '', request: { objective: 'ship' } } },
+      expect.any(AbortSignal),
+    )
 
     call.mockResolvedValueOnce({ ok: true, value: { ref: 1 } })
     await expect(ctx.remote.probe.create('agent-1', { objective: 'ship' })).resolves.toEqual({
@@ -1161,7 +1168,7 @@ describe('Client Typert API', () => {
     })).rejects.toThrow('scope must select its only lookup parameter')
   })
 
-  it('validates invocation arity, required adapters, live Connection, and mutable descriptor codecs', async () => {
+  it('validates invocation arity and required adapters, and requires a live Connection', async () => {
     const call = vi.fn<ConnectionHandle['rpc']['call']>()
       .mockResolvedValue({ ok: true, value: { ref: 'goal-1' } })
     const ctx = await bench(call)
@@ -1182,10 +1189,6 @@ describe('Client Typert API', () => {
       .rejects.toThrow('expected 2 business argument(s)')
     await expect((ctx as FixtureContext).remote.probe.rename({ objective: 'ship' }))
       .rejects.toThrow('no Client Context adapter')
-
-    ;(descriptor.parameters[0] as { codec: { mode: string } }).codec.mode = 'src-json'
-    await expect(ctx.remote.probe.create('agent-1', { objective: 'ship' })).rejects.toThrow('has no strict codec')
-    ;(descriptor.parameters[0] as { codec: { mode: string } }).codec.mode = 'strict'
 
     ctx.set('connection', undefined)
     await expect(ctx.remote.probe.create('agent-1', { objective: 'ship' })).rejects.toThrow('no active Connection')

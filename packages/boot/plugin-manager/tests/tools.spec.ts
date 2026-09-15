@@ -53,6 +53,8 @@ it('forwards all mutation actions and renders the returned outcome', async () =>
   expect(manager.installBundle).toHaveBeenLastCalledWith('bundle', {})
   await call({ action: 'install_bundle', target: 'bundle', enabled: false })
   expect(manager.installBundle).toHaveBeenLastCalledWith('bundle', { enabled: false })
+  await call({ action: 'install_bundle', target: 'bundle', approvedBuilds: ['native'] })
+  expect(manager.installBundle).toHaveBeenLastCalledWith('bundle', { approvedBuilds: ['native'] })
   expect(resultText(await call({ action: 'remove_bundle', target: 'bundle' }))).toContain('"application":"failed"')
   expect(manager.removeBundle).toHaveBeenCalledWith('bundle')
 })

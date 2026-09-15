@@ -10,15 +10,11 @@ The [boot package group](../../packages/boot/README.md) owns launcher-provided p
 
 `PluginInfo` carries module identity, effective enablement and fiber phase, plus a unique `patchId` or a `readOnlyReason`.
 
-`BundleInfo` carries the package name, optional installed version, title and description, whether the profile's own dependencies hold it, selected enablement, removal availability, optional resolution error, the rows its patch declares (`BundleRowInfo`: row id, module, and the live entry id while the bundle contributes it), and the ids of existing rows its patch overrides.
+`BundleInfo` carries the package name, optional installed version, selected enablement, removal availability and optional resolution error.
 
-`InstallBundleOptions.enabled` defaults to true. False installs without selecting the bundle layer. `requestId` (`PluginInstallRequestId`, a caller-generated UUID) identifies the installation for its log and state events and for `cancelInstall`, which answers a `PluginInstallCancellation`: `cancelled`, `too-late`, or `not-running`.
+`InstallBundleOptions.enabled` defaults to true. False installs without selecting the bundle layer. `approvedBuilds` grants persistent script permission to the supplied pending package names before installation.
 
-`PluginSpecInspection` is what `inspect` answers before an install: an accepted spec's form, name, version, description, title, and bundle declaration, or a refusal's problem and reason.
-
-`PluginInstallLogChunk` is one chunk of a pnpm run's output under its request id and job id, with the command line, the directory, the stream, and the exit code on the run's last chunk; `PluginInstallProgress` is an installation's request id and Host phase; `PluginChange` names the operation behind a `plugin-manager/changed` event, or `reload` for a patch generation applied outside the manager.
-
-`ChangeResult.changed` reports a disk edit independently of `application`: `applied`, `restart-required`, `overridden`, `failed` or `cancelled`. `message` describes the result. Optional `packageResult` records the pnpm exit code, bounded output, truncation flag, complete diagnostic log path, and the failure kind of a failed run; optional `bundle` names the package an installation added.
+`ChangeResult.changed` reports a disk edit independently of `application`: `applied`, `restart-required`, `overridden` or `failed`. Optional `error` carries a localizable code and external diagnostic. `packageResult` records the pnpm exit code, bounded output, truncation flag and complete diagnostic log path. `pendingBuilds` lists undecided packages across the profile; `approvedBuilds` records the names granted permission by this operation.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -102,7 +98,8 @@ Manage profile files and apply their declared reload lifecycle.
  * that fails, is cancelled, or adds a package without a bundle patch restores
  * `package.json` and `pnpm-lock.yaml` as they were; downloaded files can stay.
  * @param spec One package spec, including local paths relative to the invocation directory.
- * @param options Whether to activate the installed bundle (defaults to true) and the request id a cancellation names.
+ * @param options Whether to activate the installed bundle (defaults to true), the request id a cancellation names, and
+ * the pending build scripts to allow for this profile before pnpm runs.
  * @returns Package-manager diagnostics and observed activation outcome.
  */
 @Remote installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>

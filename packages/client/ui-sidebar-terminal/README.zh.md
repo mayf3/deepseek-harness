@@ -41,7 +41,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节</summary>
 
-插件向右侧栏注册 `terminal` 类型及正文和标题 seat。开始页入口使用紧凑的黑底终端图标，页签标题保留线条图标。无 React 依赖的终端模型属于 `api-terminal-controller`，通过框架 keyed hooks 暴露状态。`ui-primitives` 的 Menu 与 Button 提供 shell 选择和启动控件，支持键盘导航与选中标记。xterm.js 与 FitAddon 负责屏幕渲染和视口测量。正文在面板高度内为页签条下方预留 8px 间距。输入原样传到 PTY，包括 Tab 和控制字符。
+插件向右侧栏注册 `terminal` 类型及正文和标题 seat。开始页入口使用紧凑的黑底终端图标，页签标题保留线条图标。无 React 依赖的终端模型属于 `api-terminal-controller`，通过框架 keyed hooks 暴露状态。`ui-primitives` 的 Menu 与 Button 提供 shell 选择和启动控件，支持键盘导航与选中标记。正文在 terminal 视图挂载时加载包内 `client.terminal.js` chunk，使 xterm.js 与 FitAddon 不进入启动 `client.js`；加载后由它们负责屏幕渲染和视口测量。正文在面板高度内为页签条下方预留 8px 间距。输入原样传到 PTY，包括 Tab 和控制字符。
 
 Session header contribution 查询 Host 终端，只打开没有现有标签关联的终端。终端 controller 独立保存每个全局唯一内容身份与 Host 的关联，并负责内容恢复；侧栏负责布局持久化。恢复视图不能分配替代进程。侧栏关闭 handler 通过[终端 controller](../../api/terminal-controller/README.zh.md#understand-the-implementation)安排清理并同步返回。浏览器组件清理和 tab 的 abort signal 只停止浏览器工作。
 
@@ -73,6 +73,7 @@ Session header contribution 查询 Host 终端，只打开没有现有标签关�
 - 补全菜单和内联建议取决于 shell 配置，Web UI 不提供独立补全引擎。
 - 应用的 OSC 颜色覆盖由已挂载的渲染器保留；新打开的渲染器无法从 Host 屏幕快照恢复这些颜色。
 - 终端历史有上限。此功能不向 Agent 发送终端输出，不在单个标签页内拆分终端，也不在 Host 重启后恢复进程。
+- Terminal chunk 加载失败后需要刷新页面，因为 React 会在页面生命周期内缓存被拒绝的 lazy import。
 
 <a id="dev-note"></a>
 ### 开发备注

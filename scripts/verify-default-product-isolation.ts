@@ -300,9 +300,12 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
     }
     if (display(pkg.directory) === 'apps/web') continue
     const files = globSync('src/**/*.{ts,tsx,mts,cts,js,mjs,cjs}', { cwd: pkg.directory,
-      exclude: ['**/*.spec.*', '**/*.test.*', '**/*.d.ts', '**/tests/**', '**/__tests__/**'] })
+      exclude: ['**/*.spec.*', '**/*.test.*', '**/*.d.ts', '**/tests/**', '**/__tests__/**', '**/node_modules/**'] })
     if (display(pkg.directory) === 'apps/cli' && files.length === 0) failures.push('apps/cli: no default runtime sources')
-    for (const path of files) scanSource(resolve(pkg.directory, path))
+    for (const path of files) {
+      const sourcePath = resolve(pkg.directory, path)
+      if (statSync(sourcePath).isFile()) scanSource(sourcePath)
+    }
   }
   return { failures: [...new Set(failures)], packageCount: visited.size,
     sourceCount: sources.size, configCount: configs.size, webPluginCount }

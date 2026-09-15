@@ -9,7 +9,7 @@ export type ReadOnlyReason = 'management-required' | 'unaddressable'
 
 /** Localizable management failure and optional external diagnostic. */
 export interface ManagementError {
-  code: ReadOnlyReason | 'unknown-plugin' | 'invalid-spec' | 'ambiguous-install' | 'not-bundle' | 'not-removable' | 'stop-profile' | 'bundle-in-use' | 'operation-error'
+  code: ReadOnlyReason | 'unknown-plugin' | 'invalid-spec' | 'ambiguous-install' | 'not-bundle' | 'not-removable' | 'stop-profile' | 'bundle-in-use' | 'stale-approval' | 'operation-error'
   diagnostic?: string
 }
 
@@ -92,6 +92,10 @@ export interface ChangeResult {
   packageResult?: PackageResult
   /** The bundle an installation added, once pnpm and the bundle check accepted it. */
   bundle?: string
+  /** Exact package names awaiting explicit script approval in the profile's pnpm settings, read after a failed run. */
+  pendingBuilds?: string[]
+  /** Package script permissions saved before this installation attempt. */
+  approvedBuilds?: string[]
 }
 
 /** Identifies one installation from its start to its settlement, including its log chunks and cancellation. */
@@ -101,6 +105,8 @@ export type PluginInstallRequestId = Branded<'PluginInstallRequestId'>
 export interface InstallBundleOptions {
   enabled?: boolean
   requestId?: PluginInstallRequestId
+  /** Explicitly allow these pending packages' scripts for this profile, then install; a name no longer pending refuses the call. */
+  approvedBuilds?: string[]
 }
 
 /** The form one install spec takes, in pnpm's vocabulary. */
