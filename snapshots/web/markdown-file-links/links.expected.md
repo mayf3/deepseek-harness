@@ -1,0 +1,11 @@
+- paragraph:
+  - button "Source at line 24"
+  - text: ·
+  - button "Absolute at line 30"
+  - text: ·
+  - button "Other example"
+  - text: ·
+  - button "Missing file"
+  - text: ·
+  - link "Website":
+    - /url: https://example.com/

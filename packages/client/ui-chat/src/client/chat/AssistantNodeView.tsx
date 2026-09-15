@@ -35,6 +35,7 @@ export const AssistantNodeView = memo(function AssistantNodeView({
       reasoningHidden={reasoningHidden}
       revealProcess={revealProcess}
       mentions={mentions}
+      openFile={openFile}
       t={t}
     />
   )

@@ -80,7 +80,8 @@
   text-underline-offset: 3px;
 }
 
-.markdown a:focus-visible {
+.markdown a:focus-visible,
+.fileMention:focus-visible {
   box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
 }
 

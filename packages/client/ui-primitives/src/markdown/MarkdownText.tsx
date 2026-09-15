@@ -31,6 +31,7 @@ function renderSettled(
   labels: MarkdownLabels,
   fileMentions: MarkdownFileMentions | undefined,
   pathImages: MarkdownPathImages | undefined,
+  openFile: MarkdownRenderContext['openFile'],
 ): ReactNode[] {
   const root = parseGfmWithMath(text)
   const targets = createReferenceTargets()
@@ -40,6 +41,7 @@ function renderSettled(
     labels,
     fileMentions,
     pathImages,
+    openFile,
     targets,
     footnoteOrder: [],
     footnoteCounts: new Map(),
@@ -160,29 +162,32 @@ class StreamingRenderer {
  * single streaming gate — they apply to settled renders only, because a
  * streaming message's vocabulary is not final and frozen cached elements
  * must not bake in handlers that could go stale.
- * @returns A GFM document with TeX math rendered through KaTeX; raw HTML,
- * relative links, and unsafe protocols are disabled, while absolute HTTP(S)
- * images render directly.
+ * `openFile` enables local Markdown links in settled messages, including
+ * `#L24` and `#L24-L30` destinations (ranges open at their first line).
+ * @returns A GFM document with TeX math rendered through KaTeX; raw HTML and
+ * unsafe protocols are disabled. Local links without an opener remain text;
+ * absolute HTTP(S) images render directly.
  */
-export const MarkdownText = memo(function MarkdownText({ text, streaming = false, labels, fileMentions, pathImages }: {
+export const MarkdownText = memo(function MarkdownText({ text, streaming = false, labels, fileMentions, pathImages, openFile }: {
   text: string
   streaming?: boolean
   labels: MarkdownLabels
   fileMentions?: MarkdownFileMentions | undefined
   pathImages?: MarkdownPathImages | undefined
+  openFile?: MarkdownRenderContext['openFile']
 }) {
   const streamRef = useRef<StreamingRenderer | null>(null)
   const streamLabelsRef = useRef<MarkdownLabels>(labels)
   const children = useMemo(() => {
     if (!streaming) {
       streamRef.current = null
-      return renderSettled(text, labels, fileMentions, pathImages)
+      return renderSettled(text, labels, fileMentions, pathImages, openFile)
     }
     if (streamRef.current === null || streamLabelsRef.current !== labels) {
       streamRef.current = new StreamingRenderer(labels)
       streamLabelsRef.current = labels
     }
     return streamRef.current.render(text)
-  }, [text, streaming, labels, fileMentions, pathImages])
+  }, [text, streaming, labels, fileMentions, pathImages, openFile])
   return <div className={css.markdown}>{children}</div>
 })
