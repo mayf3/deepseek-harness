@@ -30,7 +30,7 @@
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/cordis-plugin-hmr": "workspace:^",
+    "@deepseek-ai/dsh-hmr": "workspace:^",
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@deepseek-ai/cordis-plugin-timer": "workspace:^",
@@ -101,7 +101,9 @@
     "js-yaml": "^4.2.0",
     "node-addon-require-builtin": "^0.1.6",
     "@deepseek-ai/dsh-http-proxy": "workspace:^",
-    "@deepseek-ai/dsh-mcp-resources": "workspace:^"
+    "@deepseek-ai/dsh-mcp-resources": "workspace:^",
+    "@deepseek-ai/dsh-plugin-manager": "workspace:^",
+    "@deepseek-ai/dsh-atomic-write": "workspace:^"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "1.4.0",

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { removeOwnedStyles } from '../src/client/entry-lifecycle.ts'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -536,6 +537,7 @@ describe('style claiming', () => {
     vi.stubGlobal('document', undefined)
     try {
       await b.loader.import('a', '', {})
+      removeOwnedStyles('a')
     } finally {
       vi.unstubAllGlobals()
     }
@@ -574,4 +576,28 @@ describe('default transport seam', () => {
     )
     expect([...document.querySelectorAll('script')]).toEqual([])
   })
+})
+
+
+it('rejects invalid revision URLs and keeps bootstrap exports pinned under invalidation', () => {
+  const b = bench([row(MODULES_ID), row('a', { url: '/unrevisioned' })])
+  b.loader.invalidate(MODULES_ID)
+  expect(b.loader.loadCache.get(MODULES_ID)?.exports).toBe(bootstrapExports)
+  expect(() =>{  b.loader.invalidate('a', 'next') }).toThrow('has no revision')
+})
+
+it('prefetch skips platform requests, cached dependencies and absent optional inject rows', async () => {
+  const b = bench([
+    row('a'),
+    row('b', { external: ['platform', 'a/client'], inject: ['missing'] }),
+  ], { a: () => ({}), b: () => ({}) }, { seed: { platform: {} } })
+  await b.loader.import('a', '', {})
+  await b.loader.import('b', '', {})
+  expect(b.fetched).toEqual([APPLICATION_URL])
+})
+
+
+it('rejects a wire request with no dynamic row or platform supplier at materialization', async () => {
+  const b = bench([row('a', { external: ['missing'] })], { a: require => ({ value: require('missing') }) })
+  await expect(b.loader.import('a', '', {})).rejects.toThrow('missed the module table')
 })

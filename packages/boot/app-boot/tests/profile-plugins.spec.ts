@@ -77,7 +77,7 @@ describe('profile plugin reconciliation', () => {
     const beforeManifest = {
       name: 'custom-profile', private: false, custom: { keep: true },
       dependencies: { active: '^1', disabled: '^1', gaining: '^1', losing: '^1', removed: '^1' },
-      dsh: { profile: { bundles: ['template', 'template', 'active', 'losing', 'removed'], patchReload: 'startup' } },
+      dsh: { profile: { bundles: ['template', 'template', 'active', 'losing', 'removed'] } },
     }
     writeManifest(location.profileDir, beforeManifest)
     for (const name of Object.keys(beforeManifest.dependencies)) installed(location, name, name !== 'gaining')
@@ -97,7 +97,7 @@ describe('profile plugin reconciliation', () => {
       .toEqual(['active', ...preserveDisabled ? [] : ['disabled'], 'gaining', 'added'])
     expect(result.addedPlainDependencies).toEqual(['new-library'])
     expect(JSON.parse(readFileSync(join(location.profileDir, 'package.json'), 'utf8'))).toMatchObject({
-      custom: { keep: true }, private: false, dsh: { profile: { bundles, patchReload: 'startup' } },
+      custom: { keep: true }, private: false, dsh: { profile: { bundles } },
     })
     const bytes = readFileSync(join(location.profileDir, 'package.json'), 'utf8')
     expect(reconcileProfilePlugins({ ...location, before: result.plugins, preserveDisabled }).addedPlainDependencies).toEqual([])
