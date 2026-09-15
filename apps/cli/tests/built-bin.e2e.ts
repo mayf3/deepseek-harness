@@ -933,9 +933,9 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
           `  writeFileSync(${JSON.stringify(mounted)}, 'mounted')\n  let active = true`))
         await writeFileAtomic(patch, hmrPatch
           + '- id: profile-lifecycle-fixture\n  config:\n    generation: configuration-reloaded\n', { mode: 0o600 })
+        await waitForFile(mounted)
+        await vi.waitFor(() => { expect(readFileSync(echo, 'utf8')).toBe('configuration-reloaded') }, { timeout: SPAWN_TIMEOUT_MS })
       })
-      await waitForFile(mounted)
-      await vi.waitFor(() => { expect(readFileSync(echo, 'utf8')).toBe('configuration-reloaded') }, { timeout: SPAWN_TIMEOUT_MS })
       const replacedAgain = join(fixture.home, 'module-reloaded-again')
       writeFileSync(source, original.replace('  let active = true',
         `  writeFileSync(${JSON.stringify(replacedAgain)}, 'mounted')\n  let active = true`))

@@ -155,6 +155,23 @@ describe('HMR exact config paths', () => {
     }
   })
 
+  it('processes native events for a watcher registered during a transaction', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-transaction-watch-'))
+    const filename = join(dir, 'plugins.yml')
+    onTestFinished(() => { rmSync(dir, { recursive: true, force: true }) })
+    const ctx = await bootHmr(dir)
+    onTestFinished(() => ctx.fiber.dispose())
+    const hmr = ctx.hmr
+    const observed = Promise.withResolvers<string>()
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation((reason) => { observed.reject(new Error(String(reason))) })
+    onTestFinished(() => { warn.mockRestore() })
+    await hmr.runExclusive(() => hmr.watchConfig(filename, async () => {
+      observed.resolve(readFileSync(filename, 'utf8'))
+    }))
+    writeFileSync(filename, 'created-after-transaction')
+    expect(await observed.promise).toBe('created-after-transaction')
+  })
+
   it('serializes refreshes and waits for them during disposal', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-config-'))
     hmrRoots.push(dir)

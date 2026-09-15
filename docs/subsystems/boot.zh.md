@@ -112,22 +112,6 @@ Source: [`packages/boot/app-boot/src/profile-context.ts`](../../packages/boot/ap
 
 ### `hmr/*` events
 
-<a id="hmrbefore-reload--waterfall"></a>
-
-#### `hmr/before-reload` — waterfall
-
-Acquire application-owned exclusion before an automatic reload.
-
-```ts cordis-catalog
-/** Acquire application-owned exclusion before an automatic reload.
- * @mode waterfall
- * @param next Runs the remaining lock providers and reload; listeners must await it.
- */
-'hmr/before-reload'(next: () => Promise<void>): Promise<void>
-```
-
-Source: [`packages/boot/hmr/src/index.ts`](../../packages/boot/hmr/src/index.ts)
-
 <a id="hmrchange--emit"></a>
 
 #### `hmr/change` — emit

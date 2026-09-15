@@ -3574,14 +3574,6 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'payload', description: '.change - fresh current projection or clear tombstone.' }],
   },
   {
-    name: 'hmr/before-reload',
-    mode: 'waterfall',
-    signature: '\'hmr/before-reload\'(next: () => Promise<void>): Promise<void>',
-    summary: 'Acquire application-owned exclusion before an automatic reload.',
-    description: 'Acquire application-owned exclusion before an automatic reload.',
-    parameters: [{ name: 'next', description: 'Runs the remaining lock providers and reload; listeners must await it.' }],
-  },
-  {
     name: 'hmr/change',
     mode: 'emit',
     signature: '\'hmr/change\'(url: string): void',

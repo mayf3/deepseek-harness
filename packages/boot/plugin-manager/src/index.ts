@@ -32,6 +32,8 @@ const protectedModules = new Set([
   '@deepseek-ai/cordis-plugin-include', '@deepseek-ai/dsh-api-gateway',
   '@deepseek-ai/dsh-host-webserver', '@deepseek-ai/dsh-client-modules',
   '@deepseek-ai/dsh-client-ui-settings-plugin-inventory',
+  '@deepseek-ai/dsh-host-plugin-inventory', '@deepseek-ai/dsh-typert-registry',
+  '@deepseek-ai/dsh-api-remotes',
   '@deepseek-ai/cordis-plugin-timer', '@deepseek-ai/dsh-client-connection',
   '@deepseek-ai/dsh-host-frontend-static', '@deepseek-ai/dsh-tools',
   '@deepseek-ai/dsh-hmr',
@@ -162,15 +164,15 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote
   setPluginEnabled(id: PluginEntryId, enabled: boolean): Promise<ChangeResult> {
-    return this.change(async (result) => {
+    return this.change(result => this.configure(async () => {
       const row = (await this.listPlugins()).find(item => item.entryId === id)
       if (row === undefined) throw new ManagementFailure('unknown-plugin')
       if (row.readOnlyReason !== undefined) throw new ManagementFailure(row.readOnlyReason)
-      await writePluginEnabled(this.profile.patchPath, row.patchId, enabled)
+      await writePluginEnabled(this.profile.patchPath, row.patchId, row.moduleName, enabled)
       result.warnings = await this.reload(enabled ? [row.patchId] : [])
       const current = (await this.listPlugins()).find(item => item.entryId === id)
       return current?.enabled !== enabled && this.ownerContext.get('hmr') !== undefined ? 'overridden' : undefined
-    }, { stage: 'enable', target: id, enabled })
+    }), { stage: 'enable', target: id, enabled })
   }
 
   /** Select or remove a bundle layer while retaining installed dependencies.
@@ -180,10 +182,10 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote
   setBundleEnabled(name: string, enabled: boolean): Promise<ChangeResult> {
-    return this.change(async (result) => {
+    return this.change(result => this.configure(async () => {
       await this.selectBundle(name, enabled)
       result.warnings = await this.reload(enabled ? this.bundleRows(name).map(row => row.id) : [])
-    }, { stage: 'enable', target: name, enabled })
+    }), { stage: 'enable', target: name, enabled })
   }
 
   /** Install a package using the same pnpm implementation as dsh plugin.
@@ -217,9 +219,11 @@ export class PluginManager extends TypertRemoteService {
       }
       result.target = name
       result.stage = 'enable'
-      if (options?.enabled !== false) await this.selectBundle(name, true)
-      if (Object.hasOwn(before, name)) return 'restart-required'
-      result.warnings = await this.reload()
+      return this.configure(async () => {
+        if (options?.enabled !== false) await this.selectBundle(name, true)
+        if (Object.hasOwn(before, name)) return 'restart-required'
+        if (options?.enabled !== false) result.warnings = await this.reload()
+      })
     }, { stage: 'install', target: spec, enabled: options?.enabled !== false })
   }
 
@@ -252,25 +256,26 @@ export class PluginManager extends TypertRemoteService {
   @Remote
   removeBundle(name: string): Promise<ChangeResult> {
     return this.change(async (result) => {
-      const bundle = (await this.listBundles()).find(item => item.name === name)
-      if (bundle === undefined || !bundle.removable) throw new ManagementFailure('not-removable')
-      if (this.ownerContext.get('hmr') === undefined && (this.profile.startedBundles.includes(name)
-        || this.bundleRows(name).some(row => [...this.ctx.loader.entries()]
-          .some(entry => entry.options.id === row.id && entry.fiber !== undefined)))) {
-        throw new ManagementFailure('stop-profile')
-      }
-      const contributions = bundle.error === undefined ? this.bundleRows(name) : []
-      if (bundle.enabled) {
-        await this.selectBundle(name, false)
-        result.warnings = await this.reload()
-      }
-      if ([...this.ctx.loader.entries()].some(entry => entry.fiber?.uid != null
-        && contributions.some(row => row.id === entry.options.id && row.name === entry.options.name))) {
-        throw new ManagementFailure('bundle-in-use')
-      }
+      await this.configure(async () => {
+        const bundle = (await this.listBundles()).find(item => item.name === name)
+        if (bundle === undefined || !bundle.removable) throw new ManagementFailure('not-removable')
+        if (this.ownerContext.get('hmr') === undefined && (this.profile.startedBundles.includes(name)
+          || this.bundleRows(name).some(row => [...this.ctx.loader.entries()]
+            .some(entry => entry.options.id === row.id && entry.fiber !== undefined)))) {
+          throw new ManagementFailure('stop-profile')
+        }
+        const contributions = bundle.error === undefined ? this.bundleRows(name) : []
+        if (bundle.enabled) {
+          await this.selectBundle(name, false)
+          result.warnings = await this.reload()
+        }
+        if ([...this.ctx.loader.entries()].some(entry => entry.fiber?.uid != null
+          && contributions.some(row => row.id === entry.options.id && row.name === entry.options.name))) {
+          throw new ManagementFailure('bundle-in-use')
+        }
+      })
       result.packageResult = await this.runPnpm(['remove', name])
       if (result.packageResult.exitCode !== 0) throw new Error(result.packageResult.output)
-      result.warnings = await this.reload()
     }, { stage: 'remove', target: name })
   }
 
@@ -309,6 +314,12 @@ export class PluginManager extends TypertRemoteService {
     return this.bundleRows(name).some(row => protectedModules.has(row.name) || `include:${row.id}` === this.ownerEntryId)
   }
 
+  private configure<T>(operation: () => Promise<T>): Promise<T> {
+    const hmr = this.ownerContext.get('hmr')
+    const apply = () => { this.abort.signal.throwIfAborted(); return operation() }
+    return hmr === undefined ? apply() : hmr.runExclusive(apply)
+  }
+
   private async reload(requiredIds: readonly string[] = []): Promise<string[]> {
     if (this.ownerContext.get('hmr') === undefined) return []
     return reconcileProfilePatches(this.ownerContext.root, readProfilePatches('dsh', this.profile), 'dsh', requiredIds)
@@ -334,8 +345,7 @@ export class PluginManager extends TypertRemoteService {
       notice = this.notify(result)
       return result
     }, { waitMs: this.lockWaitMs })
-    const hmr = this.ownerContext.get('hmr')
-    const result = await (hmr === undefined ? locked() : hmr.runExclusive(locked))
+    const result = await locked()
     await notice
     return result
   }

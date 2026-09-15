@@ -1,4 +1,4 @@
-/** Profile watches share HMR's queue, readiness barrier and cross-process file lock. */
+/** Profile watches share HMR's queue and readiness barrier without waiting for package installation. */
 import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
-import { boot, initProfile, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
+import { boot, initProfile, readProfileManifest, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { FSWatcher } from 'chokidar'
 import { expect, it, onTestFinished, vi } from 'vitest'
@@ -23,7 +23,7 @@ vi.mock('chokidar', async (original) => {
   } }
 })
 
-async function fixture() {
+async function fixture(beforeWatch?: (profile: ProfileContext) => void) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'hmr-profile-')))
   const dir = join(home, 'profiles', 'test')
   initProfile(dir, [])
@@ -41,6 +41,7 @@ async function fixture() {
   let commit: (() => void) | undefined
   const start = watchers.length
   const ctx = await boot('test', join(dir, 'cordis.yml'), readProfilePatches('test', profile), (host) => {
+    beforeWatch?.(profile)
     host.provide('profileContext', profile)
     host.provide('appReady', { onReady(listener) { commit = listener; return () => { commit = undefined } } })
     host.loader.builtins.timer = Timer
@@ -77,7 +78,7 @@ it('waits for application readiness and applies profile, home and manifest chang
   expect(f.ctx.get('profileProbe')).toBe('home')
   rmSync(homePatch)
   const manifest = join(f.dir, 'package.json')
-  f.emit(2, manifest)
+  f.emit(1, homePatch)
   await f.drain()
   expect(f.ctx.get('profileProbe')).toBe('edited')
   f.emit(2, manifest)
@@ -85,22 +86,45 @@ it('waits for application readiness and applies profile, home and manifest chang
   expect(f.ctx.get('profileProbe')).toBe('edited')
 })
 
-it('does not reload while a CLI package operation owns the profile lock', async () => {
+it('applies configuration while a CLI operation holds the package writer lock', async () => {
   const f = await fixture()
   f.commit()
-  const entered = Promise.withResolvers<undefined>()
-  const release = Promise.withResolvers<undefined>()
-  onTestFinished(() => { release.resolve(undefined) })
-  const locked = withFileLock(join(f.dir, 'package.json'), async () => { entered.resolve(undefined); await release.promise })
-  await entered.promise
+  await withFileLock(join(f.dir, 'package.json'), async () => {
+    const original = readFileSync(f.profile.patchPath, 'utf8')
+    writeFileSync(f.profile.patchPath, original.replace('initial', 'during-install'))
+    f.emit(0, f.profile.patchPath)
+    await f.drain()
+    expect(f.ctx.get('profileProbe')).toBe('during-install')
+  })
+})
+
+it('ignores dependency-only manifest changes and reloads a changed bundle list', async () => {
+  const f = await fixture()
+  f.commit()
+  const include = [...f.ctx.loader.entries()].find(entry => entry.id === 'include')!
+  const update = vi.spyOn(include, 'update')
+  onTestFinished(() => { update.mockRestore() })
+  const manifestPath = join(f.dir, 'package.json')
+  const manifest = readProfileManifest('test', f.dir)
+  manifest.dependencies = { added: '1.0.0' }
+  delete manifest.dsh!.profile!.bundles
+  writeFileSync(manifestPath, JSON.stringify(manifest))
+  f.emit(2, manifestPath)
+  await f.drain()
+  expect(update).not.toHaveBeenCalled()
+  const packageDir = join(f.dir, 'node_modules', 'added')
+  mkdirSync(packageDir, { recursive: true })
+  writeFileSync(join(packageDir, 'package.json'), JSON.stringify({ name: 'added', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+  writeFileSync(join(packageDir, 'cordis.patch.yml'), '- insert:\n    - id: bundled\n      name: cordis:probe\n      disabled: true\n')
+  manifest.dsh!.profile!.bundles = ['added']
+  writeFileSync(manifestPath, JSON.stringify(manifest))
+  f.emit(2, manifestPath)
+  await f.drain()
+  expect(update).toHaveBeenCalledOnce()
   f.emit(0, f.profile.patchPath)
-  let settled = false
-  const drained = f.drain().then(() => { settled = true })
-  await Promise.resolve(undefined)
-  expect(settled).toBe(false)
-  release.resolve(undefined)
-  await locked
-  await drained
+  await f.drain()
+  expect(update).toHaveBeenCalledOnce()
+  expect([...f.ctx.loader.entries()].some(entry => entry.id === 'include:bundled')).toBe(true)
 })
 
 it('cancels queued reloads when the application exits before readiness', async () => {
@@ -168,4 +192,16 @@ it('logs unchanged inactive entries while applying an unrelated file edit', asyn
   await f.drain()
   expect(f.ctx.get('profileProbe')).toBe('edited')
   expect(warn).toHaveBeenCalledWith(expect.stringContaining('missing ('))
+})
+
+it('applies a patch edited after boot parsing but before watcher registration', async () => {
+  const f = await fixture((profile) => {
+    const original = readFileSync(profile.patchPath, 'utf8')
+    writeFileSync(profile.patchPath, original.replace('initial', 'edited-during-boot'))
+  })
+  expect(f.ctx.get('profileProbe')).toBe('initial')
+  f.commit()
+  f.emit(0, f.profile.patchPath)
+  await f.drain()
+  expect(f.ctx.get('profileProbe')).toBe('edited-during-boot')
 })

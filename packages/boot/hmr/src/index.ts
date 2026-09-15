@@ -1,4 +1,4 @@
-/** Module and configuration reloads serialized with application package operations. */
+/** Serialized module and profile-configuration reloads. */
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { watchConfig as watchExactConfig } from './watch-config.ts'
 import { Context, Inject, Service, type Plugin } from '@deepseek-ai/cordis'
@@ -7,8 +7,7 @@ import type { Include } from '@deepseek-ai/cordis-plugin-include'
 import { FSWatcher, watch, type ChokidarOptions } from 'chokidar'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { readFileSync, realpathSync } from 'node:fs'
-import { readProfilePatches, reconcileProfilePatches, PROFILE_PATCH_FILENAME } from '@deepseek-ai/dsh-app-boot'
-import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
+import { readProfileManifest, readProfilePatches, reconcileProfilePatches, PROFILE_PATCH_FILENAME } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import { handleError } from './error.ts'
 import type {} from '@deepseek-ai/cordis-plugin-timer'
@@ -24,11 +23,6 @@ declare module '@deepseek-ai/cordis' {
   }
 
   interface Events {
-    /** Acquire application-owned exclusion before an automatic reload.
-     * @mode waterfall
-     * @param next Runs the remaining lock providers and reload; listeners must await it.
-     */
-    'hmr/before-reload'(next: () => Promise<void>): Promise<void>
     /** A watched file has no module or configuration handler.
      * @mode emit
      * @param url Canonical file URL.
@@ -154,7 +148,7 @@ class Hmr extends Service {
 
   private runReload(operation: () => Promise<void>): Promise<void> {
     return this.runExclusive(async () => {
-      if (await this.applicationReady) await this.ctx.waterfall('hmr/before-reload', operation)
+      if (await this.applicationReady) await operation()
     })
   }
 
@@ -168,9 +162,9 @@ class Hmr extends Service {
     if (paths.some(path => this.configPaths.has(path))) throw new Error(`config path already registered: ${filename}`)
     for (const path of paths) this.configPaths.add(path)
     try {
-      const dispose = await watchExactConfig(
+      const dispose = await this.executing.exit(() => watchExactConfig(
         this.ownerContext, filename, this.config, () => this.runReload(refresh), () => this.executing.getStore() === true,
-      )
+      ))
       return async () => {
         await dispose()
         for (const path of paths) this.configPaths.delete(path)
@@ -218,23 +212,28 @@ class Hmr extends Service {
       const unsubscribe = ready.onReady(() => { started.resolve(true) })
       yield () => { unsubscribe(); started.resolve(false); return Promise.resolve() }
       const manifestPath = join(profile.dir, 'package.json')
-      this.ownerContext.on('hmr/before-reload', next => withFileLock(manifestPath, next))
-      const files = [profile.patchPath, join(profile.home, PROFILE_PATCH_FILENAME), manifestPath]
+      const patchFiles = [profile.patchPath, join(profile.home, PROFILE_PATCH_FILENAME)]
       let lastInputs: string | undefined
-      const refresh = async (): Promise<void> => {
-        const inputs = JSON.stringify(files.map((filename) => {
+      let lastBundles = JSON.stringify(profile.startedBundles)
+      const refresh = async (manifestOnly: boolean): Promise<void> => {
+        const bundles = JSON.stringify(readProfileManifest('dsh', profile.dir).dsh?.profile?.bundles ?? [])
+        if (manifestOnly && bundles === lastBundles) return
+        const inputs = JSON.stringify([bundles, ...patchFiles.map((filename) => {
           try { return readFileSync(filename, 'utf8') }
           catch (error) {
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
             throw error
           }
-        }))
+        })])
         if (inputs === lastInputs) return
+        const patches = readProfilePatches('dsh', profile)
+        const warnings = await reconcileProfilePatches(this.ownerContext.root, patches, 'dsh')
         lastInputs = inputs
-        const warnings = await reconcileProfilePatches(this.ownerContext.root, readProfilePatches('dsh', profile), 'dsh')
+        lastBundles = bundles
         for (const diagnostic of warnings) this.ctx.logger.warn(diagnostic)
       }
-      for (const filename of files) await this.watchConfig(filename, refresh)
+      for (const filename of patchFiles) await this.watchConfig(filename, () => refresh(false))
+      await this.watchConfig(manifestPath, () => refresh(true))
     }
 
     const { loader } = this.ctx
@@ -292,17 +291,15 @@ class Hmr extends Service {
           else this.ctx.emit('hmr/change', url)
         }
         if (!fullReload && includes.size === 0 && this.stashed.size === 0) return
-        await this.ctx.waterfall('hmr/before-reload', async () => {
-          if (fullReload) {
-            loader.exit()
-            return
-          }
-          for (const include of includes) await include.refresh()
-          if (this.stashed.size > 0) {
-            try { await this.partialReload() } finally { this.stashed.clear() }
-          }
-          await loader.await()
-        })
+        if (fullReload) {
+          loader.exit()
+          return
+        }
+        for (const include of includes) await include.refresh()
+        if (this.stashed.size > 0) {
+          try { await this.partialReload() } finally { this.stashed.clear() }
+        }
+        await loader.await()
       }).catch((error: unknown) => { this.ctx.logger.warn(error) })
     }, this.config.debounce)
     this.watcher.on('change', (path) => { changed.add(path); dispatch() })

@@ -937,7 +937,7 @@ export interface HmrConfig extends ChokidarOptions {
 
 依赖： `ChokidarOptions` (`chokidar`)
 
-来源： [`packages/boot/hmr/src/index.ts:54`](../packages/boot/hmr/src/index.ts)
+来源： [`packages/boot/hmr/src/index.ts:51`](../packages/boot/hmr/src/index.ts)
 
 <a id="deepseek-aidsh-hooks-claude-code"></a>
 

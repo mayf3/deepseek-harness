@@ -1,5 +1,5 @@
 ---
-description: "Reload plugin code and profile configuration without overlapping package operations."
+description: "Reload plugin code and profile configuration through one coordinated queue."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Reload plugin source and configuration while an application is running. Module replacements, Include refreshes and registered profile-file handlers share one queue with package mutations. Existing Cordis HMR configuration and events remain available under `ctx.hmr`.
+Reload plugin source and configuration while an application is running. Module replacements, Include refreshes and profile configuration changes share one queue. Package installation runs outside that queue. Existing Cordis HMR configuration and events remain available under `ctx.hmr`.
 
 ## Table of Contents
 
@@ -54,9 +54,9 @@ Chokidar options, including polling, retain their existing meaning. Exact config
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`watchConfig()` registers an awaited configuration handler. `runExclusive()` serializes caller-owned mutations with automatic reloads and rejects nested transactions. HMR registers a `hmr/before-reload` listener that holds the profile file lock around every automatic reload; callers performing mutations acquire their file lock inside `runExclusive()` in the same order. File events received during a transaction are processed afterward.
+`watchConfig()` registers an awaited configuration handler. `runExclusive()` serializes configuration changes and Loader updates with automatic reloads and rejects nested transactions. Package installation and removal run outside this queue. HMR does not acquire the package writer lock; manifest notifications reload only when the ordered `dsh.profile.bundles` list changes. Profile and home patch changes also trigger recomposition. File events received during a configuration transaction are processed afterward.
 
-App-boot owns profile parsing and patch precedence. HMR reads the launcher’s data-only `profileContext`, registers the profile manifest and both user patch watches during initialization, and waits for application readiness before processing changes. Its disposal closes the watchers and cancels reloads waiting for startup. HMR also owns module-cache replacement and reload scheduling. Unknown-file notifications do not acquire reload locks, so lock-file events cannot trigger another lock acquisition. No invariant companion is published because the queue and watcher registrations have no independent persisted projection.
+App-boot owns profile parsing and patch precedence. HMR reads the launcher’s data-only `profileContext`, registers the profile manifest and both user patch watches during initialization, and waits for application readiness before processing changes. Its disposal closes the watchers and cancels reloads waiting for startup. HMR also owns module-cache replacement and reload scheduling. Configuration watchers start outside the active transaction context so later notifications can enter the queue. No invariant companion is published because the queue and watcher registrations have no independent persisted projection.
 
 Watched module paths use Node ESM resolution's `realpathSync()` spelling, including Windows short directory names, so file events match the module cache.
 

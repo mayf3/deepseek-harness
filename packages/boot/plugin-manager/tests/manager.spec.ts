@@ -8,7 +8,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import {
-  boot, composeEntries, initProfile, readProfilePatches, readProfileManifest,
+  boot, composeEntries, initProfile, readProfilePatches, readProfileManifest, reconcileProfilePatches,
   type ProfileContext,
 } from '@deepseek-ai/dsh-app-boot'
 import PluginManager, { type Config } from '../src/index.ts'
@@ -142,7 +142,9 @@ it('installs only valid bundle declarations and honors installation without acti
 it('unloads before removing packages and retries inactive dependencies whose files are missing', async () => {
   const { manager, dir, ctx } = await fixture()
   const remove = vi.spyOn(operations, 'runProfilePnpm').mockImplementation(async () => {
-    expect([...ctx.loader.entries()].some(row => row.id === 'include:managed')).toBe(false)
+    await ctx.hmr.runExclusive(async () => {
+      expect([...ctx.loader.entries()].some(row => row.id === 'include:managed')).toBe(false)
+    })
     return { exitCode: 1, output: 'removal failed', truncated: false, logPath: join(dir, 'pnpm.log') }
   })
   onTestFinished(() => { remove.mockRestore() })
@@ -230,6 +232,34 @@ it('refuses management bundle disablement and permits repeated bundle selections
   const { manager } = await fixture()
   expect(await manager.setBundleEnabled('core', false)).toMatchObject({ application: 'failed', changed: false })
   expect(await manager.setBundleEnabled('extra', true)).toMatchObject({ application: 'applied', changed: false })
+})
+
+it.each([
+  '@deepseek-ai/dsh-host-plugin-inventory',
+  '@deepseek-ai/dsh-typert-registry',
+  '@deepseek-ai/dsh-api-remotes',
+])('protects the management dependency %s and its containing bundle', async (name) => {
+  const { ctx, manager, bundle, profile, dir } = await fixture('startup')
+  bundle('extra', [{ id: 'dependency', name, disabled: true }])
+  await reconcileProfilePatches(ctx, readProfilePatches('test', profile), 'test')
+  const entry = (await manager.listPlugins()).find(row => row.moduleName === name)!
+  expect(entry).toMatchObject({ readOnlyReason: 'management-required' })
+  const manifest = readFileSync(join(dir, 'package.json'), 'utf8')
+  const patch = readFileSync(profile.patchPath, 'utf8')
+  expect(await manager.setPluginEnabled(entry.entryId, false)).toMatchObject({
+    changed: false, application: 'failed', error: { code: 'management-required' },
+  })
+  expect((await manager.listBundles()).find(row => row.name === 'extra')).toMatchObject({
+    removable: false, readOnlyReason: 'management-required',
+  })
+  expect(await manager.setBundleEnabled('extra', false)).toMatchObject({
+    changed: false, application: 'failed', error: { code: 'management-required' },
+  })
+  expect(await manager.removeBundle('extra')).toMatchObject({
+    changed: false, application: 'failed', error: { code: 'not-removable' },
+  })
+  expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(manifest)
+  expect(readFileSync(profile.patchPath, 'utf8')).toBe(patch)
 })
 
 it('addresses children inside profile groups and marks ambiguous ids read-only', async () => {
@@ -457,4 +487,29 @@ it('does not delete a bundle retained by a higher-priority overlay', async () =>
   expect(remove).not.toHaveBeenCalled()
   expect(readProfileManifest('test', dir).dependencies).toEqual({ extra: '1.0.0' })
   expect(ctx.get('managedProbe')).toBe(true)
+})
+
+it('applies watched configuration while pnpm installation is still running', async () => {
+  const { ctx, manager, dir, profile, bundle } = await fixture()
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const pnpm = vi.spyOn(operations, 'runProfilePnpm').mockImplementation(async () => {
+    entered.resolve(undefined)
+    await release.promise
+    bundle('new-bundle', [])
+    const manifest = readProfileManifest('test', dir)
+    manifest.dependencies = { ...manifest.dependencies, 'new-bundle': '1.0.0' }
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+    return { exitCode: 0, output: 'installed', truncated: false, logPath: join(dir, 'pnpm.log') }
+  })
+  const installing = manager.installBundle('new-bundle')
+  onTestFinished(async () => { release.resolve(undefined); await installing; pnpm.mockRestore() })
+  await entered.promise
+  writeFileSync(profile.patchPath, '- id: managed\n  disabled: true\n')
+  await vi.waitFor(() => { expect(ctx.get('managedProbe')).toBeUndefined() }, { timeout: 10000 })
+  expect(pnpm).toHaveBeenCalledOnce()
+  release.resolve(undefined)
+  expect(await installing).toMatchObject({ application: 'applied', changed: true })
+  expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['core', 'extra', 'new-bundle'])
+  expect(ctx.get('managedProbe')).toBeUndefined()
 })

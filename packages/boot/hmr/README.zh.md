@@ -1,5 +1,5 @@
 ---
-description: "热重载插件代码和 profile 配置，并与包操作互斥执行。"
+description: "通过统一协调队列热重载插件代码和 profile 配置。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在应用运行期间重载插件源码和配置。模块替换、Include 刷新与已注册的 profile 文件处理器和包修改共用一个队列。`ctx.hmr` 保留现有 Cordis HMR 的配置和事件。
+在应用运行期间重载插件源码和配置。模块替换、Include 刷新与 profile 配置变更共用一个队列。包安装在该队列之外执行。`ctx.hmr` 保留现有 Cordis HMR 的配置和事件。
 
 ## 目录
 
@@ -54,9 +54,9 @@ Chokidar 选项（包括轮询）保持原有含义。精确配置监听同时�
 <details>
 <summary>实现细节——点击展开</summary>
 
-`watchConfig()` 注册会被等待的配置处理器。`runExclusive()` 将调用方的修改与自动重载串行化，并拒绝嵌套事务。HMR 注册 `hmr/before-reload` 监听器，在每次自动重载期间持有 profile 文件锁；主动修改的调用方在 `runExclusive()` 内以相同顺序取得文件锁。事务期间收到的文件事件在事务结束后处理。
+`watchConfig()` 注册会被等待的配置处理器。`runExclusive()` 将配置变更、Loader 更新与自动重载串行化，并拒绝嵌套事务。包安装和删除在该队列之外执行。HMR 不获取包操作写锁；manifest 通知仅在有序的 `dsh.profile.bundles` 列表变化时触发重载。profile 与 home patch 变化也会触发重新组合。配置事务期间收到的文件事件在事务结束后处理。
 
-App-boot 负责 profile 解析和 patch 优先级规则。HMR 读取启动器提供的纯数据 `profileContext`，在初始化时注册 profile manifest 和两份用户 patch 的监听，并等待应用就绪后处理更改。销毁 HMR 时会关闭监听器并取消等待启动的重载。HMR 也负责模块缓存替换和重载调度。未知文件通知不获取重载锁，因此锁文件事件不会触发下一次取锁。不发布 invariant 伴生入口，因为队列和监听注册没有独立的持久投影。
+App-boot 负责 profile 解析和 patch 优先级规则。HMR 读取启动器提供的纯数据 `profileContext`，在初始化时注册 profile manifest 和两份用户 patch 的监听，并等待应用就绪后处理更改。销毁 HMR 时会关闭监听器并取消等待启动的重载。HMR 也负责模块缓存替换和重载调度。配置监听器在当前事务上下文之外启动，使后续通知可以进入队列。不发布 invariant 伴生入口，因为队列和监听注册没有独立的持久投影。
 
 被监听模块的路径沿用 Node ESM 解析所用的 `realpathSync()` 表示，包括 Windows 短目录名，使文件事件与模块缓存匹配。
 
