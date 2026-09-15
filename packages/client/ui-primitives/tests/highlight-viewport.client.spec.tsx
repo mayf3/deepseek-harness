@@ -126,7 +126,7 @@ describe('viewport-activated syntax highlighting', () => {
     expect(IntersectionObserverStub.instances).toHaveLength(0)
   })
 
-  it('activates retained offscreen source when a preview becomes available and keeps it highlighted', async () => {
+  it('releases the offscreen observer when preview replaces source, then highlights on selection', async () => {
     const code = '<svg><rect width="10"/></svg>'
     const props = { code, lang: 'svg', ...markdownLabels.code }
     const view = render(<CodeBlock {...props} />)

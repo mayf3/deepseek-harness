@@ -160,6 +160,8 @@ None; this package neither assembles nor sends a provider request.
 
 These limits define how the atoms behave at the edges; they are current package constraints, not a component roadmap.
 
+- **Diagram preview limits** — Mermaid image nodes are rejected before layout to prevent source-authored resource loads. Theme changes temporarily show the placeholder and close the lightbox until the replacement image loads.
+
 - **Diagram rendering runs on the browser thread** — every mounted settled preview starts rendering, including off-screen diagrams. Mermaid serializes layouts; Graphviz performs synchronous WebAssembly layout. Submitted layout work cannot be interrupted. Preview virtualization and worker rendering are not provided.
 
 - **Diff search is bounded, input processing is linear** — the edit-distance limit trades precise alignment for a coarse replacement on heavily changed fragments. Normalization, fallback rows, and copied output still scale with input size; the height cap limits visible rows, not those allocations.

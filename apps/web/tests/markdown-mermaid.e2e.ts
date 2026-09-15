@@ -58,7 +58,7 @@ const CPU = `flowchart LR
     MEM -->|"数据"| OUT
     CU -->|"控制信号"| OUT`
 
-function fixture(diagramSource?: string): string {
+function fixture(diagramSources?: string[]): string {
   const session = Session.create(SessionId('markdown-mermaid-source'))
   session.append('turn/start', { turn: 1 })
   const user = session.append('user/message', createUserMessage({
@@ -70,11 +70,11 @@ function fixture(diagramSource?: string): string {
     stream: [], turn: 1, step: 1,
     message: createMessage({
       role: 'assistant',
-      content: [{ type: 'text', text: diagramSource === undefined ? [
+      content: [{ type: 'text', text: diagramSources === undefined ? [
         '# Mermaid previews',
         ...[FLOW, SEQUENCE, INVALID, UNTRUSTED].map(code => `\`\`\`mermaid\n${code}\n\`\`\``),
         ...[['dot', DOT], ['svg', SVG], ['html', HTML]].map(([lang, code]) => `\`\`\`${lang}\n${code}\n\`\`\``),
-      ].join('\n\n') : `# Mermaid previews\n\n\`\`\`mermaid\n${diagramSource}\n\`\`\`` }],
+      ].join('\n\n') : ['# Mermaid previews', ...diagramSources.map(code => `\`\`\`mermaid\n${code}\n\`\`\``)].join('\n\n') }],
       source: { kind: 'model', provider: 'fixture', model: 'fixture' },
     }),
   }, { surfaceOp: 'append' })
@@ -142,7 +142,7 @@ describe('web e2e: Mermaid chat previews', () => {
     let cpuScaffold: WebScaffold | undefined
     try {
       cpuScaffold = await launchWebScaffold({})
-      await seedSession(cpuScaffold, fixture(CPU), SEED_ID)
+      await seedSession(cpuScaffold, fixture([CPU]), SEED_ID)
       await openConversation(page, cpuScaffold)
       const block = page.locator('.md-code-block')
       await block.scrollIntoViewIfNeeded()
@@ -406,9 +406,9 @@ describe('web e2e: Mermaid chat previews', () => {
     await openConversation(page, scaffold)
     const first = page.locator('.md-code-block').first()
     const invalid = page.locator('.md-code-block').nth(2)
-    await invalid.getByRole('status').waitFor()
+    await invalid.getByRole('status').filter({ hasText: 'Unable to render this diagram' }).waitFor()
     await invalid.getByRole('button', { name: 'Source', exact: true }).click()
-    expect((await invalid.locator('[data-code-block-content]').boundingBox())!.height).toBeGreaterThanOrEqual(120)
+    expect((await invalid.locator('[data-code-block-content]').boundingBox())!.height).toBeCloseTo(120, 0)
     await invalid.getByRole('button', { name: 'Preview', exact: true }).click()
     expect(await first.locator('pre').count()).toBe(0)
     expect(await first.locator('[data-code-block-source-view]').getAttribute('aria-hidden')).toBe('true')
@@ -523,6 +523,31 @@ describe('web e2e: Mermaid chat previews', () => {
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'zh.expected.md'), snapshot, MODE)
     await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md', 'zh.expected.md', 'source-highlight.expected.md', 'lightbox.expected.md', 'zh-lightbox.expected.md'])
     await page.close()
+  }, 60_000)
+
+  it.skipIf(MODE === 'record')('rejects native Mermaid image nodes before requests and renders the next diagram', async () => {
+    const page = await newEnglishPage(browser)
+    let imageScaffold: WebScaffold | undefined
+    const requests: string[] = []
+    try {
+      await page.route('https://preview.invalid/**', async (route) => {
+        requests.push(route.request().url())
+        await route.abort()
+      })
+      imageScaffold = await launchWebScaffold({})
+      await seedSession(imageScaffold, fixture([
+        'flowchart LR\n  A@{ img: "https://preview.invalid/mermaid-image", h: 80 }', FLOW,
+      ]), SEED_ID)
+      await openConversation(page, imageScaffold)
+      await page.locator('.md-code-block').first().getByRole('status')
+        .filter({ hasText: 'Unable to render this diagram' }).waitFor()
+      const image = page.getByRole('img', { name: 'Mermaid diagram', exact: true })
+      await image.evaluate(async (node: HTMLImageElement) => { await node.decode() })
+      expect(requests).toEqual([])
+    } finally {
+      await page.close()
+      await imageScaffold?.close()
+    }
   }, 60_000)
 
   it.skipIf(MODE === 'record')('previews inert DOT and SVG images', async () => {

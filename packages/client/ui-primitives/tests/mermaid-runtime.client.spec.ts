@@ -4,16 +4,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const initialize = vi.fn()
 const renderDiagram = vi.fn()
-const importRuntime = vi.fn(() => ({ default: { initialize, render: renderDiagram } }))
+const getDiagramFromText = vi.fn()
+const importRuntime = vi.fn(() => ({ default: { initialize, render: renderDiagram, mermaidAPI: { getDiagramFromText } } }))
 
 beforeEach(() => {
   vi.resetModules()
   vi.resetAllMocks()
+  getDiagramFromText.mockResolvedValue({ type: 'sequence', db: {} })
   vi.doMock('mermaid', importRuntime)
 })
 afterEach(() => { vi.doUnmock('mermaid') })
 
 describe('Mermaid runtime', () => {
+  it('rejects image nodes before layout and leaves the queue available', async () => {
+    const { renderMermaid } = await import('../src/markdown/mermaid.ts')
+    getDiagramFromText.mockResolvedValueOnce({ type: 'flowchart-v2', db: {
+      getVertices: () => new Map([['A', { img: 'https://preview.invalid/image' }]]),
+    } })
+    await expect(renderMermaid('image', new AbortController().signal)).rejects.toThrow('image nodes')
+    expect(renderDiagram).not.toHaveBeenCalled()
+    getDiagramFromText.mockResolvedValueOnce({ type: 'flowchart-v2', db: {
+      getVertices: () => new Map([['A', {}]]),
+    } })
+    renderDiagram.mockResolvedValue({ svg: '<svg/>' })
+    await expect(renderMermaid('plain', new AbortController().signal)).resolves.toContain('data:image/svg+xml')
+    expect(renderDiagram).toHaveBeenCalledOnce()
+  })
+
   it('allows another attempt after the runtime import fails', async () => {
     const importError = new Error('runtime unavailable')
     importRuntime.mockImplementationOnce(() => { throw importError })
