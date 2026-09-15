@@ -138,4 +138,26 @@ describe('ReasoningRow', () => {
     expect(view.container.querySelector('[class*="ioCard"]')).toBeNull()
     expect(view.container.querySelector('[class*="thinkBody"]')).not.toBeNull()
   })
+
+  it('anchors the sticky-header selector: only an open Think row nests the disclosure row under data-expanded and data-open', () => {
+    const view = render(
+      <AssistantMarkdown
+        t={t}
+        blocks={[
+          { kind: 'reasoning', text: 'Inspect the session\nCheck persistence' },
+          { kind: 'text', text: 'Answer' },
+        ]}
+        streaming={false}
+        renderMessageImages={renderMessageImages}
+      />,
+    )
+    // Collapsed: no `data-open`, so the sticky rule's gate never matches.
+    expect(view.container.querySelector('[data-variant="think"] [data-open]')).toBeNull()
+    fireEvent.click(view.getByText('思考'))
+    expect(
+      view.container.querySelector(
+        '[data-variant="think"][data-expanded] [data-open] [data-disclosure-row]',
+      ),
+    ).not.toBeNull()
+  })
 })
