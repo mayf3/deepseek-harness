@@ -74,7 +74,7 @@ describe('web e2e: plugin manager', () => {
     // The profile's own group holds its one bundle; the installation's optional bundles form the built-in
     // group, and its other bundles stay off the page.
     expect(await panel.locator('[data-plugin-group="bundles"] [data-plugin-package]').count()).toBe(1)
-    expect(await panel.locator('[data-plugin-group="builtin"] [data-plugin-package]').count()).toBe(2)
+    expect(await panel.locator('[data-plugin-group="builtin"] [data-plugin-package]').count()).toBe(3)
     // A bundle that is off still shows the rows its patch declares, without switches.
     await panel.getByRole('button', { name: '查看 示例组合包' }).click()
     await panel.locator('[data-plugin-row]', { hasText: 'fixture-row' }).waitFor({ timeout: 10_000 })

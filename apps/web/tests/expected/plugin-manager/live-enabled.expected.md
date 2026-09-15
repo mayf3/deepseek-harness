@@ -5,7 +5,7 @@
   - img
   - text: 添加插件
 - heading "内置" [level=3]
-- text: "2"
+- text: "3"
 - list:
   - listitem:
     - button "查看 Agent Teams": Agent Teams
@@ -15,6 +15,10 @@
     - button "查看 Agent Teams Web 面板": Agent Teams Web 面板
     - text: 官方 实验功能：在浏览器里显示 Agent Teams 的团队名单、任务板和成员导航，需先开启 Agent Teams。
     - switch "启用 Agent Teams Web 面板"
+  - listitem:
+    - button "查看 Auto review": Auto review
+    - text: 官方 实验功能：为当前会话的权限选择器增加 Auto review，每次工具调用前由模型评估风险再执行；可能误放行或误拒绝，并消耗额外 token。
+    - switch "启用 Auto review"
 - heading "已安装" [level=3]
 - text: "1"
 - list:

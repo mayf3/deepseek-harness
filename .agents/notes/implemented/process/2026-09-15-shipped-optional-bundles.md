@@ -14,7 +14,7 @@ The installation's manifest, `apps/cli/package.json`, lists under `dsh.optionalB
 
 Default-product isolation keeps its rules with one declared exception: an optional bundle's dependency graph is outside the default product. The static gate skips the `dependencies` edge from `@deepseek-ai/dsh` to a listed bundle and still rejects a runtime import, a shipped composition, a preset, or a default template that names it, an experimental dependency the list does not name, and a listed name that is not a runtime dependency or not a bundle. The workspace-constraints check accepts the same `dependencies` edges and no other runtime section, and the packed-install release check skips them from the installed entry package while requiring each listed bundle to be installed.
 
-Agent Teams ships this way first, as `@deepseek-ai/dsh-experimental-agent-team-profile` and `@deepseek-ai/dsh-experimental-agent-team-web-profile`.
+Agent Teams and Auto review ship this way first, as `@deepseek-ai/dsh-experimental-agent-team-profile`, `@deepseek-ai/dsh-experimental-agent-team-web-profile`, and `@deepseek-ai/dsh-experimental-auto-review`.
 
 ## Alternatives considered
 

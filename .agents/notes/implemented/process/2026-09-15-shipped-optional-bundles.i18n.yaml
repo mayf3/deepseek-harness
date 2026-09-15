@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-15-shipped-optional-bundles.md
-2026-09-15-shipped-optional-bundles.md: cbacff975118f2b8e6187cb5c80d1ec702d64fde
-2026-09-15-shipped-optional-bundles.zh.md: d0d2dc24f27697883d96934f473ff35db2e2ace7
+2026-09-15-shipped-optional-bundles.md: 9377eff36b90bda261abcf640fa8ff50efb3a6a9
+2026-09-15-shipped-optional-bundles.zh.md: bf1afeb127ad0d0998c975e08758208416bf9332
