@@ -428,7 +428,7 @@ Source: [`packages/client/connection/src/index.ts:72`](../packages/client/connec
 
 ## `@deepseek-ai/dsh-client-hmr`
 
-Requires: `clientModules` · `webServer` · `loader`
+Requires: `clientModules` · `webServer`
 
 ```ts config-catalog
 /** Plugin config, validated by the same-named schemastery schema. */
@@ -438,7 +438,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/client/hmr/src/index.ts:31`](../packages/client/hmr/src/index.ts)
+Source: [`packages/client/hmr/src/index.ts:30`](../packages/client/hmr/src/index.ts)
 
 <a id="deepseek-aidsh-compaction-basic"></a>
 

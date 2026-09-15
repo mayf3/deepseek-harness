@@ -2,7 +2,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { ClientModuleLoader } from '@deepseek-ai/dsh-client-modules/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import { apply } from '../src/client/index.ts'
+import { apply, inject } from '../src/client/index.ts'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
@@ -19,7 +19,7 @@ it('forwards full graphs and rebuilt frames, contains wire errors and closes its
     close = close
     addEventListener(_name: string, listener: typeof receive) { receive = listener }
   })
-  const fiber = ctx.plugin({ apply })
+  const fiber = ctx.plugin({ apply, inject })
   try {
     await fiber.await()
     const graph = { rev: 'r', entries: [], batches: [] }

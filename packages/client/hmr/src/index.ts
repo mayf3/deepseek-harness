@@ -1,16 +1,15 @@
 /**
- * HMR plugin, node half: the host end of the dev reload chain. One interval
+ * Host transport for Web client graph changes and rebuilt bundles. One interval
  * stat-polls every graph row's client bundle (polling by design: network mounts
  * deliver no inotify events), reports changes through
  * `clientModules.rebuilt(id)`, and serves the `/plugins/events` SSE channel
  * broadcasting graph/rebuilt frames to the browser half (src/client/).
- * The web bundle mounts this row unconditionally: without a rebuild
- * watcher rewriting client bundles, the poll observes no changes and the
- * chain stays idle.
+ * The Web composition mounts this transport for live graph updates;
+ * a development rebuild watcher also supplies bundle changes.
  */
 import { statSync } from 'node:fs'
 import type { ServerResponse } from 'node:http'
-import type { Context, Fiber } from '@deepseek-ai/cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 // Type imports carry the clientModules/webServer Context merges.
 import type { ClientArtifactBaseline } from '@deepseek-ai/dsh-client-modules'
@@ -24,8 +23,8 @@ export { EVENTS_ENDPOINT } from './events.ts'
 /** Cordis plugin name. */
 export const name = 'client-hmr'
 
-/** Required services: the client graph, Web route registry and Loader settlement. */
-export const inject = ['clientModules', 'webServer', 'loader']
+/** Required services: the client graph and Web route registry. */
+export const inject = ['clientModules', 'webServer']
 
 /** Plugin config, validated by the same-named schemastery schema. */
 export interface Config {
@@ -61,7 +60,7 @@ function sameBundleStat(left: WatchedBundleStat, right: WatchedBundleStat): bool
 }
 
 /**
- * Mount the dev chain: bundle watches, rebuilt reporting, and the SSE channel.
+ * Mount bundle watches and graph/rebuilt SSE delivery.
  * @param ctx - host plugin context carrying clientModules and webServer.
  * @param config - validated {@link Config}.
  */
@@ -143,7 +142,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => {
     // Initial sync covers rows already in the graph; the subscription covers
     // rows arriving later (boot-window activations, including this plugin's
-    // own row — no self-exemption, a modules/hmr rebuild rides the same chain).
+    // own row; bootstrap revisions also reach page diagnostics).
     syncWatches()
     const unsubscribe = ctx.clientModules.onGraphChanged(syncWatches)
     const timer = setInterval(pollWatches, pollIntervalMs)
@@ -158,38 +157,10 @@ export function apply(ctx: Context, config: Config): void {
   // --- /plugins/events SSE channel ----------------------------------------
   const connections = new Set<ServerResponse>()
 
-  const disposing = new Set<Fiber>()
-  let closed = false
-  let publishing: Promise<void> | undefined
-  let dirty = false
   const publishGraph = (): void => {
-    dirty = true
-    if (publishing !== undefined) return
-    publishing = (async () => {
-      do {
-        dirty = false
-        await ctx.loader.await()
-        for (const fiber of disposing) {
-          while (fiber.inertia !== undefined) await fiber.inertia
-          disposing.delete(fiber)
-        }
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- graph callbacks set dirty while Loader settlement yields.
-      } while (dirty && !closed)
-      if (closed) return
-      const line = sseData({ type: 'graph', graph: ctx.clientModules.graph() })
-      for (const res of connections) res.write(line)
-    })().catch((error: unknown) => { ctx.logger.error(error) }).finally(() => {
-      publishing = undefined
-      if (dirty && !closed) publishGraph()
-    })
+    const line = sseData({ type: 'graph', graph: ctx.clientModules.graph() })
+    for (const res of connections) res.write(line)
   }
-
-  ctx.on('internal/plugin', (fiber) => {
-    if (fiber.entry === undefined || fiber.uid !== null) return
-    // Removed fibers disappear from Loader.getTasks() before their effects finish.
-    disposing.add(fiber)
-    publishGraph()
-  })
 
   const connect = (res: ServerResponse): void => {
     res.writeHead(200, {
@@ -201,7 +172,7 @@ export function apply(ctx: Context, config: Config): void {
     // no rebuild ever happens; EventSource frame parsing skips it naturally.
     res.write(': connected\n\n')
     connections.add(res)
-    publishGraph()
+    res.write(sseData({ type: 'graph', graph: ctx.clientModules.graph() }))
     res.on('close', () => { connections.delete(res) })
   }
 
@@ -226,7 +197,6 @@ export function apply(ctx: Context, config: Config): void {
       for (const res of connections) res.write(line)
     })
     return () => {
-      closed = true
       unsubscribeGraph()
       unsubscribe()
       disposeRoute()

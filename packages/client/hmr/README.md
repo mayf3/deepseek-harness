@@ -59,7 +59,7 @@ This section explains how the reload chain is built; observable behavior is cove
 
 ### Design concept
 
-The Host half watches bundle artifacts and serves `/plugins/events`. It broadcasts the full current graph after Loader imports, activation and captured removed-fiber cleanup settle, including on connection and reconnection. Dense graph notifications during one recomposition therefore do not publish intermediate rosters. Artifact polling still reports rebuilt revisions; unchanged artifacts require no content read. The browser half delegates both frame kinds to the page-owned controller in Client Modules.
+The Host half watches bundle artifacts and serves `/plugins/events`. It forwards existing graph-change and rebuilt notifications; every new connection receives the current full graph. A graph describes the browser’s desired entries and carries no Host cleanup-completion guarantee. Host activation and cleanup remain owned by the Host lifecycle. Artifact polling reports rebuilt revisions; unchanged artifacts require no content read. The browser half delegates both frame kinds to Client Modules, which serializes entry changes and waits for browser resource cleanup.
 
 ### The browser swap
 

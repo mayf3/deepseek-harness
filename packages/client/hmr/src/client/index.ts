@@ -9,8 +9,8 @@ export { EVENTS_ENDPOINT } from '../events.ts'
 /** Cordis plugin name. */
 export const name = 'client-hmr'
 
-/** Required services: the vendored Loader (entry governance) and the client module system (boot provide, service name `modules`). */
-export const inject = ['loader', 'modules']
+/** Required service: the client module system whose entry controller handles received frames. */
+export const inject = ['modules']
 
 /**
  * Forward graph snapshots and rebuilds to the page's shared serial controller.

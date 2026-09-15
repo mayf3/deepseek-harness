@@ -204,3 +204,38 @@ it('reports bootstrap rebuilds without remounting the settings page or navigatin
     await browser.close()
   }
 })
+
+it('removes the client UI and resources while Host cleanup is still pending', async () => {
+  const scaffold = await launchWebScaffold({ extraInstallAnchors: [join(FIXTURE, 'package.json')] })
+  let release!: () => void
+  const cleanup = new Promise<void>((resolve) => { release = resolve })
+  onTestFinished(async () => { release(); await scaffold.close() })
+  const host = scaffold.ctx.loader.ctx.fiber.uid
+  const browser = await chromium.launch()
+  try {
+    const page = await browser.newPage({ locale: ZH_BROWSER_LOCALE })
+    await openInventory(page, scaffold.authenticatedUrl)
+    let navigations = 0
+    page.on('framenavigated', () => { navigations++ })
+    const entryId = await scaffold.ctx.loader.create({ name: '@fixture/live-client' })
+    const live = page.locator('[data-live-client]')
+    await live.waitFor()
+    const fiber = scaffold.ctx.loader.resolve(entryId).fiber!
+    let hostDisposed = false
+    fiber.ctx.effect(() => async () => { await cleanup; hostDisposed = true })
+    scaffold.ctx.loader.remove(entryId)
+    await expect.poll(() => live.count()).toBe(0)
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.liveDisposals)).toBe('1')
+    expect(await page.locator('style[data-plugin="@fixture/live-client"]').count()).toBe(0)
+    await page.evaluate(() => { window.dispatchEvent(new Event('dsh-fixture-ping')) })
+    expect(await page.evaluate(() => document.documentElement.dataset.liveHits)).toBeUndefined()
+    expect(hostDisposed).toBe(false)
+    expect(scaffold.ctx.loader.ctx.fiber.uid).toBe(host)
+    expect(navigations).toBe(0)
+    release()
+    while (fiber.inertia !== undefined) await fiber.inertia
+    expect(hostDisposed).toBe(true)
+  } finally {
+    await browser.close()
+  }
+})

@@ -91,7 +91,6 @@ function fakeHttpServer(routes: WebRoute[]): WebServer {
 
 async function mount(clientModuleHost: FakeHost, webServer: WebServer) {
   const ctx = new Context()
-  await ctx.plugin(Loader)
   ctx.provide('clientModules', clientModuleHost)
   ctx.provide('webServer', webServer)
   const fiber = ctx.plugin(
@@ -232,7 +231,7 @@ describe('hmr node half', () => {
 })
 
 
-it('publishes settled graphs, drains removed fibers and reconnects without intermediate rosters', async () => {
+it('broadcasts the desired graph without waiting for Host activation or cleanup', async () => {
   const ctx = new Context()
   await ctx.plugin(Loader)
   const bundle = join(dir, 'a.js')
@@ -248,9 +247,10 @@ it('publishes settled graphs, drains removed fibers and reconnects without inter
   const starting = new Promise<void>((resolve) => { started = resolve })
   const activation = new Promise<void>((resolve) => { release = resolve })
   const cleanup = new Promise<void>((resolve) => { cleaned = resolve })
+  let disposed = false
   ctx.loader.internal = { version: 'client', import: async () => ({
     apply: async (pluginCtx: Context) => {
-      pluginCtx.effect(() => () => cleanup)
+      pluginCtx.effect(() => async () => { await cleanup; disposed = true })
       started()
       await activation
     },
@@ -271,34 +271,42 @@ it('publishes settled graphs, drains removed fibers and reconnects without inter
   }
   try {
     const first = await connect()
-    rows.clear()
-    host.fireGraphChanged()
-    await Promise.resolve()
-    rows.set('a', bundle)
-    host.fireGraphChanged()
-    expect(first.lines).toEqual([': connected\n\n'])
-    release()
-    await vi.waitFor(() => { expect(first.lines).toHaveLength(2) })
+    expect(first.lines).toHaveLength(2)
     const frame = JSON.parse(first.lines[1]!.slice(6)) as { graph: WebBootGraph }
     expect(frame.graph.entries.map(row => row.id)).toEqual(['a'])
     const second = await connect()
-    await vi.waitFor(() => { expect(second.lines).toHaveLength(2) })
     expect(second.lines[1]).toBe(first.lines[1])
+    expect(first.lines).toHaveLength(2)
+    release()
+    const owned = ctx.loader.resolve(entryId).fiber!
+    await owned.await()
+    const child = owned.ctx.plugin({ apply() {} })
+    await child.await()
+    expect(child.entry).toBe(owned.entry)
+    await child.dispose()
+    await child.await()
+    await ctx.loader.await()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(second.lines).toHaveLength(2)
     first.response.emit('close')
     ctx.loader.remove(entryId)
     rows.clear()
     host.fireGraphChanged()
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(second.lines).toHaveLength(2)
-    cleaned()
-    await vi.waitFor(() => { expect(second.lines).toHaveLength(3) })
+    expect(second.lines).toHaveLength(3)
+    expect(disposed).toBe(false)
     expect((JSON.parse(second.lines[2]!.slice(6)) as { graph: WebBootGraph }).graph.entries).toEqual([])
+    const third = await connect()
+    expect(third.lines[1]).toBe(second.lines[2])
+    expect(second.lines).toHaveLength(3)
+    cleaned()
+    while (owned.inertia !== undefined) await owned.inertia
+    expect(disposed).toBe(true)
+    expect(second.lines).toHaveLength(3)
     await fiber.dispose()
     host.fireGraphChanged()
-    await Promise.resolve()
     expect(second.lines).toHaveLength(3)
     expect(second.response.destroy).toHaveBeenCalledOnce()
+    expect(third.response.destroy).toHaveBeenCalledOnce()
   } finally {
     release()
     cleaned()
