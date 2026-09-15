@@ -20,6 +20,11 @@ import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from 
 export { readProfilePatches, resolveTelemetryPatch, type ProfileContext } from './profile-context.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
+export {
+  readProfilePlugins, reconcileProfilePlugins, writeProfileBundles,
+  type ProfilePluginLocation, type ProfilePluginDependency, type ProfilePluginInventory, type ProfilePluginReconciliation,
+} from './profile-plugins.ts'
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Harness-home path resolver available to Loader `!!js` config expressions. */
@@ -32,6 +37,8 @@ export {
   createProfileResolutionGeneration,
   DEFAULT_PROFILE_BUNDLES,
   healProfilesModuleFallback,
+  healIsolatedProfileModuleFallback,
+  unlinkProfileModuleFallback,
   initProfile,
   loadProfile,
   loadProfileDirectory,

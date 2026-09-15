@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ClientModuleLoader } from '@deepseek-ai/dsh-client-modules/client'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
@@ -22,6 +24,8 @@ type ListResult =
 
 async function bench() {
   const ctx = new Context()
+  const retryClient = vi.fn(async () => {})
+  ctx.provide('modules', { entries: { state: createSnapshotStore({ syncing: false, failures: [] }), retry: retryClient } } as unknown as ClientModuleLoader)
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
   ctx.provide('locale', locale)
@@ -43,7 +47,7 @@ async function bench() {
     removeBundle: vi.fn().mockResolvedValue({ ok: true, value: { changed: true, application: 'applied', stage: 'remove', target: 'remove' } }),
   }
   ctx.provide('remote.pluginManager', managed)
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, listBundles, managed }
+  return { ctx, retryClient, slots: ctx.get('slots') as SlotRegistry, locale, list, listBundles, managed }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -59,7 +63,7 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
   })
 
   it('declares only the services used by the Settings Remote contribution', () => {
-    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.pluginInventory', 'remote.pluginManager'])
+    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.pluginInventory', 'remote.pluginManager', 'modules'])
   })
 
   it('registers a localized tab without reading the Remote eagerly', async () => {
@@ -75,6 +79,12 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(b.list).not.toHaveBeenCalled()
 
     const injected = (entry.inject as unknown as () => PluginInventorySettingsTabInjected)()
+    injected.retryClient()
+    const retryError = vi.spyOn(b.ctx.logger, 'error').mockImplementation(() => {})
+    b.retryClient.mockRejectedValueOnce(new Error('retry unavailable'))
+    injected.retryClient()
+    await vi.waitFor(() => { expect(retryError).toHaveBeenCalled() })
+    retryError.mockRestore()
     await expect(injected.list()).resolves.toEqual(EMPTY)
     expect(b.list).toHaveBeenCalledOnce()
     await expect(injected.management?.listBundles()).resolves.toEqual([])

@@ -1102,6 +1102,50 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     }
   }, SPAWN_TIMEOUT_MS * 2 + 30_000)
 
+  it('reconciles a real pnpm alias without reactivating it and keeps ordinary dependencies outside the bundle list', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-alias-'))
+    try {
+      const bundle = join(home, 'bundle-source')
+      const library = join(home, 'library-source')
+      mkdirSync(bundle)
+      mkdirSync(library)
+      writeFileSync(join(bundle, 'package.json'), JSON.stringify({
+        name: 'original-bundle-name', version: '1.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } },
+      }))
+      writeFileSync(join(bundle, 'cordis.patch.yml'), '[]\n')
+      writeFileSync(join(library, 'package.json'), JSON.stringify({ name: 'ordinary-library', version: '1.0.0' }))
+      const added = await runBuiltBin([
+        'plugin', '--profile', 'alias', 'add', `bundle-alias@file:${bundle}`, `file:${library}`,
+      ], { DSH_HOME: home }, home)
+      expect(added.code).toBe(0)
+      expect(added.stderr).toContain('ordinary-library declares no dsh.bundle — installed as a plain dependency, not a profile layer')
+      const manifestPath = join(home, 'profiles', 'alias', 'package.json')
+      const installed = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+        dependencies: Record<string, string>
+        dsh: { profile: { bundles: string[] } }
+      }
+      expect(Object.keys(installed.dependencies).sort()).toEqual(['bundle-alias', 'ordinary-library'])
+      expect(installed.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base', 'bundle-alias'])
+      installed.dsh.profile.bundles = ['@deepseek-ai/dsh-base']
+      writeFileSync(manifestPath, JSON.stringify(installed))
+      const refreshed = await runBuiltBin(['plugin', '--profile', 'alias', 'root'], { DSH_HOME: home }, home)
+      expect(refreshed.code).toBe(0)
+      expect(refreshed.stderr).not.toContain('declares no dsh.bundle')
+      const active = JSON.parse(readFileSync(manifestPath, 'utf8')) as { dsh: { profile: { bundles: string[] } } }
+      expect(active.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base'])
+      const removed = await runBuiltBin(['plugin', '--profile', 'alias', 'remove', 'bundle-alias'], { DSH_HOME: home }, home)
+      expect(removed.code).toBe(0)
+      const remaining = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+        dependencies: Record<string, string>
+        dsh: { profile: { bundles: string[] } }
+      }
+      expect(Object.keys(remaining.dependencies)).toEqual(['ordinary-library'])
+      expect(remaining.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base'])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('keeps existing dependencies inactive when package metadata gains a bundle declaration', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-update-'))
     try {

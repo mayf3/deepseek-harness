@@ -5,6 +5,8 @@
  * state tables and the load/materialize machinery.
  */
 import { stripClientSuffix } from './manifest.ts'
+import { ClientEntries } from './entries.ts'
+import { removeOwnedStyles } from './entry-lifecycle.ts'
 import type {
   BootManifest, BootModuleRow, ClientBundleRegistration, ClientModuleLoader, ClientModuleRecord,
   ClientModuleSystemOptions,
@@ -60,16 +62,17 @@ const claimStyles = (id: string): string[] => {
  */
 export class ClientModuleSystem implements ClientModuleLoader {
   readonly version = 'client'
-  readonly manifest: BootManifest
+  manifest: BootManifest
+  readonly entries: ClientEntries
   readonly loadCache = new Map<string, ClientModuleRecord>()
 
   private readonly seed: Map<string, unknown>
-  private readonly factories = new Map<string, ClientBundleRegistration['factory']>()
+  private readonly factories = new Map<string, { factory: ClientBundleRegistration['factory']; rev: string | undefined }>()
   private readonly bootstrapIds = new Set<string>()
   /** In-flight script transport per URL; every row in one batch shares it. */
   private readonly pendingArrival = new Map<string, Promise<void>>()
   /** Single-resource combo URL selected by HMR after invalidating one row. */
-  private readonly reloadUrls = new Map<string, string>()
+  private readonly reloadTargets = new Map<string, { url: string; rev: string }>()
   /** Materialization re-entrancy guard: factory-form CJS cannot deliver partial exports, so a cycle is fatal. */
   private readonly materializing = new Set<string>()
   private readonly graphRows = new Map<string, BootModuleRow>()
@@ -81,11 +84,18 @@ export class ClientModuleSystem implements ClientModuleLoader {
    */
   constructor(options: ClientModuleSystemOptions) {
     this.manifest = options.manifest
+    this.entries = new ClientEntries(this, {
+      update: (manifest, managed) => { this.updateManifest(manifest, managed) },
+      invalidateForReplacement: (id, rev) => {
+        if (this.bootstrapIds.has(id)) throw new Error(`client-modules: replacing bootstrap module ${id} requires a page reload`)
+        this.invalidate(id, rev)
+      },
+      prune: (roots) => { this.prune(roots) },
+    })
     this.seed = new Map(Object.entries(options.staticModules))
     this.loadBundle = options.loadBundle ?? defaultLoadBundle
 
     for (const row of options.manifest.modules) {
-      if (this.graphRows.has(row.id)) throw new Error(`client-modules: duplicate graph entry "${row.id}"`)
       this.graphRows.set(row.id, row)
     }
 
@@ -116,15 +126,18 @@ export class ClientModuleSystem implements ClientModuleLoader {
     if (this.bootstrapIds.has(id) || this.factories.has(id)) {
       throw new Error(`client-modules: duplicate factory registration for "${registration.id}" (bundle executed twice without invalidate?)`)
     }
-    this.factories.set(id, registration.factory)
+    this.factories.set(id, {
+      factory: registration.factory,
+      rev: this.reloadTargets.get(id)?.rev ?? this.graphRows.get(id)?.rev,
+    })
   }
 
   /** Load one graph row so its factory is registered (idempotent per in-flight arrival). */
   private arrive(row: BootModuleRow): Promise<void> {
     const { id } = row
     if (this.loadCache.has(id) || this.factories.has(id)) return Promise.resolve()
-    const reloadUrl = this.reloadUrls.get(id)
-    const url = reloadUrl ?? row.initialUrl
+    const reload = this.reloadTargets.get(id)
+    const url = reload?.url ?? row.initialUrl
     let transport = this.pendingArrival.get(url)
     if (transport === undefined) {
       transport = this.loadBundle(url).finally(() => { this.pendingArrival.delete(url) })
@@ -134,8 +147,8 @@ export class ClientModuleSystem implements ClientModuleLoader {
       if (!this.factories.has(id)) {
         throw new Error(`client-modules: bundle ${url} loaded without registering "${id}" via __ModuleLoader__.load`)
       }
-      if (reloadUrl !== undefined && this.reloadUrls.get(id) === reloadUrl) {
-        this.reloadUrls.delete(id)
+      if (reload !== undefined && this.reloadTargets.get(id) === reload) {
+        this.reloadTargets.delete(id)
       }
     })
   }
@@ -182,10 +195,13 @@ export class ClientModuleSystem implements ClientModuleLoader {
     this.materializing.add(id)
     try {
       const edges = new Set<string>()
-      const exports = registered(this.makeRequire(edges))
+      const exports = registered.factory(this.makeRequire(edges))
       const record: ClientModuleRecord = { id, exports, styles: claimStyles(id), edges }
       this.loadCache.set(id, record)
       return record
+    } catch (error) {
+      removeOwnedStyles(id)
+      throw error
     } finally {
       this.materializing.delete(id)
     }
@@ -237,12 +253,55 @@ export class ClientModuleSystem implements ClientModuleLoader {
     await this.arriveGraphRow(row)
   }
 
+  /** Refresh descriptors and unowned factory revisions before any entry imports its dependencies. */
+  private updateManifest(manifest: BootManifest, managed: Iterable<string>): void {
+    for (const id of this.bootstrapIds) {
+      if (this.manifest.modules.some(row => row.id === id) && !manifest.modules.some(row => row.id === id)) {
+        throw new Error(`client-modules: removing bootstrap module ${id} requires a page reload`)
+      }
+    }
+    const owned = new Set(managed)
+    for (const row of manifest.modules) {
+      this.graphRows.set(row.id, { ...row, initialUrl: row.url })
+      const cachedRevision = this.factories.get(row.id)?.rev ?? this.reloadTargets.get(row.id)?.rev
+      if (!owned.has(row.id) && cachedRevision !== undefined && cachedRevision !== row.rev) {
+        this.invalidate(row.id, row.rev)
+        removeOwnedStyles(row.id)
+      }
+    }
+    this.manifest = manifest
+  }
+
+  /** Retain live Loader modules and their transitive requests before evicting unreferenced graph records. */
+  private prune(roots: Iterable<string>): void {
+    const retained = new Set<string>(this.bootstrapIds)
+    const visit = (specifier: string): void => {
+      const id = stripClientSuffix(specifier)
+      if (retained.has(id)) return
+      retained.add(id)
+      const row = this.graphRows.get(id)
+      for (const request of [...row?.external ?? [], ...row?.inject ?? [], ...this.loadCache.get(id)?.edges ?? []]) {
+        visit(request)
+      }
+    }
+    for (const row of this.manifest.modules) visit(row.id)
+    for (const id of roots) visit(id)
+    for (const id of this.graphRows.keys()) {
+      if (retained.has(id)) continue
+      this.graphRows.delete(id)
+      this.invalidate(id)
+      removeOwnedStyles(id)
+    }
+  }
+
   invalidate(id: string, rev?: string): void {
     const normalized = stripClientSuffix(id)
     if (this.bootstrapIds.has(normalized)) return
     const row = this.graphRows.get(normalized)
-    if (row !== undefined) this.reloadUrls.set(normalized, atRevision(row.url, rev ?? row.rev))
-    else this.reloadUrls.delete(normalized)
+    if (row !== undefined) {
+      const revision = rev ?? row.rev
+      this.reloadTargets.set(normalized, { url: atRevision(row.url, revision), rev: revision })
+    } else this.reloadTargets.delete(normalized)
     this.factories.delete(normalized)
     this.loadCache.delete(normalized)
   }

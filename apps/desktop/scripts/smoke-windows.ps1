@@ -16,19 +16,12 @@ function Invoke-Checked([string]$Executable, [string[]]$Arguments) {
 }
 
 try {
+  & (Join-Path $PSScriptRoot 'smoke-installer-directories.ps1') -Makensis $Makensis -SevenZip $SevenZip
   $previousRunAsNode = $env:ELECTRON_RUN_AS_NODE
   try {
     $env:ELECTRON_RUN_AS_NODE = '1'
     Invoke-Checked $electron @((Join-Path $fixtureRoot 'owned-directory-smoke.mjs'))
   } finally { $env:ELECTRON_RUN_AS_NODE = $previousRunAsNode }
-
-  $cleanupExe = Join-Path $scratch 'cleanup.exe'
-  $cleanupResult = Join-Path $scratch 'cleanup.txt'
-  Invoke-Checked $Makensis @('/V2', "/DOUTPUT_FILE=$cleanupExe", "/DRESULT_FILE=$cleanupResult", (Join-Path $fixtureRoot 'installer-cleanup-smoke.nsi'))
-  Invoke-Checked $cleanupExe @('/S')
-  if ((Get-Content -LiteralPath $cleanupResult -Raw) -ne 'scratch removed; archive, plugin, rollback, registers and error flags preserved') {
-    throw 'NSIS cleanup did not preserve its sentinels'
-  }
 
   $payload = Join-Path $scratch 'payload'
   New-Item -ItemType Directory -Path $payload | Out-Null
@@ -56,7 +49,7 @@ try {
       throw "Unexpected NSIS $mode replacement result"
     }
   }
-  Write-Output 'Electron cleanup and NSIS cleanup/replacement smokes passed.'
+  Write-Output 'Electron cleanup and NSIS directory/replacement smokes passed.'
 } finally {
   $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
   $resolvedScratch = [System.IO.Path]::GetFullPath($scratch)

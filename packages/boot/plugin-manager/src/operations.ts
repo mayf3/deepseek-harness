@@ -14,6 +14,8 @@ import type { PackageResult } from './types.ts'
 /** Profile and invocation locations supplied by the launcher. */
 export interface PackageOperationContext {
   profile: string
+  /** Explicit directory for an application-owned profile; named CLI profiles resolve under home. */
+  dir?: string
   installAnchor: string
   cwd: string
   home?: string
@@ -97,7 +99,7 @@ async function reconcile(before: ProfileManifest, dir: string, anchor: string, o
 export async function runProfilePnpm(
   context: PackageOperationContext, args: readonly string[], options: PackageOperationOptions,
 ): Promise<PackageResult> {
-  const dir = resolveProfileDir(context.profile, context.home)
+  const dir = context.dir ?? resolveProfileDir(context.profile, context.home)
   const before = readProfileManifest('dsh', dir)
   const logRoot = join(dir, '.plugin-manager', 'logs')
   await mkdir(logRoot, { recursive: true, mode: 0o700 })
@@ -165,7 +167,7 @@ export async function runProfilePnpm(
 export async function runPluginCommand(
   context: PackageOperationContext, args: readonly string[], options: PackageOperationOptions,
 ): Promise<PackageResult> {
-  const dir = resolveProfileDir(context.profile, context.home)
+  const dir = context.dir ?? resolveProfileDir(context.profile, context.home)
   await mkdir(dir, { recursive: true })
   return withFileLock(join(dir, 'package.json'), async () => {
     if (!existsSync(join(dir, 'package.json'))) {

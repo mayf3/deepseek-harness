@@ -622,6 +622,30 @@ export function createProfileResolutionGeneration(
   return healProfilesModuleFallback({ ...options, materialize: false })
 }
 
+/**
+ * Supply an application-owned profile with filesystem packages from its installation and selected bundles.
+ * All fallback links belong to the profile; no shared Harness-home directory is written.
+ * Existing pnpm-managed packages remain authoritative. The caller serializes profile mutations.
+ * @param options - owning installation package.json and the loaded application profile.
+ */
+export function healIsolatedProfileModuleFallback(options: { installAnchor: string; profile: Profile }): void {
+  const installationLinks = resolveModuleFallbackEntries(options.installAnchor, false).packageDirs
+  healProfileModuleFallback(options.profile, new Set(installationLinks.keys()), true, undefined, undefined, installationLinks)
+}
+
+/**
+ * Detach this profile's fallback links before a package-manager mutation.
+ * Installed packages and links replaced by pnpm remain untouched; the next profile launch restores fallbacks.
+ * @param profileDir - profile directory whose package mutation is serialized by the caller.
+ */
+export function unlinkProfileModuleFallback(profileDir: string): void {
+  const ownedModulesDir = join(profileDir, PROFILE_MODULE_FALLBACK_DIR, 'node_modules')
+  if (!existsSync(ownedModulesDir)) return
+  for (const name of ownedPackageNames(ownedModulesDir)) {
+    removeProfileSymlink(join(profileDir, 'node_modules'), ownedModulesDir, name)
+  }
+}
+
 /** Heal one module-fallback generation while the cross-process writer lock is held. */
 function healProfilesModuleFallbackLocked(entries: readonly ModuleFallbackEntry[], modulesDir: string): void {
   for (const entry of entries) {
@@ -682,6 +706,7 @@ function healProfileModuleFallback(
   profile: Profile, installationPackageNames: ReadonlySet<string>, materialize = true,
   declarers?: Map<string, string>,
   versions?: Map<string, string | undefined>,
+  installationLinks: ReadonlyMap<string, string> = new Map(),
 ): Map<string, string> {
   const profileModulesDir = join(profile.dir, 'node_modules')
   const ownedModulesDir = join(profile.dir, PROFILE_MODULE_FALLBACK_DIR, 'node_modules')
@@ -707,11 +732,12 @@ function healProfileModuleFallback(
     }
   }, declarers, versions)
   for (const layer of profile.layers) bundleLinks.delete(layer.packageName)
-  if (!materialize) return bundleLinks
+  const links = new Map([...installationLinks, ...bundleLinks])
+  if (!materialize) return links
   for (const packageName of ownedPackageNames(ownedModulesDir)) {
-    if (!bundleLinks.has(packageName)) removeProfileSymlink(profileModulesDir, ownedModulesDir, packageName)
+    if (!links.has(packageName)) removeProfileSymlink(profileModulesDir, ownedModulesDir, packageName)
   }
-  for (const [packageName, target] of bundleLinks) {
+  for (const [packageName, target] of links) {
     const ownedLink = join(ownedModulesDir, packageName)
     mkdirSync(dirname(ownedLink), { recursive: true })
     ensureSymlink(ownedLink, target)
@@ -719,7 +745,7 @@ function healProfileModuleFallback(
     mkdirSync(dirname(profileLink), { recursive: true })
     ensureProfileSymlink(profileLink, ownedLink)
   }
-  return bundleLinks
+  return links
 }
 
 /**

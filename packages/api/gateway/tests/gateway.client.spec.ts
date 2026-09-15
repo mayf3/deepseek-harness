@@ -2341,6 +2341,20 @@ describe('Client Typert API', () => {
 })
 
 describe('Remote stream client carrier lifecycle', () => {
+  it('connects to the shell-owned Host while the document uses a local asset origin', async () => {
+    await withFakeWebSocket('dsh-app://app', async () => {
+      vi.stubGlobal('__DSH_TRANSPORT__', { streamBaseUrl: 'http://127.0.0.1:43210' })
+      const client = new RemoteStreamMuxClient()
+      try {
+        client.start()
+        expect(FakeWebSocket.sockets[0]!.url).toBe('ws://127.0.0.1:43210/api/remote.mux')
+      } finally {
+        await client.close()
+        vi.unstubAllGlobals()
+      }
+    })
+  })
+
   it('requires the transport owner to start the physical carrier', async () => {
     const client = new RemoteStreamMuxClient()
     await expect(client.open('feed/follow', {}, new AbortController().signal)

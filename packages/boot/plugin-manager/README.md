@@ -107,7 +107,7 @@ Notices append context; they do not rewrite earlier messages.
 - Startup-only profiles cannot remove packages used to start the current process; stop it and use `dsh plugin`.
 - The manager cannot disable its own management components, change another profile, or edit an agent preset's composition.
 - Package failures may leave dependencies partially changed. Inactive dependencies with missing files remain removable. Diagnostic logs remain under the profile's `.plugin-manager/logs` directory.
-- Browser bundle changes require a page refresh to load the current Client module graph. Management results describe Host activation.
+- Management results describe Host activation. Browser synchronization failures appear separately in the plugin list.
 - Desktop package operations remain owned by the Desktop shell.
 
 <a id="failure-behavior"></a>

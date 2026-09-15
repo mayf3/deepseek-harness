@@ -72,6 +72,19 @@ it('can install without activation and bounds output while retaining the complet
   expect(command.run.mock.calls[0]?.[1]).toEqual(['add', join(context.cwd, 'extra')])
 })
 
+it.each([runPluginCommand, runProfilePnpm])('installs into the supplied application profile directory with %s', async (run) => {
+  const { home, dir: namedDir, context } = fixture()
+  const dir = join(home, 'application', 'profile')
+  initProfile(dir, [])
+  command.run.mockImplementationOnce(() => result(0, 'installed', () => { install(dir, 'extra') }))
+  const outcome = await run({ ...context, dir }, ['add', 'extra'], { execution: 'service', outputBytes: 100 })
+  expect(outcome.exitCode).toBe(0)
+  expect(command.run.mock.calls[0]?.[2]).toMatchObject({ cwd: dir })
+  expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['extra'])
+  expect(readProfileManifest('test', namedDir).dependencies).not.toHaveProperty('extra')
+  expect(readProfileManifest('test', namedDir).dsh?.profile?.bundles).toEqual([])
+})
+
 it('retains partial package-manager changes after failure without activating them', async () => {
   const { dir, context } = fixture()
   command.run.mockImplementationOnce(() => result(1, 'installation failed', () =>{  install(dir, 'partial') }))

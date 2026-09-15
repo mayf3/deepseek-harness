@@ -1,6 +1,7 @@
 /** Host plugin inventory and current-profile management in Web Settings. */
 
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-modules/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -27,7 +28,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const NS = 'settings.pluginInventory'
 
 /** Services required by the Settings registration and generated Remote face. */
-export const inject = ['slots', 'locale', 'remote', 'remote.pluginInventory', 'remote.pluginManager']
+export const inject = ['slots', 'locale', 'remote', 'remote.pluginInventory', 'remote.pluginManager', 'modules']
 
 /** Contribute the lazy inventory tab to the Plugins settings section. */
 export function apply(ctx: ClientContext): void {
@@ -59,7 +60,11 @@ export function apply(ctx: ClientContext): void {
     installBundle: (spec, options) => unwrap(ctx.remote.pluginManager.installBundle(spec, options)),
     removeBundle: name => unwrap(ctx.remote.pluginManager.removeBundle(name)),
   }
-  const injected = (): PluginInventorySettingsTabInjected => ({ list, presetName, management })
+  const injected = (): PluginInventorySettingsTabInjected => ({
+    list, presetName, management,
+    hooks: { clientSync: ctx.modules.entries.state },
+    retryClient: () => { void ctx.modules.entries.retry().catch((error: unknown) => { ctx.logger.error(error) }) },
+  })
 
   ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
     name: 'settings.plugins.tab',

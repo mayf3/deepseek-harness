@@ -107,7 +107,7 @@ kind: "package-reference"
 - 仅启动时加载的 profile 不能删除当前进程启动时使用的包；停止进程后使用 `dsh plugin`。
 - 管理器不能关闭自身所需的管理组件、修改其他 profile 或编辑 agent 预设组合。
 - 包管理失败可能留下部分依赖改动。文件缺失的未启用依赖仍可删除。诊断日志保留在 profile 的 `.plugin-manager/logs` 目录中。
-- 浏览器组合包变化需要刷新页面后才能加载当前 Client 模块图。管理结果描述 Host 激活状态。
+- 管理结果描述 Host 激活状态。浏览器同步失败会在插件列表中单独显示。
 - Desktop 包管理操作仍由 Desktop shell 负责。
 
 <a id="failure-behavior"></a>
