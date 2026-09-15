@@ -26,7 +26,7 @@ App-boot 负责已安装依赖发现、安装目录优先的 bundle 声明解析
 
 本记录部分取代[打包决策](2026-08-25-electron-desktop-packaging-and-updates.zh.md)中的私有组合与无端口传输。该设计避免监听端口，并使用分帧字节管道避免 Base64 膨胀与跨版本 V8 序列化。共享 HTTP 放弃无端口保证，将服务与认证交给已有 Web 实现。发布身份、签名、进程归属及原生壳功能仍是有效决策。
 
-本地应用的原生目录选择通过窄 preload IPC 调用 Electron 的窗口所属对话框。Main 仅接受当前应用窗口中位于 `dsh-app://app` 的主框架请求；shell、远程页面和子框架均不能调用。并发请求共用待完成的对话框，窗口销毁后丢弃选择结果。Web 后端选择和 Host 浏览仍由共享实现负责。
+本地应用的原生目录选择通过窄 preload IPC 调用 Electron 的窗口所属对话框。Main 仅接受当前应用窗口中位于 `dsh-app://app` 的主框架请求；shell、远程页面和子框架均不能调用。并发请求共用待完成的对话框，窗口销毁后丢弃选择结果。Web 后端选择和 Host 浏览由共享实现负责。
 
 ## Alternatives considered
 

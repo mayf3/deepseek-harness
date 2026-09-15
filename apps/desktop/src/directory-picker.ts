@@ -1,7 +1,7 @@
 /** Window-owned workspace directory dialogs for the local Desktop renderer. */
 
 import { dialog, ipcMain, type BrowserWindow } from 'electron'
-import { DESKTOP_IPC } from './ipc.ts'
+import { DESKTOP_IPC, assertDesktopSender } from './ipc.ts'
 
 /**
  * Install the application-lifetime directory picker IPC handler.
@@ -15,15 +15,13 @@ export function installDesktopDirectoryPicker(getWindow: () => BrowserWindow | u
       || event.senderFrame !== window.webContents.mainFrame) {
       throw new Error('dsh desktop: rejected directory picker from an unowned renderer')
     }
-    const url = new URL(event.senderFrame.url)
-    if (url.protocol !== 'dsh-app:' || url.hostname !== 'app') {
-      throw new Error('dsh desktop: directory picker requires the local application page')
-    }
+    assertDesktopSender(event, ['app'])
     const existing = pending.get(window)
     if (existing !== undefined) return existing
     if (window.isMinimized()) window.restore()
+    window.show()
     window.focus()
-    const result = dialog.showOpenDialog(window, { properties: ['openDirectory'] }).then(
+    const result = dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'] }).then(
       ({ canceled, filePaths }) => window.isDestroyed() || canceled ? null : filePaths[0] ?? null,
     ).finally(() => { pending.delete(window) })
     pending.set(window, result)

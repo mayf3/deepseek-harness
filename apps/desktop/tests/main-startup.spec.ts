@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { IpcMainInvokeEvent } from 'electron'
 import { join } from 'node:path'
 import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron'
 import { DESKTOP_IPC } from '../src/ipc.ts'
@@ -29,6 +30,7 @@ const harness = await vi.hoisted(async () => {
     readonly urls: string[] = []
     readonly webContents = Object.assign(new EventEmitter(), {
       id: 42,
+      mainFrame: { url: 'dsh-app://app/' },
       setWindowOpenHandler: vi.fn(),
       openDevTools: vi.fn(),
       getURL: () => this.urls.at(-1) ?? '',
@@ -87,7 +89,7 @@ const harness = await vi.hoisted(async () => {
     popup,
     socketHeaders: vi.fn(),
     menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn(() => ({ popup })) },
-    dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn<(options: MessageBoxOptions) => Promise<MessageBoxReturnValue>>() },
+    dialog: { showOpenDialog: vi.fn(), showErrorBox: vi.fn(), showMessageBox: vi.fn<(options: MessageBoxOptions) => Promise<MessageBoxReturnValue>>() },
     openExternal: vi.fn(),
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
     mutateFailure: vi.fn<() => void>(),
@@ -118,7 +120,7 @@ vi.mock('electron', () => ({
   nativeTheme: { themeSource: 'system' },
   ipcMain: {
     on: vi.fn(),
-    handle: (channel: string, handler: (event: { senderFrame: { url: string } }) => unknown) => { harness.handlers.set(channel, handler) },
+    handle: (channel: string, handler: (event: { senderFrame: { url: string } }) => unknown) => { if (harness.handlers.has(channel)) throw new Error(`duplicate IPC handler ${channel}`); harness.handlers.set(channel, handler) },
   },
   Menu: harness.menu,
   session: { defaultSession: { webRequest: { onBeforeSendHeaders: harness.socketHeaders } } },
@@ -218,6 +220,20 @@ describe('desktop main startup', () => {
     expect(callback).toHaveBeenLastCalledWith({})
     handler({ ...details, url: 'ws://127.0.0.1:9999/api/remote.mux' }, callback)
     expect(callback).toHaveBeenLastCalledWith({})
+  })
+
+  it('registers the window-owned directory picker during startup and rejects foreign callers', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    const handler = harness.handlers.get(DESKTOP_IPC.directoryPick) as (event: IpcMainInvokeEvent) => Promise<string | null>
+    expect(handler).toBeTypeOf('function')
+    const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame } as unknown as IpcMainInvokeEvent
+    harness.dialog.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['/workspace'] })
+    await expect(handler(event)).resolves.toBe('/workspace')
+    expect(harness.dialog.showOpenDialog).toHaveBeenCalledExactlyOnceWith(window, { properties: ['openDirectory', 'createDirectory'] })
+    window.webContents.mainFrame.url = 'https://other.example/'
+    await expect(handler(event)).rejects.toThrow('unowned renderer')
   })
 
   it('holds boot injections until the Host is ready and rejects foreign boot callers', async () => {
