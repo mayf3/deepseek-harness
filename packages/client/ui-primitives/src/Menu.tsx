@@ -242,14 +242,17 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
       onClose()
     }
     const onKeyDown = (e: KeyboardEvent) => {
+      // Where the keyboard is, computed once: the menu owns it when it holds a
+      // row or sits on its anchor region.
+      const focused = document.activeElement
+      const insideList = listRef.current?.contains(focused) === true
+      const anchored = rootRef.current?.contains(focused) === true || insideList
       if (e.key === 'Escape') {
         // Closing hands the keyboard back when the menu had it — and, as this
         // primitive always did for autoFocus menus, when it held the keyboard
         // and lost it again (a row that unmounted under it).
-        const inMenu = rootRef.current?.contains(document.activeElement) === true
-          || listRef.current?.contains(document.activeElement) === true
         onClose()
-        if (inMenu || autoFocus) refocusAnchor()
+        if (anchored || autoFocus) refocusAnchor()
       }
       // Tab settles like Enter and Shift+Tab leaves like Escape, so a menu's
       // keys mean what they mean in the composer. Only a keyboard already on
@@ -257,9 +260,6 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
       // page keeps the browser's traversal even while a menu is open.
       if (e.key === 'Tab') {
         const list = listRef.current
-        const focused = document.activeElement
-        const insideList = list?.contains(focused) === true
-        const anchored = rootRef.current?.contains(focused) === true || insideList
         if (list === null || !anchored) return
         if (e.shiftKey) {
           e.preventDefault()
@@ -295,8 +295,6 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
       // alternate between two rows.
       if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
       const list = listRef.current
-      const focused = document.activeElement
-      const anchored = rootRef.current?.contains(focused) === true || list?.contains(focused) === true
       if (list === null || !anchored) return
       const buttons = Array.from(list.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'))
       if (buttons.length === 0) return
