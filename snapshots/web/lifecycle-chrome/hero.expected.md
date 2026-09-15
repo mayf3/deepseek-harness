@@ -4,8 +4,6 @@
 - button "New session":
   - img
   - text: New Session
-- navigation "Global panels":
-  - button "Plugins"
 - text: Workspaces
 - button "Search sessions":
   - img

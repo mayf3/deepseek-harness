@@ -23,8 +23,6 @@
 
 启动器只解析自身的 flag，并将其后的所有内容交给已启动的 profile；注入该 profile 的任意应用插件都可以解析这份共享的不可变快照（[`dsh-cmdline`](../../packages/boot/cmdline/README.zh.md)）。启动器无法识别的第一个 token 标志着应用参数的开始：
 
-由安装器处理的 `dsh plugin add/remove` 会将中断传给包管理进程，并等待它停止。被中断的 add 会恢复 `package.json` 与 `pnpm-lock.yaml`；下载或解包文件可能保留。SIGINT 返回退出码 130，SIGTERM 返回 143。
-
 ```sh
 dsh --profile web --port 8080       # --port belongs to the web app
 dsh --profile tui --resume <id>     # example, assuming the tui profile is installed; --resume belongs to the terminal app
@@ -36,7 +34,7 @@ dsh --help                          # the launcher's own help
 <a id="profiles"></a>
 ## Profile
 
-profile 目录包含一个 `package.json`，其中记录树外插件依赖，以及 profile manifest（元数据清单）`dsh.profile`、其中按顺序排列的 `bundles` 列表，以及 `patchReload` 生命周期；还包含一个 `cordis.patch.yml`，其中保存用户自己的 patch 层。`patchReload: live` 监视 profile 与 home 级 patch 文件，`startup` 则只应用一次。
+profile 目录包含一个 `package.json`，其中记录树外插件依赖，以及 profile manifest（元数据清单）`dsh.profile`、其中按顺序排列的 `bundles` 列表与 `patchReload` 生命周期；还包含一个 `cordis.patch.yml`，其中保存用户自己的 patch 层。`patchReload: live` 监视 profile manifest、profile 与 home 级 patch 文件，再通过统一串行重载重新组合所有层；`startup` 则只应用一次。监听器注册期间发生的编辑与后续编辑使用相同的非致命重载错误报告。[插件管理器](../../packages/boot/plugin-manager/README.zh.md) 与 `dsh plugin` 共享包操作和 profile 写锁；更新依赖会保留已停用的组合包选择。
 
 配置树以空根为起点，依次叠加以下配置层：
 - `dsh.profile.bundles` 中各组合包的 patch

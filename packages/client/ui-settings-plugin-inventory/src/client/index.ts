@@ -1,4 +1,4 @@
-/** Read-only Host plugin inventory registered into Web Settings. */
+/** Host plugin inventory and current-profile management in Web Settings. */
 
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -10,6 +10,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
 // Inline-safe shared fold: shipped ids map to dictionary keys in one home.
 import { presetDisplayText } from '@deepseek-ai/dsh-agent-presets/display'
 import { PluginInventorySettingsTab, type PluginInventorySettingsTabInjected } from './PluginInventorySettingsTab.tsx'
+import type { PluginManagement } from './management.tsx'
 import { en, zh, type PluginInventoryLocaleKey } from './locales.ts'
 
 export type { PluginInventorySettingsTabInjected, PluginInventorySettingsTabProps } from './PluginInventorySettingsTab.tsx'
@@ -26,7 +27,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const NS = 'settings.pluginInventory'
 
 /** Services required by the Settings registration and generated Remote face. */
-export const inject = ['slots', 'locale', 'remote', 'remote.pluginInventory']
+export const inject = ['slots', 'locale', 'remote', 'remote.pluginInventory', 'remote.pluginManager']
 
 /** Contribute the lazy inventory tab to the Plugins settings section. */
 export function apply(ctx: ClientContext): void {
@@ -45,7 +46,20 @@ export function apply(ctx: ClientContext): void {
   const agentPresetCopy = ctx.locale.bind('settings.agentPreset')
   const presetName: PluginInventorySettingsTabInjected['presetName'] = preset =>
     presetDisplayText(preset, agentPresetCopy).name
-  const injected = (): PluginInventorySettingsTabInjected => ({ list, presetName })
+  const unwrap = async <T>(response: Promise<{ ok: true; value: T } | { ok: false; error: Error }>): Promise<T> => {
+    const result = await response
+    if (!result.ok) throw result.error
+    return result.value
+  }
+  const management: PluginManagement = {
+    listPlugins: () => unwrap(ctx.remote.pluginManager.listPlugins()),
+    listBundles: () => unwrap(ctx.remote.pluginManager.listBundles()),
+    setPluginEnabled: (id, enabled) => unwrap(ctx.remote.pluginManager.setPluginEnabled(id, enabled)),
+    setBundleEnabled: (name, enabled) => unwrap(ctx.remote.pluginManager.setBundleEnabled(name, enabled)),
+    installBundle: (spec, options) => unwrap(ctx.remote.pluginManager.installBundle(spec, options)),
+    removeBundle: name => unwrap(ctx.remote.pluginManager.removeBundle(name)),
+  }
+  const injected = (): PluginInventorySettingsTabInjected => ({ list, presetName, management })
 
   ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
     name: 'settings.plugins.tab',

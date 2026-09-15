@@ -43,8 +43,6 @@ Create `hello-plugin/package.json`:
 }
 ```
 
-Two more `dsh` keys describe the package to people: `dsh.title` names it in the plugin list, and `dsh.plugins` lists modules a user can add to a composition one at a time, beside the layer the bundle mounts as a whole — each entry names the module (`"name": "dsh-hello-plugin/extra"`) with an optional `title` and default `config`. Every `dsh` key is declared in [`@deepseek-ai/dsh-package-manifest`](../../../../packages/util/package-manifest/README.md).
-
 Create `hello-plugin/index.js` with the plugin entry point:
 
 ```js
@@ -110,8 +108,6 @@ dsh --profile demo
 ```
 
 `dsh plugin --profile demo remove dsh-hello-plugin` removes both the dependency and the layer.
-
-A bundle mounts its rows under the parents declared in its patch and keeps their ids: the row above remains `hello`. Layers claim ids in profile order; a bundle that repeats an id or declares an earlier layer’s id is omitted whole and reported at startup and in the plugin list. A failed row outside the [required startup ids](../../../architecture.md) produces a warning while successful siblings remain active. A required consumer that cannot activate, including because its provider failed, still rejects startup.
 
 ## The loading order
 

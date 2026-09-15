@@ -9,13 +9,10 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
-  composeProfileStack,
-  formatRowConflict,
   loadOptionalPatches,
   loadOverlayPatches,
   renderConfigDump,
   type ConfigDumpLayer,
-  type StackUserLayer,
 } from '@deepseek-ai/dsh-app-boot'
 import { homePatchPath, prepareProfile, PROFILE_ROOT_FILENAME } from './profile-boot.ts'
 
@@ -38,26 +35,24 @@ export function runDumpConfig(
   fromDefaultProfile?: string,
 ): void {
   const loaded = prepareProfile(profile, !defaultOnly, fromDefaultProfile)
-  const userLayers: StackUserLayer[] = []
+  const layers: ConfigDumpLayer[] = loaded.layers.map(layer => ({
+    label: layer.packageName,
+    patches: layer.patches,
+  }))
   if (!defaultOnly) {
     if (existsSync(loaded.patchPath)) {
-      userLayers.push({ label: loaded.patchPath, patches: loaded.patches })
+      layers.push({ label: loaded.patchPath, patches: loaded.patches })
     }
     const homePatchFile = homePatchPath()
     const homePatches = loadOptionalPatches(NAME, homePatchFile)
     if (homePatches !== undefined) {
-      userLayers.push({ label: homePatchFile, patches: homePatches })
+      layers.push({ label: homePatchFile, patches: homePatches })
     }
     for (const file of patches) {
       const absolute = resolve(file)
-      userLayers.push({ label: absolute, patches: loadOverlayPatches(NAME, absolute) })
+      layers.push({ label: absolute, patches: loadOverlayPatches(NAME, absolute) })
     }
   }
-  // The same composition boot mounts: bundle layers in their declared order,
-  // a bundle or row left out by an id conflict reported, not shown.
-  const stack = composeProfileStack(loaded.layers, userLayers)
-  for (const conflict of stack.conflicts) process.stderr.write(`${NAME}: ${formatRowConflict(conflict)}\n`)
-  const layers: ConfigDumpLayer[] = stack.layers.map(layer => ({ label: layer.label, patches: layer.patches }))
   // The dump anchors on the same empty root file the boot includes.
   process.stdout.write(renderConfigDump(NAME, join(loaded.dir, PROFILE_ROOT_FILENAME), layers))
 }

@@ -57,7 +57,7 @@ export type {
 } from './tab-registry.ts'
 export type {
   SidebarRightTabInfo, SidebarRightTabInjected, UseSidebarRightTabInfo, SidebarRightTabActions,
-  SidebarRightTabMenuOwnerProps, SidebarRightTabNavigation, SidebarRightTabPlacement,
+  SidebarRightTabMenuOwnerProps, SidebarRightTabNavigation, SidebarRightTabPlacement, SidebarRightGuideEntryOwnerProps,
 } from './contract/slots.ts'
 export type {
   SidebarRightNavigationParams, SidebarRightResourceParams, SidebarRightResourceParamsMap,
@@ -189,6 +189,9 @@ export function apply(ctx: ClientContext): void {
       name: 'sidebar.right.pane.tab',
       key: GUIDE_ID,
       children: {
+        'sidebar.right.tab.guide.entry': {
+          kind: 'keyed', scope: 'session', inject: { hooks: { tabInfo: guideTabInfoFactory } },
+        },
         'sidebar.right.tab.guide': {
           kind: 'chain', scope: 'session', inject: { hooks: { tabInfo: guideTabInfoFactory } },
         },

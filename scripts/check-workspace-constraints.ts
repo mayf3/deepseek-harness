@@ -148,6 +148,8 @@ function workspaceManifests(): WorkspaceManifest[] {
 }
 
 const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
+  // Owned Worker bundles import this public bootstrap before their business entry.
+  '@deepseek-ai/dsh-app-boot': ['lib/worker/profile-resolution-bootstrap.js'],
   // Statically linked client libraries keep their stylesheets next to the emitted
   // JavaScript, which imports them by relative path: the compile shell runs
   // them through its own CSS pipeline, so the sheets are published artifacts.
@@ -189,16 +191,12 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
     'lib/runner.js',
     'lib/runner-*.js',
     'lib/output.js',
-    'lib/spawn.js',
-    'lib/spawn-*.js',
     'scripts/ensure-spawn-helper.mjs',
   ],
   // tsdown shares the repository/pack code between the lib entry and the bin
   // through a hashed chunk. The committed bin.js is the link target pnpm can
   // resolve at install time, before the build produces lib/bin.js.
   '@deepseek-ai/dsh-experimental-webworker-packer': ['bin.js', 'lib/repository-*.js'],
-  // The public patch-file parser and writer.
-  '@deepseek-ai/dsh-app-boot': ['lib/patch-file.js'],
   // The headless entry and its startup row share the JSON projection code
   // through a hashed tsdown chunk; both import it by relative path.
   '@deepseek-ai/dsh-headless': ['lib/json-stream-*.js'],

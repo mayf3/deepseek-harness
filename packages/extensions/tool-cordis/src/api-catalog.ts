@@ -1089,6 +1089,42 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'hmr',
+    summary: 'Hot reload service with Cordis-compatible module configuration and events.',
+    description: 'Hot reload service with Cordis-compatible module configuration and events.',
+    methods: [
+      {
+        signature: 'public baseDir: string',
+        description: 'Absolute base directory used to resolve module watch roots.',
+        parameters: [],
+      },
+      {
+        signature: 'runExclusive<T>(operation: () => Promise<T>): Promise<T>',
+        description: 'Serialize a caller-owned mutation with all automatic reload paths.',
+        parameters: [{ name: 'operation', description: 'Work that must not overlap module or configuration replacement.' }],
+        returns: 'The operation result after its asynchronous work completes.',
+      },
+      {
+        signature: 'async watchConfig(filename: string, refresh: () => Promise<void>): Promise<() => Promise<void>>',
+        description: 'Watch a configuration path through the same queue as module replacement.',
+        parameters: [{ name: 'filename', description: 'Absolute path, which may not exist yet.' }, { name: 'refresh', description: 'Rebuilds configuration from its current files and awaits Loader completion.' }],
+        returns: 'Disposer closing this registration and waiting for its pending refresh.',
+      },
+      {
+        signature: 'getOuterStack: () => string[] = () => []',
+        description: 'Omit internal HMR frames from module import diagnostics.',
+        parameters: [],
+        returns: 'The preserved outer stack frames.',
+      },
+      {
+        signature: 'async getLinked(url: string): Promise<string[]>',
+        description: 'Read direct module dependency URLs from the active Node loader.',
+        parameters: [{ name: 'url', description: 'Module URL.' }],
+        returns: 'Linked module URLs, or an empty list for an uncached module.',
+      },
+    ],
+  },
+  {
     key: 'inspector',
     summary: 'Shared Host/Client service façade over the realm\'s source publisher.',
     description: 'Shared Host/Client service façade over the realm\'s source publisher.',
@@ -1399,110 +1435,66 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'pluginManager',
-    summary: 'The `pluginManager` service and the `plugins` Remote.',
-    description: 'The `pluginManager` service and the `plugins` Remote.\n\nThe row injects only the Loader; the profile runtime and the agent registry are read off the context per call, so a composition without them (a test, a launcher other than the profile launcher) still mounts this service and every call then reports `plugins/unavailable` rather than the service failing to start.',
+    summary: 'Manage profile files and apply their declared reload lifecycle.',
+    description: 'Manage profile files and apply their declared reload lifecycle.',
     methods: [
       {
-        signature: '@Remote(\'list\') async list(): Promise<PluginPackageView[]>',
-        description: 'Every package the profile knows, one view each.',
+        signature: '@Remote async listPlugins(): Promise<PluginInfo[]>',
+        description: 'Read current plugins, including why a row cannot be changed through the profile patch.',
         parameters: [],
-        returns: 'the views, bundles first in layer order.',
+        returns: 'Current runtime entries with persistent patch targets.',
       },
       {
-        signature: '@Remote(\'inspect\') async inspect(spec: string, signal?: AbortSignal): Promise<PluginSpecInspection>',
-        description: 'Read what a spec names before installing it: its form, the package\'s name, version, description, and title where they are known ahead of the install, and whether it declares a bundle.',
-        parameters: [{ name: 'spec', description: 'what would be installed, in pnpm\'s own vocabulary.' }, { name: 'signal', description: 'cancels the registry lookup.' }],
-        returns: 'the inspection.',
+        signature: '@Remote listBundles(): Promise<BundleInfo[]>',
+        description: 'Read installed bundles and bundles supplied by this dsh installation.',
+        parameters: [],
+        returns: 'Package versions, activation selections and removal availability.',
       },
       {
-        signature: '@Remote(\'add\') async add(spec: string, options?: PluginInstallOptions): Promise<PluginInstallResult>',
-        description: 'Install a package with pnpm, read its declarations, and leave it disabled unless asked otherwise.',
-        parameters: [{ name: 'spec', description: 'what to install, in pnpm\'s own vocabulary.' }, { name: 'options', description: '`enable` selects new bundles; `requestId` identifies the install for progress and cancellation.' }],
-        returns: 'what the run installed and enabled.',
+        signature: '@Remote setPluginEnabled(id: PluginEntryId, enabled: boolean): Promise<ChangeResult>',
+        description: 'Persist a plugin entry\'s desired enablement and apply it on live profiles.',
+        parameters: [{ name: 'id', description: 'Loader entry identity returned by listPlugins.' }, { name: 'enabled', description: 'Whether the plugin should run.' }],
+        returns: 'Saved and runtime outcomes, including higher-priority overrides.',
       },
       {
-        signature: '@Remote(\'cancelInstall\') async cancelInstall(requestId: PluginInstallRequestId): Promise<PluginInstallCancellation>',
-        description: 'Stop this installation and wait for process exit and file recovery.',
-        parameters: [{ name: 'requestId', description: 'the id supplied to add.' }],
-        returns: 'whether cancellation completed, application already began, or no matching installation exists.',
+        signature: '@Remote setBundleEnabled(name: string, enabled: boolean): Promise<ChangeResult>',
+        description: 'Select or remove a bundle layer while retaining installed dependencies.',
+        parameters: [{ name: 'name', description: 'Bundle package name.' }, { name: 'enabled', description: 'Whether the bundle contributes its patch layer.' }],
+        returns: 'Persisted and runtime outcomes.',
       },
       {
-        signature: '@Remote(\'uninstall\') async uninstall(packageName: string): Promise<void>',
-        description: 'Remove a package from the profile with its user-layer rows.',
-        parameters: [{ name: 'packageName', description: 'the installed dependency to remove.' }],
+        signature: '@Remote installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>',
+        description: 'Install a package using the same pnpm implementation as dsh plugin.',
+        parameters: [{ name: 'spec', description: 'One package spec, including local paths relative to the invocation directory.' }, { name: 'options', description: 'Whether to activate the installed bundle; defaults to true.' }],
+        returns: 'Package-manager diagnostics and observed activation outcome.',
       },
       {
-        signature: '@Remote(\'enable\') async enable(packageName: string): Promise<PluginEnableResult>',
-        description: 'Put an installed bundle into the layer list and, on a live profile, recompose the tree with it.',
-        parameters: [{ name: 'packageName', description: 'the installed bundle.' }],
-        returns: 'whether the list changed and whether the change is live.',
-      },
-      {
-        signature: '@Remote(\'disable\') async disable(packageName: string): Promise<PluginEnableResult>',
-        description: 'Take a bundle out of the layer list and, on a live profile, recompose the tree without it.',
-        parameters: [{ name: 'packageName', description: 'the enabled bundle.' }],
-        returns: 'whether the list changed and whether the change is live.',
-      },
-      {
-        signature: '@Remote(\'retry\') async retry(packageName: string): Promise<PluginEnableResult>',
-        description: 'Compose an enabled bundle again from scratch.',
-        parameters: [{ name: 'packageName', description: 'the enabled bundle.' }],
-        returns: 'the enable outcome of the second step.',
-      },
-      {
-        signature: '@Remote(\'setRowDisabled\') async setRowDisabled(rowId: string, disabled: boolean): Promise<void>',
-        description: 'Switch one row off or on in a user layer; deny-only.',
-        parameters: [{ name: 'rowId', description: 'the row\'s id as the composition declares it.' }, { name: 'disabled', description: 'whether the layer should switch the row off.' }],
-      },
-      {
-        signature: '@Remote(\'dependents\') async dependents(packageName: string): Promise<PluginDependents>',
-        description: 'What disabling or removing a package would strand.',
-        parameters: [{ name: 'packageName', description: 'the package.' }],
-        returns: 'the dependents.',
+        signature: '@Remote removeBundle(name: string): Promise<ChangeResult>',
+        description: 'Unload and remove a profile-owned bundle dependency through dsh plugin\'s pnpm path.',
+        parameters: [{ name: 'name', description: 'Installed dependency name.' }],
+        returns: 'Removal diagnostics and the remaining profile state.',
       },
     ],
   },
   {
-    key: 'profileRuntime',
-    summary: 'Facts and recomposition of the booted profile.',
-    description: 'Facts and recomposition of the booted profile.',
+    key: 'profileContext',
+    summary: 'Current profile facts; scheduling and mutation belong to their callers.',
+    description: 'Current profile facts; scheduling and mutation belong to their callers.',
     methods: [
       {
-        signature: 'originOf(rowId: string): RowOrigin | undefined',
-        description: 'Where one mounted row came from.',
-        parameters: [{ name: 'rowId', description: 'the row\'s id as the composition declares it.' }],
-        returns: 'the origin, or undefined for a row no bundle layer owns (a user or overlay row, or a bundle left out by a conflict).',
-      },
-      {
-        signature: 'originOfEntry(entry: Entry): RowOrigin | undefined',
-        description: 'Resolve the supplying bundle within its Loader tree; nested includes inherit their owning entry.',
-        parameters: [{ name: 'entry', description: 'the live entry, including an entry inside another Include.' }],
-        returns: 'its supplying bundle, or undefined for a user-owned entry.',
-      },
-      {
-        signature: 'userDisabledRowIds(): ReadonlySet<string>',
-        description: 'Row ids the user patch layers disable with a literal `disabled: true`, as the committed composition read them. The set describes the running tree: a user file the include rejected, or one that cannot be parsed, changes nothing here until a composition with it is accepted.',
+        signature: 'readonly startedBundles: readonly string[]',
+        description: 'Bundle packages used to start this process, before any persisted edits.',
         parameters: [],
-        returns: 'the ids, from the committed composition.',
       },
       {
-        signature: 'userDisables(entry: Entry): boolean',
-        description: 'Whether the user patch layers disable an entry: its own row id, or the id of a group holding it, is among userDisabledRowIds. The Loader disables every descendant of a disabled group, so a child\'s own id alone does not say who switched it off.',
-        parameters: [{ name: 'entry', description: 'the Loader entry.' }],
-        returns: 'true when the user\'s patches disable the entry or one of the groups holding it.',
-      },
-      {
-        signature: 'async recompose(options: { reloadBundles?: boolean } = {}): Promise<readonly EntryIssue[]>',
-        description: 'Apply a fresh profile stack and wait for live entries and removed fibers to settle. Parse/composition failures leave the applied stack unchanged. Accepted options can coexist with failed entries or fibers running their previous valid config. Calls serialize; a failed call does not block later changes.',
-        parameters: [{ name: 'options', description: 'whether to reread installed bundle layers from disk.' }],
-        returns: 'current entry issues after application, without rolling back successful siblings.',
-        throws: ['when preparation fails or the root Include cannot accept the update.'],
-      },
-      {
-        signature: 'whenIdle(): Promise<void>',
-        description: 'Wait for recompositions already queued when called, including removed-fiber cleanup. Observers may read accepted composition facts afterwards; a failed operation still reports its error to its caller and does not reject this observation.',
+        signature: 'readonly overlays: readonly PatchOptions[]',
+        description: 'Parsed command-line overlays, applied above profile and home patches.',
         parameters: [],
-        returns: 'after the current recomposition queue settles.',
+      },
+      {
+        signature: 'readonly telemetryDisabledEnv: string | undefined',
+        description: 'Launch-time DSH_TELEMETRY_DISABLED value; any non-empty value opts out.',
+        parameters: [],
       },
     ],
   },
@@ -3576,6 +3568,30 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'payload', description: '.change - fresh current projection or clear tombstone.' }],
   },
   {
+    name: 'hmr/before-reload',
+    mode: 'waterfall',
+    signature: '\'hmr/before-reload\'(next: () => Promise<void>): Promise<void>',
+    summary: 'Acquire application-owned exclusion before an automatic reload.',
+    description: 'Acquire application-owned exclusion before an automatic reload.',
+    parameters: [{ name: 'next', description: 'Runs the remaining lock providers and reload; listeners must await it.' }],
+  },
+  {
+    name: 'hmr/change',
+    mode: 'emit',
+    signature: '\'hmr/change\'(url: string): void',
+    summary: 'A watched file has no module or configuration handler.',
+    description: 'A watched file has no module or configuration handler.',
+    parameters: [{ name: 'url', description: 'Canonical file URL.' }],
+  },
+  {
+    name: 'hmr/reload',
+    mode: 'emit',
+    signature: '\'hmr/reload\'(reloads: Map<Plugin, Reload>): void',
+    summary: 'Module replacements have finished loading.',
+    description: 'Module replacements have finished loading.',
+    parameters: [{ name: 'reloads', description: 'Replaced plugins and their module locations.' }],
+  },
+  {
     name: 'llm/adapters-updated',
     mode: 'emit',
     signature: '\'llm/adapters-updated\'(): void',
@@ -3598,30 +3614,6 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'The selectable process catalog changed.',
     description: 'The selectable process catalog changed. Payload-free by design: consumers subscribe first, then re-read the complete catalog.',
     parameters: [],
-  },
-  {
-    name: 'plugins/changed',
-    mode: 'emit',
-    signature: '\'plugins/changed\'(change: { readonly reason: PluginChangeReason; readonly packageName?: string }): void',
-    summary: 'The manager changed what is installed, enabled, or composed.',
-    description: 'The manager changed what is installed, enabled, or composed.',
-    parameters: [{ name: 'change', description: 'why, and which package when one is concerned.' }],
-  },
-  {
-    name: 'plugins/install-log',
-    mode: 'emit',
-    signature: '\'plugins/install-log\'(chunk: PluginInstallLogChunk): void',
-    summary: 'One chunk of an install run\'s output, in order; the last chunk carries the exit code.',
-    description: 'One chunk of an install run\'s output, in order; the last chunk carries the exit code.',
-    parameters: [{ name: 'chunk', description: 'the chunk.' }],
-  },
-  {
-    name: 'plugins/install-state',
-    mode: 'emit',
-    signature: '\'plugins/install-state\'(progress: PluginInstallProgress): void',
-    summary: 'The installation started, is stopping, or crossed into non-cancellable application.',
-    description: 'The installation started, is stopping, or crossed into non-cancellable application.',
-    parameters: [{ name: 'progress', description: 'the request and its current phase.' }],
   },
   {
     name: 'session-telemetry/record',
@@ -4100,6 +4092,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrowserUseProviderName = Branded<\'BrowserUseProviderName\'>;',
   },
   {
+    name: 'BundleInfo',
+    declaration: 'export interface BundleInfo {\n    name: string;\n    version?: string;\n    enabled: boolean;\n    removable: boolean;\n    readOnlyReason?: string;\n    error?: string;\n}',
+  },
+  {
+    name: 'ChangeResult',
+    declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\';\n    message: string;\n    packageResult?: PackageResult;\n}',
+  },
+  {
     name: 'ClientArtifactBaseline',
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly size: number;\n}',
   },
@@ -4464,10 +4464,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EncodedImageAttachment {\n    mediaType: ImageMediaType;\n    data: string;\n    name?: string;\n}',
   },
   {
-    name: 'EntryIssue',
-    declaration: 'export interface EntryIssue {\n    readonly entry: Entry;\n    readonly stage: \'import\' | \'activation\' | \'update\' | \'disabled-expression\' | \'inject-pending\';\n    readonly message: string;\n    readonly error?: unknown;\n}',
-  },
-  {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    tools?: ToolSchema[];\n}',
   },
@@ -4664,8 +4660,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type InspectorJsonValue = InspectorJsonPrimitive | readonly InspectorJsonValue[] | InspectorJsonObject;',
   },
   {
-    name: 'InstallSpecKind',
-    declaration: 'export type InstallSpecKind = \'registry\' | \'path\' | \'git\' | \'tarball\';',
+    name: 'InstallBundleOptions',
+    declaration: 'export interface InstallBundleOptions {\n    enabled?: boolean;\n}',
   },
   {
     name: 'InvariantFailure',
@@ -5028,84 +5024,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type OptionalSessionSeq = SessionSeq | null;',
   },
   {
+    name: 'PackageResult',
+    declaration: 'export interface PackageResult {\n    exitCode: number;\n    output: string;\n    truncated: boolean;\n    logPath: string;\n}',
+  },
+  {
     name: 'PermissionCatalog',
     declaration: 'export interface PermissionCatalog {\n    options: PresetOption[];\n}',
   },
   {
-    name: 'PluginChangeReason',
-    declaration: 'export type PluginChangeReason = \'install\' | \'uninstall\' | \'enable\' | \'disable\' | \'retry\' | \'row\' | \'runtime\';',
+    name: 'PluginEntryId',
+    declaration: 'export type PluginEntryId = Branded<\'PluginEntryId\'>;',
   },
   {
-    name: 'PluginDependents',
-    declaration: 'export interface PluginDependents {\n    readonly services: readonly PluginServiceDependent[];\n    readonly references: readonly PluginRowReference[];\n}',
+    name: 'PluginFiberPhase',
+    declaration: 'export type PluginFiberPhase = \'pending\' | \'loading\' | \'active\' | \'failed\' | \'unloading\' | null;',
   },
   {
-    name: 'PluginEnableResult',
-    declaration: 'export interface PluginEnableResult {\n    readonly changed: boolean;\n    readonly effect: \'live\' | \'restart\';\n    readonly issues?: readonly PluginRowIssue[];\n}',
+    name: 'PluginInfo',
+    declaration: 'export interface PluginInfo extends PluginInventoryEntry {\n    patchId?: string;\n    readOnlyReason?: string;\n}',
   },
   {
-    name: 'PluginInstallCancellation',
-    declaration: 'export interface PluginInstallCancellation {\n    readonly status: \'cancelled\' | \'too-late\' | \'not-running\';\n}',
-  },
-  {
-    name: 'PluginInstallLogChunk',
-    declaration: 'export interface PluginInstallLogChunk {\n    readonly requestId?: PluginInstallRequestId;\n    readonly jobId: string;\n    readonly argv: readonly string[];\n    readonly cwd: string;\n    readonly spec: string;\n    readonly stream: \'stdout\' | \'stderr\';\n    readonly text: string;\n    readonly exitCode?: number | null;\n}',
-  },
-  {
-    name: 'PluginInstallOptions',
-    declaration: 'export interface PluginInstallOptions {\n    readonly enable?: boolean;\n    readonly requestId?: PluginInstallRequestId;\n}',
-  },
-  {
-    name: 'PluginInstallProgress',
-    declaration: 'export interface PluginInstallProgress {\n    readonly requestId: PluginInstallRequestId;\n    readonly phase: \'installing\' | \'cancelling\' | \'applying\';\n}',
-  },
-  {
-    name: 'PluginInstallRejection',
-    declaration: 'export interface PluginInstallRejection {\n    readonly name: string;\n    readonly reason: string;\n}',
-  },
-  {
-    name: 'PluginInstallRequestId',
-    declaration: 'export type PluginInstallRequestId = Branded<\'PluginInstallRequestId\'>;',
-  },
-  {
-    name: 'PluginInstallResult',
-    declaration: 'export interface PluginInstallResult {\n    readonly installed: readonly string[];\n    readonly removed: readonly PluginInstallRejection[];\n    readonly enabled: readonly string[];\n    readonly installedOnly: readonly string[];\n    readonly plain: readonly string[];\n    readonly jobId: string;\n}',
-  },
-  {
-    name: 'PluginPackageKind',
-    declaration: 'export type PluginPackageKind = \'bundle\' | \'unknown\';',
-  },
-  {
-    name: 'PluginPackageRowView',
-    declaration: 'export interface PluginPackageRowView {\n    readonly entryId: string;\n    readonly rowId: string;\n    readonly moduleName: string;\n    readonly enabled: boolean;\n    readonly disabledBy?: \'user\' | \'composition\';\n    readonly phase: PluginRowPhase;\n    readonly failure?: {\n        readonly stage: string;\n        readonly message: string;\n    };\n}',
-  },
-  {
-    name: 'PluginPackageStatus',
-    declaration: 'export type PluginPackageStatus = \'running\' | \'partial\' | \'failed\' | \'disabled\' | \'not-enableable\' | \'restart-required\' | \'plain\';',
-  },
-  {
-    name: 'PluginPackageView',
-    declaration: 'export interface PluginPackageView {\n    readonly name: string;\n    readonly version?: string;\n    readonly title?: string;\n    readonly description?: string;\n    readonly kind: PluginPackageKind;\n    readonly installed: boolean;\n    readonly enabled: boolean;\n    readonly status: PluginPackageStatus;\n    readonly reason?: string;\n    readonly enginesDsh?: string;\n    readonly cordisSameCopy: boolean | null;\n    readonly rows: readonly PluginPackageRowView[];\n    readonly issues?: readonly PluginRowIssue[];\n    readonly overrides: readonly string[];\n    readonly liveReload: boolean;\n}',
-  },
-  {
-    name: 'PluginRowIssue',
-    declaration: 'export interface PluginRowIssue {\n    readonly entryId: string;\n    readonly moduleName: string;\n    readonly stage: string;\n    readonly message: string;\n}',
-  },
-  {
-    name: 'PluginRowPhase',
-    declaration: 'export type PluginRowPhase = \'pending\' | \'loading\' | \'active\' | \'failed\' | \'unloading\' | null;',
-  },
-  {
-    name: 'PluginRowReference',
-    declaration: 'export interface PluginRowReference {\n    readonly rowId: string;\n    readonly moduleName: string;\n}',
-  },
-  {
-    name: 'PluginServiceDependent',
-    declaration: 'export interface PluginServiceDependent {\n    readonly service: string;\n    readonly providedBy: string;\n    readonly injectedBy: readonly string[];\n}',
-  },
-  {
-    name: 'PluginSpecInspection',
-    declaration: 'export interface PluginSpecInspection {\n    readonly kind: InstallSpecKind;\n    readonly name?: string;\n    readonly version?: string;\n    readonly description?: string;\n    readonly title?: string;\n    readonly bundle: boolean | null;\n}',
+    name: 'PluginInventoryEntry',
+    declaration: 'export interface PluginInventoryEntry {\n    readonly entryId: PluginEntryId;\n    readonly moduleName: string;\n    readonly enabled: boolean;\n    readonly fiberPhase: PluginFiberPhase;\n}',
   },
   {
     name: 'PostToolDecision',
@@ -5272,6 +5212,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
   },
   {
+    name: 'Reload',
+    declaration: 'export interface Reload {\n    filename: string;\n    runtime?: Plugin.Runtime | undefined;\n}',
+  },
+  {
     name: 'RemoteError',
     declaration: 'export class RemoteError<Code extends RemoteErrorCode = RemoteErrorCode> extends Error {\n    readonly isDSHRemoteError: true;\n    constructor(readonly code: Code, message: string, readonly details: RemoteErrorDetailsMap[Code], options?: ErrorOptions);\n}',
   },
@@ -5342,10 +5286,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ResumeAgentOptions',
     declaration: 'export interface ResumeAgentOptions {\n    readonly resumeSessionId: SessionId;\n    readonly parentAgent?: Agent;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
-  },
-  {
-    name: 'RowOrigin',
-    declaration: 'export interface RowOrigin {\n    readonly packageName: string;\n    readonly version?: string;\n}',
   },
   {
     name: 'RunnerFailureRule',
@@ -6968,7 +6908,6 @@ export const INHERITED_CTX_API: readonly InheritedApiEntry[] = [
   { name: 'ctx.root / ctx.fiber / ctx.registry / ctx.reflect / ctx.events / ctx.logger', summary: 'Ambient handles onto the running context graph.' },
   { name: 'ctx.timer (+ interval / timeout / throttle / debounce)', summary: 'Disposable timer helpers. The `timer` key is provided at runtime; the four supported helpers are mixed onto ctx directly (declared via Pick).' },
   { name: 'ctx.loader', summary: 'The config Loader that booted the app (present under the loader).' },
-  { name: 'ctx.hmr', summary: 'The hot-module-reload watcher (present under the hmr plugin).' },
 ]
 
 function referencedTypeClosure(seeds: readonly string[]): TypeApiEntry[] {

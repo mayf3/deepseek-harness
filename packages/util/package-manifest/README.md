@@ -37,7 +37,6 @@ const manifest: DshPackageManifest = {
   engines: { node: '>=24', dsh: '0.1.5-alpha.1' },
   dsh: {
     manifestVersion: 1,
-    title: 'Example plugin',
     bundle: { patch: './cordis.patch.yml' },
     client,
   },

@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-14-bundle-activation-selection.md
-2026-09-14-bundle-activation-selection.md: 060a102d0336812466cb6af2809ed9117cea225c
-2026-09-14-bundle-activation-selection.zh.md: 1453834d5e215d46d5adc00bdb89b2f9a5fe235d

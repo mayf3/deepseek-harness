@@ -99,6 +99,30 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'hmr',
+    pkg: 'hmr',
+    title: 'Serialized module and configuration reloads',
+    mode: 'core',
+    consumers: ['app-boot'],
+    note: 'Owns module and exact configuration watchers; application mutations share its queue and automatic reloads await the application file lock.',
+  },
+  {
+    key: 'pluginManager',
+    pkg: 'plugin-manager',
+    title: 'Current-profile plugin and bundle management',
+    mode: 'core',
+    consumers: ['plugin-manager', 'ui-settings-plugin-inventory'],
+    note: 'Shares profile package operations with the CLI and reports persisted and running state to Web and agent callers.',
+  },
+  {
+    key: 'profileContext',
+    pkg: 'app-boot',
+    title: 'Launcher-owned profile data',
+    mode: 'core',
+    consumers: ['plugin-manager'],
+    note: 'The dsh launcher supplies data-only profile locations and composition inputs; reload scheduling belongs to dsh-hmr.',
+  },
+  {
     key: 'mcpResources',
     pkg: 'mcp-resources',
     title: 'Scoped MCP resource access',
@@ -432,21 +456,6 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Per-session agent composition',
     mode: 'core',
     note: 'Discovers preset directories over trusted and user-authored roots and mounts one preset cordis.yml under an agent scope during creation, rejecting a row that never activates or that publishes into the root service realm.',
-  },
-  {
-    key: 'pluginManager',
-    pkg: 'host-plugin-manager',
-    title: 'Plugin management over the booted profile',
-    mode: 'core',
-    note: 'Installs, enables, disables, retries, and removes bundles through pnpm and the profile runtime, edits rows in the profile\'s or a preset\'s user layer, and folds manifest, probe, and tree facts into one view per package for the plugins Remote.',
-  },
-  {
-    key: 'profileRuntime',
-    pkg: 'app-boot',
-    title: 'Booted profile facts and recomposition',
-    mode: 'core',
-    consumers: ['host-plugin-inventory', 'host-plugin-manager'],
-    note: 'Provided by the profile launcher before entries mount: the composed bundle layers, each row\'s inserting layer, the rows user patch files disable, and the one recomposition path user patch reloads and runtime bundle changes share.',
   },
   {
     key: 'commands',

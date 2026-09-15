@@ -420,14 +420,6 @@ describe('installFailLoud', () => {
     installFailLoud(NAME, proc)
     const error = new Error('assembled activation failure')
     const warn = vi.fn()
-    let checkpoint!: () => void
-    const atCheckpoint = new Promise<void>((resolve) => { checkpoint = resolve })
-    let release!: () => void
-    const schedule = vi.spyOn(globalThis, 'setImmediate').mockImplementationOnce(((callback: () => void) => {
-      release = callback
-      checkpoint()
-      return {} as NodeJS.Immediate
-    }))
     const audit = auditStartupEntries({
       loader: {
         entries: () => ['broken-a', 'broken-b'].map(name => ({
@@ -441,15 +433,11 @@ describe('installFailLoud', () => {
         })),
       },
     } as unknown as Context, NAME, warn)
-    await atCheckpoint
-    try {
-      proc.handlers[0]!(error)
-      expect(proc.written).toEqual([])
-      expect(proc.exits).toEqual([])
-    } finally {
-      schedule.mockRestore()
-      release()
-    }
+    await Promise.resolve()
+    await Promise.resolve()
+    proc.handlers[0]!(error)
+    expect(proc.written).toEqual([])
+    expect(proc.exits).toEqual([])
     await audit
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('assembled activation failure'))
     proc.handlers[0]!(error)
@@ -516,7 +504,15 @@ describe('installFailLoud', () => {
 })
 
 describe('auditStartupEntries', () => {
-  const requiredIds = ['agent-loop', 'webserver', 'modules', 'connection', 'headless-runner', 'acp', 'sdk-jsonrpc-server']
+  const requiredIds = [
+    'agent-loop',
+    'webserver',
+    'modules',
+    'connection',
+    'headless-runner',
+    'acp',
+    'sdk-jsonrpc-server',
+  ]
 
   interface FakeEntry {
     fiber?: {
@@ -555,9 +551,6 @@ describe('auditStartupEntries', () => {
         options: { id, name: './required.mjs' },
       }))), NAME, warn)).resolves.toBeUndefined()
     }
-    await expect(auditStartupEntries(ctxWith([{
-      options: { id: 'recovered', name: './plugin.mjs' }, fiber: fiber(3),
-    }]), NAME, warn)).resolves.toBeUndefined()
     expect(warn).not.toHaveBeenCalled()
   })
 

@@ -917,6 +917,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ThemeTokens = Record<string, string>;',
   },
   {
+    name: 'Translate',
+    declaration: 'export type Translate<K extends string = string> = (key: K, params?: Record<string, unknown>) => string;',
+  },
+  {
     name: 'TranslateNS',
     declaration: 'export type TranslateNS<N extends keyof LocaleNamespaceMap & string> = Translate<LocaleKeysOf<N>>;',
   },
@@ -937,7 +941,6 @@ export const INHERITED_CTX_API: readonly InheritedApiEntry[] = [
   { name: 'ctx.root / ctx.fiber / ctx.registry / ctx.reflect / ctx.events / ctx.logger', summary: 'Ambient handles onto the running context graph.' },
   { name: 'ctx.timer (+ interval / timeout / throttle / debounce)', summary: 'Disposable timer helpers. The `timer` key is provided at runtime; the four supported helpers are mixed onto ctx directly (declared via Pick).' },
   { name: 'ctx.loader', summary: 'The config Loader that booted the app (present under the loader).' },
-  { name: 'ctx.hmr', summary: 'The hot-module-reload watcher (present under the hmr plugin).' },
 ]
 
 function referencedTypeClosure(seeds: readonly string[]): TypeApiEntry[] {

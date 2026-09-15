@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-客户端调用 `pluginInventory/list`，读取非 group Loader 条目的只读快照，包括来源、有效启用状态、运行阶段和当前失败。包含 agent-preset 目录的部署还报告各预设的元信息与组合。快照不提供持久历史或变化订阅。
+客户端可以调用 `pluginInventory/list`，按加载顺序展示宿主的当前插件，包括每个条目的标识符、模块标识、有效启用状态与存活阶段。部署组合了 agent preset roster 时，还会报告各预设的元数据、健康状态与压平后的插件组合；没有 roster 时，预设数据缺席。每次响应都是供展示和诊断使用的只读即时快照：它不能修改插件，也不提供历史、来源信息或变更订阅。
 
 ## 目录
 
@@ -30,8 +30,6 @@ kind: "package-reference"
 ### 快照包含什么
 
 每一行是一个非组 Loader 条目：其条目 id、精确模块标识、有效启用状态（含被禁用的祖先组）与当前根 Fiber 阶段。`pending` 表示条目等待加载，`loading` 表示正在读取，`active` 表示正在运行，`failed` 表示其 fiber 被拒绝，`unloading` 表示正在拆除；`null` 表示完全不存在存活的根 Fiber。结构性的 group 行会被跳过。
-
-`package` 给出提供该行的组合包名与版本，`disabledBy` 区分用户覆盖与组合条件。显式行 id 保持不变。失败条目留在 Loader 树中；`failure` 报告导入、激活、更新、disabled 表达式或缺失服务问题。`active` fiber 也可能更新失败，并继续运行先前的有效配置。加载前因冲突被排除的行从 `ProfileRuntime.conflicts` 投影。没有 profile 来源时，行不携带 package。
 
 ### 每个预设的组合
 
@@ -55,7 +53,7 @@ kind: "package-reference"
 
 ### 阶段映射
 
-Fiber 状态映射为公开阶段，其中 `disposed` 映射为 `null`。启用但没有 fiber 且存在失败记录的条目报告 `failed`；正常禁用且没有活跃 fiber 的条目报告 `null`。
+Fiber 状态映射到公共阶段词汇，其中 `disposed` 折叠为 `null`——fiber 已消失的条目没有可报告的存活根。因此阶段从不区分为什么没有存活根：条目可能从未启动，也可能其 fiber 已被释放。
 
 ### 源码地图
 
@@ -98,8 +96,8 @@ Typert 生成由 `./typert` 与 `./remote` 导出的 Host 和 Client Remote 产�
 
 这些限制说明即时清单无法向客户端提供哪些信息。它们是当前包约束，不是任务积压。
 
-- **仅提供当前状态**——结果不包含持久失败历史或订阅；移除条目也会移除其诊断。
-- **无修改能力**——服务不能在任一平面启用、停用、添加或移除插件；来源只追溯到组合包层，用户 patch 或 `--patch` overlay 插入的行不带 package。
+- **仅表示调用当下**——结果不包含持久的失败历史或订阅；只要不存在存活的根 Fiber，就会报告 `null`，而不区分其原因。
+- **无来源与修改能力**——服务不识别条目由哪个 bundle、profile 或 override 引入，也不能在任一平面启用、停用、添加或移除插件。
 - **预设仅随 roster 出现**——未装 `dsh-agent-presets` 的部署只提供 Loader 条目；`agentPresets` 字段缺席而非为空。
 
 <a id="dev-note"></a>

@@ -14,14 +14,12 @@ import * as yaml from 'js-yaml'
 import { Context, type FiberState } from '@deepseek-ai/cordis'
 import Loader, { type Entry, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import { parsePatchList } from './patch-file.ts'
 import Group from '@deepseek-ai/cordis-plugin-group'
 import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import type {} from '@deepseek-ai/cordis-plugin-hmr'
-import { watchConfig } from './watch-config.ts'
+import type {} from '@deepseek-ai/dsh-hmr'
+export { readProfilePatches, resolveTelemetryPatch, type ProfileContext } from './profile-context.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { formatEntryError, inspectEntryIssues, isObservedEntryRejection } from './entry-issues.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -32,6 +30,7 @@ declare module '@deepseek-ai/cordis' {
 
 export {
   composeEntries,
+  createProfileResolutionGeneration,
   DEFAULT_PROFILE_BUNDLES,
   DEFAULT_PROFILE_PATCH_RELOAD,
   healProfilesModuleFallback,
@@ -44,25 +43,21 @@ export {
   readProfileManifest,
   resolveBundleDir,
   resolveProfileDir,
-  resolveProfileLayer,
   writeProfileManifest,
   type Profile,
   type ProfileLayer,
   type ProfileManifest,
   type ProfileModuleFallbackOptions,
+  type ProfileResolutionEntry,
+  type ProfileResolutionGeneration,
+  type ProfileResolutionMode,
   type ProfileTemplate,
 } from './profile.ts'
-export { inspectEntryIssues, type EntryIssue } from './entry-issues.ts'
 export {
-  disableBundle, enableBundle, reconcileInstalledBundles,
-  type BundleReconciliation,
-} from './external-bundles.ts'
-export {
-  claimLayerIds, composeProfileStack, formatRowConflict,
-  type ComposedStack, type LayerOwnership, type RowConflict, type StackUserLayer,
-} from './compose-stack.ts'
-export { ProfileRuntime, type RowOrigin } from './profile-runtime.ts'
-export { readPackageMetadata, type PackageMetadata, type PackageMetadataOptions, type PackageMetadataRow } from './package-metadata.ts'
+  PluginPackages,
+  type PluginPackage,
+  type PluginPackagesConfig,
+} from './profile-resolution/service.ts'
 
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for
@@ -232,6 +227,13 @@ export function loadLayeredEnv(
 
 const bootstrapIncludes = new WeakMap<Context, Entry>()
 
+// The include's YAML dialect (`!!js` scalars become expression nodes the
+// Loader interpolates against each entry's injection-ready context), imported
+// from the include itself so patch parsing and config dumping can never drift
+// from what the include mounts. User patch layers share it so they may
+// reference `process.env`.
+const userPatchesSchema = entryListSchema
+
 /** Options for live user patch-layer reconciliation. */
 export interface UserPatchWatchOptions {
   /** Diagnostic prefix used by {@link loadOptionalPatches}. */
@@ -239,19 +241,19 @@ export interface UserPatchWatchOptions {
   /** Absolute path of the watched patch file (a profile's `cordis.patch.yml`). */
   filename: string
   /**
-   * Re-apply the composition after the watched file changed. When omitted,
-   * the file's patches are re-read and mounted as the whole patch list. A
-   * launcher with a profile runtime passes its `recompose`, so the user layer
-   * is interleaved between the app-owned layers and every recomposition,
-   * watched or requested, goes through that one entry point.
+   * Compose the full patch list for a fresh user-layer generation —
+   * the same composition the app booted with, so a reload can interleave the
+   * new user patches between app-owned layers (bundle layers below,
+   * overlays above). Identity when omitted: the user layer
+   * is the whole patch list.
    */
-  reapply?: () => Promise<void>
+  compose?: (userPatches: PatchOptions[]) => PatchOptions[]
 }
 
 /**
  * Watch the user patch layer and reapply it to the boot Include without rollback.
  * @param ctx - settled app context containing the root Include and an active HMR service.
- * @param options - diagnostic, file, and re-application inputs.
+ * @param options - diagnostic, file, and patch-composition inputs.
  * @returns an asynchronous disposer after the exact-path watcher is ready.
  * @throws when HMR or the root Include is absent, watcher setup fails, or initial path resolution fails.
  */
@@ -259,30 +261,14 @@ export async function watchUserPatches(
   ctx: Context,
   options: UserPatchWatchOptions,
 ): Promise<() => Promise<void>> {
-  const { binName, filename } = options
+  const { binName, filename, compose = (patches: PatchOptions[]) => patches } = options
   const hmr = ctx.get('hmr')
-  if (hmr === undefined) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`)
+  if (hmr === undefined) throw new Error(`${binName}: user patch-layer watching requires the HMR service`)
   const entry = bootstrapIncludes.get(ctx)
   if (entry === undefined) throw new Error(`${binName}: user patch-layer watching requires the root Include entry`)
-  const apply = options.reapply ?? (async (): Promise<void> => {
-    // Re-read the include's non-patch options per refresh so a writer that
-    // updates another option between refreshes is not silently reverted.
-    const { patches: _previousPatches, ...includeConfig } = entry.options.config as Include.Config
-    await entry.update({
-      config: {
-        ...includeConfig,
-        patches: loadOptionalPatches(binName, filename) ?? [],
-      },
-    })
+  const register = hmr.watchConfig(filename, async () => {
+    await reconcileProfilePatches(ctx, compose(loadOptionalPatches(binName, filename) ?? []), binName)
   })
-  const reapply = async (): Promise<void> => {
-    await apply()
-    await ctx.loader.await()
-    await Promise.allSettled([...ctx.loader.entries()].map(entry => Promise.resolve(entry.fiber?.await())))
-    const failures = await inactiveEntries(ctx)
-    if (failures.length > 0) throw new Error(activationDiagnostic(binName, 'warning', failures).trimEnd())
-  }
-  const register = watchConfig(ctx, filename, hmr.config, reapply)
   try {
     return await register
   } catch (error) {
@@ -293,6 +279,25 @@ export async function watchUserPatches(
     if ((error as { code?: string } | null)?.code === 'INACTIVE_EFFECT') return async () => {}
     throw error
   }
+}
+
+/** Apply one complete patch generation and wait for Loader activation diagnostics.
+ * @param ctx Booted root context.
+ * @param patches Complete ordered patch list.
+ * @param binName Diagnostic prefix.
+ */
+export async function reconcileProfilePatches(ctx: Context, patches: PatchOptions[], binName: string): Promise<void> {
+  const entry = bootstrapIncludes.get(ctx)
+  if (entry === undefined) throw new Error(`${binName}: profile reload requires the root Include entry`)
+  // Removed entries leave the Loader store before their async disposers finish.
+  const previousFibers = [...ctx.loader.entries()].flatMap(row => row.fiber === undefined ? [] : [row.fiber])
+  const { patches: _previous, ...includeConfig } = entry.options.config as Include.Config
+  await entry.update({ config: { ...includeConfig, patches } })
+  const results = await Promise.allSettled(previousFibers.map(fiber => fiber.await()))
+  await ctx.loader.await()
+  const failures = await inactiveEntries(ctx)
+  if (failures.length > 0) throw new Error(activationDiagnostic(binName, 'warning', failures).trimEnd())
+  for (const result of results) if (result.status === 'rejected') throw result.reason
 }
 
 /**
@@ -334,6 +339,51 @@ export function loadOverlayPatches(binName: string, file: string): PatchOptions[
     throw new Error(`${binName}: failed to read overlay ${file}: ${String(error)}`)
   }
   return parsePatchList(binName, file, content, 'overlay')
+}
+
+/** Convert inserted filesystem paths to file URLs, anchoring relative paths beside the patch; keep assertion names literal. */
+function anchorInsertedPluginNames(patches: PatchOptions[], file: string): PatchOptions[] {
+  const base = dirname(resolve(file))
+  const visit = (entry: EntryOptions): void => {
+    if (typeof entry.name === 'string' && (isAbsolute(entry.name) || entry.name.startsWith('./') || entry.name.startsWith('../'))) {
+      entry.name = pathToFileURL(resolve(base, entry.name)).href
+    }
+    if (entry.group && Array.isArray(entry.config)) entry.config.forEach(visit)
+  }
+  for (const patch of patches) patch.insert?.forEach(visit)
+  return patches
+}
+/**
+ * Parse one loader patch list: a top-level YAML array of
+ * `@deepseek-ai/cordis-plugin-include` `PatchOptions` (id-targeted config overrides and
+ * `insert` lists, `!!js` expressions allowed). Every invalid field or value throws,
+ * because a patch file that cannot be applied at all is a misconfiguration; a
+ * single patch whose target row is absent stays a per-entry Loader warning, so
+ * one overlay shared across surfaces does not have to match every tree.
+ * @param binName - the diagnostic prefix on the thrown error.
+ * @param file - the source path, quoted in errors.
+ * @param content - the file's text.
+ * @param label - what to call this list in errors (`patches`, `overlay`).
+ * @returns the parsed patch list.
+ */
+function parsePatchList(
+  binName: string, file: string, content: string, label: string,
+): PatchOptions[] {
+  let parsed: unknown
+  try {
+    parsed = yaml.load(content, { schema: userPatchesSchema })
+  } catch (error) {
+    throw new Error(`${binName}: failed to parse ${label} ${file}: ${String(error)}`)
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${binName}: ${label} ${file} must be a top-level YAML array of loader patch entries`)
+  }
+  parsed.forEach((entry, index) => {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      throw new Error(`${binName}: ${label} entry ${index + 1} in ${file} must be a mapping (a loader patch entry)`)
+    }
+  })
+  return anchorInsertedPluginNames(parsed as PatchOptions[], file)
 }
 
 /** One overlay patch list with the source label printed in dump comments. */
@@ -472,15 +522,6 @@ function groupedDump(
 }
 
 /**
- * The root Include entry {@link mountRootInclude} created for a context.
- * @param ctx - the booted root context.
- * @returns the entry, or undefined before the root include mounted.
- */
-export function rootIncludeEntry(ctx: Context): Entry | undefined {
-  return bootstrapIncludes.get(ctx)
-}
-
-/**
  * Mount and remember the exact root Include entry used by app boot and user patch-layer HMR.
  * @param ctx - context carrying an initialized Loader service.
  * @param absoluteConfigPath - absolute YAML or JSON configuration path.
@@ -552,6 +593,33 @@ export interface FailLoudProcess {
   exit(code: number): void
 }
 
+// Loader rc.5 derives and drops a rejected promise after a fiber fails. Keep
+// exact reasons already folded into the boot diagnostic visible through the
+// next process rejection checkpoint so the process guard can coalesce them.
+const assembledActivationRejections = new Map<unknown, number>()
+
+function retainAssembledRejection(reason: unknown): void {
+  assembledActivationRejections.set(reason, (assembledActivationRejections.get(reason) ?? 0) + 1)
+}
+
+function releaseAssembledRejection(reason: unknown): void {
+  const count = assembledActivationRejections.get(reason)
+  if (count === undefined || count === 1) {
+    assembledActivationRejections.delete(reason)
+  } else {
+    assembledActivationRejections.set(reason, count - 1)
+  }
+}
+
+async function observeLoaderRejectionCheckpoint(reasons: readonly unknown[]): Promise<void> {
+  for (const reason of reasons) retainAssembledRejection(reason)
+  try {
+    await new Promise<void>(resolve => setImmediate(resolve))
+  } finally {
+    for (const reason of reasons) releaseAssembledRejection(reason)
+  }
+}
+
 /**
  * How long {@link installFailLoud} waits for its `release` hook before exiting
  * anyway. A wedged disposer must delay the fatal exit, never cancel it.
@@ -594,7 +662,7 @@ export function installFailLoud(
 ): () => void {
   let exiting = false
   const handler = (err: unknown): void => {
-    if (isObservedEntryRejection(err)) return
+    if (assembledActivationRejections.has(err)) return
     // A release in flight already owns the exit. Swallow later rejections
     // (teardown's own included) rather than reporting a second failure over the
     // real one or letting Node kill the process before the terminal is back.
@@ -634,26 +702,9 @@ export function installFailLoud(
  * Keep aligned with `packages/extensions/tool-cordis/src/fiber-state.ts` and
  * `packages/client/web/src/loader-status.ts`.
  */
+const FIBER_PENDING = 0 as FiberState.PENDING
+const FIBER_ACTIVE = 2 as FiberState.ACTIVE
 const FIBER_FAILED = 3 as FiberState.FAILED
-
-interface InactiveEntry {
-  /** Loader entry used to identify the bootstrap Include and required ids. */
-  entry: Entry
-  /** Complete diagnostic beginning with the entry id and module specifier. */
-  diagnostic: string
-}
-
-/**
- * Collect Loader activation failures and disabled-expression errors. Failed
- * fibers are awaited to recover their recorded rejection reason and coalesce
- * duplicate Loader notifications through the next process rejection checkpoint.
- */
-async function inactiveEntries(ctx: Context): Promise<InactiveEntry[]> {
-  return (await inspectEntryIssues(ctx)).map(issue => ({
-    entry: issue.entry,
-    diagnostic: `${issue.entry.options.id} (${issue.entry.options.name}): ${issue.stage === 'disabled-expression' ? 'disabled expression failed: ' : ''}${issue.message}`,
-  }))
-}
 
 /**
  * Entry ids whose presence defines a usable DSH application.
@@ -672,6 +723,77 @@ const requiredStartupEntryIds = new Set<string>([
   'sdk-jsonrpc-server',
 ])
 
+/** Render plugin stacks, nested causes, and aggregate member failures once per error. */
+function formatActivationError(error: unknown): string {
+  const details: string[] = []
+  const seen = new Set<Error>()
+  function visit(value: unknown): void {
+    if (!(value instanceof Error)) {
+      details.push(String(value))
+      return
+    }
+    if (seen.has(value)) return
+    seen.add(value)
+    details.push(value.stack ?? value.message)
+    if (value.cause !== undefined) visit(value.cause)
+    if (value instanceof AggregateError) value.errors.forEach(visit)
+  }
+  visit(error)
+  return details.join('\n')
+}
+
+interface InactiveEntry {
+  /** Loader entry used to identify the bootstrap Include and required ids. */
+  entry: Entry
+  /** Complete diagnostic beginning with the entry id and module specifier. */
+  diagnostic: string
+}
+
+/**
+ * Collect Loader activation failures and disabled-expression errors. Failed
+ * fibers are awaited to recover their recorded rejection reason and coalesce
+ * duplicate Loader notifications through the next process rejection checkpoint.
+ */
+async function inactiveEntries(ctx: Context): Promise<InactiveEntry[]> {
+  const failures: InactiveEntry[] = []
+  const rejectionReasons: unknown[] = []
+  for (const entry of ctx.loader.entries()) {
+    const subject = `${entry.options.id} (${entry.options.name})`
+    try {
+      if (entry.disabled) continue
+    } catch (error) {
+      failures.push({ entry, diagnostic: `${subject}: disabled expression failed: ${formatActivationError(error)}` })
+      continue
+    }
+    const fiber = entry.fiber
+    if (fiber === undefined) {
+      failures.push({ entry, diagnostic: `${subject}: failed to import` })
+      continue
+    }
+    const state = fiber.state
+    if (state === FIBER_ACTIVE) continue
+    if (state === FIBER_FAILED) {
+      try {
+        await fiber.await()
+      } catch (error) {
+        rejectionReasons.push(error)
+        failures.push({ entry, diagnostic: `${subject}: ${formatActivationError(error)}` })
+      }
+      continue
+    }
+    if (state === FIBER_PENDING) {
+      const missing = Object.keys(fiber.inject).filter(service => fiber.ctx.get(service) === undefined)
+      failures.push({
+        entry,
+        diagnostic: `${subject}: pending (waiting for ${missing.length === 1 ? 'service' : 'services'}: ${missing.join(', ') || 'unknown'})`,
+      })
+    } else {
+      failures.push({ entry, diagnostic: `${subject}: fiber state ${String(state)}` })
+    }
+  }
+  if (rejectionReasons.length > 0) await observeLoaderRejectionCheckpoint(rejectionReasons)
+  return failures
+}
 
 /** Render an inactive-entry diagnostic with a count and severity label. */
 function activationDiagnostic(
@@ -687,9 +809,9 @@ function activationDiagnostic(
 /**
  * Apply DSH startup policy to a settled Loader tree.
  *
- * An enabled entry in the global required-id list must activate; absent and disabled
- * ids do not affect startup. Other inactive entries produce one warning and leave
- * successful siblings running, with or without a profile runtime.
+ * Inactive entries from the global required list reject startup. Other
+ * inactive entries produce one warning and leave successful siblings running.
+ * Required ids absent from the tree, and disabled required entries, are ignored.
  * A throwing disabled expression is an entry failure, not a disabled entry.
  * The bootstrap Include must activate so unreadable or invalid root config is fatal.
  * @param ctx - the settled context whose Loader entries to audit.
@@ -715,35 +837,6 @@ export async function auditStartupEntries(
   if (required.length > 0) {
     throw new Error(activationDiagnostic('', 'required startup failure', required).trimEnd())
   }
-}
-
-/**
- * Nested plugin fibers (a `ctx.inject()` continuation inside a plugin) fail
- * without touching their entry's root fiber, so the activation audit above
- * cannot see them. Report every failed nested fiber through `warn`, one line
- * per fiber, without rejecting startup.
- * @param ctx - the settled context whose runtimes to inspect.
- * @param binName - the diagnostic prefix on each warning.
- * @param warn - sink for the warning lines; defaults to the context logger.
- * @returns the number of failed nested fibers reported.
- */
-export function warnNestedFiberFailures(
-  ctx: Context,
-  binName: string,
-  warn: (line: string) => void = (line) => { ctx.logger.warn(line) },
-): number {
-  let count = 0
-  for (const runtime of ctx.registry.values()) {
-    for (const fiber of runtime.fibers) {
-      // The Loader stamps every fiber created inside an entry's context with
-      // that entry; the entry's own root fiber is the one the entry holds.
-      const owner = fiber.entry
-      if (fiber.state !== FIBER_FAILED || owner === undefined || owner.fiber?.uid === fiber.uid) continue
-      count += 1
-      warn(`${binName}: nested fiber under ${owner.options.name} failed (${runtime.name}); the entry itself stays active`)
-    }
-  }
-  return count
 }
 
 /**
@@ -822,7 +915,7 @@ export async function boot(
       deepest = deepest.cause
     }
     const stack = deepest instanceof AggregateError
-      ? `\n${deepest.stack ?? deepest.message}\n${deepest.errors.map(formatEntryError).join('\n')}`
+      ? `\n${deepest.stack ?? deepest.message}\n${deepest.errors.map(formatActivationError).join('\n')}`
       : deepest instanceof Error && deepest !== cause ? `\n${deepest.stack ?? deepest.message}` : ''
     throw new Error(`${binName}: ${stage}: ${detail}${stack}`, { cause })
   }

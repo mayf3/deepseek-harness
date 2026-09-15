@@ -45,9 +45,6 @@
       "path": "../../host/plugin-inventory"
     },
     {
-      "path": "../../host/plugin-manager"
-    },
-    {
       "path": "../../interaction/commands"
     },
     {
@@ -91,6 +88,9 @@
     },
     {
       "path": "../terminal-controller/tsconfig.client.json"
+    },
+    {
+      "path": "../../boot/plugin-manager"
     }
   ]
 }

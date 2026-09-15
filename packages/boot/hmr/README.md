@@ -1,0 +1,95 @@
+---
+description: "Reload plugin code and profile configuration without overlapping package operations."
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-hmr
+
+English | [中文](README.zh.md)
+
+## Summary
+
+Reload plugin source and configuration while an application is running. Module replacements, Include refreshes and registered profile-file handlers share one queue with package mutations. Existing Cordis HMR configuration and events remain available under `ctx.hmr`.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+Live profiles install configuration watching automatically. To enable source-module watching, configure the `hmr` entry supplied by the base bundle in the profile patch before launching:
+
+```yaml
+- id: hmr
+  disabled: false
+  config:
+    root: ["."]
+```
+
+Existing configurations replace the module name `@deepseek-ai/cordis-plugin-hmr` with `@deepseek-ai/dsh-hmr`. The `hmr` service key, `baseDir`, `config`, `getLinked()`, `getOuterStack()`, `hmr/change` and `hmr/reload` remain available. The vendored package remains available; DSH profiles use this package.
+
+### Configuration
+
+| Field | Default | Meaning |
+|---|---|---|
+| `base` | Context base URL | Base directory for module watching. |
+| `root` | `["."]` | Module watch roots; `[]` retains only explicit configuration watches. |
+| `ignored` | `["**/node_modules", "**/.*", "cache", "data"]` | Excluded module paths. |
+| `debounce` | `100` | Milliseconds for combining module changes. |
+
+Chokidar options, including polling, retain their existing meaning. Exact configuration watches also observe additions, removals and initially missing parent directories.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+`watchConfig()` registers an awaited configuration handler. `runExclusive()` serializes caller-owned mutations with automatic reloads and rejects nested transactions. The `hmr/before-reload` waterfall lets the launcher hold the profile file lock around every automatic reload; callers performing mutations acquire their file lock inside `runExclusive()` in the same order. File events received during a transaction are processed afterward.
+
+The launcher retains profile parsing and patch precedence. HMR owns watchers, module-cache replacement and reload scheduling. Unknown-file notifications do not acquire reload locks, so lock-file events cannot trigger another lock acquisition. No invariant companion is published because the queue and watcher registrations have no independent persisted projection.
+
+Watched module paths use Node ESM resolution's `realpathSync()` spelling, including Windows short directory names, so file events match the module cache.
+
+The module replacement implementation derives from `@cordisjs/plugin-hmr` 1.0.15, with Harness Node-loader and lazy-config changes. Its [MIT license](LICENSE) is retained.
+
+</details>
+
+<a id="model-experience"></a>
+## Model Experience
+
+### Reloaded plugins
+
+#### What the model sees
+
+`ctx.hmr` adds no model-facing tools or messages. Loaded plugins determine subsequent tool and prompt contributions.
+
+#### Token effect
+
+No direct token contribution.
+
+#### KV Cache effect
+
+Reloading a contributing plugin can change later request prefixes; HMR does not rewrite conversation history.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- Module replacement requires Node loader internals. Framework dependency changes call the host-provided `loader.exit()` hook; HMR itself does not restart the process.
+- Replacing installed package versions still requires a restart through Plugin Manager. The browser Client module graph retains its separate browser-side loading mechanism.
+
+### Dev Note
+
+<a id="dev-note"></a>
+
+None.

@@ -1,5 +1,5 @@
 ---
-description: "面向 dsh profile 的插件管理：dsh plugin 命令与 Web 宿主共用的安装器，以及在已启动 profile 上启用、停用、重试、编辑用户层的行并报告每个包的管理器。"
+description: "通过 Web 设置页或 agent 启停 profile 插件，并安装、删除或选择组合包。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-plugin-manager` 通过 CLI 与 Web 宿主安装包并管理它们声明的插件行。安装读取元信息，不执行模块。管理器启停整份组合包层，编辑profile 用户 patch，重试失败并报告当前运行问题。失败携带 `plugins/*` 错误码；[Host 适配器](../../host/plugin-manager/README.zh.md) 通过 Remote 暴露这些操作。
+管理当前 profile 的插件，无需手动编辑配置。启停单个插件条目、选择已安装的组合包，以及安装或删除外部组合包。live profile 立即应用配置变化；仅启动时加载的 profile 在重启前保留运行中的组合。改动影响使用该 profile 的全部会话。
 
 ## 目录
 
@@ -25,103 +25,36 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-### 不启动也能安装
+基于 base 的 profile 提供管理服务。在 Web 设置中打开插件并选择插件列表，即可管理组合包和能唯一定位的全局插件条目。Agent 预设条目保持只读。`plugin_manager` 工具提供相同操作，默认禁用。
 
-用 profile 目录、安装锚点（dsh 应用的 `package.json`）、一个回答 profile 已组合层列表的 `loadProfile`、工具边界、pnpm 输出的去处，以及是否让 pnpm 上色，构造 `PluginInstaller`，然后 `add(spec)` 或 `remove(name)`：
+在 profile patch 中显式启用工具；使用预设的 Agent 还需要启用该预设中的 `tool-plugin-manager` 条目。
 
-```ts
-import { loadProfile } from '@deepseek-ai/dsh-app-boot'
-import { PluginInstaller } from '@deepseek-ai/dsh-plugin-manager'
-
-declare const profileDir: string
-declare const installAnchor: string
-
-const installer = new PluginInstaller({
-  profileDir, profileName: 'web', installAnchor,
-  loadProfile: () => loadProfile('dsh', 'web', installAnchor, undefined, { userLayer: false }),
-  config: { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installKillGraceMs: 5_000, installLogTailBytes: 16_384, inspectTimeoutMs: 20_000 },
-  installLog: (chunk) => process.stdout.write(chunk.text),
-  color: process.stdout.isTTY,
-})
-const outcome = await installer.add('@acme/dsh-sql-tool')
-console.log(outcome.installed, outcome.removed)
+```yaml
+- id: tool-plugin-manager
+  disabled: false
 ```
 
-`add` 在 profile 中执行 pnpm，核对 `dependencies`，并按当前行归属静态检查新组合包声明。冲突组合包会被移除并给出原因；未声明或声明不可读的包保持已安装。新组合包保持禁用，除非调用方启用。安装失败会恢复运行前的 manifest 与 `pnpm-lock.yaml`，并通过 `plugins/install-failed` 报告日志尾部，附带按运行结束方式与 pnpm 输出判定的 `kind`：`pnpm-missing`、`timeout`、`not-found`、`no-matching-version`、`network`、`disk-full`、`permission`、`build-blocked`、`integrity` 或 `unknown`。
+插件开关只写入 profile 的 `cordis.patch.yml` 中的 `disabled` 覆盖项。组合包开关修改 `package.json` 的有序 `dsh.profile.bundles` 列表。关闭保留依赖；开启追加到列表末尾，可能改变配置优先级。安装新组合包默认启用。home 和单次启动 patch 保留更高优先级。
 
-`inspect(spec, signal?)` 在任何东西安装之前读出 spec 指向什么：`parseInstallSpec` 把它归为注册表包名、绝对路径、git 地址或 tarball，拒绝相对路径和注册表不会接受的包名；注册表包名随后通过 `pnpm view` 询问注册表，在 profile 目录中运行，因而与安装使用同样的注册表与代理设置；目录则读取其 `package.json`。答复携带名称、版本、描述、`dsh.title` 以及该包是否声明组合包；git 或 tarball spec 只答复自己的类型。查询在 `inspectTimeoutMs` 到期或调用方的 signal 中止时结束。拒绝是带 `problem` 的 `plugins/inspect-rejected`：`invalid-spec`、`already-installed`（已是依赖或模板组合包）、`not-found`、`not-a-package`、`network` 或 `unknown`。
+### 配置
 
-### 管理已启动的 profile
-
-在 Cordis 上下文之上构造 `PluginManager`，并交给它按调用读取所需之物的读取器——profile runtime 和运行中的 agent 数——这样一个后来才有或始终没有其中之一的组合在调用时得到回答，而不是在挂载时：
-
-```ts
-import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-app-boot'
-import { PluginManager, type PluginToolingConfig } from '@deepseek-ai/dsh-plugin-manager'
-
-declare const ctx: Context
-declare const config: PluginToolingConfig
-
-const manager = new PluginManager(ctx, {
-  config,
-  runtime: () => ctx.get('profileRuntime'),
-  runningAgents: () => (ctx.get('agents')?.list() ?? []).filter(agent => agent.status === 'running').length,
-})
-console.log(await manager.list())
-```
-
-`list` 报告包身份、`bundle` / `unknown` 分类、安装与启用状态。运行行携带实际阶段与失败；禁用组合包显示静态 patch 声明。行更新失败后，活跃实例可能保留先前配置。包的 `issues` 还报告其 patch 覆盖的失败行，但不转移这些行的归属。
-
-`enable` 选择整份组合包层，并在实时 profile 中重组。逐行失败保留启用选择与成功的其他行；结果报告 `issues`，列表可显示 `partial` 或 `failed`。准备失败会撤销启用选择，并抛出 `plugins/enable-failed`。`disable` 移除整层，包括覆盖。`retry` 先禁用并等待清理，再启用。仅启动时生效的 profile 报告 `effect: restart`。实时 profile 中尚未应用的选择报告 `failed`，并保留实际运行的行；`restart-required` 只用于仅启动时生效的 profile。`uninstall` 禁用组合包、删除用户插入的引用、执行 pnpm remove。
-
-`setRowDisabled` 写入或删除 `disabled: true`，保留组合包自己的条件。全局编辑在实时 profile 中立即重组。`dependents` 报告注入依赖方与用户层模块引用。
-
-管理器一次只跑一个变更——上一个还在跑时再调用会以 `plugins/busy` 失败并点名正在进行的操作——`add` 与 `uninstall` 在有会话运行时拒绝改动 `node_modules`，报 `plugins/agents-running`。每次变更之后在上下文上发出 `plugins/changed` 事件，安装运行把 pnpm 的输出以 `plugins/install-log` 分块发出，每块都写明所跑的命令行与所在的 profile 目录，开了颜色时还带着 pnpm 的 SGR 转义。
-
-### 失败
-
-每次拒绝或失败都是一个 `PluginOperationError`，带稳定的 `code` 与按码定型的 `details`：`plugins/unavailable`（没有 profile runtime）、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/install-cancelled`、`plugins/inspect-rejected`、`plugins/busy`、`plugins/agents-running`，以及请求点名了 profile 没有的东西时的 `plugins/bad-request`。`pluginOperationFailureOf` 把捕获到的值收窄为按码区分的联合。
+| 字段 | 默认值 | 含义 |
+|---|---|---|
+| `outputBytes` | `16384` | 每次操作返回的 pnpm 诊断字节上限；完整输出保留在返回的日志路径中。 |
+| `lockWaitMs` | `120000` | 获取 profile 写锁的最长等待毫秒数。 |
+| `notificationDelayMs` | `250` | 合并操作通知的延迟毫秒数。 |
 
 -----
-
-安装调用方可在 `add` 选项中提供 UUID `requestId`，并调用 `cancelInstall(requestId)`。`plugins/install-state` 通知安装、取消及不可取消的配置应用阶段。取消会等待 pnpm 进程组退出、恢复清单和 `pnpm-lock.yaml`、释放修改锁，然后返回 `cancelled`；原 add 调用报告 `plugins/install-cancelled`。请求不匹配当前操作时返回 `not-running`，已进入应用阶段则返回 `too-late`。管理器随 Host 卸载时，会等待包准备或移除进程停止，不反向等待 runtime 应用过程。下载或解包文件可能留在 `node_modules` 或 pnpm 缓存中。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
 <details>
-<summary>实现内幕——点击展开</summary>
+<summary>实现细节——点击展开</summary>
 
-### 一份 manifest，两个写入者
+服务与 `dsh plugin` 共用 [operations.ts](src/operations.ts) 中的包管理操作。启动器提供当前 profile；[DSH HMR](../hmr/README.zh.md) 串行执行模块重载、文件监听和管理写入。每次刷新重新读取组合包选择与 patch 层，更新原有根 Include，并等待已移除插件释放资源及剩余 Loader 树稳定。包管理操作持有 profile manifest 锁；文件监听器在锁释放后读取完成的状态。
 
-每次变更都重新读取 profile manifest，并通过 `dsh plugin` 命令转发的动词所用的同一组 app-boot 助手（`reconcileInstalledBundles`、`enableBundle`、`disableBundle`）写回，因此 CLI 与 Web 宿主对这个文件永远不会有分歧。`dependencies` 记录装了什么；`dsh.profile.bundles` 记录启用了什么。
-
-### pnpm 进程管理
-
-独立的 `subprocess-local/spawn` 入口负责进程组终止和退出确认，无需启动服务。安装器显式转发父进程中的 registry、代理和鉴权环境，在 Windows 上通过 shell 运行 pnpm 的 `.cmd` shim，并流式读取管道输出。取消和超时均先等待进程组停止，再恢复文件；主动脱离 POSIX 进程组的后代及 Windows taskkill 的限制仍遵循 subprocess 提供方的说明。
-
-### 重试即先停用再启用
-
-重试移除整层，并等待已移除 fiber 清理完成后再添加。它不依赖合成 group，也不会静默补偿失败插件的副作用。
-
-### 管理器自己读什么，别人交给它什么
-
-管理器读取 Loader 条目、reflect 存储与条目自身诊断。profile 和 agent 信息通过逐次调用的读取器提供。[Host 适配器](../../host/plugin-manager/README.zh.md) 在状态稳定后将 Loader 生命周期变化转换为 `plugins/changed` 通知，包括等待中的行在提供方出现后恢复运行。
-
-### 源码地图
-
-| 文件 | 职责 |
-|---|---|
-| [`src/index.ts`](src/index.ts) | 包 API：类、选项、类型与失败码的 re-export |
-| [`src/installer.ts`](src/installer.ts) | `PluginInstaller`：pnpm 流式输出、静态声明与装后检查 |
-| [`src/manager.ts`](src/manager.ts) | `PluginManager`：已启动 profile 上的每项操作、一次一个的互斥、用户层编辑与依赖查询 |
-| [`src/view.ts`](src/view.ts) | 将 manifest、声明与实际行状态组合为 `PluginPackageView`，并查询行归属 |
-| [`src/helpers.ts`](src/helpers.ts) | 共享词汇：诊断前缀、工具边界、spawn 测试缝与 manifest 读取器 |
-| [`src/types.ts`](src/types.ts) | 载荷、`plugins/changed` 与 `plugins/install-log` 事件，以及 `plugins/*` 失败码及其 details |
-| [`src/errors.ts`](src/errors.ts) | `PluginOperationError` 与按码区分的失败联合 |
-| — | 不发布独立运行不变量模块；每次调用直接从 manifest、静态声明与 Loader 状态生成视图。 |
+配置保存、包管理器完成和运行时激活分别报告。失败保留部分改动和诊断，不自动恢复文件或包。管理器直接读取文件和 Loader 状态，不维护第二份目标状态注册表，因此不发布单独的运行时不变式伴生入口。
 
 </details>
 
@@ -130,41 +63,57 @@ console.log(await manager.list())
 <a id="further-exploration"></a>
 ## 进一步探索
 
-当管理器的契约还不够时读这些：它驱动的运行时、它编辑的文件，以及调用它的表面。
-
-- [App boot](../app-boot/README.zh.md)——profile runtime、外部组合包隔离与静态包声明。
-- [补丁文件](../app-boot/README.zh.md#patch-files)——用户层的行如何读写。
-- [宿主插件管理器](../../host/plugin-manager/README.zh.md)——本管理器之上的 `plugins` Remote。
-- [dsh 应用](../../../apps/cli/README.zh.md)——安装器之上的 `dsh plugin` 命令。
-
------
+- [App boot](../app-boot/README.zh.md)——profile 配置层与启动策略。
+- [Plugin inventory](../../host/plugin-inventory/README.zh.md)——当前 Loader 和预设状态。
+- [Plugin settings](../../client/ui-settings-plugin-inventory/README.zh.md)——Web 控件。
 
 <a id="model-experience"></a>
 ## 模型体验
 
-无，插件管理不注册任何面向模型的东西；它组合出的行各自拥有自己做出的注册。
+### 管理工具
+
+#### 模型看到什么
+
+[`plugin_manager` 工具](../../../docs/tool-catalog.zh.md#deepseek-aidsh-plugin-manager) 列出插件条目和组合包，并执行影响整个 profile 的改动。结果包含保存状态变化、应用状态和包管理诊断。
+
+#### Token 影响
+
+装配工具消费者时提供工具声明；每次调用追加返回的清单或改动结果。
 
 #### KV Cache 影响
 
-无；本包既不组装也不发送 provider 请求。
+工具结果追加到对话中。启停其他工具可能改变后续工具声明及其缓存复用。
+
+### 配置变更通知
+
+#### 模型看到什么
+
+连续操作结果在 `notificationDelayMs` 内合并后注入每个受影响的存活 Agent。通知包含应用结果，达到配置的输出上限时标明省略的结果数，不会唤醒空闲 Agent。
+
+#### Token 影响
+
+通知按需向每个受影响 Agent 追加用户消息上下文。
+
+#### KV Cache 影响
+
+通知追加上下文，不改写先前消息。
 
 ## 已知限制与延期工作
 
 <a id="known-limitations-and-deferred-work"></a>
 
-
-这些限制界定管理器不会为调用方做什么。它们是当前包的约束，不是任务清单。
-
-- **更新已加载的包需要重启**——Node 按 URL 缓存 ESM 模块，hoisted 安装下路径不变；经 `add` 做的 `pnpm update` 改写了文件，但运行中的树在进程重启前一直用旧模块。
-- **依赖检测止于注入**——注册型依赖（工具、LLM 适配器）没有 `inject` 边，因此 `dependents` 无法点名只读取该包所注册内容的行。
-- **尚无 `engines.dsh` 检查**——该范围只被报告，不对运行中的 harness 版本强制执行。
-- **一次只有一个进程**——互斥在进程内，补丁文件写入器持文件锁，但 profile manifest 没有锁：CLI 与运行中的 Web 宿主同时编辑同一个 profile 不受支持。
+- 替换已有包后需要重启进程，以加载新的 JavaScript 模块版本。
+- 仅启动时加载的 profile 不能删除当前进程启动时使用的包；停止进程后使用 `dsh plugin`。
+- 管理器不能关闭自身所需的管理组件、修改其他 profile 或编辑 agent 预设组合。
+- 包管理失败可能留下部分依赖改动。文件缺失的未启用依赖仍可删除。诊断日志保留在 profile 的 `.plugin-manager/logs` 目录中。
+- 浏览器组合包变化需要刷新页面后才能加载当前 Client 模块图。管理结果描述 Host 激活状态。
+- Desktop 包管理操作仍由 Desktop shell 负责。
 
 <a id="dev-note"></a>
 ### 开发备注
 
 <details>
-<summary>维护者工作上下文——点击展开</summary>
+<summary>维护者的工作上下文——点击展开</summary>
 
 无。
 

@@ -19,10 +19,7 @@ export default defineConfig([
     },
   },
   {
-    // The patch-file parser and writer ship as the `./patch-file` export,
-    // so the agent-preset roster and the plugin manager load them without
-    // the boot entry.
-    entry: { 'patch-file': 'lib/types/patch-file.js' },
+    entry: { 'worker/profile-resolution-bootstrap': 'lib/types/profile-resolution/worker-bootstrap.js' },
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',
@@ -30,5 +27,8 @@ export default defineConfig([
     fixedExtension: false,
     dts: false,
     clean: false,
+    deps: {
+      alwaysBundle: ['resolve.exports'],
+    },
   },
 ])

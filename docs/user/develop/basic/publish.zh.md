@@ -43,8 +43,6 @@ hello-plugin/
 }
 ```
 
-另有两个 `dsh` 键面向使用者描述这个包：`dsh.title` 是它在插件列表里的名字，`dsh.plugins` 列出使用者可以逐个加进组合的模块，与组合包整体挂载的层并列——每一项写模块名（`"name": "dsh-hello-plugin/extra"`），可选 `title` 与默认 `config`。所有 `dsh` 键都声明在 [`@deepseek-ai/dsh-package-manifest`](../../../../packages/util/package-manifest/README.zh.md) 里。
-
 创建 `hello-plugin/index.js`，写入插件入口：
 
 ```js
@@ -110,8 +108,6 @@ dsh --profile demo
 ```
 
 `dsh plugin --profile demo remove dsh-hello-plugin` 会同时移除依赖和对应的层。
-
-组合包按 patch 声明的父节点挂载行并保留 id：上面的行仍为 `hello`。各层按 profile 顺序占用 id；组合包重复声明 id 或声明前面层已占用的 id 时会被整层排除，并在启动时和插件列表中报告。不在[启动必需 id](../../../architecture.zh.md) 中的行失败只产生警告，成功的兄弟条目继续运行。必需消费者无法激活时仍拒绝启动，包括其提供方失败导致无法激活的情况。
 
 ## 加载顺序
 

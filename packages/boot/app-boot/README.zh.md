@@ -40,7 +40,7 @@ installFailLoud('dsh')
 const ctx = await boot('dsh', resolveConfigPath(argv[2], process.env.DSH_SNAPSHOT))
 ```
 
-启动审查使用[全局必需条目 id](../../../.agents/notes/implemented/architecture/2026-09-09-consumer-owned-startup-strictness.zh.md)，另按条目身份将启动 Include 视为必需。已存在且启用的必需条目必须激活；缺失和禁用的 id 不影响启动。其余条目失败只产生警告并保留成功的兄弟条目，包括内置工具、用户 patch 行，以及没有 profile runtime 的直接 `boot()` 调用。
+有了这个入口，启动会保留所有能够激活的插件。启用但失败的插件会产生带标签的警告。required entry 失败时，启动会拆卸整个应用并以非零码退出；profile 中不存在的 required id 和已禁用的 required entry 不影响启动。全局 required list 覆盖共享 Agent 执行、应用 endpoint，以及 Web 启动与传输：`agent-loop`、`webserver`、`modules`、`connection`、`headless-runner`、`acp` 和 `sdk-jsonrpc-server`。
 
 <a id="profiles"></a>
 ### Profile
@@ -54,39 +54,11 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 - **`.env`**——你的普通环境层：调用目录的文件优先于 harness home 的文件，两者都低于继承环境。在文件中设置的进程启动变量（如 `PATH`、`DSH_*`、`XDG_*`）会被拒绝：请改为导出这些变量。四个代理名（`HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY`）只从 harness home 的文件接受，绝不从调用目录的文件接受——后者随 clone 一起到来。对于只想加载某个目录 `.env` 的非产品 bin，文件缺失不影响启动，文件无法加载时输出一行带标签的警告。
 - **`cordis.patch.yml`**——你的 tweak 层，应用在所有组合包层之后（先应用逐 profile 的文件，再应用 home 级文件，因此后者优先级更高）：替换某个条目的整个配置（重述你要保留的字段）、插入新条目，或在启动时插值 `!!js` 表达式。patch 指定的条目不存在时输出 stderr 警告；空文件或仅含注释的文件会导致启动失败——如需禁用该层，请改用 `[]`。
 
-带 `patchReload: live` 的 profile 会监视两份用户 patch 文件，并应用[重载失败策略](#startup-and-reload-failures)。`startup` profile 既不安装这些监视器，也不安装 launcher 的仅监视 HMR（热模块替换）回退。
+带 `patchReload: live` 的 profile 会监视 profile manifest 与两份用户 patch 文件，重新读取按顺序排列的组合包层，并应用[重载失败策略](#startup-and-reload-failures)。[DSH HMR](../hmr/README.zh.md) 将这些重载与[插件管理器](../plugin-manager/README.zh.md)的修改串行化，读取变化前等待共享的 profile 包操作锁。`startup` profile 既不安装这些监视器，也不安装 launcher 的仅监视 HMR（热模块替换）回退。
 
 插入条目的插件名可以是绝对文件系统路径、文件 URL 或包标识符。patch 加载会把 `insert` 条目及其嵌套分组中的绝对路径以及相对于 patch 文件的 `./` 或 `../` 路径转换为文件 URL；对已有条目名称的断言及替换用的 `config` 值保持原样。
 
-组合包 patch 保留声明的 id、父组和顺序。各层按 manifest 顺序占有行 id；组合包重复声明或使用已占用的 id 时整层被排除并报告，冲突的用户插入则逐行排除。`dependencies` 记录安装；`dsh.profile.bundles` 选择启用的层，包括它们的全部插入和覆盖。安装和更新保留已有依赖的启用选择；不在列表中的组合包即未启用。参见[组合包启用选择](../../../.agents/notes/implemented/architecture/2026-09-14-bundle-activation-selection.zh.md)。包元数据不决定启动严格程度。
-
-launcher 在任何配置行挂载前提供 `ctx.profileRuntime`。该运行时要求注入 Loader，支持从根上下文和插件上下文取得的句柄调用。它拥有行来源、已接受的组合、冲突和用户禁用行信息。文件监听与管理操作共用它的串行重组队列。重组等待当前条目和已移除 fiber 完成后，发布已接受的选项并报告逐行问题；更新失败时，fiber 可能仍使用先前的有效配置运行。`installFailLoud` 保持到应用关闭，处理进程级未处理 rejection。 观测方可等待 `whenIdle()` 后，再发布包含组合归属的刷新视图。
-
-<a id="patch-files"></a>
-### 补丁文件
-
-上面的每一层都是一个 `cordis.patch.yml`：一个顶层 YAML 序列，元素是 include 插件的 `PatchOptions`——按 id 定位的覆盖与 `insert` 列表——采用 Loader 的方言，其中 `!!js` 标记一个由该行 fiber 求值的表达式。`./patch-file` 导出是读写这种文件的唯一地方，因此启动接受的文件就是 插件管理器接受的文件。
-
-用 `parsePatchList`（已有文本）或 `readPatchListFile`（文件不存在时读到 `undefined`）读取一层。两者都把 `insert` 行中相对的名字（如 `./plugin.js`）锚定到文件自己的目录，并对任何不是"映射序列"的内容直接报错，因为一个完全无法施加的补丁文件就是配置错误；而目标行不存在的单条补丁仍然只是 Loader 的逐条警告。
-
-通过 `mutatePatchFile` 写入。回调拿到一个 `PatchDocument`，按 Loader 寻址行的方式以行 id 编辑：
-
-```ts
-import { mutatePatchFile } from '@deepseek-ai/dsh-app-boot/patch-file'
-
-const file = '/home/me/.dsh/profiles/web/cordis.patch.yml'
-await mutatePatchFile(file, (document) => {
-  document.setRowField('tool-web', 'disabled', true)      // the id-targeted patch is created when absent
-  document.deleteRowField('tool-web', 'config')           // a patch reduced to its id is removed whole
-  document.appendInsert({ id: 'tool-foo', name: 'dsh-tool-foo' })          // into the root list
-  document.appendInsert({ id: 'sql', name: 'dsh-sql' }, 'agents')          // into the group with that id
-  document.removeInsert('tool-foo')                       // an emptied insert patch is removed whole
-}, { binName: 'dsh', mode: 0o600, dirMode: 0o700 })
-```
-
-`setRowField` 永远不接受 `id` 与 `insert`；`rowField` 读回一个键，`!!js` 标量以其源文本返回。`appendInsert` 拒绝文件已插入的 id；`insertedRow`/`removeInsert` 也能找到插入组内部的行。写入的值都是普通数据；别的键上的 `!!js` 标量原样不动，这正是用户层能撤回自己写的 `disabled: true` 而不惊动组合包在另一行上的 `!!js` 门的原因。
-
-`mutatePatchFile` 像 `dsh-atomic-write` 一样占用 `<file>.lock` 兄弟文件，读取文件（不存在按空处理），施加编辑，在文本有变化时以声明的权限位原子替换文件，然后返回从写入文本重新读出的补丁列表。什么都没改的编辑什么都不写。
+挂载 profile 条目前，`dsh` launcher 会从安装依赖图与有序 bundle 依赖图计算一份不可变的 package resolution generation。默认 link 模式会物化现有的共享 fallback 链接与 profile 自有 fallback 链接，因此受支持的启动行为保持不变。内部调用方和测试工具可以改用 runtime 模式，把 generation 安装到 Node 的 ESM 与 CommonJS resolver；也可以使用 dual 模式，同时物化并校验同一份 generation。
 
 ### 预览生效配置
 
@@ -111,7 +83,7 @@ Loader 结算后，app-boot 将 optional 失败报告为警告；若已启用的
 | 脱离 `apply()` 返回 Promise 的异步任务产生未处理 rejection | 致命错误：释放应用并以非零码退出 | 致命错误：释放应用并以非零码退出 | 致命错误：释放应用并以非零码退出，与条目 id 无关 |
 | 条目缺失或被显式禁用 | 忽略 | 忽略 | 不激活该条目；不执行 required 启动审计 |
 
-可选提供方失败可能使必需消费方等待依赖，从而阻止应用就绪。覆盖已有行不会改变其所有者或启动策略。已有行在更新前校验失败，不会回滚其他行已成功的变化。
+上面的 required 列表包含 `modules` 与 `connection`；只要其中一个已启用条目失败，Web 就无法成功启动。Optional 提供方失败也可能使 required 消费方无法激活。现有条目的新配置在更新前被 schema 校验拒绝，并不等于对兄弟插件的变更做事务回滚。
 
 [Web 进程矩阵](../../../apps/cli/tests/profiles/web/tests/web-failure-matrix.expected.e2e.ts)和[启动验收测试](../../../apps/cli/tests/profiles/web/tests/web-best-effort-startup.expected.e2e.ts)通过随附 Web profile 验证这些结果；[app-boot 测试](tests/app-boot.spec.ts)还覆盖根 Include 失败。
 
@@ -133,30 +105,28 @@ Loader 结算后，app-boot 将 optional 失败报告为警告；若已启用的
 
 ### 设计说明
 
-- **与渠道无关的库。** 此包不包含 loader 钩子，也不提供开发模式接口；[`dsh` 应用](../../../apps/cli/README.zh.md) 持有自己的 Node 源码启动钩子，并在启动序列中使用这些 helper，构建后的消费方则使用普通 Node 包解析。
+- **Profile 启动数据。** `ctx.profileContext` 只包含 profile 位置、重载策略、启动时组合包名称、已解析的调用级 overlay 与遥测退出值。`readProfilePatches()` 根据这些输入读取并组合当前文件；调用方负责调度和应用结果。
+- **进程内模块解析。** runtime 和 dual 模式会在挂载 profile 条目前，将一份 generation 安装到 Node 的 ESM 与 CommonJS 内部 resolver；link 模式不修改这两个 resolver。exports、conditions、subpath、模块缓存和错误码仍由 Node 负责；路由后的 ESM 失败会报告原始 importer，而不是内部查找锚点。`ctx.pluginPackages` 从同一 generation 提供 package metadata，不记录 Entry import；安装 generation 后，即使查询未命中也以 generation 为准，仅安装服务而未提供 generation 的底层嵌入方仍使用 Node 原生查找。
 - **两个 Loader builtin。** `mountRootInclude` 把 `cordis:include` 与 `cordis:group` 注册为 Loader builtin：group 行能把一个提供方与它的消费方放进同一个 `isolate` realm，而位于本工作区之外的 agent preset 无法按名称解析 `@deepseek-ai/cordis-plugin-group`。两者都通过宿主的模块管线加载，而非被包含树自身的说明符解析。
-- **消费方决定严格程度。** 普通 Loader 组保留成功的其他行。app-boot 在启动完成后按必需条目 id 审计；agent preset 拥有并清理要求全部配置行激活的代际。行失败从 Loader 与 Fiber 读取，重复的 rejection 通知在一个进程检查点内合并。
-- **Profile 模块后备机制。** 裸插件 specifier 由 Loader 从配置目录解析。普通 Node 会为安装依赖闭包中的每个包维护一个符号链接。打包可执行文件无法让操作系统符号链接进入 pkg 的 `/snapshot` 树，因此会按 Node ESM 条件读取已安装包的 export map，并写入重新导出虚拟模块 URL 的真实代理包。缺失 export 保持不可用，错误 export map 会让启动失败，跨进程 writer lock 则会在不暴露部分代理的情况下替换陈旧条目。所选外部组合包若不在安装闭包中，则会获得 profile 本地的 `.dsh-module-fallback` 链接；已有 pnpm 条目优先，后续闭包发现会排除投影链接，清理也只删除 dsh 自有链接。
-- **更新完成。** 实时重载等待 Loader 工作后检查逐行问题。profile 重组还等待已移除 fiber 的清理，这些工作已不在当前 Loader 树中。单独完成 `Fiber.update()` 和 `Entry.update()` 不代表重启成功。
-- **两阶段失败标签。** `boot()` 区分 `host preparation failed`（`prepare` 在任何配置树条目挂载前抛出）与 `plugin tree failed to load`。插件诊断包含原始堆栈、嵌套原因和聚合错误中的各项失败。原因链出现循环时，诊断遍历会终止，不会替换原始原因。
+- **由 consumer 持有严格语义。** 普通 Loader group 保留成功 sibling。App-boot 在首次结算后应用全局 required-entry policy；agent preset 与动态多 entry 组合在需要 all-or-nothing setup 时，持有并拆卸各自的独立 generation。App-boot 读取 failed fiber 来报告已记录的错误，并在一个进程检查点内合并 Loader 重复的 rejection 通知。
+- **唯一 fallback generation。** 安装优先、有序 bundle 逐根 breadth-first 遍历同时生成运行时表和保留的磁盘 materializer。runtime 模式不创建解析链接，并在旧链接原来的查找位置忽略陈旧投影。package `imports` 选中的外部 bare target 使用相同的选包顺序，映射、conditions 和精确 target 解析仍由 Node 负责。link 模式物化同一张表；dual 模式还会比较 Node 的磁盘结果与表。完整后继 generation 可以原子增加 package name，修改或删除既有映射则要求重启。
+- **自有 Worker。** Worker 构建 banner 会在业务 bundle 前导入 `@deepseek-ai/dsh-app-boot/worker/profile-resolution-bootstrap`。每个 Worker 在自己的 isolate 中安装结构化克隆的 generation。bootstrap bundle 不静态导入任何包。源码 Worker 入口保留自包含依赖，第三方 Worker 不接受注入。
+- **更新完成。** App boot 通过 `internal/update` waterfall 观察重启失败。实时 patch 重载在检查激活状态前等待配置树中的 fiber；单独调用 `Fiber.update()` 或 `Entry.update()` 不能确定重启成功。
+- **单一 rejection 检查点。** `assertEntriesActivated` 把折入启动诊断的确切原因保持到下一个进程级 rejection 检查点可见，使 `installFailLoud` 能合并 Loader 的重复通知，而所有无关的未处理 rejection 仍然致命。
+- **两阶段失败标签。** `boot()` 区分 `host preparation failed`（`prepare` 在任何配置树条目挂载前抛出）与 `plugin tree failed to load`，并追加最深层插件错误的堆栈。插件诊断保留嵌套原因和聚合错误中的各项失败；原因链出现循环时会停止遍历，但不会替换原始错误。
 
 ### Helper 行为
 
-包根导出启动、组合、诊断和包管理操作及其输入与结果类型。单行诊断 helper 和组合包分析中间数据保留在包内。各导出的约定见 [`src/index.ts`](src/index.ts) 与 [`src/profile.ts`](src/profile.ts)。
+每个导出各负责启动的一个阶段：配置解析与快照回放、分层环境加载、明确报错的保护机制、激活审计、patch 解析、根 include 挂载、配置 dump 渲染、活动 patch 监视、profile 组合，以及 harness 源码段落。各导出的约定在代码中，不在本 README——见 [`src/index.ts`](src/index.ts) 与 [`src/profile.ts`](src/profile.ts)。
 
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 启动、环境层、fail-loud 处理、启动审计、patch 解析与监听、配置导出 |
+| [`src/index.ts`](src/index.ts) | 启动 helper：配置解析、环境加载、会明确报错的保护机制、激活审计、patch 解析、配置 dump、harness 源码段落 |
 | [`src/profile.ts`](src/profile.ts) | profile 发现、初始化、组合包解析、模块后备机制 |
-| [`src/external-bundles.ts`](src/external-bundles.ts) | 组合包归属分析及安装、启用 manifest 列表 |
-| [`src/compose-stack.ts`](src/compose-stack.ts) | 整叠层的行 id 归属：`claimLayerIds`、`composeProfileStack`、冲突记录 |
-| [`src/entry-issues.ts`](src/entry-issues.ts) | 当前条目失败、未满足服务和诊断格式化 |
-| [`src/profile-runtime.ts`](src/profile-runtime.ts) | `profileRuntime` 服务：已提交的组合（profile、行来源、冲突）、用户停用的行、重新组合 |
-| [`src/package-metadata.ts`](src/package-metadata.ts) | 静态 manifest 与 patch 声明；不执行模块，不使用 probe 缓存 |
-| [`src/patch-file.ts`](src/patch-file.ts) | 公开 patch 文件解析器与用户层原子编辑器 |
-| — | 不发布运行时不变式伴生入口；边界与回放测试覆盖其协议映射。 |
+| [`src/profile-resolution/`](src/profile-resolution/) | 运行时 resolver、package metadata 服务与构建后 Worker bootstrap |
+| — | 不发布运行时不变式伴生入口；每个 resolver generation 只有一个 registration 所有，dual 模式在解析时比较独立物化的结果。 |
 
 </details>
 
@@ -194,14 +164,10 @@ Loader 结算后，app-boot 将 optional 失败报告为警告；若已启用的
 
 这些限制说明此启动库在何时不合适，或何时需要特别注意。它们是当前包约束，不是任务积压。
 
-- **裸包 specifier 依赖 Loader 内部机制**——生产 bin 需要 Loader 的可选原生辅助组件；没有该辅助组件的进程内调用方必须使用可解析的相对／file specifier，或提供自己的模块解析钩子。
+- **运行时解析依赖 Node 内部机制**——受支持的 Node 版本需要 native builtin access addon 和可执行兼容验证。只有构建后的 Harness 自有 Worker 接收 generation bootstrap；第三方 Worker 与自定义 `vm` linker 保持原生解析。
 - **快照回放替换仅识别特定 basename**——只有以 `cordis.yml` 或 `cordis.yaml` 结尾的配置会映射到同级 `cordis.snapshot.yml`；自定义配置名称需要调用方自行选择。
 - **环境发现以启动为界**——`loadLayeredEnv` 只读取一次调用目录与 harness home 中的 `.env`；它不搜索父目录，也不跟随之后选择的 workspace。`loadEnv` 仍是非产品 bin 使用的单目录 helper。
 - **用户 patch 会替换匹配到的整个配置**——按 id 定位的 patch 不做深度合并，因此 profile 覆盖必须重述需要保留的组合包字段。
-- **覆盖保留目标的所有者**——修改内置行可能使该必需行失败；其他行成功的更新仍然生效。禁用组合包移除其整份 patch 层，包括覆盖。
-- **冲突按顺序判定，不看是非**——外部组合包之间，`dsh.profile.bundles` 里靠前的那层保住争议 id，卸掉它之后靠后的那层在下次启动时挂上；插件列表显示谁输给了谁。
-- **嵌套 fiber 审计只是提示**——内置条目下失败的 `ctx.inject()` 延续会被报告而非致命，直到确认随附组合都没有这类失败。
-- **元数据不代表激活结果**——`readPackageMetadata` 读取包身份和组合包 patch 行，不导入模块。没有组合包 patch 的包保持 `unknown`。Config 校验和执行诊断只在实际挂载后产生。Cordis 物理路径解析无法识别被内联打包的副本。
 
 <a id="dev-note"></a>
 ### 开发备注

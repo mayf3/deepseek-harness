@@ -23,8 +23,6 @@ The invoking directory is the default workspace root. The `web`, `headless`, `sd
 
 The launcher parses only its own flags and hands everything after them to the booted profile, where any injected app plugin may parse the shared immutable snapshot ([`dsh-cmdline`](../../packages/boot/cmdline/README.md)). The first token the launcher does not recognize starts the app's arguments:
 
-Managed `dsh plugin add/remove` commands forward interruption to their package process and wait for it to stop. An interrupted add restores `package.json` and `pnpm-lock.yaml`; downloaded or unpacked files may remain. SIGINT returns exit code 130 and SIGTERM returns 143.
-
 ```sh
 dsh --profile web --port 8080       # --port belongs to the web app
 dsh --profile tui --resume <id>     # example, assuming the tui profile is installed; --resume belongs to the terminal app
@@ -36,7 +34,7 @@ dsh --help                          # the launcher's own help
 <a id="profiles"></a>
 ## Profiles
 
-A profile directory holds a `package.json` (out-of-tree plugin dependencies plus the profile manifest `dsh.profile` with its ordered `bundles` list, and `patchReload` lifecycle) and a `cordis.patch.yml` (the user's own patch layer). `patchReload: live` watches the profile and home-level patch files; `startup` applies them once.
+A profile directory holds a `package.json` (out-of-tree plugin dependencies plus the profile manifest `dsh.profile` with its ordered `bundles` list and `patchReload` lifecycle) and a `cordis.patch.yml` (the user's own patch layer). `patchReload: live` watches the profile manifest and both profile and home patch files, then recomposes all layers through one serialized reload; `startup` applies them once. Edits arriving during watcher registration use the same nonfatal reload reporting as later edits. [Plugin Manager](../../packages/boot/plugin-manager/README.md) shares package operations and the profile write lock with `dsh plugin`; package updates retain disabled bundle selections.
 
 The tree composes over an empty root:
 - each bundle's patch in `dsh.profile.bundles` order

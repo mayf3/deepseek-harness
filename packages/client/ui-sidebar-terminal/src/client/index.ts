@@ -1,7 +1,7 @@
 /** Register interactive terminal tabs and explicit process cleanup with the sidebar. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { WebTerminalId } from '@deepseek-ai/dsh-api-terminal-controller/types'
-import type { TabId } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import type { SidebarRightTabParamsMap, TabId } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-api-terminal-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -10,6 +10,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import { TerminalGuideIcon } from './TerminalIcon.tsx'
+import { TerminalGuide, type TerminalGuideInjected } from './TerminalGuide.tsx'
 import { TerminalBody } from './TerminalBody.tsx'
 import { TerminalTitle } from './TerminalTitle.tsx'
 import { TerminalRecovery, type TerminalRecoveryInjected } from './TerminalRecovery.tsx'
@@ -28,18 +29,24 @@ export function apply(ctx: Context): void {
   let disposed = false
   const recovered = new Map<SessionId, Promise<void>>()
   ctx.effect(() => () => { disposed = true; recovered.clear() }, 'ui-sidebar-terminal.lifetime')
+  const target = (sessionId: SessionId, key: string): SidebarRightTabParamsMap['terminal'] | undefined =>
+    ctx.sidebarRight.tabDomain.occurrence(sessionId, { id: key as TabId }).navigation.getSnapshot().params
   const terminalId = (sessionId: SessionId, key: string): WebTerminalId | undefined => {
-    const params = ctx.sidebarRight.tabDomain.occurrence(sessionId, { id: key as TabId }).navigation.getSnapshot().params
-    return (params as { terminalId?: WebTerminalId } | undefined)?.terminalId
+    const params = target(sessionId, key)
+    return params !== undefined && 'terminalId' in params ? params.terminalId : undefined
   }
-  const view = (sessionId: SessionId, key: string) => ctx.webTerminals.view(sessionId, key, terminalId(sessionId, key))
+  const view = (sessionId: SessionId, key: string) => {
+    const params = target(sessionId, key)
+    return ctx.webTerminals.view(sessionId, key, terminalId(sessionId, key),
+      params !== undefined && 'shellPath' in params ? params.shellPath : undefined)
+  }
   const namespace = 'sidebarTerminal'
   const id = '@deepseek-ai/dsh-client-ui-sidebar-terminal'
   const t = ctx.locale.bind(namespace)
   ctx.effect(() => ctx.locale.register(namespace, { zh, en }), 'ui-sidebar-terminal.copy')
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id, kind: 'terminal', multiple: true, priority: 'builtin', title: () => t('title'),
-    guide: [{ order: 20, title: () => t('new'), description: () => t('description'), icon: TerminalGuideIcon }],
+    guide: [{ id: 'new', order: 20, title: () => t('new'), description: () => t('description'), icon: TerminalGuideIcon }],
   }), 'ui-sidebar-terminal.type')
   ctx.effect(() => ctx.sidebarRight.registerCloseHandler('terminal', (sessionId, tab) => {
     ctx.webTerminals.close(sessionId, tab.id, terminalId(sessionId, tab.id))
@@ -52,6 +59,13 @@ export function apply(ctx: Context): void {
     getSnapshot: () => ctx.theme.getTheme(),
     subscribe: listener => ctx.on('theme/change', listener),
   }
+  ctx.effect(() => ctx.slots.inject('sidebar.right.tab.guide.entry', () => ctx.slots.register({
+    name: 'sidebar.right.tab.guide.entry', key: id, locale: namespace,
+    inject: (sessionId): TerminalGuideInjected => ({
+      loadShells: signal => ctx.webTerminals.launchShells(sessionId, signal),
+      selectShell: (path) => { ctx.webTerminals.selectShell(path) },
+    }),
+  }, TerminalGuide)), 'ui-sidebar-terminal.guide')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab', key: id, locale: namespace,
       inject: (sessionId): TerminalBodyInjected => ({ ...inject(sessionId), hooks: { theme } }),

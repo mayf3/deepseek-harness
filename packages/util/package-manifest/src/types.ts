@@ -34,8 +34,6 @@ export interface DshManifest {
   profile?: DshProfileManifest
   /** Client module loading and build metadata. */
   client?: DshClientManifest
-  /** Display title of the package, read without executing package code. */
-  title?: string
 }
 
 /** Runtime version requirements under `package.json.engines`. */

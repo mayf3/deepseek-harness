@@ -1,6 +1,5 @@
 /** Sidebar terminal screen and connection recovery. */
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Button, Menu, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import type { TerminalViewState, TerminalView } from '@deepseek-ai/dsh-api-terminal-controller/client'
@@ -10,12 +9,14 @@ import type { TerminalBodyInjected } from './face.ts'
 import type {} from './locales.ts'
 import '@xterm/xterm/css/xterm.css'
 import css from './TerminalBody.module.css'
+import { TerminalTheme } from './terminal-theme.ts'
+import { observeTerminalCursor } from './terminal-cursor.ts'
 
 /** Standard sidebar owner share plus terminal model and localized copy. */
 export type TerminalBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'sidebarTerminal'> & InjectFace<TerminalBodyInjected>
 
 /**
- * Offer shell selection or render the retained terminal with the application theme.
+ * Render the retained terminal with the application theme.
  * @param props - sidebar occurrence, model lookup and translated copy.
  * @returns the terminal screen and any pending or exceptional state.
  */
@@ -37,7 +38,6 @@ export function TerminalBody({ useTabInfo, useTerminal, useTheme, view, t }: Ter
   const readOnly = state.phase === 'connected' && state.info?.state === 'running' && !state.writable
   return (
     <section className={css.root} data-sidebar-terminal>
-      {state.phase === 'selecting' && <TerminalLauncher state={state} model={model} t={t} />}
       {(status !== undefined || retry || readOnly) && <div className={css.status} role="status">
         {status}
         {readOnly && <>{t('readonly')} <button type="button" onClick={() => { model.connect() }}>{t('control')}</button></>}
@@ -51,37 +51,6 @@ export function TerminalBody({ useTabInfo, useTerminal, useTheme, view, t }: Ter
   )
 }
 
-function TerminalLauncher({ state, model, t }: {
-  state: TerminalViewState
-  model: TerminalView
-  t: TerminalBodyProps['t']
-}): ReactNode {
-  const [open, setOpen] = useState(false)
-  const selectionId = useId()
-  const selected = state.shells?.find(shell => shell.path === state.selectedShell)
-  return <form className={css.launch} onSubmit={(event) => { event.preventDefault(); void model.start() }}>
-    <div className={css.shellField}>
-      <span>{t('shell')}</span>
-      <Menu
-        open={open} autoFocus portal className={css.shellMenu}
-        items={state.shells?.map(shell => ({ id: shell.path, label: `${shell.name} — ${shell.path}` })) ?? []}
-        selectedId={state.selectedShell}
-        onClose={() => { setOpen(false) }}
-        onSelect={(path) => { model.selectShell(path); setOpen(false) }}
-        anchor={<Button
-          variant="outline" className={css.shellTrigger}
-          aria-label={t('shell')} aria-describedby={selectionId} aria-haspopup="menu" aria-expanded={open}
-          disabled={selected === undefined} onClick={() => { setOpen(value => !value) }}
-        >
-          <span id={selectionId} className={css.shellValue}>{selected === undefined ? t('shell') : `${selected.name} — ${selected.path}`}</span>
-          <span aria-hidden="true"><IconChevronDownOutline14 /></span>
-        </Button>}
-      />
-    </div>
-    <Button type="submit" variant="outline" disabled={selected === undefined}>{t('start')}</Button>
-  </form>
-}
-
 /* oxlint-disable typescript/no-non-null-assertion -- React sets the DOM ref, then these effects initialize and use the emulator. */
 function TerminalScreen({ state, model, visible, label, theme }: {
   state: TerminalViewState
@@ -93,16 +62,20 @@ function TerminalScreen({ state, model, visible, label, theme }: {
   const element = useRef<HTMLDivElement>(null)
   const terminal = useRef<Terminal>()
   const fit = useRef<FitAddon>()
+  const colors = useRef<TerminalTheme>()
   const lastRevision = useRef(0)
   const current = useRef({ state, visible })
   current.current = { state, visible }
 
   useLayoutEffect(() => {
     const node = element.current!
-    const xterm = new Terminal({ cursorBlink: true, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', scrollback: current.current.state.environment?.scrollback ?? 0 })
+    const xterm = new Terminal({ minimumContrastRatio: 4.5, cursorBlink: true, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', scrollback: current.current.state.environment?.scrollback ?? 0 })
     const addon = new FitAddon()
     xterm.loadAddon(addon)
     xterm.open(node)
+    const palette = new TerminalTheme(xterm)
+    colors.current = palette
+    const cursor = observeTerminalCursor(xterm, node, () => palette.cursor)
     xterm.textarea?.setAttribute('aria-label', label)
     terminal.current = xterm
     fit.current = addon
@@ -117,6 +90,8 @@ function TerminalScreen({ state, model, visible, label, theme }: {
     return () => {
       observer.disconnect()
       input.dispose()
+      cursor.dispose()
+      palette.dispose()
       xterm.dispose()
       terminal.current = undefined
       fit.current = undefined
@@ -125,12 +100,7 @@ function TerminalScreen({ state, model, visible, label, theme }: {
 
   useLayoutEffect(() => {
     const style = getComputedStyle(element.current!)
-    terminal.current!.options.theme = {
-      background: style.backgroundColor, foreground: style.color,
-      cursor: style.color, cursorAccent: style.backgroundColor,
-      selectionBackground: style.color, selectionForeground: style.backgroundColor,
-      selectionInactiveBackground: style.color,
-    }
+    colors.current!.update(style.backgroundColor, style.color)
   }, [theme, model])
 
   useLayoutEffect(() => {

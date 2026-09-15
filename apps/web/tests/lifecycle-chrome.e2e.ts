@@ -291,10 +291,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
         await input.press('Enter')
         if (MODE !== 'record') {
           const thinking = page.locator('[data-variant="think"][data-state="running"]')
-          const disclosure = thinking.getByRole('button')
-          await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('true')
-          await disclosure.click()
-          await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('false')
+          await expect.poll(() => thinking.getByRole('button').getAttribute('aria-expanded')).toBe('false')
           const liveTail = thinking.locator('[data-follow-end]')
           await expect.poll(async () => {
             if (await liveTail.count() !== 1) return false

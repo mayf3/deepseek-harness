@@ -98,13 +98,6 @@
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
 
-    # Plugin management over the booted profile: install, enable, disable,
-    # retry, and user-layer rows through the `plugins` Remote. Resolves the
-    # profile runtime per call, so a composition booted without the profile
-    # launcher still starts and answers `plugins/unavailable`.
-    - id: plugin-manager
-      name: '@deepseek-ai/dsh-host-plugin-manager'
-
     # Session commands, cold reads, and live control over Typert Remote.
     - id: session-controller
       name: '@deepseek-ai/dsh-api-session-controller'
@@ -251,13 +244,6 @@
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
 
-    # Plugin management: install, enable, disable, retry, and compose the
-    # profile's packages. Without a profile runtime it reports itself unavailable.
-    - id: ui-plugin-manager
-      name: '@deepseek-ai/dsh-client-ui-plugin-manager'
-
-    # Read-only Plugin list tab in the Settings Plugins section; the built-in
-    # bundles the sidebar page leaves out are inspected here.
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
 
@@ -382,6 +368,9 @@
 # the criterion for host-plane ownership — injection resolves before any session
 # exists, so there is no agent to key by. Behind a preset realm those variables
 # would never reach the model's shell at all.
+
+- id: tool-plugin-manager
+  disabled: true
 
 - id: tool-bash
   disabled: true

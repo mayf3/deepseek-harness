@@ -4,8 +4,6 @@ import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 // Type-only: the optional agent-preset roster resolved through `ctx.get`.
 import type {} from '@deepseek-ai/dsh-agent-presets'
-// Profile row ownership and live entry diagnostics share the boot implementation.
-import { inspectEntryIssues } from '@deepseek-ai/dsh-app-boot'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
 import type {} from 'zod'
@@ -15,7 +13,6 @@ import type {
   PluginFiberPhase,
   PluginInventoryEntry,
   PluginInventorySnapshot,
-  PluginPackageRef,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -23,14 +20,6 @@ export type * from './types.ts'
 /** Brand an existing Loader-tree entry id at the owning boundary. */
 function pluginEntryId(value: string): PluginEntryId {
   return value as PluginEntryId
-}
-
-/** The wire view of a row's package origin. */
-function packageRef(origin: { packageName: string; version?: string }): PluginPackageRef {
-  return {
-    name: origin.packageName,
-    ...origin.version === undefined ? {} : { version: origin.version },
-  }
 }
 
 /** Runtime mirror: FiberState is a cross-package const enum. */
@@ -75,56 +64,38 @@ export class PluginInventoryGateway extends TypertRemoteService {
    */
   @Remote('list')
   async list(): Promise<PluginInventorySnapshot> {
-    const entries: PluginInventoryEntry[] = []
-    const runtime = this.ctx.get('profileRuntime')
-    const failures = new Map((await inspectEntryIssues(this.ctx)).map(issue => [issue.entry, issue]))
-    for (const entry of this.ctx.loader.entries()) {
-      if (entry.options.group) continue
-      // Bundle ownership and user patches address rows by the id the composition
-      // declares; the tree-wide `entry.id` adds the owning include's prefix.
-      const origin = runtime?.originOfEntry(entry)
-      const failure = failures.get(entry)
-      const enabled = failure?.stage === 'disabled-expression' || !entry.disabled
-      entries.push({
-        entryId: pluginEntryId(entry.id),
-        moduleName: entry.options.name,
-        enabled,
-        fiberPhase: entry.fiber === undefined ? (failure === undefined ? null : 'failed') : FIBER_PHASE[entry.fiber.state],
-        ...origin === undefined ? {} : { package: packageRef(origin) },
-        ...enabled ? {} : { disabledBy: runtime?.userDisables(entry) === true ? 'user' as const : 'composition' as const },
-        ...failure === undefined ? {} : { failure: { stage: failure.stage, message: failure.message } },
-      })
-    }
-    // A row the composition left out never reached the tree; the conflict
-    // names the layer that lost, so no lookup of the id's owner is needed.
-    if (runtime !== undefined) {
-      for (const conflict of runtime.conflicts) {
-        const version = runtime.layers.find(candidate => candidate.packageName === conflict.packageName)?.version
-        entries.push({
-          entryId: pluginEntryId(`conflict:${conflict.layer}:${conflict.rowId}`),
-          moduleName: conflict.moduleName,
-          enabled: true,
-          fiberPhase: 'failed',
-          ...conflict.packageName === undefined
-            ? {}
-            : { package: packageRef({ packageName: conflict.packageName, ...version === undefined ? {} : { version } }) },
-          failure: { stage: 'conflict', message: conflict.message },
-        })
-      }
-    }
-    const presets = this.ctx.get('agentPresets')
-    if (presets === undefined) return { entries }
-    const agentPresets: AgentPresetPluginGroup[] = (await presets.compositionInventory()).map(
-      composition => ({
-        ...composition,
-        rows: composition.rows.map(({ fiberState, ...row }) => ({
-          ...row,
-          fiberPhase: fiberState === undefined ? null : FIBER_PHASE[fiberState],
-        })),
-      }),
-    )
-    return { entries, agentPresets }
+    return readPluginInventory(this.ctx)
   }
 }
 
 export default PluginInventoryGateway
+
+/** Read current Loader entries and optional preset compositions.
+ * @param ctx Context with the Loader service.
+ * @returns Current inventory without a separate runtime cache.
+ */
+export async function readPluginInventory(ctx: Context): Promise<PluginInventorySnapshot> {
+  const entries: PluginInventoryEntry[] = []
+  for (const entry of ctx.loader.entries()) {
+    if (entry.options.group) continue
+    entries.push({
+      entryId: pluginEntryId(entry.id),
+      moduleName: entry.options.name,
+      enabled: !entry.disabled,
+      fiberPhase: entry.fiber === undefined ? null : FIBER_PHASE[entry.fiber.state],
+    })
+  }
+  const presets = ctx.get('agentPresets')
+  const management = ctx.get('pluginManager') === undefined ? {} : { managementAvailable: true }
+  if (presets === undefined) return { entries, ...management }
+  const agentPresets: AgentPresetPluginGroup[] = (await presets.compositionInventory()).map(
+    composition => ({
+      ...composition,
+      rows: composition.rows.map(({ fiberState, ...row }) => ({
+        ...row,
+        fiberPhase: fiberState === undefined ? null : FIBER_PHASE[fiberState],
+      })),
+    }),
+  )
+  return { entries, agentPresets, ...management }
+}

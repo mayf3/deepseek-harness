@@ -7,7 +7,7 @@ Every `config:` block a `cordis.yml` entry can set: for each loadable harness pa
 
 This file is GENERATED from source (`scripts/gen-config-catalog.ts`) and verified fresh by `pnpm run verify-config-catalog` (part of `doc-sync`) — do not edit it by hand. Declaration blocks use a `ts config-catalog` fence (skipped by doc-typecheck, since a lone declaration referencing imports is not standalone-compilable). The generator also cross-checks the runtime schemastery schema against the pasted declaration — every schema-validated key, nested keys included, must be locatable on the declared config type — so the paste cannot hide a loader-accepted field.
 
-A `Requires:` line lists the service keys the plugin `inject`s: its `cordis.yml` tree must also load providers for those services. Scope is the harness tier (`packages/`); the vendored cordis plugins a config tree may also load (`hmr`, the console logger, …) are pinned upstream source ([vendoring policy](../vendor/README.md)) and not catalogued here.
+A `Requires:` line lists the service keys the plugin `inject`s: its `cordis.yml` tree must also load providers for those services. Scope is the harness tier (`packages/`); the vendored cordis plugins a config tree may also load (the console logger, …) are pinned upstream source ([vendoring policy](../vendor/README.md)) and not catalogued here.
 
 <a id="deepseek-aidsh-acp"></a>
 
@@ -909,6 +909,28 @@ export interface Config {
 
 Source: [`packages/bundle/headless/src/index.ts:42`](../packages/bundle/headless/src/index.ts)
 
+<a id="deepseek-aidsh-hmr"></a>
+
+## `@deepseek-ai/dsh-hmr`
+
+```ts config-catalog
+/** Module roots and watcher timing, with Chokidar deployment options. */
+export interface HmrConfig extends ChokidarOptions {
+  /** Directory resolved against the owning context's base URL. */
+  base?: string
+  /** Module watch roots; an empty list leaves only explicit configuration watches. */
+  root: string[]
+  /** Milliseconds for combining module changes. */
+  debounce: number
+  /** Glob patterns excluded from module watching. */
+  ignored: string[]
+}
+```
+
+Depends on: `ChokidarOptions` (`chokidar`)
+
+Source: [`packages/boot/hmr/src/index.ts:54`](../packages/boot/hmr/src/index.ts)
+
 <a id="deepseek-aidsh-hooks-claude-code"></a>
 
 ## `@deepseek-ai/dsh-hooks-claude-code`
@@ -1034,30 +1056,6 @@ export interface Config {
 ```
 
 Source: [`packages/host/open-in-app/src/index.ts:50`](../packages/host/open-in-app/src/index.ts)
-
-<a id="deepseek-aidsh-host-plugin-manager"></a>
-
-## `@deepseek-ai/dsh-host-plugin-manager`
-
-Requires: `loader`
-
-```ts config-catalog
-/** Plugin config: the pnpm command and the bounds on the child processes plugin management runs. */
-export interface Config {
-  /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
-  pnpmCommand: string
-  /** Bound on one install or remove run, in milliseconds. */
-  installTimeoutMs: number
-  /** Grace before forcibly terminating the installation process group, in milliseconds. */
-  installKillGraceMs: number
-  /** How many trailing bytes of an install run's output an install failure reports. */
-  installLogTailBytes: number
-  /** Bound on one registry lookup an inspection runs, in milliseconds. */
-  inspectTimeoutMs: number
-}
-```
-
-Source: [`packages/host/plugin-manager/src/index.ts:43`](../packages/host/plugin-manager/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 
@@ -1799,6 +1797,26 @@ export interface PlanModeConfig {
 
 Source: [`packages/plan/plan-mode/src/index.ts:64`](../packages/plan/plan-mode/src/index.ts)
 
+<a id="deepseek-aidsh-plugin-manager"></a>
+
+## `@deepseek-ai/dsh-plugin-manager`
+
+Requires: `loader` · `profileContext`
+
+```ts config-catalog
+/** Limits for package diagnostics and change notifications. */
+export interface Config {
+  /** Maximum retained pnpm diagnostic bytes per operation. */
+  outputBytes?: number
+  /** Delay for combining consecutive management notices in one durable injection. */
+  notificationDelayMs?: number
+  /** Maximum time to wait for another process's profile package operation. */
+  lockWaitMs?: number
+}
+```
+
+Source: [`packages/boot/plugin-manager/src/index.ts:21`](../packages/boot/plugin-manager/src/index.ts)
+
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 
 ## `@deepseek-ai/dsh-plugin-package-inventory-deepseek`
@@ -1813,7 +1831,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/llm/plugin-package-inventory-deepseek/src/index.ts:31`](../packages/llm/plugin-package-inventory-deepseek/src/index.ts)
+Source: [`packages/llm/plugin-package-inventory-deepseek/src/index.ts:32`](../packages/llm/plugin-package-inventory-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-ptc-runtime-node"></a>
 
@@ -2050,7 +2068,7 @@ Requires: `deepseekLlmApiExtensions` · `sessions`
 ```ts config-catalog
 /** Session-log request contribution configuration. */
 export interface Config {
-  /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `false`. */
+  /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `true`. */
   enabled?: boolean
 }
 ```
@@ -3380,7 +3398,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/typert/loader/src/index.ts:47`](../packages/typert/loader/src/index.ts)
+Source: [`packages/typert/loader/src/index.ts:48`](../packages/typert/loader/src/index.ts)
 
 <a id="deepseek-aidsh-user-approval"></a>
 
@@ -3641,7 +3659,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-open-in-app` ([`packages/client/ui-open-in-app/src/index.ts`](../packages/client/ui-open-in-app/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-permission-presets` ([`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-plan` ([`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts))
-- `@deepseek-ai/dsh-client-ui-plugin-manager` ([`packages/client/ui-plugin-manager/src/index.ts`](../packages/client/ui-plugin-manager/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-reference` ([`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-renderer` ([`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-schedule` ([`packages/client/ui-schedule/src/index.ts`](../packages/client/ui-schedule/src/index.ts))
@@ -3760,7 +3777,6 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-native-command` ([`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts))
 - `@deepseek-ai/dsh-output-retention` ([`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts))
 - `@deepseek-ai/dsh-package-manifest` ([`packages/util/package-manifest/src/index.ts`](../packages/util/package-manifest/src/index.ts))
-- `@deepseek-ai/dsh-plugin-manager` ([`packages/boot/plugin-manager/src/index.ts`](../packages/boot/plugin-manager/src/index.ts))
 - `@deepseek-ai/dsh-remote-mock` ([`packages/test-support/remote-mock/src/index.ts`](../packages/test-support/remote-mock/src/index.ts))
 - `@deepseek-ai/dsh-sandbox-windows-acl` ([`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts))
 - `@deepseek-ai/dsh-scope` ([`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts))

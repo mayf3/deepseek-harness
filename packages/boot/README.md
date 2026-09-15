@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The boot group provides what every dsh app bin needs to start and to manage what it starts: `app-boot` turns a `cordis.yml` plus your environment and patch layers into a running app with clear failure messages, `cmdline` lets the app own its command-line flags and `--help`, and `plugin-manager` installs, enables, and edits a profile's plugins for the `dsh plugin` command and the Web host alike. All three are libraries imported by `apps/cli`, host packages, and test-only Loader fixtures, never plugins a composition loads; each package README owns its contract.
+The boot group launches profile applications and manages their installed composition. `app-boot` resolves configuration and starts the Loader, `cmdline` supplies application arguments, and `plugin-manager` exposes current-profile operations shared with the CLI. Each package README owns its details.
 
 ## Table of Contents
 
@@ -24,7 +24,8 @@ The boot group provides what every dsh app bin needs to start and to manage what
 |---|---|---|
 | [`app-boot`](app-boot/README.md) | Boots a dsh app from a `cordis.yml`: loads `.env`, applies profile and patch layers, and reports startup failures clearly | (library for the bins) |
 | [`cmdline`](cmdline/README.md) | Lets the app own its flags, `--help`, and exit code; passes everything after the launcher's flags through verbatim | `cmdlineArgs`, `appExit` |
-| [`plugin-manager`](plugin-manager/README.md) | Installs and probes packages without booting, and enables, disables, retries, and edits user-layer rows over the booted profile; the `dsh plugin` command and the Web host's `plugins` Remote share it | (library for the bins and the host) |
+| [`hmr`](hmr/README.md) | Coordinates module and configuration reloads with package mutations | `hmr` |
+| [`plugin-manager`](plugin-manager/README.md) | Manages current-profile plugins and bundle packages through shared CLI operations | `pluginManager` |
 
 <a id="related-documentation"></a>
 ## Related documentation
@@ -33,6 +34,8 @@ The boot group provides what every dsh app bin needs to start and to manage what
 - [Profile bundles](../bundle/README.md) — installable patch layers that `dsh --profile` compositions mount.
 - [dsh-home-paths](../util/home-paths/README.md) — the harness-home resolver both packages build on.
 - [dsh-cmdline](cmdline/README.md) — how an app owns its flag family instead of the launcher.
+
+- [Profile management](../../docs/subsystems/boot.md) — service methods and result records.
 
 <a id="dev-note"></a>
 ## Dev Note

@@ -12,25 +12,6 @@ export type PluginFiberPhase =
   | 'unloading'
   | null
 
-/** Why a row is disabled: the composition's own gate or tombstone, or the user's patch layer. */
-export type PluginDisabledBy = 'composition' | 'user'
-
-/** The package a row belongs to, when a bundle layer inserted it. */
-export interface PluginPackageRef {
-  /** The bundle's package name. */
-  readonly name: string
-  /** The package version, when its manifest declares one. */
-  readonly version?: string
-}
-
-/** A current entry failure or unresolved dependency, or a row the composition left out. */
-export interface PluginFailure {
-  /** The lifecycle step that failed; `conflict` is a row another layer already declares. */
-  readonly stage: 'import' | 'activation' | 'update' | 'disabled-expression' | 'inject-pending' | 'conflict'
-  /** The failure text. */
-  readonly message: string
-}
-
 /** One non-group Loader entry exposed to trusted clients. */
 export interface PluginInventoryEntry {
   readonly entryId: PluginEntryId
@@ -39,12 +20,6 @@ export interface PluginInventoryEntry {
   /** Effective Loader enablement, including disabled ancestor groups. */
   readonly enabled: boolean
   readonly fiberPhase: PluginFiberPhase
-  /** The bundle package that inserted the row, when one did. */
-  readonly package?: PluginPackageRef
-  /** Present exactly when `enabled` is false. */
-  readonly disabledBy?: PluginDisabledBy
-  /** Present for a failed attempt or unresolved dependency, including updates that leave an old fiber active. */
-  readonly failure?: PluginFailure
 }
 
 /** Effective enablement of one preset composition row. */
@@ -86,6 +61,8 @@ export interface AgentPresetPluginGroup {
 
 /** Point-in-time inventory returned by the plugin inventory Remote. */
 export interface PluginInventorySnapshot {
+  /** Whether this Host exposes persistent current-profile management. */
+  readonly managementAvailable?: boolean
   readonly entries: readonly PluginInventoryEntry[]
   /**
    * Per-preset compositions, present only when an agent-preset roster is

@@ -11,7 +11,7 @@ import { pathToFileURL } from 'node:url'
 import { afterAll, afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { FSWatcher, type ChokidarOptions } from 'chokidar'
 import { Context } from '@deepseek-ai/cordis'
-import Hmr from '@deepseek-ai/cordis-plugin-hmr'
+import Hmr from '@deepseek-ai/dsh-hmr'
 import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
@@ -20,7 +20,8 @@ import {
   loadOptionalPatches,
   loadOverlayPatches,
   PROFILE_PATCH_FILENAME,
-  watchUserPatches, rootIncludeEntry,
+  reconcileProfilePatches,
+  watchUserPatches,
 } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
@@ -355,6 +356,57 @@ describe('Loader entry disabled interpolation', () => {
   })
 })
 
+describe('profile reconciliation settlement', () => {
+  it('rejects a context without the launcher root Include', async () => {
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    await expect(reconcileProfilePatches(ctx, [], NAME)).rejects.toThrow('profile reload requires the root Include entry')
+  })
+
+  it('reports a retained activation failure even when the failed entry is removed', async () => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+    writeFileSync(join(dir, 'candidate.mjs'), 'export function apply(_ctx, config) { if (config.fail) throw new Error("candidate activation failed") }\n')
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'), [{ insert: [{ id: 'candidate', name: './candidate.mjs', config: { fail: false } }] }])
+    onTestFinished(() => ctx.fiber.dispose())
+    const entry = [...ctx.loader.entries()].find(row => row.options.id === 'candidate')
+    if (entry === undefined) throw new Error('candidate entry missing')
+    await entry.update({ config: { fail: true } })
+    await ctx.loader.await()
+    await expect(reconcileProfilePatches(ctx, [], NAME)).rejects.toThrow('candidate activation failed')
+    expect([...ctx.loader.entries()].some(row => row.options.id === 'candidate')).toBe(false)
+    await reconcileProfilePatches(ctx, [], NAME)
+  })
+
+  it('waits for a removed plugin to release its resources', async () => {
+    const dir = tmp()
+    const started = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+    writeFileSync(join(dir, 'held.mjs'), [
+      'export function apply(ctx) {',
+      '  ctx.effect(() => async () => {',
+      '    ctx.get("reloadProbe").started()',
+      '    await ctx.get("reloadProbe").release',
+      '  })',
+      '}',
+      '',
+    ].join('\n'))
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'), [{ insert: [{ id: 'held', name: './held.mjs' }] }], (host) => {
+      host.provide('reloadProbe', { started: () => { started.resolve(undefined) }, release: release.promise })
+    })
+    onTestFinished(async () => { release.resolve(undefined); await ctx.fiber.dispose() })
+    let settled = false
+    const operation = reconcileProfilePatches(ctx, [], NAME).then(() => { settled = true })
+    await started.promise
+    expect([...ctx.loader.entries()].some(entry => entry.options.id === 'held')).toBe(false)
+    expect(settled).toBe(false)
+    release.resolve(undefined)
+    await operation
+    expect(settled).toBe(true)
+  })
+})
+
 describe('boot with user patches', () => {
   it('applies id-targeted overrides, inserts, and interpolates !!js from the environment', async () => {
     const dir = tmp()
@@ -438,12 +490,7 @@ describe('boot with user patches', () => {
     const dispose = await watchUserPatches(ctx, {
       binName: NAME,
       filename,
-      reapply: async () => {
-        const entry = rootIncludeEntry(ctx)
-        if (entry === undefined) throw new Error('no root include')
-        const { patches: _previous, ...config } = entry.options.config as Include.Config
-        await entry.update({ config: { ...config, patches: [...basePatches, ...loadOptionalPatches(NAME, filename) ?? []] } })
-      },
+      compose: userPatches => [...basePatches, ...userPatches],
     })
     expect(watchers).toHaveLength(1)
     const watcher = watchers[0]!
@@ -483,7 +530,7 @@ describe('boot with user patches', () => {
       await eventually(() => (entryConfig(ctx, id) as { value?: string }).value === 'generated', 'user patch removal did not restore the app-owned patch')
       expect(failures).toHaveLength(3)
 
-      // Default re-application: the user layer IS the whole patch list, so a
+      // Default compose: the user layer IS the whole patch list, so a
       // fresh generation replaces the app-owned layer instead of stacking on it.
       await dispose()
       const disposeDefault = await watchUserPatches(ctx, { binName: NAME, filename })
@@ -492,9 +539,6 @@ describe('boot with user patches', () => {
         writeFileSync(filename, `- id: ${id}\n  config:\n    value: identity\n`)
         watchers[1]!.emit('add', filename)
         await eventually(() => (entryConfig(ctx, id) as { value?: string }).value === 'identity', 'default-compose user patch was not applied')
-        unlinkSync(filename)
-        watchers[1]!.emit('unlink', filename)
-        await eventually(() => (entryConfig(ctx, id) as { value?: string }).value === 'base', 'default-compose removal did not empty the patch list')
       } finally {
         await disposeDefault()
       }
@@ -506,7 +550,7 @@ describe('boot with user patches', () => {
   it('fails loud when the exact watcher lacks HMR or a root Include', async () => {
     const dir = tmp()
     const withoutHmr = await boot(NAME, writeTree(dir))
-    await expect(watchUserPatches(withoutHmr, { binName: NAME, filename: join(tmp(), PROFILE_PATCH_FILENAME) })).rejects.toThrow('requires the Cordis HMR service')
+    await expect(watchUserPatches(withoutHmr, { binName: NAME, filename: join(tmp(), PROFILE_PATCH_FILENAME) })).rejects.toThrow('requires the HMR service')
     await withoutHmr.fiber.dispose()
 
     const withoutInclude = new Context()

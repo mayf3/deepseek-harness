@@ -18,16 +18,16 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./patch-file": {
-      "types": "./lib/types/patch-file.d.ts",
-      "default": "./lib/patch-file.js"
+    "./worker/profile-resolution-bootstrap": {
+      "types": "./lib/types/profile-resolution/worker-bootstrap.d.ts",
+      "default": "./lib/worker/profile-resolution-bootstrap.js"
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
-    "lib/patch-file.js",
+    "lib/worker/profile-resolution-bootstrap.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
@@ -36,12 +36,12 @@
     "@deepseek-ai/dsh-package-manifest": "workspace:^",
     "chokidar": "4.0.3",
     "js-yaml": "^4.2.0",
-    "resolve.exports": "^2.0.3",
-    "yaml": "^2.9.0"
+    "node-addon-require-builtin": "^0.1.4",
+    "resolve.exports": "^2.0.3"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis-plugin-group": "workspace:^",
-    "@deepseek-ai/cordis-plugin-hmr": "workspace:^",
+    "@deepseek-ai/dsh-hmr": "workspace:^",
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@deepseek-ai/dsh-launch-environment": "workspace:^",
@@ -50,13 +50,13 @@
     "@deepseek-ai/cordis": "workspace:^"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/cordis-plugin-hmr": {
+    "@deepseek-ai/dsh-hmr": {
       "optional": true
     }
   },
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-group": "workspace:^",
-    "@deepseek-ai/cordis-plugin-hmr": "workspace:^",
+    "@deepseek-ai/dsh-hmr": "workspace:^",
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@deepseek-ai/cordis-plugin-timer": "workspace:^",

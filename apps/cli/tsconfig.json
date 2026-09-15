@@ -21,9 +21,6 @@
       "path": "../../packages/boot/app-boot"
     },
     {
-      "path": "../../packages/boot/plugin-manager"
-    },
-    {
       "path": "../../packages/boot/cmdline"
     },
     {
@@ -73,6 +70,12 @@
     },
     {
       "path": "../../packages/shell/tool-bash"
+    },
+    {
+      "path": "../../packages/boot/plugin-manager"
+    },
+    {
+      "path": "../../packages/util/atomic-write"
     }
   ]
 }

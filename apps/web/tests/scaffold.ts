@@ -33,7 +33,8 @@ import { expect } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import Group from '@deepseek-ai/cordis-plugin-group'
 import {
   captureExpectedWorkspaceSnapshot,
   captureWorkspaceSnapshot,
@@ -56,14 +57,14 @@ import {
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
 import {
-  auditStartupEntries, composeProfileStack, mountRootInclude, rootIncludeEntry,
+  auditStartupEntries,
   composeEntries,
+  createProfileResolutionGeneration,
   healProfilesModuleFallback,
   loadOverlayPatches,
-  loadProfile,
-  ProfileRuntime,
-  writeProfileManifest,
-  type ComposedStack, type Profile,
+  PluginPackages,
+  type Profile,
+  type ProfileResolutionMode,
 } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
@@ -290,6 +291,8 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
+  /** Profile resolver backend used by this test Host; defaults to runtime coverage. */
+  profileResolutionMode?: Extract<ProfileResolutionMode, 'dual' | 'runtime'>
   /** Enable the real Open In rows with deterministic launch-environment facts. */
   openInAppEnvironment?: LaunchEnvironmentSnapshot
   /** Compare the replayed root session with `replayFixture`; defaults on for a manifest-owned canonical recording. */
@@ -305,18 +308,6 @@ export interface LaunchOptions {
    * profile layers named by {@link extraOverlayPath}.
    */
   extraInstallAnchors?: string[]
-  /**
-   * Mount a `profileRuntime` over the scaffold profile, so the plugin
-   * manager has a profile to manage. Each package directory is linked into
-   * the profile as an installed dependency (`file:` in its manifest, a
-   * symlink under its `node_modules`); `enabled` lists a bundle in
-   * `dsh.profile.bundles`. `patchReload` selects live recomposition or
-   * changes applied at the next start; it defaults to `startup`.
-   */
-  profileRuntime?: {
-    patchReload?: Profile['patchReload']
-    packages: { dir: string; enabled?: boolean }[]
-  }
   /**
    * Replay fixture (session.jsonl) served by the inserted dsh-llm-replay row
    * in replay/refresh modes; ignored in record mode (the real adapter
@@ -535,6 +526,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   const patches: PatchOptions[] = [
     ...basePatches,
     ...surfacePatches,
+    { id: 'session-log-deepseek', config: { enabled: false } },
     // The historical Messages fixture retains its recorded route during replay;
     // live configuration uses the shared DeepSeek route. Explicit overlays win.
     ...messages
@@ -679,7 +671,6 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   try {
     process.chdir(workspaceCwd)
     const profileDir = join(harnessHome, 'profiles', 'scaffold')
-    const profilePatchReload = options.profileRuntime?.patchReload ?? 'startup'
     const extraLayers: Profile['layers'] = await Promise.all((options.extraInstallAnchors ?? []).map(async (anchor) => {
       const manifest = JSON.parse(await readFile(anchor, 'utf8')) as { name?: unknown }
       if (typeof manifest.name !== 'string' || manifest.name === '') {
@@ -693,45 +684,25 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       await symlink(packageDir, installedLink, 'junction')
       return {
         packageName: manifest.name,
-        version: undefined,
         packageDir,
         patchPath: join(packageDir, 'cordis.patch.yml'),
         patches: [],
       }
     }))
-    // Mirror the production launcher: the shared installation closure keeps
-    // its carrier-specific fallback, while private bundle dependencies stay
-    // isolated to this synthetic scaffold profile.
-    await healProfilesModuleFallback({
-      installAnchor: INSTALL_ANCHOR,
-      home: harnessHome,
-      profile: {
-        name: 'scaffold',
-        dir: profileDir,
-        layers: extraLayers,
-        patchPath: join(profileDir, 'cordis.patch.yml'),
-        patches: [],
-        patchReload: profilePatchReload,
-      },
-    })
-    await mkdir(profileDir, { recursive: true })
-    if (options.profileRuntime !== undefined) {
-      const dependencies: Record<string, string> = {}
-      const bundles: string[] = []
-      for (const entry of options.profileRuntime.packages) {
-        const manifest = JSON.parse(await readFile(join(entry.dir, 'package.json'), 'utf8')) as { name: string }
-        dependencies[manifest.name] = `file:${entry.dir}`
-        if (entry.enabled === true) bundles.push(manifest.name)
-        const link = join(profileDir, 'node_modules', manifest.name)
-        await mkdir(dirname(link), { recursive: true })
-        await symlink(entry.dir, link, 'dir')
-      }
-      writeProfileManifest(profileDir, {
-        name: 'dsh-profile-scaffold',
-        dependencies,
-        dsh: { profile: { bundles, patchReload: profilePatchReload } },
-      })
+    const profile: Profile = {
+      name: 'scaffold',
+      dir: profileDir,
+      layers: extraLayers,
+      patchPath: join(profileDir, 'cordis.patch.yml'),
+      patches: [],
+      patchReload: 'startup',
     }
+    const profileResolutionMode = options.profileResolutionMode ?? 'runtime'
+    const resolutionOptions = { installAnchor: INSTALL_ANCHOR, home: harnessHome, profile }
+    const resolution = profileResolutionMode === 'runtime'
+      ? await createProfileResolutionGeneration(resolutionOptions)
+      : await healProfilesModuleFallback(resolutionOptions)
+    await mkdir(profileDir, { recursive: true })
     const rootConfig = join(profileDir, 'cordis.yml')
     await writeFile(rootConfig, '[]\n')
     ctx.baseUrl = pathToFileURL(profileDir).href + '/'
@@ -747,28 +718,21 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         throw new Error(`web e2e scaffold: the web app requested exit ${String(code)} with no arguments to reject`)
       },
     })
+    await ctx.plugin(PluginPackages, {
+      generation: resolution,
+      behavior: profileResolutionMode === 'dual' ? 'verify' : 'enforce',
+    })
     await ctx.plugin(Loader)
-    let rootPatches = patches
-    if (options.profileRuntime !== undefined) {
-      // Bundle ownership is available before any configuration entry activates.
-      const readProfile = (): Profile => loadProfile('dsh', 'scaffold', INSTALL_ANCHOR, harnessHome)
-      const profile = readProfile()
-      const compose = (current: Profile): ComposedStack => composeProfileStack(current.layers, [
-        { label: 'scaffold', patches },
-        { label: current.patchPath, patches: current.patches },
-      ])
-      const stack = compose(profile)
-      rootPatches = stack.patches
-      await ctx.plugin(ProfileRuntime, {
-        profile,
-        stack,
-        installAnchor: INSTALL_ANCHOR,
-        loadProfile: readProfile,
-        compose,
-        rootEntry: () => rootIncludeEntry(ctx),
-      })
-    }
-    await mountRootInclude(ctx, rootConfig, rootPatches)
+    ctx.loader.builtins.include = Include
+    // `cordis:group` beside it, exactly as `boot()` registers it: a group row is
+    // how a preset gives one `isolate` realm to a provider and its consumers,
+    // and a preset resolving package names from its own directory cannot reach
+    // `@deepseek-ai/cordis-plugin-group` by name.
+    ctx.loader.builtins.group = Group
+    await ctx.loader.create({
+      name: 'cordis:include',
+      config: { path: pathToFileURL(rootConfig).href, patches },
+    })
     await ctx.loader.await()
     await auditStartupEntries(ctx, 'web e2e scaffold')
     if (options.welcomeNoticePending !== true) {
