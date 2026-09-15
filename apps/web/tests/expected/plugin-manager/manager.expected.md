@@ -1,9 +1,11 @@
-- heading "插件管理" [level=1]
-- paragraph: 管理已安装的插件。
+- heading "插件" [level=1]
+- paragraph: 添加和管理插件
 - button "刷新"
-- button "添加插件"
-- heading "插件包" [level=3]
-- text: 1 个
+- button "添加插件":
+  - img
+  - text: 添加插件
+- heading "已安装" [level=3]
+- text: "1"
 - list:
   - listitem:
     - button "查看 示例组合包": 示例组合包

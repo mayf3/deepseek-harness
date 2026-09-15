@@ -111,7 +111,9 @@ describe('PluginManagerPage', () => {
     const cards = screen.getAllByRole('listitem')
     expect(cards.map(card => card.getAttribute('data-plugin-package'))).toEqual(['dsh-better-sidebar', 'dsh-broken', 'dsh-protected', '@acme/dsh-tool'])
     expect(cards.map(card => card.getAttribute('data-plugin-status'))).toEqual(['running', 'problem', 'running', 'disabled'])
-    expect(screen.getByText(`4 ${en.countUnit}`)).toBeTruthy()
+    // The group heads with its title and its bare count.
+    expect(screen.getByRole('heading', { name: en.bundlesTitle })).toBeTruthy()
+    expect(document.querySelector('[data-plugin-count]')?.textContent).toBe('4')
     // A scoped name reads without its scope and harness prefix.
     expect(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'tool') })).toHaveProperty('disabled', false)
     expect(screen.getByText('A sidebar.')).toBeTruthy()
@@ -136,7 +138,9 @@ describe('PluginManagerPage', () => {
     fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Better sidebar') }))
     const detail = document.querySelector('[data-plugin-detail="dsh-better-sidebar"]') as HTMLElement
     expect(within(detail).getByRole('heading', { level: 3 }).textContent).toBe('Better sidebar')
-    expect(within(detail).getByText('0.16.0')).toBeTruthy()
+    // The version sits beside the name as a tag; the crumb only leads back.
+    expect(within(detail).getByText('v0.16.0')).toBeTruthy()
+    expect(within(detail).getByRole('button', { name: en.backToList }).textContent).toBe(en.crumbRoot)
     expect(within(detail).getByText('A sidebar.')).toBeTruthy()
     // The rows, in order, with their state and their module; the built-in rows the patch changes.
     const rows = within(detail).getAllByRole('listitem').filter(item => item.hasAttribute('data-plugin-row'))
@@ -169,7 +173,7 @@ describe('PluginManagerPage', () => {
     set({ packages: [unversioned] })
     fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
     expect(screen.getByText(en.noDescription)).toBeTruthy()
-    expect(screen.queryByText(en.versionLabel)).toBeNull()
+    expect(document.querySelector('[data-plugin-version]')).toBeNull()
     set({ packages: [] })
     expect(document.querySelector('[data-plugin-detail]')).toBeNull()
     expect(screen.getByText(en.empty)).toBeTruthy()

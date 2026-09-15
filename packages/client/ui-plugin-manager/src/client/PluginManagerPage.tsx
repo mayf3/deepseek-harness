@@ -9,8 +9,8 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { PluginInstallFailureKind } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  Button, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconCloseOutline16,
-  IconCordisPluginOutline14, IconRefreshOutline16, IconWarningOutline16,
+  Button, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconCloseOutline16, IconCordisPluginOutline14,
+  IconPluginPinwheelOutline16, IconPlusOutline16, IconRefreshOutline16, IconTrashOutline16, IconWarningOutline16,
   Input, Modal, StateDot, Switch, Tag, TerminalBlock, Toast,
   type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -237,10 +237,11 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
       {...highlighted ? { 'data-plugin-highlight': '' } : {}}
     >
       <div className={css.cardHead}>
+        <span className={css.cardIcon} aria-hidden="true"><IconPluginPinwheelOutline16 size={20} /></span>
         <div className={css.cardMain}>
           <div className={css.titleRow}>
             <button type="button" className={`${css.cardTitle} ${css.cardOpen}`} aria-label={t('openDetail', { name: title })} onClick={onOpen}>{title}</button>
-            {status === 'problem' ? <Tag tone="danger">{t('statusProblem')}</Tag> : null}
+            {status === 'problem' ? <Tag className={css.statusTag} tone="danger">{t('statusProblem')}</Tag> : null}
           </div>
           {pkg.description === undefined ? null : <span className={css.cardDesc}>{pkg.description}</span>}
         </div>
@@ -253,9 +254,10 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
 }
 
 /**
- * One package's page: the crumb back to the list; its name, tag, one-liner,
- * and its switch; the Host's problem when it reports one; its version; its
- * rows with their switches; the built-in rows it changes; and uninstall.
+ * One package's page: the crumb back to the list; its icon with uninstall
+ * and its switch; its name beside its version tag and problem tag; its
+ * one-liner; the Host's problem when it reports one; its rows with their
+ * switches; and the built-in rows it changes.
  */
 function PackageDetail({
   pkg, t, busy, rowBusy,
@@ -278,22 +280,15 @@ function PackageDetail({
       <button type="button" className={css.crumb} aria-label={t('backToList')} onClick={onBack}>
         <IconChevronDownOutline14 className={css.crumbIcon} aria-hidden="true" />
         <span>{t('crumbRoot')}</span>
-        <span className={css.crumbSep} aria-hidden="true" />
-        <span className={css.crumbHere}>{title}</span>
       </button>
       <div className={css.detailHead}>
-        <div className={css.detailMain}>
-          <div className={css.titleRow}>
-            <h3 className={css.detailTitle}>{title}</h3>
-            {status === 'problem' ? <Tag tone="danger">{t('statusProblem')}</Tag> : null}
-          </div>
-          <p className={css.detailDesc}>{pkg.description ?? t('noDescription')}</p>
-        </div>
+        <span className={css.cardIcon} aria-hidden="true"><IconPluginPinwheelOutline16 size={20} /></span>
         <div className={css.detailActions}>
           <Button
             variant="outline"
             size="sm"
             className={css.danger}
+            icon={<IconTrashOutline16 size={13} />}
             aria-label={t('uninstallLabel', { name: title })}
             disabled={busy || pkg.readOnlyReason !== undefined}
             onClick={onUninstall}
@@ -303,9 +298,16 @@ function PackageDetail({
           <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
         </div>
       </div>
+      <div className={css.detailMain}>
+        <div className={css.titleRow}>
+          <h3 className={css.detailTitle}>{title}</h3>
+          {pkg.version === undefined ? null : <span className={css.versionTag} data-plugin-version>{t('versionTag', { version: pkg.version })}</span>}
+          {status === 'problem' ? <Tag className={css.statusTag} tone="danger">{t('statusProblem')}</Tag> : null}
+        </div>
+        <p className={css.detailDesc}>{pkg.description ?? t('noDescription')}</p>
+      </div>
       {pkg.error === undefined ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {managementText(pkg.error, t)}</p>}
       {pkg.readOnlyReason === undefined ? null : <p className={css.reason} role="status">{managementText({ code: pkg.readOnlyReason }, t)}</p>}
-      {pkg.version === undefined ? null : <dl className={css.facts}><dt>{t('versionLabel')}</dt><dd>{pkg.version}</dd></dl>}
       <div className={css.detailSections}>
         <RowsSection
           rows={pkg.rows}
@@ -613,7 +615,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
               <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
                 <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutline16 /></span>
               </button>
-              <Button variant="primary" size="sm" disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
+              <Button variant="primary" size="sm" icon={<IconPlusOutline16 size={13} />} disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
             </div>
           </header>
         )
@@ -658,9 +660,9 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
           ? <p className={css.empty}>{t('empty')}</p>
           : (
             <section className={css.group} data-plugin-scope="global" data-plugin-group="bundles">
-              <div className={css.groupTitleRow}>
+              <div className={css.groupHead}>
                 <h3 className={css.groupTitle}>{t('bundlesTitle')}</h3>
-                <span className={css.count} data-plugin-count={listed.length}>{`${String(listed.length)} ${t('countUnit')}`}</span>
+                <span className={css.count} data-plugin-count={listed.length}>{listed.length}</span>
               </div>
               <ul className={css.cards}>
                 {listed.map(pkg => (

@@ -55,7 +55,7 @@ describe('web e2e: plugin manager', () => {
     await closeSettings()
     await page.getByRole('navigation', { name: '全局面板' }).getByRole('button', { name: '插件', exact: true }).click()
     const panel = page.locator('[data-plugin-panel]')
-    await panel.getByRole('heading', { name: '插件管理' }).waitFor({ timeout: 10_000 })
+    await panel.getByRole('heading', { name: '插件', exact: true }).waitFor({ timeout: 10_000 })
     return panel
   }
 

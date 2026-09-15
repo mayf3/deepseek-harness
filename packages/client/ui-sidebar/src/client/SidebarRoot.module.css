@@ -232,6 +232,8 @@
 .collapsed .iconButton {
   width: 36px;
   height: 36px;
+  /* Rail hovers share the panel rows' and New Session's 12px rounding. */
+  border-radius: 12px;
 }
 
 /* Rail logo swap: collapsed, the toggle rests as the whale mark (brand ink,
@@ -287,7 +289,7 @@
   gap: 6px;
   height: 38px;
   padding: 8px 16px;
-  margin: 0 2px 8px;
+  margin: 0 2px 12px;
   box-sizing: border-box;
   border: 0.5px solid var(--dsw-alias-border-l3);
   border-radius: 12px;
@@ -348,18 +350,20 @@
   margin-bottom: 8px;
 }
 
+/* Panel entries share the New Session bar's 12px radius and 2px inset, the
+   session rows' hover/selected surface, and the primary ink. */
 .panelRow {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  margin: 0 2px;
   min-height: 36px;
   padding: 7px 8px;
   box-sizing: border-box;
   border: none;
-  border-radius: 8px;
+  border-radius: 12px;
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-primary);
   font: inherit;
   line-height: 22px;
   text-align: left;
@@ -371,9 +375,8 @@
 }
 
 .panelRow.panelActive {
-  background: var(--dsw-alias-interactive-bg-active);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
-  font-weight: 500;
 }
 
 .panelRow:focus-visible {
@@ -404,6 +407,7 @@
   width: 36px;
   height: 36px;
   justify-content: center;
+  margin: 0;
   padding: 0;
   color: var(--dsw-alias-label-primary);
 }

@@ -4,7 +4,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 32px;
   box-sizing: border-box;
   height: 100%;
   overflow: auto;
@@ -27,7 +27,7 @@
 .pageTitle {
   margin: 0;
   font-size: 20px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 28px;
 }
 
@@ -42,24 +42,16 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-}
-
-.status,
-.failure p,
-.empty,
-.groupSub {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
+  gap: 16px;
 }
 
 .status,
 .failure p,
 .empty {
+  margin: 0;
   font-size: 13px;
   line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .failure {
@@ -85,61 +77,43 @@
   gap: 8px;
 }
 
-.group + .group {
-  margin-top: 8px;
-  padding-top: 18px;
-  border-top: 0.5px solid var(--dsw-alias-border-l2);
-}
-
-.groupTitleRow {
+.groupHead {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .groupTitle {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 22px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .count {
-  font-size: 12.5px;
-  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  color: var(--dsw-alias-label-caption);
   font-variant-numeric: tabular-nums;
 }
 
-/* The folded group's header is its toggle; the chevron turns as it opens. */
-.groupToggle {
+/* The group's explanation, folded behind a hover/focus tooltip. */
+.groupInfo {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
+  align-self: center;
+  color: var(--dsw-alias-label-caption);
 }
 
-.groupChevron {
-  flex: none;
-  transform: rotate(-90deg);
-  transition: transform 160ms ease;
-  color: var(--dsw-alias-label-tertiary);
+.groupInfo:hover,
+.groupInfo:focus-visible {
+  color: var(--dsw-alias-label-secondary);
 }
 
-.groupToggle[aria-expanded='true'] .groupChevron {
-  transform: none;
-}
-
-.groupIntro {
-  margin: -2px 0 0;
-  font-size: 12.5px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
+/* Center the status label geometrically: beside larger titles the capsule's line-box offset shows. */
+.statusTag {
+  height: 20px;
+  padding: 0 8px;
+  line-height: 1;
 }
 
 /* The package an install just enabled: a ring that fades while the list scrolls to it. */
@@ -163,14 +137,6 @@
     animation: none;
     box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
   }
-
-  .groupChevron {
-    transition: none;
-  }
-}
-
-.groupSub {
-  margin: -4px 0 4px;
 }
 
 .iconButton:focus-visible {
@@ -188,17 +154,17 @@
 .cards {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 2px;
 }
 
 .card {
   min-width: 0;
-  border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 14px;
-  background: var(--dsw-alias-bg-layer-3);
-  /* The card is the elevated surface here; the page itself scrolls on the base
-     surface. Anything that scrolls inside a card draws the l2 thumb (ui-theme
-     styles/scrollbar.css rebinding contract). */
+  /* The hover surface reaches 8px past the content on both sides while the
+     row's content stays aligned with the page header. */
+  margin: 0 -8px;
+  border-radius: 12px;
+  /* The page itself scrolls on the base surface. Anything that scrolls inside
+     a card draws the l2 thumb (ui-theme styles/scrollbar.css rebinding contract). */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
@@ -206,8 +172,21 @@
 .cardHead {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: 14px;
+  padding: 8px;
+}
+
+.cardIcon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  /* The same hairline frame as the component rows below. */
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 10px;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .cardMain {
@@ -215,7 +194,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .titleRow {
@@ -229,7 +208,7 @@
 .cardTitle {
   font-size: 14px;
   line-height: 20px;
-  font-weight: 600;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -245,7 +224,7 @@
 }
 
 .cardLink:hover {
-  border-color: var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .cardOpen {
@@ -255,7 +234,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  font-weight: 600;
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
 }
@@ -264,7 +243,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 14px;
+  border-radius: 12px;
 }
 
 .cardOpen:focus-visible {
@@ -277,12 +256,13 @@
 }
 
 .cardDesc {
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .cardEnd {
@@ -294,6 +274,7 @@
   gap: 8px;
 }
 
+/* The toolbar's icon action, round like the message-row actions. */
 .iconButton {
   display: inline-flex;
   align-items: center;
@@ -301,15 +282,15 @@
   width: 28px;
   height: 28px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 28px;
   background: transparent;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-caption);
   cursor: pointer;
 }
 
 .iconButton:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .iconButton:disabled {
@@ -321,10 +302,12 @@
   display: inline-flex;
 }
 
-/* The destructive text action in a card body. */
+/* The destructive text action in a card body: red ink inside a 30% red frame,
+   and the outline hover rebinds to a red wash instead of the gray one. */
 .danger {
   color: var(--dsw-alias-state-error-primary);
-  border-color: var(--dsw-alias-state-error-primary);
+  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 30%, transparent);
+  --dsw-alias-interactive-bg-hover: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent);
 }
 
 /* Retry, uninstall, and the switch at the end of the page's head. */
@@ -332,13 +315,13 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: 8px;
+  gap: 16px;
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 16px;
 }
 
 /* The delete of a row the person added: red on its own, not only on hover. */
@@ -369,27 +352,6 @@
   outline-offset: 1px;
 }
 
-
-.facts {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  column-gap: 14px;
-  row-gap: 4px;
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 18px;
-}
-
-.facts dt {
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.facts dd {
-  margin: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--dsw-alias-label-primary);
-}
 
 .reason {
   margin: 0;
@@ -752,36 +714,40 @@
   transform: rotate(90deg);
 }
 
-.crumbSep {
-  width: 0.5px;
-  height: 12px;
-  background: var(--dsw-alias-border-l3);
-}
-
-.crumbHere {
-  color: var(--dsw-alias-label-primary);
-}
-
+/* Head row: the pack's icon at one edge, its actions at the other; the name
+   block sits under the icon (figma detail handoff). */
 .detailHead {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  margin: 12px 0 8px;
+  margin: 32px 0 0;
 }
 
 .detailMain {
   display: flex;
-  flex: 1;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   min-width: 0;
+  margin-top: 20px;
 }
 
 .detailTitle {
   margin: 0;
   font-size: 20px;
   line-height: 28px;
-  font-weight: 600;
+  font-weight: 500;
+}
+
+.versionTag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
 }
 
 .detailDesc {
@@ -791,22 +757,22 @@
   line-height: 22px;
 }
 
+/* The unknown-package note under the name block. */
+.detail > .detailDesc {
+  margin-top: 12px;
+}
+
 .detailSections {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  margin-top: 16px;
-}
-
-.detailSections > * + * {
-  padding-top: 18px;
-  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  gap: 32px;
+  margin-top: 32px;
 }
 
 .detailSection {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .sectionHead {
@@ -819,7 +785,7 @@
   margin: 0;
   font-size: 14px;
   line-height: 20px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .sectionCount {
@@ -844,7 +810,7 @@
 }
 
 .row {
-  padding: 10px 2px;
+  padding: 12px 2px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
 }
 
@@ -855,7 +821,7 @@
 .rowLine {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   min-width: 0;
 }
 
@@ -864,10 +830,10 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 8px;
+  border-radius: 10px;
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -882,7 +848,7 @@
 .rowId {
   font-size: 13.5px;
   line-height: 20px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--dsw-alias-label-primary);
   overflow-wrap: anywhere;
 }
@@ -917,7 +883,7 @@
 
 
 .rowFailure {
-  margin: 4px 0 0 44px;
+  margin: 4px 0 0 56px;
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-state-error-primary);
