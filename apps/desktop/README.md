@@ -29,7 +29,7 @@ Node prepares the bundled interpreters and Python libraries without a system Pyt
 | Package sources | Core installation at startup adds work even when offline. | `app.asar/dsh` carries a complete production dependency tree; the profile installs only external plugins. |
 | Shared modules | Host APIs can depend on module identity. | The shared profile runner projects missing installation and bundle dependencies inside the Desktop profile; pnpm-managed packages take precedence. |
 | State ownership | Sharing executable dependency graphs would let CLI and Desktop change each other's dsh, Cordis, plugin, or native-module versions, while two desktop processes could race on the same profile. | Electron acquires its process-lifetime single-instance lock before any profile access and exclusively owns `$DSH_HOME/profiles/desktop` plus its package-manager state. CLI and Desktop share supported product data under `$DSH_HOME`, but never executable packages, plugin activation, lockfiles, or `node_modules`. |
-| Transport | Reusing Web serving and authentication keeps application behavior in one implementation. | Electron loads the Host’s authenticated HTTP URL directly; child IPC carries lifecycle messages, and the local shell protocol serves startup and management pages. |
+| Transport | Web serving and authentication share one implementation. | Electron loads packaged Web assets; the Host supplies boot injections and authenticated APIs. The shell protocol serves plugin management. |
 | Plugin changes | Package installation and Host startup can fail. | Desktop stops the Host and modifies the current profile directly. Failures retain partial changes for explicit repair; there is no automatic profile rollback. |
 | Updates | Independent shell and dsh updates would recreate version splits, while unchanged shell blocks should not require a complete transfer. | The Electron shell, matching dsh runtime and pnpm form one signed update unit. Platform update artifacts may reuse unchanged blocks, but runtime version selection never splits from the Desktop release. |
 
@@ -39,11 +39,11 @@ The [thin-wrapper decision](../../.agents/notes/implemented/architecture/2026-09
 
 Electron owns `$DSH_HOME/profiles/desktop`. Its `dependencies` contains packages installed by pnpm; `dsh.profile.bundles` contains the built-in bundles followed by enabled plugins. The signed application supplies dsh, the private Desktop Host, and their production packages from `resources/app.asar/dsh`. Packaged applications select runtime profile resolution without creating package links; development profiles use filesystem links. Both host and plugins execute in the same Electron Node-mode process; Desktop does not enable `--preserve-symlinks`. The CLI cannot boot or mutate this profile.
 
-The local startup page exposes startup status and available recovery actions. The product renderer uses the Web application’s HTTP APIs. The separate plugin window receives structured list, install, remove, update, and update-check operations; neither renderer receives filesystem access, raw Electron IPC, a shell, or arbitrary pnpm arguments.
+The application preload exposes boot readiness and fatal startup reporting. The product renderer uses the Web application’s HTTP APIs. The separate plugin window receives structured list, install, remove, update, and update-check operations; neither renderer receives filesystem access, raw Electron IPC, a shell, or arbitrary pnpm arguments.
 
 The product UI retains Web actions, including "Open In..." through the shared authenticated HTTP routes. Desktop uses Web's automatic directory-picker selection and initializes new profiles with the shared Web template's bundles and patch-reload policy.
 
-Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, the startup page, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
+Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
 
 Electron's native Edit menu supplies undo, redo, cut, copy, paste, and select-all commands and platform shortcuts for the focused window. Right-clicking an editable field opens these commands without shortcut labels, with availability supplied by Chromium; selected read-only text offers Copy.
 
@@ -59,13 +59,13 @@ The signed `resources/app.asar/dsh/desktop-runtime.json` binds the shell version
 
 CLI and Desktop use the same installed-dependency inventory and bundle reconciliation. Bundle declarations resolve with the same installation-first precedence as startup. CLI operations automatically enable installed bundles; Desktop preserves bundles disabled through its UI across updates. Neither path requires readable installed metadata to list or remove a dependency.
 
-The loading page does not depend on the Host. Errors offer restart and reinstallation guidance. Disabling plugins and resetting Desktop are offered when runtime resources support profile recovery, including development mode; early initialization failures expose restart alone. The plugin manager remains available through the application menu. Plugin changes have no automatic rollback.
+Fatal main-window creation, main-document loading, preload, renderer, Web initialization, or backend failures open one native recovery dialog per application process. It shows the first error and offers Exit, Restart, and Disable all third-party plugins and restart. Startup failures retain the Web loading page and spinner; runtime failures retain the current page. Expected shutdowns, cancelled navigation, ordinary requests, and package-operation errors do not trigger recovery. There is no startup timeout heuristic.
 
 Host error diagnostics retain only the last 64 Ki characters written to stderr. Earlier output is discarded so a long-running Host does not grow the shell’s diagnostic buffer indefinitely.
 
-Reset deletes every entry in `$DSH_HOME/profiles/desktop` except the held transaction lock, then initializes the built-in profile. It removes Desktop configuration and installed third-party packages without a backup. Shared tasks, settings, and the Harness-home `.env` are untouched. Shell resource and preload failures use a self-contained document with the available recovery actions and diagnostics; its controls do not require preload.
+Recovery waits for Host shutdown before changing plugin activation. Disabling third-party bundles writes the profile under its transaction lock without loading runtime metadata or deleting files. Invalid profile data or write failures are reported as recovery-operation errors; Desktop does not restart as though disabling succeeded. Desktop has no profile-reset action or emergency HTML document.
 
-Package transactions hold `$DSH_HOME/profiles/desktop/lock` exclusively through pnpm process exit. Before pnpm runs, the shared module-fallback helper removes only its owned links and preserves pnpm-managed directories; the Host recreates needed links on startup. Reset preserves the profile directory and its lock until initialization and Host startup finish. Link cleanup preserves target directories. Native builds follow pnpm’s configured build policy; release preparation owns its separate build-time allowlist.
+Package transactions hold `$DSH_HOME/profiles/desktop/lock` exclusively through pnpm process exit. Before pnpm runs, the shared module-fallback helper removes only its owned links and preserves pnpm-managed directories; the Host recreates needed links on startup. Link cleanup preserves target directories. Native builds follow pnpm’s configured build policy; release preparation owns its separate build-time allowlist.
 
 ## Develop
 

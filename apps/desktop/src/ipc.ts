@@ -8,6 +8,7 @@ import type { DesktopBackendState } from './backend-controller.ts'
 export const DESKTOP_IPC = {
   localeGet: 'dsh-desktop:locale-get',
   boot: 'dsh-desktop:boot',
+  bootFailed: 'dsh-desktop:boot-failed',
   pluginsList: 'dsh-desktop:plugins-list',
   pluginsAdd: 'dsh-desktop:plugins-add',
   pluginsRemove: 'dsh-desktop:plugins-remove',
@@ -16,8 +17,6 @@ export const DESKTOP_IPC = {
   pluginsDisableAll: 'dsh-desktop:plugins-disable-all',
   backendStatus: 'dsh-desktop:backend-status',
   backendRetry: 'dsh-desktop:backend-retry',
-  applicationRestart: 'dsh-desktop:application-restart',
-  configurationReset: 'dsh-desktop:configuration-reset',
   backendState: 'dsh-desktop:backend-state',
   updatesCheck: 'dsh-desktop:updates-check',
   updatesInstall: 'dsh-desktop:updates-install',
@@ -54,12 +53,4 @@ export interface DshDesktopApi {
     install(): Promise<void>
     subscribe(listener: (state: DesktopUpdateState) => void): () => void
   }
-}
-
-/** Startup-page controls, unavailable to backend-provided application documents. */
-export interface DshDesktopStartupApi extends Pick<DshDesktopApi, 'protocolVersion' | 'locale'> {
-  readonly backend: Omit<DshDesktopApi['backend'], 'retry'>
-  disablePlugins(): Promise<void>
-  restart(): Promise<void>
-  resetConfiguration(): Promise<void>
 }

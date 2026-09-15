@@ -38,7 +38,7 @@ This partially supersedes the private composition and portless transport in the 
 
 ## Consequences
 
-Desktop inherits Web features through the same boot and serving path. HTTP listener ownership and authentication remain part of application startup. Electron uses the reported Host address and preserves the existing Web document through readiness. The shared Web loading page is available before the Host starts; independent recovery resources remain available when startup fails.
+Desktop inherits Web features through the same boot and serving path. HTTP listener ownership and authentication remain part of application startup. Electron uses the reported Host address and preserves the existing Web document through readiness. The shared Web loading page is available before the Host starts; native recovery remains available when startup fails.
 
 User-selected runtime options, package sources, and permitted lifecycle scripts can affect Host execution, load third-party code, or cause startup failure. Desktop accepts these effects under the same configuration ownership as Web; the signed core runtime does not attest to user-installed plugin code. Package or loading failures retain explicit repair and the independent recovery UI rather than triggering stricter admission checks or automatic rollback.
 

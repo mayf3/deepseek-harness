@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -71,7 +71,7 @@ afterEach(async () => {
 })
 
 describe('desktop external plugin profile', () => {
-  it('reuses plugin files without scanning manifests and can disable or reset them', async () => {
+  it('reuses plugin files without scanning manifests and can disable them', async () => {
     const { manager } = setup()
     await manager.applyRelease()
     await manager.mutate({ type: 'plugin-add', spec: 'plugin@1.0.0' }, hooks())
@@ -81,9 +81,6 @@ describe('desktop external plugin profile', () => {
     await manager.mutate({ type: 'plugins-disable-all' }, hooks())
     await expect(manager.applyRelease()).resolves.toBeUndefined()
     expect(readFileSync(manifest, 'utf8')).toBe('{broken')
-    await manager.resetConfiguration(hooks())
-    expect(existsSync(manifest)).toBe(false)
-    await expect(manager.applyRelease()).resolves.toBeUndefined()
   })
 
   it('disables every third-party bundle without reading a broken plugin patch declaration', async () => {
@@ -105,46 +102,40 @@ describe('desktop external plugin profile', () => {
     await expect(manager.applyRelease()).resolves.toBeUndefined()
   })
 
-  it('resets the entire profile without backups while retaining its lock and shared data', async () => {
-    const { root, manager } = setup()
+  it('disables plugins before runtime initialization and preserves configuration and package files', async () => {
+    const { manager } = setup()
     await manager.applyRelease()
     await manager.mutate({ type: 'plugin-add', spec: 'plugin@1.0.0' }, hooks())
-    const profile = manager.paths.profile
-    expect(manager.paths.lock).toBe(join(profile, 'lock'))
-    const task = join(root, '.dsh', 'task-sentinel')
-    const homeEnvironment = join(root, '.dsh', '.env')
-    writeFileSync(homeEnvironment, 'HOME_SETTING=retained')
-    writeFileSync(task, 'retained task')
-    writeFileSync(join(profile, 'desktop-runtime-state.json'), '{broken')
-    writeFileSync(join(profile, 'cordis.patch.yml'), ': broken')
-    writeFileSync(join(profile, '.env'), 'NODE_OPTIONS=--bad')
-    mkdirSync(join(profile, '.extra'))
-    writeFileSync(join(profile, '.extra', 'custom-file'), 'remove')
-    const shared = join(root, 'shared-data')
-    mkdirSync(shared)
-    writeFileSync(join(shared, 'sentinel'), 'preserve')
-    symlinkSync(shared, join(profile, 'external-link'), process.platform === 'win32' ? 'junction' : 'dir')
-    await expect(manager.applyRelease()).rejects.toThrow()
-    await manager.resetConfiguration(hooks({
-      beforeChange: async () => { expect(readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')).toBe(': broken') },
-      afterChange: async () => {
-        expect(readFileSync(manager.paths.lock, 'utf8').trim()).toBe(String(process.pid))
-        await expect(manager.applyRelease()).rejects.toThrow('another package transaction is active')
-      },
-    }))
-    expect(manager.listPlugins()).toEqual([])
-    expect(existsSync(join(profile, 'node_modules/plugin'))).toBe(false)
-    expect(readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')).toContain('[]')
-    expect(existsSync(join(profile, '.env'))).toBe(false)
-    expect(existsSync(join(profile, '.extra'))).toBe(false)
-    expect(existsSync(join(profile, 'external-link'))).toBe(false)
-    expect(readFileSync(join(shared, 'sentinel'), 'utf8')).toBe('preserve')
-    expect(readFileSync(task, 'utf8')).toBe('retained task')
-    expect(readFileSync(homeEnvironment, 'utf8')).toBe('HOME_SETTING=retained')
-    expect(readdirSync(profile).some(name => name.includes('backup'))).toBe(false)
-    expect(calls(root)).toHaveLength(1)
-    await expect(manager.applyRelease()).resolves.toBeUndefined()
-    expect(existsSync(homeEnvironment)).toBe(true)
+    const patch = join(manager.paths.profile, 'cordis.patch.yml')
+    writeFileSync(patch, ': broken')
+    const uninitialized = new DesktopProjectManager(manager.paths, { ...manager.runtime, dsh: 'missing-runtime' })
+    await uninitialized.disableAllPlugins()
+    expect(readFileSync(patch, 'utf8')).toBe(': broken')
+    expect(existsSync(join(manager.paths.profile, 'node_modules/plugin/package.json'))).toBe(true)
+    const manifest = JSON.parse(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8')) as {
+      dependencies: Record<string, string>
+      dsh: { profile: { bundles: string[] } }
+    }
+    expect(manifest.dependencies.plugin).toBe('1.0.0')
+    expect(manifest.dsh.profile.bundles).not.toContain('plugin')
+    expect(manifest.dsh.profile.bundles).toContain('@deepseek-ai/dsh-web-app')
+  })
+
+  it('needs no runtime or package manifest when no plugins have been installed', async () => {
+    const { manager } = setup()
+    await manager.disableAllPlugins()
+    expect(existsSync(join(manager.paths.profile, 'package.json'))).toBe(false)
+    expect(existsSync(manager.paths.lock)).toBe(false)
+  })
+
+  it('reports invalid profile JSON without replacing it', async () => {
+    const { manager } = setup()
+    await manager.applyRelease()
+    const path = join(manager.paths.profile, 'package.json')
+    writeFileSync(path, '{broken')
+    await expect(manager.disableAllPlugins()).rejects.toThrow()
+    expect(readFileSync(path, 'utf8')).toBe('{broken')
+    expect(existsSync(manager.paths.lock)).toBe(false)
   })
 
   it.each(['missing', 'malformed', 'unversioned'] as const)('lists, disables, and removes a package with %s metadata', async (damage) => {
@@ -219,7 +210,6 @@ describe('desktop external plugin profile', () => {
     const { manager } = setup()
     writeFileSync(join(manager.runtime.dsh, 'desktop-runtime.json'), '{broken')
     await expect(manager.applyRelease()).rejects.toThrow()
-    expect(manager.canRecoverProfile()).toBe(false)
   })
 
   it('preserves unknown files when initializing a profile', async () => {

@@ -29,7 +29,7 @@ Node 准备内置解释器和 Python 库，无需系统 Python 或 pip。[下载
 | 包来源 | 即使离线，启动时安装核心依赖也会增加开销。 | `app.asar/dsh` 携带完整生产依赖树；profile 只安装外部插件。 |
 | 共享模块 | Host API 可能依赖模块身份。 | 共享 profile runner 在 Desktop profile 内补全安装包与 bundle 缺失的依赖；pnpm 管理的包优先。 |
 | 状态归属 | 共享可执行依赖图会让 CLI（命令行界面）与 Desktop 相互改变 dsh、Cordis、插件或原生模块版本，而两个桌面进程还可能争用同一个 profile。 | Electron 在访问任何 profile 前获取进程生命周期单实例锁，并独占 `$DSH_HOME/profiles/desktop` 及其包管理器状态。CLI 与 Desktop 共享 `$DSH_HOME` 下受支持的产品数据，但绝不共享可执行包、插件激活、锁文件或 `node_modules`。 |
-| 传输 | 复用 Web 服务与认证，让应用行为由同一份实现负责。 | Electron 直接加载 Host 的认证 HTTP URL；子进程 IPC 承载生命周期消息，本地壳协议提供启动和管理页面。 |
+| 传输 | Web 服务与认证共享一套实现。 | Electron 加载打包的 Web 资源；Host 提供启动注入和经过认证的 API。shell 协议提供插件管理页面。 |
 | 插件变更 | 包安装和 Host 启动可能失败。 | Desktop 停止 Host 后直接修改当前 profile。失败保留部分修改供用户修复，不自动回滚 profile。 |
 | 更新 | 桌面壳与 dsh 独立更新会重新产生版本分裂，而桌面壳未变化的数据块不应强制完整传输。 | Electron 壳、匹配的 dsh 运行时与 pnpm 组成一个已签名更新单元。平台更新产物可以复用未变化的数据块，但运行时版本选择绝不脱离 Desktop 发布。 |
 
@@ -39,11 +39,11 @@ Node 准备内置解释器和 Python 库，无需系统 Python 或 pip。[下载
 
 Electron 拥有 `$DSH_HOME/profiles/desktop`。其 `dependencies` 包含 pnpm 安装的包；`dsh.profile.bundles` 包含内置 bundle，后接已启用插件。签名应用从 `resources/app.asar/dsh` 提供 dsh、私有 Desktop Host 及其生产依赖。打包应用选择 runtime profile 解析，不创建包链接；开发 profile 使用文件系统链接。宿主与插件在同一个 Electron Node 模式进程中执行；Desktop 不启用 `--preserve-symlinks`。CLI 不能启动或修改此 profile。
 
-本地启动页面展示启动状态及可用恢复操作。产品渲染进程使用 Web 应用的 HTTP API。独立插件窗口接收结构化的列表、安装、移除、更新和检查更新操作；两个渲染进程都不会获得文件系统、原始 Electron IPC、shell 或任意 pnpm 参数访问权。
+应用 preload 暴露启动就绪和致命启动失败上报。产品渲染器使用 Web 应用的 HTTP API。独立插件窗口接收结构化的列表、安装、移除、更新和检查更新操作；两种渲染器都无法访问文件系统、原始 Electron IPC、shell 或任意 pnpm 参数。
 
 产品 UI 保留 Web 操作，包括通过共享认证 HTTP 路由执行的“打开方式…”。Desktop 使用 Web 的自动目录选择机制，并以共享 Web 模板的 bundle 列表和 patch 重载策略初始化新 profile。
 
-Electron 根据应用 locale 选择类型化的英文或中文桌面壳文案，并以英文作为 fallback。菜单、原生对话框、启动页与插件管理渲染进程使用同一 locale 数据；仓库的 Client UI i18n gate 会检查这些桌面源文件。
+Electron 根据应用语言选择类型化的英文或中文 shell 文案，并回退到英文。菜单、原生对话框和插件管理渲染器使用同一份语言数据；仓库 Client UI i18n 检查覆盖这些桌面端源码。
 
 Electron 原生“编辑”菜单为当前聚焦窗口提供撤销、重做、剪切、复制、粘贴和全选命令及平台快捷键。右键点击可编辑输入区域会打开不带快捷键标注的这些命令，其可用状态由 Chromium 提供；选中的只读文本提供“复制”命令。
 
@@ -59,13 +59,13 @@ Electron 原生“编辑”菜单为当前聚焦窗口提供撤销、重做、�
 
 CLI 与 Desktop 共用已安装依赖清单及 bundle 列表协调逻辑。bundle 声明遵循与启动一致的安装目录优先解析顺序。CLI 操作自动启用已安装 bundle；Desktop 更新后保留通过 UI 禁用的 bundle 状态。两条路径都不要求已安装元数据可读才能列出或移除依赖。
 
-加载页不依赖 Host。错误页提供重启和重装指导。运行时资源支持 profile 恢复时，即可禁用插件和重置 Desktop，包括开发模式；早期初始化失败只提供重启。应用菜单仍提供插件管理器入口。插件修改不自动回滚。
+主窗口创建、主文档加载、preload、渲染器、Web 初始化或后端的致命失败，会在每个应用进程中打开一次原生恢复对话框。对话框显示首次错误，并提供退出、重启、禁用全部第三方插件并重启。启动失败保留 Web 加载页和动画；运行中失败保留当前页面。预期关闭、取消导航、普通请求和包操作错误不会触发恢复。不通过启动超时推断故障。
 
 Host 错误诊断仅保留 stderr 输出的最后 64 Ki 个字符。更早的输出会被丢弃，避免长期运行的 Host 使壳的诊断缓冲区无限增长。
 
-重置删除 `$DSH_HOME/profiles/desktop` 中除所持事务锁外的所有条目，然后初始化内置 profile。它删除 Desktop 配置和已安装第三方包，不保留备份。共享任务、设置和 Harness-home `.env` 保持不变。壳资源和 preload 失败时使用独立文档显示可用恢复操作和诊断；其控件不依赖 preload。
+恢复操作等待 Host 关闭后才修改插件启用状态。禁用第三方 bundle 时持有事务锁写入 profile，不加载运行时元数据，也不删除文件。profile 数据无效或写入失败会作为恢复操作错误报告；Desktop 不会假装禁用成功后重启。Desktop 不提供 profile 重置操作或应急 HTML 文档。
 
-包事务独占 `$DSH_HOME/profiles/desktop/lock` 直到 pnpm 进程退出。pnpm 运行前，共享模块补全 helper 仅移除其拥有的链接，并保留 pnpm 管理的目录；Host 在启动时重新创建所需链接。重置保留 profile 目录与锁，直到初始化和 Host 启动结束。链接清理保留目标目录。原生构建遵循 pnpm 配置的构建策略；发布准备负责独立的构建时许可列表。
+包事务独占 `$DSH_HOME/profiles/desktop/lock`，直到 pnpm 进程退出。pnpm 运行前，共享模块回退辅助函数只删除其拥有的链接，保留 pnpm 管理的目录；Host 在启动时重建所需链接。链接清理保留目标目录。原生构建遵循 pnpm 配置的构建策略；发布准备使用独立的构建期允许列表。
 
 ## 开发
 

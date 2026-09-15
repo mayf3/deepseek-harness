@@ -16,7 +16,7 @@ Package or Host failures retain partial changes for repair and retry. There is n
 
 This supersedes staging and rollback in [the packaging decision](2026-08-25-electron-desktop-packaging-and-updates.md), [the bundled-runtime decision](2026-09-08-desktop-bundled-runtime-and-external-plugins.md), and [the immediate-window decision](2026-09-09-desktop-immediate-window-and-direct-start.md). Host boot follows the [thin-wrapper decision](2026-09-10-desktop-web-wrapper.md); release, module ownership, and window lifecycle remain separate decisions.
 
-Desktop delegates installation and lifecycle scripts to pnpm, without a pending-operation startup gate, frozen-lockfile reinstall, or automatic rebuild. Failed package operations preserve partial changes and leave disable, remove, reset, and startup retry available. The Host inherits the user environment, and profiles may use directory links. An unchanged legacy Desktop-generated pnpm configuration is replaced with the Web defaults; customized configuration remains user-owned.
+Desktop delegates installation and lifecycle scripts to pnpm, without a pending-operation startup gate, frozen-lockfile reinstall, or automatic rebuild. Failed package operations preserve partial changes and leave disable, remove, and startup retry available. The Host inherits the user environment, and profiles may use directory links. An unchanged legacy Desktop-generated pnpm configuration is replaced with the Web defaults; customized configuration remains user-owned.
 
 ## Alternatives considered
 

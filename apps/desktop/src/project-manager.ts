@@ -10,7 +10,6 @@ import {
   openSync,
   closeSync,
   readFileSync,
-  readdirSync,
   unlinkSync,
   writeFileSync,
   writeSync,
@@ -23,7 +22,6 @@ import {
   verifyDesktopCorePackageSet,
 } from './core-package-set.ts'
 import type { DesktopPaths } from './paths.ts'
-import { removeOwnedDirectory } from './owned-directory.ts'
 import type { DesktopRelease } from './release.ts'
 import { readDesktopRuntime, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 import {
@@ -124,33 +122,19 @@ export class DesktopProjectManager {
   }
 
   /**
-   * Reinitialize the profile, deleting configuration and third-party packages without a backup.
-   * @param hooks - Stop the Host before resetting files; restart after preparation succeeds.
-   * @returns Completion of reset; the held lock and shared product data are preserved.
+   * Disable third-party bundles without loading application resources or deleting plugin files.
+   * @returns Completion of the locked profile write; the caller must stop the Host first.
    */
-  async resetConfiguration(hooks: DesktopProjectHooks): Promise<void> {
-    await this.withLock(async () => {
-      await hooks.beforeChange()
-      this.descriptor = this.readRuntime()
-      for (const entry of readdirSync(this.paths.profile, { withFileTypes: true })) {
-        const path = join(this.paths.profile, entry.name)
-        if (path === this.paths.lock) continue
-        if (entry.isDirectory()) removeOwnedDirectory(path)
-        else unlinkSync(path)
-      }
-      createPluginProfile(this.paths.profile)
-      await hooks.afterChange()
+  async disableAllPlugins(): Promise<void> {
+    await this.withLock(() => {
+      if (!existsSync(join(this.paths.profile, 'package.json'))) return
+      writeProfileBundles(this.paths.profile, readProfileManifest('dsh', this.paths.profile), WEB_PROFILE.bundles)
     })
   }
 
   /** Read the dsh version supplied by this application's verified resources. */
   dshVersion(): string {
     return this.currentRuntime().release.version
-  }
-
-  /** @returns Whether application resources support profile recovery. */
-  canRecoverProfile(): boolean {
-    return this.descriptor !== undefined && existsSync(this.runtime.node) && existsSync(this.runtime.dsh)
   }
 
   private currentRuntime(): DesktopRuntimeDescriptor {

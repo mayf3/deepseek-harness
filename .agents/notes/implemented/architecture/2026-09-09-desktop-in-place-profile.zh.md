@@ -16,7 +16,7 @@ Desktop 停止 Host 后直接修改当前 profile。共享 app-boot 清理在包
 
 本记录取代[打包决策](2026-08-25-electron-desktop-packaging-and-updates.zh.md)、[内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)及[立即显示窗口决策](2026-09-09-desktop-immediate-window-and-direct-start.zh.md)中的暂存与回滚。Host 启动遵循[薄壳决策](2026-09-10-desktop-web-wrapper.zh.md)；发布、模块归属与窗口生命周期仍由各自决策负责。
 
-Desktop 将安装和生命周期脚本交给 pnpm，不设置待完成操作启动门禁、不强制按锁文件重装，也不自动重建。包操作失败会保留部分变更，仍可禁用、删除、重置和重试启动。Host 继承用户环境，profile 可以使用目录链接。未经修改的旧版 Desktop 生成 pnpm 配置替换为 Web 默认值；自定义配置仍由用户管理。
+Desktop 将安装和生命周期脚本交给 pnpm，不设置待完成操作启动门禁、不强制按锁文件重装，也不自动重建。包操作失败会保留部分变更，仍可禁用、删除和重试启动。Host 继承用户环境，profile 可以使用目录链接。未经修改的旧版 Desktop 生成 pnpm 配置替换为 Web 默认值；自定义配置仍由用户管理。
 
 ## 考虑过的替代方案
 
