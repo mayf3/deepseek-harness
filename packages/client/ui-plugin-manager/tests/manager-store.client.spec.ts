@@ -536,6 +536,41 @@ describe('PluginManagerController', () => {
     expect(state().highlight).toBeNull()
   })
 
+  it('offers the scripts a blocked run left pending, and retries the same spec with them allowed', async () => {
+    const gates: ReturnType<typeof deferred<Awaited<ReturnType<typeof ok<ChangeResult>> | ReturnType<typeof refused>>>>[] = []
+    const { face, state, controller, plugins, started } = bench({
+      installBundle: vi.fn(() => {
+        const gate = deferred<Awaited<ReturnType<typeof ok<ChangeResult>> | ReturnType<typeof refused>>>()
+        gates.push(gate)
+        return gate.promise
+      }),
+    })
+    await controller.load()
+    face.openInstall()
+    face.editInstallSpec('x')
+    // Before the failed screen offers anything, the action does nothing.
+    face.approveBuildsAndRetry()
+    face.runInstall()
+    const first = await started()
+    gates[0]!.resolve(ok({
+      ...failed({ code: 'operation-error', diagnostic: 'ERR_PNPM_IGNORED_BUILDS' },
+        { exitCode: 1, output: 'ERR_PNPM_IGNORED_BUILDS', truncated: false, logPath: '/l', kind: 'build-blocked' }),
+      pendingBuilds: ['native'],
+    }))
+    await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
+    expect(state().install.failure).toEqual({ reason: 'ERR_PNPM_IGNORED_BUILDS', code: 'operation-error', kind: 'build-blocked', pendingBuilds: ['native'] })
+    // The retry keeps the subject the check produced and carries the approved names under a new request id.
+    face.approveBuildsAndRetry()
+    const second = await started()
+    expect(second).not.toBe(first)
+    expect(plugins.installBundle).toHaveBeenLastCalledWith('x', { enabled: false, requestId: second, approvedBuilds: ['native'] })
+    expect(state().install).toMatchObject({ subject: { spec: 'x', name: 'dsh-better-sidebar' }, failure: null })
+    gates[1]!.resolve(ok({ ...APPLIED, bundle: 'dsh-better-sidebar', approvedBuilds: ['native'] }))
+    await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
+    expect(state().install).toMatchObject({ installed: 'dsh-better-sidebar', approvedBuilds: ['native'] })
+    expect(plugins.installBundle).toHaveBeenCalledTimes(2)
+  })
+
   it('drops an enable from the installed screen that settles after disposal', async () => {
     const enableGate = deferred<ReturnType<typeof ok<ChangeResult>>>()
     const { plugins, face, state, controller } = bench({ setBundleEnabled: vi.fn().mockReturnValueOnce(enableGate.promise) })

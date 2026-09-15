@@ -48,6 +48,7 @@
     "tests/plugin-config.e2e.ts",
     "tests/plugin-manager.e2e.ts",
     "tests/plugin-install-cancel.e2e.ts",
+    "tests/plugin-install-approve.e2e.ts",
     "tests/client-plugin-live.e2e.ts",
     "tests/settings-chrome.e2e.ts",
     "tests/models-settings.e2e.ts",

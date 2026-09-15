@@ -40,6 +40,7 @@
     "apps/web/tests/plugin-config.e2e.ts",
     "apps/web/tests/plugin-manager.e2e.ts",
     "apps/web/tests/plugin-install-cancel.e2e.ts",
+    "apps/web/tests/plugin-install-approve.e2e.ts",
     "apps/web/tests/client-plugin-live.e2e.ts",
     "apps/web/tests/settings-chrome.e2e.ts",
     "apps/web/tests/models-settings.e2e.ts",

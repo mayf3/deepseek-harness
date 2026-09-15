@@ -132,15 +132,20 @@ export interface InstallState {
   /**
    * The run's failure, once one settled the dialog: the Host's refusal
    * `code` with its diagnostic as `reason`, or the transport's words alone;
-   * `kind` classifies a pnpm failure. `cancelUnconfirmed` is a stop the Host
-   * did not confirm, shown over the running screen while the run goes on.
+   * `kind` classifies a pnpm failure, and `pendingBuilds` names the packages
+   * whose install scripts pnpm left undecided, offered for approval.
+   * `cancelUnconfirmed` is a stop the Host did not confirm, shown over the
+   * running screen while the run goes on.
    */
   readonly failure: {
     readonly reason: string
     readonly code?: ManagementError['code']
     readonly kind?: PluginInstallFailureKind
+    readonly pendingBuilds?: readonly string[]
     readonly cancelUnconfirmed?: true
   } | null
+  /** The packages whose install scripts the finished run was allowed to execute, saved for this profile. */
+  readonly approvedBuilds: readonly string[]
   /** Enabling the newly installed bundle from the installed screen is crossing the wire. */
   readonly enabling: boolean
 }
@@ -190,6 +195,8 @@ export interface PluginManagerFace {
   editInstallSpec: (text: string) => void
   /** Check the spec with the Host, then install it; from the failed screen, run it again. */
   runInstall: () => void
+  /** Allow the install scripts the failed run left pending, saved for this profile, and run the same spec again. */
+  approveBuildsAndRetry: () => void
   /** Leave the check or the failed screen for the spec, or ask the Host to stop the run and wait for its cleanup. */
   cancelInstall: () => void
   toggleInstallDetails: () => void
@@ -222,11 +229,14 @@ class RemoteAnswerError extends Error {
 }
 
 /** The dialog's reading of a failed change: the Host's code and diagnostic, and the run's classified failure. */
-function failureOf(error: ManagementError | undefined, kind: PluginInstallFailureKind | undefined): NonNullable<InstallState['failure']> {
+function failureOf(
+  error: ManagementError | undefined, kind: PluginInstallFailureKind | undefined, pendingBuilds?: readonly string[],
+): NonNullable<InstallState['failure']> {
   return {
     reason: error?.diagnostic ?? '',
     ...error === undefined ? {} : { code: error.code },
     ...kind === undefined ? {} : { kind },
+    ...pendingBuilds === undefined || pendingBuilds.length === 0 ? {} : { pendingBuilds },
   }
 }
 
@@ -295,7 +305,7 @@ export function sortPackages(packages: readonly PackageView[]): PackageView[] {
 
 const IDLE_INSTALL: InstallState = {
   open: false, spec: '', phase: 'idle', inputError: null, subject: null, runs: [], detailsOpen: false,
-  installed: null, restartRequired: false, failure: null, enabling: false,
+  installed: null, restartRequired: false, failure: null, approvedBuilds: [], enabling: false,
 }
 
 /** Reads and mutates the profile's plugins through the `pluginManager` Remote. */
@@ -360,6 +370,7 @@ export class PluginManagerController {
         this.patchInstall(install.phase === 'idle' ? { spec: text, inputError: null } : { ...IDLE_INSTALL, open: true, spec: text })
       },
       runInstall: () => { void this.runInstall() },
+      approveBuildsAndRetry: () => { void this.approveBuildsAndRetry() },
       cancelInstall: () => { void this.cancelInstall() },
       toggleInstallDetails: () => { this.patchInstall({ detailsOpen: !this.getSnapshot().install.detailsOpen }) },
       enableInstalled: () => { void this.enableInstalled() },
@@ -510,7 +521,7 @@ export class PluginManagerController {
     this.inspectAbort = controller
     this.patchInstall({
       phase: 'checking', inputError: null, subject: null, runs: [], detailsOpen: false,
-      installed: null, restartRequired: false, failure: null,
+      installed: null, restartRequired: false, failure: null, approvedBuilds: [],
     })
     const inspected = await this.ctx.remote.pluginManager.inspect(spec, controller.signal)
     if (this.gone(controller.signal)) return
@@ -523,12 +534,24 @@ export class PluginManagerController {
       this.patchInstall({ phase: 'idle', inputError: { problem: inspected.value.problem, reason: inspected.value.reason } })
       return
     }
+    await this.startInstall({ spec, ...inspected.value })
+  }
+
+  /**
+   * Hand the checked spec to the Host and settle the dialog from its answer.
+   * `approvedBuilds` names the pending install scripts the person allowed;
+   * the Host saves that permission for this profile before pnpm runs.
+   */
+  private async startInstall(subject: InstallSubject, approvedBuilds?: readonly string[]): Promise<void> {
+    const { spec } = subject
     const requestId = randomUUID() as PluginInstallRequestId
-    this.patchInstall({ phase: 'starting', requestId, subject: { spec, ...inspected.value } })
+    this.patchInstall({ phase: 'starting', requestId, subject, failure: null, installed: null, approvedBuilds: [] })
     // The Host announces `plugin-manager/changed` while the run is still on
     // the wire, and every such event reads again; those reads must not cancel
     // the run's settlement.
-    const result = await this.ctx.remote.pluginManager.installBundle(spec, { enabled: false, requestId })
+    const result = await this.ctx.remote.pluginManager.installBundle(spec, {
+      enabled: false, requestId, ...approvedBuilds === undefined ? {} : { approvedBuilds: [...approvedBuilds] },
+    })
     if (this.disposed || this.getSnapshot().install.requestId !== requestId) return
     const runs = this.getSnapshot().install.runs
     if (!result.ok) {
@@ -541,7 +564,7 @@ export class PluginManagerController {
       this.patchInstall({
         phase: 'failed',
         runs: settledRuns(runs, packages?.exitCode ?? null),
-        failure: failureOf(result.value.error, packages?.kind),
+        failure: failureOf(result.value.error, packages?.kind, result.value.pendingBuilds),
       })
     } else {
       this.patchInstall({
@@ -549,9 +572,21 @@ export class PluginManagerController {
         runs: settledRuns(runs, 0),
         installed: result.value.bundle ?? null,
         restartRequired: result.value.application === 'restart-required',
+        approvedBuilds: result.value.approvedBuilds ?? [],
       })
     }
     void this.load()
+  }
+
+  /**
+   * Allow the install scripts the failed run left pending and run the same
+   * spec again. Only the failed screen with pending names offers this.
+   */
+  private async approveBuildsAndRetry(): Promise<void> {
+    const install = this.getSnapshot().install
+    const pending = install.failure?.pendingBuilds
+    if (install.phase !== 'failed' || install.subject === null || pending === undefined || pending.length === 0) return
+    await this.startInstall(install.subject, pending)
   }
 
   /**

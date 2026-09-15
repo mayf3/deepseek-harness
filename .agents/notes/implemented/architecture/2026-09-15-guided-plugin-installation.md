@@ -22,6 +22,8 @@ The install dialog put a spec straight into `pnpm add` and showed pnpm's termina
 
 **Outcomes of the moment are toasts.** A change that waits for the next start, one a higher layer overrides, a cancelled run, and a refused action each toast and retire; nothing stays on the page.
 
+**Blocked install scripts are approved from the failed screen.** When pnpm 11 leaves a dependency's scripts undecided, the failed run reports the pending names ([the manager's approval](2026-09-14-current-profile-plugin-management.md)), and the failed screen shows them with **Allow these scripts and retry** in place of plain retry; the store runs the same checked subject again with `approvedBuilds`, and the installed screen names what was allowed. `pnpm-workspace.yaml` is not among the restored files for this reason. Without pending names the failure falls back to the manual instruction.
+
 ## Alternatives considered
 
 **Validate specs on the client.** Rejected: the rules are pnpm's, the registry's, and the profile's, and the client cannot import the Host package that owns them.
@@ -38,4 +40,4 @@ The install dialog put a spec straight into `pnpm add` and showed pnpm's termina
 
 ## Testing
 
-`packages/boot/plugin-manager/tests/install-spec.spec.ts` pins the spec forms and the failure classifier's inputs; `manager.spec.ts` drives `inspect` against a stubbed registry lookup and a real directory, streams a run, stops one and checks the restored files, and checks the change events; `operations.spec.ts` covers the registry lookup. `packages/client/ui-plugin-manager/tests` cover the store's phases, Host-confirmed cancellation, post-install enabling, toasts, and the page's four screens; `apps/web/tests/plugin-manager.e2e.ts` refuses an installed name, a missing path, and a bad name through the real Host and switches a bundle and one of its rows live, and `plugin-install-cancel.e2e.ts` stops a real child from the dialog, checks the restored files, and installs on the second try.
+`packages/boot/plugin-manager/tests/install-spec.spec.ts` pins the spec forms and the failure classifier's inputs; `manager.spec.ts` drives `inspect` against a stubbed registry lookup and a real directory, streams a run, stops one and checks the restored files, and checks the change events; `operations.spec.ts` covers the registry lookup. `packages/client/ui-plugin-manager/tests` cover the store's phases, Host-confirmed cancellation, post-install enabling, toasts, and the page's four screens; `apps/web/tests/plugin-manager.e2e.ts` refuses an installed name, a missing path, and a bad name through the real Host and switches a bundle and one of its rows live, and `plugin-install-cancel.e2e.ts` stops a real child from the dialog, checks the restored files, and installs on the second try, and `plugin-install-approve.e2e.ts` leaves a script undecided through the fake pnpm, allows it from the dialog, and installs on the retry.

@@ -401,6 +401,8 @@ const SUBJECT_KIND_KEYS = {
  */
 function failureText(failure: InstallState['failure'], t: Translate): string {
   if (failure === null) return t('installFailureGeneric')
+  // Blocked scripts the Host could not name leave the person to allow them in the profile's pnpm settings by hand.
+  if (failure.kind === 'build-blocked' && !failure.pendingBuilds?.length) return t('installFailureBuildBlockedManual')
   if (failure.kind !== undefined) return t(FAILURE_KIND_KEYS[failure.kind])
   if (failure.code !== undefined) return managementText({ code: failure.code, diagnostic: failure.reason }, t)
   return failure.reason === '' ? t('installFailureGeneric') : failure.reason
@@ -420,8 +422,12 @@ function SubjectCard({ subject, t }: { readonly subject: InstallSubject; readonl
   )
 }
 
-/** The install dialog: the spec and its check, then the installing, installed, and failed screens over the same subject card. */
-function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onToggleDetails, onEnableNow }: {
+/**
+ * The install dialog: the spec and its check, then the installing, installed,
+ * and failed screens over the same subject card. A failed run that left
+ * install scripts undecided shows them for approval in place of plain retry.
+ */
+function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onToggleDetails, onEnableNow, onApproveBuilds }: {
   readonly install: InstallState
   readonly t: Translate
   readonly onClose: () => void
@@ -430,9 +436,11 @@ function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onTog
   readonly onCancel: () => void
   readonly onToggleDetails: () => void
   readonly onEnableNow: () => void
+  readonly onApproveBuilds: () => void
 }): ReactNode {
   const errorId = useId()
   const guideId = useId()
+  const approvalId = useId()
   const [guideOpen, setGuideOpen] = useState(false)
   const { phase } = install
   if (phase === 'idle' || phase === 'checking') {
@@ -522,6 +530,8 @@ function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onTog
   // Only a run the Host acknowledged can be stopped; before that, and while it stops or applies, the controls wait.
   const stoppable = phase === 'running' || phase === 'failed'
   const unconfirmed = install.failure?.cancelUnconfirmed === true ? install.failure.reason : undefined
+  const pendingBuilds = phase === 'failed' ? install.failure?.pendingBuilds ?? [] : []
+  const approvable = pendingBuilds.length > 0
   const firstRun = install.runs[0]
   return (
     <Modal open={install.open} onClose={onClose} title={heading} headless className={css.installDialog as string}>
@@ -550,11 +560,28 @@ function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onTog
           {unconfirmed === undefined ? null : <p className={css.wizardSub} role="alert">{t('installCancelUnconfirmed', { reason: unconfirmed })}</p>}
         </div>
         {install.subject === null ? null : <SubjectCard subject={install.subject} t={t} />}
+        {approvable
+          ? (
+            <section className={css.approval} role="group" aria-labelledby={approvalId} data-install-approval>
+              <h3 id={approvalId} className={css.approvalTitle}>{t('installApprovalTitle')}</h3>
+              <p className={css.approvalText}>{t('installApprovalDescription')}</p>
+              <ul className={css.approvalList}>
+                {pendingBuilds.map(name => <li key={name}><code>{name}</code></li>)}
+              </ul>
+              <p className={css.approvalText}>{t('installApprovalConsequence')}</p>
+              <p className={css.approvalCaution}>{t('installApprovalCaution')}</p>
+              <Button variant="primary" className={css.wide} onClick={onApproveBuilds}>{t('installApproveAndRetry')}</Button>
+            </section>
+          )
+          : null}
         {phase === 'done' && install.installed === null
           ? <p className={css.result} role="status">{t('installDoneNothing')}</p>
           : null}
         {phase === 'done' && install.restartRequired
           ? <p className={css.resultWarn} role="status">{t('installDoneRestart')}</p>
+          : null}
+        {phase === 'done' && install.approvedBuilds.length > 0
+          ? <p className={css.result} role="status">{t('installDoneApproved', { names: install.approvedBuilds.join(', ') })}</p>
           : null}
         <div className={css.wizardFoot}>
           <button type="button" className={css.detailsToggle} aria-expanded={install.detailsOpen} onClick={onToggleDetails}>
@@ -568,7 +595,7 @@ function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onTog
               </Button>
             )
             : null}
-          {phase === 'failed' ? <Button variant="primary" size="sm" onClick={onRun}>{t('installRetry')}</Button> : null}
+          {phase === 'failed' && !approvable ? <Button variant="primary" size="sm" onClick={onRun}>{t('installRetry')}</Button> : null}
         </div>
         {install.detailsOpen
           ? (
@@ -755,6 +782,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         onCancel={props.cancelInstall}
         onToggleDetails={props.toggleInstallDetails}
         onEnableNow={props.enableInstalled}
+        onApproveBuilds={props.approveBuildsAndRetry}
       />
       {state.confirm === null
         ? null

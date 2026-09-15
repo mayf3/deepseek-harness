@@ -35,7 +35,7 @@ function row(overrides: Partial<PackageRow> = {}): PackageRow {
 
 const IDLE_INSTALL: InstallState = {
   open: false, spec: '', phase: 'idle', inputError: null, subject: null, runs: [], detailsOpen: false,
-  installed: null, restartRequired: false, failure: null, enabling: false,
+  installed: null, restartRequired: false, failure: null, approvedBuilds: [], enabling: false,
 }
 
 const READY: PluginManagerState = {
@@ -59,6 +59,7 @@ function renderTab(state: Partial<PluginManagerState> = {}) {
     runInstall: vi.fn(),
     cancelInstall: vi.fn(),
     toggleInstallDetails: vi.fn(),
+    approveBuildsAndRetry: vi.fn(),
     enableInstalled: vi.fn(),
     clearHighlight: vi.fn(),
     setEnabled: vi.fn(),
@@ -407,6 +408,33 @@ describe('PluginManagerPage', () => {
     expect(actions.closeInstall).toHaveBeenCalledTimes(1)
   })
 
+  it('asks to allow the scripts a blocked install left pending, retries with them, and says what was allowed', () => {
+    const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', bundle: true } as const
+    const { actions, set } = renderTab({
+      install: {
+        ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', subject,
+        failure: { reason: 'ERR', kind: 'build-blocked', pendingBuilds: ['native', '@scope/other'] },
+      },
+    })
+    expect(screen.getByText(en.installFailureBuildBlocked)).toBeTruthy()
+    const group = screen.getByRole('group', { name: en.installApprovalTitle })
+    expect(within(group).getByText('native')).toBeTruthy()
+    expect(within(group).getByText('@scope/other')).toBeTruthy()
+    expect(within(group).getByText(en.installApprovalCaution)).toBeTruthy()
+    // Plain retry would fail the same way, so only the approval is offered.
+    expect(screen.queryByRole('button', { name: en.installRetry })).toBeNull()
+    fireEvent.click(within(group).getByRole('button', { name: en.installApproveAndRetry }))
+    expect(actions.approveBuildsAndRetry).toHaveBeenCalledTimes(1)
+    // Without the pending names the failure reads as the manual instruction, and plain retry is back.
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', subject, failure: { reason: 'ERR', kind: 'build-blocked' } } })
+    expect(screen.getByText(en.installFailureBuildBlockedManual)).toBeTruthy()
+    expect(screen.queryByRole('group', { name: en.installApprovalTitle })).toBeNull()
+    expect(screen.getByRole('button', { name: en.installRetry })).toBeTruthy()
+    // The installed screen says which scripts were allowed.
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'done', subject, installed: 'dsh-x', approvedBuilds: ['native'] } })
+    expect(screen.getByText(en.installDoneApproved.replace('{names}', 'native'))).toBeTruthy()
+  })
+
   it('words a failed install by its kind, else in the Host\'s words, and retries it', () => {
     const subject = { spec: 'github:a/b', status: 'accepted', kind: 'git', bundle: null } as const
     const { actions, set } = renderTab({
@@ -436,7 +464,7 @@ describe('PluginManagerPage', () => {
       ['pnpm-missing', en.installFailurePnpmMissing], ['timeout', en.installFailureTimeout],
       ['not-found', en.installFailureNotFound], ['no-matching-version', en.installFailureNoMatchingVersion],
       ['disk-full', en.installFailureDiskFull], ['permission', en.installFailurePermission],
-      ['build-blocked', en.installFailureBuildBlocked], ['integrity', en.installFailureIntegrity], ['unknown', en.installFailureGeneric],
+      ['build-blocked', en.installFailureBuildBlockedManual], ['integrity', en.installFailureIntegrity], ['unknown', en.installFailureGeneric],
     ]
     for (const [kind, sentence] of kinds) {
       set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: 'r', kind: kind as never } } })
