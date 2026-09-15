@@ -259,7 +259,7 @@ describe('workspace-changes without a repository', () => {
     expect(changes(ctx, session)).toEqual([{
       turn: 1, cwd, total: 2,
       files: [
-        { path: 'existing.txt', display: 'existing.txt', added: 4, deleted: 2 },
+        { path: 'existing.txt', display: 'existing.txt', added: 3, deleted: 1 },
         { path: join(await realpath(outside), 'note.txt'), display: `~/${outside.slice(homedir().length + 1)}/note.txt`, added: 2, deleted: 0 },
       ],
     }])

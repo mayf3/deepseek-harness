@@ -30,6 +30,13 @@ describe('hunkLineCounts', () => {
       { path: 'a', oldText: null, newText: 'x\ny\n' },
     ])).toEqual({ added: 4, deleted: 1 })
   })
+
+  it('appends a line after an unterminated last line without counting that line as rewritten', () => {
+    // The file tools persist hunk sides without a trailing newline; an append reads +1 -0, not +2 -1.
+    expect(hunkLineCounts([{ path: 'a', oldText: 'last', newText: 'last\nadded' }])).toEqual({ added: 1, deleted: 0 })
+    expect(hunkLineCounts([{ path: 'a', oldText: 'last\n', newText: 'last\nadded\n' }])).toEqual({ added: 1, deleted: 0 })
+    expect(hunkLineCounts([{ path: 'a', oldText: 'gone', newText: '' }])).toEqual({ added: 0, deleted: 1 })
+  })
 })
 
 describe('fileDiffsOf', () => {

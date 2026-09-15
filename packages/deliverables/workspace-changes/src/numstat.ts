@@ -40,9 +40,18 @@ export function parseNumstat(output: string): NumstatEntry[] {
 }
 
 /**
+ * A side's text with every line terminated, so the last line compares by
+ * content alone: the file tools persist hunk sides without a trailing newline,
+ * and the same rule reads empty text as no lines rather than one empty line.
+ */
+function terminated(text: string): string {
+  return text === '' || text.endsWith('\n') ? text : `${text}\n`
+}
+
+/**
  * Sum the added and deleted lines over recorded hunks. Context lines appear on
  * both sides of a hunk and cancel out; a hunk without prior text counts every
- * line as added.
+ * line as added; a trailing newline never counts as a changed line.
  * @param diffs - the applied hunks a file tool persisted with its result.
  * @returns line totals for one file.
  */
@@ -50,7 +59,7 @@ export function hunkLineCounts(diffs: readonly FileDiff[]): { added: number; del
   let added = 0
   let deleted = 0
   for (const diff of diffs) {
-    const patch = structuredPatch('', '', diff.oldText ?? '', diff.newText)
+    const patch = structuredPatch('', '', terminated(diff.oldText ?? ''), terminated(diff.newText))
     for (const hunk of patch.hunks) {
       for (const line of hunk.lines) {
         if (line.startsWith('+')) added += 1
