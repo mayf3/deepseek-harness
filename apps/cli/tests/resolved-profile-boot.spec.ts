@@ -8,7 +8,6 @@ import { boot, composeEntries, healIsolatedProfileModuleFallback, watchUserPatch
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runProfile } from '../src/profile-boot.ts'
-import * as profileBoot from '../src/profile-boot.ts'
 
 vi.mock('@deepseek-ai/dsh-app-boot', async importOriginal => ({
   ...await importOriginal<typeof import('@deepseek-ai/dsh-app-boot')>(),
@@ -28,10 +27,6 @@ afterEach(() => {
 })
 
 describe('runProfile with an application-owned profile', () => {
-  it('exposes only the shared runner at the public runtime entry', () => {
-    expect(Object.keys(profileBoot)).toEqual(['runProfile'])
-  })
-
   it.each(['composition', 'boot', 'watch', 'cleanup', 'tree-cleanup', 'both-cleanups'] as const)('releases startup resources after a %s failure', async (stage) => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-profile-startup-failure-'))
     homes.push(home)

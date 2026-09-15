@@ -21,7 +21,7 @@ import {
   reconcileProfilePlugins,
   resolveProfileDir,
 } from '@deepseek-ai/dsh-app-boot'
-import { INSTALL_ANCHOR } from './profile-boot-internal.ts'
+import { INSTALL_ANCHOR } from './profile-boot.ts'
 
 const NAME = 'dsh'
 

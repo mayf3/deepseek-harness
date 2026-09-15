@@ -14,7 +14,7 @@ import {
 } from '@deepseek-ai/dsh-app-boot'
 import { describe, expect, it } from 'vitest'
 import { execa } from 'execa'
-import { initializeProfileFromDefault } from '../src/profile-boot-internal.ts'
+import { initializeProfileFromDefault } from '../src/profile-boot.ts'
 
 const childEntry = fileURLToPath(new URL('./fixtures/initialize-profile-from-default.ts', import.meta.url))
 const tsxLoader = import.meta.resolve('tsx/esm')

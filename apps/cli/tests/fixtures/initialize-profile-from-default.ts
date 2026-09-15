@@ -2,7 +2,7 @@
 
 import { existsSync, writeFileSync } from 'node:fs'
 import { setTimeout as delay } from 'node:timers/promises'
-import { initializeProfileFromDefault } from '../../src/profile-boot-internal.ts'
+import { initializeProfileFromDefault } from '../../src/profile-boot.ts'
 
 const [home, name, source, ready, gate] = process.argv.slice(2)
 if (home === undefined || name === undefined || source === undefined || ready === undefined || gate === undefined) {

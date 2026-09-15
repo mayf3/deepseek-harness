@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveTelemetryPatch } from '../src/profile-boot-internal.ts'
+import { resolveTelemetryPatch } from '../src/profile-boot.ts'
 
 describe('resolveTelemetryPatch', () => {
   it('preserves the configured telemetry mode when the hard-disable switch is unset or empty', () => {
