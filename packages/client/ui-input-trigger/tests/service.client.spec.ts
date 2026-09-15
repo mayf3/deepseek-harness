@@ -953,6 +953,27 @@ describe('arbitrate', () => {
     expect(drillable.picks).toHaveLength(0)
   })
 
+  it('a launcher-opened menu survives the track its own focus produces', async () => {
+    const { controller } = await menuBench()
+    controller.toggleSource('command', {
+      trigger: '/', query: '', quoted: false, position: 'leading',
+      span: { start: 0, end: 0, draftRev: 0 },
+    })
+    expect(controller.menu.getSnapshot().open).toBe(true)
+
+    // Driving the menu with the keyboard focuses the editor, and Lexical's
+    // deferred selection restore re-tracks an empty draft: the menu stays.
+    controller.track('', 0, { tier: 'plain' }, 0)
+    await tick()
+    expect(controller.menu.getSnapshot().open).toBe(true)
+
+    // Typing takes the ordinary path.
+    controller.track('/g', 2, { tier: 'plain' }, 1)
+    await tick()
+    expect(controller.menu.getSnapshot().open).toBe(true)
+    expect(controller.launcher.getSnapshot()).toBeNull()
+  })
+
   it('a settled pick keeps its menu closed while the same hit re-tracks', async () => {
     const { controller } = await menuBench()
     expect(controller.arbitrate('enter', false)).toBe('pick-highlighted')
