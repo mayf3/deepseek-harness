@@ -4,13 +4,15 @@ import { readFileSync } from 'node:fs'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 
+import { productionOwnership, LOGIN } from './blame-ownership.mjs'
+import { authorCreditPoints, countMergedAuthorPulls } from './author-weight.mjs'
+
 const API_VERSION = '2026-03-10'
 const MAX_PULL_REQUEST_REVIEWS = 3_000
 const PAGE_SIZE = 100
 const STATUS_CONTEXT = 'weighted approval'
 const WRITABLE_PERMISSIONS = new Set(['admin', 'write'])
 const REVIEW_STATES = new Set(['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED', 'PENDING'])
-const LOGIN = /^[A-Za-z0-9-]+(?:\[bot\])?$/u
 
 class GitHubApiError extends Error {
   constructor(message, status) {
@@ -128,10 +130,10 @@ export async function listPullRequestReviews(api, repository, pullNumber) {
 
 /**
  * Evaluate approval points from current reviews and repository permissions.
- * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>}} options Runtime inputs.
- * @returns {Promise<{pull: {repository: string, number: number, headSha: string}, state: 'pending' | 'success', description: string, points: number, requiredPoints: number, approvals: Array<{login: string, points: number}>, blockers: string[], ignoredReviewers: string[]}>} Approval decision and status payload fields.
+ * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, getOwnership?: typeof productionOwnership, getMergedCount?: typeof countMergedAuthorPulls}} options Runtime inputs.
+ * @returns {Promise<{pull: {repository: string, number: number, headSha: string}, state: 'pending' | 'success', description: string, points: number, authorCredit: {mergedCount: number, points: number} | null, requiredPoints: number, approvals: Array<{login: string, points: number, ownership?: {ownedLines: number, totalLines: number}}>, blockers: string[], ignoredReviewers: string[]}>} Approval decision and status payload fields; null author credit means history was not evaluated.
  */
-export async function evaluateApproval({ event, policySource, api }) {
+export async function evaluateApproval({ event, policySource, api, getOwnership = productionOwnership, getMergedCount = countMergedAuthorPulls }) {
   const pull = pullRequestFromEvent(event)
   const policy = parseApprovalPolicy(policySource)
   if (pull.draft) {
@@ -160,19 +162,38 @@ export async function evaluateApproval({ event, policySource, api }) {
       })
     }
   }
+  let authorCredit = null
+  const reviewerPoints = approvals.reduce((sum, approval) => sum + approval.points, 0)
+  if (blockers.length === 0 && reviewerPoints < policy.requiredPoints) {
+    const mergedCount = await getMergedCount(pull, api)
+    authorCredit = { mergedCount, points: authorCreditPoints(mergedCount) }
+  }
+  const pointsBeforeOwnership = reviewerPoints + (authorCredit?.points ?? 0)
+  if (blockers.length === 0 && pointsBeforeOwnership < policy.requiredPoints
+    && approvals.some(approval => approval.points === policy.defaultPoints)) {
+    const ownership = await getOwnership(pull, api)
+    for (const approval of approvals) {
+      if (approval.points !== policy.defaultPoints) continue
+      const ownedLines = ownership.reviewerLines[approval.login.toLowerCase()] ?? 0
+      approval.ownership = { ownedLines, totalLines: ownership.totalLines }
+      if (ownership.totalLines > 0) approval.points = Math.min(policy.requiredPoints, policy.defaultPoints
+        + (policy.requiredPoints - policy.defaultPoints) * 4 * ownedLines / ownership.totalLines)
+    }
+  }
   approvals.sort((left, right) => left.login.localeCompare(right.login, 'en'))
   blockers.sort((left, right) => left.localeCompare(right, 'en'))
   ignoredReviewers.sort((left, right) => left.localeCompare(right, 'en'))
   const points = approvals.reduce((total, approval) => {
     const next = total + approval.points
-    if (!Number.isSafeInteger(next)) throw new Error('approval points exceed the safe integer range')
+    if (!Number.isFinite(next) || next > Number.MAX_SAFE_INTEGER) throw new Error('approval points must be finite and at most Number.MAX_SAFE_INTEGER')
     return next
-  }, 0)
+  }, authorCredit?.points ?? 0)
   if (blockers.length > 0) {
     return approvalResult(pull, policy.requiredPoints, approvals, blockers, ignoredReviewers, 'pending',
-      `${blockers.length} blocking change request${blockers.length === 1 ? '' : 's'}`)
+      `${blockers.length} blocking change request${blockers.length === 1 ? '' : 's'}`, authorCredit)
   }
-  const state = points >= policy.requiredPoints ? 'success' : 'pending'
+  // Tolerate floating-point addition error without rounding approval scores.
+  const state = points + 1e-12 >= policy.requiredPoints ? 'success' : 'pending'
   return approvalResult(
     pull,
     policy.requiredPoints,
@@ -180,31 +201,48 @@ export async function evaluateApproval({ event, policySource, api }) {
     blockers,
     ignoredReviewers,
     state,
-    `${points}/${policy.requiredPoints} approval points`,
+    `${Number(points.toFixed(3))}/${policy.requiredPoints} approval points${authorCredit ? ` (author ${authorCredit.points})` : ''}`,
+    authorCredit,
   )
 }
 
 /**
  * Evaluate and publish the required commit status, publishing an error status when evaluation fails.
- * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, runUrl: string, write?: (line: string) => void}} options Runtime inputs.
+ * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, runUrl: string, write?: (line: string) => void, getOwnership?: typeof productionOwnership, getMergedCount?: typeof countMergedAuthorPulls}} options Runtime inputs.
  * @returns {Promise<Awaited<ReturnType<typeof evaluateApproval>>>} Published approval decision.
  */
-export async function runApprovalCheck({ event, policySource, api, runUrl, write = line => process.stdout.write(`${line}\n`) }) {
+export async function runApprovalCheck({ event, policySource, api, runUrl, getOwnership = productionOwnership, getMergedCount = countMergedAuthorPulls, write = line => process.stdout.write(`${line}\n`) }) {
   const pull = pullRequestFromEvent(event)
+  await publishStatus(api, pull, 'pending', 'Evaluating approval points.', runUrl)
   let result
   try {
-    result = await evaluateApproval({ event, policySource, api })
+    result = await evaluateApproval({ event, policySource, api, getOwnership, getMergedCount })
   } catch (error) {
     await publishStatus(api, pull, 'error', 'Approval evaluation failed.', runUrl)
     throw error
   }
+  write(result.authorCredit
+    ? `Author credit: ${result.authorCredit.points} (${result.authorCredit.mergedCount} merged PRs).`
+    : `Author credit: not evaluated (${pull.draft ? 'draft' : result.blockers.length ? 'blocking review' : 'reviewer points suffice'}).`)
   write(`Approval score: ${result.points}/${result.requiredPoints}.`)
-  writeList(write, 'Counted approvals', result.approvals.map(({ login, points }) => `@${login}: ${points}`))
+  writeList(write, 'Counted approvals', result.approvals.map(({ login, points, ownership }) =>
+    `@${login}: ${points}${ownership ? ` (${ownership.ownedLines}/${ownership.totalLines} old production lines)` : ''}`))
   writeList(write, 'Blocking change requests', result.blockers.map(login => `@${login}`))
   writeList(write, 'Ignored reviewers without write access', result.ignoredReviewers.map(login => `@${login}`))
   await publishStatus(api, pull, result.state, result.description, runUrl)
   write(`Published ${JSON.stringify(STATUS_CONTEXT)} status ${JSON.stringify(result.state)}.`)
   return result
+}
+
+/**
+ * Revoke a previous success before dependency installation, or report its failure.
+ * @param {{event: unknown, api: (path: string, options: object) => Promise<unknown>, runUrl: string, phase: string}} options Publication inputs.
+ * @returns {Promise<void>} Completion of the status write.
+ */
+export async function publishApprovalPhase({ event, api, runUrl, phase }) {
+  if (!['pending', 'error'].includes(phase)) throw new Error('invalid approval setup phase')
+  await publishStatus(api, pullRequestFromEvent(event), phase,
+    phase === 'pending' ? 'Preparing approval evaluation.' : 'Approval setup or evaluation failed.', runUrl)
 }
 
 /**
@@ -235,12 +273,13 @@ export async function approvalEventFromWorkflowRun({ event, api }) {
   return { ...event, pull_request: pull }
 }
 
-function approvalResult(pull, requiredPoints, approvals, blockers, ignoredReviewers, state, detail) {
+function approvalResult(pull, requiredPoints, approvals, blockers, ignoredReviewers, state, detail, authorCredit = null) {
   return {
     pull: { repository: pull.repository, number: pull.number, headSha: pull.headSha },
     state,
     description: `${detail}.`,
-    points: approvals.reduce((total, approval) => total + approval.points, 0),
+    points: approvals.reduce((total, approval) => total + approval.points, authorCredit?.points ?? 0),
+    authorCredit,
     requiredPoints,
     approvals,
     blockers,
@@ -286,12 +325,15 @@ function pullRequestFromEvent(event) {
   if (!Number.isSafeInteger(pull.number) || pull.number <= 0) throw new Error('pull request has no valid number')
   if (typeof pull.draft !== 'boolean') throw new Error('pull request has no draft flag')
   const author = validateLogin(pull.user.login, 'pull-request author')
+  // REST node_id and GraphQL id identify the same global account node.
+  if (typeof pull.user.node_id !== 'string' || !pull.user.node_id) throw new Error('pull request has no author account ID')
   const headSha = validateHeadSha(pull.head.sha, 'pull request')
   return {
     repository,
     number: pull.number,
     draft: pull.draft,
     author,
+    authorId: pull.user.node_id,
     headSha,
   }
 }
@@ -359,6 +401,11 @@ async function main() {
       return
     }
     event = resolved
+  }
+  const phase = process.argv[2]
+  if (phase) {
+    await publishApprovalPhase({ event, api, runUrl: process.env.GITHUB_RUN_URL ?? '', phase })
+    return
   }
   await runApprovalCheck({
     event,

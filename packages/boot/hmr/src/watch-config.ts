@@ -28,13 +28,15 @@ async function findWatchRoot(filename: string): Promise<{ filename: string; root
  * Watch one patch path, including missing parents, and serialize refresh callbacks.
  * @param ctx Context that owns watcher disposal and receives refresh failures.
  * @param filename Absolute patch-file path.
- * @param options Deployment watcher options inherited from the HMR configuration.
+ * @param options Deployment watcher options; configuration watches enable write stabilization by default.
  * @param refresh Callback for additions, changes, and removals.
+ * @param inTransaction Whether disposal is running inside the refresh being removed.
  * @returns A disposer that closes the watcher and drains its current refresh.
  * @throws When path resolution, watcher startup, or effect registration fails.
  */
 export async function watchConfig(
   ctx: Context, filename: string, options: ChokidarOptions, refresh: () => Promise<void> | void,
+  inTransaction: () => boolean = () => false,
 ): Promise<() => Promise<void>> {
   const target = await findWatchRoot(filename)
   const paths = registrations.get(ctx) ?? new Set<string>()
@@ -42,7 +44,8 @@ export async function watchConfig(
   if (paths.has(target.filename)) throw new Error(`config path already registered: ${filename}`)
   const { cwd: _cwd, ignored: _ignored, ...watchOptions } = options
   const watcher = watch(target.root, {
-    ...watchOptions, depth: target.depth, ignoreInitial: false,
+    // Stabilized events bypass Chokidar's lossy 50 ms change-event throttle.
+    awaitWriteFinish: true, ...watchOptions, depth: target.depth, ignoreInitial: false,
   })
   paths.add(target.filename)
   const state = { dirty: false }
@@ -77,11 +80,11 @@ export async function watchConfig(
   const dispose = async () => {
     await watcher.close()
     paths.delete(target.filename)
-    await running
+    if (!inTransaction()) await running
   }
   try {
     await ready.promise
-    return ctx.effect(() => dispose, 'app-boot.watchConfig()')
+    return ctx.effect(() => dispose, 'hmr.watchConfig()')
   } catch (error) {
     await dispose()
     throw error

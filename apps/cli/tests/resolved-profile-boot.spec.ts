@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import { boot, composeEntries, healIsolatedProfileModuleFallback, watchUserPatches, type Profile } from '@deepseek-ai/dsh-app-boot'
+import { boot, composeEntries, healIsolatedProfileModuleFallback, type Profile } from '@deepseek-ai/dsh-app-boot'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runProfile } from '../src/profile-boot.ts'
@@ -14,7 +14,6 @@ vi.mock('@deepseek-ai/dsh-app-boot', async importOriginal => ({
   boot: vi.fn(),
   healIsolatedProfileModuleFallback: vi.fn(),
   installFailLoud: vi.fn(),
-  watchUserPatches: vi.fn(),
 }))
 vi.mock('@deepseek-ai/dsh-http-proxy', () => ({ installProxyFromEnvironment: vi.fn() }))
 
@@ -49,14 +48,12 @@ describe('runProfile with an application-owned profile', () => {
     vi.mocked(installProxyFromEnvironment).mockResolvedValue(disposeProxy)
     vi.mocked(boot).mockImplementation(async (_name, _root, _patches, setup) => {
       await setup?.(ctx)
-      if (stage === 'boot') throw failure
-      return ctx
+      throw failure
     })
     if (stage === 'composition') vi.mocked(healIsolatedProfileModuleFallback).mockImplementationOnce(() => { throw failure })
-    if (stage !== 'composition' && stage !== 'boot') vi.mocked(watchUserPatches).mockImplementationOnce(() => { throw failure })
     const profile: Profile = {
       name: 'desktop', dir: home, patchPath: join(home, 'cordis.patch.yml'),
-      patchReload: 'live', patches: [], layers: [],
+      patches: [], layers: [],
     }
     try {
       const application = runProfile({
@@ -79,7 +76,7 @@ describe('runProfile with an application-owned profile', () => {
     }
   })
 
-  it.each([['live', 'link'], ['startup', 'link'], ['startup', 'runtime']] as const)('uses shared layers, %s reload, %s resolution, and shutdown', async (patchReload, resolutionMode) => {
+  it.each(['link', 'runtime'] as const)('uses shared layers, %s resolution, and shutdown', async (resolutionMode) => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-resolved-profile-'))
     homes.push(home)
     mkdirSync(join(home, 'runtime'))
@@ -108,7 +105,7 @@ describe('runProfile with an application-owned profile', () => {
     writeFileSync(overlay, '- id: target\n  config: { overlay: true, priority: overlay }\n')
     writeFileSync(join(home, 'cordis.yml'), '- id: stale\n')
     const profile: Profile = {
-      name: 'desktop', dir: home, patchPath: profilePatch, patchReload,
+      name: 'desktop', dir: home, patchPath: profilePatch,
       patches: [{ id: 'target', config: { profile: true, priority: 'profile' } }],
       layers: [{
         packageName: 'test-bundle', packageDir: home, patchPath: join(home, 'bundle.yml'),
@@ -145,14 +142,7 @@ describe('runProfile with an application-owned profile', () => {
       ])
       expect(rows.find(row => row.id === 'target')?.config).toEqual({ overlay: true, priority: 'overlay' })
       expect(rows.find(row => row.id === 'session-telemetry-otel')?.disabled).toBe(true)
-      if (patchReload === 'live') {
-        expect(vi.mocked(watchUserPatches).mock.calls.map(call => call[1].filename)).toEqual([profilePatch, homePatch])
-        writeFileSync(homePatch, '- id: target\n  config: { home: updated }\n')
-        const live = vi.mocked(watchUserPatches).mock.calls[0]![1].compose!
-        expect(live([])[2]).toMatchObject({ id: 'target', config: { home: 'updated' } })
-      } else {
-        expect(watchUserPatches).not.toHaveBeenCalled()
-      }
+      expect(ctx.profileContext).toMatchObject({ dir: home, patchPath: profilePatch, installAnchor: runtime.installAnchor })
       await shutdown.shutdown(0)
       expect(dispose).toHaveBeenCalledOnce()
       expect(disposeProxy).toHaveBeenCalledOnce()

@@ -12,6 +12,7 @@ import {
 import type { StateDotState, TagTone } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginInventoryLocaleKey } from './locales.ts'
+import { BundleManager, usePluginManagement, type PluginManagement } from './management.tsx'
 import css from './PluginInventorySettingsTab.module.css'
 
 type PluginInventoryEntry = PluginInventorySnapshot['entries'][number]
@@ -20,6 +21,8 @@ type AgentPresetRow = AgentPresetGroup['rows'][number]
 
 /** Registration-side Remote face used by the section. */
 export interface PluginInventorySettingsTabInjected {
+  /** Persistent controls, available only on profile-backed Hosts. */
+  management?: PluginManagement
   /** Page-local module synchronization, independent from the Host inventory. */
   hooks: { clientSync: ObservableSnapshot<ClientEntryState> }
   /** Retry the latest client graph without changing the Host composition. */
@@ -204,7 +207,7 @@ function StateTag({ kind, label }: { readonly kind: EnablementKind; readonly lab
 
 /** Render the read-only plugin inventory: agent presets first, then the global plane. */
 export function PluginInventorySettingsTab(
-  { list, presetName, t, useClientSync, retryClient }: PluginInventorySettingsTabProps,
+  { list, presetName, management, t, useClientSync, retryClient }: PluginInventorySettingsTabProps,
 ): ReactNode {
   const clientSync = useClientSync(snapshot => snapshot)
   const sectionId = useId()
@@ -216,6 +219,8 @@ export function PluginInventorySettingsTab(
   const [presetOpen, setPresetOpen] = useState<boolean | null>(null)
   const [globalOpen, setGlobalOpen] = useState<boolean | null>(null)
   const [state, setState] = useState<ViewState>({ status: 'loading' })
+  const manageable = state.status === 'ready' && state.snapshot.managementAvailable === true
+  const managerState = usePluginManagement(management, manageable, request)
 
   useEffect(() => {
     let current = true
@@ -224,7 +229,7 @@ export function PluginInventorySettingsTab(
       () => { if (current) setState({ status: 'error' }) },
     )
     return () => { current = false }
-  }, [list, request])
+  }, [list, request, managerState.refresh])
 
   const normalizedQuery = query.trim().toLocaleLowerCase()
   const searching = normalizedQuery.length > 0
@@ -353,6 +358,15 @@ export function PluginInventorySettingsTab(
           </>
         )}
       >
+        {management === undefined || !manageable ? null : (() => {
+          const control = managerState.plugins.find(row => row.entryId === entry.entryId)
+          return control?.patchId === undefined
+            ? <p>{control?.readOnlyReason === undefined ? null : t(control.readOnlyReason)}</p>
+            : <label><input type="checkbox" role="switch" checked={entry.enabled}
+              disabled={managerState.busy} aria-label={t('pluginSwitch', { name: title })}
+              onChange={(event) => { void managerState.run(() => management.setPluginEnabled(entry.entryId, event.target.checked)) }} />
+            {t(entry.enabled ? 'enabledTag' : 'disabledTag')}</label>
+        })()}
         <CardFacts
           moduleName={entry.moduleName}
           moduleLabel={t('moduleLabel')}
@@ -384,6 +398,7 @@ export function PluginInventorySettingsTab(
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
+      {management !== undefined && manageable ? <BundleManager manager={management} state={managerState} t={t} /> : null}
       {clientSync.syncing ? <p className={css.status} role="status">{t('clientSyncing')}</p> : null}
       {clientSync.failures.length === 0 ? null : (
         <div className={css.failure} data-client-sync-failure>

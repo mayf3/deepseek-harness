@@ -60698,7 +60698,7 @@
       ],
       "sources": [
         "packages/core/session/src/types.ts:276",
-        "packages/deliverables/workspace-changes/src/types.ts:52"
+        "packages/deliverables/workspace-changes/src/types.ts:58"
       ]
     },
     {
