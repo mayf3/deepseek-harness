@@ -10,6 +10,7 @@ import {
   ipcMain,
   Menu,
   protocol,
+  session,
   shell,
   type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
@@ -24,6 +25,7 @@ import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { desktopErrorState } from './startup-error.ts'
+import { serveWebDocument, authenticateWebHost, forwardWebRequest } from './web-document.ts'
 import { startupFailureDocument } from './startup-document.ts'
 
 const SCHEME = 'dsh-app'
@@ -51,7 +53,7 @@ protocol.registerSchemesAsPrivileged([{
     standard: true,
     secure: true,
     supportFetchAPI: true,
-    corsEnabled: false,
+    corsEnabled: true,
     stream: true,
     codeCache: true,
   },
@@ -200,7 +202,10 @@ async function main(): Promise<void> {
   const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
   const managementPreload = fileURLToPath(new URL('./preload.cjs', import.meta.url))
   const startupUrl = `${SCHEME}://shell/startup.html`
-  let applicationUrl = startupUrl
+  const applicationUrl = `${SCHEME}://app/`
+  let hostUrl: string | undefined
+  let hostCookie: string | undefined
+  let injections: readonly unknown[] = []
   let navigation: { window: BrowserWindow; url: string; promise: Promise<void> } | undefined
   let emergencyDocument = false
 
@@ -244,7 +249,10 @@ async function main(): Promise<void> {
     return {
       start: async () => {
         const ready = await host.start()
-        applicationUrl = ready.url
+        hostCookie = await authenticateWebHost(ready.url)
+        hostUrl = ready.url
+        if (ready.injections === undefined) throw new Error('Desktop Host did not provide boot injections')
+        injections = ready.injections
       },
       stop: () => host.stop(),
     }
@@ -296,11 +304,11 @@ async function main(): Promise<void> {
   const reconcileBackend = (): Promise<void> => {
     startup ??= (async () => {
       pageError = undefined
-      await navigateMain(startupUrl)
+      await navigateMain(applicationUrl)
       await backend.start(async () => {
         await manager.applyRelease()
       })
-      if (backend.host !== undefined) await navigateMain(applicationUrl)
+      // The existing Web document resumes through the boot IPC response.
     })().catch(async (error: unknown) => {
       await showStartupError(error)
       throw error
@@ -318,6 +326,16 @@ async function main(): Promise<void> {
 
   protocol.handle(SCHEME, (request) => {
     const url = new URL(request.url)
+    if (url.hostname === 'app') {
+      if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname.startsWith('/assets/')
+        || ['/favicon.svg', '/manifest.webmanifest'].includes(url.pathname)) {
+        return serveWebDocument(request, join(resources.dsh, 'node_modules', '@deepseek-ai', 'dsh-web-frontend', 'dist'))
+      }
+      if (backend.host === undefined || hostUrl === undefined || hostCookie === undefined) {
+        return Promise.resolve(new Response(null, { status: 503 }))
+      }
+      return forwardWebRequest(request, hostUrl, hostCookie)
+    }
     if (url.hostname === 'shell') return serveShellAsset(request).then((response) => {
       if (response.status >= 400 && ['/startup.html', '/startup.js', '/startup.css'].includes(url.pathname)) {
         void showEmergencyError(new Error(`Desktop recovery resource could not be loaded: ${url.pathname} (HTTP ${response.status})`))
@@ -326,6 +344,26 @@ async function main(): Promise<void> {
       return response
     })
     return Promise.resolve(new Response(null, { status: 404 }))
+  })
+
+  ipcMain.handle(DESKTOP_IPC.boot, async (event) => {
+    assertDesktopSender(event, ['app'])
+    await startup
+    if (backend.host === undefined || hostUrl === undefined) throw new Error('Desktop Host is unavailable')
+    return { injections, streamBaseUrl: new URL(hostUrl).origin }
+  })
+
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['ws://127.0.0.1/*'] }, (details, callback) => {
+    if (hostUrl === undefined || hostCookie === undefined || details.webContentsId !== mainWindow?.webContents.id) {
+      callback({})
+      return
+    }
+    const target = new URL(hostUrl)
+    const requested = new URL(details.url)
+    if (requested.host !== target.host) { callback({}); return }
+    const headers = Object.fromEntries(Object.entries(details.requestHeaders).map(([name, value]) => [name.toLowerCase(), value]))
+    if (headers.origin !== 'dsh-app://app') { callback({ cancel: true }); return }
+    callback({ requestHeaders: { ...headers, origin: target.origin, cookie: hostCookie, 'sec-fetch-site': 'same-origin' } })
   })
 
   const mutate = async (event: IpcMainInvokeEvent, mutation: Parameters<DesktopProjectManager['mutate']>[0]): Promise<void> => {
@@ -495,7 +533,7 @@ async function main(): Promise<void> {
     const window = mainWindow
     if (window === undefined || window.isDestroyed()) {
       createMainWindow()
-      void navigateMain(backendState().phase === 'ready' ? applicationUrl : startupUrl)
+      void navigateMain(applicationUrl)
         .catch((error: unknown) => { console.error(error) })
       return
     }

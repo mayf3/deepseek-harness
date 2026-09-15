@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { DESKTOP_IPC } from '../src/ipc.ts'
 
+vi.mock('../src/web-document.ts', () => ({ authenticateWebHost: async () => 'test-cookie', serveWebDocument: vi.fn(), forwardWebRequest: vi.fn() }))
+
 const harness = await vi.hoisted(async () => {
   const { EventEmitter } = await import('node:events')
   function deferred() {
@@ -24,6 +26,7 @@ const harness = await vi.hoisted(async () => {
     destroyed = false
     readonly urls: string[] = []
     readonly webContents = Object.assign(new EventEmitter(), {
+      id: 42,
       setWindowOpenHandler: vi.fn(),
       openDevTools: vi.fn(),
       getURL: () => this.urls.at(-1) ?? '',
@@ -39,7 +42,7 @@ const harness = await vi.hoisted(async () => {
     isMinimized() { return false }
     async loadURL(url: string) {
       this.urls.push(url)
-      if (url.startsWith('http://')) navigated.resolve()
+      if (url === 'dsh-app://app/') navigated.resolve()
     }
     static getAllWindows() { return windows.filter(window => !window.destroyed) }
     close() { this.destroyed = true; this.emit('closed') }
@@ -49,7 +52,7 @@ const harness = await vi.hoisted(async () => {
     readonly ready = deferred()
     readonly exited = deferred()
     readonly stopping = deferred()
-    readonly start = vi.fn(() => { hostStarted.resolve(); return this.ready.promise.then(() => ({ url: this.url })) })
+    readonly start = vi.fn(() => { hostStarted.resolve(); return this.ready.promise.then(() => ({ url: this.url, injections: [] })) })
     readonly stop = vi.fn(() => {
       this.stopping.resolve()
       this.ready.reject(new Error('child stopped'))
@@ -81,6 +84,7 @@ const harness = await vi.hoisted(async () => {
   return {
     windows, hosts, handlers, app, FakeWindow, FakeHost,
     popup,
+    socketHeaders: vi.fn(),
     menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn(() => ({ popup })) },
     dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn() },
     openExternal: vi.fn(),
@@ -89,6 +93,7 @@ const harness = await vi.hoisted(async () => {
     get preparing() { return preparing }, get prepared() { return prepared },
     get hostStarted() { return hostStarted }, get navigated() { return navigated },
     get errorPublished() { return errorPublished }, get quitCompleted() { return quitCompleted },
+    nextNavigation() { navigated = deferred(); return navigated.promise },
     nextHostStart() { hostStarted = deferred(); return hostStarted.promise },
     get pluginsEnabled() { return pluginsEnabled },
     set pluginsEnabled(value: boolean) { pluginsEnabled = value },
@@ -111,6 +116,7 @@ vi.mock('electron', () => ({
     handle: (channel: string, handler: (event: { senderFrame: { url: string } }) => unknown) => { harness.handlers.set(channel, handler) },
   },
   Menu: harness.menu,
+  session: { defaultSession: { webRequest: { onBeforeSendHeaders: harness.socketHeaders } } },
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
 }))
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: 'desktop-test-profile' }) }))
@@ -162,6 +168,49 @@ afterEach(async () => {
 })
 
 describe('desktop main startup', () => {
+  it('attaches Host socket credentials only to the owned application origin and window', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    harness.hosts[0]!.ready.resolve()
+    await Promise.resolve(invoke(DESKTOP_IPC.backendRetry))
+    const handler = harness.socketHeaders.mock.calls[0]![1] as (
+      details: { url: string; webContentsId: number; requestHeaders: Record<string, string> },
+      callback: (result: unknown) => void,
+    ) => void
+    const callback = vi.fn()
+    const details = { url: 'ws://127.0.0.1:3080/api/remote.mux', webContentsId: 42, requestHeaders: { Origin: 'dsh-app://app' } }
+    handler(details, callback)
+    expect(callback).toHaveBeenLastCalledWith({ requestHeaders: {
+      origin: 'http://127.0.0.1:3080', cookie: 'test-cookie', 'sec-fetch-site': 'same-origin',
+    } })
+    handler({ ...details, requestHeaders: { Origin: 'https://other.example' } }, callback)
+    expect(callback).toHaveBeenLastCalledWith({ cancel: true })
+    handler({ ...details, webContentsId: 43 }, callback)
+    expect(callback).toHaveBeenLastCalledWith({})
+    handler({ ...details, url: 'ws://127.0.0.1:9999/api/remote.mux' }, callback)
+    expect(callback).toHaveBeenLastCalledWith({})
+  })
+
+  it('holds boot injections until the Host is ready and rejects foreign boot callers', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const handler = harness.handlers.get(DESKTOP_IPC.boot)!
+    await expect(handler({ senderFrame: { url: 'https://other.example/' } })).rejects.toThrow('unowned renderer')
+    let settled = false
+    const boot = Promise.resolve(handler({ senderFrame: { url: 'dsh-app://app/' } })).then((value) => { settled = true; return value })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    expect(settled).toBe(false)
+    harness.hosts[0]!.ready.resolve()
+    await expect(boot).resolves.toEqual({ injections: [], streamBaseUrl: 'http://127.0.0.1:3080' })
+    expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
+  })
+
   it('offers native editing actions on right-click and only copy for selected read-only text', async () => {
     await import('../src/main.ts')
     await harness.preparing.promise
@@ -187,7 +236,7 @@ describe('desktop main startup', () => {
     expect(harness.menu.buildFromTemplate).not.toHaveBeenCalled()
   })
 
-  it('navigates to each Host authentication URL when retry replaces a failed backend', async () => {
+  it('keeps a local document while retry connects a replacement Host', async () => {
     await import('../src/main.ts')
     await harness.preparing.promise
     harness.prepared.resolve()
@@ -197,7 +246,7 @@ describe('desktop main startup', () => {
     first.ready.resolve()
     await harness.navigated.promise
     const window = harness.windows[0]!
-    expect(window.urls.at(-1)).toBe(first.url)
+    expect(window.urls).toEqual(['dsh-app://app/'])
     await Promise.resolve(invoke(DESKTOP_IPC.backendRetry))
     first.onFailure!(new Error('backend exited'))
     await harness.errorPublished.promise
@@ -212,7 +261,7 @@ describe('desktop main startup', () => {
     await retry
     expect(harness.windows).toHaveLength(1)
     expect(window.urls).toEqual([
-      'dsh-app://shell/startup.html', first.url, 'dsh-app://shell/startup.html', replacement.url,
+      'dsh-app://app/', 'dsh-app://shell/startup.html', 'dsh-app://app/',
     ])
     expect(harness.openExternal).not.toHaveBeenCalled()
   })
@@ -237,7 +286,7 @@ describe('desktop main startup', () => {
     expect(harness.openExternal).toHaveBeenCalledWith('https://example.com/document')
     harness.openExternal.mockClear()
     const internal = { preventDefault: vi.fn() }
-    window.webContents.emit('will-navigate', internal, 'http://127.0.0.1:3080/session/task-1')
+    window.webContents.emit('will-navigate', internal, 'dsh-app://app/session/task-1')
     expect(internal.preventDefault).not.toHaveBeenCalled()
     expect(harness.openExternal).not.toHaveBeenCalled()
   })
@@ -275,7 +324,7 @@ describe('desktop main startup', () => {
     const window = harness.windows[0]!
     window.webContents.emit('render-process-gone', {}, { reason: 'crashed' })
     await harness.errorPublished.promise
-    expect(window.urls).toEqual(['dsh-app://shell/startup.html', 'dsh-app://shell/startup.html'])
+    expect(window.urls).toEqual(['dsh-app://app/', 'dsh-app://shell/startup.html'])
     expect(invoke(DESKTOP_IPC.backendStatus)).toMatchObject({ phase: 'error', message: 'Desktop renderer exited: crashed' })
   })
 
@@ -289,15 +338,16 @@ describe('desktop main startup', () => {
     harness.hosts[0]!.ready.resolve()
     await Promise.resolve(invoke(DESKTOP_IPC.backendRetry))
     const started = harness.nextHostStart()
+    const navigated = harness.nextNavigation()
     const event = { preventDefault: vi.fn() }
     window.webContents.emit('will-navigate', event, `dsh-recovery://${action}/?`)
     await harness.hosts[0]!.stopping.promise
     harness.hosts[0]!.exited.resolve()
     await started
     harness.hosts[1]!.ready.resolve()
-    await harness.navigated.promise
+    await navigated
     expect(event.preventDefault).toHaveBeenCalled()
-    expect(window.urls.at(-1)).toBe('http://127.0.0.1:3080/?token=test')
+    expect(window.urls.at(-1)).toBe('dsh-app://app/')
   })
 
   it('allows a full profile reset for an unclassified startup failure', async () => {
@@ -374,14 +424,14 @@ describe('desktop main startup', () => {
     expect(harness.windows).toHaveLength(1)
     const window = harness.windows[0]!
     expect(window.options.show).toBe(true)
-    expect(window.urls).toEqual(['dsh-app://shell/startup.html'])
+    expect(window.urls).toEqual(['dsh-app://app/'])
     expect(harness.hosts).toHaveLength(0)
     const retry = invoke(DESKTOP_IPC.backendRetry)
     const secondRetry = invoke(DESKTOP_IPC.backendRetry)
     harness.prepared.resolve()
     await harness.hostStarted.promise
     expect(harness.hosts).toHaveLength(1)
-    expect(window.urls).toEqual(['dsh-app://shell/startup.html'])
+    expect(window.urls).toEqual(['dsh-app://app/'])
     harness.hosts[0]!.ready.resolve()
     await Promise.all([retry, secondRetry, harness.navigated.promise])
     expect(harness.applyRelease).toHaveBeenCalledTimes(1)
@@ -394,7 +444,7 @@ describe('desktop main startup', () => {
     })
     expect(harness.hosts[0]!.start).toHaveBeenCalledTimes(1)
     expect(harness.windows).toHaveLength(1)
-    expect(window.urls).toEqual(['dsh-app://shell/startup.html', 'http://127.0.0.1:3080/?token=test'])
+    expect(window.urls).toEqual(['dsh-app://app/'])
     expect(invoke(DESKTOP_IPC.backendStatus)).toEqual({ phase: 'ready' })
   })
 
@@ -425,7 +475,7 @@ describe('desktop main startup', () => {
     await harness.errorPublished.promise
     await failedRetry
     expect(invoke(DESKTOP_IPC.backendStatus)).toEqual({ phase: 'error', message: 'plugin composition failed', profileRecovery: true })
-    expect(harness.windows[0]!.urls).toEqual(['dsh-app://shell/startup.html'])
+    expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/', 'dsh-app://shell/startup.html'])
     const nextStarted = harness.nextHostStart()
     const retry = Promise.resolve(invoke(DESKTOP_IPC.backendRetry))
     await nextStarted
@@ -433,7 +483,7 @@ describe('desktop main startup', () => {
     harness.hosts[1]!.ready.resolve()
     await retry
     expect(harness.windows).toHaveLength(1)
-    expect(harness.windows[0]!.urls.at(-1)).toBe('http://127.0.0.1:3080/?token=test')
+    expect(harness.windows[0]!.urls.at(-1)).toBe('dsh-app://app/')
     expect(harness.dialog.showErrorBox).not.toHaveBeenCalled()
   })
 
@@ -453,7 +503,7 @@ describe('desktop main startup', () => {
     host.exited.resolve()
     await harness.quitCompleted.promise
     expect(host.stop).toHaveBeenCalledTimes(1)
-    expect(window.urls).toEqual(['dsh-app://shell/startup.html'])
+    expect(window.urls).toEqual(['dsh-app://app/'])
     expect(harness.windows).toHaveLength(1)
   })
 })

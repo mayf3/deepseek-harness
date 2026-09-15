@@ -20,5 +20,9 @@ const startup: DshDesktopStartupApi = {
   resetConfiguration: () => ipcRenderer.invoke(DESKTOP_IPC.configurationReset) as Promise<void>,
 }
 
+if (location.protocol === 'dsh-app:' && location.hostname === 'app') {
+  contextBridge.exposeInMainWorld('dshDesktopBoot', { ready: () => ipcRenderer.invoke(DESKTOP_IPC.boot) as Promise<unknown> })
+}
+
 contextBridge.exposeInMainWorld('dshDesktop', location.protocol === 'dsh-app:' && location.hostname === 'shell'
   ? startup : { protocolVersion: 1 })

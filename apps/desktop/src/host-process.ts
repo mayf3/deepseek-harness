@@ -7,6 +7,7 @@ import { desktopNodeEnvironment } from './node-environment.ts'
 interface ReadyEvent {
   readonly type: 'ready'
   readonly url: string
+  readonly injections?: readonly unknown[] | undefined
 }
 
 interface FatalEvent {
@@ -47,6 +48,7 @@ async function exitsWithin(exit: Promise<void>, milliseconds: number): Promise<b
 /** Browser authentication URL reported by the running Web application. */
 export interface DesktopHostReady {
   readonly url: string
+  readonly injections?: readonly unknown[] | undefined
 }
 
 /** One Web backend running under the Electron executable in Node mode. */
@@ -114,7 +116,7 @@ export class DesktopHostProcess {
         child.kill('SIGTERM')
         return
       }
-      if (message.type === 'ready') this.readyResolve({ url: message.url })
+      if (message.type === 'ready') this.readyResolve({ url: message.url, injections: message.injections })
       else this.fail(new Error(message.message))
     })
     child.once('error', (error) => { this.fail(error) })

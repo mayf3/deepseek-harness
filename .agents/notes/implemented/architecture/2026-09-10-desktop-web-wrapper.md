@@ -12,7 +12,7 @@ Separate Desktop composition and request transport require their own configurati
 
 ## Decision
 
-The private Desktop Host invokes the CLI's shared profile runner against the independently owned Desktop profile. The complete Web composition owns authentication, HTTP routes, client assets, RPC, and response streaming. Electron loads the authenticated URL reported by the child. Child IPC carries readiness and shutdown; application requests travel directly over HTTP.
+The private Desktop Host invokes the CLI's shared profile runner against the independently owned Desktop profile. The complete Web composition owns authentication, HTTP routes, client assets, RPC, and response streaming. Electron loads packaged static Web assets before the child is ready. Child IPC carries readiness, structured boot injections, and shutdown. The [immediate-window decision](2026-09-09-desktop-immediate-window-and-direct-start.md) owns local-document HTTP forwarding and authenticated WebSocket access; Web retains application dispatch and stream framing.
 
 The shared runner owns profile and Harness-home patches, proxy setup, telemetry defaults, module fallbacks, configuration reload, and application lifecycle. Desktop initializes profiles from the shared Web template's bundles and patch-reload policy and uses Web's automatic directory-picker selection, keeping application defaults under one owner. Desktop uses a separate default listener port so both applications can run concurrently; profile configuration can override it. Shell windows, menus, plugin management, recovery, and updates remain Electron responsibilities.
 
@@ -38,7 +38,7 @@ This partially supersedes the private composition and portless transport in the 
 
 ## Consequences
 
-Desktop inherits Web features through the same boot and serving path. HTTP listener ownership and authentication remain part of application startup, and Electron must load the ready URL instead of assuming a port or translating requests. The independent loading and recovery window remains available before the Web application starts.
+Desktop inherits Web features through the same boot and serving path. HTTP listener ownership and authentication remain part of application startup. Electron uses the reported Host address and preserves the existing Web document through readiness. The shared Web loading page is available before the Host starts; independent recovery resources remain available when startup fails.
 
 User-selected runtime options, package sources, and permitted lifecycle scripts can affect Host execution, load third-party code, or cause startup failure. Desktop accepts these effects under the same configuration ownership as Web; the signed core runtime does not attest to user-installed plugin code. Package or loading failures retain explicit repair and the independent recovery UI rather than triggering stricter admission checks or automatic rollback.
 

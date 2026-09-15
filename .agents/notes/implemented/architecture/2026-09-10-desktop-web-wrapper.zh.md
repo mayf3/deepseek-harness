@@ -12,7 +12,7 @@ Status: implemented
 
 ## Decision
 
-私有 Desktop Host 针对独立归属的 Desktop profile 调用 CLI 的共享 profile runner。完整 Web 组合负责认证、HTTP 路由、客户端资源、RPC 与响应流。Electron 加载子进程报告的认证 URL。子进程 IPC 承载就绪与关闭；应用请求直接通过 HTTP 传输。
+私有 Desktop Host 针对独立归属的 Desktop profile 调用 CLI 的共享 profile runner。完整 Web 组合负责认证、HTTP 路由、客户端资源、RPC 与响应流。Electron 在子进程就绪前加载打包静态 Web 资源。子进程 IPC 承载就绪、结构化启动注入与关闭。[立即显示窗口决策](2026-09-09-desktop-immediate-window-and-direct-start.zh.md)规定本地文档 HTTP 转发与认证 WebSocket 访问；Web 保留应用分派与流帧处理。
 
 共享 runner 负责 profile 与 Harness-home patch、代理设置、遥测默认值、模块补全、配置重载及应用生命周期。Desktop 以共享 Web 模板的 bundle 列表和 patch 重载策略初始化 profile，并使用 Web 的自动目录选择机制，让应用默认值由一处维护。Desktop 使用独立的默认监听端口，使两个应用可以同时运行；profile 配置可以覆盖该端口。壳窗口、菜单、插件管理、恢复及更新仍由 Electron 负责。
 
@@ -38,7 +38,7 @@ App-boot 负责已安装依赖发现、安装目录优先的 bundle 声明解析
 
 ## Consequences
 
-Desktop 通过相同启动与服务路径继承 Web 功能。HTTP 监听归属与认证仍属于应用启动，Electron 必须加载就绪 URL，而不是假设端口或转换请求。独立加载与恢复窗口在 Web 应用启动前仍可用。
+Desktop 通过相同启动与服务路径继承 Web 功能。HTTP 监听归属与认证仍属于应用启动。Electron 使用报告的 Host 地址，并在就绪前后保留现有 Web 文档。共享 Web 加载页在 Host 启动前可用；独立恢复资源在启动失败时仍可用。
 
 用户选择的运行时选项、包来源及允许的生命周期脚本可以影响 Host 执行、加载第三方代码或导致启动失败。Desktop 按与 Web 相同的配置归属接受这些影响；签名核心运行时不为用户安装的插件代码背书。包操作或加载失败保留显式修复及独立恢复 UI，不触发更严格的准入检查或自动回滚。
 
