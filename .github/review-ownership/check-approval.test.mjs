@@ -6,13 +6,16 @@ import {
   approvalEventFromWorkflowRun,
   createGitHubApi,
   effectiveReviewDecisions,
-  evaluateApproval,
+  evaluateApproval as evaluateWithHistory,
   listPullRequestReviews,
   parseApprovalPolicy,
-  runApprovalCheck,
+  runApprovalCheck as runWithHistory,
+  publishApprovalPhase,
 } from './check-approval.mjs'
 
 const policySource = readFileSync(new URL('approval-policy.json', import.meta.url), 'utf8')
+const evaluateApproval = options => evaluateWithHistory({ getMergedCount: async () => 0, ...options })
+const runApprovalCheck = options => runWithHistory({ getMergedCount: async () => 0, ...options })
 const HEAD_SHA = '1234567890abcdef1234567890abcdef12345678'
 
 const pullRequestEvent = ({ author = 'author', draft = false } = {}) => ({
@@ -20,7 +23,7 @@ const pullRequestEvent = ({ author = 'author', draft = false } = {}) => ({
   pull_request: {
     number: 42,
     draft,
-    user: { login: author },
+    user: { login: author, node_id: 'author-id' },
     head: { sha: HEAD_SHA },
   },
 })
@@ -149,6 +152,7 @@ test('accepts one two-point approval from a write-capable reviewer', async () =>
   const result = await evaluateApproval({
     event: pullRequestEvent(),
     policySource,
+    getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }),
     api: async (path) => {
       calls.push(path)
       if (path.includes('/reviews?')) return [review('07akioni', 'APPROVED')]
@@ -166,6 +170,7 @@ test('accepts two one-point approvals and ignores reviews without write access',
   const result = await evaluateApproval({
     event: pullRequestEvent(),
     policySource,
+    getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }),
     api: async (path) => {
       if (path.includes('/reviews?')) {
         return [
@@ -193,6 +198,7 @@ test('keeps one one-point approval pending without failing the status', async ()
   const result = await evaluateApproval({
     event: pullRequestEvent(),
     policySource,
+    getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }),
     api: async (path) => {
       if (path.includes('/reviews?')) return [review('writer', 'APPROVED')]
       if (path.includes('/collaborators/writer/permission')) return { permission: 'write' }
@@ -227,6 +233,7 @@ test('keeps the status pending on a write-capable change request while ignoring 
   const result = await runApprovalCheck({
     event: pullRequestEvent({ author: 'author' }),
     policySource,
+    getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }),
     runUrl: 'https://github.example/actions/runs/1',
     api: async (path, options = {}) => {
       if (path.includes('/reviews?')) {
@@ -256,6 +263,11 @@ test('keeps the status pending on a write-capable change request while ignoring 
   assert.deepEqual(statuses, [{
     state: 'pending',
     context: 'weighted approval',
+    description: 'Evaluating approval points.',
+    target_url: 'https://github.example/actions/runs/1',
+  }, {
+    state: 'pending',
+    context: 'weighted approval',
     description: '1 blocking change request.',
     target_url: 'https://github.example/actions/runs/1',
   }])
@@ -265,6 +277,7 @@ test('keeps drafts pending without reading reviews', async () => {
   const result = await evaluateApproval({
     event: pullRequestEvent({ draft: true }),
     policySource,
+    getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }),
     api: async () => { throw new Error('draft evaluation must not call GitHub') },
   })
   assert.equal(result.state, 'pending')
@@ -278,6 +291,7 @@ test('publishes the required status and replaces stale success with error on eva
   const result = await runApprovalCheck({
     event: pullRequestEvent(),
     policySource,
+    getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }),
     runUrl: 'https://github.example/actions/runs/1',
     api: async (path, options = {}) => {
       calls.push({ path, options })
@@ -301,12 +315,14 @@ test('publishes the required status and replaces stale success with error on eva
       },
     },
   })
-  assert.equal(output[0], 'Approval score: 2/2.')
+  assert.equal(output[0], 'Author credit: not evaluated (reviewer points suffice).')
+  assert.equal(output[1], 'Approval score: 2/2.')
 
   const failures = []
   await assert.rejects(runApprovalCheck({
     event: pullRequestEvent(),
     policySource,
+    getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }),
     runUrl: 'https://github.example/actions/runs/2',
     api: async (path, options = {}) => {
       if (path.includes('/reviews?')) throw new Error('reviews unavailable')
@@ -318,8 +334,9 @@ test('publishes the required status and replaces stale success with error on eva
     },
     write: () => {},
   }), /reviews unavailable/u)
-  assert.equal(failures[0].options.body.state, 'error')
-  assert.equal(failures[0].options.body.description, 'Approval evaluation failed.')
+  assert.equal(failures[0].options.body.state, 'pending')
+  assert.equal(failures[1].options.body.state, 'error')
+  assert.equal(failures[1].options.body.description, 'Approval evaluation failed.')
 })
 
 test('sends authenticated JSON and escapes an API error body', async () => {
@@ -345,4 +362,258 @@ test('sends authenticated JSON and escapes an API error body', async () => {
     fetchImpl: async () => new Response('::error::untrusted\nbody', { status: 422 }),
   })
   await assert.rejects(failing('/failure'), /"::error::untrusted\\nbody"/u)
+})
+
+for (const [ownedLines, totalLines, expectedPoints] of [[9, 100, 1.3599999999999999], [0, 100, 1], [1, 8, 1.5], [24, 100, 1.96], [1, 4, 2], [25, 100, 2], [26, 100, 2], [100, 100, 2], [0, 0, 1]]) {
+  test(`scores ${ownedLines}/${totalLines} old production lines as ${expectedPoints} points`, async () => {
+    let measurements = 0
+    const result = await evaluateApproval({
+      event: pullRequestEvent(), policySource,
+      getOwnership: async () => {
+        measurements++
+        return { totalLines, reviewerLines: { writer: ownedLines } }
+      },
+      api: async path => path.includes('/reviews?')
+        ? [review('Writer', 'APPROVED')]
+        : { permission: 'write' },
+    })
+    assert.equal(result.points, expectedPoints)
+    assert.equal(result.description, `${Number(expectedPoints.toFixed(3))}/2 approval points (author 0).`)
+    assert.equal(result.state, expectedPoints === 2 ? 'success' : 'pending')
+    assert.equal(measurements, 1)
+    assert.deepEqual(result.approvals[0].ownership, { ownedLines, totalLines })
+  })
+}
+
+test('does not fetch ownership when a change request blocks approval', async () => {
+  let measurements = 0
+  const result = await evaluateApproval({
+    event: pullRequestEvent(), policySource,
+    getOwnership: async () => {
+      measurements++
+      return { totalLines: 2, reviewerLines: { first: 1, second: 1 } }
+    },
+    api: async path => path.includes('/reviews?')
+      ? [review('first', 'APPROVED'), review('second', 'APPROVED'), review('blocker', 'CHANGES_REQUESTED')]
+      : { permission: 'write' },
+  })
+  assert.equal(measurements, 0)
+  assert.equal(result.points, 2)
+  assert.equal(result.state, 'pending')
+})
+
+test('does not fetch history when approvals already have two-point weights', async () => {
+  const result = await evaluateApproval({
+    event: pullRequestEvent(), policySource,
+    getOwnership: async () => { throw new Error('unexpected history fetch') },
+    api: async path => path.includes('/reviews?') ? [review('turtle1999', 'APPROVED')] : { permission: 'write' },
+  })
+  assert.equal(result.points, 2)
+})
+
+test('publishes error when production attribution fails', async () => {
+  const states = []
+  await assert.rejects(runApprovalCheck({
+    event: pullRequestEvent(), policySource, runUrl: 'https://github.example/run/1',
+    getOwnership: async () => { throw new Error('incomplete history') },
+    api: async (path, options) => {
+      if (path.includes('/reviews?')) return [review('writer', 'APPROVED')]
+      if (path.includes('/permission')) return { permission: 'write' }
+      states.push(options.body.state)
+      return {}
+    },
+  }), /incomplete history/u)
+  assert.deepEqual(states, ['pending', 'error'])
+})
+
+
+test('revokes a previous success before starting expensive attribution', async () => {
+  const states = []
+  await runApprovalCheck({
+    event: pullRequestEvent(), policySource, runUrl: 'https://github.example/run/1', write: () => {},
+    getOwnership: async () => {
+      assert.deepEqual(states, ['pending'])
+      return { totalLines: 100, reviewerLines: { writer: 25 } }
+    },
+    api: async (path, options) => {
+      if (path.includes('/reviews?')) return [review('writer', 'APPROVED')]
+      if (path.includes('/permission')) return { permission: 'write' }
+      states.push(options.body.state)
+      return {}
+    },
+  })
+  assert.deepEqual(states, ['pending', 'success'])
+})
+
+for (const reviewers of [['first', 'second'], ['turtle1999', 'first']]) {
+  test(`does not fetch ownership for sufficient approvals: ${reviewers}`, async () => {
+    const result = await evaluateApproval({
+      event: pullRequestEvent(), policySource,
+      getOwnership: async () => { throw new Error('unnecessary lookup') },
+      api: async path => path.includes('/reviews?')
+        ? reviewers.map(login => review(login, 'APPROVED')) : { permission: 'write' },
+    })
+    assert.equal(result.state, 'success')
+  })
+}
+
+test('uses policy endpoints and formats only the displayed score', async () => {
+  const result = await evaluateApproval({
+    event: pullRequestEvent(),
+    policySource: JSON.stringify({ requiredPoints: 5, defaultPoints: 2, reviewerPoints: {} }),
+    getOwnership: async () => ({ totalLines: 100, reviewerLines: { writer: 9 } }),
+    api: async path => path.includes('/reviews?') ? [review('writer', 'APPROVED')] : { permission: 'write' },
+  })
+  assert.equal(result.points, 3.08)
+  assert.equal(result.description, '3.08/5 approval points (author 0).')
+})
+
+test('publishes setup phases without evaluating or installing dependencies', async () => {
+  const states = []
+  const options = {
+    event: pullRequestEvent(), runUrl: 'https://github.example/run/1',
+    api: async (path, { body }) => { assert.match(path, /\/statuses\//u); states.push(body.state) },
+  }
+  await publishApprovalPhase({ ...options, phase: 'pending' })
+  await publishApprovalPhase({ ...options, phase: 'error' })
+  assert.deepEqual(states, ['pending', 'error'])
+  await assert.rejects(publishApprovalPhase({ ...options, phase: 'success' }), /invalid approval setup phase/u)
+})
+
+for (const [mergedCount, credit] of [[0, 0], [1, 0.004], [50, 0.2], [100, 0.4], [125, 0.5], [150, 0.6], [200, 0.6]]) {
+  test(`author with ${mergedCount} merged PRs contributes ${credit} points but cannot approve alone`, async () => {
+    const result = await evaluateApproval({
+      event: pullRequestEvent(), policySource, getMergedCount: async () => mergedCount,
+      api: async path => path.includes('/reviews?') ? [review('author', 'APPROVED')] : { permission: 'write' },
+    })
+    assert.equal(result.points, credit)
+    assert.equal(result.authorCredit.points, credit)
+    assert.equal(result.state, 'pending')
+    assert.deepEqual(result.approvals, [])
+  })
+}
+
+test('combines author credit and reviewer ownership at the passing threshold', async () => {
+  for (let mergedCount = 0; mergedCount <= 150; mergedCount++) {
+    const result = await evaluateApproval({
+      event: pullRequestEvent(), policySource, getMergedCount: async () => mergedCount,
+      getOwnership: async () => ({ totalLines: 1000, reviewerLines: { writer: 250 - mergedCount } }),
+      api: async path => path.includes('/reviews?') ? [review('writer', 'APPROVED')] : { permission: 'write' },
+    })
+    assert.equal(result.state, 'success', `author merged ${mergedCount}`)
+  }
+})
+
+test('blockers skip history and ignore non-write reviewers', async () => {
+  const result = await evaluateApproval({
+    event: pullRequestEvent(), policySource, getMergedCount: async () => { throw new Error('blockers must skip history') },
+    getOwnership: async () => { throw new Error('blockers must skip blame') },
+    api: async path => path.includes('/reviews?')
+      ? [review('writer', 'APPROVED'), review('blocker', 'CHANGES_REQUESTED'), review('reader', 'APPROVED')]
+      : { permission: path.includes('/reader/') ? 'read' : 'write' },
+  })
+  assert.equal(result.state, 'pending')
+  assert.equal(result.points, 1)
+  assert.equal(result.authorCredit, null)
+  assert.deepEqual(result.blockers, ['blocker'])
+  assert.deepEqual(result.ignoredReviewers, ['reader'])
+})
+
+test('drafts skip history and history failures revoke success with error', async () => {
+  await evaluateApproval({
+    event: pullRequestEvent({ draft: true }), policySource,
+    getMergedCount: async () => { throw new Error('draft must skip history') },
+  })
+  const states = []
+  await assert.rejects(runApprovalCheck({
+    event: pullRequestEvent(), policySource, runUrl: 'https://github.example/run/1',
+    getMergedCount: async () => { throw new Error('history unavailable') },
+    api: async (path, options) => {
+      if (path.includes('/reviews?')) return []
+      states.push(options.body.state)
+    },
+  }), /history unavailable/u)
+  assert.deepEqual(states, ['pending', 'error'])
+})
+
+
+test('a score just below the threshold remains pending even if its display rounds to two', async () => {
+  const result = await evaluateApproval({
+    event: pullRequestEvent(), policySource, getMergedCount: async () => 150,
+    getOwnership: async () => ({ totalLines: 1000000, reviewerLines: { writer: 99999 } }),
+    api: async path => path.includes('/reviews?') ? [review('writer', 'APPROVED')] : { permission: 'write' },
+  })
+  assert.equal(result.state, 'pending')
+  assert.ok(result.points < 2)
+})
+
+test('the publisher counts merged history through the production API path', async () => {
+  const event = pullRequestEvent()
+  const states = []
+  const output = []
+  const result = await runWithHistory({
+    event, policySource, runUrl: 'https://github.example/run/1', write: line => output.push(line),
+    getOwnership: async () => ({ totalLines: 8, reviewerLines: { writer: 1 } }),
+    api: async (path, options) => {
+      if (path === '/graphql') {
+        assert.equal(options.body.variables.owner, 'deepseek-harness')
+        return { data: { repository: { pullRequests: {
+          nodes: Array.from({ length: options.body.variables.after ? 25 : 100 }, (_, i) => ({
+            number: i + (options.body.variables.after ? 200 : 100), author: { id: event.pull_request.user.node_id },
+          })),
+          pageInfo: { hasNextPage: !options.body.variables.after, endCursor: 'next' },
+        } } } }
+      }
+      if (path.includes('/reviews?')) return [review('writer', 'APPROVED')]
+      if (path.includes('/permission')) return { permission: 'write' }
+      states.push(options.body.state)
+      return {}
+    },
+  })
+  assert.equal(result.points, 2)
+  assert.equal(result.authorCredit.points, 0.5)
+  assert.equal(result.approvals[0].points, 1.5)
+  assert.deepEqual(states, ['pending', 'success'])
+  assert.equal(output[0], 'Author credit: 0.5 (125 merged PRs).')
+})
+
+test('sufficient reviewer points and drafts publish without querying author history', async () => {
+  for (const draft of [false, true]) {
+    const output = []
+    const result = await runWithHistory({
+      event: pullRequestEvent({ draft }), policySource, runUrl: 'https://github.example/run/1',
+      write: line => output.push(line),
+      api: async path => {
+        assert.notEqual(path, '/graphql')
+        if (path.includes('/reviews?')) return [review('turtle2099', 'APPROVED')]
+        if (path.includes('/permission')) return { permission: 'write' }
+        return {}
+      },
+    })
+    assert.equal(result.state, draft ? 'pending' : 'success')
+    assert.equal(result.authorCredit, null)
+    assert.equal(output[0], `Author credit: not evaluated (${draft ? 'draft' : 'reviewer points suffice'}).`)
+  }
+})
+
+test('rejects missing author node IDs before calling APIs even for drafts', async () => {
+  for (const nodeId of [undefined, '', 123]) {
+    const event = pullRequestEvent({ draft: true })
+    event.pull_request.user.node_id = nodeId
+    await assert.rejects(evaluateWithHistory({
+      event, policySource, api: async () => assert.fail('invalid events must not call GitHub'),
+    }), /account ID/u)
+  }
+})
+
+test('bot authors receive the same history credit', async () => {
+  const event = pullRequestEvent({ author: 'dependabot[bot]' })
+  event.pull_request.user.type = 'Bot'
+  const result = await evaluateApproval({
+    event, policySource, getMergedCount: async () => 150,
+    getOwnership: async () => ({ totalLines: 10, reviewerLines: { writer: 1 } }),
+    api: async path => path.includes('/reviews?') ? [review('writer', 'APPROVED')] : { permission: 'write' },
+  })
+  assert.equal(result.authorCredit.points, 0.6)
+  assert.equal(result.state, 'success')
 })

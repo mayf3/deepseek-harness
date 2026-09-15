@@ -1,5 +1,5 @@
 ---
-description: "Scope-grouped read-only plugin inventory tab in Web Plugins settings for the dsh web client: agent-preset compositions first, the global plane behind a disclosure, search across both."
+description: "Scope-grouped plugin inventory and current-profile management tab in Web Plugins settings for the dsh web client: agent-preset compositions first, the global plane behind a disclosure, search across both."
 kind: "package-reference"
 ---
 
@@ -39,6 +39,8 @@ The switcher is the same selector-pill-plus-menu control the General settings ro
 
 A failed read renders a generic failure state inside the tab; retrying re-runs the lazy `list()` call without exposing transport details.
 
+The Plugin list also shows synchronization failures on the current page. Its retry reapplies the latest client graph without changing Host enablement or refreshing the page.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -47,13 +49,15 @@ A failed read renders a generic failure state inside the tab; retrying re-runs t
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The tab is a read-only projection of a Host-owned snapshot; it performs no Remote read during plugin activation and takes the snapshot on first selection.
+The tab reads the Host inventory on first selection, without Remote calls during plugin activation. Hosts exposing [Plugin Manager](../../boot/plugin-manager/README.md) also provide bundle installation, removal and switches for uniquely addressable global entries. Operations refresh observed state and show failures, overrides and pending restarts; a successful inventory refresh preserves the last operation error; preset compositions remain read-only.
 
 ### Registration
 
 The browser plugin registers one localized `settings.plugins.tab` contribution with id `all`; the Plugins section owns the navigation entry and tab chrome. Registration uses `ctx.slots.inject()`, so it follows late tab declaration, redeclaration, locale changes, and teardown without importing the section owner.
 
 ### Rendering
+
+Management error and read-only codes use the current locale dictionary. The page displays raw package and Loader diagnostics, cleanup results and leftover dependencies alongside localized status text. Invalid profile dependencies remain removable with their switches disabled.
 
 Row keys are scope-qualified (`global:`, `preset:<id>:<index>`), so one module appearing in both scopes keeps distinct disclosure state; a declared entry id appears in expanded details and supplies the collapsed subtitle after removal of a leading composition `include:` marker, while a row without one stays unlabeled. The preset-provided marking is derived client-side: a global entry carries it when it is disabled there while at least one preset row for the same module specifier is actually enabled, so a module every preset gates off (or declares only conditionally) stays plainly disabled rather than over-claiming provision.
 
@@ -89,8 +93,8 @@ None; this package neither assembles nor sends a provider request.
 
 These limits define the freshness and reach of the inventory view; they are current package constraints.
 
-- **One snapshot per Settings mount or retry** — the tab does not subscribe to Loader changes or automatically refetch after reconnect; switching tabs preserves the current snapshot, while reopening Settings obtains a new one.
-- **Read-only in both planes** — the tab shows global and preset enablement but mutates neither; enable/disable controls that write a custom preset's own composition file are deliberate follow-up work.
+- **Inventory refresh** — the tab does not subscribe to Loader changes or automatically refetch after reconnect; switching tabs preserves the current snapshot, while reopening Settings or completing a management operation obtains a new one.
+- **Preset compositions remain read-only**: global controls require the current-profile manager; Desktop retains its shell-owned package controls.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -102,4 +106,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This package owns a read-only Settings contribution.
+**Runtime invariant:** No companion is published. This package renders Host-owned state and forwards mutations to Plugin Manager.

@@ -7,10 +7,10 @@
  * here is the submit plane (phase, claim, attempt) alone.
  */
 import type { Context } from '@deepseek-ai/cordis'
+import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ArbitrateKey, ArbitrateOutcome, Occurrence, ReferenceInsert, TokenSpan } from './draft-editor.ts'
-import type { QueueRow } from './queue.ts'
 import type { InputSubmitMode } from './composer-submission.ts'
 
 /** Attachment payload passed to a claimed command submission. */
@@ -239,9 +239,6 @@ export interface InputNotice {
   readonly seq: number
 }
 
-/** One independently addressable row projected from the transient queue snapshot. */
-export type QueuedMessage = QueueRow
-
 /** Guard union of the scoped consume-token event, checked by the shell. */
 export type ConsumeTokenGuard = ConsumeTokenRequest['guard']
 
@@ -258,8 +255,8 @@ export interface InputState {
   readonly claim?: { readonly name: string; readonly token: string; readonly hint?: string; readonly attachments?: boolean }
   /** Reference occurrence view of the editor's chips, sorted by offset. */
   readonly occurrences: readonly Occurrence[]
-  /** Read-only transient inbox projection from Session control, including pending steering. */
-  readonly queue: readonly QueuedMessage[]
+  /** Messages still waiting for their own turn. */
+  readonly queue: InboxState['next-turn']
 }
 
 /**

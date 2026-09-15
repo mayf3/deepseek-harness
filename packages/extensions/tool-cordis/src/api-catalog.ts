@@ -1089,6 +1089,42 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'hmr',
+    summary: 'Hot reload service with Cordis-compatible module configuration and events.',
+    description: 'Hot reload service with Cordis-compatible module configuration and events.',
+    methods: [
+      {
+        signature: 'public baseDir: string',
+        description: 'Absolute base directory used to resolve module watch roots.',
+        parameters: [],
+      },
+      {
+        signature: 'runExclusive<T>(operation: () => Promise<T>): Promise<T>',
+        description: 'Serialize a caller-owned mutation with all automatic reload paths.',
+        parameters: [{ name: 'operation', description: 'Work that must not overlap module or configuration replacement.' }],
+        returns: 'The operation result after its asynchronous work completes.',
+      },
+      {
+        signature: 'async watchConfig(filename: string, refresh: () => Promise<void>): Promise<() => Promise<void>>',
+        description: 'Watch a configuration path through the same queue as module replacement.',
+        parameters: [{ name: 'filename', description: 'Absolute path, which may not exist yet.' }, { name: 'refresh', description: 'Rebuilds configuration from its current files and awaits Loader completion.' }],
+        returns: 'Disposer closing this registration and waiting for its pending refresh.',
+      },
+      {
+        signature: 'getOuterStack: () => string[] = () => []',
+        description: 'Omit internal HMR frames from module import diagnostics.',
+        parameters: [],
+        returns: 'The preserved outer stack frames.',
+      },
+      {
+        signature: 'async getLinked(url: string): Promise<string[]>',
+        description: 'Read direct module dependency URLs from the active Node loader.',
+        parameters: [{ name: 'url', description: 'Module URL.' }],
+        returns: 'Linked module URLs, or an empty list for an uncached module.',
+      },
+    ],
+  },
+  {
     key: 'inspector',
     summary: 'Shared Host/Client service façade over the realm\'s source publisher.',
     description: 'Shared Host/Client service façade over the realm\'s source publisher.',
@@ -1398,6 +1434,71 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'pluginManager',
+    summary: 'Manage profile files and apply their declared reload lifecycle.',
+    description: 'Manage profile files and apply their declared reload lifecycle.',
+    methods: [
+      {
+        signature: '@Remote async listPlugins(): Promise<PluginInfo[]>',
+        description: 'Read current plugins, including why a row cannot be changed through the profile patch.',
+        parameters: [],
+        returns: 'Current runtime entries with persistent patch targets.',
+      },
+      {
+        signature: '@Remote listBundles(): Promise<BundleInfo[]>',
+        description: 'Read installed bundles and bundles supplied by this dsh installation.',
+        parameters: [],
+        returns: 'Package versions, activation selections and removal availability.',
+      },
+      {
+        signature: '@Remote setPluginEnabled(id: PluginEntryId, enabled: boolean): Promise<ChangeResult>',
+        description: 'Persist a plugin entry\'s desired enablement and apply it on live profiles.',
+        parameters: [{ name: 'id', description: 'Loader entry identity returned by listPlugins.' }, { name: 'enabled', description: 'Whether the plugin should run.' }],
+        returns: 'Saved and runtime outcomes, including higher-priority overrides.',
+      },
+      {
+        signature: '@Remote setBundleEnabled(name: string, enabled: boolean): Promise<ChangeResult>',
+        description: 'Select or remove a bundle layer while retaining installed dependencies.',
+        parameters: [{ name: 'name', description: 'Bundle package name.' }, { name: 'enabled', description: 'Whether the bundle contributes its patch layer.' }],
+        returns: 'Persisted and runtime outcomes.',
+      },
+      {
+        signature: '@Remote installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>',
+        description: 'Install a package using the same pnpm implementation as dsh plugin.',
+        parameters: [{ name: 'spec', description: 'One package spec, including local paths relative to the invocation directory.' }, { name: 'options', description: 'Whether to activate the installed bundle; defaults to true.' }],
+        returns: 'Package-manager diagnostics and observed activation outcome.',
+      },
+      {
+        signature: '@Remote removeBundle(name: string): Promise<ChangeResult>',
+        description: 'Unload and remove a profile-owned bundle dependency through dsh plugin\'s pnpm path.',
+        parameters: [{ name: 'name', description: 'Installed dependency name.' }],
+        returns: 'Removal diagnostics and the remaining profile state.',
+      },
+    ],
+  },
+  {
+    key: 'profileContext',
+    summary: 'Current profile facts; scheduling and mutation belong to their callers.',
+    description: 'Current profile facts; scheduling and mutation belong to their callers.',
+    methods: [
+      {
+        signature: 'readonly startedBundles: readonly string[]',
+        description: 'Bundle packages used to start this process, before any persisted edits.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly overlays: readonly PatchOptions[]',
+        description: 'Parsed command-line overlays, applied above profile and home patches.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly telemetryDisabledEnv: string | undefined',
+        description: 'Launch-time DSH_TELEMETRY_DISABLED value; any non-empty value opts out.',
+        parameters: [],
+      },
+    ],
+  },
+  {
     key: 'ptcRuntime',
     summary: 'Registers one `ctx.ptcRuntime` implementation.',
     description: 'Registers one `ctx.ptcRuntime` implementation. Program, budget, abort, and substrate failures resolve in PtcRunResult; only Service Definition contract misuse rejects. Implementations bridge structured-cloneable bindings, materialize each declared namespace rejection class, treat programs as hostile peers, isolate runs from one another, and terminate and await in-flight runs during disposal.',
@@ -1560,8 +1661,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the durable attachment reference and base64-encoded bytes.',
       },
       {
-        signature: '@Remote(\'updateQueue\') updateQueue(request: SessionUpdateQueueRequest): SessionUpdateQueueValue',
-        description: 'Mutate one still-pending queue occurrence on a live Agent.',
+        signature: '@Remote(\'updateQueue\') updateQueue(request: SessionUpdateQueueRequest): Promise<SessionUpdateQueueValue>',
+        description: 'Mutate one still-pending queue occurrence, resuming a cold Agent first.',
         parameters: [{ name: 'request', description: 'Session, queue item, and requested mutation.' }],
         returns: 'acknowledgement that the queue mutation was applied.',
       },
@@ -2559,6 +2660,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the existing or newly committed terminal.',
       },
       {
+        signature: '@Remote({ mode: \'stream\' }) retain(sessionId: SessionId, id: WebTerminalId, signal: AbortSignal): AsyncIterable<TerminalRetentionFrame>',
+        description: 'Retain an existing terminal for a window without activating its Agent or taking input control.',
+        parameters: [{ name: 'sessionId', description: 'owning Session identity, including an inactive saved layout.' }, { name: 'id', description: 'retained Host terminal identity.' }, { name: 'signal', description: 'physical Remote stream cancellation.' }],
+        returns: 'a hold acknowledgement followed by an open lifetime stream.',
+      },
+      {
         signature: '@Remote({ mode: \'stream\' }) follow(agent: Agent, id: WebTerminalId, attachmentId: TerminalAttachmentId, signal: AbortSignal): AsyncIterable<TerminalFrame>',
         description: 'Attach to a terminal without binding its process lifetime to the transport.',
         parameters: [{ name: 'agent', description: 'Session owner supplied by the Gateway.' }, { name: 'id', description: 'terminal identity.' }, { name: 'attachmentId', description: 'new exclusive input attachment.' }, { name: 'signal', description: 'physical stream cancellation.' }],
@@ -3467,6 +3574,22 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'payload', description: '.change - fresh current projection or clear tombstone.' }],
   },
   {
+    name: 'hmr/change',
+    mode: 'emit',
+    signature: '\'hmr/change\'(url: string): void',
+    summary: 'A watched file has no module or configuration handler.',
+    description: 'A watched file has no module or configuration handler.',
+    parameters: [{ name: 'url', description: 'Canonical file URL.' }],
+  },
+  {
+    name: 'hmr/reload',
+    mode: 'emit',
+    signature: '\'hmr/reload\'(reloads: Map<Plugin, Reload>): void',
+    summary: 'Module replacements have finished loading.',
+    description: 'Module replacements have finished loading.',
+    parameters: [{ name: 'reloads', description: 'Replaced plugins and their module locations.' }],
+  },
+  {
     name: 'llm/adapters-updated',
     mode: 'emit',
     signature: '\'llm/adapters-updated\'(): void',
@@ -3965,6 +4088,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BrowserUseProviderName',
     declaration: 'export type BrowserUseProviderName = Branded<\'BrowserUseProviderName\'>;',
+  },
+  {
+    name: 'BundleInfo',
+    declaration: 'export interface BundleInfo {\n    name: string;\n    version?: string;\n    enabled: boolean;\n    removable: boolean;\n    readOnlyReason?: ReadOnlyReason;\n    error?: ManagementError;\n}',
+  },
+  {
+    name: 'ChangeResult',
+    declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\';\n    stage: \'install\' | \'enable\' | \'remove\';\n    target: string;\n    enabled?: boolean;\n    error?: ManagementError;\n    warnings?: string[];\n    remainingDependencies?: string[];\n    cleanup?: {\n        name: string;\n        packageResult?: PackageResult;\n        error?: ManagementError;\n    };\n    packageResult?: PackageResult;\n}',
   },
   {
     name: 'ClientArtifactBaseline',
@@ -4527,6 +4658,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type InspectorJsonValue = InspectorJsonPrimitive | readonly InspectorJsonValue[] | InspectorJsonObject;',
   },
   {
+    name: 'InstallBundleOptions',
+    declaration: 'export interface InstallBundleOptions {\n    enabled?: boolean;\n}',
+  },
+  {
     name: 'InvariantFailure',
     declaration: 'export type InvariantFailure = (message: string) => never;',
   },
@@ -4735,6 +4870,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface LspRange {\n    readonly start: LspPosition;\n    readonly end: LspPosition;\n}',
   },
   {
+    name: 'ManagementError',
+    declaration: 'export interface ManagementError {\n    code: ReadOnlyReason | \'unknown-plugin\' | \'invalid-spec\' | \'ambiguous-install\' | \'not-bundle\' | \'not-removable\' | \'stop-profile\' | \'bundle-in-use\' | \'operation-error\';\n    diagnostic?: string;\n}',
+  },
+  {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
   },
@@ -4887,8 +5026,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type OptionalSessionSeq = SessionSeq | null;',
   },
   {
+    name: 'PackageResult',
+    declaration: 'export interface PackageResult {\n    exitCode: number;\n    output: string;\n    truncated: boolean;\n    logPath: string;\n}',
+  },
+  {
     name: 'PermissionCatalog',
     declaration: 'export interface PermissionCatalog {\n    options: PresetOption[];\n}',
+  },
+  {
+    name: 'PluginEntryId',
+    declaration: 'export type PluginEntryId = Branded<\'PluginEntryId\'>;',
+  },
+  {
+    name: 'PluginFiberPhase',
+    declaration: 'export type PluginFiberPhase = \'pending\' | \'loading\' | \'active\' | \'failed\' | \'unloading\' | null;',
+  },
+  {
+    name: 'PluginInfo',
+    declaration: 'export type PluginInfo = PluginInventoryEntry & ({\n    patchId: string;\n    readOnlyReason?: never;\n} | {\n    patchId?: never;\n    readOnlyReason: ReadOnlyReason;\n});',
+  },
+  {
+    name: 'PluginInventoryEntry',
+    declaration: 'export interface PluginInventoryEntry {\n    readonly entryId: PluginEntryId;\n    readonly moduleName: string;\n    readonly enabled: boolean;\n    readonly fiberPhase: PluginFiberPhase;\n}',
   },
   {
     name: 'PostToolDecision',
@@ -5035,8 +5194,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PtcRunSpec extends PtcRunRequest {\n    cwd: string;\n    timeoutMs: number | null;\n}',
   },
   {
+    name: 'QueueAction',
+    declaration: 'export type QueueAction = {\n    readonly kind: \'edit\';\n    readonly content: readonly ContentBlock[];\n} | {\n    readonly kind: \'remove\';\n} | {\n    readonly kind: \'steer\';\n};',
+  },
+  {
     name: 'ReadFileLine',
     declaration: 'export interface ReadFileLine {\n    number: number;\n    text: string;\n}',
+  },
+  {
+    name: 'ReadOnlyReason',
+    declaration: 'export type ReadOnlyReason = \'management-required\' | \'unaddressable\';',
   },
   {
     name: 'ReadResultView',
@@ -5053,6 +5220,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
+  },
+  {
+    name: 'Reload',
+    declaration: 'export interface Reload {\n    filename: string;\n    runtime?: Plugin.Runtime | undefined;\n}',
   },
   {
     name: 'RemoteError',
@@ -5256,11 +5427,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionControlBaseline',
-    declaration: 'export interface SessionControlBaseline {\n    readonly queues: Readonly<Record<SessionId, readonly SessionQueuedItem[]>>;\n    readonly jobs: Readonly<Record<SessionId, readonly SessionJob[]>>;\n    readonly projections: Readonly<Record<SessionId, SessionProjectionBaseline>>;\n}',
+    declaration: 'export interface SessionControlBaseline {\n    readonly jobs: Readonly<Record<SessionId, readonly SessionJob[]>>;\n    readonly projections: Readonly<Record<SessionId, SessionProjectionBaseline>>;\n}',
   },
   {
     name: 'SessionControlFrame',
-    declaration: 'export type SessionControlFrame = {\n    readonly type: \'baseline\';\n    readonly value: SessionControlBaseline;\n} | {\n    readonly type: \'queue\';\n    readonly sessionId: SessionId;\n    readonly items: readonly SessionQueuedItem[];\n} | {\n    readonly type: \'jobs\';\n    readonly sessionId: SessionId;\n    readonly jobs: readonly SessionJob[];\n} | ({\n    readonly type: \'projection\';\n} & SessionProjectionUpdate);',
+    declaration: 'export type SessionControlFrame = {\n    readonly type: \'baseline\';\n    readonly value: SessionControlBaseline;\n} | {\n    readonly type: \'jobs\';\n    readonly sessionId: SessionId;\n    readonly jobs: readonly SessionJob[];\n} | ({\n    readonly type: \'projection\';\n} & SessionProjectionUpdate);',
   },
   {
     name: 'SessionCreateRequest',
@@ -5529,10 +5700,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionPromptValue',
     declaration: 'export interface SessionPromptValue {\n    readonly accepted: true;\n}',
-  },
-  {
-    name: 'SessionQueuedItem',
-    declaration: 'export interface SessionQueuedItem {\n    readonly id: MessageId;\n    readonly placement: \'queued\' | \'steering\' | \'context\';\n    readonly rpcId?: SessionRequestId;\n    readonly message: {\n        readonly id: MessageId;\n        readonly content: readonly JsonValue[];\n    };\n}',
   },
   {
     name: 'SessionRecord',
@@ -6019,6 +6186,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SubprocessStdio {\n    stdin: SubprocessStdinMode;\n    stdout: SubprocessOutputMode;\n    stderr: SubprocessOutputMode;\n    control?: \'pipe\';\n}',
   },
   {
+    name: 'SubprocessTerminalActivity',
+    declaration: 'export interface SubprocessTerminalActivity {\n    state: \'idle\' | \'busy\' | \'unknown\';\n    revision: number;\n}',
+  },
+  {
     name: 'SubprocessTerminalEnvironment',
     declaration: 'export interface SubprocessTerminalEnvironment {\n    platform: \'posix\' | \'windows\';\n    defaultShell?: string;\n}',
   },
@@ -6028,7 +6199,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessTerminalHandle',
-    declaration: 'export interface SubprocessTerminalHandle {\n    readonly pid: number;\n    readonly output: Readable;\n    readonly done: Promise<SubprocessOutcome>;\n    write(data: string): Promise<void>;\n    resize(cols: number, rows: number): Promise<void>;\n    inspectForeground(): Promise<SubprocessTerminalForeground | undefined>;\n    signalForeground(signal: SubprocessTerminalSignal): Promise<number>;\n    terminate(): Promise<void>;\n}',
+    declaration: 'export interface SubprocessTerminalHandle {\n    readonly pid: number;\n    readonly output: Readable;\n    readonly done: Promise<SubprocessOutcome>;\n    write(data: string): Promise<void>;\n    resize(cols: number, rows: number): Promise<void>;\n    inspectForeground(): Promise<SubprocessTerminalForeground | undefined>;\n    inspectActivity(): Promise<SubprocessTerminalActivity>;\n    signalForeground(signal: SubprocessTerminalSignal): Promise<number>;\n    terminate(): Promise<void>;\n}',
   },
   {
     name: 'SubprocessTerminalSignal',
@@ -6036,7 +6207,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessTerminalSpawnSpec',
-    declaration: 'export interface SubprocessTerminalSpawnSpec {\n    argv: readonly string[];\n    cwd: string;\n    env?: Record<string, string> | undefined;\n    rows: number;\n    cols: number;\n    terminalType: string;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n}',
+    declaration: 'export interface SubprocessTerminalSpawnSpec {\n    argv: readonly string[];\n    cwd: string;\n    env?: Record<string, string> | undefined;\n    rows: number;\n    cols: number;\n    terminalType: string;\n    shellActivity?: boolean | undefined;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n}',
   },
   {
     name: 'SurfaceEvent',
@@ -6161,6 +6332,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TerminalResultView',
     declaration: 'export interface TerminalResultView {\n    card: \'terminal\';\n    title?: string;\n    output?: string;\n    exitCode?: number;\n    signal?: string;\n}',
+  },
+  {
+    name: 'TerminalRetentionFrame',
+    declaration: 'export interface TerminalRetentionFrame {\n    readonly type: \'retained\';\n}',
   },
   {
     name: 'TerminalSendOperation',
@@ -6755,7 +6930,6 @@ export const INHERITED_CTX_API: readonly InheritedApiEntry[] = [
   { name: 'ctx.root / ctx.fiber / ctx.registry / ctx.reflect / ctx.events / ctx.logger', summary: 'Ambient handles onto the running context graph.' },
   { name: 'ctx.timer (+ interval / timeout / throttle / debounce)', summary: 'Disposable timer helpers. The `timer` key is provided at runtime; the four supported helpers are mixed onto ctx directly (declared via Pick).' },
   { name: 'ctx.loader', summary: 'The config Loader that booted the app (present under the loader).' },
-  { name: 'ctx.hmr', summary: 'The hot-module-reload watcher (present under the hmr plugin).' },
 ]
 
 function referencedTypeClosure(seeds: readonly string[]): TypeApiEntry[] {
