@@ -16,13 +16,13 @@ const harness = await vi.hoisted(async () => {
   const windows: FakeWindow[] = []
   let windowFailure: Error | undefined
   const hosts: FakeHost[] = []
-  const handlers = new Map<string, (event: { senderFrame: { url: string } }) => unknown>()
+  const handlers = new Map<string, (event: { senderFrame: { url: string } }, ...args: unknown[]) => unknown>()
   let pluginsEnabled = false
   let preparing = deferred()
   let prepared = deferred()
   let hostStarted = deferred()
   let navigated = deferred()
-  let errorPublished = deferred()
+  let dialogShown = deferred()
   let quitCompleted = deferred()
   class FakeWindow extends EventEmitter {
     destroyed = false
@@ -32,9 +32,7 @@ const harness = await vi.hoisted(async () => {
       setWindowOpenHandler: vi.fn(),
       openDevTools: vi.fn(),
       getURL: () => this.urls.at(-1) ?? '',
-      send: vi.fn((channel: string, state: { phase?: string }) => {
-        if (channel === 'dsh-desktop:backend-state' && state.phase === 'error') errorPublished.resolve()
-      }),
+      send: vi.fn(),
     })
     readonly show = vi.fn()
     readonly focus = vi.fn()
@@ -96,7 +94,7 @@ const harness = await vi.hoisted(async () => {
     disableAllPlugins: vi.fn(async () => { pluginsEnabled = false }),
     get preparing() { return preparing }, get prepared() { return prepared },
     get hostStarted() { return hostStarted }, get navigated() { return navigated },
-    get errorPublished() { return errorPublished }, get quitCompleted() { return quitCompleted },
+    get dialogShown() { return dialogShown }, get quitCompleted() { return quitCompleted },
     nextNavigation() { navigated = deferred(); return navigated.promise },
     nextHostStart() { hostStarted = deferred(); return hostStarted.promise },
     get pluginsEnabled() { return pluginsEnabled },
@@ -107,7 +105,7 @@ const harness = await vi.hoisted(async () => {
       windowFailure = undefined
       pluginsEnabled = false
       preparing = deferred(); prepared = deferred(); hostStarted = deferred()
-      navigated = deferred(); errorPublished = deferred(); quitCompleted = deferred()
+      navigated = deferred(); dialogShown = deferred(); quitCompleted = deferred()
     },
   }
 })
@@ -150,10 +148,10 @@ vi.mock('../src/project-manager.ts', () => ({
 vi.mock('../src/host-process.ts', () => ({ DesktopHostProcess: harness.FakeHost }))
 vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: vi.fn() }))
 
-function invoke(channel: string): unknown {
+function invoke(channel: string, ...args: unknown[]): unknown {
   const handler = harness.handlers.get(channel)
   if (handler === undefined) throw new Error(`missing handler ${channel}`)
-  return handler({ senderFrame: { url: channel === DESKTOP_IPC.boot ? 'dsh-app://app/' : 'dsh-app://shell/plugin-manager.html' } })
+  return handler({ senderFrame: { url: channel === DESKTOP_IPC.boot ? 'dsh-app://app/' : 'dsh-app://shell/plugin-manager.html' } }, ...args)
 }
 
 beforeEach(() => {
@@ -161,7 +159,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.useFakeTimers()
   harness.reset()
-  harness.dialog.showMessageBox.mockImplementation(() => new Promise(() => {}))
+  harness.dialog.showMessageBox.mockImplementation(() => { harness.dialogShown.resolve(); return new Promise(() => {}) })
   vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.stubEnv('DSH_DESKTOP_PNPM_ENTRY', 'test-pnpm')
   vi.stubEnv('DSH_DESKTOP_DSH_DIR', 'test-runtime')
@@ -339,11 +337,10 @@ describe('desktop main startup', () => {
     harness.mutateFailure.mockImplementationOnce(() => { throw new Error('package write failed') })
     host.exited.resolve()
     const nextStarted = harness.nextHostStart()
-    const failure = expect(invoke(DESKTOP_IPC.pluginsDisableAll)).rejects.toThrow('package write failed')
+    const failure = expect(invoke(DESKTOP_IPC.pluginsAdd, 'example-plugin')).rejects.toThrow('package write failed')
     await nextStarted
     harness.hosts[1]!.ready.resolve()
     await failure
-    expect(invoke(DESKTOP_IPC.backendStatus)).toEqual({ phase: 'ready' })
     expect(harness.dialog.showMessageBox).not.toHaveBeenCalled()
     expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/', 'dsh-app://app/'])
   })
@@ -358,7 +355,7 @@ describe('desktop main startup', () => {
     await Promise.resolve(invoke(DESKTOP_IPC.boot))
     host.exited.resolve()
     const nextStarted = harness.nextHostStart()
-    const failure = expect(invoke(DESKTOP_IPC.pluginsDisableAll)).rejects.toThrow('new Host failed')
+    const failure = expect(invoke(DESKTOP_IPC.pluginsAdd, 'example-plugin')).rejects.toThrow('new Host failed')
     await nextStarted
     const replacement = harness.hosts[1]!
     replacement.exited.resolve()
@@ -373,7 +370,7 @@ describe('desktop main startup', () => {
     await import('../src/main.ts')
     await harness.preparing.promise
     harness.prepared.reject(new Error('runtime resources missing'))
-    await harness.errorPublished.promise
+    await harness.dialogShown.promise
     expect(harness.dialog.showMessageBox.mock.calls[0]![0].detail).toContain('runtime resources missing')
     expect(harness.dialog.showMessageBox.mock.calls[0]![0].buttons).toEqual(['Exit', 'Restart', 'Disable all third-party plugins and restart'])
     expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
@@ -387,7 +384,7 @@ describe('desktop main startup', () => {
     else window.webContents.emit('render-process-gone', {}, { reason: 'crashed' })
     window.webContents.emit('preload-error', {}, 'preload-app.cjs', new Error('secondary failure'))
     harness.prepared.reject(new Error('backend also failed'))
-    await harness.errorPublished.promise
+    await harness.dialogShown.promise
     expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
     expect(harness.dialog.showMessageBox.mock.calls[0]![0].detail).not.toContain('secondary failure')
     expect(window.urls).toEqual(['dsh-app://app/'])
@@ -462,7 +459,6 @@ describe('desktop main startup', () => {
     expect(harness.hosts[0]!.start).toHaveBeenCalledTimes(1)
     expect(harness.windows).toHaveLength(1)
     expect(window.urls).toEqual(['dsh-app://app/'])
-    expect(invoke(DESKTOP_IPC.backendStatus)).toEqual({ phase: 'ready' })
   })
 
   it('prepares an independent plugin profile for the unpackaged Host', async () => {
@@ -488,11 +484,11 @@ describe('desktop main startup', () => {
     const first = harness.hosts[0]!
     first.exited.resolve()
     first.ready.reject(new Error('plugin composition failed'))
-    await harness.errorPublished.promise
+    await harness.dialogShown.promise
     expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
     expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
     expect(harness.handlers.has('dsh-desktop:backend-retry')).toBe(false)
-    await expect(invoke(DESKTOP_IPC.pluginsDisableAll)).rejects.toThrow('The application could not start or stopped unexpectedly.')
+    await expect(invoke(DESKTOP_IPC.pluginsAdd, 'example-plugin')).rejects.toThrow('The application could not start or stopped unexpectedly.')
     expect(harness.hosts).toHaveLength(1)
   })
 

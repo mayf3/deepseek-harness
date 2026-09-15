@@ -62,7 +62,7 @@ Fatal main-window creation, main-document loading, preload, renderer, Web initia
 
 Native dialog details include at most 1,200 UTF-16 code units and eight diagnostic lines; the complete reported error is written to the Electron console. Host error diagnostics retain only the last 64 Ki characters written to stderr. Earlier output is discarded so a long-running Host does not grow the shell’s diagnostic buffer indefinitely.
 
-Recovery waits for Host shutdown before changing plugin activation. Disabling third-party bundles writes the profile under its transaction lock without loading runtime metadata or deleting files. Invalid profile data or write failures are reported as recovery-operation errors; Desktop does not restart as though disabling succeeded. Desktop has no profile-reset action or emergency HTML document.
+Recovery waits for Host shutdown before changing plugin activation. The native recovery action disables third-party bundles by writing the profile under its transaction lock without loading runtime metadata or deleting files. Invalid profile data or write failures are reported as recovery-operation errors; Desktop does not restart as though disabling succeeded. Desktop has no profile-reset action or emergency HTML document.
 
 Package transactions hold `$DSH_HOME/profiles/desktop/lock` exclusively through pnpm process exit. Before pnpm runs, the shared module-fallback helper removes only its owned links and preserves pnpm-managed directories; development Host startup restores needed links. Link cleanup preserves target directories. Native builds follow pnpm’s configured build policy; release preparation owns its separate build-time allowlist.
 

@@ -20,7 +20,7 @@ import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
 import { desktopNodeEnvironment } from './node-environment.ts'
-import { DesktopBackendController, type DesktopBackendState } from './backend-controller.ts'
+import { DesktopBackendController } from './backend-controller.ts'
 import { DESKTOP_IPC, type DesktopUpdateState } from './ipc.ts'
 import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
@@ -223,11 +223,6 @@ async function main(): Promise<void> {
     navigation = next
     return next.promise
   }
-  const publishBackend = (state: DesktopBackendState): void => {
-    for (const window of BrowserWindow.getAllWindows()) {
-      window.webContents.send(DESKTOP_IPC.backendState, state)
-    }
-  }
   const backend = new DesktopBackendController((onFailure) => {
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
@@ -247,7 +242,6 @@ async function main(): Promise<void> {
     }
   }, (state) => {
     if (state.phase === 'error') reportFatal(new Error(state.message))
-    publishBackend(state)
   })
 
   const publishUpdate = (state: DesktopUpdateState): DesktopUpdateState => {
@@ -376,11 +370,6 @@ async function main(): Promise<void> {
   ipcMain.handle(DESKTOP_IPC.pluginsToggle, (event, name: unknown, enabled: unknown) => {
     if (typeof name !== 'string' || typeof enabled !== 'boolean') throw new Error('dsh desktop: invalid plugin activation request')
     return mutate(event, { type: 'plugin-toggle', name, enabled })
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginsDisableAll, event => mutate(event, { type: 'plugins-disable-all' }))
-  ipcMain.handle(DESKTOP_IPC.backendStatus, (event) => {
-    assertDesktopSender(event, ['shell'])
-    return backend.state
   })
   ipcMain.handle(DESKTOP_IPC.updatesCheck, async (event) => {
     assertDesktopSender(event, ['shell'])

@@ -31,7 +31,6 @@ it.each(['en', 'zh-CN'])('updates through the inline form, including the install
   const update = vi.fn(async () => {})
   Object.defineProperty(dom.window, 'dshDesktop', { value: {
     locale: async () => locale,
-    backend: { status: async () => ({ phase: 'ready' }) },
     plugins: { list: async () => [{ name: 'example-plugin', version: '1.0.0', enabled: true }], update },
   } })
   try {

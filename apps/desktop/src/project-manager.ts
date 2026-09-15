@@ -61,7 +61,6 @@ export type DesktopProjectMutation =
   | { readonly type: 'plugin-remove'; readonly name: string }
   | { readonly type: 'plugin-update'; readonly name: string; readonly version: string }
   | { readonly type: 'plugin-toggle'; readonly name: string; readonly enabled: boolean }
-  | { readonly type: 'plugins-disable-all' }
 
 const PROJECT_NAME = '@deepseek-ai/dsh-desktop-runtime'
 const DSH_PACKAGE = '@deepseek-ai/dsh'
@@ -173,11 +172,7 @@ export class DesktopProjectManager {
       if (!existsSync(this.paths.profile)) throw new Error('desktop project: active profile is not installed')
       await hooks.beforeChange()
       try {
-        if (mutation.type === 'plugins-disable-all') {
-          writeProfileBundles(this.paths.profile, readProfileManifest('dsh', this.paths.profile), WEB_PROFILE.bundles)
-        } else {
-          await this.applyMutation(this.paths.profile, mutation)
-        }
+        await this.applyMutation(this.paths.profile, mutation)
       } catch (error) {
         try { await hooks.afterChange() } catch (restartError) {
           throw new AggregateError([error, restartError], 'Desktop package operation and backend restart failed')
@@ -188,7 +183,7 @@ export class DesktopProjectManager {
     })
   }
 
-  private async applyMutation(projectDir: string, mutation: Exclude<DesktopProjectMutation, { type: 'plugins-disable-all' }>): Promise<void> {
+  private async applyMutation(projectDir: string, mutation: DesktopProjectMutation): Promise<void> {
     const location = this.pluginLocation(projectDir)
     const before = readProfilePlugins(location)
     const bundles = before.manifest.dsh?.profile?.bundles ?? []

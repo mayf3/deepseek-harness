@@ -108,7 +108,7 @@ it.each(['directory', 'file', 'tarball', 'plain'] as const)('installs a %s sourc
     await manager.mutate({ type: 'plugin-add', spec }, hooks)
     expect(manager.listPlugins()).toEqual([{ name: 'local-plugin', version: '1.0.0', enabled: source !== 'plain' }])
     expect(existsSync(join(manager.paths.profile, 'node_modules/local-plugin/missing.yml'))).toBe(false)
-    await manager.mutate({ type: 'plugins-disable-all' }, hooks)
+    await manager.disableAllPlugins()
     expect(manager.listPlugins()[0]?.enabled).toBe(false)
     await manager.mutate({ type: 'plugin-remove', name: 'local-plugin' }, hooks)
     expect(manager.listPlugins()).toEqual([])

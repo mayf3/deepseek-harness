@@ -89,7 +89,7 @@ describe('desktop external plugin profile', () => {
     const manifest = join(manager.paths.profile, 'node_modules/plugin/package.json')
     writeFileSync(manifest, '{broken')
     await expect(manager.applyRelease()).resolves.toBeUndefined()
-    await manager.mutate({ type: 'plugins-disable-all' }, hooks())
+    await manager.disableAllPlugins()
     await expect(manager.applyRelease()).resolves.toBeUndefined()
     expect(readFileSync(manifest, 'utf8')).toBe('{broken')
   })
@@ -100,11 +100,7 @@ describe('desktop external plugin profile', () => {
     await manager.mutate({ type: 'plugin-add', spec: 'plugin@1.0.0' }, hooks())
     const patch = join(manager.paths.profile, 'node_modules/plugin/bundle.yml')
     unlinkSync(patch)
-    await manager.mutate({ type: 'plugins-disable-all' }, hooks({ afterChange: async () => {
-      expect((JSON.parse(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8')) as {
-        dsh: { profile: { bundles: string[] } }
-      }).dsh.profile.bundles).not.toContain('plugin')
-    } }))
+    await manager.disableAllPlugins()
     expect((JSON.parse(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8')) as {
       dsh: { profile: { bundles: string[] } }
     }).dsh.profile.bundles).not.toContain('plugin')
@@ -291,7 +287,7 @@ describe('desktop external plugin profile', () => {
     const { root, manager } = setup()
     await manager.applyRelease()
     await manager.mutate({ type: 'plugin-add', spec: 'plugin@1.0.0' }, hooks())
-    await manager.mutate({ type: 'plugins-disable-all' }, hooks())
+    await manager.disableAllPlugins()
     expect(calls(root)).toHaveLength(1)
     expect(manager.listPlugins()).toEqual([{ name: 'plugin', version: '1.0.0', enabled: false }])
     await manager.mutate({ type: 'plugin-update', name: 'plugin', version: '1.1.0' }, hooks())
@@ -339,7 +335,7 @@ describe('desktop external plugin profile', () => {
     const next = new DesktopProjectManager(manager.paths, { ...manager.runtime, dsh })
     await expect(next.applyRelease()).resolves.toBeUndefined()
     expect(next.dshVersion()).toBe('2.0.0')
-    await next.mutate({ type: 'plugins-disable-all' }, hooks())
+    await next.disableAllPlugins()
     expect(next.dshVersion()).toBe('2.0.0')
     expect(next.listPlugins()).toEqual([{ name: 'plugin', version: '1.0.0', enabled: false }])
   })
@@ -375,7 +371,7 @@ describe('desktop external plugin profile', () => {
     expect(existsSync(manager.paths.lock)).toBe(false)
     writeFileSync(join(manager.paths.profile, 'desktop-packages-pending'), '')
     await manager.applyRelease()
-    await manager.mutate({ type: 'plugins-disable-all' }, hooks({ afterChange: async () => { starts++ } }))
+    await manager.mutate({ type: 'plugin-toggle', name: 'plugin', enabled: false }, hooks({ afterChange: async () => { starts++ } }))
     expect(starts).toBe(2)
     await manager.mutate({ type: 'plugin-remove', name: 'plugin' }, hooks())
     expect(manager.listPlugins()).toEqual([])
