@@ -372,7 +372,7 @@ export interface ClientModuleRecord {
 export interface ClientModuleLoader {
   /** Discriminant against Node's internal loader shapes ('v1'/'v2'). */
   version: 'client'
-  /** Parsed Host boot graph shared with the web entry after module-system creation. */
+  /** Latest parsed Host graph, updated by live entry reconciliation. */
   manifest: BootManifest
   /** Page-owned entry reconciliation, shared by boot, graph updates and HMR. */
   entries: ClientEntries
@@ -413,7 +413,7 @@ export interface ClientModuleLoader {
 
 /** Internal construction inputs assembled by the modules bundle's bootstrap export. */
 export interface ClientModuleSystemOptions {
-  /** Parsed boot graph owned by the resulting module system. */
+  /** Boot graph validated by {@link parseBootManifest}, owned by the resulting module system. */
   manifest: BootManifest
   /** Module-table seed: platform-singleton specifier → shell instance. */
   staticModules: Record<string, unknown>

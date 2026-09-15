@@ -132,6 +132,7 @@ export class ClientEntries {
       try {
         listener()
       } catch (error) {
+        // The page controller has no owning plugin Context for a scoped logger.
         console.error('client-modules: synchronization subscriber failed', error)
       }
     }

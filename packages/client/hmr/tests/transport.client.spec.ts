@@ -25,7 +25,7 @@ it('forwards full graphs and rebuilt frames, contains wire errors and closes its
     const graph = { rev: 'r', entries: [], batches: [] }
     receive({ data: JSON.stringify({ type: 'graph', graph }) })
     receive({ data: JSON.stringify({ type: 'rebuilt', id: 'a', rev: 'r1' }) })
-    await vi.waitFor(() =>{  expect(sync).toHaveBeenCalledWith(graph) })
+    await vi.waitFor(() => { expect(sync).toHaveBeenCalledWith(graph) })
     expect(reload).toHaveBeenCalledWith('a', 'r1')
     receive({ data: '{' })
     receive({ data: JSON.stringify({ type: 'graph', graph: null }) })
@@ -33,7 +33,7 @@ it('forwards full graphs and rebuilt frames, contains wire errors and closes its
     expect(warnings).toHaveBeenCalledTimes(2)
     sync.mockRejectedValueOnce(new Error('invalid graph'))
     receive({ data: JSON.stringify({ type: 'graph', graph: {} }) })
-    await vi.waitFor(() =>{  expect(errors).toHaveBeenCalledWith(expect.objectContaining({ message: 'invalid graph' })) })
+    await vi.waitFor(() => { expect(errors).toHaveBeenCalledWith(expect.objectContaining({ message: 'invalid graph' })) })
   } finally {
     await fiber.dispose()
     await ctx.fiber.dispose()

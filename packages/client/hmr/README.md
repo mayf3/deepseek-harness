@@ -33,7 +33,7 @@ Run `pnpm run dev:web` (or any tsdown watch process that writes the plugin's `li
 
 ### What a reload does
 
-Each reload re-executes the plugin bundle and remounts the plugin with fresh state. Plugins that depend on the reloaded one reload with it automatically. A reload that fails is reported visibly and retried from scratch on the next rebuild.
+Each successful reload re-executes the plugin bundle and remounts the plugin with fresh state. Plugins that depend on the reloaded one reload with it automatically. Failures appear in the plugin list, where they can be retried without waiting for another rebuild.
 
 ### Configuration
 
@@ -71,7 +71,7 @@ A fiber's activation epoch strings its service providers' uids, so replacing a p
 
 ### Failure policy
 
-No rollback: failed imports and activation remain visible as page-local synchronization errors. Settings → Plugins → Plugin list retries the latest graph, even when its revision is unchanged; successful unrelated plugins remain active.
+Download failures leave the running plugin active. After the old fiber is torn down, import or activation failure does not restore the previous bundle. Failures appear as page-local synchronization errors. Settings → Plugins → Plugin list retries the latest graph, even when its revision is unchanged; a later rebuild also retries the affected plugin. Successful unrelated plugins remain active.
 
 ### Source map
 
@@ -114,7 +114,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define what the reload driver does not preserve or restore. They are current package constraints, not a task backlog.
 
 - **Reload is coarse by design** — a fresh fiber and fresh components; React state inside the reloaded plugin is lost while the data layer (connection/runtime fibers, Session objects) is untouched. react-refresh-grade state preservation conflicts with re-executing the bundle and is deliberately out.
-- **No failure rollback** — a reload that fails leaves the entry FAILED and visible in the loader status projection; the previous bundle is not restored automatically.
+- **No failure rollback** — after the old fiber is torn down, a failed replacement does not restore the previous bundle.
 - **Web transport only** — Electron installation and backend restart handling do not use this SSE path. Entry reconciliation itself is transport-independent.
 
 <a id="dev-note"></a>
