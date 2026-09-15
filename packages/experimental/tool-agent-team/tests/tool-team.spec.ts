@@ -128,7 +128,7 @@ async function waitNoAgent(ctx: Context, id: SessionId): Promise<void> {
 }
 
 describe('dsh-tool-team', () => {
-  it.each(['running', 'idle', 'inactive', 'provisioning', 'failed'] as const)(
+  it.each(['running', 'inactive', 'provisioning', 'failed'] as const)(
     'projects %s members consistently in creation, listing, and schemas', async (status) => {
       const { ctx, lead } = await setup([])
       const member = {
@@ -138,7 +138,7 @@ describe('dsh-tool-team', () => {
       vi.spyOn(ctx.agentTeams, 'spawnTeammate').mockResolvedValue({ member })
       vi.spyOn(ctx.agentTeams, 'listMembers').mockReturnValue([member])
       const expected = {
-        target: 'reviewer', role: 'teammate', status: status === 'idle' ? 'inactive' : status,
+        target: 'reviewer', role: 'teammate', status,
         description: 'review changes', diagnostics: [],
       }
       const spawned = await execute(ctx, lead, 'spawn_teammate', {
@@ -162,11 +162,11 @@ describe('dsh-tool-team', () => {
     },
   )
 
-  it.each(['running', 'idle', 'inactive'] as const)('projects interrupted %s status', async (previousStatus) => {
+  it.each(['running', 'inactive'] as const)('returns interrupted %s status', async (previousStatus) => {
     const { ctx, lead } = await setup([])
     const interrupt = vi.spyOn(ctx.agentTeams, 'interrupt').mockReturnValue({ previousStatus })
     const result = await execute(ctx, lead, 'interrupt_agent', { target: 'reviewer' })
-    expect(JSON.parse(text(result))).toEqual({ previousStatus: previousStatus === 'running' ? 'running' : 'inactive' })
+    expect(JSON.parse(text(result))).toEqual({ previousStatus })
     expect(interrupt).toHaveBeenCalledWith(lead, 'reviewer')
   })
 
@@ -196,9 +196,11 @@ describe('dsh-tool-team', () => {
     const interrupted = await execute(ctx, lead, 'interrupt_agent', { target: listed[1]!.target })
     expect(interrupted.isError).toBe(false)
     await child.whenIdle()
+    expect(child.status).toBe('idle')
+    expect(ctx.agentTeams.interrupt(lead, member.target)).toEqual({ previousStatus: 'inactive' })
     const stored = await execute(ctx, lead, 'list_agents', {})
     expect(JSON.parse(text(stored))).toContainEqual(expect.objectContaining({ target: member.target, status: 'inactive' }))
-    expect(ctx.agentTeams.listMembers(lead)[1]).toMatchObject({ id: childId, name: member.target, status: 'idle' })
+    expect(ctx.agentTeams.listMembers(lead)[1]).toMatchObject({ id: childId, name: member.target, status: 'inactive' })
   })
 
   it('installs the complete scoped schema and shared-checkout policy for roots and teammates', async () => {

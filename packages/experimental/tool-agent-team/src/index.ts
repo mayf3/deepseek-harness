@@ -59,10 +59,10 @@ const MEMBER_VIEW_SCHEMA = {
   },
 } as const
 
-/** Project member identity and availability without changing the service or Web view. */
+/** Expose the member name as its model-facing target. */
 function modelMember(member: TeamMemberView): InferValue<typeof MEMBER_VIEW_SCHEMA> {
-  const { id: _id, name, status, ...details } = member
-  return { target: name, status: status === 'idle' ? 'inactive' : status, ...details }
+  const { id: _id, name, ...details } = member
+  return { target: name, ...details }
 }
 
 /** One shared task, matching the public `TeamTaskView`. */
@@ -274,11 +274,7 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
       },
       output: jsonOutput(INTERRUPT_VALUE_SCHEMA),
       execute(args, exec) {
-        const { previousStatus } = ctx.agentTeams.interrupt(
-          callingAgent(exec.agent, 'interrupt_agent'),
-          args.target,
-        )
-        return Promise.resolve({ previousStatus: previousStatus === 'running' ? 'running' : 'inactive' } as const)
+        return Promise.resolve(ctx.agentTeams.interrupt(callingAgent(exec.agent, 'interrupt_agent'), args.target))
       },
     })))
 
