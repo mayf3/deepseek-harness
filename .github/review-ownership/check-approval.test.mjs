@@ -5,6 +5,7 @@ import test from 'node:test'
 import {
   approvalEventFromWorkflowRun,
   approvalEventFromComment,
+  approvalEventFromPullRequest,
   createGitHubApi,
   effectiveReviewDecisions,
   evaluateApproval as evaluateWithHistory,
@@ -24,6 +25,7 @@ const pullRequestEvent = ({ author = 'author', draft = false } = {}) => ({
   repository: { full_name: 'deepseek-harness/deepseek-harness' },
   pull_request: {
     number: 42,
+    state: 'open',
     draft,
     user: { login: author, node_id: 'author-id' },
     head: { sha: HEAD_SHA },
@@ -623,10 +625,17 @@ test('bot authors receive the same history credit', async () => {
   assert.equal(result.state, 'success')
 })
 
-const comment = (login, body, created_at = '2026-09-15T00:00:00Z', id = 1) => ({ user: { login }, body, created_at, id })
+const comment = (login, body, created_at = '2026-09-15T00:00:00Z', id = 1) => ({
+  user: { login, node_id: `account:${login.toLowerCase()}` }, body, created_at, id, node_id: `comment:${login}:${id}:${body}:${created_at}`,
+})
 
 function delegationApi({ comments = [], reviews = [], permissions = {} } = {}) {
-  return async path => {
+  return async (path, options) => {
+    if (path === '/graphql') return { data: { nodes: options.body.variables.ids.map(id => {
+      const entry = comments.find(comment => comment.node_id === id)
+      return { id, body: entry.body, createdAt: entry.created_at, author: { id: entry.user.node_id }, lastEditedAt: null, editor: null,
+        ...entry.editorMetadata }
+    }) } }
     if (path.includes('/comments?')) return comments
     if (path.includes('/reviews?')) return reviews
     const match = /\/collaborators\/([^/]+)\/permission$/u.exec(path)
@@ -659,7 +668,7 @@ test('delegates the sender fixed points once after the recipient approves, retai
         ...(senderState === 'CHANGES_REQUESTED' ? ['turtle1999'] : []),
         ...(recipientState === 'CHANGES_REQUESTED' ? ['writer'] : []),
       ])
-      if (points) assert.deepEqual(result.approvals[0], { login: 'turtle1999', points: 2, delegatedTo: 'writer' })
+      if (points) assert.deepEqual(result.approvals[0], { login: senderState ? 'turtle1999' : 'Turtle1999', points: 2, delegatedTo: 'writer' })
     }
   }
 })
@@ -806,23 +815,20 @@ test('an active delegate command requests review once and preserves other reques
             return { users: [{ login: 'another-reviewer' }, ...(alreadyRequested ? [{ login: 'WRITER' }] : [])], teams: [] }
           }
           if (path.includes('/statuses/')) return {}
-          return api(path)
+          return api(path, options)
         },
       })
       assert.equal(result.points, 0)
       assert.deepEqual(requests, alreadyRequested ? [] : [{ reviewers: ['writer'] }])
-      assert.equal(output.includes("Requested review from @writer for @turtle1999's delegation."), !alreadyRequested)
+      assert.equal(output.includes("Requested delegated reviews from @writer."), !alreadyRequested)
     }
   }
 })
 
-test('inactive commands, drafts, and non-comment events do not request review', async () => {
+test('inactive commands and drafts do not request review', async () => {
   const command = comment('turtle1999', '/delegate @writer')
   for (const scenario of [
-    { event: {} },
-    { event: { issue: { number: 42, pull_request: {} }, action: 'deleted', comment: { id: 1 } } },
     { comments: [comment('turtle1999', '/delegate @turtle1999')] },
-    { comments: [command, comment('turtle1999', '/delegate @other', '2026-09-16T00:00:00Z', 2)] },
     { reviews: [review('turtle1999', 'COMMENTED', '2026-09-16T00:00:00Z')] },
     { permissions: { turtle1999: 'read' } },
     { permissions: { writer: 'read' } },
@@ -843,23 +849,26 @@ test('inactive commands, drafts, and non-comment events do not request review', 
   }
 })
 
-test('failed review requests publish an error status', async () => {
+test('failed review requests preserve the computed score and report the retry', async () => {
   for (const failedRead of [false, true]) {
     const statuses = []
-    const api = delegationApi({ comments: [comment('turtle1999', '/delegate @writer')] })
-    await assert.rejects(runWithHistory({
+    const api = delegationApi({ comments: [comment('turtle1999', '/delegate @writer')], reviews: [review('imccyu', 'APPROVED')] })
+    const output = []
+    await runWithHistory({
       event: { ...pullRequestEvent(), issue: { number: 42, pull_request: {} }, action: 'created', comment: { id: 1 } },
-      policySource, runUrl: 'https://github.example/run/1', getMergedCount: async () => 0, write: () => {},
+      policySource, runUrl: 'https://github.example/run/1', getMergedCount: async () => 0, getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }), write: line => output.push(line),
       api: async (path, options) => {
         if (path.includes('/statuses/')) { statuses.push(options.body.state); return {} }
         if (path.endsWith('/requested_reviewers')) {
           if (options?.method === 'POST') throw new Error('request rejected')
           return failedRead ? {} : { users: [] }
         }
-        return api(path)
+        return api(path, options)
       },
-    }), failedRead ? /no users array/u : /request rejected/u)
-    assert.deepEqual(statuses, ['pending', 'error'])
+    })
+    assert.match(output.at(-1), failedRead ? /no users array/u : /request rejected/u)
+    assert.match(output.at(-1), /score is unchanged.*will retry/u)
+    assert.deepEqual(statuses, ['pending', 'success'])
   }
 })
 
@@ -884,12 +893,12 @@ test('delegation dismisses only the sender old decisions and stays active across
       if (options?.method === 'POST') calls.push(options)
       return { users: [] }
     }
-    return read(path)
+    return read(path, options)
   }
   const result = await runWithHistory({ event: { ...pullRequestEvent(), issue: { number: 42, pull_request: {} }, action: 'created', comment: { id: 1 } },
     policySource, api, runUrl: 'https://github.example/run/1', write: () => {}, getMergedCount: async () => 0,
   })
-  assert.deepEqual(calls.map(call => call.method), ['PUT', 'PUT', 'POST'])
+  assert.deepEqual(calls.map(call => call.method), ['PUT', 'PUT'])
   assert.equal(calls[0].body.event, 'DISMISS')
   assert.equal(calls[0].body.message, 'This is by automated Angry Turtle Cyborg, not a human. @turtle1999 delegated approval to @writer via /delegate.')
   assert.deepEqual(result.blockers, ['other'])
@@ -943,7 +952,7 @@ test('a failed or unconfirmed dismissal prevents review requests and publishes e
           return { id: 10, state: 'CHANGES_REQUESTED' }
         }
         assert.ok(!path.endsWith('/requested_reviewers'))
-        return read(path)
+        return read(path, options)
       },
     }), rejected ? /dismissal denied/u : /dismissal was not confirmed/u)
     assert.deepEqual(states, ['pending', 'error'])
@@ -953,21 +962,22 @@ test('a failed or unconfirmed dismissal prevents review requests and publishes e
 test('reads all comment pages, logs the score owner, and fails closed on missing comment history', async () => {
   const statuses = []
   const output = []
-  const api = delegationApi({ reviews: [review('writer', 'APPROVED')] })
+  const pageCommand = comment('turtle1999', '/delegate @writer')
+  const api = delegationApi({ comments: [pageCommand], reviews: [review('writer', 'APPROVED')] })
   const run = comments => runWithHistory({
     event: pullRequestEvent(), policySource, runUrl: 'https://github.example/run/1',
     getMergedCount: async () => 0, write: line => output.push(line),
     api: async (path, options) => {
       if (path.includes('/statuses/')) { statuses.push(options.body.state); return {} }
       if (path.includes('/comments?')) return comments(path)
-      return api(path)
+      return api(path, options)
     },
   })
   const pages = []
   await run(path => {
     pages.push(path)
     return path.endsWith('page=1') ? Array.from({ length: 100 }, () => comment('writer', 'text'))
-      : [comment('turtle1999', '/delegate @writer')]
+      : [pageCommand]
   })
   assert.equal(pages.length, 2)
   assert.ok(output.includes('- @turtle1999: 2 (delegated to @writer)'))
@@ -1005,4 +1015,117 @@ test('comment events resolve the live PR head and skip ordinary issues and close
   for (const response of [null, { ...pull, number: 1 }, { ...pull, state: 'unknown' }, { ...pull, head: {} }]) {
     await assert.rejects(approvalEventFromComment({ event, api: async () => response }))
   }
+})
+
+test('only the author can authorize a command edit, on every event reconstruction', async () => {
+  for (const editor of [{ id: 'account:attacker' }, null, { id: 'account:turtle1999' }]) {
+    const command = { ...comment('turtle1999', '/delegate @attacker'), editorMetadata: {
+      lastEditedAt: '2026-09-15T01:00:00Z', editor,
+    } }
+    const result = await evaluateDelegation({ api: delegationApi({ comments: [command], reviews: [review('attacker', 'APPROVED')] }) })
+    assert.equal(result.points, editor?.id === 'account:turtle1999' ? 3 : 1)
+    assert.equal(result.delegations.length, editor?.id === 'account:turtle1999' ? 1 : 0)
+  }
+})
+
+test('ineligible or third-party edited commands do not replace an earlier eligible delegation', async () => {
+  for (const later of [comment('turtle1999', '/delegate @reader'), comment('turtle1999', '/delegate @author'),
+    { ...comment('turtle1999', '/delegate @turtle1999'), editorMetadata: { lastEditedAt: '2026-09-15T01:00:00Z', editor: { id: 'account:attacker' } } }]) {
+    const result = await evaluateDelegation({ api: delegationApi({
+      comments: [comment('turtle1999', '/delegate @writer'), later],
+      reviews: [review('writer', 'APPROVED')], permissions: { reader: 'read' },
+    }) })
+    assert.equal(result.points, 3)
+    assert.equal(result.delegations[0].delegatedTo, 'writer')
+  }
+})
+
+test('missing, partial, changed, or failed editor metadata prevents scoring', async () => {
+  const command = comment('turtle1999', '/delegate @writer')
+  const read = delegationApi({ comments: [command], reviews: [review('writer', 'APPROVED')] })
+  for (const response of [null, {}, { data: { nodes: [] } }, { data: { nodes: [null] } }, { errors: [{ message: 'forbidden' }] }]) {
+    await assert.rejects(evaluateDelegation({ api: (path, options) => path === '/graphql' ? response : read(path, options) }), /editor history/u)
+  }
+  for (const patch of [{ body: '/delegate @attacker' }, { author: { id: 'account:attacker' } }, { lastEditedAt: undefined }, { id: 'other-comment' }]) {
+    await assert.rejects(evaluateDelegation({ api: delegationApi({ comments: [{ ...command, editorMetadata: patch }] }) }), /editor history/u)
+  }
+  await assert.rejects(evaluateDelegation({ api: (path, options) => {
+    if (path === '/graphql') throw new Error('editor API unavailable')
+    return read(path, options)
+  } }), /editor API unavailable/u)
+})
+
+test('editor verification batches complete command history', async () => {
+  const comments = Array.from({ length: 101 }, (_, index) => comment('turtle1999', '/delegate @writer', undefined, index + 1))
+  const read = delegationApi({ comments })
+  const batches = []
+  const result = await evaluateDelegation({ api: (path, options) => {
+    if (path.includes('/comments?')) return path.endsWith('page=1') ? comments.slice(0, 100) : comments.slice(100)
+    if (path === '/graphql') batches.push(options.body.variables.ids.length)
+    return read(path, options)
+  } })
+  assert.deepEqual(batches, [100, 1])
+  assert.equal(result.delegations[0].commentId, 101)
+})
+
+test('later events reconcile all active delegations after a draft or replaced comment event', async () => {
+  for (const action of ['ready_for_review', 'synchronize', 'submitted', 'deleted']) {
+    const reviews = [review('Turtle1999', 'CHANGES_REQUESTED', undefined, 10), review('second', 'APPROVED', undefined, 11)]
+    const read = delegationApi({ comments: [comment('Turtle1999', '/delegate @Writer'), comment('second', '/delegate @WRITER')], reviews })
+    const effects = []
+    const requested = []
+    const api = async (path, options) => {
+      if (path.includes('/statuses/')) return {}
+      if (path.endsWith('/dismissals')) {
+        const old = reviews.find(review => path.endsWith(`/reviews/${review.id}/dismissals`))
+        effects.push(old.id)
+        old.state = 'DISMISSED'
+        return old
+      }
+      if (path.endsWith('/requested_reviewers')) {
+        if (options?.method === 'POST') { effects.push(options.body); requested.push({ login: 'writer' }) }
+        return { users: requested }
+      }
+      return read(path, options)
+    }
+    const run = draft => runWithHistory({ event: { ...pullRequestEvent({ draft }), action }, policySource, api,
+      runUrl: 'https://github.example/run/1', getMergedCount: async () => 0, write: () => {},
+    })
+    await run(true)
+    assert.deepEqual(effects, [])
+    const result = await run(false)
+    assert.deepEqual(effects, [10, 11, { reviewers: ['Writer'] }])
+    assert.equal(result.delegations[0].login, 'Turtle1999')
+    await run(false)
+    assert.equal(effects.length, 3)
+  }
+})
+
+test('already approved delegates need no new request', async () => {
+  const read = delegationApi({ comments: [comment('turtle1999', '/delegate @writer')],
+    reviews: [review('writer', 'APPROVED')],
+  })
+  const result = await runWithHistory({ event: pullRequestEvent(), policySource, runUrl: 'https://github.example/run/1', write: () => {},
+    api: (path, options) => {
+      if (path.includes('/statuses/')) return {}
+      assert.ok(!path.endsWith('/requested_reviewers'))
+      return read(path, options)
+    },
+  })
+  assert.equal(result.state, 'success')
+})
+
+test('pull-request events use live state and skip closed, merged, and superseded PRs', async () => {
+  const event = pullRequestEvent()
+  for (const patch of [{ state: 'closed' }, { state: 'closed', merged: true, merge_commit_sha: HEAD_SHA },
+    { head: { sha: 'abcdef1234567890abcdef1234567890abcdef12' } }]) {
+    assert.equal(await approvalEventFromPullRequest({ event, api: async () => ({ ...event.pull_request, ...patch }) }), null)
+  }
+  const ready = await approvalEventFromPullRequest({ event: pullRequestEvent({ draft: true }), api: async () => event.pull_request })
+  assert.equal(ready.pull_request.draft, false)
+  assert.equal(await approvalEventFromWorkflowRun({ event: {
+    repository: event.repository,
+    workflow_run: { path: '.github/workflows/weighted-approval-review-event.yml', event: 'pull_request_review',
+      conclusion: 'success', head_sha: HEAD_SHA, display_title: 'weighted-approval-review-event:42', pull_requests: [] },
+  }, api: async () => ({ ...event.pull_request, state: 'closed', merged: true }) }), null)
 })

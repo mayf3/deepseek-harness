@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync } from 'node:fs'
+import { appendFileSync, readFileSync } from 'node:fs'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 
@@ -132,22 +132,62 @@ async function listRecords(api, path, subject) {
   }
 }
 
-// The API orders comments by creation ID; edits do not reorder commands.
-function effectiveDelegations(comments, reviews) {
-  const delegations = new Map()
+async function delegationCommands(api, comments) {
+  const candidates = []
   for (const comment of comments) {
     if (!isRecord(comment)) throw new Error('pull-request comment is not an object')
     if (comment.user === null) continue
     if (typeof comment.body !== 'string') throw new Error('pull-request comment has no body')
     const match = /^\/delegate @([^\s]+)$/u.exec(comment.body.trim())
     if (!match || !LOGIN.test(match[1])) continue
-    const login = validateLogin(comment.user?.login, 'delegation author').toLowerCase()
-    const delegate = match[1].toLowerCase()
-    if (login === delegate) delegations.delete(login)
-    else {
-      if (!Number.isSafeInteger(comment.id) || comment.id <= 0) throw new Error('delegation comment has no valid ID')
-      delegations.set(login, { delegate, commentId: comment.id, createdAt: timestamp(comment.created_at, 'delegation comment') })
+    const login = validateLogin(comment.user?.login, 'delegation author')
+    if (!Number.isSafeInteger(comment.id) || comment.id <= 0) throw new Error('delegation comment has no valid ID')
+    if (!comment.node_id || !comment.user.node_id) throw new Error('delegation comment has no account or node ID')
+    candidates.push({ comment, login, delegate: match[1], createdAt: timestamp(comment.created_at, 'delegation comment') })
+  }
+  const commands = []
+  for (let offset = 0; offset < candidates.length; offset += PAGE_SIZE) {
+    const batch = candidates.slice(offset, offset + PAGE_SIZE)
+    const response = await api('/graphql', {
+      method: 'POST',
+      body: {
+        query: `query($ids: [ID!]!) {
+          nodes(ids: $ids) { ... on IssueComment {
+            id body createdAt lastEditedAt
+            author { ... on Node { id } }
+            editor { ... on Node { id } }
+          } }
+        }`,
+        variables: { ids: batch.map(({ comment }) => comment.node_id) },
+      },
+    })
+    const nodes = response?.data?.nodes
+    if (response?.errors?.length || !Array.isArray(nodes) || nodes.length !== batch.length) {
+      throw new Error('delegation comment editor history is incomplete')
     }
+    for (const [index, command] of batch.entries()) {
+      const node = nodes[index]
+      const { comment } = command
+      if (node?.id !== comment.node_id || node.body !== comment.body || node.createdAt !== comment.created_at
+        || node.author?.id !== comment.user.node_id || node.lastEditedAt === undefined) {
+        throw new Error('delegation comment changed or editor history is incomplete')
+      }
+      // Other writers can edit a comment without changing its original author.
+      if (node.lastEditedAt !== null && node.editor?.id !== node.author.id) continue
+      commands.push(command)
+    }
+  }
+  return commands
+}
+
+// Reviews must first pass effectiveReviewDecisions; commands retain creation order after edits.
+function effectiveDelegations(commands, reviews, writers) {
+  const delegations = new Map()
+  for (const { login, delegate, comment, createdAt } of commands) {
+    const key = login.toLowerCase()
+    if (!writers.has(key) || !writers.has(delegate.toLowerCase())) continue
+    if (key === delegate.toLowerCase()) delegations.delete(key)
+    else delegations.set(key, { delegate: delegate.toLowerCase(), commentId: comment.id, createdAt })
   }
   for (const review of reviews) {
     if (review.user === null || review.state.toUpperCase() === 'PENDING') continue
@@ -169,7 +209,7 @@ function timestamp(value, subject) {
 /**
  * Evaluate approval points from current reviews and repository permissions.
  * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, getOwnership?: typeof productionOwnership, getMergedCount?: typeof countMergedAuthorPulls}} options Runtime inputs.
- * @returns {Promise<{pull: {repository: string, number: number, headSha: string}, state: 'pending' | 'success', description: string, points: number, authorCredit: {mergedCount: number, points: number} | null, requiredPoints: number, approvals: Array<{login: string, points: number, delegatedTo?: string, ownership?: {ownedLines: number, totalLines: number}}>, delegations: Array<{login: string, delegatedTo: string, commentId: number, reviewIds: number[]}>, blockers: string[], ignoredReviewers: string[]}>} Approval decision and status payload fields; approval login owns the points, delegatedTo supplies its decision, delegations contains eligible active commands and their superseded decision review IDs, and null author credit means history was not evaluated.
+ * @returns {Promise<{pull: {repository: string, number: number, headSha: string}, state: 'pending' | 'success', description: string, points: number, authorCredit: {mergedCount: number, points: number} | null, requiredPoints: number, approvals: Array<{login: string, points: number, delegatedTo?: string, ownership?: {ownedLines: number, totalLines: number}}>, delegations: Array<{login: string, delegatedTo: string, commentId: number, reviewIds: number[], approved: boolean}>, blockers: string[], ignoredReviewers: string[]}>} Approval decision and status payload fields; approval login owns the points, delegatedTo supplies its decision, delegations contains eligible active commands and their superseded decision review IDs, and null author credit means history was not evaluated.
  */
 export async function evaluateApproval({ event, policySource, api, getOwnership = productionOwnership, getMergedCount = countMergedAuthorPulls }) {
   const pull = pullRequestFromEvent(event)
@@ -182,11 +222,11 @@ export async function evaluateApproval({ event, policySource, api, getOwnership 
   const decisions = effectiveReviewDecisions(reviews)
     .filter(({ login }) => login.toLowerCase() !== pull.author.toLowerCase())
   const comments = await listRecords(api, `/repos/${pull.repository}/issues/${pull.number}/comments`, 'pull-request comments')
-  const delegations = effectiveDelegations(comments, reviews)
+  const commands = await delegationCommands(api, comments)
   const participants = new Map(decisions.map(({ login }) => [login.toLowerCase(), login]))
-  for (const [login, { delegate }] of delegations) {
-    participants.set(login, participants.get(login) ?? login)
-    participants.set(delegate, participants.get(delegate) ?? delegate)
+  for (const { login, delegate } of commands) {
+    participants.set(login.toLowerCase(), participants.get(login.toLowerCase()) ?? login)
+    participants.set(delegate.toLowerCase(), participants.get(delegate.toLowerCase()) ?? delegate)
   }
   participants.delete(pull.author.toLowerCase())
   const writers = new Set()
@@ -196,6 +236,7 @@ export async function evaluateApproval({ event, policySource, api, getOwnership 
     if (WRITABLE_PERMISSIONS.has(permission)) writers.add(key)
     else ignoredReviewers.push(login)
   }
+  const delegations = effectiveDelegations(commands, reviews, writers)
   const approvals = []
   const activeDelegations = []
   const blockers = decisions.filter(({ login, state }) => writers.has(login.toLowerCase()) && state === 'CHANGES_REQUESTED')
@@ -206,7 +247,7 @@ export async function evaluateApproval({ event, policySource, api, getOwnership 
     const target = delegation?.delegate
     const delegatedTo = writers.has(target) ? target : undefined
     if (delegatedTo) activeDelegations.push({
-      login: participants.get(key), delegatedTo: participants.get(delegatedTo), commentId: delegation.commentId,
+      login: participants.get(key), delegatedTo: participants.get(delegatedTo), commentId: delegation.commentId, approved: approved.has(delegatedTo),
       reviewIds: reviews.filter(review => review.user?.login.toLowerCase() === key
         && ['APPROVED', 'CHANGES_REQUESTED'].includes(review.state.toUpperCase()))
         .map(review => positiveInteger(review.id, 'delegated review ID')),
@@ -274,8 +315,7 @@ export async function runApprovalCheck({ event, policySource, api, runUrl, getOw
   let result
   try {
     result = await evaluateApproval({ event, policySource, api, getOwnership, getMergedCount })
-    const delegation = activeCommentDelegation(event, result)
-    if (delegation?.reviewIds.length) {
+    for (const delegation of result.delegations) {
       for (const reviewId of delegation.reviewIds) {
         const dismissed = await api(`/repos/${pull.repository}/pulls/${pull.number}/reviews/${reviewId}/dismissals`, {
           method: 'PUT',
@@ -286,9 +326,10 @@ export async function runApprovalCheck({ event, policySource, api, runUrl, getOw
         }
         write(`Dismissed @${delegation.login}'s review ${reviewId} for delegation to @${delegation.delegatedTo}.`)
       }
+    }
+    if (result.delegations.some(({ reviewIds }) => reviewIds.length)) {
       result = await evaluateApproval({ event, policySource, api, getOwnership, getMergedCount })
     }
-    await requestDelegatedReview(event, result, api, write)
   } catch (error) {
     await publishStatus(api, pull, 'error', 'Approval evaluation failed.', runUrl)
     throw error
@@ -303,6 +344,11 @@ export async function runApprovalCheck({ event, policySource, api, runUrl, getOw
   writeList(write, 'Ignored reviewers without write access', result.ignoredReviewers.map(login => `@${login}`))
   await publishStatus(api, pull, result.state, result.description, runUrl)
   write(`Published ${JSON.stringify(STATUS_CONTEXT)} status ${JSON.stringify(result.state)}.`)
+  try {
+    await requestDelegatedReviews(result, api, write)
+  } catch (error) {
+    write(`Review request failed; approval score is unchanged and the next evaluation will retry: ${JSON.stringify(error instanceof Error ? error.message : String(error))}`)
+  }
   return result
 }
 
@@ -320,7 +366,7 @@ export async function publishApprovalPhase({ event, api, runUrl, phase }) {
 /**
  * Resolve the reviewed pull request from a completed run of the review-event workflow file.
  * @param {{event: unknown, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>}} options Trusted workflow inputs.
- * @returns {Promise<Record<string, unknown> | null>} Event with a current pull request, or null after the pull-request head changes.
+ * @returns {Promise<Record<string, unknown> | null>} Event with a current pull request, or null after the PR closes or its head changes.
  */
 export async function approvalEventFromWorkflowRun({ event, api }) {
   const repository = repositoryFromEvent(event)
@@ -341,7 +387,8 @@ export async function approvalEventFromWorkflowRun({ event, api }) {
   }
   const pull = await api(`/repos/${repository}/pulls/${pullNumber}`)
   if (!isRecord(pull) || !isRecord(pull.head)) throw new Error(`pull request #${pullNumber} response is invalid`)
-  if (pull.head.sha !== expectedHeadSha) return null
+  if (!['open', 'closed'].includes(pull.state)) throw new Error('pull request has an invalid state')
+  if (pull.state === 'closed' || pull.head.sha !== expectedHeadSha) return null
   return { ...event, pull_request: pull }
 }
 
@@ -366,21 +413,29 @@ export async function approvalEventFromComment({ event, api }) {
   return resolved
 }
 
-function activeCommentDelegation(event, result) {
-  if (!isRecord(event.issue) || !['created', 'edited'].includes(event.action) || !isRecord(event.comment)) return undefined
-  return result.delegations.find(({ commentId }) => commentId === event.comment.id)
+/**
+ * Refresh a pull-request event before any status write; closed PRs and stale heads are skipped.
+ * @param {{event: unknown, api: (path: string) => Promise<unknown>}} options Pull-request event and API caller.
+ * @returns {Promise<Record<string, unknown> | null>} Live event, or null for a closed PR or superseded head.
+ */
+export async function approvalEventFromPullRequest({ event, api }) {
+  const expected = pullRequestFromEvent(event)
+  const resolved = await approvalEventFromComment({ event: { ...event, issue: { number: expected.number, pull_request: {} } }, api })
+  if (resolved === null || resolved.pull_request.head.sha !== expected.headSha) return null
+  return { ...event, pull_request: resolved.pull_request }
 }
 
-async function requestDelegatedReview(event, result, api, write) {
-  const delegation = activeCommentDelegation(event, result)
-  if (!delegation) return
+async function requestDelegatedReviews(result, api, write) {
+  const recipients = new Map(result.delegations.filter(({ approved }) => !approved)
+    .map(({ delegatedTo }) => [delegatedTo.toLowerCase(), delegatedTo]))
+  if (!recipients.size) return
   const path = `/repos/${result.pull.repository}/pulls/${result.pull.number}/requested_reviewers`
   const requested = await api(path)
   if (!isRecord(requested) || !Array.isArray(requested.users)) throw new Error('requested reviewers response has no users array')
-  const logins = requested.users.map(user => validateLogin(user?.login, 'requested reviewer').toLowerCase())
-  if (logins.includes(delegation.delegatedTo.toLowerCase())) return
-  await api(path, { method: 'POST', body: { reviewers: [delegation.delegatedTo] } })
-  write(`Requested review from @${delegation.delegatedTo} for @${delegation.login}'s delegation.`)
+  for (const user of requested.users) recipients.delete(validateLogin(user?.login, 'requested reviewer').toLowerCase())
+  if (!recipients.size) return
+  await api(path, { method: 'POST', body: { reviewers: [...recipients.values()] } })
+  write(`Requested delegated reviews from ${[...recipients.values()].map(login => `@${login}`).join(', ')}.`)
 }
 
 function approvalResult(pull, requiredPoints, approvals, blockers, ignoredReviewers, state, detail, authorCredit = null, delegations = []) {
@@ -504,22 +559,19 @@ async function main() {
   })
   if (isRecord(event) && isRecord(event.issue)) {
     event = await approvalEventFromComment({ event, api })
-    if (event === null) return
+  } else if (isRecord(event) && isRecord(event.workflow_run)) {
+    event = await approvalEventFromWorkflowRun({ event, api })
+  } else {
+    event = await approvalEventFromPullRequest({ event, api })
   }
-  if (isRecord(event) && isRecord(event.workflow_run)) {
-    const resolved = await approvalEventFromWorkflowRun({
-      event,
-      api,
-    })
-    if (resolved === null) {
-      process.stdout.write('Skipped a review event for a superseded pull-request head.\n')
-      return
-    }
-    event = resolved
+  if (event === null) {
+    process.stdout.write('Skipped an issue, closed pull request, or superseded pull-request head.\n')
+    return
   }
   const phase = process.argv[2]
   if (phase) {
     await publishApprovalPhase({ event, api, runUrl: process.env.GITHUB_RUN_URL ?? '', phase })
+    if (phase === 'pending' && process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, 'active=true\n')
     return
   }
   await runApprovalCheck({
