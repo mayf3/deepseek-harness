@@ -18,7 +18,8 @@ import * as PluginPackageInventoryDeepSeek from '@deepseek-ai/dsh-plugin-package
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import * as SessionLogDeepSeek from '@deepseek-ai/dsh-session-log-deepseek'
 import * as Messages from '../../src/index.ts'
-import { DeepSeekFilesClient, MESSAGES_FILES_BETA } from '../../src/common/files-api.ts'
+import { DeepSeekFilesClient } from '../../src/common/files-api.ts'
+import { MESSAGES_FILES_BETA } from '../../src/common/messages-api.ts'
 import { assemble, options, user } from './helpers.ts'
 
 const IN_HISTORY_MODEL = process.env.DEEPSEEK_IN_HISTORY_MODEL

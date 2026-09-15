@@ -83,7 +83,7 @@ kind: "package-reference"
     protocol: chat-completions
 ```
 
-`protocol` 默认为 `messages`，官方根地址为 `https://api.deepseek.com/anthropic`；`chat-completions` 使用 `https://api.deepseek.com`。随产品交付的官方组合继承该默认值。两种协议都不要求填写 `baseURL`：当 `baseURL` 与 `$DEEPSEEK_BASE_URL` 均未设置时使用当前协议的官方默认值。切换协议保留已有端点覆盖，用户需要填写与选定协议兼容的地址。显式填写的 `https://api.deepseek.com` 是 Chat 根地址：删除该覆盖即可使用官方 Messages 默认值，也可以改填 `https://api.deepseek.com/anthropic`。Chat 追加 `/chat/completions`，Messages 追加 `/v1/messages`；除去末尾斜线之外，不推测或删除自定义路径中的 `/v1` 等后缀。两种协议共用 `llm-deepseek` 设置、`apiKeyEnv` 与 `deepseek-official`，因此已保存的模型选择仍然有效。
+`protocol` 默认为 `messages`，官方根地址为 `https://api.deepseek.com/anthropic`；`chat-completions` 使用 `https://api.deepseek.com`。随产品交付的官方组合继承该默认值。两种协议都不要求填写 `baseURL`：当 `baseURL` 与 `$DEEPSEEK_BASE_URL` 均未设置时使用当前协议的官方默认值。切换协议保留已有端点覆盖，用户需要填写与选定协议兼容的地址。显式填写的 `https://api.deepseek.com` 是 Chat 根地址：删除该覆盖即可使用官方 Messages 默认值，也可以改填 `https://api.deepseek.com/anthropic`。Chat 追加 `/chat/completions`。Messages 与其 Files API 仅把末尾严格匹配的 `/v1` 路径段视为已有 Anthropic API 版本，并追加 `/messages` 或 `/files`；其他基址均追加 `/v1/messages` 或 `/v1/files`。因此，官方 Messages 根地址仍使用推荐的 `/anthropic/v1` 请求路径，同时不为任意版本式后缀提供兼容性。末尾斜线不改变这些结果。两种协议共用 `llm-deepseek` 设置、`apiKeyEnv` 与 `deepseek-official`，因此已保存的模型选择仍然有效。
 
 Messages 以内容块发送文本、思考、工具调用和工具结果，以 `output_config.effort` 发送推理强度，并以 Files 引用或内联 base64 发送图片。声明 `systemPromptUpdate: in-history` 的模型保留初始顶层 system，在对应 user/tool-result 轮次之后发送新的 system 快照；未声明能力时，使用最新快照作为顶层 system。回放元数据记录 Messages 格式、模型和签名；Chat 请求只序列化持久化内容，不发送这些签名。无效的 Messages 回放元数据产生警告并省略签名，不丢弃文本或工具历史。
 
