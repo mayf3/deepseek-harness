@@ -14,9 +14,10 @@ export interface ClientEntryState {
   readonly failures: readonly { readonly id: string; readonly message: string }[]
 }
 
-/** Internal capabilities owned by the module table, called only after serialized entry operations. */
+/** Module-table capabilities used within serialized entry operations. */
 interface ModuleIndex {
-  update(manifest: BootManifest): void
+  update(manifest: BootManifest, managed: Iterable<string>): void
+  invalidateForReplacement(id: string, rev: string): void
   prune(roots: Iterable<string>): void
 }
 
@@ -107,9 +108,10 @@ export class ClientEntries {
 
   /**
    * Replace one entry's code in the same queue as graph updates; duplicate revisions are ignored.
+   * Entries missing after a failed import are reconciled; bootstrap replacement fails before teardown.
    * @param id - Package id from a rebuilt frame.
    * @param rev - Opaque revision selecting the rebuilt artifact.
-   * @returns after replacement settles; failure rejects and is exposed in page diagnostics.
+   * @returns after queued work; replacement errors reject, while per-package reconciliation errors remain in {@link state}.
    */
   reload(id: string, rev: string): Promise<void> {
     this.desired = {
@@ -117,9 +119,16 @@ export class ClientEntries {
       modules: this.desired.modules.map(row => row.id === id ? { ...row, rev } : row),
     }
     return this.enqueue(async () => {
-      if (this.stopped || !this.desired.modules.some(row => row.id === id)) return
+      const desired = this.desired.modules.find(row => row.id === id)
+      if (this.stopped || desired === undefined) return
       const entry = this.managed.get(id)
-      if (entry === undefined || this.revisions.get(id) === rev) return
+      if (entry === undefined) {
+        this.modules.invalidate(id, desired.rev)
+        removeOwnedStyles(id)
+        await this.reconcile(this.generation)
+        return
+      }
+      if (this.revisions.get(id) === rev) return
       this.publish({ syncing: true, failures: this.snapshot.failures.filter(failure => failure.id !== id) })
       await this.replace(entry, id, rev, this.generation)
       this.publish({ syncing: false, failures: this.snapshot.failures })
@@ -166,7 +175,7 @@ export class ClientEntries {
   }
 
   private async replace(entry: Entry, id: string, rev: string, generation: number): Promise<void> {
-    this.modules.invalidate(id, rev)
+    this.index.invalidateForReplacement(id, rev)
     await this.modules.prefetch(id)
     if (!this.current(generation)) return
     await tearDownEntryFiber(entry)
@@ -187,7 +196,7 @@ export class ClientEntries {
     const manifest = this.desired
     this.publish({ syncing: true, failures: [] })
     const failures: { id: string; message: string }[] = []
-    this.index.update(manifest)
+    this.index.update(manifest, this.managed.keys())
     const wanted = new Set(manifest.plugins.map(row => row.id))
     for (const [id, entry] of this.managed) {
       if (wanted.has(id)) continue

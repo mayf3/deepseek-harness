@@ -81,7 +81,7 @@ The host contributes structured index rows that inject, into `<head>`: the `wind
 
 ### Entry ownership
 
-`ClientEntries` records the entries created during boot and serializes full-graph updates, retries and code reloads over the same Loader. A local generation prevents an older download from mounting after its desired entry or code changes; snapshots of the same targets share the pending load. New arrivals use single-resource URLs, never startup batches that could register existing factories twice. Cleanup retains declared and observed transitive module requests from every remaining Loader entry. Its observable status has no runtime library import because the modules bootstrap materializes before platform seeds are available.
+`ClientEntries` records the entries created during boot and serializes full-graph updates, retries and code reloads over the same Loader. A local generation prevents an older download from mounting after its desired entry or code changes; snapshots of the same targets share the pending load. New arrivals use single-resource URLs, never startup batches that could register existing factories twice. Factories retain their artifact revision before an entry exists; graph updates discard stale unowned factories, their styles and failed arrival targets before importing consumers. Cleanup retains declared and observed transitive module requests from every remaining Loader entry. Its observable status has no runtime library import because the modules bootstrap materializes before platform seeds are available.
 
 ### Source map
 
@@ -128,7 +128,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define what the module system does not do. They are current package constraints, not a task backlog.
 
 - **Flat module graph by design** — every bundle is one module node whose edges point only at table leaves; the interface (`loadCache`/`edges`/`invalidate`) already supports a general module graph, so the externalization granularity can change without an interface change.
-- **Bootstrap and code replacement limits** — the page retains its modules bootstrap and static platform identities. Removing the bootstrap requires a page reload; replacing package code and all existing consumers is outside ordinary enable/disable synchronization.
+- **Bootstrap and code replacement limits** — the page retains its modules bootstrap and static platform identities. Removing or replacing the bootstrap requires a page reload; live replacement requests report a page-local error while retaining its fiber and exports; replacing package code and all existing consumers is outside ordinary enable/disable synchronization.
 - **Snapshot delivery retains artifact bytes** — the Host holds each bundle, optional source map, generated one-resource response, and current startup combo responses in memory; HMR additionally retains one prior startup generation. Memory scales as several copies of the composed client artifacts in exchange for immutable responses and one-generation race tolerance.
 
 <a id="dev-note"></a>

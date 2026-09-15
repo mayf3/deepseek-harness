@@ -2,7 +2,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createClientModuleSystem } from '../src/client/index.ts'
+import { apply as provideModules, createClientModuleSystem } from '../src/client/index.ts'
 import type { ClientBundleRegistration, ClientModuleLoaderTarget, WebBootEntry, WebBootGraph } from '../src/client/index.ts'
 
 const contexts: Context[] = []
@@ -35,16 +35,17 @@ async function bench(initial: WebBootGraph, factories: Record<string, ClientBund
   const fetched: string[] = []
   const target: ClientModuleLoaderTarget = {
     mode: 'queue', pendingQueue: [], load: () => {},
-    create: options => createClientModuleSystem(target, { id: 'bootstrap', exports: { apply() {} } }, options),
+    create: options => createClientModuleSystem(target, { id: 'bootstrap', exports: { inject: ['loader'], apply: provideModules } }, options),
   }
   let arrival: (url: string) => Promise<void> = async () => {}
   const modules = target.create({
     boot: initial, staticModules: {},
     loadBundle: async (url) => {
       fetched.push(url)
+      const ids = url === '/batch' ? initial.entries.map(row => row.id).filter(id => id !== 'bootstrap') : [url.split('??')[1]!.split('/client.js')[0]!]
+      const registrations = ids.map(id => ({ id, factory: factories[id]! }))
       await arrival(url)
-      const ids = url === '/batch' ? initial.entries.map(row => row.id) : [url.split('??')[1]!.split('/client.js')[0]!]
-      for (const id of ids) target.load({ id, factory: factories[id]! })
+      for (const registration of registrations) target.load(registration)
     },
   })
   await ctx.plugin(Loader)
@@ -405,4 +406,111 @@ it('coalesces an overlapping graph snapshot with the same rebuilt artifact', asy
   await Promise.all([rebuilding, syncing])
   expect(b.fetched).toEqual(['/batch', row('a', 'r1').url])
   expect(effects).toEqual({ mounted: 2, disposed: 1, hits: 0 })
+})
+
+it.each(['graph', 'rebuilt'])('replaces a failed factory before entry creation on a new %s revision', async (source) => {
+  const effects = { mounted: 0, disposed: 0, hits: 0 }
+  const factories: Record<string, ClientBundleRegistration['factory']> = { a: () => { throw new Error('broken r0 factory') } }
+  const b = await bench(graph(), factories)
+  await b.modules.entries.sync(graph(row('a')))
+  expect([...b.ctx.loader.entries()]).toHaveLength(0)
+  expect(b.modules.entries.state.getSnapshot().failures[0]?.message).toContain('broken r0 factory')
+  factories.a = () => ({ ...visible('a', effects)(), revision: 'r1' })
+  if (source === 'graph') await b.modules.entries.sync(graph(row('a', 'r1')))
+  else await b.modules.entries.reload('a', 'r1')
+  await b.modules.entries.retry()
+  expect(b.fetched).toEqual([row('a').url, row('a', 'r1').url])
+  expect(await b.modules.import('a')).toHaveProperty('revision', 'r1')
+  expect(document.querySelectorAll('[data-live=a]')).toHaveLength(1)
+  expect(effects.mounted).toBe(1)
+  expect(b.modules.entries.state.getSnapshot().failures).toEqual([])
+})
+
+it('replaces a superseded arrival and its cached dependency before mounting the latest code', async () => {
+  const dependency = row('dependency')
+  const consumer = row('consumer', 'r0', { external: ['dependency/client'] })
+  const factories: Record<string, ClientBundleRegistration['factory']> = {
+    dependency: () => ({ apply() {}, revision: 'r0' }),
+    consumer: require => ({ apply() {}, dependency: require('dependency/client'), revision: 'r0' }),
+  }
+  const b = await bench(graph(), factories)
+  const started = deferred()
+  const download = deferred()
+  b.arrival(async (url) => { if (url === consumer.url) { started.resolve(); await download.promise } })
+  const old = b.modules.entries.sync(graph(consumer, dependency))
+  try {
+    await started.promise
+    factories.dependency = () => ({ apply() {}, revision: 'r1' })
+    factories.consumer = require => ({ apply() {}, dependency: require('dependency/client'), revision: 'r1' })
+    const latest = b.modules.entries.sync(graph(row('consumer', 'r1', { external: ['dependency/client'] }), row('dependency', 'r1')))
+    download.resolve()
+    await Promise.all([old, latest])
+    expect(await b.modules.import('consumer')).toMatchObject({ revision: 'r1', dependency: { revision: 'r1' } })
+    expect(b.fetched).toEqual([dependency.url, consumer.url, row('dependency', 'r1').url, row('consumer', 'r1').url])
+    expect(b.modules.entries.state.getSnapshot().failures).toEqual([])
+  } finally {
+    download.resolve()
+    await old
+  }
+})
+
+it.each(['graph', 'rebuilt'])('preserves bootstrap and dependent fibers when a %s requests new bootstrap code', async (source) => {
+  const effects = { mounted: 0, disposed: 0, hits: 0 }
+  const b = await bench(graph(row('bootstrap'), row('consumer')), {
+    consumer: () => ({ ...visible('consumer', effects)(), inject: ['modules'] }),
+  })
+  const fibers = [...b.ctx.loader.entries()].map(entry => entry.fiber)
+  const exports = await b.modules.import('bootstrap')
+  if (source === 'graph') await b.modules.entries.sync(graph(row('bootstrap', 'r1'), row('consumer')))
+  else await expect(b.modules.entries.reload('bootstrap', 'r1')).rejects.toThrow('requires a page reload')
+  for (let retry = 0; retry < 2; retry++) {
+    await b.modules.entries.retry()
+    expect(b.modules.entries.state.getSnapshot().failures).toEqual([
+      { id: 'bootstrap', message: 'Error: client-modules: replacing bootstrap module bootstrap requires a page reload' },
+    ])
+  }
+  expect([...b.ctx.loader.entries()].map(entry => entry.fiber)).toEqual(fibers)
+  expect(await b.modules.import('bootstrap')).toBe(exports)
+  expect(effects).toEqual({ mounted: 1, disposed: 0, hits: 0 })
+  expect(b.fetched).toEqual(['/batch'])
+})
+
+it('discards a failed arrival target when an uncreated entry receives a newer graph', async () => {
+  const b = await bench(graph(), { a: () => { throw new Error('r0 factory') } })
+  await b.modules.entries.sync(graph(row('a')))
+  b.arrival(async () => { throw new Error('offline r1') })
+  await b.modules.entries.reload('a', 'r1')
+  expect(b.modules.entries.state.getSnapshot().failures[0]?.message).toContain('offline r1')
+  b.arrival(async () => {})
+  await b.modules.entries.sync(graph(row('a', 'r2')))
+  expect(b.fetched).toEqual([row('a').url, row('a', 'r1').url, row('a', 'r2').url])
+})
+
+it('uses the latest desired revision when a rebuild queues before entry creation', async () => {
+  const b = await bench(graph(), { a: () => ({ apply() {} }) })
+  const adding = b.modules.entries.sync(graph(row('a')))
+  const rebuilding = b.modules.entries.reload('a', 'r1')
+  const latest = b.modules.entries.sync(graph(row('a', 'r2')))
+  await Promise.all([adding, rebuilding, latest])
+  expect(b.fetched).toEqual([row('a', 'r2').url])
+  expect([...b.ctx.loader.entries()]).toHaveLength(1)
+})
+
+it('cleans styles from a materialized factory superseded before its entry is created', async () => {
+  const effects = { mounted: 0, disposed: 0, hits: 0 }
+  let latest: Promise<void> | undefined
+  const factories: Record<string, ClientBundleRegistration['factory']> = { a: () => {
+    const old = visible('a', effects)()
+    queueMicrotask(() => {
+      factories.a = visible('a', effects)
+      latest = b.modules.entries.sync(graph(row('a', 'r1')))
+    })
+    return old
+  } }
+  const b = await bench(graph(), factories)
+  await b.modules.entries.sync(graph(row('a')))
+  await latest
+  expect(b.fetched).toEqual([row('a').url, row('a', 'r1').url])
+  expect(effects).toEqual({ mounted: 1, disposed: 0, hits: 0 })
+  expect(document.querySelectorAll('style[data-plugin=a]')).toHaveLength(1)
 })

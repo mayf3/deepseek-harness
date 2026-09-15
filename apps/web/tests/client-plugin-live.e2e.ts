@@ -1,8 +1,10 @@
 /** Real profile, Remote, bundle scripts and Cordis slots: page-local client lifecycle without navigation. */
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { chromium, type Page } from 'playwright'
-import { expect, it, onTestFailed } from 'vitest'
+import { expect, it, onTestFailed, onTestFinished } from 'vitest'
 import { launchWebScaffold, watchConsole, captureStableAria, compareOrRefreshGolden, webSnapshotMode } from './scaffold.ts'
 import { saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
 
@@ -129,3 +131,76 @@ it('keeps a failed client download local and retries without changing Host enabl
     await scaffold.close()
   }
 }, 90_000)
+
+it('recovers an uncreated client entry with rebuilt factory code without navigation', async () => {
+  const fixture = await mkdtemp(join(tmpdir(), 'dsh-client-rebuild-'))
+  // Finished hooks unwind in reverse order, so the Host closes before its fixture is removed.
+  onTestFinished(() => rm(fixture, { recursive: true, force: true }))
+  await cp(FIXTURE, fixture, { recursive: true })
+  const file = join(fixture, 'client.js')
+  const source = await readFile(file, 'utf8')
+  const broken = source.replace("const React = require('react')", "throw new Error('fixture r0 factory failed')")
+  expect(broken).not.toBe(source)
+  await writeFile(file, broken)
+  const scaffold = await launchWebScaffold({ extraInstallAnchors: [join(fixture, 'package.json')] })
+  onTestFinished(() => scaffold.close())
+  const host = scaffold.ctx.loader.ctx.fiber.uid
+  const browser = await chromium.launch()
+  try {
+    const page = await browser.newPage({ locale: ZH_BROWSER_LOCALE })
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-client-factory-rebuild'))
+    const inventory = await openInventory(page, scaffold.authenticatedUrl)
+    const draft = inventory.getByRole('searchbox', { name: '搜索插件' })
+    await draft.fill('unfinished-filter')
+    let navigations = 0
+    page.on('framenavigated', () => { navigations++ })
+    const entryId = await scaffold.ctx.loader.create({ name: '@fixture/live-client' })
+    const failure = page.locator('[data-client-sync-failure]')
+    await failure.getByText(/fixture r0 factory failed/).waitFor()
+    const rebuilt = source.replace('动态插件已启用', '动态插件 r1 已启用').replace('Live plugin enabled', 'Live plugin r1 enabled')
+    await writeFile(file, rebuilt)
+    scaffold.ctx.clientModules.rebuilt('@fixture/live-client')
+    await page.getByText('动态插件 r1 已启用', { exact: true }).waitFor()
+    await expect.poll(() => failure.count()).toBe(0)
+    await compareOrRefreshGolden(join(EXPECTED, 'recovered.expected.md'), await captureStableAria(page, '[data-live-client]', scaffold.workspaceCwd), webSnapshotMode())
+    expect(await draft.inputValue()).toBe('unfinished-filter')
+    expect(await page.locator('style[data-plugin="@fixture/live-client"]').count()).toBe(1)
+    expect(await page.evaluate(() => document.documentElement.dataset.liveMounts)).toBe('1')
+    expect(scaffold.ctx.loader.resolve(entryId).fiber?.state).toBe(2)
+    expect(scaffold.ctx.loader.ctx.fiber.uid).toBe(host)
+    expect(navigations).toBe(0)
+  } finally {
+    await browser.close()
+  }
+})
+
+it('reports bootstrap rebuilds without remounting the settings page or navigating', async () => {
+  const scaffold = await launchWebScaffold()
+  onTestFinished(() => scaffold.close())
+  const host = scaffold.ctx.loader.ctx.fiber.uid
+  const browser = await chromium.launch()
+  try {
+    const page = await browser.newPage({ locale: ZH_BROWSER_LOCALE })
+    const console = watchConsole(page)
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-client-bootstrap-rebuild'))
+    const inventory = await openInventory(page, scaffold.authenticatedUrl)
+    const draft = inventory.getByRole('searchbox', { name: '搜索插件' })
+    await draft.fill('unfinished-filter')
+    const originalInput = await draft.elementHandle()
+    let navigations = 0
+    page.on('framenavigated', () => { navigations++ })
+    scaffold.ctx.clientModules.rebuilt('@deepseek-ai/dsh-client-modules')
+    const failure = page.locator('[data-client-sync-failure]')
+    await failure.getByText(/replacing bootstrap module .* requires a page reload/).waitFor()
+    await failure.getByRole('button', { name: '重试本页面同步' }).click()
+    await failure.getByText(/replacing bootstrap module .* requires a page reload/).waitFor()
+    await compareOrRefreshGolden(join(EXPECTED, 'bootstrap-rebuild.expected.md'), await captureStableAria(page, '[data-client-sync-failure]', scaffold.workspaceCwd), webSnapshotMode())
+    expect(await originalInput!.evaluate(input => input.isConnected)).toBe(true)
+    expect(await draft.inputValue()).toBe('unfinished-filter')
+    expect(scaffold.ctx.loader.ctx.fiber.uid).toBe(host)
+    expect(navigations).toBe(0)
+    expect(console.pageErrors).toEqual([])
+  } finally {
+    await browser.close()
+  }
+})
