@@ -1,8 +1,10 @@
 """Exercise production-line attribution against isolated real Git histories."""
 
+import base64
 import importlib.util
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 import subprocess
@@ -58,7 +60,9 @@ class ProductionBlameTest(unittest.TestCase):
         for path in ('docs/a.ts', 'vendor/src/a.ts', 'packages/a/tests/a.ts',
                      'packages/a/src/a.spec.ts', 'packages/support/a/src/a.ts',
                      'packages/a/src/generated/a.ts', 'packages/a/src/a.d.ts',
-                     'packages/a/src/a.md', 'scripts/a.ts'):
+                     'packages/a/src/a.md', 'scripts/a.ts',
+                     'packages/core/tools/src/testing.ts',
+                     'packages/session/session-persistence-jsonl/src/testing/generation.ts'):
             self.assertFalse(blame.production_path(path), path)
         self.assertTrue(blame.production_path('packages/a/src/a.ts'))
         for path in ('python/sdk-runtime/runtime-bootstrap.mjs', 'apps/desktop/renderer/startup.js',
@@ -122,36 +126,88 @@ class ProductionBlameTest(unittest.TestCase):
 
     def test_publisher_fetches_history_without_checking_out_pr_code(self):
         self.write('packages/a/src/a.ts', 'const old = 1\n')
+        self.write('packages/a/src/base.ts', 'const base = 1\n')
         base = self.commit()
         self.write('packages/a/src/a.ts', 'throw new Error("PR code must not run")\n')
-        head = self.commit()
+        branch = self.commit()
+        self.git('checkout', '--detach', base)
+        self.write('packages/a/src/base.ts', 'const base = 2\n')
+        advanced = self.commit()
+        self.git('checkout', '--detach', branch)
+        self.git('merge', '--no-edit', advanced)
+        head = self.git('rev-parse', 'HEAD')
         remote = self.root / 'remote' / 'owner' / 'repo.git'
         remote.parent.mkdir(parents=True)
         self.git('clone', '--bare', str(self.root), str(remote))
-        subprocess.run(['git', '-C', str(remote), 'update-ref', 'refs/heads/trusted', base], check=True)
+        subprocess.run(['git', '-C', str(remote), 'update-ref', 'refs/heads/trusted', advanced], check=True)
         subprocess.run(['git', '-C', str(remote), 'symbolic-ref', 'HEAD', 'refs/heads/trusted'], check=True)
-        subprocess.run(['git', '-C', str(remote), 'update-ref', 'refs/pull/42/head', head], check=True)
+        subprocess.run(['git', '-C', str(remote), 'update-ref', 'refs/pull/42/head', advanced], check=True)
         checkout = self.root / 'checkout'
         self.git('clone', '--depth=1', remote.as_uri(), str(checkout))
+        wrappers = self.root / 'wrappers'
+        wrappers.mkdir()
+        trace = self.root / 'git-environment.json'
+        git_wrapper = wrappers / 'git'
+        git_wrapper.write_text(f"#!{sys.executable}\nimport json, os, sys\n"
+                               f"if 'fetch' in sys.argv: open({str(trace)!r}, 'w').write(json.dumps({{key: value for key, value in os.environ.items() if key.startswith('GIT_CONFIG_')}}))\n"
+                               f"os.execv({shutil.which('git')!r}, ['git', *sys.argv[1:]])\n")
+        git_wrapper.chmod(0o755)
         module = Path(__file__).with_name('blame-ownership.mjs').resolve().as_uri()
         program = f"""
           import {{ productionOwnership }} from {json.dumps(module)};
           const result = await productionOwnership({{repository:'owner/repo', number:42, headSha:{json.dumps(head)}}},
             async path => path === '/graphql'
               ? {{data:{{repository:{{c0:{{author:{{user:{{login:'writer'}}}}}}}}}}}}
-              : {{base:{{sha:{json.dumps(base)}}},head:{{sha:{json.dumps(head)}}}}});
+              : {{base:{{sha:{json.dumps(base)},ref:'trusted'}},head:{{sha:{json.dumps(head)}}}}});
           console.log(JSON.stringify(result));
         """
         result = subprocess.run(['node', '--input-type=module', '-e', program], cwd=checkout,
                                 check=True, capture_output=True, text=True,
                                 env={**os.environ, 'GITHUB_TOKEN': 'fixture-token',
                                      'GITHUB_SERVER_URL': (self.root / 'remote').as_uri(),
-                                     'PATH': str(Path(sys.executable).parent) + os.pathsep + os.environ['PATH']})
+                                     'PATH': str(wrappers) + os.pathsep + str(Path(sys.executable).parent) + os.pathsep + os.environ['PATH']})
         self.assertEqual(json.loads(result.stdout), {'totalLines': 1, 'reviewerLines': {'writer': 1}})
-        self.assertEqual(subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', 'HEAD'], text=True).strip(), base)
+        self.assertEqual(subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', 'HEAD'], text=True).strip(), advanced)
+        fetch_environment = json.loads(trace.read_text())
+        self.assertEqual(fetch_environment['GIT_CONFIG_COUNT'], '1')
+        self.assertEqual(fetch_environment['GIT_CONFIG_KEY_0'],
+                         f"http.{(self.root / 'remote').as_uri()}/.extraheader")
+        self.assertEqual(fetch_environment['GIT_CONFIG_VALUE_0'],
+                         'AUTHORIZATION: basic ' + base64.b64encode(b'x-access-token:fixture-token').decode())
         config = (checkout / '.git' / 'config').read_text()
         self.assertNotIn('fixture-token', config)
         self.assertNotIn('AUTHORIZATION', config)
+
+    def test_merge_forward_excludes_base_only_edits(self):
+        path = 'packages/a/src/a.ts'
+        self.write(path, 'const a = 1\n')
+        self.write('packages/a/src/base.ts', 'const base = 1\n')
+        fork = self.commit()
+        self.write(path, 'const a = 2\n')
+        branch = self.commit()
+        self.git('checkout', '--detach', fork)
+        self.write('packages/a/src/base.ts', 'const base = 2\n')
+        advanced = self.commit()
+        self.git('checkout', '--detach', branch)
+        self.git('merge', '--no-edit', advanced)
+        result = blame.measure(str(self.root), advanced, self.git('rev-parse', 'HEAD'))
+        self.assertEqual(result['mergeBase'], advanced)
+        self.assertEqual(result['commitLines'], {fork: 1})
+
+    def test_non_utf8_blobs_and_commit_metadata_keep_old_lines(self):
+        path = 'packages/a/src/a.ts'
+        self.write(path, 'const a = "old"\n')
+        (self.root / path).write_bytes(b'const a = "\xff"\n')
+        self.git('add', '.')
+        subprocess.run(['git', '-C', str(self.root), '-c', 'i18n.commitEncoding=ISO-8859-1',
+                        'commit', '-q', '-F', '-'], input=b'metadata \xff', check=True, capture_output=True)
+        base = self.git('rev-parse', 'HEAD')
+        (self.root / path).write_bytes(b'\0new \xfe\n')
+        self.assertEqual(blame.measure(str(self.root), base, self.commit())['commitLines'], {base: 1})
+
+    def test_generated_words_in_code_do_not_exclude_handwritten_files(self):
+        self.assertEqual(blame.code_lines('a.ts', 'const text = "generated by an agent"\n'), {1})
+        self.assertEqual(blame.code_lines('a.ts', 'const a = 1\n// do not edit user data\n'), {1})
 
     def test_rejects_shallow_history(self):
         self.write('packages/a/src/a.ts', 'const a = 1\n')

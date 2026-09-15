@@ -11,7 +11,7 @@ test('combines commit author accounts and retains unlinked authors in the denomi
   }, 'owner/repo', async (path, { body }) => {
     assert.equal(path, '/graphql')
     assert.deepEqual(body.variables, { owner: 'owner', name: 'repo' })
-    assert.match(body.query, /c0: object/u)
+    assert.equal(body.query, `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { ${[1, 2, 3].map((number, index) => `c${index}: object(oid: "${sha(number)}") { ... on Commit { author { user { login } } } }`).join('\n')} } }`)
     return { data: { repository: {
       c0: { author: { user: { login: 'Writer' } } },
       c1: { author: { user: { login: 'writer' } } },
@@ -26,8 +26,13 @@ test('batches author lookup and skips zero-line changes', async () => {
   let calls = 0
   await resolveBlameAuthors({
     totalLines: 51, commitLines: Object.fromEntries(Array.from({ length: 51 }, (_, index) => [sha(index), 1])),
-  }, 'owner/repo', async () => {
+  }, 'owner/repo', async (path, { body }) => {
+    const offset = calls * 50
     const length = calls++ === 0 ? 50 : 1
+    for (let index = 0; index < length; index++) {
+      assert.ok(body.query.includes(`c${index}: object(oid: "${sha(offset + index)}") { ... on Commit { author { user { login } } } }`))
+    }
+    assert.equal((body.query.match(/object\(oid:/gu) ?? []).length, length)
     return { data: { repository: Object.fromEntries(Array.from({ length }, (_, index) =>
       [`c${index}`, { author: { user: null } }])) } }
   })

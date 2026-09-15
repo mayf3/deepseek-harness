@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 
-import { productionOwnership } from './blame-ownership.mjs'
+import { productionOwnership, LOGIN } from './blame-ownership.mjs'
 
 const API_VERSION = '2026-03-10'
 const MAX_PULL_REQUEST_REVIEWS = 3_000
@@ -12,7 +12,6 @@ const PAGE_SIZE = 100
 const STATUS_CONTEXT = 'weighted approval'
 const WRITABLE_PERMISSIONS = new Set(['admin', 'write'])
 const REVIEW_STATES = new Set(['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED', 'PENDING'])
-const LOGIN = /^[A-Za-z0-9-]+(?:\[bot\])?$/u
 
 class GitHubApiError extends Error {
   constructor(message, status) {
@@ -162,13 +161,16 @@ export async function evaluateApproval({ event, policySource, api, getOwnership 
       })
     }
   }
-  if (approvals.some(approval => approval.points === 1)) {
+  const unboostedPoints = approvals.reduce((sum, approval) => sum + approval.points, 0)
+  if (blockers.length === 0 && unboostedPoints < policy.requiredPoints
+    && approvals.some(approval => approval.points === policy.defaultPoints)) {
     const ownership = await getOwnership(pull, api)
     for (const approval of approvals) {
-      if (approval.points !== 1) continue
+      if (approval.points !== policy.defaultPoints) continue
       const ownedLines = ownership.reviewerLines[approval.login.toLowerCase()] ?? 0
       approval.ownership = { ownedLines, totalLines: ownership.totalLines }
-      if (ownership.totalLines > 0) approval.points = Math.min(2, 1 + 4 * ownedLines / ownership.totalLines)
+      if (ownership.totalLines > 0) approval.points = Math.min(policy.requiredPoints, policy.defaultPoints
+        + (policy.requiredPoints - policy.defaultPoints) * 4 * ownedLines / ownership.totalLines)
     }
   }
   approvals.sort((left, right) => left.login.localeCompare(right.login, 'en'))
@@ -176,7 +178,7 @@ export async function evaluateApproval({ event, policySource, api, getOwnership 
   ignoredReviewers.sort((left, right) => left.localeCompare(right, 'en'))
   const points = approvals.reduce((total, approval) => {
     const next = total + approval.points
-    if (!Number.isFinite(next) || next > Number.MAX_SAFE_INTEGER) throw new Error('approval points exceed the safe integer range')
+    if (!Number.isFinite(next) || next > Number.MAX_SAFE_INTEGER) throw new Error('approval points must be finite and at most Number.MAX_SAFE_INTEGER')
     return next
   }, 0)
   if (blockers.length > 0) {
@@ -191,7 +193,7 @@ export async function evaluateApproval({ event, policySource, api, getOwnership 
     blockers,
     ignoredReviewers,
     state,
-    `${points}/${policy.requiredPoints} approval points`,
+    `${Number(points.toFixed(2))}/${policy.requiredPoints} approval points`,
   )
 }
 
@@ -218,6 +220,17 @@ export async function runApprovalCheck({ event, policySource, api, runUrl, getOw
   await publishStatus(api, pull, result.state, result.description, runUrl)
   write(`Published ${JSON.stringify(STATUS_CONTEXT)} status ${JSON.stringify(result.state)}.`)
   return result
+}
+
+/**
+ * Revoke a previous success before dependency installation, or report its failure.
+ * @param {{event: unknown, api: (path: string, options: object) => Promise<unknown>, runUrl: string, phase: string}} options Publication inputs.
+ * @returns {Promise<void>} Completion of the status write.
+ */
+export async function publishApprovalPhase({ event, api, runUrl, phase }) {
+  if (!['pending', 'error'].includes(phase)) throw new Error('invalid approval setup phase')
+  await publishStatus(api, pullRequestFromEvent(event), phase,
+    phase === 'pending' ? 'Preparing approval evaluation.' : 'Approval setup or evaluation failed.', runUrl)
 }
 
 /**
@@ -372,6 +385,11 @@ async function main() {
       return
     }
     event = resolved
+  }
+  const phase = process.argv[2]
+  if (phase) {
+    await publishApprovalPhase({ event, api, runUrl: process.env.GITHUB_RUN_URL ?? '', phase })
+    return
   }
   await runApprovalCheck({
     event,

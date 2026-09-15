@@ -10,6 +10,7 @@ import {
   listPullRequestReviews,
   parseApprovalPolicy,
   runApprovalCheck,
+  publishApprovalPhase,
 } from './check-approval.mjs'
 
 const policySource = readFileSync(new URL('approval-policy.json', import.meta.url), 'utf8')
@@ -185,8 +186,8 @@ test('accepts two one-point approvals and ignores reviews without write access',
   assert.equal(result.state, 'success')
   assert.equal(result.points, 2)
   assert.deepEqual(result.approvals, [
-    { login: 'writer-a', points: 1, ownership: { ownedLines: 0, totalLines: 0 } },
-    { login: 'writer-b', points: 1, ownership: { ownedLines: 0, totalLines: 0 } },
+    { login: 'writer-a', points: 1 },
+    { login: 'writer-b', points: 1 },
   ])
   assert.deepEqual(result.ignoredReviewers, ['reader'])
 })
@@ -360,7 +361,7 @@ test('sends authenticated JSON and escapes an API error body', async () => {
   await assert.rejects(failing('/failure'), /"::error::untrusted\\nbody"/u)
 })
 
-for (const [ownedLines, totalLines, expectedPoints] of [[0, 100, 1], [1, 8, 1.5], [24, 100, 1.96], [1, 4, 2], [25, 100, 2], [26, 100, 2], [100, 100, 2], [0, 0, 1]]) {
+for (const [ownedLines, totalLines, expectedPoints] of [[9, 100, 1.3599999999999999], [0, 100, 1], [1, 8, 1.5], [24, 100, 1.96], [1, 4, 2], [25, 100, 2], [26, 100, 2], [100, 100, 2], [0, 0, 1]]) {
   test(`scores ${ownedLines}/${totalLines} old production lines as ${expectedPoints} points`, async () => {
     let measurements = 0
     const result = await evaluateApproval({
@@ -374,13 +375,14 @@ for (const [ownedLines, totalLines, expectedPoints] of [[0, 100, 1], [1, 8, 1.5]
         : { permission: 'write' },
     })
     assert.equal(result.points, expectedPoints)
+    assert.equal(result.description, `${Number(expectedPoints.toFixed(2))}/2 approval points.`)
     assert.equal(result.state, expectedPoints === 2 ? 'success' : 'pending')
     assert.equal(measurements, 1)
     assert.deepEqual(result.approvals[0].ownership, { ownedLines, totalLines })
   })
 }
 
-test('shares one measurement across reviewers without overriding a change request', async () => {
+test('does not fetch ownership when a change request blocks approval', async () => {
   let measurements = 0
   const result = await evaluateApproval({
     event: pullRequestEvent(), policySource,
@@ -392,8 +394,8 @@ test('shares one measurement across reviewers without overriding a change reques
       ? [review('first', 'APPROVED'), review('second', 'APPROVED'), review('blocker', 'CHANGES_REQUESTED')]
       : { permission: 'write' },
   })
-  assert.equal(measurements, 1)
-  assert.equal(result.points, 4)
+  assert.equal(measurements, 0)
+  assert.equal(result.points, 2)
   assert.equal(result.state, 'pending')
 })
 
@@ -438,4 +440,39 @@ test('revokes a previous success before starting expensive attribution', async (
     },
   })
   assert.deepEqual(states, ['pending', 'success'])
+})
+
+for (const reviewers of [['first', 'second'], ['turtle1999', 'first']]) {
+  test(`does not fetch ownership for sufficient approvals: ${reviewers}`, async () => {
+    const result = await evaluateApproval({
+      event: pullRequestEvent(), policySource,
+      getOwnership: async () => { throw new Error('unnecessary lookup') },
+      api: async path => path.includes('/reviews?')
+        ? reviewers.map(login => review(login, 'APPROVED')) : { permission: 'write' },
+    })
+    assert.equal(result.state, 'success')
+  })
+}
+
+test('uses policy endpoints and formats only the displayed score', async () => {
+  const result = await evaluateApproval({
+    event: pullRequestEvent(),
+    policySource: JSON.stringify({ requiredPoints: 5, defaultPoints: 2, reviewerPoints: {} }),
+    getOwnership: async () => ({ totalLines: 100, reviewerLines: { writer: 9 } }),
+    api: async path => path.includes('/reviews?') ? [review('writer', 'APPROVED')] : { permission: 'write' },
+  })
+  assert.equal(result.points, 3.08)
+  assert.equal(result.description, '3.08/5 approval points.')
+})
+
+test('publishes setup phases without evaluating or installing dependencies', async () => {
+  const states = []
+  const options = {
+    event: pullRequestEvent(), runUrl: 'https://github.example/run/1',
+    api: async (path, { body }) => { assert.match(path, /\/statuses\//u); states.push(body.state) },
+  }
+  await publishApprovalPhase({ ...options, phase: 'pending' })
+  await publishApprovalPhase({ ...options, phase: 'error' })
+  assert.deepEqual(states, ['pending', 'error'])
+  await assert.rejects(publishApprovalPhase({ ...options, phase: 'success' }), /invalid approval setup phase/u)
 })

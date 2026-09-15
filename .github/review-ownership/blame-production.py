@@ -16,7 +16,7 @@ from pygments.token import Comment, Literal
 EXCLUDED = frozenset((
     'vendor', 'node_modules', 'dist', 'lib', 'build', 'coverage', 'target',
     'test', 'tests', '__tests__', 'fixture', 'fixtures', 'snapshot', 'snapshots',
-    'test-support', 'support', 'examples', 'docs', 'gen', 'generated', 'generated-effect',
+    'testing', 'test-support', 'support', 'examples', 'docs', 'gen', 'generated', 'generated-effect',
 ))
 EXTENSIONS = frozenset(('.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.css', '.scss', '.py', '.c', '.h', '.cpp', '.hpp', '.rs', '.html'))
 SHIPPED_ROOTS = ('apps/desktop/renderer/', 'packages/experimental/code-runtime-python/py/')
@@ -43,18 +43,23 @@ def production_path(path):
         shipped
         and not EXCLUDED.intersection(name.parts)
         and not re.search(r'\.(?:test|spec|e2e|gen|generated|d)\.', name.name)
+        and name.stem != 'testing'
         and name.suffix in EXTENSIONS
     )
 
 
 def code_lines(path, source):
     """Return physical lines containing non-comment, nonblank tokens, including mixed lines."""
-    if GENERATED.search(source[:1000]):
-        return set()
     lexer = get_lexer_for_filename(path, stripnl=False, ensurenl=False)
     lines = set()
     line = 1
+    leading = True
     for kind, value in lex(source, lexer):
+        if leading and (kind in Comment or kind in Literal.String.Doc):
+            if GENERATED.search(value):
+                return set()
+        elif value.strip():
+            leading = False
         for index, fragment in enumerate(value.split('\n')):
             if index:
                 line += 1
@@ -71,7 +76,7 @@ def changed_files(repo, base, head):
     index = 0
     while index < len(fields) - 1:
         metadata = fields[index].decode('ascii').split()
-        path = fields[index + 1].decode('utf-8')
+        path = os.fsdecode(fields[index + 1])
         index += 2
         if metadata[4].startswith(('R', 'C')):
             index += 1
@@ -92,7 +97,7 @@ def measure(repo, base, head):
     counts = Counter()
     files = 0
     for path, old_blob, new_blob in changed_files(repo, merge_base, head):
-        source = git(repo, 'cat-file', 'blob', old_blob).decode('utf-8')
+        source = git(repo, 'cat-file', 'blob', old_blob).decode('utf-8', errors='replace')
         eligible = code_lines(path, source)
         if not eligible:
             continue
@@ -100,7 +105,7 @@ def measure(repo, base, head):
             changed = eligible
         else:
             patch = git(repo, 'diff', '--no-ext-diff', '--no-textconv', '--text', '--unified=0',
-                        old_blob, new_blob, '--').decode('utf-8')
+                        old_blob, new_blob, '--').decode('utf-8', errors='replace')
             changed = set()
             for start, length in re.findall(r'^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@', patch, re.M):
                 start = int(start)
@@ -110,7 +115,7 @@ def measure(repo, base, head):
         files += 1
         # One blame per file covers all changed ranges; unchanged intervening lines never count.
         blame = git(repo, 'blame', '--no-textconv', '--line-porcelain', '-L', f'{min(changed)},{max(changed)}',
-                    merge_base, '--', path).decode('utf-8')
+                    merge_base, '--', path).decode('utf-8', errors='replace')
         attributed = 0
         for commit, line in re.findall(r'^([0-9a-f]{40}) \d+ (\d+)(?: \d+)?$', blame, re.M):
             if int(line) in changed:
