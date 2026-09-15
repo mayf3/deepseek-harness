@@ -436,7 +436,7 @@
   height: 28px;
   border: none;
   border-radius: 8px;
-  padding: 0 12px 0 28px;
+  padding: 0 12px 0 calc(28px + var(--dsh-workspace-indent, 0px));
   background: transparent;
   cursor: pointer;
   text-align: left;
@@ -511,6 +511,6 @@
 }
 
 .parentChildren {
-  padding-inline-start: 12px;
+  --dsh-workspace-indent: 12px;
   min-width: 0;
 }

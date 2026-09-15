@@ -387,9 +387,9 @@ describe('WorkspaceBrowser', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     expect(screen.getByText('分组方式')).toBeTruthy() // the menu heading label
-    expect(screen.getAllByRole('separator')).toHaveLength(2)
+    expect(screen.getAllByRole('separator')).toHaveLength(1)
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      '按工作区', '单列表', '手动排序', '最近更新', '添加父目录分组…',
+      '按工作区', '单列表', '手动排序', '最近更新',
     ])
     expect(screen.getByRole('menuitem', { name: '按工作区' }).querySelector('svg')).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '手动排序' }).querySelector('svg')).toBeTruthy()
@@ -1643,6 +1643,43 @@ describe('WorkspaceBrowser', () => {
 
 
 describe('parent folders', () => {
+  it('cancels a picked path and can add it as a normal Workspace instead of a group', async () => {
+    const b = mount({
+      useWorkspaces: hook(workspaceState([workspace('alpha', [])])),
+      createWorkspace: vi.fn(async () => workspace('projects', [])),
+      renderSlot: ((_name: string, owner: DirectoryFlowOwnerProps) => owner.open
+        ? <button onClick={() => { owner.onPicked('/projects') }}>Pick directory</button> : null) as WorkspaceBrowserProps['renderSlot'],
+    })
+    fireEvent.click(screen.getByRole('button', { name: '添加工作区' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pick directory' }))
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(b.props.createWorkspace).not.toHaveBeenCalled()
+    expect(b.props.startSession).not.toHaveBeenCalled()
+    expect(b.store.getSnapshot().parentFolders).toBeUndefined()
+    fireEvent.click(screen.getByRole('button', { name: '添加工作区' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pick directory' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '按子工作区分组' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加' }))
+    await waitFor(() => { expect(b.props.startSession).toHaveBeenCalledWith(wid('projects')) })
+    expect(b.props.createWorkspace).toHaveBeenCalledWith({ path: '/projects' })
+    expect(b.store.getSnapshot().parentFolders).toBeUndefined()
+  })
+
+  it('defaults an empty directory to Workspace adoption but allows an empty parent group', () => {
+    const b = mount({
+      renderSlot: ((_name: string, owner: DirectoryFlowOwnerProps) => owner.open
+        ? <button onClick={() => { owner.onPicked('/empty') }}>Pick directory</button> : null) as WorkspaceBrowserProps['renderSlot'],
+    })
+    fireEvent.click(screen.getByRole('button', { name: '添加工作区' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pick directory' }))
+    const choice = screen.getByRole('checkbox', { name: '按子工作区分组' }) as HTMLInputElement
+    expect(choice.checked).toBe(false)
+    fireEvent.click(choice)
+    fireEvent.click(screen.getByRole('button', { name: '添加' }))
+    expect(screen.getByRole('treeitem', { name: '/empty' })).toBeTruthy()
+    expect(b.props.createWorkspace).not.toHaveBeenCalled()
+  })
+
   it('adds a parent through the picker without creating a Workspace or Session, and restores it after reload', () => {
     const b = mount({
       useWorkspaces: hook(workspaceState([workspace('alpha', ['first'])])),
@@ -1650,9 +1687,11 @@ describe('parent folders', () => {
       renderSlot: ((_name: string, owner: DirectoryFlowOwnerProps) => owner.open
         ? <button onClick={() => { owner.onPicked('/projects') }}>Pick parent</button> : null) as WorkspaceBrowserProps['renderSlot'],
     })
-    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '添加父目录分组…' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加工作区' }))
     fireEvent.click(screen.getByRole('button', { name: 'Pick parent' }))
+    expect(screen.getByRole('checkbox', { name: '按子工作区分组' }).getAttribute('checked')).not.toBeNull()
+    expect(b.props.createWorkspace).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '添加' }))
     expect(b.props.createWorkspace).not.toHaveBeenCalled()
     expect(b.props.startSession).not.toHaveBeenCalled()
     const parent = screen.getByRole('treeitem', { name: '/projects' })
@@ -1662,7 +1701,8 @@ describe('parent folders', () => {
     b.view.unmount()
     const restored = mount({ useWorkspaces: b.props.useWorkspaces, useSessions: b.props.useSessions })
     expect(screen.getByRole('treeitem', { name: '/projects' }).getAttribute('aria-expanded')).toBe('false')
-    fireEvent.click(screen.getByRole('button', { name: '移除父目录分组“/projects”' }))
+    fireEvent.click(screen.getByRole('button', { name: '工作区“/projects”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '移除分组' }))
     expect(screen.queryByRole('treeitem', { name: '/projects' })).toBeNull()
     expect(screen.getByText('alpha')).toBeTruthy()
     expect(restored.props.deleteWorkspace).not.toHaveBeenCalled()

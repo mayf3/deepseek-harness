@@ -98,8 +98,7 @@ function useNativeDragAcceptance(active: boolean): void {
 }
 
 /** Grouping and ordering menu; own open state so it resets with the wide chrome. */
-function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, onAddParentFolder, t }: {
-  onAddParentFolder: (() => void) | undefined
+function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
   groupBy: 'workspace' | 'flat'
   orderBy: SessionOrderBy
   onGroupPick: (mode: 'workspace' | 'flat') => void
@@ -119,16 +118,11 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, onAddPare
         { type: 'label' as const, id: 'order-by', text: t('orderBy.label') },
         { id: 'manual', label: t('orderBy.manual') },
         { id: 'updated', label: t('orderBy.updated') },
-        ...(onAddParentFolder === undefined ? [] : [
-          { type: 'separator' as const, id: 'folders-separator' },
-          { id: 'add-parent-folder', label: t('parentFolder.add') },
-        ]),
       ]}
       selectedIds={[groupBy, orderBy]}
       onSelect={(id) => {
         if (id === 'workspace' || id === 'flat') onGroupPick(id)
         else if (id === 'manual' || id === 'updated') onOrderPick(id)
-        else if (id === 'add-parent-folder') onAddParentFolder?.()
         setOpen(false)
       }}
       align="end"
@@ -897,7 +891,6 @@ export function WorkspaceBrowser({
   // Section-header ＋ opens the picker menu (same popover in wide and rail
   // states; the menu anchors on this button).
   const [wsPickerOpen, setWsPickerOpen] = useState(false)
-  const [pickingParentFolder, setPickingParentFolder] = useState(false)
   const wsPlusRef = useRef<HTMLButtonElement>(null)
   const composingRef = useRef(false)
 
@@ -1164,10 +1157,6 @@ export function WorkspaceBrowser({
               orderBy={orderBy}
               onGroupPick={(mode) => { actions.setGroupBy(mode) }}
               onOrderPick={(mode) => { actions.setOrderBy(mode, activeSessionOrders) }}
-              onAddParentFolder={directoryFlowAvailable ? () => {
-                setPickingParentFolder(true)
-                setWsPickerOpen(true)
-              } : undefined}
               t={t}
             />
           )}
@@ -1182,7 +1171,6 @@ export function WorkspaceBrowser({
                 className={css.iconButton}
                 aria-label={t('workspace.add')}
                 onClick={() => {
-                  setPickingParentFolder(false)
                   setWsPickerOpen(v => !v)
                 }}
               >
@@ -1201,10 +1189,10 @@ export function WorkspaceBrowser({
           useDirectoryFlow={useDirectoryFlow}
           renderDirectoryFlow={owner => renderSlot('sidebar.workspaces.directoryFlow', owner)}
           addOnly
-          onPickParentFolder={pickingParentFolder ? (path) => {
+          onPickParentFolder={(path) => {
             actions.setParentFolder(path, true)
             actions.setGroupBy('workspace')
-          } : undefined}
+          }}
           side="right"
           onPick={(workspaceId) => {
             setWsPickerOpen(false)

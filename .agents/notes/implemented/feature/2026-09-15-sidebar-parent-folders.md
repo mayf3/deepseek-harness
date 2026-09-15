@@ -12,7 +12,7 @@ A flat Workspace list makes related projects hard to browse when many directorie
 
 Parent folders are browser-local viewing state in the existing Workspace store. Each Workspace appears under the most specific selected ancestor or equal path; unassigned Workspaces retain their root positions relative to each other. Selected parents retain addition order, including empty parents. Path comparison respects directory separators and uses Host case spelling. It does not resolve symlink aliases.
 
-The directory picker reports a parent path without creating a Workspace or Session. Project rows retain their current actions and per-account Session ordering. Workspace dragging is restricted to siblings in the same parent. Search-result navigation expands the parent before revealing the Session. Missing parent-folder state in older browser preferences means no grouping; removing a parent never changes Host state.
+The existing Add workspace flow offers parent grouping after directory selection, without creating a Workspace or Session. Parent rows reuse the Workspace folder affordance and ellipsis menu. Row fills and hit targets span the same width at every level; indentation applies only to row contents. Project rows retain their current actions and per-account Session ordering. Workspace dragging is restricted to siblings in the same parent. Search-result navigation expands the parent before revealing the Session. Missing parent-folder state in older browser preferences means no grouping; removing a parent never changes Host state.
 
 ## Alternatives considered
 

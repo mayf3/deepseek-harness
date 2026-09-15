@@ -14,6 +14,7 @@
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join, sep } from 'node:path'
+import { homedir } from 'node:os'
 import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -76,6 +77,10 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     // Creating selects the new folder in the listing; Open adopts it.
     await dialog.getByRole('button', { name: 'Open', exact: true }).click()
     await dialog.waitFor({ state: 'hidden', timeout: 10_000 })
+    const confirmation = page.getByRole('dialog', { name: 'Add workspace', exact: true })
+    await confirmation.getByRole('checkbox', { name: 'Group by child workspaces' }).uncheck()
+    await confirmation.getByRole('button', { name: 'Add', exact: true }).click()
+    await confirmation.waitFor({ state: 'hidden' })
     await expect.poll(
       () => scaffold.ctx.workspaceRegistry.resolveByPath(join(parent, name)),
       { timeout: 10_000 },
@@ -96,6 +101,10 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     const dialog = await browseTo(path)
     await dialog.getByRole('button', { name: 'Open', exact: true }).click()
     await dialog.waitFor({ state: 'hidden', timeout: 10_000 })
+    const confirmation = page.getByRole('dialog', { name: 'Add workspace', exact: true })
+    await confirmation.getByRole('checkbox', { name: 'Group by child workspaces' }).uncheck()
+    await confirmation.getByRole('button', { name: 'Add', exact: true }).click()
+    await confirmation.waitFor({ state: 'hidden' })
     await expect.poll(
       () => scaffold.ctx.workspaceRegistry.resolveByPath(path),
       { timeout: 10_000 },
@@ -665,13 +674,13 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
   it('groups existing Workspaces by a picked parent without creating a parent Workspace', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-parent-folders'))
     const parentPath = join(scaffold.workspaceCwd, 'folder-group')
+    const parentName = parentPath.startsWith(homedir() + sep) ? `~${parentPath.slice(homedir().length)}` : parentPath
     await mkdir(parentPath)
     await addNewFolderWorkspace(parentPath, 'project-one')
     await addNewFolderWorkspace(parentPath, 'project-two')
     const workspaceIds = scaffold.ctx.workspaceRegistry.list().map(workspace => workspace.id)
     const agentCount = scaffold.ctx.agents.list().length
-    await page.getByRole('button', { name: 'View options' }).click()
-    await page.getByRole('menuitem', { name: 'Add parent folder…' }).click()
+    await page.getByRole('button', { name: 'Add workspace', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Select Workspace Directory' })
     await dialog.getByRole('button', { name: 'Edit path' }).click()
     await dialog.locator('input[aria-label="Edit path"]').fill(parentPath)
@@ -679,16 +688,33 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     await dialog.locator('input[aria-label="Edit path"]').waitFor({ state: 'detached' })
     await dialog.getByRole('button', { name: 'Open', exact: true }).click()
     await dialog.waitFor({ state: 'hidden' })
+    const confirmation = page.getByRole('dialog', { name: 'Add workspace', exact: true })
+    expect(await confirmation.getByRole('checkbox', { name: 'Group by child workspaces' }).isChecked()).toBe(true)
+    const confirmationAria = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    await confirmation.getByRole('button', { name: 'Add', exact: true }).click()
+    await confirmation.waitFor({ state: 'hidden' })
     const parent = page.getByRole('treeitem', { name: parentPath, exact: true })
     await parent.getByText('project-two', { exact: true }).waitFor()
     expect(await parent.getByText('project-one', { exact: true }).count()).toBe(1)
     expect(scaffold.ctx.workspaceRegistry.list().map(workspace => workspace.id)).toEqual(workspaceIds)
     expect(scaffold.ctx.agents.list()).toHaveLength(agentCount)
+    const parentBounds = (await parent.boundingBox())!
+    const project = parent.getByRole('treeitem', { name: 'project-two', exact: true })
+    const session = parent.locator('[aria-selected="true"]')
+    for (const row of [project, session]) {
+      const bounds = (await row.boundingBox())!
+      expect(bounds.x).toBeCloseTo(parentBounds.x, 0)
+      expect(bounds.width).toBeCloseTo(parentBounds.width, 0)
+    }
+    const parentLabel = (await parent.getByRole('button', { name: parentName, exact: true }).locator('span').last().boundingBox())!
+    const projectLabel = (await project.getByText('project-two', { exact: true }).boundingBox())!
+    expect(projectLabel.x - parentLabel.x).toBeCloseTo(12, 0)
     const expected = fileURLToPath(new URL('./expected/workspace-management/parent-folders.expected.md', import.meta.url))
-    await compareOrRefreshGolden(expected, await captureStableAria(
+    await compareOrRefreshGolden(expected, confirmationAria + '\n' + await captureStableAria(
       page, '[role="treeitem"][aria-label]', scaffold.workspaceCwd,
+      { replacements: [[parentName, '{{cwd}}/folder-group']] },
     ), MODE)
-    await parent.getByRole('button', { name: parentPath, exact: true }).click()
+    await parent.getByRole('button', { name: parentName, exact: true }).click()
     expect(await parent.getByText('project-two', { exact: true }).count()).toBe(0)
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
@@ -696,7 +722,8 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     expect(await parent.getAttribute('aria-expanded')).toBe('false')
     await parent.hover()
-    await parent.getByRole('button', { name: `Remove parent folder “${parentPath}”` }).click()
+    await parent.getByRole('button', { name: `Workspace actions for ${parentName}` }).click()
+    await page.getByRole('menuitem', { name: 'Remove group', exact: true }).click()
     await parent.waitFor({ state: 'detached' })
     await page.getByRole('tree').getByText('project-two', { exact: true }).waitFor()
     expect(scaffold.ctx.workspaceRegistry.list().map(workspace => workspace.id)).toEqual(workspaceIds)

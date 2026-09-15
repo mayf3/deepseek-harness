@@ -5,6 +5,7 @@
   gap: 6px;
   border-radius: 8px;
   padding: 0 8px;
+  padding-inline-start: calc(8px + var(--dsh-workspace-indent, 0px));
   cursor: pointer;
   user-select: none;
   color: var(--dsw-alias-label-primary);
@@ -239,12 +240,15 @@
 
 .projectRow:hover .rowActions,
 .sessionRow:hover .rowActions,
+.projectRow:focus-within .rowActions,
+.sessionRow:focus-within .rowActions,
 .projectRow.menuOpen .rowActions,
 .sessionRow.menuOpen .rowActions {
   display: inline-flex;
 }
 
 .sessionRow:hover .time,
+.sessionRow:focus-within .time,
 .sessionRow.menuOpen .time {
   display: none;
 }
