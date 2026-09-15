@@ -5,6 +5,7 @@ import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 
 import { productionOwnership, LOGIN } from './blame-ownership.mjs'
+import { authorCreditPoints, countMergedAuthorPulls } from './author-weight.mjs'
 
 const API_VERSION = '2026-03-10'
 const MAX_PULL_REQUEST_REVIEWS = 3_000
@@ -129,10 +130,10 @@ export async function listPullRequestReviews(api, repository, pullNumber) {
 
 /**
  * Evaluate approval points from current reviews and repository permissions.
- * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, getOwnership?: typeof productionOwnership}} options Runtime inputs.
- * @returns {Promise<{pull: {repository: string, number: number, headSha: string}, state: 'pending' | 'success', description: string, points: number, requiredPoints: number, approvals: Array<{login: string, points: number, ownership?: {ownedLines: number, totalLines: number}}>, blockers: string[], ignoredReviewers: string[]}>} Approval decision and status payload fields.
+ * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, getOwnership?: typeof productionOwnership, getMergedCount?: typeof countMergedAuthorPulls}} options Runtime inputs.
+ * @returns {Promise<{pull: {repository: string, number: number, headSha: string}, state: 'pending' | 'success', description: string, points: number, authorCredit: {mergedCount: number, points: number} | null, requiredPoints: number, approvals: Array<{login: string, points: number, ownership?: {ownedLines: number, totalLines: number}}>, blockers: string[], ignoredReviewers: string[]}>} Approval decision and status payload fields; null author credit means history was not evaluated.
  */
-export async function evaluateApproval({ event, policySource, api, getOwnership = productionOwnership }) {
+export async function evaluateApproval({ event, policySource, api, getOwnership = productionOwnership, getMergedCount = countMergedAuthorPulls }) {
   const pull = pullRequestFromEvent(event)
   const policy = parseApprovalPolicy(policySource)
   if (pull.draft) {
@@ -161,8 +162,14 @@ export async function evaluateApproval({ event, policySource, api, getOwnership 
       })
     }
   }
-  const unboostedPoints = approvals.reduce((sum, approval) => sum + approval.points, 0)
-  if (blockers.length === 0 && unboostedPoints < policy.requiredPoints
+  let authorCredit = null
+  const reviewerPoints = approvals.reduce((sum, approval) => sum + approval.points, 0)
+  if (blockers.length === 0 && reviewerPoints < policy.requiredPoints) {
+    const mergedCount = await getMergedCount(pull, api)
+    authorCredit = { mergedCount, points: authorCreditPoints(mergedCount) }
+  }
+  const pointsBeforeOwnership = reviewerPoints + (authorCredit?.points ?? 0)
+  if (blockers.length === 0 && pointsBeforeOwnership < policy.requiredPoints
     && approvals.some(approval => approval.points === policy.defaultPoints)) {
     const ownership = await getOwnership(pull, api)
     for (const approval of approvals) {
@@ -180,12 +187,13 @@ export async function evaluateApproval({ event, policySource, api, getOwnership 
     const next = total + approval.points
     if (!Number.isFinite(next) || next > Number.MAX_SAFE_INTEGER) throw new Error('approval points must be finite and at most Number.MAX_SAFE_INTEGER')
     return next
-  }, 0)
+  }, authorCredit?.points ?? 0)
   if (blockers.length > 0) {
     return approvalResult(pull, policy.requiredPoints, approvals, blockers, ignoredReviewers, 'pending',
-      `${blockers.length} blocking change request${blockers.length === 1 ? '' : 's'}`)
+      `${blockers.length} blocking change request${blockers.length === 1 ? '' : 's'}`, authorCredit)
   }
-  const state = points >= policy.requiredPoints ? 'success' : 'pending'
+  // Tolerate floating-point addition error without rounding approval scores.
+  const state = points + 1e-12 >= policy.requiredPoints ? 'success' : 'pending'
   return approvalResult(
     pull,
     policy.requiredPoints,
@@ -193,25 +201,29 @@ export async function evaluateApproval({ event, policySource, api, getOwnership 
     blockers,
     ignoredReviewers,
     state,
-    `${Number(points.toFixed(2))}/${policy.requiredPoints} approval points`,
+    `${Number(points.toFixed(3))}/${policy.requiredPoints} approval points${authorCredit ? ` (author ${authorCredit.points})` : ''}`,
+    authorCredit,
   )
 }
 
 /**
  * Evaluate and publish the required commit status, publishing an error status when evaluation fails.
- * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, runUrl: string, write?: (line: string) => void, getOwnership?: typeof productionOwnership}} options Runtime inputs.
+ * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, runUrl: string, write?: (line: string) => void, getOwnership?: typeof productionOwnership, getMergedCount?: typeof countMergedAuthorPulls}} options Runtime inputs.
  * @returns {Promise<Awaited<ReturnType<typeof evaluateApproval>>>} Published approval decision.
  */
-export async function runApprovalCheck({ event, policySource, api, runUrl, getOwnership = productionOwnership, write = line => process.stdout.write(`${line}\n`) }) {
+export async function runApprovalCheck({ event, policySource, api, runUrl, getOwnership = productionOwnership, getMergedCount = countMergedAuthorPulls, write = line => process.stdout.write(`${line}\n`) }) {
   const pull = pullRequestFromEvent(event)
   await publishStatus(api, pull, 'pending', 'Evaluating approval points.', runUrl)
   let result
   try {
-    result = await evaluateApproval({ event, policySource, api, getOwnership })
+    result = await evaluateApproval({ event, policySource, api, getOwnership, getMergedCount })
   } catch (error) {
     await publishStatus(api, pull, 'error', 'Approval evaluation failed.', runUrl)
     throw error
   }
+  write(result.authorCredit
+    ? `Author credit: ${result.authorCredit.points} (${result.authorCredit.mergedCount} merged PRs).`
+    : `Author credit: not evaluated (${pull.draft ? 'draft' : result.blockers.length ? 'blocking review' : 'reviewer points suffice'}).`)
   write(`Approval score: ${result.points}/${result.requiredPoints}.`)
   writeList(write, 'Counted approvals', result.approvals.map(({ login, points, ownership }) =>
     `@${login}: ${points}${ownership ? ` (${ownership.ownedLines}/${ownership.totalLines} old production lines)` : ''}`))
@@ -261,12 +273,13 @@ export async function approvalEventFromWorkflowRun({ event, api }) {
   return { ...event, pull_request: pull }
 }
 
-function approvalResult(pull, requiredPoints, approvals, blockers, ignoredReviewers, state, detail) {
+function approvalResult(pull, requiredPoints, approvals, blockers, ignoredReviewers, state, detail, authorCredit = null) {
   return {
     pull: { repository: pull.repository, number: pull.number, headSha: pull.headSha },
     state,
     description: `${detail}.`,
-    points: approvals.reduce((total, approval) => total + approval.points, 0),
+    points: approvals.reduce((total, approval) => total + approval.points, authorCredit?.points ?? 0),
+    authorCredit,
     requiredPoints,
     approvals,
     blockers,
@@ -312,12 +325,15 @@ function pullRequestFromEvent(event) {
   if (!Number.isSafeInteger(pull.number) || pull.number <= 0) throw new Error('pull request has no valid number')
   if (typeof pull.draft !== 'boolean') throw new Error('pull request has no draft flag')
   const author = validateLogin(pull.user.login, 'pull-request author')
+  // REST node_id and GraphQL id identify the same global account node.
+  if (typeof pull.user.node_id !== 'string' || !pull.user.node_id) throw new Error('pull request has no author account ID')
   const headSha = validateHeadSha(pull.head.sha, 'pull request')
   return {
     repository,
     number: pull.number,
     draft: pull.draft,
     author,
+    authorId: pull.user.node_id,
     headSha,
   }
 }
