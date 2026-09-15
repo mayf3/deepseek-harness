@@ -176,15 +176,16 @@ export interface PluginInstallLogChunk {
 
 /** What changed in the profile, for consumers that show it. */
 export interface PluginChange {
-  /** The operation that changed it; `reload` is a patch generation applied outside the manager. */
-  readonly reason: 'plugin' | 'bundle' | 'install' | 'remove' | 'reload'
+  /** The operation that changed it. */
+  readonly reason: 'plugin' | 'bundle' | 'install' | 'remove'
 }
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
     /**
      * The profile's plugins, bundles, or composition changed: a manager
-     * operation completed, or a patch generation was applied.
+     * operation completed. A patch generation applied outside the manager,
+     * by HMR's watcher after a CLI or hand edit, announces nothing here.
      * @mode emit
      * @param change - what changed.
      */

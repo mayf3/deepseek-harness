@@ -3629,8 +3629,8 @@ export const EVENT_API: readonly EventApiEntry[] = [
     name: 'plugin-manager/changed',
     mode: 'emit',
     signature: '\'plugin-manager/changed\'(change: PluginChange): void',
-    summary: 'The profile\'s plugins, bundles, or composition changed: a manager operation completed, or a patch generation was applied.',
-    description: 'The profile\'s plugins, bundles, or composition changed: a manager operation completed, or a patch generation was applied.',
+    summary: 'The profile\'s plugins, bundles, or composition changed: a manager operation completed.',
+    description: 'The profile\'s plugins, bundles, or composition changed: a manager operation completed. A patch generation applied outside the manager, by HMR\'s watcher after a CLI or hand edit, announces nothing here.',
     parameters: [{ name: 'change', description: 'what changed.' }],
   },
   {
@@ -3648,14 +3648,6 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'An installation moved between its Host phases.',
     description: 'An installation moved between its Host phases.',
     parameters: [{ name: 'progress', description: 'the installation\'s request id and phase.' }],
-  },
-  {
-    name: 'profile/reconciled',
-    mode: 'emit',
-    signature: '\'profile/reconciled\'(patches: readonly PatchOptions[]): void',
-    summary: 'A complete patch generation was applied to the root Include and the Loader settled, whether or not every row activated.',
-    description: 'A complete patch generation was applied to the root Include and the Loader settled, whether or not every row activated.',
-    parameters: [{ name: 'patches', description: 'the ordered patch list that was applied.' }],
   },
   {
     name: 'session-telemetry/record',
@@ -5087,7 +5079,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginChange',
-    declaration: 'export interface PluginChange {\n    readonly reason: \'plugin\' | \'bundle\' | \'install\' | \'remove\' | \'reload\';\n}',
+    declaration: 'export interface PluginChange {\n    readonly reason: \'plugin\' | \'bundle\' | \'install\' | \'remove\';\n}',
   },
   {
     name: 'PluginEntryId',

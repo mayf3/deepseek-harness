@@ -148,8 +148,6 @@ export class PluginManager extends TypertRemoteService {
   private readonly abort = new AbortController()
   /** Installations by request id, from their call until it settles. */
   private readonly installs = new Map<PluginInstallRequestId, InstallControl>()
-  /** A manager operation holds the profile lock; reconciliations it runs announce through its own change. */
-  private operating = false
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'pluginManager')
@@ -164,11 +162,6 @@ export class PluginManager extends TypertRemoteService {
       this.abort.abort()
       await Promise.allSettled([...this.packageOperations])
     }, 'plugin-manager: package cancellation')
-    // A patch generation applied outside a manager operation — HMR's file
-    // watcher after a CLI or hand edit — changes what the lists show.
-    ctx.on('profile/reconciled', () => {
-      if (!this.operating) ctx.emit('plugin-manager/changed', { reason: 'reload' })
-    })
   }
 
   /** Read current plugins, including why a row cannot be changed through the profile patch.
@@ -572,7 +565,6 @@ export class PluginManager extends TypertRemoteService {
   ): Promise<ChangeResult> {
     return withFileLock(join(this.profile.dir, 'package.json'), async () => {
       this.abort.signal.throwIfAborted()
-      this.operating = true
       const before = this.diskState()
       const result: ChangeResult = { ...request, changed: false,
         application: this.ownerContext.get('hmr') !== undefined ? 'applied' : 'restart-required' }
@@ -585,8 +577,6 @@ export class PluginManager extends TypertRemoteService {
           result.application = 'failed'
           result.error = managementError(error)
         }
-      } finally {
-        this.operating = false
       }
       result.changed = before !== this.diskState()
       this.ownerContext.emit('plugin-manager/changed', { reason })

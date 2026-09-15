@@ -232,18 +232,6 @@ export function loadLayeredEnv(
 
 const bootstrapIncludes = new WeakMap<Context, Entry>()
 
-declare module '@deepseek-ai/cordis' {
-  interface Events {
-    /**
-     * A complete patch generation was applied to the root Include and the
-     * Loader settled, whether or not every row activated.
-     * @mode emit
-     * @param patches - the ordered patch list that was applied.
-     */
-    'profile/reconciled'(patches: readonly PatchOptions[]): void
-  }
-}
-
 // The include's YAML dialect (`!!js` scalars become expression nodes the
 // Loader interpolates against each entry's injection-ready context), imported
 // from the include itself so patch parsing and config dumping can never drift
@@ -274,7 +262,6 @@ export async function reconcileProfilePatches(
   await entry.update({ config: { ...includeConfig, patches } })
   const results = await Promise.allSettled(previousFibers.map(({ fiber }) => fiber.await()))
   await ctx.loader.await()
-  ctx.emit('profile/reconciled', patches)
   const failures = await inactiveEntries(ctx)
   const introduced = failures.filter(failure => requiredIds.includes(failure.entry.options.id) || !previousFailures.some(previous =>
     previous.entry === failure.entry && previous.fiber === failure.entry.fiber

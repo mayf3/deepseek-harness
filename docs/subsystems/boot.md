@@ -172,12 +172,13 @@ Source: [`packages/boot/hmr/src/index.ts`](../../packages/boot/hmr/src/index.ts)
 
 #### `plugin-manager/changed` — emit
 
-The profile's plugins, bundles, or composition changed: a manager operation completed, or a patch generation was applied.
+The profile's plugins, bundles, or composition changed: a manager operation completed. A patch generation applied outside the manager, by HMR's watcher after a CLI or hand edit, announces nothing here.
 
 ```ts cordis-catalog
 /**
  * The profile's plugins, bundles, or composition changed: a manager
- * operation completed, or a patch generation was applied.
+ * operation completed. A patch generation applied outside the manager,
+ * by HMR's watcher after a CLI or hand edit, announces nothing here.
  * @mode emit
  * @param change - what changed.
  */
@@ -219,26 +220,4 @@ An installation moved between its Host phases.
 ```
 
 Source: [`packages/boot/plugin-manager/src/types.ts`](../../packages/boot/plugin-manager/src/types.ts)
-
-<a id="profile-events"></a>
-
-### `profile/*` events
-
-<a id="profilereconciled--emit"></a>
-
-#### `profile/reconciled` — emit
-
-A complete patch generation was applied to the root Include and the Loader settled, whether or not every row activated.
-
-```ts cordis-catalog
-/**
- * A complete patch generation was applied to the root Include and the
- * Loader settled, whether or not every row activated.
- * @mode emit
- * @param patches - the ordered patch list that was applied.
- */
-'profile/reconciled'(patches: readonly PatchOptions[]): void
-```
-
-Source: [`packages/boot/app-boot/src/index.ts`](../../packages/boot/app-boot/src/index.ts)
 <!-- END GENERATED cordis-surface -->

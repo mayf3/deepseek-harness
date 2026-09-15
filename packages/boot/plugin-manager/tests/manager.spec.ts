@@ -629,17 +629,17 @@ it('reads what a spec names before installing it', async () => {
   expect(view).toHaveBeenCalledTimes(13)
 })
 
-it('announces a patch generation applied outside the manager as a change', async () => {
+it('announces each manager operation as a change, and a patch generation applied outside it not at all', async () => {
   const { ctx, manager, profile } = await fixture('startup')
   const changes: PluginChange[] = []
   ctx.on('plugin-manager/changed', (change) => { changes.push(change) })
   await reconcileProfilePatches(ctx, readProfilePatches('test', profile), 'test')
-  expect(changes).toEqual([{ reason: 'reload' }])
+  expect(changes).toEqual([])
   const id = (await manager.listPlugins()).find(row => row.patchId === 'managed')!.entryId
   await manager.setPluginEnabled(id, false)
-  expect(changes).toEqual([{ reason: 'reload' }, { reason: 'plugin' }])
+  expect(changes).toEqual([{ reason: 'plugin' }])
   await manager.setBundleEnabled('extra', false)
-  expect(changes).toEqual([{ reason: 'reload' }, { reason: 'plugin' }, { reason: 'bundle' }])
+  expect(changes).toEqual([{ reason: 'plugin' }, { reason: 'bundle' }])
 })
 
 it('handles missing patch files and retains non-Error package diagnostics', async () => {
