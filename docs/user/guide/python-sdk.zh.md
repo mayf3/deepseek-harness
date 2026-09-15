@@ -14,7 +14,10 @@
 
 ## 安装 SDK
 
-<a id="linux-与-macos"></a><a id="windows-powershell"></a>
+<div>
+<a id="linux-与-macos"></a>
+<a id="windows-powershell"></a>
+</div>
 
 ::: code-group
 
@@ -42,7 +45,10 @@ python -m pip install deepseek-harness-sdk
 
 导出凭据；使用兼容代理时再设置 endpoint：
 
-<a id="linux-与-macos-1"></a><a id="windows-powershell-1"></a>
+<div>
+<a id="linux-与-macos-1"></a>
+<a id="windows-powershell-1"></a>
+</div>
 
 ::: code-group
 
@@ -60,7 +66,10 @@ $env:DEEPSEEK_API_KEY = "sk-your-key-here"
 
 使用显式 workspace 与 home 路径运行一个任务：
 
-<a id="linux-与-macos-2"></a><a id="windows-powershell-2"></a>
+<div>
+<a id="linux-与-macos-2"></a>
+<a id="windows-powershell-2"></a>
+</div>
 
 ::: code-group
 
@@ -115,7 +124,10 @@ SDK 会延迟启动内置的 `dsh --profile sdk-minimal` 进程，并复用到�
 
 需要在该 home 中持久保存依赖与 bundle 层时，使用 `dsh plugin`：
 
-<a id="linux-与-macos-3"></a><a id="windows-powershell-3"></a>
+<div>
+<a id="linux-与-macos-3"></a>
+<a id="windows-powershell-3"></a>
+</div>
 
 ::: code-group
 

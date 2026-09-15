@@ -14,7 +14,10 @@ This tutorial installs the published Python SDK, runs the shipped standalone min
 
 ## Install the SDK
 
-<a id="linux-and-macos"></a><a id="windows-powershell"></a>
+<div>
+<a id="linux-and-macos"></a>
+<a id="windows-powershell"></a>
+</div>
 
 ::: code-group
 
@@ -42,7 +45,10 @@ The installation includes a matching native runtime wheel and the `dsh` command.
 
 Export the credential and, when needed, a compatible proxy endpoint:
 
-<a id="linux-and-macos-1"></a><a id="windows-powershell-1"></a>
+<div>
+<a id="linux-and-macos-1"></a>
+<a id="windows-powershell-1"></a>
+</div>
 
 ::: code-group
 
@@ -60,7 +66,10 @@ $env:DEEPSEEK_API_KEY = "sk-your-key-here"
 
 Run one task with explicit workspace and home paths:
 
-<a id="linux-and-macos-2"></a><a id="windows-powershell-2"></a>
+<div>
+<a id="linux-and-macos-2"></a>
+<a id="windows-powershell-2"></a>
+</div>
 
 ::: code-group
 
@@ -115,7 +124,10 @@ The SDK starts the bundled `dsh --profile sdk-minimal` process lazily and reuses
 
 Use `dsh plugin` for dependencies and bundle layers that should persist in this home:
 
-<a id="linux-and-macos-3"></a><a id="windows-powershell-3"></a>
+<div>
+<a id="linux-and-macos-3"></a>
+<a id="windows-powershell-3"></a>
+</div>
 
 ::: code-group
 
