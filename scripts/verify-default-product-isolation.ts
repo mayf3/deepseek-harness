@@ -1,7 +1,7 @@
 /**
  * Keep experimental packages outside default installations, runtime imports, and shipped compositions.
- * The one declared exception is a bundle the installation lists under `dsh.optionalBundles`: shipped for the
- * person to switch on, selected by no shipped template, its own dependency graph outside the default product's.
+ * The one declared exception is a bundle the launcher names in `OPTIONAL_BUNDLES`: shipped for the person to
+ * switch on, selected by no shipped template, its own dependency graph outside the default product's.
  */
 
 import { existsSync, globSync, readFileSync, statSync } from 'node:fs'
@@ -30,7 +30,7 @@ interface Manifest {
   optionalDependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
   devDependencies?: Record<string, string>
-  dsh?: { bundle?: { patch?: string }; configTrees?: Array<{ path: string }>; optionalBundles?: unknown }
+  dsh?: { bundle?: { patch?: string }; configTrees?: Array<{ path: string }> }
 }
 
 interface Package {
@@ -76,22 +76,16 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
   if (cli?.manifest.name !== '@deepseek-ai/dsh') {
     failures.push('apps/cli/package.json must identify @deepseek-ai/dsh')
   }
-  // The bundles the installation ships switched off: each a runtime dependency that is a bundle, none a default.
-  const optionalBundles = new Set<string>()
-  const offered = cli?.manifest.dsh?.optionalBundles
-  if (offered !== undefined) {
-    if (!Array.isArray(offered) || !offered.every(name => typeof name === 'string')) {
-      failures.push('apps/cli/package.json: dsh.optionalBundles must be a list of package names')
-    } else {
-      for (const name of offered) {
-        if (cli?.manifest.dependencies?.[name] === undefined) {
-          failures.push(`apps/cli/package.json: optional bundle ${name} must be a runtime dependency`)
-        }
-        if (packages.get(name)?.manifest.dsh?.bundle?.patch === undefined) {
-          failures.push(`apps/cli/package.json: optional bundle ${name} must declare dsh.bundle.patch`)
-        }
-        optionalBundles.add(name)
-      }
+  // The bundles the launcher ships switched off: each a runtime dependency of the installation that is a bundle, none a default.
+  const profilePath = resolve(root, PROFILE_SOURCE)
+  const selection = existsSync(profilePath) ? profilePackages(readFileSync(profilePath, 'utf8')) : undefined
+  const optionalBundles = new Set(selection?.optionalBundles ?? [])
+  for (const name of optionalBundles) {
+    if (cli?.manifest.dependencies?.[name] === undefined) {
+      failures.push(`${PROFILE_SOURCE}: optional bundle ${name} must be a runtime dependency of apps/cli`)
+    }
+    if (packages.get(name)?.manifest.dsh?.bundle?.patch === undefined) {
+      failures.push(`${PROFILE_SOURCE}: optional bundle ${name} must declare dsh.bundle.patch`)
     }
   }
 
@@ -231,9 +225,7 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
     const path = display(pkg.directory)
     if (path.startsWith('apps/') || path === 'python/sdk-runtime') add(pkg, path)
   }
-  const profilePath = resolve(root, PROFILE_SOURCE)
-  if (existsSync(profilePath)) {
-    const selection = profilePackages(readFileSync(profilePath, 'utf8'))
+  if (selection !== undefined) {
     for (const name of selection.packages) {
       reference(name, PROFILE_SOURCE)
       if (packages.get(name)?.manifest.dsh?.bundle?.patch === undefined) {
@@ -347,16 +339,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** Read the literal package lists that define installation-owned profile defaults. */
-function profilePackages(source: string): { packages: string[]; webBundles: string[] } {
+/** Read the literal package lists that define installation-owned profile defaults and the optional bundles it ships. */
+function profilePackages(source: string): { packages: string[]; webBundles: string[]; optionalBundles: string[] } {
   const file = ts.createSourceFile(PROFILE_SOURCE, source, ts.ScriptTarget.Latest, true)
   const required = new Set(['PROFILE_TEMPLATES', 'DEFAULT_PROFILE_BUNDLES'])
   const found = new Set<string>()
   const packages: string[] = []
   const webBundles: string[] = []
+  const optionalBundles: string[] = []
   const literals = (node: ts.Node, path: string[]): void => {
     if (ts.isStringLiteralLike(node)) {
-      if (node.text.startsWith('@')) packages.push(node.text)
+      if (path[0] === 'OPTIONAL_BUNDLES') optionalBundles.push(node.text)
+      else if (node.text.startsWith('@')) packages.push(node.text)
       if (path.join('.') === 'PROFILE_TEMPLATES.web.bundles') webBundles.push(node.text)
     } else if (ts.isArrayLiteralExpression(node)) node.elements.forEach((child) => { literals(child, path) })
     else if (ts.isObjectLiteralExpression(node)) node.properties.forEach((child) => { literals(child, path) })
@@ -374,17 +368,20 @@ function profilePackages(source: string): { packages: string[]; webBundles: stri
     if (!ts.isVariableStatement(statement)) continue
     for (const declaration of statement.declarationList.declarations) {
       if (!ts.isIdentifier(declaration.name)
-        || !required.has(declaration.name.text) && declaration.name.text !== 'INSTALLATION_OWNED_PROFILE_TUPLES') continue
+        || !required.has(declaration.name.text) && declaration.name.text !== 'INSTALLATION_OWNED_PROFILE_TUPLES'
+        && declaration.name.text !== 'OPTIONAL_BUNDLES') continue
       if (declaration.initializer === undefined) continue
       if (required.has(declaration.name.text)) found.add(declaration.name.text)
       const before = packages.length
       literals(declaration.initializer, [declaration.name.text])
-      if (packages.length === before) throw new Error(`${PROFILE_SOURCE}: ${declaration.name.text} has no default bundles`)
+      if (declaration.name.text !== 'OPTIONAL_BUNDLES' && packages.length === before) {
+        throw new Error(`${PROFILE_SOURCE}: ${declaration.name.text} has no default bundles`)
+      }
     }
   }
   if (found.size !== required.size) throw new Error(`${PROFILE_SOURCE}: missing default profile declarations`)
   if (webBundles.length === 0) throw new Error(`${PROFILE_SOURCE}: missing default Web bundle list`)
-  return { packages, webBundles }
+  return { packages, webBundles, optionalBundles }
 }
 
 if (import.meta.main) {

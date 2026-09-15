@@ -41,8 +41,8 @@ export interface BundleInfo {
   /** Whether the profile's own dependencies hold the package; false for a bundle the dsh installation supplies. */
   installed: boolean
   /**
-   * Whether the installation ships the bundle for the person to switch on: named under `dsh.optionalBundles` in
-   * the installation's manifest, selected by no shipped template, and never removable.
+   * Whether the installation ships the bundle for the person to switch on: named by the launcher's `OPTIONAL_BUNDLES`,
+   * held by the installation's dependencies, selected by no shipped template, and never removable.
    */
   optional: boolean
   removable: boolean

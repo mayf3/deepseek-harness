@@ -3,13 +3,13 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
+import { OPTIONAL_BUNDLES } from '../../packages/boot/app-boot/src/profile.ts'
 
 interface InstalledManifest {
   name: string
   dependencies?: Record<string, string>
   optionalDependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
-  dsh?: { optionalBundles?: unknown }
   peerDependenciesMeta?: Record<string, { optional?: boolean }>
 }
 
@@ -19,7 +19,7 @@ interface InstalledManifest {
  * @param directory - installed entry package directory.
  * @returns number of distinct installed packages visited.
  */
-export function verifyInstalledProductIsolation(directory: string): number {
+export function verifyInstalledProductIsolation(directory: string, optionalBundles: readonly string[] = OPTIONAL_BUNDLES): number {
   const visited = new Set<string>()
   const queue = [{ directory, chain: [] as string[] }]
   for (const item of queue) {
@@ -30,10 +30,10 @@ export function verifyInstalledProductIsolation(directory: string): number {
     const chain = [...item.chain, manifest.name]
     rejectExperimental(manifest.name, chain)
     // The bundles the entry package ships switched off are installed beside the product, not required by it.
-    const optionalBundles = item.chain.length === 0 ? optionalBundlesOf(manifest) : new Set<string>()
+    const offered = item.chain.length === 0 ? new Set(optionalBundles) : new Set<string>()
     for (const section of ['dependencies', 'optionalDependencies', 'peerDependencies'] as const) {
       for (const [name, range] of Object.entries(manifest[section] ?? {})) {
-        if (section === 'dependencies' && optionalBundles.has(name)) {
+        if (section === 'dependencies' && offered.has(name)) {
           if (installedPackage(canonical, name) === undefined) throw new Error(`optional bundle is missing: ${[...chain, name].join(' -> ')}`)
           continue
         }
@@ -53,16 +53,6 @@ export function verifyInstalledProductIsolation(directory: string): number {
     }
   }
   return visited.size
-}
-
-/** The names under the entry package's `dsh.optionalBundles`, the shipped bundles no default composition selects. */
-function optionalBundlesOf(manifest: InstalledManifest): Set<string> {
-  const offered = manifest.dsh?.optionalBundles
-  if (offered === undefined) return new Set()
-  if (!Array.isArray(offered) || !offered.every(name => typeof name === 'string')) {
-    throw new Error(`${manifest.name}: dsh.optionalBundles must be a list of package names`)
-  }
-  return new Set(offered)
 }
 
 function rejectExperimental(name: string, chain: readonly string[]): void {

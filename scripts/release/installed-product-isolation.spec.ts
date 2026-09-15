@@ -54,23 +54,16 @@ describe('installed default-product isolation', () => {
 
   it('skips the entry package\'s optional bundles, which must be installed, and still rejects other experimental edges', () => {
     const root = fixture()
-    const entry = writePackage(root, '@deepseek-ai/dsh', {
-      dependencies: { core: '1.0.0', [experimental]: '1.0.0' },
-      dsh: { optionalBundles: [experimental] },
-    })
+    const entry = writePackage(root, '@deepseek-ai/dsh', { dependencies: { core: '1.0.0', [experimental]: '1.0.0' } })
     writePackage(root, 'core', {})
     writePackage(root, experimental, { dependencies: { '@deepseek-ai/dsh-experimental-inner': '1.0.0' } })
-    expect(verifyInstalledProductIsolation(entry)).toBe(2)
+    expect(verifyInstalledProductIsolation(entry, [experimental])).toBe(2)
 
     writePackage(root, 'core', { dependencies: { [experimental]: '1.0.0' } })
-    expect(() => verifyInstalledProductIsolation(entry)).toThrow(`core -> ${experimental}`)
+    expect(() => verifyInstalledProductIsolation(entry, [experimental])).toThrow(`core -> ${experimental}`)
 
-    const missing = writePackage(root, '@deepseek-ai/dsh-missing', {
-      dependencies: { absent: '1.0.0' }, dsh: { optionalBundles: ['absent'] },
-    })
-    expect(() => verifyInstalledProductIsolation(missing)).toThrow('optional bundle is missing: @deepseek-ai/dsh-missing -> absent')
-    const malformed = writePackage(root, '@deepseek-ai/dsh-malformed', { dsh: { optionalBundles: 'absent' } })
-    expect(() => verifyInstalledProductIsolation(malformed)).toThrow('dsh.optionalBundles must be a list of package names')
+    const missing = writePackage(root, '@deepseek-ai/dsh-missing', { dependencies: { absent: '1.0.0' } })
+    expect(() => verifyInstalledProductIsolation(missing, ['absent'])).toThrow('optional bundle is missing: @deepseek-ai/dsh-missing -> absent')
   })
 
   it('rejects experimental identities hidden behind an installed alias', () => {

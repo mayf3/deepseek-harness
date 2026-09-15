@@ -88,21 +88,18 @@ describe('experimental workspace constraints', () => {
     },
   )
 
-  it('allows the dsh installation to ship the optional bundles it lists, and nothing else experimental', () => {
-    const installation = (dependencies: Record<string, string>, optionalBundles: unknown) => ({
-      dir: 'apps/cli',
-      manifest: { name: '@deepseek-ai/dsh', dependencies, dsh: { optionalBundles } },
-    }) satisfies WorkspaceManifest
+  it('allows the dsh installation to ship the optional bundles the launcher names, and nothing else experimental', () => {
     const listed = { '@deepseek-ai/dsh-experimental-prototype': 'workspace:^' }
-    expect(checkExperimentalDependencyIsolation([experimental, installation(listed, ['@deepseek-ai/dsh-experimental-prototype'])])).toEqual([])
-    expect(checkExperimentalDependencyIsolation([experimental, installation(listed, [])])).toEqual([
+    const installation = { dir: 'apps/cli', manifest: { name: '@deepseek-ai/dsh', dependencies: listed } } satisfies WorkspaceManifest
+    expect(checkExperimentalDependencyIsolation([experimental, installation], ['@deepseek-ai/dsh-experimental-prototype'])).toEqual([])
+    expect(checkExperimentalDependencyIsolation([experimental, installation], [])).toEqual([
       '@deepseek-ai/dsh: dependencies.@deepseek-ai/dsh-experimental-prototype must not reference an experimental package',
     ])
     // Only a plain dependency edge is offered; a peer would make the bundle a requirement of every consumer.
     expect(checkExperimentalDependencyIsolation([experimental, {
       dir: 'apps/cli',
-      manifest: { name: '@deepseek-ai/dsh', peerDependencies: listed, dsh: { optionalBundles: ['@deepseek-ai/dsh-experimental-prototype'] } },
-    }])).toEqual([
+      manifest: { name: '@deepseek-ai/dsh', peerDependencies: listed },
+    }], ['@deepseek-ai/dsh-experimental-prototype'])).toEqual([
       '@deepseek-ai/dsh: peerDependencies.@deepseek-ai/dsh-experimental-prototype must not reference an experimental package',
     ])
   })

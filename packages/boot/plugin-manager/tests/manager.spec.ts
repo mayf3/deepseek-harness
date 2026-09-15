@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import {
-  boot, composeEntries, initProfile, readProfilePatches, readProfileManifest, reconcileProfilePatches,
+  boot, composeEntries, initProfile, readProfilePatches, readProfileManifest, reconcileProfilePatches, OPTIONAL_BUNDLES,
   type ProfileContext,
 } from '@deepseek-ai/dsh-app-boot'
 import PluginManager, { type Config, type PluginChange, type PluginInstallLogChunk, type PluginInstallProgress, type PluginInstallRequestId } from '../src/index.ts'
@@ -676,22 +676,28 @@ it('refuses removal of a hot-installed bundle after HMR is disabled', async () =
   expect(await manager.removeBundle('later')).toMatchObject({ changed: false, application: 'failed' })
 })
 
-it('offers the installation\'s optional bundles switched off and never removable, preferring dsh.description', async () => {
-  const { manager, dir, profile, bundle } = await fixture()
-  bundle('offered', [{ id: 'offered-row', name: './plugin.mjs', config: { service: 'offeredProbe' } }])
-  writeFileSync(join(dir, 'node_modules', 'offered', 'package.json'), JSON.stringify({
-    name: 'offered', version: '3.0.0', description: 'Package one-liner.',
+it('offers the launcher\'s optional bundles switched off and never removable, preferring dsh.description', async () => {
+  const { manager, profile } = await fixture()
+  // The launcher names the bundles the installation ships; the fixture supplies one of them from the
+  // installation's own node_modules, which the resolver consults before the profile's and before the repository's.
+  const offered = OPTIONAL_BUNDLES[0]!
+  const supplied = join(profile.home, 'node_modules', offered)
+  mkdirSync(supplied, { recursive: true })
+  writeFileSync(join(supplied, 'package.json'), JSON.stringify({
+    name: offered, version: '3.0.0', description: 'Package one-liner.',
     dsh: { title: 'Offered', description: 'Display one-liner.', bundle: { patch: './cordis.patch.yml' } },
   }))
-  writeFileSync(profile.installAnchor, JSON.stringify({ name: 'installation', dependencies: { offered: '3.0.0' }, dsh: { optionalBundles: ['offered'] } }))
-  expect((await manager.listBundles()).find(row => row.name === 'offered')).toEqual({
-    name: 'offered', version: '3.0.0', title: 'Offered', description: 'Display one-liner.',
+  writeFileSync(join(supplied, 'cordis.patch.yml'), JSON.stringify([{ insert: [{ id: 'offered-row', name: './plugin.mjs', config: { service: 'offeredProbe' } }] }]))
+  writeFileSync(join(supplied, 'plugin.mjs'), 'export function apply(ctx, config) { ctx.provide(config?.service ?? "offeredProbe", true) }\n')
+  writeFileSync(profile.installAnchor, JSON.stringify({ name: 'installation', dependencies: { [offered]: '3.0.0' } }))
+  expect((await manager.listBundles()).find(row => row.name === offered)).toEqual({
+    name: offered, version: '3.0.0', title: 'Offered', description: 'Display one-liner.',
     enabled: false, installed: false, optional: true, removable: false,
-    rows: [{ rowId: 'offered-row', moduleName: pathToFileURL(join(dir, 'node_modules', 'offered', 'plugin.mjs')).href }], overrides: [],
+    rows: [{ rowId: 'offered-row', moduleName: pathToFileURL(join(supplied, 'plugin.mjs')).href }], overrides: [],
   })
-  expect(await manager.setBundleEnabled('offered', true)).toMatchObject({ application: 'applied' })
-  expect((await manager.listBundles()).find(row => row.name === 'offered')).toMatchObject({ enabled: true, optional: true, removable: false })
-  expect(await manager.removeBundle('offered')).toMatchObject({ changed: false, application: 'failed' })
+  expect(await manager.setBundleEnabled(offered, true)).toMatchObject({ application: 'applied' })
+  expect((await manager.listBundles()).find(row => row.name === offered)).toMatchObject({ enabled: true, optional: true, removable: false })
+  expect(await manager.removeBundle(offered)).toMatchObject({ changed: false, application: 'failed' })
 })
 
 it('omits installation-owned plain packages from the bundle inventory', async () => {

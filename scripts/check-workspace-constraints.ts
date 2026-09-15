@@ -13,6 +13,7 @@ import {
   PRIVATE_EXPERIMENTAL_PACKAGE_DIRECTORIES,
 } from './experimental-package-policy.ts'
 import { hasTypertRemoteNavigation, isForbiddenPublicationFile } from './publication-payload.ts'
+import { OPTIONAL_BUNDLES } from '../packages/boot/app-boot/src/profile.ts'
 import { collectProjectReferenceFaceViolations } from './project-reference-faces.ts'
 
 const root = resolve(import.meta.dirname, '..')
@@ -99,8 +100,6 @@ export interface PackageManifest {
     bundle?: {
       patch?: string
     }
-    /** The bundles the dsh installation ships switched off; the one runtime edge to experimental packages it may hold. */
-    optionalBundles?: unknown
   }
 }
 
@@ -505,12 +504,15 @@ const runtimeDependencySections = ['dependencies', 'optionalDependencies', 'peer
 
 /**
  * Prevent an official runtime from requiring an experimental package. The dsh installation's `dependencies`
- * may hold the bundles its `dsh.optionalBundles` lists: shipped switched off, they are not a requirement
+ * may hold the bundles the launcher's `OPTIONAL_BUNDLES` names: shipped switched off, they are not a requirement
  * ([rationale](../.agents/notes/implemented/process/2026-09-15-shipped-optional-bundles.md)).
  * @param manifests - release, private experimental, and deployment-root manifests.
+ * @param optionalBundles - the bundles the installation ships switched off; the launcher's list by default.
  * @returns One error for each forbidden runtime dependency.
  */
-export function checkExperimentalDependencyIsolation(manifests: readonly WorkspaceManifest[]): string[] {
+export function checkExperimentalDependencyIsolation(
+  manifests: readonly WorkspaceManifest[], optionalBundles: readonly string[] = OPTIONAL_BUNDLES,
+): string[] {
   const experimentalNames = new Set(manifests
     .filter(entry => experimentalPackageDirectory.test(entry.dir))
     .map(entry => entry.manifest.name)
@@ -518,9 +520,7 @@ export function checkExperimentalDependencyIsolation(manifests: readonly Workspa
   const errors: string[] = []
   for (const { dir, manifest } of manifests) {
     if (!standardReleaseMemberDirectory.test(dir) && dir !== 'python/sdk-runtime') continue
-    const offered = manifest.name === '@deepseek-ai/dsh' && Array.isArray(manifest.dsh?.optionalBundles)
-      ? new Set(manifest.dsh.optionalBundles.filter((name): name is string => typeof name === 'string'))
-      : new Set<string>()
+    const offered = manifest.name === '@deepseek-ai/dsh' ? new Set(optionalBundles) : new Set<string>()
     for (const section of runtimeDependencySections) {
       for (const name of Object.keys(manifest[section] ?? {})) {
         if (!experimentalNames.has(name)) continue

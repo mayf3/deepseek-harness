@@ -10,7 +10,9 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import z from '@deepseek-ai/schemastery'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import { pluginEntryId, readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
-import { readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries, reconcileProfilePatches, readProfilePatches } from '@deepseek-ai/dsh-app-boot'
+import {
+  readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries, reconcileProfilePatches, readProfilePatches, OPTIONAL_BUNDLES,
+} from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-hmr'
 import type { ProfileContext, ProfileManifest } from '@deepseek-ai/dsh-app-boot'
 import { bundleManifest, runProfilePnpm, saveManifest, viewProfilePackage } from './operations.ts'
@@ -96,7 +98,6 @@ function stringField(manifest: object, field: string): string | undefined {
 /** The fields of the dsh installation's own manifest the manager reads. */
 interface InstallationManifest {
   dependencies?: Record<string, string>
-  dsh?: { optionalBundles?: string[] }
 }
 
 /** What a package manifest says about the package: identity, one-liner, and whether it is a bundle. */
@@ -197,12 +198,11 @@ export class PluginManager extends TypertRemoteService {
     const selected = manifest.dsh?.profile?.bundles ?? []
     const dependencies = Object.keys(manifest.dependencies ?? {})
     const installation = JSON.parse(readFileSync(this.profile.installAnchor, 'utf8')) as InstallationManifest
-    const offered = installation.dsh?.optionalBundles ?? []
     const names = [...new Set([...selected, ...dependencies, ...Object.keys(installation.dependencies ?? {})])]
     const bundles: BundleInfo[] = []
     for (const name of names) {
       const installed = dependencies.includes(name)
-      const optional = offered.includes(name)
+      const optional = OPTIONAL_BUNDLES.includes(name)
       const removable = installed && !Object.hasOwn(installation.dependencies ?? {}, name)
       const enabled = selected.includes(name)
       try {
