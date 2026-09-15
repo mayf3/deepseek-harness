@@ -29,6 +29,12 @@ export function apply(ctx: Context): void {
   let disposed = false
   const recovered = new Map<SessionId, Promise<void>>()
   ctx.effect(() => () => { disposed = true; recovered.clear() }, 'ui-sidebar-terminal.lifetime')
+  ctx.effect(() => {
+    const sync = (): void => { ctx.webTerminals.retainTabs(ctx.sidebarRight.openTabs.getSnapshot().filter(tab => tab.kind === 'terminal')) }
+    const unsubscribe = ctx.sidebarRight.openTabs.subscribe(sync)
+    sync()
+    return () => { unsubscribe(); ctx.webTerminals.retainTabs([]) }
+  }, 'ui-sidebar-terminal.window-holds')
   const target = (sessionId: SessionId, key: string): SidebarRightTabParamsMap['terminal'] | undefined =>
     ctx.sidebarRight.tabDomain.occurrence(sessionId, { id: key as TabId }).navigation.getSnapshot().params
   const terminalId = (sessionId: SessionId, key: string): WebTerminalId | undefined => {
@@ -80,6 +86,9 @@ export function apply(ctx: Context): void {
       restore: () => {
         let pending = recovered.get(sessionId)
         if (pending === undefined) {
+          for (const tab of ctx.sidebarRight.tabsIn(sessionId)) {
+            if (tab.kind === 'terminal') view(sessionId, tab.id)
+          }
           pending = ctx.webTerminals.recover(sessionId).then((terminals) => {
             if (disposed) return
             for (const info of terminals) ctx.sidebarRight.openTabIn(sessionId, 'terminal', {

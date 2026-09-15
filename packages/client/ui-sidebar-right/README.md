@@ -67,7 +67,9 @@ After every action the kit's settle planner keeps the expanded surface populated
 
 The docked surface's last tab carries one more rule, decided in the store's `closeTab` and mirrored to the kit through `canCloseTab`: the guide standing as the only docked tab draws no close control and no menu close item — its chip sits quiet, and with no extension item contributed a secondary press opens no menu — and a programmatic close of it records nothing; any other tab standing alone closes together with the column in one entry — the layout stays empty until the next expansion seeds its current default page. Floating panels take no part in the rule: they render whether or not the column is expanded, and their tabs close freely.
 
-Layout, open tabs, navigation parameters and selection are memory-only. A reload constructs the collapsed default; content plugins can then reopen their own live content, as [terminal recovery](../ui-sidebar-terminal/README.md#use-this-package) does. Switching sessions keeps each surface where it was.
+The store saves each Session's layout, tab identities, selection, split ratios, floating rectangles, presentation and history as JSON under `dsh.sidebar-right.v1.<sessionId>` in localStorage. Reload restores that layout before tab bodies render; switching Sessions keeps their layouts independent. Providers restore their own content from the retained tab identity and resource address, including [terminal reconnection](../ui-sidebar-terminal/README.md#use-this-package). Navigation parameters, resource contents and live connections are not layout state. Storage failures leave the current layout usable in memory.
+
+`sidebarRight.openTabs` publishes stable metadata for every open tab across saved and adopted Sessions. Startup discovery reads the layout keys without mounting dormant content, pinning files or activating Agents. Adopted stores replace their own metadata on membership commits, and permanently cleared scopes remove it. Other windows' storage writes do not overwrite this window's live membership. Providers use this inventory to restore their own resource lifetimes.
 
 <a id="extension-seats"></a>
 ## Extension seats
@@ -91,7 +93,7 @@ Two more seats extend what is already there: `sidebar.right.tab.guide` (chain) r
 <a id="the-tab-domain"></a>
 ## The Tab domain
 
-The Tab domain retains navigation, an abort signal, and bound actions per (Session, tab id). A private assembly callback adopts each Session's store and reconciles records on its commits. Only record removal or plugin unload aborts the signal; closing the sidebar and switching Sessions retain records, while undo restores a new occurrence. `useTabInfo()` composes framework-bound store and navigation hooks without manual component subscriptions or render-time record creation. `tab.actions` always target their own Session; `tab.visible` distinguishes bodies from titles, and floating tabs remain visible when the sidebar closes. `adopt` is absent from the public controller.
+The Tab domain retains navigation, an abort signal, and bound actions per (Session, tab id). A private assembly callback adopts each Session's store, reconciles restored records immediately, and follows its commits. Only record removal or plugin unload aborts the signal; closing the sidebar and switching Sessions retain records, while undo restores a new occurrence. `useTabInfo()` composes framework-bound store and navigation hooks without manual component subscriptions or render-time record creation. `tab.actions` always target their own Session; `tab.visible` distinguishes bodies from titles, and floating tabs remain visible when the sidebar closes. `adopt` is absent from the public controller.
 
 Tab owners register `registerCloseHandler(kind, handler)` through an effect. A handler synchronously retains any background cleanup before allowing explicit close or replacement. The resource owner tracks completion and retry; the sidebar does not wait. A thrown handler preserves the tab. Collapse, presentation changes and plugin disposal do not invoke close handlers; the tab abort signal identifies occurrence disposal, not an explicit close.
 
@@ -124,7 +126,7 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Memory-only layout.** Sidebar state is not persisted; content-specific recovery cannot reproduce the previous layout or selection.
+- **Browser-local layout.** Layout does not synchronize between devices; provider-specific state requires its provider's recovery support.
 - **No surface without a session.** State is keyed by session id, so the hero screen shows nothing on the right.
 - **Hard-coded stacking.** The panel and the float host use fixed z-index values because the client has no z-index token layer yet.
 - **Undo is not exposed.** The recorded sequence is stepped only through the `@internal` service methods; product controls are deliberately absent.

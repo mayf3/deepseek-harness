@@ -2,11 +2,13 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { Button, IconPlusOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TerminalViewState, TerminalView } from '@deepseek-ai/dsh-api-terminal-controller/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { TerminalBodyInjected } from './face.ts'
 import type {} from './locales.ts'
+import { TerminalGuideIcon } from './TerminalIcon.tsx'
 import '@xterm/xterm/css/xterm.css'
 import css from './TerminalBody.module.css'
 
@@ -25,23 +27,37 @@ export function TerminalBody({ useTabInfo, useTerminal, useTheme, view, t }: Ter
   const state = useTerminal(tab.id)
   useEffect(() => model.mount(), [model])
   if (state === undefined) return null
-  const error = state.issue === undefined ? state.error ?? state.info?.error : t(state.issue)
+  const newTerminal = <Button variant="primary" size={state.issue === 'missingTerminal' ? 'md' : 'sm'}
+    icon={<span className={css.actionIcon} aria-hidden="true"><IconPlusOutline16 /></span>}
+    onClick={() => { tab.actions.openTab('terminal', { replaceTab: true }) }}>
+    {t('new')}
+  </Button>
+  if (state.issue === 'missingTerminal') return <section className={css.root} data-sidebar-terminal>
+    <div className={css.empty}>
+      <TerminalGuideIcon size={36} />
+      <p className={css.emptyMessage} role="alert">{t('missingTerminal')}</p>
+      {newTerminal}
+    </div>
+  </section>
+  const error = state.phase === 'disconnected' ? undefined : state.issue === undefined ? state.error ?? state.info?.error : t(state.issue)
   let status: string | undefined
   if (state.phase === 'idle' || state.phase === 'loading') status = t('loading')
   else if (state.phase === 'creating' || state.phase === 'connecting' || state.phase === 'disconnected') status = t(state.phase)
   else if (state.info?.state === 'exited') status = t('exited', { code: String(state.info.exitCode ?? '—') })
   else if (state.info?.state === 'failed') status = t('unavailable')
   else if (state.phase === 'closed') status = t('closed')
-  const retry = state.phase === 'failed' || state.phase === 'disconnected'
+  const ended = state.info?.state === 'exited' || state.phase === 'closed'
+  const retry = !ended && (state.phase === 'failed' || state.phase === 'disconnected')
   const readOnly = state.phase === 'connected' && state.info?.state === 'running' && !state.writable
   return (
     <section className={css.root} data-sidebar-terminal>
       {(status !== undefined || retry || readOnly) && <div className={css.status} role="status">
         {status}
-        {readOnly && <>{t('readonly')} <button type="button" onClick={() => { model.connect() }}>{t('control')}</button></>}
+        {readOnly && <>{t('readonly')} <Button variant="outline" size="sm" onClick={() => { model.connect() }}>{t('control')}</Button></>}
         {retry && (state.info === undefined
-          ? <button type="button" onClick={() => { void model.refresh() }}>{t('retry')}</button>
-          : <button type="button" onClick={() => { model.connect() }}>{t('reconnect')}</button>)}
+          ? <Button variant="outline" size="sm" onClick={() => { void model.refresh() }}>{t(state.phase === 'disconnected' ? 'reconnect' : 'retry')}</Button>
+          : <Button variant="outline" size="sm" onClick={() => { model.connect() }}>{t('reconnect')}</Button>)}
+        {ended && newTerminal}
       </div>}
       {state.info !== undefined && <TerminalScreen state={state} model={model} visible={tab.visible} label={t('title')} theme={theme} />}
       {error !== undefined && <p className={css.error} role="alert">{t('failed', { message: error })}</p>}

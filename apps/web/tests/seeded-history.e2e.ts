@@ -20,9 +20,10 @@ import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
 import { deriveEventMessage, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
+import type {} from '@deepseek-ai/dsh-api-terminal-controller'
 import { join } from 'node:path'
 import {
-  assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
+  acknowledgeReloadConnectionLoss, assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
   compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, parseSeedFixture, realizeSeedFixture, recordFixture, renderSeedFixture, seedSession, watchConsole,
   webSnapshotMode, type WebScaffold,
@@ -189,7 +190,9 @@ describe('web e2e: seeded history renders through cold resume', () => {
   let seededThroughSeq = -1
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({})
+    scaffold = await launchWebScaffold(process.platform === 'win32' ? {} : {
+      extraOverlayPath: fileURLToPath(new URL('./fixtures/sidebar-terminal.patch.yml', import.meta.url)),
+    })
     // Composer recording uses a child workspace; seedSession owns the scaffold root.
     const sessionCwd = MODE === 'record' ? join(scaffold.workspaceCwd, 'workspace') : scaffold.workspaceCwd
     await mkdir(sessionCwd, { recursive: true })
@@ -537,6 +540,48 @@ describe('web e2e: seeded history renders through cold resume', () => {
     if (bodyBox === null) throw new Error('short context disclosure geometry is not measurable')
     expect(bodyBox.height).toBeLessThan(141)
     expect(await body.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(false)
+  })
+
+  it.skipIf(MODE === 'record')('restores the recorded file preview in its original tab after page reload', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-sidebar-reload'))
+    await page.getByRole('button', { name: 'Open right sidebar', exact: true }).click()
+    const column = page.locator('[data-rightbar-col]')
+    await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
+    const tabId = await column.locator('[data-dockkit-tab]').getAttribute('data-dockkit-tab')
+    const preview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
+    const warningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
+    expect(await column.locator('[data-dockkit-tab]').getAttribute('data-dockkit-tab')).toBe(tabId)
+    const restoredPreview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
+    expect(restoredPreview).toBe(preview)
+  })
+
+  it.skipIf(MODE === 'record' || process.platform === 'win32')('offers explicit terminal replacement after restoring the recorded Session', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-terminal-unavailable'))
+    await page.locator('[data-dockkit-add-tab]').click()
+    await page.locator('[data-sidebar-right-guide-entry="terminal"]').getByRole('button', { name: /^New terminal/u }).click()
+    const sessionId = SessionId(SEED_ID)
+    const terminals = () => scaffold.ctx.terminalController.list(sessionId)
+    await expect.poll(() => terminals().length).toBe(1)
+    const previous = terminals()[0]!.id
+    const agent = scaffold.ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('Recorded Session did not attach an Agent for its terminal')
+    await scaffold.ctx.terminalController.close(agent, previous)
+    const warningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    const terminal = page.locator('[data-sidebar-terminal]')
+    await expect.poll(() => terminal.getByRole('alert').innerText()).toContain('no longer exists')
+    expect(terminals()).toEqual([])
+    const expected = fileURLToPath(new URL('./expected/sidebar-terminal/unavailable.expected.md', import.meta.url))
+    await compareOrRefreshGolden(expected, await terminal.ariaSnapshot(), MODE)
+    await terminal.getByRole('button', { name: 'New terminal', exact: true }).click()
+    await expect.poll(() => terminals().length).toBe(1)
+    expect(terminals()[0]!.id).not.toBe(previous)
+    await terminal.getByRole('status').waitFor({ state: 'hidden' })
+    await terminal.getByRole('textbox', { name: 'Terminal', exact: true }).waitFor()
   })
 
   it.skipIf(MODE === 'record')('issued zero model calls and stayed clean', async () => {

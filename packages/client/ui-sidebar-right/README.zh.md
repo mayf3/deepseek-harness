@@ -67,7 +67,9 @@ kind: "package-reference"
 
 停靠面的最后一个 tab 还多带一条规则，由 store 的 `closeTab` 决定并经 `canCloseTab` 镜像给套件：作为唯一停靠 tab 的引导页不画关闭控件也不画菜单里的关闭项——它的 chip 呈安静样式，在没有扩展条目时次键按下也不弹出菜单——对它的编程式关闭什么都不记录；任何其它 tab 独自留下时，点击关闭会连同整列一起收起，记为一条历史，布局保持为空，直到下次展开时创建当时的默认页。浮动面板不参与这条规则：它们无论列是否展开都会渲染，其 tab 照常关闭。
 
-布局、打开的标签页、导航参数和选中项只在内存中。刷新会构造折叠的默认态；内容插件随后可重新打开自己仍存活的内容，例如[终端恢复](../ui-sidebar-terminal/README.zh.md#use-this-package)。切换会话则让每个停靠面留在原处。
+store 将每个 Session 的布局、标签身份、选中项、分栏比例、浮窗矩形、呈现方式和历史以 JSON 保存到 localStorage 的 `dsh.sidebar-right.v1.<sessionId>`。刷新时在渲染标签正文前恢复布局；不同 Session 的布局独立。provider 根据保留的标签身份和资源地址恢复自身内容，包括[终端重连](../ui-sidebar-terminal/README.zh.md#use-this-package)。导航参数、资源内容和活动连接不属于布局状态。存储失败时，当前布局仍可在内存中使用。
+
+`sidebarRight.openTabs` 发布所有已保存和已采用 Session 的打开标签元数据，并保持快照引用稳定。启动时读取布局 key，不挂载非当前内容、pin 文件或激活 Agent。已采用的 store 在标签成员变化时更新自己的元数据，永久清除的 scope 删除对应记录。其他窗口写入 storage 不会覆盖当前窗口的活动成员关系。provider 使用该清单恢复自己的资源生命周期。
 
 <a id="extension-seats"></a>
 ## 扩展席位
@@ -91,7 +93,7 @@ tab 类型分两阶段注册，随包发布的引导类型走的正是别的包�
 <a id="the-tab-domain"></a>
 ## Tab 域
 
-Tab域按（Session，Tab id）保留导航、中止信号与绑定动作；私有装配回调收养各会话的store，并在每次提交时对齐记录。记录消失或插件卸载才中止signal，收起和切会话不销毁记录；undo恢复的是新occurrence。`useTabInfo()` 组合框架绑定的store与导航hook，不在组件中手写订阅或在渲染时创建记录。`tab.actions` 始终作用于自己的会话；`tab.visible` 区分正文与标题，浮窗不受整栏收起影响。`adopt` 不在公开控制器上。
+Tab 域按（Session，Tab id）保留导航、中止信号与绑定动作。私有装配回调采用各 Session 的 store，立即对齐恢复的记录，再跟随其提交。记录消失或插件卸载才中止 signal，收起和切会话不销毁记录；undo 恢复的是新 occurrence。`useTabInfo()` 组合框架绑定的 store 与导航 hook，不在组件中手写订阅或在渲染时创建记录。`tab.actions` 始终作用于自己的会话；`tab.visible` 区分正文与标题，浮窗不受整栏收起影响。`adopt` 不在公开控制器上。
 
 标签页所有者通过 effect 注册 `registerCloseHandler(kind, handler)`。handler 在允许显式关闭或替换前同步保存后台清理任务。资源所有者跟踪完成和重试，侧栏不等待清理。handler 抛错时保留标签页。折叠、展示方式改变和插件卸载不调用关闭 handler；tab abort signal 标识 occurrence 卸载，不代表显式关闭。
 
@@ -124,7 +126,7 @@ Tab域按（Session，Tab id）保留导航、中止信号与绑定动作；私�
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **布局只在内存中。** 侧栏状态不持久化；内容自身的恢复无法还原此前的布局或选中项。
+- **布局保存在当前浏览器。** 布局不跨设备同步；provider 专属状态需要由该 provider 支持恢复。
 - **没有会话就没有停靠面。** 状态按会话 id 键控，因此 hero 画面右侧什么都不显示。
 - **硬编码的层叠。** 面板与浮窗宿主使用固定的 z-index 值，因为客户端还没有 z-index token 层。
 - **未暴露撤销。** 记录的序列只能通过 `@internal` 服务方法步进；产品控件是有意缺席的。

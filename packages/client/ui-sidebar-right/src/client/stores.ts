@@ -27,6 +27,7 @@
  * The kit plans none of this; it is decided here before its planners run.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
+import { sidebarPersistence } from './open-tabs.ts'
 import type {
   DockMode, DockZone, FloatRect, History, LayoutOp, LayoutState, Mint, PaneId, SplitId, TabId, TabRecord,
 } from '@deepseek-ai/dsh-client-ui-dockkit'
@@ -253,7 +254,7 @@ function stepped(surface: SurfaceState, step: HistoryStepper): SurfaceState {
 }
 
 /**
- * Create the Sidebar store handle.
+ * Create the Sidebar store handle with per-Session JSON persistence in localStorage.
  *
  * The default page arrives as a thunk: a pane is seeded when a split or an
  * expansion of an empty column needs one, which can be long after the store was
@@ -266,6 +267,7 @@ export function createSidebarRightStore(
 ): EngineStoreHandle<SidebarRightState, SidebarRightActions> {
   return defineStore({
     init: (): SidebarRightState => ({ bySession: {} }),
+    persist: sidebarPersistence,
     actions: {
       // Materialize a session's surface without changing it, so the first read
       // after a session switch sees the collapsed empty column rather than nothing.
