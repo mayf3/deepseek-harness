@@ -29,13 +29,14 @@ function StepProcess({ range, nodes, ...seatProps }: SeatProps & { readonly rang
   const presentation = useChatNodeProcess(range.seats[0].nodeKey)
   const spec = presentation?.spec
   const stored = useStore(state => spec === undefined ? undefined : storedTurnProcessEntry(state, spec.turn))
+  const liveProcess = presentation !== undefined && !presentation.turnClosed
   const outerFoldable = seatProps.compactTranscript
     && (!seatProps.historyIncomplete || presentation?.turnStarted === true)
-    && presentation?.turnClosed === true && spec?.answerStep !== null && spec?.answerAnchorSeq !== null
-  const outerHidden = outerFoldable && stored?.answerStep !== spec?.answerStep
+    && spec !== undefined
+  const outerHidden = outerFoldable && (liveProcess ? stored?.answerStep === null : stored?.answerStep !== (spec.answerStep ?? 0))
   const revealOuter = useCallback(() => {
-    if (spec !== undefined && spec.answerStep !== null) actions.setTurnProcessOpen(spec.turn, spec.answerStep, true)
-  }, [actions, spec])
+    if (spec !== undefined) actions.setTurnProcessOpen(spec.turn, liveProcess ? null : (spec.answerStep ?? 0), true)
+  }, [actions, spec, liveProcess])
   const rootRef = useSearchableHidden(outerHidden, revealOuter)
   const reveal = useCallback(() => { setOpen(true) }, [])
   const bodyRef = useSearchableHidden(!open, reveal)

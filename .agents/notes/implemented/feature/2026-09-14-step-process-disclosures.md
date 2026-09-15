@@ -24,6 +24,8 @@ Whole-turn folding checks each Turn independently: while history is paginated, i
 
 **Include infrastructure labels in summaries.** Prompt assembly, injected context, and permission metadata do not describe the model's work and make compact titles harder to scan.
 
+The whole-turn control appears at the start event, defaults to expanded during execution, and updates elapsed time every second. Completion fixes the clock and defaults to collapsed; live overrides do not carry into the completed answer generation.
+
 ## Consequences
 
 The grouping changes presentation only and adds no Session events or model input. Tool names determine categories; unmatched custom tools use the generic category. Disclosure state is local to the mounted chat view. Pagination that changes a group's first member may reset its expansion. Existing per-tool disclosures remain available inside the capped process area.

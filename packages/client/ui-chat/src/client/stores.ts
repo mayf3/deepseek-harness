@@ -6,13 +6,13 @@ type ChatActions = {
   setTurnProcessOpen: (
     draft: ChatStoreState,
     turn: number,
-    answerStep: number,
+    answerStep: number | null,
     open: boolean,
   ) => void
 }
 
 /**
- * Resolve the manually expanded answer for one Turn.
+ * Resolve the manual disclosure override for one Turn.
  * @param state - Chat store snapshot.
  * @param turn - owning Turn.
  * @returns the Turn's stored entry, when present.
@@ -34,7 +34,7 @@ export function createChatStore(): EngineStoreHandle<ChatStoreState, ChatActions
     actions: {
       setTurnProcessOpen: (draft, turn, answerStep, open) => {
         const index = draft.turnProcesses.findIndex(entry => entry.turn === turn)
-        if (!open) {
+        if (answerStep === null ? open : !open) {
           if (index >= 0) draft.turnProcesses.splice(index, 1)
           return
         }

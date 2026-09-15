@@ -57,36 +57,34 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     ? undefined
     : storedTurnProcessEntry(state, processSpec.turn))
   const processEntry = processSpec !== undefined
-    && processSpec.answerStep !== null
-    && storedEntry?.answerStep === processSpec.answerStep
+    && storedEntry?.answerStep === (processSpec.answerStep ?? 0)
     ? storedEntry
     : undefined
-  const processOpen = processEntry !== undefined
+  const liveProcess = processPresentation !== undefined && !processPresentation.turnClosed
+  const processOpen = liveProcess ? storedEntry?.answerStep !== null : processEntry !== undefined
   const setOpen = useCallback((open: boolean) => {
-    if (processSpec !== undefined && processSpec.answerStep !== null) {
-      actions.setTurnProcessOpen(processSpec.turn, processSpec.answerStep, open)
+    if (processSpec !== undefined) {
+      actions.setTurnProcessOpen(processSpec.turn, liveProcess ? null : (processSpec.answerStep ?? 0), open)
     }
-  }, [actions, processSpec])
+  }, [actions, processSpec, liveProcess])
   const processWindowReady = processSpec !== undefined
     && processPresentation !== undefined
     && compactTranscript
-    && processSpec.answerAnchorSeq !== null
     && processPresentation.turn === processSpec.turn
-    && processPresentation.turnClosed
     && (!historyIncomplete || processPresentation.turnStarted)
   const processMember = routedNode !== undefined
     && processWindowReady
     && !TURN_PROCESS_INDEPENDENT_KINDS.has(routedNode.kind)
     && routedNode.anchorSeq >= processSpec.processStartSeq
-    && routedNode.anchorSeq < processSpec.answerAnchorSeq
+    && (liveProcess || processSpec.answerAnchorSeq === null || routedNode.anchorSeq < processSpec.answerAnchorSeq)
   const processAnswer = routedNode !== undefined
     && processWindowReady
+    && !liveProcess
     && routedNode.kind === 'assistant-step'
     && routedNode.data.step === processSpec.answerStep
   const ownsDisclosure = routedNode?.kind === 'turn-process' || processAnswer
   const foldable = processWindowReady
-    && (processMember || (ownsDisclosure
-      && (processPresentation.hasExternalProcess || processSpec.inlineReasoning)))
+    && (liveProcess || processMember || ownsDisclosure)
   const turnProcess = useMemo(() => processSpec === undefined
     ? undefined
     : {

@@ -156,6 +156,11 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     // The marker IS the synchronization: the stream is provably parked in the
     // hang (prefix chunks delivered to the loop) before the stop click.
     await expect.poll(() => existsSync(marker), { timeout: 15_000 }).toBe(true)
+    const liveControl = page.locator('[data-turn-process]')
+    expect(await liveControl.getAttribute('aria-expanded')).toBe('true')
+    const liveLabel = await liveControl.textContent()
+    expect(liveLabel).toMatch(/^Worked for /)
+    await expect.poll(() => liveControl.textContent()).not.toBe(liveLabel)
     await expect.poll(
       () => page.getByRole('status').filter({ hasText: 'Deep diving...' }).isVisible(),
       { timeout: 10_000 },
@@ -190,6 +195,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     await stopButton.click()
     await settled
     expect(turnEndReasons(sessionEvents).at(-1)).toBe('aborted')
+    await expect.poll(() => liveControl.getAttribute('aria-expanded')).toBe('false')
     // Composer recovered; no streaming node lingers. The host settled first
     // (awaited above), but the abort frame reaches the browser over SSE — the
     // frozen-partial swap is eventually consistent, so poll rather than count.

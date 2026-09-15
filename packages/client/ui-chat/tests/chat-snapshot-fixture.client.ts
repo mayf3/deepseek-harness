@@ -401,14 +401,15 @@ export function chatSnapshotFixture(input: {
     const controlAnchor = inTurn.find(candidate => candidate.kind === 'assistant-step'
       || candidate.kind === 'tool-call'
       || candidate.kind === 'model-retry')
-    if (controlAnchor === undefined) continue
+    const startSeq = turns.get(turnNumber)?.start?.seq
+    if (controlAnchor === undefined && startSeq === undefined) continue
     const processStart = inTurn.find(candidate => !TURN_PROCESS_INDEPENDENT_KINDS.has(candidate.kind))
       ?? controlAnchor
     const inlineReasoning = answer?.blocks.some(block => block.kind === 'reasoning' && block.text.trim() !== '') === true
     const candidate: TurnProcessSpec = {
       turn: turnNumber,
-      controlAnchorSeq: controlAnchor.anchorSeq,
-      processStartSeq: processStart.anchorSeq,
+      controlAnchorSeq: controlAnchor?.anchorSeq ?? startSeq!,
+      processStartSeq: processStart?.anchorSeq ?? startSeq!,
       answerAnchorSeq: answer?.finalNode.seq ?? null,
       answerStep: answer?.step ?? null,
       inlineReasoning: answer !== undefined && inlineReasoning,

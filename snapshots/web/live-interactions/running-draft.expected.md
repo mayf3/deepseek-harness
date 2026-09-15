@@ -10,7 +10,8 @@
 - button "System prompt"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
-- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Worked for {{duration}}" [expanded]
+- button "Analysis completed"
 - paragraph: partial
 - status: Deep diving...
 - textbox "Message or run a task, / commands, @ files or sessions":

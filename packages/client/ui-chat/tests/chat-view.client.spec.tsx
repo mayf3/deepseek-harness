@@ -1664,6 +1664,39 @@ describe('ChatView', () => {
     expect(answer?.hasAttribute('data-turn-process-answer')).toBe(false)
   })
 
+  it.each([true, false])('shows a ticking control and collapses at completion (answer: %s)', (hasAnswer) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    try {
+      const h = makeHarness({ nodes: [user(1, 'question')], running: true,
+        turnTimings: new Map([[1, { startTime: 10_000 }]]) })
+      h.props.t = makeTranslate(en, commonEn)
+      const view = render(<h.ChatView {...h.props} />)
+      const toggle = view.getByRole('button', { name: 'Worked for 0s' })
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      act(() => { vi.advanceTimersByTime(2_000) })
+      expect(toggle.textContent).toBe('Worked for 2s')
+      fireEvent.click(toggle)
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      act(() => { h.set({ nodes: [user(1, 'question'), context(2, 'working context', 1)] }) })
+      const group = view.container.querySelector('[data-step-process]')!
+      expect(group.getAttribute('hidden')).toBe('until-found')
+      fireEvent.click(toggle)
+      expect(group.getAttribute('hidden')).toBeNull()
+      act(() => { h.set({ nodes: [user(1, 'question'), context(2, 'working context', 1), ...(hasAnswer ? [assistant(3, 'answer')] : [])],
+        running: false, turnEnds: new Map([[1, 4]]),
+        turnTimings: new Map([[1, { startTime: 10_000, endTime: 12_000 }]]) }) })
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect(group.getAttribute('hidden')).toBe('until-found')
+      act(() => { vi.advanceTimersByTime(3_000) })
+      expect(toggle.textContent).toBe('Worked for 2s')
+      view.unmount()
+    } finally {
+      cleanup()
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps a live Turn expanded and folds it once at turn/end', () => {
     const process = assistant(2, 'inspect', 1, 1)
     const h = makeHarness({
@@ -1672,7 +1705,7 @@ describe('ChatView', () => {
       running: true,
     })
     const view = render(<h.ChatView {...h.props} />)
-    expect(turnProcessControl(view.container)).toBeNull()
+    expect(turnProcessControl(view.container)?.getAttribute('aria-expanded')).toBe('true')
     const processRow = view.getByText('inspect').closest('[data-chat-flow-kind="assistant-step"]') as HTMLElement
 
     act(() => {
