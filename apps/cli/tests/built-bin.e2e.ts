@@ -348,10 +348,11 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     expect(bare.stderr).toContain('--profile <name> is required')
     const help = await runBuiltBin(['--help'])
     expect(help.code).toBe(0)
+    await expect(help.stdout).toMatchFileSnapshot('./expected/launcher-help.txt')
     expect(help.stdout).toContain('dsh --profile web')
     expect(help.stdout).toContain('dsh plugin --profile')
     expect(help.stdout).not.toMatch(/^\s+(?:tui|meta|upgrade)\b/mu)
-    for (const removed of [['--config', 'x.yml'], ['-p', 'task']]) {
+    for (const removed of [['--config', 'x.yml'], ['-p', 'task'], ['web', '--profile', 'tui']]) {
       const result = await runBuiltBin(removed)
       expect(result.code).toBe(1)
     }

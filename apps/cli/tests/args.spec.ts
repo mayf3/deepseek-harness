@@ -64,14 +64,16 @@ describe('parseDshArgs', () => {
       ['--dump-config'], ['--dump-default-config'],
       ['--patch', 'a.yml', '--resume', 'id', '--patch', 'late.yml'],
       ['--', '--help'], ['--', '--', 'task'],
-      ['--profile', 'other'],
+      ['plugin'], ['--', 'plugin'],
     ]) {
       expect(parse([profile, ...args])).toEqual(parse(['--profile', profile, ...args]))
     }
   })
 
-  it('keeps plugin management reserved and forwards web as an app argument', () => {
+  it('reserves leading plugin for management and forwards later command names', () => {
     expect(parse(['--profile', 'plugin'])).toMatchObject({ mode: 'profile', profile: 'plugin' })
+    expect(parse(['--profile', 'x', 'plugin', 'add', 'y']))
+      .toMatchObject({ mode: 'profile', profile: 'x', args: ['plugin', 'add', 'y'] })
     expect(parse(['headless', 'web'])).toMatchObject({ profile: 'headless', args: ['web'] })
     expect(exitCode(['--patch', 'a.yml', 'tui'])).toBe(1)
     expect(exitCode(['--', 'tui'])).toBe(1)
@@ -90,6 +92,22 @@ describe('parseDshArgs', () => {
   it.each(['-V', '--version'])('prints the launcher version for shorthand %s', (flag) => {
     expect(exitCode(['custom', flag])).toBe(0)
     expect(parse(['custom', 'task', flag])).toMatchObject({ args: ['task', flag] })
+  })
+
+  it.each([
+    ['web', '--profile', 'tui'],
+    ['--profile', 'web', '--profile', 'tui'],
+    ['--profile=web', '--profile=web'],
+    ['plugin', '--profile', 'web', '--profile', 'tui', 'add', 'x'],
+  ])('rejects repeated profile selection %j', (...argv: string[]) => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+    expect(exitCode(argv)).toBe(1)
+    expect(stderr.mock.calls.map(([chunk]) => String(chunk)).join('')).toContain('select a profile only once')
+  })
+
+  it('forwards late profile options to the application', () => {
+    expect(parse(['web', 'task', '--profile', 'tui']))
+      .toMatchObject({ profile: 'web', args: ['task', '--profile', 'tui'] })
   })
 
   it('routes the plugin pnpm forwarder', () => {
@@ -155,12 +173,13 @@ describe('parseDshArgs', () => {
     expect(exitCode(['--profile', 'desktop', '--dump-config'])).toBe(1)
     expect(exitCode(['plugin', '--profile', 'desktop', 'add', 'x'])).toBe(1)
     expect(exitCode(['plugin', '--profile', 'Desktop', 'add', 'x'])).toBe(1)
-    expect(exitCode(['--profile', 'x', 'plugin', 'add', 'y'])).toBe(1)
     expect(exitCode(['--from-default-profile', 'web', 'plugin', '--profile', 'x', 'add', 'y'])).toBe(1)
   })
 
   it('keeps its own help for an invocation with no app to hand it to', () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
     expect(exitCode(['--help'])).toBe(0)
+    expect(stdout.mock.calls.map(([chunk]) => String(chunk)).join('')).not.toContain('help [command]')
     expect(exitCode(['-h'])).toBe(0)
     expect(exitCode(['--version'])).toBe(0)
   })

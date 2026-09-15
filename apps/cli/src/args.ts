@@ -15,7 +15,7 @@
  * @module @deepseek-ai/dsh/args
  */
 
-import { Command, CommanderError } from 'commander'
+import { Command, CommanderError, InvalidArgumentError } from 'commander'
 
 /** Boot a named profile and hand it the invocation's inner arguments. */
 interface ProfileInvocation {
@@ -65,6 +65,11 @@ interface BootOptions {
  */
 const collect = (value: string, previous: string[] = []): string[] => [...previous, value]
 
+function selectProfile(value: string, previous?: string): string {
+  if (previous !== undefined) throw new InvalidArgumentError('select a profile only once')
+  return value
+}
+
 function rejectElectronProfile(program: Command, profile: string): void {
   if (profile.toLowerCase() === 'desktop') {
     program.error('error: profile "desktop" is managed exclusively by the Electron application')
@@ -77,11 +82,11 @@ Examples:
   dsh web                                   boot the web profile (same as: dsh --profile web)
   dsh rescue --from-default-profile web
                                             create rescue from the shipped web template, then boot it
-  dsh headless "run the tests"               answer one task, print the result, and exit
-  dsh tui --patch ./extra.yml                boot a custom profile with one extra overlay
-  dsh tui --resume <session>                 arguments after the launcher flags reach the app
-  dsh web --help                             the web app's own flags and help
-  dsh plugin --profile tui add <package>      install a plugin into the tui profile
+  dsh headless "run the tests"              answer one task, print the result, and exit
+  dsh tui --patch ./extra.yml               boot a custom profile with one extra overlay
+  dsh tui --resume <session>                arguments after the launcher flags reach the app
+  dsh web --help                            the web app's own flags and help
+  dsh plugin --profile tui add <package>    install a plugin into the tui profile
 `
 
 /**
@@ -124,6 +129,7 @@ function resolveBoot(program: Command, profile: string, options: BootOptions, ar
  * @returns the resolved invocation.
  */
 export function parseDshArgs(argv: readonly string[], version: string): DshInvocation {
+  const first = argv[0]
   let resolved: DshInvocation | undefined
   // Annotated, not inferred: the actions below call back into `program`, and an
   // inferred type would be circular through its own chain.
@@ -131,7 +137,7 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
   program
     .name('dsh')
     .version(version, '-V, --version', 'output the version number')
-    .usage('[--profile] <name> [options] [app-args...]')
+    .usage('[--profile] <name> [options] [app-args...]\n       dsh plugin --profile <name> <pnpm-args...>')
     .description('dsh: boot a DeepSeek Harness profile — an ordered stack of plugin-bundle patch layers under your own overrides.')
     .addHelpText('after', HELP_EXAMPLES)
     .exitOverride()
@@ -139,11 +145,12 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
     // know; everything from there on belongs to the booted app, including
     // its -h. `dsh -h` with no profile still prints this help, below.
     .helpOption(false)
+    .helpCommand(false)
     .allowUnknownOption()
     .passThroughOptions()
     .enablePositionalOptions()
     .argument('[args...]', 'arguments for the booted profile\'s app (see: dsh --profile <name> --help)')
-    .option('--profile <name>', 'the profile under $DSH_HOME/profiles to boot')
+    .option('--profile <name>', 'the profile under $DSH_HOME/profiles to boot', selectProfile)
     .option('--from-default-profile <name>', 'initialize a new custom profile from a shipped profile template')
     .option('--patch <path>', 'extra patch-list overlay applied after the profile layer (repeatable)', collect)
     .option('--dump-config', 'print the composed profile tree and exit')
@@ -161,33 +168,21 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
       resolved = resolveBoot(program, profile, options, args)
     })
 
-  /** Reject parent options supplied before a subcommand. */
-  const rejectParentOptions = (command: string): void => {
-    const parent = program.opts<BootOptions & { profile?: string }>()
-    if (parent.profile !== undefined || parent.patch !== undefined
-      || parent.dumpConfig !== undefined || parent.dumpDefaultConfig !== undefined
-      || parent.fromDefaultProfile !== undefined) {
-      program.error(
-        `error: ${command} takes none of parent --profile, --from-default-profile, --patch, --dump-config, or --dump-default-config`,
-      )
-    }
+  if (first === 'plugin') {
+    const plugin = program.command('plugin').description('manage a profile\'s plugins by forwarding the remaining arguments to pnpm in the profile directory')
+    plugin
+      .requiredOption('--profile <name>', 'the profile whose plugins to manage (initialized on first use)', selectProfile)
+      .allowUnknownOption()
+      .argument('[args...]', 'pnpm arguments, forwarded verbatim (add <pkg>, remove <pkg>, why <pkg>, ...)')
+      .action((args: string[], options: { profile: string }) => {
+        if (options.profile === '') program.error('error: --profile needs a name')
+        rejectElectronProfile(plugin, options.profile)
+        if (args.length === 0) program.error('error: plugin needs pnpm arguments to forward (e.g. add <package>)')
+        resolved = { mode: 'plugin', profile: options.profile, args }
+      })
   }
 
-  const plugin = program.command('plugin').description('manage a profile\'s plugins by forwarding the remaining arguments to pnpm in the profile directory')
-  plugin
-    .requiredOption('--profile <name>', 'the profile whose plugins to manage (initialized on first use)')
-    .allowUnknownOption()
-    .argument('[args...]', 'pnpm arguments, forwarded verbatim (add <pkg>, remove <pkg>, why <pkg>, ...)')
-    .action((args: string[], options: { profile: string }) => {
-      rejectParentOptions('plugin')
-      if (options.profile === '') program.error('error: --profile needs a name')
-      rejectElectronProfile(plugin, options.profile)
-      if (args.length === 0) program.error('error: plugin needs pnpm arguments to forward (e.g. add <package>)')
-      resolved = { mode: 'plugin', profile: options.profile, args }
-    })
-
   try {
-    const first = argv[0]
     const expanded = first !== undefined && !first.startsWith('-') && first !== 'plugin'
       ? ['--profile', ...argv]
       : argv
