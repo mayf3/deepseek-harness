@@ -1,5 +1,5 @@
 ---
-description: "Native directory-picker surface: the browser half that drives the host OS chooser for workspace-directory flows; for users and maintainers choosing a picking interaction."
+description: "Native directory-picker surface: the browser half that drives the local Desktop or Host OS chooser for workspace-directory flows; for users and maintainers choosing a picking interaction."
 kind: "package-reference"
 ---
 
@@ -76,7 +76,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define when the native chooser fits. They are current package constraints, not a general picker comparison or a task backlog.
 
 - **No cancellation of an open chooser** — the wire has no per-request abort, so a chooser already on the local display cannot be closed from the browser; a discarded settlement is ignored.
-- **Local Host carriers only** — the Electron dialog selects local paths; ordinary Web opens the Host chooser. Remote-browser and in-process deployments use the `-browse` composition. Platform failures surface through the owner's retryable folder dialog.
+- **Local carriers only** — the Electron dialog selects local paths; ordinary Web opens the Host chooser. Remote-browser and in-process deployments use the `-browse` composition. Platform failures surface through the owner's retryable folder dialog.
 - **Linux automatic selection** — without zenity or kdialog, the Host selects browse even in Desktop; the Electron dialog is not used.
 
 <a id="dev-note"></a>

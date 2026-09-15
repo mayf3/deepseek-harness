@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 /** Desktop directory flow through the Web bundle roster and production client boot. */
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, expect, vi } from 'vitest'
 import { cleanup, render, waitFor } from '@testing-library/react'
 import type { ComponentType } from 'react'
 import type { DirectoryFlowOwnerProps } from '@deepseek-ai/dsh-client-ui-workspace/client'
-import { ClientRoster, createClientTest, webApp } from '../src/assembly/index.ts'
+import { ClientRoster, createClientTest, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 
-const manifest = JSON.parse(readFileSync('packages/client/ui-directory-picker-native/package.json', 'utf8')) as {
+const manifest = JSON.parse(readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf8')) as {
   name: string
   dsh: { client: { inject: string[] } }
 }

@@ -9,8 +9,14 @@ import { apply, inject } from '../src/client/index.ts'
 import { NativeDirectoryFlow } from '../src/client/flow.ts'
 import { apply as nodeApply } from '../src/index.ts'
 
-const desktopIpc = vi.hoisted(() => ({ invoke: vi.fn() }))
-vi.mock('../../../../apps/desktop/node_modules/electron/index.js', () => ({
+const desktopIpc = await vi.hoisted(async () => {
+  const { createRequire } = await import('node:module')
+  const path = await import('node:path')
+  // Electron belongs to the Desktop app; resolve its mock from that workspace.
+  const electron = createRequire(path.resolve(import.meta.dirname, '../../../../apps/desktop/package.json')).resolve('electron')
+  return { invoke: vi.fn(), electron }
+})
+vi.mock(desktopIpc.electron, () => ({
   ipcRenderer: { invoke: desktopIpc.invoke },
   contextBridge: { exposeInMainWorld: (name: string, value: unknown) => { vi.stubGlobal(name, value) } },
 }))
