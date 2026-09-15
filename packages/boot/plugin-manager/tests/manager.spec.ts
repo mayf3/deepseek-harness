@@ -1,5 +1,6 @@
 /** Persistent manager behavior through a real profile Include and Loader. */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
@@ -18,10 +19,10 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { Group } from '@deepseek-ai/cordis-plugin-loader'
 import * as operations from '../src/operations.ts'
 import { parse } from 'yaml'
-import { execa } from 'execa'
 
 async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, prepare?: (ctx: Context) => void, config: Config = {}) {
-  const home = mkdtempSync(join(tmpdir(), 'plugin-manager-'))
+  // pnpm resolves workspace roots through native realpath, including Windows 8.3 aliases.
+  const home = await realpath(mkdtempSync(join(tmpdir(), 'plugin-manager-')))
   const dir = join(home, 'profiles', 'test')
   const anchor = join(home, 'package.json')
   writeFileSync(anchor, '{"name":"installation","dependencies":{}}\n')
@@ -194,17 +195,15 @@ it('runs a real pnpm dependency script only after approval and cleanup retry', a
     scripts: { install: 'node build.cjs' }, dsh: { bundle: { patch: './cordis.patch.yml' } } }))
   writeFileSync(join(addon, 'build.cjs'), 'require("node:fs").writeFileSync("built.txt", "built")\n')
   writeFileSync(join(addon, 'cordis.patch.yml'), '[]\n')
-  await execa('pnpm', ['pack', '--pack-destination', profile.cwd], { cwd: addon })
-  const spec = 'file:./approval-fixture-addon-1.0.0.tgz'
   writeFileSync(join(dir, 'package.json'), '{"name":"approval-fixture","private":true}\n')
   writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - .\nnodeLinker: hoisted\nautoInstallPeers: false\nstrictDepBuilds: true\n')
-  const blocked = await manager.installBundle(spec, { enabled: false })
+  const blocked = await manager.installBundle('file:./addon', { enabled: false })
   expect(blocked, JSON.stringify(blocked)).toMatchObject({ application: 'failed', cleanup: { name: 'approval-fixture-addon' } })
   expect(blocked.pendingBuilds).toHaveLength(1)
   const built = join(dir, 'node_modules', 'approval-fixture-addon', 'built.txt')
   expect(existsSync(built)).toBe(false)
   expect(readProfileManifest('test', dir).dependencies?.['approval-fixture-addon']).toBeUndefined()
-  const allowed = await manager.installBundle(spec, { enabled: false, approvedBuilds: blocked.pendingBuilds! })
+  const allowed = await manager.installBundle('file:./addon', { enabled: false, approvedBuilds: blocked.pendingBuilds! })
   expect(allowed, JSON.stringify(allowed)).toMatchObject({ application: 'restart-required', packageResult: { exitCode: 0 } })
   expect(readFileSync(built, 'utf8')).toBe('built')
 })
