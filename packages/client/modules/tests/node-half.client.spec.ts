@@ -20,6 +20,7 @@ const UI_RENDERER_ID = '@deepseek-ai/dsh-client-ui-renderer'
 const comboUrl = (ids: readonly string[], rev: string): string =>
   `/plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
 const mapUrl = (url: string): string => url.replace(/\/client\.js(?=,|&rev=)/g, '/client.js.map')
+const chunkUrl = (id: string, fileName: string, rev: string): string => `/plugins/${id}/${fileName}?rev=${rev}`
 const BOOTSTRAP_URL = comboUrl([MODULES_ID], 'boot')
 const APPLICATION_URL = comboUrl([UI_RENDERER_ID], 'app')
 
@@ -778,6 +779,33 @@ describe('client bundle activation', () => {
     expect(JSON.parse(nextMap.body.toString('utf8'))).toMatchObject({
       sections: [{ map: { sources: ['/plugins/@fixture/source-map/src/changed.tsx'] } }],
     })
+  })
+
+  it('serves a package-local chunk only after its versioned URL is requested', async () => {
+    const packageName = '@fixture/chunked'
+    const clientPath = writePackage(packageName)
+    const chunkPath = join(dirname(clientPath), 'client.terminal.js')
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = { load: () => require.async("./client.terminal.js") }\n')
+    const { service, route } = constructWithRoute([packageName])
+    const row = service.graph().entries[0]!
+
+    const startup = await routeRequest(route, row.url)
+    expect(startup.status).toBe(200)
+    expect(startup.body.toString('utf8')).not.toContain('terminal loaded')
+    expect((await routeRequest(route, chunkUrl(packageName, 'client.terminal.js', row.rev))).status).toBe(404)
+
+    writeFileSync(chunkPath, 'module.exports = { marker: "terminal loaded" }\n')
+    const url = chunkUrl(packageName, 'client.terminal.js', row.rev)
+    const head = await routeRequest(route, url, 'HEAD')
+    expect(head.status).toBe(200)
+    expect(head.body).toHaveLength(0)
+    const chunk = await routeRequest(route, url)
+    expect(chunk.status).toBe(200)
+    expect(chunk.body.toString('utf8')).toContain('terminal loaded')
+    expect(chunk.body.toString('utf8')).toContain(`sourceMappingURL=${url.replace('.js?', '.js.map?')}`)
+    expect((await routeRequest(route, url.replace('.js?', '.js.map?'))).status).toBe(200)
+    expect((await routeRequest(route, url.replace(`rev=${row.rev}`, 'rev=stale'))).status).toBe(404)
   })
 
   it('applies sourceRoot before relocating absolute-looking section sources', async () => {

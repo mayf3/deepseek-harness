@@ -15,7 +15,7 @@ import { existsSync, globSync, readFileSync } from 'node:fs'
 import { createRequire, isBuiltin } from 'node:module'
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { TsdownPlugin, UserConfig } from 'tsdown'
+import { Rolldown, type TsdownPlugin, type UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 import { optionalStringArray } from './modules/src/client/manifest.ts'
 import { PLATFORM_MODULES, PRELOADED_CLIENT_EXTERNALS } from './web/src/platform.ts'
@@ -434,6 +434,34 @@ function matchesSpecifier(patterns: readonly RegExp[], specifier: string): boole
   return patterns.some(pattern => pattern.test(specifier))
 }
 
+/** Render package-local dynamic imports through the Client module loader's asynchronous operation. */
+function asyncChunkRequirePlugin(): TsdownPlugin {
+  return {
+    name: 'dsh-client-async-chunk-require',
+    renderChunk(code, chunk, outputOptions) {
+      if (outputOptions.format !== 'cjs') return null
+      const transformed = new Rolldown.RolldownMagicString(code)
+      for (const dynamicImport of chunk.dynamicImports) {
+        const fileName = dynamicImport.startsWith('./') ? dynamicImport.slice(2) : dynamicImport
+        if (!/^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/.test(fileName)) continue
+        const specifier = `./${fileName}`
+        const call = new RegExp(
+          `Promise\\.resolve\\(\\)\\.then\\(\\(\\)\\s*=>\\s*require\\((['"])${escapeSpecifier(specifier)}\\1\\)\\)`,
+          'gu',
+        )
+        const matches = [...code.matchAll(call)]
+        if (matches.length === 0) {
+          throw new Error(`client bundle compiler: dynamic chunk ${JSON.stringify(specifier)} has no generated import expression`)
+        }
+        for (const match of matches) {
+          transformed.overwrite(match.index, match.index + match[0].length, `require.async(${JSON.stringify(specifier)})`)
+        }
+      }
+      return transformed.hasChanged() ? transformed : null
+    },
+  }
+}
+
 function clientConfig(id: string, entry: string, clientBanner?: (fileName: string) => string | undefined): UserConfig {
   const isRequested = (specifier: string): boolean => clientExternals(id).has(specifier)
   const isolation = clientInputIsolation(id)
@@ -508,7 +536,7 @@ function clientConfig(id: string, entry: string, clientBanner?: (fileName: strin
           + '(type-only imports are erased and never reach this gate)',
         )
       },
-    }, tscSourceMapPlugin(), isolation.plugin, {
+    }, tscSourceMapPlugin(), asyncChunkRequirePlugin(), isolation.plugin, {
       name: 'dsh-css-modules-inline',
       resolveId(source: string, importer: string | undefined) {
         if (!source.endsWith('.module.css')) return null

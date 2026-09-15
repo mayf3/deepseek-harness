@@ -638,7 +638,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'rebuilt(id: string): string | undefined',
-        description: 'Re-snapshot one package\'s entry and chunks (the HMR watch\'s registration hook — the only entry point through which executable changes reach the graph).',
+        description: 'Re-hash one bundle (the HMR watch\'s registration hook — the only entry point through which bundle content changes reach the graph).',
         parameters: [{ name: 'id', description: 'entry id (package name).' }],
         returns: 'the new rev, or undefined for an unknown id.',
       },
@@ -4099,7 +4099,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ClientArtifactBaseline',
-    declaration: 'export interface ClientArtifactBaseline {\n    readonly files: readonly {\n        readonly path: string;\n        readonly mtimeMs: number;\n        readonly size: number;\n    }[];\n}',
+    declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly size: number;\n}',
   },
   {
     name: 'CollectedOutput',

@@ -8,7 +8,6 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { TerminalBodyInjected } from './face.ts'
 import type {} from './locales.ts'
-import { TerminalGuideIcon } from './TerminalIcon.tsx'
 import '@xterm/xterm/css/xterm.css'
 import css from './terminal.module.css'
 import { TerminalTheme } from './terminal-theme.ts'
@@ -36,7 +35,10 @@ export function TerminalBody({ useTabInfo, useTerminal, useTheme, view, t }: Ter
   </Button>
   if (state.issue === 'missingTerminal') return <section className={css.root} data-sidebar-terminal>
     <div className={css.empty}>
-      <TerminalGuideIcon size={36} />
+      <svg width="36" height="36" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+        <rect x="3" y="5" width="22" height="19" rx="3" fill="#17191d" />
+        <path d="m8 10 4 4-4 4M15 18h5" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
       <p className={css.emptyMessage} role="alert">{t('missingTerminal')}</p>
       {newTerminal}
     </div>

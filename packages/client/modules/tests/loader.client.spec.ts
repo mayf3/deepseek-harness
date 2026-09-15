@@ -12,6 +12,8 @@ const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 
 const comboUrl = (ids: readonly string[], rev: string): string =>
   `/plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
+const chunkUrl = (id: string, fileName: string, rev = '0'): string =>
+  `/plugins/${id}/${fileName}?rev=${rev}`
 const BOOTSTRAP_URL = comboUrl([MODULES_ID], 'bootstrap')
 const APPLICATION_URL = comboUrl(['a', 'b'], 'application')
 const win = globalThis as DshWindow
@@ -71,6 +73,7 @@ function bench(
     gated?: string[]
     pending?: ClientBundleRegistration[]
     defaultTransport?: boolean
+    chunks?: Record<string, Factory | null>
   } = {},
 ): Bench {
   const fetched: string[] = []
@@ -81,6 +84,14 @@ function bench(
     fetched.push(url)
     if (opts.gated?.includes(url) === true) {
       await new Promise<void>((resolve) => { gates.set(url, resolve) })
+    }
+    const sibling = /^\/plugins\/(.+)\/(client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js)\?rev=[^&]+$/.exec(url)
+    if (sibling !== null) {
+      const id = sibling[1] as string
+      const chunk = sibling[2] as string
+      const factory = opts.chunks?.[`${id}/${chunk}`]
+      if (factory != null) win.__ModuleLoader__?.load({ id, chunk, factory })
+      return
     }
     const batchIds = url === BOOTSTRAP_URL
       ? entries.filter(entry => entry.initialUrl === BOOTSTRAP_URL).map(entry => entry.id)
@@ -222,6 +233,42 @@ describe('lazy CJS arrival', () => {
     await b.loader.prefetch('a')
     await b.loader.prefetch('a')
     expect(b.fetched).toHaveLength(1)
+  })
+
+  it('loads a package-local dynamic chunk only when its factory requests it', async () => {
+    const b = bench([row('a')], {
+      a: req => ({ load: () => req.async('./client.terminal.js') }),
+    }, {
+      chunks: { 'a/client.terminal.js': () => ({ marker: 'terminal' }) },
+    })
+    const entry = await b.loader.import('a', '', {}) as { load: () => Promise<{ marker: string }> }
+    expect(b.fetched).toEqual([APPLICATION_URL])
+
+    const first = await entry.load()
+    const second = await entry.load()
+    expect(first).toBe(second)
+    expect(first).toEqual({ marker: 'terminal' })
+    expect(b.fetched).toEqual([APPLICATION_URL, chunkUrl('a', 'client.terminal.js')])
+  })
+
+  it('loads a package-local chunk with the revision that invalidated its entry', async () => {
+    const b = bench([row('a')], {
+      a: req => ({ load: () => req.async('./client.terminal.js') }),
+    }, {
+      chunks: { 'a/client.terminal.js': () => ({ marker: 'terminal' }) },
+    })
+    const first = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    await first.load()
+
+    b.loader.invalidate('a', 'rebuilt')
+    const second = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    await second.load()
+    expect(b.fetched).toEqual([
+      APPLICATION_URL,
+      chunkUrl('a', 'client.terminal.js'),
+      comboUrl(['a'], 'rebuilt'),
+      chunkUrl('a', 'client.terminal.js', 'rebuilt'),
+    ])
   })
 })
 
