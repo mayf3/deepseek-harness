@@ -341,7 +341,7 @@ function startStartupProfile(fixture: StartupFixture, args: readonly string[]) {
 }
 
 describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', () => {
-  it('requires --profile and rejects removed commands', async () => {
+  it('requires a profile and rejects removed flags', async () => {
     const bare = await runBuiltBin()
     expect(bare.code).toBe(1)
     expect(bare.stdout).toBe('')
@@ -351,7 +351,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     expect(help.stdout).toContain('dsh --profile web')
     expect(help.stdout).toContain('dsh plugin --profile')
     expect(help.stdout).not.toMatch(/^\s+(?:tui|meta|upgrade)\b/mu)
-    for (const removed of [['tui'], ['--config', 'x.yml'], ['-p', 'task'], ['run', 'task']]) {
+    for (const removed of [['--config', 'x.yml'], ['-p', 'task']]) {
       const result = await runBuiltBin(removed)
       expect(result.code).toBe(1)
     }
@@ -379,7 +379,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(wildcardHost.stderr).toContain('--host 0.0.0.0 is intentionally not supported yet for safety: it would expose remote code execution to the network; use 127.0.0.1 instead')
       expect(wildcardHost.stderr).not.toContain('dsh web: http://')
 
-      const headlessHelp = await runBuiltBin(['--profile', 'headless', '--help'], {
+      const headlessHelp = await runBuiltBin(['headless', '--help'], {
         DSH_HOME: home,
         DSH_TELEMETRY_DISABLED: '1',
       })
@@ -387,7 +387,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(headlessHelp.stderr).toBe('')
       expect(headlessHelp.stdout).toContain('Usage: dsh --profile headless')
 
-      const sdkHelp = await runBuiltBin(['--profile', 'sdk', '--help'], {
+      const sdkHelp = await runBuiltBin(['sdk', '--help'], {
         DSH_HOME: home,
         DSH_TELEMETRY_DISABLED: '1',
       })
@@ -395,7 +395,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(sdkHelp.stderr).toBe('')
       expect(sdkHelp.stdout).toContain('Usage: dsh --profile sdk')
 
-      const acpHelp = await runBuiltBin(['--profile', 'acp', '--help'], {
+      const acpHelp = await runBuiltBin(['acp', '--help'], {
         DSH_HOME: home,
         DSH_TELEMETRY_DISABLED: '1',
       })
@@ -655,7 +655,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
   it('fails loud on a nonexistent profile with the plugin-command hint', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-missing-profile-'))
     try {
-      const result = await runBuiltBin(['--profile', 'nope'], { DSH_HOME: home })
+      const result = await runBuiltBin(['nope'], { DSH_HOME: home })
       expect(result.code).toBe(1)
       expect(result.stderr).toContain('profile "nope" does not exist')
       expect(result.stderr).toContain('dsh plugin --profile nope add')
@@ -668,7 +668,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     const home = mkdtempSync(join(tmpdir(), 'dsh-from-default-profile-'))
     try {
       const created = await runBuiltBin(
-        ['--profile', 'rescue', '--from-default-profile', 'web', '--help'],
+        ['rescue', '--from-default-profile', 'web', '--help'],
         { DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' },
       )
       expect(created.code).toBe(0)
@@ -688,7 +688,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8')).toContain('nodeLinker: hoisted')
 
       const repeated = await runBuiltBin(
-        ['--profile', 'rescue', '--from-default-profile', 'web', '--help'],
+        ['rescue', '--from-default-profile', 'web', '--help'],
         { DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' },
       )
       expect(repeated.code).toBe(1)
@@ -697,7 +697,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(repeated.stderr).toContain('omit --from-default-profile to use it')
 
       const reopened = await runBuiltBin(
-        ['--profile', 'rescue', '--help'],
+        ['rescue', '--help'],
         { DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' },
       )
       expect(reopened.code).toBe(0)
@@ -720,7 +720,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(existsSync(join(home, 'profiles', 'rescue', 'package.json'))).toBe(true)
 
       const retried = await runBuiltBin(
-        ['--profile', 'rescue', '--help'],
+        ['rescue', '--help'],
         { DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' },
       )
       expect(retried.code).toBe(0)
@@ -1185,7 +1185,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     afterEach(() => { rmSync(home, { recursive: true, force: true }) })
 
     it('prints the web profile bundle layers without a user layer', async () => {
-      const { stdout, code, stderr } = await runBuiltBin(['--profile', 'web', '--dump-default-config'], { DSH_HOME: home })
+      const { stdout, code, stderr } = await runBuiltBin(['web', '--dump-default-config'], { DSH_HOME: home })
       expect(code).toBe(0)
       expect(stderr).toBe('')
       expect(stdout).toContain("name: '@deepseek-ai/dsh-agent-loop'")
@@ -1280,7 +1280,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
 
     it('composes the profile user layer and a --patch overlay in order', async () => {
       // Auto-init the web profile first, then write its user layer.
-      const init = await runBuiltBin(['--profile', 'web', '--dump-default-config'], { DSH_HOME: home })
+      const init = await runBuiltBin(['web', '--dump-default-config'], { DSH_HOME: home })
       expect(init.code).toBe(0)
       const profilePatch = join(home, 'profiles', 'web', 'cordis.patch.yml')
       writeFileSync(profilePatch, [

@@ -21,7 +21,7 @@ function exitCode(argv: string[]): number {
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('parseDshArgs', () => {
-  it('routes profile boots and the web alias, handing the rest to the app', () => {
+  it('routes profile boots and shorthand, handing the rest to the app', () => {
     expect(parse(['--profile', 'tui'])).toEqual({ mode: 'profile', profile: 'tui', patches: [], args: [] })
     expect(parse(['--profile', 'tui', '--patch', 'a.yml', '--patch', 'b.yml']))
       .toEqual({ mode: 'profile', profile: 'tui', patches: ['a.yml', 'b.yml'], args: [] })
@@ -53,7 +53,43 @@ describe('parseDshArgs', () => {
         args: ['--resume', 'abc', '--from-default-profile', 'web'],
       })
     expect(parse(['web', '--from-default-profile', 'web']))
-      .toEqual({ mode: 'profile', profile: 'web', patches: [], args: ['--from-default-profile', 'web'] })
+      .toEqual({ mode: 'profile', profile: 'web', fromDefaultProfile: 'web', patches: [], args: [] })
+  })
+
+  it.each(['web', 'headless', 'sdk', 'sdk-minimal', 'acp', 'tui', 'custom', 'run', 'help'])('expands %s without looking up profiles', (profile) => {
+    for (const args of [
+      [], ['task', 'words'], ['--help'], ['-h'], ['web'],
+      ['--patch', 'a.yml', '--patch', 'b.yml'],
+      ['--from-default-profile', 'web', '--help'],
+      ['--dump-config'], ['--dump-default-config'],
+      ['--patch', 'a.yml', '--resume', 'id', '--patch', 'late.yml'],
+      ['--', '--help'], ['--', '--', 'task'],
+      ['--profile', 'other'],
+    ]) {
+      expect(parse([profile, ...args])).toEqual(parse(['--profile', profile, ...args]))
+    }
+  })
+
+  it('keeps plugin management reserved and forwards web as an app argument', () => {
+    expect(parse(['--profile', 'plugin'])).toMatchObject({ mode: 'profile', profile: 'plugin' })
+    expect(parse(['headless', 'web'])).toMatchObject({ profile: 'headless', args: ['web'] })
+    expect(exitCode(['--patch', 'a.yml', 'tui'])).toBe(1)
+    expect(exitCode(['--', 'tui'])).toBe(1)
+  })
+
+  it.each([
+    [''], ['desktop'], ['Desktop'], ['DESKTOP'],
+    ['custom', '--patch='], ['custom', '--from-default-profile='],
+    ['custom', '--dump-config', '--dump-default-config'],
+    ['custom', '--dump-default-config', '--patch', 'a.yml'],
+    ['custom', '--dump-config', 'task'],
+  ])('rejects invalid shorthand %j', (...argv: string[]) => {
+    expect(exitCode(argv)).toBe(1)
+  })
+
+  it.each(['-V', '--version'])('prints the launcher version for shorthand %s', (flag) => {
+    expect(exitCode(['custom', flag])).toBe(0)
+    expect(parse(['custom', 'task', flag])).toMatchObject({ args: ['task', flag] })
   })
 
   it('routes the plugin pnpm forwarder', () => {
@@ -91,10 +127,8 @@ describe('parseDshArgs', () => {
 
   it('rejects missing profile, removed flags, and contradictory inputs', () => {
     expect(exitCode([])).toBe(1)
-    expect(exitCode(['tui'])).toBe(1) // an app argument without --profile has no app to reach
     expect(exitCode(['--config', 'c.yml'])).toBe(1) // removed
     expect(exitCode(['-p', 'task'])).toBe(1) // removed
-    expect(exitCode(['run', 'task'])).toBe(1) // app-owned task replaced the launcher subcommand
     expect(exitCode(['--profile', ''])).toBe(1)
     expect(exitCode(['--profile', 'x', '--from-default-profile='])).toBe(1)
     expect(exitCode(['--profile', 'x', '--from-default-profile'])).toBe(1)
@@ -104,7 +138,6 @@ describe('parseDshArgs', () => {
     expect(exitCode(['--profile', 'x', '--dump-default-config', '--patch', 'p.yml'])).toBe(1)
     expect(exitCode(['--profile', 'x', '--dump-config', 'task'])).toBe(1)
     expect(exitCode(['--bogus'])).toBe(1)
-    expect(exitCode(['--profile', 'x', 'web'])).toBe(1)
     expect(exitCode(['web', '--dump-config', '--dump-default-config'])).toBe(1)
     expect(exitCode(['web', '--dump-default-config', '--patch', 'w.yml'])).toBe(1)
     expect(exitCode(['web', '--patch='])).toBe(1)
