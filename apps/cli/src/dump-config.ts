@@ -14,7 +14,7 @@ import {
   renderConfigDump,
   type ConfigDumpLayer,
 } from '@deepseek-ai/dsh-app-boot'
-import { homePatchPath, prepareProfile, PROFILE_ROOT_FILENAME } from './profile-boot.ts'
+import { homePatchPath, prepareProfile, PROFILE_ROOT_FILENAME } from './profile-boot-internal.ts'
 
 const NAME = 'dsh'
 
