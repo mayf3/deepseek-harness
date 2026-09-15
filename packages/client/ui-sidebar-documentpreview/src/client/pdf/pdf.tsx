@@ -1,12 +1,10 @@
 /** PDF page presentation; binary content and tab information come from the document owner. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import clsx from 'clsx'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconLoadingOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { DocumentPreviewProps } from '../document/contract.ts'
-import { LoadingIndicator } from '../LoadingIndicator.tsx'
-import { DEFAULT_PDF_VIEW, type PdfStore } from './store.ts'
+import type { PdfStore } from './store.ts'
 import { renderPdfPage, type PdfDocument } from './document.ts'
 import { openPdf } from './runtime.ts'
 import { PdfWorkerFailure } from './errors.ts'
@@ -30,6 +28,8 @@ type LoadState =
   | { readonly kind: 'loaded'; readonly data: Uint8Array<ArrayBuffer>; readonly document: PdfDocument }
   | { readonly kind: 'failed'; readonly data: Uint8Array<ArrayBuffer>; readonly error: unknown }
 
+const INITIAL_PDF_VIEW = { page: 1 }
+
 /**
  * Present a PDF with tab-local viewing preferences and component-owned rendering resources.
  * @param props - complete bytes and framework-owned tab/store/locale seats.
@@ -37,7 +37,7 @@ type LoadState =
  */
 export function PdfBody(props: PdfBodyProps): ReactNode {
   const { tab } = props.useTabInfo()
-  const view = props.useStore(state => state.byTab[tab.id] ?? DEFAULT_PDF_VIEW)
+  const view = props.useStore(state => state.byTab[tab.id] ?? INITIAL_PDF_VIEW)
   const data = props.content.kind === 'bytes' ? props.content.data : undefined
   const [load, setLoad] = useState<LoadState>()
   const [attempt, setAttempt] = useState(0)
@@ -67,7 +67,10 @@ export function PdfBody(props: PdfBodyProps): ReactNode {
   if (data === undefined) return <p className={css.status} role="alert">{t('unsupported')}</p>
   // The open wait centres like the owner's read spinner before it, so one
   // spinner position covers everything until the first page block appears.
-  if (load?.data !== data) return <LoadingIndicator className={clsx(css.status, css.opening)} label={t('loading')} />
+  if (load?.data !== data) return <span className={`${css.status} ${css.opening}`} role="status"
+    aria-label={t('loading')} data-document-loading>
+    <span className={css.loadingIcon} aria-hidden="true"><IconLoadingOutline16 /></span>
+  </span>
   if (load.kind === 'failed') {
     return <div className={css.status} role="alert">
       <span>{failureText(load.error, t)}</span>

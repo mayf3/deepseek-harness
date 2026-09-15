@@ -12,6 +12,8 @@ const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 
 const comboUrl = (ids: readonly string[], rev: string): string =>
   `/plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
+const chunkUrl = (id: string, fileName: string, rev = '0'): string =>
+  `/plugins/${id}/${fileName}?rev=${rev}`
 const BOOTSTRAP_URL = comboUrl([MODULES_ID], 'bootstrap')
 const APPLICATION_URL = comboUrl(['a', 'b'], 'application')
 const win = globalThis as DshWindow
@@ -71,6 +73,7 @@ function bench(
     gated?: string[]
     pending?: ClientBundleRegistration[]
     defaultTransport?: boolean
+    chunks?: Record<string, Factory | null>
   } = {},
 ): Bench {
   const fetched: string[] = []
@@ -92,9 +95,17 @@ function bench(
     const singleId = combo?.split(',').length === 1 && combo.endsWith('/client.js')
       ? combo.slice(0, -'/client.js'.length)
       : undefined
+    const sibling = /^\/plugins\/(.+)\/(client\.[^/]+\.js)$/.exec(parsed.pathname)
     for (const id of batchIds ?? (singleId === undefined ? [] : [singleId])) {
       const factory = bundles[id]
       if (factory != null) win.__ModuleLoader__?.load({ id, factory })
+    }
+    if (sibling !== null) {
+      const id = sibling[1]!
+      const chunk = sibling[2]!
+      const key = `${id}/${chunk}`
+      const factory = opts.chunks?.[key]
+      if (factory != null) win.__ModuleLoader__?.load({ id, chunk, factory })
     }
   }
   const bootstrapEntries = entries.filter(entry => entry.initialUrl === BOOTSTRAP_URL).map(entry => entry.id)
@@ -222,6 +233,27 @@ describe('lazy CJS arrival', () => {
     await b.loader.prefetch('a')
     await b.loader.prefetch('a')
     expect(b.fetched).toHaveLength(1)
+  })
+
+  it('fetches a dynamic sibling chunk once on demand', async () => {
+    const b = bench([row('a')], {
+      a: req => ({
+        load: () => Promise.resolve().then(() => req('./client.pdf.js')),
+      }),
+    }, {
+      chunks: {
+        'a/client.pdf.js': () => ({ marker: 'pdf' }),
+      },
+    })
+    const entry = await b.loader.import('a', '', {}) as {
+      load: () => Promise<{ marker: string }>
+    }
+    expect(b.fetched).toEqual([APPLICATION_URL])
+
+    const [first, second] = await Promise.all([entry.load(), entry.load()])
+    expect(first).toBe(second)
+    expect(first).toEqual({ marker: 'pdf' })
+    expect(b.fetched).toEqual([APPLICATION_URL, chunkUrl('a', 'client.pdf.js')])
   })
 })
 

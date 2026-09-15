@@ -20,6 +20,7 @@ const UI_RENDERER_ID = '@deepseek-ai/dsh-client-ui-renderer'
 const comboUrl = (ids: readonly string[], rev: string): string =>
   `/plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
 const mapUrl = (url: string): string => url.replace(/\/client\.js(?=,|&rev=)/g, '/client.js.map')
+const chunkUrl = (id: string, fileName: string, rev: string): string => `/plugins/${id}/${fileName}?rev=${rev}`
 const BOOTSTRAP_URL = comboUrl([MODULES_ID], 'boot')
 const APPLICATION_URL = comboUrl([UI_RENDERER_ID], 'app')
 
@@ -778,6 +779,36 @@ describe('client bundle activation', () => {
     expect(JSON.parse(nextMap.body.toString('utf8'))).toMatchObject({
       sections: [{ map: { sources: ['/plugins/@fixture/source-map/src/changed.tsx'] } }],
     })
+  })
+
+  it('snapshots and serves package-local chunks under the entry revision', async () => {
+    const packageName = '@fixture/chunked'
+    const clientPath = writePackage(packageName)
+    const chunkPath = join(dirname(clientPath), 'client.pdf.js')
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = require("./client.pdf.js")\n')
+    writeFileSync(chunkPath, 'module.exports = { version: 1 }\n//# sourceMappingURL=client.pdf.js.map')
+    writeFileSync(`${chunkPath}.map`, JSON.stringify({
+      version: 3,
+      names: [],
+      mappings: 'AAAA',
+      sources: ['../../../packages/client/demo/src/pdf.tsx'],
+    }))
+    const { service, route } = constructWithRoute([packageName])
+    const firstRev = service.graph().entries[0]!.rev
+    const firstUrl = chunkUrl(packageName, 'client.pdf.js', firstRev)
+
+    const script = await routeRequest(route, firstUrl)
+    expect(script.status).toBe(200)
+    expect(script.body.toString('utf8')).toContain('module.exports = { version: 1 }')
+    expect(script.body.toString('utf8')).toContain(`sourceMappingURL=${firstUrl.replace('.js?', '.js.map?')}`)
+    expect((await routeRequest(route, firstUrl.replace('.js?', '.js.map?'))).status).toBe(200)
+
+    writeFileSync(chunkPath, 'module.exports = { version: 2 }\n')
+    const secondRev = service.rebuilt(packageName)!
+    expect(secondRev).not.toBe(firstRev)
+    const second = await routeRequest(route, chunkUrl(packageName, 'client.pdf.js', secondRev))
+    expect(second.body.toString('utf8')).toContain('module.exports = { version: 2 }')
   })
 
   it('applies sourceRoot before relocating absolute-looking section sources', async () => {

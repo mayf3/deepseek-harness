@@ -10,7 +10,7 @@ import type { TerminalBodyInjected } from './face.ts'
 import type {} from './locales.ts'
 import { TerminalGuideIcon } from './TerminalIcon.tsx'
 import '@xterm/xterm/css/xterm.css'
-import css from './TerminalBody.module.css'
+import css from './terminal.module.css'
 import { TerminalTheme } from './terminal-theme.ts'
 import { observeTerminalCursor } from './terminal-cursor.ts'
 

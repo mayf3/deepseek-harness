@@ -104,7 +104,7 @@ function browserSourcePath(source: string, sourcemapPath: string): string {
  * @param libEntry - node-half entries, spelled at the call site so the
  * package-invariants gate can see `lib/types/invariant.js` in each package's
  * own tsdown.config.ts (a preset-side glob hides it from the mechanical check).
- * @param options - phase placement, lib overrides, and companion Node configs.
+ * @param options - phase placement, lib overrides, companion Node configs, and optional per-file Client banner.
  * @returns ENV-selected tsdown config for the current build face.
  */
 export function clientBundle(
@@ -116,7 +116,7 @@ export function clientBundle(
   return ({ env }) => {
     const face = buildFace(env?.DSH_BUILD_FACE)
     const clientEntry = face === undefined ? 'src/client/index.ts' : 'lib/types/client/index.js'
-    const client = clientConfig(id, clientEntry)
+    const client = clientConfig(id, clientEntry, options.clientBanner)
     const node = [lib, ...(options.companions ?? [])]
     if (face === 'host') return options.hostPhase === true ? node : [SKIP_WORKSPACE_BUILD]
     if (face === 'client') {
@@ -205,6 +205,8 @@ interface ClientBundleOptions {
   readonly companions?: readonly UserConfig[]
   /** Overrides for the package's primary Node-side library config. */
   readonly lib?: UserConfig
+  /** Optional legal or attribution text selected by emitted client filename. */
+  readonly clientBanner?: (fileName: string) => string | undefined
 }
 
 type BuildFace = 'host' | 'client' | undefined
@@ -432,7 +434,7 @@ function matchesSpecifier(patterns: readonly RegExp[], specifier: string): boole
   return patterns.some(pattern => pattern.test(specifier))
 }
 
-function clientConfig(id: string, entry: string): UserConfig {
+function clientConfig(id: string, entry: string, clientBanner?: (fileName: string) => string | undefined): UserConfig {
   const isRequested = (specifier: string): boolean => clientExternals(id).has(specifier)
   const isolation = clientInputIsolation(id)
   return {
@@ -565,6 +567,7 @@ function clientConfig(id: string, entry: string): UserConfig {
     }],
     outputOptions: {
       entryFileNames: 'client.js',
+      chunkFileNames: 'client.[name].js',
       sourcemapExcludeSources: false,
       // The map is served from /plugins/<scoped-package>/client.js.map. The
       // browser resolves its local sources back into URLs that mirror the
@@ -574,7 +577,11 @@ function clientConfig(id: string, entry: string): UserConfig {
         isolation.sourcePath(source, mapPath)
         return browserSourcePath(source, mapPath)
       },
-      banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(id)}, factory: (require) => {`,
+      banner: (chunk) => {
+        const registration = `window.__ModuleLoader__.load({ id: ${JSON.stringify(id)}, ${chunk.isEntry ? '' : `chunk: ${JSON.stringify(chunk.fileName)}, `}factory: (require) => {`
+        const prefix = clientBanner?.(chunk.fileName)
+        return prefix === undefined ? registration : `${prefix}\n${registration}`
+      },
       footer: 'return module.exports; } });',
       intro: 'var module = { exports: {} }; var exports = module.exports;',
     },

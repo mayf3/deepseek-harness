@@ -13,7 +13,7 @@ import type { SidebarRightOpenTab } from '@deepseek-ai/dsh-client-ui-sidebar-rig
 import { apply, inject } from '../src/client/index.ts'
 import { apply as hostApply } from '../src/index.ts'
 import { TerminalGuide, type TerminalGuideInjected } from '../src/client/TerminalGuide.tsx'
-import { TerminalBody } from '../src/client/TerminalBody.tsx'
+import { LazyTerminalBody } from '../src/client/LazyTerminalBody.tsx'
 import { TerminalTitle } from '../src/client/TerminalTitle.tsx'
 import { TerminalRecovery, type TerminalRecoveryInjected } from '../src/client/TerminalRecovery.tsx'
 import { TerminalCleanup, type TerminalCleanupInjected } from '../src/client/TerminalCleanup.tsx'
@@ -89,7 +89,7 @@ it('registers terminal views, recovery and cleanup, then releases every contribu
     expect(h.dictionaries.get('sidebarTerminal')).toEqual({ en, zh })
     expect(h.entries.map(entry => [entry.name, entry.component, entry.locale])).toEqual([
       ['sidebar.right.tab.guide.entry', TerminalGuide, 'sidebarTerminal'],
-      ['sidebar.right.pane.tab', TerminalBody, 'sidebarTerminal'],
+      ['sidebar.right.pane.tab', LazyTerminalBody, 'sidebarTerminal'],
       ['sidebar.right.pane.tab.title', TerminalTitle, 'sidebarTerminal'],
       ['conversation.session.header.actions', TerminalRecovery, 'sidebarTerminal'],
       ['shell.overlay', TerminalCleanup, 'sidebarTerminal'],

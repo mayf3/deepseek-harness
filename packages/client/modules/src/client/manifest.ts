@@ -306,10 +306,13 @@ export function parseBootManifest(wire: unknown): BootManifest {
 export interface ClientBundleRegistration {
   /** Plugin id (package name) — the registration key; must match the graph row being executed. */
   id: string
+  /** Package-local chunk filename; absent for the package's `client.js` entry. */
+  chunk?: string
   /**
    * Closure factory holding the whole bundle body: receives the synchronous
-   * require bound to the module table and returns the bundle's exports. Runs
-   * once, at materialization.
+   * require bound to the module table and returns the bundle's exports. A
+   * generated relative chunk require returns that chunk's loading promise.
+   * The factory runs once, at materialization.
    */
   factory: (require: (spec: string) => unknown) => Record<string, unknown>
 }
@@ -354,7 +357,7 @@ export interface DshWindow {
 
 /** Per-module bookkeeping in {@link ClientModuleLoader.loadCache} (flat module-graph boundary). */
 export interface ClientModuleRecord {
-  /** Module id (entry name / package name). */
+  /** Module id (entry package name or package-local chunk key). */
   id: string
   /** Materialized exports (`module.exports` from a factory or bootstrap registration). */
   exports: unknown
@@ -400,8 +403,8 @@ export interface ClientModuleLoader {
    */
   prefetch(id: string): Promise<void>
   /**
-   * Full reset of one non-bootstrap module: drop its registered factory and
-   * materialized record so the next prefetch/import loads its one-resource
+   * Full reset of one non-bootstrap package: drop its entry and chunk factories
+   * and materialized records so the next prefetch/import loads its one-resource
    * combo script rather than the initial multi-resource request. The bootstrap
    * module remains materialized.
    * @param id - entry name to invalidate.
