@@ -14,7 +14,7 @@ composer 内有两个选择界面在打开期间持有焦点，两者都把 Tab 
 
 ## 决策
 
-`PopupSelectView` 用回车或 Tab 接受，用 Escape 或 Shift+Tab 离开：回车与 Tab 都对筛选后的高亮行执行 `select`，Escape 与 Shift+Tab 都关闭并通过对话自己的 `focus()` 把焦点还给 composer，该路径走 Lexical，因此光标回到草稿原来的位置，而不是开头。从 composer 的 launcher 按钮打开触发菜单时也在开菜单之前做同样的事：该菜单是挂在编辑器上的 combobox，按钮不能握着键盘。`↑`／`↓` 在筛选后的高亮间移动（循环，滚动进视野），`←`／`→` 仍归搜索框的原生光标。上述按键全部被消费，因此尚未就绪的行列表会把 Tab 当作 no-op 吞掉，而不是把焦点放出卡片。
+`PopupSelectView` 用回车或 Tab 接受，用 Escape 或 Shift+Tab 离开：回车与 Tab 都对筛选后的高亮行执行 `select`，Escape 与 Shift+Tab 都关闭并通过对话自己的 `focus()` 把焦点还给 composer，该路径走 Lexical，因此光标回到草稿原来的位置，而不是开头。该方法是本决策对 `SessionInput` 面的唯一新增：外壳需要的是 composer 自己的焦点，而不是对其 contenteditable 的 DOM focus，而光标的拥有者是唯一能恢复它的一方。从 composer 的 launcher 按钮打开触发菜单时也在开菜单之前做同样的事：该菜单是挂在编辑器上的 combobox，按钮不能握着键盘。`↑`／`↓` 在筛选后的高亮间移动（循环，滚动进视野），`←`／`→` 仍归搜索框的原生光标。上述按键全部被消费，因此尚未就绪的行列表会把 Tab 当作 no-op 吞掉，而不是把焦点放出卡片。
 
 `PopupSelectController` 把高亮停在已加载列表标记为当前值的那一行；没有行被标记，或重试时保留的搜索把该行过滤掉时，退回首行。输入搜索会把高亮重定到筛选结果的首行，因为搜索要找的正是当前值之外的东西。因此在刚打开的面板上接受即确认正在使用的值。
 

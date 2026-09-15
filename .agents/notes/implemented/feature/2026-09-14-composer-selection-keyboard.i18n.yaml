@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-14-composer-selection-keyboard.md
-2026-09-14-composer-selection-keyboard.md: da5c7267bf5506024183e11271dd20357f351104
-2026-09-14-composer-selection-keyboard.zh.md: 0723b390a9cf4abe38322149a06d768d808787d3
+2026-09-14-composer-selection-keyboard.md: 50802a03cb2f0fee75bcdb62169c2b33ce5690ec
+2026-09-14-composer-selection-keyboard.zh.md: daa2c999e43f9ccf1acdd7ee2ad2e7115838eec1
