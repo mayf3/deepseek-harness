@@ -33,8 +33,6 @@ export interface BundleRowInfo {
 export interface BundleInfo {
   name: string
   version?: string
-  /** `dsh.title` of the package manifest. */
-  title?: string
   /** `description` of the package manifest. */
   description?: string
   enabled: boolean
@@ -135,8 +133,6 @@ export type PluginSpecInspection =
     readonly version?: string
     /** `description` of the package manifest. */
     readonly description?: string
-    /** `dsh.title` of the package manifest. */
-    readonly title?: string
     /** Whether the package declares a bundle patch; null when the spec's form does not say. */
     readonly bundle: boolean | null
   }

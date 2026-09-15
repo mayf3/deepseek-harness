@@ -68,20 +68,20 @@ describe('web e2e: plugin manager', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-list'))
     const panel = await openPluginsPanel()
 
-    await panel.getByText('示例组合包', { exact: true }).waitFor({ timeout: 20_000 })
-    const toggle = panel.getByRole('switch', { name: '启用 示例组合包' })
+    await panel.getByText('bundle', { exact: true }).waitFor({ timeout: 20_000 })
+    const toggle = panel.getByRole('switch', { name: '启用 bundle' })
     expect(await toggle.getAttribute('aria-checked')).toBe('false')
     // The profile's own group holds its one bundle; the installation's optional bundles form the built-in
     // group, and its other bundles stay off the page.
     expect(await panel.locator('[data-plugin-group="bundles"] [data-plugin-package]').count()).toBe(1)
     expect(await panel.locator('[data-plugin-group="builtin"] [data-plugin-package]').count()).toBe(3)
     // A bundle that is off still shows the rows its patch declares, without switches.
-    await panel.getByRole('button', { name: '查看 示例组合包' }).click()
+    await panel.getByRole('button', { name: '查看 bundle' }).click()
     await panel.locator('[data-plugin-row]', { hasText: 'fixture-row' }).waitFor({ timeout: 10_000 })
     expect(await panel.getByRole('switch', { name: '启用组件 fixture-row' }).count()).toBe(0)
-    await panel.getByRole('button', { name: '卸载 示例组合包' }).waitFor({ timeout: 5_000 })
+    await panel.getByRole('button', { name: '卸载 bundle' }).waitFor({ timeout: 5_000 })
     await panel.getByRole('button', { name: '返回插件列表' }).click()
-    await expect.poll(() => panel.getByRole('button', { name: '卸载 示例组合包' }).count(), { timeout: 5_000 }).toBe(0)
+    await expect.poll(() => panel.getByRole('button', { name: '卸载 bundle' }).count(), { timeout: 5_000 }).toBe(0)
 
     const snapshot = await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MANAGER_EXPECTED, snapshot, MODE)
@@ -119,7 +119,7 @@ describe('web e2e: plugin manager', () => {
   it('enables a bundle into the profile manifest, mounts its rows live, and switches one of them', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-enable'))
     const panel = await openPluginsPanel()
-    const toggle = panel.getByRole('switch', { name: '启用 示例组合包' })
+    const toggle = panel.getByRole('switch', { name: '启用 bundle' })
     await toggle.waitFor({ timeout: 20_000 })
     const mounted = () => [...scaffold.ctx.loader.entries()].find(entry => entry.options.id === 'fixture-row')
     expect(mounted()?.fiber?.state).toBeUndefined()
@@ -137,7 +137,7 @@ describe('web e2e: plugin manager', () => {
     const snapshot = await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(LIVE_EXPECTED, snapshot, MODE)
     // The pack's page lists its rows as the Host runs them, each with a switch that writes the profile patch.
-    await panel.getByRole('button', { name: '查看 示例组合包' }).click()
+    await panel.getByRole('button', { name: '查看 bundle' }).click()
     const rowSwitch = panel.getByRole('switch', { name: '启用组件 fixture-row' })
     await rowSwitch.waitFor({ timeout: 10_000 })
     expect(await rowSwitch.getAttribute('aria-checked')).toBe('true')
@@ -177,7 +177,7 @@ describe('web e2e: startup-applied plugin management', () => {
       await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
       await page.getByRole('navigation', { name: '全局面板' }).getByRole('button', { name: '插件', exact: true }).click()
       const panel = page.locator('[data-plugin-panel]')
-      const toggle = panel.getByRole('switch', { name: '启用 示例组合包' })
+      const toggle = panel.getByRole('switch', { name: '启用 bundle' })
       await toggle.waitFor({ timeout: 20_000 })
       const mounted = () => [...scaffold.ctx.loader.entries()].find(entry => entry.options.id === 'fixture-row')
       const bundles = async () => {
@@ -192,7 +192,7 @@ describe('web e2e: startup-applied plugin management', () => {
       await page.getByText('更改将在下次启动生效', { exact: true }).waitFor({ timeout: 10_000 })
       expect(mounted()?.fiber?.state).toBeUndefined()
       // The pack's page lists its rows from their declarations, with no live entry to switch.
-      await panel.getByRole('button', { name: '查看 示例组合包' }).click()
+      await panel.getByRole('button', { name: '查看 bundle' }).click()
       await panel.locator('[data-plugin-row]', { hasText: 'fixture-row' }).waitFor({ timeout: 10_000 })
       expect(await panel.getByRole('switch', { name: '启用组件 fixture-row' }).isDisabled()).toBe(true)
       await panel.getByRole('button', { name: '返回插件列表' }).click()

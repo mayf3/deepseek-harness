@@ -103,8 +103,7 @@ interface InstallationManifest {
 /** What a package manifest says about the package: identity, one-liner, and whether it is a bundle. */
 function inspectionOf(kind: 'registry' | 'path', manifest: object): Extract<PluginSpecInspection, { status: 'accepted' }> {
   const dsh = (manifest as { dsh?: unknown }).dsh
-  const declared = typeof dsh === 'object' && dsh !== null ? dsh as { title?: unknown; bundle?: unknown } : undefined
-  const title = declared === undefined ? undefined : stringField(declared, 'title')
+  const declared = typeof dsh === 'object' && dsh !== null ? dsh as { bundle?: unknown } : undefined
   const bundle = declared !== undefined && typeof declared.bundle === 'object' && declared.bundle !== null
   const name = stringField(manifest, 'name')
   const version = stringField(manifest, 'version')
@@ -114,7 +113,6 @@ function inspectionOf(kind: 'registry' | 'path', manifest: object): Extract<Plug
     ...name === undefined ? {} : { name },
     ...version === undefined ? {} : { version },
     ...description === undefined || description === '' ? {} : { description },
-    ...title === undefined ? {} : { title },
   }
 }
 
@@ -189,7 +187,7 @@ export class PluginManager extends TypertRemoteService {
 
   /** Read the profile's installed bundles, the bundles this dsh installation supplies, and the selected names that are not bundles.
    * A dependency without a bundle patch is listed, as a `not-bundle` problem, only while it is selected.
-   * @returns Package versions, titles, one-liners, rows, activation selections, whether the installation offers the
+   * @returns Package versions, one-liners, rows, activation selections, whether the installation offers the
    * bundle, and removal availability.
    */
   @Remote
@@ -212,9 +210,7 @@ export class PluginManager extends TypertRemoteService {
           continue
         }
         const readOnlyReason = this.protectsManager(name) ? 'management-required' as const : undefined
-        const title = info.dsh?.title
         bundles.push({ name, ...(info.version === undefined ? {} : { version: info.version }),
-          ...(title === undefined ? {} : { title }),
           ...(info.description === undefined || info.description === '' ? {} : { description: info.description }),
           enabled, installed, optional, removable: removable && readOnlyReason === undefined,
           ...(readOnlyReason === undefined ? {} : { readOnlyReason }),

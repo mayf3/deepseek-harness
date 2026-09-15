@@ -13,7 +13,6 @@ const ROW_ENTRY = 'include:sidebar' as PluginEntryId
 const BUNDLE: BundleInfo = {
   name: 'dsh-better-sidebar',
   version: '0.16.0',
-  title: 'Better sidebar',
   description: 'A sidebar.',
   enabled: false,
   installed: true,
@@ -84,7 +83,7 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
 describe('packageView', () => {
   it('joins a bundle with the entries its rows run as', () => {
     expect(packageView(BUNDLE, PLUGINS)).toEqual({
-      name: 'dsh-better-sidebar', version: '0.16.0', title: 'Better sidebar', description: 'A sidebar.',
+      name: 'dsh-better-sidebar', version: '0.16.0', description: 'A sidebar.',
       installed: true, optional: false, enabled: false,
       rows: [
         { rowId: 'sidebar', moduleName: 'dsh-better-sidebar', entryId: ROW_ENTRY, enabled: true, phase: 'active' },
@@ -110,10 +109,10 @@ describe('packageView', () => {
 })
 
 describe('sortPackages', () => {
-  it('orders packages by the title a person reads, not by the Host order or enablement', async () => {
+  it('orders packages by the short name a person reads, not by the Host order or enablement', async () => {
     const plain = { enabled: true, installed: true, optional: false, removable: true, rows: [], overrides: [] }
     const zeta: BundleInfo = { ...plain, name: 'dsh-zeta' }
-    const alpha: BundleInfo = { ...plain, name: '@acme/dsh-alpha', title: 'Alpha tools', enabled: false }
+    const alpha: BundleInfo = { ...plain, name: '@acme/dsh-alpha', enabled: false }
     const views = [zeta, BUNDLE, alpha].map(bundle => packageView(bundle, PLUGINS))
     expect(sortPackages(views).map(pkg => pkg.name)).toEqual(['@acme/dsh-alpha', 'dsh-better-sidebar', 'dsh-zeta'])
     // The store lists what it read in that order, whatever the Host's order.

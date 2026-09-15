@@ -213,7 +213,7 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
   readonly onOpen: () => void
   readonly onSetEnabled: (enabled: boolean) => void
 }): ReactNode {
-  const title = pkg.title ?? shortName(pkg.name)
+  const title = shortName(pkg.name)
   const status = packageStatus(pkg)
   return (
     <li
@@ -262,7 +262,7 @@ function PackageDetail({
   readonly onUninstall: () => void
   readonly onSetRowEnabled: (row: PackageRow, enabled: boolean) => void
 }): ReactNode {
-  const title = pkg.title ?? shortName(pkg.name)
+  const title = shortName(pkg.name)
   const status = packageStatus(pkg)
   return (
     <div className={css.detail} data-plugin-detail={pkg.name}>
@@ -408,9 +408,9 @@ function failureText(failure: InstallState['failure'], t: Translate): string {
   return failure.reason === '' ? t('installFailureGeneric') : failure.reason
 }
 
-/** The package the install is about: its title, one-liner, and version, as the Host read them before installing. */
+/** The package the install is about: its name, one-liner, and version, as the Host read them before installing. */
 function SubjectCard({ subject, t }: { readonly subject: InstallSubject; readonly t: Translate }): ReactNode {
-  const title = subject.title ?? subject.name ?? subject.spec
+  const title = subject.name ?? subject.spec
   const kindKey = SUBJECT_KIND_KEYS[subject.kind]
   const description = subject.description ?? (kindKey === undefined ? undefined : t(kindKey))
   return (
@@ -629,15 +629,13 @@ function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onTog
 }
 
 /** The confirmation an uninstall waits on. */
-function ConfirmDialog({ confirm, t, packages, onConfirm, onCancel }: {
+function ConfirmDialog({ confirm, t, onConfirm, onCancel }: {
   readonly confirm: ConfirmState
   readonly t: Translate
-  readonly packages: readonly PackageView[]
   readonly onConfirm: () => void
   readonly onCancel: () => void
 }): ReactNode {
-  const pkg = packages.find(candidate => candidate.name === confirm.packageName)
-  const name = pkg?.title ?? shortName(confirm.packageName)
+  const name = shortName(confirm.packageName)
   return (
     <Modal
       open
@@ -792,7 +790,6 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
           <ConfirmDialog
             confirm={state.confirm}
             t={t}
-            packages={state.packages}
             onConfirm={props.confirm}
             onCancel={props.cancelConfirm}
           />

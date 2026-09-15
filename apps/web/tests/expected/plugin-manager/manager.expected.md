@@ -23,6 +23,6 @@
 - text: "1"
 - list:
   - listitem:
-    - button "查看 示例组合包": 示例组合包
+    - button "查看 bundle": bundle
     - text: "Web e2e fixture: a bundle whose one row is an inert plugin."
-    - switch "启用 示例组合包"
+    - switch "启用 bundle"

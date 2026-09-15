@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决定
 
-**宿主先读 spec，再安装。** `PluginManager.inspect` 用 `parseInstallSpec` 把 spec 分成注册表名、绝对路径、git 地址、压缩包，拒绝 pnpm 或注册表不会接受的写法，再通过 `pnpm view` 问注册表、或读目录的 `package.json`，得到名字、版本、描述、标题和组合包声明。`pnpm view` 在 profile 目录里运行，让注册表和代理设置与安装一致。没有组合包 patch 的包在这一步、在 pnpm 运行之前就被拒绝：管理器只安装组合包。答复带七种 problem 之一；客户端把每一种渲染成输入框下的一句话，spec 保留可改。列表里已有的名字由对话框直接拒绝，不问宿主。
+**宿主先读 spec，再安装。** `PluginManager.inspect` 用 `parseInstallSpec` 把 spec 分成注册表名、绝对路径、git 地址、压缩包，拒绝 pnpm 或注册表不会接受的写法，再通过 `pnpm view` 问注册表、或读目录的 `package.json`，得到名字、版本、描述和组合包声明。`pnpm view` 在 profile 目录里运行，让注册表和代理设置与安装一致。没有组合包 patch 的包在这一步、在 pnpm 运行之前就被拒绝：管理器只安装组合包。答复带七种 problem 之一；客户端把每一种渲染成输入框下的一句话，spec 保留可改。列表里已有的名字由对话框直接拒绝，不问宿主。
 
 **失败或被取消的安装恢复 profile 文件。** `installBundle` 在 pnpm 运行前快照 `package.json` 与 `pnpm-lock.yaml`，在 pnpm 失败、运行被取消、或 pnpm 装入的包没有声明组合包 patch 时把它们放回去。这只针对安装反转了[管理器的决定](2026-09-14-current-profile-plugin-management.zh.md)中"保留部分改动"的部分：没有产出可用组合包的安装，不能留下一个页面无法显示的依赖。删除仍沿用那个决定。已下载文件可能留在 `node_modules` 与 pnpm 缓存中。
 

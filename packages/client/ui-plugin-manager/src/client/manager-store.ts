@@ -65,7 +65,6 @@ export interface PackageRow {
 export interface PackageView {
   readonly name: string
   readonly version?: string
-  readonly title?: string
   readonly description?: string
   /** Whether the profile's own dependencies hold the package; false for a bundle the installation supplies. */
   readonly installed: boolean
@@ -285,7 +284,6 @@ export function packageView(bundle: BundleInfo, plugins: readonly PluginInfo[]):
     enabled: bundle.enabled,
     rows,
     ...bundle.version === undefined ? {} : { version: bundle.version },
-    ...bundle.title === undefined ? {} : { title: bundle.title },
     ...bundle.description === undefined ? {} : { description: bundle.description },
     ...bundle.readOnlyReason === undefined ? {} : { readOnlyReason: bundle.readOnlyReason },
     ...bundle.error === undefined ? {} : { error: bundle.error },
@@ -293,14 +291,13 @@ export function packageView(bundle: BundleInfo, plugins: readonly PluginInfo[]):
 }
 
 /**
- * The order the list shows packages in: by the title a person reads, so a
+ * The order the list shows packages in: by the short name a person reads, so a
  * card stays put when its bundle is switched, whatever order the Host answers in.
  * @param packages - the Host's bundles as views.
- * @returns the views sorted by title.
+ * @returns the views sorted by short name.
  */
 export function sortPackages(packages: readonly PackageView[]): PackageView[] {
-  const label = (pkg: PackageView): string => pkg.title ?? shortName(pkg.name)
-  return [...packages].sort((a, b) => label(a).localeCompare(label(b)))
+  return [...packages].sort((a, b) => shortName(a.name).localeCompare(shortName(b.name)))
 }
 
 const IDLE_INSTALL: InstallState = {

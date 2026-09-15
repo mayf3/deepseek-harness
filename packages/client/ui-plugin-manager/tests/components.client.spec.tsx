@@ -101,14 +101,14 @@ describe('PluginManagerPage', () => {
   it('lists the installed bundles as cards, the installation\'s offered ones as built in, and tags a problem the Host reports', () => {
     const { actions } = renderTab({
       packages: [
-        pkg({ title: 'Better sidebar', description: 'A sidebar.' }),
+        pkg({ description: 'A sidebar.' }),
         pkg({ name: 'dsh-broken', enabled: false, error: { code: 'not-bundle' } }),
         pkg({ name: '@deepseek-ai/dsh-web-app', installed: false }),
         pkg({ name: 'dsh-protected', readOnlyReason: 'management-required' }),
         pkg({ name: '@acme/dsh-tool', enabled: false }),
         // Selected by the profile but not a bundle: a problem the person can switch off, in the profile's own group.
         pkg({ name: 'dsh-selected', installed: false, error: { code: 'not-bundle' } }),
-        pkg({ name: '@deepseek-ai/dsh-experimental-agent-team-profile', title: 'Agent Teams', installed: false, optional: true, enabled: false }),
+        pkg({ name: '@deepseek-ai/dsh-experimental-agent-team-profile', installed: false, optional: true, enabled: false }),
       ],
       busy: ['dsh-protected'],
     })
@@ -128,7 +128,7 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText('A sidebar.')).toBeTruthy()
     expect(screen.getAllByText(en.statusProblem)).toHaveLength(2)
     // The switch acts on the bundle; a bundle the Host cannot read stays off, a protected one stays as it is.
-    fireEvent.click(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'Better sidebar') }))
+    fireEvent.click(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'better-sidebar') }))
     expect(actions.setEnabled).toHaveBeenCalledWith('dsh-better-sidebar', false)
     expect(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'broken') })).toHaveProperty('disabled', true)
     const locked = screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'protected') })
@@ -138,13 +138,13 @@ describe('PluginManagerPage', () => {
 
   it('opens a built-in bundle\'s page with its official tag and no uninstall, and switches it on', () => {
     const { actions } = renderTab({
-      packages: [pkg({ name: '@deepseek-ai/dsh-experimental-agent-team-profile', title: 'Agent Teams', installed: false, optional: true, enabled: false })],
+      packages: [pkg({ name: '@deepseek-ai/dsh-experimental-agent-team-profile', installed: false, optional: true, enabled: false })],
     })
-    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Agent Teams') }))
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'experimental-agent-team-profile') }))
     const detail = document.querySelector('[data-plugin-detail]') as HTMLElement
     expect(within(detail).getByText(en.statusOfficial)).toBeTruthy()
-    expect(within(detail).queryByRole('button', { name: en.uninstallLabel.replace('{name}', 'Agent Teams') })).toBeNull()
-    fireEvent.click(within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', 'Agent Teams') }))
+    expect(within(detail).queryByRole('button', { name: en.uninstallLabel.replace('{name}', 'experimental-agent-team-profile') })).toBeNull()
+    fireEvent.click(within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', 'experimental-agent-team-profile') }))
     expect(actions.setEnabled).toHaveBeenCalledExactlyOnceWith('@deepseek-ai/dsh-experimental-agent-team-profile', true)
   })
 
@@ -166,16 +166,16 @@ describe('PluginManagerPage', () => {
   it('opens a bundle\'s page with its facts and rows, and uninstalls from it', () => {
     const { actions, set } = renderTab({
       packages: [pkg({
-        title: 'Better sidebar', description: 'A sidebar.',
+        description: 'A sidebar.',
         rows: [row(), row({ rowId: 'theme', moduleName: 'dsh-better-sidebar/theme', entryId: 'include:theme' as PluginEntryId, enabled: false, phase: null })],
       })],
     })
-    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Better sidebar') }))
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
     const detail = document.querySelector('[data-plugin-detail="dsh-better-sidebar"]') as HTMLElement
-    expect(within(detail).getByRole('heading', { level: 3 }).textContent).toBe('Better sidebar')
+    expect(within(detail).getByRole('heading', { level: 3 }).textContent).toBe('better-sidebar')
     // The version sits beside the name as a tag; the crumb only leads back.
     expect(within(detail).getByText('v0.16.0')).toBeTruthy()
-    // The full package name stays visible under the title, whatever the title shows.
+    // The full package name stays visible under the short name.
     expect(document.querySelector('[data-plugin-name]')?.textContent).toBe('dsh-better-sidebar')
     expect(within(detail).getByRole('button', { name: en.backToList }).textContent).toBe(en.crumbRoot)
     expect(within(detail).getByText('A sidebar.')).toBeTruthy()
@@ -187,19 +187,19 @@ describe('PluginManagerPage', () => {
     expect(within(detail).getByText('dsh-better-sidebar/theme')).toBeTruthy()
     expect(within(detail).getByText(en.rowPhaseActive)).toBeTruthy()
     expect(within(detail).getByText(en.partOff)).toBeTruthy()
-    fireEvent.click(within(detail).getByRole('button', { name: en.uninstallLabel.replace('{name}', 'Better sidebar') }))
+    fireEvent.click(within(detail).getByRole('button', { name: en.uninstallLabel.replace('{name}', 'better-sidebar') }))
     expect(actions.uninstall).toHaveBeenCalledWith('dsh-better-sidebar')
-    fireEvent.click(within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', 'Better sidebar') }))
+    fireEvent.click(within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', 'better-sidebar') }))
     expect(actions.setEnabled).toHaveBeenCalledWith('dsh-better-sidebar', false)
     // A problem and a protection the Host reports read on the page in the dictionary's words; the page leaves with the crumb.
-    set({ packages: [pkg({ title: 'Better sidebar', error: { code: 'operation-error', diagnostic: 'unreadable' }, readOnlyReason: 'management-required' })] })
+    set({ packages: [pkg({ error: { code: 'operation-error', diagnostic: 'unreadable' }, readOnlyReason: 'management-required' })] })
     expect(within(detail).getByText(`${en.reasonLabel}: unreadable`)).toBeTruthy()
     expect(within(detail).getByText(en.reasonManagementRequired)).toBeTruthy()
-    expect(within(detail).getByRole('button', { name: en.uninstallLabel.replace('{name}', 'Better sidebar') })).toHaveProperty('disabled', true)
+    expect(within(detail).getByRole('button', { name: en.uninstallLabel.replace('{name}', 'better-sidebar') })).toHaveProperty('disabled', true)
     expect(within(detail).getByText(en.partsEmpty)).toBeTruthy()
-    set({ packages: [pkg({ title: 'Better sidebar', error: { code: 'not-bundle' } })] })
+    set({ packages: [pkg({ error: { code: 'not-bundle' } })] })
     expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonNotBundle}`)).toBeTruthy()
-    set({ packages: [pkg({ title: 'Better sidebar', error: { code: 'operation-error' } })] })
+    set({ packages: [pkg({ error: { code: 'operation-error' } })] })
     expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonOperationError}`)).toBeTruthy()
     fireEvent.click(within(detail).getByRole('button', { name: en.backToList }))
     expect(document.querySelector('[data-plugin-detail]')).toBeNull()
@@ -303,11 +303,11 @@ describe('PluginManagerPage', () => {
   })
 
   it('shows the subject while installing, folds the pnpm output behind the details, and stops through the Host', () => {
-    const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', title: 'Sidebar', version: '1.4.2', description: 'A sidebar.', bundle: true } as const
+    const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', bundle: true } as const
     const run = { jobId: 'j1', command: 'pnpm add dsh-x', cwd: '/home/u/.dsh/profiles/web', output: 'Progress: resolved \x1b[96m1\x1b[39m\n' }
     const { actions, set } = renderTab({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'running', subject, runs: [run] } })
     expect(screen.getByRole('status').textContent).toBe(en.installingTitle)
-    expect(screen.getByText('Sidebar')).toBeTruthy()
+    expect(screen.getByText('dsh-x')).toBeTruthy()
     expect(screen.getByText('A sidebar.')).toBeTruthy()
     expect(screen.getByText(en.installVersion.replace('{version}', '1.4.2'))).toBeTruthy()
     expect(screen.queryByRole('textbox')).toBeNull()
@@ -528,10 +528,10 @@ describe('PluginManagerPage', () => {
 
   it('confirms an uninstall by the package\'s title and runs the action through it', () => {
     const { actions, set } = renderTab({
-      packages: [pkg({ title: 'Better sidebar' }), pkg({ name: 'dsh-other' })],
+      packages: [pkg(), pkg({ name: 'dsh-other' })],
       confirm: { action: 'uninstall', packageName: 'dsh-better-sidebar' },
     })
-    expect(screen.getByRole('dialog', { name: en.confirmUninstallTitle.replace('{name}', 'Better sidebar') })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: en.confirmUninstallTitle.replace('{name}', 'better-sidebar') })).toBeTruthy()
     expect(screen.getByText(en.confirmUninstallDescription)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.cancel }))
     expect(actions.cancelConfirm).toHaveBeenCalledTimes(1)
