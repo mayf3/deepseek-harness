@@ -19,22 +19,23 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import {
   boot,
-  composeEntries,
+  type ProfileResolutionMode,
+  type ProfileResolutionGeneration,
+  PluginPackages,
   createProfileResolutionGeneration,
+  composeEntries,
   healProfilesModuleFallback,
+  healIsolatedProfileModuleFallback,
   initProfile,
   installFailLoud,
   loadOptionalPatches,
   loadOverlayPatches,
   loadProfile,
-  PluginPackages,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   resolveProfileDir,
   watchUserPatches,
   type Profile,
-  type ProfileResolutionGeneration,
-  type ProfileResolutionMode,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
@@ -197,9 +198,8 @@ export function prepareProfile(name: string, userLayer = true, fromDefaultProfil
 
 /** One profile's patch layers, in application order. */
 interface ComposedProfile {
-  profile: Profile
-  /** Immutable package fallback selected before any plugin imports. */
   resolution: ProfileResolutionGeneration
+  profile: Profile
   /** Bundle layers concatenated — the part below the user layers on a live reload. */
   bundlePatches: PatchOptions[]
   /** The home-level user layer (`$DSH_HOME/cordis.patch.yml`), applied after the profile's own. */
@@ -227,6 +227,8 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
  * then the telemetry switch.
  * @param name - the profile name.
  * @param patchFiles - `--patch` overlay paths, in argv order.
+ * @param fromDefaultProfile - shipped template for a missing named profile.
+ * @param resolvedProfile - application-owned profile and installation; bypasses named discovery.
  * @returns the profile and its patch layers.
  */
 async function composeProfile(
@@ -234,10 +236,13 @@ async function composeProfile(
   patchFiles: readonly string[],
   resolutionMode: ProfileResolutionMode,
   fromDefaultProfile?: string,
+  resolvedProfile?: ResolvedProfileRuntime,
 ): Promise<ComposedProfile> {
-  const profile = prepareProfile(name, true, fromDefaultProfile)
-  const resolutionOptions = { installAnchor: INSTALL_ANCHOR, profile }
-  const resolution = resolutionMode === 'runtime'
+  const profile = resolvedProfile?.profile ?? prepareProfile(name, true, fromDefaultProfile)
+  if (resolvedProfile !== undefined) writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
+  const resolutionOptions = { installAnchor: resolvedProfile?.installAnchor ?? INSTALL_ANCHOR, profile }
+  if (resolvedProfile !== undefined && resolutionMode !== 'runtime') healIsolatedProfileModuleFallback(resolvedProfile)
+  const resolution = resolutionMode === 'runtime' || resolvedProfile !== undefined
     ? await createProfileResolutionGeneration(resolutionOptions)
     : await healProfilesModuleFallback(resolutionOptions)
   const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
@@ -253,20 +258,30 @@ async function composeProfile(
   return { profile, resolution, bundlePatches, homePatches, overlays: composedOverlays }
 }
 
+/** An application-owned profile and its independent installation fallback. */
+export interface ResolvedProfileRuntime {
+  /** Profile already loaded from the application's own directory. */
+  profile: Profile
+  /** Absolute package.json path of the application's dsh installation. */
+  installAnchor: string
+}
+
 /** Options for {@link runProfile}. */
 export interface RunProfileOptions {
+  /** Package lookup strategy; packaged executables always use runtime resolution. */
+  resolutionMode?: ProfileResolutionMode
   /** This run's frozen environment snapshot, provided before any entry mounts. */
   environment: LaunchEnvironmentSnapshot
   /** The profile name to boot. */
   profile: string
+  /** Loaded application profile; bypasses named profile initialization when supplied. */
+  resolvedProfile?: ResolvedProfileRuntime | undefined
   /** Shipped template used once to initialize a missing profile. */
   fromDefaultProfile?: string | undefined
   /** `--patch` overlay paths, in argv order. */
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
-  /** Module fallback backend; pkg executables always use runtime resolution. */
-  resolutionMode?: ProfileResolutionMode
 }
 
 /**
@@ -290,6 +305,7 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  * mounted plugins (or to a one-shot runner the composition mounts).
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
  * @returns the settled root context and the shutdown controller.
+ * @throws after disposing startup resources; a cleanup failure retains both errors in an AggregateError.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
   // Before the first plugin mounts and before anything can issue a request: Node's fetch ignores the
@@ -303,111 +319,124 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
 
   const packaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
   const resolutionMode = packaged ? 'runtime' : options.resolutionMode ?? 'link'
-  const composed = await composeProfile(
-    options.profile, options.patchFiles, resolutionMode, options.fromDefaultProfile,
-  )
   const app: { current?: Context } = {}
-  const appReady = createAppReady()
-  const shutdown = createProcessShutdown(async () => {
-    await app.current?.fiber.dispose()
-    await disposeProxy()
-  })
-  const signalShutdown = new AbortController()
-  const interrupt = (code: number): void => {
-    signalShutdown.abort()
-    shutdown.interrupt(code)
-  }
-  // Signals own teardown throughout the startup window, not only after boot()
-  // settles: an inserted provider can publish before sibling rows finish mounting.
-  // SIGTERM is a supervisor's ordinary stop request and exits 0 on every
-  // surface — the launcher does not know whether the app considered its work
-  // complete; SIGINT is a user interrupt and reports 130.
-  process.on('SIGTERM', () => { interrupt(0) })
-  process.on('SIGINT', () => { interrupt(130) })
-  installFailLoud(NAME, process, async () => {
-    await app.current?.fiber.dispose()
-  })
-
-  const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
-  // Recomposition for the live user layers: bundle layers below, overlays
-  // above, so a user edit can never displace them. Parsed app arguments are
-  // not in here at all — they live in app-provided services that survive a
-  // recomposition. BOTH
-  // user files are re-read per generation (the HMR watcher hands us only the
-  // changed file's patches, which one of the reads duplicates — fresh reads
-  // keep the two watchers from stitching in each other's stale copy).
-  // Fresh clones per generation: the include pushes `insert` rows into the
-  // mounted tree BY REFERENCE and later id-targeted patches mutate those
-  // objects in place. Reusing one parsed patch object across applications
-  // would bake a user override into the bundle's in-memory insert row, so
-  // removing the override could never revert the row to the bundle default.
-  const composeLive = (): PatchOptions[] => structuredClone([
-    ...composed.bundlePatches,
-    ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
-    ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
-    ...composed.overlays,
-  ])
-  // Cloned for the same insert-aliasing reason as composeLive: the boot
-  // application must not mutate the objects later reloads recompose from.
-  const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), async (hostCtx) => {
-    app.current = hostCtx
-    // Before any config-tree entry mounts, so plugins resolve all launch-time
-    // environment values from the same immutable launch snapshot.
-    hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
-    await hostCtx.plugin(PluginPackages, resolutionMode === 'link' ? {} : {
-      generation: composed.resolution,
-      behavior: resolutionMode === 'dual' ? 'verify' : 'enforce',
-    })
-    // The command line and bounded exit request are launcher facts available
-    // to every app plugin that injects the argument snapshot.
-    provideCmdline(hostCtx, {
-      args: options.args,
-      exit: code => void shutdown.shutdown(code),
-      ready: appReady.service,
-    })
-  })
-  app.current = ctx
-  // A live-reload profile can dispose the whole tree while post-boot watcher
-  // setup is in flight — a signal or appExit. Loader presence and fiber state
-  // own liveness; the initial check skips a tree that already exited, and the
-  // catch below re-checks for an exit that landed mid-setup. Startup-frozen
-  // profiles apply every user layer above but install no HMR fallback or watcher.
-  if (composed.profile.patchReload === 'live'
-    && !signalShutdown.signal.aborted
-    && ctx.fiber.state === FiberState.ACTIVE
-    && ctx.get('loader') !== undefined) {
-    try {
-      // Config-only HMR for the live profile patch layer: dsh-base disables
-      // module reload by default, so when no profile explicitly enabled that
-      // service, mount a watch-only instance with no module roots —
-      // cordis.patch.yml edits stay live without replacing source modules. A
-      // silent skip would break the documented reload contract. HMR injects
-      // the timer service, which a bare custom profile may not mount either.
-      if (ctx.get('hmr') === undefined) {
-        if (ctx.get('timer') === undefined) {
-          await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-timer' })
-        }
-        await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-hmr', config: { root: [] } })
-        await ctx.loader.await()
-      }
-      await watchUserPatches(ctx, {
-        binName: NAME,
-        filename: composed.profile.patchPath,
-        compose: composeLive,
-      })
-      await watchUserPatches(ctx, {
-        binName: NAME,
-        filename: homePatchPath(),
-        compose: composeLive,
-      })
-    } catch (error) {
-      suppressShutdownError(ctx, signalShutdown.signal, error)
+  let disposal: Promise<void> | undefined
+  const dispose = (): Promise<void> => disposal ??= (async () => {
+    const failures: unknown[] = []
+    for (const release of [() => app.current?.fiber.dispose(), disposeProxy]) {
+      try { await release() } catch (error) { failures.push(error) }
     }
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'dsh: profile cleanup failed')
+  })()
+  try {
+    const composed = await composeProfile(
+      options.profile, options.patchFiles, resolutionMode, options.fromDefaultProfile, options.resolvedProfile,
+    )
+    const appReady = createAppReady()
+    const shutdown = createProcessShutdown(dispose)
+    const signalShutdown = new AbortController()
+    const interrupt = (code: number): void => {
+      signalShutdown.abort()
+      shutdown.interrupt(code)
+    }
+    // Signals own teardown throughout the startup window, not only after boot()
+    // settles: an inserted provider can publish before sibling rows finish mounting.
+    // SIGTERM is a supervisor's ordinary stop request and exits 0 on every
+    // surface — the launcher does not know whether the app considered its work
+    // complete; SIGINT is a user interrupt and reports 130.
+    process.on('SIGTERM', () => { interrupt(0) })
+    process.on('SIGINT', () => { interrupt(130) })
+    installFailLoud(NAME, process, async () => {
+      await app.current?.fiber.dispose()
+    })
+
+    const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
+    // Recomposition for the live user layers: bundle layers below, overlays
+    // above, so a user edit can never displace them. Parsed app arguments are
+    // not in here at all — they live in app-provided services that survive a
+    // recomposition. BOTH
+    // user files are re-read per generation (the HMR watcher hands us only the
+    // changed file's patches, which one of the reads duplicates — fresh reads
+    // keep the two watchers from stitching in each other's stale copy).
+    // Fresh clones per generation: the include pushes `insert` rows into the
+    // mounted tree BY REFERENCE and later id-targeted patches mutate those
+    // objects in place. Reusing one parsed patch object across applications
+    // would bake a user override into the bundle's in-memory insert row, so
+    // removing the override could never revert the row to the bundle default.
+    const composeLive = (): PatchOptions[] => structuredClone([
+      ...composed.bundlePatches,
+      ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
+      ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
+      ...composed.overlays,
+    ])
+    // Cloned for the same insert-aliasing reason as composeLive: the boot
+    // application must not mutate the objects later reloads recompose from.
+    const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), async (hostCtx) => {
+      app.current = hostCtx
+      // Before any config-tree entry mounts, so plugins resolve all launch-time
+      // environment values from the same immutable launch snapshot.
+      hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
+      await hostCtx.plugin(PluginPackages, resolutionMode === 'link' ? {} : {
+        generation: composed.resolution,
+        behavior: resolutionMode === 'dual' ? 'verify' : 'enforce',
+      })
+      // The command line and bounded exit request are launcher facts available
+      // to every app plugin that injects the argument snapshot.
+      provideCmdline(hostCtx, {
+        args: options.args,
+        exit: code => void shutdown.shutdown(code),
+        ready: appReady.service,
+      })
+    })
+    app.current = ctx
+    // A live-reload profile can dispose the whole tree while post-boot watcher
+    // setup is in flight — a signal or appExit. Loader presence and fiber state
+    // own liveness; the initial check skips a tree that already exited, and the
+    // catch below re-checks for an exit that landed mid-setup. Startup-frozen
+    // profiles apply every user layer above but install no HMR fallback or watcher.
+    if (composed.profile.patchReload === 'live'
+      && !signalShutdown.signal.aborted
+      && ctx.fiber.state === FiberState.ACTIVE
+      && ctx.get('loader') !== undefined) {
+      try {
+        // Config-only HMR for the live profile patch layer: dsh-base disables
+        // module reload by default, so when no profile explicitly enabled that
+        // service, mount a watch-only instance with no module roots —
+        // cordis.patch.yml edits stay live without replacing source modules. A
+        // silent skip would break the documented reload contract. HMR injects
+        // the timer service, which a bare custom profile may not mount either.
+        if (ctx.get('hmr') === undefined) {
+          if (ctx.get('timer') === undefined) {
+            await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-timer' })
+          }
+          await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-hmr', config: { root: [] } })
+          await ctx.loader.await()
+        }
+        await watchUserPatches(ctx, {
+          binName: NAME,
+          filename: composed.profile.patchPath,
+          compose: composeLive,
+        })
+        await watchUserPatches(ctx, {
+          binName: NAME,
+          filename: homePatchPath(),
+          compose: composeLive,
+        })
+      } catch (error) {
+        suppressShutdownError(ctx, signalShutdown.signal, error)
+      }
+    }
+    if (!signalShutdown.signal.aborted
+      && ctx.fiber.state === FiberState.ACTIVE
+      && ctx.get('loader') !== undefined) {
+      appReady.commit()
+    }
+    return { ctx, shutdown }
+  } catch (error) {
+    try { await dispose() } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], 'dsh: profile startup and cleanup failed')
+    }
+    throw error
   }
-  if (!signalShutdown.signal.aborted
-    && ctx.fiber.state === FiberState.ACTIVE
-    && ctx.get('loader') !== undefined) {
-    appReady.commit()
-  }
-  return { ctx, shutdown }
 }

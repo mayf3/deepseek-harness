@@ -934,14 +934,15 @@ export class SessionManager {
       this.entryCache.set(entry.sessionId, entry)
       return entry
     })
+    const itemIds = new Set(items.map(entry => entry.sessionId))
     for (const id of this.entryCache.keys()) {
-      if (!items.some(e => e.sessionId === id)) this.entryCache.delete(id)
+      if (!itemIds.has(id)) this.entryCache.delete(id)
     }
     const sameOrder = items.length === this.itemsCache.length && items.every((e, i) => e === this.itemsCache[i])
     if (!sameOrder) this.itemsCache = items
     const selected = this.selected
     const current = selected !== undefined
-      && (items.some(item => item.sessionId === selected) || this.addresses.has(selected))
+      && (itemIds.has(selected) || this.addresses.has(selected))
       ? selected
       : undefined
     return {

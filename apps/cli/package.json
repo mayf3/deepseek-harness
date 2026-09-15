@@ -15,7 +15,8 @@
     "dsh": "lib/bin.js"
   },
   "files": [
-    "lib/*.js"
+    "lib/*.js",
+    "lib/types/*.d.ts"
   ],
   "dsh": {
     "configTrees": [
@@ -148,5 +149,13 @@
     "@types/ws": "8.18.1",
     "execa": "^10.0.0",
     "ws": "8.21.0"
+  },
+  "exports": {
+    "./profile-boot": {
+      "types": "./lib/types/profile-boot.d.ts",
+      "default": "./lib/profile-boot.js"
+    },
+    "./lib/*": "./lib/*",
+    "./package.json": "./package.json"
   }
 }

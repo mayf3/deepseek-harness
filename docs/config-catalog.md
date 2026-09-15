@@ -444,7 +444,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/client/hmr/src/index.ts:31`](../packages/client/hmr/src/index.ts)
+Source: [`packages/client/hmr/src/index.ts:30`](../packages/client/hmr/src/index.ts)
 
 <a id="deepseek-aidsh-compaction-basic"></a>
 
