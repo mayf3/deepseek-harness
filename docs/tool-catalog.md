@@ -79,7 +79,7 @@ List plugins or bundles in the current profile, enable or disable them, install 
     },
     "approvedBuilds": {
       "type": "array",
-      "description": "For install_bundle: package names from pendingBuilds whose install scripts the user explicitly approved. Permission persists for this profile.",
+      "description": "For install_bundle: pass names from pendingBuilds only after the user explicitly approves running their install scripts in the conversation. This grants persistent permission for this profile.",
       "items": {
         "type": "string"
       }

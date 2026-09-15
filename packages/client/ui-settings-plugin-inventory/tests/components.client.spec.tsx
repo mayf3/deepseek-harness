@@ -570,3 +570,12 @@ it('shows current-page sync errors and retries without re-reading Host inventory
   act(() => { sync.set({ syncing: false, failures: [] }) })
   expect(screen.queryByRole('alert')).toBeNull()
 })
+
+it.each([en, zh])('renders stale build approval in the selected locale', (dictionary) => {
+  const localized = ((key: PluginInventoryLocaleKey) => dictionary[key]) as PluginInventorySettingsTabProps['t']
+  render(<BundleManager manager={managementFixture()} t={localized} state={{
+    plugins: [], bundles: [], busy: false, refresh: 0, error: undefined, run: async () => {},
+    result: { stage: 'install', target: 'addon', changed: false, application: 'failed', error: { code: 'stale-approval' } },
+  }} />)
+  expect(screen.getByRole('alert').textContent).toContain(dictionary['stale-approval'])
+})

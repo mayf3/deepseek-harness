@@ -4,9 +4,6 @@ import { realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
-import type AgentRegistry from '@deepseek-ai/dsh-agent'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import {
   boot, composeEntries, initProfile, readProfilePatches, readProfileManifest, reconcileProfilePatches,
@@ -18,7 +15,7 @@ import Timer from '@deepseek-ai/cordis-plugin-timer'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { Group } from '@deepseek-ai/cordis-plugin-loader'
 import * as operations from '../src/operations.ts'
-import { parse } from 'yaml'
+import { parse, parseDocument } from 'yaml'
 
 async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, prepare?: (ctx: Context) => void, config: Config = {}) {
   // pnpm resolves workspace roots through native realpath, including Windows 8.3 aliases.
@@ -170,7 +167,7 @@ it('cleans a blocked installation and retries only after explicit profile build 
   })
   expect(readProfileManifest('test', dir).dependencies).not.toHaveProperty('addon')
   expect(parse(readFileSync(policy, 'utf8'))).toMatchObject({ allowBuilds: { native: 'set this to true or false' } })
-  expect(await manager.installBundle('addon', { approvedBuilds: ['denied'] })).toMatchObject({ application: 'failed', changed: false })
+  expect(await manager.installBundle('addon', { approvedBuilds: ['denied'] })).toMatchObject({ application: 'failed', changed: false, error: { code: 'stale-approval' } })
   expect(run).toHaveBeenCalledTimes(2)
   expect(await manager.installBundle('addon', { approvedBuilds: ['native'], enabled: false })).toMatchObject({ application: 'applied', changed: true })
   expect(readProfileManifest('test', dir).dsh?.profile?.bundles).not.toContain('addon')
@@ -196,7 +193,10 @@ it('runs a real pnpm dependency script only after approval and cleanup retry', a
   writeFileSync(join(addon, 'build.cjs'), 'require("node:fs").writeFileSync("built.txt", "built")\n')
   writeFileSync(join(addon, 'cordis.patch.yml'), '[]\n')
   writeFileSync(join(dir, 'package.json'), '{"name":"approval-fixture","private":true}\n')
-  writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - .\nnodeLinker: hoisted\nautoInstallPeers: false\nstrictDepBuilds: true\n')
+  const policy = parseDocument(readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8'))
+  policy.set('offline', true)
+  policy.set('storeDir', join(profile.cwd, 'store'))
+  writeFileSync(join(dir, 'pnpm-workspace.yaml'), String(policy))
   const blocked = await manager.installBundle('file:./addon', { enabled: false })
   expect(blocked, JSON.stringify(blocked)).toMatchObject({ application: 'failed', cleanup: { name: 'approval-fixture-addon' } })
   expect(blocked.pendingBuilds).toHaveLength(1)
@@ -254,29 +254,6 @@ it('keeps saved changes after activation failure and allows a corrected configur
   writeFileSync(join(dir, 'cordis.patch.yml'), '- id: managed\n  disabled: true\n  config: { fail: false }\n')
   const result = await manager.setPluginEnabled(id, true)
   expect(result, JSON.stringify(result)).toMatchObject({ application: 'applied' })
-})
-
-
-it('combines concurrent changes into durable notices without waking Agents', async () => {
-  const session = Session.create(SessionId('manager-notices'))
-  const wake = vi.fn()
-  const notices: UserMessage[] = []
-  const liveAgents = [{
-    inject(message: UserMessage) {
-      notices.push(message)
-      session.append('user/message', message, { surfaceOp: 'append' })
-    }, followup: wake, steer: wake,
-  }, { inject() { throw new Error('already disposed') } }]
-  const agents = { list: () => liveAgents }
-  const { manager } = await fixture('live', false, (ctx) => { ctx.provide('agents', agents as unknown as AgentRegistry) })
-  const id = (await manager.listPlugins()).find(row => row.patchId === 'managed')!.entryId
-  await Promise.all([manager.setPluginEnabled(id, false), manager.setPluginEnabled(id, true)])
-  expect(notices).toHaveLength(1)
-  const noticeText = notices[0]?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
-  expect(noticeText).toContain('"enabled":false')
-  expect(noticeText).toContain('"enabled":true')
-  expect(wake).not.toHaveBeenCalled()
-  expect(session.snapshotEvents().filter(row => row.type === 'user/message')).toHaveLength(1)
 })
 
 
@@ -465,15 +442,6 @@ it('handles missing patch files and retains non-Error package diagnostics', asyn
   await expect(manager.setPluginEnabled(id, true)).rejects.toThrow()
 })
 
-it('bounds batched notices and discloses omitted operation results', async () => {
-  const messages: UserMessage[] = []
-  const { manager } = await fixture('live', false, (ctx) => {
-    ctx.provide('agents', { list: () => [{ inject: (message: UserMessage) => { messages.push(message) } }] } as unknown as AgentRegistry)
-  }, { outputBytes: 1, notificationDelayMs: 0 })
-  await manager.setBundleEnabled('extra', false)
-  expect(messages[0]?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')).toContain('"omitted":1')
-})
-
 it('applies a manager change through the active HMR service', async () => {
   const { manager } = await fixture()
   const id = (await manager.listPlugins()).find(row => row.patchId === 'managed')!.entryId
@@ -581,4 +549,12 @@ it('applies watched configuration while pnpm installation is still running', asy
   expect(await installing).toMatchObject({ application: 'applied', changed: true })
   expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['core', 'extra', 'new-bundle'])
   expect(ctx.get('managedProbe')).toBeUndefined()
+})
+
+it.each(['[', 'allowBuilds: false\n'])('preserves pnpm diagnostics when pending approvals cannot be read: %s', async (policy) => {
+  const { manager, dir } = await fixture()
+  writeFileSync(join(dir, 'pnpm-workspace.yaml'), policy)
+  const run = vi.spyOn(operations, 'runProfilePnpm').mockResolvedValue({ exitCode: 1, output: 'original pnpm failure', truncated: false, logPath: '/log' })
+  onTestFinished(() => { run.mockRestore() })
+  expect(await manager.installBundle('addon')).toMatchObject({ application: 'failed', error: { diagnostic: 'original pnpm failure' } })
 })

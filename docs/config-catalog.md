@@ -1810,18 +1810,16 @@ Source: [`packages/plan/plan-mode/src/index.ts:64`](../packages/plan/plan-mode/s
 Requires: `loader` · `profileContext`
 
 ```ts config-catalog
-/** Limits for package diagnostics and change notifications. */
+/** Limits for package diagnostics and lock acquisition. */
 export interface Config {
   /** Maximum retained pnpm diagnostic bytes per operation. */
   outputBytes?: number
-  /** Delay for combining consecutive management notices in one durable injection. */
-  notificationDelayMs?: number
   /** Maximum time to wait for another process's profile package operation. */
   lockWaitMs?: number
 }
 ```
 
-Source: [`packages/boot/plugin-manager/src/index.ts:22`](../packages/boot/plugin-manager/src/index.ts)
+Source: [`packages/boot/plugin-manager/src/index.ts:21`](../packages/boot/plugin-manager/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 

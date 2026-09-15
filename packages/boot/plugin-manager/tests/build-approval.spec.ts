@@ -15,7 +15,7 @@ function fixture(text?: string) {
 }
 
 it('approves only named pending packages and preserves comments, decisions and settings', async () => {
-  const { dir, filename } = fixture('# profile settings\nnodeLinker: hoisted\nallowBuilds:\n  native: set this to true or false\n  "@scope/other": set this to true or false\n  trusted: true\n  denied: false\n  "@scope/*": set this to true or false\n')
+  const { dir, filename } = fixture('# profile settings\nother: &unrelated value\ncopy: *unrelated\nnodeLinker: hoisted\nallowBuilds:\n  native: set this to true or false\n  "@scope/other": set this to true or false\n  trusted: true\n  denied: false\n  "@scope/*": set this to true or false\n')
   expect(await readPendingBuilds(dir)).toEqual(['native', '@scope/other'])
   await approveBuilds(dir, ['native'])
   const text = readFileSync(filename, 'utf8')
@@ -27,7 +27,7 @@ it('approves only named pending packages and preserves comments, decisions and s
 it.each(['missing', 'denied', '*', '--all'])('rejects an unlisted approval atomically: %s', async (name) => {
   const original = 'allowBuilds:\n  native: set this to true or false\n  denied: false\n'
   const { dir, filename } = fixture(original)
-  await expect(approveBuilds(dir, ['native', name])).rejects.toThrow('Build approval changed')
+  await expect(approveBuilds(dir, ['native', name])).rejects.toThrow('stale-approval')
   expect(readFileSync(filename, 'utf8')).toBe(original)
 })
 
@@ -56,4 +56,14 @@ it('reports unreadable workspace settings', async () => {
   const { dir, filename } = fixture()
   mkdirSync(filename)
   await expect(readPendingBuilds(dir)).rejects.toThrow()
+})
+
+it.each([
+  'allowBuilds:\n  native: &pending set this to true or false\n  other: *pending\n',
+  'allowBuilds: &builds\n  native: set this to true or false\nshared: *builds\n',
+  'shared: &pending set this to true or false\nallowBuilds:\n  native: *pending\n',
+])('rejects shared YAML approval nodes without changing permissions: %s', async (original) => {
+  const { dir, filename } = fixture(original)
+  await expect(approveBuilds(dir, ['native'])).rejects.toThrow()
+  expect(readFileSync(filename, 'utf8')).toBe(original)
 })

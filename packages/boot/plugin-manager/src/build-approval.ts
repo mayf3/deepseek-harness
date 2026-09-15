@@ -1,7 +1,8 @@
 /** Approve pnpm's pending dependency scripts in the current profile's workspace settings. */
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { isMap, isScalar, parseDocument } from 'yaml'
+import { isAlias, isMap, isNode, isScalar, parseDocument, visit } from 'yaml'
+import { ManagementFailure } from './failure.ts'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 
 async function readPolicy(dir: string) {
@@ -16,6 +17,11 @@ async function readPolicy(dir: string) {
   if (!isMap(document.contents)) throw new Error('pnpm-workspace.yaml must be a YAML mapping')
   const builds = document.get('allowBuilds')
   if (builds !== undefined && !isMap(builds)) throw new Error('allowBuilds must be a YAML mapping')
+  visit(builds ?? null, (_key, node) => {
+    if (isAlias(node) || (isNode(node) && 'anchor' in node && node.anchor)) {
+      throw new Error('allowBuilds must not contain YAML anchors or aliases')
+    }
+  })
   const pending = isMap(builds) ? builds.items.flatMap(({ key, value }) =>
     isScalar(key) && typeof key.value === 'string' && !/[*?]/.test(key.value)
       && isScalar(value) && value.value === 'set this to true or false' ? [key.value] : []) : []
@@ -33,11 +39,11 @@ export async function readPendingBuilds(dir: string): Promise<string[]> {
 /** Persist approval without running scripts; the caller holds the profile manifest lock.
  * @param dir Current profile directory.
  * @param names Explicit package names from the pending build list.
- * @throws If any requested name is no longer pending; no approvals are written.
+ * @throws If a name is no longer pending or allowBuilds contains YAML anchors or aliases; no approvals are written.
  */
 export async function approveBuilds(dir: string, names: readonly string[]): Promise<void> {
   const { document, pending } = await readPolicy(dir)
-  if (names.some(name => !pending.includes(name))) throw new Error('Build approval changed; retry installation to refresh the pending packages')
+  if (names.some(name => !pending.includes(name))) throw new ManagementFailure('stale-approval')
   if (names.length === 0) return
   for (const name of names) document.setIn(['allowBuilds', name], true)
   await writeFileAtomic(join(dir, 'pnpm-workspace.yaml'), String(document), { mode: 0o600 })

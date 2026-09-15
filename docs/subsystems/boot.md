@@ -12,9 +12,9 @@ The [boot package group](../../packages/boot/README.md) owns launcher-provided p
 
 `BundleInfo` carries the package name, optional installed version, selected enablement, removal availability and optional resolution error.
 
-`InstallBundleOptions.enabled` defaults to true. False installs without selecting the bundle layer.
+`InstallBundleOptions.enabled` defaults to true. False installs without selecting the bundle layer. `approvedBuilds` grants persistent script permission to the supplied pending package names before installation.
 
-`ChangeResult.changed` reports a disk edit independently of `application`: `applied`, `restart-required`, `overridden` or `failed`. `message` describes the result. Optional `packageResult` records the pnpm exit code, bounded output, truncation flag and complete diagnostic log path.
+`ChangeResult.changed` reports a disk edit independently of `application`: `applied`, `restart-required`, `overridden` or `failed`. Optional `error` carries a localizable code and external diagnostic. `packageResult` records the pnpm exit code, bounded output, truncation flag and complete diagnostic log path. `pendingBuilds` lists undecided packages across the profile; `approvedBuilds` records the names granted permission by this operation.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

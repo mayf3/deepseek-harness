@@ -27,7 +27,7 @@ The **Plugin list** tab lets Web users inspect plugins without changing their co
 
 Open the Plugins section in Settings and select the **Plugin list** tab to inspect the Host's plugin inventory. The tab reads no Remote during plugin activation — selecting it for the first time mounts the component and lazily calls `ctx.remote.pluginInventory.list()` through `api-remotes`.
 
-A failed installation with pending pnpm build permissions offers **Allow these scripts and retry**. The action displays the exact package names and persistent permission scope, then retries the original package spec and activation choice. Closing the page grants no permission.
+A failed installation with pending pnpm build permissions offers **Allow these scripts and retry**. The action displays the exact package names and persistent permission scope, then retries the original package spec and activation choice. One click approves the entire displayed group, which can include pending packages from earlier attempts. Closing the page grants no permission.
 
 ### Reading a card
 

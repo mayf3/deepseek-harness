@@ -37,7 +37,7 @@ Enable the tool explicitly in the profile patch; agents using a preset also need
 
 A plugin toggle updates only `disabled` in the last matching override in the profile's `cordis.patch.yml`, or appends an override when none matches. Matching uses the entry id and any module-name assertion. A bundle toggle changes `package.json`'s ordered `dsh.profile.bundles` list. Disabling retains the dependency; enabling appends the bundle at the end, which can change configuration precedence. Installation enables a new bundle by default. Home and invocation patches retain their higher priority.
 
-When pnpm 11 blocks dependency scripts, the failed installation reports pending package names. Web offers **Allow these scripts and retry**; the tool accepts the same names through `approvedBuilds` on `install_bundle`. Approval persists by package name in this profile, permits commands with the host user's permissions, and survives another installation failure. Only currently undecided names can be approved; existing denials and wildcard rules cannot be overridden through this action. Installation cleanup retains these decisions. Retry preserves the original activation choice.
+When pnpm 11 blocks dependency scripts, the failed installation reports all pending package names in the profile, including earlier attempts. Web offers **Allow these scripts and retry**; the tool can grant permission on the user's behalf through `approvedBuilds` on `install_bundle`, after the user approves those scripts in the conversation. The service validates pending names; it does not verify conversation approval. Approval persists by package name in this profile, permits commands with the host user's permissions, and survives another installation failure. Only currently undecided names can be approved; existing denials and wildcard rules cannot be overridden through this action. Approval rejects YAML anchors or aliases inside `allowBuilds`. Installation cleanup retains these decisions. Retry preserves the original activation choice.
 
 ### Configuration
 
@@ -45,7 +45,6 @@ When pnpm 11 blocks dependency scripts, the failed installation reports pending 
 |---|---|---|
 | `outputBytes` | `16384` | Maximum pnpm diagnostic bytes returned per operation; the full output remains in the returned log path. |
 | `lockWaitMs` | `120000` | Maximum time in milliseconds to acquire the profile write lock. |
-| `notificationDelayMs` | `250` | Delay in milliseconds for combining operation notices. |
 
 -----
 
@@ -77,7 +76,7 @@ Results contain the last attempted stage, target, saved-state change, applicatio
 
 #### What the model sees
 
-The [`plugin_manager` tool](../../../docs/tool-catalog.md#deepseek-aidsh-plugin-manager) lists plugin entries and bundles and performs profile-wide changes. Its results include saved-state changes, application status and package diagnostics.
+The [`plugin_manager` tool](../../../docs/tool-catalog.md#deepseek-aidsh-plugin-manager) lists plugin entries and bundles and performs profile-wide changes. Its results include saved-state changes, application status and package diagnostics. Management operations do not inject messages into Agents.
 
 #### Token effect
 
@@ -87,24 +86,11 @@ The tool declaration is present when its consumer is mounted; each invocation ad
 
 Tool results append to the transcript. Enabling or disabling other tools can change subsequent tool declarations and their cache reuse.
 
-### Configuration change notices
-
-#### What the model sees
-
-Consecutive operation results are combined within `notificationDelayMs` and injected into each affected live Agent. Notices include the application outcome, disclose omitted results when the configured output bound is reached, and do not wake an idle Agent.
-
-#### Token effect
-
-Notices add conditional user-message context to each affected Agent.
-
-#### KV Cache effect
-
-Notices append context; they do not rewrite earlier messages.
-
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- Web approves the entire displayed pending group; it has no per-package selection.
 - Package replacements require restarting the process to load a fresh JavaScript module generation.
 - Startup-only profiles cannot remove packages used to start the current process; stop it and use `dsh plugin`.
 - The manager cannot disable its own management components, change another profile, or edit an agent preset's composition.
