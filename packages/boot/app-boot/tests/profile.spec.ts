@@ -9,13 +9,16 @@ import {
   unlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { afterAll, describe, expect, it } from 'vitest'
 import {
   composeEntries,
   healProfilesModuleFallback,
+  healIsolatedProfileModuleFallback,
   initProfile,
+  unlinkProfileModuleFallback,
   loadProfile,
   loadProfileDirectory,
   PROFILE_PATCH_FILENAME,
@@ -88,6 +91,82 @@ function stageProfile(home: string, name: string, bundleAnchor: string): Profile
     patchReload: 'live',
   }
 }
+
+describe('healIsolatedProfileModuleFallback', () => {
+  it.each([false, true])('resolves peers from each installation without sharing profile state (Web fallback: %s)', async (webFallback) => {
+    const home = tmp()
+    const webAnchor = stageInstallation({ commander: {} })
+    if (webFallback) await healProfilesModuleFallback({ installAnchor: webAnchor, home })
+    const sharedCommander = join(home, 'profiles', 'node_modules', 'commander')
+    const sharedTarget = webFallback ? readlinkSync(sharedCommander) : undefined
+    const bundleAnchor = stageInstallation({ 'bundle-only': {} }, 'external-bundle')
+    const anchorA = stageInstallation({ commander: {}, 'pnpm-owned': {} })
+    const anchorB = stageInstallation({ commander: {}, 'pnpm-owned': {} })
+    const profileA = stageProfile(home, 'desktop-a', bundleAnchor)
+    const profileB = stageProfile(home, 'desktop-b', bundleAnchor)
+    const consumerA = join(profileA.dir, 'node_modules', 'custom-plugin', 'index.js')
+    const consumerB = join(profileB.dir, 'node_modules', 'custom-plugin', 'index.js')
+    for (const consumer of [consumerA, consumerB]) {
+      mkdirSync(join(consumer, '..'), { recursive: true })
+      writeFileSync(consumer, 'module.exports = require("commander")\n')
+      writeFileSync(join(consumer, '..', 'package.json'), JSON.stringify({
+        name: 'custom-plugin', peerDependencies: { commander: '*' },
+      }))
+    }
+    const installed = join(profileA.dir, 'node_modules', 'pnpm-owned')
+    mkdirSync(installed)
+    writeFileSync(join(installed, 'package.json'), JSON.stringify({ name: 'pnpm-owned', main: 'index.js' }))
+    writeFileSync(join(installed, 'index.js'), 'module.exports = "profile-installed"\n')
+
+    healIsolatedProfileModuleFallback({ installAnchor: anchorA, profile: profileA })
+    healIsolatedProfileModuleFallback({ installAnchor: anchorB, profile: profileB })
+    healIsolatedProfileModuleFallback({ installAnchor: anchorA, profile: profileA })
+
+    expect(realpathSync.native(createRequire(consumerA).resolve('commander')))
+      .toBe(realpathSync.native(join(anchorA, '..', 'node_modules', 'commander', 'index.js')))
+    expect(realpathSync.native(createRequire(consumerB).resolve('commander')))
+      .toBe(realpathSync.native(join(anchorB, '..', 'node_modules', 'commander', 'index.js')))
+    expect(realpathSync.native(createRequire(consumerA).resolve('pnpm-owned'))).toBe(realpathSync.native(join(installed, 'index.js')))
+    expect(readFileSync(join(installed, 'index.js'), 'utf8')).toContain('profile-installed')
+    expect(realpathSync.native(createRequire(consumerA).resolve('bundle-only')))
+      .toBe(realpathSync.native(join(bundleAnchor, '..', 'node_modules', 'bundle-only', 'index.js')))
+    expect(existsSync(join(home, 'profiles', 'node_modules'))).toBe(webFallback)
+    if (webFallback) expect(readlinkSync(sharedCommander)).toBe(sharedTarget)
+
+    healIsolatedProfileModuleFallback({ installAnchor: anchorA, profile: { ...profileA, layers: [] } })
+    expect(existsSync(join(profileA.dir, 'node_modules', 'bundle-only'))).toBe(false)
+    expect(existsSync(join(profileB.dir, 'node_modules', 'bundle-only'))).toBe(true)
+    expect(realpathSync.native(createRequire(consumerA).resolve('commander')))
+      .toBe(realpathSync.native(join(anchorA, '..', 'node_modules', 'commander', 'index.js')))
+  })
+})
+
+describe('unlinkProfileModuleFallback', () => {
+  it('detaches only this profile projections and restores missing packages from a relocated installation', () => {
+    const home = tmp()
+    const anchor = stageInstallation({ fallback: {}, '@scope/peer': {}, replaced: {} })
+    const nextAnchor = stageInstallation({ fallback: {}, '@scope/peer': {}, replaced: {} })
+    const bundleAnchor = stageInstallation({}, 'selected-bundle')
+    const profile = stageProfile(home, 'desktop', bundleAnchor)
+    const other = stageProfile(home, 'other', bundleAnchor)
+    unlinkProfileModuleFallback(profile.dir)
+    healIsolatedProfileModuleFallback({ installAnchor: anchor, profile })
+    healIsolatedProfileModuleFallback({ installAnchor: anchor, profile: other })
+    const modules = join(profile.dir, 'node_modules')
+    unlinkSync(join(modules, 'replaced'))
+    mkdirSync(join(modules, 'replaced'))
+    writeFileSync(join(modules, 'replaced', 'sentinel'), 'pnpm')
+    unlinkProfileModuleFallback(profile.dir)
+    unlinkProfileModuleFallback(profile.dir)
+    expect(existsSync(join(modules, 'fallback'))).toBe(false)
+    expect(existsSync(join(modules, '@scope/peer'))).toBe(false)
+    expect(readFileSync(join(modules, 'replaced', 'sentinel'), 'utf8')).toBe('pnpm')
+    expect(existsSync(join(other.dir, 'node_modules', 'fallback'))).toBe(true)
+    healIsolatedProfileModuleFallback({ installAnchor: nextAnchor, profile })
+    expect(realpathSync(join(modules, 'fallback'))).toBe(realpathSync(join(nextAnchor, '..', 'node_modules', 'fallback')))
+    expect(readFileSync(join(modules, 'replaced', 'sentinel'), 'utf8')).toBe('pnpm')
+  })
+})
 
 describe('resolveProfileDir', () => {
   it('joins the home and rejects traversal-shaped names', () => {

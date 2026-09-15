@@ -218,3 +218,33 @@ describe('plugin activation', () => {
     await entry.dispose()
   })
 })
+
+it('draws the shared boot page before Host injections and resumes without replacing the document', async () => {
+  const gate = Promise.withResolvers<undefined>()
+  vi.stubGlobal('__DSH_BOOT_READY__', gate)
+  const container = document.createElement('div')
+  document.body.append(container)
+  const create = vi.fn(() => { throw new Error('injections consumed') })
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const entry = new AppWebEntry(container)
+  const boot = entry.run()
+  try {
+    const page = container.querySelector('[data-dsh-boot]')
+    const spinner = container.querySelector('[data-dsh-boot-spinner]')
+    expect(spinner).not.toBeNull()
+    await Promise.resolve()
+    expect(create).not.toHaveBeenCalled()
+    expect(error).not.toHaveBeenCalled()
+    installFacade(create)
+    gate.resolve(undefined)
+    await boot
+    expect(create).toHaveBeenCalledOnce()
+    expect(container.querySelector('[data-dsh-boot]')).toBe(page)
+    expect(container.textContent).toContain('injections consumed')
+  } finally {
+    gate.resolve(undefined)
+    await boot
+    await entry.dispose()
+    vi.unstubAllGlobals()
+  }
+})

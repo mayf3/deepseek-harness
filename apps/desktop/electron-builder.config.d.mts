@@ -26,7 +26,13 @@ export interface DesktopElectronBuilderConfig {
   }
   readonly nsis: {
     readonly include: string
+    readonly oneClick: false
+    readonly perMachine: false
+    readonly allowElevation: false
+    readonly allowToChangeInstallationDirectory: false
+    readonly installerLanguages: readonly ['en_US', 'zh_CN']
   }
+  readonly beforeBuild: () => Promise<boolean>
   readonly artifactBuildCompleted: (artifact: { readonly file: string }) => Promise<void> | undefined
   readonly publish: readonly [{ readonly provider: 'generic', readonly url: string }] | null
 }

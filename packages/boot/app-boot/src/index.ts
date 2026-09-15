@@ -21,6 +21,11 @@ import type {} from '@deepseek-ai/cordis-plugin-hmr'
 import { watchConfig } from './watch-config.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
+export {
+  readProfilePlugins, reconcileProfilePlugins, writeProfileBundles,
+  type ProfilePluginLocation, type ProfilePluginDependency, type ProfilePluginInventory, type ProfilePluginReconciliation,
+} from './profile-plugins.ts'
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Harness-home path resolver available to Loader `!!js` config expressions. */
@@ -34,6 +39,8 @@ export {
   DEFAULT_PROFILE_BUNDLES,
   DEFAULT_PROFILE_PATCH_RELOAD,
   healProfilesModuleFallback,
+  healIsolatedProfileModuleFallback,
+  unlinkProfileModuleFallback,
   initProfile,
   loadProfile,
   loadProfileDirectory,
