@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PluginInventorySettingsTab } from '../src/client/PluginInventorySettingsTab.tsx'
 import type {
@@ -7,7 +7,6 @@ import type {
   PluginInventorySettingsTabProps,
 } from '../src/client/PluginInventorySettingsTab.tsx'
 import { en, type PluginInventoryLocaleKey } from '../src/client/locales.ts'
-import { BundleManager, usePluginManagement, type PluginManagement } from '../src/client/management.tsx'
 
 afterEach(cleanup)
 
@@ -34,7 +33,7 @@ const SNAPSHOT = {
   entries: [
     { entryId: 'telemetry', moduleName: '@fixture/telemetry', enabled: true, fiberPhase: 'failed' },
     { entryId: 'timer', moduleName: 'cordis:timer', enabled: true, fiberPhase: 'active' },
-    { entryId: '8a1b2c3d', moduleName: '@deepseek-ai/dsh-hmr', enabled: true, fiberPhase: 'active' },
+    { entryId: '8a1b2c3d', moduleName: '@deepseek-ai/cordis-plugin-hmr', enabled: true, fiberPhase: 'active' },
     { entryId: 'unobserved', moduleName: '@fixture/unobserved-name', enabled: true, fiberPhase: null },
     { entryId: 'bash-host', moduleName: '@deepseek-ai/dsh-tool-bash', enabled: false, fiberPhase: null },
     { entryId: 'fs-host', moduleName: '@deepseek-ai/dsh-tool-fs', enabled: false, fiberPhase: null },
@@ -325,7 +324,7 @@ describe('PluginInventorySettingsTab', () => {
   it('renders a rosterless deployment as one global list, folded until opened', async () => {
     const view = await renderReady({
       entries: [
-        { entryId: 'hmr', moduleName: '@deepseek-ai/dsh-hmr', enabled: true, fiberPhase: 'active' },
+        { entryId: 'hmr', moduleName: '@deepseek-ai/cordis-plugin-hmr', enabled: true, fiberPhase: 'active' },
         { entryId: 'off', moduleName: '@fixture/off', enabled: false, fiberPhase: null },
       ],
     } as unknown as Snapshot)
@@ -393,120 +392,4 @@ describe('PluginInventorySettingsTab', () => {
     pendingFailure.unmount()
     await act(async () => { deferredFailure.reject(new Error('late failure')) })
   })
-})
-
-describe('persistent profile management', () => {
-  it('runs bundle and plugin controls through the same manager and shows failed results', async () => {
-    let enabled = true
-    let selected = true
-    let installed = true
-    const list: PluginInventorySettingsTabInjected['list'] = async () => ({
-      managementAvailable: true,
-      entries: [{ entryId: 'managed' as Snapshot['entries'][number]['entryId'], moduleName: '@fixture/managed', enabled, fiberPhase: enabled ? 'active' : null }],
-    })
-    const management = {
-      listPlugins: async () => [{ ...(await list()).entries[0]!, patchId: 'managed' }],
-      listBundles: async () => installed ? [{ name: 'extra', version: '1', enabled: selected, removable: true }] : [],
-      setPluginEnabled: vi.fn(async (_id: Snapshot['entries'][number]['entryId'], next: boolean) => {
-        enabled = next
-        return { changed: true, application: 'applied' as const, message: 'Plugin changed.' }
-      }),
-      setBundleEnabled: vi.fn(async (_name: string, next: boolean) => {
-        selected = next
-        return { changed: true, application: 'applied' as const, message: 'Bundle changed.' }
-      }),
-      installBundle: vi.fn(async () => ({ changed: false, application: 'failed' as const, message: 'Registry unavailable.' })),
-      removeBundle: vi.fn(async () => {
-        installed = false
-        return { changed: true, application: 'applied' as const, message: 'Bundle removed.' }
-      }),
-    } satisfies NonNullable<PluginInventorySettingsTabInjected['management']>
-    render(<PluginInventorySettingsTab {...props(list)} management={management} />)
-    fireEvent.click(await screen.findByRole('switch', { name: 'Toggle bundle extra' }))
-    await waitFor(() => { expect(management.setBundleEnabled).toHaveBeenCalledWith('extra', false) })
-    await waitFor(() => { expect(screen.getByRole<HTMLInputElement>('switch', { name: 'Toggle bundle extra' }).checked).toBe(false) })
-    fireEvent.click(screen.getByRole('button', { name: /managed, managed/ }))
-    fireEvent.click(await screen.findByRole('switch', { name: 'Toggle plugin managed' }))
-    await waitFor(() => { expect(management.setPluginEnabled).toHaveBeenCalledWith('managed', false) })
-    await waitFor(() => { expect(screen.getByRole<HTMLInputElement>('switch', { name: 'Toggle plugin managed' }).checked).toBe(false) })
-    fireEvent.change(screen.getByRole('textbox', { name: 'npm package name or local path' }), { target: { value: 'new-bundle' } })
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Enable after installation' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Install' }))
-    await waitFor(() => { expect(management.installBundle).toHaveBeenCalledWith('new-bundle', { enabled: false }) })
-    expect((await screen.findByRole('alert')).textContent).toContain('Registry unavailable.')
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
-    await waitFor(() => { expect(management.removeBundle).toHaveBeenCalledWith('extra') })
-    await waitFor(() => { expect(screen.queryByRole('switch', { name: 'Toggle bundle extra' })).toBeNull() })
-  })
-})
-
-function managementFixture() {
-  const applied = { changed: true, application: 'applied' as const, message: 'saved' }
-  return {
-    listPlugins: vi.fn<PluginManagement['listPlugins']>(async () => []),
-    listBundles: vi.fn<PluginManagement['listBundles']>(async () => []),
-    setPluginEnabled: vi.fn(async () => applied), setBundleEnabled: vi.fn(async () => applied),
-    installBundle: vi.fn(async () => applied), removeBundle: vi.fn(async () => applied),
-  }
-}
-
-it('ignores inventory completion after unmount and reports current read failures', async () => {
-  for (const failure of [undefined, new Error('late failure')]) {
-    const read = Promise.withResolvers<Awaited<ReturnType<PluginManagement['listBundles']>>>()
-    const manager = managementFixture()
-    vi.mocked(manager.listBundles).mockReturnValue(read.promise)
-    const hook = renderHook(() => usePluginManagement(manager, true, 0))
-    hook.unmount()
-    await act(async () => {
-      if (failure === undefined) read.resolve([])
-      else read.reject(failure)
-      await read.promise.catch(() => {})
-    })
-  }
-  for (const failure of [new Error('inventory unavailable'), 'inventory rejected']) {
-    const manager = managementFixture()
-    vi.mocked(manager.listBundles).mockRejectedValue(failure)
-    const hook = renderHook(() => usePluginManagement(manager, true, 0))
-    await waitFor(() => { expect(hook.result.current.error).toBe(failure instanceof Error ? failure.message : failure) })
-    hook.unmount()
-  }
-})
-
-it('blocks duplicate submissions and refreshes after a rejected management request', async () => {
-  const manager = managementFixture()
-  const hook = renderHook(() => usePluginManagement(manager, true, 0))
-  const pending = Promise.withResolvers<Awaited<ReturnType<PluginManagement['removeBundle']>>>()
-  const operation = vi.fn(() => pending.promise)
-  await act(async () => {
-    const first = hook.result.current.run(operation)
-    await hook.result.current.run(operation)
-    pending.resolve({ changed: true, application: 'applied', message: 'removed' })
-    await first
-  })
-  expect(operation).toHaveBeenCalledOnce()
-  expect(hook.result.current.result?.message).toBe('removed')
-  for (const failure of [new Error('request unavailable'), 'request rejected']) {
-    await act(async () => { await hook.result.current.run(async () => { throw failure }) })
-    expect(hook.result.current.error).toBe(failure instanceof Error ? failure.message : failure)
-    expect(hook.result.current.busy).toBe(false)
-  }
-})
-
-it('shows package diagnostics, read errors and protected or missing bundles', () => {
-  const manager = managementFixture()
-  const state: ReturnType<typeof usePluginManagement> = {
-    plugins: [], bundles: [
-      { name: 'missing', enabled: false, removable: true, error: 'package files missing' },
-      { name: 'core', enabled: true, removable: false, readOnlyReason: 'required for management' },
-    ], busy: false, refresh: 0, error: 'inventory unavailable', run: async () => {},
-    result: { changed: true, application: 'failed', message: 'installation failed',
-      packageResult: { exitCode: 1, output: 'failed', truncated: false, logPath: '/profile/operation/pnpm.log' } },
-  }
-  render(<BundleManager manager={manager} state={state} t={t} />)
-  expect(screen.getByText('inventory unavailable')).toBeDefined()
-  expect(screen.getByText('/profile/operation/pnpm.log')).toBeDefined()
-  expect(screen.getByText('package files missing')).toBeDefined()
-  expect(screen.getByText('required for management')).toBeDefined()
-  expect(screen.getByRole<HTMLInputElement>('switch', { name: 'Toggle bundle missing' }).disabled).toBe(true)
-  expect(screen.getByRole<HTMLInputElement>('switch', { name: 'Toggle bundle core' }).disabled).toBe(true)
 })

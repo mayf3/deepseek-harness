@@ -61,9 +61,14 @@ import {
   composeEntries,
   createProfileResolutionGeneration,
   healProfilesModuleFallback,
+  initProfile,
+  mountRootInclude,
+  readProfileManifest,
+  readProfilePatches,
   loadOverlayPatches,
   PluginPackages,
   type Profile,
+  type ProfileContext,
   type ProfileResolutionMode,
 } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
@@ -309,6 +314,19 @@ export interface LaunchOptions {
    */
   extraInstallAnchors?: string[]
   /**
+   * Manage the scaffold profile the way the launcher does: a `profileContext`
+   * over the profile directory, whose manifest lists the shipped web bundles
+   * and each package directory here as an installed dependency (`file:` in the
+   * manifest, a symlink under the profile's `node_modules`); `enabled` also
+   * lists a bundle in `dsh.profile.bundles`. The plugin manager mounts on such
+   * a profile, and the root Include is mounted from the profile's own layers.
+   * `patchReload` defaults to `live`.
+   */
+  profile?: {
+    patchReload?: 'live' | 'startup'
+    packages: { dir: string; enabled?: boolean }[]
+  }
+  /**
    * Replay fixture (session.jsonl) served by the inserted dsh-llm-replay row
    * in replay/refresh modes; ignored in record mode (the real adapter
    * answers). Omit for scenarios issuing no model calls — a stray stream then
@@ -523,9 +541,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     surfaceContext?: boolean
   } | undefined
   const surfaceContext = webRuntimeConfig?.surfaceContext !== false
-  const patches: PatchOptions[] = [
-    ...basePatches,
-    ...surfacePatches,
+  // The scaffold's own overrides, above every bundle layer like `--patch` overlays.
+  const overlayPatches: PatchOptions[] = [
     { id: 'session-log-deepseek', config: { enabled: false } },
     // The historical Messages fixture retains its recorded route during replay;
     // live configuration uses the shared DeepSeek route. Explicit overlays win.
@@ -653,6 +670,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         config: messages ? {} : { protocol: 'chat-completions' } },
     ],
   ]
+  const patches: PatchOptions[] = [...basePatches, ...surfacePatches, ...overlayPatches]
 
   // Sessions inherit the gateway's process.cwd() default; run the boot from
   // the temp workspace so tool cwd, session cwd, and fixtures agree.
@@ -689,13 +707,14 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         patches: [],
       }
     }))
+    const profilePatchReload = options.profile?.patchReload ?? 'live'
     const profile: Profile = {
       name: 'scaffold',
       dir: profileDir,
       layers: extraLayers,
       patchPath: join(profileDir, 'cordis.patch.yml'),
       patches: [],
-      patchReload: 'startup',
+      patchReload: options.profile === undefined ? 'startup' : profilePatchReload,
     }
     const profileResolutionMode = options.profileResolutionMode ?? 'runtime'
     const resolutionOptions = { installAnchor: INSTALL_ANCHOR, home: harnessHome, profile }
@@ -706,6 +725,31 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     const rootConfig = join(profileDir, 'cordis.yml')
     await writeFile(rootConfig, '[]\n')
     ctx.baseUrl = pathToFileURL(profileDir).href + '/'
+    let profileContext: ProfileContext | undefined
+    if (options.profile !== undefined) {
+      // A real profile: the shipped web bundles plus each fixture package,
+      // installed the way `dsh plugin add` leaves them.
+      const dependencies: Record<string, string> = {}
+      const bundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
+      for (const entry of options.profile.packages) {
+        const manifest = JSON.parse(await readFile(join(entry.dir, 'package.json'), 'utf8')) as { name: string }
+        dependencies[manifest.name] = `file:${entry.dir}`
+        if (entry.enabled === true) bundles.push(manifest.name)
+        const link = join(profileDir, 'node_modules', manifest.name)
+        await mkdir(dirname(link), { recursive: true })
+        await symlink(entry.dir, link, 'junction')
+      }
+      initProfile(profileDir, bundles, profilePatchReload)
+      const manifest = readProfileManifest('dsh', profileDir)
+      manifest.dependencies = dependencies
+      await writeFile(join(profileDir, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
+      profileContext = {
+        name: 'scaffold', dir: profileDir, patchPath: profile.patchPath, installAnchor: INSTALL_ANCHOR,
+        cwd: workspaceCwd, home: harnessHome, startedBundles: bundles, patchReload: profilePatchReload,
+        overlays: overlayPatches, telemetryDisabledEnv: undefined,
+      }
+      ctx.provide('profileContext', profileContext)
+    }
     // This direct Loader harness supplies the same root-path capability as app-boot.
     ctx.provide('dshHomePath', dshHomePath)
     // A host with no command line still provides one: the web bundle's startup
@@ -723,16 +767,23 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       behavior: profileResolutionMode === 'dual' ? 'verify' : 'enforce',
     })
     await ctx.plugin(Loader)
-    ctx.loader.builtins.include = Include
-    // `cordis:group` beside it, exactly as `boot()` registers it: a group row is
-    // how a preset gives one `isolate` realm to a provider and its consumers,
-    // and a preset resolving package names from its own directory cannot reach
-    // `@deepseek-ai/cordis-plugin-group` by name.
-    ctx.loader.builtins.group = Group
-    await ctx.loader.create({
-      name: 'cordis:include',
-      config: { path: pathToFileURL(rootConfig).href, patches },
-    })
+    if (profileContext === undefined) {
+      ctx.loader.builtins.include = Include
+      // `cordis:group` beside it, exactly as `boot()` registers it: a group row is
+      // how a preset gives one `isolate` realm to a provider and its consumers,
+      // and a preset resolving package names from its own directory cannot reach
+      // `@deepseek-ai/cordis-plugin-group` by name.
+      ctx.loader.builtins.group = Group
+      await ctx.loader.create({
+        name: 'cordis:include',
+        config: { path: pathToFileURL(rootConfig).href, patches },
+      })
+    } else {
+      // The launcher's own mount, so the manager's reloads find the root Include
+      // and compose the same layers the profile files name; bare names still
+      // resolve through the resolution generation above, as in the direct mount.
+      await mountRootInclude(ctx, rootConfig, readProfilePatches('dsh', profileContext))
+    }
     await ctx.loader.await()
     await auditStartupEntries(ctx, 'web e2e scaffold')
     if (options.welcomeNoticePending !== true) {

@@ -1,8 +1,8 @@
 /**
  * Plugin manager, browser half: the **Plugins** entry of the sidebar and the
- * management page it opens in the main column. The page installs, enables, disables,
- * retries, and uninstalls the packages of the Host's profile through the
- * `plugins` Remote and edits global rows in the profile's user layer.
+ * management page it opens in the main column. The page installs, enables,
+ * disables, and removes the bundles of the Host's profile through the
+ * `pluginManager` Remote and switches their rows in the profile's user layer.
  * Configuring a plugin stays in Settings.
  */
 
@@ -18,7 +18,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: the forwarded events' own declaration (`$on`'s key face resolves
 // through the owning package's client-safe types subpath).
-import type {} from '@deepseek-ai/dsh-host-plugin-manager/types'
+import type {} from '@deepseek-ai/dsh-plugin-manager/types'
 import { PluginManagerPage } from './PluginManagerPage.tsx'
 import { PluginsPanelIcon } from './PluginsPanelIcon.tsx'
 import { PluginManagerController } from './manager-store.ts'
@@ -43,8 +43,8 @@ export const NS = 'pluginManager'
 /** The id shared by the sidebar entry and the main panel it opens. */
 export const PANEL_ID = 'plugins' as MainPanelId
 
-/** Services required by the Settings registration and the Remote methods. */
-export const inject = ['slots', 'locale', 'remote', 'remote.plugins']
+/** Services required by the sidebar registration and the Remote methods; the inventory says whether the Host manages a profile. */
+export const inject = ['slots', 'locale', 'remote', 'remote.pluginManager', 'remote.pluginInventory']
 
 /**
  * Contribute the Plugins entry to the sidebar with the management page it
@@ -64,9 +64,9 @@ export function apply(ctx: ClientContext): void {
       if (controller.getSnapshot().status !== 'idle') void controller.load()
     }
     const disposers = [
-      ctx.remote.$on('plugins/changed', refresh),
-      ctx.remote.$on('plugins/install-log', (chunk) => { controller.appendLog(chunk) }),
-      ctx.remote.$on('plugins/install-state', (progress) => { controller.installProgress(progress) }),
+      ctx.remote.$on('plugin-manager/changed', refresh),
+      ctx.remote.$on('plugin-manager/install-log', (chunk) => { controller.appendLog(chunk) }),
+      ctx.remote.$on('plugin-manager/install-state', (progress) => { controller.installProgress(progress) }),
       ctx.on('connection/reset', refresh),
     ]
     return () => { for (const dispose of disposers) dispose() }

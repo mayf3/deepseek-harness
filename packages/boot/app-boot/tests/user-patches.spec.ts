@@ -13,7 +13,7 @@ import { FSWatcher, type ChokidarOptions } from 'chokidar'
 import { Context } from '@deepseek-ai/cordis'
 import Hmr from '@deepseek-ai/dsh-hmr'
 import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
+import Loader, { type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
 import {
   boot,
@@ -361,6 +361,22 @@ describe('profile reconciliation settlement', () => {
     const ctx = new Context()
     onTestFinished(() => ctx.fiber.dispose())
     await expect(reconcileProfilePatches(ctx, [], NAME)).rejects.toThrow('profile reload requires the root Include entry')
+    // A Loader without the pinned root id is no better.
+    await ctx.plugin(Loader)
+    await expect(reconcileProfilePatches(ctx, [], NAME)).rejects.toThrow('profile reload requires the root Include entry')
+  })
+
+  it('finds a root Include mounted under its pinned id by another copy of this module', async () => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    await ctx.plugin(Loader)
+    ctx.loader.builtins.include = Include
+    const root: EntryOptions = { id: 'include', name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } }
+    await ctx.loader.create(root)
+    await ctx.loader.await()
+    await expect(reconcileProfilePatches(ctx, [], NAME)).resolves.toBeUndefined()
   })
 
   it('reports a retained activation failure even when the failed entry is removed', async () => {

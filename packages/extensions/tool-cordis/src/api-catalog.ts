@@ -1448,7 +1448,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: '@Remote listBundles(): Promise<BundleInfo[]>',
         description: 'Read installed bundles and bundles supplied by this dsh installation.',
         parameters: [],
-        returns: 'Package versions, activation selections and removal availability.',
+        returns: 'Package versions, titles, rows, activation selections and removal availability.',
+      },
+      {
+        signature: '@Remote async inspect(spec: string, signal?: AbortSignal): Promise<PluginSpecInspection>',
+        description: 'Read what a spec names before installing it.',
+        parameters: [{ name: 'spec', description: 'One package spec: a registry name, an absolute path, a git address, or a tarball.' }, { name: 'signal', description: 'Ends a registry lookup early.' }],
+        returns: 'The package the spec names, or why it is refused.',
       },
       {
         signature: '@Remote setPluginEnabled(id: PluginEntryId, enabled: boolean): Promise<ChangeResult>',
@@ -1464,9 +1470,15 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>',
-        description: 'Install a package using the same pnpm implementation as dsh plugin.',
-        parameters: [{ name: 'spec', description: 'One package spec, including local paths relative to the invocation directory.' }, { name: 'options', description: 'Whether to activate the installed bundle; defaults to true.' }],
+        description: 'Install a package using the same pnpm implementation as dsh plugin. A run that fails, is cancelled, or adds a package without a bundle patch restores `package.json` and `pnpm-lock.yaml` as they were; downloaded files can stay.',
+        parameters: [{ name: 'spec', description: 'One package spec, including local paths relative to the invocation directory.' }, { name: 'options', description: 'Whether to activate the installed bundle (defaults to true) and the request id a cancellation names.' }],
         returns: 'Package-manager diagnostics and observed activation outcome.',
+      },
+      {
+        signature: '@Remote async cancelInstall(requestId: PluginInstallRequestId): Promise<PluginInstallCancellation>',
+        description: 'Stop an installation this manager owns and wait until its files are back.',
+        parameters: [{ name: 'requestId', description: 'The id the installation was started with.' }],
+        returns: '`cancelled` once pnpm exited and the files are restored, `too-late` once the bundle is being applied, `not-running` for any other id.',
       },
       {
         signature: '@Remote removeBundle(name: string): Promise<ChangeResult>',
@@ -3616,6 +3628,38 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [],
   },
   {
+    name: 'plugin-manager/changed',
+    mode: 'emit',
+    signature: '\'plugin-manager/changed\'(change: PluginChange): void',
+    summary: 'The profile\'s plugins, bundles, or composition changed: a manager operation completed, or a patch generation was applied.',
+    description: 'The profile\'s plugins, bundles, or composition changed: a manager operation completed, or a patch generation was applied.',
+    parameters: [{ name: 'change', description: 'what changed.' }],
+  },
+  {
+    name: 'plugin-manager/install-log',
+    mode: 'emit',
+    signature: '\'plugin-manager/install-log\'(chunk: PluginInstallLogChunk): void',
+    summary: 'One chunk of a pnpm run\'s output, streamed as the run produces it.',
+    description: 'One chunk of a pnpm run\'s output, streamed as the run produces it.',
+    parameters: [{ name: 'chunk', description: 'the chunk and the run it belongs to.' }],
+  },
+  {
+    name: 'plugin-manager/install-state',
+    mode: 'emit',
+    signature: '\'plugin-manager/install-state\'(progress: PluginInstallProgress): void',
+    summary: 'An installation moved between its Host phases.',
+    description: 'An installation moved between its Host phases.',
+    parameters: [{ name: 'progress', description: 'the installation\'s request id and phase.' }],
+  },
+  {
+    name: 'profile/reconciled',
+    mode: 'emit',
+    signature: '\'profile/reconciled\'(patches: readonly PatchOptions[]): void',
+    summary: 'A complete patch generation was applied to the root Include and the Loader settled, whether or not every row activated.',
+    description: 'A complete patch generation was applied to the root Include and the Loader settled, whether or not every row activated.',
+    parameters: [{ name: 'patches', description: 'the ordered patch list that was applied.' }],
+  },
+  {
     name: 'session-telemetry/record',
     mode: 'waterfall',
     signature: '\'session-telemetry/record\'(record: SessionTelemetryRecord, next: () => SessionTelemetryRecord): SessionTelemetryRecord',
@@ -4093,11 +4137,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BundleInfo',
-    declaration: 'export interface BundleInfo {\n    name: string;\n    version?: string;\n    enabled: boolean;\n    removable: boolean;\n    readOnlyReason?: string;\n    error?: string;\n}',
+    declaration: 'export interface BundleInfo {\n    name: string;\n    version?: string;\n    title?: string;\n    description?: string;\n    enabled: boolean;\n    installed: boolean;\n    removable: boolean;\n    readOnlyReason?: string;\n    error?: string;\n    rows: BundleRowInfo[];\n    overrides: string[];\n}',
+  },
+  {
+    name: 'BundleRowInfo',
+    declaration: 'export interface BundleRowInfo {\n    rowId: string;\n    moduleName: string;\n    entryId?: PluginEntryId;\n}',
   },
   {
     name: 'ChangeResult',
-    declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\';\n    message: string;\n    packageResult?: PackageResult;\n}',
+    declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\' | \'cancelled\';\n    message: string;\n    packageResult?: PackageResult;\n    bundle?: string;\n}',
   },
   {
     name: 'ClientArtifactBaseline',
@@ -4661,7 +4709,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'InstallBundleOptions',
-    declaration: 'export interface InstallBundleOptions {\n    enabled?: boolean;\n}',
+    declaration: 'export interface InstallBundleOptions {\n    enabled?: boolean;\n    requestId?: PluginInstallRequestId;\n}',
+  },
+  {
+    name: 'InstallSpecKind',
+    declaration: 'export type InstallSpecKind = \'registry\' | \'path\' | \'git\' | \'tarball\';',
   },
   {
     name: 'InvariantFailure',
@@ -5025,11 +5077,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PackageResult',
-    declaration: 'export interface PackageResult {\n    exitCode: number;\n    output: string;\n    truncated: boolean;\n    logPath: string;\n}',
+    declaration: 'export interface PackageResult {\n    exitCode: number;\n    output: string;\n    truncated: boolean;\n    logPath: string;\n    kind?: PluginInstallFailureKind;\n}',
   },
   {
     name: 'PermissionCatalog',
     declaration: 'export interface PermissionCatalog {\n    options: PresetOption[];\n}',
+  },
+  {
+    name: 'PluginChange',
+    declaration: 'export interface PluginChange {\n    readonly reason: \'plugin\' | \'bundle\' | \'install\' | \'remove\' | \'reload\';\n}',
   },
   {
     name: 'PluginEntryId',
@@ -5044,8 +5100,36 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PluginInfo extends PluginInventoryEntry {\n    patchId?: string;\n    readOnlyReason?: string;\n}',
   },
   {
+    name: 'PluginInspectProblem',
+    declaration: 'export type PluginInspectProblem = \'invalid-spec\' | \'already-installed\' | \'not-found\' | \'not-a-package\' | \'not-a-bundle\' | \'network\' | \'unknown\';',
+  },
+  {
+    name: 'PluginInstallCancellation',
+    declaration: 'export interface PluginInstallCancellation {\n    readonly status: \'cancelled\' | \'too-late\' | \'not-running\';\n}',
+  },
+  {
+    name: 'PluginInstallFailureKind',
+    declaration: 'export type PluginInstallFailureKind = \'pnpm-missing\' | \'timeout\' | \'not-found\' | \'no-matching-version\' | \'network\' | \'disk-full\' | \'permission\' | \'build-blocked\' | \'integrity\' | \'unknown\';',
+  },
+  {
+    name: 'PluginInstallLogChunk',
+    declaration: 'export interface PluginInstallLogChunk {\n    readonly requestId?: PluginInstallRequestId;\n    readonly jobId: string;\n    readonly argv: readonly string[];\n    readonly cwd: string;\n    readonly stream: \'stdout\' | \'stderr\';\n    readonly text: string;\n    readonly exitCode?: number | null;\n}',
+  },
+  {
+    name: 'PluginInstallProgress',
+    declaration: 'export interface PluginInstallProgress {\n    readonly requestId: PluginInstallRequestId;\n    readonly phase: \'installing\' | \'cancelling\' | \'applying\';\n}',
+  },
+  {
+    name: 'PluginInstallRequestId',
+    declaration: 'export type PluginInstallRequestId = Branded<\'PluginInstallRequestId\'>;',
+  },
+  {
     name: 'PluginInventoryEntry',
     declaration: 'export interface PluginInventoryEntry {\n    readonly entryId: PluginEntryId;\n    readonly moduleName: string;\n    readonly enabled: boolean;\n    readonly fiberPhase: PluginFiberPhase;\n}',
+  },
+  {
+    name: 'PluginSpecInspection',
+    declaration: 'export type PluginSpecInspection = {\n    readonly status: \'accepted\';\n    readonly kind: InstallSpecKind;\n    readonly name?: string;\n    readonly version?: string;\n    readonly description?: string;\n    readonly title?: string;\n    readonly bundle: boolean | null;\n} | {\n    readonly status: \'refused\';\n    readonly problem: PluginInspectProblem;\n    readonly reason: string;\n};',
   },
   {
     name: 'PostToolDecision',

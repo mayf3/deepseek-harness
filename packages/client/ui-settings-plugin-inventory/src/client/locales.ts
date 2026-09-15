@@ -2,10 +2,6 @@
 
 /** Simplified Chinese dictionary and key source of truth. */
 export const zh = {
-  bundles: '组合包', packageSpec: 'npm 包名称或本地路径', install: '安装', remove: '删除',
-  enableAfterInstall: '安装后启用', applying: '正在应用更改…',
-  operationFailed: '操作失败', applied: '已生效', 'restart-required': '重启后生效', overridden: '被其他配置覆盖',
-  pluginSwitch: '启停插件 {name}', bundleSwitch: '启停组合包 {name}',
   tab: '插件列表',
   loading: '正在读取插件…',
   error: '暂时无法读取插件。',
@@ -49,10 +45,6 @@ export type PluginInventoryLocaleKey = keyof typeof zh
 
 /** English dictionary checked against the Chinese key set. */
 export const en = {
-  bundles: 'Bundles', packageSpec: 'npm package name or local path', install: 'Install', remove: 'Remove',
-  enableAfterInstall: 'Enable after installation', applying: 'Applying changes…',
-  operationFailed: 'Failed', applied: 'Applied', 'restart-required': 'Restart required', overridden: 'Overridden by another configuration',
-  pluginSwitch: 'Toggle plugin {name}', bundleSwitch: 'Toggle bundle {name}',
   tab: 'Plugin list',
   loading: 'Reading plugins…',
   error: 'Plugins are temporarily unavailable.',

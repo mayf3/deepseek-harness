@@ -20,7 +20,7 @@ This extends the [profile bundle composition decision](2026-08-05-profile-plugin
 
 **Spawning another dsh process from the service.** This duplicates lifecycle coordination and cannot establish that the current Loader finished unloading before pnpm removes files. Sharing the operation module retains one implementation while letting each caller own its presentation.
 
-**A second desired-state database or automatic rollback.** These require synchronizing package-manager side effects with another state store. Profile files remain inspectable and repairable; partial installation and loading failures are reported rather than concealed by an incomplete rollback.
+**A second desired-state database or automatic rollback.** These require synchronizing package-manager side effects with another state store. Profile files remain inspectable and repairable; partial loading failures are reported rather than concealed by an incomplete rollback. For installations this was later reversed: a failed or cancelled installation restores the manifest and lockfile ([guided plugin installation](2026-09-15-guided-plugin-installation.md)).
 
 **Source-module hot replacement for package updates.** Configuration changes can reuse the loaded module cache, whereas replacing installed JavaScript needs a new process generation. Replacing an existing dependency reports a required restart.
 

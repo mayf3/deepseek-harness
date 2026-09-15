@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-settings-plugin-inventory",
-  "description": "Cordis Loader inventory and current-profile management in Web Plugins settings",
+  "description": "Read-only Cordis Loader inventory tab in Web Plugins settings",
   "version": "0.1.5-rc.2",
   "publishConfig": {
     "access": "public"

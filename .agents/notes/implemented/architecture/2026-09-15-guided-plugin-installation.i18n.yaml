@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-15-guided-plugin-installation.md
-2026-09-15-guided-plugin-installation.md: 8e4b908d5813a0b87b67fe0f775b89f53bf0f5fa
-2026-09-15-guided-plugin-installation.zh.md: 59dbe042d86a2501aad8d38b99b3bb5f3581568e
+2026-09-15-guided-plugin-installation.md: 83d52e29b2a24c6abd16f4a1ffae8d26cfe83c3f
+2026-09-15-guided-plugin-installation.zh.md: 4669343c662f93e758d5fb35d67213b8f085c962

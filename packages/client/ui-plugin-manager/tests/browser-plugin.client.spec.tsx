@@ -26,9 +26,13 @@ async function bench() {
     }
   }
   new LocaleHolder(ctx)
-  const list = vi.fn(() => Promise.resolve({ ok: true as const, value: [] }))
+  const list = vi.fn(() => Promise.resolve({ ok: true as const, value: { entries: [], managementAvailable: true } }))
   const remote = new TestRemote(ctx, {
-    plugins: { list },
+    pluginInventory: { list },
+    pluginManager: {
+      listBundles: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
+      listPlugins: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
+    },
   })
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, remote }
 }
@@ -49,7 +53,7 @@ describe('ui-plugin-manager browser plugin', () => {
   })
 
   it('declares only the services the page and its Remote methods use', () => {
-    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.plugins'])
+    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.pluginManager', 'remote.pluginInventory'])
   })
 
   it('registers the sidebar entry and its page, which reads the Host only once rendered and follows Host changes', async () => {
@@ -74,14 +78,14 @@ describe('ui-plugin-manager browser plugin', () => {
     expect(resolveSlotLabel(icon.options.label)).toBe('插件')
     const face = (entry.inject as unknown as () => PluginManagerFace)()
     // A Host change before the first render is not a reason to read.
-    b.remote.emit('plugins/changed', [{ reason: 'install' }])
+    b.remote.emit('plugin-manager/changed', [{ reason: 'install' }])
     b.ctx.emit('connection/reset')
     await Promise.resolve()
     expect(b.list).not.toHaveBeenCalled()
     face.ensure()
     await vi.waitFor(() => { expect(face.hooks.pluginManager.getSnapshot().status).toBe('ready') })
     expect(b.list).toHaveBeenCalledTimes(1)
-    b.remote.emit('plugins/changed', [{ reason: 'enable', packageName: 'x' }])
+    b.remote.emit('plugin-manager/changed', [{ reason: 'bundle' }])
     await vi.waitFor(() => { expect(b.list).toHaveBeenCalledTimes(2) })
     b.ctx.emit('connection/reset')
     await vi.waitFor(() => { expect(b.list).toHaveBeenCalledTimes(3) })
@@ -89,14 +93,14 @@ describe('ui-plugin-manager browser plugin', () => {
     // Install output folds into an open run only.
     face.openInstall()
     face.editInstallSpec('pkg')
-    b.remote.emit('plugins/install-log', [{ jobId: 'j', argv: ['pnpm', 'add', 'pkg'], cwd: '/p', spec: 'pkg', stream: 'stdout', text: 'early' }])
-    b.remote.emit('plugins/install-state', [{ requestId: 'foreign', phase: 'installing' }])
+    b.remote.emit('plugin-manager/install-log', [{ jobId: 'j', argv: ['pnpm', 'add', 'pkg'], cwd: '/p', stream: 'stdout', text: 'early' }])
+    b.remote.emit('plugin-manager/install-state', [{ requestId: 'foreign', phase: 'installing' }])
     expect(face.hooks.pluginManager.getSnapshot().install.runs).toEqual([])
 
     await fiber.dispose()
     expect(b.slots.entries('main')).toHaveLength(0)
     expect(b.slots.entries('sidebar.panellist')).toHaveLength(0)
-    b.remote.emit('plugins/changed', [{ reason: 'install' }])
+    b.remote.emit('plugin-manager/changed', [{ reason: 'install' }])
     await Promise.resolve()
     expect(b.list).toHaveBeenCalledTimes(3)
   })

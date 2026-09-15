@@ -227,6 +227,30 @@ export function loadLayeredEnv(
 
 const bootstrapIncludes = new WeakMap<Context, Entry>()
 
+/** The pinned id of the bootstrap Include: app glue, not a config row. */
+const ROOT_INCLUDE_ID = 'include'
+
+/**
+ * The root Include entry of a booted tree: the one this module mounted, else
+ * the entry carrying the pinned root id, which a tree mounted through another
+ * copy of this module (a test harness importing sources beside built packages) has.
+ */
+function rootIncludeOf(ctx: Context): Entry | undefined {
+  return bootstrapIncludes.get(ctx) ?? [...ctx.get('loader')?.entries() ?? []].find(entry => entry.id === ROOT_INCLUDE_ID)
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * A complete patch generation was applied to the root Include and the
+     * Loader settled, whether or not every row activated.
+     * @mode emit
+     * @param patches - the ordered patch list that was applied.
+     */
+    'profile/reconciled'(patches: readonly PatchOptions[]): void
+  }
+}
+
 // The include's YAML dialect (`!!js` scalars become expression nodes the
 // Loader interpolates against each entry's injection-ready context), imported
 // from the include itself so patch parsing and config dumping can never drift
@@ -264,7 +288,7 @@ export async function watchUserPatches(
   const { binName, filename, compose = (patches: PatchOptions[]) => patches } = options
   const hmr = ctx.get('hmr')
   if (hmr === undefined) throw new Error(`${binName}: user patch-layer watching requires the HMR service`)
-  const entry = bootstrapIncludes.get(ctx)
+  const entry = rootIncludeOf(ctx)
   if (entry === undefined) throw new Error(`${binName}: user patch-layer watching requires the root Include entry`)
   const register = hmr.watchConfig(filename, async () => {
     await reconcileProfilePatches(ctx, compose(loadOptionalPatches(binName, filename) ?? []), binName)
@@ -287,7 +311,7 @@ export async function watchUserPatches(
  * @param binName Diagnostic prefix.
  */
 export async function reconcileProfilePatches(ctx: Context, patches: PatchOptions[], binName: string): Promise<void> {
-  const entry = bootstrapIncludes.get(ctx)
+  const entry = rootIncludeOf(ctx)
   if (entry === undefined) throw new Error(`${binName}: profile reload requires the root Include entry`)
   // Removed entries leave the Loader store before their async disposers finish.
   const previousFibers = [...ctx.loader.entries()].flatMap(row => row.fiber === undefined ? [] : [row.fiber])
@@ -295,6 +319,7 @@ export async function reconcileProfilePatches(ctx: Context, patches: PatchOption
   await entry.update({ config: { ...includeConfig, patches } })
   const results = await Promise.allSettled(previousFibers.map(fiber => fiber.await()))
   await ctx.loader.await()
+  ctx.emit('profile/reconciled', patches)
   const failures = await inactiveEntries(ctx)
   if (failures.length > 0) throw new Error(activationDiagnostic(binName, 'warning', failures).trimEnd())
   for (const result of results) if (result.status === 'rejected') throw result.reason
@@ -565,7 +590,7 @@ export async function mountRootInclude(
     ...patches.length > 0 ? { patches: [...patches] } : {},
   }
   const rootInclude: EntryOptions = {
-    id: 'include',
+    id: ROOT_INCLUDE_ID,
     name: 'cordis:include',
     config: includeConfig,
   }

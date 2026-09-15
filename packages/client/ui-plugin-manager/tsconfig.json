@@ -15,7 +15,7 @@
       "path": "../../api/remotes/tsconfig.client.json"
     },
     {
-      "path": "../../host/plugin-manager"
+      "path": "../../boot/plugin-manager"
     },
     {
       "path": "../../test-support/client-runtime"

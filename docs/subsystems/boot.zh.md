@@ -10,11 +10,15 @@
 
 `PluginInfo` 包含模块标识、实际启停状态和 fiber 阶段，以及唯一的 `patchId` 或 `readOnlyReason`。
 
-`BundleInfo` 包含包名、可选的安装版本、组合层选择状态、删除可用性及可选的解析错误。
+`BundleInfo` 包含包名、可选的安装版本、标题与描述、profile 自身依赖是否持有该包、组合层选择状态、删除可用性、可选的解析错误、其 patch 声明的行（`BundleRowInfo`：行 id、模块，以及组合包生效期间的存活条目 id），以及其 patch 覆盖的已有行 id。
 
-`InstallBundleOptions.enabled` 默认为 true。False 表示安装但不选择该组合包层。
+`InstallBundleOptions.enabled` 默认为 true。False 表示安装但不选择该组合包层。`requestId`（`PluginInstallRequestId`，调用方生成的 UUID）标识这次安装，用于其日志与状态事件以及 `cancelInstall`，后者答复 `PluginInstallCancellation`：`cancelled`、`too-late` 或 `not-running`。
 
-`ChangeResult.changed` 独立报告磁盘修改，`application` 为 `applied`、`restart-required`、`overridden` 或 `failed`。`message` 描述结果。可选的 `packageResult` 记录 pnpm 退出码、有界输出、截断标记与完整诊断日志路径。
+`PluginSpecInspection` 是 `inspect` 在安装前的答复：被接受的 spec 的形式、名称、版本、描述、标题与组合包声明，或拒绝的问题与原因。
+
+`PluginInstallLogChunk` 是 pnpm 运行输出的一块，归于其 request id 与 job id 之下，带命令行、目录、流，以及运行最后一块上的退出码；`PluginInstallProgress` 是一次安装的 request id 与 Host 阶段；`PluginChange` 给出 `plugin-manager/changed` 事件背后的操作，管理器之外应用的一代 patch 记为 `reload`。
+
+`ChangeResult.changed` 独立报告磁盘修改，`application` 为 `applied`、`restart-required`、`overridden`、`failed` 或 `cancelled`。`message` 描述结果。可选的 `packageResult` 记录 pnpm 退出码、有界输出、截断标记、完整诊断日志路径，以及失败运行的失败类别；可选的 `bundle` 给出安装新增的包。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -66,9 +70,16 @@ Manage profile files and apply their declared reload lifecycle.
 @Remote async listPlugins(): Promise<PluginInfo[]>
 
 /** Read installed bundles and bundles supplied by this dsh installation.
- * @returns Package versions, activation selections and removal availability.
+ * @returns Package versions, titles, rows, activation selections and removal availability.
  */
 @Remote listBundles(): Promise<BundleInfo[]>
+
+/** Read what a spec names before installing it.
+ * @param spec One package spec: a registry name, an absolute path, a git address, or a tarball.
+ * @param signal Ends a registry lookup early.
+ * @returns The package the spec names, or why it is refused.
+ */
+@Remote async inspect(spec: string, signal?: AbortSignal): Promise<PluginSpecInspection>
 
 /** Persist a plugin entry's desired enablement and apply it on live profiles.
  * @param id Loader entry identity returned by listPlugins.
@@ -84,12 +95,22 @@ Manage profile files and apply their declared reload lifecycle.
  */
 @Remote setBundleEnabled(name: string, enabled: boolean): Promise<ChangeResult>
 
-/** Install a package using the same pnpm implementation as dsh plugin.
+/**
+ * Install a package using the same pnpm implementation as dsh plugin. A run
+ * that fails, is cancelled, or adds a package without a bundle patch restores
+ * `package.json` and `pnpm-lock.yaml` as they were; downloaded files can stay.
  * @param spec One package spec, including local paths relative to the invocation directory.
- * @param options Whether to activate the installed bundle; defaults to true.
+ * @param options Whether to activate the installed bundle (defaults to true) and the request id a cancellation names.
  * @returns Package-manager diagnostics and observed activation outcome.
  */
 @Remote installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>
+
+/** Stop an installation this manager owns and wait until its files are back.
+ * @param requestId The id the installation was started with.
+ * @returns `cancelled` once pnpm exited and the files are restored, `too-late` once the bundle is being
+ * applied, `not-running` for any other id.
+ */
+@Remote async cancelInstall(requestId: PluginInstallRequestId): Promise<PluginInstallCancellation>
 
 /** Unload and remove a profile-owned bundle dependency through dsh plugin's pnpm path.
  * @param name Installed dependency name.
@@ -159,4 +180,82 @@ Module replacements have finished loading.
 ```
 
 Source: [`packages/boot/hmr/src/index.ts`](../../packages/boot/hmr/src/index.ts)
+
+<a id="plugin-manager-events"></a>
+
+### `plugin-manager/*` events
+
+<a id="plugin-managerchanged--emit"></a>
+
+#### `plugin-manager/changed` — emit
+
+The profile's plugins, bundles, or composition changed: a manager operation completed, or a patch generation was applied.
+
+```ts cordis-catalog
+/**
+ * The profile's plugins, bundles, or composition changed: a manager
+ * operation completed, or a patch generation was applied.
+ * @mode emit
+ * @param change - what changed.
+ */
+'plugin-manager/changed'(change: PluginChange): void
+```
+
+Source: [`packages/boot/plugin-manager/src/types.ts`](../../packages/boot/plugin-manager/src/types.ts)
+
+<a id="plugin-managerinstall-log--emit"></a>
+
+#### `plugin-manager/install-log` — emit
+
+One chunk of a pnpm run's output, streamed as the run produces it.
+
+```ts cordis-catalog
+/**
+ * One chunk of a pnpm run's output, streamed as the run produces it.
+ * @mode emit
+ * @param chunk - the chunk and the run it belongs to.
+ */
+'plugin-manager/install-log'(chunk: PluginInstallLogChunk): void
+```
+
+Source: [`packages/boot/plugin-manager/src/types.ts`](../../packages/boot/plugin-manager/src/types.ts)
+
+<a id="plugin-managerinstall-state--emit"></a>
+
+#### `plugin-manager/install-state` — emit
+
+An installation moved between its Host phases.
+
+```ts cordis-catalog
+/**
+ * An installation moved between its Host phases.
+ * @mode emit
+ * @param progress - the installation's request id and phase.
+ */
+'plugin-manager/install-state'(progress: PluginInstallProgress): void
+```
+
+Source: [`packages/boot/plugin-manager/src/types.ts`](../../packages/boot/plugin-manager/src/types.ts)
+
+<a id="profile-events"></a>
+
+### `profile/*` events
+
+<a id="profilereconciled--emit"></a>
+
+#### `profile/reconciled` — emit
+
+A complete patch generation was applied to the root Include and the Loader settled, whether or not every row activated.
+
+```ts cordis-catalog
+/**
+ * A complete patch generation was applied to the root Include and the
+ * Loader settled, whether or not every row activated.
+ * @mode emit
+ * @param patches - the ordered patch list that was applied.
+ */
+'profile/reconciled'(patches: readonly PatchOptions[]): void
+```
+
+Source: [`packages/boot/app-boot/src/index.ts`](../../packages/boot/app-boot/src/index.ts)
 <!-- END GENERATED cordis-surface -->

@@ -28,6 +28,8 @@ export interface DshPackageManifest {
 export interface DshManifest {
   /** Manifest format version, independent of the npm package and Session format versions. */
   manifestVersion?: 1
+  /** Display title of the package, read without executing package code. */
+  title?: string
   /** Bundle metadata consumed by the profile launcher. */
   bundle?: DshBundleManifest
   /** Profile metadata consumed by the profile launcher. */

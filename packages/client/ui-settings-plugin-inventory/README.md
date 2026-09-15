@@ -1,5 +1,5 @@
 ---
-description: "Scope-grouped plugin inventory and current-profile management tab in Web Plugins settings for the dsh web client: agent-preset compositions first, the global plane behind a disclosure, search across both."
+description: "Scope-grouped read-only plugin inventory tab in Web Plugins settings for the dsh web client: agent-preset compositions first, the global plane behind a disclosure, search across both."
 kind: "package-reference"
 ---
 
@@ -47,7 +47,7 @@ A failed read renders a generic failure state inside the tab; retrying re-runs t
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The tab reads the Host inventory on first selection, without Remote calls during plugin activation. Hosts exposing [Plugin Manager](../../boot/plugin-manager/README.md) also provide bundle installation, removal and switches for uniquely addressable global entries. Operations refresh observed state and show failures, overrides and pending restarts; a successful inventory refresh preserves the last operation error; preset compositions remain read-only.
+The tab is a read-only projection of a Host-owned snapshot; it performs no Remote read during plugin activation and takes the snapshot on first selection.
 
 ### Registration
 
@@ -89,8 +89,8 @@ None; this package neither assembles nor sends a provider request.
 
 These limits define the freshness and reach of the inventory view; they are current package constraints.
 
-- **Inventory refresh** — the tab does not subscribe to Loader changes or automatically refetch after reconnect; switching tabs preserves the current snapshot, while reopening Settings or completing a management operation obtains a new one.
-- **Preset compositions remain read-only**: global controls require the current-profile manager; Desktop retains its shell-owned package controls.
+- **One snapshot per Settings mount or retry** — the tab does not subscribe to Loader changes or automatically refetch after reconnect; switching tabs preserves the current snapshot, while reopening Settings obtains a new one.
+- **Read-only in both planes** — the tab shows global and preset enablement but mutates neither; enable/disable controls that write a custom preset's own composition file are deliberate follow-up work.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -102,4 +102,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This package renders Host-owned state and forwards mutations to Plugin Manager.
+**Runtime invariant:** No companion is published. This package owns a read-only Settings contribution.

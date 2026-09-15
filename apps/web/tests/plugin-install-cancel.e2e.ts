@@ -12,10 +12,10 @@ import { ZH_BROWSER_LOCALE } from './support.ts'
 it('cancels installation through the UI, restores files, and offers the spec again', async () => {
   const scratch = await mkdtemp(join(tmpdir(), 'dsh-install-cancel-'))
   const overlay = join(scratch, 'cordis.patch.yml')
-  await writeFile(overlay, `- id: plugin-manager\n  config: ${JSON.stringify({ pnpmCommand: process.execPath, installTimeoutMs: 60_000, installKillGraceMs: 50 })}\n`)
+  await writeFile(overlay, `- id: plugin-manager\n  config: ${JSON.stringify({ pnpmCommand: process.execPath })}\n`)
   let scaffold: WebScaffold | undefined
   try {
-    scaffold = await launchWebScaffold({ profileRuntime: { packages: [] }, extraOverlayPath: overlay })
+    scaffold = await launchWebScaffold({ profile: { packages: [] }, extraOverlayPath: overlay })
     const browser = await chromium.launch()
     try {
       const profile = join(scaffold.harnessHome, 'profiles', 'scaffold')
@@ -25,7 +25,7 @@ it('cancels installation through the UI, restores files, and offers the spec aga
       await writeFile(lockPath, 'original lockfile\n')
       // Node stands in for the pnpm executable: `view` answers the check that precedes the run,
       // and the same installer owns and stops the real `add` child.
-      await writeFile(join(profile, 'view'), 'console.log(JSON.stringify({ name: "slow-package", version: "1.0.0" }))\n')
+      await writeFile(join(profile, 'view'), 'console.log(JSON.stringify({ name: "slow-package", version: "1.0.0", dsh: { bundle: { patch: "./cordis.patch.yml" } } }))\n')
       await writeFile(join(profile, 'add'), `
         import('node:fs').then(fs => {
         fs.writeFileSync('package.json', JSON.stringify({ ...JSON.parse(fs.readFileSync('package.json', 'utf8')), dependencies: { partial: '1.0.0' } }));
@@ -60,11 +60,21 @@ it('cancels installation through the UI, restores files, and offers the spec aga
         .split(process.execPath).join('{{node}}')
         .split(scaffold.harnessHome).join('{{harnessHome}}')
       await compareOrRefreshGolden(fileURLToPath(new URL('./expected/plugin-install-cancel/cancelled.expected.md', import.meta.url)), snapshot, webSnapshotMode())
-      await writeFile(join(profile, 'add'), 'console.log("Retry completed")\n')
+      // The second run installs a bundle the way pnpm leaves one: the dependency in the manifest and the package under node_modules.
+      await writeFile(join(profile, 'add'), `
+        import('node:fs').then(fs => {
+        fs.mkdirSync('node_modules/slow-package', { recursive: true });
+        fs.writeFileSync('node_modules/slow-package/package.json', JSON.stringify({ name: 'slow-package', version: '1.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } } }));
+        fs.writeFileSync('node_modules/slow-package/cordis.patch.yml', '[]\\n');
+        fs.writeFileSync('package.json', JSON.stringify({ ...JSON.parse(fs.readFileSync('package.json', 'utf8')), dependencies: { 'slow-package': '1.0.0' } }));
+        console.log('Retry completed');
+        });
+      `)
       await dialog.getByRole('button', { name: '安装', exact: true }).click()
-      await dialog.getByRole('button', { name: '完成', exact: true }).waitFor()
+      await dialog.getByRole('button', { name: '立即启用', exact: true }).waitFor()
       await dialog.getByRole('button', { name: '查看安装详情', exact: true }).click()
       await dialog.getByText('Retry completed', { exact: true }).waitFor()
+      expect(JSON.parse(await readFile(manifestPath, 'utf8'))).toMatchObject({ dependencies: { 'slow-package': '1.0.0' } })
       expect(tripwire.pageErrors).toEqual([])
     } finally { await browser.close() }
   } finally {

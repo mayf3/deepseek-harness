@@ -1,17 +1,18 @@
 /** Persistent manager behavior through a real profile Include and Loader. */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type AgentRegistry from '@deepseek-ai/dsh-agent'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import {
-  boot, composeEntries, initProfile, readProfilePatches, readProfileManifest,
+  boot, composeEntries, initProfile, readProfilePatches, readProfileManifest, reconcileProfilePatches,
   type ProfileContext,
 } from '@deepseek-ai/dsh-app-boot'
-import PluginManager, { type Config } from '../src/index.ts'
+import PluginManager, { type Config, type PluginChange, type PluginInstallLogChunk, type PluginInstallProgress, type PluginInstallRequestId } from '../src/index.ts'
 import Hmr from '@deepseek-ai/dsh-hmr'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
 import { Group } from '@deepseek-ai/cordis-plugin-loader'
@@ -52,14 +53,48 @@ async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, pre
 }
 
 it('lists bundle versions and current-profile plugin targets', async () => {
-  const { manager } = await fixture()
+  const { manager, dir } = await fixture()
   const plugins = await manager.listPlugins()
   expect(plugins.find(row => row.entryId === 'include:managed')).toMatchObject({ patchId: 'managed', enabled: true })
   expect(plugins.find(row => row.entryId === 'include:manager')?.readOnlyReason).toBeDefined()
   expect(await manager.listBundles()).toEqual([
-    { name: 'core', version: '1.0.0', enabled: true, removable: false, readOnlyReason: 'This bundle provides plugin management components' },
-    { name: 'extra', version: '1.0.0', enabled: true, removable: true },
+    {
+      name: 'core', version: '1.0.0', enabled: true, installed: false, removable: false,
+      readOnlyReason: 'This bundle provides plugin management components',
+      rows: [{ rowId: 'manager', moduleName: 'cordis:manager', entryId: 'include:manager' }], overrides: [],
+    },
+    {
+      name: 'extra', version: '1.0.0', enabled: true, installed: true, removable: true,
+      rows: [{ rowId: 'managed', moduleName: pathToFileURL(join(dir, 'node_modules', 'extra', 'plugin.mjs')).href, entryId: 'include:managed' }], overrides: [],
+    },
   ])
+})
+
+it('describes a bundle by its manifest and patch: title, one-liner, rows without a live entry, and the built-in rows it changes', async () => {
+  const { manager, dir, bundle } = await fixture()
+  bundle('described', [{ id: 'described-row', name: './plugin.mjs' }])
+  writeFileSync(join(dir, 'node_modules', 'described', 'package.json'), JSON.stringify({
+    name: 'described', version: '2.0.0', description: 'Describes itself.', dsh: { title: 'Described', bundle: { patch: './cordis.patch.yml' } },
+  }))
+  // An anonymous row is not addressable and is left out of the rows.
+  writeFileSync(join(dir, 'node_modules', 'described', 'cordis.patch.yml'), JSON.stringify([
+    { insert: [{ id: 'described-row', name: './plugin.mjs' }, { name: './plugin.mjs' }] }, { id: 'managed', disabled: true }, { id: 'described-row', config: {} },
+  ]))
+  const manifest = readProfileManifest('test', dir)
+  manifest.dependencies = { ...manifest.dependencies, described: '2.0.0' }
+  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+  const moduleName = pathToFileURL(join(dir, 'node_modules', 'described', 'plugin.mjs')).href
+  expect((await manager.listBundles()).find(row => row.name === 'described')).toEqual({
+    name: 'described', version: '2.0.0', title: 'Described', description: 'Describes itself.', enabled: false, installed: true, removable: true,
+    rows: [{ rowId: 'described-row', moduleName }], overrides: ['managed'],
+  })
+  await manager.setBundleEnabled('described', true)
+  expect((await manager.listBundles()).find(row => row.name === 'described')?.rows).toEqual([
+    { rowId: 'described-row', moduleName, entryId: 'include:described-row' },
+  ])
+  // Off again, the rows lose their entries.
+  await manager.setBundleEnabled('described', false)
+  expect((await manager.listBundles()).find(row => row.name === 'described')?.rows).toEqual([{ rowId: 'described-row', moduleName }])
 })
 
 it('turns a plugin off and on without duplicating patch overrides', async () => {
@@ -150,18 +185,26 @@ it('unloads before removing packages and retries inactive dependencies whose fil
   expect((await manager.listBundles()).some(row => row.name === 'extra')).toBe(false)
 })
 
-it('reports package failure separately from partial disk changes', async () => {
+it('restores the manifest and lockfile after a failed package run, classifying the failure', async () => {
   const { manager, dir } = await fixture()
+  const lockPath = join(dir, 'pnpm-lock.yaml')
   const install = vi.spyOn(operations, 'runProfilePnpm').mockImplementation(async () => {
     const manifest = readProfileManifest('test', dir)
     manifest.dependencies = { ...manifest.dependencies, partial: '1' }
     writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
-    return { exitCode: 42, output: 'fetch failed', truncated: false, logPath: join(dir, 'pnpm.log') }
+    writeFileSync(lockPath, 'partial lockfile\n')
+    return { exitCode: 42, output: 'ERR_PNPM_META_FETCH_FAIL  GET https://registry/partial: ENOTFOUND', truncated: false, logPath: join(dir, 'pnpm.log') }
   })
   onTestFinished(() => { install.mockRestore() })
-  expect(await manager.installBundle('partial')).toMatchObject({ changed: true, application: 'failed', packageResult: { exitCode: 42 } })
-  expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['core', 'extra'])
-  expect((await manager.listBundles()).find(row => row.name === 'partial')?.error).toContain('cannot resolve profile bundle')
+  const before = readFileSync(join(dir, 'package.json'), 'utf8')
+  expect(await manager.installBundle('partial')).toMatchObject({ changed: false, application: 'failed', packageResult: { exitCode: 42, kind: 'network' } })
+  expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(before)
+  // A lockfile the run created is removed; one that existed is put back.
+  expect(existsSync(lockPath)).toBe(false)
+  writeFileSync(lockPath, 'original lockfile\n')
+  expect(await manager.installBundle('partial')).toMatchObject({ changed: false, application: 'failed' })
+  expect(readFileSync(lockPath, 'utf8')).toBe('original lockfile\n')
+  expect((await manager.listBundles()).some(row => row.name === 'partial')).toBe(false)
 })
 
 it('keeps saved changes after activation failure and allows a corrected configuration to retry', async () => {
@@ -237,7 +280,7 @@ it.each(['', '-g'])('rejects an invalid installation spec before calling pnpm: %
   expect(await manager.installBundle(spec)).toMatchObject({ changed: false, application: 'failed' })
 })
 
-it('retains a successful install that cannot be activated as a bundle', async () => {
+it('restores the manifest when the package pnpm added declares no bundle', async () => {
   const { manager, dir, bundle } = await fixture()
   const install = vi.spyOn(operations, 'runProfilePnpm').mockImplementation(async () => {
     bundle('plain', [])
@@ -248,8 +291,8 @@ it('retains a successful install that cannot be activated as a bundle', async ()
     return { exitCode: 0, output: 'installed', truncated: false, logPath: join(dir, 'pnpm.log') }
   })
   onTestFinished(() => { install.mockRestore() })
-  expect(await manager.installBundle('plain')).toMatchObject({ changed: true, application: 'failed', packageResult: { exitCode: 0 } })
-  expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['core', 'extra'])
+  expect(await manager.installBundle('plain')).toMatchObject({ changed: false, application: 'failed', message: 'plain declares no dsh.bundle.patch', packageResult: { exitCode: 0 } })
+  expect(readProfileManifest('test', dir)).toMatchObject({ dependencies: { extra: '1.0.0' }, dsh: { profile: { bundles: ['core', 'extra'] } } })
 })
 
 it('reports repeated installs as requiring restart and ambiguous package changes as failures', async () => {
@@ -263,7 +306,168 @@ it('reports repeated installs as requiring restart and ambiguous package changes
     writeFileSync(join(dir, 'package.json'), '{}')
     return { exitCode: 0, output: '', truncated: false, logPath: join(dir, 'pnpm.log') }
   })
-  expect(await manager.installBundle('unknown')).toMatchObject({ changed: true, application: 'failed' })
+  expect(await manager.installBundle('unknown')).toMatchObject({ changed: false, application: 'failed', message: 'Cannot identify one installed bundle from the dependency change' })
+  expect(readProfileManifest('test', dir).dependencies).toEqual({ extra: '1.0.0' })
+})
+
+it('streams pnpm output, reports the installation phases, and names the installed bundle', async () => {
+  const { ctx, manager, dir, bundle } = await fixture()
+  const chunks: PluginInstallLogChunk[] = []
+  const phases: PluginInstallProgress[] = []
+  const changes: PluginChange[] = []
+  ctx.on('plugin-manager/install-log', (chunk) => { chunks.push(chunk) })
+  ctx.on('plugin-manager/install-state', (progress) => { phases.push(progress) })
+  ctx.on('plugin-manager/changed', (change) => { changes.push(change) })
+  const install = vi.spyOn(operations, 'runProfilePnpm').mockImplementation(async (_context, args, options) => {
+    options.onOutput?.('Progress: resolved 1\n', 'stdout')
+    options.onOutput?.('warning\n', 'stderr')
+    const name = String(args[1])
+    bundle(name, [{ id: name, name: './plugin.mjs', config: { service: name } }])
+    const manifest = readProfileManifest('test', dir)
+    manifest.dependencies = { ...manifest.dependencies, [name]: '1.0.0' }
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+    return { exitCode: 0, output: 'installed', truncated: false, logPath: join(dir, 'pnpm.log') }
+  })
+  onTestFinished(() => { install.mockRestore() })
+  const requestId = 'f2340b6d-40bb-46b7-8b94-217bdf5010bd' as PluginInstallRequestId
+  expect(await manager.installBundle('streamed', { enabled: false, requestId })).toMatchObject({ application: 'applied', changed: true, bundle: 'streamed' })
+  expect(install).toHaveBeenCalledWith(expect.objectContaining({ profile: 'test' }), ['add', 'streamed'], expect.objectContaining({ command: 'pnpm' }))
+  const jobId = chunks[0]?.jobId
+  expect(chunks).toEqual([
+    { requestId, jobId, argv: ['pnpm', 'add', 'streamed'], cwd: dir, stream: 'stdout', text: 'Progress: resolved 1\n' },
+    { requestId, jobId, argv: ['pnpm', 'add', 'streamed'], cwd: dir, stream: 'stderr', text: 'warning\n' },
+    { requestId, jobId, argv: ['pnpm', 'add', 'streamed'], cwd: dir, stream: 'stdout', text: '', exitCode: 0 },
+  ])
+  expect(phases).toEqual([{ requestId, phase: 'installing' }, { requestId, phase: 'applying' }])
+  expect(changes).toEqual([{ reason: 'install' }])
+  // A run without a request id streams too, unidentified.
+  await manager.removeBundle('streamed')
+  expect(chunks.at(-1)).toMatchObject({ argv: ['pnpm', 'remove', 'streamed'], stream: 'stdout', exitCode: 0 })
+  expect(chunks.at(-1)).not.toHaveProperty('requestId')
+})
+
+it('stops a run on request, restores the files, and answers not-running or too-late otherwise', async () => {
+  const { ctx, manager, dir, bundle } = await fixture()
+  const phases: PluginInstallProgress[] = []
+  ctx.on('plugin-manager/install-state', (progress) => { phases.push(progress) })
+  const started = Promise.withResolvers<undefined>()
+  const install = vi.spyOn(operations, 'runProfilePnpm').mockImplementation(async (_context, _args, options) => {
+    const manifest = readProfileManifest('test', dir)
+    manifest.dependencies = { ...manifest.dependencies, slow: '1' }
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+    started.resolve(undefined)
+    await new Promise<undefined>((resolve) => { options.signal?.addEventListener('abort', () => { resolve(undefined) }, { once: true }) })
+    return { exitCode: 1, output: 'killed', truncated: false, logPath: join(dir, 'pnpm.log') }
+  })
+  onTestFinished(() => { install.mockRestore() })
+  const requestId = 'f2340b6d-40bb-46b7-8b94-217bdf5010bd' as PluginInstallRequestId
+  const before = readFileSync(join(dir, 'package.json'), 'utf8')
+  const run = manager.installBundle('slow', { requestId })
+  await started.promise
+  expect(await manager.cancelInstall('00000000-0000-4000-8000-000000000000' as PluginInstallRequestId)).toEqual({ status: 'not-running' })
+  expect(await manager.cancelInstall(requestId)).toEqual({ status: 'cancelled' })
+  expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(before)
+  expect(await run).toMatchObject({ application: 'cancelled', changed: false, message: 'Installation cancelled', packageResult: { exitCode: 1 } })
+  expect(phases).toEqual([{ requestId, phase: 'installing' }, { requestId, phase: 'cancelling' }])
+  expect(await manager.cancelInstall(requestId)).toEqual({ status: 'not-running' })
+  // Once pnpm has exited and the bundle is being applied, the run cannot be stopped.
+  install.mockImplementation(async (_context, args) => {
+    const name = String(args[1])
+    bundle(name, [{ id: name, name: './plugin.mjs', config: { service: name } }])
+    const manifest = readProfileManifest('test', dir)
+    manifest.dependencies = { ...manifest.dependencies, [name]: '1.0.0' }
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+    return { exitCode: 0, output: 'installed', truncated: false, logPath: join(dir, 'pnpm.log') }
+  })
+  let tooLate: Promise<unknown> | undefined
+  ctx.on('plugin-manager/install-state', (progress) => { if (progress.phase === 'applying') tooLate = manager.cancelInstall(progress.requestId) })
+  expect(await manager.installBundle('late', { requestId })).toMatchObject({ application: 'applied', bundle: 'late' })
+  expect(await tooLate).toEqual({ status: 'too-late' })
+  // A request aborted before its turn under the lock never starts pnpm.
+  const early = manager.installBundle('never', { requestId })
+  const queued = manager.installBundle('after', { requestId: '11111111-1111-4111-8111-111111111111' as PluginInstallRequestId })
+  expect(await manager.cancelInstall('11111111-1111-4111-8111-111111111111' as PluginInstallRequestId)).toEqual({ status: 'cancelled' })
+  await early
+  expect(await queued).toMatchObject({ application: 'cancelled', changed: false })
+})
+
+it('reads what a spec names before installing it', async () => {
+  const { manager, dir, profile } = await fixture(undefined, false, undefined, { inspectTimeoutMs: 1000, pnpmCommand: 'pnpm-test' })
+  const view = vi.spyOn(operations, 'viewProfilePackage')
+  onTestFinished(() => { view.mockRestore() })
+  const answers = (stdout: string) => view.mockResolvedValueOnce({ exitCode: 0, stdout, stderr: '', timedOut: false })
+  answers(JSON.stringify({ name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', dsh: { title: 'Sidebar', bundle: { patch: './cordis.patch.yml' } } }))
+  expect(await manager.inspect('dsh-x')).toEqual({
+    status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', title: 'Sidebar', bundle: true,
+  })
+  expect(view).toHaveBeenCalledWith(dir, 'dsh-x', { command: 'pnpm-test', timeoutMs: 1000 })
+  const signal = AbortSignal.abort()
+  answers(JSON.stringify([{ name: 'dsh-lib', version: '1.0.0', dsh: { bundle: {} } }, { name: 'dsh-lib', version: '1.1.0', dsh: null }]))
+  expect(await manager.inspect('dsh-lib@^1', signal)).toEqual({ status: 'refused', problem: 'not-a-bundle', reason: 'dsh-lib declares no dsh.bundle' })
+  expect(view).toHaveBeenLastCalledWith(dir, 'dsh-lib@^1', { command: 'pnpm-test', timeoutMs: 1000, signal })
+  // An answer that names no package keeps the name the spec gave; colour escapes around the JSON are dropped.
+  answers('\x1b[36m' + JSON.stringify({ version: '0.0.1', description: '', dsh: { bundle: { patch: './p.yml' } } }) + '\x1b[39m\n')
+  expect(await manager.inspect('dsh-bare')).toEqual({ status: 'accepted', kind: 'registry', name: 'dsh-bare', version: '0.0.1', bundle: true })
+  const failure = (stderr: string, exitCode: number | null = 1, more: Partial<operations.PackageViewResult> = {}) =>
+    view.mockResolvedValueOnce({ exitCode, stdout: '', stderr, timedOut: false, ...more })
+  failure('npm error code E404\nnpm error 404 Not Found - GET https://registry/nope\n')
+  expect(await manager.inspect('nope')).toMatchObject({ status: 'refused', problem: 'not-found', reason: expect.stringContaining('E404') as string })
+  failure('ERR_PNPM_NO_MATCHING_VERSION  No matching version found for old@9\n')
+  expect(await manager.inspect('old@9')).toMatchObject({ status: 'refused', problem: 'not-found' })
+  failure('ERR_PNPM_META_FETCH_FAIL  request failed, reason: getaddrinfo ENOTFOUND registry\n')
+  expect(await manager.inspect('far')).toMatchObject({ status: 'refused', problem: 'network' })
+  view.mockResolvedValueOnce({ exitCode: 3, stdout: 'plain text\n', stderr: '', timedOut: false })
+  expect(await manager.inspect('odd')).toEqual({ status: 'refused', problem: 'unknown', reason: 'plain text' })
+  failure('', 4)
+  expect(await manager.inspect('quiet')).toEqual({ status: 'refused', problem: 'unknown', reason: 'pnpm view exited with 4' })
+  failure('', null, { timedOut: true })
+  expect(await manager.inspect('slow')).toEqual({ status: 'refused', problem: 'unknown', reason: 'pnpm view timed out after 1000ms' })
+  failure('', null, { cause: Object.assign(new Error('spawn pnpm ENOENT'), { code: 'ENOENT' }) })
+  expect(await manager.inspect('gone')).toMatchObject({ status: 'refused', problem: 'unknown', reason: expect.stringContaining('ENOENT') as string })
+  answers('not json')
+  expect(await manager.inspect('garbled')).toMatchObject({ status: 'refused', problem: 'unknown', reason: expect.stringContaining('unreadable pnpm view output') as string })
+  answers('"just a string"')
+  expect(await manager.inspect('scalar')).toEqual({ status: 'refused', problem: 'unknown', reason: 'pnpm view answered no package' })
+  answers('')
+  expect(await manager.inspect('silent')).toEqual({ status: 'refused', problem: 'unknown', reason: 'pnpm view answered no package' })
+  // What is installed, or supplied by the installation, is refused before the registry is asked.
+  expect(await manager.inspect('extra')).toEqual({ status: 'refused', problem: 'already-installed', reason: 'extra is already installed' })
+  expect(await manager.inspect('./relative')).toEqual({ status: 'refused', problem: 'invalid-spec', reason: 'a local path must be absolute' })
+  expect(await manager.inspect('github:acme/dsh-remote')).toEqual({ status: 'accepted', kind: 'git', bundle: null })
+  const tarball = join(profile.home, 'pack.tgz')
+  expect(await manager.inspect(tarball)).toEqual({ status: 'refused', problem: 'not-a-package', reason: 'the tarball does not exist' })
+  writeFileSync(tarball, '')
+  expect(await manager.inspect(tarball)).toEqual({ status: 'accepted', kind: 'tarball', bundle: null })
+  expect(await manager.inspect('https://cdn.example.com/x/y/z/dsh-x-1.0.0.tgz')).toEqual({ status: 'accepted', kind: 'tarball', bundle: null })
+  // A directory answers from its own manifest.
+  const local = join(profile.home, 'dev', 'dsh-local')
+  mkdirSync(local, { recursive: true })
+  expect(await manager.inspect(join(profile.home, 'dev', 'missing'))).toEqual({ status: 'refused', problem: 'not-a-package', reason: 'the path does not exist' })
+  expect(await manager.inspect(local)).toMatchObject({ status: 'refused', problem: 'not-a-package', reason: expect.stringContaining('no readable package.json') as string })
+  writeFileSync(join(local, 'package.json'), '{"version":"1.0.0"}')
+  expect(await manager.inspect(local)).toEqual({ status: 'refused', problem: 'not-a-package', reason: 'the package.json names no package' })
+  writeFileSync(join(local, 'package.json'), JSON.stringify({ name: 'dsh-local', version: '0.1.0', description: 'Local.' }))
+  expect(await manager.inspect(local)).toEqual({ status: 'refused', problem: 'not-a-bundle', reason: 'dsh-local declares no dsh.bundle' })
+  writeFileSync(join(local, 'package.json'), JSON.stringify({ name: 'dsh-local', version: '0.1.0', description: 'Local.', dsh: { bundle: { patch: './p.yml' } } }))
+  expect(await manager.inspect(`file:${local}`)).toEqual({ status: 'accepted', kind: 'path', name: 'dsh-local', version: '0.1.0', description: 'Local.', bundle: true })
+  writeFileSync(join(local, 'package.json'), JSON.stringify({ name: 'core', dsh: { bundle: { patch: './p.yml' } } }))
+  expect(await manager.inspect(local)).toEqual({ status: 'refused', problem: 'already-installed', reason: 'core is already installed' })
+  // A profile and an installation that list nothing know nothing.
+  writeFileSync(join(dir, 'package.json'), '{}')
+  writeFileSync(profile.installAnchor, '{}')
+  expect(await manager.inspect(local)).toEqual({ status: 'accepted', kind: 'path', name: 'core', bundle: true })
+  expect(view).toHaveBeenCalledTimes(13)
+})
+
+it('announces a patch generation applied outside the manager as a change', async () => {
+  const { ctx, manager, profile } = await fixture()
+  const changes: PluginChange[] = []
+  ctx.on('plugin-manager/changed', (change) => { changes.push(change) })
+  await reconcileProfilePatches(ctx, readProfilePatches('test', profile), 'test')
+  expect(changes).toEqual([{ reason: 'reload' }])
+  const id = (await manager.listPlugins()).find(row => row.patchId === 'managed')!.entryId
+  await manager.setPluginEnabled(id, false)
+  expect(changes).toEqual([{ reason: 'reload' }, { reason: 'plugin' }])
 })
 
 it('handles missing patch files and retains non-Error package diagnostics', async () => {

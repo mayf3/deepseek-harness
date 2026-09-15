@@ -10,7 +10,6 @@ import {
 import type { StateDotState, TagTone } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginInventoryLocaleKey } from './locales.ts'
-import { BundleManager, usePluginManagement, type PluginManagement } from './management.tsx'
 import css from './PluginInventorySettingsTab.module.css'
 
 type PluginInventoryEntry = PluginInventorySnapshot['entries'][number]
@@ -19,8 +18,6 @@ type AgentPresetRow = AgentPresetGroup['rows'][number]
 
 /** Registration-side Remote face used by the section. */
 export interface PluginInventorySettingsTabInjected {
-  /** Persistent controls, available only on profile-backed Hosts. */
-  management?: PluginManagement
   /** Read a current Host inventory snapshot. */
   list: () => Promise<PluginInventorySnapshot>
   /**
@@ -200,7 +197,7 @@ function StateTag({ kind, label }: { readonly kind: EnablementKind; readonly lab
 }
 
 /** Render the read-only plugin inventory: agent presets first, then the global plane. */
-export function PluginInventorySettingsTab({ list, presetName, management, t }: PluginInventorySettingsTabProps): ReactNode {
+export function PluginInventorySettingsTab({ list, presetName, t }: PluginInventorySettingsTabProps): ReactNode {
   const sectionId = useId()
   const [request, setRequest] = useState(0)
   const [query, setQuery] = useState('')
@@ -210,8 +207,6 @@ export function PluginInventorySettingsTab({ list, presetName, management, t }: 
   const [presetOpen, setPresetOpen] = useState<boolean | null>(null)
   const [globalOpen, setGlobalOpen] = useState<boolean | null>(null)
   const [state, setState] = useState<ViewState>({ status: 'loading' })
-  const manageable = state.status === 'ready' && state.snapshot.managementAvailable === true
-  const managerState = usePluginManagement(management, manageable, request)
 
   useEffect(() => {
     let current = true
@@ -220,7 +215,7 @@ export function PluginInventorySettingsTab({ list, presetName, management, t }: 
       () => { if (current) setState({ status: 'error' }) },
     )
     return () => { current = false }
-  }, [list, request, managerState.refresh])
+  }, [list, request])
 
   const normalizedQuery = query.trim().toLocaleLowerCase()
   const searching = normalizedQuery.length > 0
@@ -350,15 +345,6 @@ export function PluginInventorySettingsTab({ list, presetName, management, t }: 
           </>
         )}
       >
-        {management === undefined || !manageable ? null : (() => {
-          const control = managerState.plugins.find(row => row.entryId === entry.entryId)
-          return control?.patchId === undefined
-            ? <p>{control?.readOnlyReason}</p>
-            : <label><input type="checkbox" role="switch" checked={entry.enabled}
-              disabled={managerState.busy} aria-label={t('pluginSwitch', { name: title })}
-              onChange={(event) => { void managerState.run(() => management.setPluginEnabled(entry.entryId, event.target.checked)) }} />
-            {t(entry.enabled ? 'enabledTag' : 'disabledTag')}</label>
-        })()}
         <CardFacts
           moduleName={entry.moduleName}
           moduleLabel={t('moduleLabel')}
@@ -390,7 +376,6 @@ export function PluginInventorySettingsTab({ list, presetName, management, t }: 
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
-      {management !== undefined && manageable ? <BundleManager manager={management} state={managerState} t={t} /> : null}
       {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
       {state.status === 'error' ? (
         <div className={css.failure}>

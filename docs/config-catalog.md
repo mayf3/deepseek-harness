@@ -1804,18 +1804,22 @@ Source: [`packages/plan/plan-mode/src/index.ts:64`](../packages/plan/plan-mode/s
 Requires: `loader` · `profileContext`
 
 ```ts config-catalog
-/** Limits for package diagnostics and change notifications. */
+/** The pnpm executable and the limits for package diagnostics, registry lookups, and change notifications. */
 export interface Config {
+  /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
+  pnpmCommand?: string
   /** Maximum retained pnpm diagnostic bytes per operation. */
   outputBytes?: number
   /** Delay for combining consecutive management notices in one durable injection. */
   notificationDelayMs?: number
   /** Maximum time to wait for another process's profile package operation. */
   lockWaitMs?: number
+  /** Bound on one registry lookup an inspection runs, in milliseconds. */
+  inspectTimeoutMs?: number
 }
 ```
 
-Source: [`packages/boot/plugin-manager/src/index.ts:21`](../packages/boot/plugin-manager/src/index.ts)
+Source: [`packages/boot/plugin-manager/src/index.ts:31`](../packages/boot/plugin-manager/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 
@@ -3659,6 +3663,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-open-in-app` ([`packages/client/ui-open-in-app/src/index.ts`](../packages/client/ui-open-in-app/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-permission-presets` ([`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-plan` ([`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-plugin-manager` ([`packages/client/ui-plugin-manager/src/index.ts`](../packages/client/ui-plugin-manager/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-reference` ([`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-renderer` ([`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-schedule` ([`packages/client/ui-schedule/src/index.ts`](../packages/client/ui-schedule/src/index.ts))
