@@ -268,6 +268,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
     if (!this.factories.has(id)) {
       const row = this.graphRows.get(ownerId)
       if (row === undefined) throw new Error(`client-modules: chunk owner "${ownerId}" is not a boot graph entry`)
+      /* v8 ignore next -- the final fallback needs an impossible graph-owned factory with no recorded revision. */
       const revision = this.factories.get(ownerId)?.rev ?? this.reloadTargets.get(ownerId)?.rev ?? row.rev
       const url = chunkUrl(row, fileName, revision)
       let transport = this.pendingArrival.get(url)

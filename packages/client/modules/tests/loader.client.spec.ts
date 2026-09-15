@@ -270,6 +270,56 @@ describe('lazy CJS arrival', () => {
       chunkUrl('a', 'client.terminal.js', 'rebuilt'),
     ])
   })
+
+  it('answers a bare asynchronous request through the ordinary module import path', async () => {
+    const b = bench([row('a'), row('b')], {
+      a: req => ({ load: () => req.async('b') }),
+      b: () => ({ marker: 'b' }),
+    })
+    const entry = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    await expect(entry.load()).resolves.toEqual({ marker: 'b' })
+  })
+
+  it('materializes a parser-preloaded chunk without another transport', async () => {
+    const b = bench([row('a')], {
+      a: req => ({ load: () => req.async('./client.preloaded.js') }),
+    }, {
+      pending: [{ id: 'a', chunk: 'client.preloaded.js', factory: () => ({ marker: 'preloaded' }) }],
+    })
+    const entry = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    await expect(entry.load()).resolves.toEqual({ marker: 'preloaded' })
+    expect(b.fetched).toEqual([APPLICATION_URL])
+  })
+
+  it('shares one in-flight package-local chunk transport', async () => {
+    const url = chunkUrl('a', 'client.terminal.js')
+    const b = bench([row('a')], {
+      a: req => ({ load: () => req.async('./client.terminal.js') }),
+    }, {
+      gated: [url],
+      chunks: { 'a/client.terminal.js': () => ({ marker: 'terminal' }) },
+    })
+    const entry = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    const first = entry.load()
+    const second = entry.load()
+    expect(b.gates.has(url)).toBe(true)
+    b.gates.get(url)?.()
+    const [left, right] = await Promise.all([first, second])
+    expect(left).toBe(right)
+    expect(b.fetched.filter(fetched => fetched === url)).toHaveLength(1)
+  })
+
+  it('uses a pending replacement revision for a stale entry closure', async () => {
+    const b = bench([row('a')], {
+      a: req => ({ load: () => req.async('./client.terminal.js') }),
+    }, {
+      chunks: { 'a/client.terminal.js': () => ({ marker: 'terminal' }) },
+    })
+    const stale = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    b.loader.invalidate('a', 'rebuilt')
+    await stale.load()
+    expect(b.fetched.at(-1)).toBe(chunkUrl('a', 'client.terminal.js', 'rebuilt'))
+  })
 })
 
 describe('require resolution', () => {
@@ -373,6 +423,49 @@ describe('failure modes', () => {
     win.__ModuleLoader__?.load({ id: 'x', factory: () => ({}) })
     expect(() => win.__ModuleLoader__?.load({ id: 'x', factory: () => ({}) }))
       .toThrow('duplicate factory registration for "x"')
+  })
+
+  it('rejects malformed and duplicate chunk registrations', () => {
+    const b = bench([])
+    expect(() => b.target.load({ id: 'a', chunk: '../bad.js', factory: () => ({}) }))
+      .toThrow('invalid package-local chunk "../bad.js"')
+    b.target.load({ id: 'a', chunk: 'client.terminal.js', factory: () => ({}) })
+    expect(() => b.target.load({ id: 'a', chunk: 'client.terminal.js', factory: () => ({}) }))
+      .toThrow('duplicate factory registration for "a/client.terminal.js"')
+  })
+
+  it('rejects malformed relative chunk requests', async () => {
+    const b = bench([row('a')], {
+      a: req => ({ load: () => req.async('./terminal.js') }),
+    })
+    const entry = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    await expect(entry.load()).rejects.toThrow('invalid relative chunk request "./terminal.js"')
+  })
+
+  it('rejects a chunk request from a manually registered owner outside the boot graph', async () => {
+    const b = bench([])
+    b.target.load({
+      id: 'orphan',
+      factory: req => ({ load: () => req.async('./client.terminal.js') }),
+    })
+    const entry = await b.loader.import('orphan', '', {}) as { load: () => Promise<unknown> }
+    await expect(entry.load()).rejects.toThrow('chunk owner "orphan" is not a boot graph entry')
+  })
+
+  it('rejects a graph row whose one-resource URL cannot address sibling chunks', async () => {
+    const b = bench([row('a', { url: '/plugins/a/client.js?rev=0' })], {
+      a: req => ({ load: () => req.async('./client.terminal.js') }),
+    })
+    const entry = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    await expect(entry.load()).rejects.toThrow('cannot resolve chunk "client.terminal.js"')
+  })
+
+  it('rejects a chunk script that does not register its generated id', async () => {
+    const b = bench([row('a')], {
+      a: req => ({ load: () => req.async('./client.missing.js') }),
+    })
+    const entry = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    await expect(entry.load()).rejects.toThrow('loaded without registering "a/client.missing.js"')
   })
 
   it('a bundle that never registers its id is loud', async () => {
