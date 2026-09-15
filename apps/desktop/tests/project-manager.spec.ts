@@ -360,14 +360,31 @@ describe('desktop external plugin profile', () => {
       afterChange: async () => { starts++ },
     }))).rejects.toThrow(/pnpm exited with 1/u)
     expect(worker.listPlugins()).toEqual([{ name: 'plugin', version: '1.0.0', enabled: false }])
-    expect(starts).toBe(0)
+    expect(starts).toBe(1)
     expect(existsSync(manager.paths.lock)).toBe(false)
     writeFileSync(join(manager.paths.profile, 'desktop-packages-pending'), '')
     await manager.applyRelease()
     await manager.mutate({ type: 'plugins-disable-all' }, hooks({ afterChange: async () => { starts++ } }))
-    expect(starts).toBe(1)
+    expect(starts).toBe(2)
     await manager.mutate({ type: 'plugin-remove', name: 'plugin' }, hooks())
     expect(manager.listPlugins()).toEqual([])
+  })
+
+  it('retains both package and restart errors when the changed profile cannot start', async () => {
+    const { root, manager } = setup()
+    await manager.applyRelease()
+    const failingPnpm = join(root, 'failing-restart.mjs')
+    writeFileSync(failingPnpm, 'process.exitCode = 1')
+    const worker = new DesktopProjectManager(manager.paths, { ...manager.runtime, pnpm: failingPnpm })
+    await worker.applyRelease()
+    const afterChange = vi.fn(async () => { throw new Error('Host initialization failed') })
+    const failure = await worker.mutate({ type: 'plugin-add', spec: 'missing' }, hooks({ afterChange }))
+      .catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors.map((error: Error) => error.message))
+      .toEqual([expect.stringContaining('pnpm exited with 1'), 'Host initialization failed'])
+    expect(afterChange).toHaveBeenCalledOnce()
+    expect(existsSync(manager.paths.lock)).toBe(false)
   })
 
   it('holds the transaction lock until the pnpm worker exits', async ({ task, signal }) => {

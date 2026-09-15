@@ -18,7 +18,6 @@ const api: DshDesktopApi = {
   },
   backend: {
     status: () => ipcRenderer.invoke(DESKTOP_IPC.backendStatus) as ReturnType<DshDesktopApi['backend']['status']>,
-    retry: () => ipcRenderer.invoke(DESKTOP_IPC.backendRetry) as Promise<void>,
     subscribe(listener) {
       const handle = (_event: Electron.IpcRendererEvent, state: DesktopBackendState): void => { listener(state) }
       ipcRenderer.on(DESKTOP_IPC.backendState, handle)

@@ -83,3 +83,22 @@ it('allows exit after shutdown cleanup fails', async () => {
   await pending
   expect(operations.exit).toHaveBeenCalledOnce()
 })
+
+it.each(['en', 'zh-CN'])('bounds long diagnostics and recovery-operation errors in %s', async (locale) => {
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  const { operations, stopped, recovery } = fixture(locale)
+  operations.show.mockResolvedValueOnce({ response: 2, checkboxChecked: false })
+    .mockResolvedValueOnce({ response: 0, checkboxChecked: false })
+  operations.disablePlugins.mockRejectedValueOnce(new Error('read-only\n'.repeat(5000) + 'final write failure'))
+  stopped.resolve(undefined)
+  await recovery.report(new Error('😀'.repeat(32768) + '\nfinal backend failure'))
+  for (const [options] of operations.show.mock.calls) {
+    expect(options.detail!.length).toBeLessThanOrEqual(1200)
+    expect(options.detail!.split('\n').length).toBeLessThanOrEqual(12)
+    expect(options.detail).toContain(operations.messages().diagnosticTruncated)
+    expect(options.detail).toContain(operations.messages().startupReinstallAdvice)
+    expect(options.detail!.isWellFormed()).toBe(true)
+  }
+  expect(operations.show.mock.calls[0]![0].detail).toContain('final backend failure')
+  expect(operations.show.mock.calls[1]![0].detail).toContain('final write failure')
+})

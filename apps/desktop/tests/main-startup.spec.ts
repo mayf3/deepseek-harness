@@ -133,8 +133,15 @@ vi.mock('../src/project-manager.ts', () => ({
     disableAllPlugins = harness.disableAllPlugins
     async mutate(_mutation: unknown, hooks: { beforeChange(): Promise<void>; afterChange(): Promise<void> }) {
       await hooks.beforeChange()
-      harness.mutateFailure()
-      harness.pluginsEnabled = false
+      try {
+        harness.mutateFailure()
+        harness.pluginsEnabled = false
+      } catch (error) {
+        try { await hooks.afterChange() } catch (restartError) {
+          throw new AggregateError([error, restartError], 'Desktop package operation and backend restart failed')
+        }
+        throw error
+      }
       await hooks.afterChange()
     }
 
@@ -146,7 +153,7 @@ vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: vi.fn
 function invoke(channel: string): unknown {
   const handler = harness.handlers.get(channel)
   if (handler === undefined) throw new Error(`missing handler ${channel}`)
-  return handler({ senderFrame: { url: 'dsh-app://shell/plugin-manager.html' } })
+  return handler({ senderFrame: { url: channel === DESKTOP_IPC.boot ? 'dsh-app://app/' : 'dsh-app://shell/plugin-manager.html' } })
 }
 
 beforeEach(() => {
@@ -196,7 +203,7 @@ describe('desktop main startup', () => {
     harness.prepared.resolve()
     await harness.hostStarted.promise
     harness.hosts[0]!.ready.resolve()
-    await Promise.resolve(invoke(DESKTOP_IPC.backendRetry))
+    await Promise.resolve(invoke(DESKTOP_IPC.boot))
     const handler = harness.socketHeaders.mock.calls[0]![1] as (
       details: { url: string; webContentsId: number; requestHeaders: Record<string, string> },
       callback: (result: unknown) => void,
@@ -256,36 +263,6 @@ describe('desktop main startup', () => {
     harness.menu.buildFromTemplate.mockClear()
     window.webContents.emit('context-menu', {}, { isEditable: false, selectionText: '', editFlags })
     expect(harness.menu.buildFromTemplate).not.toHaveBeenCalled()
-  })
-
-  it('keeps a local document while retry connects a replacement Host', async () => {
-    await import('../src/main.ts')
-    await harness.preparing.promise
-    harness.prepared.resolve()
-    await harness.hostStarted.promise
-    const first = harness.hosts[0]!
-    first.url = 'http://127.0.0.1:40001/?token=first'
-    first.ready.resolve()
-    await harness.navigated.promise
-    const window = harness.windows[0]!
-    expect(window.urls).toEqual(['dsh-app://app/'])
-    await Promise.resolve(invoke(DESKTOP_IPC.backendRetry))
-    first.onFailure!(new Error('backend exited'))
-    await harness.errorPublished.promise
-    await first.stopping.promise
-    first.exited.resolve()
-    const nextStarted = harness.nextHostStart()
-    const retry = Promise.resolve(invoke(DESKTOP_IPC.backendRetry))
-    await nextStarted
-    const replacement = harness.hosts[1]!
-    replacement.url = 'http://127.0.0.1:40002/?token=replacement'
-    replacement.ready.resolve()
-    await retry
-    expect(harness.windows).toHaveLength(1)
-    expect(window.urls).toEqual([
-      'dsh-app://app/', 'dsh-app://app/',
-    ])
-    expect(harness.openExternal).not.toHaveBeenCalled()
   })
 
   it('opens message links externally while retaining same-origin application navigation', async () => {
@@ -358,11 +335,37 @@ describe('desktop main startup', () => {
     await harness.hostStarted.promise
     const host = harness.hosts[0]!
     host.ready.resolve()
-    await Promise.resolve(invoke(DESKTOP_IPC.backendRetry))
+    await Promise.resolve(invoke(DESKTOP_IPC.boot))
     harness.mutateFailure.mockImplementationOnce(() => { throw new Error('package write failed') })
     host.exited.resolve()
-    await expect(invoke(DESKTOP_IPC.pluginsDisableAll)).rejects.toThrow('package write failed')
+    const nextStarted = harness.nextHostStart()
+    const failure = expect(invoke(DESKTOP_IPC.pluginsDisableAll)).rejects.toThrow('package write failed')
+    await nextStarted
+    harness.hosts[1]!.ready.resolve()
+    await failure
+    expect(invoke(DESKTOP_IPC.backendStatus)).toEqual({ phase: 'ready' })
     expect(harness.dialog.showMessageBox).not.toHaveBeenCalled()
+    expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/', 'dsh-app://app/'])
+  })
+
+  it('opens fatal recovery when the Host cannot restart after a package change', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    const host = harness.hosts[0]!
+    host.ready.resolve()
+    await Promise.resolve(invoke(DESKTOP_IPC.boot))
+    host.exited.resolve()
+    const nextStarted = harness.nextHostStart()
+    const failure = expect(invoke(DESKTOP_IPC.pluginsDisableAll)).rejects.toThrow('new Host failed')
+    await nextStarted
+    const replacement = harness.hosts[1]!
+    replacement.exited.resolve()
+    replacement.ready.reject(new Error('new Host failed'))
+    await failure
+    expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
+    expect(harness.dialog.showMessageBox.mock.calls[0]![0].detail).toContain('new Host failed')
     expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
   })
 
@@ -419,7 +422,7 @@ describe('desktop main startup', () => {
     await harness.hostStarted.promise
     const host = harness.hosts[0]!
     host.ready.resolve()
-    await Promise.resolve(invoke(DESKTOP_IPC.backendRetry))
+    await Promise.resolve(invoke(DESKTOP_IPC.boot))
     host.onFailure!(new Error('backend exited'))
     await host.stopping.promise
     expect(harness.app.relaunch).not.toHaveBeenCalled()
@@ -440,8 +443,8 @@ describe('desktop main startup', () => {
     expect(window.options.show).toBe(true)
     expect(window.urls).toEqual(['dsh-app://app/'])
     expect(harness.hosts).toHaveLength(0)
-    const retry = invoke(DESKTOP_IPC.backendRetry)
-    const secondRetry = invoke(DESKTOP_IPC.backendRetry)
+    const retry = invoke(DESKTOP_IPC.boot)
+    const secondRetry = invoke(DESKTOP_IPC.boot)
     harness.prepared.resolve()
     await harness.hostStarted.promise
     expect(harness.hosts).toHaveLength(1)
@@ -477,28 +480,20 @@ describe('desktop main startup', () => {
     expect(harness.dialog.showErrorBox).not.toHaveBeenCalled()
   })
 
-  it('keeps startup errors and a successful retry in the same window', async () => {
+  it('keeps startup errors in the existing window without a shell retry handler', async () => {
     await import('../src/main.ts')
     await harness.preparing.promise
     harness.prepared.resolve()
     await harness.hostStarted.promise
     const first = harness.hosts[0]!
-    const failedRetry = expect(Promise.resolve(invoke(DESKTOP_IPC.backendRetry))).rejects.toThrow('plugin composition failed')
     first.exited.resolve()
     first.ready.reject(new Error('plugin composition failed'))
     await harness.errorPublished.promise
-    await failedRetry
-    expect(invoke(DESKTOP_IPC.backendStatus)).toEqual({ phase: 'error', message: 'plugin composition failed' })
     expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
-    const nextStarted = harness.nextHostStart()
-    const retry = Promise.resolve(invoke(DESKTOP_IPC.backendRetry))
-    await nextStarted
-    expect(harness.hosts).toHaveLength(2)
-    harness.hosts[1]!.ready.resolve()
-    await retry
-    expect(harness.windows).toHaveLength(1)
-    expect(harness.windows[0]!.urls.at(-1)).toBe('dsh-app://app/')
-    expect(harness.dialog.showErrorBox).not.toHaveBeenCalled()
+    expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
+    expect(harness.handlers.has('dsh-desktop:backend-retry')).toBe(false)
+    await expect(invoke(DESKTOP_IPC.pluginsDisableAll)).rejects.toThrow('The application could not start or stopped unexpectedly.')
+    expect(harness.hosts).toHaveLength(1)
   })
 
   it('waits for a pending child to exit on quit without late window navigation', async () => {

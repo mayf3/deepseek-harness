@@ -335,9 +335,15 @@ async function main(): Promise<void> {
   const mutate = async (event: IpcMainInvokeEvent, mutation: Parameters<DesktopProjectManager['mutate']>[0]): Promise<void> => {
     assertDesktopSender(event, ['shell'])
     await startup?.catch(() => undefined)
-    await manager.mutate(mutation, hooks)
-    navigation = undefined
-    await navigateMain(applicationUrl).catch(reportFatal)
+    if (recovery.active) throw new Error(messages.fatalSummary)
+    try {
+      await manager.mutate(mutation, hooks)
+    } finally {
+      if (backend.state.phase === 'ready') {
+        navigation = undefined
+        await navigateMain(applicationUrl).catch(reportFatal)
+      }
+    }
   }
 
   ipcMain.handle(DESKTOP_IPC.localeGet, (event) => {
@@ -375,16 +381,6 @@ async function main(): Promise<void> {
   ipcMain.handle(DESKTOP_IPC.backendStatus, (event) => {
     assertDesktopSender(event, ['shell'])
     return backend.state
-  })
-  ipcMain.handle(DESKTOP_IPC.backendRetry, async (event) => {
-    assertDesktopSender(event, ['shell'])
-    const retrying = backend.state.phase === 'error'
-    await reconcileBackend()
-    if (retrying) {
-      navigation = undefined
-      await navigateMain(applicationUrl).catch(reportFatal)
-    }
-    focusPrimaryWindow()
   })
   ipcMain.handle(DESKTOP_IPC.updatesCheck, async (event) => {
     assertDesktopSender(event, ['shell'])

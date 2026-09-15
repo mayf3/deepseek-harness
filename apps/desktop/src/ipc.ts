@@ -16,7 +16,6 @@ export const DESKTOP_IPC = {
   pluginsToggle: 'dsh-desktop:plugins-toggle',
   pluginsDisableAll: 'dsh-desktop:plugins-disable-all',
   backendStatus: 'dsh-desktop:backend-status',
-  backendRetry: 'dsh-desktop:backend-retry',
   backendState: 'dsh-desktop:backend-state',
   updatesCheck: 'dsh-desktop:updates-check',
   updatesInstall: 'dsh-desktop:updates-install',
@@ -45,7 +44,6 @@ export interface DshDesktopApi {
   }
   readonly backend: {
     status(): Promise<DesktopBackendState>
-    retry(): Promise<void>
     subscribe(listener: (state: DesktopBackendState) => void): () => void
   }
   readonly updates: {

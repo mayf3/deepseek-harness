@@ -46,11 +46,11 @@ export interface DesktopRuntimeExecutables {
   readonly dsh: string
 }
 
-/** Hooks that stop the backend before profile writes and restart it after success. */
+/** Hooks that stop the backend before profile writes and restart it after each attempted change. */
 export interface DesktopProjectHooks {
   /** Stop the active backend and await process exit before modifying its files. */
   beforeChange(): Promise<void>
-  /** Start the modified profile after package preparation succeeds. */
+  /** Start the current profile even when package preparation failed with partial writes. */
   afterChange(): Promise<void>
 }
 
@@ -167,10 +167,17 @@ export class DesktopProjectManager {
       this.currentRuntime()
       if (!existsSync(this.paths.profile)) throw new Error('desktop project: active profile is not installed')
       await hooks.beforeChange()
-      if (mutation.type === 'plugins-disable-all') {
-        writeProfileBundles(this.paths.profile, readProfileManifest('dsh', this.paths.profile), WEB_PROFILE.bundles)
-      } else {
-        await this.applyMutation(this.paths.profile, mutation)
+      try {
+        if (mutation.type === 'plugins-disable-all') {
+          writeProfileBundles(this.paths.profile, readProfileManifest('dsh', this.paths.profile), WEB_PROFILE.bundles)
+        } else {
+          await this.applyMutation(this.paths.profile, mutation)
+        }
+      } catch (error) {
+        try { await hooks.afterChange() } catch (restartError) {
+          throw new AggregateError([error, restartError], 'Desktop package operation and backend restart failed')
+        }
+        throw error
       }
       await hooks.afterChange()
     })
