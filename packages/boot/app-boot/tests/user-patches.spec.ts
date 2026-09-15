@@ -11,7 +11,7 @@ import { pathToFileURL } from 'node:url'
 import { afterAll, afterEach, describe, expect, it, onTestFinished } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import Loader, { type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import {
   boot,
   loadOptionalPatches,
@@ -338,19 +338,6 @@ describe('profile reconciliation settlement', () => {
     // A Loader without the pinned root id is no better.
     await ctx.plugin(Loader)
     await expect(reconcileProfilePatches(ctx, [], NAME)).rejects.toThrow('profile reload requires the root Include entry')
-  })
-
-  it('finds a root Include mounted under its pinned id by another copy of this module', async () => {
-    const dir = tmp()
-    writeFileSync(join(dir, 'cordis.yml'), '[]\n')
-    const ctx = new Context()
-    onTestFinished(() => ctx.fiber.dispose())
-    await ctx.plugin(Loader)
-    ctx.loader.builtins.include = Include
-    const root: EntryOptions = { id: 'include', name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } }
-    await ctx.loader.create(root)
-    await ctx.loader.await()
-    await expect(reconcileProfilePatches(ctx, [], NAME)).resolves.toEqual([])
   })
 
   it('removes a previously failed entry without reporting its old activation error', async () => {

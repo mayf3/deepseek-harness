@@ -232,18 +232,6 @@ export function loadLayeredEnv(
 
 const bootstrapIncludes = new WeakMap<Context, Entry>()
 
-/** The pinned id of the bootstrap Include: app glue, not a config row. */
-const ROOT_INCLUDE_ID = 'include'
-
-/**
- * The root Include entry of a booted tree: the one this module mounted, else
- * the entry carrying the pinned root id, which a tree mounted through another
- * copy of this module (a test harness importing sources beside built packages) has.
- */
-function rootIncludeOf(ctx: Context): Entry | undefined {
-  return bootstrapIncludes.get(ctx) ?? [...ctx.get('loader')?.entries() ?? []].find(entry => entry.id === ROOT_INCLUDE_ID)
-}
-
 declare module '@deepseek-ai/cordis' {
   interface Events {
     /**
@@ -273,7 +261,7 @@ const userPatchesSchema = entryListSchema
 export async function reconcileProfilePatches(
   ctx: Context, patches: PatchOptions[], binName: string, requiredIds: readonly string[] = [],
 ): Promise<string[]> {
-  const entry = rootIncludeOf(ctx)
+  const entry = bootstrapIncludes.get(ctx)
   if (entry === undefined) throw new Error(`${binName}: profile reload requires the root Include entry`)
   const previousFailures = (await inactiveEntries(ctx)).map(failure => ({
     ...failure, fiber: failure.entry.fiber, options: JSON.stringify(failure.entry.options),
@@ -563,7 +551,7 @@ export async function mountRootInclude(
     ...patches.length > 0 ? { patches: [...patches] } : {},
   }
   const rootInclude: EntryOptions = {
-    id: ROOT_INCLUDE_ID,
+    id: 'include',
     name: 'cordis:include',
     config: includeConfig,
   }

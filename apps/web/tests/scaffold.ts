@@ -56,21 +56,7 @@ import {
   writesCurrentSessionFixtures,
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
-import {
-  auditStartupEntries,
-  composeEntries,
-  createProfileResolutionGeneration,
-  healProfilesModuleFallback,
-  initProfile,
-  mountRootInclude,
-  readProfileManifest,
-  readProfilePatches,
-  loadOverlayPatches,
-  PluginPackages,
-  type Profile,
-  type ProfileContext,
-  type ProfileResolutionMode,
-} from '@deepseek-ai/dsh-app-boot'
+import type { Profile, ProfileContext, ProfileResolutionMode } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type {
@@ -96,7 +82,16 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
-import { REPO_ROOT, requireDist } from './support.ts'
+import { REPO_ROOT, requireBuilt, requireDist } from './support.ts'
+
+// The launcher's own module, as built: the manager and HMR plugins the profile
+// loads reload the tree through this copy's registry of the root Include, so
+// the scaffold mounts through the same copy rather than the source import.
+const appBoot = requireBuilt('@deepseek-ai/dsh-app-boot') as typeof import('@deepseek-ai/dsh-app-boot')
+const {
+  auditStartupEntries, composeEntries, createProfileResolutionGeneration, healProfilesModuleFallback, initProfile,
+  mountRootInclude, readProfileManifest, readProfilePatches, loadOverlayPatches, PluginPackages,
+} = appBoot
 
 // Host-side web e2e cannot import a browser package: doing so would pull that
 // package's complete TS project into this graph. Mirrored from
