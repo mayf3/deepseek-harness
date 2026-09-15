@@ -27,6 +27,8 @@ kind: "package-reference"
 
 与 `ui-workspace` 及 Host 后端 [`dsh-host-directory-picker-native`](../../host/directory-picker-native/README.zh.md) 一起挂载本插件；一行 `cordis.yml` 随即组合出完整的原生拾取交互。当工作区添加或选择器流程发起目录请求时，用户看到操作系统的文件夹对话框；拾取的路径被工作区流程采纳，取消则关闭对话框。
 
+在本地 Electron 应用中，此流程使用 preload 提供的窄目录选择接口。取消和失败都不会改用 Host 选择器重试。普通 Web 保留 Host 调用；独立的浏览组合始终列出 Host 目录。Desktop 保留后端自动选择，因此 Linux 缺少 zenity 或 kdialog 时仍使用浏览模式。
+
 ### 何时选择
 
 当浏览器与 Host 运行在同一台机器上、操作系统对话框可以在那里打开时，选择此表面。当浏览器为远程或进程内、没有本地选择器时，选择 [`-browse`](../ui-directory-picker-browse/README.zh.md) 表面。两个表面填充相同的 slot，因此切换只是组合改动，而非代码改动。

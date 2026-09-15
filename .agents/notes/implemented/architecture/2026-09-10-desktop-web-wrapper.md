@@ -26,7 +26,11 @@ Shared `initProfile` creates missing profile files and preserves existing conten
 
 This partially supersedes the private composition and portless transport in the [packaging decision](2026-08-25-electron-desktop-packaging-and-updates.md). That design avoided listening ports and used framed byte pipes to avoid Base64 expansion and cross-version V8 serialization. Shared HTTP gives up the portless guarantee and assigns serving and authentication to the existing Web implementation. Release identity, signing, process ownership, and native shell features remain active decisions.
 
+Native directory selection in the local application uses a narrow preload IPC call to Electron’s window-owned dialog. Main admits only the current application window’s main frame at `dsh-app://app`; shell, remote, and child frames cannot request it. Concurrent requests share the pending dialog and destroyed windows discard selections. Web backend selection and Host browse remain shared.
+
 ## Alternatives considered
+
+**Use the Host OS chooser in Electron.** The Host’s macOS AppleScript dialog has no Electron parent window and cannot reliably follow application focus. Electron owns the local dialog while Web keeps its Host chooser; cancellation and errors do not launch a second chooser.
 
 **Maintain a second backend composition and carrier.** This permits a portless application, but every Web route, reload behavior, authentication change, and stream capability needs a Desktop implementation or explicit omission. Reintroduction requires a desktop product requirement that cannot use the Web implementation and justifies that continuing cost.
 

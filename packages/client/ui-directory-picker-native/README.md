@@ -27,6 +27,8 @@ This package provides the native directory-picking surface for the Web GUI: when
 
 Mount this plugin alongside `ui-workspace` and the host backend [`dsh-host-directory-picker-native`](../../host/directory-picker-native/README.md); one `cordis.yml` row then composes the whole native picking interaction. When a workspace add or picker flow opens a directory request, the user sees the operating system's folder dialog; the picked path is adopted by the workspace flow, and cancelling closes the dialog.
 
+In the local Electron application, this flow uses the narrow preload directory-picker bridge. Cancellation and failure never retry through the Host chooser. Ordinary Web retains the Host call; the separate browse composition always lists Host directories. Desktop keeps automatic backend selection, so Linux without zenity or kdialog still uses browse.
+
 ### When to choose it
 
 Choose this surface when the browser runs on the same machine as the Host, so an OS dialog can open there. Choose the [`-browse`](../ui-directory-picker-browse/README.md) surface when the browser is remote or in-process and no local chooser exists. The two surfaces fill the same slots, so switching is a composition change, not a code change.

@@ -19,6 +19,7 @@ import {
 import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
+import { installDesktopDirectoryPicker } from './directory-picker.ts'
 import { desktopNodeEnvironment } from './node-environment.ts'
 import { DesktopBackendController } from './backend-controller.ts'
 import { DESKTOP_IPC, type DesktopUpdateState } from './ipc.ts'
@@ -296,6 +297,8 @@ async function main(): Promise<void> {
     if (url.hostname === 'shell') return serveShellAsset(request)
     return Promise.resolve(new Response(null, { status: 404 }))
   })
+
+  installDesktopDirectoryPicker(() => mainWindow)
 
   ipcMain.handle(DESKTOP_IPC.boot, async (event) => {
     assertDesktopSender(event, ['app'])
