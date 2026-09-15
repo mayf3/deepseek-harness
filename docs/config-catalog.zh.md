@@ -441,7 +441,7 @@ export interface ConnectionRecoveryConfig {
 ```ts config-catalog
 /** Plugin config, validated by the same-named schemastery schema. */
 export interface Config {
-  /** Entry/chunk stat-poll interval in milliseconds (default 500, the build-side watcher's polling default). */
+  /** Bundle stat-poll interval in milliseconds (default 500, the build-side watcher's polling default). */
   pollIntervalMs?: number
 }
 ```
