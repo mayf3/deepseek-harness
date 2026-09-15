@@ -1,0 +1,48 @@
+.page-markdown-actions {
+  margin-bottom: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vp-c-text-2);
+}
+
+.page-markdown-actions-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 12px;
+}
+
+.page-markdown-actions-controls :is(button, a) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  color: var(--vp-c-text-2);
+  background: var(--vp-c-bg);
+}
+
+.page-markdown-actions-controls :is(button, a):hover {
+  color: var(--vp-c-brand-1);
+  border-color: var(--vp-c-brand-1);
+}
+
+.page-markdown-actions-controls :is(button, a):focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 3px;
+}
+
+.page-markdown-actions-controls button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.page-markdown-actions-status {
+  text-align: right;
+}
+
+.page-markdown-actions-status:not(:empty) {
+  margin-top: 8px;
+}

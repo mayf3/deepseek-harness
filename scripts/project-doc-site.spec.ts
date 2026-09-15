@@ -566,13 +566,13 @@ describe('sidebar ordering', () => {
 
 describe('addProjectionFrontmatter', () => {
   it('adds frontmatter to an ordinary Markdown page', () => {
-    expect(addProjectionFrontmatter('# Guide\n', { source: 'docs/guide.md' })).toBe(
-      '---\neditSource: "docs/guide.md"\n---\n\n# Guide\n',
+    expect(addProjectionFrontmatter('# Guide\n', { source: 'docs/guide.md', route: 'en/guide.md', sidebar: 'en-guide' })).toBe(
+      '---\neditSource: "docs/guide.md"\nrawMarkdownPath: "en/guide.md"\n---\n\n# Guide\n',
     )
   })
 
   it('extends existing VitePress frontmatter', () => {
-    expect(addProjectionFrontmatter('---\nlayout: home\n---\n', { source: 'docs/index.md' })).toBe(
+    expect(addProjectionFrontmatter('---\nlayout: home\n---\n', { source: 'docs/index.md', route: 'index.md', sidebar: null })).toBe(
       '---\neditSource: "docs/index.md"\nlayout: home\n---\n',
     )
   })
@@ -580,9 +580,11 @@ describe('addProjectionFrontmatter', () => {
   it('adds the page-specific outline depth from the publication manifest', () => {
     expect(addProjectionFrontmatter('# Catalog\n', {
       source: 'docs/catalog.md',
+      route: 'reference/index.md',
+      sidebar: 'zh-reference',
       outline: [2, 4],
     })).toBe(
-      '---\neditSource: "docs/catalog.md"\noutline: [2,4]\n---\n\n# Catalog\n',
+      '---\neditSource: "docs/catalog.md"\nrawMarkdownPath: "reference/index.md"\noutline: [2,4]\n---\n\n# Catalog\n',
     )
   })
 })

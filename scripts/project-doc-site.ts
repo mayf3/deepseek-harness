@@ -202,15 +202,16 @@ export function rewriteMarkdown(source: string, options: RewriteMarkdownOptions)
 }
 
 /**
- * Record the canonical edit target in VitePress frontmatter.
+ * Record canonical edit and raw-Markdown targets in VitePress frontmatter.
  *
  * @param markdown Projected Markdown content.
  * @param page Publication manifest entry for the content.
  * @returns Markdown with projection-owned frontmatter fields.
  */
-export function addProjectionFrontmatter(markdown: string, page: Pick<DocsPage, 'source' | 'outline'>): string {
+export function addProjectionFrontmatter(markdown: string, page: Pick<DocsPage, 'source' | 'outline' | 'route' | 'sidebar'>): string {
   const fields = [
     `editSource: ${JSON.stringify(page.source)}`,
+    ...(page.sidebar === null ? [] : [`rawMarkdownPath: ${JSON.stringify(page.route)}`]),
     ...(page.outline === undefined ? [] : [`outline: ${JSON.stringify(page.outline)}`]),
   ].join('\n')
   if (markdown.startsWith('---\n')) return markdown.replace('---\n', `---\n${fields}\n`)

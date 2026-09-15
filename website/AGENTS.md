@@ -16,4 +16,6 @@ The build also emits each route's raw-Markdown twin (with a parent-level alias p
 
 Run `pnpm docs:check` after changing this subtree; the gate rejects additional non-ignored Markdown under `website/`.
 
+Content-page Markdown actions use the projector's `rawMarkdownPath` and the site base, including full `index.md` routes. Copy fetches carry `?dsh-raw=1`; development script imports still belong to Vite. Keep clipboard work within its initiating gesture and page lifetime; the [Markdown actions decision](../.agents/notes/implemented/feature/2026-09-15-docs-page-markdown-actions.md) owns browser limitations and verification.
+
 The default-theme extension owns the Mermaid fullscreen viewer. Keep its enhancements separate from Markdown projection and preserve the original SVG. Route, language, theme, and rendered-SVG changes close the active view; theme disposal releases every observer, listener, and scroll lock. The [viewer decision](../.agents/notes/implemented/feature/2026-09-14-docs-mermaid-viewer.md) explains SVG isolation and verification.
