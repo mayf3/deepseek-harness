@@ -49,6 +49,9 @@
     },
     {
       "path": "../../../vendor/timer"
+    },
+    {
+      "path": "../../util/brand"
     }
   ]
 }
