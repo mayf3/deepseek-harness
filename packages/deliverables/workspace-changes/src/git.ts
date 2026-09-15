@@ -24,6 +24,8 @@ export interface GitRunOptions {
   cwd: string
   env?: Readonly<Record<string, string>> | undefined
   stdin?: string | undefined
+  /** In-memory stdout cap for this command, replacing the runner's `outputMaxBytes`. */
+  maxBytes?: number | undefined
   signal: AbortSignal
 }
 
@@ -58,7 +60,7 @@ export class GitRunner {
       cwd: options.cwd,
       stdio: {
         stdin: options.stdin === undefined ? 'ignore' : { data: options.stdin },
-        stdout: { maxBytes: this.limits.outputMaxBytes },
+        stdout: { maxBytes: options.maxBytes ?? this.limits.outputMaxBytes },
         stderr: { maxBytes: STDERR_TAIL_BYTES },
       },
       graceMs: TERMINATE_GRACE_MS,
@@ -166,6 +168,49 @@ export async function snapshotTree(git: GitRunner, workspace: GitWorkspace, sign
   } finally {
     await rm(scratch, { recursive: true, force: true })
   }
+}
+
+/** A blob one snapshot tree holds at a path. */
+export interface TreeBlob {
+  oid: string
+  /** Object size in bytes. */
+  size: number
+}
+
+/**
+ * The blob a snapshot tree holds at one path.
+ * @param git - command runner.
+ * @param workspace - addressed repository.
+ * @param tree - snapshot tree id.
+ * @param path - slash-separated path relative to the repository root.
+ * @param signal - cancellation.
+ * @returns the blob, or null when the tree holds nothing at the path or holds a gitlink or tree there.
+ */
+export async function treeBlob(
+  git: GitRunner, workspace: GitWorkspace, tree: string, path: string, signal: AbortSignal,
+): Promise<TreeBlob | null> {
+  const result = ok(await git.run(['ls-tree', '-z', '-l', tree, '--', path], { cwd: workspace.root, env: workspace.env, signal }), 'git ls-tree')
+  const entry = result.stdout.split('\0')[0] ?? ''
+  const match = /^\d+ (\S+) ([0-9a-f]+) +(\d+)\t/.exec(entry)
+  if (match === null || match[1] !== 'blob') return null
+  return { oid: match[2] as string, size: Number(match[3]) }
+}
+
+/**
+ * The text of one blob.
+ * @param git - command runner.
+ * @param workspace - addressed repository.
+ * @param oid - blob id.
+ * @param maxBytes - inclusive byte cap; a larger blob throws.
+ * @param signal - cancellation.
+ * @returns the blob decoded as UTF-8.
+ */
+export async function blobText(
+  git: GitRunner, workspace: GitWorkspace, oid: string, maxBytes: number, signal: AbortSignal,
+): Promise<string> {
+  const result = ok(await git.run(['cat-file', 'blob', oid], { cwd: workspace.root, env: workspace.env, maxBytes, signal }), 'git cat-file')
+  if (result.truncated) throw new Error(`blob ${oid} exceeds ${maxBytes} bytes`)
+  return result.stdout
 }
 
 /**

@@ -50,6 +50,20 @@ export function toolCall(session: Session, turn: number, name: string, args: unk
   }, { surfaceOp: 'append', sourceEventSeqs: [source.seq] })
 }
 
+/**
+ * Apply a file-tool mutation the way the runtime does: announce it through
+ * `tools/pre-execute` so the recorder captures the path, apply it, then log
+ * the settled call.
+ */
+export async function mutate(
+  ctx: Context, session: Session, turn: number, name: string, args: unknown, apply: () => Promise<void>,
+  result: { meta?: unknown; isError?: boolean } = {},
+) {
+  await ctx.waterfall('tools/pre-execute', { agent: { session }, name, arguments: args } as never, () => Promise.resolve(undefined as never))
+  await apply()
+  return toolCall(session, turn, name, args, result)
+}
+
 /** Close the step and the turn. */
 export function endTurn(session: Session, turn: number, reason: 'completed' | 'blocked' = 'completed'): void {
   session.append('step/end', { turn, step: 1 })

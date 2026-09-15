@@ -16,13 +16,13 @@ The recorder snapshots the working tree with git at turn start and turn end: `ad
 
 Git is the default executable on `PATH`; no environment plugin is consulted. Outside any repository, or without git, no snapshot is taken and the summary lists the file-tool edits alone, with the working directory as the workspace, so the card still appears but misses shell edits. Nested repositories and submodules are gitlinks and are not descended into.
 
-Changes outside snapshot coverage are handled by source. File-tool edits to ignored files and to files outside the work tree join the same list with counts summed from the hunks the tools persist with their results, or from the call's arguments when a result persists none, as a `write` that creates a file and every `str_replace_editor` mutation do; no extra baseline is captured. Files under the temporary directories are omitted unless they lie inside the working directory; a file left in `/tmp` needs `present` to reach the user. Shell edits outside coverage are a known limitation.
+Changes outside snapshot coverage come from whole-file captures: before a `write`, `edit`, or mutating `str_replace_editor` call runs, the recorder copies the named file into the Session's temporary directory, once per path per turn, and copies it again at turn end; ignored files, files outside the work tree, and every file-tool edit without a snapshot are listed from a line comparison of the two copies ([comparison decision](2026-09-15-changed-file-diff-preview.md)). Files under the temporary directories are omitted unless they lie inside the working directory; a file left in `/tmp` needs `present` to reach the user. Shell edits outside coverage are a known limitation.
 
 The list sorts by a display path in code-unit order: the path relative to the working directory, `../` for repository files above it, `~` under the home directory, otherwise absolute; parent and absolute paths therefore lead without a separate group. The card shows the total count with summed added and deleted lines in its header, three rows before a fold, and a collapse control at the bottom once expanded. With a Host desktop the header opens the deepest workspace folder containing the listed files — computed over workspace-relative paths and falling back to the workspace root — and each row opens its file in the default application; without one, rows preview in the right Sidebar.
 
 The recorder appends inside the turn on `agent/turn-stopping` and again after `turn/end` only when tool results settled after the last record, so aborted, failed, and steered turns are covered. The Client keeps the latest announcement per turn and reads its summary once through the authenticated summary route.
 
-The log deliberately carries nothing but the turn number. Summaries, snapshot trees, and the tree ids a later content comparison needs live only as long as the Session in the Host process: the summaries in the recorder, the objects in a temporary directory removed on disposal. A conversation reopened after a Host restart has no card for its earlier turns. The product decision is that a card whose content the Host can no longer open should not appear at all, so the card's lifetime equals the content's lifetime rather than the log's. Whether to keep content across restarts, and for how many turns, is left to #3822.
+The log deliberately carries nothing but the turn number. Summaries, snapshot trees, and captured copies live only as long as the Session in the Host process: the summaries in the recorder, the objects and copies in a temporary directory removed on disposal. A conversation reopened after a Host restart has no card for its earlier turns. The product decision is that a card whose content the Host can no longer open should not appear at all, so the card's lifetime equals the content's lifetime rather than the log's. Content is not kept across restarts ([comparison decision](2026-09-15-changed-file-diff-preview.md)).
 
 ## Alternatives considered
 
@@ -34,7 +34,7 @@ The log deliberately carries nothing but the turn number. Summaries, snapshot tr
 
 **A pure-JavaScript git or a bundled binary for hosts without git** adds megabytes and a platform matrix for users who mostly run without the card; until git exists the card lists file-tool edits only.
 
-**Recording the pre-edit file content at first touch** would make hunk counts exact and enable full-file diffs for uncovered files, but requires the file tools to hand their pre-read content to the recorder; the persisted hunks already carry the before and after text of each edit for that purpose.
+**Summing the hunks the file tools persist** for uncovered files was the first implementation; it counted a repeatedly edited line more than once and could not show a whole-file comparison, so the recorder now copies the whole file at first touch instead ([comparison decision](2026-09-15-changed-file-diff-preview.md)).
 
 **Recording the file list and counts in the event** was the first implementation: the card would then render from the log forever, while the content it opens would not survive. It was replaced by the announcement-only event so that the card and its content share one lifetime.
 
@@ -46,7 +46,7 @@ The log deliberately carries nothing but the turn number. Summaries, snapshot tr
 
 ## Consequences
 
-Every turn with tool results costs two snapshots and one diff on the Host, and writes blob and tree objects for the changed files into the Session's temporary directory, which disposal removes. Edits the user makes during a turn are attributed to it. Hunk-based counts for uncovered files are sums over edits rather than a first-to-last diff.
+Every turn with tool results costs two snapshots and one diff on the Host, and writes blob and tree objects for the changed files into the Session's temporary directory, which disposal removes. Edits the user makes during a turn are attributed to it. Every file-tool edit also copies its whole file into that directory once per turn.
 
 The Web bundle alone mounts the recorder, so headless, SDK, and ACP logs are unchanged; recorded Web scenarios gain the event and the card whenever a turn changes a file; one dedicated scenario seeds a git repository so the card also carries a shell edit, while the others list their file-tool writes alone. The card replaces the Chinese and English "Files changed" row; prose file mentions still resolve against mutation-call paths and deliveries.
 

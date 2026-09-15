@@ -1,4 +1,4 @@
-/** `deliverables` namespace dictionaries. */
+/** `deliverables` namespace dictionaries: cards, comparison tab, and file-mention copy. */
 
 /** Dictionary namespace owned by this plugin. */
 export const NS = 'deliverables'
@@ -50,6 +50,19 @@ export const zh = {
   'changes.collapseAria': '收起改动文件列表',
   'changes.folderOpening': '正在打开文件夹…',
   'changes.folderError': '无法打开文件夹，点击重试',
+  'changes.oversized': '过大',
+  'changes.viewDiff': '查看 {name} 的改动',
+  'diff.loading': '正在读取改动…',
+  'diff.missing': '这轮改动的内容已不可用',
+  'diff.error': '无法读取改动',
+  'diff.binary': '二进制文件，无法显示改动',
+  'diff.oversized': '文件过大，无法显示改动',
+  'diff.created': '本轮新建的文件',
+  'diff.deleted': '本轮删除的文件',
+  'diff.unchanged': '两侧内容相同',
+  'diff.coarse': '逐行对比超时，按整个文件替换显示',
+  'diff.openNative': '用默认应用打开',
+  'diff.openNativeError': '打开失败，点击重试',
 }
 
 /** English dictionary (same key set). */
@@ -99,6 +112,19 @@ export const en: Record<DeliverablesKey, string> = {
   'changes.collapseAria': 'Collapse changed files',
   'changes.folderOpening': 'Opening folder…',
   'changes.folderError': 'Could not open folder. Click to retry.',
+  'changes.oversized': 'too large',
+  'changes.viewDiff': 'View changes to {name}',
+  'diff.loading': 'Reading changes…',
+  'diff.missing': 'The contents of this turn’s changes are no longer available',
+  'diff.error': 'Could not read the changes',
+  'diff.binary': 'Binary file; changes cannot be shown',
+  'diff.oversized': 'File too large; changes cannot be shown',
+  'diff.created': 'Created in this turn',
+  'diff.deleted': 'Deleted in this turn',
+  'diff.unchanged': 'Both sides hold the same lines',
+  'diff.coarse': 'Line comparison timed out; shown as a whole-file replacement',
+  'diff.openNative': 'Open in default app',
+  'diff.openNativeError': 'Could not open. Click to retry.',
 }
 
 /** Union of this namespace's dictionary keys. */

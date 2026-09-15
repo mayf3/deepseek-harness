@@ -1,4 +1,4 @@
-/** The changed-files card: a folder-opening header, per-file line counts, and a three-row fold. */
+/** The changed-files card: a folder-opening header, per-file line counts opening each file's comparison, and a three-row fold. */
 import { useState } from 'react'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { IconChevronDownOutline14, IconChevronUpOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -17,9 +17,9 @@ const COLLAPSED_ROWS = 3
 const GROUPED = new Intl.NumberFormat('en-US')
 
 /**
- * Gesture state worth showing in place of the counts: pending, or failed. A
- * completed open shows the counts again. The card never reveals, so only open
- * phases occur.
+ * Folder gesture state worth showing in place of the totals: pending, or
+ * failed. A completed open shows the totals again. The card never reveals, so
+ * only open phases occur.
  */
 function gesture(phase: PresentedOpenPhase | undefined): { key: 'presented.opening' | 'presented.error' | 'presented.nativeUnavailable'; failed: boolean } | undefined {
   switch (phase) {
@@ -39,13 +39,13 @@ function Counts({ added, deleted, t }: { added: number; deleted: number } & Prop
 }
 
 /**
- * Render one turn's changed files. Rows open files in the Host's default
- * application when a desktop is available and otherwise preview them in the
- * right Sidebar; the header opens the files' common folder only with a desktop.
- * @param props - the recorded summary, Host capabilities, gesture status, openers, and localized copy.
+ * Render one turn's changed files. Each row opens its file's turn-start and
+ * turn-end comparison in the right Sidebar; the header opens the files' common
+ * folder only with a Host desktop.
+ * @param props - the recorded summary, Host capabilities, folder gesture status, openers, and localized copy.
  * @returns the card.
  */
-export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, openFile, t }: {
+export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, openDiff, t }: {
   /** The served summary with the sequence of the event that announced it. */
   changes: Pick<ChangesSummary, 'files' | 'total' | 'added' | 'deleted'> & { seq: number }
   cwd: string | undefined
@@ -53,7 +53,8 @@ export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, op
   host: PresentedHost | null
   phases: Record<string, PresentedOpenPhase | undefined>
   onOpen: (index: number | null) => void
-  openFile: (path: string) => void
+  /** Open the comparison of the file at an original summary index. */
+  openDiff: (index: number, display: string) => void
 } & PropsLocale<typeof NS>) {
   const [expanded, setExpanded] = useState(false)
   const native = host !== null && host.available
@@ -77,25 +78,20 @@ export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, op
         disabled={folder !== undefined && !folder.failed} onClick={() => { onOpen(null) }}>{summary}</button>
       : <div className={css.header}>{summary}</div>}
     <ul className={css.list}>
-      {rows.map((file, index) => {
-        const phase = phases[changedFileUrl(sessionId, changes.seq, index)]
-        const status = gesture(phase)
-        // A file without a verified Host path falls back to the Sidebar preview the status names.
-        const opensNatively = native && phase !== 'nativeUnavailable'
-        return <li key={file.display}>
+      {rows.map((file, index) => (
+        <li key={file.display}>
           <button type="button" className={css.row} title={resolveWorkspacePath(cwd, file.path)}
-            aria-label={t(opensNatively ? 'changes.openFile' : 'presented.previewButton', { name: file.display })}
-            disabled={status !== undefined && !status.failed}
-            onClick={() => { if (opensNatively) onOpen(index); else openFile(file.path) }}>
+            aria-label={t('changes.viewDiff', { name: file.display })}
+            onClick={() => { openDiff(index, file.display) }}>
             <span className={css.path}>{file.display}</span>
-            <span className={css.counts} role={status === undefined ? undefined : 'status'} data-error={status?.failed || undefined}>
-              {status !== undefined ? t(status.key)
-                : file.binary === true ? t('changes.binary')
+            <span className={css.counts}>
+              {file.binary === true ? t('changes.binary')
+                : file.oversized === true ? t('changes.oversized')
                   : <Counts t={t} added={file.added} deleted={file.deleted} />}
             </span>
           </button>
         </li>
-      })}
+      ))}
     </ul>
     {foldable && <button type="button" className={css.toggle}
       aria-expanded={expanded}

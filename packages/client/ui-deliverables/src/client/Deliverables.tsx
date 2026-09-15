@@ -9,7 +9,7 @@ import type { ChangesSummaryStore } from './changes-summary.ts'
 import { ChangedFiles } from './ChangedFiles.tsx'
 import { changesForClosing, presentedForClosing, type ChangesTurnData, type PresentedPath } from './turn-deliverables.ts'
 import type { NS } from './locales.ts'
-import { changesSummaryUrl } from '../changes.ts'
+import { changesSummaryUrl, type ChangesDiffCoordinates } from '../changes.ts'
 import { presentedFileUrl } from '../presented.ts'
 import { PresentedFileCard } from './PresentedFileCard.tsx'
 import css from './Deliverables.module.css'
@@ -29,6 +29,8 @@ export interface DeliverablesInjected {
   loadChangesSummary: ChangesSummaryStore['load']
   openPresented: PresentedOpenController['open']
   openChanged: PresentedOpenController['openChanged']
+  /** Open one listed file's comparison in the right Sidebar. */
+  openChangesDiff: (coordinates: ChangesDiffCoordinates) => void
 }
 
 /**
@@ -50,8 +52,8 @@ export function selectDeliverables(owner: TurnTailOwnerProps): DeliverablesMatch
  * @returns the closing turn's file rows.
  */
 export function Deliverables({
-  matched, openFile, t, sessionId, useSessions, openPresented, openChanged, usePresentedOpen, usePresentedHost, useChangesSummary,
-  reloadPresentedHost, loadChangesSummary,
+  matched, openFile, t, sessionId, useSessions, openPresented, openChanged, openChangesDiff, usePresentedOpen, usePresentedHost,
+  useChangesSummary, reloadPresentedHost, loadChangesSummary,
 }: Pick<TurnTailOwnerProps, 'openFile'> & {
   matched: DeliverablesMatch
 } & PropsLocale<typeof NS> & Pick<SessionStandardProps, 'sessionId'> & Pick<GlobalStandardProps, 'useSessions'> & InjectFace<DeliverablesInjected>) {
@@ -76,7 +78,8 @@ export function Deliverables({
   }, [host, reloadPresentedHost])
   return <>
     {changes !== null && <ChangedFiles changes={changes} cwd={cwd} sessionId={sessionId}
-      host={host === 'error' ? null : host} phases={states} t={t} openFile={openFile}
+      host={host === 'error' ? null : host} phases={states} t={t}
+      openDiff={(index, display) => { openChangesDiff({ sessionId, seq: changes.seq, index, display }) }}
       onOpen={(index) => { void openChanged(sessionId, changes.seq, index) }} />}
     {matched.presented.length > 0 && <div
       className={css.root}

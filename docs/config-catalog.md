@@ -3638,7 +3638,7 @@ Source: [`packages/workflow/workflow-ptc/src/index.ts:32`](../packages/workflow/
 Requires: `subprocess`
 
 ```ts config-catalog
-/** Snapshot bounds. Invalid values fail plugin load. */
+/** Snapshot, capture, and comparison bounds. Invalid values fail plugin load. */
 export interface Config {
   /** Milliseconds one git command may run before the turn's record is abandoned. */
   timeoutMs: number
@@ -3646,10 +3646,17 @@ export interface Config {
   outputMaxBytes: number
   /** Maximum files carried by one summary; `total` still reports the complete count. */
   maxFiles: number
+  /**
+   * Bytes a file may hold to be captured around a file-tool edit or read from a snapshot for its comparison;
+   * a larger file is listed without counts or comparison.
+   */
+  maxFileBytes: number
+  /** Milliseconds a line comparison may run before it degrades to whole-file replacement. */
+  diffTimeoutMs: number
 }
 ```
 
-Source: [`packages/deliverables/workspace-changes/src/index.ts:29`](../packages/deliverables/workspace-changes/src/index.ts)
+Source: [`packages/deliverables/workspace-changes/src/index.ts:33`](../packages/deliverables/workspace-changes/src/index.ts)
 
 ## Loadable plugins with no config
 

@@ -1,4 +1,4 @@
-/** A turn that edits, creates, and shell-appends files in a git workspace ends with the changed-files card. */
+/** A turn that edits, creates, and shell-appends files in a git workspace ends with the changed-files card; its rows open comparisons. */
 import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -110,9 +110,31 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     expect(await card.getByText('已编辑 4 个文件', { exact: true }).count()).toBe(1)
     expect(await card.getByRole('listitem').count()).toBe(3)
     expect(await card.getByRole('button', { name: '展开全部 4 个改动文件' }).count()).toBe(1)
-    // Without a Host desktop the header is a label and rows preview in the Sidebar.
+    // Without a Host desktop the header is a label; every row opens its comparison in the Sidebar.
     expect(await card.getByRole('button', { name: '打开改动文件所在的文件夹' }).count()).toBe(0)
-    expect(await card.getByRole('button', { name: '在侧边栏打开 notes.txt' }).count()).toBe(1)
+    expect(await card.getByRole('button', { name: '查看 notes.txt 的改动' }).count()).toBe(1)
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
+  })
+
+  it('opens a shell-appended file’s comparison from the snapshots and an ignored file’s from its captured copies', async () => {
+    const card = page.locator('[data-changed-files]')
+    const column = page.locator('[data-rightbar-col]')
+    await card.getByRole('button', { name: '查看 notes.txt 的改动' }).click()
+    const notes = column.locator('[data-changes-diff][data-diff-state="text"]')
+    await notes.waitFor({ state: 'visible' })
+    expect(await column.locator('[data-dockkit-tab]').filter({ hasText: 'notes.txt' }).count()).toBe(1)
+    expect(await notes.locator('[data-diff-line]').evaluateAll(lines => lines.map(line => `${line.getAttribute('data-diff-line')}:${line.textContent}`))).toEqual([
+      'context:11 start', 'add:2+done',
+    ])
+    // The ignored file has no snapshot; its comparison comes from the copies captured around the write call.
+    await card.getByRole('button', { name: '查看 app.local 的改动' }).click()
+    const local = column.locator('[data-changes-diff][data-diff-state="text"]').filter({ hasText: 'mode=demo' })
+    await local.waitFor({ state: 'visible' })
+    expect(await local.locator('[data-diff-line]').evaluateAll(lines => lines.map(line => `${line.getAttribute('data-diff-line')}:${line.textContent}`))).toEqual(['add:1+mode=demo'])
+    expect(await local.getByText('本轮新建的文件').count()).toBe(1)
+    // No desktop, so the header offers no native open.
+    expect(await local.getByRole('button').count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })

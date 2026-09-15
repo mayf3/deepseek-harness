@@ -105,11 +105,11 @@
 - text: 已编辑 4 个文件 +6 -1
 - list:
   - listitem:
-    - button "在侧边栏打开 app.local": app.local +1 -0
+    - button "查看 app.local 的改动": app.local +1 -0
   - listitem:
-    - button "在侧边栏打开 intro.md": intro.md +1 -1
+    - button "查看 intro.md 的改动": intro.md +1 -1
   - listitem:
-    - button "在侧边栏打开 notes.txt": notes.txt +1 -0
+    - button "查看 notes.txt 的改动": notes.txt +1 -0
 - button "展开全部 4 个改动文件":
   - text: 全部 4 个文件
   - img

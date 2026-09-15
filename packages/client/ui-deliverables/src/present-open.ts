@@ -1,4 +1,4 @@
-/** Serve change summaries and open declared or changed workspace paths verified by the viewed Session's filesystem. */
+/** Serve change summaries and comparisons, and open declared or changed workspace paths verified by the viewed Session's filesystem. */
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
@@ -10,13 +10,13 @@ import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-session-query'
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { WorkspaceChangedFile } from '@deepseek-ai/dsh-workspace-changes/types'
-import { CHANGES_OPEN_PATH, CHANGED_FILES_PATH, type ChangesSummary } from './changes.ts'
+import { CHANGES_DIFF_PATH, CHANGES_OPEN_PATH, CHANGED_FILES_PATH, type ChangesSummary } from './changes.ts'
 import { isPresentedData, isPresentedFile, PRESENT_OPEN_PATH, PRESENT_HOST_PATH, type PresentedHost } from './presented.ts'
 
 /**
  * Register the deliverables routes inside Connection's authentication fence:
- * desktop metadata, change summaries, declared-file actions, and changed-file
- * or folder opening.
+ * desktop metadata, change summaries and comparisons, declared-file actions,
+ * and changed-file or folder opening.
  * @param ctx - Session lookup, change summaries, native opener, and route lifetime.
  */
 export function registerPresentOpen(ctx: Context): void {
@@ -35,10 +35,13 @@ export function registerPresentOpen(ctx: Context): void {
     lifetime.abort()
     await Promise.allSettled(pending)
   })
-  for (const [path, handler] of [[PRESENT_OPEN_PATH, handlePresentOpen], [CHANGES_OPEN_PATH, handleChangesOpen]] as const) {
+  const routes = [
+    [PRESENT_OPEN_PATH, 'POST', handlePresentOpen], [CHANGES_OPEN_PATH, 'POST', handleChangesOpen], [CHANGES_DIFF_PATH, 'GET', handleChangesDiff],
+  ] as const
+  for (const [path, method, handler] of routes) {
     ctx.connection.fetch.register({
       path,
-      methods: ['POST'],
+      methods: [method],
       requestBody: 'buffered',
       fetch: (request) => {
         const task = handler(ctx, new Request(request, {
@@ -150,6 +153,23 @@ function handleChangesSummary(ctx: Context, request: Request): Response {
   if (summary === undefined) return new Response('Change summary unavailable.', { status: 404 })
   const { turn, files, total, added, deleted } = summary
   return Response.json({ turn, files, total, added, deleted } satisfies ChangesSummary, { headers: { 'cache-control': 'no-store' } })
+}
+
+/** One listed file's comparison; 404 once the Host no longer serves the summary or the index names no file. */
+async function handleChangesDiff(ctx: Context, request: Request): Promise<Response> {
+  const query = new URL(request.url).searchParams
+  const id = query.get('sessionId')
+  const seq = coordinate(query.get('seq'))
+  const index = coordinate(query.get('index'))
+  if (!id || seq === undefined || index === undefined) return new Response('Invalid changed file coordinates.', { status: 400 })
+  try {
+    const diff = await ctx.workspaceChanges.diff(id as SessionId, seq, index, request.signal)
+    if (diff === undefined) return new Response('Change comparison unavailable.', { status: 404 })
+    return Response.json(diff, { headers: { 'cache-control': 'no-store' } })
+  } catch (error: unknown) {
+    request.signal.throwIfAborted()
+    return new Response('Change comparison unavailable.', { status: failureStatus(error) })
+  }
 }
 
 async function handleChangesOpen(ctx: Context, request: Request): Promise<Response> {

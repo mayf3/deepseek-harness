@@ -1,15 +1,33 @@
-/** Validate workspace-change records that cross the Host route and address their summary and native-open actions. */
+/** Validate workspace-change records that cross the Host routes and address their summary, comparison, and native-open actions. */
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkspaceChangedFile, WorkspaceChangesSummary } from '@deepseek-ai/dsh-workspace-changes/types'
+import type { WorkspaceChangedFile, WorkspaceChangesSummary, WorkspaceDiffHunk, WorkspaceFileDiff } from '@deepseek-ai/dsh-workspace-changes/types'
 
 /** Authenticated GET route serving one announced change summary while its Session lives. */
 export const CHANGED_FILES_PATH = '/api/changes.summary'
 
+/** Authenticated GET route serving one listed file's turn-start and turn-end comparison while its Session lives. */
+export const CHANGES_DIFF_PATH = '/api/changes.diff'
+
 /** Authenticated POST route for opening a changed file, or the changed files' common folder, on the Host desktop. */
 export const CHANGES_OPEN_PATH = '/api/changes.open'
 
+/** Resource-address prefix of a changed file's comparison tab in the right Sidebar. */
+export const CHANGES_DIFF_ADDRESS = 'dsh-resource://changes-diff/session/'
+
 /** The summary fields the route serves; the Host keeps the working directory and snapshot ids to itself. */
 export type ChangesSummary = Pick<WorkspaceChangesSummary, 'turn' | 'files' | 'total' | 'added' | 'deleted'>
+
+/** The comparison the route serves, as the Host computed it. */
+export type ChangesDiff = WorkspaceFileDiff
+
+/** Coordinates of one listed file's comparison: the viewed Session, the announcing event, and the file's index. */
+export interface ChangesDiffCoordinates {
+  sessionId: SessionId
+  seq: number
+  index: number
+  /** The listed file's display path, carried for the tab title. */
+  display: string
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -22,9 +40,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 export function isChangedFile(value: unknown): value is WorkspaceChangedFile {
   if (!isRecord(value)) return false
-  const { path, display, added, deleted, binary } = value
+  const { path, display, added, deleted, binary, oversized } = value
   return typeof path === 'string' && path.length > 0 && typeof display === 'string' && display.length > 0
-    && Number.isSafeInteger(added) && Number.isSafeInteger(deleted) && (binary === undefined || binary === true)
+    && Number.isSafeInteger(added) && Number.isSafeInteger(deleted)
+    && (binary === undefined || binary === true) && (oversized === undefined || oversized === true)
 }
 
 /**
@@ -38,6 +57,29 @@ export function isChangesSummary(value: unknown): value is ChangesSummary {
   return Number.isSafeInteger(turn) && (turn as number) >= 1 && Number.isSafeInteger(total)
     && Number.isSafeInteger(added) && Number.isSafeInteger(deleted)
     && Array.isArray(files) && files.every(isChangedFile)
+}
+
+function isHunk(value: unknown): value is WorkspaceDiffHunk {
+  if (!isRecord(value)) return false
+  const { oldStart, oldLines, newStart, newLines, lines } = value
+  return [oldStart, oldLines, newStart, newLines].every(field => Number.isSafeInteger(field) && (field as number) >= 0)
+    && Array.isArray(lines) && lines.every(line => typeof line === 'string' && /^[+ -]/.test(line))
+}
+
+/**
+ * Validate a comparison read from the comparison route.
+ * @param value - decoded JSON.
+ * @returns whether the value is a text comparison with well-formed hunks, or a binary or oversized refusal.
+ */
+export function isChangesDiff(value: unknown): value is ChangesDiff {
+  if (!isRecord(value)) return false
+  const { kind, path, display } = value
+  if (typeof path !== 'string' || path.length === 0 || typeof display !== 'string' || display.length === 0) return false
+  if (kind === 'binary' || kind === 'oversized') return true
+  if (kind !== 'text') return false
+  const { before, after, hunks, coarse } = value
+  return typeof before === 'boolean' && typeof after === 'boolean' && typeof coarse === 'boolean'
+    && Array.isArray(hunks) && hunks.every(isHunk)
 }
 
 /**
@@ -60,6 +102,17 @@ export function changesSummaryUrl(sessionId: SessionId, seq: number): string {
 }
 
 /**
+ * Build authenticated coordinates for one listed file's comparison.
+ * @param sessionId - owning Session.
+ * @param seq - workspace/changes event sequence.
+ * @param index - original index in the summary's files array.
+ * @returns same-origin comparison URL.
+ */
+export function changesDiffUrl(sessionId: SessionId, seq: number, index: number): string {
+  return `${CHANGES_DIFF_PATH}?${new URLSearchParams({ sessionId, seq: String(seq), index: String(index) })}`
+}
+
+/**
  * Build authenticated coordinates for a changed file or the changed files' common folder.
  * @param sessionId - owning Session.
  * @param seq - workspace/changes event sequence.
@@ -70,4 +123,35 @@ export function changedFileUrl(sessionId: SessionId, seq: number, index: number 
   const query = new URLSearchParams({ sessionId, seq: String(seq) })
   if (index !== null) query.set('index', String(index))
   return `${CHANGES_OPEN_PATH}?${query}`
+}
+
+/**
+ * The right-Sidebar address of one listed file's comparison. The display path
+ * rides the address only for the tab title; the coordinates identify the content.
+ * @param coordinates - viewed Session, announcing event, file index, and display path.
+ * @returns a `dsh-resource://changes-diff/session/…` address.
+ */
+export function changesDiffAddress({ sessionId, seq, index, display }: ChangesDiffCoordinates): string {
+  return `${CHANGES_DIFF_ADDRESS}${encodeURIComponent(sessionId)}/${seq}/${index}/${encodeURIComponent(display)}`
+}
+
+/**
+ * Read the coordinates back out of a comparison address.
+ * @param address - a resource address.
+ * @returns the coordinates, or undefined for any other address.
+ */
+export function parseChangesDiffAddress(address: string): ChangesDiffCoordinates | undefined {
+  if (!address.startsWith(CHANGES_DIFF_ADDRESS)) return undefined
+  const parts = address.slice(CHANGES_DIFF_ADDRESS.length).split('/')
+  if (parts.length !== 4) return undefined
+  const [sessionId, seq, index, display] = parts as [string, string, string, string]
+  if (sessionId === '' || display === '' || !/^\d+$/.test(seq) || !/^\d+$/.test(index)) return undefined
+  try {
+    return {
+      sessionId: decodeURIComponent(sessionId) as SessionId, seq: Number(seq), index: Number(index), display: decodeURIComponent(display),
+    }
+  } catch {
+    // A malformed percent sequence is not an address this package minted.
+    return undefined
+  }
 }
