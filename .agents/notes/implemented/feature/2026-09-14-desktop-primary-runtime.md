@@ -18,6 +18,8 @@ Node downloads and hash-verifies the complete locked wheel set and unpacks these
 
 macOS grants `com.apple.security.cs.allow-jit` only to the standalone Node executable. Hardened-runtime signing without that entitlement prevents V8 from allocating its code region. Interpreter and library smoke checks run after signing as well as after staging cleanup; a valid signature alone does not establish executable behavior.
 
+Desktop ZIP extraction pins `extract-zip` to `yauzl` 3.4.0 through a scoped dependency override. The 2.x reader can leave large deflate entries unfinished on Node 26 ([upstream issue](https://github.com/thejoshwolfe/yauzl/issues/176)); retaining the existing extractor preserves its path validation and wheel-entry checks. The development launcher uses top-level await so unfinished preparation cannot exit successfully. A large compressed wheel regression checks the complete extracted bytes.
+
 ## Alternatives considered
 
 **System interpreters only.** They do not provide predictable availability or preinstalled numpy and pandas.

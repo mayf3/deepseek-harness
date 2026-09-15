@@ -113,7 +113,7 @@ async function main(): Promise<void> {
   await launchElectron()
 }
 
-main().catch((error: unknown) => {
+await main().catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : error)
   process.exitCode = 1
 })
