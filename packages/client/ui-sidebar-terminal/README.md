@@ -33,7 +33,7 @@ Closing or replacing a terminal tab removes it immediately and ends its process 
 
 After reload, the [sidebar restores its layout](../../client/ui-sidebar-right/README.md#state) and each terminal reconnects to its saved Host identity in the original tab. Collapsed and inactive tabs do not create recovery duplicates or change selection. Host terminals without a saved tab association reopen as recovery tabs; recovery failure offers **Retry terminal recovery**. A missing saved process shows a localized unavailable panel with **New terminal**. Clicking it replaces the unavailable tab in place with a fresh terminal; recovery never creates that replacement automatically.
 
-The terminal background, default text, cursor, and selection follow the DSH theme, including system preference and theme-token overrides. Theme changes update the existing screen without clearing output or restarting the shell. Shell-provided ANSI colors remain in effect.
+The terminal background, default text, cursor, and selection follow the DSH theme, including system preference and theme-token overrides. Theme changes preserve the running shell, output, and application OSC color overrides. Reset commands restore colors to the current DSH defaults. xterm adjusts text toward 4.5:1 contrast; the cursor keeps at least 3:1 contrast against its cell background, including Vim colorschemes.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -71,6 +71,7 @@ None; terminal output travels only between the browser and Host.
 
 - Shell discovery or native PTY startup can fail. The tab reports the failure without launching a different shell.
 - Completion menus and inline suggestions depend on shell configuration. The Web UI adds no independent completion engine.
+- Application OSC color overrides are retained by the mounted renderer; a newly opened renderer cannot recover them from the Host screen snapshot.
 - Terminal history is bounded. The feature does not send terminal output to the Agent, provide split terminal panes inside a tab, or restore processes after Host restart.
 
 <a id="dev-note"></a>
