@@ -103,12 +103,12 @@ interface InstallationManifest {
 /** What a package manifest says about the package: identity, one-liner, and whether it is a bundle. */
 function inspectionOf(kind: 'registry' | 'path', manifest: object): Extract<PluginSpecInspection, { status: 'accepted' }> {
   const dsh = (manifest as { dsh?: unknown }).dsh
-  const declared = typeof dsh === 'object' && dsh !== null ? dsh as { title?: unknown; description?: unknown; bundle?: unknown } : undefined
+  const declared = typeof dsh === 'object' && dsh !== null ? dsh as { title?: unknown; bundle?: unknown } : undefined
   const title = declared === undefined ? undefined : stringField(declared, 'title')
   const bundle = declared !== undefined && typeof declared.bundle === 'object' && declared.bundle !== null
   const name = stringField(manifest, 'name')
   const version = stringField(manifest, 'version')
-  const description = (declared === undefined ? undefined : stringField(declared, 'description')) ?? stringField(manifest, 'description')
+  const description = stringField(manifest, 'description')
   return {
     status: 'accepted', kind, bundle,
     ...name === undefined ? {} : { name },
@@ -213,10 +213,9 @@ export class PluginManager extends TypertRemoteService {
         }
         const readOnlyReason = this.protectsManager(name) ? 'management-required' as const : undefined
         const title = info.dsh?.title
-        const description = info.dsh?.description ?? info.description
         bundles.push({ name, ...(info.version === undefined ? {} : { version: info.version }),
           ...(title === undefined ? {} : { title }),
-          ...(description === undefined || description === '' ? {} : { description }),
+          ...(info.description === undefined || info.description === '' ? {} : { description: info.description }),
           enabled, installed, optional, removable: removable && readOnlyReason === undefined,
           ...(readOnlyReason === undefined ? {} : { readOnlyReason }),
           ...this.declaredRows(name, info) })

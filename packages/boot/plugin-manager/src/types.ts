@@ -35,7 +35,7 @@ export interface BundleInfo {
   version?: string
   /** `dsh.title` of the package manifest. */
   title?: string
-  /** `dsh.description` of the package manifest, else its `description`. */
+  /** `description` of the package manifest. */
   description?: string
   enabled: boolean
   /** Whether the profile's own dependencies hold the package; false for a bundle the dsh installation supplies. */
@@ -133,7 +133,7 @@ export type PluginSpecInspection =
     readonly kind: InstallSpecKind
     readonly name?: string
     readonly version?: string
-    /** `dsh.description` of the package manifest, else its `description`. */
+    /** `description` of the package manifest. */
     readonly description?: string
     /** `dsh.title` of the package manifest. */
     readonly title?: string

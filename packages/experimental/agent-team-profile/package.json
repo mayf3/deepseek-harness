@@ -29,8 +29,6 @@
   ],
   "license": "MIT",
   "dsh": {
-    "title": "Agent Teams",
-    "description": "实验功能：把子代理委派换成 Agent Teams 的团队协作工具，这是宿主层，需与 Agent Teams Web 面板一起开启。",
     "bundle": {
       "patch": "./cordis.patch.yml"
     }

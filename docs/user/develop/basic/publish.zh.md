@@ -39,15 +39,9 @@ hello-plugin/
   "type": "module",
   "main": "index.js",
   "files": ["index.js", "cordis.patch.yml"],
-  "dsh": {
-    "title": "Hello plugin",
-    "description": "Logs a greeting when it loads.",
-    "bundle": { "patch": "./cordis.patch.yml" }
-  }
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
 }
 ```
-
-`dsh.title` 与 `dsh.description` 是用户在组合包列表（例如 Web 侧栏的插件页）里看到的名字和简介；没有它们时，页面显示去掉 scope 和 `dsh-` 前缀的包名，以及包的 `description`。
 
 创建 `hello-plugin/index.js`，写入插件入口：
 

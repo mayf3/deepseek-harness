@@ -71,8 +71,6 @@
     "access": "public"
   },
   "dsh": {
-    "title": "Auto review",
-    "description": "实验功能：为当前会话的权限选择器增加 Auto review，每次工具调用前由模型评估风险再执行；可能误放行或误拒绝，并消耗额外 token。",
     "bundle": {
       "patch": "./cordis.patch.yml"
     }

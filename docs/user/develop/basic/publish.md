@@ -39,15 +39,9 @@ Create `hello-plugin/package.json`:
   "type": "module",
   "main": "index.js",
   "files": ["index.js", "cordis.patch.yml"],
-  "dsh": {
-    "title": "Hello plugin",
-    "description": "Logs a greeting when it loads.",
-    "bundle": { "patch": "./cordis.patch.yml" }
-  }
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
 }
 ```
-
-`dsh.title` and `dsh.description` are what users see where bundles are listed, such as the Web sidebar's Plugins page; without them the page shows the package name stripped of its scope and `dsh-` prefix, and the package `description`.
 
 Create `hello-plugin/index.js` with the plugin entry point:
 

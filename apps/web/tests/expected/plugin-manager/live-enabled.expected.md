@@ -8,17 +8,17 @@
 - text: "3"
 - list:
   - listitem:
-    - button "查看 Agent Teams": Agent Teams
-    - text: 官方 实验功能：把子代理委派换成 Agent Teams 的团队协作工具，这是宿主层，需与 Agent Teams Web 面板一起开启。
-    - switch "启用 Agent Teams"
+    - button "查看 experimental-agent-team-profile": experimental-agent-team-profile
+    - text: 官方 Experimental profile bundle enabling Agent Teams over dsh-base
+    - switch "启用 experimental-agent-team-profile"
   - listitem:
-    - button "查看 Agent Teams Web 面板": Agent Teams Web 面板
-    - text: 官方 实验功能：在浏览器里显示 Agent Teams 的团队名单、任务板和成员导航，需先开启 Agent Teams。
-    - switch "启用 Agent Teams Web 面板"
+    - button "查看 experimental-agent-team-web-profile": experimental-agent-team-web-profile
+    - text: 官方 Experimental Web profile layer for Agent Teams Remote and UI plugins
+    - switch "启用 experimental-agent-team-web-profile"
   - listitem:
-    - button "查看 Auto review": Auto review
-    - text: 官方 实验功能：为当前会话的权限选择器增加 Auto review，每次工具调用前由模型评估风险再执行；可能误放行或误拒绝，并消耗额外 token。
-    - switch "启用 Auto review"
+    - button "查看 experimental-auto-review": experimental-auto-review
+    - text: 官方 Per-tool LLM authorization review for the DeepSeek Harness Auto permission preset
+    - switch "启用 experimental-auto-review"
 - heading "已安装" [level=3]
 - text: "1"
 - list:

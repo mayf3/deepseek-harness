@@ -30,8 +30,6 @@ export interface DshManifest {
   manifestVersion?: 1
   /** Display title of the package, read without executing package code. */
   title?: string
-  /** Display one-liner of the package, read without executing package code; shown instead of the package `description`. */
-  description?: string
   /** Bundle metadata consumed by the profile launcher. */
   bundle?: DshBundleManifest
   /** Profile metadata consumed by the profile launcher. */

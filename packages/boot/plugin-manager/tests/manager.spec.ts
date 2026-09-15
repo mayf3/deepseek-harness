@@ -564,11 +564,9 @@ it('reads what a spec names before installing it', async () => {
   const view = vi.spyOn(operations, 'viewProfilePackage')
   onTestFinished(() => { view.mockRestore() })
   const answers = (stdout: string) => view.mockResolvedValueOnce({ exitCode: 0, stdout, stderr: '', timedOut: false })
-  answers(JSON.stringify({
-    name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', dsh: { title: 'Sidebar', description: 'A better sidebar.', bundle: { patch: './cordis.patch.yml' } },
-  }))
+  answers(JSON.stringify({ name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', dsh: { title: 'Sidebar', bundle: { patch: './cordis.patch.yml' } } }))
   expect(await manager.inspect('dsh-x')).toEqual({
-    status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.4.2', description: 'A better sidebar.', title: 'Sidebar', bundle: true,
+    status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', title: 'Sidebar', bundle: true,
   })
   expect(view).toHaveBeenCalledWith(dir, 'dsh-x', { command: 'pnpm-test', timeoutMs: 1000 })
   const signal = AbortSignal.abort()
@@ -676,7 +674,7 @@ it('refuses removal of a hot-installed bundle after HMR is disabled', async () =
   expect(await manager.removeBundle('later')).toMatchObject({ changed: false, application: 'failed' })
 })
 
-it('offers the launcher\'s optional bundles switched off and never removable, preferring dsh.description', async () => {
+it('offers the launcher\'s optional bundles switched off and never removable', async () => {
   const { manager, profile } = await fixture()
   // The launcher names the bundles the installation ships; the fixture supplies one of them from the
   // installation's own node_modules, which the resolver consults before the profile's and before the repository's.
@@ -684,14 +682,13 @@ it('offers the launcher\'s optional bundles switched off and never removable, pr
   const supplied = join(profile.home, 'node_modules', offered)
   mkdirSync(supplied, { recursive: true })
   writeFileSync(join(supplied, 'package.json'), JSON.stringify({
-    name: offered, version: '3.0.0', description: 'Package one-liner.',
-    dsh: { title: 'Offered', description: 'Display one-liner.', bundle: { patch: './cordis.patch.yml' } },
+    name: offered, version: '3.0.0', description: 'Package one-liner.', dsh: { bundle: { patch: './cordis.patch.yml' } },
   }))
   writeFileSync(join(supplied, 'cordis.patch.yml'), JSON.stringify([{ insert: [{ id: 'offered-row', name: './plugin.mjs', config: { service: 'offeredProbe' } }] }]))
   writeFileSync(join(supplied, 'plugin.mjs'), 'export function apply(ctx, config) { ctx.provide(config?.service ?? "offeredProbe", true) }\n')
   writeFileSync(profile.installAnchor, JSON.stringify({ name: 'installation', dependencies: { [offered]: '3.0.0' } }))
   expect((await manager.listBundles()).find(row => row.name === offered)).toEqual({
-    name: offered, version: '3.0.0', title: 'Offered', description: 'Display one-liner.',
+    name: offered, version: '3.0.0', description: 'Package one-liner.',
     enabled: false, installed: false, optional: true, removable: false,
     rows: [{ rowId: 'offered-row', moduleName: pathToFileURL(join(supplied, 'plugin.mjs')).href }], overrides: [],
   })
