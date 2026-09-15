@@ -346,10 +346,8 @@ describe('web e2e: composer draft scrolling', () => {
       const m = await measureScrollport(page)
       return m.scrollTop === m.scrollMax
     }, { timeout: 10_000 }).toBe(true)
-    // The caret at the draft's end, then the trailing lines removed one at a
-    // time; the box must stay at the end, where the caret is. Select-all plus
-    // ArrowRight lands the caret on the document end; the collapse has to be
-    // observable before Backspace, or the whole selection is what gets deleted.
+    // Chromium updates the DOM selection before delivering selectionchange
+    // to Lexical. Deliver it before deletion so the editor sees the end caret.
     const input = surface(page)
     await input.click()
     await page.keyboard.press('ControlOrMeta+KeyA')
@@ -358,6 +356,7 @@ describe('web e2e: composer draft scrolling', () => {
       async () => page.evaluate(() => window.getSelection()?.isCollapsed ?? false),
       { timeout: 10_000 },
     ).toBe(true)
+    await input.evaluate(el => el.ownerDocument.dispatchEvent(new Event('selectionchange')))
     await page.keyboard.press('Backspace')
     await expect.poll(async () => (await measureScrollport(page)).overflows, { timeout: 10_000 }).toBe(true)
     await expect.poll(async () => {
@@ -372,6 +371,7 @@ describe('web e2e: composer draft scrolling', () => {
     // lines and delete them at once.
     await page.keyboard.press('Shift+ArrowUp')
     await page.keyboard.press('Shift+ArrowUp')
+    await input.evaluate(el => el.ownerDocument.dispatchEvent(new Event('selectionchange')))
     await page.keyboard.press('Delete')
     await expect.poll(async () => {
       const m = await measureScrollport(page)
