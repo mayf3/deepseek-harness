@@ -61,6 +61,14 @@ describe('default product isolation', () => {
     expect(verifyDefaultProductIsolation(root)).toMatchObject({ failures: [], packageCount: 5, configCount: 2 })
   })
 
+  it('ignores dependency trees and directories whose names end in a source extension', () => {
+    const root = fixture()
+    mkdirSync(join(root, 'python/sdk-runtime/src/vendor.js'), { recursive: true })
+    write(root, 'python/sdk-runtime/src/node_modules/vendor/index.js', `import '${experimental}'\n`)
+
+    expect(verifyDefaultProductIsolation(root).failures).toEqual([])
+  })
+
   it.each(['dependencies', 'optionalDependencies', 'peerDependencies'])(
     'rejects transitive experimental %s',
     (section) => {

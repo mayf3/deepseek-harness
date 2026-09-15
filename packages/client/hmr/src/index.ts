@@ -74,7 +74,7 @@ export function apply(ctx: Context, config: Config): void {
   const rehash = (id: string, watch: WatchedBundle, current: WatchedBundleStat): void => {
     try {
       // rebuilt() replaces the opaque startup rev on its first call; later
-      // calls stay silent when the content hash is unchanged.
+      // calls stay silent until the completed-build entry stamp changes.
       ctx.clientModules.rebuilt(id)
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
@@ -101,7 +101,7 @@ export function apply(ctx: Context, config: Config): void {
       return
     }
     // The module host captured its baseline before reading the bytes in the
-    // startup batch. Only a mismatch crosses into the content-hash path.
+    // startup batch. Only a mismatch crosses into generation publication.
     if (!sameBundleStat(current, watch)) rehash(id, watch, current)
   }
 
@@ -116,8 +116,9 @@ export function apply(ctx: Context, config: Config): void {
         continue
       }
       if (!watch.dirty && sameBundleStat(current, watch)) continue
-      // Stat-before-hash preserves a detectable older baseline for writes that
-      // land during hashing. Repeated stat changes heal a torn read.
+      // Stat-before-publication preserves a detectable older baseline for
+      // writes that land during the read. The preset stamps the entry after
+      // sibling chunks, so a completed build supplies the final stat change.
       rehash(id, watch, current)
     }
   }

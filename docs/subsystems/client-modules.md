@@ -151,8 +151,8 @@ async fetchBundle(request: Request): Promise<Response>
 artifactBaseline(id: string): ClientArtifactBaseline | undefined
 
 /**
- * Re-hash one bundle (the HMR watch's registration hook — the only entry
- * point through which bundle content changes reach the graph).
+ * Publish one completed bundle generation (the HMR watch's registration
+ * hook — the only entry point through which build changes reach the graph).
  * @param id - entry id (package name).
  * @returns the new rev, or undefined for an unknown id.
  */

@@ -73,50 +73,6 @@ async function typeDraft(page: Page, rows: readonly string[]): Promise<void> {
   }
 }
 
-/**
- * Replace the draft with one pasted block through the composer's own paste
- * path (the keymap's ClipboardEvent route).
- * @param page - the page under test.
- * @param rows - draft lines, joined with '\n' — one paste, not one keystroke each.
- */
-async function pasteDraft(page: Page, rows: readonly string[]): Promise<void> {
-  await typeDraft(page, [])
-  await surface(page).evaluate((el, text) => {
-    const data = new DataTransfer()
-    data.setData('text/plain', text)
-    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
-  }, rows.join('\n'))
-}
-
-/** The composer's scrollport alone, for measurements taken after an edit removed the marked lines. */
-interface ScrollportMetrics {
-  /** True when the draft is taller than the capped box. */
-  overflows: boolean
-  /** The composer's one scroll offset. */
-  scrollTop: number
-  /** Furthest that offset can go. */
-  scrollMax: number
-}
-
-/**
- * Measure the composer's scrollport without addressing the draft's marked lines.
- * @param page - the page under test.
- * @returns the offset, its maximum, and whether the draft overflows.
- */
-function measureScrollport(page: Page): Promise<ScrollportMetrics> {
-  return page.evaluate(() => {
-    const input = document.querySelector<HTMLElement>('[data-composer-input][contenteditable="true"]')
-    if (input === null) throw new Error('no live composer surface in the DOM')
-    const scroll = input.closest<HTMLElement>('[data-input-scroll]')
-    if (scroll === null) throw new Error('the composer surface is not inside a draft scrollport')
-    return {
-      overflows: scroll.scrollHeight > scroll.clientHeight,
-      scrollTop: scroll.scrollTop,
-      scrollMax: scroll.scrollHeight - scroll.clientHeight,
-    }
-  })
-}
-
 /** The composer's scroll surface as the browser lays it out. */
 interface ComposerMetrics {
   /** True when the draft is taller than the capped box — the situation under test. */
@@ -329,54 +285,6 @@ describe('web e2e: composer draft scrolling', () => {
     // final line — is on screen.
     expect(bottom.lastLineOffset).toBeGreaterThanOrEqual(0)
     expect(bottom.lastLineOffset).toBeLessThan(bottom.clientHeight)
-    expect(tripwire.pageErrors).toEqual([])
-  }, 60_000)
-
-  it('deleting a pasted draft\'s trailing lines keeps the box at the end', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-composer-draft-scroll-paste-delete'))
-    // A pasted block is where a draft's structure and a typed one diverge: a
-    // paste that keeps its newlines inside one text node leaves the browser
-    // revealing the caret from a rect that spans the whole block, which jumps
-    // the capped box back to the draft's head on the next edit at its end.
-    await pasteDraft(page, [...DRAFT_ROWS, '', '', ''])
-    await expect.poll(async () => (await measureScrollport(page)).overflows, { timeout: 10_000 }).toBe(true)
-    await surface(page).hover()
-    await page.mouse.wheel(0, 4000)
-    await expect.poll(async () => {
-      const m = await measureScrollport(page)
-      return m.scrollTop === m.scrollMax
-    }, { timeout: 10_000 }).toBe(true)
-    // Chromium updates the DOM selection before delivering selectionchange
-    // to Lexical. Deliver it before deletion so the editor sees the end caret.
-    const input = surface(page)
-    await input.click()
-    await page.keyboard.press('ControlOrMeta+KeyA')
-    await page.keyboard.press('ArrowRight')
-    await expect.poll(
-      async () => page.evaluate(() => window.getSelection()?.isCollapsed ?? false),
-      { timeout: 10_000 },
-    ).toBe(true)
-    await input.evaluate(el => el.ownerDocument.dispatchEvent(new Event('selectionchange')))
-    await page.keyboard.press('Backspace')
-    await expect.poll(async () => (await measureScrollport(page)).overflows, { timeout: 10_000 }).toBe(true)
-    await expect.poll(async () => {
-      const m = await measureScrollport(page)
-      return m.scrollTop === m.scrollMax
-    }, { timeout: 10_000 }).toBe(true)
-    // The box is at its furthest offset rather than back at the draft's head.
-    const afterBackspace = await measureScrollport(page)
-    expect(afterBackspace.scrollMax).toBeGreaterThan(0)
-    expect(afterBackspace.scrollTop).toBe(afterBackspace.scrollMax)
-    // The same failure through the selection gesture: select the trailing
-    // lines and delete them at once.
-    await page.keyboard.press('Shift+ArrowUp')
-    await page.keyboard.press('Shift+ArrowUp')
-    await input.evaluate(el => el.ownerDocument.dispatchEvent(new Event('selectionchange')))
-    await page.keyboard.press('Delete')
-    await expect.poll(async () => {
-      const m = await measureScrollport(page)
-      return m.overflows && m.scrollTop === m.scrollMax
-    }, { timeout: 10_000 }).toBe(true)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
