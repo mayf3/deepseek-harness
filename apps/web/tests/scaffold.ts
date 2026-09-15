@@ -84,14 +84,20 @@ import type {} from '@deepseek-ai/dsh-agent'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { REPO_ROOT, requireBuilt, requireDist } from './support.ts'
 
-// The launcher's own module, as built: the manager and HMR plugins the profile
-// loads reload the tree through this copy's registry of the root Include, so
-// the scaffold mounts through the same copy rather than the source import.
-const appBoot = requireBuilt('@deepseek-ai/dsh-app-boot') as typeof import('@deepseek-ai/dsh-app-boot')
-const {
-  auditStartupEntries, composeEntries, createProfileResolutionGeneration, healProfilesModuleFallback, initProfile,
-  mountRootInclude, readProfileManifest, readProfilePatches, loadOverlayPatches, PluginPackages,
-} = appBoot
+type AppBoot = typeof import('@deepseek-ai/dsh-app-boot')
+let builtAppBoot: AppBoot | undefined
+
+/**
+ * The launcher's own module, as built: the manager and HMR plugins the profile
+ * loads reload the tree through this copy's registry of the root Include, so
+ * the scaffold mounts through the same copy rather than the source import.
+ * Resolved on the first launch, which needs the build anyway, so the fixture
+ * helpers this module also exports load without one.
+ */
+function appBoot(): AppBoot {
+  builtAppBoot ??= requireBuilt('@deepseek-ai/dsh-app-boot') as AppBoot
+  return builtAppBoot
+}
 
 // Host-side web e2e cannot import a browser package: doing so would pull that
 // package's complete TS project into this graph. Mirrored from
@@ -447,6 +453,10 @@ async function cleanupScaffoldWorld(ctx: Context, workspaceCwd: string, persiste
  */
 export async function launchWebScaffold(options: LaunchOptions = {}): Promise<WebScaffold> {
   requireDist()
+  const {
+    auditStartupEntries, composeEntries, createProfileResolutionGeneration, healProfilesModuleFallback, initProfile,
+    mountRootInclude, readProfileManifest, readProfilePatches, loadOverlayPatches, PluginPackages,
+  } = appBoot()
   const mode = webSnapshotMode()
   const replayFixture = options.replayFixture === undefined
     ? undefined
