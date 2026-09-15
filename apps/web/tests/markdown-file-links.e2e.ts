@@ -63,7 +63,7 @@ describe('web e2e: Markdown file links', () => {
     expect(await page.getByRole('link', { name: 'Website', exact: true }).getAttribute('target')).toBe('_blank')
     const artifacts = fileURLToPath(new URL('../../../.artifacts', import.meta.url))
     await mkdir(artifacts, { recursive: true })
-    await page.screenshot({ path: join(artifacts, 'markdown-file-links.png') })
+    await page.screenshot({ path: join(artifacts, 'markdown-file-links.png'), animations: 'disabled' })
     await page.getByRole('button', { name: 'Other example', exact: true }).click()
     await expect.poll(() => column.locator('[data-textpreview-path]').textContent())
       .toBe(join(scaffold.workspaceCwd, 'other/example.txt'))
