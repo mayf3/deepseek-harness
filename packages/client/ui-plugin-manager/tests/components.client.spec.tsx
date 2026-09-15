@@ -140,6 +140,8 @@ describe('PluginManagerPage', () => {
     expect(within(detail).getByRole('heading', { level: 3 }).textContent).toBe('Better sidebar')
     // The version sits beside the name as a tag; the crumb only leads back.
     expect(within(detail).getByText('v0.16.0')).toBeTruthy()
+    // The full package name stays visible under the title, whatever the title shows.
+    expect(document.querySelector('[data-plugin-name]')?.textContent).toBe('dsh-better-sidebar')
     expect(within(detail).getByRole('button', { name: en.backToList }).textContent).toBe(en.crumbRoot)
     expect(within(detail).getByText('A sidebar.')).toBeTruthy()
     // The rows, in order, with their state and their module; the built-in rows the patch changes.

@@ -255,9 +255,10 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
 
 /**
  * One package's page: the crumb back to the list; its icon with uninstall
- * and its switch; its name beside its version tag and problem tag; its
- * one-liner; the Host's problem when it reports one; its rows with their
- * switches; and the built-in rows it changes.
+ * and its switch; its title beside its version tag and problem tag; the
+ * package name the title stands for, which is what installs it elsewhere;
+ * its one-liner; the Host's problem when it reports one; its rows with
+ * their switches; and the built-in rows it changes.
  */
 function PackageDetail({
   pkg, t, busy, rowBusy,
@@ -304,6 +305,7 @@ function PackageDetail({
           {pkg.version === undefined ? null : <span className={css.versionTag} data-plugin-version>{t('versionTag', { version: pkg.version })}</span>}
           {status === 'problem' ? <Tag className={css.statusTag} tone="danger">{t('statusProblem')}</Tag> : null}
         </div>
+        <p className={css.detailName}><code data-plugin-name>{pkg.name}</code></p>
         <p className={css.detailDesc}>{pkg.description ?? t('noDescription')}</p>
       </div>
       {pkg.error === undefined ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {managementText(pkg.error, t)}</p>}

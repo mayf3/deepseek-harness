@@ -757,6 +757,20 @@
   line-height: 22px;
 }
 
+/* The package name under the title: the exact spec that installs the package
+   elsewhere, where a title of its own or a shortened name hides it. */
+.detailName {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-caption);
+  overflow-wrap: anywhere;
+}
+
+.detailName code {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
 /* The unknown-package note under the name block. */
 .detail > .detailDesc {
   margin-top: 12px;
