@@ -24,8 +24,13 @@ export function parseNumstat(output: string): NumstatEntry[] {
   const entries: NumstatEntry[] = []
   while (queue.length > 0) {
     const record = queue.shift() as string
-    const [added, deleted, path] = record.split('\t')
-    if (added === undefined || deleted === undefined || path === undefined) throw new Error(`malformed numstat record: ${record}`)
+    // Only the first two tabs separate fields; a file name keeps its own tabs.
+    const first = record.indexOf('\t')
+    const second = first < 0 ? -1 : record.indexOf('\t', first + 1)
+    if (second < 0) throw new Error(`malformed numstat record: ${record}`)
+    const added = record.slice(0, first)
+    const deleted = record.slice(first + 1, second)
+    const path = record.slice(second + 1)
     let target = path
     if (target === '') {
       queue.shift()
@@ -73,12 +78,14 @@ export function hunkLineCounts(diffs: readonly FileDiff[]): { added: number; del
 /**
  * Narrow a tool result's opaque `meta` to the file-tool hunk list.
  * @param meta - persisted result metadata.
- * @returns the hunks, or undefined when the metadata carries none; `write` persists an empty list for a created file.
+ * @returns the hunks; an empty list for a `write` that updated a file without changing it; undefined when the
+ * metadata carries none, as `write` persists for a created file, so the call's arguments supply the content.
  */
 export function fileDiffsOf(meta: unknown): FileDiff[] | undefined {
   if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return undefined
-  const { diffs } = meta as Record<string, unknown>
-  if (!Array.isArray(diffs) || diffs.length === 0) return undefined
+  const { diffs, operation } = meta as Record<string, unknown>
+  if (!Array.isArray(diffs)) return undefined
+  if (diffs.length === 0) return operation === 'update' ? [] : undefined
   const out: FileDiff[] = []
   for (const value of diffs) {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined

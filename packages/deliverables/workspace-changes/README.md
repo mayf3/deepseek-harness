@@ -86,6 +86,7 @@ Nothing here enters a model request, so provider cache reuse is unaffected.
 - Summaries and snapshot trees live only as long as their Session in this Host process; earlier turns of a conversation reopened after a Host restart have no card. This is the decided behavior: a card whose content the Host can no longer open is not shown.
 - Two git features still write into the repository's own git directory during a snapshot: `core.splitIndex` writes `sharedindex.*` files, and git-lfs runs its clean filter on changed files and stores their objects under `.git/lfs`.
 - git 2.13 or later is required for `rev-parse --absolute-git-dir`; an unsupported repository format or another git failure abandons the turn with a warning rather than being treated as a plain directory.
+- The first snapshot of a Session writes every untracked, non-ignored file of the work tree into the Session's temporary directory; a repository without a `.gitignore` that carries large build outputs costs that much temporary space until the Session is disposed.
 - Edits the user makes during a turn are attributed to that turn.
 - A working directory outside any git repository lists file-tool edits only, so shell edits are missing from its card; a shadow repository under the Harness home is deferred until its exclude rules can replace a missing `.gitignore` reliably.
 - Hunk-based counts for files outside snapshot coverage are sums over edits, not a first-to-last diff, and cover file tools only.

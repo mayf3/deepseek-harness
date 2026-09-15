@@ -65,7 +65,7 @@ export function Deliverables({
     if (announced !== null && summary === undefined) void loadChangesSummary(sessionId, announced.seq)
   }, [announced, summary, sessionId, loadChangesSummary])
   const changes = announced !== null && typeof summary === 'object' && summary.files.length > 0
-    ? { seq: announced.seq, files: summary.files, total: summary.total }
+    ? { seq: announced.seq, ...summary }
     : null
   const collapsible = matched.presented.length > COLLAPSED_PRESENTED_COUNT
   const presented = collapsible && !expanded

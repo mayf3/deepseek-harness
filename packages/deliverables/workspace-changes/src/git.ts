@@ -1,9 +1,9 @@
 /** Git working-tree snapshots, tree diffs, and ignore checks through the subprocess capability. */
 import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { parseNumstat, type NumstatEntry } from './numstat.ts'
+import { canonicalPath, isInside, toPosix } from './paths.ts'
 
 /** Milliseconds a git child gets to exit after termination starts; a fixed lifecycle constant. */
 const TERMINATE_GRACE_MS = 2_000
@@ -88,14 +88,18 @@ function ok(result: GitRunResult, what: string): GitRunResult {
   return result
 }
 
-/** The repository enclosing a Session working directory and the private store its snapshots write to. */
+/** The repository enclosing a Session working directory and the private directory its snapshots write to. */
 export interface GitWorkspace {
   /** Repository top-level directory, the root every diff path is relative to. */
   root: string
   /** Absolute git directory holding the repository's index. */
   gitDir: string
+  /** Private directory holding the snapshot object store and each snapshot's scratch index. */
+  scratch: string
   /** Environment that routes object writes to the private store and object reads through the repository's store. */
   env: Readonly<Record<string, string>>
+  /** Work-tree paths a snapshot must skip: the private directory when a temporary root lies inside the work tree. */
+  excludes: readonly string[]
 }
 
 /** Whether a filesystem error names a missing path. */
@@ -105,26 +109,32 @@ function isMissing(error: unknown): boolean {
 
 /**
  * Locate the repository enclosing a working directory and prepare the private
- * object store its snapshots write to. The repository's own object store is
+ * directory its snapshots write to. The repository's own object store is
  * attached read-only as an alternate, so snapshots read committed content from
- * it and write nothing into it. A directory outside any repository yields
- * null; any other git failure throws.
+ * it and write nothing into it. A private directory that lies inside the work
+ * tree, as a temporary root under the workspace does, is excluded from every
+ * snapshot. A directory outside any repository yields null; any other git
+ * failure throws.
  * @param git - command runner.
  * @param cwd - absolute Session working directory.
- * @param objectsDir - yields the directory that receives every snapshot blob and tree; called only for a located repository.
+ * @param scratch - yields the private directory for snapshot objects and scratch indexes; called only for a located repository.
  * @param signal - cancellation.
  * @returns the repository, or null when the directory is not inside one.
  */
 export async function locateGitWorkspace(
-  git: GitRunner, cwd: string, objectsDir: () => Promise<string>, signal: AbortSignal,
+  git: GitRunner, cwd: string, scratch: () => Promise<string>, signal: AbortSignal,
 ): Promise<GitWorkspace | null> {
   const found = await git.run(['rev-parse', '--show-toplevel', '--absolute-git-dir', '--git-path', 'objects'], { cwd, signal })
   if (found.exitCode === 128 && /not a git repository/i.test(found.stderr)) return null
   const lines = ok(found, 'git rev-parse').stdout.split('\n').map(line => resolve(cwd, line))
   const [root, gitDir, repositoryObjects] = lines as [string, string, string]
-  const objects = await objectsDir()
+  // git reports the canonical root; compare the private directory in the same spelling.
+  const directory = await canonicalPath(await scratch())
+  const objects = join(directory, 'objects')
   await mkdir(objects, { recursive: true })
-  return { root, gitDir, env: { GIT_OBJECT_DIRECTORY: objects, GIT_ALTERNATE_OBJECT_DIRECTORIES: repositoryObjects } }
+  const excludes = isInside(root, directory) ? [toPosix(relative(root, directory))] : []
+  const env = { GIT_OBJECT_DIRECTORY: objects, GIT_ALTERNATE_OBJECT_DIRECTORIES: repositoryObjects }
+  return { root, gitDir, scratch: directory, env, excludes }
 }
 
 /**
@@ -139,7 +149,7 @@ export async function locateGitWorkspace(
  * @returns the tree object id.
  */
 export async function snapshotTree(git: GitRunner, workspace: GitWorkspace, signal: AbortSignal): Promise<string> {
-  const scratch = await mkdtemp(join(tmpdir(), 'dsh-workspace-changes-'))
+  const scratch = await mkdtemp(join(workspace.scratch, 'index-'))
   try {
     const index = join(scratch, 'index')
     // A repository without an index yet (fresh `git init`) starts from scratch.
@@ -148,7 +158,8 @@ export async function snapshotTree(git: GitRunner, workspace: GitWorkspace, sign
     })
     const env = { ...workspace.env, GIT_INDEX_FILE: index }
     // `--ignore-errors` skips unreadable files and reports them through exit code 1; the index is still complete.
-    const added = await git.run(['add', '--all', '--ignore-errors'], { cwd: workspace.root, env, signal })
+    const pathspec = workspace.excludes.length === 0 ? [] : ['--', '.', ...workspace.excludes.map(path => `:(exclude)${path}`)]
+    const added = await git.run(['add', '--all', '--ignore-errors', ...pathspec], { cwd: workspace.root, env, signal })
     /* v8 ignore next -- git reports a skipped unreadable file only on hosts whose permissions the tests can revoke. */
     if (added.exitCode !== 1) ok(added, `git add in ${workspace.root}`)
     return ok(await git.run(['write-tree'], { cwd: workspace.root, env, signal }), 'git write-tree').stdout.trim()
@@ -176,6 +187,24 @@ export async function diffTrees(
   }), 'git diff-tree')
   if (result.truncated) throw new Error('git diff-tree output exceeded the configured cap')
   return parseNumstat(result.stdout)
+}
+
+/**
+ * Work-tree directories the index records as gitlinks: nested repositories and
+ * submodules, whose contents snapshots never descend into and `check-ignore`
+ * refuses to classify.
+ * @param git - command runner.
+ * @param workspace - addressed repository.
+ * @param signal - cancellation.
+ * @returns slash-separated gitlink paths relative to the repository root.
+ */
+export async function gitlinkPaths(git: GitRunner, workspace: GitWorkspace, signal: AbortSignal): Promise<Set<string>> {
+  const result = ok(await git.run(['ls-files', '-z', '--stage'], { cwd: workspace.root, env: workspace.env, signal }), 'git ls-files')
+  const links = new Set<string>()
+  for (const entry of result.stdout.split('\0')) {
+    if (entry.startsWith('160000 ')) links.add(entry.slice(entry.indexOf('\t') + 1))
+  }
+  return links
 }
 
 /**

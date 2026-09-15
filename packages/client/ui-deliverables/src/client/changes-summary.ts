@@ -11,6 +11,8 @@ export class ChangesSummaryStore {
   /** Summary URLs key the state across Sessions and turns. */
   readonly state = createSnapshotStore<Record<string, ChangesSummaryState | undefined>>({})
   private readonly lifetime = new AbortController()
+  /** The connection generation the current states belong to; a reset aborts it so no older read publishes. */
+  private generation = new AbortController()
   private readonly pending = new Set<Promise<void>>()
 
   /**
@@ -23,7 +25,7 @@ export class ChangesSummaryStore {
     const url = changesSummaryUrl(sessionId, seq)
     if (this.lifetime.signal.aborted || this.state.getSnapshot()[url] !== undefined) return
     this.state.update((state) => { state[url] = 'loading' })
-    const task = this.read(url)
+    const task = this.read(url, AbortSignal.any([this.lifetime.signal, this.generation.signal]))
     this.pending.add(task)
     try {
       await task
@@ -32,8 +34,10 @@ export class ChangesSummaryStore {
     }
   }
 
-  /** Forget every state; a replaced connection may reach a Host that no longer serves them. */
+  /** Forget every state and abandon in-flight reads; a replaced connection may reach a Host that no longer serves them. */
   reset(): void {
+    this.generation.abort()
+    this.generation = new AbortController()
     this.state.set({})
   }
 
@@ -43,10 +47,10 @@ export class ChangesSummaryStore {
     await Promise.all(this.pending)
   }
 
-  private async read(url: string): Promise<void> {
+  private async read(url: string, signal: AbortSignal): Promise<void> {
     let next: ChangesSummaryState = 'missing'
     try {
-      const response = await fetch(url, { signal: this.lifetime.signal })
+      const response = await fetch(url, { signal })
       if (response.ok) {
         const value: unknown = await response.json()
         if (isChangesSummary(value)) next = value
@@ -55,6 +59,6 @@ export class ChangesSummaryStore {
       // A transport failure reads as missing until the connection is replaced and the store reset.
       next = 'missing'
     }
-    if (!this.lifetime.signal.aborted) this.state.update((state) => { state[url] = next })
+    if (!signal.aborted) this.state.update((state) => { state[url] = next })
   }
 }

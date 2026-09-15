@@ -30,10 +30,6 @@ function gesture(phase: PresentedOpenPhase | undefined): { key: 'presented.openi
   }
 }
 
-function sum(files: readonly { added: number; deleted: number }[], key: 'added' | 'deleted'): number {
-  return files.reduce((total, file) => total + file[key], 0)
-}
-
 /** Added and deleted line counts in the card's colors. */
 function Counts({ added, deleted, t }: { added: number; deleted: number } & PropsLocale<typeof NS>) {
   return <>
@@ -51,7 +47,7 @@ function Counts({ added, deleted, t }: { added: number; deleted: number } & Prop
  */
 export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, openFile, t }: {
   /** The served summary with the sequence of the event that announced it. */
-  changes: Pick<ChangesSummary, 'files' | 'total'> & { seq: number }
+  changes: Pick<ChangesSummary, 'files' | 'total' | 'added' | 'deleted'> & { seq: number }
   cwd: string | undefined
   sessionId: SessionId
   host: PresentedHost | null
@@ -70,7 +66,7 @@ export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, op
       <span className={css.title}>{t('changes.title', { count: String(changes.total) })}</span>
       <span className={css.stat} role={folder === undefined ? undefined : 'status'} data-error={folder?.failed || undefined}>
         {folder === undefined
-          ? <Counts t={t} added={sum(changes.files, 'added')} deleted={sum(changes.files, 'deleted')} />
+          ? <Counts t={t} added={changes.added} deleted={changes.deleted} />
           : t(folder.failed ? 'changes.folderError' : 'changes.folderOpening')}
       </span>
     </span>

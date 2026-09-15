@@ -23,6 +23,17 @@ describe('parseNumstat', () => {
   })
 })
 
+describe('parseNumstat with unusual names', () => {
+  it('keeps tabs inside a file name', () => {
+    expect(parseNumstat(['1\t0\ta\tb.txt', '2\t0\t', 'old\tx', 'new\ty', ''].join('\u0000'))).toEqual([
+      { path: 'a\tb.txt', added: 1, deleted: 0, binary: false },
+      { path: 'new\ty', added: 2, deleted: 0, binary: false },
+    ])
+    expect(() => parseNumstat('1\ta.txt\u0000')).toThrow('malformed numstat record')
+    expect(() => parseNumstat('garbage\u0000')).toThrow('malformed numstat record')
+  })
+})
+
 describe('hunkLineCounts', () => {
   it('counts changed lines and ignores context', () => {
     expect(hunkLineCounts([
@@ -45,6 +56,10 @@ describe('fileDiffsOf', () => {
     expect(fileDiffsOf(undefined)).toBeUndefined()
     expect(fileDiffsOf([])).toBeUndefined()
     expect(fileDiffsOf({ diffs: [] })).toBeUndefined()
+    expect(fileDiffsOf({ diffs: 'x' })).toBeUndefined()
+    expect(fileDiffsOf({ operation: 'create', diffs: [] })).toBeUndefined()
+    // An unchanged overwrite persists no hunks and changes nothing; the call's content must not count as added.
+    expect(fileDiffsOf({ operation: 'update', diffs: [] })).toEqual([])
     expect(fileDiffsOf({ diffs: [null] })).toBeUndefined()
     expect(fileDiffsOf({ diffs: [{ path: 1, oldText: null, newText: '' }] })).toBeUndefined()
     expect(fileDiffsOf({ diffs: [{ path: 'a', oldText: 2, newText: '' }] })).toBeUndefined()

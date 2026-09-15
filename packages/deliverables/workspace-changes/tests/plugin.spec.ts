@@ -82,7 +82,9 @@ describe('workspace-changes in a repository', () => {
     expect(events.map(event => event.data)).toEqual([{ turn: 1 }])
     const [recorded, ...rest] = changes(ctx, session)
     expect(rest).toEqual([])
-    expect(recorded).toMatchObject({ turn: 1, cwd, total: 6 })
+    expect(recorded).toMatchObject({ turn: 1, cwd, total: 6, added: 8, deleted: 1 })
+    expect(recorded!.snapshot!.before).toMatch(/^[0-9a-f]{40,64}$/)
+    expect(recorded!.snapshot!.after).toMatch(/^[0-9a-f]{40,64}$/)
     expect(recorded!.files).toEqual([
       { path: '.env', display: '.env', added: 2, deleted: 0 },
       { path: '.env.gone', display: '.env.gone', added: 1, deleted: 0 },
@@ -213,12 +215,36 @@ describe('workspace-changes in a repository', () => {
     await settle(ctx, session)
     await writeFile(join(cwd, 'x.txt'), 'x\n')
     toolCall(session, 1, 'bash', { command: 'x' })
+    // A repository whose snapshot failed is not summarized from file-tool hunks as if it had no repository.
+    toolCall(session, 1, 'write', { file_path: 'x.txt', content: 'x\n' }, { meta: { operation: 'create', diffs: [] } })
     endTurn(session, 1)
     await settle(ctx, session)
     expect(changes(ctx, session)).toEqual([])
     const own = warn.mock.calls.map(call => String(call[0])).filter(message => message.startsWith('workspace-changes:'))
     expect(own).toHaveLength(1)
     expect(own[0]).toContain('missing-git')
+  })
+
+  it('leaves nested repositories out even when a file tool edits inside them', async () => {
+    const cwd = await repository()
+    const sub = join(cwd, 'sub')
+    await mkdir(sub)
+    git(sub, 'init', '-q', '-b', 'main')
+    await writeFile(join(sub, 'inner.txt'), 'inner\n')
+    git(sub, 'add', '-A'); git(sub, 'commit', '-q', '-m', 'inner')
+    git(cwd, 'add', 'sub'); git(cwd, 'commit', '-q', '-m', 'gitlink')
+    const { ctx } = await boot()
+    const session = ctx.sessions.create(SessionId('gitlink'), { meta: { cwd } })
+    startTurn(session, 1)
+    await settle(ctx, session)
+    await writeFile(join(sub, 'inner.txt'), 'inner\nedited\n')
+    toolCall(session, 1, 'edit', { file_path: 'sub/inner.txt' }, { meta: { diffs: [{ path: 'sub/inner.txt', oldText: 'inner', newText: 'inner\nedited' }] } })
+    await writeFile(join(cwd, 'top.txt'), 'top\n')
+    toolCall(session, 1, 'write', { file_path: 'top.txt', content: 'top\n' }, { meta: { operation: 'create', diffs: [] } })
+    toolCall(session, 1, 'write', { file_path: 'same.txt', content: 'same\n' }, { meta: { operation: 'update', diffs: [] } })
+    endTurn(session, 1)
+    await settle(ctx, session)
+    expect(changes(ctx, session).map(summary => summary.files.map(file => file.display))).toEqual([['top.txt']])
   })
 
   it('rejects non-positive bounds at load', async () => {
@@ -257,7 +283,7 @@ describe('workspace-changes without a repository', () => {
     endTurn(session, 1)
     await settle(ctx, session)
     expect(changes(ctx, session)).toEqual([{
-      turn: 1, cwd, total: 2,
+      turn: 1, cwd, total: 2, added: 5, deleted: 1,
       files: [
         { path: 'existing.txt', display: 'existing.txt', added: 3, deleted: 1 },
         { path: join(await realpath(outside), 'note.txt'), display: `~/${outside.slice(homedir().length + 1)}/note.txt`, added: 2, deleted: 0 },
@@ -333,7 +359,7 @@ describe('workspace-changes without git', () => {
       endTurn(session, turn)
       await settle(ctx, session)
     }
-    expect(changes(ctx, session)).toEqual([{ turn: 2, cwd, total: 1, files: [{ path: 'w.txt', display: 'w.txt', added: 1, deleted: 0 }] }])
+    expect(changes(ctx, session)).toEqual([{ turn: 2, cwd, total: 1, added: 1, deleted: 0, files: [{ path: 'w.txt', display: 'w.txt', added: 1, deleted: 0 }] }])
     expect(info).toHaveBeenCalledTimes(1)
     expect(info.mock.calls[0]![0]).toContain('git is unavailable')
   })

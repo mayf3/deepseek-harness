@@ -73,6 +73,10 @@ describe('real Loader composition', () => {
     await context.waterfall('tools/pre-execute', { agent: { session } } as never, () => Promise.resolve(undefined as never))
     const [recorded, ...rest] = changes(context, session)
     expect(rest).toEqual([])
-    expect(recorded).toEqual({ turn: 1, cwd, total: 1, files: [{ path: 'tracked.txt', display: 'tracked.txt', added: 1, deleted: 0 }] })
+    expect(recorded).toEqual({
+      turn: 1, cwd, total: 1, added: 1, deleted: 0,
+      files: [{ path: 'tracked.txt', display: 'tracked.txt', added: 1, deleted: 0 }],
+      snapshot: { before: expect.stringMatching(/^[0-9a-f]+$/) as string, after: expect.stringMatching(/^[0-9a-f]+$/) as string },
+    })
   })
 })

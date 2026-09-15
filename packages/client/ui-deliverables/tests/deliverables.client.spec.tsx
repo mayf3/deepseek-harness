@@ -469,7 +469,7 @@ describe('ChangedFiles card', () => {
     changedFile('~/.zshrc', 0, 0, { binary: true, path: '/home/u/.zshrc' }),
   ]
   const changes = { seq: 5 }
-  const served: ChangesSummary = { turn: 1, files, total: 11 }
+  const served: ChangesSummary = { turn: 1, files, total: 11, added: 1232, deleted: 326 }
 
   /** A store already holding the summary the Host served for the announced sequence. */
   function servedStore(summary: ChangesSummary = served, seq = 5) {
@@ -493,7 +493,7 @@ describe('ChangedFiles card', () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       if (url.endsWith('seq=5')) return Response.json(served)
-      if (url.endsWith('seq=6')) return Response.json({ turn: 1, files: [], total: 0 })
+      if (url.endsWith('seq=6')) return Response.json({ turn: 1, files: [], total: 0, added: 0, deleted: 0 })
       return new Response('gone', { status: 404 })
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -524,6 +524,29 @@ describe('ChangedFiles card', () => {
     await summaries.dispose()
     await summaries.load(SessionId('child-session'), 9)
     expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 9)]).toBeUndefined()
+  })
+
+  it('sums the header from the Host totals, not from the capped list', () => {
+    const capped = servedStore({ turn: 1, files: files.slice(0, 1), total: 2, added: 50, deleted: 20 })
+    const { view } = renderCard(new PresentedOpenController(), en, { changes, presented: [] as never[] }, capped)
+    expect(view.getByText('Edited 2 files')).toBeTruthy()
+    expect(view.getByText('+50')).toBeTruthy()
+    expect(view.getByText('-20')).toBeTruthy()
+  })
+
+  it('lets no read started before a reset publish afterwards', async () => {
+    const summaries = new ChangesSummaryStore()
+    let settle!: (response: Response) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => { settle = resolve })))
+    const stale = summaries.load(SessionId('child-session'), 5)
+    summaries.reset()
+    const url = changesSummaryUrl(SessionId('child-session'), 5)
+    expect(summaries.state.getSnapshot()[url]).toBeUndefined()
+    settle(Response.json(served))
+    await stale
+    // The reset abandoned the read; a later mount asks the new Host afresh.
+    expect(summaries.state.getSnapshot()[url]).toBeUndefined()
+    await summaries.dispose()
   })
 
   it('drops a read that settles after disposal', async () => {
@@ -618,7 +641,7 @@ describe('ChangedFiles card', () => {
   })
 
   it('renders without a fold for three files or fewer and beside delivery cards', () => {
-    const short = servedStore({ turn: 1, files: files.slice(0, 2), total: 2 })
+    const short = servedStore({ turn: 1, files: files.slice(0, 2), total: 2, added: 185, deleted: 43 })
     const { view } = renderCard(new PresentedOpenController(), en, { changes, presented: [{ path: 'report.pdf', seq: 6, index: 0 }] as never[] }, short)
     expect(view.getByText('Edited 2 files')).toBeTruthy()
     expect(view.queryByRole('button', { name: /Show all|Collapse changed/ })).toBeNull()
@@ -716,9 +739,9 @@ describe('plugin registration', () => {
     fetcher.mockResolvedValueOnce(Response.json({ name: 'desktop', available: true, fileManager: 'finder' }))
     await face.reloadPresentedHost()
     expect(face.hooks.presentedHost.getSnapshot()).toMatchObject({ name: 'desktop' })
-    fetcher.mockResolvedValueOnce(Response.json({ turn: 1, files: [], total: 0 }))
+    fetcher.mockResolvedValueOnce(Response.json({ turn: 1, files: [], total: 0, added: 0, deleted: 0 }))
     await face.loadChangesSummary(SessionId('child-session'), 5)
-    expect(face.hooks.changesSummary.getSnapshot()['/api/changes.summary?sessionId=child-session&seq=5']).toEqual({ turn: 1, files: [], total: 0 })
+    expect(face.hooks.changesSummary.getSnapshot()['/api/changes.summary?sessionId=child-session&seq=5']).toEqual({ turn: 1, files: [], total: 0, added: 0, deleted: 0 })
     ctx.emit('connection/reset')
     expect(face.hooks.presentedHost.getSnapshot()).toBeNull()
     // The replaced connection may reach a Host that no longer serves the summaries read so far.
@@ -814,7 +837,7 @@ it.each([{}, { turn: '1', callId: 'bad', files: [] },
   const owner = tailOwner(deliverablesOf(value), 6)
   const matched = selectDeliverables(owner)!
   const summaries = new ChangesSummaryStore()
-  summaries.state.set({ [changesSummaryUrl(SessionId('session'), 5)]: { turn: 1, files: [{ path: 'a.txt', display: 'a.txt', added: 1, deleted: 0 }], total: 1 } })
+  summaries.state.set({ [changesSummaryUrl(SessionId('session'), 5)]: { turn: 1, files: [{ path: 'a.txt', display: 'a.txt', added: 1, deleted: 0 }], total: 1, added: 1, deleted: 0 } })
   const view = render(<Deliverables {...openProps(new PresentedOpenController(), summaries)} matched={matched} openFile={owner.openFile} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.getByText('Edited 1 files')).toBeTruthy()
   expect(view.queryByText('Deliverables')).toBeNull()

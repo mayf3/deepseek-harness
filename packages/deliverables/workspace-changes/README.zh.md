@@ -86,6 +86,7 @@ git 通过 `subprocess` 能力运行，使用净化后的环境、`GIT_TERMINAL_
 - 摘要与快照树只在本 Host 进程内随其 Session 存活；Host 重启后重新打开的对话，先前轮次没有卡片。这是既定行为：Host 已经打不开内容的卡片不显示。
 - 有两个 git 功能在快照期间仍会写入仓库自己的 git 目录：`core.splitIndex` 会写 `sharedindex.*` 文件，git-lfs 会对改动文件运行 clean 过滤器并把对象存到 `.git/lfs` 下。
 - 需要 git 2.13 或更高版本以支持 `rev-parse --absolute-git-dir`；不支持的仓库格式或其他 git 失败会带着警告放弃本轮，而不是被当成普通目录。
+- Session 的首次快照会把工作树里所有未跟踪且未被忽略的文件写进 Session 的临时目录；没有 `.gitignore` 却带着大体积构建产物的仓库，在 Session 释放前会占用同等的临时空间。
 - 用户在轮次进行中自己做的编辑会被算到该轮。
 - 不在任何 git 仓库内的工作目录只列文件工具的编辑，卡片里因此没有 shell 改动；Harness home 下的影子仓库暂缓，直到其排除规则能可靠地代替缺失的 `.gitignore`。
 - 快照覆盖范围之外的文件按 hunk 累加计数，不是首尾对比，且只覆盖文件工具。

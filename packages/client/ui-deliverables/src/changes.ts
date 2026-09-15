@@ -8,8 +8,8 @@ export const CHANGED_FILES_PATH = '/api/changes.summary'
 /** Authenticated POST route for opening a changed file, or the changed files' common folder, on the Host desktop. */
 export const CHANGES_OPEN_PATH = '/api/changes.open'
 
-/** The summary fields the route serves; the Host keeps the working directory to itself. */
-export type ChangesSummary = Pick<WorkspaceChangesSummary, 'turn' | 'files' | 'total'>
+/** The summary fields the route serves; the Host keeps the working directory and snapshot ids to itself. */
+export type ChangesSummary = Pick<WorkspaceChangesSummary, 'turn' | 'files' | 'total' | 'added' | 'deleted'>
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -30,12 +30,13 @@ export function isChangedFile(value: unknown): value is WorkspaceChangedFile {
 /**
  * Validate a summary read from the summary route.
  * @param value - decoded JSON.
- * @returns whether the value identifies a turn, a complete file list, and the total count.
+ * @returns whether the value identifies a turn, a complete file list, the total count, and the line totals.
  */
 export function isChangesSummary(value: unknown): value is ChangesSummary {
   if (!isRecord(value)) return false
-  const { turn, files, total } = value
+  const { turn, files, total, added, deleted } = value
   return Number.isSafeInteger(turn) && (turn as number) >= 1 && Number.isSafeInteger(total)
+    && Number.isSafeInteger(added) && Number.isSafeInteger(deleted)
     && Array.isArray(files) && files.every(isChangedFile)
 }
 

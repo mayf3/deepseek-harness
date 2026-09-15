@@ -25,7 +25,7 @@ The deliverables family records what a turn hands to the user as durable Session
 | Package | Role | ctx key |
 |---|---|---|
 | [`tool-present`](tool-present/README.md) | Declares existing files as final deliverables through the `present` tool | registers on `ctx.tools` |
-| [`workspace-changes`](workspace-changes/README.md) | Records each top-level turn's changed files from git working-tree snapshots | listens to `session/event`, appends `workspace/changes` |
+| [`workspace-changes`](workspace-changes/README.md) | Summarizes each top-level turn's changed files from git working-tree snapshots | provides `ctx.workspaceChanges`; listens to `session/event`, appends `workspace/changes` |
 
 -----
 

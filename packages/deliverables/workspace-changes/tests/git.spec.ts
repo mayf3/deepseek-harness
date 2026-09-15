@@ -7,7 +7,7 @@ import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { GitRunner, diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree } from '../src/git.ts'
 import { TurnRecorder } from '../src/recorder.ts'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import { git, scratchDir } from './support.ts'
+import { git, scratchDir, startTurn, toolCall } from './support.ts'
 
 /** An object directory factory under a scratch root. */
 const objectsIn = (root: string) => () => Promise.resolve(join(root, 'objects'))
@@ -70,7 +70,7 @@ describe('snapshots and diffs', () => {
     const { git: runnerGit } = await runner()
     const store = objectsIn(await scratchDir('dsh-git-store-', cleanups))
     expect(await locateGitWorkspace(runnerGit, cwd, store, signal)).toBeNull()
-    const broken = { root: cwd, gitDir: join(cwd, 'missing'), env: {} }
+    const broken = { root: cwd, gitDir: join(cwd, 'missing'), scratch: cwd, env: {}, excludes: [] }
     await expect(snapshotTree(runnerGit, broken, signal)).rejects.toThrow('git add in')
     await expect(ignoredPaths(runnerGit, broken, ['x'], signal)).rejects.toThrow('git check-ignore failed')
     expect(await ignoredPaths(runnerGit, broken, [], signal)).toEqual(new Set())
@@ -171,10 +171,32 @@ describe('TurnRecorder', () => {
     const repo = new TurnRecorder(ctx.sessions.create(SessionId('repo'), { meta: { cwd } }), cwd, env)
     repo.start(1)
     await repo.settled()
-    const [objects, ...others] = (await readdir(tempRoot)).filter(entry => entry.startsWith('dsh-workspace-changes-objects-'))
+    const [objects, ...others] = (await readdir(tempRoot)).filter(entry => entry.startsWith('dsh-workspace-changes-'))
     expect(others).toEqual([])
     expect(objects).toBeDefined()
     await repo.dispose()
     expect(await readdir(tempRoot)).toEqual([])
+  })
+
+  it('keeps its own directory out of the snapshots when the temporary root lies inside the work tree', async () => {
+    const cwd = await scratchDir('dsh-recorder-tmp-in-tree-', cleanups)
+    git(cwd, 'init', '-q', '-b', 'main')
+    await writeFile(join(cwd, 'tracked.txt'), 'one\n')
+    git(cwd, 'add', '-A'); git(cwd, 'commit', '-q', '-m', 'init')
+    const tempRoot = join(cwd, 'tmp')
+    await mkdir(tempRoot)
+    const { ctx, git: runnerGit } = await runner()
+    const session = ctx.sessions.create(SessionId('tmp-in-tree'), { meta: { cwd } })
+    const env = { git: Promise.resolve(runnerGit), tempRoot, maxFiles: 10, warn: (m: string) => { throw new Error(m) } }
+    const recorder = new TurnRecorder(session, cwd, env)
+    startTurn(session, 1)
+    recorder.start(1)
+    await recorder.settled()
+    await writeFile(join(cwd, 'tracked.txt'), 'one\ntwo\n')
+    recorder.observe(toolCall(session, 1, 'bash', { command: 'x' }))
+    await recorder.stopping(1)
+    const announced = session.snapshotEvents().find(event => event.type === 'workspace/changes')
+    expect(recorder.summary(announced!.seq)?.files.map(file => file.display)).toEqual(['tracked.txt'])
+    await recorder.dispose()
   })
 })

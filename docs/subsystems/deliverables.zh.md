@@ -53,6 +53,12 @@ interface WorkspaceChangesSummary {
   files: WorkspaceChangedFile[]
   /** Complete changed-file count, including files omitted by the cap. */
   total: number
+  /** Lines added over every changed file, including files omitted by the cap. */
+  added: number
+  /** Lines deleted over every changed file, including files omitted by the cap. */
+  deleted: number
+  /** Git tree ids of the turn-start and turn-end snapshots; absent when no snapshot was taken. */
+  snapshot?: { before: string; after: string }
 }
 ```
 

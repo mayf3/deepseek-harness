@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { FileDiff } from '@deepseek-ai/dsh-tools'
-import { diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree, type GitRunner, type GitWorkspace } from './git.ts'
+import { diffTrees, gitlinkPaths, ignoredPaths, locateGitWorkspace, snapshotTree, type GitRunner, type GitWorkspace } from './git.ts'
 import { argumentHunks, fileDiffsOf, hunkLineCounts } from './numstat.ts'
 import { canonicalPath, compareDisplay, displayPathOf, durablePathOf, isInside, isTemporaryPath, temporaryRoots, toPosix } from './paths.ts'
 import type { WorkspaceChangedFile, WorkspaceChangesSummary } from './types.ts'
@@ -43,8 +43,11 @@ interface Baseline extends Repository { tree: string }
 /** Everything one turn accumulates; a new turn gets a new object so queued work for an older turn keeps its own. */
 interface TurnState {
   readonly turn: number
-  /** Set once the turn-start snapshot exists; a turn without one summarizes file-tool hunks only. */
-  baseline: Baseline | null
+  /**
+   * The turn-start snapshot once it exists. `null` means no repository or no git, so the turn summarizes file-tool
+   * hunks only; `'failed'` means the repository exists but its snapshot failed, so the turn records nothing.
+   */
+  baseline: Baseline | null | 'failed'
   /** Hunks derived from each mutation call's arguments, or null for a call that changes no file. */
   readonly calls: Map<string, FileDiff[] | null>
   /** File-tool hunks by their model-facing path; canonicalized when the record is built. */
@@ -77,8 +80,8 @@ export class TurnRecorder {
   private paths: Paths | undefined
   /** The located repository, reused across turns once found; null keeps retrying each turn. */
   private repository: Repository | null = null
-  /** Temporary directory holding this Session's snapshot objects, created with the first located repository. */
-  private objectsDir: string | undefined
+  /** Temporary directory holding this Session's snapshot objects and scratch indexes, created with the first located repository. */
+  private scratch: string | undefined
   /** Summaries by the sequence of the event that announced them. */
   private readonly summaries = new Map<number, WorkspaceChangesSummary>()
   private readonly lifetime = new AbortController()
@@ -97,11 +100,17 @@ export class TurnRecorder {
     const state = freshState(turn)
     this.state = state
     void this.enqueue(async (signal) => {
-      this.paths ??= { cwd: await realpath(this.cwd), home: await canonicalPath(homedir()), temporaryRoots: await temporaryRoots() }
-      const repository = await this.locate(this.paths.cwd, signal)
-      if (repository === null) return
-      const tree = await snapshotTree(repository.git, repository.workspace, signal)
-      state.baseline = { ...repository, tree }
+      try {
+        this.paths ??= { cwd: await realpath(this.cwd), home: await canonicalPath(homedir()), temporaryRoots: await temporaryRoots() }
+        const repository = await this.locate(this.paths.cwd, signal)
+        if (repository === null) return
+        const tree = await snapshotTree(repository.git, repository.workspace, signal)
+        state.baseline = { ...repository, tree }
+      } catch (error: unknown) {
+        // A repository whose snapshot failed must not be summarized as if it had none.
+        state.baseline = 'failed'
+        throw error
+      }
     })
   }
 
@@ -175,7 +184,7 @@ export class TurnRecorder {
     this.lifetime.abort()
     this.summaries.clear()
     await this.chain
-    if (this.objectsDir !== undefined) await rm(this.objectsDir, { recursive: true, force: true })
+    if (this.scratch !== undefined) await rm(this.scratch, { recursive: true, force: true })
   }
 
   private enqueue(task: (signal: AbortSignal) => Promise<void>): Promise<void> {
@@ -202,8 +211,8 @@ export class TurnRecorder {
     const git = await this.env.git
     if (git === null) return null
     const workspace = await locateGitWorkspace(git, cwd, async () => {
-      this.objectsDir ??= await mkdtemp(join(this.env.tempRoot, 'dsh-workspace-changes-objects-'))
-      return this.objectsDir
+      this.scratch ??= await mkdtemp(join(this.env.tempRoot, 'dsh-workspace-changes-'))
+      return this.scratch
     }, signal)
     if (workspace === null) return null
     this.repository = { git, workspace }
@@ -212,14 +221,16 @@ export class TurnRecorder {
 
   private async record(state: TurnState, signal: AbortSignal): Promise<void> {
     const paths = this.paths
-    if (paths === undefined || state.lastToolResultSeq < 0) return
-    state.attemptedAfterSeq = state.lastToolResultSeq
     const { baseline } = state
+    if (paths === undefined || baseline === 'failed' || state.lastToolResultSeq < 0) return
+    state.attemptedAfterSeq = state.lastToolResultSeq
     // Without a snapshot the working directory itself bounds the workspace.
     const root = baseline?.workspace.root ?? paths.cwd
     const files = new Map<string, WorkspaceChangedFile>()
+    let snapshot: WorkspaceChangesSummary['snapshot']
     if (baseline !== null) {
       const after = await snapshotTree(baseline.git, baseline.workspace, signal)
+      snapshot = { before: baseline.tree, after }
       for (const entry of await diffTrees(baseline.git, baseline.workspace, baseline.tree, after, signal)) {
         const absolute = resolve(root, entry.path)
         files.set(absolute, changedFile(paths, root, absolute, entry))
@@ -232,7 +243,12 @@ export class TurnRecorder {
       if (!files.has(absolute)) hunks.set(absolute, [...hunks.get(absolute) ?? [], ...list])
     }
     const workTreePath = (absolute: string): string => toPosix(relative(root, absolute))
-    const inWorkspace = [...hunks.keys()].filter(absolute => isInside(root, absolute))
+    let inWorkspace = [...hunks.keys()].filter(absolute => isInside(root, absolute))
+    if (baseline !== null && inWorkspace.length > 0) {
+      // Nested repositories and submodules are gitlinks: their contents never enter the summary.
+      const gitlinks = await gitlinkPaths(baseline.git, baseline.workspace, signal)
+      inWorkspace = inWorkspace.filter(absolute => ![...gitlinks].some(link => isInside(resolve(root, link), absolute)))
+    }
     // A snapshot covers every workspace file except the ignored ones; without one, every file-tool edit counts.
     const uncoveredInWorkspace = baseline === null
       ? new Set(inWorkspace.map(workTreePath))
@@ -248,7 +264,15 @@ export class TurnRecorder {
     // An empty list after an earlier in-turn record supersedes that record.
     if (sorted.length === 0 && state.recordedAfterSeq < 0) return
     const event = this.session.append('workspace/changes', { turn: state.turn })
-    this.summaries.set(event.seq, { turn: state.turn, cwd: this.cwd, files: sorted.slice(0, this.env.maxFiles), total: sorted.length })
+    this.summaries.set(event.seq, {
+      turn: state.turn,
+      cwd: this.cwd,
+      files: sorted.slice(0, this.env.maxFiles),
+      total: sorted.length,
+      added: sorted.reduce((sum, file) => sum + file.added, 0),
+      deleted: sorted.reduce((sum, file) => sum + file.deleted, 0),
+      ...snapshot === undefined ? {} : { snapshot },
+    })
     state.recordedAfterSeq = event.seq
   }
 }

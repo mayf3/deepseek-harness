@@ -148,8 +148,8 @@ function handleChangesSummary(ctx: Context, request: Request): Response {
   if (!id || seq === undefined) return new Response('Invalid change summary coordinates.', { status: 400 })
   const summary = ctx.workspaceChanges.summary(id as SessionId, seq)
   if (summary === undefined) return new Response('Change summary unavailable.', { status: 404 })
-  const { turn, files, total } = summary
-  return Response.json({ turn, files, total } satisfies ChangesSummary, { headers: { 'cache-control': 'no-store' } })
+  const { turn, files, total, added, deleted } = summary
+  return Response.json({ turn, files, total, added, deleted } satisfies ChangesSummary, { headers: { 'cache-control': 'no-store' } })
 }
 
 async function handleChangesOpen(ctx: Context, request: Request): Promise<Response> {
