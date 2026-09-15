@@ -112,7 +112,9 @@ vi.mock('electron', () => ({
   BrowserWindow: harness.FakeWindow,
   dialog: harness.dialog,
   shell: { openExternal: harness.openExternal },
+  nativeTheme: { themeSource: 'system' },
   ipcMain: {
+    on: vi.fn(),
     handle: (channel: string, handler: (event: { senderFrame: { url: string } }) => unknown) => { harness.handlers.set(channel, handler) },
   },
   Menu: harness.menu,
@@ -168,6 +170,21 @@ afterEach(async () => {
 })
 
 describe('desktop main startup', () => {
+  it.each(['darwin', 'win32', 'linux'] as const)('limits native titlebar styling to macOS on %s', async (platform) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    expect(window.urls).toEqual(['dsh-app://app/'])
+    if (platform === 'darwin') {
+      expect(window.options).toMatchObject({ titleBarStyle: 'hiddenInset', vibrancy: 'sidebar', backgroundColor: '#00000000' })
+    } else {
+      expect(window.options).not.toHaveProperty('titleBarStyle')
+      expect(window.options).not.toHaveProperty('vibrancy')
+    }
+    expect(harness.hosts).toHaveLength(0)
+  })
+
   it('attaches Host socket credentials only to the owned application origin and window', async () => {
     await import('../src/main.ts')
     await harness.preparing.promise

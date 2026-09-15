@@ -9,6 +9,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeTheme,
   protocol,
   session,
   shell,
@@ -102,6 +103,17 @@ function createWindow(preload: string, show = false): BrowserWindow {
     minWidth: 880,
     minHeight: 600,
     show,
+    // hiddenInset places traffic lights inside the sidebar; sidebar vibrancy
+    // needs a transparent window background to show through the page.
+    ...(process.platform === 'darwin' ? {
+      titleBarStyle: 'hiddenInset' as const,
+      trafficLightPosition: { x: 16, y: 18 },
+      vibrancy: 'sidebar' as const,
+      // 'active' keeps the vibrancy material stable when the window blurs;
+      // 'followWindow' washes the sidebar out behind an unfocused window.
+      visualEffectState: 'active' as const,
+      backgroundColor: '#00000000',
+    } : {}),
     webPreferences: {
       preload,
       nodeIntegration: false,
@@ -382,6 +394,11 @@ async function main(): Promise<void> {
   ipcMain.handle(DESKTOP_IPC.localeGet, (event) => {
     assertDesktopSender(event, ['shell'])
     return locale
+  })
+  // Only the main window may synchronize its palette with the native material.
+  ipcMain.on(DESKTOP_IPC.nativeThemeSet, (event, source: unknown) => {
+    if (mainWindow === undefined || event.sender !== mainWindow.webContents) return
+    if (source === 'light' || source === 'dark' || source === 'system') nativeTheme.themeSource = source
   })
   ipcMain.handle(DESKTOP_IPC.pluginsList, (event) => {
     assertDesktopSender(event, ['shell'])

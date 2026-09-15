@@ -3,9 +3,11 @@ import { DESKTOP_IPC, type DshDesktopStartupApi } from '../src/ipc.ts'
 
 const electron = vi.hoisted(() => ({
   contextBridge: { exposeInMainWorld: vi.fn() },
-  ipcRenderer: { invoke: vi.fn(), on: vi.fn(), off: vi.fn() },
+  ipcRenderer: { invoke: vi.fn(), on: vi.fn(), off: vi.fn(), send: vi.fn() },
 }))
 vi.mock('electron', () => electron)
+vi.mock('../src/preload-platform.ts', () => ({ markDocumentPlatform: vi.fn() }))
+vi.mock('../src/preload-theme.ts', () => ({ syncNativeTheme: vi.fn() }))
 
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); vi.resetModules() })
 
