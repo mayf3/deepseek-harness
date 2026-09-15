@@ -10,6 +10,7 @@ import type { TerminalShell, WebTerminalId, WebTerminalInfo } from '../types.ts'
 import { preferredShell, rememberShell } from './shell-preference.ts'
 import { TerminalCloseRequests, type TerminalCloseRequest } from './close-requests.ts'
 import { TerminalWindowHold } from './retention.ts'
+import { TerminalBindings } from './bindings.ts'
 
 export type { TerminalView, TerminalViewState, TerminalViewIssue, TerminalRenderFrame, TerminalRemote } from './model.ts'
 
@@ -42,10 +43,10 @@ export class ClientTerminals extends Service {
   private readonly closed = new Set<WebTerminalId>(this.requests.pending().map(request => request.id))
   private disposed = false
   private readonly views = new Map<SessionId, Map<string, TerminalView>>()
-  private readonly bindings = new Map<SessionId, SnapshotStore<Record<string, WebTerminalId>>>()
+  private readonly bindings = new TerminalBindings()
   private readonly holds = new Map<SessionId, Map<WebTerminalId, TerminalWindowHold>>()
   private readonly releasing = new Set<Promise<void>>()
-  private openTabs: readonly { sessionId: SessionId; tabId: string }[] = []
+  private openTabs: readonly { sessionId: SessionId; tabId: string; contentId: string }[] = []
 
   /**
    * @param ctx - Client root Context with Gateway and terminal Remote namespace.
@@ -69,19 +70,19 @@ export class ClientTerminals extends Service {
    * Return the stable model for one sidebar occurrence.
    * @param sessionId - owning Session.
    * @param key - sidebar occurrence key.
-   * @param terminalId - existing Host identity when restoring a listed terminal; otherwise reuse the saved occurrence identity.
+   * @param contentId - globally unique content identity; layout-local tab ids are not persistence keys.
+   * @param terminalId - existing Host identity when restoring a listed terminal; otherwise reuse the saved content identity.
    * @param shellPath - explicit shell for a new terminal; restored terminals retain their own shell.
    * @returns its observable state and terminal commands.
    */
-  view(sessionId: SessionId, key: string, terminalId?: WebTerminalId, shellPath?: string): TerminalView {
+  view(sessionId: SessionId, key: string, contentId: string, terminalId?: WebTerminalId, shellPath?: string): TerminalView {
     let views = this.views.get(sessionId)
     if (views === undefined) { views = new Map(); this.views.set(sessionId, views) }
     let view = views.get(key)
     if (view === undefined) {
-      const bindings = this.sessionBindings(sessionId)
-      const saved = terminalId ?? bindings.getSnapshot()[key]
+      const saved = terminalId ?? this.bindings.get(sessionId, contentId)
       const id = saved ?? randomUUID() as WebTerminalId
-      bindings.update((draft) => { draft[key] = id })
+      this.bindings.set(sessionId, contentId, id)
       view = new TerminalView(sessionId, this.remote, this.ctx.remote, id, saved === undefined, shellPath,
         signal => this.hold(sessionId, id).ready(signal))
       views.set(key, view)
@@ -114,20 +115,18 @@ export class ClientTerminals extends Service {
    * Save a close intent and release the tab immediately; cleanup outlives DOM unmount and reload.
    * @param sessionId - owning Session.
    * @param key - sidebar occurrence key, including an inactive restored tab.
+   * @param contentId - globally unique content identity whose binding is removed.
    * @param terminalId - restored identity if the tab has no model yet.
    */
-  close(sessionId: SessionId, key: string, terminalId?: WebTerminalId): void {
+  close(sessionId: SessionId, key: string, contentId: string, terminalId?: WebTerminalId): void {
     const views = this.views.get(sessionId)
     const view = views?.get(key)
-    const bindings = this.sessionBindings(sessionId)
-    const id = view?.id ?? terminalId ?? bindings.getSnapshot()[key]
+    const id = view?.id ?? terminalId ?? this.bindings.get(sessionId, contentId)
     if (id === undefined) return
     const request: TerminalCloseRequest = { sessionId, id, title: view?.state.getSnapshot().title ?? key }
     this.closed.add(id)
     this.requests.save(request)
-    if (bindings.getSnapshot()[key] !== undefined) {
-      bindings.set(Object.fromEntries(Object.entries(bindings.getSnapshot()).filter(([tabKey]) => tabKey !== key)))
-    }
+    this.bindings.delete(sessionId, contentId)
     views?.delete(key)
     if (views?.size === 0) this.views.delete(sessionId)
     this.cleanup(request, view)
@@ -138,7 +137,7 @@ export class ClientTerminals extends Service {
    * Reconcile this window's open terminal occurrences, including dormant saved Sessions.
    * @param tabs - terminal-kind membership supplied by the sidebar layout owner.
    */
-  retainTabs(tabs: readonly { sessionId: SessionId; tabId: string }[]): void {
+  retainTabs(tabs: readonly { sessionId: SessionId; tabId: string; contentId: string }[]): void {
     this.openTabs = tabs
     this.reconcileHolds()
   }
@@ -159,7 +158,7 @@ export class ClientTerminals extends Service {
     if (this.disposed) return
     const wanted = new Map<SessionId, Set<WebTerminalId>>()
     for (const tab of this.openTabs) {
-      const id = this.sessionBindings(tab.sessionId).getSnapshot()[tab.tabId]
+      const id = this.bindings.get(tab.sessionId, tab.contentId)
       if (id === undefined || this.closed.has(id)) continue
       let ids = wanted.get(tab.sessionId)
       if (ids === undefined) { ids = new Set(); wanted.set(tab.sessionId, ids) }
@@ -194,17 +193,6 @@ export class ClientTerminals extends Service {
     const held = new Set([...(this.views.get(sessionId)?.values() ?? [])].map(view => view.id))
     const closing = new Set(this.requests.pending().map(request => request.id))
     return result.value.filter(info => !held.has(info.id) && !closing.has(info.id) && !this.closed.has(info.id))
-  }
-
-  private sessionBindings(sessionId: SessionId): SnapshotStore<Record<string, WebTerminalId>> {
-    let bindings = this.bindings.get(sessionId)
-    if (bindings === undefined) {
-      bindings = createSnapshotStore<Record<string, WebTerminalId>>({}, {
-        persist: { name: `dsh.terminal.tabs.v1.${sessionId}` },
-      })
-      this.bindings.set(sessionId, bindings)
-    }
-    return bindings
   }
 
   /**

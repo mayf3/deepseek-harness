@@ -68,7 +68,7 @@ export type { FloatRect, PaneId, TabId, TabRecord } from '@deepseek-ai/dsh-clien
 export type { PinResource, SidebarRightNavigator, TabOccurrence } from './tab-domain.ts'
 export type { SidebarRightKey } from './locales.ts'
 export type { OpenContentIntent } from './stores.ts'
-export type { SidebarRightOpenTab } from './open-tabs.ts'
+export type { SidebarRightOpenTab } from './tab-inventory.ts'
 
 /** This package's copy namespace. */
 const NS = 'sidebarRight'

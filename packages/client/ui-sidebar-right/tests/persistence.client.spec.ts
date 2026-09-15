@@ -22,7 +22,7 @@ function storage() {
 const sessionId = 'first' as SessionId
 const seed = () => ({ kind: 'guide', title: 'Start' })
 
-it('restores tabs, selection, split ratios, floating rectangles and history independently by Session', () => {
+it('restores current layout independently by Session with a fresh undo history', () => {
   storage()
   const handle = createSidebarRightStore(seed)
   const first = handle.create(sessionId)
@@ -41,12 +41,13 @@ it('restores tabs, selection, split ratios, floating rectangles and history inde
   second.actions.open('second')
   const saved = first.getSnapshot()
   const restored = createSidebarRightStore(seed).create(sessionId)
-  expect(restored.getSnapshot()).toEqual(saved)
+  const recovered = { bySession: { [sessionId]: { ...saved.bySession[sessionId], history: { entries: [], cursor: 0 } } } }
+  expect(restored.getSnapshot()).toEqual(recovered)
   expect(createSidebarRightStore(seed).create('second').getSnapshot()).toEqual(second.getSnapshot())
   expect(createSidebarRightStore(seed).create('new').getSnapshot()).toEqual({ bySession: {} })
   restored.actions.undo(sessionId)
   restored.actions.redo(sessionId)
-  expect(restored.getSnapshot()).toEqual(saved)
+  expect(restored.getSnapshot()).toEqual(recovered)
   restored.actions.setExpanded(sessionId, false)
   expect(createSidebarRightStore(seed).create(sessionId).getSnapshot().bySession[sessionId]!.layout.expanded).toBe(false)
   restored.clearPersisted()

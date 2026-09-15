@@ -43,7 +43,7 @@ kind: "package-reference"
 
 插件向右侧栏注册 `terminal` 类型及正文和标题 seat。开始页入口使用紧凑的黑底终端图标，页签标题保留线条图标。无 React 依赖的终端模型属于 `api-terminal-controller`，通过框架 keyed hooks 暴露状态。`ui-primitives` 的 Menu 与 Button 提供 shell 选择和启动控件，支持键盘导航与选中标记。xterm.js 与 FitAddon 负责屏幕渲染和视口测量。正文在面板高度内为页签条下方预留 8px 间距。输入原样传到 PTY，包括 Tab 和控制字符。
 
-Session header contribution 查询 Host 终端，只打开没有现有标签关联的终端。终端 controller 负责按 Session 保存关联和恢复内容，侧栏负责持久化布局。恢复视图不能分配替代进程。侧栏关闭 handler 通过[终端 controller](../../api/terminal-controller/README.zh.md#understand-the-implementation)安排清理并同步返回。浏览器组件清理和 tab 的 abort signal 只停止浏览器工作。
+Session header contribution 查询 Host 终端，只打开没有现有标签关联的终端。终端 controller 独立保存每个全局唯一内容身份与 Host 的关联，并负责内容恢复；侧栏负责布局持久化。恢复视图不能分配替代进程。侧栏关闭 handler 通过[终端 controller](../../api/terminal-controller/README.zh.md#understand-the-implementation)安排清理并同步返回。浏览器组件清理和 tab 的 abort signal 只停止浏览器工作。
 
 插件启动时，侧栏完整打开标签清单中的 terminal 条目会持有相匹配的已保存 Host 身份，包括非当前 Session。窗口持有关系独立于 React 挂载和屏幕订阅。删除最后一个匹配的 occurrence 会释放持有关系；折叠或切换视图不会释放。[终端控制器](../../api/terminal-controller/README.zh.md#use-this-package) 负责无人持有时的空闲回收和长命令保护。
 

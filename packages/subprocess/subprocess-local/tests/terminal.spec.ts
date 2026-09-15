@@ -119,6 +119,24 @@ function makeHandle(pty: FakePty, inspector: ProcessInspector, graceMs: number):
 }
 
 describe('LocalTerminalHandle', () => {
+  it('retains ownership after shell exit when /proc cannot be enumerated', async () => {
+    const pty = new FakePty()
+    let readable = false
+    const inspector = createProcessInspector('linux', 'x64', {
+      readDir: () => { if (!readable) throw new Error('EACCES'); return [] },
+    } as unknown as ProcessInspectorInternals)
+    const released = vi.fn()
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, 'linux', undefined, undefined, undefined, released, true)
+    pty.emitExit()
+    await expect(handle.inspectActivity()).resolves.toMatchObject({ state: 'unknown' })
+    await expect(handle.terminate()).rejects.toThrow('/proc directory is unreadable')
+    expect(released).not.toHaveBeenCalled()
+    readable = true
+    await expect(handle.inspectActivity()).resolves.toMatchObject({ state: 'idle' })
+    await handle.terminate()
+    expect(released).toHaveBeenCalledOnce()
+  })
+
   it('pauses native output until the consumer drains and resumes before termination', async () => {
     const pty = new FakePty()
     const handle = makeHandle(pty, new FakeInspector(), 10)

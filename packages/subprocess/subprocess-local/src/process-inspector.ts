@@ -68,6 +68,7 @@ export interface ProcessInspector {
   /**
    * Read the process table once and answer tree, session, and liveness from it.
    * @returns A process-table observation whose reads are shared.
+   * @throws when the platform process table cannot be enumerated.
    */
   snapshot(): ProcessSnapshot
   /**
@@ -224,11 +225,11 @@ export function linuxProcessGroupHasLiveMembers(
   return matched ? false : undefined
 }
 
-function numericEntries(internals: ProcessInspectorInternals, path: string): number[] {
+function numericEntries(internals: ProcessInspectorInternals, path: string): number[] | undefined {
   try {
     return internals.readDir(path).filter(entry => /^\d+$/.test(entry)).map(Number)
   } catch (_unreadableProcDirectory) {
-    return []
+    return undefined
   }
 }
 
@@ -446,10 +447,10 @@ class LinuxProcessInspector extends PosixProcessInspector {
     if (shell === undefined) return false
     const terminalDevice = readLinuxTerminalDevice(this.internals, shellPid, shell.ttyDevice)
     if (terminalDevice === undefined) return false
-    for (const pid of numericEntries(this.internals, '/proc')) {
+    for (const pid of numericEntries(this.internals, '/proc') ?? []) {
       const process = readLinuxStat(this.internals, pid)
       if (process?.pgrp !== pgid) continue
-      for (const tid of numericEntries(this.internals, `/proc/${pid}/task`)) {
+      for (const tid of numericEntries(this.internals, `/proc/${pid}/task`) ?? []) {
         const syscall = readSyscall(this.internals, pid, tid)
         if (syscall !== undefined
           && syscallWaitsOnStdin(this.internals, pid, tid, syscall, tables)
@@ -465,8 +466,10 @@ class LinuxProcessInspector extends PosixProcessInspector {
   }
 
   snapshot(): ProcessSnapshot {
+    const pids = numericEntries(this.internals, '/proc')
+    if (pids === undefined) throw new Error('Cannot inspect processes: /proc directory is unreadable')
     let complete = true
-    const rows = numericEntries(this.internals, '/proc').flatMap((pid) => {
+    const rows = pids.flatMap((pid) => {
       const stat = readLinuxStat(this.internals, pid)
       if (stat === undefined) complete = false
       return stat === undefined ? [] : [{

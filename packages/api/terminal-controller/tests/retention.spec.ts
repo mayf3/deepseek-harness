@@ -157,3 +157,39 @@ it('does not overlap activity queries when a disconnect schedules work during an
   expect(h.terminate).not.toHaveBeenCalled()
   await stream.return?.()
 })
+
+it('waits for the in-flight observation before reporting a disposal cleanup failure', async () => {
+  const h = fixture()
+  const pending = Promise.withResolvers<SubprocessTerminalActivity>()
+  h.inspect.mockReturnValueOnce(pending.promise)
+  await vi.advanceTimersByTimeAsync(0)
+  const error = new Error('cleanup failed')
+  h.terminate.mockRejectedValueOnce(error)
+  let settled = false
+  const disposed = h.owner.dispose().catch((reason: unknown) => { settled = true; return reason })
+  try {
+    await vi.advanceTimersByTimeAsync(0)
+    expect(settled).toBe(false)
+    pending.resolve({ state: 'unknown', revision: 1 })
+    expect(await disposed).toBe(error)
+  } finally { pending.resolve({ state: 'unknown', revision: 1 }); await disposed }
+})
+
+it('waits for pending cleanup when the observation settles first during disposal', async () => {
+  const h = fixture()
+  const observed = Promise.withResolvers<SubprocessTerminalActivity>()
+  const cleanup = Promise.withResolvers<undefined>()
+  h.inspect.mockReturnValueOnce(observed.promise)
+  h.terminate.mockReturnValueOnce(cleanup.promise)
+  await vi.advanceTimersByTimeAsync(0)
+  let settled = false
+  const disposed = h.owner.dispose().then(() => { settled = true })
+  try {
+    observed.resolve({ state: 'unknown', revision: 1 })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(settled).toBe(false)
+    cleanup.resolve(undefined)
+    await disposed
+    expect(settled).toBe(true)
+  } finally { observed.resolve({ state: 'unknown', revision: 1 }); cleanup.resolve(undefined); await disposed }
+})

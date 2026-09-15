@@ -38,7 +38,7 @@ import type { SidebarRightTabClaim, SidebarRightTabRegistry } from './tab-regist
 import { canCloseTab, type SidebarRightState, type SurfaceState } from './stores.ts'
 import type { createSidebarRightStore } from './stores.ts'
 import { TabDomain, type PinResource } from './tab-domain.ts'
-import { OpenSidebarTabs } from './open-tabs.ts'
+import { SidebarTabInventory } from './tab-inventory.ts'
 
 /** The seat's bound action set. */
 export type SurfaceActions = BoundActions<ReturnType<typeof createSidebarRightStore>>
@@ -69,7 +69,7 @@ export function createSidebarRightController(tabs: SidebarRightTabRegistry, pin:
   forget: (sessionId: SessionId) => void
 } {
   const adopted = new Map<SessionId, Adoption>()
-  const inventory = new OpenSidebarTabs()
+  const inventory = new SidebarTabInventory()
   const controller = new SidebarRightController(tabs, pin, adopted, inventory.source)
   return {
     controller,
@@ -213,7 +213,7 @@ export interface ISidebarRight {
 /** Cross-plugin right-Sidebar face (ctx.sidebarRight). */
 export class SidebarRightController implements ISidebarRight {
   /** Open tab metadata across saved and adopted Sessions, independent of visible seats. */
-  readonly openTabs: OpenSidebarTabs['source']
+  readonly openTabs: SidebarTabInventory['source']
   private binding: SidebarRightBinding | undefined
   private readonly closeHandlers = new Map<string, SidebarRightCloseHandler>()
 
@@ -245,7 +245,7 @@ export class SidebarRightController implements ISidebarRight {
     private readonly tabs: SidebarRightTabRegistry,
     pin: PinResource,
     private readonly adopted = new Map<SessionId, Adoption>(),
-    openTabs: OpenSidebarTabs['source'] = new OpenSidebarTabs().source,
+    openTabs: SidebarTabInventory['source'] = new SidebarTabInventory().source,
   ) {
     this.openTabs = openTabs
     this.tabDomain = new TabDomain(this, pin)

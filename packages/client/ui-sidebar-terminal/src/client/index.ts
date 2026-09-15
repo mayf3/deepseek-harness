@@ -43,7 +43,8 @@ export function apply(ctx: Context): void {
   }
   const view = (sessionId: SessionId, key: string) => {
     const params = target(sessionId, key)
-    return ctx.webTerminals.view(sessionId, key, terminalId(sessionId, key),
+    const contentId = ctx.sidebarRight.tabDomain.occurrence(sessionId, { id: key as TabId }).navigation.getSnapshot().address
+    return ctx.webTerminals.view(sessionId, key, contentId, terminalId(sessionId, key),
       params !== undefined && 'shellPath' in params ? params.shellPath : undefined)
   }
   const namespace = 'sidebarTerminal'
@@ -55,7 +56,7 @@ export function apply(ctx: Context): void {
     guide: [{ id: 'new', order: 20, title: () => t('new'), description: () => t('description'), icon: TerminalGuideIcon }],
   }), 'ui-sidebar-terminal.type')
   ctx.effect(() => ctx.sidebarRight.registerCloseHandler('terminal', (sessionId, tab) => {
-    ctx.webTerminals.close(sessionId, tab.id, terminalId(sessionId, tab.id))
+    ctx.webTerminals.close(sessionId, tab.id, tab.contentId, terminalId(sessionId, tab.id))
   }), 'ui-sidebar-terminal.close')
   const inject = (sessionId: SessionId): TerminalInjected => ({
     view: key => view(sessionId, key),

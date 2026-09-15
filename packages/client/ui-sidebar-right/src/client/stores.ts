@@ -27,7 +27,7 @@
  * The kit plans none of this; it is decided here before its planners run.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
-import { sidebarPersistence } from './open-tabs.ts'
+import { clearSidebarLayout, readSidebarLayout, writeSidebarLayout } from './persistence.ts'
 import type {
   DockMode, DockZone, FloatRect, History, LayoutOp, LayoutState, Mint, PaneId, SplitId, TabId, TabRecord,
 } from '@deepseek-ai/dsh-client-ui-dockkit'
@@ -265,9 +265,8 @@ function stepped(surface: SurfaceState, step: HistoryStepper): SurfaceState {
 export function createSidebarRightStore(
   seed: () => SidebarRightSeed,
 ): EngineStoreHandle<SidebarRightState, SidebarRightActions> {
-  return defineStore({
+  const handle = defineStore<SidebarRightState, SidebarRightActions>({
     init: (): SidebarRightState => ({ bySession: {} }),
-    persist: sidebarPersistence,
     actions: {
       // Materialize a session's surface without changing it, so the first read
       // after a session switch sees the collapsed empty column rather than nothing.
@@ -411,4 +410,15 @@ export function createSidebarRightStore(
       },
     },
   })
+  return { ...handle, create(scopeKey) {
+    const instance = handle.create(scopeKey)
+    if (scopeKey === undefined) return instance
+    const saved = readSidebarLayout(scopeKey)
+    if (saved !== undefined) instance.store.set({ bySession: { [scopeKey]: saved } })
+    instance.subscribe(() => {
+      const surface = instance.getSnapshot().bySession[scopeKey]
+      if (surface !== undefined) writeSidebarLayout(scopeKey, surface)
+    })
+    return { ...instance, clearPersisted: () => { clearSidebarLayout(scopeKey) } }
+  } }
 }

@@ -45,7 +45,7 @@ async function mountPlugin() {
     recover: vi.fn(async (_sessionId: SessionId): Promise<WebTerminalInfo[]> => []),
   }
   let params: { terminalId: WebTerminalId } | { shellPath: string } | undefined
-  const occurrence = vi.fn(() => ({ navigation: { getSnapshot: () => ({ params }) } }))
+  const occurrence = vi.fn(() => ({ navigation: { getSnapshot: () => ({ params, address: 'sidebar://terminal/content' }) } }))
   const openTabIn = vi.fn()
   const tabsIn = vi.fn(() => [] as { id: string; kind: string }[])
   const openTabs = createSnapshotStore<readonly SidebarRightOpenTab[]>([])
@@ -111,22 +111,22 @@ it('registers terminal views, recovery and cleanup, then releases every contribu
     h.emitTheme()
     expect(changed).toHaveBeenCalledOnce()
     expect(face.view('tab')).toBe(h.model)
-    expect(h.terminals.view).toHaveBeenLastCalledWith(sessionId, 'tab', undefined, undefined)
+    expect(h.terminals.view).toHaveBeenLastCalledWith(sessionId, 'tab', 'sidebar://terminal/content', undefined, undefined)
     const terminalId = 'retained' as WebTerminalId
     h.setParams({ terminalId })
     h.setParams({ shellPath: '/bin/bash' })
     face.view('tab')
-    expect(h.terminals.view).toHaveBeenLastCalledWith(sessionId, 'tab', undefined, '/bin/bash')
+    expect(h.terminals.view).toHaveBeenLastCalledWith(sessionId, 'tab', 'sidebar://terminal/content', undefined, '/bin/bash')
     h.setParams({ terminalId })
     expect(face.keyedHooks.terminal('tab')).toBe(h.model.state)
-    expect(h.terminals.view).toHaveBeenLastCalledWith(sessionId, 'tab', terminalId, undefined)
+    expect(h.terminals.view).toHaveBeenLastCalledWith(sessionId, 'tab', 'sidebar://terminal/content', terminalId, undefined)
     expect(h.occurrence).toHaveBeenLastCalledWith(sessionId, { id: 'tab' })
     if (h.closeHandler === undefined) throw new Error('Terminal close handler was not registered')
-    h.closeHandler(sessionId, { id: 'tab' } as Parameters<SidebarRightCloseHandler>[1])
-    expect(h.terminals.close).toHaveBeenLastCalledWith(sessionId, 'tab', terminalId)
+    h.closeHandler(sessionId, { id: 'tab', contentId: 'sidebar://terminal/content' } as Parameters<SidebarRightCloseHandler>[1])
+    expect(h.terminals.close).toHaveBeenLastCalledWith(sessionId, 'tab', 'sidebar://terminal/content', terminalId)
     h.setParams(undefined)
-    h.closeHandler(sessionId, { id: 'new-tab' } as Parameters<SidebarRightCloseHandler>[1])
-    expect(h.terminals.close).toHaveBeenLastCalledWith(sessionId, 'new-tab', undefined)
+    h.closeHandler(sessionId, { id: 'new-tab', contentId: 'sidebar://terminal/new' } as Parameters<SidebarRightCloseHandler>[1])
+    expect(h.terminals.close).toHaveBeenLastCalledWith(sessionId, 'new-tab', 'sidebar://terminal/new', undefined)
     const cleanupFace = h.entries[4]!.inject(sessionId) as TerminalCleanupInjected
     expect(cleanupFace.hooks.closeFailures).toBe(h.terminals.closeFailures)
     cleanupFace.retryClose('terminal' as Parameters<TerminalCleanupInjected['retryClose']>[0])
@@ -149,7 +149,7 @@ it('restores terminal occurrences before listing unrepresented Host terminals an
   const recovery = h.entries[3]!.inject(sessionId) as TerminalRecoveryInjected
   const remounted = h.entries[3]!.inject(sessionId) as TerminalRecoveryInjected
   const completion = recovery.restore()
-  expect(h.terminals.view).toHaveBeenCalledWith(sessionId, 'collapsed-terminal', undefined, undefined)
+  expect(h.terminals.view).toHaveBeenCalledWith(sessionId, 'collapsed-terminal', 'sidebar://terminal/content', undefined, undefined)
   expect(h.terminals.view).toHaveBeenCalledOnce()
   try {
     expect(remounted.restore()).toBe(completion)

@@ -31,7 +31,7 @@ subprocess 能力接口提供带状态和 revision 的 `inspectActivity()`。普
 
 Host [终端控制器](../../../../packages/api/terminal-controller/README.zh.md#use-this-package) 管理可配置的 `unattendedTimeoutMs`（7200000）、`activityPollIntervalMs`（30000）和 `cleanupRetryMs`（60000）。零只禁用自动回收。控制器使用单调时钟；观察间隔超过轮询周期两倍时，旧证据失效并重置宽限期。输入和持有关系变化会使正在进行的观察失效。最终检查通过后，在异步终止前将身份标记为关闭，阻止迟到的创建和连接。已关闭身份不能复用，每个清理任务始终属于原来的 Session owner。
 
-清理等待 provider 范围完全停稳和最终屏幕输出排空。失败时保留所有权、拒绝新持有关系，并安排一次重试，不重新给予空闲宽限期。分配失败后的清理采用相同重试策略。owner 卸载会停止计时器和流，并等待清理和观察结束；失败仍会报告。Agent 终端工具、模型输入和 Session 事件均不改变。
+清理等待 provider 范围完全停稳和最终屏幕输出排空。失败时保留所有权、拒绝新持有关系，并安排一次重试，不重新给予空闲宽限期。分配失败后的清理采用相同重试策略。owner 卸载会停止计时器和流，在清理与观察都结束后才报告失败，包括清理早于观察结束而拒绝的情况。Agent 终端工具、模型输入和 Session 事件均不改变。
 
 Codex 线程卸载、OpenCode Location scope 和 [VS Code PTY 宽限期](https://github.com/microsoft/vscode/blob/main/src/vs/platform/terminal/node/ptyService.ts) 的调研支持了独立引用和延迟清理的设计。两小时是 DSH 的产品策略，不是行业默认值。[浏览器终端决策](2026-09-09-web-sidebar-terminal.zh.md) 与[布局／provider 恢复决策](../architecture/2026-09-14-sidebar-layout-provider-recovery.zh.md) 继续有效，因为其资源所有权和持久化职责划分仍然适用。
 
@@ -49,7 +49,7 @@ Codex 线程卸载、OpenCode Location scope 和 [VS Code PTY 宽限期](https:/
 
 无人使用的空闲终端具有保留期限，而已连接窗口和长任务能跨刷新及呈现变化继续存在。运行中、挂起或长期提供服务的命令可能无限期保留；不支持的 shell 和不确定的进程观察也是如此。仍可明确关闭。PowerShell、fish、Windows、自定义 shell 参数以及经过 sandbox 包装的启动当前返回 unknown。
 
-根 shell 退出不授予终止后代的权限。明确为空的原生 Linux 范围和完整且为空的 Linux 会话允许清理已退出记录。macOS 无法在根进程退出后确认未观察到的范围，可能保留记录直到明确关闭或 owner 卸载。provider 对已逃逸且未观察到的后代的限制仍然存在；生命周期记录不是用于防御同一用户恶意进程的安全屏障。
+根 shell 退出不授予终止后代的权限。Linux 进程枚举失败表示观察不可用，而不是进程范围为空；活动保持 unknown，清理保留所有权。明确为空的原生 Linux 范围和完整且为空的 Linux 会话允许清理已退出记录。macOS 无法在根进程退出后确认未观察到的范围，可能保留记录直到明确关闭或 owner 卸载。provider 对已逃逸且未观察到的后代的限制仍然存在；生命周期记录不是用于防御同一用户恶意进程的安全屏障。
 
 浏览器 storage 失败时，当前内存状态仍可使用，但不能保证刷新后恢复非当前 Session。Host 重启不能恢复 PTY。屏幕历史和每个 Session 的终端配额保持原有上限，不新增无限增长的到期原因缓存。
 

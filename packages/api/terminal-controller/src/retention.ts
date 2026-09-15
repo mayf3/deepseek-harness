@@ -89,7 +89,9 @@ export class TerminalRetention {
   async dispose(): Promise<void> {
     this.disposed = true
     this.cancelTimer()
-    await Promise.all([this.close(), this.observation])
+    const observation = this.observation
+    try { await this.close() }
+    finally { await observation }
   }
 
   private cancelTimer(): void { clearTimeout(this.timer); this.timer = undefined }

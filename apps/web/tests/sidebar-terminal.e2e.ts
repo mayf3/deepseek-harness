@@ -8,7 +8,7 @@ import type {} from '@deepseek-ai/dsh-api-terminal-controller'
 import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import { createProcessInspector, type ProcessIdentity } from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
 import { compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, saveFailureShot } from './support.ts'
 
 const expected = fileURLToPath(new URL('./expected/sidebar-terminal/running.expected.md', import.meta.url))
 const shots = fileURLToPath(new URL('../../../.artifacts/screenshots/sidebar-terminal/', import.meta.url))
@@ -77,7 +77,8 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
   beforeEach(async () => {
     scaffold = await launchWebScaffold({ extraOverlayPath: fileURLToPath(new URL('./fixtures/sidebar-terminal.patch.yml', import.meta.url)) })
     browser = await chromium.launch()
-    page = await newEnglishPage(browser)
+    const context = await browser.newContext({ viewport: { width: 1680, height: 1000 }, locale: 'en-US', timezoneId: 'Asia/Shanghai' })
+    page = await context.newPage()
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -399,6 +400,48 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     expect(tripwire.pageErrors).toEqual([])
   })
 
+  it('keeps new terminals independent when two same-origin windows mint the same tab id', async () => {
+    onTestFailed(() => saveFailureShot(page, 'sidebar-terminal-shared-storage'))
+    const second = await page.context().newPage()
+    const secondErrors = watchConsole(second)
+    await second.goto(page.url(), { waitUntil: 'load' })
+    await second.getByText('Ready for terminal input.').waitFor()
+    await openTerminal(page)
+    const firstTab = await page.locator('[data-dockkit-tab][aria-selected="true"]').getAttribute('data-dockkit-tab')
+    const firstProcess = processIdentity(0)
+    await command(page, "printf 'WINDOW_A\\n'")
+    await expect.poll(() => page.locator('.xterm-rows:visible').innerText()).toContain('WINDOW_A')
+    await openTerminal(second)
+    const secondTab = await second.locator('[data-dockkit-tab][aria-selected="true"]').getAttribute('data-dockkit-tab')
+    expect(secondTab).toBe(firstTab)
+    expect(handles).toHaveLength(2)
+    const secondProcess = processIdentity(1)
+    expect(secondProcess.pid).not.toBe(firstProcess.pid)
+    await command(second, "printf 'WINDOW_B\\n'")
+    await expect.poll(() => second.locator('.xterm-rows:visible').innerText()).toContain('WINDOW_B')
+    expect(await second.locator('.xterm-rows:visible').innerText()).not.toContain('WINDOW_A')
+    expect(await page.locator('.xterm-rows:visible').innerText()).not.toContain('WINDOW_B')
+    const bindings = () => page.evaluate(() => Object.keys(localStorage)
+      .filter(key => key.startsWith('dsh.terminal.binding.v1.')).map(key => localStorage.getItem(key)))
+    const saved = await bindings()
+    expect(saved).toHaveLength(2)
+    const selected = second.locator('[data-dockkit-tab][aria-selected="true"]')
+    await selected.hover()
+    await selected.locator('[data-dockkit-tab-close]').click()
+    await expect.poll(() => alive(secondProcess)).toBe(false)
+    expect(alive(firstProcess)).toBe(true)
+    await expect.poll(() => bindings()).toHaveLength(1)
+    expect(saved).toContain((await bindings())[0])
+    await page.reload({ waitUntil: 'load' })
+    await expect.poll(() => page.locator('.xterm-rows:visible').innerText()).toContain('WINDOW_A')
+    await command(page, "printf 'WINDOW_A_RECONNECTED\\n'")
+    await expect.poll(() => page.locator('.xterm-rows:visible').innerText()).toContain('WINDOW_A_RECONNECTED')
+    expect(handles).toHaveLength(2)
+    expect(alive(firstProcess)).toBe(true)
+    expect(tripwire.pageErrors).toEqual([])
+    expect(secondErrors.pageErrors).toEqual([])
+  })
+
   it('holds a collapsed layout across windows and reclaims only after the last transport disappears', async () => {
     onTestFailed(() => saveFailureShot(page, 'sidebar-terminal-window-holds'))
     const retains = vi.spyOn(scaffold.ctx.terminalController, 'retain')
@@ -408,9 +451,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     // Shell activity is exercised with real PTYs in the provider tests; this scenario isolates window ownership.
     vi.spyOn(handles[0]!, 'inspectActivity').mockResolvedValue({ state: 'idle', revision: 1 })
     await page.getByRole('button', { name: 'Collapse right sidebar', exact: true }).click()
-    const secondContext = await browser.newContext({ storageState: await page.context().storageState(),
-      viewport: { width: 1680, height: 1000 }, locale: 'en-US', timezoneId: 'Asia/Shanghai' })
-    const second = await secondContext.newPage()
+    const second = await page.context().newPage()
     const transport = await controlTransport(second)
     await second.goto(page.url(), { waitUntil: 'load' })
     await second.locator('[data-sidebar-right-expand]').waitFor()
