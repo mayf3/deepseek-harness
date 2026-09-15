@@ -86,7 +86,7 @@ Manage profile files and apply their declared reload lifecycle.
 
 /** Install a package using the same pnpm implementation as dsh plugin.
  * @param spec One package spec, including local paths relative to the invocation directory.
- * @param options Whether to activate the installed bundle; defaults to true.
+ * @param options Activation defaults to true; explicit build approvals persist for this profile before installation.
  * @returns Package-manager diagnostics and observed activation outcome.
  */
 @Remote installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>

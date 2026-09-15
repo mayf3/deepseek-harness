@@ -440,6 +440,24 @@ function managementFixture() {
   }
 }
 
+it('requires a click to approve the displayed packages and retries the original install options', async () => {
+  const manager = managementFixture()
+  const result = { changed: false, application: 'failed' as const, stage: 'install' as const,
+    target: 'addon@1', enabled: false, pendingBuilds: ['native', '@scope/helper'] }
+  function Form() {
+    const state = usePluginManagement(manager, true, 0)
+    return <BundleManager manager={manager} t={t} state={{ ...state, result: state.result ?? result }} />
+  }
+  render(<Form />)
+  expect(screen.getByText('native')).toBeDefined()
+  expect(screen.getByText('@scope/helper')).toBeDefined()
+  expect(manager.installBundle).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByRole('textbox', { name: en.packageSpec }), { target: { value: 'unrelated' } })
+  fireEvent.click(screen.getByRole('button', { name: en.approveBuildsAndRetry }))
+  await waitFor(() => { expect(manager.installBundle).toHaveBeenCalledWith('addon@1', { enabled: false, approvedBuilds: ['native', '@scope/helper'] }) })
+  await waitFor(() => { expect(screen.queryByRole('group', { name: en.buildApproval })).toBeNull() })
+})
+
 it('ignores inventory completion after unmount and reports current read failures', async () => {
   for (const failure of [undefined, new Error('late failure')]) {
     const read = Promise.withResolvers<Awaited<ReturnType<PluginManagement['listBundles']>>>()

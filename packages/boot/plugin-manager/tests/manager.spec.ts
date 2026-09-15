@@ -1,5 +1,5 @@
 /** Persistent manager behavior through a real profile Include and Loader. */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
@@ -17,6 +17,7 @@ import Timer from '@deepseek-ai/cordis-plugin-timer'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { Group } from '@deepseek-ai/cordis-plugin-loader'
 import * as operations from '../src/operations.ts'
+import { parse } from 'yaml'
 
 async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, prepare?: (ctx: Context) => void, config: Config = {}) {
   const home = mkdtempSync(join(tmpdir(), 'plugin-manager-'))
@@ -137,6 +138,72 @@ it('installs only valid bundle declarations and honors installation without acti
   expect((await manager.listPlugins()).find(row => row.patchId === 'new-bundle')?.fiberPhase).toBe('active')
   expect(await manager.installBundle('another-bundle')).toMatchObject({ application: 'applied' })
   expect((await manager.listBundles()).find(row => row.name === 'another-bundle')?.enabled).toBe(true)
+})
+
+it('cleans a blocked installation and retries only after explicit profile build approval', async () => {
+  const { manager, dir, bundle } = await fixture()
+  const policy = join(dir, 'pnpm-workspace.yaml')
+  const run = vi.spyOn(operations, 'runProfilePnpm').mockImplementation(async (_context, args) => {
+    const manifest = readProfileManifest('test', dir)
+    const completion = { exitCode: 0, output: '', truncated: false, logPath: join(dir, 'pnpm.log') }
+    if (args[0] === 'remove') {
+      delete manifest.dependencies?.addon
+    } else {
+      manifest.dependencies = { ...manifest.dependencies, addon: '1.0.0' }
+      if (run.mock.calls.length === 1) {
+        writeFileSync(policy, 'allowBuilds:\n  native: set this to true or false\n  denied: false\n')
+        completion.exitCode = 1
+        completion.output = 'ERR_PNPM_IGNORED_BUILDS'
+      } else {
+        expect(parse(readFileSync(policy, 'utf8'))).toEqual({ allowBuilds: { native: true, denied: false } })
+        bundle('addon', [])
+      }
+    }
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+    return completion
+  })
+  onTestFinished(() => { run.mockRestore() })
+  expect(await manager.installBundle('addon')).toMatchObject({
+    application: 'failed', pendingBuilds: ['native'], cleanup: { name: 'addon' },
+  })
+  expect(readProfileManifest('test', dir).dependencies).not.toHaveProperty('addon')
+  expect(parse(readFileSync(policy, 'utf8'))).toMatchObject({ allowBuilds: { native: 'set this to true or false' } })
+  expect(await manager.installBundle('addon', { approvedBuilds: ['denied'] })).toMatchObject({ application: 'failed', changed: false })
+  expect(run).toHaveBeenCalledTimes(2)
+  expect(await manager.installBundle('addon', { approvedBuilds: ['native'], enabled: false })).toMatchObject({ application: 'applied', changed: true })
+  expect(readProfileManifest('test', dir).dsh?.profile?.bundles).not.toContain('addon')
+})
+
+it('retains approved policy and reports it as changed when the registry fails before adding a dependency', async () => {
+  const { manager, dir } = await fixture()
+  writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'allowBuilds:\n  native: set this to true or false\n')
+  const run = vi.spyOn(operations, 'runProfilePnpm').mockResolvedValue({ exitCode: 1, output: 'registry unavailable', truncated: false, logPath: '/log' })
+  onTestFinished(() => { run.mockRestore() })
+  expect(await manager.installBundle('addon', { approvedBuilds: ['native'] })).toMatchObject({
+    changed: true, application: 'failed', pendingBuilds: [], approvedBuilds: ['native'], error: { diagnostic: 'registry unavailable' },
+  })
+  expect(parse(readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8'))).toEqual({ allowBuilds: { native: true } })
+})
+
+it('runs a real pnpm dependency script only after approval and cleanup retry', async () => {
+  const { manager, dir, profile } = await fixture('startup')
+  const addon = join(profile.cwd, 'addon')
+  mkdirSync(addon)
+  writeFileSync(join(addon, 'package.json'), JSON.stringify({ name: 'approval-fixture-addon', version: '1.0.0',
+    scripts: { install: 'node build.cjs' }, dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+  writeFileSync(join(addon, 'build.cjs'), 'require("node:fs").writeFileSync("built.txt", "built")\n')
+  writeFileSync(join(addon, 'cordis.patch.yml'), '[]\n')
+  writeFileSync(join(dir, 'package.json'), '{"name":"approval-fixture","private":true}\n')
+  writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - .\nnodeLinker: hoisted\nautoInstallPeers: false\nstrictDepBuilds: true\n')
+  const blocked = await manager.installBundle('file:./addon', { enabled: false })
+  expect(blocked, JSON.stringify(blocked)).toMatchObject({ application: 'failed', cleanup: { name: 'approval-fixture-addon' } })
+  expect(blocked.pendingBuilds).toHaveLength(1)
+  const built = join(dir, 'node_modules', 'approval-fixture-addon', 'built.txt')
+  expect(existsSync(built)).toBe(false)
+  expect(readProfileManifest('test', dir).dependencies?.['approval-fixture-addon']).toBeUndefined()
+  const allowed = await manager.installBundle('file:./addon', { enabled: false, approvedBuilds: blocked.pendingBuilds! })
+  expect(allowed, JSON.stringify(allowed)).toMatchObject({ application: 'restart-required', packageResult: { exitCode: 0 } })
+  expect(readFileSync(built, 'utf8')).toBe('built')
 })
 
 it('unloads before removing packages and retries inactive dependencies whose files are missing', async () => {

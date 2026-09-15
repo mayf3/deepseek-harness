@@ -37,6 +37,8 @@ Enable the tool explicitly in the profile patch; agents using a preset also need
 
 A plugin toggle updates only `disabled` in the last matching override in the profile's `cordis.patch.yml`, or appends an override when none matches. Matching uses the entry id and any module-name assertion. A bundle toggle changes `package.json`'s ordered `dsh.profile.bundles` list. Disabling retains the dependency; enabling appends the bundle at the end, which can change configuration precedence. Installation enables a new bundle by default. Home and invocation patches retain their higher priority.
 
+When pnpm 11 blocks dependency scripts, the failed installation reports pending package names. Web offers **Allow these scripts and retry**; the tool accepts the same names through `approvedBuilds` on `install_bundle`. Approval persists by package name in this profile, permits commands with the host user's permissions, and survives another installation failure. Only currently undecided names can be approved; existing denials and wildcard rules cannot be overridden through this action. Installation cleanup retains these decisions. Retry preserves the original activation choice.
+
 ### Configuration
 
 | Field | Default | Meaning |

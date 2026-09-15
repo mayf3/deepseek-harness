@@ -14,6 +14,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { bundleManifest, runProfilePnpm, saveManifest } from './operations.ts'
 import { writePluginEnabled } from './patch.ts'
+import { approveBuilds, readPendingBuilds } from './build-approval.ts'
 import type { BundleInfo, ChangeResult, InstallBundleOptions, ManagementError, PackageResult, PluginEntryId, PluginInfo } from './types.ts'
 export type * from './types.ts'
 
@@ -190,18 +191,25 @@ export class PluginManager extends TypertRemoteService {
 
   /** Install a package using the same pnpm implementation as dsh plugin.
    * @param spec One package spec, including local paths relative to the invocation directory.
-   * @param options Whether to activate the installed bundle; defaults to true.
+   * @param options Activation defaults to true; explicit build approvals persist for this profile before installation.
    * @returns Package-manager diagnostics and observed activation outcome.
    */
   @Remote
   installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult> {
     return this.change(async (result) => {
       if (spec.trim() === '' || spec.startsWith('-')) throw new ManagementFailure('invalid-spec')
+      if (options?.approvedBuilds !== undefined) {
+        await approveBuilds(this.profile.dir, options.approvedBuilds)
+        result.approvedBuilds = options.approvedBuilds
+      }
       const before = readProfileManifest('dsh', this.profile.dir).dependencies ?? {}
       let name: string
       try {
         result.packageResult = await this.runPnpm(['add', spec])
-        if (result.packageResult.exitCode !== 0) throw new Error(result.packageResult.output)
+        if (result.packageResult.exitCode !== 0) {
+          result.pendingBuilds = await readPendingBuilds(this.profile.dir)
+          throw new Error(result.packageResult.output)
+        }
         const after = readProfileManifest('dsh', this.profile.dir).dependencies ?? {}
         const installed = Object.keys(after).filter(name => before[name] !== after[name])
         // Registry retries can retain the saved range after a partial installation.
@@ -351,7 +359,7 @@ export class PluginManager extends TypertRemoteService {
   }
 
   private diskState(): string {
-    return ['package.json', 'cordis.patch.yml'].map((file) => {
+    return ['package.json', 'cordis.patch.yml', 'pnpm-workspace.yaml'].map((file) => {
       try { return readFileSync(join(this.profile.dir, file), 'utf8') }
       catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''

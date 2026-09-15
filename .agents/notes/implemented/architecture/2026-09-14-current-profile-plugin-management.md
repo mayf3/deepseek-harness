@@ -20,6 +20,8 @@ This extends the [profile bundle composition decision](2026-08-05-profile-plugin
 
 CLI calls inherit the terminal and authentication environment; service calls retain the subprocess credential scrub and bounded diagnostics. Management records carry error codes and parameters for locale-owned Web presentation. Reconciliation compares entry identity, fiber identity, configuration and diagnostics before and after updating: unchanged inactive entries remain warnings, while newly affected failures reject the operation. Explicit enablement targets must activate.
 
+Build approvals update pnpm 11's unresolved `allowBuilds` entries under the same profile lock and preserve unrelated YAML. They persist by exact package name rather than applying an unrestricted script policy. The retry accepts only names still pending, so stale requests cannot override a subsequent denial. Package cleanup leaves the approval settings intact; a later retry can use them without retaining partially installed dependencies. The service reports policy-only changes and injects them through the existing management notices.
+
 ## Alternatives considered
 
 **Spawning another dsh process from the service.** This duplicates lifecycle coordination and cannot establish that the current Loader finished unloading before pnpm removes files. Sharing the operation module retains one implementation while letting each caller own its presentation.

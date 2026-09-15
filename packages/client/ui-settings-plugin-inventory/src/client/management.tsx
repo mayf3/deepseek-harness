@@ -1,6 +1,6 @@
 /** Minimal profile package controls over the shared manager Remote. */
 import { useEffect, useRef, useState } from 'react'
-import type { BundleInfo, ChangeResult, PluginEntryId, PluginInfo } from '@deepseek-ai/dsh-api-remotes/client'
+import type { BundleInfo, ChangeResult, InstallBundleOptions, PluginEntryId, PluginInfo } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PluginInventorySettingsTabProps } from './PluginInventorySettingsTab.tsx'
 import css from './PluginInventorySettingsTab.module.css'
 
@@ -10,7 +10,7 @@ export interface PluginManagement {
   listBundles(): Promise<BundleInfo[]>
   setPluginEnabled(id: PluginEntryId, enabled: boolean): Promise<ChangeResult>
   setBundleEnabled(name: string, enabled: boolean): Promise<ChangeResult>
-  installBundle(spec: string, options: { enabled: boolean }): Promise<ChangeResult>
+  installBundle(spec: string, options: InstallBundleOptions): Promise<ChangeResult>
   removeBundle(name: string): Promise<ChangeResult>
 }
 
@@ -61,6 +61,8 @@ export function BundleManager({ manager, state, t }: {
 }) {
   const [spec, setSpec] = useState('')
   const [enabled, setEnabled] = useState(true)
+  const result = state.result
+  const pendingBuilds = result?.pendingBuilds
   return <section className={css.manager} aria-label={t('bundles')} aria-busy={state.busy}>
     <h3>{t('bundles')}</h3>
     <form className={css.install} onSubmit={(event) => {
@@ -86,6 +88,15 @@ export function BundleManager({ manager, state, t }: {
       {state.result.remainingDependencies?.length ? <span> {t('remainingDependencies')}: {state.result.remainingDependencies.join(', ')}</span> : null}
       {state.result.warnings?.length ? <span> {t('existingFailures')}: {state.result.warnings.join('\n')}</span> : null}
     </p>}
+    {result !== undefined && pendingBuilds !== undefined && pendingBuilds.length > 0 ? <div role="group" aria-label={t('buildApproval')}>
+      <p>{t('buildApprovalDescription')}</p>
+      <ul>{pendingBuilds.map(name => <li key={name}><code>{name}</code></li>)}</ul>
+      <button type="button" disabled={state.busy} onClick={() => {
+        void state.run(() => manager.installBundle(result.target, {
+          enabled: result.enabled !== false, approvedBuilds: pendingBuilds,
+        }))
+      }}>{t('approveBuildsAndRetry')}</button>
+    </div> : null}
     <ul className={css.bundleList}>{state.bundles.map(bundle => <li key={bundle.name}>
       <span><strong>{bundle.name}</strong> {bundle.version}</span>
       <label><input type="checkbox" role="switch" aria-label={t('bundleSwitch', { name: bundle.name })}
