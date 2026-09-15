@@ -23,7 +23,6 @@
  * @module @deepseek-ai/dsh-client-modules
  */
 
-import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -59,12 +58,15 @@ interface WebBootRowFields {
 
 /** Filesystem baseline captured before a client artifact snapshot is read. */
 export interface ClientArtifactBaseline {
-  /** Absolute path of the client entry bundle watched for package rebuilds. */
-  readonly path: string
-  /** Bundle modification time in milliseconds. */
-  readonly mtimeMs: number
-  /** Bundle size in bytes. */
-  readonly size: number
+  /** Entry and recursively referenced chunks watched for package rebuilds. */
+  readonly files: readonly {
+    /** Absolute artifact path. */
+    readonly path: string
+    /** Artifact modification time in milliseconds. */
+    readonly mtimeMs: number
+    /** Artifact size in bytes. */
+    readonly size: number
+  }[]
 }
 
 /** Resolved metadata cached for one Loader specifier and owning-tree base URL until restart. */
@@ -92,6 +94,8 @@ const CLIENT_BUNDLE_BUILD_INSTRUCTION = 'run `pnpm run build` before launch'
 
 /** Missing built client export, retained as structured data for activation-error grouping. */
 class MissingClientBundleError extends Error {
+  readonly code = 'ENOENT'
+
   constructor(
     readonly packageName: string,
     readonly clientPath: string,
@@ -213,7 +217,9 @@ function framedHash(domain: string, parts: readonly Buffer[]): string {
 
 /** Hash the entry and every package-local chunk served under one plugin revision. */
 function artifactRevision(bundle: Buffer, chunks: ReadonlyMap<string, Buffer>): string {
-  return framedHash('plugin-artifact', [bundle, ...[...chunks].sort(([left], [right]) => left.localeCompare(right))
+  return framedHash('plugin-artifact', [bundle, ...[...chunks].sort(([left], [right]) => (
+    left < right ? -1 : left > right ? 1 : 0
+  ))
     .flatMap(([name, body]) => [Buffer.from(name), body])])
 }
 
@@ -405,15 +411,25 @@ function buildCombo(
   sourceMapOf: (clientPath: string) => Record<string, unknown> | undefined,
   revision?: string,
 ): ComboArtifact {
-  const resources = records.map(record => ({
+  const entries = records.map(record => record.entry.id)
+  const entryResources = records.map(record => ({
     id: record.entry.id,
     rev: record.entry.rev,
     clientPath: record.meta.clientPath,
     fileName: 'client.js',
     bundle: record.bundle,
   }))
-  const rev = revision ?? comboRevision(resources)
-  const entries = resources.map(resource => resource.id)
+  const resources = records.flatMap(record => [
+    ...chunkDependencies(record, record.bundle),
+    {
+      id: record.entry.id,
+      rev: record.entry.rev,
+      clientPath: record.meta.clientPath,
+      fileName: 'client.js',
+      bundle: record.bundle,
+    },
+  ])
+  const rev = revision ?? comboRevision(entryResources)
   const url = comboUrl(entries, rev)
   const sourceMapUrl = comboUrl(entries, rev, true)
   return {
@@ -424,6 +440,56 @@ function buildCombo(
     scriptBody: lazyBody(() => buildComboScript(resources, sourceMapUrl)),
     sourceMapBody: lazyBody(() => buildComboSourceMap(resources, sourceMapOf)),
   }
+}
+
+/** Order package-local chunk roots and dependencies for synchronous CJS materialization. */
+function orderedChunks(record: WebPluginRecord, roots: Iterable<string>): ComboResource[] {
+  const resources: ComboResource[] = []
+  const visited = new Set<string>()
+  const open: string[] = []
+  const visit = (fileName: string): void => {
+    if (visited.has(fileName)) return
+    const cycleStart = open.indexOf(fileName)
+    if (cycleStart !== -1) {
+      throw new Error(`client-modules: package-local chunk cycle ${[...open.slice(cycleStart), fileName].join(' -> ')}`)
+    }
+    const bundle = record.chunks.get(fileName)
+    /* v8 ignore next -- artifactSnapshot captures every relative chunk dependency before composition. */
+    if (bundle === undefined) {
+      throw new Error(`client-modules: chunk ${JSON.stringify(fileName)} is absent from package ${record.entry.id}`)
+    }
+    open.push(fileName)
+    for (const match of bundle.toString('utf8').matchAll(CLIENT_CHUNK_REQUIRE)) {
+      const dependency = match[2] as string
+      visit(dependency)
+    }
+    open.pop()
+    visited.add(fileName)
+    resources.push({
+      id: record.entry.id,
+      rev: record.entry.rev,
+      clientPath: join(dirname(record.meta.clientPath), fileName),
+      fileName,
+      bundle,
+    })
+  }
+  for (const root of roots) visit(root)
+  return resources
+}
+
+/** Package-local static dependencies referenced directly by one generated artifact. */
+function chunkDependencies(record: WebPluginRecord, bundle: Buffer): ComboResource[] {
+  const roots: string[] = []
+  for (const match of bundle.toString('utf8').matchAll(CLIENT_CHUNK_REQUIRE)) {
+    const dependency = match[2] as string
+    roots.push(dependency)
+  }
+  return orderedChunks(record, roots)
+}
+
+/** Order one chunk and its package-local dependencies for synchronous CJS materialization. */
+function chunkClosure(record: WebPluginRecord, rootFileName: string): ComboResource[] {
+  return orderedChunks(record, [rootFileName])
 }
 
 /** Add initial-load scheduling metadata to a combo artifact. */
@@ -665,7 +731,7 @@ export class ClientModuleRegistry extends Service {
    */
   artifactBaseline(id: string): ClientArtifactBaseline | undefined {
     const baseline = this.table.get(id)?.baseline
-    return baseline === undefined ? undefined : { ...baseline }
+    return baseline === undefined ? undefined : { files: baseline.files.map(file => ({ ...file })) }
   }
 
   /**
@@ -759,17 +825,16 @@ export class ClientModuleRegistry extends Service {
         body: artifact.sourceMapBody,
         contentType: 'application/json; charset=utf-8',
       })
-      for (const [fileName, bundle] of record.chunks) {
-        const clientPath = join(dirname(record.meta.clientPath), fileName)
-        const resource = { id: record.entry.id, rev: record.entry.rev, clientPath, fileName, bundle }
+      for (const fileName of record.chunks.keys()) {
+        const resources = chunkClosure(record, fileName)
         const url = chunkUrl(record.entry.id, fileName, record.entry.rev)
         const sourceMapUrl = chunkUrl(record.entry.id, fileName, record.entry.rev, true)
         responses.set(url, this.responses.get(url) ?? {
-          body: lazyBody(() => buildComboScript([resource], sourceMapUrl)),
+          body: lazyBody(() => buildComboScript(resources, sourceMapUrl)),
           contentType: 'text/javascript; charset=utf-8',
         })
         responses.set(sourceMapUrl, this.responses.get(sourceMapUrl) ?? {
-          body: lazyBody(() => buildComboSourceMap([resource], this.readSourceMap, fileName)),
+          body: lazyBody(() => buildComboSourceMap(resources, this.readSourceMap, fileName)),
           contentType: 'application/json; charset=utf-8',
         })
       }
@@ -908,11 +973,11 @@ export class ClientModuleRegistry extends Service {
     return `${baseUrl}\0${loaderName}`
   }
 
-  /** Capture the bundle stats before reading its bytes. */
-  private captureArtifactBaseline(clientPath: string): ClientArtifactBaseline {
-    const bundle = statSync(clientPath)
+  /** Capture one artifact's stats before reading its bytes. */
+  private captureArtifactBaseline(path: string): ClientArtifactBaseline['files'][number] {
+    const bundle = statSync(path)
     return {
-      path: clientPath,
+      path,
       mtimeMs: bundle.mtimeMs,
       size: bundle.size,
     }
@@ -936,25 +1001,27 @@ export class ClientModuleRegistry extends Service {
     baseline: ClientArtifactBaseline
   } {
     try {
-      const baseline = this.captureArtifactBaseline(clientPath)
+      const files = [this.captureArtifactBaseline(clientPath)]
       const bundle = readFileSync(clientPath)
       const chunks = new Map<string, Buffer>()
       const pending = [bundle]
       for (const artifact of pending) {
         const source = artifact.toString('utf8')
         for (const match of source.matchAll(CLIENT_CHUNK_REQUIRE)) {
-          const fileName = match[2]
-          assert(fileName !== undefined)
+          const fileName = match[2] as string
           if (chunks.has(fileName)) continue
-          const chunk = readFileSync(join(dirname(clientPath), fileName))
+          const chunkPath = join(dirname(clientPath), fileName)
+          files.push(this.captureArtifactBaseline(chunkPath))
+          const chunk = readFileSync(chunkPath)
           chunks.set(fileName, chunk)
           pending.push(chunk)
         }
       }
-      return { bundle, chunks, baseline }
+      return { bundle, chunks, baseline: { files } }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      throw new MissingClientBundleError(pkgName, clientPath, error)
+      const missingPath = (error as NodeJS.ErrnoException).path
+      throw new MissingClientBundleError(pkgName, typeof missingPath === 'string' ? missingPath : clientPath, error)
     }
   }
 

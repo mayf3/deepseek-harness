@@ -73,6 +73,7 @@ Session header contribution 查询 Host 终端，只打开没有现有标签关�
 - 补全菜单和内联建议取决于 shell 配置，Web UI 不提供独立补全引擎。
 - 应用的 OSC 颜色覆盖由已挂载的渲染器保留；新打开的渲染器无法从 Host 屏幕快照恢复这些颜色。
 - 终端历史有上限。此功能不向 Agent 发送终端输出，不在单个标签页内拆分终端，也不在 Host 重启后恢复进程。
+- Terminal chunk 加载失败后需要刷新页面，因为 React 会在页面生命周期内缓存被拒绝的 lazy import。
 
 <a id="dev-note"></a>
 ### 开发备注

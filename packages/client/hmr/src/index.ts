@@ -1,6 +1,6 @@
 /**
  * Host transport for Web client graph changes and rebuilt bundles. One interval
- * stat-polls every graph row's client bundle (polling by design: network mounts
+ * stat-polls every graph row's client entry and chunks (polling by design: network mounts
  * deliver no inotify events), reports changes through
  * `clientModules.rebuilt(id)`, and serves the `/plugins/events` SSE channel
  * broadcasting graph/rebuilt frames to the browser half (src/client/).
@@ -28,7 +28,7 @@ export const inject = ['clientModules', 'webServer']
 
 /** Plugin config, validated by the same-named schemastery schema. */
 export interface Config {
-  /** Bundle stat-poll interval in milliseconds (default 500, the build-side watcher's polling default). */
+  /** Entry/chunk stat-poll interval in milliseconds (default 500, the build-side watcher's polling default). */
   pollIntervalMs?: number
 }
 
@@ -41,22 +41,34 @@ function sseData(frame: PluginsEventFrame): string {
   return `data: ${JSON.stringify(frame)}\n\n`
 }
 
-type WatchedBundleStat = Omit<ClientArtifactBaseline, 'path'>
+type WatchedBundleStat = ClientArtifactBaseline['files'][number]
 
-type WatchedBundle = {
-  -readonly [K in keyof ClientArtifactBaseline]: ClientArtifactBaseline[K]
-} & { dirty: boolean }
-
-/** Snapshot the executable bundle metadata that drives reloads. */
-function bundleStat(path: string): WatchedBundleStat {
-  const bundle = statSync(path)
-  return { mtimeMs: bundle.mtimeMs, size: bundle.size }
+interface WatchedBundle {
+  files: Map<string, Omit<WatchedBundleStat, 'path'>>
+  dirty: boolean
 }
 
-/** Whether the executable bundle is unchanged since the last successful re-hash. */
-function sameBundleStat(left: WatchedBundleStat, right: WatchedBundleStat): boolean {
-  return left.mtimeMs === right.mtimeMs
-    && left.size === right.size
+/** Index an advertised artifact baseline by path. */
+function baselineFiles(baseline: ClientArtifactBaseline): WatchedBundle['files'] {
+  return new Map(baseline.files.map(file => [file.path, { mtimeMs: file.mtimeMs, size: file.size }]))
+}
+
+/** Snapshot every executable artifact metadata field that drives reloads. */
+function bundleStat(paths: Iterable<string>): WatchedBundle['files'] {
+  return new Map([...paths].map((path) => {
+    const bundle = statSync(path)
+    return [path, { mtimeMs: bundle.mtimeMs, size: bundle.size }]
+  }))
+}
+
+/** Whether every executable artifact is unchanged since the last successful re-hash. */
+function sameBundleStat(left: WatchedBundle['files'], right: WatchedBundle['files']): boolean {
+  if (left.size !== right.size) return false
+  for (const [path, stat] of left) {
+    const other = right.get(path)
+    if (other === undefined || other.mtimeMs !== stat.mtimeMs || other.size !== stat.size) return false
+  }
+  return true
 }
 
 /**
@@ -71,7 +83,7 @@ export function apply(ctx: Context, config: Config): void {
   // --- bundle watch: one HMR-owned stat poll ------------------------------
   const watched = new Map<string, WatchedBundle>()
 
-  const rehash = (id: string, watch: WatchedBundle, current: WatchedBundleStat): void => {
+  const rehash = (id: string, watch: WatchedBundle): void => {
     try {
       // rebuilt() replaces the opaque startup rev on its first call; later
       // calls stay silent when the content hash is unchanged.
@@ -84,17 +96,21 @@ export function apply(ctx: Context, config: Config): void {
       }
       ctx.logger.warn(error)
     }
-    watch.mtimeMs = current.mtimeMs
-    watch.size = current.size
+    const baseline = ctx.clientModules.artifactBaseline(id)
+    if (baseline === undefined) {
+      watched.delete(id)
+      return
+    }
+    watch.files = baselineFiles(baseline)
     watch.dirty = false
   }
 
   const watchRow = (id: string, baseline: ClientArtifactBaseline): void => {
-    const watch: WatchedBundle = { ...baseline, dirty: false }
+    const watch: WatchedBundle = { files: baselineFiles(baseline), dirty: false }
     watched.set(id, watch)
-    let current: WatchedBundleStat
+    let current: WatchedBundle['files']
     try {
-      current = bundleStat(baseline.path)
+      current = bundleStat(watch.files.keys())
     } catch (error) {
       watch.dirty = true
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') ctx.logger.warn(error)
@@ -102,23 +118,23 @@ export function apply(ctx: Context, config: Config): void {
     }
     // The module host captured its baseline before reading the bytes in the
     // startup batch. Only a mismatch crosses into the content-hash path.
-    if (!sameBundleStat(current, watch)) rehash(id, watch, current)
+    if (!sameBundleStat(current, watch.files)) rehash(id, watch)
   }
 
   const pollWatches = (): void => {
     for (const [id, watch] of watched) {
-      let current: WatchedBundleStat
+      let current: WatchedBundle['files']
       try {
-        current = bundleStat(watch.path)
+        current = bundleStat(watch.files.keys())
       } catch (error) {
         watch.dirty = true
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') ctx.logger.warn(error)
         continue
       }
-      if (!watch.dirty && sameBundleStat(current, watch)) continue
+      if (!watch.dirty && sameBundleStat(current, watch.files)) continue
       // Stat-before-hash preserves a detectable older baseline for writes that
       // land during hashing. Repeated stat changes heal a torn read.
-      rehash(id, watch, current)
+      rehash(id, watch)
     }
   }
 
@@ -131,7 +147,10 @@ export function apply(ctx: Context, config: Config): void {
       if (watch !== undefined) rows.set(row.id, watch)
     }
     for (const [id, watch] of watched) {
-      if (rows.get(id)?.path === watch.path) continue
+      const baseline = rows.get(id)
+      if (baseline !== undefined
+        && baseline.files.length === watch.files.size
+        && baseline.files.every(file => watch.files.has(file.path))) continue
       watched.delete(id)
     }
     for (const [id, watch] of rows) {

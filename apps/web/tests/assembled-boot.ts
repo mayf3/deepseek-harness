@@ -93,6 +93,7 @@ function resolveClientExport(packagePath: string, pkg: ClientPackageManifest): s
 
 const comboUrl = (ids: readonly string[], rev: string): string =>
   `/plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
+const CLIENT_CHUNK_REQUIRE = /\brequire\((["'])\.\/(client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js)\1\)/g
 
 /** Derive the assembled browser graph from the same bundle patches and package declarations as `dsh web`. */
 function loadAssembledPlugins(): readonly AssembledPlugin[] {
@@ -159,18 +160,44 @@ function bootGraph(plugins: readonly AssembledPlugin[]): WebBootGraph {
   }
 }
 
-/** Build single-resource and startup combo script bodies for one fixture composition. */
+/** Build package entry, sibling chunk, and startup combo bodies for one fixture composition. */
 function bundleTable(graph: WebBootGraph, plugins: readonly AssembledPlugin[]): Map<string, string> {
-  const bundles = new Map(plugins.map(plugin => [
-    plugin.url,
-    readFileSync(plugin.bundlePath, 'utf8'),
-  ]))
+  const bundles = new Map<string, string>()
+  const entries = new Map<string, string>()
+  for (const plugin of plugins) {
+    const artifacts = new Map<string, string>([
+      ['client.js', readFileSync(plugin.bundlePath, 'utf8')],
+    ])
+    for (const fileName of globSync('client.*.js', { cwd: dirname(plugin.bundlePath) })) {
+      artifacts.set(fileName, readFileSync(join(dirname(plugin.bundlePath), fileName), 'utf8'))
+    }
+    const closure = (root: string, open: readonly string[] = [], visited = new Set<string>()): string[] => {
+      if (visited.has(root)) return []
+      if (open.includes(root)) {
+        throw new Error(`assembled boot: package-local chunk cycle ${[...open, root].join(' -> ')}`)
+      }
+      const source = artifacts.get(root)
+      if (source === undefined) {
+        throw new Error(`assembled boot: missing built bundle ${join(dirname(plugin.bundlePath), root)}`)
+      }
+      const next = [...open, root]
+      const dependencies = [...source.matchAll(CLIENT_CHUNK_REQUIRE)].flatMap(match =>
+        closure(match[2] as string, next, visited))
+      visited.add(root)
+      return [...dependencies, source]
+    }
+    const entry = closure('client.js').join('\n;\n')
+    entries.set(plugin.id, entry)
+    bundles.set(plugin.url, entry)
+    for (const fileName of artifacts.keys()) {
+      if (fileName === 'client.js') continue
+      bundles.set(`/plugins/${plugin.id}/${fileName}?rev=${plugin.rev}`, closure(fileName).join('\n;\n'))
+    }
+  }
   for (const batch of graph.batches) {
     bundles.set(batch.url, batch.entries.map((id) => {
-      const plugin = plugins.find(candidate => candidate.id === id)
-      if (plugin === undefined) throw new Error(`assembled boot: batch names unknown plugin ${id}`)
-      const code = bundles.get(plugin.url)
-      if (code === undefined) throw new Error(`assembled boot: missing built bundle ${plugin.url}`)
+      const code = entries.get(id)
+      if (code === undefined) throw new Error(`assembled boot: missing built entry ${id}`)
       return code
     }).join('\n;\n'))
   }

@@ -4099,7 +4099,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ClientArtifactBaseline',
-    declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly size: number;\n}',
+    declaration: 'export interface ClientArtifactBaseline {\n    readonly files: readonly {\n        readonly path: string;\n        readonly mtimeMs: number;\n        readonly size: number;\n    }[];\n}',
   },
   {
     name: 'CollectedOutput',

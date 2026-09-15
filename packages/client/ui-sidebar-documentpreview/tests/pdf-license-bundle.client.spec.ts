@@ -42,7 +42,8 @@ function runPnpm(args: string[], cwd: string, timeout: number): string {
 }
 
 describe('published PDF.js licenses', () => {
-  it.skipIf(!existsSync(bundlePath) || !existsSync(pdfChunkPath))('keeps every bundled license in the packed PDF chunk', ({ task }) => {
+  it.skipIf(!existsSync(bundlePath))('keeps every bundled license in the packed PDF chunk', ({ task }) => {
+    expect(existsSync(pdfChunkPath)).toBe(true)
     const output = mkdtempSync(join(tmpdir(), 'dsh-document-preview-pack-'))
     try {
       const packed = JSON.parse(runPnpm([
@@ -54,7 +55,10 @@ describe('published PDF.js licenses', () => {
 
       const client = run('tar', ['-xOf', resolve(packageRoot, packed.filename), 'package/lib/client.js'], packageRoot, task.timeout)
       const pdf = run('tar', ['-xOf', resolve(packageRoot, packed.filename), 'package/lib/client.pdf.js'], packageRoot, task.timeout)
-      expect([...client.matchAll(/require\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1])).toEqual(['./client.pdf.js'])
+      expect([...client.matchAll(/require\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))
+        .toEqual(['./client.store.js', './client.pdf.js'])
+      expect([...pdf.matchAll(/require\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))
+        .toEqual(['./client.store.js'])
       expect(client).not.toContain('//! Bundled PDF.js license notices')
       expect(client).not.toContain('/pdfjs-dist/')
       expect(pdf).toContain('//! Bundled PDF.js license notices')

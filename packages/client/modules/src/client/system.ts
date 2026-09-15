@@ -149,13 +149,18 @@ export class ClientModuleSystem implements ClientModuleLoader {
       throw new Error(`client-modules: invalid package-local chunk ${JSON.stringify(registration.chunk)}`)
     }
     const id = registration.chunk === undefined ? ownerId : chunkId(ownerId, registration.chunk)
-    if (this.bootstrapIds.has(id) || this.factories.has(id)) {
-      const registrationName = registration.chunk === undefined ? registration.id : id
-      throw new Error(`client-modules: duplicate factory registration for "${registrationName}" (bundle executed twice without invalidate?)`)
+    const rev = this.factories.get(ownerId)?.rev ?? this.reloadTargets.get(ownerId)?.rev ?? this.graphRows.get(ownerId)?.rev
+    const previous = this.factories.get(id)
+    if (registration.chunk !== undefined && previous !== undefined && previous.rev === rev) return
+    if (this.bootstrapIds.has(id)) {
+      throw new Error(`client-modules: duplicate factory registration for "${registration.id}" (bundle executed twice without invalidate?)`)
+    }
+    if (previous !== undefined) {
+      throw new Error(`client-modules: duplicate factory registration for "${id}" (bundle executed twice without invalidate?)`)
     }
     this.factories.set(id, {
       factory: registration.factory,
-      rev: this.reloadTargets.get(ownerId)?.rev ?? this.graphRows.get(ownerId)?.rev,
+      rev,
     })
   }
 
@@ -243,6 +248,12 @@ export class ClientModuleSystem implements ClientModuleLoader {
     return (spec: string): unknown => {
       edges.add(spec)
       if (spec.startsWith('./')) {
+        if (spec === './client.js') {
+          const owner = this.loadCache.get(ownerId)
+          /* v8 ignore next -- a chunk factory is materialized only from its cached owner entry. */
+          if (owner === undefined) throw new Error(`client-modules: package chunk loaded before entry "${ownerId}"`)
+          return owner.exports
+        }
         const fileName = spec.slice(2)
         if (!CLIENT_CHUNK.test(fileName)) {
           throw new Error(`client-modules: invalid relative chunk request ${JSON.stringify(spec)}`)
@@ -268,22 +279,20 @@ export class ClientModuleSystem implements ClientModuleLoader {
   /** Load, register, and materialize one package-local tsdown chunk. */
   private async importChunk(ownerId: string, fileName: string): Promise<unknown> {
     const id = chunkId(ownerId, fileName)
-    const existing = this.loadCache.get(id)
-    if (existing !== undefined) return existing.exports
+    const row = this.graphRows.get(ownerId)
+    if (row === undefined) throw new Error(`client-modules: chunk owner "${ownerId}" is not a boot graph entry`)
+    const revision = this.factories.get(ownerId)?.rev
+    /* v8 ignore next -- graph entry registration always records its row or reload revision. */
+    if (revision === undefined) throw new Error(`client-modules: chunk owner "${ownerId}" has no artifact revision`)
+    const url = chunkUrl(row, fileName, revision)
+    let transport = this.pendingArrival.get(url)
+    if (transport === undefined) {
+      transport = this.loadBundle(url).finally(() => { this.pendingArrival.delete(url) })
+      this.pendingArrival.set(url, transport)
+    }
+    await transport
     if (!this.factories.has(id)) {
-      const row = this.graphRows.get(ownerId)
-      if (row === undefined) throw new Error(`client-modules: chunk owner "${ownerId}" is not a boot graph entry`)
-      const revision = this.factories.get(ownerId)?.rev ?? this.reloadTargets.get(ownerId)?.rev ?? row.rev
-      const url = chunkUrl(row, fileName, revision)
-      let transport = this.pendingArrival.get(url)
-      if (transport === undefined) {
-        transport = this.loadBundle(url).finally(() => { this.pendingArrival.delete(url) })
-        this.pendingArrival.set(url, transport)
-      }
-      await transport
-      if (!this.factories.has(id)) {
-        throw new Error(`client-modules: bundle ${url} loaded without registering "${id}" via __ModuleLoader__.load`)
-      }
+      throw new Error(`client-modules: bundle ${url} loaded without registering "${id}" via __ModuleLoader__.load`)
     }
     return this.materialize(id, ownerId).exports
   }

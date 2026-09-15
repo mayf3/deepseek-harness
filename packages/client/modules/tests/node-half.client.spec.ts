@@ -1,6 +1,6 @@
 /** Node-half composition diagnostics for package metadata and built client bundles. */
 
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { SourceMap } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -491,6 +491,28 @@ describe('client bundle activation', () => {
     expect(String(thrown)).not.toContain('pnpm run build')
   })
 
+  it('names a missing sibling chunk and preserves its retryable ENOENT code', () => {
+    const packageName = '@fixture/missing-chunk'
+    const clientPath = writePackage(packageName)
+    const chunkPath = join(dirname(clientPath), 'client.pdf.js')
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = [require("./client.pdf.js"), require("./client.pdf.js")]\n')
+    writeFileSync(chunkPath, 'module.exports = {}\n')
+    const service = construct([packageName])
+    unlinkSync(chunkPath)
+
+    let thrown: unknown
+    try {
+      service.rebuilt(packageName)
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toMatchObject({ code: 'ENOENT', clientPath: chunkPath })
+
+    writeFileSync(chunkPath, 'module.exports = { restored: true }\n')
+    expect(service.rebuilt(packageName)).toBeTypeOf('string')
+  })
+
   it('falls back to a generated-file map when an authored map is malformed', async () => {
     const packageName = '@fixture/malformed-source-map'
     const clientPath = writePackage(packageName)
@@ -640,13 +662,13 @@ describe('client bundle activation', () => {
     writeFileSync(clientPath, 'module.exports = { generation: 1 }\n')
     const { service, route } = constructWithRoute([packageName])
     const first = service.graph().batches[0]!.url
-    const firstSize = service.artifactBaseline(packageName)!.size
+    const firstSize = service.artifactBaseline(packageName)!.files[0]!.size
 
     writeFileSync(clientPath, 'module.exports = { generation: 200 }\n')
     service.rebuilt(packageName)
     const second = service.graph().batches[0]!.url
     expect(second).not.toBe(first)
-    expect(service.artifactBaseline(packageName)!.size).toBeGreaterThan(firstSize)
+    expect(service.artifactBaseline(packageName)!.files[0]!.size).toBeGreaterThan(firstSize)
     expect((await routeRequest(route, first)).status).toBe(200)
     expect((await routeRequest(route, second)).status).toBe(200)
 
@@ -673,9 +695,11 @@ describe('client bundle activation', () => {
     const firstPath = service.clientPath(firstName)!
     const firstStat = statSync(firstPath)
     expect(service.artifactBaseline(firstName)).toEqual({
-      path: firstPath,
-      mtimeMs: firstStat.mtimeMs,
-      size: firstStat.size,
+      files: [{
+        path: firstPath,
+        mtimeMs: firstStat.mtimeMs,
+        size: firstStat.size,
+      }],
     })
     expect(service.artifactBaseline('@fixture/unknown')).toBeUndefined()
   })
@@ -785,9 +809,11 @@ describe('client bundle activation', () => {
     const packageName = '@fixture/chunked'
     const clientPath = writePackage(packageName)
     const chunkPath = join(dirname(clientPath), 'client.pdf.js')
+    const sharedPath = join(dirname(clientPath), 'client.store.js')
     mkdirSync(dirname(clientPath), { recursive: true })
-    writeFileSync(clientPath, 'module.exports = require("./client.pdf.js")\n')
-    writeFileSync(chunkPath, 'module.exports = { version: 1 }\n//# sourceMappingURL=client.pdf.js.map')
+    writeFileSync(clientPath, 'const store = require("./client.store.js"); module.exports = [store, require("./client.pdf.js")]\n')
+    writeFileSync(chunkPath, 'const store = require("./client.store.js"); module.exports = { version: 1, store }\n//# sourceMappingURL=client.pdf.js.map')
+    writeFileSync(sharedPath, 'module.exports = { shared: true }\n')
     writeFileSync(`${chunkPath}.map`, JSON.stringify({
       version: 3,
       names: [],
@@ -797,10 +823,15 @@ describe('client bundle activation', () => {
     const { service, route } = constructWithRoute([packageName])
     const firstRev = service.graph().entries[0]!.rev
     const firstUrl = chunkUrl(packageName, 'client.pdf.js', firstRev)
+    expect(service.artifactBaseline(packageName)?.files.map(file => file.path)).toEqual([clientPath, sharedPath, chunkPath])
+
+    const entry = await routeRequest(route, service.graph().entries[0]!.url)
+    expect(entry.body.indexOf(Buffer.from('shared: true'))).toBeLessThan(entry.body.indexOf(Buffer.from('module.exports = [store')))
 
     const script = await routeRequest(route, firstUrl)
     expect(script.status).toBe(200)
-    expect(script.body.toString('utf8')).toContain('module.exports = { version: 1 }')
+    expect(script.body.toString('utf8')).toContain('version: 1')
+    expect(script.body.indexOf(Buffer.from('shared: true'))).toBeLessThan(script.body.indexOf(Buffer.from('version: 1')))
     expect(script.body.toString('utf8')).toContain(`sourceMappingURL=${firstUrl.replace('.js?', '.js.map?')}`)
     expect((await routeRequest(route, firstUrl.replace('.js?', '.js.map?'))).status).toBe(200)
 

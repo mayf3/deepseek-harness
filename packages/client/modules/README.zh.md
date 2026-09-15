@@ -65,13 +65,13 @@ application combo 脚本在启动时仅注册一次插件 factory；模块主体
 
 ### 惰性 CJS 模型
 
-执行插件 bundle 只注册其 factory；每个模块主体副作用（包括 CSS 注入）都位于 factory 闭包中，在物化时运行（`factory(require)` → 导出，在 `loadCache` 中记忆化）。一个包也可以注册 tsdown 产出的 sibling chunk；`import()` 生成的相对 `require()` 会按需加载并记忆该 chunk。factory 依赖另一个已注册但未物化的模块时会递归物化它；require 循环会抛出异常，因为 factory 形式的 CJS 无法提供部分导出。解析会依次检查平台 seed 表、已记忆记录、启动图 row 与已注册 factory；其他情况一律抛错。普通模块表 `require` 使用相同顺序，但不含异步 graph-row 加载，并把观察到的边记录到模块记录中。
+执行插件 bundle 只注册其 factory；每个模块主体副作用（包括 CSS 注入）都位于 factory 闭包中，在物化时运行（`factory(require)` → 导出，在 `loadCache` 中记忆化）。一个包也可以注册 tsdown 产出的 sibling chunk；`import()` 生成的相对 `require()` 会按需加载并记忆该 chunk，而 chunk 的 `require('./client.js')` 会读取已经物化的所属 entry。factory 依赖另一个已注册但未物化的模块时会递归物化它；require 循环会抛出异常，因为 factory 形式的 CJS 无法提供部分导出。解析会依次检查平台 seed 表、已记忆记录、启动图 row 与已注册 factory；其他情况一律抛错。普通模块表 `require` 使用相同顺序，但不含异步 graph-row 加载，并把观察到的边记录到模块记录中。
 
 ### 增量组合
 
 Node 半侧逐包增量扫描——没有全量重扫路径。每次发出 `internal/plugin` 事件时，系统都会把该 fiber 的 entry 名标脏；微任务 flush 会把每个脏名与当前 loader 条目对账，激活 pass 会初始化同一个脏集合并同步 flush，因此首次扫描与稳态共用同一实现。包元数据按 Loader specifier 与所属 tree base URL 缓存至重启，解析出的 manifest（元数据清单）包名作为浏览器模块身份。若不同的 active Loader source 解析到同一包名，组合会失败；移除冲突来源后，剩余来源无需重启 fiber 即可接替。bundle 内容变更只能通过 `rebuilt()`（HMR 钩子）进入图。
 
-Node 半侧会在发布前快照每个客户端 entry 及其递归引用的全部 sibling chunk，并在不构建响应 body 的情况下创建 combo descriptor。它把启动 entry 分组到 `/plugins/??...&rev=...` combo URL：modules row 使用一个 bootstrap combo，其余 row 使用一个或多个 application combo；包内 chunk 保持为独立的 `/plugins/<package>/<chunk>?rev=...` 资源，仅在其 dynamic import 执行时加载。每个启动阶段都会在 URL 超过 3 KiB 之前分区。脚本 body 在首次 `GET` 时只构建一次，并以对应 map URL 结尾；map 文件则在首次 map `GET` 时单独读取、校验并组合，`HEAD` 不会物化任一 body。每份生成的 map 都是 Indexed Source Map v3，并在可用时使用作者提供的 section，否则为已打包产物生成 identity section。初始逐插件 revision 使用进程 nonce，HMR 哈希 entry 及其 chunks，combo revision 从有序 row revision 派生。已公告响应在首次物化后保持不可变；未知资源或 revision 返回 404。
+Node 半侧会在发布前快照每个客户端 entry 及其递归引用的全部 sibling chunk，并在不构建响应 body 的情况下创建 combo descriptor。它把启动 entry 分组到 `/plugins/??...&rev=...` combo URL：modules row 使用一个 bootstrap combo，其余 row 使用一个或多个 application combo；包内 chunk 保持为独立的 `/plugins/<package>/<chunk>?rev=...` 资源，仅在其 dynamic import 执行时加载。请求一个 chunk 时，响应会先按依赖顺序登记其 sibling dependency，再登记目标 factory，使生成的静态 CJS request 保持同步。每个启动阶段都会在 URL 超过 3 KiB 之前分区。脚本 body 在首次 `GET` 时只构建一次，并以对应 map URL 结尾；map 文件则在首次 map `GET` 时单独读取、校验并组合，`HEAD` 不会物化任一 body。每份生成的 map 都是 Indexed Source Map v3，并在可用时使用作者提供的 section，否则为已打包产物生成 identity section。初始逐插件 revision 使用进程 nonce，HMR 哈希 entry 及其 chunks，combo revision 从有序 row revision 派生。已公告响应在首次物化后保持不可变；未知资源或 revision 返回 404。
 
 ### 启动 manifest 注入
 

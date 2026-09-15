@@ -7,11 +7,14 @@ const entryPath = join(packageRoot, 'lib/client.js')
 const terminalPath = join(packageRoot, 'lib/client.terminal.js')
 
 describe('terminal client artifacts', () => {
-  it.skipIf(!existsSync(entryPath) || !existsSync(terminalPath))('keeps xterm outside the startup bundle', () => {
+  it.skipIf(!existsSync(entryPath))('keeps xterm outside the startup bundle', () => {
+    expect(existsSync(terminalPath)).toBe(true)
     const entry = readFileSync(entryPath, 'utf8')
     const terminal = readFileSync(terminalPath, 'utf8')
     expect([...entry.matchAll(/require\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))
-      .toEqual(['./client.terminal.js'])
+      .toEqual(['./client.TerminalIcon.js', './client.terminal.js'])
+    expect([...terminal.matchAll(/require\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))
+      .toEqual(['./client.TerminalIcon.js'])
     expect(entry).not.toContain('/@xterm+xterm@')
     expect(terminal).toContain('/@xterm+xterm@')
   })

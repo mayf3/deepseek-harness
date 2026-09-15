@@ -78,6 +78,7 @@ PNG、JPEG、GIF、WebP、BMP、ICO 和 SVG 通过 Blob URL 在 `<img>` 静态�
 - **本地 HTML 依赖集合有限。** 只打包直接引用的经典 `.js` 脚本和 `.css` 样式表。浏览器解析的资源仍受浏览器源与网络规则限制；iframe 不获得运行时文件读取桥接。
 - **换行图标为包内自绘。** `IconWrapFill16` 与 `IconNowrapFill16` 住在 `src/client/icons.tsx`，直到共享图标集提供为止；它们的 props 已与共享图标契约一致。
 - **滚动写入未节流。** 每次滚动事件都把偏移记进 store；行块已 memo 化，于是由此引发的重渲染交还给 React 的是同一批元素。
+- **PDF chunk 加载失败后需要刷新页面。** React 会在页面生命周期内缓存被拒绝的 lazy import；已加载正文中的普通 PDF 打开或渲染失败仍可重试。
 
 <a id="dev-note"></a>
 ### 开发备注

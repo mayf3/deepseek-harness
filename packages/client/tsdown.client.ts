@@ -567,6 +567,8 @@ function clientConfig(id: string, entry: string, clientBanner?: (fileName: strin
     }],
     outputOptions: {
       entryFileNames: 'client.js',
+      // The imported source basename becomes the published chunk name; package
+      // files lists and artifact tests pin every intentional chunk.
       chunkFileNames: 'client.[name].js',
       sourcemapExcludeSources: false,
       // The map is served from /plugins/<scoped-package>/client.js.map. The

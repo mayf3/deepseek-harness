@@ -89,16 +89,19 @@ Package metadata — including the negative "not a client package" verdict — i
 ```ts type-equiv
 /** Filesystem baseline captured before a client artifact snapshot is read. */
 interface ClientArtifactBaseline {
-  /** Absolute path of the client entry bundle watched for package rebuilds. */
-  readonly path: string
-  /** Bundle modification time in milliseconds. */
-  readonly mtimeMs: number
-  /** Bundle size in bytes. */
-  readonly size: number
+  /** Entry and recursively referenced chunks watched for package rebuilds. */
+  readonly files: readonly {
+    /** Absolute artifact path. */
+    readonly path: string
+    /** Artifact modification time in milliseconds. */
+    readonly mtimeMs: number
+    /** Artifact size in bytes. */
+    readonly size: number
+  }[]
 }
 ```
 
-`ClientModuleRegistry` (`ctx.clientModules`, defined in [`packages/client/modules/src/index.ts`](../../packages/client/modules/src/index.ts)) exposes reads and the rebuild face; signatures are in the generated [service catalog](#ctxclientmodules--clientmoduleregistry). `graph()` returns the current composed graph (a stable object between changes), `clientPath(id)` returns the entry bundle's absolute path, and `artifactBaseline(id)` returns the entry stat values captured before the current snapshot was read. `fetchBundle()` resolves the same lazy response used by the HTTP route. `rebuilt(id)` is the only entry point through which changed executable artifacts reach the graph: it re-snapshots the entry and referenced chunks, then only a real revision change recomposes the graph and notifies. `onRebuilt` fires per changed package with the new revision; `onGraphChanged` fires after any flush that recomposed the graph (row added or removed, or a rebuilt revision change) and is pull-model — listeners re-read `graph()`. Both notification paths contain listener exceptions so one throwing subscriber cannot skip later subscribers or kill whatever triggered the flush.
+`ClientModuleRegistry` (`ctx.clientModules`, defined in [`packages/client/modules/src/index.ts`](../../packages/client/modules/src/index.ts)) exposes reads and the rebuild face; signatures are in the generated [service catalog](#ctxclientmodules--clientmoduleregistry). `graph()` returns the current composed graph (a stable object between changes), `clientPath(id)` returns the entry bundle's absolute path, and `artifactBaseline(id)` returns the entry and chunk stat values captured before the current snapshot was read. `fetchBundle()` resolves the same lazy response used by the HTTP route. `rebuilt(id)` is the only entry point through which changed executable artifacts reach the graph: it re-snapshots the entry and referenced chunks, then only a real revision change recomposes the graph and notifies. `onRebuilt` fires per changed package with the new revision; `onGraphChanged` fires after any flush that recomposed the graph (row added or removed, or a rebuilt revision change) and is pull-model — listeners re-read `graph()`. Both notification paths contain listener exceptions so one throwing subscriber cannot skip later subscribers or kill whatever triggered the flush.
 
 [`dsh-client-hmr`](../../packages/client/hmr/README.md) delivers live graph snapshots in the shipped Web composition. The Host forwards existing graph-change notifications immediately, and reconnect sends the current full graph. A graph describes desired browser entries without asserting that Host cleanup has completed. Its artifact poll separately reports rebuilt revisions. Source-map changes alone do not trigger a reload; a new combo-map URL appears only after a bundle revision changes, and each map body is fixed by its first `GET`. Client Modules validates snapshots and serializes reconciliation with those rebuilds; it owns the boot-created entry map, single-resource arrivals, asynchronous removal, unused-module/style cleanup and page-local retry status. Static platform modules and the bootstrap retain their page lifetime; Electron installation is a separate flow.
 

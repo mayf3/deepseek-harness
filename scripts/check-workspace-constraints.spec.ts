@@ -158,6 +158,14 @@ describe('package payload constraints', () => {
       'lib/types/**/*.d.ts',
     ])
   })
+
+  it.each([
+    'packages/client/ui-sidebar-documentpreview',
+    'packages/client/ui-sidebar-terminal',
+  ])('accepts package-local Client chunks from %s', (dir) => {
+    const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+    expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+  })
 })
 
 it('publishes CLI runtime declarations and rejects a payload that omits them', () => {

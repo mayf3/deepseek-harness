@@ -238,22 +238,52 @@ describe('lazy CJS arrival', () => {
   it('fetches a dynamic sibling chunk once on demand', async () => {
     const b = bench([row('a')], {
       a: req => ({
+        marker: 'entry',
         load: () => Promise.resolve().then(() => req('./client.pdf.js')),
       }),
     }, {
       chunks: {
-        'a/client.pdf.js': () => ({ marker: 'pdf' }),
+        'a/client.pdf.js': req => ({
+          marker: 'pdf',
+          owner: req('./client.js'),
+          store: req('./client.store.js'),
+        }),
       },
     })
+    b.target.load({ id: 'a', chunk: 'client.store.js', factory: () => ({ shared: true }) })
     const entry = await b.loader.import('a', '', {}) as {
-      load: () => Promise<{ marker: string }>
+      marker: string
+      load: () => Promise<{ marker: string; owner: unknown; store: unknown }>
     }
     expect(b.fetched).toEqual([APPLICATION_URL])
 
     const [first, second] = await Promise.all([entry.load(), entry.load()])
+    const third = await entry.load()
     expect(first).toBe(second)
-    expect(first).toEqual({ marker: 'pdf' })
+    expect(third).toBe(first)
+    expect(first).toEqual({ marker: 'pdf', owner: entry, store: { shared: true } })
     expect(b.fetched).toEqual([APPLICATION_URL, chunkUrl('a', 'client.pdf.js')])
+  })
+
+  it('reloads package-local chunks at the invalidated entry revision', async () => {
+    const b = bench([row('a')], {
+      a: req => ({ load: () => Promise.resolve().then(() => req('./client.pdf.js')) }),
+    }, {
+      chunks: { 'a/client.pdf.js': () => ({ marker: 'pdf' }) },
+    })
+    const first = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    await first.load()
+
+    b.loader.invalidate('a', 'rebuilt')
+    const second = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    await second.load()
+
+    expect(b.fetched).toEqual([
+      APPLICATION_URL,
+      chunkUrl('a', 'client.pdf.js'),
+      comboUrl(['a'], 'rebuilt'),
+      chunkUrl('a', 'client.pdf.js', 'rebuilt'),
+    ])
   })
 })
 
@@ -354,10 +384,46 @@ describe('bootstrap module', () => {
 
 describe('failure modes', () => {
   it('duplicate factory registration is loud', () => {
-    bench([])
+    const b = bench([])
     win.__ModuleLoader__?.load({ id: 'x', factory: () => ({}) })
     expect(() => win.__ModuleLoader__?.load({ id: 'x', factory: () => ({}) }))
       .toThrow('duplicate factory registration for "x"')
+    b.target.load({ id: 'x', chunk: 'client.pdf.js', factory: () => ({}) })
+    expect(() => { b.target.load({ id: 'x', chunk: 'client.pdf.js', factory: () => ({}) }) }).not.toThrow()
+  })
+
+  it('rejects malformed chunk registrations and relative requests', async () => {
+    const b = bench([])
+    expect(() => { b.target.load({ id: 'a', chunk: 'client.js', factory: () => ({}) }) })
+      .toThrow('invalid package-local chunk')
+
+    const malformed = bench([row('a')], { a: req => ({ value: req('./other.js') }) })
+    await expect(malformed.loader.import('a', '', {})).rejects.toThrow('invalid relative chunk request')
+  })
+
+  it('rejects a chunk without a graph owner or registration', async () => {
+    const ownerless = bench([], {}, {
+      pending: [{
+        id: 'ghost',
+        factory: req => ({ load: () => Promise.resolve().then(() => req('./client.pdf.js')) }),
+      }],
+    })
+    const ghost = await ownerless.loader.import('ghost', '', {}) as { load: () => Promise<unknown> }
+    await expect(ghost.load()).rejects.toThrow('chunk owner "ghost" is not a boot graph entry')
+
+    const unregistered = bench([row('a')], {
+      a: req => ({ load: () => Promise.resolve().then(() => req('./client.pdf.js')) }),
+    }, { chunks: { 'a/client.pdf.js': null } })
+    const entry = await unregistered.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    await expect(entry.load()).rejects.toThrow('loaded without registering "a/client.pdf.js"')
+  })
+
+  it('rejects a chunk whose owner URL is not a one-resource combo', async () => {
+    const b = bench([row('a', { url: '/plugins/a/client.js?rev=0' })], {
+      a: req => ({ load: () => Promise.resolve().then(() => req('./client.pdf.js')) }),
+    })
+    const entry = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    await expect(entry.load()).rejects.toThrow('cannot resolve chunk "client.pdf.js"')
   })
 
   it('a bundle that never registers its id is loud', async () => {
