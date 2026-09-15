@@ -1,5 +1,5 @@
 /** Private activity records reject stale input evidence and incomplete observations. */
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -51,6 +51,22 @@ it('supports an unset original ZDOTDIR and removes private files on disposal', (
   expect(existsSync(activity.env.ZDOTDIR!)).toBe(true)
   activity.dispose()
   expect(existsSync(activity.env.ZDOTDIR!)).toBe(false)
+})
+
+it('restores a quoted original ZDOTDIR before sourcing user startup files', () => {
+  const env = Object.freeze({ ZDOTDIR: "/shell config/user's $settings", OTHER: 'preserved' })
+  const activity = prepareShellActivity(spec, env, 'linux')!
+  cleanups.push(() => { activity.dispose() })
+  const directory = activity.env.ZDOTDIR!
+  expect(directory).not.toBe(env.ZDOTDIR)
+  expect(activity.env).toEqual({ ...env, ZDOTDIR: directory })
+  expect(activity.argv).toEqual(spec.argv)
+  expect(readFileSync(join(directory, '.zshenv'), 'utf8').split('\n').slice(0, 2)).toEqual([
+    "ZDOTDIR='/shell config/user'\\''s $settings'",
+    '[[ ! -r ${ZDOTDIR:-$HOME}/.zshenv ]] || builtin source "${ZDOTDIR:-$HOME}/.zshenv"',
+  ])
+  activity.dispose()
+  expect(existsSync(directory)).toBe(false)
 })
 
 it('removes the allocated private directory when writing its startup file fails', () => {
