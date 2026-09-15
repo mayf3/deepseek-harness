@@ -173,8 +173,7 @@
   - img "Token preview"
 - text: css
 - button "Line numbers"
-- button "Copy":
-  - img
+- button "Copy"
 - text: Source
 - code: "--inline-code: #F5F5F5;"
 - paragraph: LINK_GALLERY_DONE

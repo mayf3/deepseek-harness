@@ -31,13 +31,11 @@
   - code: packages/context/session-reference
   - text: 📦
 - button "Line numbers"
-- button "Copy":
-  - img
+- button "Copy"
 - text: Source
 - code: session-reference ├── README.md ├── package.json ├── src │ ├── index.ts │ └── uri.ts └── tests └── session-reference.spec.ts
 - button "Line numbers"
-- button "Copy":
-  - img
+- button "Copy"
 - text: Source
 - code: "session-reference/ ├── README.md # 包说明文档 ├── package.json # 包元数据与依赖声明 ├── src/ │ ├── index.ts # 入口，导出公共 API │ └── uri.ts # 会话引用 URI 相关实现 └── tests/ └── session-reference.spec.ts # 单元测试"
 - paragraph: 这是一个很典型的轻量 TypeScript 包结构：入口 + 实现 + 测试。这一轮到此结束，等系统开启下一个 turn。
@@ -70,8 +68,7 @@
     - code: packages/context/session-reference
     - text: ，输出了文件结构：
     - button "Line numbers"
-    - button "Copy":
-      - img
+    - button "Copy"
     - text: Source
     - code: session-reference/ ├── README.md ├── package.json ├── src/ │ ├── index.ts │ └── uri.ts └── tests/ └── session-reference.spec.ts
   - listitem:
@@ -80,8 +77,7 @@
     - code: packages/llm/token-meter
     - text: ，输出了文件结构：
     - button "Line numbers"
-    - button "Copy":
-      - img
+    - button "Copy"
     - text: Source
     - code: token-meter/ ├── README.md ├── package.json ├── src/ │ └── index.ts └── tests/ └── token-meter.spec.ts
 - paragraph:

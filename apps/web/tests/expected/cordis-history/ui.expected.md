@@ -47,8 +47,7 @@
 - tabpanel "Host":
   - text: javascript
   - button "Line numbers"
-  - button "Copy":
-    - img
+  - button "Copy"
   - text: Source
   - code: "return { name: \"snapshot-noop\", apply(ctx) {} }"
 - text: Result Defined snap-1/pkg-1 (snapshot noop); it is not running yet. Use cordis_run to activate this Package. Run controls live in the Cordis panel above Settings
