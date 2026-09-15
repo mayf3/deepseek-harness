@@ -10,7 +10,7 @@ Web 和 Agent 控件需要修改运行中的 profile，同时避免另建包安�
 
 ## 决策
 
-[插件管理器](../../../../packages/boot/plugin-manager/README.zh.md)与 `dsh plugin` 调用同一套异步包操作。launcher 通过纯数据 `ctx.profileContext` 提供 profile 与解析位置、启动时组合包、重载策略和调用级 overlay。共享函数组合当前文件；该接口不包含回调或修改方法。CLI 与 service 修改持有 profile manifest 的写锁；[DSH HMR](../../../../packages/boot/hmr/README.zh.md) 通过同一队列串行执行模块替换、Include 刷新、profile 重新组合与 service 修改。launcher 在插件启动前注册 `hmr/before-reload` 文件锁包装。包修改在 `hmr.runExclusive()` 内获取同一文件锁。每次重载重新读取 manifest、组合包层与用户 patch，同时保留调用级 overlay 的优先级。
+[插件管理器](../../../../packages/boot/plugin-manager/README.zh.md)与 `dsh plugin` 调用同一套异步包操作。launcher 通过纯数据 `ctx.profileContext` 提供 profile 与解析位置、启动时组合包和调用级 overlay。共享函数组合当前文件；该接口不包含回调或修改方法。CLI 与 service 修改持有 profile manifest 的写锁；[DSH HMR](../../../../packages/boot/hmr/README.zh.md) 通过同一队列串行执行模块替换、Include 刷新、profile 重新组合与 service 修改。HMR 在自身初始化时注册 profile 监听与 `hmr/before-reload` 文件锁包装，等待应用就绪后再处理编辑。最终 YAML 组合决定是否运行 HMR，启动器不安装回退实例。包修改在 `hmr.runExclusive()` 内获取同一文件锁。每次重载重新读取 manifest、组合包层与用户 patch，同时保留调用级 overlay 的优先级。
 
 profile 文件保持为持久状态：条目开关只修改 YAML 文档中的 `disabled`，组合包开关修改有序字符串列表。更新依赖不会重新激活保留的已停用组合包。service 删除组合包时，先应用去掉该组合包的配置，等待旧 fiber 完成卸载后再删除依赖。已保存配置、pnpm 完成状态与运行时激活分别报告；失败保留实际的部分状态与诊断路径。
 

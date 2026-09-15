@@ -1392,9 +1392,6 @@ importers:
       '@deepseek-ai/dsh-package-manifest':
         specifier: workspace:^
         version: link:../../util/package-manifest
-      chokidar:
-        specifier: 4.0.3
-        version: 4.0.3
       js-yaml:
         specifier: ^4.2.0
         version: 4.2.0
@@ -1420,9 +1417,6 @@ importers:
       '@deepseek-ai/cordis-plugin-timer':
         specifier: workspace:^
         version: link:../../../vendor/timer
-      '@deepseek-ai/dsh-hmr':
-        specifier: workspace:^
-        version: link:../hmr
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:^
         version: link:../../util/home-paths
@@ -1456,6 +1450,9 @@ importers:
       '@babel/code-frame':
         specifier: ^7.29.0
         version: 7.29.7
+      '@deepseek-ai/dsh-atomic-write':
+        specifier: workspace:^
+        version: link:../../util/atomic-write
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -1478,6 +1475,12 @@ importers:
       '@deepseek-ai/cordis-plugin-timer':
         specifier: workspace:^
         version: link:../../../vendor/timer
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:^
+        version: link:../app-boot
+      '@deepseek-ai/dsh-cmdline':
+        specifier: workspace:^
+        version: link:../cmdline
       '@types/babel__code-frame':
         specifier: ^7.27.0
         version: 7.27.0

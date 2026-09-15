@@ -86,7 +86,6 @@ function stageProfile(home: string, name: string, bundleAnchor: string): Profile
     }],
     patchPath: join(dir, PROFILE_PATCH_FILENAME),
     patches: [],
-    patchReload: 'live',
   }
 }
 
@@ -110,7 +109,7 @@ it('composes current files from profile data and retains launch overlay and tele
   writeFileSync(join(home, PROFILE_PATCH_FILENAME), '- id: session-telemetry-otel\n  disabled: false\n')
   const context = {
     name: 'test', dir, patchPath, installAnchor, home, cwd: home,
-    startedBundles: ['base'], patchReload: 'live' as const,
+    startedBundles: ['base'],
     overlays: [{ id: 'session-telemetry-otel', disabled: false }], telemetryDisabledEnv: 'false',
   }
   expect(composeEntries([readProfilePatches('test', context)])[0]?.disabled).toBe(true)
@@ -130,14 +129,12 @@ describe('initProfile', () => {
     initProfile(dir, ['@deepseek-ai/dsh-base'])
     const manifest = readProfileManifest('t', dir)
     expect(manifest.dsh?.profile?.bundles).toEqual(['@deepseek-ai/dsh-base'])
-    expect(manifest.dsh?.profile?.patchReload).toBe('live')
     expect(readFileSync(join(dir, PROFILE_PATCH_FILENAME), 'utf8')).toContain('[]')
     expect(readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8')).toContain('nodeLinker: hoisted')
     // Re-init keeps user edits.
     writeFileSync(join(dir, PROFILE_PATCH_FILENAME), '- id: x\n  config: {}\n')
-    initProfile(dir, ['other'], 'startup')
+    initProfile(dir, ['other'])
     expect(readProfileManifest('t', dir).dsh?.profile?.bundles).toEqual(['@deepseek-ai/dsh-base'])
-    expect(readProfileManifest('t', dir).dsh?.profile?.patchReload).toBe('live')
     expect(readFileSync(join(dir, PROFILE_PATCH_FILENAME), 'utf8')).toContain('- id: x')
   })
 })
@@ -210,7 +207,6 @@ describe('loadProfile', () => {
     const profile = loadProfile('t', 'demo', anchor, home)
     expect(profile.layers.map(layer => layer.packageName)).toEqual(['bundle-a', 'bundle-b'])
     expect(profile.patches).toHaveLength(1)
-    expect(profile.patchReload).toBe('live')
     const entries = composeEntries([
       ...profile.layers.map(layer => layer.patches),
       profile.patches,
@@ -222,7 +218,6 @@ describe('loadProfile', () => {
     writeProfileManifest(dir, { name: 'bare' })
     const bare = loadProfile('t', 'demo', anchor, home)
     expect(bare.layers).toEqual([])
-    expect(bare.patchReload).toBe('live')
   })
 
   it('auto-initializes only shipped templates and fails loud otherwise', () => {
@@ -234,19 +229,14 @@ describe('loadProfile', () => {
     // cannot be asserted to fail here: the source-plane test runner resolves
     // @deepseek-ai/* through tsconfig paths regardless of the staged anchor.
     expect(PROFILE_TEMPLATES.web?.bundles).toContain('@deepseek-ai/dsh-base')
-    expect(PROFILE_TEMPLATES.web?.patchReload).toBe('live')
-    expect(PROFILE_TEMPLATES.headless?.patchReload).toBe('startup')
     expect(PROFILE_TEMPLATES.acp).toEqual({
       bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-acp-app'],
-      patchReload: 'startup',
     })
     expect(PROFILE_TEMPLATES.sdk).toEqual({
       bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-sdk-app'],
-      patchReload: 'startup',
     })
     expect(PROFILE_TEMPLATES['sdk-minimal']).toEqual({
       bundles: ['@deepseek-ai/dsh-sdk-minimal'],
-      patchReload: 'startup',
     })
     try {
       loadProfile('t', 'web', anchor, home)
@@ -255,8 +245,6 @@ describe('loadProfile', () => {
     }
     expect(readProfileManifest('t', resolveProfileDir('web', home)).dsh?.profile?.bundles)
       .toEqual([...PROFILE_TEMPLATES.web?.bundles ?? []])
-    expect(readProfileManifest('t', resolveProfileDir('web', home)).dsh?.profile?.patchReload)
-      .toBe('live')
   })
 
   it('normalizes only the exact installation-owned headless bundle tuple', () => {
@@ -272,12 +260,10 @@ describe('loadProfile', () => {
       '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless',
     ])
     const retiredManifest = readProfileManifest('t', stock)
-    delete retiredManifest.dsh!.profile!.patchReload
     writeProfileManifest(stock, retiredManifest)
     loadProfile('t', 'headless', anchor, home)
     expect(readProfileManifest('t', stock).dsh?.profile).toEqual({
       bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
-      patchReload: 'startup',
     })
 
     const customHome = tmp()
@@ -289,38 +275,6 @@ describe('loadProfile', () => {
     expect(readProfileManifest('t', custom).dsh?.profile?.bundles).toEqual([
       '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless', 'custom-bundle',
     ])
-  })
-
-  it('adds a shipped reload default only to an exact stock tuple and preserves explicit choices', () => {
-    const anchor = stageInstallation({
-      '@deepseek-ai/dsh-base': { patch: '[]\n' },
-      '@deepseek-ai/dsh-web-app': { patch: '[]\n' },
-    })
-    const stockHome = tmp()
-    const stock = resolveProfileDir('web', stockHome)
-    initProfile(stock, PROFILE_TEMPLATES.web?.bundles ?? [])
-    const stockManifest = readProfileManifest('t', stock)
-    delete stockManifest.dsh!.profile!.patchReload
-    writeProfileManifest(stock, stockManifest)
-    expect(loadProfile('t', 'web', anchor, stockHome).patchReload).toBe('live')
-    expect(readProfileManifest('t', stock).dsh?.profile?.patchReload).toBe('live')
-
-    const explicitHome = tmp()
-    const explicit = resolveProfileDir('web', explicitHome)
-    initProfile(explicit, PROFILE_TEMPLATES.web?.bundles ?? [], 'startup')
-    expect(loadProfile('t', 'web', anchor, explicitHome).patchReload).toBe('startup')
-  })
-
-  it('fails loud on an unknown patch reload value from disk', () => {
-    const anchor = stageInstallation({})
-    const home = tmp()
-    const dir = resolveProfileDir('demo', home)
-    initProfile(dir, [])
-    const manifest = readProfileManifest('t', dir)
-    const rawProfile = manifest.dsh!.profile as { patchReload?: string }
-    rawProfile.patchReload = 'sometimes'
-    writeProfileManifest(dir, manifest)
-    expect(() => loadProfile('t', 'demo', anchor, home)).toThrow('patchReload must be "live" or "startup"')
   })
 
   it('fails loud when a listed bundle declares no dsh.bundle', () => {
@@ -466,7 +420,6 @@ describe('healProfilesModuleFallback', () => {
       }],
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [],
-      patchReload: 'live',
     }
 
     await healProfilesModuleFallback({ installAnchor: installationAnchor, profile, home })
@@ -511,7 +464,6 @@ describe('healProfilesModuleFallback', () => {
       })),
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [],
-      patchReload: 'live',
     }
 
     await healProfilesModuleFallback({ installAnchor: installationAnchor, profile, home })
@@ -551,7 +503,6 @@ describe('healProfilesModuleFallback', () => {
       })),
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [],
-      patchReload: 'live',
     }
 
     await healProfilesModuleFallback({ installAnchor: installationAnchor, profile, home })

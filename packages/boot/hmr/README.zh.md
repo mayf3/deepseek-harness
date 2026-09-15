@@ -24,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-live profile 自动启用配置监听。如需监听源码模块，在启动前通过 profile patch 配置 base 组合包提供的 `hmr` 条目：
+启动器提供 `profileContext` 时，base 组合包以 `root: []` 启用 HMR；没有该 profile 上下文的宿主保留此条目为禁用状态。Headless、SDK 和 ACP 组合包在 YAML 中禁用此条目，后续 profile patch 可以重新启用。禁用或省略 HMR 时，更改在重启后生效。如需监听源码模块，在启动前通过 profile patch 配置 base 组合包提供的 `hmr` 条目：
 
 ```yaml
 - id: hmr
@@ -54,9 +54,9 @@ Chokidar 选项（包括轮询）保持原有含义。精确配置监听同时�
 <details>
 <summary>实现细节——点击展开</summary>
 
-`watchConfig()` 注册会被等待的配置处理器。`runExclusive()` 将调用方的修改与自动重载串行化，并拒绝嵌套事务。`hmr/before-reload` 瀑布事件让启动器在每次自动重载期间持有 profile 文件锁；主动修改的调用方在 `runExclusive()` 内以相同顺序取得文件锁。事务期间收到的文件事件在事务结束后处理。
+`watchConfig()` 注册会被等待的配置处理器。`runExclusive()` 将调用方的修改与自动重载串行化，并拒绝嵌套事务。HMR 注册 `hmr/before-reload` 监听器，在每次自动重载期间持有 profile 文件锁；主动修改的调用方在 `runExclusive()` 内以相同顺序取得文件锁。事务期间收到的文件事件在事务结束后处理。
 
-启动器保留 profile 解析和 patch 优先级规则。HMR 负责监听器、模块缓存替换和重载调度。未知文件通知不获取重载锁，因此锁文件事件不会触发下一次取锁。不发布 invariant 伴生入口，因为队列和监听注册没有独立的持久投影。
+App-boot 负责 profile 解析和 patch 优先级规则。HMR 读取启动器提供的纯数据 `profileContext`，在初始化时注册 profile manifest 和两份用户 patch 的监听，并等待应用就绪后处理更改。销毁 HMR 时会关闭监听器并取消等待启动的重载。HMR 也负责模块缓存替换和重载调度。未知文件通知不获取重载锁，因此锁文件事件不会触发下一次取锁。不发布 invariant 伴生入口，因为队列和监听注册没有独立的持久投影。
 
 被监听模块的路径沿用 Node ESM 解析所用的 `realpathSync()` 表示，包括 Windows 短目录名，使文件事件与模块缓存匹配。
 

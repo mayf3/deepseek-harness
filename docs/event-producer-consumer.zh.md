@@ -47,9 +47,9 @@
 | `fs/write-intent` | `waterfall` | [`packages/fs/fs/src/index.ts:58`](../packages/fs/fs/src/index.ts) | [`tool-fs`](../packages/fs/tool-fs) (`waterfall`), [`tool-str-replace-editor`](../packages/fs/tool-str-replace-editor) (`waterfall`) | [`fs-observation-policy`](../packages/fs/fs-observation-policy) |
 | `goal/activation-changed` | `emit` | [`packages/goal/goal/src/types.ts:150`](../packages/goal/goal/src/types.ts) | [`goal`](../packages/goal/goal) (`emit`) | `remotes` |
 | `goal/changed` | `emit` | [`packages/goal/goal/src/domain.ts:114`](../packages/goal/goal/src/domain.ts) | [`goal`](../packages/goal/goal) (`emit`) | [`goal-round-driver`](../packages/goal/goal-round-driver) |
-| `hmr/before-reload` | `waterfall` | [`packages/boot/hmr/src/index.ts:28`](../packages/boot/hmr/src/index.ts) | [`hmr`](../packages/boot/hmr) (`waterfall`) | - |
-| `hmr/change` | `emit` | [`packages/boot/hmr/src/index.ts:33`](../packages/boot/hmr/src/index.ts) | [`hmr`](../packages/boot/hmr) (`emit`) | - |
-| `hmr/reload` | `emit` | [`packages/boot/hmr/src/index.ts:38`](../packages/boot/hmr/src/index.ts) | [`hmr`](../packages/boot/hmr) (`emit`) | - |
+| `hmr/before-reload` | `waterfall` | [`packages/boot/hmr/src/index.ts:31`](../packages/boot/hmr/src/index.ts) | [`hmr`](../packages/boot/hmr) (`waterfall`) | [`hmr`](../packages/boot/hmr) |
+| `hmr/change` | `emit` | [`packages/boot/hmr/src/index.ts:36`](../packages/boot/hmr/src/index.ts) | [`hmr`](../packages/boot/hmr) (`emit`) | - |
+| `hmr/reload` | `emit` | [`packages/boot/hmr/src/index.ts:41`](../packages/boot/hmr/src/index.ts) | [`hmr`](../packages/boot/hmr) (`emit`) | - |
 | `llm/adapters-updated` | `emit` | [`packages/llm/llm/src/types.ts:23`](../packages/llm/llm/src/types.ts) | [`llm`](../packages/llm/llm) (`events.dispatch`) | [`acp`](../packages/acp/acp), [`llm`](../packages/llm/llm), `remotes` |
 | `llm/stream` | `waterfall` | [`packages/llm/llm/src/index.ts:72`](../packages/llm/llm/src/index.ts) | [`llm`](../packages/llm/llm) (`waterfall`) | [`agent-loop`](../packages/core/agent-loop), [`llm`](../packages/llm/llm), [`llm-replay`](../packages/test-support/llm-replay), [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy), [`session-title`](../packages/session/session-title) |
 | `permission-presets/catalog-changed` | `emit` | [`packages/interaction/permission-presets/src/types.ts:44`](../packages/interaction/permission-presets/src/types.ts) | [`permission-presets`](../packages/interaction/permission-presets) (`events.dispatch`) | `remotes` |

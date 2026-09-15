@@ -163,7 +163,7 @@ export async function runPluginCommand(
   return withFileLock(join(dir, 'package.json'), async () => {
     if (!existsSync(join(dir, 'package.json'))) {
       const template = PROFILE_TEMPLATES[context.profile]
-      initProfile(dir, template?.bundles ?? DEFAULT_PROFILE_BUNDLES, template?.patchReload)
+      initProfile(dir, template?.bundles ?? DEFAULT_PROFILE_BUNDLES)
       options.onOutput?.(`dsh: initialized profile ${context.profile} at ${dir}\n`, 'stderr')
     }
     return runProfilePnpm(context, args, options)

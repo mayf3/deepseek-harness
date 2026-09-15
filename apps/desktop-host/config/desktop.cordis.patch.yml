@@ -9,6 +9,9 @@
 - id: web-runtime
   disabled: true
 
+- id: hmr
+  disabled: true
+
 - id: client-hmr
   disabled: true
 

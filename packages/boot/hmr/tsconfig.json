@@ -22,6 +22,15 @@
     },
     {
       "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../app-boot"
+    },
+    {
+      "path": "../cmdline"
+    },
+    {
+      "path": "../../util/atomic-write"
     }
   ]
 }

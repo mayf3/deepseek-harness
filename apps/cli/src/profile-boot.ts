@@ -2,8 +2,7 @@
  * Shared profile boot for every `dsh` surface: resolve the profile, stack its
  * patch layers (bundle layers in `dsh.profile.bundles` order, the profile's
  * own `cordis.patch.yml`, `--patch` overlays, the telemetry switch), mount the
- * tree over the profile's empty root config, apply its selected patch-reload
- * lifecycle, and wire fail-loud plus bounded shutdown.
+ * tree over the profile's empty root config, and wire fail-loud plus bounded shutdown.
  *
  * App flags are not the launcher's business: the invocation's inner arguments
  * are provided to the tree through `ctx.cmdlineArgs`, where any injected app
@@ -11,11 +10,9 @@
  * @module @deepseek-ai/dsh/profile-boot
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type {} from '@deepseek-ai/dsh-hmr'
-import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
@@ -31,7 +28,6 @@ import {
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   resolveProfileDir,
-  reconcileProfilePatches,
   type ProfileContext,
   type Profile,
   type ProfileResolutionGeneration,
@@ -94,7 +90,7 @@ export const PROFILE_ROOT_FILENAME = 'cordis.yml'
 
 /**
  * Initialize a missing profile from one shipped template. This copies only
- * the template's bundle list and patch-reload policy; local state from the
+ * the template's bundle list; local state from the
  * same-named shipped profile is not read, and no inheritance metadata is
  * persisted. Shipped profile names are reserved, and the target directory is
  * claimed exclusively so existing or concurrent state is never reused.
@@ -141,7 +137,7 @@ export function initializeProfileFromDefault(
     )
   }
   try {
-    initProfile(dir, template.bundles, template.patchReload)
+    initProfile(dir, template.bundles)
   } catch (error) {
     try {
       rmSync(dir, { recursive: true, force: true })
@@ -228,22 +224,6 @@ export interface RunProfileOptions {
 }
 
 /**
- * Re-throw a watcher-setup failure unless a shutdown already owns the tree:
- * a signal aborted this invocation, or an app requested exit (`ctx.appExit`
- * from a fast one-shot) and the root's disposal rejected the in-flight setup
- * await. Either way the failure describes a tree that is exiting as asked,
- * not a broken watch.
- * @param ctx - the booted root context.
- * @param signal - this invocation's signal-shutdown fact.
- * @param error - the setup failure.
- */
-function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown): void {
-  if (signal.aborted) return
-  if (ctx.fiber.state !== FiberState.ACTIVE || ctx.get('loader') === undefined) return
-  throw error
-}
-
-/**
  * Boot one profile invocation end to end and leave process lifetime to the
  * mounted plugins (or to a one-shot runner the composition mounts).
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
@@ -286,28 +266,16 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   })
 
   const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
-  const manifestPath = join(composed.profile.dir, 'package.json')
-  const watchedFiles = [composed.profile.patchPath, homePatchPath(), manifestPath]
-  const readInputs = (): string => JSON.stringify(watchedFiles.map((filename) => {
-    try {
-      return readFileSync(filename, 'utf8')
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-      throw error
-    }
-  }))
-  let lastInputs = readInputs()
   const profileContext: ProfileContext = {
     name: options.profile,
     dir: composed.profile.dir, patchPath: composed.profile.patchPath, installAnchor: INSTALL_ANCHOR,
     startedBundles: composed.profile.layers.map(layer => layer.packageName),
-    cwd: process.cwd(), home: resolveDshHome(), patchReload: composed.profile.patchReload,
+    cwd: process.cwd(), home: resolveDshHome(),
     overlays: composed.overlays, telemetryDisabledEnv: process.env.DSH_TELEMETRY_DISABLED,
   }
   const ctx = await boot(NAME, rootConfig, readProfilePatches(NAME, profileContext), async (hostCtx) => {
     app.current = hostCtx
     hostCtx.provide('profileContext', profileContext)
-    hostCtx.on('hmr/before-reload', next => withFileLock(manifestPath, next))
     // Before any config-tree entry mounts, so plugins resolve all launch-time
     // environment values from the same immutable launch snapshot.
     hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
@@ -324,51 +292,6 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     })
   })
   app.current = ctx
-  // A live-reload profile can dispose the whole tree while post-boot watcher
-  // setup is in flight — a signal or appExit. Loader presence and fiber state
-  // own liveness; the initial check skips a tree that already exited, and the
-  // catch below re-checks for an exit that landed mid-setup. Startup-frozen
-  // profiles apply every user layer above but install no HMR fallback or watcher.
-  if (composed.profile.patchReload === 'live'
-    && !signalShutdown.signal.aborted
-    && ctx.fiber.state === FiberState.ACTIVE
-    && ctx.get('loader') !== undefined) {
-    try {
-      // Config-only HMR for the live profile patch layer: dsh-base disables
-      // module reload by default, so when no profile explicitly enabled that
-      // service, mount a watch-only instance with no module roots —
-      // cordis.patch.yml edits stay live without replacing source modules. A
-      // silent skip would break the documented reload contract. HMR injects
-      // the timer service, which a bare custom profile may not mount either.
-      if (ctx.get('hmr') === undefined) {
-        if (ctx.get('timer') === undefined) {
-          await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-timer' })
-        }
-        await ctx.loader.create({ name: '@deepseek-ai/dsh-hmr', config: { root: [] } })
-        await ctx.loader.await()
-      }
-      const refresh = async (): Promise<void> => {
-        if (readInputs() === lastInputs) return
-        lastInputs = readInputs()
-        await reconcileProfilePatches(ctx, readProfilePatches(NAME, profileContext), NAME)
-      }
-      const watching = ctx.inject(['hmr'], async (owner) => {
-        for (const filename of watchedFiles) {
-          await owner.effect(() => owner.hmr.watchConfig(filename, refresh))
-        }
-      })
-      await watching.await()
-      // Include writes that finished while the file watchers were registering.
-      try {
-        await ctx.hmr.runExclusive(() => withFileLock(manifestPath, refresh))
-      } catch (error) {
-        ctx.logger.warn('profile reload failed')
-        ctx.logger.warn(error)
-      }
-    } catch (error) {
-      suppressShutdownError(ctx, signalShutdown.signal, error)
-    }
-  }
   if (!signalShutdown.signal.aborted
     && ctx.fiber.state === FiberState.ACTIVE
     && ctx.get('loader') !== undefined) {

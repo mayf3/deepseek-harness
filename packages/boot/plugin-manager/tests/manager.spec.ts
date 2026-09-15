@@ -22,7 +22,7 @@ async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, pre
   const dir = join(home, 'profiles', 'test')
   const anchor = join(home, 'package.json')
   writeFileSync(anchor, '{"name":"installation","dependencies":{}}\n')
-  initProfile(dir, ['core', 'extra'], reload)
+  initProfile(dir, ['core', 'extra'])
   const bundle = (name: string, rows: unknown[]) => {
     const path = join(dir, 'node_modules', name)
     mkdirSync(path, { recursive: true })
@@ -39,16 +39,24 @@ async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, pre
   const profile: ProfileContext = {
     name: 'test',
     startedBundles: ['core', 'extra'],
-    dir, patchPath: join(dir, 'cordis.patch.yml'), installAnchor: anchor, cwd: home, home, patchReload: reload,
+    dir, patchPath: join(dir, 'cordis.patch.yml'), installAnchor: anchor, cwd: home, home,
     overlays: overlay ? [{ id: 'managed', disabled: true }] : [], telemetryDisabledEnv: undefined,
   }
   const ctx = await boot('test', join(dir, 'cordis.yml'), readProfilePatches('test', profile), (ctx) => {
+    ctx.provide('appReady', { onReady: (listener: () => void) => { listener(); return () => {} } })
     prepare?.(ctx)
     ctx.provide('profileContext', profile)
     ctx.loader.builtins.manager = PluginManager
   })
   onTestFinished(async () => { await ctx.fiber.dispose(); rmSync(home, { recursive: true, force: true }) })
-  return { ctx, dir, manager: ctx.pluginManager, bundle, profile }
+  let stopHmr = async () => {}
+  if (reload === 'live') {
+    await ctx.plugin(Timer)
+    const owner = await ctx.plugin(Hmr, { root: [], ignored: [], debounce: 0 })
+    stopHmr = () => owner.dispose()
+    await ctx.hmr.runExclusive(async () => {})
+  }
+  return { ctx, dir, manager: ctx.pluginManager, bundle, profile, stopHmr }
 }
 
 it('lists bundle versions and current-profile plugin targets', async () => {
@@ -171,7 +179,8 @@ it('keeps saved changes after activation failure and allows a corrected configur
   expect(await manager.setPluginEnabled(id, true)).toMatchObject({ changed: true, application: 'failed' })
   expect(readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')).toContain('disabled: false')
   writeFileSync(join(dir, 'cordis.patch.yml'), '- id: managed\n  disabled: true\n  config: { fail: false }\n')
-  expect(await manager.setPluginEnabled(id, true)).toMatchObject({ application: 'applied' })
+  const result = await manager.setPluginEnabled(id, true)
+  expect(result, JSON.stringify(result)).toMatchObject({ application: 'applied' })
 })
 
 
@@ -289,10 +298,22 @@ it('bounds batched notices and discloses omitted operation results', async () =>
 })
 
 it('applies a manager change through the active HMR service', async () => {
-  const { ctx, manager } = await fixture()
-  await ctx.plugin(Timer)
-  await ctx.plugin(Hmr, { root: [], ignored: [], debounce: 0 })
+  const { manager } = await fixture()
   const id = (await manager.listPlugins()).find(row => row.patchId === 'managed')!.entryId
   expect(await manager.setPluginEnabled(id, false)).toMatchObject({ changed: true, application: 'applied' })
   expect((await manager.listPlugins()).find(row => row.entryId === id)?.enabled).toBe(false)
+})
+
+it('refuses removal of a hot-installed bundle after HMR is disabled', async () => {
+  const { ctx, manager, dir, bundle, stopHmr } = await fixture()
+  bundle('later', [{ id: 'later', name: './plugin.mjs', config: { service: 'laterProbe' } }])
+  const manifest = readProfileManifest('test', dir)
+  manifest.dependencies = { ...manifest.dependencies, later: '1' }
+  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+  expect(await manager.setBundleEnabled('later', true)).toMatchObject({ application: 'applied' })
+  await stopHmr()
+  expect(ctx.get('hmr')).toBeUndefined()
+  expect(await manager.setBundleEnabled('later', false)).toMatchObject({ application: 'restart-required' })
+  expect(ctx.get('laterProbe')).toBe(true)
+  expect(await manager.removeBundle('later')).toMatchObject({ changed: false, application: 'failed' })
 })

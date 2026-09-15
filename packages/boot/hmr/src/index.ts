@@ -5,8 +5,11 @@ import { Context, Inject, Service, type Plugin } from '@deepseek-ai/cordis'
 import { ModuleLoader, type ModuleJob, type ResolveResult } from '@deepseek-ai/cordis-plugin-loader'
 import type { Include } from '@deepseek-ai/cordis-plugin-include'
 import { FSWatcher, watch, type ChokidarOptions } from 'chokidar'
-import { basename, dirname, relative, resolve } from 'node:path'
-import { realpathSync } from 'node:fs'
+import { basename, dirname, join, relative, resolve } from 'node:path'
+import { readFileSync, realpathSync } from 'node:fs'
+import { readProfilePatches, reconcileProfilePatches, PROFILE_PATCH_FILENAME } from '@deepseek-ai/dsh-app-boot'
+import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
+import type {} from '@deepseek-ai/dsh-cmdline'
 import { handleError } from './error.ts'
 import type {} from '@deepseek-ai/cordis-plugin-timer'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -131,6 +134,7 @@ class Hmr extends Service {
   private stashed = new Set<string>()
   private operations: Promise<unknown> = Promise.resolve()
   private readonly executing = new AsyncLocalStorage<boolean>()
+  private applicationReady: Promise<boolean> = Promise.resolve(true)
   private closing = false
   private readonly configPaths = new Set<string>()
 
@@ -149,7 +153,9 @@ class Hmr extends Service {
   }
 
   private runReload(operation: () => Promise<void>): Promise<void> {
-    return this.runExclusive(() => this.ctx.waterfall('hmr/before-reload', operation))
+    return this.runExclusive(async () => {
+      if (await this.applicationReady) await this.ctx.waterfall('hmr/before-reload', operation)
+    })
   }
 
   /** Watch a configuration path through the same queue as module replacement.
@@ -203,6 +209,33 @@ class Hmr extends Service {
       if (!this.executing.getStore()) await this.operations
     }
 
+    const profile = this.ownerContext.get('profileContext')
+    if (profile !== undefined) {
+      const ready = this.ownerContext.get('appReady')
+      if (ready === undefined) throw new Error('Profile HMR requires application readiness')
+      const started = Promise.withResolvers<boolean>()
+      this.applicationReady = started.promise
+      const unsubscribe = ready.onReady(() => { started.resolve(true) })
+      yield () => { unsubscribe(); started.resolve(false); return Promise.resolve() }
+      const manifestPath = join(profile.dir, 'package.json')
+      this.ownerContext.on('hmr/before-reload', next => withFileLock(manifestPath, next))
+      const files = [profile.patchPath, join(profile.home, PROFILE_PATCH_FILENAME), manifestPath]
+      let lastInputs: string | undefined
+      const refresh = async (): Promise<void> => {
+        const inputs = JSON.stringify(files.map((filename) => {
+          try { return readFileSync(filename, 'utf8') }
+          catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+            throw error
+          }
+        }))
+        if (inputs === lastInputs) return
+        lastInputs = inputs
+        await reconcileProfilePatches(this.ownerContext.root, readProfilePatches('dsh', profile), 'dsh')
+      }
+      for (const filename of files) await this.watchConfig(filename, refresh)
+    }
+
     const { loader } = this.ctx
     const { root, ignored } = this.config
     if (!this.config.base) {
@@ -234,6 +267,7 @@ class Hmr extends Service {
     const changed = new Set<string>()
     const dispatch = this.ctx.debounce(() => {
       void this.runExclusive(async () => {
+        if (!await this.applicationReady) return
         const batch = [...changed]
         changed.clear()
         const includes = new Set<Include>()

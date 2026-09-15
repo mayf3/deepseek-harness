@@ -138,7 +138,6 @@ async function bootWeb(
     layers: [],
     patchPath: join(profileDir, 'cordis.patch.yml'),
     patches: [],
-    patchReload: 'startup',
   }
   let bundlePatches: PatchOptions[] = [
     ...loadOverlayPatches('dsh-test', BASE_PATCH),

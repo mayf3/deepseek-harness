@@ -159,7 +159,7 @@ export class PluginManager extends TypertRemoteService {
       await writePluginEnabled(this.profile.patchPath, row.patchId, enabled)
       await this.reload()
       const current = (await this.listPlugins()).find(item => item.entryId === id)
-      return current?.enabled !== enabled && this.profile.patchReload === 'live' ? 'overridden' : undefined
+      return current?.enabled !== enabled && this.ownerContext.get('hmr') !== undefined ? 'overridden' : undefined
     }, `Plugin ${id}: ${enabled ? 'enabled' : 'disabled'}.`)
   }
 
@@ -215,8 +215,10 @@ export class PluginManager extends TypertRemoteService {
     return this.change(async () => {
       const bundle = (await this.listBundles()).find(item => item.name === name)
       if (bundle === undefined || !bundle.removable) throw new Error(`Bundle is not a profile-owned dependency: ${name}`)
-      if (this.profile.patchReload === 'startup' && this.profile.startedBundles.includes(name)) {
-        throw new Error('Stop this startup-only profile and remove the bundle with dsh plugin')
+      if (this.ownerContext.get('hmr') === undefined && (this.profile.startedBundles.includes(name)
+        || this.bundleRows(name).some(row => [...this.ctx.loader.entries()]
+          .some(entry => entry.options.id === row.id && entry.fiber !== undefined)))) {
+        throw new Error('Stop this profile before removing a loaded bundle with dsh plugin')
       }
       if (bundle.enabled) {
         await this.selectBundle(name, false)
@@ -252,16 +254,19 @@ export class PluginManager extends TypertRemoteService {
     await saveManifest(this.profile.dir, manifest)
   }
 
-  private protectsManager(name: string): boolean {
+  private bundleRows(name: string): EntryOptions[] {
     const info = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
-    if (info?.dsh?.bundle === undefined) return false
+    if (info?.dsh?.bundle === undefined) return []
     const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
-    const rows = flatten(composeEntries([loadOverlayPatches('dsh', join(dir, info.dsh.bundle.patch))]))
-    return rows.some(row => protectedModules.has(row.name) || `include:${row.id}` === this.ownerEntryId)
+    return flatten(composeEntries([loadOverlayPatches('dsh', join(dir, info.dsh.bundle.patch))]))
+  }
+
+  private protectsManager(name: string): boolean {
+    return this.bundleRows(name).some(row => protectedModules.has(row.name) || `include:${row.id}` === this.ownerEntryId)
   }
 
   private async reload(): Promise<void> {
-    if (this.profile.patchReload === 'startup') return
+    if (this.ownerContext.get('hmr') === undefined) return
     await reconcileProfilePatches(this.ownerContext.root, readProfilePatches('dsh', this.profile), 'dsh')
   }
 
@@ -272,7 +277,7 @@ export class PluginManager extends TypertRemoteService {
     const locked = () => withFileLock(join(this.profile.dir, 'package.json'), async () => {
       this.abort.signal.throwIfAborted()
       const before = this.diskState()
-      let application: ChangeResult['application'] = this.profile.patchReload === 'live' ? 'applied' : 'restart-required'
+      let application: ChangeResult['application'] = this.ownerContext.get('hmr') !== undefined ? 'applied' : 'restart-required'
       try {
         application = await operation() ?? application
       } catch (error) {
