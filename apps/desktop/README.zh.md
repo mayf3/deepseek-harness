@@ -27,7 +27,6 @@ Node 准备内置解释器和 Python 库，无需系统 Python 或 pip。[下载
 | 发布身份 | 桌面壳 API、Web 客户端、后端与插件依赖图作为一个组合完成验证；独立版本会产生未经验证的组合，并让更新可用性含糊不清。 | Electron 与 `@deepseek-ai/dsh` 始终使用同一精确版本。即使桌面壳代码不变，升级 dsh 也必须发布新 Desktop 版本。 |
 | 运行时 | 应用必须能够在没有系统 Node.js 或 pnpm 的机器上运行。 | dsh 通过设置 `ELECTRON_RUN_AS_NODE=1` 和 `--expose-internals` 的 Electron 运行，所有包操作都使用内置 pnpm。包管理器配置和 Host 环境遵循用户设置。包脚本通过 `node` shell 启动器转发给 Electron。 |
 | 包来源 | 即使离线，启动时安装核心依赖也会增加开销。 | `app.asar/dsh` 携带完整生产依赖树；profile 只安装外部插件。 |
-| 共享模块 | Host API 可能依赖模块身份。 | 共享 profile runner 在 Desktop profile 内补全安装包与 bundle 缺失的依赖；pnpm 管理的包优先。 |
 | 状态归属 | 共享可执行依赖图会让 CLI（命令行界面）与 Desktop 相互改变 dsh、Cordis、插件或原生模块版本，而两个桌面进程还可能争用同一个 profile。 | Electron 在访问任何 profile 前获取进程生命周期单实例锁，并独占 `$DSH_HOME/profiles/desktop` 及其包管理器状态。CLI 与 Desktop 共享 `$DSH_HOME` 下受支持的产品数据，但绝不共享可执行包、插件激活、锁文件或 `node_modules`。 |
 | 传输 | Web 服务与认证共享一套实现。 | Electron 加载打包的 Web 资源；Host 提供启动注入和经过认证的 API。shell 协议提供插件管理页面。 |
 | 插件变更 | 包安装和 Host 启动可能失败。 | Desktop 停止 Host 后直接修改当前 profile。失败保留部分修改供用户修复，不自动回滚 profile。 |
@@ -41,7 +40,7 @@ Electron 拥有 `$DSH_HOME/profiles/desktop`。其 `dependencies` 包含 pnpm �
 
 应用 preload 暴露启动就绪和致命启动失败上报。产品渲染器使用 Web 应用的 HTTP API。独立插件窗口接收结构化的列表、安装、移除、更新和检查更新操作；两种渲染器都无法访问文件系统、原始 Electron IPC、shell 或任意 pnpm 参数。
 
-产品 UI 保留 Web 操作，包括通过共享认证 HTTP 路由执行的“打开方式…”。Desktop 使用 Web 的自动目录选择机制，并以共享 Web 模板的 bundle 列表和 patch 重载策略初始化新 profile。
+产品 UI 保留 Web 操作，包括通过共享认证 HTTP 路由执行的“打开方式…”。Desktop 使用 Web 的自动目录选择机制，并以共享 Web 模板的 bundle 列表初始化新 profile。
 
 Electron 根据应用语言选择类型化的英文或中文 shell 文案，并回退到英文。菜单、原生对话框和插件管理渲染器使用同一份语言数据；仓库 Client UI i18n 检查覆盖这些桌面端源码。
 
@@ -51,8 +50,8 @@ Electron 原生“编辑”菜单为当前聚焦窗口提供撤销、重做、�
 
 签名资源中的 `resources/app.asar/dsh/desktop-runtime.json` 绑定 shell 版本、Electron 的 Node 版本、平台、架构、共享包版本和最终文件清单。启动读取元数据，并检查共享包记录。发布 schema、shell 版本、目标兼容性和文件完整性在打包时验证。首次启动不会把核心包复制到 profile 存储或通过 pnpm 安装核心包。
 
-1. 主窗口在 profile 准备或后端启动前，从打包静态资源显示共享 Web 加载页。共享 profile 初始化创建缺失的 manifest、空用户 patch 与 pnpm workspace 文件，不覆盖现有文件。实际 Host 仅启动一次，并通过共享 profile runner 补全缺失的模块链接。
-2. 应用升级时，共享 profile runner 刷新其拥有的模块链接，不检查插件 peer 要求。插件文件、配置、版本与锁文件保留原位；不运行 pnpm。
+1. 主窗口在 profile 准备或后端启动前，从打包静态资源显示共享 Web 加载页。共享 profile 初始化创建缺失的 manifest、空用户 patch 与 pnpm workspace 文件，不覆盖现有文件。
+2. 应用升级保留插件文件、配置、版本和锁文件；启动时不运行 pnpm。
 3. Electron 的 Node 版本、平台或架构变化时保留已安装插件。原生兼容性问题在加载时报错，可通过 pnpm 修复。
 4. 插件添加、更新和删除使用内置 pnpm 及其正常的用户和 profile 配置。Desktop 不覆盖 registry、npmrc、缓存或 store，新 profile 不添加构建许可列表或严格构建设置。插件管理页提供可取消的行内版本表单；版本和范围交给 pnpm，也允许提交已安装版本以重装。包规格交给 pnpm，包括本地目录、Git、tarball 和别名。相对路径从 Desktop profile 目录解析。声明 `dsh.bundle.patch` 的包作为 bundle 启用；普通依赖安装后不自动启用。Desktop 不扫描插件依赖图，也不在 Host 启动前验证 patch 文件。自定义 profile 元数据和 bundle 顺序会保留。已安装元数据不可读时，仍能列出、禁用和删除依赖；无法读取已安装版本时，列表使用依赖规格。
 5. 插件变更在直接修改当前 profile 前停止后端。准备成功后启动 Host。包操作或 Host 启动失败会保留已修改文件并报告错误。Desktop 不创建 staging 目录、激活日志或回滚副本。
@@ -65,7 +64,7 @@ Host 错误诊断仅保留 stderr 输出的最后 64 Ki 个字符。更早的输
 
 恢复操作等待 Host 关闭后才修改插件启用状态。禁用第三方 bundle 时持有事务锁写入 profile，不加载运行时元数据，也不删除文件。profile 数据无效或写入失败会作为恢复操作错误报告；Desktop 不会假装禁用成功后重启。Desktop 不提供 profile 重置操作或应急 HTML 文档。
 
-包事务独占 `$DSH_HOME/profiles/desktop/lock`，直到 pnpm 进程退出。pnpm 运行前，共享模块回退辅助函数只删除其拥有的链接，保留 pnpm 管理的目录；Host 在启动时重建所需链接。链接清理保留目标目录。原生构建遵循 pnpm 配置的构建策略；发布准备使用独立的构建期允许列表。
+包事务独占 `$DSH_HOME/profiles/desktop/lock`，直到 pnpm 进程退出。pnpm 运行前，共享模块回退辅助函数只删除其拥有的链接，保留 pnpm 管理的目录；开发 Host 在启动时重建所需链接。链接清理保留目标目录。原生构建遵循 pnpm 配置的构建策略；发布准备使用独立的构建期允许列表。
 
 ## 开发
 
@@ -212,7 +211,7 @@ pnpm run prepare:desktop
 
 ## 更新
 
-打包应用会在主窗口打开十秒后检查目标专用的发布流；本地化的 **检查更新…** 菜单项会手动触发同一检查。发现可用版本时，应用打开一个原生确认弹窗。用户确认后，应用等待正在进行的检查完成，下载并验证已签名的 Desktop 发布、停止 dsh 子进程，并把安装与重启交给 electron-updater。下次启动在显示本地加载页的同时校准版本绑定的运行时。
+打包应用会在主窗口打开十秒后检查目标专用的发布流；本地化的 **检查更新…** 菜单项会手动触发同一检查。发现可用版本时，应用打开一个原生确认弹窗。用户确认后，应用等待正在进行的检查完成，下载并验证已签名的 Desktop 发布、停止 dsh 子进程，并把安装与重启交给 electron-updater。
 
 签名打包为 `DSH_DESKTOP_AUTO_UPDATE_ENV` 选择的部署生成 generic-provider 频道元数据。NSIS 差分包与 macOS ZIP 目标让 electron-updater 可以复用未变化的数据块；供手动安装的 DMG 经过公证，但不生成 blockmap，因为它不是 macOS updater 的载荷。运行时与桌面壳仍属于同一个签名 Desktop 发布。macOS 签名与公证凭据使用 electron-builder 的标准环境变量；Windows EV 签名使用上文所述的公开证书、已验证 SignTool、SafeNet 容器和 runner PIN。必填 Desktop 发布环境选择构建所验证的应用身份与平台签名身份。
 
