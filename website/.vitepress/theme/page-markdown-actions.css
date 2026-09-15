@@ -60,7 +60,6 @@
   background: var(--vp-c-default-soft);
 }
 
-.page-markdown-actions [disabled],
 .page-markdown-actions [aria-disabled="true"] {
   cursor: wait;
   opacity: 0.65;
@@ -131,4 +130,15 @@
 
 .page-markdown-actions-status:not(:empty) {
   margin-top: 8px;
+}
+
+.page-markdown-static {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  background: var(--vp-c-bg);
 }

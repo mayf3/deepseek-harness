@@ -16,7 +16,14 @@ export function rawMarkdownMiddleware(base: string, index: () => string): Connec
       next()
       return
     }
-    const url = new URL(req.url, 'http://docs.local')
+    let url: URL
+    try {
+      url = new URL(req.url, 'http://docs.local')
+    } catch (_error) {
+      // Malformed targets belong to Vite's request handling, not raw-route lookup.
+      next()
+      return
+    }
     if (!url.pathname.startsWith(base)) {
       next()
       return

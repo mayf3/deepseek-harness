@@ -1,5 +1,5 @@
 /** Current-page Markdown actions; each mounted instance owns one page's copy request. */
-import { defineComponent, h, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
+import { defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 
 type CopyState = 'idle' | 'copying' | 'copied' | 'requestFailed' | 'clipboardFailed'
 
@@ -47,6 +47,7 @@ function icon(name: keyof typeof icons) {
 
 /**
  * Actions keyed by the owning layout to the current route and language.
+ * Server rendering exposes the raw link; mounting enables copying and the menu.
  * Clipboard writes begin in the click gesture; their data resolves on demand.
  */
 export const PageMarkdownActions = defineComponent({
@@ -56,6 +57,8 @@ export const PageMarkdownActions = defineComponent({
     lang: { type: String, required: true },
   },
   setup(props) {
+    const interactive = ref(false)
+    onMounted(() => { interactive.value = true })
     const state = ref<CopyState>('idle')
     const open = ref(false)
     const root = ref<HTMLElement>()
@@ -101,9 +104,7 @@ export const PageMarkdownActions = defineComponent({
       }
     }
     let controller: AbortController | undefined
-    let disposed = false
     onBeforeUnmount(() => {
-      disposed = true
       open.value = false
       controller?.abort()
     })
@@ -139,10 +140,10 @@ export const PageMarkdownActions = defineComponent({
       })
       try {
         await clipboard.write([new ClipboardItem({ 'text/plain': content })])
-        if (!disposed) state.value = 'copied'
+        state.value = 'copied'
       } catch (_error) {
         // Browser failures use localized feedback; their implementation-specific text is not user copy.
-        if (!disposed) state.value = outcome.requestFailed ? 'requestFailed' : 'clipboardFailed'
+        state.value = outcome.requestFailed ? 'requestFailed' : 'clipboardFailed'
       } finally {
         request.abort()
         if (controller === request) controller = undefined
@@ -151,6 +152,12 @@ export const PageMarkdownActions = defineComponent({
 
     return () => {
       const text = messages[props.lang.startsWith('zh') ? 'zh' : 'en']
+      if (!interactive.value) {
+        return h('div', { class: 'page-markdown-actions' }, [
+          h('a', { class: 'page-markdown-static', href: props.path, target: '_blank', rel: 'noopener', 'aria-label': text.newTab },
+            [text.view, icon('external')]),
+        ])
+      }
       return h('div', {
         ref: root, class: 'page-markdown-actions',
         onFocusout: (event: FocusEvent) => {
@@ -166,8 +173,9 @@ export const PageMarkdownActions = defineComponent({
       }, [
         h('div', { class: 'page-markdown-actions-dropdown' }, [
           h('div', { class: 'page-markdown-actions-controls' }, [
-            h('button', { class: 'page-markdown-copy', type: 'button', disabled: state.value === 'copying', onClick: copy },
-              [icon('copy'), state.value === 'copying' ? text.copying : text.copy]),
+            h('button', { class: 'page-markdown-copy', type: 'button',
+              'aria-disabled': state.value === 'copying', 'aria-busy': state.value === 'copying', onClick: copy },
+            [icon('copy'), state.value === 'copying' ? text.copying : text.copy]),
             h('button', { ref: toggle, class: 'page-markdown-toggle', type: 'button', 'aria-label': text.more,
               'aria-haspopup': 'menu', 'aria-expanded': open.value, 'aria-controls': menuId,
               onClick: () => { if (open.value) closeMenu(); else openMenu() },
@@ -182,7 +190,8 @@ export const PageMarkdownActions = defineComponent({
           open.value ? h('div', { id: menuId, role: 'menu', 'aria-label': text.menu,
             class: 'page-markdown-menu', onKeydown: menuKeydown }, [
             h('button', { ref: menuCopy, role: 'menuitem', type: 'button', tabindex: -1,
-              'aria-label': text.copy, 'aria-describedby': `${menuId}-copy`, 'aria-disabled': state.value === 'copying', onClick: copy }, [
+              'aria-label': text.copy, 'aria-describedby': `${menuId}-copy`, 'aria-disabled': state.value === 'copying',
+              'aria-busy': state.value === 'copying', onClick: copy }, [
               h('span', { class: 'page-markdown-menu-icon' }, [icon('copy')]),
               h('span', { class: 'page-markdown-menu-text' }, [h('span', { class: 'page-markdown-menu-title' }, text.copy),
                 h('span', { id: `${menuId}-copy`, class: 'page-markdown-menu-description' }, text.copyDescription)]),

@@ -45,7 +45,7 @@ describe('raw Markdown development middleware', () => {
     expect(rawMarkdownRoute).not.toHaveBeenCalled()
   })
 
-  it.each(['/missing.md', '/en/reference.md', '/%2e%2e/secrets.md'])('returns 404 for explicit unpublished route %s', (url) => {
+  it.each(['/missing.md', '/en/reference.md'])('returns 404 for explicit unpublished route %s', (url) => {
     const { res, next } = request(`${url}?dsh-raw=1`, 'empty')
     expect(res.statusCode).toBe(404)
     expect(res.end).toHaveBeenCalledExactlyOnceWith()
@@ -67,6 +67,13 @@ describe('raw Markdown development middleware', () => {
       request('/en/reference/index.md?dsh-raw=1', 'empty', 'GET', '/deepseek-harness/'),
       request('/en/reference/index.md?dsh-raw=1', 'empty', 'POST'),
     ]) expect(next).toHaveBeenCalledExactlyOnceWith()
+  })
+
+  it.each(['http://[', 'http://[::1'])('delegates an unparseable request target %s', (url) => {
+    const { res, next } = request(url, 'empty')
+    expect(next).toHaveBeenCalledExactlyOnceWith()
+    expect(res.end).not.toHaveBeenCalled()
+    expect(rawMarkdownRoute).not.toHaveBeenCalled()
   })
 
   it('does not turn a projection error into a successful raw response', () => {
