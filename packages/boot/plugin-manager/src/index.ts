@@ -101,15 +101,21 @@ function stringField(manifest: object, field: string): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
+/** The fields of the dsh installation's own manifest the manager reads. */
+interface InstallationManifest {
+  dependencies?: Record<string, string>
+  dsh?: { optionalBundles?: string[] }
+}
+
 /** What a package manifest says about the package: identity, one-liner, and whether it is a bundle. */
 function inspectionOf(kind: 'registry' | 'path', manifest: object): Extract<PluginSpecInspection, { status: 'accepted' }> {
   const dsh = (manifest as { dsh?: unknown }).dsh
-  const declared = typeof dsh === 'object' && dsh !== null ? dsh as { title?: unknown; bundle?: unknown } : undefined
+  const declared = typeof dsh === 'object' && dsh !== null ? dsh as { title?: unknown; description?: unknown; bundle?: unknown } : undefined
   const title = declared === undefined ? undefined : stringField(declared, 'title')
   const bundle = declared !== undefined && typeof declared.bundle === 'object' && declared.bundle !== null
   const name = stringField(manifest, 'name')
   const version = stringField(manifest, 'version')
-  const description = stringField(manifest, 'description')
+  const description = (declared === undefined ? undefined : stringField(declared, 'description')) ?? stringField(manifest, 'description')
   return {
     status: 'accepted', kind, bundle,
     ...name === undefined ? {} : { name },
@@ -205,38 +211,43 @@ export class PluginManager extends TypertRemoteService {
     })
   }
 
-  /** Read installed bundles and bundles supplied by this dsh installation.
-   * @returns Package versions, titles, rows, activation selections and removal availability.
+  /** Read the profile's installed bundles, the bundles this dsh installation supplies, and the selected names that are not bundles.
+   * A dependency without a bundle patch is listed, as a `not-bundle` problem, only while it is selected.
+   * @returns Package versions, titles, one-liners, rows, activation selections, whether the installation offers the
+   * bundle, and removal availability.
    */
   @Remote
   listBundles(): Promise<BundleInfo[]> {
     const manifest = readProfileManifest('dsh', this.profile.dir)
     const selected = manifest.dsh?.profile?.bundles ?? []
     const dependencies = Object.keys(manifest.dependencies ?? {})
-    const installation = JSON.parse(readFileSync(this.profile.installAnchor, 'utf8')) as { dependencies?: Record<string, string> }
+    const installation = JSON.parse(readFileSync(this.profile.installAnchor, 'utf8')) as InstallationManifest
+    const offered = installation.dsh?.optionalBundles ?? []
     const names = [...new Set([...selected, ...dependencies, ...Object.keys(installation.dependencies ?? {})])]
     const bundles: BundleInfo[] = []
     for (const name of names) {
       const installed = dependencies.includes(name)
+      const optional = offered.includes(name)
       const removable = installed && !Object.hasOwn(installation.dependencies ?? {}, name)
       const enabled = selected.includes(name)
       try {
         const info = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
         if (info === undefined) {
-          if (enabled || installed) bundles.push({ name, enabled, installed, removable, error: { code: 'not-bundle' }, rows: [], overrides: [] })
+          if (enabled) bundles.push({ name, enabled, installed, optional, removable, error: { code: 'not-bundle' }, rows: [], overrides: [] })
           continue
         }
         const readOnlyReason = this.protectsManager(name) ? 'management-required' as const : undefined
         const title = info.dsh?.title
+        const description = info.dsh?.description ?? info.description
         bundles.push({ name, ...(info.version === undefined ? {} : { version: info.version }),
           ...(title === undefined ? {} : { title }),
-          ...(info.description === undefined || info.description === '' ? {} : { description: info.description }),
-          enabled, installed, removable: removable && readOnlyReason === undefined,
+          ...(description === undefined || description === '' ? {} : { description }),
+          enabled, installed, optional, removable: removable && readOnlyReason === undefined,
           ...(readOnlyReason === undefined ? {} : { readOnlyReason }),
           ...this.declaredRows(name, info) })
       } catch (error) {
         if (enabled || installed) {
-          bundles.push({ name, enabled, installed, removable, error: managementError(error), rows: [], overrides: [] })
+          bundles.push({ name, enabled, installed, optional, removable, error: managementError(error), rows: [], overrides: [] })
         }
       }
     }
@@ -259,7 +270,7 @@ export class PluginManager extends TypertRemoteService {
       return refused('invalid-spec', error.reason)
     }
     const manifest = readProfileManifest('dsh', this.profile.dir)
-    const installation = JSON.parse(readFileSync(this.profile.installAnchor, 'utf8')) as { dependencies?: Record<string, string> }
+    const installation = JSON.parse(readFileSync(this.profile.installAnchor, 'utf8')) as InstallationManifest
     const known = new Set([
       ...manifest.dsh?.profile?.bundles ?? [], ...Object.keys(manifest.dependencies ?? {}), ...Object.keys(installation.dependencies ?? {}),
     ])

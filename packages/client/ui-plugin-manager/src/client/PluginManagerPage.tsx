@@ -1,8 +1,9 @@
 /**
- * Global plugin management: installed bundle cards, their row switches, the
- * guided install dialog with its folded pnpm output, the uninstall
- * confirmation, and the toasts an action's outcome becomes. A bundle's page
- * lists the rows it contributes as the Host runs them.
+ * Global plugin management: cards for the profile's installed bundles and for
+ * the official bundles the installation ships switched off, their row
+ * switches, the install dialog with its guide and folded pnpm output, the
+ * uninstall confirmation, and the toasts an action's outcome becomes. A
+ * bundle's page lists the rows it contributes as the Host runs them.
  */
 
 import { useEffect, useId, useState, type ReactNode } from 'react'
@@ -203,7 +204,7 @@ function packageStatus(pkg: PackageView): 'running' | 'disabled' | 'problem' {
   return pkg.enabled ? 'running' : 'disabled'
 }
 
-/** One installed package as a card that opens its page: its name, its one-liner, its tags, and its bundle switch. */
+/** One package as a card that opens its page: its name, its one-liner, its tags, and its bundle switch. */
 function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
   readonly pkg: PackageView
   readonly t: Translate
@@ -226,6 +227,7 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
         <div className={css.cardMain}>
           <div className={css.titleRow}>
             <button type="button" className={`${css.cardTitle} ${css.cardOpen}`} aria-label={t('openDetail', { name: title })} onClick={onOpen}>{title}</button>
+            {pkg.optional ? <Tag className={css.statusTag} tone="info">{t('statusOfficial')}</Tag> : null}
             {status === 'problem' ? <Tag className={css.statusTag} tone="danger">{t('statusProblem')}</Tag> : null}
           </div>
           {pkg.description === undefined ? null : <span className={css.cardDesc}>{pkg.description}</span>}
@@ -239,8 +241,9 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
 }
 
 /**
- * One package's page: the crumb back to the list; its icon with uninstall
- * and its switch; its title beside its version tag and problem tag; the
+ * One package's page: the crumb back to the list; its icon with its switch
+ * and, for a package the profile installed, uninstall; its title beside its
+ * version tag, its official tag, and its problem tag; the
  * package name the title stands for, which is what installs it elsewhere;
  * its one-liner; the Host's problem when it reports one; and its rows with
  * their switches.
@@ -270,17 +273,21 @@ function PackageDetail({
       <div className={css.detailHead}>
         <span className={css.cardIcon} aria-hidden="true"><IconPluginPinwheelOutline16 size={20} /></span>
         <div className={css.detailActions}>
-          <Button
-            variant="outline"
-            size="sm"
-            className={css.danger}
-            icon={<IconTrashOutline16 size={13} />}
-            aria-label={t('uninstallLabel', { name: title })}
-            disabled={busy || pkg.readOnlyReason !== undefined}
-            onClick={onUninstall}
-          >
-            {t('uninstall')}
-          </Button>
+          {pkg.installed
+            ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className={css.danger}
+                icon={<IconTrashOutline16 size={13} />}
+                aria-label={t('uninstallLabel', { name: title })}
+                disabled={busy || pkg.readOnlyReason !== undefined}
+                onClick={onUninstall}
+              >
+                {t('uninstall')}
+              </Button>
+            )
+            : null}
           <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
         </div>
       </div>
@@ -288,6 +295,7 @@ function PackageDetail({
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{title}</h3>
           {pkg.version === undefined ? null : <span className={css.versionTag} data-plugin-version>{t('versionTag', { version: pkg.version })}</span>}
+          {pkg.optional ? <Tag className={css.statusTag} tone="info">{t('statusOfficial')}</Tag> : null}
           {status === 'problem' ? <Tag className={css.statusTag} tone="danger">{t('statusProblem')}</Tag> : null}
         </div>
         <p className={css.detailName}><code data-plugin-name>{pkg.name}</code></p>
@@ -339,6 +347,21 @@ const INPUT_PROBLEM_KEYS = {
   'network': 'installProblemNetwork',
   'unknown': 'installProblemUnknown',
 } satisfies Record<InstallInputError['problem'], PluginManagerLocaleKey>
+
+/** One row of the install guide: a spec form's title, its example, and where the person finds it. */
+interface GuideExample {
+  readonly key: string
+  readonly titleKey: PluginManagerLocaleKey
+  readonly exampleKey: PluginManagerLocaleKey
+  readonly hintKey: PluginManagerLocaleKey
+}
+
+/** The spec forms the install guide shows, each with an example the person can drop into the field. */
+const GUIDE_EXAMPLES = [
+  { key: 'id', titleKey: 'installGuideIdTitle', exampleKey: 'installGuideIdExample', hintKey: 'installGuideIdHint' },
+  { key: 'git', titleKey: 'installGuideGitTitle', exampleKey: 'installGuideGitExample', hintKey: 'installGuideGitHint' },
+  { key: 'path', titleKey: 'installGuidePathTitle', exampleKey: 'installGuidePathExample', hintKey: 'installGuidePathHint' },
+] as const satisfies readonly GuideExample[]
 
 /** The one-line reading of a classified pnpm failure. */
 const FAILURE_KIND_KEYS = {
@@ -409,7 +432,8 @@ function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onTog
   readonly onEnableNow: () => void
 }): ReactNode {
   const errorId = useId()
-  const hintId = useId()
+  const guideId = useId()
+  const [guideOpen, setGuideOpen] = useState(false)
   const { phase } = install
   if (phase === 'idle' || phase === 'checking') {
     const checking = phase === 'checking'
@@ -438,7 +462,7 @@ function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onTog
               placeholder={t('installSpecPlaceholder')}
               disabled={checking}
               aria-invalid={install.inputError !== null}
-              aria-describedby={install.inputError === null ? hintId : `${errorId} ${hintId}`}
+              aria-describedby={install.inputError === null ? undefined : errorId}
               onChange={(event) => { onEditSpec(event.currentTarget.value) }}
               onKeyDown={(event) => { if (event.key === 'Enter' && !empty && !checking) onRun() }}
             />
@@ -446,7 +470,49 @@ function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onTog
           {install.inputError === null
             ? null
             : <p id={errorId} className={css.inputError} role="alert">{t(INPUT_PROBLEM_KEYS[install.inputError.problem], { reason: install.inputError.reason })}</p>}
-          <p id={hintId} className={css.installHint}>{t('installSpecHint')}</p>
+          <button
+            type="button"
+            className={css.guideToggle}
+            aria-expanded={guideOpen}
+            aria-controls={guideId}
+            onClick={() => { setGuideOpen(open => !open) }}
+          >
+            <IconChevronDownOutline14 className={css.guideChevron} aria-hidden="true" />
+            <span>{t(guideOpen ? 'installGuideHide' : 'installGuideToggle')}</span>
+          </button>
+          {guideOpen
+            ? (
+              <div id={guideId} className={css.guide} data-install-guide>
+                <p className={css.guideIntro}>{t('installGuideIntro')}</p>
+                <p className={css.guideNote}>{t('installGuideIdNote')}</p>
+                <ol className={css.guideList}>
+                  {GUIDE_EXAMPLES.map(({ key, titleKey, exampleKey, hintKey }, index) => (
+                    <li key={key} className={css.guideItem}>
+                      <span className={css.guideIndex} aria-hidden="true">{index + 1}</span>
+                      <div className={css.guideMain}>
+                        <span className={css.guideTitle}>{t(titleKey)}</span>
+                        <code className={css.guideExample}>{t(exampleKey)}</code>
+                        <span className={css.guideHint}>{t(hintKey)}</span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        aria-label={t('installGuideFillAria', { example: t(exampleKey) })}
+                        disabled={checking}
+                        onClick={() => { onEditSpec(t(exampleKey)) }}
+                      >
+                        {t('installGuideFill')}
+                      </Button>
+                    </li>
+                  ))}
+                </ol>
+                <p className={css.guideSafety} role="note">
+                  <IconWarningOutline16 size={14} aria-hidden="true" />
+                  <span>{t('installGuideSafety')}</span>
+                </p>
+              </div>
+            )
+            : null}
         </div>
       </Modal>
     )
@@ -580,15 +646,42 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   }, [highlight, clearHighlight])
   const noticeLine = state.notice === null ? null : noticeText(state.notice, t)
 
-  // The page manages what the person installed; the bundles the dsh
-  // installation supplies are inspected in the Settings Plugins section's Plugin list tab.
-  const listed = state.packages.filter(pkg => pkg.installed)
+  // The page manages what the person installed, what the installation ships for them to switch on, and a
+  // selected name the Host cannot read; the installation's other bundles are inspected in the Settings
+  // Plugins section's Plugin list tab.
+  const listed = state.packages.filter(pkg => pkg.installed || pkg.optional || pkg.error !== undefined)
+  const mine = listed.filter(pkg => pkg.installed || !pkg.optional)
+  const builtin = listed.filter(pkg => pkg.optional && !pkg.installed)
   const loaded = state.status === 'ready' || state.status === 'error'
   const openPkg = openPackage === null ? undefined : listed.find(pkg => pkg.name === openPackage)
   const setRowEnabled = (row: PackageRow, enabled: boolean): void => {
     /* v8 ignore next -- a row without a live entry has its switch disabled */
     if (row.entryId !== undefined) props.setRowEnabled(row.entryId, enabled)
   }
+  // One group of cards under its heading and count; the built-in group comes first, and a group with nothing in it takes no room.
+  const renderGroup = (id: 'bundles' | 'builtin', heading: string, packages: readonly PackageView[]): ReactNode => packages.length === 0
+    ? null
+    : (
+      <section className={css.group} data-plugin-scope="global" data-plugin-group={id}>
+        <div className={css.groupHead}>
+          <h3 className={css.groupTitle}>{heading}</h3>
+          <span className={css.count} data-plugin-count={packages.length}>{packages.length}</span>
+        </div>
+        <ul className={css.cards}>
+          {packages.map(pkg => (
+            <PackageCard
+              key={pkg.name}
+              pkg={pkg}
+              t={t}
+              busy={state.busy.includes(pkg.name)}
+              highlighted={state.highlight === pkg.name}
+              onOpen={() => { setOpenPackage(pkg.name) }}
+              onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
+            />
+          ))}
+        </ul>
+      </section>
+    )
 
   return (
     <section className={css.page} data-plugin-panel aria-busy={state.status === 'loading'}>
@@ -647,25 +740,10 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         ? listed.length === 0
           ? <p className={css.empty}>{t('empty')}</p>
           : (
-            <section className={css.group} data-plugin-scope="global" data-plugin-group="bundles">
-              <div className={css.groupHead}>
-                <h3 className={css.groupTitle}>{t('bundlesTitle')}</h3>
-                <span className={css.count} data-plugin-count={listed.length}>{listed.length}</span>
-              </div>
-              <ul className={css.cards}>
-                {listed.map(pkg => (
-                  <PackageCard
-                    key={pkg.name}
-                    pkg={pkg}
-                    t={t}
-                    busy={state.busy.includes(pkg.name)}
-                    highlighted={state.highlight === pkg.name}
-                    onOpen={() => { setOpenPackage(pkg.name) }}
-                    onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
-                  />
-                ))}
-              </ul>
-            </section>
+            <>
+              {renderGroup('builtin', t('builtinTitle'), builtin)}
+              {renderGroup('bundles', t('bundlesTitle'), mine)}
+            </>
           )
         : null}
       <InstallDialog

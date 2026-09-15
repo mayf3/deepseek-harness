@@ -69,8 +69,10 @@ Manage profile files and apply their declared reload lifecycle.
  */
 @Remote async listPlugins(): Promise<PluginInfo[]>
 
-/** Read installed bundles and bundles supplied by this dsh installation.
- * @returns Package versions, titles, rows, activation selections and removal availability.
+/** Read the profile's installed bundles, the bundles this dsh installation supplies, and the selected names that are not bundles.
+ * A dependency without a bundle patch is listed, as a `not-bundle` problem, only while it is selected.
+ * @returns Package versions, titles, one-liners, rows, activation selections, whether the installation offers the
+ * bundle, and removal availability.
  */
 @Remote listBundles(): Promise<BundleInfo[]>
 

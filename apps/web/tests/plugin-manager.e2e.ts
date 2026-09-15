@@ -71,8 +71,10 @@ describe('web e2e: plugin manager', () => {
     await panel.getByText('示例组合包', { exact: true }).waitFor({ timeout: 20_000 })
     const toggle = panel.getByRole('switch', { name: '启用 示例组合包' })
     expect(await toggle.getAttribute('aria-checked')).toBe('false')
-    // The shipped bundles are not the person's to manage here.
-    expect(await panel.locator('[data-plugin-package]').count()).toBe(1)
+    // The profile's own group holds its one bundle; the installation's optional bundles form the built-in
+    // group, and its other bundles stay off the page.
+    expect(await panel.locator('[data-plugin-group="bundles"] [data-plugin-package]').count()).toBe(1)
+    expect(await panel.locator('[data-plugin-group="builtin"] [data-plugin-package]').count()).toBe(2)
     // A bundle that is off still shows the rows its patch declares, without switches.
     await panel.getByRole('button', { name: '查看 示例组合包' }).click()
     await panel.locator('[data-plugin-row]', { hasText: 'fixture-row' }).waitFor({ timeout: 10_000 })
@@ -92,7 +94,7 @@ describe('web e2e: plugin manager', () => {
     await panel.getByRole('button', { name: '添加插件', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '添加插件' })
     await dialog.waitFor({ timeout: 10_000 })
-    const field = dialog.getByRole('textbox', { name: '插件 ID 或地址' })
+    const field = dialog.getByRole('textbox', { name: '包名或地址' })
     const install = dialog.getByRole('button', { name: '安装', exact: true })
     expect(await install.isDisabled()).toBe(true)
     // A name the list already shows is refused without asking the Host.
@@ -108,7 +110,7 @@ describe('web e2e: plugin manager', () => {
     // A name the registry would refuse never reaches it.
     await field.fill('Not A Package')
     await install.click()
-    await expect.poll(() => dialog.getByRole('alert').textContent(), { timeout: 10_000 }).toContain('无法识别这个插件 ID 或地址')
+    await expect.poll(() => dialog.getByRole('alert').textContent(), { timeout: 10_000 }).toContain('无法识别这个包名或地址')
     await dialog.getByRole('button', { name: '关闭' }).click()
     await expect.poll(() => page.getByRole('dialog', { name: '添加插件' }).count(), { timeout: 5_000 }).toBe(0)
     expect(tripwire.pageErrors).toEqual([])

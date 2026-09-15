@@ -99,6 +99,8 @@ export interface PackageManifest {
     bundle?: {
       patch?: string
     }
+    /** The bundles the dsh installation ships switched off; the one runtime edge to experimental packages it may hold. */
+    optionalBundles?: unknown
   }
 }
 
@@ -500,7 +502,9 @@ const dependencySections = ['dependencies', 'devDependencies', 'peerDependencies
 const runtimeDependencySections = ['dependencies', 'optionalDependencies', 'peerDependencies'] as const
 
 /**
- * Prevent an official runtime from requiring a package its release omits.
+ * Prevent an official runtime from requiring an experimental package. The dsh installation's `dependencies`
+ * may hold the bundles its `dsh.optionalBundles` lists: shipped switched off, they are not a requirement
+ * ([rationale](../.agents/notes/implemented/process/2026-09-15-shipped-optional-bundles.md)).
  * @param manifests - release, private experimental, and deployment-root manifests.
  * @returns One error for each forbidden runtime dependency.
  */
@@ -512,9 +516,13 @@ export function checkExperimentalDependencyIsolation(manifests: readonly Workspa
   const errors: string[] = []
   for (const { dir, manifest } of manifests) {
     if (!standardReleaseMemberDirectory.test(dir) && dir !== 'python/sdk-runtime') continue
+    const offered = manifest.name === '@deepseek-ai/dsh' && Array.isArray(manifest.dsh?.optionalBundles)
+      ? new Set(manifest.dsh.optionalBundles.filter((name): name is string => typeof name === 'string'))
+      : new Set<string>()
     for (const section of runtimeDependencySections) {
       for (const name of Object.keys(manifest[section] ?? {})) {
         if (!experimentalNames.has(name)) continue
+        if (section === 'dependencies' && offered.has(name)) continue
         errors.push(`${manifest.name ?? dir}: ${section}.${name} must not reference an experimental package`)
       }
     }

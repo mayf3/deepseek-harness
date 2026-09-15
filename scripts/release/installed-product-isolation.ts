@@ -9,6 +9,7 @@ interface InstalledManifest {
   dependencies?: Record<string, string>
   optionalDependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
+  dsh?: { optionalBundles?: unknown }
   peerDependenciesMeta?: Record<string, { optional?: boolean }>
 }
 
@@ -28,8 +29,14 @@ export function verifyInstalledProductIsolation(directory: string): number {
     const manifest = JSON.parse(readFileSync(join(canonical, 'package.json'), 'utf8')) as InstalledManifest
     const chain = [...item.chain, manifest.name]
     rejectExperimental(manifest.name, chain)
+    // The bundles the entry package ships switched off are installed beside the product, not required by it.
+    const optionalBundles = item.chain.length === 0 ? optionalBundlesOf(manifest) : new Set<string>()
     for (const section of ['dependencies', 'optionalDependencies', 'peerDependencies'] as const) {
       for (const [name, range] of Object.entries(manifest[section] ?? {})) {
+        if (section === 'dependencies' && optionalBundles.has(name)) {
+          if (installedPackage(canonical, name) === undefined) throw new Error(`optional bundle is missing: ${[...chain, name].join(' -> ')}`)
+          continue
+        }
         rejectExperimental(name, [...chain, name])
         if (range.startsWith('npm:')) {
           rejectExperimental(range.slice(4), [...chain, `${name} (${range})`])
@@ -46,6 +53,16 @@ export function verifyInstalledProductIsolation(directory: string): number {
     }
   }
   return visited.size
+}
+
+/** The names under the entry package's `dsh.optionalBundles`, the shipped bundles no default composition selects. */
+function optionalBundlesOf(manifest: InstalledManifest): Set<string> {
+  const offered = manifest.dsh?.optionalBundles
+  if (offered === undefined) return new Set()
+  if (!Array.isArray(offered) || !offered.every(name => typeof name === 'string')) {
+    throw new Error(`${manifest.name}: dsh.optionalBundles must be a list of package names`)
+  }
+  return new Set(offered)
 }
 
 function rejectExperimental(name: string, chain: readonly string[]): void {

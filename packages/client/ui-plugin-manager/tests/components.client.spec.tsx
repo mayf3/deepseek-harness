@@ -22,6 +22,7 @@ function pkg(overrides: Partial<PackageView> = {}): PackageView {
     name: 'dsh-better-sidebar',
     version: '0.16.0',
     installed: true,
+    optional: false,
     enabled: true,
     rows: [],
     ...overrides,
@@ -96,7 +97,7 @@ describe('PluginManagerPage', () => {
     expect(actions.openInstall).toHaveBeenCalledTimes(1)
   })
 
-  it('lists the installed bundles as cards, leaves the installation\'s own to Settings, and tags a problem the Host reports', () => {
+  it('lists the installed bundles as cards, the installation\'s offered ones as built in, and tags a problem the Host reports', () => {
     const { actions } = renderTab({
       packages: [
         pkg({ title: 'Better sidebar', description: 'A sidebar.' }),
@@ -104,19 +105,27 @@ describe('PluginManagerPage', () => {
         pkg({ name: '@deepseek-ai/dsh-web-app', installed: false }),
         pkg({ name: 'dsh-protected', readOnlyReason: 'management-required' }),
         pkg({ name: '@acme/dsh-tool', enabled: false }),
+        // Selected by the profile but not a bundle: a problem the person can switch off, in the profile's own group.
+        pkg({ name: 'dsh-selected', installed: false, error: { code: 'not-bundle' } }),
+        pkg({ name: '@deepseek-ai/dsh-experimental-agent-team-profile', title: 'Agent Teams', installed: false, optional: true, enabled: false }),
       ],
       busy: ['dsh-protected'],
     })
     const cards = screen.getAllByRole('listitem')
-    expect(cards.map(card => card.getAttribute('data-plugin-package'))).toEqual(['dsh-better-sidebar', 'dsh-broken', 'dsh-protected', '@acme/dsh-tool'])
-    expect(cards.map(card => card.getAttribute('data-plugin-status'))).toEqual(['running', 'problem', 'running', 'disabled'])
-    // The group heads with its title and its bare count.
+    // The built-in group comes first.
+    expect(cards.map(card => card.getAttribute('data-plugin-package'))).toEqual([
+      '@deepseek-ai/dsh-experimental-agent-team-profile', 'dsh-better-sidebar', 'dsh-broken', 'dsh-protected', '@acme/dsh-tool', 'dsh-selected',
+    ])
+    expect(cards.map(card => card.getAttribute('data-plugin-status'))).toEqual(['disabled', 'running', 'problem', 'running', 'disabled', 'problem'])
+    // Each group heads with its title and its bare count; the built-in card carries the official tag.
     expect(screen.getByRole('heading', { name: en.bundlesTitle })).toBeTruthy()
-    expect(document.querySelector('[data-plugin-count]')?.textContent).toBe('4')
+    expect(screen.getByRole('heading', { name: en.builtinTitle })).toBeTruthy()
+    expect([...document.querySelectorAll('[data-plugin-count]')].map(count => count.textContent)).toEqual(['1', '5'])
+    expect(screen.getAllByText(en.statusOfficial)).toHaveLength(1)
     // A scoped name reads without its scope and harness prefix.
     expect(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'tool') })).toHaveProperty('disabled', false)
     expect(screen.getByText('A sidebar.')).toBeTruthy()
-    expect(screen.getAllByText(en.statusProblem)).toHaveLength(1)
+    expect(screen.getAllByText(en.statusProblem)).toHaveLength(2)
     // The switch acts on the bundle; a bundle the Host cannot read stays off, a protected one stays as it is.
     fireEvent.click(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'Better sidebar') }))
     expect(actions.setEnabled).toHaveBeenCalledWith('dsh-better-sidebar', false)
@@ -124,6 +133,33 @@ describe('PluginManagerPage', () => {
     const locked = screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'protected') })
     expect(locked).toHaveProperty('disabled', true)
     expect(locked.getAttribute('title')).toBe(en.reasonManagementRequired)
+  })
+
+  it('opens a built-in bundle\'s page with its official tag and no uninstall, and switches it on', () => {
+    const { actions } = renderTab({
+      packages: [pkg({ name: '@deepseek-ai/dsh-experimental-agent-team-profile', title: 'Agent Teams', installed: false, optional: true, enabled: false })],
+    })
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Agent Teams') }))
+    const detail = document.querySelector('[data-plugin-detail]') as HTMLElement
+    expect(within(detail).getByText(en.statusOfficial)).toBeTruthy()
+    expect(within(detail).queryByRole('button', { name: en.uninstallLabel.replace('{name}', 'Agent Teams') })).toBeNull()
+    fireEvent.click(within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', 'Agent Teams') }))
+    expect(actions.setEnabled).toHaveBeenCalledExactlyOnceWith('@deepseek-ai/dsh-experimental-agent-team-profile', true)
+  })
+
+  it('opens a guide under the field and drops an example into it', () => {
+    const { actions } = renderTab({ install: { ...IDLE_INSTALL, open: true } })
+    expect(screen.queryByText(en.installGuideIntro)).toBeNull()
+    const toggle = screen.getByRole('button', { name: en.installGuideToggle })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button', { name: en.installGuideHide }).getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText(en.installGuideIdNote)).toBeTruthy()
+    expect(screen.getByText(en.installGuideGitExample)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.installGuideFillAria.replace('{example}', en.installGuideIdExample) }))
+    expect(actions.editInstallSpec).toHaveBeenCalledExactlyOnceWith(en.installGuideIdExample)
+    fireEvent.click(screen.getByRole('button', { name: en.installGuideHide }))
+    expect(screen.queryByText(en.installGuideIntro)).toBeNull()
   })
 
   it('opens a bundle\'s page with its facts and rows, and uninstalls from it', () => {

@@ -29,6 +29,8 @@
   ],
   "license": "MIT",
   "dsh": {
+    "title": "Agent Teams Web 面板",
+    "description": "实验功能：在浏览器里显示 Agent Teams 的团队名单、任务板和成员导航，需先开启 Agent Teams。",
     "bundle": {
       "patch": "./cordis.patch.yml"
     }

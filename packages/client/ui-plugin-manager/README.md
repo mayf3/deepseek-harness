@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use the **Plugins** entry in the Web sidebar to manage the profile's installed bundles. Switch bundles and their rows on and off, install a bundle after the Host has read what the spec names, watch pnpm's output, stop a run, and enable what it added. Uninstalling asks for confirmation. Global configuration remains in Settings.
+Use the **Plugins** entry in the Web sidebar to manage the profile's installed bundles and the official bundles the installation ships switched off. Switch bundles and their rows on and off, install a bundle after the Host has read what the spec names, watch pnpm's output, stop a run, and enable what it added. Uninstalling asks for confirmation. Global configuration remains in Settings.
 
 ## Table of Contents
 
@@ -25,11 +25,11 @@ Use the **Plugins** entry in the Web sidebar to manage the profile's installed b
 <a id="use-this-package"></a>
 ## Use this package
 
-Select **Plugins** in the sidebar. The page reads the inventory and the bundles through `api-remotes` when first opened; a Host without a managed profile shows the page as unavailable. Cards are listed by title, so switching a bundle on or off does not move its card. Global configuration remains in the Settings **Plugins** section.
+Select **Plugins** in the sidebar. The page reads the inventory and the bundles through `api-remotes` when first opened; a Host without a managed profile shows the page as unavailable. **Built in** comes first and lists the bundles the installation ships for switching on, each tagged official, off until switched on and without an uninstall; **Installed** lists the bundles the profile holds. Cards are listed by title, so switching a bundle on or off does not move its card. A dependency without a bundle patch is not a plugin and is not listed unless the profile selects it, in which case it carries a problem tag. Global configuration remains in the Settings **Plugins** section.
 
 ### Installing a bundle
 
-**Add plugin** takes a plugin ID, which is the registry package name with an optional version, a Git address, a tarball, or an absolute local path; a hint under the field says what an ID looks like. **Install** first asks the Host to read what the spec names (`pluginManager.inspect`): a name the list already shows, a name the registry does not have, a path without a package, a package without a bundle patch, or a spec pnpm would refuse comes back under the field as one sentence, with the spec kept for editing. An accepted spec opens the installing screen, which shows the package's title, one-liner, and version as the Host read them and folds pnpm's command and output behind **Show install details**. A finished install offers **Enable now**, which switches the new bundle on, closes the dialog, and scrolls the list to it; closing instead leaves it installed and off. A failed install says what went wrong in one line — the registry or network could not be reached, the package was not found, the disk is full, the profile is not writable, pnpm blocked a build script — with pnpm's output behind the details and **Retry** at hand; the Host has already put the profile files back. A successful installation does not certify that a module can activate.
+**Add plugin** takes a package name with an optional version, a Git address, a tarball, or an absolute local path; the dialog says a package name is what follows `dsh plugin add` in a README. **Not sure what to enter?** under the field opens a guide that shows the three common forms with an example each; **Use example** drops one into the field. **Install** first asks the Host to read what the spec names (`pluginManager.inspect`): a name the list already shows, a name the registry does not have, a path without a package, a package without a bundle patch, or a spec pnpm would refuse comes back under the field as one sentence, with the spec kept for editing. An accepted spec opens the installing screen, which shows the package's title, one-liner, and version as the Host read them and folds pnpm's command and output behind **Show install details**. A finished install offers **Enable now**, which switches the new bundle on, closes the dialog, and scrolls the list to it; closing instead leaves it installed and off. A failed install says what went wrong in one line — the registry or network could not be reached, the package was not found, the disk is full, the profile is not writable, pnpm blocked a build script — with pnpm's output behind the details and **Retry** at hand; the Host has already put the profile files back. A successful installation does not certify that a module can activate.
 
 During installation, **Cancel install** asks the Host to stop the run and shows **Stopping installation…** until the Host confirms. Loading the bundle cannot be cancelled. Once confirmed, the dialog returns to the spec, ready to install again, and a toast says the installation was cancelled; the manifest and lockfile are back as they were, while downloaded files can remain. Closing the dialog is blocked while the Host owns the operation. A connection error does not confirm cancellation: the running screen says so and cancelling can be tried again.
 
@@ -90,7 +90,7 @@ None; this package neither assembles nor sends a provider request.
 
 These limits define the reach of the management view; they are current package constraints.
 
-- **Only bundles are managed** — a dependency without a bundle patch is refused before it installs; one the profile already holds is listed as a problem that can only be uninstalled, and loading plain plugin modules stays a file operation.
+- **Only bundles are managed** — a dependency without a bundle patch is refused before it installs; one the profile already holds is left off the page unless the profile selects it, and loading plain plugin modules stays a file operation.
 - **Rows show a phase, not a reason** — a failed row reads as failed without the Host's error text; the Host log has it.
 - **One install at a time** — the dialog runs one pnpm command; a second spec waits for the first to finish.
 - **No version picker** — the spec is typed as pnpm accepts it; the page neither lists registry versions nor offers upgrades.

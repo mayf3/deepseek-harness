@@ -69,11 +69,11 @@ it('lists bundle versions and current-profile plugin targets', async () => {
   expect(plugins.find(row => row.entryId === 'include:manager')?.readOnlyReason).toBe('management-required')
   expect(await manager.listBundles()).toEqual([
     {
-      name: 'core', version: '1.0.0', enabled: true, installed: false, removable: false, readOnlyReason: 'management-required',
+      name: 'core', version: '1.0.0', enabled: true, installed: false, optional: false, removable: false, readOnlyReason: 'management-required',
       rows: [{ rowId: 'manager', moduleName: 'cordis:manager', entryId: 'include:manager' }], overrides: [],
     },
     {
-      name: 'extra', version: '1.0.0', enabled: true, installed: true, removable: true,
+      name: 'extra', version: '1.0.0', enabled: true, installed: true, optional: false, removable: true,
       rows: [{ rowId: 'managed', moduleName: pathToFileURL(join(dir, 'node_modules', 'extra', 'plugin.mjs')).href, entryId: 'include:managed' }], overrides: [],
     },
   ])
@@ -94,7 +94,7 @@ it('describes a bundle by its manifest and patch: title, one-liner, rows without
   writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
   const moduleName = pathToFileURL(join(dir, 'node_modules', 'described', 'plugin.mjs')).href
   expect((await manager.listBundles()).find(row => row.name === 'described')).toEqual({
-    name: 'described', version: '2.0.0', title: 'Described', description: 'Describes itself.', enabled: false, installed: true, removable: true,
+    name: 'described', version: '2.0.0', title: 'Described', description: 'Describes itself.', enabled: false, installed: true, optional: false, removable: true,
     rows: [{ rowId: 'described-row', moduleName }], overrides: ['managed'],
   })
   await manager.setBundleEnabled('described', true)
@@ -261,13 +261,14 @@ it('combines concurrent changes into durable notices without waking Agents', asy
 })
 
 
-it('reports plain dependencies, missing versions and invalid selected bundles distinctly', async () => {
+it('reports a selected plain dependency as a problem, omits an unselected one, and reports missing versions', async () => {
   const { manager, dir, profile } = await fixture()
   writeFileSync(profile.installAnchor, '{}')
   writeFileSync(join(dir, 'node_modules', 'extra', 'package.json'), '{"name":"extra"}')
   expect((await manager.listBundles()).find(row => row.name === 'extra')).toMatchObject({ enabled: true, error: { code: 'not-bundle' } })
   expect(await manager.setBundleEnabled('extra', false)).toMatchObject({ application: 'applied' })
-  expect((await manager.listBundles()).find(row => row.name === 'extra')).toMatchObject({ enabled: false, removable: true, error: { code: 'not-bundle' } })
+  // Switched off, a dependency without a bundle patch is a library the page has no business with.
+  expect((await manager.listBundles()).some(row => row.name === 'extra')).toBe(false)
   expect(await manager.setBundleEnabled('extra', true)).toMatchObject({ changed: false, application: 'failed' })
   writeFileSync(join(dir, 'node_modules', 'core', 'package.json'), '{"name":"core","dsh":{"bundle":{"patch":"./cordis.patch.yml"}}}')
   expect((await manager.listBundles())[0]?.version).toBeUndefined()
@@ -512,9 +513,11 @@ it('reads what a spec names before installing it', async () => {
   const view = vi.spyOn(operations, 'viewProfilePackage')
   onTestFinished(() => { view.mockRestore() })
   const answers = (stdout: string) => view.mockResolvedValueOnce({ exitCode: 0, stdout, stderr: '', timedOut: false })
-  answers(JSON.stringify({ name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', dsh: { title: 'Sidebar', bundle: { patch: './cordis.patch.yml' } } }))
+  answers(JSON.stringify({
+    name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', dsh: { title: 'Sidebar', description: 'A better sidebar.', bundle: { patch: './cordis.patch.yml' } },
+  }))
   expect(await manager.inspect('dsh-x')).toEqual({
-    status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', title: 'Sidebar', bundle: true,
+    status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.4.2', description: 'A better sidebar.', title: 'Sidebar', bundle: true,
   })
   expect(view).toHaveBeenCalledWith(dir, 'dsh-x', { command: 'pnpm-test', timeoutMs: 1000 })
   const signal = AbortSignal.abort()
@@ -629,6 +632,24 @@ it('refuses removal of a hot-installed bundle after HMR is disabled', async () =
   expect(await manager.setBundleEnabled('later', false)).toMatchObject({ application: 'restart-required' })
   expect(ctx.get('laterProbe')).toBe(true)
   expect(await manager.removeBundle('later')).toMatchObject({ changed: false, application: 'failed' })
+})
+
+it('offers the installation\'s optional bundles switched off and never removable, preferring dsh.description', async () => {
+  const { manager, dir, profile, bundle } = await fixture()
+  bundle('offered', [{ id: 'offered-row', name: './plugin.mjs', config: { service: 'offeredProbe' } }])
+  writeFileSync(join(dir, 'node_modules', 'offered', 'package.json'), JSON.stringify({
+    name: 'offered', version: '3.0.0', description: 'Package one-liner.',
+    dsh: { title: 'Offered', description: 'Display one-liner.', bundle: { patch: './cordis.patch.yml' } },
+  }))
+  writeFileSync(profile.installAnchor, JSON.stringify({ name: 'installation', dependencies: { offered: '3.0.0' }, dsh: { optionalBundles: ['offered'] } }))
+  expect((await manager.listBundles()).find(row => row.name === 'offered')).toEqual({
+    name: 'offered', version: '3.0.0', title: 'Offered', description: 'Display one-liner.',
+    enabled: false, installed: false, optional: true, removable: false,
+    rows: [{ rowId: 'offered-row', moduleName: pathToFileURL(join(dir, 'node_modules', 'offered', 'plugin.mjs')).href }], overrides: [],
+  })
+  expect(await manager.setBundleEnabled('offered', true)).toMatchObject({ application: 'applied' })
+  expect((await manager.listBundles()).find(row => row.name === 'offered')).toMatchObject({ enabled: true, optional: true, removable: false })
+  expect(await manager.removeBundle('offered')).toMatchObject({ changed: false, application: 'failed' })
 })
 
 it('omits installation-owned plain packages from the bundle inventory', async () => {

@@ -69,6 +69,8 @@ export interface PackageView {
   readonly description?: string
   /** Whether the profile's own dependencies hold the package; false for a bundle the installation supplies. */
   readonly installed: boolean
+  /** Whether the installation ships the bundle for the person to switch on: official, off until selected, never removable. */
+  readonly optional: boolean
   /** Whether the bundle is in the profile's layer list. */
   readonly enabled: boolean
   /** Why the Host refuses to switch the bundle off or remove it, when it does. */
@@ -269,6 +271,7 @@ export function packageView(bundle: BundleInfo, plugins: readonly PluginInfo[]):
   return {
     name: bundle.name,
     installed: bundle.installed,
+    optional: bundle.optional,
     enabled: bundle.enabled,
     rows,
     ...bundle.version === undefined ? {} : { version: bundle.version },

@@ -35,11 +35,16 @@ export interface BundleInfo {
   version?: string
   /** `dsh.title` of the package manifest. */
   title?: string
-  /** `description` of the package manifest. */
+  /** `dsh.description` of the package manifest, else its `description`. */
   description?: string
   enabled: boolean
   /** Whether the profile's own dependencies hold the package; false for a bundle the dsh installation supplies. */
   installed: boolean
+  /**
+   * Whether the installation ships the bundle for the person to switch on: named under `dsh.optionalBundles` in
+   * the installation's manifest, selected by no shipped template, and never removable.
+   */
+  optional: boolean
   removable: boolean
   readOnlyReason?: ReadOnlyReason
   error?: ManagementError
@@ -122,7 +127,9 @@ export type PluginSpecInspection =
     readonly kind: InstallSpecKind
     readonly name?: string
     readonly version?: string
+    /** `dsh.description` of the package manifest, else its `description`. */
     readonly description?: string
+    /** `dsh.title` of the package manifest. */
     readonly title?: string
     /** Whether the package declares a bundle patch; null when the spec's form does not say. */
     readonly bundle: boolean | null

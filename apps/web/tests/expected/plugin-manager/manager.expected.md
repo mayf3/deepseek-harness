@@ -4,6 +4,17 @@
 - button "添加插件":
   - img
   - text: 添加插件
+- heading "内置" [level=3]
+- text: "2"
+- list:
+  - listitem:
+    - button "查看 Agent Teams": Agent Teams
+    - text: 官方 实验功能：把子代理委派换成 Agent Teams 的团队协作工具，这是宿主层，需与 Agent Teams Web 面板一起开启。
+    - switch "启用 Agent Teams"
+  - listitem:
+    - button "查看 Agent Teams Web 面板": Agent Teams Web 面板
+    - text: 官方 实验功能：在浏览器里显示 Agent Teams 的团队名单、任务板和成员导航，需先开启 Agent Teams。
+    - switch "启用 Agent Teams Web 面板"
 - heading "已安装" [level=3]
 - text: "1"
 - list:

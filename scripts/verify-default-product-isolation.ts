@@ -1,4 +1,8 @@
-/** Keep experimental packages outside default installations, runtime imports, and shipped compositions. */
+/**
+ * Keep experimental packages outside default installations, runtime imports, and shipped compositions.
+ * The one declared exception is a bundle the installation lists under `dsh.optionalBundles`: shipped for the
+ * person to switch on, selected by no shipped template, its own dependency graph outside the default product's.
+ */
 
 import { existsSync, globSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, extname, relative, resolve } from 'node:path'
@@ -26,7 +30,7 @@ interface Manifest {
   optionalDependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
   devDependencies?: Record<string, string>
-  dsh?: { bundle?: { patch?: string }; configTrees?: Array<{ path: string }> }
+  dsh?: { bundle?: { patch?: string }; configTrees?: Array<{ path: string }>; optionalBundles?: unknown }
 }
 
 interface Package {
@@ -68,8 +72,27 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
   for (const path of ['apps/cli/package.json', 'apps/web/package.json', 'python/sdk-runtime/package.json']) {
     if (!existsSync(resolve(root, path))) failures.push(`missing default product root ${path}`)
   }
-  if (directories.get(resolve(root, 'apps/cli'))?.manifest.name !== '@deepseek-ai/dsh') {
+  const cli = directories.get(resolve(root, 'apps/cli'))
+  if (cli?.manifest.name !== '@deepseek-ai/dsh') {
     failures.push('apps/cli/package.json must identify @deepseek-ai/dsh')
+  }
+  // The bundles the installation ships switched off: each a runtime dependency that is a bundle, none a default.
+  const optionalBundles = new Set<string>()
+  const offered = cli?.manifest.dsh?.optionalBundles
+  if (offered !== undefined) {
+    if (!Array.isArray(offered) || !offered.every(name => typeof name === 'string')) {
+      failures.push('apps/cli/package.json: dsh.optionalBundles must be a list of package names')
+    } else {
+      for (const name of offered) {
+        if (cli?.manifest.dependencies?.[name] === undefined) {
+          failures.push(`apps/cli/package.json: optional bundle ${name} must be a runtime dependency`)
+        }
+        if (packages.get(name)?.manifest.dsh?.bundle?.patch === undefined) {
+          failures.push(`apps/cli/package.json: optional bundle ${name} must declare dsh.bundle.patch`)
+        }
+        optionalBundles.add(name)
+      }
+    }
   }
 
   const queue: Package[] = []
@@ -216,6 +239,7 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
       if (packages.get(name)?.manifest.dsh?.bundle?.patch === undefined) {
         failures.push(`${PROFILE_SOURCE}: default bundle ${name} must declare dsh.bundle.patch`)
       }
+      if (optionalBundles.has(name)) failures.push(`${PROFILE_SOURCE}: optional bundle ${name} must not be a default bundle`)
     }
     const webLayers = selection.webBundles.flatMap((name) => {
       const pkg = packages.get(name)
@@ -262,6 +286,7 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
     const { manifest } = pkg
     for (const section of RUNTIME_SECTIONS) {
       for (const [name, range] of Object.entries(manifest[section] ?? {})) {
+        if (pkg === cli && section === 'dependencies' && optionalBundles.has(name)) continue
         dependency(name, range, pkg, `${manifest.name} ${section}`)
       }
     }
