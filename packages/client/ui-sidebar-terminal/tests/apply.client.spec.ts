@@ -3,8 +3,9 @@
 import { createElement } from 'react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { cleanup, render, waitFor } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
-import { expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WebTerminalId, WebTerminalInfo } from '@deepseek-ai/dsh-api-terminal-controller/types'
 import { SidebarRightTabRegistry } from '@deepseek-ai/dsh-client-ui-sidebar-right/src/client/tab-registry.ts'
@@ -13,7 +14,7 @@ import type { SidebarRightOpenTab } from '@deepseek-ai/dsh-client-ui-sidebar-rig
 import { apply, inject } from '../src/client/index.ts'
 import { apply as hostApply } from '../src/index.ts'
 import { TerminalGuide, type TerminalGuideInjected } from '../src/client/TerminalGuide.tsx'
-import { TerminalBody } from '../src/client/TerminalBody.tsx'
+import { LazyTerminalBody } from '../src/client/LazyTerminalBody.tsx'
 import { TerminalTitle } from '../src/client/TerminalTitle.tsx'
 import { TerminalRecovery, type TerminalRecoveryInjected } from '../src/client/TerminalRecovery.tsx'
 import { TerminalCleanup, type TerminalCleanupInjected } from '../src/client/TerminalCleanup.tsx'
@@ -21,6 +22,10 @@ import type { TerminalBodyInjected } from '../src/client/face.ts'
 import { en, zh } from '../src/client/locales.ts'
 
 vi.mock('@xterm/xterm', () => ({ Terminal: vi.fn() }))
+const renderedTerminal = vi.hoisted(() => vi.fn(() => null))
+vi.mock('../src/client/terminal.tsx', () => ({ TerminalBody: renderedTerminal }))
+
+afterEach(() => { cleanup(); renderedTerminal.mockClear() })
 
 const terminalInfo = (id: string): WebTerminalInfo => ({ id: id as WebTerminalId, title: id, shell: { path: '/bin/sh', name: 'sh', args: ['-i'] }, cwd: '/workspace', cols: 80, rows: 24, state: 'running', exitCode: null })
 
@@ -89,7 +94,7 @@ it('registers terminal views, recovery and cleanup, then releases every contribu
     expect(h.dictionaries.get('sidebarTerminal')).toEqual({ en, zh })
     expect(h.entries.map(entry => [entry.name, entry.component, entry.locale])).toEqual([
       ['sidebar.right.tab.guide.entry', TerminalGuide, 'sidebarTerminal'],
-      ['sidebar.right.pane.tab', TerminalBody, 'sidebarTerminal'],
+      ['sidebar.right.pane.tab', LazyTerminalBody, 'sidebarTerminal'],
       ['sidebar.right.pane.tab.title', TerminalTitle, 'sidebarTerminal'],
       ['conversation.session.header.actions', TerminalRecovery, 'sidebarTerminal'],
       ['shell.overlay', TerminalCleanup, 'sidebarTerminal'],
@@ -138,6 +143,11 @@ it('registers terminal views, recovery and cleanup, then releases every contribu
   expect(h.tabs.get('terminal')).toBeUndefined()
   expect(h.entries).toEqual([])
   expect(h.dictionaries.size).toBe(0)
+})
+
+it('loads the terminal body implementation when its registered wrapper mounts', async () => {
+  render(createElement(LazyTerminalBody, {} as never))
+  await waitFor(() => { expect(renderedTerminal).toHaveBeenCalledOnce() })
 })
 
 it('restores terminal occurrences before listing unrepresented Host terminals and shares recovery across headers', async () => {

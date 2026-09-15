@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 启动重载链路
 
-对同一个宿主运行 `pnpm run dev:web`（或任何写入插件 `lib/client.js` 的 tsdown watch 进程）；重建后的插件随后会被自动逐个替换进运行中的浏览器。
+对同一个宿主运行 `pnpm run dev:web`（或使用共享 Client tsdown 预设的 watch 进程）；重建后的插件随后会被自动逐个替换进运行中的浏览器。该预设会在所有包内 chunk 写完后标记 `lib/client.js`，因此仅 chunk 发生重建也会推进包 revision，无需 Host 扫描 chunk。
 
 ### 一次重载做什么
 
@@ -59,7 +59,7 @@ kind: "package-reference"
 
 ### 设计理念
 
-Host 半侧监听 bundle 产物并提供 `/plugins/events`。它转发现有的图变化与重建通知；每个新连接都会收到当前完整图。图描述浏览器的目标条目，不保证 Host 清理已经完成。Host 的激活与清理仍由 Host 生命周期管理。产物轮询报告重建 revision；未变化的产物无需读取内容。浏览器半侧将两种帧都交给 Client Modules，由它串行处理条目变更并等待浏览器资源清理。
+Host 半侧监听每个包带完成标记的入口产物，并提供 `/plugins/events`。它转发现有的图变化与重建通知；每个新连接都会收到当前完整图。图描述浏览器的目标条目，不保证 Host 清理已经完成。Host 的激活与清理仍由 Host 生命周期管理。入口字节与构建完成时间戳共同标识 revision；未变化的产物无需读取内容。浏览器半侧将两种帧都交给 Client Modules，由它串行处理条目变更并等待浏览器资源清理。
 
 ### 浏览器侧替换
 
