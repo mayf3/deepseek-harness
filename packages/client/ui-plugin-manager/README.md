@@ -25,7 +25,7 @@ Use the **Plugins** entry in the Web sidebar to manage the profile's installed b
 <a id="use-this-package"></a>
 ## Use this package
 
-Select **Plugins** in the sidebar. The page reads the inventory and the bundles through `api-remotes` when first opened; a Host without a managed profile shows the page as unavailable. Global configuration remains in the Settings **Plugins** section.
+Select **Plugins** in the sidebar. The page reads the inventory and the bundles through `api-remotes` when first opened; a Host without a managed profile shows the page as unavailable. Cards are listed by title, so switching a bundle on or off does not move its card. Global configuration remains in the Settings **Plugins** section.
 
 ### Installing a bundle
 

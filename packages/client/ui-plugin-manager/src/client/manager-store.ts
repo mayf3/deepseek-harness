@@ -23,6 +23,7 @@ import type {
   ReadOnlyReason,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { shortName } from './presentation.ts'
 
 /** What the last action left to say, shown as a toast; `seq` tells one showing from the next. */
 export type ManagerNotice =
@@ -276,6 +277,17 @@ export function packageView(bundle: BundleInfo, plugins: readonly PluginInfo[]):
   }
 }
 
+/**
+ * The order the list shows packages in: by the title a person reads, so a
+ * card stays put when its bundle is switched, whatever order the Host answers in.
+ * @param packages - the Host's bundles as views.
+ * @returns the views sorted by title.
+ */
+export function sortPackages(packages: readonly PackageView[]): PackageView[] {
+  const label = (pkg: PackageView): string => pkg.title ?? shortName(pkg.name)
+  return [...packages].sort((a, b) => label(a).localeCompare(label(b)))
+}
+
 const IDLE_INSTALL: InstallState = {
   open: false, spec: '', phase: 'idle', inputError: null, subject: null, runs: [], detailsOpen: false,
   installed: null, restartRequired: false, failure: null, enabling: false,
@@ -443,7 +455,7 @@ export class PluginManagerController {
         }
         this.patch({
           status: 'ready',
-          packages: bundles.value.map(bundle => packageView(bundle, plugins.value)),
+          packages: sortPackages(bundles.value.map(bundle => packageView(bundle, plugins.value))),
         })
       } while (this.shouldRerun())
     } finally {

@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { BundleInfo, ChangeResult, ManagementError, PluginEntryId, PluginInfo, PluginInstallRequestId } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
-import { packageView, PluginManagerController, rowKey } from '../src/client/manager-store.ts'
+import { packageView, PluginManagerController, rowKey, sortPackages } from '../src/client/manager-store.ts'
 
 const ROW_ENTRY = 'include:sidebar' as PluginEntryId
 
@@ -105,6 +105,20 @@ describe('packageView', () => {
         { rowId: 'gone', moduleName: 'x', entryId: 'include:gone', enabled: false, phase: null },
       ],
     })
+  })
+})
+
+describe('sortPackages', () => {
+  it('orders packages by the title a person reads, not by the Host order or enablement', async () => {
+    const plain = { enabled: true, installed: true, removable: true, rows: [], overrides: [] }
+    const zeta: BundleInfo = { ...plain, name: 'dsh-zeta' }
+    const alpha: BundleInfo = { ...plain, name: '@acme/dsh-alpha', title: 'Alpha tools', enabled: false }
+    const views = [zeta, BUNDLE, alpha].map(bundle => packageView(bundle, PLUGINS))
+    expect(sortPackages(views).map(pkg => pkg.name)).toEqual(['@acme/dsh-alpha', 'dsh-better-sidebar', 'dsh-zeta'])
+    // The store lists what it read in that order, whatever the Host's order.
+    const { state, controller } = bench({ listBundles: vi.fn(() => Promise.resolve(ok([zeta, BUNDLE, alpha]))) })
+    await controller.load()
+    expect(state().packages.map(pkg => pkg.name)).toEqual(['@acme/dsh-alpha', 'dsh-better-sidebar', 'dsh-zeta'])
   })
 })
 
