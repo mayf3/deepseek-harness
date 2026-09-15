@@ -30,6 +30,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-attachment'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
@@ -184,8 +185,17 @@ interface BrowserPromptSource {
   readonly clientTimeZone?: string
 }
 
+/** Host configuration for continuable subagent capacity. */
+export interface Config {
+  /** Maximum live continuable children across one root's tree, excluding the root; defaults to 16. */
+  maxActiveSubagents?: number
+}
+
 /** Named provider registry with one-shot runs, durable discovery, and continuable-child operations. */
 export class SubagentRuntime extends TypertRemoteService {
+  static Config: z<Config> = z.object({
+    maxActiveSubagents: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(16),
+  })
   private providers = new Map<string, SubagentProvider>()
   private continuations: SubagentContinuationManager | undefined
   /**
@@ -195,14 +205,14 @@ export class SubagentRuntime extends TypertRemoteService {
    */
   private readonly emitLifecycle: LifecycleEmitter
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: Config) {
     super(ctx, 'subagents')
     this.emitLifecycle = createLifecycleEmitter(this.ctx, parent => scopeTarget(this, parent))
     ctx.inject(['agents'], (childCtx: Context) => {
       const manager = new SubagentContinuationManager(childCtx, {
         prepareContinuable: (name, request) => this.prepareContinuable(name, request),
         observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),
-      })
+      }, (config as Required<Config>).maxActiveSubagents)
       this.continuations = manager
       childCtx.effect(() => () => {
         /* v8 ignore else -- one injected binding owns the slot until its fiber disposes. */

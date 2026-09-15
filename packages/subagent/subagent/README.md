@@ -42,6 +42,12 @@ Mount the service with a provider and the delegation tool. The provider register
 
 An agent that calls the tool gets the child's final answer as the tool result. Mounting the service alone changes nothing: nothing can delegate until a provider and a tool are composed.
 
+### Continuable capacity
+
+Set `maxActiveSubagents` on the host `dsh-subagent` plugin to limit live continuable children across each root Agent's entire continuable tree. It defaults to `16` and accepts positive safe integers. The root does not consume a slot; descendants inherit one shared pool. Fresh creation and cold resume reserve before reconstructing the Agent, and cleanup returns the slot after handle disposal. A waiting parent, pending inbox work, and an Activation being stopped still occupy slots. Messages to a resident child reuse its slot. One-shot and external-provider runs are outside this limit; depth remains the delegation tool's separate policy.
+
+At capacity, creation or cold resume rejects with `ACTIVATION_LIMIT_REACHED`: wait for a child to finish or continue using the existing agents. Admission does not queue, because a parent waiting for descendants must not wait for its own occupied slot. Slots are process-local and do not constrain cumulative Session history or token usage.
+
 ### One-shot and continuable children
 
 One-shot children run once and settle with a single result, plus an optional structured output and a safe diagnostic on failure. A start request may override the child Agent's provider, model, reasoning effort, and output-token limit through `agentOptions`; every requested option requires the provider's matching capability. Continuable children keep a durable session and accept later messages in order: the caller receives a stable child id, sends adjacent-Agent messages, and can interrupt the current turn without destroying the child. The tool row's `backgroundMode` picks the shape (`one-shot` by default, or `continuable` on providers that support it).
