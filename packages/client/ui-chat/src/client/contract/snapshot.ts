@@ -74,6 +74,8 @@ export interface ChatLocationNodeIndex {
 export interface ChatTurnProcessPresentation {
   readonly turn: number
   readonly spec: TurnProcessSpec
+  /** Whether the loaded window includes this Turn's start event. */
+  readonly turnStarted: boolean
   readonly turnClosed: boolean
   readonly hasExternalProcess: boolean
   readonly compactAnswer: boolean

@@ -9,6 +9,7 @@ import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './ChatView.module.css'
 
 interface ChatNodeSeatProps extends ChatNodeOwnerProps {
+  readonly assistantPart?: 'reasoning' | 'response'
   readonly nodeKey: string
   readonly useChatNode: ChatViewSlotProps['useChatNode']
   readonly useChatNodeProcess: ChatViewSlotProps['useChatNodeProcess']
@@ -36,11 +37,18 @@ function turnOf(node: ChatNode | undefined): number | undefined {
 
 /** Subscribe, apply Turn-process visibility, and dispatch one stable Context key. */
 export const ChatNodeSeat = memo(function ChatNodeSeat({
-  nodeKey, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
+  nodeKey, assistantPart, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
   cwd, openFile, openSkill, inspectCall, forkAt,
   loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t,
 }: ChatNodeSeatProps) {
-  const node = useChatNode(nodeKey)
+  const sourceNode = useChatNode(nodeKey)
+  const node = useMemo(() => {
+    const value = sourceNode as ChatNode | undefined
+    if (value?.kind !== 'assistant-step' || assistantPart === undefined) return sourceNode
+    return { ...value, data: { ...value.data, blocks: value.data.blocks.filter(block =>
+      assistantPart === 'reasoning' ? block.kind === 'reasoning' : block.kind !== 'reasoning'),
+    } }
+  }, [sourceNode, assistantPart])
   const routedNode = node as ChatNode | undefined
   const turn = turnOf(routedNode)
   const processPresentation = useChatNodeProcess(nodeKey)
@@ -65,7 +73,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     && processSpec.answerAnchorSeq !== null
     && processPresentation.turn === processSpec.turn
     && processPresentation.turnClosed
-    && !historyIncomplete
+    && (!historyIncomplete || processPresentation.turnStarted)
   const processMember = routedNode !== undefined
     && processWindowReady
     && !TURN_PROCESS_INDEPENDENT_KINDS.has(routedNode.kind)
@@ -126,7 +134,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     <div
       ref={wrapperRef}
       className={css.flowItem}
-      data-chat-anchor-key={routedNode.key}
+      data-chat-anchor-key={assistantPart === 'reasoning' ? `${routedNode.key}:reasoning` : routedNode.key}
       data-chat-flow-key={routedNode.key}
       data-chat-flow-kind={routedNode.kind}
       data-chat-turn={turn}

@@ -46,9 +46,19 @@
 /* `hidden="until-found"` retains a zero-height box so browser find can reveal
    its subtree. Direct Chat Node Seats and auxiliary rows share one flow;
    hidden and empty Seats do not contribute spacing. */
-.column > :not([hidden]):not(.flowItem:empty)
+:is(.column, .processBody) > :not([hidden]):not(.flowItem:empty)
   ~ :not([hidden]):not(.flowItem:empty) {
   margin-top: var(--dsh-chat-flow-gap, 16px);
+}
+
+/* Capped process scrollports retain the same row spacing without shrinking leaves. */
+.processBody {
+  display: flex;
+  flex-direction: column;
+}
+
+.processBody > * {
+  flex-shrink: 0;
 }
 
 /* Settled-flow identity boundary. It is neutral until it becomes the natural

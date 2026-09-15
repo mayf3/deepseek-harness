@@ -1,7 +1,7 @@
 // An enclosing `[data-conversation-scroll]` owns scrolling when present;
 // otherwise this view owns it. Each row subscribes to one stable node key.
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ConversationTimelineSnapshot, RenderMessageImages,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -12,7 +12,7 @@ import {
 import type { ChatViewSlotProps, OpenFileOptions } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
 import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
-import { ChatNodeSeat } from './ChatNodeSeat.tsx'
+import { ChatNodeList } from './StepProcessList.tsx'
 import { TurnNavigator } from './TurnNavigator.tsx'
 import { mergeTurnRailItems } from './turn-rail-items.ts'
 import { useChatScroll } from './use-chat-scroll.ts'
@@ -95,16 +95,6 @@ function TurnStatus({ startTime, t }: {
     </div>
   )
 }
-
-type ChatNodeListProps = Omit<ComponentProps<typeof ChatNodeSeat>, 'nodeKey'> & {
-  readonly order: readonly string[]
-}
-
-const ChatNodeList = memo(function ChatNodeList({ order, ...seatProps }: ChatNodeListProps) {
-  return order.map(nodeKey => (
-    <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} {...seatProps} />
-  ))
-})
 
 /**
  * The chat view slot entry: pure component over the composed props; each
@@ -234,7 +224,7 @@ export function ChatView({
           )}
           <MarkdownDelegateProvider openExternalLink={openExternalLink} openFile={requestOpenFile}>
             <ChatNodeList
-              order={order}
+              useChat={useChat}
               useChatNode={useChatNode}
               useChatNodeProcess={useChatNodeProcess}
               historyIncomplete={hasMore}

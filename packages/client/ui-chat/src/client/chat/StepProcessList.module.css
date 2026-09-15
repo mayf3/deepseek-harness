@@ -1,0 +1,33 @@
+.root {
+  min-width: 0;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chevron {
+  flex: none;
+  transform: rotate(-90deg);
+}
+
+.title[aria-expanded="true"] .chevron {
+  transform: rotate(0deg);
+}
+
+.body {
+  max-height: min(400px, 50vh);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}

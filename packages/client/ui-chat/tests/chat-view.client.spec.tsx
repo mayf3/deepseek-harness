@@ -579,6 +579,72 @@ describe('Chat node rendering', () => {
 })
 
 describe('ChatView', () => {
+  it.each([
+    [4_000, 'Worked for 4s'],
+    [65_000, 'Worked for 1m 05s'],
+    [3_665_000, 'Worked for 1h 01m 05s'],
+  ])('labels the whole turn with its logged duration (%i ms)', (duration, label) => {
+    const h = makeHarness({
+      nodes: [user(1, 'question'), reasoningAssistant(2, 'analysis'), assistant(3, 'answer', 1, 2)],
+      turnEnds: new Map([[1, 4]]),
+      turnTimings: new Map([[1, { startTime: 10_000, endTime: 10_000 + duration }]]),
+    })
+    h.props.t = makeTranslate(en, commonEn)
+    const view = render(<h.ChatView {...h.props} />)
+    const toggle = view.getByRole('button', { name: label })
+    fireEvent.click(toggle)
+    expect(toggle.textContent).toBe(label)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it.each([
+    ['bash', 'Ran 1 command', 'Ran 2 commands'],
+    ['read', 'Read 1 file', 'Read 2 files'],
+    ['edit', 'Edited 1 file', 'Edited 2 files'],
+    ['grep', 'Performed 1 search', 'Performed 2 searches'],
+    ['custom_tool', 'Used 1 tool', 'Used 2 tools'],
+  ])('pluralizes completed %s activity in English', (name, singular, plural) => {
+    const opening = assistant(2, 'Starting.', 2)
+    const result = toolResult(3, 'first', name)
+    const response = assistant(5, 'Progress.', 2, 2)
+    const h = makeHarness({ nodes: [userInTurn(1, 'inspect', 2), opening, result, response] })
+    h.props.t = makeTranslate(en, commonEn)
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('button', { name: singular })).toBeTruthy()
+    act(() => { h.setChat({ nodes: [userInTurn(1, 'inspect', 2), opening, result, toolResult(4, 'second', name), response] }) })
+    expect(view.getByRole('button', { name: plural })).toBeTruthy()
+  })
+
+  it('closes a work range on streamed response text and keeps its expansion while more work runs', () => {
+    const h = makeHarness({
+      nodes: [userInTurn(1, 'inspect', 2), context(2, 'private runtime context', 2), reasoningAssistant(2.5, 'initial reasoning', 2)],
+      runningCalls: [runningCall('work')],
+      running: true,
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const toggle = view.getByRole('button', { name: '正在运行命令' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    const body = view.container.querySelector('[data-step-process-body]')!
+    expect(body.getAttribute('hidden')).toBe('until-found')
+    expect(toggle.textContent).not.toMatch(/context|上下文|permission|系统提示/)
+    fireEvent.click(toggle)
+    expect(body.hasAttribute('hidden')).toBe(false)
+    act(() => { h.setChat({
+      nodes: [userInTurn(1, 'inspect', 2), context(2, 'private runtime context', 2), reasoningAssistant(2.5, 'initial reasoning', 2), toolResult(3, 'work')],
+      runningCalls: [],
+      partial: { turn: 2, step: 2, blocks: [{ kind: 'reasoning', text: 'private analysis' }] },
+    }) })
+    expect(view.getByRole('button', { name: '正在思考' }).getAttribute('aria-expanded')).toBe('true')
+    act(() => { h.setChat({
+      partial: { turn: 2, step: 2, blocks: [
+        { kind: 'reasoning', text: 'private analysis' }, { kind: 'text', text: 'Here is the progress.' },
+      ] },
+    }) })
+    expect(view.getByRole('button', { name: '运行了 1 条命令' }).getAttribute('aria-expanded')).toBe('true')
+    expect(view.getByText('Here is the progress.').closest('[data-step-process-body]')).toBeNull()
+    expect(view.getByText('private analysis').closest('[data-step-process-body]')).toBe(body)
+  })
+
   it('leaves the turn rail unrendered when an unrelated Chat update commits', () => {
     const snapshot = chatSnapshotFixture({
       nodes: [
@@ -997,7 +1063,7 @@ describe('ChatView', () => {
     expect(view.getByText('running tools')).toBeTruthy()
     expect(view.getByTestId('tool-seat-a').textContent).toBe('bash:a')
     expect(view.getByTestId('tool-seat-b').textContent).toBe('bash:b')
-    expect([...view.container.querySelectorAll('[data-chat-flow-key]')].map(row => ({
+    expect([...view.container.querySelectorAll('[data-chat-flow-kind]')].map(row => ({
       key: row.getAttribute('data-chat-flow-key'),
       kind: row.getAttribute('data-chat-flow-kind'),
     }))).toEqual([
@@ -1012,7 +1078,7 @@ describe('ChatView', () => {
     expect([...view.container.querySelectorAll('[data-chat-anchor-key]')].map(row => row.getAttribute('data-chat-anchor-key')))
       .toEqual([
         'fixture:user:1', 'fixture:turn-process:1', 'fixture:assistant:2',
-        'fixture:tool:a', 'call:a', 'fixture:tool:b', 'call:b',
+        'fixture:tool:a:process', 'fixture:tool:a', 'call:a', 'fixture:tool:b', 'call:b',
       ])
   })
 
@@ -1313,14 +1379,14 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     const disclosure = view.container.querySelector('details') as HTMLDetailsElement
     expect(disclosure.dataset.active).toBe('true')
-    expect(within(disclosure).getByRole('status').textContent).toBe('正在重试模型请求（1/2） · 1s')
+    expect(within(disclosure).getByRole('status', { hidden: true }).textContent).toBe('正在重试模型请求（1/2） · 1s')
 
     act(() => {
       h.setChat({ nodes: [user(1, 'try'), nextRetry] })
     })
-    expect(within(disclosure).getAllByRole('status')).toHaveLength(1)
+    expect(within(disclosure).getAllByRole('status', { hidden: true })).toHaveLength(1)
     expect(view.container.querySelector('details')).toBe(disclosure)
-    expect(within(disclosure).getByRole('status').textContent).toBe('正在重试模型请求（2/2） · 1s')
+    expect(within(disclosure).getByRole('status', { hidden: true }).textContent).toBe('正在重试模型请求（2/2） · 1s')
 
     act(() => {
       h.setChat({
@@ -1334,7 +1400,7 @@ describe('ChatView', () => {
       h.setSession({ running: false })
     })
     expect(disclosure.dataset.active).toBeUndefined()
-    expect(within(disclosure).getByRole('status').textContent).toBe('已重试模型请求（2/2） · 1s')
+    expect(within(disclosure).getByRole('status', { hidden: true }).textContent).toBe('已重试模型请求（2/2） · 1s')
 
     act(() => {
       h.setChat({ nodes: [user(1, 'try'), { ...retry(6), retryState: 'cancelled' }] })
@@ -1342,7 +1408,7 @@ describe('ChatView', () => {
     })
     const cancelledDisclosure = view.container.querySelector('details') as HTMLDetailsElement
     expect(cancelledDisclosure.dataset.active).toBeUndefined()
-    expect(within(cancelledDisclosure).getByRole('status').textContent).toContain('重试已取消')
+    expect(within(cancelledDisclosure).getByRole('status', { hidden: true }).textContent).toContain('重试已取消')
   })
 
   it('renders terminal turn failures inline with their durable message and optional code', () => {
@@ -1423,38 +1489,38 @@ describe('ChatView', () => {
       turnEnds: new Map([[1, 6]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    const toggle = view.getByRole('button', { name: '1 次工具调用 · 1 条消息 · 1 个 subagent' })
+    const toggle = view.getByRole('button', { name: '工作了 4秒' })
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(toggle.getAttribute('data-turn-process-tool-calls')).toBe('1')
     expect(toggle.getAttribute('data-turn-process-messages')).toBe('1')
     expect(toggle.getAttribute('data-turn-process-subagents')).toBe('1')
     const members = [...view.container.querySelectorAll<HTMLElement>('[data-turn-process-member]')]
-    expect(members).toHaveLength(3)
+    expect(members).toHaveLength(4)
     expect(members.map(member => member.getAttribute('hidden')))
-      .toEqual(['until-found', 'until-found', 'until-found'])
+      .toEqual(['until-found', 'until-found', 'until-found', 'until-found'])
     expect(members[0]?.textContent).toContain('inspect the repository')
-    expect(members[1]?.textContent).toContain('bash:a')
-    expect(members[2]?.textContent).toContain('subagent:b')
+    expect(members[2]?.textContent).toContain('bash:a')
+    expect(members[3]?.textContent).toContain('subagent:b')
     expect(view.getByText('final answer')).toBeTruthy()
 
     fireEvent.click(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
-    expect(members.map(member => member.getAttribute('hidden'))).toEqual([null, null, null])
+    expect(members.map(member => member.getAttribute('hidden'))).toEqual([null, null, null, null])
 
     fireEvent.click(toggle)
     expect(members.map(member => member.getAttribute('hidden')))
-      .toEqual(['until-found', 'until-found', 'until-found'])
+      .toEqual(['until-found', 'until-found', 'until-found', 'until-found'])
     fireEvent(members[1]!, new Event('beforematch'))
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
-    expect(members.map(member => member.getAttribute('hidden'))).toEqual([null, null, null])
+    expect(members.map(member => member.getAttribute('hidden'))).toEqual([null, null, null, null])
 
     act(() => { h.set({ nodes: [user(1, 'question'), first] }) })
-    expect(view.getByRole('button', { name: '已思考' }).getAttribute('aria-expanded')).toBe('false')
+    expect(view.getByRole('button', { name: '工作了 4秒' }).getAttribute('aria-expanded')).toBe('false')
     expect(members[0]?.getAttribute('hidden')).toBeNull()
     act(() => { h.set({
       nodes: [user(1, 'question'), first, toolResult(3, 'a'), toolResult(4, 'b', 'subagent'), second],
     }) })
-    const renewedToggle = view.getByRole('button', { name: '1 次工具调用 · 1 条消息 · 1 个 subagent' })
+    const renewedToggle = view.getByRole('button', { name: '工作了 4秒' })
     expect(renewedToggle.getAttribute('aria-expanded')).toBe('true')
     expect(members[0]?.getAttribute('hidden')).toBeNull()
   })
@@ -1552,7 +1618,7 @@ describe('ChatView', () => {
       turnEnds: new Map([[1, 4]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    const toggle = view.getByRole('button', { name: '已思考' })
+    const toggle = view.getByRole('button', { name: '已完成工作' })
     const contextRow = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="context"]')
 
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
@@ -1653,7 +1719,7 @@ describe('ChatView', () => {
     }
     const h = makeHarness({ nodes: [user(1, 'question'), final], turnEnds: new Map([[1, 4]]) })
     const view = render(<h.ChatView {...h.props} />)
-    const toggle = view.getByRole('button', { name: '已思考' })
+    const toggle = view.getByRole('button', { name: '已完成工作' })
     const reasoning = view.container.querySelector<HTMLElement>('[data-turn-process-inline]')
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(reasoning?.getAttribute('hidden')).toBe('until-found')
@@ -1715,6 +1781,7 @@ describe('ChatView', () => {
       running: true,
     })
     const view = render(<h.ChatView {...h.props} />)
+    fireEvent.click(view.getByRole('button', { name: '正在思考' }))
     const contextToggle = view.getByRole('button', { name: '上下文注入' })
     const contextRow = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="context"]')
     contextToggle.focus()
@@ -1740,28 +1807,42 @@ describe('ChatView', () => {
     expect(contextRow?.getAttribute('hidden')).toBe('until-found')
   })
 
-  it('keeps a foldable closed Turn fully visible while history is partial', () => {
+  it.each(['ordinary', 'goal'])('folds a complete %s Turn while older history remains unloaded', (kind) => {
     const h = makeHarness({
       nodes: [
-        user(1, 'question'),
-        context(2, 'runtime policy', 1),
+        ...(kind === 'ordinary' ? [user(1, 'question')] : []),
+        context(2, 'goal continuation', 1),
         assistant(3, 'working', 1, 1),
         assistant(4, 'final answer', 1, 2),
       ],
+      turnTimings: new Map([[1, { startTime: 0, endTime: 4_000 }]]),
       turnEnds: new Map([[1, 5]]),
       hasMore: true,
     })
     const view = render(<h.ChatView {...h.props} />)
-    const contextRow = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="context"]')
-
-    expect(turnProcessControl(view.container)).toBeNull()
-    expect(contextRow?.getAttribute('hidden')).toBeNull()
-    expect(contextRow?.hasAttribute('data-turn-process-member')).toBe(false)
-
-    act(() => { h.set({ hasMore: false }) })
     const toggle = turnProcessControl(view.container)!
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(contextRow?.getAttribute('hidden')).toBe('until-found')
+    const group = view.container.querySelector<HTMLElement>('[data-step-process]')!
+    expect(group.getAttribute('hidden')).toBe('until-found')
+    fireEvent.click(toggle)
+    expect(group.getAttribute('hidden')).toBeNull()
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('folds a truncated Turn when its start arrives even with more history unloaded', () => {
+    const h = makeHarness({
+      nodes: [context(2, 'goal continuation', 1), assistant(3, 'working', 1, 1),
+        assistant(4, 'final answer', 1, 2)],
+      turnEnds: new Map([[1, 5]]),
+      hasMore: true,
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(turnProcessControl(view.container)).toBeNull()
+    const group = view.container.querySelector<HTMLElement>('[data-step-process]')!
+    expect(group.getAttribute('hidden')).toBeNull()
+    act(() => { h.set({ turnTimings: new Map([[1, { startTime: 0, endTime: 4_000 }]]) }) })
+    expect(turnProcessControl(view.container)?.getAttribute('aria-expanded')).toBe('false')
+    expect(group.getAttribute('hidden')).toBe('until-found')
   })
 
   it('withholds process controls for partial history and folds final-page groups', () => {
@@ -2194,7 +2275,7 @@ describe('ChatView', () => {
     }
 
     const h = makeHarness({
-      nodes: [user(1, 'q'), assistant(4, 'later')],
+      nodes: [userInTurn(1, 'q', 2), assistant(2, 'starting', 2), assistant(4, 'later', 2)],
       runningCalls: [runningCall('r1')],
     }, { running: true })
     h.props.renderSlot = ((key: string, owner: object, opts?: { fallback?: React.ReactNode }) => {
@@ -2211,7 +2292,7 @@ describe('ChatView', () => {
 
     act(() => {
       h.setChat({
-        nodes: [user(1, 'q'), toolResult(3, 'r1'), assistant(4, 'later')],
+        nodes: [userInTurn(1, 'q', 2), assistant(2, 'starting', 2), toolResult(3, 'r1'), assistant(4, 'later', 2)],
         runningCalls: [],
       })
       h.setSession({ running: false })
