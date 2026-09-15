@@ -18,7 +18,6 @@ import type {
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DirectoryFlowOwnerProps, WorkspacePickerProps } from './contract/slots.ts'
-import { owningParentFolder } from './tree.ts'
 import css from './WorkspacePicker.module.css'
 
 const ADD_WORKSPACE = '::add-workspace'
@@ -39,8 +38,6 @@ export interface WorkspacePickFlowProps {
   useDirectoryFlow: SnapshotSelectorHook<boolean>
   /** Render this surface's directory-flow hole with the owner conversation (the entry's narrowed renderSlot). */
   renderDirectoryFlow: (owner: DirectoryFlowOwnerProps) => ReactNode
-  /** Offer parent grouping after directory selection; confirmation calls this without creating a Workspace. */
-  onPickParentFolder?: ((path: string) => void) | undefined
   /** A real Workspace was picked or created. */
   onPick: (workspaceId: WorkspaceId) => void
   /** Close the popover (outside click / Escape / post-pick). */
@@ -67,7 +64,6 @@ export function WorkspacePickFlow({
   useDirectoryFlow,
   renderDirectoryFlow,
   onPick,
-  onPickParentFolder,
   onClose,
   addOnly = false,
   side = 'bottom',
@@ -83,16 +79,11 @@ export function WorkspacePickFlow({
   const [modalError, setModalError] = useState<string | null>(null)
   const [flowOpen, setFlowOpen] = useState(false)
   const [pickingFolder, setPickingFolder] = useState(false)
-  const [pickedDirectory, setPickedDirectory] = useState<string | null>(null)
-  const [groupChildren, setGroupChildren] = useState(false)
   // One picking interaction at a time: while the flow is open (native chooser
   // pending, browse dialog up) or its pick is being adopted, every other
   // menu action stays disabled — a late outcome must not race a concurrent
   // selection or adoption.
-  const flowBusy = flowOpen || pickingFolder || pickedDirectory !== null
-  const childWorkspaces = pickedDirectory === null ? [] : workspaces.filter(
-    workspace => owningParentFolder(workspace.path, [pickedDirectory]) !== undefined,
-  )
+  const flowBusy = flowOpen || pickingFolder
 
   // The occupied hole gates the picking affordance: with no composed flow the
   // entry simply is not there (the seam's documented no-flow default). The
@@ -144,7 +135,6 @@ export function WorkspacePickFlow({
 
   const openDirectoryFlow = useCallback((): void => {
     onClose()
-    setPickedDirectory(null)
     setErrorOpen(false)
     setModalError(null)
     setFlowOpen(true)
@@ -171,12 +161,6 @@ export function WorkspacePickFlow({
     open: flowOpen,
     busy: pickingFolder,
     onPicked: (path) => {
-      if (onPickParentFolder !== undefined) {
-        setFlowOpen(false)
-        setPickedDirectory(path)
-        setGroupChildren(workspaces.some(workspace => owningParentFolder(workspace.path, [path]) !== undefined))
-        return
-      }
       setPickingFolder(true)
       void adoptDirectory(path).finally(() => { setPickingFolder(false) })
     },
@@ -212,41 +196,6 @@ export function WorkspacePickFlow({
       />
       {open && !addIsTheOnlyEntry && !menuIsEmpty && workspaceSnapshot.phase === 'pending' && <div className={css.menuStatus} role="status">{t('picker.loading')}</div>}
       {renderDirectoryFlow(flowOwner)}
-      <Modal
-        open={pickedDirectory !== null}
-        onClose={() => { setPickedDirectory(null) }}
-        closeLabel={t('close')}
-        title={t('workspace.add')}
-        footer={(
-          <>
-            <Button variant="outline" className={css.modalAction} onClick={() => { setPickedDirectory(null) }}>{t('cancel')}</Button>
-            <Button variant="primary" className={css.modalAction} onClick={() => {
-              if (pickedDirectory === null) return
-              const path = pickedDirectory
-              setPickedDirectory(null)
-              if (groupChildren && onPickParentFolder !== undefined) onPickParentFolder(path)
-              else {
-                setPickingFolder(true)
-                void adoptDirectory(path).finally(() => { setPickingFolder(false) })
-              }
-            }}>{t('picker.add')}</Button>
-          </>
-        )}
-      >
-        <div className={css.pickedDirectory}>{pickedDirectory}</div>
-        <label className={css.groupChoice}>
-          <input type="checkbox" checked={groupChildren} onChange={(event) => { setGroupChildren(event.target.checked) }} />
-          {t('parentFolder.group')}
-        </label>
-        <div className={css.groupHelp}>{t('parentFolder.help')}</div>
-        {groupChildren && (
-          <div className={css.groupPreview}>
-            {childWorkspaces.length === 0 ? t('parentFolder.empty') : childWorkspaces.map(workspace => (
-              <div key={workspace.workspaceId}>{workspace.title}</div>
-            ))}
-          </div>
-        )}
-      </Modal>
       <Modal
         open={errorOpen}
         onClose={closeModal}

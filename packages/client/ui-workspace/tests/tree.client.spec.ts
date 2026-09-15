@@ -591,7 +591,7 @@ describe('workspaceLabel', () => {
 describe('parent folder membership', () => {
   it.each([
     ['/git/app', ['/git'], '/git'],
-    ['/git', ['/git/'], '/git/'],
+    ['/git', ['/git/'], undefined],
     ['/git-other/app', ['/git'], undefined],
     ['/git/team/app', ['/git', '/git/team'], '/git/team'],
     ['/git/team/app', ['/git/team', '/git'], '/git/team'],
@@ -602,7 +602,7 @@ describe('parent folder membership', () => {
     [String.raw`\\server\share\app`, [String.raw`\\server\share`], String.raw`\\server\share`],
     [String.raw`/git/a\b`, ['/git/a'], undefined],
     ['/Git/app', ['/git'], undefined],
-  ])('groups %s under its most specific selected parent', (path, parents, expected) => {
+  ])('groups %s under its nearest registered ancestor', (path, parents, expected) => {
     expect(owningParentFolder(path, parents)).toBe(expected)
   })
 })

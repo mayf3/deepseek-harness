@@ -1,4 +1,4 @@
-# Agent Note: Sidebar Parent Folders
+# Agent Note: Sidebar Workspace Hierarchy
 
 Status: implemented
 
@@ -10,20 +10,20 @@ A flat Workspace list makes related projects hard to browse when many directorie
 
 ## Decision
 
-Parent folders are browser-local viewing state in the existing Workspace store. Each Workspace appears under the most specific selected ancestor or equal path; unassigned Workspaces retain their root positions relative to each other. Selected parents retain addition order, including empty parents. Path comparison respects directory separators and uses Host case spelling. It does not resolve symlink aliases.
+The sidebar derives a recursive hierarchy from registered Workspace paths. Each Workspace appears under its nearest strict ancestor; path equality never creates a self-parent. Comparison respects directory separators and Host case spelling, without resolving symlink aliases. Siblings retain their Host order.
 
-The existing Add workspace flow offers parent grouping after directory selection, without creating a Workspace or Session. Parent rows reuse the Workspace folder affordance and ellipsis menu. Row fills and hit targets span the same width at every level; indentation applies only to row contents. Project rows retain their current actions and per-account Session ordering. Workspace dragging is restricted to siblings in the same parent. Search-result navigation expands the parent before revealing the Session. Missing parent-folder state in older browser preferences means no grouping; removing a parent never changes Host state.
+Adding a directory registers a normal Workspace and opens its Session directly. Parent Workspaces retain their own Sessions and standard row actions. The existing browser-local expansion state controls both child Workspaces and the parent's Session rows; ancestors default to expanded when no explicit preference exists. All rows have equal-width fills and hit targets, with content indentation per level. Workspace drag stays among siblings, and search navigation expands every ancestor.
 
 ## Alternatives considered
 
-**Recursive Workspace membership:** this changes the working-directory invariant and makes a Session eligible for multiple accounts. Display grouping needs neither change.
+**Recursive Workspace membership:** this changes the working-directory invariant and makes a Session eligible for multiple accounts. Display nesting needs neither change.
 
-**A Host-persisted folder hierarchy:** this would synchronize organization across browsers but adds records and API operations for a viewing preference. Browser-local persistence matches the requested scope.
+**Separate parent-folder records and an add-time choice:** this duplicates directories already represented by Workspaces and adds a confirmation to ordinary addition. Deriving hierarchy from the registry preserves one add flow and lets every directory own Sessions.
 
-**Automatic directory discovery:** this could show projects without a registered Workspace, but adds filesystem listing, refresh, and adoption behavior. The grouping operation consumes the current Workspace list only.
+**Automatic directory discovery:** this could show unregistered projects, but requires filesystem listing, refresh, and adoption behavior. The sidebar consumes the current Workspace list only.
 
 ## Consequences
 
-Users can collapse a family of projects without changing Session ownership. Removing a group preserves the independent [Workspace deletion semantics](2026-07-27-workspace-registration-deletion.md). That decision remains active and is not superseded. Groups do not synchronize across browsers, selected parent folders remain one level deep, and symlink aliases require selecting the canonical ancestor.
+Users can collapse related projects without changing Session ownership. Deleting an ancestor preserves child registrations; the independent [Workspace deletion semantics](2026-07-27-workspace-registration-deletion.md) still govern the deleted Workspace's own Sessions. That decision remains active. Browser-local collapse preferences do not synchronize, and canonical path spelling determines nesting.
 
-Pure path tests cover overlapping roots, segment boundaries, POSIX backslashes, and Windows separators. Component tests cover preference restoration, removal, search revelation, and sibling sorting. The Workspace-management browser scenario exercises the real picker and checks that grouping preserves Host registrations and Agent count.
+Pure path tests cover strict ancestry, segment boundaries, POSIX backslashes, and Windows separators. Component and browser scenarios exercise direct addition, later registrations, independent parent Sessions, collapse restoration, search revelation, sibling sorting, and equal-width rows.

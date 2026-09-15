@@ -1,21 +1,11 @@
-- dialog "Add workspace":
-  - heading "Add workspace" [level=2]
-  - button "Close":
+- treeitem "folder-group" [expanded]:
+  - img
+  - text: folder-group
+- group:
+  - treeitem "project-two" [expanded]:
     - img
-  - text: {{cwd}}/folder-group
-  - checkbox "Group by child workspaces" [checked]
-  - text: Group by child workspaces Show added workspaces in this directory and their sessions. project-two project-one
-  - button "Cancel"
-  - button "Add"
-- treeitem "{{cwd}}/folder-group" [expanded]:
-  - button "{{cwd}}/folder-group" [expanded]:
+    - text: project-two
+  - treeitem "New Session" [selected]
+  - treeitem "project-one" [expanded]:
     - img
-    - text: {{cwd}}/folder-group
-  - group:
-    - treeitem "project-two" [expanded]:
-      - img
-      - text: project-two
-    - treeitem "New Session" [selected]
-    - treeitem "project-one" [expanded]:
-      - img
-      - text: project-one
+    - text: project-one

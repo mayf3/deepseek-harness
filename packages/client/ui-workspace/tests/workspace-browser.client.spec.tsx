@@ -387,7 +387,7 @@ describe('WorkspaceBrowser', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     expect(screen.getByText('分组方式')).toBeTruthy() // the menu heading label
-    expect(screen.getAllByRole('separator')).toHaveLength(1)
+    expect(screen.getByRole('separator')).toBeTruthy()
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
       '按工作区', '单列表', '手动排序', '最近更新',
     ])
@@ -877,7 +877,7 @@ describe('WorkspaceBrowser', () => {
   })
 
   it('opens a Host content hit, exits search, and reveals its hidden grouped row', async () => {
-    createWorkspaceViewStore().create().actions.setParentFolder('/projects', false)
+    createWorkspaceViewStore().create().actions.setGroupExpanded('root', false)
     vi.useFakeTimers()
     try {
       const open = vi.fn()
@@ -895,6 +895,7 @@ describe('WorkspaceBrowser', () => {
           summary('body-hit', 1, { displayTitle: 'Research notes' }),
         ])),
         useWorkspaces: hook(workspaceState([
+          { ...workspace('root', []), path: '/projects' },
           workspace('research', [
             'newest-1', 'newest-2', 'newest-3', 'newest-4', 'newest-5', 'body-hit',
           ], 'Research Workspace'),
@@ -919,7 +920,7 @@ describe('WorkspaceBrowser', () => {
       expect(input.value).toBe('')
       expect(screen.queryByRole('tree', { name: '搜索结果' })).toBeNull()
       expect(screen.getByRole('tree', { name: '会话' })).toBeTruthy()
-      expect(b.store.getSnapshot().groupExpansion).toEqual({ research: true })
+      expect(b.store.getSnapshot().groupExpansion).toEqual({ root: true, research: true })
       const targetRow = screen.getByText('Research notes').closest('[role="treeitem"]')
       expect(targetRow).toBeTruthy()
       expect(screen.getByRole('button', { name: '收起' })).toBeTruthy()
@@ -1642,99 +1643,69 @@ describe('WorkspaceBrowser', () => {
 })
 
 
-describe('parent folders', () => {
-  it('cancels a picked path and can add it as a normal Workspace instead of a group', async () => {
+describe('automatic Workspace hierarchy', () => {
+  const root = { ...workspace('root', ['root-session'], 'Projects'), path: '/projects' }
+  const team = workspace('team', ['team-session'], 'Team')
+  const child = { ...workspace('child', ['child-session'], 'Child'), path: '/projects/team/child' }
+  const section = (title: string) => screen.getByText(title).closest<HTMLElement>('[class*="groupSection"]')!
+
+  it('adopts a parent directory and opens its Session without confirmation', async () => {
     const b = mount({
-      useWorkspaces: hook(workspaceState([workspace('alpha', [])])),
-      createWorkspace: vi.fn(async () => workspace('projects', [])),
+      useWorkspaces: hook(workspaceState([child])),
+      createWorkspace: vi.fn(async () => root),
       renderSlot: ((_name: string, owner: DirectoryFlowOwnerProps) => owner.open
         ? <button onClick={() => { owner.onPicked('/projects') }}>Pick directory</button> : null) as WorkspaceBrowserProps['renderSlot'],
     })
     fireEvent.click(screen.getByRole('button', { name: '添加工作区' }))
     fireEvent.click(screen.getByRole('button', { name: 'Pick directory' }))
-    fireEvent.click(screen.getByRole('button', { name: '取消' }))
-    expect(b.props.createWorkspace).not.toHaveBeenCalled()
-    expect(b.props.startSession).not.toHaveBeenCalled()
-    expect(b.store.getSnapshot().parentFolders).toBeUndefined()
-    fireEvent.click(screen.getByRole('button', { name: '添加工作区' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Pick directory' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: '按子工作区分组' }))
-    fireEvent.click(screen.getByRole('button', { name: '添加' }))
-    await waitFor(() => { expect(b.props.startSession).toHaveBeenCalledWith(wid('projects')) })
+    await waitFor(() => { expect(b.props.startSession).toHaveBeenCalledWith(wid('root')) })
     expect(b.props.createWorkspace).toHaveBeenCalledWith({ path: '/projects' })
-    expect(b.store.getSnapshot().parentFolders).toBeUndefined()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    rerender(b, { useWorkspaces: hook(workspaceState([child, root])) })
+    expect(within(section('Projects')).getByText('Child')).toBeTruthy()
   })
 
-  it('defaults an empty directory to Workspace adoption but allows an empty parent group', () => {
+  it('nests newly registered ancestors and children while retaining each Workspace session', () => {
     const b = mount({
-      renderSlot: ((_name: string, owner: DirectoryFlowOwnerProps) => owner.open
-        ? <button onClick={() => { owner.onPicked('/empty') }}>Pick directory</button> : null) as WorkspaceBrowserProps['renderSlot'],
+      useSessions: hook(sessionState([summary('root-session', 1), summary('team-session', 2), summary('child-session', 3)])),
+      useWorkspaces: hook(workspaceState([child, root])),
     })
-    fireEvent.click(screen.getByRole('button', { name: '添加工作区' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Pick directory' }))
-    const choice = screen.getByRole('checkbox', { name: '按子工作区分组' }) as HTMLInputElement
-    expect(choice.checked).toBe(false)
-    fireEvent.click(choice)
-    fireEvent.click(screen.getByRole('button', { name: '添加' }))
-    expect(screen.getByRole('treeitem', { name: '/empty' })).toBeTruthy()
-    expect(b.props.createWorkspace).not.toHaveBeenCalled()
+    expect(within(section('Projects')).getByText('Child')).toBeTruthy()
+    rerender(b, { useWorkspaces: hook(workspaceState([child, team, root])) })
+    expect(within(section('Projects')).getByText('Team')).toBeTruthy()
+    expect(within(section('Team')).getByText('Child')).toBeTruthy()
+    expect(within(section('Team')).queryByText('root-session')).toBeNull()
+    expect(within(section('Projects')).getByText('root-session')).toBeTruthy()
+    expect(within(section('Team')).getByText('team-session')).toBeTruthy()
+    expect(screen.getAllByText('Child')).toHaveLength(1)
+    fireEvent.click(screen.getByText('Child'))
+    expect(within(section('Child')).getByText('child-session')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '在“Projects”中新建会话' }))
+    expect(b.props.startSession).toHaveBeenCalledWith(root.workspaceId)
+    rerender(b, { useWorkspaces: hook(workspaceState([child, root])) })
+    expect(screen.queryByText('Team')).toBeNull()
+    expect(within(section('Projects')).getByText('Child')).toBeTruthy()
   })
 
-  it('adds a parent through the picker without creating a Workspace or Session, and restores it after reload', () => {
-    const b = mount({
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['first'])])),
-      useSessions: hook(sessionState([summary('first', 1)])),
-      renderSlot: ((_name: string, owner: DirectoryFlowOwnerProps) => owner.open
-        ? <button onClick={() => { owner.onPicked('/projects') }}>Pick parent</button> : null) as WorkspaceBrowserProps['renderSlot'],
-    })
-    fireEvent.click(screen.getByRole('button', { name: '添加工作区' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Pick parent' }))
-    expect(screen.getByRole('checkbox', { name: '按子工作区分组' }).getAttribute('checked')).not.toBeNull()
-    expect(b.props.createWorkspace).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: '添加' }))
-    expect(b.props.createWorkspace).not.toHaveBeenCalled()
-    expect(b.props.startSession).not.toHaveBeenCalled()
-    const parent = screen.getByRole('treeitem', { name: '/projects' })
-    expect(within(parent).getByText('alpha')).toBeTruthy()
-    fireEvent.click(within(parent).getByRole('button', { name: '/projects' }))
-    expect(screen.queryByText('alpha')).toBeNull()
+  it('restores collapsed ancestors and keeps the flat view independent', () => {
+    const b = mount({ useWorkspaces: hook(workspaceState([root, team, child])) })
+    fireEvent.click(screen.getByText('Projects'))
+    expect(screen.queryByText('Team')).toBeNull()
     b.view.unmount()
-    const restored = mount({ useWorkspaces: b.props.useWorkspaces, useSessions: b.props.useSessions })
-    expect(screen.getByRole('treeitem', { name: '/projects' }).getAttribute('aria-expanded')).toBe('false')
-    fireEvent.click(screen.getByRole('button', { name: '工作区“/projects”的操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '移除分组' }))
-    expect(screen.queryByRole('treeitem', { name: '/projects' })).toBeNull()
-    expect(screen.getByText('alpha')).toBeTruthy()
-    expect(restored.props.deleteWorkspace).not.toHaveBeenCalled()
-  })
-
-  it('assigns overlapping parents once, retains empty folders, and ignores them in flat view', () => {
-    const preferences = createWorkspaceViewStore().create()
-    preferences.actions.setParentFolder('/projects', true)
-    preferences.actions.setParentFolder('/projects/team', true)
-    preferences.actions.setParentFolder('/empty', true)
-    const b = mount({ useWorkspaces: hook(workspaceState([
-      workspace('alpha', []), { ...workspace('beta', []), path: '/projects/team/beta' },
-    ])) })
-    expect(within(screen.getByRole('treeitem', { name: '/projects' })).queryByText('beta')).toBeNull()
-    expect(within(screen.getByRole('treeitem', { name: '/projects/team' })).getByText('beta')).toBeTruthy()
-    expect(screen.getAllByText('beta')).toHaveLength(1)
-    expect(within(screen.getByRole('treeitem', { name: '/empty' })).getByText('此目录下没有已添加的工作区')).toBeTruthy()
-    act(() => { b.store.actions.setGroupBy('flat') })
-    expect(screen.queryByRole('treeitem', { name: '/projects' })).toBeNull()
-    act(() => { b.store.actions.setGroupBy('workspace') })
-    expect(screen.getByRole('treeitem', { name: '/projects' })).toBeTruthy()
-    act(() => { b.store.actions.removeParentFolder('/projects/team') })
-    expect(within(screen.getByRole('treeitem', { name: '/projects' })).getByText('beta')).toBeTruthy()
+    const restored = mount({ useWorkspaces: b.props.useWorkspaces })
+    expect(screen.queryByText('Child')).toBeNull()
+    fireEvent.click(screen.getByText('Projects'))
+    expect(screen.getByText('Child')).toBeTruthy()
+    act(() => { restored.store.actions.setGroupBy('flat') })
+    expect(screen.queryByText('Projects')).toBeNull()
+    act(() => { restored.store.actions.setGroupBy('workspace') })
+    expect(screen.getByText('Child')).toBeTruthy()
   })
 
   it('keeps Workspace drag within its parent and uses the next displayed sibling as anchor', () => {
-    const preferences = createWorkspaceViewStore().create()
-    preferences.actions.setParentFolder('/projects', true)
-    preferences.actions.setParentFolder('/elsewhere', true)
     const b = mount({ useWorkspaces: hook(workspaceState([
       workspace('alpha', []), { ...workspace('outside', []), path: '/elsewhere/outside' },
-      workspace('beta', []), workspace('gamma', []),
+      workspace('beta', []), workspace('gamma', []), root,
     ])) })
     const alpha = screen.getByText('alpha').closest('[role="treeitem"]') as HTMLElement
     const beta = screen.getByText('beta').closest('[role="treeitem"]') as HTMLElement
@@ -1752,6 +1723,7 @@ describe('parent folders', () => {
     fireEvent.dragStart(alpha, { dataTransfer: dragData() })
     fireDrag(beta.parentElement as HTMLElement, 'drop', 100)
     fireEvent.dragEnd(alpha)
+    expect(b.props.insertWorkspaceBefore).toHaveBeenCalledOnce()
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledWith(wid('alpha'), wid('gamma'))
   })
 })

@@ -9,7 +9,7 @@
  * menu in between; the flow and its error dialog live in WorkspacePicker
  * (same package — direct composition, no slot between them).
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Button, IconCloseFill14, IconPersonalizationOutline16,
@@ -26,7 +26,7 @@ import {
   deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey, owningParentFolder,
   pinCurrentBlank, reconcileManualOrder, UNGROUPED_KEY, visibleSessionIds,
 } from '../tree.ts'
-import { ParentFolderRow, ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
+import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
 import { FLAT_SESSION_ORDER_KEY } from '../stores.ts'
 import { WorkspacePickFlow } from '../WorkspacePicker.tsx'
 import css from './WorkspaceBrowser.module.css'
@@ -42,7 +42,6 @@ const SEARCH_DEBOUNCE_MS = 250
 const SEARCH_QUERY_MAX_CODE_UNITS = 500
 /** Session rows visible per Workspace before the local overflow control. */
 const COLLAPSED_SESSION_LIMIT = 5
-const NO_PARENT_FOLDERS: Readonly<Record<string, boolean>> = {}
 
 /** Fold one Workspace without charging its provisional New Session against the ordinary-row limit. */
 function collapsedSessionRows(sessions: readonly SessionNode[]): {
@@ -172,10 +171,6 @@ type SessionTreeProps = Pick<
   'useSessionPendingInteraction' | 'startSession' | 'open' | 'forkSession'
   | 'insertWorkspaceBefore' | 't' | 'usePanelInfo'
 > & {
-  /** Browser-local parent paths and expansion, independent of Workspace membership. */
-  parentFolders: Readonly<Record<string, boolean>>
-  setParentFolder: (path: string, expanded: boolean) => void
-  removeParentFolder: (path: string) => void
   /** Always-mounted Session list snapshot. */
   list: SessionListState
   /** Host account home for POSIX hover-path abbreviation. */
@@ -211,7 +206,7 @@ type SessionTreeProps = Pick<
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
   list, useSessionPendingInteraction, startSession, open, forkSession, workspaces, ungroupedSessionIds,
-  archivedSessionIds, parentFolders, setParentFolder, removeParentFolder,
+  archivedSessionIds,
   workspaceReady, usePanelInfo,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
   insertWorkspaceBefore,
@@ -240,10 +235,19 @@ function SessionTree({
     if (current === undefined || currentGroup === undefined || Object.hasOwn(groupExpansion, currentGroup)) return
     setGroupExpanded(currentGroup, true)
   }, [current, currentGroup, setGroupExpanded, groupExpansion])
-  const expandedGroups = useMemo(
-    () => Object.entries(groupExpansion).filter(([, expanded]) => expanded).map(([key]) => key),
-    [groupExpansion],
-  )
+  const parents = useMemo(() => {
+    const keysByPath = new Map(workspaces.map(workspace => [workspace.path, workspace.workspaceId]))
+    const paths = [...keysByPath.keys()]
+    return new Map<string, WorkspaceId | undefined>(workspaces.map((workspace) => {
+      const path = owningParentFolder(workspace.path, paths)
+      return [workspace.workspaceId, path === undefined ? undefined : keysByPath.get(path)]
+    }))
+  }, [workspaces])
+  const expandedGroups = useMemo(() => {
+    const ancestorKeys = new Set<string | undefined>(parents.values())
+    return [...workspaces.map(workspace => workspace.workspaceId), UNGROUPED_KEY]
+      .filter(key => groupExpansion[key] ?? ancestorKeys.has(key))
+  }, [groupExpansion, parents, workspaces])
   const groups = useMemo(
     () => deriveGroups(list, workspaces, archivedSessionIds, pendingInteractions, {
       expandedGroups,
@@ -252,9 +256,10 @@ function SessionTree({
     [list, workspaces, archivedSessionIds, pendingInteractions, expandedGroups, ungroupedSessionIds],
   )
   useEffect(() => {
-    if (revealGroup === undefined || groupExpansion[revealGroup] === true) return
-    setGroupExpanded(revealGroup, true)
-  }, [groupExpansion, revealGroup, setGroupExpanded])
+    for (let key = revealGroup; key !== undefined; key = parents.get(key)) {
+      if (groupExpansion[key] !== true) setGroupExpanded(key, true)
+    }
+  }, [groupExpansion, parents, revealGroup, setGroupExpanded])
   useEffect(() => {
     if (revealSessionId === undefined || revealGroup === undefined) return
     const group = groups.find(candidate => candidate.key === revealGroup)
@@ -262,12 +267,6 @@ function SessionTree({
     if (collapsedSessionRows(group.sessions).rows.some(row => row.id === revealSessionId)) return
     setExpandedSessionGroups(keys => keys.includes(revealGroup) ? keys : [...keys, revealGroup])
   }, [groups, revealGroup, revealSessionId])
-  const parentPaths = useMemo(() => Object.keys(parentFolders), [parentFolders])
-  const parentOf = (group: GroupNode): string | undefined => owningParentFolder(group.cwd, parentPaths)
-  const revealParent = owningParentFolder(groups.find(group => group.key === revealGroup)?.cwd, parentPaths)
-  useEffect(() => {
-    if (revealParent !== undefined && parentFolders[revealParent] !== true) setParentFolder(revealParent, true)
-  }, [revealParent, parentFolders, setParentFolder])
   const now = Date.now()
   const commitSessionDrag = (activeDrag: DragState, over: NonNullable<DragState['over']>): void => {
     if (sessionDropCommitted.current) return
@@ -325,9 +324,8 @@ function SessionTree({
     if (workspaceDropCommitted.current) return
     workspaceDropCommitted.current = true
     setWorkspaceDrag(null)
-    const source = workspaces.find(workspace => workspace.workspaceId === activeDrag.workspaceId)
-    const owner = owningParentFolder(source?.path, parentPaths)
-    const siblings = workspaces.filter(workspace => owningParentFolder(workspace.path, parentPaths) === owner)
+    const owner = parents.get(activeDrag.workspaceId)
+    const siblings = workspaces.filter(workspace => parents.get(workspace.workspaceId) === owner)
     const rowIndex = siblings.findIndex(workspace => workspace.workspaceId === over.id)
     if (rowIndex === -1) return
     const anchor = over.half === 'before' ? over.id : siblings[rowIndex + 1]?.workspaceId
@@ -341,17 +339,14 @@ function SessionTree({
       console.warn('workspace reorder rejected:', reason)
     })
   }
-  const workspaceDropAtListStart = parentPaths.length === 0 && groups[0]?.workspaceId !== undefined
-    && workspaceDrag?.over?.id === groups[0].workspaceId
+  const rootGroups = groups.filter(group => parents.get(group.key) === undefined)
+  const workspaceDropAtListStart = rootGroups[0]?.workspaceId !== undefined
+    && workspaceDrag?.over?.id === rootGroups[0].workspaceId
     && workspaceDrag.over.half === 'before'
 
-  const draggedWorkspace = workspaceDrag === null
-    ? undefined
-    : workspaces.find(workspace => workspace.workspaceId === workspaceDrag.workspaceId)
-  const draggedParent = owningParentFolder(draggedWorkspace?.path, parentPaths)
-  const renderGroup = (group: GroupNode) => {
+  const renderGroup = (group: GroupNode, depth: number): ReactNode => {
     const workspaceId = group.workspaceId
-    const compatibleDrag = workspaceDrag !== null && draggedParent === parentOf(group)
+    const compatibleDrag = workspaceDrag !== null && parents.get(workspaceDrag.workspaceId) === parents.get(group.key)
     const collapsed = collapsedSessionRows(group.sessions)
     const sessionsExpanded = expandedSessionGroups.includes(group.key)
     const workspaceMarker = workspaceId !== undefined && workspaceDrag?.over?.id === workspaceId
@@ -389,6 +384,7 @@ function SessionTree({
     // (WorkspaceBrowser.module.css).
       <div
         key={group.key}
+        style={{ '--dsh-workspace-indent': `${depth * 12}px` } as CSSProperties}
         className={clsx(
           css.groupSection,
           workspaceMarker === 'before' && css.workspaceDropBefore,
@@ -398,6 +394,7 @@ function SessionTree({
           ? undefined
           : (e) => {
             e.preventDefault()
+            e.stopPropagation()
             if (hoverWorkspace === undefined) {
               e.dataTransfer.dropEffect = 'none'
               setWorkspaceDrag({ ...workspaceDrag, over: null })
@@ -410,6 +407,7 @@ function SessionTree({
           ? undefined
           : (e) => {
             e.preventDefault()
+            e.stopPropagation()
             if (dropWorkspace === undefined) {
               workspaceDropCommitted.current = true
               setWorkspaceDrag(null)
@@ -448,6 +446,11 @@ function SessionTree({
               },
             }}
         />
+        {group.expanded && groups.some(child => parents.get(child.key) === group.key) && (
+          <div role="group" className={css.parentChildren}>
+            {groups.filter(child => parents.get(child.key) === group.key).map(child => renderGroup(child, depth + 1))}
+          </div>
+        )}
         {(sessionsExpanded
           ? group.sessions
           : collapsed.rows
@@ -522,25 +525,10 @@ function SessionTree({
         role="tree"
         aria-label={t('section.sessions')}
       >
-        {groups.length === 0 && parentPaths.length === 0 && (
+        {groups.length === 0 && (
           <div className={css.empty}>{t('empty.none')}</div>
         )}
-        {parentPaths.map(path => (
-          <div key={path} role="treeitem" aria-label={path} aria-expanded={parentFolders[path]}>
-            <ParentFolderRow
-              path={path} expanded={parentFolders[path] === true} home={home} t={t}
-              onToggle={() => { setParentFolder(path, parentFolders[path] !== true) }}
-              onRemove={() => { removeParentFolder(path) }}
-            />
-            {parentFolders[path] === true && (
-              <div role="group" className={css.parentChildren}>
-                {groups.filter(group => parentOf(group) === path).map(renderGroup)}
-                {!groups.some(group => parentOf(group) === path) && <div className={css.empty}>{t('parentFolder.empty')}</div>}
-              </div>
-            )}
-          </div>
-        ))}
-        {groups.filter(group => parentOf(group) === undefined).map(renderGroup)}
+        {rootGroups.map(group => renderGroup(group, 0))}
       </div>
       <span className={css.fade} />
     </div>
@@ -776,7 +764,6 @@ export function WorkspaceBrowser({
   const groupBy = useStore(s => s.groupBy)
   const orderBy = useStore(s => s.orderBy)
   const groupExpansion = useStore(s => s.groupExpansion)
-  const parentFolders = useStore(s => s.parentFolders ?? NO_PARENT_FOLDERS)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
   const workspaceReady = workspacePhase === 'ready' && workspaceStreamState !== 'loading'
   const currentBlank = list.current !== undefined && list.byId[list.current]?.blank === true
@@ -822,7 +809,7 @@ export function WorkspaceBrowser({
     )
   }, [currentBlank, flatMemberIds, list.byId, orderBy, sessionOrderByAccount])
   const activeSessionOrders = useMemo<Readonly<Record<string, readonly string[]>>>(() => Object.fromEntries([
-    ...orderedWorkspaces.map(workspace => [workspace.workspaceId as string, workspace.sessionIds] as const),
+    ...orderedWorkspaces.map(workspace => [workspace.workspaceId, workspace.sessionIds] as const),
     [UNGROUPED_KEY, orderedUngroupedSessionIds] as const,
     [FLAT_SESSION_ORDER_KEY, orderedFlatSessionIds] as const,
   ]), [orderedFlatSessionIds, orderedUngroupedSessionIds, orderedWorkspaces])
@@ -831,7 +818,7 @@ export function WorkspaceBrowser({
     actions.retainAccountKeys([
       UNGROUPED_KEY,
       FLAT_SESSION_ORDER_KEY,
-      ...workspaces.map(workspace => workspace.workspaceId as string),
+      ...workspaces.map(workspace => workspace.workspaceId),
     ])
   }, [actions.retainAccountKeys, workspacePhase, workspaces])
   useEffect(() => {
@@ -1189,10 +1176,6 @@ export function WorkspaceBrowser({
           useDirectoryFlow={useDirectoryFlow}
           renderDirectoryFlow={owner => renderSlot('sidebar.workspaces.directoryFlow', owner)}
           addOnly
-          onPickParentFolder={(path) => {
-            actions.setParentFolder(path, true)
-            actions.setGroupBy('workspace')
-          }}
           side="right"
           onPick={(workspaceId) => {
             setWsPickerOpen(false)
@@ -1264,9 +1247,6 @@ export function WorkspaceBrowser({
                 workspaces={orderedWorkspaces}
                 ungroupedSessionIds={orderedUngroupedSessionIds}
                 workspaceReady={workspaceReady}
-                parentFolders={parentFolders}
-                setParentFolder={actions.setParentFolder}
-                removeParentFolder={actions.removeParentFolder}
                 groupExpansion={groupExpansion}
                 setGroupExpanded={actions.setGroupExpanded}
                 setSessionOrder={saveSessionOrder}

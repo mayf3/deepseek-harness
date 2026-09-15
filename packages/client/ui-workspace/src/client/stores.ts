@@ -18,8 +18,6 @@ export type SessionOrderBy = 'manual' | 'updated'
 /** Workspace browser viewing state persisted across surface remounts and reloads. */
 type WorkspaceViewState = {
   groupBy: SessionGroupBy
-  /** Selected parent paths and expansion; absent in older browser preferences. */
-  parentFolders?: Record<string, boolean>
   orderBy: SessionOrderBy
   /** Explicit zero-or-five-session state keyed by Workspace group identity. */
   groupExpansion: Record<string, boolean>
@@ -32,8 +30,6 @@ type WorkspaceViewState = {
  * return type); drift fails assignability at the defineStore call.
  */
 type WorkspaceViewActions = {
-  setParentFolder: (draft: WorkspaceViewState, path: string, expanded: boolean) => void
-  removeParentFolder: (draft: WorkspaceViewState, path: string) => void
   setGroupBy: (draft: WorkspaceViewState, mode: SessionGroupBy) => void
   setOrderBy: (
     draft: WorkspaceViewState,
@@ -75,8 +71,6 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
     }),
     persist: 'dsh.workspace.view.v5',
     actions: {
-      setParentFolder: (d, path, expanded) => { (d.parentFolders ??= {})[path] = expanded },
-      removeParentFolder: (d, path) => { delete d.parentFolders?.[path] },
       setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
       setOrderBy: (d, mode: SessionOrderBy, initialOrders) => {
         if (mode === d.orderBy) return

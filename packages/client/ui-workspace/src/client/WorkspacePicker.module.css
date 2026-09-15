@@ -18,37 +18,3 @@
 .menuStatus {
   color: var(--dsw-alias-label-secondary);
 }
-
-.pickedDirectory {
-  overflow-wrap: anywhere;
-  font-size: 14px;
-  line-height: 22px;
-}
-
-.groupChoice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 16px;
-  font-size: 14px;
-  line-height: 22px;
-  cursor: pointer;
-}
-
-.groupChoice input {
-  accent-color: var(--dsw-alias-state-business-primary);
-}
-
-.groupHelp,
-.groupPreview {
-  margin: 8px 0 0 24px;
-  font-size: 12px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-secondary);
-  overflow-wrap: anywhere;
-}
-
-.groupPreview {
-  padding-left: 12px;
-  border-left: 1px solid var(--dsw-alias-border-l4);
-}

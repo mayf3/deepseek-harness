@@ -511,6 +511,5 @@
 }
 
 .parentChildren {
-  --dsh-workspace-indent: 12px;
   min-width: 0;
 }
