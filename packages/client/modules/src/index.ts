@@ -23,6 +23,7 @@
  * @module @deepseek-ai/dsh-client-modules
  */
 
+import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -939,10 +940,11 @@ export class ClientModuleRegistry extends Service {
       const bundle = readFileSync(clientPath)
       const chunks = new Map<string, Buffer>()
       const pending = [bundle]
-      for (let index = 0; index < pending.length; index += 1) {
-        const source = pending[index]!.toString('utf8')
+      for (const artifact of pending) {
+        const source = artifact.toString('utf8')
         for (const match of source.matchAll(CLIENT_CHUNK_REQUIRE)) {
-          const fileName = match[2]!
+          const fileName = match[2]
+          assert(fileName !== undefined)
           if (chunks.has(fileName)) continue
           const chunk = readFileSync(join(dirname(clientPath), fileName))
           chunks.set(fileName, chunk)
