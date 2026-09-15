@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本插件汇总每个顶层轮次改动了哪些文件、每个文件的增删行数。它在轮次开始和结束时用 git 对工作树做快照，比较两次快照，并补上 git 覆盖不到的文件工具编辑。Session 日志只收到一条写明轮号的 `workspace/changes` 事件；摘要本身留在 Host 上，通过 `workspaceChanges` 服务提供，直到 Session 释放。只有位于 git 仓库内的工作目录会被记录。Web 的改动文件卡片渲染提供的摘要；模型看不到它。
+本插件汇总每个顶层轮次改动了哪些文件、每个文件的增删行数：比较轮次开始和结束时的 git 工作树快照，再补上 git 覆盖不到的文件工具编辑。不在 git 仓库内或没有 git 时，摘要只列文件工具的编辑。Session 日志只收到一条写明轮号的 `workspace/changes` 事件；摘要留在 Host 上，通过 `workspaceChanges` 服务提供，直到 Session 释放。Web 的改动文件卡片渲染它；模型看不到它。
 
 ## 目录
 
@@ -39,7 +39,7 @@ kind: "package-reference"
 | `outputMaxBytes` | `8388608` | 每条命令保留的 git 输出字节数，diff 列表更大时放弃本轮记录 |
 | `maxFiles` | `500` | 单份摘要携带的最大文件数；`total` 仍报告完整数量 |
 
-工作目录位于 git 仓库内且不是子代理来源的 Session 都会被记录；子代理 Session 和不在任何仓库内的工作目录不记录。快照通过私有 index 写入 Session 自己拥有的临时对象目录，仓库自己的对象库以只读 alternate 的方式挂接；仓库的 index、对象、工作树和 ref 保持不变，用户此前未提交的改动也不会进入摘要。Session 释放时删除该目录。工作目录内的嵌套仓库和 submodule 记录为 gitlink，其内部改动不会出现。没有 git 时——或者 macOS 上只有 `/usr/bin/git` 的开发者工具桩程序时——本插件不记录任何内容，并记录一次日志。
+有工作目录且不是子代理来源的 Session 都会被记录；子代理 Session 不记录。快照通过私有 index 写入 Session 自己拥有的临时对象目录，仓库自己的对象库以只读 alternate 的方式挂接；仓库的 index、对象、工作树和 ref 保持不变，用户此前未提交的改动也不会进入摘要。Session 释放时删除该目录。工作目录内的嵌套仓库和 submodule 记录为 gitlink，其内部改动不会出现。不在任何 git 仓库内的工作目录不做快照。没有 git 时——或者 macOS 上只有 `/usr/bin/git` 的开发者工具桩程序时——同样定位不到仓库，插件记录一次日志。两种情况下摘要都只列下文所述的文件工具编辑，并以工作目录作为工作区；shell 的改动不会出现。
 
 文件工具改动但快照覆盖不到的文件，由这些工具随结果持久化的 hunk 补入，结果没有持久化 hunk 时则取调用自身的参数，也就是新建文件的 `write` 和 `str_replace_editor` 的每一种修改：匹配忽略模式的文件，以及仓库之外的文件。`/tmp` 与平台临时目录下的文件被排除，除非它们位于仓库内。这些文件的行数按记录的 hunk 累加，因此同一轮内对一个文件的重复编辑可能把一行计算多次。快照覆盖范围之外通过 shell 命令做出的改动不会被记录。
 
@@ -87,7 +87,7 @@ git 通过 `subprocess` 能力运行，使用净化后的环境、`GIT_TERMINAL_
 - 有两个 git 功能在快照期间仍会写入仓库自己的 git 目录：`core.splitIndex` 会写 `sharedindex.*` 文件，git-lfs 会对改动文件运行 clean 过滤器并把对象存到 `.git/lfs` 下。
 - 需要 git 2.13 或更高版本以支持 `rev-parse --absolute-git-dir`；不支持的仓库格式或其他 git 失败会带着警告放弃本轮，而不是被当成普通目录。
 - 用户在轮次进行中自己做的编辑会被算到该轮。
-- 不在任何 git 仓库内的工作目录没有卡片；Harness home 下的影子仓库暂缓，直到其排除规则能可靠地代替缺失的 `.gitignore`。
+- 不在任何 git 仓库内的工作目录只列文件工具的编辑，卡片里因此没有 shell 改动；Harness home 下的影子仓库暂缓，直到其排除规则能可靠地代替缺失的 `.gitignore`。
 - 快照覆盖范围之外的文件按 hunk 累加计数，不是首尾对比，且只覆盖文件工具。
 - Windows 路径在 `path` 中保留原生分隔符；`display` 始终用斜杠分隔。
 

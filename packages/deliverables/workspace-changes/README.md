@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This plugin summarizes which files each top-level turn changed, with per-file added and deleted line counts. It snapshots the working tree with git when a turn starts and when it ends, diffs the two snapshots, and adds the file-tool edits that git does not cover. The Session log receives only a `workspace/changes` event naming the turn; the summary itself stays on the Host, served through the `workspaceChanges` service until the Session is disposed. Only a working directory inside a git repository is recorded. The Web changed-files card renders the served summary; the model never sees it.
+This plugin summarizes which files each top-level turn changed, with per-file added and deleted line counts: git snapshots of the working tree at turn start and turn end are diffed, and the file-tool edits git does not cover are added. Outside a git repository, or without git, the summary lists the file-tool edits only. The Session log receives one `workspace/changes` event naming the turn; the summary stays on the Host, served through the `workspaceChanges` service until the Session is disposed. The Web changed-files card renders it; the model never sees it.
 
 ## Table of Contents
 
@@ -39,7 +39,7 @@ The shipped Web bundle mounts this plugin. Mount it in any composition with the 
 | `outputMaxBytes` | `8388608` | Bytes of git output retained per command; a larger diff listing abandons the record |
 | `maxFiles` | `500` | Maximum files carried by one summary; `total` still reports the complete count |
 
-Every Session whose working directory lies inside a git repository and that has no subagent origin is recorded; subagent Sessions and working directories outside any repository are not. Snapshots are written through a private index into a temporary object directory owned by the Session, with the repository's own object store attached as a read-only alternate; the repository's index, objects, work tree, and refs stay untouched, and the user's earlier uncommitted changes never enter a summary. Session disposal removes the directory. Nested repositories and submodules inside the working directory are recorded as gitlinks, so their internal changes do not appear. Without git — or, on macOS, with only the developer-tools stub at `/usr/bin/git` — the plugin records nothing and logs that once.
+Every Session with a working directory and no subagent origin is recorded; subagent Sessions are not. Snapshots are written through a private index into a temporary object directory owned by the Session, with the repository's own object store attached as a read-only alternate; the repository's index, objects, work tree, and refs stay untouched, and the user's earlier uncommitted changes never enter a summary. Session disposal removes the directory. Nested repositories and submodules inside the working directory are recorded as gitlinks, so their internal changes do not appear. A working directory outside any git repository takes no snapshots. Without git — or, on macOS, with only the developer-tools stub at `/usr/bin/git` — no repository is located either, and the plugin logs that once. Either way the summary lists the file-tool edits alone, as described next, with the working directory as the workspace; shell edits are absent.
 
 Files the file tools changed but the snapshots do not cover are added from the hunks those tools persist with their results, or from the call's own arguments when the result persists none — a `write` that creates a file and every `str_replace_editor` mutation: files matching an ignore pattern and files outside the repository. Files under `/tmp` or the platform temporary directory are excluded unless they lie inside the repository. Line counts for these files sum over the recorded hunks, so repeated edits to one file in a turn can count a line more than once. Changes made through shell commands outside the snapshot coverage are not recorded.
 
@@ -87,7 +87,7 @@ Nothing here enters a model request, so provider cache reuse is unaffected.
 - Two git features still write into the repository's own git directory during a snapshot: `core.splitIndex` writes `sharedindex.*` files, and git-lfs runs its clean filter on changed files and stores their objects under `.git/lfs`.
 - git 2.13 or later is required for `rev-parse --absolute-git-dir`; an unsupported repository format or another git failure abandons the turn with a warning rather than being treated as a plain directory.
 - Edits the user makes during a turn are attributed to that turn.
-- A working directory outside any git repository has no card; a shadow repository under the Harness home is deferred until its exclude rules can replace a missing `.gitignore` reliably.
+- A working directory outside any git repository lists file-tool edits only, so shell edits are missing from its card; a shadow repository under the Harness home is deferred until its exclude rules can replace a missing `.gitignore` reliably.
 - Hunk-based counts for files outside snapshot coverage are sums over edits, not a first-to-last diff, and cover file tools only.
 - Windows paths keep native separators in `path`; `display` is always slash-separated.
 

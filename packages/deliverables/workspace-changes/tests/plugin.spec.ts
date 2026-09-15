@@ -231,9 +231,12 @@ describe('workspace-changes in a repository', () => {
 })
 
 describe('workspace-changes without a repository', () => {
-  it('records nothing for a working directory outside any git repository', async () => {
+  it('summarizes file-tool edits only for a working directory outside any git repository', async () => {
     const cwd = await scratchDir('dsh-workspace-changes-plain-', cleanups)
     await writeFile(join(cwd, 'existing.txt'), 'before\n')
+    await writeFile(join(cwd, 'shell.txt'), 'shell\n')
+    const outside = await mkdtemp(join(homedir(), '.dsh-workspace-changes-plain-'))
+    cleanups.push(() => rm(outside, { recursive: true, force: true }))
     const { ctx } = await boot()
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
     const session = ctx.sessions.create(SessionId('plain'), { meta: { cwd } })
@@ -243,9 +246,23 @@ describe('workspace-changes without a repository', () => {
     toolCall(session, 1, 'write', { file_path: 'existing.txt', content: 'after\nmore\n' }, {
       meta: { diffs: [{ path: 'existing.txt', oldText: 'before', newText: 'after\nmore' }] },
     })
+    toolCall(session, 1, 'edit', { file_path: 'existing.txt', old_string: 'more', new_string: 'more\nagain' }, {
+      meta: { diffs: [{ path: 'existing.txt', oldText: 'more', newText: 'more\nagain' }] },
+    })
+    // Shell edits and scratch files under a temporary root stay out; a file elsewhere outside the workspace counts.
+    await writeFile(join(cwd, 'shell.txt'), 'shell\nedited\n')
+    toolCall(session, 1, 'bash', { command: 'x' })
+    toolCall(session, 1, 'write', { file_path: join(tmpdir(), 'scratch.txt'), content: 'scratch\n' }, { meta: { diffs: [] } })
+    toolCall(session, 1, 'str_replace_editor', { command: 'create', path: join(outside, 'note.txt'), file_text: 'one\ntwo\n' })
     endTurn(session, 1)
     await settle(ctx, session)
-    expect(changes(ctx, session)).toEqual([])
+    expect(changes(ctx, session)).toEqual([{
+      turn: 1, cwd, total: 2,
+      files: [
+        { path: 'existing.txt', display: 'existing.txt', added: 4, deleted: 2 },
+        { path: join(await realpath(outside), 'note.txt'), display: `~/${outside.slice(homedir().length + 1)}/note.txt`, added: 2, deleted: 0 },
+      ],
+    }])
     expect(warn.mock.calls.filter(call => String(call[0]).startsWith('workspace-changes:'))).toEqual([])
     await expect(stat(join(cwd, '.git'))).rejects.toThrow()
   })
@@ -301,8 +318,8 @@ describe('workspace-changes without a repository', () => {
 })
 
 describe('workspace-changes without git', () => {
-  it('records nothing and reports the absence once', async () => {
-    const cwd = await scratchDir('dsh-workspace-changes-nogit-', cleanups)
+  it('summarizes file-tool edits only, even inside a repository, and reports the absence once', async () => {
+    const cwd = await repository()
     const { ctx } = await boot()
     vi.spyOn(ctx.subprocess, 'resolveExecutable').mockRejectedValue(new Error('git: not found'))
     const info = vi.spyOn(ctx.logger, 'info').mockImplementation(() => undefined)
@@ -312,10 +329,11 @@ describe('workspace-changes without git', () => {
       await settle(ctx, session)
       await writeFile(join(cwd, `${turn}.txt`), 'x\n')
       toolCall(session, turn, 'bash', { command: 'x' })
+      if (turn === 2) toolCall(session, turn, 'write', { file_path: 'w.txt', content: 'w\n' }, { meta: { diffs: [] } })
       endTurn(session, turn)
       await settle(ctx, session)
     }
-    expect(changes(ctx, session)).toEqual([])
+    expect(changes(ctx, session)).toEqual([{ turn: 2, cwd, total: 1, files: [{ path: 'w.txt', display: 'w.txt', added: 1, deleted: 0 }] }])
     expect(info).toHaveBeenCalledTimes(1)
     expect(info.mock.calls[0]![0]).toContain('git is unavailable')
   })

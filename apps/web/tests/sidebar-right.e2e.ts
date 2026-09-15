@@ -186,6 +186,15 @@ async function setPanelWidth(page: Page, target: number): Promise<void> {
 }
 
 /** Tab titles inside one container, in strip order. */
+/**
+ * The closing prose's inline-code mention of the seeded file. The changed-files
+ * card below the prose offers the same open under the same accessible name, so
+ * the first match in document order is the prose's.
+ */
+function proseChip(root: Page): Locator {
+  return root.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).first()
+}
+
 async function tabTitles(root: Locator): Promise<string[]> {
   return await root.locator('[data-dockkit-tab-title]').allInnerTexts()
 }
@@ -734,7 +743,7 @@ describe('web e2e: shipped right Sidebar', () => {
       // The product's own entry point: the closing prose's file mention. It
       // reaches the Sidebar through openFile → ctx.sidebarRight.openResource, and the
       // text type claims the address.
-      const chip = page.getByRole('button', { name: `Open ${SAMPLE_NAME} in sidebar` })
+      const chip = proseChip(page)
       await chip.click()
       await expect.poll(async () => await tabTitles(column)).toEqual(['Files', SAMPLE_NAME])
 
@@ -756,11 +765,12 @@ describe('web e2e: shipped right Sidebar', () => {
       await shot(page, '06-produced-chip-to-preview')
 
       // The directory scenario's V1 behaviour, asserted in the shipped product:
-      // there is no folder affordance at all. `openFile('.')` would name a
-      // directory, which a text preview correctly refuses, and the native opener
-      // it used to reach is gone — so the row offers nothing rather than a
-      // button that always fails.
-      expect(await page.getByRole('button', { name: /folder/i }).count()).toBe(0)
+      // the prose mention offers no folder affordance. `openFile('.')` would
+      // name a directory, which a text preview correctly refuses. The only
+      // folder action on the page is the changed-files card's header, and only
+      // when the Host has a desktop.
+      const folders = page.getByRole('button', { name: /folder/i })
+      expect(await folders.count()).toBe(await page.locator('[data-changed-files]').getByRole('button', { name: /folder/i }).count())
 
       // Split, then dock-drag: the kit's gestures drive the store's actions.
       await panes.first().locator('[data-dockkit-split-button]').click()
@@ -819,7 +829,7 @@ describe('web e2e: shipped right Sidebar', () => {
         const column = fx.locator('[data-rightbar-col]')
         await ensureExpanded(fx, column)
         await width(column)
-        await fx.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
+        await proseChip(fx).click()
         await column.locator('[data-textpreview-state="text"]').waitFor({ timeout: 15_000 })
         const wrap = column.locator('[data-textpreview-tool="wrap"]')
         expect(await wrap.getAttribute('aria-pressed')).toBe('true')
@@ -888,7 +898,7 @@ describe('web e2e: shipped right Sidebar', () => {
       //    leave it standing, since a pane emptied by a move is dropped.
       const first = panes.first()
       const strip = first.locator('[data-dockkit-strip]')
-      await page.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
+      await proseChip(page).click()
       await expect.poll(async () => await tabTitles(first)).toEqual(['Files', SAMPLE_NAME])
       const order = await tabTitles(first)
       // The insertion index is measured against chip midpoints, not strip width.
@@ -962,7 +972,7 @@ describe('web e2e: shipped right Sidebar', () => {
       const column = await resetSidebar(page)
       const panes = column.locator('[data-dockkit-pane]')
       expect(await column.locator('[data-dockkit-tab-close]').count()).toBe(1)
-      await page.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
+      await proseChip(page).click()
       await expect.poll(async () => await tabTitles(panes.first())).toEqual(['Files', SAMPLE_NAME])
       await panes.first().locator('[data-dockkit-split-button]').click()
       await expect.poll(async () => await panes.count()).toBe(2)
@@ -998,7 +1008,7 @@ describe('web e2e: shipped right Sidebar', () => {
       // sample file, close the guide (an ordinary close with two tabs), then
       // close the file: the column collapses in the same gesture, and the
       // settle rule reseeds the current default, so reopening shows Start.
-      await page.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
+      await proseChip(page).click()
       await expect.poll(async () => await tabTitles(column)).toEqual(['Start', SAMPLE_NAME])
       await column.locator('[data-dockkit-tab]').first().hover()
       await column.locator('[data-dockkit-tab-close]').first().click()

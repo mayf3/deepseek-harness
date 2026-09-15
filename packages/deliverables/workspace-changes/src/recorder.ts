@@ -21,23 +21,29 @@ export interface RecorderEnvironment {
   warn: (message: string) => void
 }
 
-/** Everything a located repository needs, resolved once per Session. */
-interface Located {
-  git: GitRunner
-  workspace: GitWorkspace
+/** Canonical paths every comparison and display uses, resolved once per Session. */
+interface Paths {
   /** Canonical working directory; git reports symlink-resolved paths, so every comparison uses that form. */
   cwd: string
   /** Canonical home directory abbreviated as `~` in display paths. */
   home: string
-  /** Temporary roots whose files never enter a summary. */
+  /** Temporary roots whose files outside the workspace never enter a summary. */
   temporaryRoots: readonly string[]
 }
 
-interface Baseline extends Located { tree: string }
+/** The repository enclosing the working directory and the runner that snapshots it. */
+interface Repository {
+  git: GitRunner
+  workspace: GitWorkspace
+}
+
+/** The turn-start snapshot of a located repository. */
+interface Baseline extends Repository { tree: string }
 
 /** Everything one turn accumulates; a new turn gets a new object so queued work for an older turn keeps its own. */
 interface TurnState {
   readonly turn: number
+  /** Set once the turn-start snapshot exists; a turn without one summarizes file-tool hunks only. */
   baseline: Baseline | null
   /** Hunks derived from each mutation call's arguments, or null for a call that changes no file. */
   readonly calls: Map<string, FileDiff[] | null>
@@ -60,14 +66,17 @@ function freshState(turn: number): TurnState {
  * summary this recorder keeps. Snapshot objects live in a temporary directory
  * owned by the recorder; disposal removes it together with the summaries.
  * Tool execution waits for pending work so a snapshot never races a mutation.
- * A working directory outside any repository records nothing.
+ * A working directory outside any repository, or a Host without git, gets no
+ * snapshot; its summary lists the files the file tools changed.
  */
 export class TurnRecorder {
   private chain: Promise<void> = Promise.resolve()
   /** The open turn; before the first `turn/start` it is an empty placeholder no event can match. */
   private state = freshState(0)
+  /** Canonical paths, resolved by the first turn. */
+  private paths: Paths | undefined
   /** The located repository, reused across turns once found; null keeps retrying each turn. */
-  private located: Located | null = null
+  private repository: Repository | null = null
   /** Temporary directory holding this Session's snapshot objects, created with the first located repository. */
   private objectsDir: string | undefined
   /** Summaries by the sequence of the event that announced them. */
@@ -88,10 +97,11 @@ export class TurnRecorder {
     const state = freshState(turn)
     this.state = state
     void this.enqueue(async (signal) => {
-      const located = await this.locate(signal)
-      if (located === null) return
-      const tree = await snapshotTree(located.git, located.workspace, signal)
-      state.baseline = { ...located, tree }
+      this.paths ??= { cwd: await realpath(this.cwd), home: await canonicalPath(homedir()), temporaryRoots: await temporaryRoots() }
+      const repository = await this.locate(this.paths.cwd, signal)
+      if (repository === null) return
+      const tree = await snapshotTree(repository.git, repository.workspace, signal)
+      state.baseline = { ...repository, tree }
     })
   }
 
@@ -186,46 +196,53 @@ export class TurnRecorder {
     if (!this.lifetime.signal.aborted) this.env.warn(`workspace-changes: ${String(error)}`)
   }
 
-  /** The repository for this Session together with the canonical paths every comparison uses, located once. */
-  private async locate(signal: AbortSignal): Promise<Located | null> {
-    if (this.located !== null) return this.located
+  /** The repository enclosing the working directory, located once; null keeps retrying each turn. */
+  private async locate(cwd: string, signal: AbortSignal): Promise<Repository | null> {
+    if (this.repository !== null) return this.repository
     const git = await this.env.git
     if (git === null) return null
-    const cwd = await realpath(this.cwd)
     const workspace = await locateGitWorkspace(git, cwd, async () => {
       this.objectsDir ??= await mkdtemp(join(this.env.tempRoot, 'dsh-workspace-changes-objects-'))
       return this.objectsDir
     }, signal)
     if (workspace === null) return null
-    this.located = { git, workspace, cwd, home: await canonicalPath(homedir()), temporaryRoots: await temporaryRoots() }
-    return this.located
+    this.repository = { git, workspace }
+    return this.repository
   }
 
   private async record(state: TurnState, signal: AbortSignal): Promise<void> {
-    if (state.baseline === null || state.lastToolResultSeq < 0) return
+    const paths = this.paths
+    if (paths === undefined || state.lastToolResultSeq < 0) return
     state.attemptedAfterSeq = state.lastToolResultSeq
-    const baseline = state.baseline
-    const { git, workspace, tree: before, cwd } = baseline
-    const root = workspace.root
-    const after = await snapshotTree(git, workspace, signal)
+    const { baseline } = state
+    // Without a snapshot the working directory itself bounds the workspace.
+    const root = baseline?.workspace.root ?? paths.cwd
     const files = new Map<string, WorkspaceChangedFile>()
-    for (const entry of await diffTrees(git, workspace, before, after, signal)) {
-      const absolute = resolve(root, entry.path)
-      files.set(absolute, changedFile(baseline, absolute, entry))
+    if (baseline !== null) {
+      const after = await snapshotTree(baseline.git, baseline.workspace, signal)
+      for (const entry of await diffTrees(baseline.git, baseline.workspace, baseline.tree, after, signal)) {
+        const absolute = resolve(root, entry.path)
+        files.set(absolute, changedFile(paths, root, absolute, entry))
+      }
     }
     // File-tool hunks by canonical absolute path, for the files snapshots do not cover.
     const hunks = new Map<string, FileDiff[]>()
     for (const [path, list] of state.hunks) {
-      const absolute = await canonicalPath(resolve(cwd, path))
+      const absolute = await canonicalPath(resolve(paths.cwd, path))
       if (!files.has(absolute)) hunks.set(absolute, [...hunks.get(absolute) ?? [], ...list])
     }
     const workTreePath = (absolute: string): string => toPosix(relative(root, absolute))
-    const inRepository = [...hunks.keys()].filter(absolute => isInside(root, absolute))
-    const ignored = await ignoredPaths(git, workspace, inRepository.map(workTreePath), signal)
+    const inWorkspace = [...hunks.keys()].filter(absolute => isInside(root, absolute))
+    // A snapshot covers every workspace file except the ignored ones; without one, every file-tool edit counts.
+    const uncoveredInWorkspace = baseline === null
+      ? new Set(inWorkspace.map(workTreePath))
+      : await ignoredPaths(baseline.git, baseline.workspace, inWorkspace.map(workTreePath), signal)
     for (const [absolute, list] of hunks) {
-      // Inside the repository only ignored files are uncovered; outside it, scratch files under a temporary root stay out.
-      const uncovered = isInside(root, absolute) ? ignored.has(workTreePath(absolute)) : !isTemporaryPath(absolute, baseline.temporaryRoots)
-      if (uncovered) files.set(absolute, changedFile(baseline, absolute, { ...hunkLineCounts(list), binary: false }))
+      // Outside the workspace, scratch files under a temporary root stay out.
+      const uncovered = isInside(root, absolute)
+        ? uncoveredInWorkspace.has(workTreePath(absolute))
+        : !isTemporaryPath(absolute, paths.temporaryRoots)
+      if (uncovered) files.set(absolute, changedFile(paths, root, absolute, { ...hunkLineCounts(list), binary: false }))
     }
     const sorted = [...files.values()].sort(compareDisplay)
     // An empty list after an earlier in-turn record supersedes that record.
@@ -237,11 +254,11 @@ export class TurnRecorder {
 }
 
 function changedFile(
-  { cwd, workspace, home }: Baseline, absolute: string, counts: { added: number; deleted: number; binary: boolean },
+  { cwd, home }: Paths, root: string, absolute: string, counts: { added: number; deleted: number; binary: boolean },
 ): WorkspaceChangedFile {
   return {
     path: durablePathOf(absolute, cwd),
-    display: displayPathOf(absolute, cwd, workspace.root, home),
+    display: displayPathOf(absolute, cwd, root, home),
     added: counts.added,
     deleted: counts.deleted,
     ...counts.binary ? { binary: true as const } : {},

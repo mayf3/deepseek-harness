@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-与 `ui-conversation` 和 Host 侧的 [workspace-changes](../../deliverables/workspace-changes/README.zh.md) 插件一起挂载本插件；已完成轮次随即以改动文件卡片收尾，位于收尾消息正文与其动作页脚之间。没有可提供的摘要时——工作区不在任何 git 仓库内、Host 上没有 git、该插件被组合出去，或该轮之后 Host 重启过——卡片不出现，只保留交付卡片与正文链接。
+与 `ui-conversation` 和 Host 侧的 [workspace-changes](../../deliverables/workspace-changes/README.zh.md) 插件一起挂载本插件；已完成轮次随即以改动文件卡片收尾，位于收尾消息正文与其动作页脚之间。没有可提供的摘要时——本轮没有改动任何文件、该插件被组合出去，或该轮之后 Host 重启过——卡片不出现，只保留交付卡片与正文链接；工作区不在 git 仓库内时摘要只列文件工具的编辑。
 
 <a id="explicit-deliveries"></a>
 ### 显式交付

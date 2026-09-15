@@ -3,8 +3,8 @@
  * snapshots taken at turn start and turn end plus the hunks file tools persist
  * for paths git does not cover. Each summary is announced by a `workspace/changes`
  * Session event that carries only the turn number and is served through the
- * `workspaceChanges` service until the Session is disposed. Only a working
- * directory inside a git repository is recorded.
+ * `workspaceChanges` service until the Session is disposed. Outside a git
+ * repository, or without git, the summary lists file-tool edits only.
  */
 import { homedir, tmpdir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
@@ -103,7 +103,7 @@ export function apply(ctx: Context, config: Config): void {
   const gitRunner = (): Promise<GitRunner | null> => {
     runner ??= resolveGit(ctx, lifetime.signal).then((executable) => {
       if (executable === null) {
-        ctx.logger.info('workspace-changes: git is unavailable; turn file changes are not recorded')
+        ctx.logger.info('workspace-changes: git is unavailable; only file-tool edits are summarized')
         return null
       }
       return new GitRunner(ctx.subprocess, executable, { timeoutMs: config.timeoutMs, outputMaxBytes: config.outputMaxBytes })

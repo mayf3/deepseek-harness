@@ -14,7 +14,7 @@ The Host [workspace-changes](../../../../packages/deliverables/workspace-changes
 
 The recorder snapshots the working tree with git at turn start and turn end: `add --all` into a private index seeded from the repository's index, then `write-tree`. Both write into a temporary object directory owned by the Session while the repository's object store is attached as a read-only alternate, so the user's repository gains no objects; keeping every captured byte outside the workspace follows the workspace change journal POC (#2973) and costs nothing measurable because the stat cache lives in the index. The two tree ids are diffed with `diff-tree -r -M --numstat`, so the summary contains exactly the turn's changes — the user's earlier uncommitted work, staged or not, is part of the baseline — and commits the model makes mid-turn cannot hide changes. The repository's own index, objects, work tree, and refs are never modified. On a 10k-file repository one snapshot costs about 60 ms and the diff about 10 ms; the baseline runs concurrently with the first model request, and tool execution waits for it.
 
-Git is the default executable on `PATH`; no environment plugin is consulted. Only a working directory inside a git repository is recorded; outside any repository, or without git, the plugin records nothing and the card is absent. Nested repositories and submodules are gitlinks and are not descended into.
+Git is the default executable on `PATH`; no environment plugin is consulted. Outside any repository, or without git, no snapshot is taken and the summary lists the file-tool edits alone, with the working directory as the workspace, so the card still appears but misses shell edits. Nested repositories and submodules are gitlinks and are not descended into.
 
 Changes outside snapshot coverage are handled by source. File-tool edits to ignored files and to files outside the work tree join the same list with counts summed from the hunks the tools persist with their results, or from the call's arguments when a result persists none, as a `write` that creates a file and every `str_replace_editor` mutation do; no extra baseline is captured. Files under the temporary directories are omitted unless they lie inside the working directory; a file left in `/tmp` needs `present` to reach the user. Shell edits outside coverage are a known limitation.
 
@@ -32,7 +32,7 @@ The log deliberately carries nothing but the turn number. Summaries, snapshot tr
 
 **A git tag or `stash create` per turn** leaves refs in the user's repository or omits untracked files; a tree written through a private index does neither.
 
-**A pure-JavaScript git or a bundled binary for hosts without git** adds megabytes and a platform matrix for users who mostly run without the card; the card is simply absent until git exists.
+**A pure-JavaScript git or a bundled binary for hosts without git** adds megabytes and a platform matrix for users who mostly run without the card; until git exists the card lists file-tool edits only.
 
 **Recording the pre-edit file content at first touch** would make hunk counts exact and enable full-file diffs for uncovered files, but requires the file tools to hand their pre-read content to the recorder; the persisted hunks already carry the before and after text of each edit for that purpose.
 
@@ -42,7 +42,7 @@ The log deliberately carries nothing but the turn number. Summaries, snapshot tr
 
 **An environment-provider seam for locating git** was raised by the team but not settled; the plugin uses `PATH` and keeps its lookup in one place.
 
-**A shadow repository for working directories outside any repository** — a git directory under the Harness home with the work tree pointing at the working directory — would give those users the card without adding a `.git`, but a shadow repository has no `.gitignore`, and a configured exclude list cannot reliably keep build outputs, caches, and dependency trees out of every project layout. It is deferred until that exclude policy is settled; the recorder already treats the repository as an input, so adding the tier changes only where the snapshot goes.
+**A shadow repository for working directories outside any repository** — a git directory under the Harness home with the work tree pointing at the working directory — would add shell edits to those users' card without adding a `.git`, but a shadow repository has no `.gitignore`, and a configured exclude list cannot reliably keep build outputs, caches, and dependency trees out of every project layout. It is deferred until that exclude policy is settled; the recorder already treats the repository as an input, so adding the tier changes only where the snapshot goes.
 
 ## Consequences
 
