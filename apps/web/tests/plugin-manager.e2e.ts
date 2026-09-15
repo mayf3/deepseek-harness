@@ -74,13 +74,18 @@ describe('web e2e: plugin manager', () => {
     const panel = await openPluginsPanel()
 
     await panel.getByText('示例组合包', { exact: true }).waitFor({ timeout: 20_000 })
-    expect(await panel.getByText('示例插件', { exact: true }).count()).toBe(1)
-    // Non-bundle packages remain installed and expose their uninstall on the detail page.
+    // Non-bundle packages remain installed, folded under their own group, and expose their uninstall on the detail page.
+    expect(await panel.getByText('示例插件', { exact: true }).count()).toBe(0)
     const toggle = panel.getByRole('switch', { name: '启用 示例组合包' })
     expect(await toggle.getAttribute('aria-checked')).toBe('false')
     expect(await panel.getByRole('switch', { name: '启用 示例插件' }).count()).toBe(0)
     expect(await panel.getByRole('button', { name: '加入全局' }).count()).toBe(0)
     expect(await panel.getByRole('button', { name: '卸载 示例插件' }).count()).toBe(0)
+    const others = panel.getByRole('button', { name: '非插件包依赖', exact: true })
+    expect(await others.getAttribute('aria-expanded')).toBe('false')
+    expect(await panel.getByRole('button', { name: '查看 示例插件' }).count()).toBe(0)
+    await others.click()
+    expect(await panel.getByText('示例插件', { exact: true }).count()).toBe(1)
     await panel.getByRole('button', { name: '查看 示例插件' }).click()
     await panel.getByRole('button', { name: '卸载 示例插件' }).waitFor({ timeout: 5_000 })
     await panel.getByText('此包未提供组合包 patch，可通过 Cordis 配置手动加载模块。', { exact: true }).waitFor({ timeout: 5_000 })
@@ -89,6 +94,34 @@ describe('web e2e: plugin manager', () => {
 
     const snapshot = await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MANAGER_EXPECTED, snapshot, MODE)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
+  it('checks a spec before installing it and words what the check refused', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-install'))
+    const panel = await openPluginsPanel()
+    await panel.getByRole('button', { name: '添加插件', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '添加插件' })
+    await dialog.waitFor({ timeout: 10_000 })
+    const field = dialog.getByRole('textbox', { name: '包名或地址' })
+    const install = dialog.getByRole('button', { name: '安装', exact: true })
+    expect(await install.isDisabled()).toBe(true)
+    // A name the list already shows is refused without asking the Host.
+    await field.fill('@fixture/bundle')
+    await install.click()
+    await dialog.getByRole('alert').waitFor({ timeout: 5_000 })
+    expect(await dialog.getByRole('alert').textContent()).toBe('该插件已安装')
+    // A path the Host cannot read as a package is refused with its reason, and the spec stays editable.
+    await field.fill(join(scaffold.harnessHome, 'no-such-plugin'))
+    await install.click()
+    await expect.poll(() => dialog.getByRole('alert').textContent(), { timeout: 10_000 }).toBe('该路径不存在或不是有效的插件包')
+    expect(await field.isDisabled()).toBe(false)
+    // A name the registry would refuse never reaches it.
+    await field.fill('Not A Package')
+    await install.click()
+    await expect.poll(() => dialog.getByRole('alert').textContent(), { timeout: 10_000 }).toContain('无法识别这个包名或地址')
+    await dialog.getByRole('button', { name: '关闭' }).click()
+    await expect.poll(() => page.getByRole('dialog', { name: '添加插件' }).count(), { timeout: 5_000 }).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 

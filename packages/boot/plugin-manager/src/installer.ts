@@ -7,7 +7,7 @@
 
 import { spawn as spawnChild } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { readFileSync, writeFileSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import type { Readable } from 'node:stream'
 import { finished } from 'node:stream/promises'
 import { spawnSubprocess } from '@deepseek-ai/dsh-subprocess-local/spawn'
@@ -25,8 +25,13 @@ import {
   type ProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
 import { PluginOperationError } from './errors.ts'
-import { dependenciesOf, messageOf, NAME, type PluginToolingConfig, type SpawnLike } from './helpers.ts'
-import type { PluginInstallLogChunk, PluginInstallRejection, PluginInstallResult, PluginInstallRequestId } from './types.ts'
+import { bundlesOf, dependenciesOf, messageOf, NAME, optional, type PluginToolingConfig, type SpawnLike } from './helpers.ts'
+import { classifyInstallFailure } from './install-failure.ts'
+import { parseInstallSpec } from './install-spec.ts'
+import type {
+  PluginInspectProblem, PluginInstallFailureKind, PluginInstallLogChunk, PluginInstallRejection, PluginInstallRequestId,
+  PluginInstallResult, PluginSpecInspection,
+} from './types.ts'
 
 /** The manager owns cancellation until prepared transfers control to runtime application. */
 export interface PluginInstallControl {
@@ -84,6 +89,40 @@ export interface PluginInstallerOptions {
 
 /** The installed package's manifest slice the view reads. */
 export type InstalledManifest = ProfileManifest & { description?: string; dsh?: ProfileManifest['dsh'] & { title?: string } }
+
+/** The fields an inspection reads off a manifest, on disk or as the registry reports it. */
+interface InspectedManifest {
+  readonly name?: unknown
+  readonly version?: unknown
+  readonly description?: unknown
+  readonly dsh?: { readonly title?: unknown; readonly bundle?: unknown } | null
+}
+
+/** How one quiet pnpm run ended. */
+interface QuietRun {
+  readonly exitCode: number | null
+  readonly stdout: string
+  readonly stderr: string
+  readonly kind: PluginInstallFailureKind | null
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === 'string' && value !== '' ? value : undefined
+}
+
+/** The manifest facts an inspection reports, with only the fields the manifest carries. */
+function inspectionOf(kind: PluginSpecInspection['kind'], manifest: InspectedManifest): PluginSpecInspection {
+  const dsh = manifest.dsh ?? undefined
+  const bundle = dsh?.bundle
+  return {
+    kind,
+    ...optional('name', stringField(manifest.name)),
+    ...optional('version', stringField(manifest.version)),
+    ...optional('description', stringField(manifest.description)),
+    ...optional('title', stringField(dsh?.title)),
+    bundle: bundle !== undefined && bundle !== null,
+  }
+}
 
 /**
  * Installs and removes packages in one profile with pnpm, and reads their declarations.
@@ -223,6 +262,129 @@ export class PluginInstaller {
   }
 
   /**
+   * Read what a spec names before installing it: its form, and for a registry
+   * name or a directory the package's name, version, description, title, and
+   * whether it declares a bundle. A registry name is asked of the registry
+   * through `pnpm view`, run in the profile directory so the same registry,
+   * proxy, and auth settings apply as to the install itself; a git or tarball
+   * spec is only checked for form, and a tarball on disk for existence.
+   * @param spec - what would be installed, in pnpm's own vocabulary.
+   * @param signal - cancels the registry lookup.
+   * @returns the inspection.
+   * @throws {PluginOperationError} `plugins/inspect-rejected` with the problem: an
+   * `invalid-spec`, a package `already-installed` (a dependency or a template bundle),
+   * a registry name `not-found` (no such package, or no version in the range), a path that is
+   * `not-a-package`, a `network` failure reaching the registry, or an `unknown` lookup failure.
+   */
+  async inspect(spec: string, signal?: AbortSignal): Promise<PluginSpecInspection> {
+    const parsed = parseInstallSpec(spec)
+    const manifest = readProfileManifest(NAME, this.options.profileDir)
+    const known = new Set([...bundlesOf(manifest), ...Object.keys(dependenciesOf(manifest))])
+    const rejected = (problem: PluginInspectProblem, reason: string): PluginOperationError<'plugins/inspect-rejected'> =>
+      new PluginOperationError('plugins/inspect-rejected', `${NAME}: ${reason}: ${parsed.spec}`, { spec: parsed.spec, problem, reason })
+    const assertNew = (name: string): void => {
+      if (known.has(name)) throw rejected('already-installed', `${name} is already installed`)
+    }
+    switch (parsed.kind) {
+      case 'path': {
+        if (!existsSync(parsed.path)) throw rejected('not-a-package', 'the path does not exist')
+        let read: InspectedManifest
+        try {
+          read = JSON.parse(readFileSync(join(parsed.path, 'package.json'), 'utf8')) as InspectedManifest
+        } catch (error) {
+          throw rejected('not-a-package', `no readable package.json at the path: ${messageOf(error)}`)
+        }
+        const inspection = inspectionOf('path', read)
+        if (inspection.name === undefined) throw rejected('not-a-package', 'the package.json names no package')
+        assertNew(inspection.name)
+        return inspection
+      }
+      case 'tarball': {
+        if (parsed.path !== undefined && !existsSync(parsed.path)) throw rejected('not-a-package', 'the tarball does not exist')
+        return { kind: 'tarball', bundle: null }
+      }
+      case 'git':
+        return { kind: 'git', bundle: null }
+      case 'registry': {
+        assertNew(parsed.name)
+        const run = await this.runQuietly(['view', parsed.spec, 'name', 'version', 'description', 'dsh', '--json'], signal)
+        if (run.kind !== null) {
+          const log = run.stderr.trim() || run.stdout.trim()
+          switch (run.kind) {
+            case 'not-found':
+            case 'no-matching-version':
+              throw rejected('not-found', log)
+            case 'network':
+              throw rejected('network', log)
+            default:
+              throw rejected('unknown', log || `pnpm view exited with ${String(run.exitCode)}`)
+          }
+        }
+        let answer: unknown
+        try {
+          answer = JSON.parse(run.stdout)
+        } catch (error) {
+          throw rejected('unknown', `unreadable pnpm view output: ${messageOf(error)}`)
+        }
+        // A range that several versions satisfy answers one object per version, newest last.
+        const latest: unknown = Array.isArray(answer) ? answer.at(-1) : answer
+        if (typeof latest !== 'object' || latest === null) throw rejected('unknown', 'pnpm view answered no package')
+        const inspection = inspectionOf('registry', latest)
+        return inspection.name === undefined ? { ...inspection, name: parsed.name } : inspection
+      }
+      /* v8 ignore next -- closed-union exhaustiveness guard */
+      default: return parsed satisfies never
+    }
+  }
+
+  /**
+   * Run one pnpm command whose output is answered, not streamed: a registry
+   * lookup, bounded by `inspectTimeoutMs` and the caller's signal.
+   */
+  private async runQuietly(args: readonly string[], signal: AbortSignal | undefined): Promise<QuietRun> {
+    const { color, config, profileDir } = this.options
+    const deadline = new AbortController()
+    const timer = setTimeout(() => { deadline.abort() }, config.inspectTimeoutMs)
+    let stdout = ''
+    let stderr = ''
+    let exitCode: number | null = null
+    let cause: unknown
+    try {
+      const child = this.spawn({
+        argv: [config.pnpmCommand, ...args], cwd: profileDir, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
+        graceMs: config.installKillGraceMs, signal: signal === undefined ? deadline.signal : AbortSignal.any([deadline.signal, signal]),
+        env: { ...process.env, FORCE_COLOR: color ? '1' : '0' },
+      })
+      const out = child.stdout as Readable
+      const err = child.stderr as Readable
+      out.setEncoding('utf8')
+      err.setEncoding('utf8')
+      out.on('data', (text: string) => { stdout += text })
+      err.on('data', (text: string) => { stderr += text })
+      try {
+        const [outcome] = await Promise.all([child.done, finished(out), finished(err)])
+        exitCode = outcome.exitCode
+      } finally {
+        await child.waitForExit()
+      }
+      if (deadline.signal.aborted) cause = new Error(`${NAME}: pnpm ${args.join(' ')} timed out after ${String(config.inspectTimeoutMs)}ms`)
+    } catch (error) {
+      cause = error
+    } finally {
+      clearTimeout(timer)
+    }
+    const plain = stderr.replace(ANSI_SEQUENCE, '')
+    const log = cause === undefined ? plain : `${plain}${messageOf(cause)}\n`
+    const failed = exitCode !== 0 || cause !== undefined
+    return {
+      exitCode,
+      stdout: stdout.replace(ANSI_SEQUENCE, ''),
+      stderr: log,
+      kind: failed ? classifyInstallFailure({ log, cause, timedOut: deadline.signal.aborted }) : null,
+    }
+  }
+
+  /**
    * Run `pnpm remove` and reconcile the layer list.
    * @param packageName - the dependency to remove.
    * @param control - optional cancellation for this package operation.
@@ -315,16 +477,19 @@ export class PluginInstaller {
       record('stderr', `${message}\n`)
       this.options.installLog({ ...request, jobId, argv, cwd: profileDir, spec, stream: 'stderr', text: '', exitCode })
       if (error instanceof PluginOperationError && error.code === 'plugins/install-cancelled') throw error
-      throw new PluginOperationError('plugins/install-failed', `${NAME}: ${message}`, { spec, exitCode, log: tail.join('') }, { cause: error })
+      const log = tail.join('')
+      const kind = classifyInstallFailure({ log, cause: error, timedOut: deadline.signal.aborted })
+      throw new PluginOperationError('plugins/install-failed', `${NAME}: ${message}`, { spec, exitCode, log, kind }, { cause: error })
     } finally {
       clearTimeout(timer)
     }
     this.options.installLog({ ...request, jobId, argv, cwd: profileDir, spec, stream: 'stdout', text: '', exitCode })
     if (exitCode !== 0) {
+      const log = tail.join('')
       throw new PluginOperationError(
         'plugins/install-failed',
         `${NAME}: pnpm ${args.join(' ')} exited with ${String(exitCode)} in ${profileDir}`,
-        { spec, exitCode, log: tail.join('') },
+        { spec, exitCode, log, kind: classifyInstallFailure({ log }) },
       )
     }
     return jobId

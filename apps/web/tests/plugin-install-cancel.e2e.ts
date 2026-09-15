@@ -9,7 +9,7 @@ import { expect, it } from 'vitest'
 import { launchWebScaffold, captureStableAria, compareOrRefreshGolden, webSnapshotMode, watchConsole, type WebScaffold } from './scaffold.ts'
 import { ZH_BROWSER_LOCALE } from './support.ts'
 
-it('cancels installation through the UI, restores files, and accepts a retry', async () => {
+it('cancels installation through the UI, restores files, and offers the spec again', async () => {
   const scratch = await mkdtemp(join(tmpdir(), 'dsh-install-cancel-'))
   const overlay = join(scratch, 'cordis.patch.yml')
   await writeFile(overlay, `- id: plugin-manager\n  config: ${JSON.stringify({ pnpmCommand: process.execPath, installTimeoutMs: 60_000, installKillGraceMs: 50 })}\n`)
@@ -23,7 +23,9 @@ it('cancels installation through the UI, restores files, and accepts a retry', a
       const manifest = await readFile(manifestPath, 'utf8')
       const lockPath = join(profile, 'pnpm-lock.yaml')
       await writeFile(lockPath, 'original lockfile\n')
-      // Node stands in for the pnpm executable; the same installer owns and stops this real child.
+      // Node stands in for the pnpm executable: `view` answers the check that precedes the run,
+      // and the same installer owns and stops the real `add` child.
+      await writeFile(join(profile, 'view'), 'console.log(JSON.stringify({ name: "slow-package", version: "1.0.0" }))\n')
       await writeFile(join(profile, 'add'), `
         import('node:fs').then(fs => {
         fs.writeFileSync('package.json', JSON.stringify({ ...JSON.parse(fs.readFileSync('package.json', 'utf8')), dependencies: { partial: '1.0.0' } }));
@@ -40,12 +42,17 @@ it('cancels installation through the UI, restores files, and accepts a retry', a
       await page.getByRole('navigation', { name: '全局面板' }).getByRole('button', { name: '插件', exact: true }).click()
       const panel = page.locator('[data-plugin-panel]')
       await panel.getByRole('button', { name: '添加插件', exact: true }).click()
-      const dialog = page.getByRole('dialog', { name: '添加插件' })
+      // The dialog is named after its current screen, so it is found by role alone.
+      const dialog = page.getByRole('dialog')
       await dialog.getByRole('textbox').fill('slow-package')
       await dialog.getByRole('button', { name: '安装', exact: true }).click()
+      // The check passed: the running screen names the package and folds pnpm's output behind the details.
+      await dialog.getByText('版本 1.0.0', { exact: true }).waitFor()
+      await dialog.getByRole('button', { name: '查看安装详情', exact: true }).click()
       await dialog.getByText('Waiting for package download', { exact: true }).waitFor()
       await dialog.getByRole('button', { name: '取消安装', exact: true }).click()
-      await dialog.getByText('已取消安装，本次未继续启用插件。下载缓存或已解包文件可能保留，需要时可重新安装。', { exact: true }).waitFor()
+      // The Host's confirmation returns the dialog to the spec and says so in a toast.
+      await page.getByText('已取消安装，本次未继续启用插件。下载缓存或已解包文件可能保留，需要时可重新安装。', { exact: true }).waitFor()
       expect(await readFile(manifestPath, 'utf8')).toBe(manifest)
       expect(await readFile(lockPath, 'utf8')).toBe('original lockfile\n')
       expect(await dialog.getByRole('textbox').inputValue()).toBe('slow-package')
@@ -54,9 +61,10 @@ it('cancels installation through the UI, restores files, and accepts a retry', a
         .split(scaffold.harnessHome).join('{{harnessHome}}')
       await compareOrRefreshGolden(fileURLToPath(new URL('./expected/plugin-install-cancel/cancelled.expected.md', import.meta.url)), snapshot, webSnapshotMode())
       await writeFile(join(profile, 'add'), 'console.log("Retry completed")\n')
-      await dialog.getByRole('button', { name: '重试', exact: true }).click()
+      await dialog.getByRole('button', { name: '安装', exact: true }).click()
+      await dialog.getByRole('button', { name: '完成', exact: true }).waitFor()
+      await dialog.getByRole('button', { name: '查看安装详情', exact: true }).click()
       await dialog.getByText('Retry completed', { exact: true }).waitFor()
-      await expect.poll(() => dialog.getByRole('button', { name: '完成', exact: true }).count()).toBeGreaterThan(0)
       expect(tripwire.pageErrors).toEqual([])
     } finally { await browser.close() }
   } finally {

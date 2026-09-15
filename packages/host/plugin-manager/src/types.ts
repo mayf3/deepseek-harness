@@ -20,8 +20,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'plugins/not-enableable': PluginOperationDetailsMap['plugins/not-enableable']
     /** Preparation or the root Include rejected enablement; the layer selection was reverted. */
     'plugins/enable-failed': PluginOperationDetailsMap['plugins/enable-failed']
-    /** pnpm exited non-zero, could not be spawned, or timed out. */
+    /** pnpm exited non-zero, could not be spawned, or timed out; `kind` classifies the failure. */
     'plugins/install-failed': PluginOperationDetailsMap['plugins/install-failed']
+    /** The spec cannot be installed as given; `problem` says why. */
+    'plugins/inspect-rejected': PluginOperationDetailsMap['plugins/inspect-rejected']
     /** The installation stopped and its manifest and lockfile were restored. */
     'plugins/install-cancelled': PluginOperationDetailsMap['plugins/install-cancelled']
     /** Another mutation is still running; the manager runs one at a time and refuses rather than queues. */

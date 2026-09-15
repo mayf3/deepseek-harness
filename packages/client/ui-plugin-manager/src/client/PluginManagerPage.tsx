@@ -1,23 +1,25 @@
 /**
  * Global plugin management: installed package cards, bundle component switches,
- * entry diagnostics, streamed installation output and dependency confirmations.
+ * entry diagnostics, the guided install dialog with its folded pnpm output,
+ * dependency confirmations, and the toasts an action's refusal becomes.
  * Package details expose module names and runtime failures; non-bundle packages
  * retain package information and uninstall without automatic composition actions.
  */
 
-import { isInstallPending } from './manager-store.ts'
 import { useEffect, useId, useState, type ReactNode } from 'react'
-import type { PluginInstallRejection, PluginPackageView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { PluginInstallFailureKind, PluginInstallRejection, PluginPackageView } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  Button, IconChevronDownOutline14, IconCordisPluginOutline14, IconRefreshOutline16,
-  Input, Modal, StateDot, Switch, Tag, TerminalBlock,
+  Button, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconCloseOutline16,
+  IconCordisPluginOutline14, IconRefreshOutline16, IconWarningOutline16,
+  Input, Modal, StateDot, Switch, Tag, TerminalBlock, Toast,
   type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginManagerLocaleKey } from './locales.ts'
-import { rowKey, type ConfirmState, type InstallState, type PluginManagerFace } from './manager-store.ts'
-import { NoticeLine } from './NoticeLine.tsx'
-import { packageOf, refusalText, rowLabel, shortName, type Translate } from './presentation.ts'
+import {
+  isInstallPending, rowKey, type ConfirmState, type InstallInputError, type InstallState, type InstallSubject, type PluginManagerFace,
+} from './manager-store.ts'
+import { noticeText, packageOf, refusalText, rowLabel, shortName, type Translate } from './presentation.ts'
 import css from './PluginManagerPage.module.css'
 
 /** Full component props assembled by the main slot renderer. */
@@ -31,11 +33,28 @@ type RowPhase = NonNullable<RowView['phase']>
 
 /** The layer a pack's components are switched in: a row override always lands in the profile's global user layer. */
 
-/** The list's two groups: packs, which switch as a whole, and everything else, which joins a composition per row. */
+/**
+ * The list's two groups: packs, which switch as a whole, and the dependencies
+ * that are not packs, which only uninstall and stay folded until opened.
+ */
 const PACKAGE_GROUPS = [
-  { key: 'bundles', titleKey: 'bundlesTitle', holds: (pkg: PluginPackageView) => pkg.kind === 'bundle' },
-  { key: 'plugins', titleKey: 'pluginsTitle', holds: (pkg: PluginPackageView) => pkg.kind !== 'bundle' },
-] as const satisfies readonly { key: string; titleKey: PluginManagerLocaleKey; holds: (pkg: PluginPackageView) => boolean }[]
+  { key: 'bundles', titleKey: 'bundlesTitle', introKey: undefined, folds: false, holds: (pkg: PluginPackageView) => pkg.kind === 'bundle' },
+  { key: 'plugins', titleKey: 'pluginsTitle', introKey: 'pluginsIntro', folds: true, holds: (pkg: PluginPackageView) => pkg.kind !== 'bundle' },
+] as const satisfies readonly {
+  key: string
+  titleKey: PluginManagerLocaleKey
+  introKey: PluginManagerLocaleKey | undefined
+  folds: boolean
+  holds: (pkg: PluginPackageView) => boolean
+}[]
+
+/** How long the list marks a package an install just enabled. */
+const HIGHLIGHT_MS = 2_400
+
+/** How long a toast holds: long enough to read a failure that names what broke. */
+function toastHoldMs(text: string): number {
+  return Math.min(8_000, Math.max(3_000, text.length * 80))
+}
 
 const PHASE_KEYS = {
   pending: 'rowPhasePending',
@@ -267,17 +286,23 @@ function EnableSwitch({ pkg, title, t, busy, onSetEnabled }: {
 }
 
 /** One installed package as a card that opens its page: its name, its one-liner, its tags, and its bundle switch. */
-function PackageCard({ pkg, t, busy, onOpen, onSetEnabled }: {
+function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
   readonly pkg: PluginPackageView
   readonly t: Translate
   readonly busy: boolean
+  readonly highlighted: boolean
   readonly onOpen: () => void
   readonly onSetEnabled: (enabled: boolean) => void
 }): ReactNode {
   const title = pkg.title ?? shortName(pkg.name)
   const status = cardStatus(pkg)
   return (
-    <li className={`${css.card} ${css.cardLink}`} data-plugin-package={pkg.name} data-plugin-status={pkg.status}>
+    <li
+      className={`${css.card} ${css.cardLink}`}
+      data-plugin-package={pkg.name}
+      data-plugin-status={pkg.status}
+      {...highlighted ? { 'data-plugin-highlight': '' } : {}}
+    >
       <div className={css.cardHead}>
         <div className={css.cardMain}>
           <div className={css.titleRow}>
@@ -420,107 +445,204 @@ function terminalLabels(t: Translate): TerminalBlockLabels {
   }
 }
 
+/** The sentence under the field for a spec the check refused. */
+const INPUT_PROBLEM_KEYS = {
+  'invalid-spec': 'installProblemInvalid',
+  'already-installed': 'installProblemInstalled',
+  'not-found': 'installProblemNotFound',
+  'not-a-package': 'installProblemNotPackage',
+  'network': 'installProblemNetwork',
+  'unknown': 'installProblemUnknown',
+} satisfies Record<InstallInputError['problem'], PluginManagerLocaleKey>
+
+/** The one-line reading of a classified pnpm failure. */
+const FAILURE_KIND_KEYS = {
+  'pnpm-missing': 'installFailurePnpmMissing',
+  'timeout': 'installFailureTimeout',
+  'not-found': 'installFailureNotFound',
+  'no-matching-version': 'installFailureNoMatchingVersion',
+  'network': 'installFailureNetwork',
+  'disk-full': 'installFailureDiskFull',
+  'permission': 'installFailurePermission',
+  'build-blocked': 'installFailureBuildBlocked',
+  'integrity': 'installFailureIntegrity',
+  'unknown': 'installFailureGeneric',
+} satisfies Record<PluginInstallFailureKind, PluginManagerLocaleKey>
+
+/** The heading of each screen past the spec. */
+const SCREEN_TITLE_KEYS = {
+  starting: 'installStarting',
+  running: 'installingTitle',
+  cancelling: 'installCancelling',
+  applying: 'installApplying',
+  done: 'installedTitle',
+  failed: 'installFailedTitle',
+} satisfies Record<Exclude<InstallState['phase'], 'idle' | 'checking'>, PluginManagerLocaleKey>
+
+/** What the spec's kind reads as when the package carries no description of its own. */
+const SUBJECT_KIND_KEYS = {
+  registry: undefined,
+  path: 'installSubjectPath',
+  git: 'installSubjectGit',
+  tarball: 'installSubjectTarball',
+} satisfies Record<InstallSubject['kind'], PluginManagerLocaleKey | undefined>
+
 /**
- * The failure line: the Host's refusal in its words, except a pnpm failure,
- * which the terminal above already shows — unless none of its output reached
- * the dialog, in which case the Host's captured tail stands in.
+ * The failed screen's one line: a pnpm failure by its kind, any other
+ * refusal in the Host's words; the run's output stays behind the details.
  */
-function failureText(install: InstallState, t: Translate): string {
-  if (install.failure === null) return t('installFailed')
-  if (install.failure.code === 'plugins/install-failed' && install.runs.length === 0) {
-    return t('installFailedTail', { reason: install.failure.reason })
-  }
-  return refusalText(install.failure, t)
+function failureText(failure: InstallState['failure'], t: Translate): string {
+  if (failure === null) return t('installFailureGeneric')
+  if (failure.code === 'plugins/install-failed') return t(FAILURE_KIND_KEYS[failure.kind ?? 'unknown'])
+  return refusalText(failure, t)
 }
 
-/** The install dialog: the spec, the enable choice, the run's progress, and a terminal per pnpm run. */
-function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun, onCancel }: {
+/** The package the install is about: its title, one-liner, and version, as the Host read them before installing. */
+function SubjectCard({ subject, t }: { readonly subject: InstallSubject; readonly t: Translate }): ReactNode {
+  const title = subject.title ?? subject.name ?? subject.spec
+  const kindKey = SUBJECT_KIND_KEYS[subject.kind]
+  const description = subject.description ?? (kindKey === undefined ? undefined : t(kindKey))
+  return (
+    <div className={css.subject} data-install-subject={subject.spec}>
+      <p className={css.subjectName}>{title}</p>
+      {description === undefined ? null : <p className={css.subjectDesc}>{description}</p>}
+      {subject.version === undefined ? null : <p className={css.subjectMeta}>{t('installVersion', { version: subject.version })}</p>}
+    </div>
+  )
+}
+
+/** The install dialog: the spec and its check, then the installing, installed, and failed screens over the same subject card. */
+function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onToggleDetails, onEnableNow }: {
   readonly install: InstallState
   readonly t: Translate
   readonly onClose: () => void
   readonly onEditSpec: (text: string) => void
-  readonly onToggleEnable: () => void
   readonly onRun: () => void
   readonly onCancel: () => void
+  readonly onToggleDetails: () => void
+  readonly onEnableNow: () => void
 }): ReactNode {
-  const running = isInstallPending(install.phase)
-  const exampleId = useId()
+  const errorId = useId()
+  const { phase } = install
+  if (phase === 'idle' || phase === 'checking') {
+    const checking = phase === 'checking'
+    const empty = install.spec.trim() === ''
+    return (
+      <Modal
+        open={install.open}
+        onClose={onClose}
+        title={t('installTitle')}
+        closeLabel={t('close')}
+        description={t('installDescription')}
+        className={css.installDialog as string}
+        footer={(
+          <Button variant="primary" className={css.wide} disabled={checking || empty} aria-busy={checking} onClick={onRun}>
+            {checking ? <span className={css.spinner} aria-hidden="true" /> : null}
+            {t(checking ? 'installChecking' : 'installRun')}
+          </Button>
+        )}
+      >
+        <div className={css.installBody}>
+          <label className={css.installField}>
+            <span>{t('installSpecLabel')}</span>
+            <input
+              type="text"
+              value={install.spec}
+              placeholder={t('installSpecPlaceholder')}
+              disabled={checking}
+              aria-invalid={install.inputError !== null}
+              aria-describedby={install.inputError === null ? undefined : errorId}
+              onChange={(event) => { onEditSpec(event.currentTarget.value) }}
+              onKeyDown={(event) => { if (event.key === 'Enter' && !empty && !checking) onRun() }}
+            />
+          </label>
+          {install.inputError === null
+            ? null
+            : <p id={errorId} className={css.inputError} role="alert">{t(INPUT_PROBLEM_KEYS[install.inputError.problem], { reason: install.inputError.reason })}</p>}
+        </div>
+      </Modal>
+    )
+  }
+  const heading = t(SCREEN_TITLE_KEYS[phase])
+  const pending = isInstallPending(phase)
+  // Only a run the Host acknowledged can be stopped; before that, and while it stops or applies, the controls wait.
+  const stoppable = phase === 'running' || phase === 'failed'
+  const unconfirmed = install.failure?.code === 'client/cancel-unconfirmed' ? install.failure.reason : undefined
   const firstRun = install.runs[0]
-  const outcomes: string[] = install.phase !== 'done'
-    ? []
-    : install.installed.length === 0 && install.removed.length === 0
-      ? [t('installDoneNothing')]
-      : install.installed.map(name => t(
-        install.enabled.includes(name)
-          ? 'installDoneEnabled'
-          : install.installedOnly.includes(name) ? 'installDoneBundle' : install.plain.includes(name) ? 'installDonePlugin' : 'installDoneOther',
-        { name },
-      ))
   return (
-    <Modal
-      open={install.open}
-      onClose={onClose}
-      title={t('installTitle')}
-      closeLabel={t('close')}
-      description={t('installDescription')}
-      className={css.installDialog as string}
-      footer={install.phase === 'done'
-        ? <Button variant="primary" onClick={onClose}>{t('installClose')}</Button>
-        : running
-          ? <Button variant="outline" disabled={install.phase !== 'running'} onClick={onCancel}>{t(install.phase === 'cancelling' ? 'installCancelling' : 'installCancel')}</Button>
-          : (
-            <>
-              <Button variant="outline" disabled={running} onClick={onClose}>{t(install.phase === 'idle' ? 'cancel' : 'installClose')}</Button>
-              <Button variant="primary" disabled={install.spec.trim() === ''} onClick={onRun}>
-                {t(install.phase === 'failed' || install.phase === 'cancelled' ? 'installRetry' : 'installRun')}
-              </Button>
-            </>
-          )}
-    >
-      <div className={css.installBody}>
-        <label className={css.installField}>
-          <span>{t('installSpecLabel')}</span>
-          <input
-            type="text"
-            value={install.spec}
-            placeholder={t('installSpecPlaceholder')}
-            aria-describedby={exampleId}
-            disabled={running}
-            onChange={(event) => { onEditSpec(event.currentTarget.value) }}
-          />
-        </label>
-        <span id={exampleId} className={css.installExample}>{t('installExample')}</span>
-        <label className={css.installOption}>
-          <input type="checkbox" checked={install.enable} disabled={running} onChange={onToggleEnable} />
-          <span>{t('installEnable')}</span>
-        </label>
-        {running
-          ? <p className={css.progress} role="status"><span className={css.spinner} aria-hidden="true" />{install.phase === 'starting' ? t('installStarting') : install.phase === 'cancelling' ? t('installCancelling') : install.phase === 'applying' ? t('installApplying') : t('installRunning', { spec: install.spec.trim() })}</p>
+    <Modal open={install.open} onClose={onClose} title={heading} headless className={css.installDialog as string}>
+      <div className={css.wizard} data-install-phase={phase}>
+        <div className={css.wizardHead}>
+          {phase === 'done'
+            ? <span />
+            : (
+              <button type="button" className={css.wizardBack} aria-label={t('installEditAria')} disabled={!stoppable} onClick={onCancel}>
+                <IconChevronLeftOutline14 aria-hidden="true" />
+                <span>{t('installEdit')}</span>
+              </button>
+            )}
+          <button type="button" className={css.wizardClose} aria-label={t('close')} disabled={pending} onClick={onClose}>
+            <IconCloseOutline16 size={14} />
+          </button>
+        </div>
+        <div className={css.wizardHero}>
+          <span className={css.wizardIcon} data-tone={pending ? 'pending' : phase} aria-hidden="true">
+            {pending
+              ? <span className={css.spinnerLarge} />
+              : phase === 'done' ? <IconCheckOutline16 size={28} /> : <IconWarningOutline16 size={28} />}
+          </span>
+          <h2 className={css.wizardTitle} role={phase === 'failed' ? 'alert' : 'status'}>{heading}</h2>
+          {phase === 'failed' ? <p className={css.wizardSub}>{failureText(install.failure, t)}</p> : null}
+          {unconfirmed === undefined ? null : <p className={css.wizardSub} role="alert">{t('installCancelUnconfirmed', { reason: unconfirmed })}</p>}
+        </div>
+        {install.subject === null ? null : <SubjectCard subject={install.subject} t={t} />}
+        {phase === 'done' && install.installed.length === 0 && install.removed.length === 0
+          ? <p className={css.result} role="status">{t('installDoneNothing')}</p>
           : null}
-        {outcomes.map(line => <p key={line} className={css.result} role="status">{line}</p>)}
-        {install.phase === 'done'
+        {phase === 'done'
+          ? install.plain.map(name => <p key={name} className={css.resultWarn} role="status">{t('installDoneNotBundle', { name })}</p>)
+          : null}
+        {phase === 'done'
           ? install.removed.map(entry => <p key={entry.name} className={css.resultWarn} role="status">{removedText(entry, t)}</p>)
           : null}
-        {install.phase === 'cancelled' ? <p className={css.result} role="status">{t('installCancelled')}</p> : null}
-        {install.failure?.code === 'client/cancel-unconfirmed' ? <p className={css.reason} role="alert">{t('installCancelUnconfirmed', { reason: install.failure.reason })}</p> : null}
-        {install.phase === 'failed'
-          ? <p className={css.reason} role="alert">{failureText(install, t)}</p>
+        <div className={css.wizardFoot}>
+          <button type="button" className={css.detailsToggle} aria-expanded={install.detailsOpen} onClick={onToggleDetails}>
+            <span>{t(install.detailsOpen ? 'installDetailsHide' : 'installDetailsShow')}</span>
+            <IconChevronDownOutline14 className={css.detailsChevron} aria-hidden="true" />
+          </button>
+          {pending
+            ? (
+              <Button variant="outline" size="sm" disabled={phase !== 'running'} onClick={onCancel}>
+                {t(phase === 'cancelling' ? 'installCancelling' : 'installCancel')}
+              </Button>
+            )
+            : null}
+          {phase === 'failed' ? <Button variant="primary" size="sm" onClick={onRun}>{t('installRetry')}</Button> : null}
+        </div>
+        {install.detailsOpen
+          ? (
+            <div className={css.detailsBody}>
+              <p className={css.installLocation}>{firstRun === undefined ? t('terminalNoOutput') : t('installLocation', { dir: firstRun.cwd })}</p>
+              {install.runs.map(run => (
+                <TerminalBlock
+                  key={run.jobId}
+                  command={run.command}
+                  output={run.output}
+                  running={run.exitCode === undefined}
+                  exitCode={run.exitCode}
+                  maxLines={INSTALL_TERMINAL_LINES}
+                  labels={{ ...terminalLabels(t), ...phase === 'cancelling' ? { failed: t('installCancelledShort') } : {} }}
+                  className={css.terminal}
+                />
+              ))}
+            </div>
+          )
           : null}
-        {firstRun === undefined
+        {phase !== 'done'
           ? null
-          : <p className={css.installLocation}>{t('installLocation', { dir: firstRun.cwd })}</p>}
-        {install.runs.map(run => (
-          <TerminalBlock
-            key={run.jobId}
-            command={run.command}
-            output={run.output}
-            running={run.exitCode === undefined}
-            exitCode={run.exitCode}
-            maxLines={INSTALL_TERMINAL_LINES}
-            labels={{ ...terminalLabels(t), ...(install.phase === 'cancelled' || install.phase === 'cancelling' ? { failed: t('installCancelledShort') } : {}) }}
-            className={css.terminal}
-          />
-        ))}
+          : install.installedOnly.length > 0
+            ? <Button variant="primary" className={css.wide} disabled={install.enabling} aria-busy={install.enabling} onClick={onEnableNow}>{t('installEnableNow')}</Button>
+            : <Button variant="primary" className={css.wide} onClick={onClose}>{t('installClose')}</Button>}
       </div>
     </Modal>
   )
@@ -590,7 +712,19 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const state = props.usePluginManager(snapshot => snapshot)
   // The package whose page is open; one that leaves the list (uninstalled) drops back to the cards.
   const [openPackage, setOpenPackage] = useState<string | null>(null)
+  // The folded group of dependencies that are not packs.
+  const [pluginsOpen, setPluginsOpen] = useState(false)
   useEffect(() => { ensure() }, [ensure])
+  // A package an install just enabled: scroll it into view and mark it for a moment.
+  const { highlight, clearHighlight } = { highlight: state.highlight, clearHighlight: props.clearHighlight }
+  useEffect(() => {
+    if (highlight === null) return
+    const card = document.querySelector(`[data-plugin-package="${highlight}"]`)
+    if (card !== null && typeof card.scrollIntoView === 'function') card.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    const timer = setTimeout(clearHighlight, HIGHLIGHT_MS)
+    return () => { clearTimeout(timer) }
+  }, [highlight, clearHighlight])
+  const noticeLine = state.notice === null ? null : noticeText(state.notice, t)
 
   // The page manages what the person installed; the bundles the profile
   // template supplies are inspected in the Settings Plugins section's Plugin list tab.
@@ -630,7 +764,17 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
       {restartPending.length > 0
         ? <p className={css.banner} role="status">{t('restartBanner', { names: restartPending.join(', ') })}</p>
         : null}
-      <NoticeLine notice={state.notice} t={t} onDismiss={props.dismissNotice} />
+      {state.notice === null || noticeLine === null
+        ? null
+        : (
+          <Toast
+            key={state.notice.seq}
+            text={noticeLine}
+            icon={<IconWarningOutline16 />}
+            holdMs={toastHoldMs(noticeLine)}
+            onDone={props.dismissNotice}
+          />
+        )}
       {loaded && openPkg !== undefined
         ? (
           <PackageDetail
@@ -655,26 +799,40 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
           ? <p className={css.empty}>{t('empty')}</p>
           : PACKAGE_GROUPS.map((group) => {
             const members = listed.filter(group.holds)
+            const open = !group.folds || pluginsOpen
             return members.length === 0
               ? null
               : (
                 <section key={group.key} className={css.group} data-plugin-scope="global" data-plugin-group={group.key}>
                   <div className={css.groupTitleRow}>
-                    <h3 className={css.groupTitle}>{t(group.titleKey)}</h3>
+                    {group.folds
+                      ? (
+                        <button type="button" className={css.groupToggle} aria-expanded={open} onClick={() => { setPluginsOpen(value => !value) }}>
+                          <IconChevronDownOutline14 className={css.groupChevron} aria-hidden="true" />
+                          <span className={css.groupTitle}>{t(group.titleKey)}</span>
+                        </button>
+                      )
+                      : <h3 className={css.groupTitle}>{t(group.titleKey)}</h3>}
                     <span className={css.count} data-plugin-count={members.length}>{`${String(members.length)} ${t('countUnit')}`}</span>
                   </div>
-                  <ul className={css.cards}>
-                    {members.map(pkg => (
-                      <PackageCard
-                        key={pkg.name}
-                        pkg={pkg}
-                        t={t}
-                        busy={state.busy.includes(pkg.name)}
-                        onOpen={() => { setOpenPackage(pkg.name) }}
-                        onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
-                      />
-                    ))}
-                  </ul>
+                  {group.introKey === undefined ? null : <p className={css.groupIntro}>{t(group.introKey)}</p>}
+                  {open
+                    ? (
+                      <ul className={css.cards}>
+                        {members.map(pkg => (
+                          <PackageCard
+                            key={pkg.name}
+                            pkg={pkg}
+                            t={t}
+                            busy={state.busy.includes(pkg.name)}
+                            highlighted={state.highlight === pkg.name}
+                            onOpen={() => { setOpenPackage(pkg.name) }}
+                            onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
+                          />
+                        ))}
+                      </ul>
+                    )
+                    : null}
                 </section>
               )
           })
@@ -684,9 +842,10 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         t={t}
         onClose={props.closeInstall}
         onEditSpec={props.editInstallSpec}
-        onToggleEnable={props.toggleInstallEnable}
         onRun={props.runInstall}
         onCancel={props.cancelInstall}
+        onToggleDetails={props.toggleInstallDetails}
+        onEnableNow={props.enableInstalled}
       />
       {state.confirm === null
         ? null

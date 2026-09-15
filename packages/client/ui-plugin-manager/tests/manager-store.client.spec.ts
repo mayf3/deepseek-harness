@@ -4,9 +4,9 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import type { PluginPackageView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { PluginInstallRequestId, PluginPackageView } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
-import { type InstallState, PluginManagerController, rowKey } from '../src/client/manager-store.ts'
+import { PluginManagerController, rowKey } from '../src/client/manager-store.ts'
 
 const BUNDLE: PluginPackageView = {
   name: 'dsh-better-sidebar',
@@ -31,6 +31,9 @@ type InstallValue = {
   jobId: string
 }
 
+/** What the check answers for a registry name. */
+const INSPECTED = { kind: 'registry' as const, name: 'dsh-better-sidebar', version: '1.0.0', bundle: true }
+
 function ok<T>(value: T) {
   return { ok: true as const, value }
 }
@@ -49,6 +52,7 @@ function deferred<T>() {
 function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}) {
   const plugins = {
     list: vi.fn(() => Promise.resolve(ok([BUNDLE]))),
+    inspect: vi.fn(() => Promise.resolve(ok(INSPECTED))),
     add: vi.fn(() => Promise.resolve(ok({ installed: ['a'], removed: [], enabled: [], installedOnly: [], plain: [], jobId: 'j1' }))),
     cancelInstall: vi.fn(() => Promise.resolve(ok({ status: 'cancelled' }))),
     uninstall: vi.fn(() => Promise.resolve(ok(undefined))),
@@ -62,12 +66,13 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
   const ctx = { remote: { plugins } } as never
   const controller = new PluginManagerController(ctx)
   const face = controller.inject()
-  return { plugins, controller, face, state: () => controller.getSnapshot() }
-}
-
-function installationRequest(controller: PluginManagerController): Pick<InstallState, 'requestId'> {
-  const requestId = controller.getSnapshot().install.requestId
-  return requestId === undefined ? {} : { requestId }
+  const state = () => controller.getSnapshot()
+  /** The request id of the run the dialog just handed to the Host. */
+  const started = async (): Promise<PluginInstallRequestId> => {
+    await vi.waitFor(() => { expect(state().install.phase).toBe('starting') })
+    return state().install.requestId as PluginInstallRequestId
+  }
+  return { plugins, controller, face, state, started }
 }
 
 describe('PluginManagerController', () => {
@@ -118,7 +123,7 @@ describe('PluginManagerController', () => {
     expect(plugins.enable).toHaveBeenCalledTimes(1)
     gate.resolve(ok({ changed: true, effect: 'restart' }))
     await vi.waitFor(() => { expect(state().busy).toEqual([]) })
-    expect(state().notice).toEqual({ kind: 'restart', packageName: BUNDLE.name })
+    expect(state().notice).toEqual({ kind: 'restart', packageName: BUNDLE.name, seq: 1 })
     expect(plugins.list).toHaveBeenCalledTimes(2)
     face.dismissNotice()
     expect(state().notice).toBeNull()
@@ -134,7 +139,7 @@ describe('PluginManagerController', () => {
     face.setEnabled(BUNDLE.name, true)
     await vi.waitFor(() => { expect(state().notice).not.toBeNull() })
     expect(state().notice).toEqual({
-      kind: 'failed', code: 'plugins/not-enableable', reason: 'foreign cordis', packageName: BUNDLE.name,
+      kind: 'failed', code: 'plugins/not-enableable', reason: 'foreign cordis', packageName: BUNDLE.name, seq: 1,
     })
     expect(state().busy).toEqual([])
     face.setEnabled(BUNDLE.name, true)
@@ -146,7 +151,7 @@ describe('PluginManagerController', () => {
     await controller.load()
     face.setEnabled(BUNDLE.name, false)
     await vi.waitFor(() => { expect(plugins.disable).toHaveBeenCalledWith(BUNDLE.name) })
-    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'restart', packageName: BUNDLE.name }) })
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'restart', packageName: BUNDLE.name, seq: 1 }) })
 
     plugins.dependents.mockResolvedValueOnce(ok({
       services: [{ service: 'sidebar', providedBy: 'dsh-better-sidebar/better-sidebar', injectedBy: ['x'] }],
@@ -274,144 +279,320 @@ describe('PluginManagerController', () => {
     await controller.load()
     face.setRowDisabled('r', true)
     await vi.waitFor(() => {
-      expect(state().notice).toEqual({ kind: 'failed', code: 'gateway/internal', reason: 'offline', rowId: 'r' })
+      expect(state().notice).toEqual({ kind: 'failed', code: 'gateway/internal', reason: 'offline', rowId: 'r', seq: 1 })
     })
     face.setRowDisabled('r', true)
     await vi.waitFor(() => { expect(state().notice).toMatchObject({ reason: 'plain text' }) })
   })
 
-  it('waits for Host cancellation and ignores the old add reply after a retry starts', async () => {
+  it('checks the spec, hands the run to the Host, and folds the chunks that carry its request id', async () => {
+    const gate = deferred<ReturnType<typeof ok<InstallValue>>>()
+    const { plugins, face, state, controller, started } = bench({ add: vi.fn().mockReturnValueOnce(gate.promise) })
+    await controller.load()
+    face.runInstall()
+    expect(plugins.inspect).not.toHaveBeenCalled()
+    face.openInstall()
+    expect(state().install).toMatchObject({ open: true, spec: '', phase: 'idle', inputError: null, subject: null })
+    face.editInstallSpec('  dsh-new ')
+    face.runInstall()
+    face.runInstall()
+    expect(state().install.phase).toBe('checking')
+    // Neither typing nor a second run reaches the Host while it checks.
+    face.editInstallSpec('other')
+    expect(state().install.spec).toBe('  dsh-new ')
+    expect(plugins.inspect).toHaveBeenCalledTimes(1)
+    expect(plugins.inspect).toHaveBeenCalledWith('dsh-new', expect.any(AbortSignal))
+    const requestId = await started()
+    expect(state().install.subject).toEqual({ spec: 'dsh-new', ...INSPECTED })
+    expect(plugins.add).toHaveBeenCalledTimes(1)
+    expect(plugins.add).toHaveBeenCalledWith('dsh-new', { requestId })
+    // The Host's acknowledgement makes the run stoppable; a chunk of another request is not this run's.
+    controller.installProgress({ requestId, phase: 'installing' })
+    expect(state().install.phase).toBe('running')
+    controller.appendLog({ requestId: 'other' as PluginInstallRequestId, jobId: 'j1', argv: [], cwd: '/p', spec: 'dsh-new', stream: 'stdout', text: 'x' })
+    expect(state().install.runs).toEqual([])
+    const argv = ['pnpm', 'add', 'dsh-new']
+    controller.appendLog({ requestId, jobId: 'j1', argv, cwd: '/p', spec: 'dsh-new', stream: 'stdout', text: 'Progress\n' })
+    // The Host's second pnpm run — removing a rejected package, under that
+    // package's name — is a run of its own, and a later chunk lands on the
+    // run it names.
+    controller.appendLog({ requestId, jobId: 'jr', argv: ['pnpm', 'remove', 'lib'], cwd: '/p', spec: 'lib', stream: 'stdout', text: '- lib\n', exitCode: 0 })
+    controller.appendLog({ requestId, jobId: 'j1', argv, cwd: '/p', spec: 'dsh-new', stream: 'stdout', text: 'Done\n' })
+    expect(state().install.runs).toEqual([
+      { jobId: 'j1', command: 'pnpm add dsh-new', cwd: '/p', output: 'Progress\nDone\n' },
+      { jobId: 'jr', command: 'pnpm remove lib', cwd: '/p', output: '- lib\n', exitCode: 0 },
+    ])
+    face.toggleInstallDetails()
+    expect(state().install.detailsOpen).toBe(true)
+    gate.resolve(ok({
+      installed: ['dsh-new', 'dsh-tool-foo'], removed: [{ name: 'lib', reason: 'not a plugin' }],
+      enabled: [], installedOnly: ['dsh-new'], plain: ['dsh-tool-foo'], jobId: 'j1',
+    }))
+    await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
+    expect(state().install).toMatchObject({
+      installed: ['dsh-new', 'dsh-tool-foo'],
+      installedOnly: ['dsh-new'],
+      plain: ['dsh-tool-foo'],
+      removed: [{ name: 'lib', reason: 'not a plugin' }],
+      detailsOpen: true,
+    })
+    // The finished install settled its run; a trailing last chunk still lands
+    // on it, while a chunk for a run the dialog never saw is dropped.
+    controller.appendLog({ requestId, jobId: 'j1', argv, cwd: '/p', spec: 'dsh-new', stream: 'stdout', text: 'late', exitCode: 0 })
+    controller.appendLog({ requestId, jobId: 'j3', argv, cwd: '/p', spec: 'dsh-new', stream: 'stdout', text: 'stray' })
+    expect(state().install.runs).toEqual([
+      { jobId: 'j1', command: 'pnpm add dsh-new', cwd: '/p', output: 'Progress\nDone\nlate', exitCode: 0 },
+      { jobId: 'jr', command: 'pnpm remove lib', cwd: '/p', output: '- lib\n', exitCode: 0 },
+    ])
+    await vi.waitFor(() => { expect(plugins.list).toHaveBeenCalledTimes(2) })
+    // Cancelling from the finished screen does nothing, nor does the Host's late progress; a new spec after it starts over.
+    face.cancelInstall()
+    controller.installProgress({ requestId, phase: 'applying' })
+    expect(state().install.phase).toBe('done')
+    face.editInstallSpec('another')
+    expect(state().install).toMatchObject({ phase: 'idle', spec: 'another', runs: [], installed: [], subject: null })
+    face.closeInstall()
+    expect(state().install.open).toBe(false)
+  })
+
+  it('refuses a spec the list already shows without asking the Host, and words what the Host refused', async () => {
+    const { plugins, face, state, controller } = bench({
+      inspect: vi.fn()
+        .mockResolvedValueOnce(refused('plugins/inspect-rejected', 'not found', { spec: 'nope', problem: 'not-found', reason: 'E404' }))
+        .mockResolvedValueOnce(refused('plugins/inspect-rejected', 'odd', { spec: 'odd', problem: 'made-up', reason: 'strange' }))
+        .mockResolvedValueOnce(refused('plugins/unavailable', 'no profile', { reason: 'no profile runtime' })),
+    })
+    await controller.load()
+    face.openInstall()
+    face.editInstallSpec(BUNDLE.name)
+    face.runInstall()
+    expect(plugins.inspect).not.toHaveBeenCalled()
+    expect(state().install).toMatchObject({ phase: 'idle', inputError: { problem: 'already-installed', reason: BUNDLE.name } })
+    // Typing clears the refusal.
+    face.editInstallSpec('nope')
+    expect(state().install.inputError).toBeNull()
+    face.runInstall()
+    await vi.waitFor(() => { expect(state().install.inputError).toEqual({ problem: 'not-found', reason: 'E404' }) })
+    expect(state().install.phase).toBe('idle')
+    expect(plugins.add).not.toHaveBeenCalled()
+    // A problem the dialog does not know reads as unknown; a refusal without a problem too.
+    face.editInstallSpec('odd')
+    face.runInstall()
+    await vi.waitFor(() => { expect(state().install.inputError).toEqual({ problem: 'unknown', reason: 'strange' }) })
+    face.editInstallSpec('x')
+    face.runInstall()
+    await vi.waitFor(() => { expect(state().install.inputError).toEqual({ problem: 'unknown', reason: 'no profile runtime' }) })
+  })
+
+  it('leaves the check or the failed screen for the spec at once', async () => {
+    const inspectGate = deferred<ReturnType<typeof ok<typeof INSPECTED>>>()
+    const { plugins, face, state, controller } = bench({
+      inspect: vi.fn().mockReturnValueOnce(inspectGate.promise).mockResolvedValue(ok(INSPECTED)),
+      add: vi.fn().mockResolvedValue(refused('plugins/install-failed', 'exit 1', { spec: 'dsh-x', exitCode: 1, log: 'ERR', kind: 'unknown' })),
+    })
+    await controller.load()
+    face.openInstall()
+    face.editInstallSpec('dsh-x')
+    face.runInstall()
+    const checkSignal = (plugins.inspect.mock.calls[0] as unknown[])[1] as AbortSignal
+    face.cancelInstall()
+    expect(checkSignal.aborted).toBe(true)
+    expect(state().install).toMatchObject({ open: true, phase: 'idle', spec: 'dsh-x', inputError: null })
+    // The settlement of the dropped check changes nothing.
+    inspectGate.resolve(ok(INSPECTED))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(state().install.phase).toBe('idle')
+    expect(plugins.add).not.toHaveBeenCalled()
+    // Closing during a check drops it too.
+    face.runInstall()
+    face.closeInstall()
+    expect(state().install.open).toBe(false)
+    expect((plugins.inspect.mock.calls[1] as unknown[])[1]).toMatchObject({ aborted: true })
+    // From the failed screen the same control goes back to the spec.
+    face.openInstall()
+    face.editInstallSpec('dsh-x')
+    face.runInstall()
+    await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
+    face.cancelInstall()
+    expect(state().install).toMatchObject({ open: true, phase: 'idle', spec: 'dsh-x', failure: null, subject: null })
+  })
+
+  it('asks the Host to stop a run, keeps the spec once it confirms, and forgets the stopped run', async () => {
     const first = deferred<ReturnType<typeof refused>>()
     const second = deferred<ReturnType<typeof ok<InstallValue>>>()
     const cancellation = deferred<ReturnType<typeof ok<{ status: 'cancelled' }>>>()
-    const { plugins, face, state, controller } = bench({
+    const { plugins, face, state, controller, started } = bench({
       add: vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise),
       cancelInstall: vi.fn().mockReturnValueOnce(cancellation.promise),
     })
-    face.openInstall(); face.editInstallSpec('slow'); face.runInstall()
-    const requestId = state().install.requestId as NonNullable<InstallState['requestId']>
+    face.openInstall()
+    face.editInstallSpec('slow')
+    face.runInstall()
+    const requestId = await started()
+    // Before the Host acknowledges the run there is nothing to stop, and the dialog cannot close.
     face.cancelInstall()
+    face.closeInstall()
     expect(plugins.cancelInstall).not.toHaveBeenCalled()
+    expect(state().install).toMatchObject({ open: true, phase: 'starting' })
     controller.installProgress({ requestId, phase: 'installing' })
-    face.cancelInstall(); face.cancelInstall(); face.closeInstall(); face.openInstall()
+    face.cancelInstall()
+    face.cancelInstall()
+    face.closeInstall()
+    face.openInstall()
     expect(plugins.cancelInstall).toHaveBeenCalledExactlyOnceWith(requestId)
     expect(state().install).toMatchObject({ phase: 'cancelling', open: true, spec: 'slow' })
+    // A queued start cannot undo the request to stop; the Host's own cancelling phase is the same.
     controller.installProgress({ requestId, phase: 'installing' })
     controller.installProgress({ requestId, phase: 'cancelling' })
     expect(state().install.phase).toBe('cancelling')
     cancellation.resolve(ok({ status: 'cancelled' }))
-    await vi.waitFor(() => { expect(state().install.phase).toBe('cancelled') })
+    await vi.waitFor(() => { expect(state().install.phase).toBe('idle') })
+    // The spec is offered again, the run is forgotten, and a toast says the Host stopped it.
+    expect(state().install).toMatchObject({ open: true, spec: 'slow', subject: null, runs: [] })
+    expect(state().install.requestId).toBeUndefined()
+    expect(state().notice).toEqual({ kind: 'cancelled', seq: 1 })
     face.runInstall()
-    const nextId = state().install.requestId
+    const nextId = await started()
     expect(nextId).not.toBe(requestId)
+    // The stopped run's answer, progress, and chunks belong to a request the dialog no longer has.
     first.resolve(refused('plugins/install-cancelled', 'cancelled', { requestId }))
-    await Promise.resolve(); await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
     expect(state().install).toMatchObject({ requestId: nextId, phase: 'starting' })
     controller.installProgress({ requestId, phase: 'applying' })
     controller.appendLog({ requestId, jobId: 'old', argv: [], cwd: '/p', spec: 'slow', stream: 'stdout', text: 'late' })
-    expect(state().install.runs).toEqual([])
+    expect(state().install).toMatchObject({ phase: 'starting', runs: [] })
     second.resolve(ok({ installed: [], removed: [], enabled: [], installedOnly: [], plain: [], jobId: 'new' }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
-    controller.installProgress({ requestId: nextId as typeof requestId, phase: 'installing' })
-    expect(state().install.phase).toBe('done')
   })
 
-  it.each(['too-late', 'not-running', 'offline'] as const)('keeps cancellation %s distinct from a stopped installation', async (status) => {
+  it.each(['too-late', 'not-running', 'offline'] as const)('keeps a stop the Host answered %s apart from a stopped run', async (status) => {
     const pending = deferred<ReturnType<typeof refused>>()
-    const { plugins, face, state, controller } = bench({
+    const { plugins, face, state, controller, started } = bench({
       add: vi.fn().mockReturnValue(pending.promise),
       cancelInstall: vi.fn().mockResolvedValue(status === 'offline' ? refused('gateway/internal', 'offline') : ok({ status })),
     })
-    face.openInstall(); face.editInstallSpec('slow'); face.runInstall()
-    const requestId = state().install.requestId as NonNullable<InstallState['requestId']>
+    face.openInstall()
+    face.editInstallSpec('slow')
+    face.runInstall()
+    const requestId = await started()
     controller.installProgress({ requestId, phase: 'installing' })
     face.cancelInstall()
     await vi.waitFor(() => { expect(state().install.phase).toBe(status === 'too-late' ? 'applying' : 'running') })
-    expect(state().install.phase).not.toBe('cancelled')
     expect(plugins.cancelInstall).toHaveBeenCalledOnce()
+    // A stop the Host did not confirm says so over the running screen, with the transport's words when it has them.
+    expect(state().install.failure).toEqual(
+      status === 'too-late' ? null : { code: 'client/cancel-unconfirmed', reason: status === 'offline' ? 'offline' : '' },
+    )
+    // The Host's own word that it stopped the run still ends it.
     pending.resolve(refused('plugins/install-cancelled', 'cancelled', { requestId }))
-    await vi.waitFor(() => { expect(state().install.phase).toBe('cancelled') })
-    expect(state().install.failure).toBeNull()
+    await vi.waitFor(() => { expect(state().install.phase).toBe('idle') })
+    expect(state().install).toMatchObject({ open: true, spec: 'slow', failure: null })
+    expect(state().notice).toEqual({ kind: 'cancelled', seq: 1 })
   })
 
-  it.each([false, true])('drops a cancellation response after the add settles or the page is disposed (%s)', async (dispose) => {
+  it.each([false, true])('drops a stop the Host confirms once the run settled, or after disposal (%s)', async (dispose) => {
     const answer = deferred<ReturnType<typeof ok<InstallValue>>>()
     const cancellation = deferred<ReturnType<typeof ok<{ status: 'cancelled' }>>>()
-    const { face, state, controller } = bench({
-      add: vi.fn().mockReturnValue(answer.promise), cancelInstall: vi.fn().mockReturnValue(cancellation.promise),
+    const { face, state, controller, started } = bench({
+      add: vi.fn().mockReturnValue(answer.promise),
+      cancelInstall: vi.fn().mockReturnValue(cancellation.promise),
     })
-    face.openInstall(); face.editInstallSpec('slow'); face.runInstall()
-    controller.installProgress({ requestId: state().install.requestId as NonNullable<InstallState['requestId']>, phase: 'installing' })
+    await controller.load()
+    face.openInstall()
+    face.editInstallSpec('slow')
+    face.runInstall()
+    controller.installProgress({ requestId: await started(), phase: 'installing' })
     face.cancelInstall()
+    expect(state().install.phase).toBe('cancelling')
     if (dispose) controller.dispose()
     answer.resolve(ok({ installed: [], removed: [], enabled: [], installedOnly: [], plain: [], jobId: 'j' }))
     if (!dispose) await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
-    const before = state()
     cancellation.resolve(ok({ status: 'cancelled' }))
-    await Promise.resolve(); await Promise.resolve()
-    expect(state()).toBe(before)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(state().install.phase).toBe(dispose ? 'cancelling' : 'done')
+    expect(state().notice).toBeNull()
   })
 
-  it('runs an install, folds its own log chunks, and closes only once it settled', async () => {
-    const gate = deferred<ReturnType<typeof ok<InstallValue>>>()
-    const { plugins, face, state, controller } = bench({ add: vi.fn().mockReturnValueOnce(gate.promise) })
-    await controller.load()
-    face.runInstall()
-    expect(plugins.add).not.toHaveBeenCalled()
-    face.openInstall()
-    expect(state().install).toMatchObject({ open: true, spec: '', enable: true, phase: 'idle' })
-    face.editInstallSpec('  dsh-better-sidebar ')
-    face.toggleInstallEnable()
-    face.runInstall()
-    face.runInstall()
-    expect(plugins.add).toHaveBeenCalledTimes(1)
-    expect(plugins.add).toHaveBeenCalledWith('dsh-better-sidebar', { enable: false, requestId: state().install.requestId })
-    expect(state().install.phase).toBe('starting')
-    face.closeInstall()
-    expect(state().install.open).toBe(true)
-    const argv = ['pnpm', 'add', 'dsh-better-sidebar']
-    controller.appendLog({ ...installationRequest(controller), jobId: 'j1', argv, cwd: '/p', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'Progress\n' })
-    // The Host's second pnpm run — removing a rejected package, under that
-    // package's name — is a run of its own, and a later chunk lands on the
-    // run it names.
-    controller.appendLog({ ...installationRequest(controller), jobId: 'jr', argv: ['pnpm', 'remove', 'lib'], cwd: '/p', spec: 'lib', stream: 'stdout', text: '- lib\n', exitCode: 0 })
-    controller.appendLog({ ...installationRequest(controller), jobId: 'j1', argv, cwd: '/p', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'Done\n' })
-    expect(state().install.runs).toEqual([
-      { jobId: 'j1', command: 'pnpm add dsh-better-sidebar', cwd: '/p', output: 'Progress\nDone\n' },
-      { jobId: 'jr', command: 'pnpm remove lib', cwd: '/p', output: '- lib\n', exitCode: 0 },
-    ])
-    gate.resolve(ok({
-      installed: ['dsh-better-sidebar', 'dsh-tool-foo'], removed: [{ name: 'lib', reason: 'not a plugin' }],
-      enabled: [], installedOnly: ['dsh-better-sidebar'], plain: ['dsh-tool-foo'], jobId: 'j1',
-    }))
-    await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
-    expect(state().install).toMatchObject({
-      installed: ['dsh-better-sidebar', 'dsh-tool-foo'],
-      enabled: [],
-      installedOnly: ['dsh-better-sidebar'],
-      plain: ['dsh-tool-foo'],
-      removed: [{ name: 'lib', reason: 'not a plugin' }],
+  it('enables what a finished install added from its screen, closes, and marks the first in the list', async () => {
+    const { plugins, face, state, controller } = bench({
+      add: vi.fn().mockResolvedValue(ok({ installed: ['dsh-a', 'dsh-b', 'lib'], removed: [], enabled: [], installedOnly: ['dsh-a', 'dsh-b'], plain: ['lib'], jobId: 'j' })),
+      enable: vi.fn()
+        .mockResolvedValueOnce(ok({ changed: true, effect: 'live' }))
+        .mockResolvedValueOnce(ok({ changed: true, effect: 'restart' }))
+        .mockResolvedValueOnce(ok({ changed: true, effect: 'live' }))
+        .mockResolvedValueOnce(refused('plugins/enable-failed', 'plugin-manager: dsh-b rejected', { packageName: 'dsh-b', reason: 'the tree rejected it' })),
     })
-    // The finished install settled its run; a trailing last chunk still lands
-    // on it, while a chunk for a run the dialog never saw is dropped.
-    controller.appendLog({ ...installationRequest(controller), jobId: 'j1', argv, cwd: '/p', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'late', exitCode: 0 })
-    controller.appendLog({ ...installationRequest(controller), jobId: 'j3', argv, cwd: '/p', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'stray' })
-    expect(state().install.runs).toEqual([
-      { jobId: 'j1', command: 'pnpm add dsh-better-sidebar', cwd: '/p', output: 'Progress\nDone\nlate', exitCode: 0 },
-      { jobId: 'jr', command: 'pnpm remove lib', cwd: '/p', output: '- lib\n', exitCode: 0 },
-    ])
-    await vi.waitFor(() => { expect(plugins.list).toHaveBeenCalledTimes(2) })
-    // A new spec after the finished run starts over, keeping the enable choice.
-    face.editInstallSpec('another')
-    expect(state().install).toMatchObject({ phase: 'idle', spec: 'another', enable: false, runs: [], installed: [] })
-    face.closeInstall()
-    expect(state().install.open).toBe(false)
+    await controller.load()
+    face.enableInstalled()
+    expect(plugins.enable).not.toHaveBeenCalled()
+    face.openInstall()
+    face.editInstallSpec('dsh-a')
+    face.runInstall()
+    await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
+    face.enableInstalled()
+    face.enableInstalled()
+    expect(state().install.enabling).toBe(true)
+    await vi.waitFor(() => { expect(state().install.open).toBe(false) })
+    expect(plugins.enable.mock.calls).toEqual([['dsh-a'], ['dsh-b']])
+    // A restart one of them waits for is said in passing; the list marks the first.
+    expect(state().notice).toEqual({ kind: 'restart', packageName: 'dsh-b', seq: 1 })
+    expect(state().highlight).toBe('dsh-a')
+    face.clearHighlight()
+    face.clearHighlight()
+    expect(state().highlight).toBeNull()
+
+    // A refusal stops at the package it refused, toasts it, and still closes.
+    face.openInstall()
+    face.editInstallSpec('dsh-a')
+    face.runInstall()
+    await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
+    face.enableInstalled()
+    await vi.waitFor(() => { expect(state().install.open).toBe(false) })
+    expect(plugins.enable).toHaveBeenCalledTimes(4)
+    expect(state().notice).toEqual({ kind: 'failed', code: 'plugins/enable-failed', reason: 'the tree rejected it', packageName: 'dsh-b', seq: 2 })
+    expect(state().highlight).toBe('dsh-a')
+
+    // An install that added no pack has nothing to enable or mark: the screen just closes.
+    plugins.add.mockResolvedValueOnce(ok({ installed: ['lib'], removed: [], enabled: [], installedOnly: [], plain: ['lib'], jobId: 'j' }) as never)
+    face.openInstall()
+    face.editInstallSpec('lib')
+    face.runInstall()
+    await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
+    face.enableInstalled()
+    await vi.waitFor(() => { expect(state().install.open).toBe(false) })
+    expect(plugins.enable).toHaveBeenCalledTimes(4)
+    expect(state().highlight).toBeNull()
+  })
+
+  it('drops an enable from the installed screen that settles after disposal', async () => {
+    const enableGate = deferred<ReturnType<typeof ok<{ changed: boolean; effect: 'live' }>>>()
+    const { plugins, face, state, controller } = bench({
+      add: vi.fn().mockResolvedValue(ok({ installed: ['dsh-a'], removed: [], enabled: [], installedOnly: ['dsh-a'], plain: [], jobId: 'j' })),
+      enable: vi.fn().mockReturnValueOnce(enableGate.promise),
+    })
+    await controller.load()
+    face.openInstall()
+    face.editInstallSpec('dsh-a')
+    face.runInstall()
+    await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
+    face.enableInstalled()
+    expect(plugins.enable).toHaveBeenCalledWith('dsh-a')
+    const before = state()
+    controller.dispose()
+    enableGate.resolve(ok({ changed: true, effect: 'live' }))
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(state()).toBe(before)
   })
 
   it('settles an install and a confirmation while reads run beside them', async () => {
     const addGate = deferred<ReturnType<typeof ok<InstallValue>>>()
     const dependentsGate = deferred<ReturnType<typeof ok<{ services: never[]; references: never[] }>>>()
-    const { plugins, face, state, controller } = bench({
+    const { plugins, face, state, controller, started } = bench({
       add: vi.fn().mockReturnValueOnce(addGate.promise),
       dependents: vi.fn().mockReturnValueOnce(dependentsGate.promise),
     })
@@ -419,9 +600,10 @@ describe('PluginManagerController', () => {
     face.openInstall()
     face.editInstallSpec('pkg')
     face.runInstall()
+    await started()
     // The Host announces the change before the run answers; the read it triggers must not drop the answer.
     await controller.load()
-    addGate.resolve(ok({ installed: ['pkg'], removed: [], enabled: ['pkg'], installedOnly: [], plain: [], jobId: 'j' }))
+    addGate.resolve(ok({ installed: ['pkg'], removed: [], enabled: [], installedOnly: ['pkg'], plain: [], jobId: 'j' }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
 
     face.uninstall(BUNDLE.name)
@@ -431,54 +613,70 @@ describe('PluginManagerController', () => {
     expect(plugins.list).toHaveBeenCalledTimes(4)
   })
 
-  it('keeps the Host reason of a failed install and settles a run whose last chunk never came', async () => {
-    const { face, state, controller, plugins } = bench({
-      add: vi.fn()
-        .mockResolvedValueOnce(refused('plugins/install-failed', 'exit 1', { spec: 'x', exitCode: 1, log: 'ERR_PNPM' }))
-        .mockResolvedValueOnce(refused('gateway/internal', 'offline'))
-        .mockResolvedValueOnce(refused('plugins/install-failed', 'killed', { spec: 'x', exitCode: null, log: 'tail' }))
-        .mockResolvedValueOnce(refused('plugins/enable-failed', 'plugin-manager: x rejected', { packageName: 'x', reason: 'the tree rejected it' }))
-        .mockResolvedValueOnce(refused('plugins/install-failed', 'exit 1', { spec: 'x' }))
-        .mockResolvedValueOnce(refused('plugins/install-failed', 'exit 1', { spec: 'x', exitCode: 'one' })),
+  it('keeps the Host reason and kind of a failed install, settles a run whose last chunk never came, and toasts a refusal of the moment', async () => {
+    // Every run waits on its own gate, so chunks can land while it is installing.
+    const gates: ReturnType<typeof deferred<Awaited<ReturnType<typeof refused>>>>[] = []
+    const { face, state, controller, plugins, started } = bench({
+      add: vi.fn(() => {
+        const gate = deferred<Awaited<ReturnType<typeof refused>>>()
+        gates.push(gate)
+        return gate.promise
+      }),
     })
     const argv = ['pnpm', 'add', 'x']
     await controller.load()
     face.openInstall()
     face.editInstallSpec('x')
-    // No chunk arrived: the Host's captured tail is the reason, and there is no run.
-    face.runInstall()
+    let requestId = '' as PluginInstallRequestId
+    const installing = async (): Promise<void> => {
+      face.runInstall()
+      requestId = await started()
+    }
+    const answer = (value: ReturnType<typeof refused>): void => { gates[gates.length - 1]?.resolve(value) }
+    // No chunk arrived: the Host's captured tail is the reason, and there is no run; the kind is kept.
+    await installing()
+    answer(refused('plugins/install-failed', 'exit 1', { spec: 'x', exitCode: 1, log: 'ERR_PNPM', kind: 'network' }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
     expect(state().install.runs).toEqual([])
-    expect(state().install.failure).toEqual({ code: 'plugins/install-failed', reason: 'ERR_PNPM' })
-    face.runInstall()
-    await vi.waitFor(() => { expect(plugins.add).toHaveBeenCalledTimes(2) })
+    expect(state().install.failure).toEqual({ code: 'plugins/install-failed', reason: 'ERR_PNPM', kind: 'network' })
+    expect(state().install.subject).toEqual({ spec: 'x', ...INSPECTED })
+    await installing()
+    answer(refused('gateway/internal', 'offline'))
     await vi.waitFor(() => { expect(state().install.failure).toEqual({ code: 'gateway/internal', reason: 'offline' }) })
-    // A pnpm failure settles the open run with the code the answer names — here none.
-    face.runInstall()
-    controller.appendLog({ ...installationRequest(controller), jobId: 'j', argv, cwd: '/p', spec: 'x', stream: 'stderr', text: 'streamed' })
-    await vi.waitFor(() => { expect(plugins.add).toHaveBeenCalledTimes(3) })
+    // A pnpm failure settles the open run with the code the answer names — here none; a kind the dialog does not know is dropped.
+    await installing()
+    controller.appendLog({ requestId, jobId: 'j', argv, cwd: '/p', spec: 'x', stream: 'stderr', text: 'streamed' })
+    answer(refused('plugins/install-failed', 'killed', { spec: 'x', exitCode: null, log: 'tail', kind: 'made-up' }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
     expect(state().install.runs).toEqual([{ jobId: 'j', command: 'pnpm add x', cwd: '/p', output: 'streamed', exitCode: null }])
     expect(state().install.failure).toEqual({ code: 'plugins/install-failed', reason: 'tail' })
     // A refusal after pnpm means pnpm itself exited 0.
-    face.runInstall()
-    controller.appendLog({ ...installationRequest(controller), jobId: 'j', argv, cwd: '/p', spec: 'x', stream: 'stdout', text: 'Done' })
-    await vi.waitFor(() => { expect(plugins.add).toHaveBeenCalledTimes(4) })
+    await installing()
+    controller.appendLog({ requestId, jobId: 'j', argv, cwd: '/p', spec: 'x', stream: 'stdout', text: 'Done' })
+    answer(refused('plugins/enable-failed', 'plugin-manager: x rejected', { packageName: 'x', reason: 'the tree rejected it' }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
     expect(state().install.runs).toEqual([{ jobId: 'j', command: 'pnpm add x', cwd: '/p', output: 'Done', exitCode: 0 }])
     expect(state().install.failure).toEqual({ code: 'plugins/enable-failed', reason: 'the tree rejected it' })
     // Details without an exit code settle the run as having none.
-    face.runInstall()
-    controller.appendLog({ ...installationRequest(controller), jobId: 'j', argv, cwd: '/p', spec: 'x', stream: 'stdout', text: 'partial' })
-    await vi.waitFor(() => { expect(plugins.add).toHaveBeenCalledTimes(5) })
+    await installing()
+    controller.appendLog({ requestId, jobId: 'j', argv, cwd: '/p', spec: 'x', stream: 'stdout', text: 'partial' })
+    answer(refused('plugins/install-failed', 'exit 1', { spec: 'x' }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
     expect(state().install.runs).toEqual([{ jobId: 'j', command: 'pnpm add x', cwd: '/p', output: 'partial', exitCode: null }])
     // So does an exit code the answer types wrongly.
-    face.runInstall()
-    controller.appendLog({ ...installationRequest(controller), jobId: 'j', argv, cwd: '/p', spec: 'x', stream: 'stdout', text: 'odd' })
-    await vi.waitFor(() => { expect(plugins.add).toHaveBeenCalledTimes(6) })
+    await installing()
+    controller.appendLog({ requestId, jobId: 'j', argv, cwd: '/p', spec: 'x', stream: 'stdout', text: 'odd' })
+    answer(refused('plugins/install-failed', 'exit 1', { spec: 'x', exitCode: 'one' }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
     expect(state().install.runs).toEqual([{ jobId: 'j', command: 'pnpm add x', cwd: '/p', output: 'odd', exitCode: null }])
+    // A running session refuses the moment, not the spec: a toast, and the spec is back to try again.
+    await installing()
+    answer(refused('plugins/agents-running', 'plugin-manager: add waits for 1 running session(s)', { operation: 'add', running: 1 }))
+    await vi.waitFor(() => { expect(state().install.phase).toBe('idle') })
+    expect(state().install).toMatchObject({ open: true, spec: 'x', subject: null, runs: [], failure: null })
+    expect(state().install.requestId).toBeUndefined()
+    expect(state().notice).toEqual({ kind: 'failed', code: 'plugins/agents-running', reason: 'plugin-manager: add waits for 1 running session(s)', seq: 1 })
+    expect(plugins.add).toHaveBeenCalledTimes(7)
     // Editing the spec after a failure starts over too.
     face.editInstallSpec('y')
     expect(state().install).toMatchObject({ phase: 'idle', spec: 'y', runs: [], failure: null })
@@ -487,7 +685,7 @@ describe('PluginManagerController', () => {
   it('drops every late settlement after disposal', async () => {
     const enableGate = deferred<ReturnType<typeof ok<{ changed: boolean; effect: 'live' }>>>()
     const installGate = deferred<ReturnType<typeof ok<InstallValue>>>()
-    const { face, state, controller } = bench({
+    const { face, state, controller, started } = bench({
       enable: vi.fn().mockReturnValueOnce(enableGate.promise),
       add: vi.fn().mockReturnValueOnce(installGate.promise),
     })
@@ -495,6 +693,7 @@ describe('PluginManagerController', () => {
     face.openInstall()
     face.editInstallSpec('x')
     face.runInstall()
+    await started()
     face.setEnabled(BUNDLE.name, true)
     const before = state()
     controller.dispose()
@@ -536,16 +735,18 @@ describe('PluginManagerController', () => {
   })
 
   it('leaves a run its own exit code when its last chunk beat the answer', async () => {
-    const { face, state, controller } = bench({
-      add: vi.fn().mockResolvedValueOnce(refused('plugins/install-failed', 'exit 1', { spec: 'x', exitCode: 1, log: 'same tail' })),
-    })
+    const gate = deferred<ReturnType<typeof refused>>()
+    const { face, state, controller, started } = bench({ add: vi.fn().mockReturnValueOnce(gate.promise) })
     await controller.load()
     face.openInstall()
     face.editInstallSpec('x')
     face.runInstall()
-    controller.appendLog({ ...installationRequest(controller), jobId: 'j', argv: ['pnpm', 'add', 'x'], cwd: '/p', spec: 'x', stream: 'stderr', text: 'same tail' })
-    controller.appendLog({ ...installationRequest(controller), jobId: 'j', argv: ['pnpm', 'add', 'x'], cwd: '/p', spec: 'x', stream: 'stdout', text: '', exitCode: 1 })
+    const requestId = await started()
+    controller.appendLog({ requestId, jobId: 'j', argv: ['pnpm', 'add', 'x'], cwd: '/p', spec: 'x', stream: 'stderr', text: 'same tail' })
+    controller.appendLog({ requestId, jobId: 'j', argv: ['pnpm', 'add', 'x'], cwd: '/p', spec: 'x', stream: 'stdout', text: '', exitCode: 1 })
+    gate.resolve(refused('plugins/install-failed', 'exit 1', { spec: 'x', exitCode: 1, log: 'same tail', kind: 'unknown' }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
     expect(state().install.runs).toEqual([{ jobId: 'j', command: 'pnpm add x', cwd: '/p', output: 'same tail', exitCode: 1 }])
+    expect(state().install.failure).toEqual({ code: 'plugins/install-failed', reason: 'same tail', kind: 'unknown' })
   })
 })

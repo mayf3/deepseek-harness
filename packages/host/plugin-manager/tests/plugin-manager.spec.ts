@@ -21,7 +21,7 @@ import PluginManagerRemote, { remoteErrorOf, type Config } from '@deepseek-ai/ds
 import type {} from '@deepseek-ai/dsh-host-plugin-manager/types'
 
 /** A complete config: the schema fills defaults at load, the type does not. */
-const CONFIG: Config = { pnpmCommand: 'pnpm', installTimeoutMs: 1_000, installKillGraceMs: 50, installLogTailBytes: 16_384 }
+const CONFIG: Config = { pnpmCommand: 'pnpm', installTimeoutMs: 1_000, installKillGraceMs: 50, installLogTailBytes: 16_384, inspectTimeoutMs: 1_000 }
 
 const contexts: Context[] = []
 afterEach(async () => {
@@ -249,7 +249,7 @@ describe('PluginManagerRemote', () => {
     const remote = await mount()
     expect(remote.typertRemote).toMatchObject({ serviceKey: 'pluginManager', namespace: 'plugins' })
     expect(remoteMethods(remote).map(marker => marker.method)).toEqual([
-      'list', 'add', 'cancelInstall', 'uninstall', 'enable', 'disable', 'retry', 'setRowDisabled', 'dependents',
+      'list', 'inspect', 'add', 'cancelInstall', 'uninstall', 'enable', 'disable', 'retry', 'setRowDisabled', 'dependents',
     ])
   })
 
@@ -275,7 +275,9 @@ describe('PluginManagerRemote', () => {
     }) as PluginManager
     const remote = await mount(stub)
 
+    const signal = AbortSignal.abort()
     await expect(remote.list()).resolves.toEqual({ method: 'list' })
+    await remote.inspect('spec', signal)
     await remote.add('spec', { enable: true })
     await remote.cancelInstall('f2340b6d-40bb-46b7-8b94-217bdf5010bd' as PluginInstallRequestId)
     await remote.uninstall('pkg')
@@ -287,6 +289,7 @@ describe('PluginManagerRemote', () => {
 
     expect(calls).toEqual([
       ['list'],
+      ['inspect', 'spec', signal],
       ['add', 'spec', { enable: true }],
       ['cancelInstall', 'f2340b6d-40bb-46b7-8b94-217bdf5010bd'],
       ['uninstall', 'pkg'],
@@ -357,7 +360,8 @@ describe('remoteErrorOf', () => {
       new PluginOperationError('plugins/not-enableable', 'm', { packageName: 'p', reason: 'r' }),
       new PluginOperationError('plugins/enable-failed', 'm', { packageName: 'p', reason: 'r' }),
       new PluginOperationError('plugins/install-cancelled', 'm', { requestId: 'f2340b6d-40bb-46b7-8b94-217bdf5010bd' as PluginInstallRequestId }),
-      new PluginOperationError('plugins/install-failed', 'm', { spec: 's', exitCode: 1, log: 'l' }),
+      new PluginOperationError('plugins/install-failed', 'm', { spec: 's', exitCode: 1, log: 'l', kind: 'unknown' }),
+      new PluginOperationError('plugins/inspect-rejected', 'm', { spec: 's', problem: 'not-found', reason: 'r' }),
       new PluginOperationError('plugins/busy', 'm', { operation: 'add', subject: 'y', active: { operation: 'add', subject: 'x' } }),
       new PluginOperationError('plugins/agents-running', 'm', { operation: 'add', running: 1 }),
     ]

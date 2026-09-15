@@ -69,6 +69,7 @@ export function refusalText(failure: { readonly code: string; readonly reason: s
 export function noticeText(notice: ManagerNotice, t: Translate): string {
   switch (notice.kind) {
     case 'restart': return t('restartNotice')
+    case 'cancelled': return t('installCancelled')
     case 'failed': {
       switch (notice.code) {
         case 'plugins/not-enableable': return t('notEnableable', { reason: notice.reason })

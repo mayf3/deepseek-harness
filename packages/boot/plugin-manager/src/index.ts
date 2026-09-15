@@ -19,5 +19,7 @@
 export * from './errors.ts'
 export type * from './types.ts'
 export type { PluginToolingConfig, SpawnLike } from './helpers.ts'
+export { classifyInstallFailure, type InstallFailureFacts } from './install-failure.ts'
+export { parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts'
 export { PluginInstaller, type PluginInstallerOptions, type PluginInstallOutcome } from './installer.ts'
 export { PluginManager, type PluginManagerOptions } from './manager.ts'

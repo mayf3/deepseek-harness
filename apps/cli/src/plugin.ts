@@ -32,7 +32,9 @@ import { INSTALL_ANCHOR } from './profile-boot.ts'
 const NAME = 'dsh'
 
 /** The tooling bounds the command runs with; the Web host reads the same values from its config. */
-const TOOLING: PluginToolingConfig = { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installKillGraceMs: 5_000, installLogTailBytes: 16_384 }
+const TOOLING: PluginToolingConfig = {
+  pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installKillGraceMs: 5_000, installLogTailBytes: 16_384, inspectTimeoutMs: 20_000,
+}
 
 /** Test seams: the child spawner and the static metadata reader. */
 export interface PluginCommandInternals {

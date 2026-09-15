@@ -1409,6 +1409,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the views, bundles first in layer order.',
       },
       {
+        signature: '@Remote(\'inspect\') async inspect(spec: string, signal?: AbortSignal): Promise<PluginSpecInspection>',
+        description: 'Read what a spec names before installing it: its form, the package\'s name, version, description, and title where they are known ahead of the install, and whether it declares a bundle.',
+        parameters: [{ name: 'spec', description: 'what would be installed, in pnpm\'s own vocabulary.' }, { name: 'signal', description: 'cancels the registry lookup.' }],
+        returns: 'the inspection.',
+      },
+      {
         signature: '@Remote(\'add\') async add(spec: string, options?: PluginInstallOptions): Promise<PluginInstallResult>',
         description: 'Install a package with pnpm, read its declarations, and leave it disabled unless asked otherwise.',
         parameters: [{ name: 'spec', description: 'what to install, in pnpm\'s own vocabulary.' }, { name: 'options', description: '`enable` selects new bundles; `requestId` identifies the install for progress and cancellation.' }],
@@ -4658,6 +4664,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type InspectorJsonValue = InspectorJsonPrimitive | readonly InspectorJsonValue[] | InspectorJsonObject;',
   },
   {
+    name: 'InstallSpecKind',
+    declaration: 'export type InstallSpecKind = \'registry\' | \'path\' | \'git\' | \'tarball\';',
+  },
+  {
     name: 'InvariantFailure',
     declaration: 'export type InvariantFailure = (message: string) => never;',
   },
@@ -5092,6 +5102,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PluginServiceDependent',
     declaration: 'export interface PluginServiceDependent {\n    readonly service: string;\n    readonly providedBy: string;\n    readonly injectedBy: readonly string[];\n}',
+  },
+  {
+    name: 'PluginSpecInspection',
+    declaration: 'export interface PluginSpecInspection {\n    readonly kind: InstallSpecKind;\n    readonly name?: string;\n    readonly version?: string;\n    readonly description?: string;\n    readonly title?: string;\n    readonly bundle: boolean | null;\n}',
   },
   {
     name: 'PostToolDecision',

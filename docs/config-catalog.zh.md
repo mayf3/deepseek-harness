@@ -1054,10 +1054,12 @@ export interface Config {
   installKillGraceMs: number
   /** How many trailing bytes of an install run's output an install failure reports. */
   installLogTailBytes: number
+  /** Bound on one registry lookup an inspection runs, in milliseconds. */
+  inspectTimeoutMs: number
 }
 ```
 
-来源：[`packages/host/plugin-manager/src/index.ts:39`](../packages/host/plugin-manager/src/index.ts)
+来源：[`packages/host/plugin-manager/src/index.ts:43`](../packages/host/plugin-manager/src/index.ts)
 
 
 <a id="deepseek-aidsh-host-webserver"></a>

@@ -34,6 +34,7 @@ import type {
   PluginInstallCancellation,
   PluginPackageView,
   PluginRowIssue,
+  PluginSpecInspection,
   PluginRowReference,
   PluginServiceDependent,
 } from './types.ts'
@@ -215,6 +216,19 @@ export class PluginManager {
         throw error
       }
     })
+  }
+
+  /**
+   * Read what a spec names before installing it, without changing anything:
+   * a lookup, so it runs beside a mutation rather than waiting for one.
+   * @param spec - what would be installed, in pnpm's own vocabulary.
+   * @param signal - cancels the registry lookup.
+   * @returns the inspection.
+   * @throws {PluginOperationError} `plugins/unavailable` without a profile runtime, or
+   * `plugins/inspect-rejected` with the problem the installer found.
+   */
+  async inspect(spec: string, signal?: AbortSignal): Promise<PluginSpecInspection> {
+    return this.installer(this.runtime()).inspect(spec, signal)
   }
 
   /**

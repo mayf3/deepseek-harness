@@ -29,7 +29,7 @@ Select **Plugins** in the sidebar. The page reads packages through `api-remotes`
 
 ### Installing a package
 
-**Add plugin** accepts a pnpm package spec, local path or Git URL. The dialog shows the command, streamed output, and completion result, and stays open during installation. New bundles can be enabled immediately. Undeclared packages remain installed; invalid or conflicting bundle declarations may be rejected with the Host’s reason. A successful installation does not certify that a module can activate.
+**Add plugin** takes a registry name, an absolute local path, or a Git address. **Install** first asks the Host to read what the spec names (`plugins.inspect`): a name the list already shows, a name the registry does not have, a path without a package, or a spec pnpm would refuse comes back under the field as one sentence, with the spec kept for editing. An accepted spec opens the installing screen, which shows the package's title, one-liner, and version as the Host read them and folds pnpm's command and output behind **Show install details**. A finished install offers **Enable now**, which switches the new bundles on, closes the dialog, and scrolls the list to the first of them; closing instead leaves them installed and off. A failed install says what went wrong in one line — the registry or network could not be reached, the package was not found, the disk is full, the profile is not writable, pnpm blocked a build script — with pnpm's output behind the details and **Retry** at hand. Packages pnpm added that the Host removed again are listed with its reason; a dependency that is not a plugin pack is named as such. A successful installation does not certify that a module can activate.
 
 ### Switching a plugin pack
 
@@ -41,11 +41,11 @@ A row's switch on the pack's page calls `plugins.setRowDisabled` against the pro
 
 ### Packages without a bundle
 
-Non-bundle dependencies remain installed and appear under **Other installed packages**. Their detail page shows package metadata and uninstall. Modules can be loaded by writing Cordis configuration; this page does not infer module exports.
+Non-bundle dependencies remain installed and appear under **Dependencies that are not plugin packs**, folded until opened. Their detail page shows package metadata and uninstall. Modules can be loaded by writing Cordis configuration; this page does not infer module exports.
 
 -----
 
-During installation, **Cancel installation** requests Host cleanup and shows **Stopping installation** until it is confirmed. Configuration application cannot be cancelled. A cancelled dialog keeps the package spec and logs and offers retry; downloaded or unpacked files can remain. Closing the dialog is blocked while the Host owns the operation. A connection error does not confirm cancellation.
+During installation, **Cancel install** asks the Host to stop the run and shows **Stopping installation…** until the Host confirms. Configuration application cannot be cancelled. Once confirmed, the dialog returns to the spec, ready to install again, and a toast says the installation was cancelled; downloaded or unpacked files can remain. Closing the dialog is blocked while the Host owns the operation. A connection error does not confirm cancellation: the running screen says so and cancelling can be tried again.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -61,7 +61,7 @@ The browser plugin registers the `plugins` sidebar entry and its `main` panel th
 
 ### The store
 
-`PluginManagerController` owns the package snapshot, busy keys, notices, install progress and confirmations. It coalesces overlapping reads, refreshes after operations and Host changes, and ignores late results after disposal. Install output is grouped by job id.
+`PluginManagerController` owns the package snapshot, busy keys, notices, install progress and confirmations. It coalesces overlapping reads, refreshes after operations and Host changes, and ignores late results after disposal. Install output is grouped by job id. The install dialog moves `idle → checking → starting → running → done | failed`, with `cancelling` and `applying` as the Host reports them. The check runs under an `AbortController` that going back or closing aborts, and its settlement is dropped; a run is stopped only through `plugins.cancelInstall`, whose answer the dialog waits for. A refusal of the moment — `plugins/busy` or `plugins/agents-running` — returns the dialog to the spec instead of the failed screen. Every notice is a toast that retires on its own; only the restart banner, which names packages whose change waits for the next start, stays on the page.
 
 ### Confirmation
 

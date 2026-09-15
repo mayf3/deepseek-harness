@@ -79,29 +79,6 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.notice {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-size: 12px;
-  line-height: 18px;
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-secondary);
-}
-
-.notice[data-kind='failed'] {
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.notice span {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
 .group {
   display: flex;
   flex-direction: column;
@@ -132,6 +109,64 @@
   font-size: 12.5px;
   color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
+}
+
+/* The folded group's header is its toggle; the chevron turns as it opens. */
+.groupToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.groupChevron {
+  flex: none;
+  transform: rotate(-90deg);
+  transition: transform 160ms ease;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.groupToggle[aria-expanded='true'] .groupChevron {
+  transform: none;
+}
+
+.groupIntro {
+  margin: -2px 0 0;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The package an install just enabled: a ring that fades while the list scrolls to it. */
+.card[data-plugin-highlight] {
+  animation: dsh-plugin-highlight 2400ms ease-out;
+}
+
+@keyframes dsh-plugin-highlight {
+  0%,
+  55% {
+    box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card[data-plugin-highlight] {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
+  }
+
+  .groupChevron {
+    transition: none;
+  }
 }
 
 .groupSub {
@@ -438,28 +473,186 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.installExample {
-  display: block;
-  margin-top: -6px;
+.installField input[aria-invalid='true'] {
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
+/* What the check refused, under the field. */
+.inputError {
+  margin: -4px 0 0;
   font-size: 12px;
   line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-state-error-primary);
 }
 
-.installOption {
+/* The footer's only action spans the dialog, as the primary action of a short form does. */
+.wide {
+  width: 100%;
+  justify-content: center;
+}
+
+/* The installing, installed, and failed screens: a head row, the centred
+   state, the subject card, then the details toggle beside the screen's action. */
+.wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px 20px 20px;
+}
+
+.wizardHead {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  justify-content: space-between;
+  min-height: 24px;
 }
 
-.progress {
+.wizardBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.wizardClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.wizardClose:hover {
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+}
+
+.wizardHero {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 10px;
+  padding: 8px 0 4px;
+  text-align: center;
+}
+
+.wizardIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.wizardIcon[data-tone='done'] {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.wizardIcon[data-tone='failed'] {
+  color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary));
+}
+
+.wizardTitle {
+  margin: 0;
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
+}
+
+.wizardSub {
   margin: 0;
   font-size: 13px;
+  line-height: 20px;
   color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.subject {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 12px;
+  text-align: center;
+}
+
+.subjectName {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.subjectDesc,
+.subjectMeta {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.wizardFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detailsToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.detailsChevron {
+  transition: transform 160ms ease;
+}
+
+.detailsToggle[aria-expanded='true'] .detailsChevron {
+  transform: rotate(180deg);
+}
+
+.detailsBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.spinnerLarge {
+  width: 28px;
+  height: 28px;
+  border: 3px solid color-mix(in srgb, var(--dsw-alias-label-primary) 18%, transparent);
+  border-top-color: var(--dsw-alias-label-primary);
+  border-radius: 50%;
+  corner-shape: round;
+  animation: spin 900ms linear infinite;
 }
 
 .spinner {
@@ -480,8 +673,13 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .spinner {
+  .spinner,
+  .spinnerLarge {
     animation: none;
+  }
+
+  .detailsChevron {
+    transition: none;
   }
 }
 

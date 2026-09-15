@@ -495,7 +495,10 @@ flowchart TD
   pkg_session_log_export --> pkg_session
   pkg_session_log_export --> pkg_session_persistence
   pkg_plugin_manager --> pkg_app_boot
+  pkg_plugin_manager --> pkg_brand
   pkg_plugin_manager --> pkg_package_manifest
+  pkg_plugin_manager --> pkg_subprocess
+  pkg_plugin_manager --> pkg_subprocess_local
   pkg_plugin_manager --> pkg_util_values
   pkg_ptc_runtime --> pkg_sandbox
   pkg_sandbox_local --> pkg_llm
@@ -1433,7 +1436,7 @@ flowchart TD
 | [`fs`](../packages/fs/fs) | `fs` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`sandbox`](../packages/sandbox/sandbox) |
 | [`spill-local`](../packages/spill/spill-local) | `spill` | [`spill`](../packages/spill/spill) |
 | [`session-log-export`](../packages/session-query/session-log-export) | `session-query` | [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence) |
-| [`plugin-manager`](../packages/boot/plugin-manager) | `boot` | [`app-boot`](../packages/boot/app-boot), [`package-manifest`](../packages/util/package-manifest), [`util-values`](../packages/util/values) |
+| [`plugin-manager`](../packages/boot/plugin-manager) | `boot` | [`app-boot`](../packages/boot/app-boot), [`brand`](../packages/util/brand), [`package-manifest`](../packages/util/package-manifest), [`subprocess`](../packages/subprocess/subprocess), [`subprocess-local`](../packages/subprocess/subprocess-local), [`util-values`](../packages/util/values) |
 | [`ptc-runtime`](../packages/ptc-runtime/ptc-runtime) | `ptc-runtime` | [`sandbox`](../packages/sandbox/sandbox) |
 | [`sandbox-local`](../packages/sandbox/sandbox-local) | `sandbox` | [`llm`](../packages/llm/llm), [`sandbox`](../packages/sandbox/sandbox), [`session`](../packages/core/session) |
 | [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl) | `session` | [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence) |

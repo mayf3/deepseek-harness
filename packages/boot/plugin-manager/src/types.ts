@@ -167,6 +167,60 @@ export interface PluginDependents {
   readonly references: readonly PluginRowReference[]
 }
 
+/** The form one install spec takes, in pnpm's vocabulary. */
+export type InstallSpecKind = 'registry' | 'path' | 'git' | 'tarball'
+
+/**
+ * What a spec names before anything installs. `name` and `bundle` are known
+ * for a registry package the registry answered for and for a directory whose
+ * manifest was read; a git or tarball spec keeps them unknown until pnpm has
+ * fetched it.
+ */
+export interface PluginSpecInspection {
+  readonly kind: InstallSpecKind
+  readonly name?: string
+  readonly version?: string
+  readonly description?: string
+  /** The manifest's `dsh.title`. */
+  readonly title?: string
+  /** Whether the package declares a bundle patch; null while that is unknown. */
+  readonly bundle: boolean | null
+}
+
+/** Why an inspection refused a spec. */
+export type PluginInspectProblem =
+  | 'invalid-spec'
+  | 'already-installed'
+  | 'not-found'
+  | 'not-a-package'
+  | 'network'
+  | 'unknown'
+
+/**
+ * What an install failure was, read off pnpm's exit and output:
+ *
+ * - `pnpm-missing`: pnpm could not be spawned;
+ * - `timeout`: the run outlived its bound;
+ * - `not-found`: the registry has no such package;
+ * - `no-matching-version`: the package exists, the requested range matches nothing;
+ * - `network`: the registry or a git host could not be reached;
+ * - `disk-full`, `permission`: the profile directory could not be written;
+ * - `build-blocked`: pnpm refused a dependency's build script until it is allowed;
+ * - `integrity`: a downloaded tarball failed its check;
+ * - `unknown`: none of the above.
+ */
+export type PluginInstallFailureKind =
+  | 'pnpm-missing'
+  | 'timeout'
+  | 'not-found'
+  | 'no-matching-version'
+  | 'network'
+  | 'disk-full'
+  | 'permission'
+  | 'build-blocked'
+  | 'integrity'
+  | 'unknown'
+
 /** Why the manager changed something, for a listener deciding what to refresh. */
 export type PluginChangeReason = 'install' | 'uninstall' | 'enable' | 'disable' | 'retry' | 'row' | 'runtime'
 
@@ -203,8 +257,10 @@ export interface PluginOperationDetailsMap {
   'plugins/not-enableable': { readonly packageName: string; readonly reason: string }
   /** Preparation or the root Include rejected enablement; the layer selection was reverted. */
   'plugins/enable-failed': { readonly packageName: string; readonly reason: string }
-  /** pnpm exited non-zero, could not be spawned, or timed out. */
-  'plugins/install-failed': { readonly spec: string; readonly exitCode: number | null; readonly log: string }
+  /** pnpm exited non-zero, could not be spawned, or timed out; `kind` classifies the failure. */
+  'plugins/install-failed': { readonly spec: string; readonly exitCode: number | null; readonly log: string; readonly kind: PluginInstallFailureKind }
+  /** The spec cannot be installed as given; `problem` says why and `reason` details it. */
+  'plugins/inspect-rejected': { readonly spec: string; readonly problem: PluginInspectProblem; readonly reason: string }
   /** The user cancelled, and the installer restored its manifest and lockfile. */
   'plugins/install-cancelled': { readonly requestId: PluginInstallRequestId }
   /** Another mutation is still running; the manager runs one at a time and refuses rather than queues. */

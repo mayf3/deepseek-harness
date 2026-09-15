@@ -39,7 +39,7 @@ declare const installAnchor: string
 const installer = new PluginInstaller({
   profileDir, profileName: 'web', installAnchor,
   loadProfile: () => loadProfile('dsh', 'web', installAnchor, undefined, { userLayer: false }),
-  config: { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installKillGraceMs: 5_000, installLogTailBytes: 16_384 },
+  config: { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installKillGraceMs: 5_000, installLogTailBytes: 16_384, inspectTimeoutMs: 20_000 },
   installLog: (chunk) => process.stdout.write(chunk.text),
   color: process.stdout.isTTY,
 })
@@ -47,7 +47,9 @@ const outcome = await installer.add('@acme/dsh-sql-tool')
 console.log(outcome.installed, outcome.removed)
 ```
 
-`add` runs pnpm in the profile, reconciles `dependencies`, and statically checks new bundle declarations against current row ownership. Conflicting bundles are removed with a reason; undeclared and unreadable packages remain installed. New bundles stay disabled unless the caller enables them. Failed installation restores the saved manifest and `pnpm-lock.yaml`; downloaded and unpacked files may remain in `node_modules` or the pnpm store. Failures report `plugins/install-failed` with the log tail.
+`add` runs pnpm in the profile, reconciles `dependencies`, and statically checks new bundle declarations against current row ownership. Conflicting bundles are removed with a reason; undeclared and unreadable packages remain installed. New bundles stay disabled unless the caller enables them. Failed installation restores the saved manifest and `pnpm-lock.yaml`; downloaded and unpacked files may remain in `node_modules` or the pnpm store. Failures report `plugins/install-failed` with the log tail and a `kind` read off how the run ended and what pnpm printed: `pnpm-missing`, `timeout`, `not-found`, `no-matching-version`, `network`, `disk-full`, `permission`, `build-blocked`, `integrity`, or `unknown`.
+
+`inspect(spec, signal?)` reads what a spec names before anything installs: `parseInstallSpec` sorts it into a registry name, an absolute path, a git address, or a tarball, refusing a relative path or a name the registry would not accept; a registry name is then asked of the registry through `pnpm view`, run in the profile directory so the same registry and proxy settings apply as to the install, and a directory has its `package.json` read. The answer carries the name, version, description, `dsh.title`, and whether the package declares a bundle; a git or tarball spec answers only its kind. The lookup ends at `inspectTimeoutMs` or when the caller's signal aborts. A refusal is `plugins/inspect-rejected` with a `problem`: `invalid-spec`, `already-installed` (a dependency or a template bundle), `not-found`, `not-a-package`, `network`, or `unknown`.
 
 ### Managing the booted profile
 
@@ -80,7 +82,7 @@ The manager runs one mutation at a time — a second call while one runs fails w
 
 ### Failures
 
-Every refusal or failure is a `PluginOperationError` with a stable `code` and `details` typed by it: `plugins/unavailable` (no profile runtime), `plugins/not-installed`, `plugins/not-enableable`, `plugins/enable-failed`, `plugins/install-failed`, `plugins/install-cancelled`, `plugins/busy`, `plugins/agents-running`, and `plugins/bad-request` for a request that names nothing the profile has. `pluginOperationFailureOf` narrows a caught value to the code-discriminated union.
+Every refusal or failure is a `PluginOperationError` with a stable `code` and `details` typed by it: `plugins/unavailable` (no profile runtime), `plugins/not-installed`, `plugins/not-enableable`, `plugins/enable-failed`, `plugins/install-failed`, `plugins/install-cancelled`, `plugins/inspect-rejected`, `plugins/busy`, `plugins/agents-running`, and `plugins/bad-request` for a request that names nothing the profile has. `pluginOperationFailureOf` narrows a caught value to the code-discriminated union.
 
 -----
 

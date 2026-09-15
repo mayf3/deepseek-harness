@@ -51,6 +51,8 @@ export interface PluginToolingConfig {
   readonly installKillGraceMs: number
   /** How many trailing bytes of an install run's output an install failure reports. */
   readonly installLogTailBytes: number
+  /** Bound on one registry lookup an inspection runs, in milliseconds. */
+  readonly inspectTimeoutMs: number
 }
 
 /**

@@ -729,6 +729,7 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   PluginInstallOptions: 'plugin manager installation control is owned by packages/host/plugin-manager/README.md',
   PluginInstallProgress: 'plugin manager installation control is owned by packages/host/plugin-manager/README.md',
   PluginInstallCancellation: 'plugin manager installation control is owned by packages/host/plugin-manager/README.md',
+  PluginSpecInspection: 'plugin manager spec inspections are owned by packages/host/plugin-manager/README.md',
   PluginInstallLogChunk: 'plugin manager install log chunks are owned by packages/host/plugin-manager/README.md',
   PluginPackageView: 'plugin manager package views are owned by packages/host/plugin-manager/README.md',
   PluginInstallResult: 'plugin manager install results are owned by packages/host/plugin-manager/README.md',

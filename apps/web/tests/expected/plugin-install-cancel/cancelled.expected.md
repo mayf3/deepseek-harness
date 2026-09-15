@@ -2,18 +2,9 @@
   - heading "添加插件" [level=2]
   - button "关闭":
     - img
-  - paragraph: 输入插件的包名、本地路径或 Git 地址。
+  - paragraph: 你可以从 Git 社区中获取插件 ID，例如 dsh-better-sidebar、github:someone/dsh-plugin，或输入本地路径例如 /path/to/plugin。
   - text: 包名或地址
   - textbox "包名或地址":
-    - /placeholder: dsh-better-sidebar 或 /path/to/plugin
+    - /placeholder: 输入插件的包名、本地路径或 Git 地址
     - text: slow-package
-  - text: 例如 dsh-better-sidebar、github:someone/dsh-plugin、/path/to/plugin
-  - checkbox "安装完成后直接启用" [checked]
-  - text: 安装完成后直接启用
-  - status: 已取消安装，本次未继续启用插件。下载缓存或已解包文件可能保留，需要时可重新安装。
-  - paragraph: 安装位置：{{cwd}}/.dsh-home/profiles/scaffold
-  - text: 已取消 $ {{node}} add slow-package 未正常退出
-  - button "复制"
-  - text: "Waiting for package download plugin-manager: installation cancelled"
-  - button "完成"
-  - button "重试"
+  - button "安装"

@@ -23,6 +23,7 @@ import {
   type PluginInstallCancellation,
   type PluginOperationFailure,
   type PluginPackageView,
+  type PluginSpecInspection,
   type SpawnLike,
 } from '@deepseek-ai/dsh-plugin-manager'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -48,6 +49,8 @@ export interface Config {
   installKillGraceMs: number
   /** How many trailing bytes of an install run's output an install failure reports. */
   installLogTailBytes: number
+  /** Bound on one registry lookup an inspection runs, in milliseconds. */
+  inspectTimeoutMs: number
 }
 
 /** Test seams: the child spawner, the static metadata reader, or a manager standing in for the shared one. */
@@ -74,6 +77,7 @@ export class PluginManagerRemote extends TypertRemoteService {
     installTimeoutMs: z.number().min(1_000).default(600_000),
     installKillGraceMs: z.number().min(1).default(5_000),
     installLogTailBytes: z.number().min(256).default(16_384),
+    inspectTimeoutMs: z.number().min(1_000).default(20_000),
   })
 
   private readonly manager: PluginManager
@@ -133,6 +137,18 @@ export class PluginManagerRemote extends TypertRemoteService {
   @Remote('list')
   async list(): Promise<PluginPackageView[]> {
     return relay(() => this.manager.list())
+  }
+
+  /**
+   * Read what a spec names before installing it: its form, the package's name, version,
+   * description, and title where they are known ahead of the install, and whether it declares a bundle.
+   * @param spec - what would be installed, in pnpm's own vocabulary.
+   * @param signal - cancels the registry lookup.
+   * @returns the inspection.
+   */
+  @Remote('inspect')
+  async inspect(spec: string, signal?: AbortSignal): Promise<PluginSpecInspection> {
+    return relay(() => this.manager.inspect(spec, signal))
   }
 
   /**
@@ -254,6 +270,7 @@ export function remoteErrorOf(failure: PluginOperationFailure): RemoteError {
     case 'plugins/enable-failed': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/install-cancelled': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/install-failed': return new RemoteError(failure.code, failure.message, failure.details, options)
+    case 'plugins/inspect-rejected': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/busy': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/agents-running': return new RemoteError(failure.code, failure.message, failure.details, options)
     case 'plugins/bad-request': return new RemoteError('gateway/bad-request', failure.message, {}, options)

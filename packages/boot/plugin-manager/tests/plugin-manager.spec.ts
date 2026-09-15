@@ -31,7 +31,7 @@ const NAME = 'dsh-test'
 
 /** A complete tooling config: the host's schema fills these defaults at load, the type does not. */
 function managerConfig(overrides: Partial<PluginToolingConfig> = {}): PluginToolingConfig {
-  return { pnpmCommand: 'pnpm', installTimeoutMs: 1_000, installKillGraceMs: 50, installLogTailBytes: 16_384, ...overrides }
+  return { pnpmCommand: 'pnpm', installTimeoutMs: 1_000, installKillGraceMs: 50, installLogTailBytes: 16_384, inspectTimeoutMs: 1_000, ...overrides }
 }
 
 /** Test seams: the child spawner and the static metadata reader. */
@@ -771,6 +771,10 @@ describe('PluginManager', () => {
       expect(log.every(chunk => chunk.requestId === undefined)).toBe(true)
       await installer.remove('ext-plain')
       expect(manifestOf(staged.profileDir).dependencies).not.toHaveProperty('ext-plain')
+      // A caller's signal bounds an inspection beside the deadline: one already aborted never reads the registry.
+      await expect(installer.inspect('ext-view', AbortSignal.abort())).rejects.toMatchObject({
+        code: 'plugins/inspect-rejected', details: { spec: 'ext-view', problem: 'unknown' },
+      })
     })
 
     it('does not start package removal after removing its user row disposes the manager', async () => {
@@ -945,6 +949,127 @@ describe('PluginManager', () => {
         spawn: fakePnpm(staged.profileDir, () => ({ code: 2, stdout: 'a'.repeat(300), stderr: 'b'.repeat(300) })),
       }, { installLogTailBytes: 256 })
       await expect(manager.add('x')).rejects.toMatchObject({ details: { log: 'b'.repeat(300) } })
+    })
+
+    it('classifies a failure by how the run ended and what pnpm printed', async () => {
+      const outputs: Record<string, string> = {
+        'disk': 'ERR_PNPM_ENOSPC  ENOSPC: no space left on device\n',
+        'blocked': 'ERR_PNPM_IGNORED_BUILDS  Ignored build scripts: node-pty\n',
+        'gone': 'ERR_PNPM_META_FETCH_FAIL  GET https://registry/x: getaddrinfo ENOTFOUND registry\n',
+        'odd': 'something else\n',
+      }
+      const staged = await stageHome()
+      const { manager } = await bootProfile(staged, { spawn: fakePnpm(staged.profileDir, args => ({ code: 1, stderr: outputs[args[1] ?? ''] ?? '' })) })
+      for (const [spec, kind] of [['disk', 'disk-full'], ['blocked', 'build-blocked'], ['gone', 'network'], ['odd', 'unknown']] as const) {
+        await expect(manager.add(spec)).rejects.toMatchObject({ code: 'plugins/install-failed', details: { spec, kind } })
+      }
+      const missingHome = await stageHome()
+      const missing = await bootProfile(missingHome, {
+        spawn: fakePnpm(missingHome.profileDir, () => ({ code: null, error: Object.assign(new Error('spawn pnpm ENOENT'), { code: 'ENOENT' }) })),
+      })
+      await expect(missing.manager.add('x')).rejects.toMatchObject({ details: { kind: 'pnpm-missing' } })
+      const hangingHome = await stageHome()
+      const hanging = await bootProfile(hangingHome, { spawn: fakePnpm(hangingHome.profileDir, () => ({ code: null, hang: true })) })
+      await expect(hanging.manager.add('x')).rejects.toMatchObject({ details: { kind: 'timeout' } })
+    })
+  })
+
+  describe('inspect', () => {
+    /** The registry as a fake pnpm view answers it: one JSON object per package, several for a range. */
+    type ViewAnswer = { code?: number | null; stdout?: string; stderr?: string; hang?: boolean; error?: unknown }
+    const registry = (profileDir: string, answers: Record<string, ViewAnswer>): SpawnLike =>
+      fakePnpm(profileDir, (args) => {
+        expect(args.slice(0, 1)).toEqual(['view'])
+        expect(args.slice(2)).toEqual(['name', 'version', 'description', 'dsh', '--json'])
+        const answer = answers[args[1] ?? '']
+        if (answer === undefined) return { code: 1, stderr: 'unexpected pnpm view\n' }
+        return { code: answer.code ?? 0, ...answer }
+      })
+
+    it('reads a registry name through pnpm view, newest version of a range last', async () => {
+      const staged = await stageHome()
+      const { manager } = await bootProfile(staged, {
+        spawn: registry(staged.profileDir, {
+          'dsh-x': { stdout: JSON.stringify({ name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', dsh: { title: 'Sidebar', bundle: { patch: './cordis.patch.yml' } } }) },
+          'dsh-lib@^1': { stdout: JSON.stringify([{ name: 'dsh-lib', version: '1.0.0' }, { name: 'dsh-lib', version: '1.1.0', dsh: null }]) },
+          'dsh-bare': { stdout: '\u001b[36m' + JSON.stringify({ version: '0.0.1', description: '' }) + '\u001b[39m\n' },
+        }),
+      })
+      await expect(manager.inspect('dsh-x')).resolves.toEqual({
+        kind: 'registry', name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', title: 'Sidebar', bundle: true,
+      })
+      await expect(manager.inspect('dsh-lib@^1')).resolves.toEqual({ kind: 'registry', name: 'dsh-lib', version: '1.1.0', bundle: false })
+      // An answer that names no package keeps the name the spec gave; colour escapes around the JSON are dropped.
+      await expect(manager.inspect('dsh-bare')).resolves.toEqual({ kind: 'registry', name: 'dsh-bare', version: '0.0.1', bundle: false })
+    })
+
+    it('refuses a registry name the registry cannot answer for, by what it said', async () => {
+      const staged = await stageHome()
+      const { manager } = await bootProfile(staged, {
+        spawn: registry(staged.profileDir, {
+          'nope': { code: 1, stderr: 'npm error code E404\nnpm error 404 Not Found - GET https://registry/nope\n' },
+          'old@9': { code: 1, stderr: 'ERR_PNPM_NO_MATCHING_VERSION  No matching version found for old@9\n' },
+          'far': { code: 1, stderr: 'ERR_PNPM_META_FETCH_FAIL  request failed, reason: getaddrinfo ENOTFOUND registry\n' },
+          'odd': { code: 3, stdout: 'plain text\n' },
+          'quiet': { code: 4 },
+          'garbled': { stdout: 'not json' },
+          'scalar': { stdout: '"just a string"' },
+          'slow': { hang: true },
+          'gone': { code: null, error: Object.assign(new Error('spawn pnpm ENOENT'), { code: 'ENOENT' }) },
+        }),
+      }, { inspectTimeoutMs: 100 })
+      const problem = async (spec: string): Promise<{ problem: string; reason: string }> => {
+        const failure = await manager.inspect(spec).then(() => undefined, (error: unknown) => pluginOperationFailureOf(error))
+        if (failure?.code !== 'plugins/inspect-rejected') throw new Error(`${spec}: ${String(failure?.code)}`)
+        expect(failure.details.spec).toBe(spec)
+        return { problem: failure.details.problem, reason: failure.details.reason }
+      }
+      await expect(problem('nope')).resolves.toMatchObject({ problem: 'not-found', reason: expect.stringContaining('E404') as string })
+      await expect(problem('old@9')).resolves.toMatchObject({ problem: 'not-found', reason: expect.stringContaining('No matching version') as string })
+      await expect(problem('far')).resolves.toMatchObject({ problem: 'network' })
+      // Without stderr, stdout stands in as the reason; with neither, the exit code does.
+      await expect(problem('odd')).resolves.toEqual({ problem: 'unknown', reason: 'plain text' })
+      await expect(problem('quiet')).resolves.toEqual({ problem: 'unknown', reason: 'pnpm view exited with 4' })
+      await expect(problem('garbled')).resolves.toMatchObject({ problem: 'unknown', reason: expect.stringContaining('unreadable pnpm view output') as string })
+      await expect(problem('scalar')).resolves.toEqual({ problem: 'unknown', reason: 'pnpm view answered no package' })
+      await expect(problem('slow')).resolves.toMatchObject({ problem: 'unknown', reason: expect.stringContaining('timed out') as string })
+      await expect(problem('gone')).resolves.toMatchObject({ problem: 'unknown', reason: expect.stringContaining('ENOENT') as string })
+    })
+
+    it('reads a directory\'s manifest, and refuses what is not a package or is already installed', async () => {
+      const staged = await stageHome()
+      const dir = join(staged.home, 'dev', 'dsh-local')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'dsh-local', version: '0.1.0', description: 'Local.', dsh: { bundle: { patch: './p.yml' } } }))
+      const bare = join(staged.home, 'dev', 'bare')
+      mkdirSync(bare, { recursive: true })
+      writeFileSync(join(bare, 'package.json'), '{"version":"1.0.0"}')
+      const broken = join(staged.home, 'dev', 'broken')
+      mkdirSync(broken, { recursive: true })
+      writeFileSync(join(broken, 'package.json'), '{')
+      const tarball = join(staged.home, 'dev', 'pack.tgz')
+      writeFileSync(tarball, '')
+      addDependency(staged.profileDir, 'dsh-installed')
+      const { manager } = await bootProfile(staged, { spawn: registry(staged.profileDir, {}) })
+
+      await expect(manager.inspect(`file:${dir}`)).resolves.toEqual({ kind: 'path', name: 'dsh-local', version: '0.1.0', description: 'Local.', bundle: true })
+      await expect(manager.inspect(tarball)).resolves.toEqual({ kind: 'tarball', bundle: null })
+      await expect(manager.inspect('github:acme/dsh-remote')).resolves.toEqual({ kind: 'git', bundle: null })
+      await expect(manager.inspect(join(staged.home, 'dev', 'missing'))).rejects.toMatchObject({ details: { problem: 'not-a-package', reason: 'the path does not exist' } })
+      await expect(manager.inspect(join(staged.home, 'dev', 'missing.tgz'))).rejects.toMatchObject({ details: { problem: 'not-a-package', reason: 'the tarball does not exist' } })
+      await expect(manager.inspect(bare)).rejects.toMatchObject({ details: { problem: 'not-a-package', reason: 'the package.json names no package' } })
+      await expect(manager.inspect(broken)).rejects.toMatchObject({ details: { problem: 'not-a-package', reason: expect.stringContaining('no readable package.json') as string } })
+      await expect(manager.inspect('dsh-installed')).rejects.toMatchObject({ details: { problem: 'already-installed', reason: 'dsh-installed is already installed' } })
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'dsh-installed' }))
+      await expect(manager.inspect(dir)).rejects.toMatchObject({ details: { problem: 'already-installed' } })
+      await expect(manager.inspect('./relative')).rejects.toMatchObject({ details: { problem: 'invalid-spec' } })
+    })
+
+    it('reports plugins/unavailable without a profile runtime', async () => {
+      const ctx = new Context()
+      contexts.push(ctx)
+      await ctx.plugin(Loader)
+      await expect(managerOver(ctx).inspect('x')).rejects.toMatchObject({ code: 'plugins/unavailable' })
     })
   })
 

@@ -39,7 +39,7 @@ declare const installAnchor: string
 const installer = new PluginInstaller({
   profileDir, profileName: 'web', installAnchor,
   loadProfile: () => loadProfile('dsh', 'web', installAnchor, undefined, { userLayer: false }),
-  config: { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installKillGraceMs: 5_000, installLogTailBytes: 16_384 },
+  config: { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installKillGraceMs: 5_000, installLogTailBytes: 16_384, inspectTimeoutMs: 20_000 },
   installLog: (chunk) => process.stdout.write(chunk.text),
   color: process.stdout.isTTY,
 })
@@ -47,7 +47,9 @@ const outcome = await installer.add('@acme/dsh-sql-tool')
 console.log(outcome.installed, outcome.removed)
 ```
 
-`add` 在 profile 中执行 pnpm，核对 `dependencies`，并按当前行归属静态检查新组合包声明。冲突组合包会被移除并给出原因；未声明或声明不可读的包保持已安装。新组合包保持禁用，除非调用方启用。安装失败会恢复运行前的 manifest 与 `pnpm-lock.yaml`，并通过 `plugins/install-failed` 报告日志尾部。
+`add` 在 profile 中执行 pnpm，核对 `dependencies`，并按当前行归属静态检查新组合包声明。冲突组合包会被移除并给出原因；未声明或声明不可读的包保持已安装。新组合包保持禁用，除非调用方启用。安装失败会恢复运行前的 manifest 与 `pnpm-lock.yaml`，并通过 `plugins/install-failed` 报告日志尾部，附带按运行结束方式与 pnpm 输出判定的 `kind`：`pnpm-missing`、`timeout`、`not-found`、`no-matching-version`、`network`、`disk-full`、`permission`、`build-blocked`、`integrity` 或 `unknown`。
+
+`inspect(spec, signal?)` 在任何东西安装之前读出 spec 指向什么：`parseInstallSpec` 把它归为注册表包名、绝对路径、git 地址或 tarball，拒绝相对路径和注册表不会接受的包名；注册表包名随后通过 `pnpm view` 询问注册表，在 profile 目录中运行，因而与安装使用同样的注册表与代理设置；目录则读取其 `package.json`。答复携带名称、版本、描述、`dsh.title` 以及该包是否声明组合包；git 或 tarball spec 只答复自己的类型。查询在 `inspectTimeoutMs` 到期或调用方的 signal 中止时结束。拒绝是带 `problem` 的 `plugins/inspect-rejected`：`invalid-spec`、`already-installed`（已是依赖或模板组合包）、`not-found`、`not-a-package`、`network` 或 `unknown`。
 
 ### 管理已启动的 profile
 
@@ -80,7 +82,7 @@ console.log(await manager.list())
 
 ### 失败
 
-每次拒绝或失败都是一个 `PluginOperationError`，带稳定的 `code` 与按码定型的 `details`：`plugins/unavailable`（没有 profile runtime）、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/install-cancelled`、`plugins/busy`、`plugins/agents-running`，以及请求点名了 profile 没有的东西时的 `plugins/bad-request`。`pluginOperationFailureOf` 把捕获到的值收窄为按码区分的联合。
+每次拒绝或失败都是一个 `PluginOperationError`，带稳定的 `code` 与按码定型的 `details`：`plugins/unavailable`（没有 profile runtime）、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/install-cancelled`、`plugins/inspect-rejected`、`plugins/busy`、`plugins/agents-running`，以及请求点名了 profile 没有的东西时的 `plugins/bad-request`。`pluginOperationFailureOf` 把捕获到的值收窄为按码区分的联合。
 
 -----
 

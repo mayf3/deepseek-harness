@@ -927,6 +927,15 @@ The row injects only the Loader; the profile runtime and the agent registry are 
 @Remote('list') async list(): Promise<PluginPackageView[]>
 
 /**
+ * Read what a spec names before installing it: its form, the package's name, version,
+ * description, and title where they are known ahead of the install, and whether it declares a bundle.
+ * @param spec - what would be installed, in pnpm's own vocabulary.
+ * @param signal - cancels the registry lookup.
+ * @returns the inspection.
+ */
+@Remote('inspect') async inspect(spec: string, signal?: AbortSignal): Promise<PluginSpecInspection>
+
+/**
  * Install a package with pnpm, read its declarations, and leave it disabled unless asked otherwise.
  * @param spec - what to install, in pnpm's own vocabulary.
  * @param options - `enable` selects new bundles; `requestId` identifies the install for progress and cancellation.

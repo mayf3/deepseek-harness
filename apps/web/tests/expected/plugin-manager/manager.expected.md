@@ -9,8 +9,11 @@
     - button "查看 示例组合包": 示例组合包
     - text: "Web e2e fixture: a bundle whose one row is an inert plugin."
     - switch "启用 示例组合包"
-- heading "其他已安装包" [level=3]
+- button "非插件包依赖" [expanded]:
+  - img
+  - text: 非插件包依赖
 - text: 1 个
+- paragraph: 这些包不是 dsh 插件包，不会被加载；可以在这里卸载。
 - list:
   - listitem:
     - button "查看 示例插件": 示例插件

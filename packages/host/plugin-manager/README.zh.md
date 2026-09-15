@@ -29,11 +29,11 @@ kind: "package-reference"
 
 ### Remote
 
-`plugins/list`、`plugins/add`、`plugins/uninstall`、`plugins/enable`、`plugins/disable`、`plugins/retry`、`plugins/setRowDisabled` 与 `plugins/dependents` 携带管理器同名方法定义的参数与答复；[管理器 README](../../boot/plugin-manager/README.zh.md#use-this-package) 逐一说明。`./types` 导出原样 re-export 管理器的载荷类型，客户端只需导入一套词汇。
+`plugins/list`、`plugins/inspect`、`plugins/add`、`plugins/uninstall`、`plugins/enable`、`plugins/disable`、`plugins/retry`、`plugins/setRowDisabled` 与 `plugins/dependents` 携带管理器同名方法定义的参数与答复；[管理器 README](../../boot/plugin-manager/README.zh.md#use-this-package) 逐一说明。`plugins/inspect` 接受末尾的 `AbortSignal`：客户端中止它或断开连接，注册表查询即结束。`./types` 导出原样 re-export 管理器的载荷类型，客户端只需导入一套词汇。
 
 ### 失败码
 
-管理器的失败以同样的 `code` 与 `details` 作为 `RemoteError` 到达客户端：`plugins/unavailable`、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/install-cancelled`、`plugins/busy` 与 `plugins/agents-running`，各自以管理器的 details 类型声明在 Remote 失败表里。管理器的通用拒绝 `plugins/bad-request` 以 Gateway 的 `gateway/bad-request` 过线。管理器抛出的其他错误原样传播，由 Gateway 报为 `gateway/internal`。
+管理器的失败以同样的 `code` 与 `details` 作为 `RemoteError` 到达客户端：`plugins/unavailable`、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/install-cancelled`、`plugins/inspect-rejected`、`plugins/busy` 与 `plugins/agents-running`，各自以管理器的 details 类型声明在 Remote 失败表里。管理器的通用拒绝 `plugins/bad-request` 以 Gateway 的 `gateway/bad-request` 过线。管理器抛出的其他错误原样传播，由 Gateway 报为 `gateway/internal`。
 
 ### 配置
 
@@ -43,6 +43,7 @@ kind: "package-reference"
 | `installTimeoutMs` | `600000` | 单次安装或移除运行的上限。 |
 | `installKillGraceMs` | `5000` | 强制终止前的宽限期。 |
 | `installLogTailBytes` | `16384` | 安装失败时报告多少尾部输出。 |
+| `inspectTimeoutMs` | `20000` | 单次检查所做注册表查询的上限。 |
 
 -----
 

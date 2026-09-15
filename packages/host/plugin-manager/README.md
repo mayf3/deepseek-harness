@@ -29,11 +29,11 @@ Mount the row in a host composition beside the plugin inventory; the web bundle 
 
 ### The Remote
 
-`plugins/list`, `plugins/add`, `plugins/uninstall`, `plugins/enable`, `plugins/disable`, `plugins/retry`, `plugins/setRowDisabled`, and `plugins/dependents` carry the arguments and answers the manager's methods of the same names define; the [manager README](../../boot/plugin-manager/README.md#use-this-package) documents each. The `./types` export re-exports the manager's payload types unchanged, so a client imports one vocabulary.
+`plugins/list`, `plugins/inspect`, `plugins/add`, `plugins/uninstall`, `plugins/enable`, `plugins/disable`, `plugins/retry`, `plugins/setRowDisabled`, and `plugins/dependents` carry the arguments and answers the manager's methods of the same names define; the [manager README](../../boot/plugin-manager/README.md#use-this-package) documents each. `plugins/inspect` takes a trailing `AbortSignal`: a client that aborts it, or disconnects, ends the registry lookup. The `./types` export re-exports the manager's payload types unchanged, so a client imports one vocabulary.
 
 ### Failure codes
 
-A manager failure reaches the client as a `RemoteError` with the same `code` and `details`: `plugins/unavailable`, `plugins/not-installed`, `plugins/not-enableable`, `plugins/enable-failed`, `plugins/install-failed`, `plugins/install-cancelled`, `plugins/busy`, and `plugins/agents-running`, each declared in the Remote failure map with the manager's details type. The manager's generic refusal, `plugins/bad-request`, crosses as the Gateway's `gateway/bad-request`. Any other error the manager throws propagates untouched, which the Gateway reports as `gateway/internal`.
+A manager failure reaches the client as a `RemoteError` with the same `code` and `details`: `plugins/unavailable`, `plugins/not-installed`, `plugins/not-enableable`, `plugins/enable-failed`, `plugins/install-failed`, `plugins/install-cancelled`, `plugins/inspect-rejected`, `plugins/busy`, and `plugins/agents-running`, each declared in the Remote failure map with the manager's details type. The manager's generic refusal, `plugins/bad-request`, crosses as the Gateway's `gateway/bad-request`. Any other error the manager throws propagates untouched, which the Gateway reports as `gateway/internal`.
 
 ### Configuration
 
@@ -43,6 +43,7 @@ A manager failure reaches the client as a `RemoteError` with the same `code` and
 | `installTimeoutMs` | `600000` | Bound on one install or remove run. |
 | `installKillGraceMs` | `5000` | Grace before forced termination. |
 | `installLogTailBytes` | `16384` | How much trailing output an install failure reports. |
+| `inspectTimeoutMs` | `20000` | Bound on one registry lookup an inspection runs. |
 
 -----
 
