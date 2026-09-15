@@ -164,6 +164,37 @@ describe('page Markdown actions', () => {
     expect(queryByRole(host, 'menu')).toBeNull()
   })
 
+  it.each(['copy', 'view', 'toggle'])('keeps %s activation available when pointer clicks do not focus controls', async (action) => {
+    await mount()
+    const toggle = await openMenu()
+    const target = action === 'toggle' ? toggle : getByRole(host, 'menuitem', {
+      name: action === 'copy' ? 'Copy page' : 'View as Markdown (opens in a new tab)',
+    })
+    let activated = false
+    target.addEventListener('click', (event) => {
+      activated = true
+      if (action === 'view') event.preventDefault()
+    }, { once: true })
+    fireEvent.pointerDown(target)
+    // Safari can blur the focused menu item without focusing the pressed control.
+    if (fireEvent.mouseDown(target)) (document.activeElement as HTMLElement).blur()
+    await nextTick()
+    expect(target.isConnected).toBe(true)
+    expect(queryByRole(host, 'menu')).not.toBeNull()
+    fireEvent.mouseUp(target)
+    fireEvent.click(target)
+    await nextTick()
+    expect(activated).toBe(true)
+    expect(queryByRole(host, 'menu')).toBeNull()
+    expect(document.activeElement).toBe(toggle)
+    if (action === 'copy') {
+      await waitFor(() => { expect(getByRole(host, 'status').textContent).toBe('Markdown copied.') })
+      expect(write).toHaveBeenCalledOnce()
+    } else {
+      expect(write).not.toHaveBeenCalled()
+    }
+  })
+
   it('copies from the menu in the same click and prevents another copy while it is pending', async () => {
     const pending = deferred<Response>()
     fetchMock.mockReturnValueOnce(pending.promise)

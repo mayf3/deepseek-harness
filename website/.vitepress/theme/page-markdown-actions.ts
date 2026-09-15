@@ -178,7 +178,8 @@ export const PageMarkdownActions = defineComponent({
             [icon('copy'), state.value === 'copying' ? text.copying : text.copy]),
             h('button', { ref: toggle, class: 'page-markdown-toggle', type: 'button', 'aria-label': text.more,
               'aria-haspopup': 'menu', 'aria-expanded': open.value, 'aria-controls': menuId,
-              onClick: () => { if (open.value) closeMenu(); else openMenu() },
+              onMousedown: (event: MouseEvent) => { if (open.value) event.preventDefault() },
+              onClick: () => { if (open.value) closeMenu(true); else openMenu() },
               onKeydown: (event: KeyboardEvent) => {
                 if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                   event.preventDefault()
@@ -188,7 +189,9 @@ export const PageMarkdownActions = defineComponent({
             }, [icon('chevron')]),
           ]),
           open.value ? h('div', { id: menuId, role: 'menu', 'aria-label': text.menu,
-            class: 'page-markdown-menu', onKeydown: menuKeydown }, [
+            class: 'page-markdown-menu', onKeydown: menuKeydown,
+            // Keep focus until click activation in browsers that do not focus pressed controls.
+            onMousedown: (event: MouseEvent) => { event.preventDefault() } }, [
             h('button', { ref: menuCopy, role: 'menuitem', type: 'button', tabindex: -1,
               'aria-label': text.copy, 'aria-describedby': `${menuId}-copy`, 'aria-disabled': state.value === 'copying',
               'aria-busy': state.value === 'copying', onClick: copy }, [
