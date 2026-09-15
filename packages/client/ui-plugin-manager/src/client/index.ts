@@ -25,9 +25,7 @@ import { PluginManagerController } from './manager-store.ts'
 import { en, zh, type PluginManagerLocaleKey } from './locales.ts'
 
 export type { PluginManagerPageProps } from './PluginManagerPage.tsx'
-export type {
-  ConfirmState, InstallState, ManagerNotice, PluginManagerFace, PluginManagerState,
-} from './manager-store.ts'
+export type { PluginManagerFace } from './manager-store.ts'
 export type { PluginManagerLocaleKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
