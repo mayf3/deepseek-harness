@@ -101,6 +101,10 @@ export function PopupSelectView({ popup, t }: PopupSelectViewProps) {
       // the shell HOLDS focus, and native traversal would leave an open card
       // whose search input lost focus.
       case 'Tab':
+        // With nothing to settle — still loading, failed, or filtered empty —
+        // the keystroke stays the browser's, which is how the error strip's
+        // retry button remains reachable.
+        if (!ev.shiftKey && (state.status !== 'ready' || rows.length === 0)) return
         ev.preventDefault()
         if (ev.shiftKey) popup.dismiss({ focusComposer: true })
         else void popup.select(state.active)

@@ -142,12 +142,15 @@ export function ModelSelect(
     if (intent === 'drill') {
       // The checked row is the value in use; a pane without one opens on its
       // first row.
-      const checked = menuRef.current?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')
-      const target = checked ?? itemRefs.current.find(item => item !== null)
-      target?.focus()
+      const checked = menuRef.current?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]:not([disabled])')
+      const target = checked ?? itemRefs.current.find(item => item !== null && !item.disabled)
+      // Rows a selection in flight disabled cannot take the keyboard; the
+      // trigger does, so the card's keys still reach the menu.
+      ;(target ?? triggerRef.current)?.focus()
       return
     }
-    itemRefs.current[intent === 'effort' ? 1 : 0]?.focus()
+    const cell = itemRefs.current[intent === 'effort' ? 1 : 0]
+    ;(cell !== null && cell !== undefined && !cell.disabled ? cell : triggerRef.current)?.focus()
   }, [open, pane])
 
   // Portaled placement (the Menu primitive's portal rules: fixed from the
@@ -242,12 +245,15 @@ export function ModelSelect(
         return
       }
       // Settling activates the row the keyboard is on; with focus still on the
-      // trigger, Tab enters the menu at the value in use instead.
+      // trigger, Tab enters the menu at the value in use instead. Any other
+      // control inside the card (a retry button) keeps the browser's traversal.
       const focused = document.activeElement
-      if (focused instanceof HTMLElement && menuRef.current?.contains(focused) === true) {
+      const rows = itemRefs.current.filter((item): item is HTMLButtonElement => item !== null)
+      if (focused instanceof HTMLButtonElement && rows.includes(focused)) {
         focused.click()
         return
       }
+      if (focused !== triggerRef.current) return
       const checked = menuRef.current?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')
       ;(checked ?? itemRefs.current.find(item => item !== null))?.focus()
       return

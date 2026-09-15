@@ -263,7 +263,7 @@ export const InputBar = memo(function InputBar({
     // before the launcher opens it: activating the button from the keyboard
     // leaves focus on the button, and restoring it afterwards would re-track an
     // empty draft and close the menu again.
-    editor?.getRootElement()?.focus({ preventScroll: true })
+    if (editor !== null) focusDraftEditor(editor, revealSelection)
     toggleCommandMenu?.(keyboard.caretSpan())
   }
 

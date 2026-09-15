@@ -146,12 +146,13 @@ describe('PopupSelectView', () => {
     expect(settling.view.container.childElementCount).toBe(0)
   })
 
-  it('Tab is consumed while the rows are still loading: no pick, no focus escape', async () => {
+  it('Tab stays the browser\'s while the rows are still loading: no pick, no escape', async () => {
     const popup = new PopupSelectController<string>({ consume: () => true, focusComposer: () => {} })
     render(<PopupSelectView popup={popup} t={t} />)
     await act(async () => { popup.open('theme', spec({ options: () => new Promise(() => {}) }), 'ctx-A', SEGMENT) })
     const search = screen.getByRole('textbox', { name: '筛选选项' })
-    expect(fireEvent.keyDown(search, { key: 'Tab' })).toBe(false)
+    // Nothing is settleable yet, so the keystroke is not swallowed.
+    expect(fireEvent.keyDown(search, { key: 'Tab' })).toBe(true)
     expect(document.activeElement).toBe(search)
     expect(screen.getByText('正在加载选项…')).toBeTruthy()
   })

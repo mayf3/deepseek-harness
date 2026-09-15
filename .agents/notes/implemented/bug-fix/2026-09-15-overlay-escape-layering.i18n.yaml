@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-15-overlay-escape-layering.md
-2026-09-15-overlay-escape-layering.md: 6a8e2affca2f1150fd0746bd63b242472d88e2cf
-2026-09-15-overlay-escape-layering.zh.md: 78e395b62bc2e69f394117b0a5b96aadf94950e9

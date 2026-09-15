@@ -991,7 +991,8 @@ describe('popupFor', () => {
     expect(second.state.getSnapshot()).toMatchObject({ open: false, options: [] })
     expect(onSelect).not.toHaveBeenCalled()
     expect(consume).not.toHaveBeenCalled()
-    expect(focuses).toEqual([])
+    // The stale catalog takes the rows away; the composer keeps the keyboard.
+    expect(focuses).toEqual([sid('s1'), sid('s2')])
   })
 
   it('resolves lazily per session; a foreign session gets its own controller; unscoped ctx throws', async () => {

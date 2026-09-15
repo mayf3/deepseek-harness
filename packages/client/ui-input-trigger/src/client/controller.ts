@@ -130,7 +130,10 @@ export class InputTriggerController {
     const raw = detectTrigger(draft, caret, guard)
     if (raw === null) {
       this.hit = null
-      this.dismissed = null
+      // A frozen-tier track is the submit gesture's own bookkeeping, not a new
+      // intent from the user: a command submitted after a dismissal must not
+      // re-arm the menu the dismissal closed.
+      if (guard.tier !== 'frozen') this.dismissed = null
       this.stopFetch()
       this.reduce({ type: 'close' })
       return

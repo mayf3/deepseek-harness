@@ -57,10 +57,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // A row's open menu is an inner layer: its own Escape closes it, and the
-      // panel waits for the next one.
-      if (e.key !== 'Escape' || document.querySelector('[role="menu"]') !== null) return
-      onClose()
+      if (e.key === 'Escape') onClose()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => { document.removeEventListener('keydown', onKeyDown) }

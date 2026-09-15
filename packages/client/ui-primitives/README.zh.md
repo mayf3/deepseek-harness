@@ -45,7 +45,7 @@ kind: "package-library"
 | `StateDot` | 状态标记：`done`、`warning`、`ongoing`、`error` 或 `idle`。它是 `aria-hidden` 的，名称由渲染点提供。 |
 | `ConnectionIndicator` | 行内连接恢复控件，覆盖断线、重试与已恢复三种状态。 |
 | `DisclosureRow` | 24px 紧凑折叠行，标题与内容左右排列。 |
-| `Modal` | 页面遮罩之上的居中对话框；Escape 关闭它，除非对话框内有打开的菜单先接管这次 Escape。 |
+| `Modal` | 页面遮罩之上的居中对话框。 |
 | `RiskConfirmation` | 以显式复选框把关的敏感操作确认。 |
 | `OnboardingSurface` | 首次运行的引导舞台，期间保持应用根节点 inert。 |
 | `Tooltip` | 克隆锚点上的悬停文本，可置于右、下、上三个方向。 |

@@ -315,8 +315,18 @@ describe('ModelSelect keyboard walk', () => {
   })
 
   it('Tab with the keyboard still on the trigger enters the menu at the value in use', () => {
-    mountOpen()
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={createSnapshotStore(state())}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
     const trigger = screen.getByRole('button', { name: /选择模型/ })
+    // A real click focuses the trigger first; jsdom's does not.
+    trigger.focus()
+    fireEvent.click(trigger)
     expect(fireEvent.keyDown(trigger, { key: 'Tab' })).toBe(false)
     // The root pane's first cell carries the current selection.
     const cells = screen.getAllByRole('menuitem')

@@ -148,7 +148,10 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
    */
   dismiss(name: string): void {
     for (const popup of this.live.popups.values()) {
-      if (popup.state.getSnapshot().command === name) popup.dismiss()
+      // A catalog that went stale underneath the card takes its rows away; the
+      // composer keeps the keyboard the card was holding, like every other
+      // dismissal path.
+      if (popup.state.getSnapshot().command === name) popup.dismiss({ focusComposer: true })
     }
   }
 

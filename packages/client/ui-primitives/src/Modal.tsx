@@ -42,10 +42,7 @@ export function Modal({
   useEffect(() => {
     if (!open) return
     const onKeyDown = (e: KeyboardEvent) => {
-      // An open menu is an inner layer: its own Escape closes it and hands the
-      // keyboard back to its anchor, so the dialog waits for the next one.
-      if (e.key !== 'Escape' || document.querySelector('[role="menu"]') !== null) return
-      onClose()
+      if (e.key === 'Escape') onClose()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => { document.removeEventListener('keydown', onKeyDown) }
