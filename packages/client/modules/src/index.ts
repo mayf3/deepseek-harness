@@ -58,15 +58,12 @@ interface WebBootRowFields {
 
 /** Filesystem baseline captured before a client artifact snapshot is read. */
 export interface ClientArtifactBaseline {
-  /** Entry and recursively referenced chunks watched for package rebuilds. */
-  readonly files: readonly {
-    /** Absolute artifact path. */
-    readonly path: string
-    /** Artifact modification time in milliseconds. */
-    readonly mtimeMs: number
-    /** Artifact size in bytes. */
-    readonly size: number
-  }[]
+  /** Absolute path of the client bundle. */
+  readonly path: string
+  /** Bundle modification time in milliseconds. */
+  readonly mtimeMs: number
+  /** Bundle size in bytes. */
+  readonly size: number
 }
 
 /** Resolved metadata cached for one Loader specifier and owning-tree base URL until restart. */
@@ -94,8 +91,6 @@ const CLIENT_BUNDLE_BUILD_INSTRUCTION = 'run `pnpm run build` before launch'
 
 /** Missing built client export, retained as structured data for activation-error grouping. */
 class MissingClientBundleError extends Error {
-  readonly code = 'ENOENT'
-
   constructor(
     readonly packageName: string,
     readonly clientPath: string,
@@ -142,8 +137,6 @@ interface WebPluginRecord {
   meta: PkgMeta
   /** Exact build artifact included in the startup batches. */
   bundle: Buffer
-  /** Package-local chunks referenced by the entry or another captured chunk. */
-  chunks: Map<string, Buffer>
   /** Pre-read filesystem baseline handed to the HMR watcher. */
   baseline: ClientArtifactBaseline
 }
@@ -153,7 +146,6 @@ interface ComboResource {
   id: string
   rev: string
   clientPath: string
-  fileName: string
   bundle: Buffer
 }
 
@@ -187,8 +179,6 @@ const COMBO_REVISION_PLACEHOLDER = '0'.repeat(HASH_REVISION_LENGTH)
 const SOURCE_MAP_TRAILER = /(?:\r?\n)?\/\/# sourceMappingURL=[^\r\n]*(?:\r?\n)?$/
 /** Debugger source name appended to page bundles in the WebWorker image. */
 const SOURCE_URL_TRAILER = /(?:\r?\n)?\/\/# sourceURL=([^\r\n]+)(?:\r?\n)?$/
-/** Relative CJS requests emitted by tsdown for package-local dynamic imports. */
-const CLIENT_CHUNK_REQUIRE = /\brequire\((["'])\.\/(client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js)\1\)/g
 
 /** Resolve `exports["./client"]` to a relative path, accepting the string and one-level conditional forms. */
 function clientExportOf(pkgName: string, exportsField: unknown): string | undefined {
@@ -215,23 +205,15 @@ function framedHash(domain: string, parts: readonly Buffer[]): string {
   return hash.digest('hex').slice(0, HASH_REVISION_LENGTH)
 }
 
-/** Hash the entry and every package-local chunk served under one plugin revision. */
-function artifactRevision(bundle: Buffer, chunks: ReadonlyMap<string, Buffer>): string {
-  return framedHash('plugin-artifact', [bundle, ...[...chunks].sort(([left], [right]) => (
-    left < right ? -1 : left > right ? 1 : 0
-  ))
-    .flatMap(([name, body]) => [Buffer.from(name), body])])
+/** Hash the executable artifact served after HMR observes one plugin change. */
+function artifactRevision(bundle: Buffer): string {
+  return framedHash('plugin-artifact', [bundle])
 }
 
 /** Address one ordered plugin-file list through the shared combo route. */
 function comboUrl(ids: readonly string[], rev: string, sourceMap = false): string {
   const resources = ids.map(id => `${id}/client.js${sourceMap ? '.map' : ''}`).join(',')
   return `/plugins/??${resources}&rev=${rev}`
-}
-
-/** Address one package-local chunk through the same revision as its entry. */
-function chunkUrl(id: string, fileName: string, rev: string, sourceMap = false): string {
-  return `/plugins/${id}/${fileName}${sourceMap ? '.map' : ''}?rev=${rev}`
 }
 
 /** Measure the longer map-form URL used to partition a startup resource list. */
@@ -283,7 +265,7 @@ function prepareSource(resource: ComboResource): PreparedSource {
   source = source.replace(SOURCE_URL_TRAILER, '').replace(SOURCE_MAP_TRAILER, '')
   if (!source.endsWith('\n')) source += '\n'
   const fallbackSource = sourceUrl === undefined
-    ? `/plugins/${resource.id}/${resource.fileName}`
+    ? `/plugins/${resource.id}/client.js`
     : /^(?:[A-Za-z][A-Za-z\d+.-]*:|\/)/.test(sourceUrl) ? sourceUrl : `/${sourceUrl}`
   return { source, fallbackSource }
 }
@@ -329,7 +311,7 @@ function newlineCount(value: string): number {
 function comboSectionMap(resource: ComboResource, original: Record<string, unknown>): Record<string, unknown> {
   const sourcePaths = original.sources as string[]
   const sourceRoot = typeof original.sourceRoot === 'string' ? original.sourceRoot : ''
-  const base = new URL(`/plugins/${resource.id}/${resource.fileName}.map`, 'http://dsh.invalid')
+  const base = new URL(`/plugins/${resource.id}/client.js.map`, 'http://dsh.invalid')
   const relocated = sourcePaths.map((source) => {
     const separator = sourceRoot !== '' && !sourceRoot.endsWith('/') && !source.startsWith('/') ? '/' : ''
     const resolved = new URL(`${sourceRoot}${separator}${source}`, base)
@@ -383,7 +365,6 @@ function buildComboScript(resources: readonly ComboResource[], sourceMapUrl: str
 function buildComboSourceMap(
   resources: readonly ComboResource[],
   sourceMapOf: (clientPath: string) => Record<string, unknown> | undefined,
-  fileName = 'client.js',
 ): Buffer {
   const sections: { offset: { line: number; column: 0 }; map: Record<string, unknown> }[] = []
   let line = 0
@@ -402,7 +383,7 @@ function buildComboSourceMap(
     sections.push({ offset: { line, column: 0 }, map: section })
     line += newlineCount(`${prepared.source};\n`)
   }
-  return Buffer.from(`${JSON.stringify({ version: 3, file: fileName, sections })}\n`)
+  return Buffer.from(`${JSON.stringify({ version: 3, file: 'client.js', sections })}\n`)
 }
 
 /** Describe one combo and defer its executable and debug payloads independently. */
@@ -411,25 +392,14 @@ function buildCombo(
   sourceMapOf: (clientPath: string) => Record<string, unknown> | undefined,
   revision?: string,
 ): ComboArtifact {
-  const entries = records.map(record => record.entry.id)
-  const entryResources = records.map(record => ({
+  const resources = records.map(record => ({
     id: record.entry.id,
     rev: record.entry.rev,
     clientPath: record.meta.clientPath,
-    fileName: 'client.js',
     bundle: record.bundle,
   }))
-  const resources = records.flatMap(record => [
-    ...chunkDependencies(record, record.bundle),
-    {
-      id: record.entry.id,
-      rev: record.entry.rev,
-      clientPath: record.meta.clientPath,
-      fileName: 'client.js',
-      bundle: record.bundle,
-    },
-  ])
-  const rev = revision ?? comboRevision(entryResources)
+  const rev = revision ?? comboRevision(resources)
+  const entries = resources.map(resource => resource.id)
   const url = comboUrl(entries, rev)
   const sourceMapUrl = comboUrl(entries, rev, true)
   return {
@@ -440,56 +410,6 @@ function buildCombo(
     scriptBody: lazyBody(() => buildComboScript(resources, sourceMapUrl)),
     sourceMapBody: lazyBody(() => buildComboSourceMap(resources, sourceMapOf)),
   }
-}
-
-/** Order package-local chunk roots and dependencies for synchronous CJS materialization. */
-function orderedChunks(record: WebPluginRecord, roots: Iterable<string>): ComboResource[] {
-  const resources: ComboResource[] = []
-  const visited = new Set<string>()
-  const open: string[] = []
-  const visit = (fileName: string): void => {
-    if (visited.has(fileName)) return
-    const cycleStart = open.indexOf(fileName)
-    if (cycleStart !== -1) {
-      throw new Error(`client-modules: package-local chunk cycle ${[...open.slice(cycleStart), fileName].join(' -> ')}`)
-    }
-    const bundle = record.chunks.get(fileName)
-    /* v8 ignore next -- artifactSnapshot captures every relative chunk dependency before composition. */
-    if (bundle === undefined) {
-      throw new Error(`client-modules: chunk ${JSON.stringify(fileName)} is absent from package ${record.entry.id}`)
-    }
-    open.push(fileName)
-    for (const match of bundle.toString('utf8').matchAll(CLIENT_CHUNK_REQUIRE)) {
-      const dependency = match[2] as string
-      visit(dependency)
-    }
-    open.pop()
-    visited.add(fileName)
-    resources.push({
-      id: record.entry.id,
-      rev: record.entry.rev,
-      clientPath: join(dirname(record.meta.clientPath), fileName),
-      fileName,
-      bundle,
-    })
-  }
-  for (const root of roots) visit(root)
-  return resources
-}
-
-/** Package-local static dependencies referenced directly by one generated artifact. */
-function chunkDependencies(record: WebPluginRecord, bundle: Buffer): ComboResource[] {
-  const roots: string[] = []
-  for (const match of bundle.toString('utf8').matchAll(CLIENT_CHUNK_REQUIRE)) {
-    const dependency = match[2] as string
-    roots.push(dependency)
-  }
-  return orderedChunks(record, roots)
-}
-
-/** Order one chunk and its package-local dependencies for synchronous CJS materialization. */
-function chunkClosure(record: WebPluginRecord, rootFileName: string): ComboResource[] {
-  return orderedChunks(record, [rootFileName])
 }
 
 /** Add initial-load scheduling metadata to a combo artifact. */
@@ -731,25 +651,25 @@ export class ClientModuleRegistry extends Service {
    */
   artifactBaseline(id: string): ClientArtifactBaseline | undefined {
     const baseline = this.table.get(id)?.baseline
-    return baseline === undefined ? undefined : { files: baseline.files.map(file => ({ ...file })) }
+    return baseline === undefined ? undefined : { ...baseline }
   }
 
   /**
-   * Re-snapshot one package's entry and chunks (the HMR watch's registration
-   * hook — the only entry point through which executable changes reach the graph).
+   * Re-hash one bundle (the HMR watch's registration hook — the only entry
+   * point through which bundle content changes reach the graph).
    * @param id - entry id (package name).
    * @returns the new rev, or undefined for an unknown id.
    */
   rebuilt(id: string): string | undefined {
     const record = this.table.get(id)
     if (record === undefined) return undefined
-    const snapshot = this.artifactSnapshot(id, record.meta.clientPath)
-    const rev = artifactRevision(snapshot.bundle, snapshot.chunks)
-    record.baseline = snapshot.baseline
+    const baseline = this.captureArtifactBaseline(record.meta.clientPath)
+    const bundle = readFileSync(record.meta.clientPath)
+    const rev = artifactRevision(bundle)
+    record.baseline = baseline
     if (rev === record.entry.rev) return rev
     record.entry = graphRow(id, rev, record.meta)
-    record.bundle = snapshot.bundle
-    record.chunks = snapshot.chunks
+    record.bundle = bundle
     this.composed = this.compose()
     for (const notify of this.rebuildListeners) {
       // Containment: rebuilt() runs inside the HMR watch callback — a
@@ -825,19 +745,6 @@ export class ClientModuleRegistry extends Service {
         body: artifact.sourceMapBody,
         contentType: 'application/json; charset=utf-8',
       })
-      for (const fileName of record.chunks.keys()) {
-        const resources = chunkClosure(record, fileName)
-        const url = chunkUrl(record.entry.id, fileName, record.entry.rev)
-        const sourceMapUrl = chunkUrl(record.entry.id, fileName, record.entry.rev, true)
-        responses.set(url, this.responses.get(url) ?? {
-          body: lazyBody(() => buildComboScript(resources, sourceMapUrl)),
-          contentType: 'text/javascript; charset=utf-8',
-        })
-        responses.set(sourceMapUrl, this.responses.get(sourceMapUrl) ?? {
-          body: lazyBody(() => buildComboSourceMap(resources, this.readSourceMap, fileName)),
-          contentType: 'application/json; charset=utf-8',
-        })
-      }
     }
     this.previousBatchResponses = this.batchResponses
     this.batchResponses = batchResponses
@@ -973,11 +880,11 @@ export class ClientModuleRegistry extends Service {
     return `${baseUrl}\0${loaderName}`
   }
 
-  /** Capture one artifact's stats before reading its bytes. */
-  private captureArtifactBaseline(path: string): ClientArtifactBaseline['files'][number] {
-    const bundle = statSync(path)
+  /** Capture the bundle stats before reading its bytes. */
+  private captureArtifactBaseline(clientPath: string): ClientArtifactBaseline {
+    const bundle = statSync(clientPath)
     return {
-      path,
+      path: clientPath,
       mtimeMs: bundle.mtimeMs,
       size: bundle.size,
     }
@@ -989,39 +896,23 @@ export class ClientModuleRegistry extends Service {
   }
 
   /**
-   * Read the activation-time entry and recursively referenced chunk snapshot.
+   * Read the activation-time bundle snapshot.
    * @param pkgName - package that declares the client bundle.
    * @param clientPath - absolute path of the built client artifact.
    * @returns the immutable bytes plus the pre-read filesystem baseline.
    * @throws {MissingClientBundleError} when the read fails with `ENOENT`; other filesystem errors are rethrown unchanged.
    */
-  private artifactSnapshot(pkgName: string, clientPath: string): {
+  private initialBundleSnapshot(pkgName: string, clientPath: string): {
     bundle: Buffer
-    chunks: Map<string, Buffer>
     baseline: ClientArtifactBaseline
   } {
     try {
-      const files = [this.captureArtifactBaseline(clientPath)]
+      const baseline = this.captureArtifactBaseline(clientPath)
       const bundle = readFileSync(clientPath)
-      const chunks = new Map<string, Buffer>()
-      const pending = [bundle]
-      for (const artifact of pending) {
-        const source = artifact.toString('utf8')
-        for (const match of source.matchAll(CLIENT_CHUNK_REQUIRE)) {
-          const fileName = match[2] as string
-          if (chunks.has(fileName)) continue
-          const chunkPath = join(dirname(clientPath), fileName)
-          files.push(this.captureArtifactBaseline(chunkPath))
-          const chunk = readFileSync(chunkPath)
-          chunks.set(fileName, chunk)
-          pending.push(chunk)
-        }
-      }
-      return { bundle, chunks, baseline: { files } }
+      return { bundle, baseline }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      const missingPath = (error as NodeJS.ErrnoException).path
-      throw new MissingClientBundleError(pkgName, typeof missingPath === 'string' ? missingPath : clientPath, error)
+      throw new MissingClientBundleError(pkgName, clientPath, error)
     }
   }
 
@@ -1094,7 +985,7 @@ export class ClientModuleRegistry extends Service {
     if (this.table.get(packageName)?.sourceKey === source.sourceKey) return false
     // The opaque initial rev rides the row until HMR observes a file change;
     // a fiber restart from the same source reuses the existing row.
-    const snapshot = this.artifactSnapshot(packageName, source.meta.clientPath)
+    const snapshot = this.initialBundleSnapshot(packageName, source.meta.clientPath)
     const rev = this.allocateInitialRevision()
     this.table.set(packageName, {
       entry: graphRow(packageName, rev, source.meta),
@@ -1102,7 +993,6 @@ export class ClientModuleRegistry extends Service {
       sourceKey: source.sourceKey,
       meta: source.meta,
       bundle: snapshot.bundle,
-      chunks: snapshot.chunks,
       baseline: snapshot.baseline,
     })
     return true

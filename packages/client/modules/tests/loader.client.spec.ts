@@ -12,8 +12,6 @@ const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 
 const comboUrl = (ids: readonly string[], rev: string): string =>
   `/plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
-const chunkUrl = (id: string, fileName: string, rev = '0'): string =>
-  `/plugins/${id}/${fileName}?rev=${rev}`
 const BOOTSTRAP_URL = comboUrl([MODULES_ID], 'bootstrap')
 const APPLICATION_URL = comboUrl(['a', 'b'], 'application')
 const win = globalThis as DshWindow
@@ -73,7 +71,6 @@ function bench(
     gated?: string[]
     pending?: ClientBundleRegistration[]
     defaultTransport?: boolean
-    chunks?: Record<string, Factory | null>
   } = {},
 ): Bench {
   const fetched: string[] = []
@@ -95,17 +92,9 @@ function bench(
     const singleId = combo?.split(',').length === 1 && combo.endsWith('/client.js')
       ? combo.slice(0, -'/client.js'.length)
       : undefined
-    const sibling = /^\/plugins\/(.+)\/(client\.[^/]+\.js)$/.exec(parsed.pathname)
     for (const id of batchIds ?? (singleId === undefined ? [] : [singleId])) {
       const factory = bundles[id]
       if (factory != null) win.__ModuleLoader__?.load({ id, factory })
-    }
-    if (sibling !== null) {
-      const id = sibling[1]!
-      const chunk = sibling[2]!
-      const key = `${id}/${chunk}`
-      const factory = opts.chunks?.[key]
-      if (factory != null) win.__ModuleLoader__?.load({ id, chunk, factory })
     }
   }
   const bootstrapEntries = entries.filter(entry => entry.initialUrl === BOOTSTRAP_URL).map(entry => entry.id)
@@ -234,57 +223,6 @@ describe('lazy CJS arrival', () => {
     await b.loader.prefetch('a')
     expect(b.fetched).toHaveLength(1)
   })
-
-  it('fetches a dynamic sibling chunk once on demand', async () => {
-    const b = bench([row('a')], {
-      a: req => ({
-        marker: 'entry',
-        load: () => Promise.resolve().then(() => req('./client.pdf.js')),
-      }),
-    }, {
-      chunks: {
-        'a/client.pdf.js': req => ({
-          marker: 'pdf',
-          owner: req('./client.js'),
-          store: req('./client.store.js'),
-        }),
-      },
-    })
-    b.target.load({ id: 'a', chunk: 'client.store.js', factory: () => ({ shared: true }) })
-    const entry = await b.loader.import('a', '', {}) as {
-      marker: string
-      load: () => Promise<{ marker: string; owner: unknown; store: unknown }>
-    }
-    expect(b.fetched).toEqual([APPLICATION_URL])
-
-    const [first, second] = await Promise.all([entry.load(), entry.load()])
-    const third = await entry.load()
-    expect(first).toBe(second)
-    expect(third).toBe(first)
-    expect(first).toEqual({ marker: 'pdf', owner: entry, store: { shared: true } })
-    expect(b.fetched).toEqual([APPLICATION_URL, chunkUrl('a', 'client.pdf.js')])
-  })
-
-  it('reloads package-local chunks at the invalidated entry revision', async () => {
-    const b = bench([row('a')], {
-      a: req => ({ load: () => Promise.resolve().then(() => req('./client.pdf.js')) }),
-    }, {
-      chunks: { 'a/client.pdf.js': () => ({ marker: 'pdf' }) },
-    })
-    const first = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
-    await first.load()
-
-    b.loader.invalidate('a', 'rebuilt')
-    const second = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
-    await second.load()
-
-    expect(b.fetched).toEqual([
-      APPLICATION_URL,
-      chunkUrl('a', 'client.pdf.js'),
-      comboUrl(['a'], 'rebuilt'),
-      chunkUrl('a', 'client.pdf.js', 'rebuilt'),
-    ])
-  })
 })
 
 describe('require resolution', () => {
@@ -384,46 +322,10 @@ describe('bootstrap module', () => {
 
 describe('failure modes', () => {
   it('duplicate factory registration is loud', () => {
-    const b = bench([])
+    bench([])
     win.__ModuleLoader__?.load({ id: 'x', factory: () => ({}) })
     expect(() => win.__ModuleLoader__?.load({ id: 'x', factory: () => ({}) }))
       .toThrow('duplicate factory registration for "x"')
-    b.target.load({ id: 'x', chunk: 'client.pdf.js', factory: () => ({}) })
-    expect(() => { b.target.load({ id: 'x', chunk: 'client.pdf.js', factory: () => ({}) }) }).not.toThrow()
-  })
-
-  it('rejects malformed chunk registrations and relative requests', async () => {
-    const b = bench([])
-    expect(() => { b.target.load({ id: 'a', chunk: 'client.js', factory: () => ({}) }) })
-      .toThrow('invalid package-local chunk')
-
-    const malformed = bench([row('a')], { a: req => ({ value: req('./other.js') }) })
-    await expect(malformed.loader.import('a', '', {})).rejects.toThrow('invalid relative chunk request')
-  })
-
-  it('rejects a chunk without a graph owner or registration', async () => {
-    const ownerless = bench([], {}, {
-      pending: [{
-        id: 'ghost',
-        factory: req => ({ load: () => Promise.resolve().then(() => req('./client.pdf.js')) }),
-      }],
-    })
-    const ghost = await ownerless.loader.import('ghost', '', {}) as { load: () => Promise<unknown> }
-    await expect(ghost.load()).rejects.toThrow('chunk owner "ghost" is not a boot graph entry')
-
-    const unregistered = bench([row('a')], {
-      a: req => ({ load: () => Promise.resolve().then(() => req('./client.pdf.js')) }),
-    }, { chunks: { 'a/client.pdf.js': null } })
-    const entry = await unregistered.loader.import('a', '', {}) as { load: () => Promise<unknown> }
-    await expect(entry.load()).rejects.toThrow('loaded without registering "a/client.pdf.js"')
-  })
-
-  it('rejects a chunk whose owner URL is not a one-resource combo', async () => {
-    const b = bench([row('a', { url: '/plugins/a/client.js?rev=0' })], {
-      a: req => ({ load: () => Promise.resolve().then(() => req('./client.pdf.js')) }),
-    })
-    const entry = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
-    await expect(entry.load()).rejects.toThrow('cannot resolve chunk "client.pdf.js"')
   })
 
   it('a bundle that never registers its id is loud', async () => {

@@ -30,21 +30,17 @@ type FakeHost = ClientModuleRegistry & { rebuiltCalls: string[]; fireGraphChange
 interface FakeHostOptions {
   beforeGraphRead?: () => void
   rebuilt?: (id: string) => string | undefined
-  artifacts?: (id: string, entryPath: string) => readonly string[]
 }
 
-function artifactBaseline(paths: readonly string[]): ClientArtifactBaseline {
-  return { files: paths.map((path) => {
-    const bundle = statSync(path)
-    return { path, mtimeMs: bundle.mtimeMs, size: bundle.size }
-  }) }
+function artifactBaseline(path: string): ClientArtifactBaseline {
+  const bundle = statSync(path)
+  return { path, mtimeMs: bundle.mtimeMs, size: bundle.size }
 }
 
 function fakeClientModuleHost(rows: Map<string, string>, options: FakeHostOptions = {}): FakeHost {
   const graphListeners = new Set<() => void>()
   const rebuiltCalls: string[] = []
-  const artifacts = (id: string, path: string): readonly string[] => options.artifacts?.(id, path) ?? [path]
-  const baselines = new Map([...rows].map(([id, path]) => [id, artifactBaseline(artifacts(id, path))]))
+  const baselines = new Map([...rows].map(([id, path]) => [id, artifactBaseline(path)]))
   const fake: Pick<FakeHost, 'graph' | 'artifactBaseline' | 'rebuilt' | 'onRebuilt' | 'onGraphChanged' | 'rebuiltCalls' | 'fireGraphChanged'> = {
     rebuiltCalls,
     fireGraphChanged: () => { for (const l of graphListeners) l() },
@@ -60,19 +56,15 @@ function fakeClientModuleHost(rows: Map<string, string>, options: FakeHostOption
       const path = rows.get(id)
       if (path === undefined) return undefined
       let baseline = baselines.get(id)
-      const paths = artifacts(id, path)
-      if (baseline === undefined || baseline.files.map(file => file.path).join('\0') !== paths.join('\0')) {
-        baseline = artifactBaseline(paths)
+      if (baseline?.path !== path) {
+        baseline = artifactBaseline(path)
         baselines.set(id, baseline)
       }
-      return { files: baseline.files.map(file => ({ ...file })) }
+      return { ...baseline }
     },
     rebuilt: (id) => {
       rebuiltCalls.push(id)
-      const result = options.rebuilt?.(id) ?? 'r2'
-      const path = rows.get(id)
-      if (path !== undefined) baselines.set(id, artifactBaseline(artifacts(id, path)))
-      return result
+      return options.rebuilt?.(id) ?? 'r2'
     },
     onRebuilt: () => () => {},
     onGraphChanged: (listener) => {
@@ -189,21 +181,6 @@ describe('hmr node half', () => {
     clientModuleHost.rebuiltCalls.length = 0
     await new Promise(resolve => setTimeout(resolve, POLL_MS * 3))
     expect(clientModuleHost.rebuiltCalls).toHaveLength(0)
-    await fiber.dispose()
-  })
-
-  it('rehashes when a sibling chunk changes without an entry rewrite', async () => {
-    const bundle = join(dir, 'chunk-entry.js')
-    const chunk = join(dir, 'client.pdf.js')
-    writeFileSync(bundle, 'module.exports = require("./client.pdf.js")')
-    writeFileSync(chunk, 'v1')
-    const clientModuleHost = fakeClientModuleHost(new Map([['pkg-a', bundle]]), {
-      artifacts: () => [bundle, chunk],
-    })
-    const fiber = await mount(clientModuleHost, fakeHttpServer([]))
-
-    writeFileSync(chunk, 'v2-longer')
-    await vi.waitFor(() => { expect(clientModuleHost.rebuiltCalls).toEqual(['pkg-a']) }, { timeout: 3_000 })
     await fiber.dispose()
   })
 

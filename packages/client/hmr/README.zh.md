@@ -39,7 +39,7 @@ kind: "package-reference"
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
-| `pollIntervalMs` | `500` | entry/chunk stat 轮询间隔，单位为毫秒 |
+| `pollIntervalMs` | `500` | bundle stat 轮询间隔，单位为毫秒 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-client-hmr)是所有受支持字段及其 JSDoc 的完整真源。
 
@@ -59,7 +59,7 @@ kind: "package-reference"
 
 ### 设计理念
 
-Host 半侧监听每个包的 Client entry 与引用的 chunk，并提供 `/plugins/events`。它转发现有的图变化与重建通知；每个新连接都会收到当前完整图。图描述浏览器的目标条目，不保证 Host 清理已经完成。Host 的激活与清理仍由 Host 生命周期管理。产物轮询报告重建 revision；未变化的产物无需读取内容。浏览器半侧将两种帧都交给 Client Modules，由它串行处理条目变更并等待浏览器资源清理。
+Host 半侧监听 bundle 产物并提供 `/plugins/events`。它转发现有的图变化与重建通知；每个新连接都会收到当前完整图。图描述浏览器的目标条目，不保证 Host 清理已经完成。Host 的激活与清理仍由 Host 生命周期管理。产物轮询报告重建 revision；未变化的产物无需读取内容。浏览器半侧将两种帧都交给 Client Modules，由它串行处理条目变更并等待浏览器资源清理。
 
 ### 浏览器侧替换
 
@@ -77,7 +77,7 @@ fiber 的激活 epoch 会串联其服务提供方的 uid，因此替换提供方
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | node 半侧：entry/chunk stat 轮询、`rebuilt` 上报、`/plugins/events` SSE 通道 |
+| [`src/index.ts`](src/index.ts) | node 半侧：bundle stat 轮询、`rebuilt` 上报、`/plugins/events` SSE 通道 |
 | [`src/client/index.ts`](src/client/index.ts) | 浏览器半侧：SSE 订阅与共享条目控制器调用 |
 | [`src/events.ts`](src/events.ts) | 共享帧类型（`graph` / `rebuilt`）与端点常量 |
 

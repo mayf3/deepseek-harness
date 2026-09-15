@@ -36,28 +36,6 @@ function atRevision(url: string, rev: string): string {
   return url.replace(/([?&]rev=)[^&#]*/, `$1${encodeURIComponent(rev)}`)
 }
 
-const CLIENT_CHUNK = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/
-
-/** Internal module-table key for one package-local chunk. */
-function chunkId(ownerId: string, fileName: string): string {
-  return `${ownerId}/${fileName}`
-}
-
-/** Resolve a sibling chunk against the package's one-resource URL and current revision. */
-function chunkUrl(row: BootModuleRow, fileName: string, rev: string): string {
-  const url = atRevision(row.url, rev)
-  const marker = '/??'
-  const resourceStart = url.indexOf(marker)
-  const revisionStart = url.indexOf('&rev=', resourceStart + marker.length)
-  const resource = resourceStart < 0 || revisionStart < 0
-    ? undefined
-    : url.slice(resourceStart + marker.length, revisionStart)
-  if (resource !== `${row.id}/client.js`) {
-    throw new Error(`client-modules: cannot resolve chunk ${JSON.stringify(fileName)} from bundle URL ${url}`)
-  }
-  return `${url.slice(0, resourceStart)}/${row.id}/${fileName}?${url.slice(revisionStart + 1)}`
-}
-
 /**
  * Claim and inventory the <style> tags a factory injected during
  * materialization: preset-emitted tags arrive pre-tagged with data-plugin;
@@ -144,23 +122,13 @@ export class ClientModuleSystem implements ClientModuleLoader {
 
   /** Register one bundle factory, rejecting a script that executes twice without invalidation. */
   private register(registration: ClientBundleRegistration): void {
-    const ownerId = stripClientSuffix(registration.id)
-    if (registration.chunk !== undefined && !CLIENT_CHUNK.test(registration.chunk)) {
-      throw new Error(`client-modules: invalid package-local chunk ${JSON.stringify(registration.chunk)}`)
-    }
-    const id = registration.chunk === undefined ? ownerId : chunkId(ownerId, registration.chunk)
-    const rev = this.factories.get(ownerId)?.rev ?? this.reloadTargets.get(ownerId)?.rev ?? this.graphRows.get(ownerId)?.rev
-    const previous = this.factories.get(id)
-    if (registration.chunk !== undefined && previous !== undefined && previous.rev === rev) return
-    if (this.bootstrapIds.has(id)) {
+    const id = stripClientSuffix(registration.id)
+    if (this.bootstrapIds.has(id) || this.factories.has(id)) {
       throw new Error(`client-modules: duplicate factory registration for "${registration.id}" (bundle executed twice without invalidate?)`)
-    }
-    if (previous !== undefined) {
-      throw new Error(`client-modules: duplicate factory registration for "${id}" (bundle executed twice without invalidate?)`)
     }
     this.factories.set(id, {
       factory: registration.factory,
-      rev,
+      rev: this.reloadTargets.get(id)?.rev ?? this.graphRows.get(id)?.rev,
     })
   }
 
@@ -215,7 +183,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
   }
 
   /** Materialize a registered factory (synchronous; memoized in loadCache). */
-  private materialize(id: string, ownerId = id): ClientModuleRecord {
+  private materialize(id: string): ClientModuleRecord {
     const existing = this.loadCache.get(id)
     if (existing !== undefined) return existing
     const registered = this.factories.get(id)
@@ -227,12 +195,12 @@ export class ClientModuleSystem implements ClientModuleLoader {
     this.materializing.add(id)
     try {
       const edges = new Set<string>()
-      const exports = registered.factory(this.makeRequire(ownerId, edges))
-      const record: ClientModuleRecord = { id, exports, styles: claimStyles(ownerId), edges }
+      const exports = registered.factory(this.makeRequire(edges))
+      const record: ClientModuleRecord = { id, exports, styles: claimStyles(id), edges }
       this.loadCache.set(id, record)
       return record
     } catch (error) {
-      removeOwnedStyles(ownerId)
+      removeOwnedStyles(id)
       throw error
     } finally {
       this.materializing.delete(id)
@@ -240,30 +208,14 @@ export class ClientModuleSystem implements ClientModuleLoader {
   }
 
   /**
-   * The require answered to factories: a generated relative chunk request
-   * returns its asynchronous load, while ordinary module-table requests stay
-   * synchronous: seed → memoized record → registered factory.
+   * The synchronous require answered to factories: seed → memoized record →
+   * registered factory. Fetching is async and therefore unreachable
+   * from here; an external dynamic package must have arrived before its
+   * consumer materializes.
    */
-  private makeRequire(ownerId: string, edges: Set<string>): (spec: string) => unknown {
+  private makeRequire(edges: Set<string>): (spec: string) => unknown {
     return (spec: string): unknown => {
       edges.add(spec)
-      if (spec.startsWith('./')) {
-        if (spec === './client.js') {
-          const owner = this.loadCache.get(ownerId)
-          /* v8 ignore next -- a chunk factory is materialized only from its cached owner entry. */
-          if (owner === undefined) throw new Error(`client-modules: package chunk loaded before entry "${ownerId}"`)
-          return owner.exports
-        }
-        const fileName = spec.slice(2)
-        if (!CLIENT_CHUNK.test(fileName)) {
-          throw new Error(`client-modules: invalid relative chunk request ${JSON.stringify(spec)}`)
-        }
-        const id = chunkId(ownerId, fileName)
-        const record = this.loadCache.get(id)
-        if (record !== undefined) return record.exports
-        if (this.factories.has(id)) return this.materialize(id, ownerId).exports
-        return this.importChunk(ownerId, fileName)
-      }
       if (this.seed.has(spec)) return this.seed.get(spec)
       const id = stripClientSuffix(spec)
       const record = this.loadCache.get(id)
@@ -274,27 +226,6 @@ export class ClientModuleSystem implements ClientModuleLoader {
         + 'and no registered package factory (a build-time externals drift, or a dynamic dependency that did not arrive)',
       )
     }
-  }
-
-  /** Load, register, and materialize one package-local tsdown chunk. */
-  private async importChunk(ownerId: string, fileName: string): Promise<unknown> {
-    const id = chunkId(ownerId, fileName)
-    const row = this.graphRows.get(ownerId)
-    if (row === undefined) throw new Error(`client-modules: chunk owner "${ownerId}" is not a boot graph entry`)
-    const revision = this.factories.get(ownerId)?.rev
-    /* v8 ignore next -- graph entry registration always records its row or reload revision. */
-    if (revision === undefined) throw new Error(`client-modules: chunk owner "${ownerId}" has no artifact revision`)
-    const url = chunkUrl(row, fileName, revision)
-    let transport = this.pendingArrival.get(url)
-    if (transport === undefined) {
-      transport = this.loadBundle(url).finally(() => { this.pendingArrival.delete(url) })
-      this.pendingArrival.set(url, transport)
-    }
-    await transport
-    if (!this.factories.has(id)) {
-      throw new Error(`client-modules: bundle ${url} loaded without registering "${id}" via __ModuleLoader__.load`)
-    }
-    return this.materialize(id, ownerId).exports
   }
 
   async import(specifier: string): Promise<unknown> {
@@ -371,11 +302,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
       const revision = rev ?? row.rev
       this.reloadTargets.set(normalized, { url: atRevision(row.url, revision), rev: revision })
     } else this.reloadTargets.delete(normalized)
-    for (const key of this.factories.keys()) {
-      if (key === normalized || key.startsWith(`${normalized}/client.`)) this.factories.delete(key)
-    }
-    for (const key of this.loadCache.keys()) {
-      if (key === normalized || key.startsWith(`${normalized}/client.`)) this.loadCache.delete(key)
-    }
+    this.factories.delete(normalized)
+    this.loadCache.delete(normalized)
   }
 }

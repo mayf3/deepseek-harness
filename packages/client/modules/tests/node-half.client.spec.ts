@@ -1,6 +1,6 @@
 /** Node-half composition diagnostics for package metadata and built client bundles. */
 
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { SourceMap } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -20,7 +20,6 @@ const UI_RENDERER_ID = '@deepseek-ai/dsh-client-ui-renderer'
 const comboUrl = (ids: readonly string[], rev: string): string =>
   `/plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
 const mapUrl = (url: string): string => url.replace(/\/client\.js(?=,|&rev=)/g, '/client.js.map')
-const chunkUrl = (id: string, fileName: string, rev: string): string => `/plugins/${id}/${fileName}?rev=${rev}`
 const BOOTSTRAP_URL = comboUrl([MODULES_ID], 'boot')
 const APPLICATION_URL = comboUrl([UI_RENDERER_ID], 'app')
 
@@ -491,28 +490,6 @@ describe('client bundle activation', () => {
     expect(String(thrown)).not.toContain('pnpm run build')
   })
 
-  it('names a missing sibling chunk and preserves its retryable ENOENT code', () => {
-    const packageName = '@fixture/missing-chunk'
-    const clientPath = writePackage(packageName)
-    const chunkPath = join(dirname(clientPath), 'client.pdf.js')
-    mkdirSync(dirname(clientPath), { recursive: true })
-    writeFileSync(clientPath, 'module.exports = [require("./client.pdf.js"), require("./client.pdf.js")]\n')
-    writeFileSync(chunkPath, 'module.exports = {}\n')
-    const service = construct([packageName])
-    unlinkSync(chunkPath)
-
-    let thrown: unknown
-    try {
-      service.rebuilt(packageName)
-    } catch (error) {
-      thrown = error
-    }
-    expect(thrown).toMatchObject({ code: 'ENOENT', clientPath: chunkPath })
-
-    writeFileSync(chunkPath, 'module.exports = { restored: true }\n')
-    expect(service.rebuilt(packageName)).toBeTypeOf('string')
-  })
-
   it('falls back to a generated-file map when an authored map is malformed', async () => {
     const packageName = '@fixture/malformed-source-map'
     const clientPath = writePackage(packageName)
@@ -662,13 +639,13 @@ describe('client bundle activation', () => {
     writeFileSync(clientPath, 'module.exports = { generation: 1 }\n')
     const { service, route } = constructWithRoute([packageName])
     const first = service.graph().batches[0]!.url
-    const firstSize = service.artifactBaseline(packageName)!.files[0]!.size
+    const firstSize = service.artifactBaseline(packageName)!.size
 
     writeFileSync(clientPath, 'module.exports = { generation: 200 }\n')
     service.rebuilt(packageName)
     const second = service.graph().batches[0]!.url
     expect(second).not.toBe(first)
-    expect(service.artifactBaseline(packageName)!.files[0]!.size).toBeGreaterThan(firstSize)
+    expect(service.artifactBaseline(packageName)!.size).toBeGreaterThan(firstSize)
     expect((await routeRequest(route, first)).status).toBe(200)
     expect((await routeRequest(route, second)).status).toBe(200)
 
@@ -695,11 +672,9 @@ describe('client bundle activation', () => {
     const firstPath = service.clientPath(firstName)!
     const firstStat = statSync(firstPath)
     expect(service.artifactBaseline(firstName)).toEqual({
-      files: [{
-        path: firstPath,
-        mtimeMs: firstStat.mtimeMs,
-        size: firstStat.size,
-      }],
+      path: firstPath,
+      mtimeMs: firstStat.mtimeMs,
+      size: firstStat.size,
     })
     expect(service.artifactBaseline('@fixture/unknown')).toBeUndefined()
   })
@@ -803,43 +778,6 @@ describe('client bundle activation', () => {
     expect(JSON.parse(nextMap.body.toString('utf8'))).toMatchObject({
       sections: [{ map: { sources: ['/plugins/@fixture/source-map/src/changed.tsx'] } }],
     })
-  })
-
-  it('snapshots and serves package-local chunks under the entry revision', async () => {
-    const packageName = '@fixture/chunked'
-    const clientPath = writePackage(packageName)
-    const chunkPath = join(dirname(clientPath), 'client.pdf.js')
-    const sharedPath = join(dirname(clientPath), 'client.store.js')
-    mkdirSync(dirname(clientPath), { recursive: true })
-    writeFileSync(clientPath, 'const store = require("./client.store.js"); module.exports = [store, require("./client.pdf.js")]\n')
-    writeFileSync(chunkPath, 'const store = require("./client.store.js"); module.exports = { version: 1, store }\n//# sourceMappingURL=client.pdf.js.map')
-    writeFileSync(sharedPath, 'module.exports = { shared: true }\n')
-    writeFileSync(`${chunkPath}.map`, JSON.stringify({
-      version: 3,
-      names: [],
-      mappings: 'AAAA',
-      sources: ['../../../packages/client/demo/src/pdf.tsx'],
-    }))
-    const { service, route } = constructWithRoute([packageName])
-    const firstRev = service.graph().entries[0]!.rev
-    const firstUrl = chunkUrl(packageName, 'client.pdf.js', firstRev)
-    expect(service.artifactBaseline(packageName)?.files.map(file => file.path)).toEqual([clientPath, sharedPath, chunkPath])
-
-    const entry = await routeRequest(route, service.graph().entries[0]!.url)
-    expect(entry.body.indexOf(Buffer.from('shared: true'))).toBeLessThan(entry.body.indexOf(Buffer.from('module.exports = [store')))
-
-    const script = await routeRequest(route, firstUrl)
-    expect(script.status).toBe(200)
-    expect(script.body.toString('utf8')).toContain('version: 1')
-    expect(script.body.indexOf(Buffer.from('shared: true'))).toBeLessThan(script.body.indexOf(Buffer.from('version: 1')))
-    expect(script.body.toString('utf8')).toContain(`sourceMappingURL=${firstUrl.replace('.js?', '.js.map?')}`)
-    expect((await routeRequest(route, firstUrl.replace('.js?', '.js.map?'))).status).toBe(200)
-
-    writeFileSync(chunkPath, 'module.exports = { version: 2 }\n')
-    const secondRev = service.rebuilt(packageName)!
-    expect(secondRev).not.toBe(firstRev)
-    const second = await routeRequest(route, chunkUrl(packageName, 'client.pdf.js', secondRev))
-    expect(second.body.toString('utf8')).toContain('module.exports = { version: 2 }')
   })
 
   it('applies sourceRoot before relocating absolute-looking section sources', async () => {

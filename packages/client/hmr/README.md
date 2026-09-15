@@ -39,7 +39,7 @@ Each successful reload re-executes the plugin bundle and remounts the plugin wit
 
 | Field | Default | Meaning |
 |---|---|---|
-| `pollIntervalMs` | `500` | Entry/chunk stat-poll interval in milliseconds |
+| `pollIntervalMs` | `500` | Bundle stat-poll interval in milliseconds |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-client-hmr) is the exhaustive source for every accepted field and its JSDoc.
 
@@ -59,7 +59,7 @@ This section explains how the reload chain is built; observable behavior is cove
 
 ### Design concept
 
-The Host half watches each package's Client entry and referenced chunks and serves `/plugins/events`. It forwards existing graph-change and rebuilt notifications; every new connection receives the current full graph. A graph describes the browser’s desired entries and carries no Host cleanup-completion guarantee. Host activation and cleanup remain owned by the Host lifecycle. Artifact polling reports rebuilt revisions; unchanged artifacts require no content read. The browser half delegates both frame kinds to Client Modules, which serializes entry changes and waits for browser resource cleanup.
+The Host half watches bundle artifacts and serves `/plugins/events`. It forwards existing graph-change and rebuilt notifications; every new connection receives the current full graph. A graph describes the browser’s desired entries and carries no Host cleanup-completion guarantee. Host activation and cleanup remain owned by the Host lifecycle. Artifact polling reports rebuilt revisions; unchanged artifacts require no content read. The browser half delegates both frame kinds to Client Modules, which serializes entry changes and waits for browser resource cleanup.
 
 ### The browser swap
 
@@ -77,7 +77,7 @@ Download failures leave the running plugin active. After the old fiber is torn d
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Node half: entry/chunk stat polling, `rebuilt` reporting, `/plugins/events` SSE channel |
+| [`src/index.ts`](src/index.ts) | Node half: bundle stat-poll, `rebuilt` reporting, `/plugins/events` SSE channel |
 | [`src/client/index.ts`](src/client/index.ts) | Browser half: SSE subscription and delegation to the shared entry controller |
 | [`src/events.ts`](src/events.ts) | Shared frame types (`graph` / `rebuilt`) and the endpoint constant |
 
