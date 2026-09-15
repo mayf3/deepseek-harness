@@ -375,9 +375,11 @@
   outline-offset: 1px;
 }
 
-/* Wider than the default dialog: pnpm's lines are long, and the terminal keeps them unwrapped. */
+/* Wider than the default dialog: pnpm's lines are long, and the terminal keeps them unwrapped. The card never
+   outgrows the viewport; the running screens scroll inside it so the head's controls stay reachable. */
 .installDialog {
   width: min(600px, 100%);
+  max-height: calc(100vh - 48px);
 }
 
 .installBody {
@@ -560,10 +562,22 @@
    state, the subject card, then the details toggle beside the screen's action. */
 .wizard {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+  min-height: 0;
   padding: 16px 20px 20px;
+}
+
+/* Everything under the head: it scrolls when the runs' output makes the screen taller than the card. */
+.wizardScroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .wizardHead {

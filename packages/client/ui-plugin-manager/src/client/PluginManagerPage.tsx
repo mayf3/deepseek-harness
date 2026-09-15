@@ -549,78 +549,80 @@ function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onTog
             <IconCloseOutline16 size={14} />
           </button>
         </div>
-        <div className={css.wizardHero}>
-          <span className={css.wizardIcon} data-tone={pending ? 'pending' : phase} aria-hidden="true">
-            {pending
-              ? <span className={css.spinnerLarge} />
-              : phase === 'done' ? <IconCheckOutline16 size={28} /> : <IconWarningOutline16 size={28} />}
-          </span>
-          <h2 className={css.wizardTitle} role={phase === 'failed' ? 'alert' : 'status'}>{heading}</h2>
-          {phase === 'failed' ? <p className={css.wizardSub}>{failureText(install.failure, t)}</p> : null}
-          {unconfirmed === undefined ? null : <p className={css.wizardSub} role="alert">{t('installCancelUnconfirmed', { reason: unconfirmed })}</p>}
-        </div>
-        {install.subject === null ? null : <SubjectCard subject={install.subject} t={t} />}
-        {approvable
-          ? (
-            <section className={css.approval} role="group" aria-labelledby={approvalId} data-install-approval>
-              <h3 id={approvalId} className={css.approvalTitle}>{t('installApprovalTitle')}</h3>
-              <p className={css.approvalText}>{t('installApprovalDescription')}</p>
-              <ul className={css.approvalList}>
-                {pendingBuilds.map(name => <li key={name}><code>{name}</code></li>)}
-              </ul>
-              <p className={css.approvalText}>{t('installApprovalConsequence')}</p>
-              <p className={css.approvalCaution}>{t('installApprovalCaution')}</p>
-              <Button variant="primary" className={css.wide} onClick={onApproveBuilds}>{t('installApproveAndRetry')}</Button>
-            </section>
-          )
-          : null}
-        {phase === 'done' && install.installed === null
-          ? <p className={css.result} role="status">{t('installDoneNothing')}</p>
-          : null}
-        {phase === 'done' && install.restartRequired
-          ? <p className={css.resultWarn} role="status">{t('installDoneRestart')}</p>
-          : null}
-        {phase === 'done' && install.approvedBuilds.length > 0
-          ? <p className={css.result} role="status">{t('installDoneApproved', { names: install.approvedBuilds.join(', ') })}</p>
-          : null}
-        <div className={css.wizardFoot}>
-          <button type="button" className={css.detailsToggle} aria-expanded={install.detailsOpen} onClick={onToggleDetails}>
-            <span>{t(install.detailsOpen ? 'installDetailsHide' : 'installDetailsShow')}</span>
-            <IconChevronDownOutline14 className={css.detailsChevron} aria-hidden="true" />
-          </button>
-          {pending
+        <div className={css.wizardScroll}>
+          <div className={css.wizardHero}>
+            <span className={css.wizardIcon} data-tone={pending ? 'pending' : phase} aria-hidden="true">
+              {pending
+                ? <span className={css.spinnerLarge} />
+                : phase === 'done' ? <IconCheckOutline16 size={28} /> : <IconWarningOutline16 size={28} />}
+            </span>
+            <h2 className={css.wizardTitle} role={phase === 'failed' ? 'alert' : 'status'}>{heading}</h2>
+            {phase === 'failed' ? <p className={css.wizardSub}>{failureText(install.failure, t)}</p> : null}
+            {unconfirmed === undefined ? null : <p className={css.wizardSub} role="alert">{t('installCancelUnconfirmed', { reason: unconfirmed })}</p>}
+          </div>
+          {install.subject === null ? null : <SubjectCard subject={install.subject} t={t} />}
+          {approvable
             ? (
-              <Button variant="outline" size="sm" disabled={phase !== 'running'} onClick={onCancel}>
-                {t(phase === 'cancelling' ? 'installCancelling' : 'installCancel')}
-              </Button>
+              <section className={css.approval} role="group" aria-labelledby={approvalId} data-install-approval>
+                <h3 id={approvalId} className={css.approvalTitle}>{t('installApprovalTitle')}</h3>
+                <p className={css.approvalText}>{t('installApprovalDescription')}</p>
+                <ul className={css.approvalList}>
+                  {pendingBuilds.map(name => <li key={name}><code>{name}</code></li>)}
+                </ul>
+                <p className={css.approvalText}>{t('installApprovalConsequence')}</p>
+                <p className={css.approvalCaution}>{t('installApprovalCaution')}</p>
+                <Button variant="primary" className={css.wide} onClick={onApproveBuilds}>{t('installApproveAndRetry')}</Button>
+              </section>
             )
             : null}
-          {phase === 'failed' && !approvable ? <Button variant="primary" size="sm" onClick={onRun}>{t('installRetry')}</Button> : null}
+          {phase === 'done' && install.installed === null
+            ? <p className={css.result} role="status">{t('installDoneNothing')}</p>
+            : null}
+          {phase === 'done' && install.restartRequired
+            ? <p className={css.resultWarn} role="status">{t('installDoneRestart')}</p>
+            : null}
+          {phase === 'done' && install.approvedBuilds.length > 0
+            ? <p className={css.result} role="status">{t('installDoneApproved', { names: install.approvedBuilds.join(', ') })}</p>
+            : null}
+          <div className={css.wizardFoot}>
+            <button type="button" className={css.detailsToggle} aria-expanded={install.detailsOpen} onClick={onToggleDetails}>
+              <span>{t(install.detailsOpen ? 'installDetailsHide' : 'installDetailsShow')}</span>
+              <IconChevronDownOutline14 className={css.detailsChevron} aria-hidden="true" />
+            </button>
+            {pending
+              ? (
+                <Button variant="outline" size="sm" disabled={phase !== 'running'} onClick={onCancel}>
+                  {t(phase === 'cancelling' ? 'installCancelling' : 'installCancel')}
+                </Button>
+              )
+              : null}
+            {phase === 'failed' && !approvable ? <Button variant="primary" size="sm" onClick={onRun}>{t('installRetry')}</Button> : null}
+          </div>
+          {install.detailsOpen
+            ? (
+              <div className={css.detailsBody}>
+                <p className={css.installLocation}>{firstRun === undefined ? t('terminalNoOutput') : t('installLocation', { dir: firstRun.cwd })}</p>
+                {install.runs.map(run => (
+                  <TerminalBlock
+                    key={run.jobId}
+                    command={run.command}
+                    output={run.output}
+                    running={run.exitCode === undefined}
+                    exitCode={run.exitCode}
+                    maxLines={INSTALL_TERMINAL_LINES}
+                    labels={{ ...terminalLabels(t), ...phase === 'cancelling' ? { failed: t('installCancelledShort') } : {} }}
+                    className={css.terminal}
+                  />
+                ))}
+              </div>
+            )
+            : null}
+          {phase !== 'done'
+            ? null
+            : install.installed !== null
+              ? <Button variant="primary" className={css.wide} disabled={install.enabling} aria-busy={install.enabling} onClick={onEnableNow}>{t('installEnableNow')}</Button>
+              : <Button variant="primary" className={css.wide} onClick={onClose}>{t('installClose')}</Button>}
         </div>
-        {install.detailsOpen
-          ? (
-            <div className={css.detailsBody}>
-              <p className={css.installLocation}>{firstRun === undefined ? t('terminalNoOutput') : t('installLocation', { dir: firstRun.cwd })}</p>
-              {install.runs.map(run => (
-                <TerminalBlock
-                  key={run.jobId}
-                  command={run.command}
-                  output={run.output}
-                  running={run.exitCode === undefined}
-                  exitCode={run.exitCode}
-                  maxLines={INSTALL_TERMINAL_LINES}
-                  labels={{ ...terminalLabels(t), ...phase === 'cancelling' ? { failed: t('installCancelledShort') } : {} }}
-                  className={css.terminal}
-                />
-              ))}
-            </div>
-          )
-          : null}
-        {phase !== 'done'
-          ? null
-          : install.installed !== null
-            ? <Button variant="primary" className={css.wide} disabled={install.enabling} aria-busy={install.enabling} onClick={onEnableNow}>{t('installEnableNow')}</Button>
-            : <Button variant="primary" className={css.wide} onClick={onClose}>{t('installClose')}</Button>}
       </div>
     </Modal>
   )

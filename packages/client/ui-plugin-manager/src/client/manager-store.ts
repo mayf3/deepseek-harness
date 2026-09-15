@@ -545,7 +545,7 @@ export class PluginManagerController {
   private async startInstall(subject: InstallSubject, approvedBuilds?: readonly string[]): Promise<void> {
     const { spec } = subject
     const requestId = randomUUID() as PluginInstallRequestId
-    this.patchInstall({ phase: 'starting', requestId, subject, failure: null, installed: null, approvedBuilds: [] })
+    this.patchInstall({ phase: 'starting', requestId, subject, runs: [], failure: null, installed: null, approvedBuilds: [] })
     // The Host announces `plugin-manager/changed` while the run is still on
     // the wire, and every such event reads again; those reads must not cancel
     // the run's settlement.
