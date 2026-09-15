@@ -39,7 +39,7 @@ The collapsed 自定义设置 fold carries the curated extras: `baseURL` for bot
 
 The DeepSeek card edits the shared `llm-deepseek` endpoint, credentials, and model catalog without a protocol selector. When Cordis YAML selects Messages, the public endpoint placeholder is `https://api.deepseek.com/anthropic`. Saving the card preserves protocol configuration.
 
-Expand **Customized settings → Model options → Image input** to declare whether the model supports images. **Supported** writes text and image input; **Not supported** writes text only. **Default** removes the explicit declaration: DeepSeek defaults to text only, while pi-ai inherits the installed model catalog or provider default. DeepSeek stores this choice in `inputModalities`; pi-ai stores it in `input`. Selecting text only or default for DeepSeek also removes `imagePixelBudget` and `imageMaxBytes`, which its adapter rejects without image input. Declare support only for models that can actually process images.
+Expand **Customized settings → Model options → Image input** to declare whether the model supports images. **Supported** writes text and image input; **Not supported** writes text only. DeepSeek's **Default (text only)** removes `inputModalities`; an absent declaration means text only. Pi-ai's **Use default** removes `input` and inherits the installed model catalog or provider default. Selecting **Not supported** or **Default (text only)** for DeepSeek also removes `imagePixelBudget` and `imageMaxBytes`, which its adapter rejects without image input. Declare support only for models that can actually process images.
 
 ### Adding and deleting providers
 

@@ -221,10 +221,12 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     expect(savedDefaults).toContain('id: deepseek-flash')
     expect(savedDefaults).toContain('inputModalities:')
     expect(savedDefaults).toContain('- text')
-    expect(savedDefaults).toContain('- image')
     expect(savedDefaults).toContain('systemPromptUpdate: in-history')
     await expect(scaffold.ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-flash')).resolves.toMatchObject({
       name: 'Configured Flash', inputModalities: ['text'], systemPromptUpdate: 'in-history',
+    })
+    await expect(scaffold.ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-v4-flash-vision-exp')).resolves.toMatchObject({
+      inputModalities: ['text', 'image'],
     })
     await deepSeek.locator('xpath=ancestor::li').getByRole('button', { name: '编辑' }).click()
     await settings.getByText('自定义设置').click()

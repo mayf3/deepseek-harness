@@ -39,7 +39,7 @@ kind: "package-reference"
 
 `llm-deepseek` 的 DeepSeek 卡片编辑共用的端点、凭据和模型目录，不提供协议选择器。Cordis YAML 选择 Messages 时，官方端点占位符为 `https://api.deepseek.com/anthropic`；保存卡片不会改写协议配置。
 
-展开**自定义设置 → 模型选项 → 图片输入**，声明模型是否支持图片。选择**支持**会写入文本和图片输入；选择**不支持**会写入仅文本。选择**默认**会移除显式声明：DeepSeek 默认为仅文本，pi-ai 则继承已安装模型目录或提供方的默认值。DeepSeek 将此选项存入 `inputModalities`，pi-ai 存入 `input`。DeepSeek 切为仅文本或默认时，还会移除 `imagePixelBudget` 和 `imageMaxBytes`，因为适配器在没有图片输入时拒绝这些限制。仅为实际能够处理图片的模型声明支持。
+展开**自定义设置 → 模型选项 → 图片输入**，声明模型是否支持图片。选择**支持**会写入文本和图片输入；选择**不支持**会写入仅文本。DeepSeek 的**默认（仅文本）**会移除 `inputModalities`；缺省的声明表示仅文本。Pi-ai 的**使用默认值**会移除 `input`，继承已安装模型目录或提供方的默认值。DeepSeek 选择**不支持**或**默认（仅文本）**时，还会移除 `imagePixelBudget` 和 `imageMaxBytes`，因为适配器在没有图片输入时拒绝这些限制。仅为实际能够处理图片的模型声明支持。
 
 ### 新增与删除提供方
 

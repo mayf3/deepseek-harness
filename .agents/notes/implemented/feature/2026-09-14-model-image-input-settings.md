@@ -16,6 +16,8 @@ The shared field replaces one drafted row and preserves unrelated metadata. Sele
 
 ## Alternatives considered
 
+**Keep `input` editable only in the settings document.** The [earlier pi-ai modality decision](../../archived/architecture/2026-08-12-pi-ai-route-default-input-modalities.md) kept this field outside the model-list editor. That leaves users who add custom vision models through the UI unable to enable their image input there. Per-row editing supplies that configuration while the default choice preserves catalog inheritance.
+
 **A two-state switch.** Treating an absent pi-ai declaration as disabled would misrepresent inherited vision support and encourage overwriting catalog defaults. The explicit Default choice preserves the adapter's existing resolution rules.
 
 **Keep image limits when disabling DeepSeek images.** This leaves a configuration that the adapter refuses to save. Clearing the image-specific limits makes the selected text-only state valid while preserving unrelated model fields.
