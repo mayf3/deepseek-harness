@@ -47,8 +47,13 @@ function isLabel(entry: MenuEntry): entry is MenuLabel {
 const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
 
 /**
- * Render an anchored dropdown menu.
- * @param props.autoFocus - focus the first item on open and enable arrow-key navigation; Escape focuses the anchor's first button.
+ * Render an anchored dropdown menu. While the list is open its keys mirror the
+ * composer's: Tab settles the focused row — from the trigger, Tab enters the
+ * list instead — and Escape or Shift+Tab close it and return focus to the
+ * anchor's first button, and selecting a row does the same — the rows unmount
+ * with the list. Only a keyboard on the trigger or inside the list is
+ * intercepted; Tab presses elsewhere on the page stay the browser's.
+ * @param props.autoFocus - focus the first item on open; the arrow keys walk the list either way.
  * @param props.open - whether the list is showing (owner-controlled).
  * @param props.anchor - the trigger element (rendered in place).
  * @param props.items - selectable rows and optional separators.
@@ -106,6 +111,28 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
 }) {
   const rootRef = useRef<HTMLSpanElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  /** Index the arrow walk last focused, the resume point when focus left the rows. */
+  const walkIndex = useRef<number | null>(null)
+
+  /**
+   * Hand the keyboard back to the anchor's first button after a close that
+   * unmounts the rows: focus left on a removed row falls to the page body,
+   * where the next Tab restarts from the top of the page.
+   */
+  const refocusAnchor = (): void => {
+    rootRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+  }
+
+  /**
+   * Post-selection focus, for the paths where the rows unmount with the list.
+   * An owner that moved focus itself (a card handing it to its preview button)
+   * keeps its choice: only a keyboard still on the closing list comes back to
+   * the anchor.
+   */
+  const refocusAfterSelection = (): void => {
+    const active = document.activeElement
+    if (active === null || active === document.body || listRef.current?.contains(active) === true) refocusAnchor()
+  }
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null)
   const [fixedPos, setFixedPos] = useState<CSSProperties | null>(null)
   const { arm: armClose, cancel: cancelClose } = usePointerGrace(onClose)
@@ -164,12 +191,16 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
   }, [open, portal, align, side, getAnchorRect])
 
   useEffect(() => {
-    if (open && autoFocus) listRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+    if (!open || !autoFocus) return
+    const first = listRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')
+    walkIndex.current = first === undefined || first === null ? null : 0
+    first?.focus()
   }, [open, autoFocus])
 
   useEffect(() => {
     if (!open) {
       setOpenSubmenuId(null)
+      walkIndex.current = null
       return
     }
     const onPointerDown = (e: PointerEvent) => {
@@ -181,16 +212,60 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
     }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // Closing hands the keyboard back to the anchor whenever the menu had
+        // it, so Escape leaves the user where it found them.
+        const inMenu = rootRef.current?.contains(document.activeElement) === true
+          || listRef.current?.contains(document.activeElement) === true
         onClose()
-        if (autoFocus) rootRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+        if (inMenu) refocusAnchor()
       }
-      if (!autoFocus || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
-      const buttons = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])
-      const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
-      if (index < 0) return
-      e.preventDefault()
+      // Tab settles like Enter and Shift+Tab leaves like Escape, so a menu's
+      // keys mean what they mean in the composer. Only a keyboard already on
+      // the trigger or inside the list is intercepted: Tab elsewhere on the
+      // page keeps the browser's traversal even while a menu is open.
+      if (e.key === 'Tab') {
+        const list = listRef.current
+        const focused = document.activeElement
+        const anchored = rootRef.current?.contains(focused) === true || list?.contains(focused) === true
+        if (list === null || !anchored) return
+        e.preventDefault()
+        if (e.shiftKey) {
+          onClose()
+          refocusAnchor()
+          return
+        }
+        // Settling the row the keyboard is on; from the trigger, Tab enters the
+        // list instead (its own foreground meaning).
+        if (list.contains(focused)) {
+          (focused as HTMLElement).click()
+          return
+        }
+        list.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+        walkIndex.current = 0
+        return
+      }
+      // Arrows walk the list whether or not the menu focused its first item on
+      // open, so `autoFocus` chooses only that entry behavior. A keyboard still
+      // on the anchor enters at the end the step comes from. The walk resumes
+      // from where it last put focus, not from `document.activeElement`: a row
+      // that refused focus (a hidden portal frame, a detached node) would
+      // otherwise re-enter at the near end on every press and the walk would
+      // alternate between two rows.
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
+      const list = listRef.current
+      const focused = document.activeElement
+      const anchored = rootRef.current?.contains(focused) === true || list?.contains(focused) === true
+      if (list === null || !anchored) return
+      const buttons = Array.from(list.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'))
+      if (buttons.length === 0) return
+      const index = buttons.indexOf(focused as HTMLButtonElement)
+      const from = index >= 0 ? index : walkIndex.current
       const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1
-        : (index + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+        : from === null
+          ? (e.key === 'ArrowDown' ? 0 : buttons.length - 1)
+          : (from + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+      e.preventDefault()
+      walkIndex.current = next
       buttons[next]?.focus()
     }
     // A pointerdown inside a cross-origin iframe (a sandboxed HTML preview)
@@ -253,6 +328,7 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
               return
             }
             onSelect(entry.id)
+            refocusAfterSelection()
           }}
         >
           {entry.icon !== undefined && <span className={css.itemIcon}>{entry.icon}</span>}
@@ -269,7 +345,7 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
                 role="menuitem"
                 className={css.item}
                 disabled={sub.disabled}
-                onClick={() => { onSelect(sub.id) }}
+                onClick={() => { onSelect(sub.id); refocusAfterSelection() }}
               >
                 {sub.icon !== undefined && <span className={css.itemIcon}>{sub.icon}</span>}
                 <span className={css.itemLabel}>{sub.label}</span>

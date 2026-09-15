@@ -258,7 +258,13 @@ export const InputBar = memo(function InputBar({
   }
 
   const onToggleCommandMenu = (): void => {
-    if (keyboard !== undefined) toggleCommandMenu?.(keyboard.caretSpan())
+    if (keyboard === undefined) return
+    // The menu is a combobox over the editor, so the keyboard has to be there
+    // before the launcher opens it: activating the button from the keyboard
+    // leaves focus on the button, and restoring it afterwards would re-track an
+    // empty draft and close the menu again.
+    editor?.getRootElement()?.focus({ preventScroll: true })
+    toggleCommandMenu?.(keyboard.caretSpan())
   }
 
   // The no-session Workspace trigger: the resident editable div acts as the

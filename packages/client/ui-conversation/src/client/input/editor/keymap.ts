@@ -100,9 +100,14 @@ export function registerComposerKeymap(editor: LexicalEditor, handlers: Composer
     editor.registerUpdateListener(syncComposition),
     editor.registerCommand(KEY_ARROW_UP_COMMAND, arrow('up'), COMMAND_PRIORITY_CRITICAL),
     editor.registerCommand(KEY_ARROW_DOWN_COMMAND, arrow('down'), COMMAND_PRIORITY_CRITICAL),
-    // Tab acts only when the trigger menu has a highlighted completion;
-    // otherwise it passes so the browser keeps its native focus traversal.
-    editor.registerCommand(KEY_TAB_COMMAND, arrow('tab'), COMMAND_PRIORITY_CRITICAL),
+    // Tab settles the highlighted completion; Shift+Tab leaves the menu like
+    // Escape, so the two Tab gestures never disagree about consuming the draft.
+    // Without a highlight both pass, keeping native focus traversal.
+    editor.registerCommand(
+      KEY_TAB_COMMAND,
+      event => arrow(event.shiftKey ? 'tabBack' : 'tab')(event),
+      COMMAND_PRIORITY_CRITICAL,
+    ),
     editor.registerCommand(KEY_ESCAPE_COMMAND, (event) => {
       // Escape layering: an open overlay closes; claimed without an overlay
       // does NOT release (backspacing the token is the only exit gesture).

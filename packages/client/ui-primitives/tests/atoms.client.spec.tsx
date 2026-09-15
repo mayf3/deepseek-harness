@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Button, ConnectionIndicator, Input, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -175,6 +176,154 @@ describe('Menu', () => {
       />)
     expect(screen.getByTestId('ic')).toBeDefined()
     expect(screen.getByRole('separator')).toBeDefined()
+  })
+
+  it('Tab settles the focused row; Shift+Tab closes back to the anchor', () => {
+    const onSelect = vi.fn()
+    const onClose = vi.fn()
+    render(
+      <Menu open autoFocus anchor={<button type="button">trigger</button>} items={items} onSelect={onSelect} onClose={onClose} />)
+    // autoFocus parks the keyboard on the first row; Tab settles it like Enter.
+    const alpha = screen.getByRole('menuitem', { name: 'Alpha' })
+    expect(document.activeElement).toBe(alpha)
+    expect(fireEvent.keyDown(alpha, { key: 'Tab' })).toBe(false)
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('a')
+
+    // Shift+Tab leaves like Escape: closed, with the trigger taking the keyboard.
+    fireEvent.keyDown(alpha, { key: 'Tab', shiftKey: true })
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'trigger' }))
+  })
+
+  it('Tab from the trigger enters the open list, and elsewhere on the page stays native', () => {
+    render(
+      <Menu open anchor={<button type="button">trigger</button>} items={items} onSelect={() => {}} onClose={() => {}} />)
+    const trigger = screen.getByRole('button', { name: 'trigger' })
+    trigger.focus()
+    expect(fireEvent.keyDown(trigger, { key: 'Tab' })).toBe(false)
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Alpha' }))
+
+    // A keyboard outside both the anchor and the list keeps the traversal.
+    const outside = document.createElement('button')
+    document.body.append(outside)
+    outside.focus()
+    expect(fireEvent.keyDown(outside, { key: 'Tab' })).toBe(true)
+    outside.remove()
+  })
+
+  it('walks the list with the arrows without autoFocus, wrapping at both ends', () => {
+    const onClose = vi.fn()
+    const rows = [
+      { id: 'a', label: 'Alpha' },
+      { id: 'b', label: 'Beta' },
+      { id: 'c', label: 'Gamma' },
+    ]
+    render(
+      <Menu open anchor={<button type="button">trigger</button>} items={rows} onSelect={() => {}} onClose={onClose} />)
+    const trigger = screen.getByRole('button', { name: 'trigger' })
+    const alpha = screen.getByRole('menuitem', { name: 'Alpha' })
+    const beta = screen.getByRole('menuitem', { name: 'Beta' })
+    const gamma = screen.getByRole('menuitem', { name: 'Gamma' })
+    trigger.focus()
+    // autoFocus is off: the menu opens with the keyboard on the anchor, and the
+    // first step enters at the near end.
+    expect(document.activeElement).toBe(trigger)
+    expect(fireEvent.keyDown(trigger, { key: 'ArrowDown' })).toBe(false)
+    expect(document.activeElement).toBe(alpha)
+    fireEvent.keyDown(alpha, { key: 'ArrowDown' })
+    fireEvent.keyDown(beta, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(gamma)
+    fireEvent.keyDown(gamma, { key: 'ArrowDown' }) // wraps forwards
+    expect(document.activeElement).toBe(alpha)
+    fireEvent.keyDown(alpha, { key: 'ArrowUp' }) // wraps backwards
+    expect(document.activeElement).toBe(gamma)
+    fireEvent.keyDown(gamma, { key: 'Home' })
+    expect(document.activeElement).toBe(alpha)
+    fireEvent.keyDown(alpha, { key: 'End' })
+    expect(document.activeElement).toBe(gamma)
+    // Escape closes and hands the keyboard back to the anchor.
+    fireEvent.keyDown(gamma, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('enters at the last enabled row on ↑ and steps over a disabled one', () => {
+    render(
+      <Menu open anchor={<button type="button">trigger</button>} items={items} onSelect={() => {}} onClose={() => {}} />)
+    const trigger = screen.getByRole('button', { name: 'trigger' })
+    trigger.focus()
+    // Beta is disabled: it is not a step target, so Alpha is the only row.
+    expect(fireEvent.keyDown(trigger, { key: 'ArrowUp' })).toBe(false)
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Alpha' }))
+  })
+
+  it('leaves Escape to a menu open inside the dialog, then closes on the next one', () => {
+    const onClose = vi.fn()
+    const onSelect = vi.fn()
+    function Host() {
+      const [menuOpen, setMenuOpen] = useState(false)
+      return (
+        <Modal open onClose={onClose} title="Settings" closeLabel="Close">
+          <Menu
+            open={menuOpen}
+            anchor={<button type="button" onClick={() => { setMenuOpen(true) }}>permissions</button>}
+            items={[{ id: 'a', label: 'Alpha' }]}
+            onSelect={onSelect}
+            onClose={() => { setMenuOpen(false) }}
+          />
+        </Modal>
+      )
+    }
+    render(<Host />)
+    fireEvent.click(screen.getByRole('button', { name: 'permissions' }))
+    expect(screen.getByRole('menu')).toBeTruthy()
+
+    // The menu is the inner layer: its Escape closes it and keeps the dialog.
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: 'Settings' })).toBeTruthy()
+
+    // With no menu open, the next Escape reaches the dialog.
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('resumes the arrow walk after focus left the rows instead of re-entering', () => {
+    const rows = [
+      { id: 'a', label: 'Alpha' },
+      { id: 'b', label: 'Beta' },
+      { id: 'c', label: 'Gamma' },
+    ]
+    render(
+      <Menu open anchor={<button type="button">trigger</button>} items={rows} onSelect={() => {}} onClose={() => {}} />)
+    const trigger = screen.getByRole('button', { name: 'trigger' })
+    const alpha = screen.getByRole('menuitem', { name: 'Alpha' })
+    const beta = screen.getByRole('menuitem', { name: 'Beta' })
+    trigger.focus()
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    fireEvent.keyDown(alpha, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(beta)
+
+    // Focus leaves the rows — a portal frame that refused focus, a detached
+    // node. The next step must resume from Beta, not re-enter at the far end
+    // (which would alternate between the first and last row forever).
+    trigger.focus()
+    fireEvent.keyDown(trigger, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(alpha)
+  })
+
+  it('returns the keyboard to the anchor after a row is selected', () => {
+    const onSelect = vi.fn()
+    render(
+      <Menu open autoFocus anchor={<button type="button">trigger</button>} items={items} onSelect={onSelect} onClose={() => {}} />)
+    const alpha = screen.getByRole('menuitem', { name: 'Alpha' })
+    // autoFocus parked the keyboard on the first row; selecting unmounts the
+    // rows with the list in the real consumers, so the anchor takes it back.
+    expect(document.activeElement).toBe(alpha)
+    fireEvent.click(alpha)
+    expect(onSelect).toHaveBeenCalledWith('a')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'trigger' }))
   })
 
   it('renders a non-interactive heading label and a danger row', () => {

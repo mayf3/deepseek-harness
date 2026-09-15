@@ -24,7 +24,8 @@ type ModalProps = ModalBaseProps & (
 /**
  * Render a centered, body-portaled modal over a blurred page mask.
  * @param props.open - whether the dialog is showing.
- * @param props.onClose - Escape or mask click.
+ * @param props.onClose - Escape or mask click; while a menu is open inside the
+ * dialog, Escape belongs to that menu first.
  * @param props.title - dialog heading (aria-label in every mode).
  * @param props.closeLabel - localized accessible close-button label.
  * @param props.description - optional supporting sentence under the title.
@@ -41,7 +42,10 @@ export function Modal({
   useEffect(() => {
     if (!open) return
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      // An open menu is an inner layer: its own Escape closes it and hands the
+      // keyboard back to its anchor, so the dialog waits for the next one.
+      if (e.key !== 'Escape' || document.querySelector('[role="menu"]') !== null) return
+      onClose()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => { document.removeEventListener('keydown', onKeyDown) }

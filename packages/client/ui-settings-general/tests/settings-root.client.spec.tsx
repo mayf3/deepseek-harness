@@ -268,6 +268,23 @@ describe('SettingsPanel close paths', () => {
     await vi.waitFor(() => { expect(document.activeElement).toBe(trigger) })
   })
 
+  it('leaves Escape to a menu open inside the panel, then closes on the next one', async () => {
+    mount()
+    const trigger = openPanel()
+    // The guard's condition is the open menu's marker, which a row's dropdown
+    // renders inside the panel.
+    const menu = document.createElement('div')
+    menu.setAttribute('role', 'menu')
+    screen.getByRole('dialog').append(menu)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+
+    menu.remove()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await vi.waitFor(() => { expect(document.activeElement).toBe(trigger) })
+  })
+
   it('closes via document-level Escape, restores trigger focus, and unhooks the listener', async () => {
     mount()
     const trigger = openPanel()
