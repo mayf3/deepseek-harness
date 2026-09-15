@@ -113,12 +113,13 @@ async function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxEx
 // session already owns the send lifecycle the race protects.
 async function startupSession(
   session: LocalPtySession,
-  config: ResolvedConfig,
+  dialect: ShellDialect,
+  timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<void> {
   let startupOperation: TerminalSendOperation | undefined
   const start = async (): Promise<void> => {
-    if (config.shellDialect === 'bash') {
+    if (dialect === 'bash') {
       await session.initialize(signal)
       return
     }
@@ -141,8 +142,7 @@ async function startupSession(
       viewport = result.viewport
       if (result.waitReason === 'stdin_read') break
     }
-    // Startup output can arrive before the final send or between startup sends.
-    session.motd = session.read({ count: config.scrollbackLines }).text
+    session.motd = viewport
   }
   const races: Promise<void>[] = []
   let onAbort: (() => void) | undefined
@@ -153,12 +153,12 @@ async function startupSession(
     races.push(aborted.promise)
   }
   let deadlineTimer: NodeJS.Timeout | undefined
-  if (config.shellDialect === 'pwsh') {
+  if (dialect === 'pwsh') {
     const deadline = Promise.withResolvers<never>()
     deadlineTimer = setTimeout(() => {
       startupOperation?.cancel()
       deadline.reject(new Error('PTY shell did not reach readiness before startup timeout'))
-    }, config.timeoutMs)
+    }, timeoutMs)
     races.push(deadline.promise)
   }
   try {
@@ -222,7 +222,7 @@ export class BashTerminalBackend implements TerminalBackend {
       return rejectAfterStartupCleanup(error, () => terminal.terminate())
     }
     try {
-      await startupSession(session, this.config, spec.signal)
+      await startupSession(session, this.config.shellDialect, this.config.timeoutMs, spec.signal)
       return session
     } catch (error) {
       return rejectAfterStartupCleanup(error, () => session.close('PTY startup failed'))

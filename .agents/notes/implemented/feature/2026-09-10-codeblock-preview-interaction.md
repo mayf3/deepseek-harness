@@ -28,12 +28,12 @@ The source renderer consumes each highlight frame once. `StreamingHighlightSessi
 
 **Share a global preview cache.** Cross-block reuse adds eviction, renderer identity, and theme-key ownership while retaining conversation content beyond individual mounts. The measured repeated work occurs within one block, so its mounted lifetime is sufficient.
 
-**Defer previewable source highlighting until Source opens.** The highlighted source DOM owns current block dimensions, so delayed activation could change geometry after Preview has already entered the transcript. Source-only blocks retain viewport-delayed highlighting.
+**Mount and highlight source before selection.** The retained image determines block dimensions, so hidden source adds work without improving the preview.
 
 ## Consequences
 
-Settled previewable blocks activate source highlighting when their sizing DOM mounts. Ordinary source-only blocks still defer highlighting until they intersect; streaming diagram placeholders do not mount source.
+Previewable blocks mount and highlight source on first selection; preview-only readers do not mount source. Ordinary source-only blocks still defer highlighting until they intersect; streaming diagram placeholders do not mount source.
 
-Default previews submit work for every mounted settled supported block, including off-screen blocks. Returning to Source keeps the image and renderer owner alive, and every settled previewable block retains source token DOM. Memory therefore follows mounted blocks, with no claim of reduced heap use. Mermaid's queue and synchronous Graphviz layout still run on the browser thread, and cancellation cannot preempt active layout.
+Default previews submit work for every mounted settled supported block, including off-screen blocks. Returning to Source keeps the image and renderer owner alive, and blocks whose Source view has been opened retain source token DOM. Memory therefore follows mounted blocks, with no claim of reduced heap use. Mermaid's queue and synchronous Graphviz layout still run on the browser thread, and cancellation cannot preempt active layout.
 
 The [component tests](../../../../packages/client/ui-primitives/tests/source-preview.client.spec.tsx) cover retained results, source identity, pending and failed controls, copy, streaming transitions, invalidation, and stale publication. The [browser scenario](../../../../apps/web/tests/markdown-mermaid.e2e.ts) exercises equal Source/Preview geometry, internal overflow, toolbar fading, line-number controls, lightbox interaction, and localized UI snapshots. Highlighting retains the existing streamed/settled parity tests. The streaming browser scenario waits for the turn to finish persisting before closing Session handles, including after failed assertions.

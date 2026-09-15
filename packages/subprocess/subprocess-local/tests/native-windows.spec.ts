@@ -53,6 +53,10 @@ async function waitGone(pid: number): Promise<void> {
   throw new Error(`pid ${pid} remained alive`)
 }
 
+function cleanup(pid: number): void {
+  spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' })
+}
+
 type SpawnFailure = NodeJS.ErrnoException & { path?: string }
 
 function expectedSpawnFailure(error: SpawnFailure): Record<string, unknown> {
@@ -174,6 +178,7 @@ describe.skipIf(!windowsNative)('Windows Job native containment', () => {
       stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' } as const,
     }
     const handle = bindManagedProcess(request, launchWindowsJob(request, targetEnvironment(request)))
+    let descendant: number | undefined
     try {
       if (handle.stdout === undefined) throw new Error('expected piped stdout')
       if (handle.stderr === undefined) throw new Error('expected piped stderr')
@@ -187,7 +192,7 @@ describe.skipIf(!windowsNative)('Windows Job native containment', () => {
         handle.stderr?.once('end', resolve)
         handle.stderr?.once('error', reject)
       })
-      const descendant = await waitForPid(pidFile)
+      descendant = await waitForPid(pidFile)
       await expect(handle.done).resolves.toEqual({ exitCode: 42, signal: null })
       await expect(Promise.race([
         Promise.all([stdoutEnded, stderrEnded]).then(() => true),
@@ -203,9 +208,9 @@ describe.skipIf(!windowsNative)('Windows Job native containment', () => {
       await expect(handle.waitForExit()).resolves.toBe(true)
       await waitGone(descendant)
     } finally {
-      // The Job owns descendant cleanup; an exited descendant's PID can already be reused.
       handle.terminate()
       await Promise.allSettled([handle.done, handle.waitForExit()])
+      if (descendant !== undefined) cleanup(descendant)
       rmSync(targetCwd, { recursive: true, force: true })
     }
   })

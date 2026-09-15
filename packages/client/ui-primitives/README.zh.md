@@ -122,7 +122,7 @@ Graphviz 按需加载 `@viz-js/viz`，使用 `dot` 引擎渲染 DOT。SVG 与 Gr
 
 ### 预览所有权
 
-流式占位既不挂载源码高亮组件，也不调用图表渲染器。流式结束后，等待画布保留至图片加载完成；停止输出也会退出流式等待。减少动态效果设置禁用其 1.8 秒透明度动画。每个已挂载的代码块在视图切换时保留预览，并在源码、renderer 或解析后的主题变化时重新生成。支持预览的定稿代码块会立即挂载并高亮源码，因为该 DOM 负责确定尺寸；纯源码代码块仍在进入视口后激活高亮。独立 memo 化的源码与复制控件让工具栏反馈和属性未变的父组件更新不必重做源码工作，语法就绪状态也只针对该源码语言。[交互决策](../../../.agents/notes/implemented/feature/2026-09-10-codeblock-preview-interaction.zh.md)负责保留机制，[按源码定高的预览决策](../../../.agents/notes/implemented/simplification/2026-09-14-source-sized-code-block-previews.zh.md)负责几何行为。
+流式占位既不挂载源码高亮组件，也不调用图表渲染器。流式结束后，等待画布保留至图片加载完成；停止输出也会退出流式等待。减少动态效果设置禁用其 1.8 秒透明度动画。每个已挂载的代码块在视图切换时保留预览，并在源码、renderer 或解析后的主题变化时重新生成。支持预览的代码块在首次选中源码时挂载并高亮，之后保留其 DOM；纯源码代码块仍在进入视口后激活高亮。独立 memo 化的源码与复制控件让工具栏反馈和属性未变的父组件更新不必重做源码工作，语法就绪状态也只针对该源码语言。[交互决策](../../../.agents/notes/implemented/feature/2026-09-10-codeblock-preview-interaction.zh.md)负责保留机制，[预览尺寸决策](../../../.agents/notes/implemented/simplification/2026-09-14-source-sized-code-block-previews.zh.md)负责几何行为。
 
 ### 几何与溢出
 

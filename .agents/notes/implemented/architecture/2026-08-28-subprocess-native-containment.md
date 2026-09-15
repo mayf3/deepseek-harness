@@ -46,8 +46,6 @@ Linux falls back before target execution when the exact bootstrap, modern readab
 
 Normal Cordis disposal starts direct-result and range observation independently, requests termination, and waits for every owned range. Consumer teardown does not inspect an ordinary PID; it retains the original operation or startup error while attempting terminate and final wait, and preserves cleanup failures in the consumer's existing error order. A confirmed empty range permanently disables later signalling against stale identities.
 
-The [native Windows fixture](../../../../packages/subprocess/subprocess-local/tests/native-windows.spec.ts) also delegates final cleanup to its Job-backed handle. The descendant PID is only a liveness observation: after the Job empties, Windows can reuse that PID for another test worker, so an additional `taskkill /PID` can terminate an unrelated process. The fixture awaits the handle's direct result and range settlement before removing its directory.
-
 During a JavaScript-observable host exit, `LocalSubprocessRuntime` synchronously force-terminates every still-live handle without promises or timers. Linux sends the existing direct fallback kill and the exact scope kill; Windows kills the runner so its only Job handle closes; PTY fallback scans remain best effort. Per-handle failures are contained and do not change the host's exit result. Termination modes in which JavaScript cannot run remain outside this listener's guarantee.
 
 ## Existing decisions and supersession

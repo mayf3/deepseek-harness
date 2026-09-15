@@ -50,29 +50,25 @@ const highlightViewport = new HighlightViewport()
  * IntersectionObserver activate immediately.
  * @param target - Code surface whose plain rendering reserves its geometry.
  * @param lang - Optional language hint.
- * @param immediate - Activate on explicit reader intent without waiting for viewport delivery.
+ * @param initiallyActive - Activate at mount on explicit reader intent without waiting for viewport delivery.
  * @returns Whether this component may build highlighted output.
  */
 export function useViewportHighlighting(
   target: RefObject<Element>,
   lang: string | undefined,
-  immediate = false,
+  initiallyActive = false,
 ): boolean {
   const supported = supportsHighlighting(lang)
-  const [activated, setActivated] = useState(immediate)
+  const [activated, setActivated] = useState(initiallyActive)
   const activate = useCallback(() => { setActivated(true) }, [])
 
   useEffect(() => {
     if (activated || !supported) return
-    if (immediate) {
-      activate()
-      return
-    }
     const element = target.current
     /* v8 ignore next -- React attaches the host ref before running effects. */
     if (element === null) return
     return highlightViewport.observe(element, activate)
-  }, [activate, activated, immediate, supported, target])
+  }, [activate, activated, supported, target])
 
-  return (activated || immediate) && supported
+  return activated && supported
 }

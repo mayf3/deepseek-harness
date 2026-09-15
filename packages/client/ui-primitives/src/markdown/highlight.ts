@@ -74,7 +74,6 @@ const LAZY_GRAMMARS = new Map<string, () => Promise<LangModule>>([
   ['sql', () => import('@shikijs/langs/sql')],
   ['xml', () => import('@shikijs/langs/xml')],
   ['dot', () => import('./grammars/dot.ts')],
-  // ['mermaid', () => import('@shikijs/langs/mermaid')],
   // Upstream's entry matches Markdown fences; CodeBlock supplies only their body.
   ['mermaid', async () => {
     const { default: grammars } = await import('@shikijs/langs/mermaid')

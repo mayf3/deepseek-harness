@@ -48,6 +48,7 @@
 }
 
 .failure {
+  min-height: 120px;
   background: var(--dsw-alias-markdown-code-block);
 }
 
