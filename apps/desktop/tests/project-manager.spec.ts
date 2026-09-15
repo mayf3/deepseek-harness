@@ -71,6 +71,17 @@ afterEach(async () => {
 })
 
 describe('desktop external plugin profile', () => {
+  it('cleans application packages only when preparing a production launch', async () => {
+    const { manager } = setup()
+    await manager.applyRelease()
+    const name = '@deepseek-ai/dsh-web-app'
+    const path = join(manager.paths.profile, 'node_modules', name)
+    mkdirSync(path, { recursive: true })
+    await manager.applyRelease()
+    expect(existsSync(path)).toBe(true)
+    await manager.applyRelease(true)
+    expect(existsSync(path)).toBe(false)
+  })
   it('reuses plugin files without scanning manifests and can disable them', async () => {
     const { manager } = setup()
     await manager.applyRelease()

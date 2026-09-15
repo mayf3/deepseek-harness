@@ -10,6 +10,8 @@ Staging preserves an old plugin installation but adds profile copying, directory
 
 ## Decision
 
+Application-owned package retention is qualified by the [production cleanup decision](../bug-fix/2026-09-15-desktop-profile-core-cleanup.md).
+
 Desktop stops the Host and modifies the current profile directly. Shared app-boot cleanup detaches its own fallback links before package changes; the Host’s shared profile runner supplies required links on startup. Package locking and configured lifecycle scripts remain. Upgrades refresh module links without copying plugin files.
 
 Package or Host failures retain partial changes for repair and retry. There is no staging profile, activation journal, directory-swap recovery, or automatic rollback. Existing scratch directories are not interpreted or deleted.

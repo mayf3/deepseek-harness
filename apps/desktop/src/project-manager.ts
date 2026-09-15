@@ -29,6 +29,7 @@ import {
   unlinkProfileModuleFallback, writeProfileBundles, type ProfileTemplate,
 } from '@deepseek-ai/dsh-app-boot'
 import { migrateDesktopProfileLinks } from './profile-packages.ts'
+import { cleanProfileCorePackages } from './profile-core-cleanup.ts'
 
 /** Desktop plugin record derived from the installed profile. */
 export interface DesktopPluginRecord {
@@ -151,10 +152,14 @@ export class DesktopProjectManager {
     return { binName: 'dsh', profileDir, installAnchor: join(this.runtime.dsh, 'node_modules', DSH_PACKAGE, 'package.json') }
   }
 
-  /** Load application metadata and initialize missing profile files without installing packages. */
-  async applyRelease(): Promise<void> {
+  /**
+   * Load application metadata and prepare the external plugin profile without installing packages.
+   * @param production - Remove application-owned profile packages before packaged Host startup.
+   */
+  async applyRelease(production = false): Promise<void> {
     await this.withLock(() => {
       this.descriptor = this.readRuntime()
+      cleanProfileCorePackages(this.paths.profile, this.descriptor.sharedPackages.map(entry => entry.name), production)
       migrateProfileSettings(this.paths.profile)
       migrateDesktopProfileLinks(this.paths.profile)
       createPluginProfile(this.paths.profile)

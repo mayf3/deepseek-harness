@@ -269,7 +269,7 @@ async function main(): Promise<void> {
     startup ??= (async () => {
       await navigateMain(applicationUrl)
       await backend.start(async () => {
-        await manager.applyRelease()
+        await manager.applyRelease(app.isPackaged)
       })
       // The existing Web document resumes through the boot IPC response.
     })().catch((error: unknown) => {

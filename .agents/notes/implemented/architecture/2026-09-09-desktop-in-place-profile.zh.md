@@ -10,6 +10,8 @@ staging 能保留旧插件安装，但增加 profile 复制、目录移动、恢
 
 ## 决策
 
+应用管理包的保留范围受[生产清理决策](../bug-fix/2026-09-15-desktop-profile-core-cleanup.zh.md)限定。
+
 Desktop 停止 Host 后直接修改当前 profile。共享 app-boot 清理在包变更前分离其拥有的模块补全链接；Host 的共享 profile runner 在启动时补全所需链接。包锁及配置允许的生命周期脚本保留。升级刷新模块链接，不复制插件文件。
 
 包操作或 Host 失败会保留部分修改，供修复和重试。不使用 staging profile、激活日志、目录切换恢复或自动回滚。已有临时目录不会被解释或删除。
