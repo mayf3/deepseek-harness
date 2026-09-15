@@ -287,7 +287,8 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
       }
       // Arrows walk the list whether or not the menu focused its first item on
       // open, so `autoFocus` chooses only that entry behavior. A keyboard still
-      // on the anchor enters at the end the step comes from. The walk resumes
+      // on the anchor enters at the end the step comes from — unless it already
+      // walked, in which case the walk resumes where it left off. The walk resumes
       // from where it last put focus, not from `document.activeElement`: a row
       // that refused focus (a hidden portal frame, a detached node) would
       // otherwise re-enter at the near end on every press and the walk would

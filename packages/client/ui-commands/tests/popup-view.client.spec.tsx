@@ -157,6 +157,18 @@ describe('PopupSelectView', () => {
     expect(screen.getByText('正在加载选项…')).toBeTruthy()
   })
 
+  it('Tab stays the browser\'s on a failed load, so the retry stays reachable', async () => {
+    const popup = new PopupSelectController<string>({ consume: () => true, focusComposer: () => {} })
+    render(<PopupSelectView popup={popup} t={t} />)
+    await act(async () => {
+      popup.open('theme', spec({ options: () => Promise.reject(new Error('directory down')) }), 'ctx-A', SEGMENT)
+      await Promise.resolve()
+    })
+    const search = screen.getByRole('textbox', { name: '筛选选项' })
+    expect(fireEvent.keyDown(search, { key: 'Tab' })).toBe(true)
+    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy()
+  })
+
   it('scrolls the highlighted row into view when the highlight moves', async () => {
     const { search } = await mountOpen()
     scrollIntoView.mockClear()

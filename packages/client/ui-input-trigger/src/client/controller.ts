@@ -139,6 +139,9 @@ export class InputTriggerController {
       return
     }
     const hit: TriggerHit = { ...raw, span: { ...raw.span, draftRev } }
+    // A launcher-opened menu is a fresh intent: the dismissal that closed the
+    // same token earlier must not silence it.
+    if (launched) this.dismissed = null
     if (this.dismissed !== null) {
       if (!dismissedHit(this.dismissed, hit)) this.dismissed = null
       else {

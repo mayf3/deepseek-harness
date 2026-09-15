@@ -358,6 +358,39 @@ describe('ModelSelect keyboard walk', () => {
     expect(document.activeElement).toBe(rows[2])
   })
 
+  it('keeps the card navigable when a pane has no rows, and leaves a retry its Tab', () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state({
+      groups: [], failures: [], status: 'error', error: 'catalog down',
+    }))
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+    const trigger = screen.getByRole('button', { name: /选择模型/ })
+    // A real click focuses the trigger first; jsdom's does not.
+    trigger.focus()
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
+    // No rows to hand the keyboard to: the trigger keeps it, so the card's
+    // keys still reach the menu.
+    expect(document.activeElement).toBe(trigger)
+
+    const retry = screen.getByRole('button', { name: '重试' })
+    retry.focus()
+    // A control that is not a row keeps the browser's traversal.
+    expect(fireEvent.keyDown(retry, { key: 'Tab' })).toBe(true)
+    // Escape still backs out of the pane and then closes the card.
+    fireEvent.keyDown(retry, { key: 'Escape' })
+    // Back on the root pane, whose only cell remains (no model means no effort row).
+    const cell = screen.getAllByRole('menuitem')[0]!
+    fireEvent.keyDown(cell, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
   it('drills into the model list on the selected model', () => {
     mountOpen()
     fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))

@@ -84,9 +84,15 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
       { timeout: 10_000 },
     ).toBe(true)
     await page.keyboard.press('ArrowDown')
-    expect(await levels.nth(1).evaluate(element => element === document.activeElement)).toBe(true)
+    await expect.poll(
+      () => levels.nth(1).evaluate(element => element === document.activeElement),
+      { timeout: 10_000 },
+    ).toBe(true)
     await page.keyboard.press('ArrowDown')
-    expect(await levels.nth(2).evaluate(element => element === document.activeElement)).toBe(true)
+    await expect.poll(
+      () => levels.nth(2).evaluate(element => element === document.activeElement),
+      { timeout: 10_000 },
+    ).toBe(true)
 
     // Settling with Tab is the same gesture that saves the default selection, so
     // the effort lands in the Agent default Settings section beside provider/model.

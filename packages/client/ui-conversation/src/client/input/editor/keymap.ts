@@ -100,9 +100,10 @@ export function registerComposerKeymap(editor: LexicalEditor, handlers: Composer
     editor.registerUpdateListener(syncComposition),
     editor.registerCommand(KEY_ARROW_UP_COMMAND, arrow('up'), COMMAND_PRIORITY_CRITICAL),
     editor.registerCommand(KEY_ARROW_DOWN_COMMAND, arrow('down'), COMMAND_PRIORITY_CRITICAL),
-    // Tab settles the highlighted completion; Shift+Tab leaves the menu like
-    // Escape, so the two Tab gestures never disagree about consuming the draft.
-    // Without a highlight both pass, keeping native focus traversal.
+    // Tab settles the highlighted completion and passes without one, keeping
+    // native focus traversal; Shift+Tab leaves the menu like Escape whenever it
+    // is open, highlight or not, so the two Tab gestures never disagree about
+    // consuming the draft.
     editor.registerCommand(
       KEY_TAB_COMMAND,
       event => arrow(event.shiftKey ? 'tabBack' : 'tab')(event),

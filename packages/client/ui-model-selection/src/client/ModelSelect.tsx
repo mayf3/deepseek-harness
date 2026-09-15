@@ -238,24 +238,27 @@ export function ModelSelect(
     // keys mean what they mean in the composer. Both are consumed: the card
     // keeps the browser's focus traversal out while it is open.
     if (event.key === 'Tab') {
-      event.preventDefault()
       if (event.shiftKey) {
+        event.preventDefault()
         if (pane !== 'root') back(pane)
         else close(true)
         return
       }
       // Settling activates the row the keyboard is on; with focus still on the
       // trigger, Tab enters the menu at the value in use instead. Any other
-      // control inside the card (a retry button) keeps the browser's traversal.
+      // control inside the card (a retry button) keeps the browser's traversal,
+      // so the keystroke stays unconsumed there.
       const focused = document.activeElement
       const rows = itemRefs.current.filter((item): item is HTMLButtonElement => item !== null)
       if (focused instanceof HTMLButtonElement && rows.includes(focused)) {
+        event.preventDefault()
         focused.click()
         return
       }
       if (focused !== triggerRef.current) return
-      const checked = menuRef.current?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')
-      ;(checked ?? itemRefs.current.find(item => item !== null))?.focus()
+      event.preventDefault()
+      const checked = menuRef.current?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]:not([disabled])')
+      ;(checked ?? rows.find(item => !item.disabled))?.focus()
       return
     }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
