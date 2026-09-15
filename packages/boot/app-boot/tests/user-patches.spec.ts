@@ -352,6 +352,18 @@ describe('profile reconciliation settlement', () => {
     await reconcileProfilePatches(ctx, [], NAME)
   })
 
+  it('reports an unchanged failed entry as a warning but rejects a changed configuration with the same failure', async () => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+    writeFileSync(join(dir, 'candidate.mjs'), 'export function apply() { throw new Error("candidate activation failed") }\n')
+    const patches = [{ insert: [{ id: 'candidate', name: './candidate.mjs', config: { revision: 1 } }] }]
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'), patches)
+    onTestFinished(() => ctx.fiber.dispose())
+    expect(await reconcileProfilePatches(ctx, patches, NAME)).toEqual([expect.stringContaining('candidate activation failed')])
+    await expect(reconcileProfilePatches(ctx, [...patches, { id: 'candidate', config: { revision: 2 } }], NAME))
+      .rejects.toThrow('candidate activation failed')
+  })
+
   it('reports an activation failure that settles while its entry is being removed', async () => {
     const dir = tmp()
     const entered = Promise.withResolvers<undefined>()

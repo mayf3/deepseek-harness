@@ -18,11 +18,13 @@ Profile files remain the persisted state: entry toggles edit only `disabled` in 
 
 This extends the [profile bundle composition decision](2026-08-05-profile-plugin-bundles.md). Profiles without HMR keep their process composition, and Desktop package management remains shell-owned. Web controls and explicitly enabled agent tools call the same service, whose batched durable notices inform live Agents without waking them. The agent tool is disabled by default in the base bundle and shipped presets. The browser-only worker preview has no host package installer; its module-proxy table refuses `execa` calls explicitly while retaining the management module for inventory discovery.
 
+CLI calls inherit the terminal and authentication environment; service calls retain the subprocess credential scrub and bounded diagnostics. Management records carry error codes and parameters for locale-owned Web presentation. Reconciliation compares entry identity, fiber identity, configuration and diagnostics before and after updating: unchanged inactive entries remain warnings, while newly affected failures reject the operation. Explicit enablement targets must activate.
+
 ## Alternatives considered
 
 **Spawning another dsh process from the service.** This duplicates lifecycle coordination and cannot establish that the current Loader finished unloading before pnpm removes files. Sharing the operation module retains one implementation while letting each caller own its presentation.
 
-**A second desired-state database or automatic rollback.** These require synchronizing package-manager side effects with another state store. Profile files remain inspectable and repairable; partial installation and loading failures are reported rather than concealed by an incomplete rollback.
+**Restoring existing packages after failure.** Package versions, dependency trees and install-script effects cannot be reconstructed reliably from the previous manifest. Failed installation permits one removal attempt for an unambiguously identified new dependency. Existing dependencies and successful installations whose activation fails remain in place. Invalid leftover packages stay visible and removable.
 
 **Source-module hot replacement for package updates.** Configuration changes can reuse the loaded module cache, whereas replacing installed JavaScript needs a new process generation. Replacing an existing dependency reports a required restart.
 

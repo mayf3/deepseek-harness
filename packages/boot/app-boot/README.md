@@ -67,6 +67,8 @@ Before you boot, you can print the exact configuration the app will mount: the d
 <a id="startup-and-reload-failures"></a>
 ### Startup and reload failures
 
+Profile reconciliation returns diagnostics for unchanged inactive entries without failing an unrelated mutation. A new inactive entry, a changed configuration or fiber, or a changed diagnostic fails reconciliation; removed fibers must still finish disposal. Explicit enablement targets must activate even when their failure predates the operation.
+
 After the Loader settles, app-boot reports optional failures as warnings and rejects startup if an enabled required entry cannot activate. In the table, stopping startup means disposing any mounted plugins and exiting nonzero without reporting readiness; continuing keeps successful plugins running. Later configuration HMR does not repeat the required-startup audit and does not roll back the whole update.
 
 | Failure pattern | Optional entry at startup | Required entry at startup | Later configuration HMR |

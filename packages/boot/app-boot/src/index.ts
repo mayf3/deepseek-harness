@@ -236,10 +236,17 @@ const userPatchesSchema = entryListSchema
  * @param ctx Booted root context.
  * @param patches Complete ordered patch list.
  * @param binName Diagnostic prefix.
+ * @param requiredIds Explicit enablement targets whose existing failures also reject reconciliation.
+ * @returns Diagnostics for unchanged pre-existing inactive entries; new or changed failures reject.
  */
-export async function reconcileProfilePatches(ctx: Context, patches: PatchOptions[], binName: string): Promise<void> {
+export async function reconcileProfilePatches(
+  ctx: Context, patches: PatchOptions[], binName: string, requiredIds: readonly string[] = [],
+): Promise<string[]> {
   const entry = bootstrapIncludes.get(ctx)
   if (entry === undefined) throw new Error(`${binName}: profile reload requires the root Include entry`)
+  const previousFailures = (await inactiveEntries(ctx)).map(failure => ({
+    ...failure, fiber: failure.entry.fiber, options: JSON.stringify(failure.entry.options),
+  }))
   // Removed entries leave the Loader store before their async disposers finish.
   const previousFibers = [...ctx.loader.entries()].flatMap(row => row.fiber === undefined ? [] : [{
     fiber: row.fiber, failed: row.fiber.state === FIBER_FAILED || row.fiber.state === FIBER_DISPOSED,
@@ -249,10 +256,14 @@ export async function reconcileProfilePatches(ctx: Context, patches: PatchOption
   const results = await Promise.allSettled(previousFibers.map(({ fiber }) => fiber.await()))
   await ctx.loader.await()
   const failures = await inactiveEntries(ctx)
-  if (failures.length > 0) throw new Error(activationDiagnostic(binName, 'warning', failures).trimEnd())
+  const introduced = failures.filter(failure => requiredIds.includes(failure.entry.options.id) || !previousFailures.some(previous =>
+    previous.entry === failure.entry && previous.fiber === failure.entry.fiber
+    && previous.options === JSON.stringify(failure.entry.options) && previous.diagnostic === failure.diagnostic))
+  if (introduced.length > 0) throw new Error(activationDiagnostic(binName, 'warning', introduced).trimEnd())
   for (const [index, result] of results.entries()) {
     if (result.status === 'rejected' && !previousFibers[index]?.failed) throw result.reason
   }
+  return failures.map(failure => failure.diagnostic)
 }
 
 /**

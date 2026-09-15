@@ -55,17 +55,17 @@ it('activates newly installed bundles and leaves retained disabled dependencies 
   const { dir, context } = fixture()
   install(dir, 'disabled')
   command.run.mockImplementationOnce(() => result(0, 'installed', () =>{  install(dir, 'new-bundle') }))
-  expect(await runPluginCommand(context, ['add', 'new-bundle'], { outputBytes: 100 })).toMatchObject({ exitCode: 0 })
+  expect(await runPluginCommand(context, ['add', 'new-bundle'], { execution: 'service', outputBytes: 100 })).toMatchObject({ exitCode: 0 })
   expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['new-bundle'])
   command.run.mockImplementationOnce(() => result(0, 'updated'))
-  await runPluginCommand(context, ['update'], { outputBytes: 100 })
+  await runPluginCommand(context, ['update'], { execution: 'service', outputBytes: 100 })
   expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['new-bundle'])
 })
 
 it('can install without activation and bounds output while retaining the complete log', async () => {
   const { dir, context } = fixture()
   command.run.mockImplementationOnce(() => result(0, '0123456789', () =>{  install(dir, 'extra') }))
-  const outcome = await runProfilePnpm(context, ['add', './extra'], { outputBytes: 4, activateNewBundles: false })
+  const outcome = await runProfilePnpm(context, ['add', './extra'], { execution: 'service', outputBytes: 4, activateNewBundles: false })
   expect(outcome).toMatchObject({ exitCode: 0, output: '6789', truncated: true })
   expect(readFileSync(outcome.logPath, 'utf8')).toBe('0123456789')
   expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual([])
@@ -75,7 +75,7 @@ it('can install without activation and bounds output while retaining the complet
 it('retains partial package-manager changes after failure without activating them', async () => {
   const { dir, context } = fixture()
   command.run.mockImplementationOnce(() => result(1, 'installation failed', () =>{  install(dir, 'partial') }))
-  expect(await runProfilePnpm(context, ['add', 'partial'], { outputBytes: 100 })).toMatchObject({ exitCode: 1 })
+  expect(await runProfilePnpm(context, ['add', 'partial'], { execution: 'service', outputBytes: 100 })).toMatchObject({ exitCode: 1 })
   expect(readProfileManifest('test', dir).dependencies).toEqual({ partial: '1' })
   expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual([])
 })
@@ -87,7 +87,7 @@ it('initializes missing profiles under the same lock and reports initialization'
   command.run.mockImplementation(() => result(0, ''))
   for (const profile of ['custom', 'web']) {
     await runPluginCommand({ ...context, profile }, ['root'], {
-      outputBytes: 100, lockWaitMs: 1000, onOutput: (text) => { messages.push(text) },
+      execution: 'service', outputBytes: 100, lockWaitMs: 1000, onOutput: (text) => { messages.push(text) },
     })
     expect(readProfileManifest('test', join(home, 'profiles', profile)).dsh?.profile?.bundles).toContain('@deepseek-ai/dsh-base')
   }
@@ -108,7 +108,7 @@ it('retains built-in layers, removes deleted dependencies and warns about plain 
     delete after.dependencies?.removed
     writeFileSync(join(dir, 'package.json'), JSON.stringify(after))
   }))
-  await runPluginCommand(context, ['remove', 'removed'], { outputBytes: 100, onOutput: (text) => { messages.push(text) } })
+  await runPluginCommand(context, ['remove', 'removed'], { execution: 'service', outputBytes: 100, onOutput: (text) => { messages.push(text) } })
   expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['builtin'])
   expect(messages.join('')).toContain('plain dependency')
 })
@@ -122,7 +122,7 @@ it('preserves a package-manager selected new bundle without adding it twice', as
     manifest.dsh = { profile: { bundles: ['new'] } }
     writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
   }))
-  await runProfilePnpm(context, ['add', 'new'], { outputBytes: 100 })
+  await runProfilePnpm(context, ['add', 'new'], { execution: 'service', outputBytes: 100 })
   expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['new'])
 })
 
@@ -132,7 +132,7 @@ it.each([
 ])('reports launch failures with a complete log: $code', async ({ code, shortMessage, expected }) => {
   const { context } = fixture()
   command.run.mockImplementationOnce(() => result(undefined, '', () => {}, { code, ...shortMessage === undefined ? {} : { shortMessage } }))
-  const outcome = await runProfilePnpm(context, ['root'], { outputBytes: 4, signal: new AbortController().signal })
+  const outcome = await runProfilePnpm(context, ['root'], { execution: 'service', outputBytes: 4, signal: new AbortController().signal })
   expect(outcome.exitCode).toBe(expected)
   expect(outcome.truncated).toBe(true)
   expect(readFileSync(outcome.logPath, 'utf8')).toBe(shortMessage ?? 'pnpm failed')
@@ -148,7 +148,7 @@ it('cancels and settles package output when the output consumer fails', async ()
     return child
   })
   await expect(runProfilePnpm(context, ['root'], {
-    outputBytes: 100, onOutput() { throw new Error('output destination closed') },
+    execution: 'service', outputBytes: 100, onOutput() { throw new Error('output destination closed') },
   })).rejects.toThrow('output destination closed')
   expect(cancellation?.aborted).toBe(true)
 })
@@ -160,12 +160,41 @@ it('preserves an unexpected subprocess rejection after both streams settle', asy
   stdout.end()
   stderr.end()
   command.run.mockImplementationOnce(() => Object.assign(Promise.reject(new Error('subprocess failed')), { stdout, stderr }))
-  await expect(runProfilePnpm(context, ['root'], { outputBytes: 100 })).rejects.toThrow('subprocess failed')
+  await expect(runProfilePnpm(context, ['root'], { execution: 'service', outputBytes: 100 })).rejects.toThrow('subprocess failed')
 })
 
 
 it('handles manifests without dependency or bundle selections', async () => {
   const { context, dir } = fixture()
   command.run.mockImplementationOnce(() => result(0, '', () => { writeFileSync(join(dir, 'package.json'), '{}') }))
-  expect(await runProfilePnpm(context, ['root'], { outputBytes: 100 })).toMatchObject({ exitCode: 0 })
+  expect(await runProfilePnpm(context, ['root'], { execution: 'service', outputBytes: 100 })).toMatchObject({ exitCode: 0 })
+})
+
+it.each(['cli', 'service'] as const)('uses the %s environment and interaction policy', async (execution) => {
+  const { context } = fixture()
+  const names = ['NPM_TOKEN', 'NODE_AUTH_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN', 'DEEPSEEK_API_KEY']
+  const originals = names.map(name => process.env[name])
+  onTestFinished(() => {
+    names.forEach((name, index) => {
+      const original = originals[index]
+      if (original === undefined) Reflect.deleteProperty(process.env, name)
+      else process.env[name] = original
+    })
+  })
+  for (const name of names) process.env[name] = 'fixture-credential'
+  command.run.mockImplementationOnce(() => result(0, ''))
+  await runPluginCommand(context, ['approve-builds'], { execution, outputBytes: 100 })
+  const options = command.run.mock.calls[0]?.[2] as { env: NodeJS.ProcessEnv; stdin: string; stdout: string; stderr: string }
+  for (const name of names) expect(options.env[name]).toBe(execution === 'cli' ? 'fixture-credential' : undefined)
+  expect(options.stdin).toBe(execution === 'cli' ? 'inherit' : 'ignore')
+  expect(options.stdout).toBe(execution === 'cli' ? 'inherit' : 'pipe')
+  expect(options.stderr).toBe(execution === 'cli' ? 'inherit' : 'pipe')
+})
+
+it('settles inherited CLI descriptors without requiring captured streams', async () => {
+  const { context } = fixture()
+  command.run.mockImplementationOnce(() => Object.assign(
+    Promise.resolve({ exitCode: 0, failed: false }), { stdout: null, stderr: null },
+  ) as unknown as ReturnType<typeof result>)
+  expect(await runPluginCommand(context, ['approve-builds'], { execution: 'cli', outputBytes: 100 })).toMatchObject({ exitCode: 0, output: '' })
 })

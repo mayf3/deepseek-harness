@@ -2,6 +2,17 @@
 
 /** Simplified Chinese dictionary and key source of truth. */
 export const zh = {
+  'management-required': '管理插件所需，不能停用或删除。',
+  unaddressable: '当前 profile patch 无法唯一定位此插件。',
+  'unknown-plugin': '找不到该插件。', 'invalid-spec': '请输入有效的包名称或路径。',
+  'ambiguous-install': '无法从依赖变更中确定一个安装目标。',
+  'not-bundle': '该依赖未声明组合包配置。',
+  'not-removable': '该依赖不属于当前 profile，或是管理所需的组件。',
+  'bundle-in-use': '其他配置仍在使用该组合包，请先停用相应插件。',
+  'stop-profile': '请停止当前 profile，再通过 dsh plugin 删除仍在使用的依赖。',
+  'operation-error': '请查看诊断信息。',
+  installFailed: '安装失败', enableFailed: '启停失败', removeFailed: '删除失败',
+  cleanup: '清理新增依赖', remainingDependencies: '剩余新增依赖', existingFailures: '其他诊断',
   bundles: '组合包', packageSpec: 'npm 包名称或本地路径', install: '安装', remove: '删除',
   enableAfterInstall: '安装后启用', applying: '正在应用更改…',
   operationFailed: '操作失败', applied: '已生效', 'restart-required': '重启后生效', overridden: '被其他配置覆盖',
@@ -49,6 +60,17 @@ export type PluginInventoryLocaleKey = keyof typeof zh
 
 /** English dictionary checked against the Chinese key set. */
 export const en = {
+  'management-required': 'Required for plugin management; cannot be disabled or removed.',
+  unaddressable: 'The current profile patch cannot uniquely address this plugin.',
+  'unknown-plugin': 'Plugin not found.', 'invalid-spec': 'Enter a valid package name or path.',
+  'ambiguous-install': 'Cannot identify one installation target from the dependency changes.',
+  'not-bundle': 'This dependency declares no bundle configuration.',
+  'not-removable': 'This dependency is not owned by the current profile or is required for management.',
+  'bundle-in-use': 'Other configuration still uses this bundle. Disable those plugins first.',
+  'stop-profile': 'Stop this profile, then remove the dependency still in use with dsh plugin.',
+  'operation-error': 'See the diagnostics for details.',
+  installFailed: 'Installation failed', enableFailed: 'Enablement failed', removeFailed: 'Removal failed',
+  cleanup: 'New dependency cleanup', remainingDependencies: 'Remaining new dependencies', existingFailures: 'Other diagnostics',
   bundles: 'Bundles', packageSpec: 'npm package name or local path', install: 'Install', remove: 'Remove',
   enableAfterInstall: 'Enable after installation', applying: 'Applying changes…',
   operationFailed: 'Failed', applied: 'Applied', 'restart-required': 'Restart required', overridden: 'Overridden by another configuration',

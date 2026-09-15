@@ -67,6 +67,8 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 <a id="startup-and-reload-failures"></a>
 ### 启动与重载失败
 
+profile 重载返回未变化的已有故障诊断，不让无关修改因此失败。新增未激活条目、配置或 fiber 变化、诊断变化都会使重载失败；被移除的 fiber 仍须完成释放。显式启用的目标必须成功激活，即使它的故障早于本次操作。
+
 Loader 结算后，app-boot 将 optional 失败报告为警告；若已启用的 required 条目无法激活，则拒绝启动。表中的“终止启动”指释放已挂载插件并以非零码退出，不报告就绪；“继续”指保留成功运行的插件。后续配置 HMR 不会再次执行 required 启动审计，也不会回滚整个更新。
 
 | 失败模式 | Optional 条目启动时 | Required 条目启动时 | 后续配置 HMR |

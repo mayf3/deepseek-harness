@@ -352,7 +352,7 @@ export function PluginInventorySettingsTab({ list, presetName, management, t }: 
         {management === undefined || !manageable ? null : (() => {
           const control = managerState.plugins.find(row => row.entryId === entry.entryId)
           return control?.patchId === undefined
-            ? <p>{control?.readOnlyReason}</p>
+            ? <p>{control?.readOnlyReason === undefined ? null : t(control.readOnlyReason)}</p>
             : <label><input type="checkbox" role="switch" checked={entry.enabled}
               disabled={managerState.busy} aria-label={t('pluginSwitch', { name: title })}
               onChange={(event) => { void managerState.run(() => management.setPluginEnabled(entry.entryId, event.target.checked)) }} />

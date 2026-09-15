@@ -55,6 +55,8 @@ The browser plugin registers one localized `settings.plugins.tab` contribution w
 
 ### Rendering
 
+Management error and read-only codes use the current locale dictionary. The page displays raw package and Loader diagnostics, cleanup results and leftover dependencies alongside localized status text. Invalid profile dependencies remain removable with their switches disabled.
+
 Row keys are scope-qualified (`global:`, `preset:<id>:<index>`), so one module appearing in both scopes keeps distinct disclosure state; a declared entry id appears in expanded details and supplies the collapsed subtitle after removal of a leading composition `include:` marker, while a row without one stays unlabeled. The preset-provided marking is derived client-side: a global entry carries it when it is disabled there while at least one preset row for the same module specifier is actually enabled, so a module every preset gates off (or declares only conditionally) stays plainly disabled rather than over-claiming provision.
 
 </details>

@@ -45,6 +45,7 @@ export function usePluginManagement(manager: PluginManagement | undefined, avail
     submitting.current = true
     setBusy(true)
     setError(undefined)
+    setResult(undefined)
     try { setResult(await operation()) }
     catch (error) { setError(error instanceof Error ? error.message : String(error)) }
     finally { submitting.current = false; setBusy(false); setRefresh(value => value + 1) }
@@ -75,8 +76,15 @@ export function BundleManager({ manager, state, t }: {
     {state.busy ? <p role="status">{t('applying')}</p> : null}
     {state.error === undefined ? null : <p role="alert">{state.error}</p>}
     {state.result === undefined ? null : <p role={state.result.application === 'failed' ? 'alert' : 'status'}>
-      {t(state.result.application === 'failed' ? 'operationFailed' : state.result.application)} {state.result.message}
+      {t(state.result.application === 'failed' ? 'operationFailed' : state.result.application)} {state.result.target}
+      {state.result.error === undefined ? null : <span> {t(`${state.result.stage}Failed`)}: {t(state.result.error.code)} {state.result.error.diagnostic}</span>}
       {state.result.packageResult === undefined ? null : <code>{state.result.packageResult.logPath}</code>}
+      {state.result.cleanup === undefined ? null : <span> {t('cleanup')}: {state.result.cleanup.name} — {t(state.result.cleanup.error === undefined ? 'applied' : 'operationFailed')}
+        {state.result.cleanup.error?.diagnostic}
+        {state.result.cleanup.packageResult === undefined ? null : <code>{state.result.cleanup.packageResult.logPath}</code>}
+      </span>}
+      {state.result.remainingDependencies?.length ? <span> {t('remainingDependencies')}: {state.result.remainingDependencies.join(', ')}</span> : null}
+      {state.result.warnings?.length ? <span> {t('existingFailures')}: {state.result.warnings.join('\n')}</span> : null}
     </p>}
     <ul className={css.bundleList}>{state.bundles.map(bundle => <li key={bundle.name}>
       <span><strong>{bundle.name}</strong> {bundle.version}</span>
@@ -86,8 +94,8 @@ export function BundleManager({ manager, state, t }: {
       {t(bundle.enabled ? 'enabledTag' : 'disabledTag')}</label>
       <button type="button" disabled={state.busy || !bundle.removable}
         onClick={() => { void state.run(() => manager.removeBundle(bundle.name)) }}>{t('remove')}</button>
-      {bundle.error === undefined ? null : <p role="alert">{bundle.error}</p>}
-      {bundle.readOnlyReason === undefined ? null : <p>{bundle.readOnlyReason}</p>}
+      {bundle.error === undefined ? null : <p role="alert">{t(bundle.error.code)} {bundle.error.diagnostic}</p>}
+      {bundle.readOnlyReason === undefined ? null : <p>{t(bundle.readOnlyReason)}</p>}
     </li>)}</ul>
   </section>
 }

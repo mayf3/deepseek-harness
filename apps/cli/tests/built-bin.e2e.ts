@@ -1039,6 +1039,20 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     }
   }, SPAWN_TIMEOUT_MS + 30_000)
 
+  it('forwards CLI authentication and stdin through pnpm while preserving its exit code', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-interaction-'))
+    try {
+      const child = await execa(process.execPath, [dshBin, 'plugin', '--profile', 'interactive', 'exec', process.execPath, '-e',
+        "const fs = require('node:fs'); const input = fs.readFileSync(0, 'utf8'); const auth = ['NPM_TOKEN','NODE_AUTH_TOKEN','GH_TOKEN','GITHUB_TOKEN'].every(name => process.env[name] === 'fixture-auth'); process.stdout.write(JSON.stringify({ input, auth })); process.exit(42)",
+      ], {
+        input: 'fixture-input', timeout: SPAWN_TIMEOUT_MS, killSignal: 'SIGKILL', reject: false,
+        env: { DSH_HOME: home, NPM_TOKEN: 'fixture-auth', NODE_AUTH_TOKEN: 'fixture-auth', GH_TOKEN: 'fixture-auth', GITHUB_TOKEN: 'fixture-auth' },
+      })
+      expect(child.exitCode).toBe(42)
+      expect(child.stdout).toContain('{"input":"fixture-input","auth":true}')
+    } finally { rmSync(home, { recursive: true, force: true }) }
+  }, SPAWN_TIMEOUT_MS + 30_000)
+
   it('anchors a relative add spec to the invoking directory, not the profile', async () => {
     // `dsh plugin --profile x add .` from a plugin checkout must install THAT
     // checkout — pnpm's cwd is the profile directory, so an un-anchored `.`

@@ -6,7 +6,7 @@ import type {
   PluginInventorySettingsTabInjected,
   PluginInventorySettingsTabProps,
 } from '../src/client/PluginInventorySettingsTab.tsx'
-import { en, type PluginInventoryLocaleKey } from '../src/client/locales.ts'
+import { en, zh, type PluginInventoryLocaleKey } from '../src/client/locales.ts'
 import { BundleManager, usePluginManagement, type PluginManagement } from '../src/client/management.tsx'
 
 afterEach(cleanup)
@@ -394,16 +394,16 @@ describe('persistent profile management', () => {
       listBundles: async () => installed ? [{ name: 'extra', version: '1', enabled: selected, removable: true }] : [],
       setPluginEnabled: vi.fn(async (_id: Snapshot['entries'][number]['entryId'], next: boolean) => {
         enabled = next
-        return { changed: true, application: 'applied' as const, message: 'Plugin changed.' }
+        return { changed: true, application: 'applied' as const, stage: 'enable' as const, target: 'managed', enabled: next }
       }),
       setBundleEnabled: vi.fn(async (_name: string, next: boolean) => {
         selected = next
-        return { changed: true, application: 'applied' as const, message: 'Bundle changed.' }
+        return { changed: true, application: 'applied' as const, stage: 'enable' as const, target: 'extra', enabled: next }
       }),
-      installBundle: vi.fn(async () => ({ changed: false, application: 'failed' as const, message: 'Registry unavailable.' })),
+      installBundle: vi.fn(async () => ({ changed: false, application: 'failed' as const, stage: 'install' as const, target: 'new-bundle', error: { code: 'operation-error' as const, diagnostic: 'Registry unavailable.' } })),
       removeBundle: vi.fn(async () => {
         installed = false
-        return { changed: true, application: 'applied' as const, message: 'Bundle removed.' }
+        return { changed: true, application: 'applied' as const, stage: 'remove' as const, target: 'extra' }
       }),
     } satisfies NonNullable<PluginInventorySettingsTabInjected['management']>
     render(<PluginInventorySettingsTab {...props(list)} management={management} />)
@@ -426,7 +426,7 @@ describe('persistent profile management', () => {
 })
 
 function managementFixture() {
-  const applied = { changed: true, application: 'applied' as const, message: 'saved' }
+  const applied = { changed: true, application: 'applied' as const, stage: 'enable' as const, target: 'example' }
   return {
     listPlugins: vi.fn<PluginManagement['listPlugins']>(async () => []),
     listBundles: vi.fn<PluginManagement['listBundles']>(async () => []),
@@ -465,11 +465,11 @@ it('blocks duplicate submissions and refreshes after a rejected management reque
   await act(async () => {
     const first = hook.result.current.run(operation)
     await hook.result.current.run(operation)
-    pending.resolve({ changed: true, application: 'applied', message: 'removed' })
+    pending.resolve({ changed: true, application: 'applied', stage: 'remove', target: 'removed' })
     await first
   })
   expect(operation).toHaveBeenCalledOnce()
-  expect(hook.result.current.result?.message).toBe('removed')
+  expect(hook.result.current.result?.target).toBe('removed')
   for (const failure of [new Error('request unavailable'), 'request rejected']) {
     await act(async () => { await hook.result.current.run(async () => { throw failure }) })
     expect(hook.result.current.error).toBe(failure instanceof Error ? failure.message : failure)
@@ -481,17 +481,53 @@ it('shows package diagnostics, read errors and protected or missing bundles', ()
   const manager = managementFixture()
   const state: ReturnType<typeof usePluginManagement> = {
     plugins: [], bundles: [
-      { name: 'missing', enabled: false, removable: true, error: 'package files missing' },
-      { name: 'core', enabled: true, removable: false, readOnlyReason: 'required for management' },
+      { name: 'missing', enabled: false, removable: true, error: { code: 'operation-error', diagnostic: 'package files missing' } },
+      { name: 'core', enabled: true, removable: false, readOnlyReason: 'management-required' },
     ], busy: false, refresh: 0, error: 'inventory unavailable', run: async () => {},
-    result: { changed: true, application: 'failed', message: 'installation failed',
+    result: { changed: true, application: 'failed', stage: 'install', target: 'example', error: { code: 'not-bundle' },
       packageResult: { exitCode: 1, output: 'failed', truncated: false, logPath: '/profile/operation/pnpm.log' } },
   }
   render(<BundleManager manager={manager} state={state} t={t} />)
   expect(screen.getByText('inventory unavailable')).toBeDefined()
   expect(screen.getByText('/profile/operation/pnpm.log')).toBeDefined()
-  expect(screen.getByText('package files missing')).toBeDefined()
-  expect(screen.getByText('required for management')).toBeDefined()
+  expect(screen.getByText(/package files missing/)).toBeDefined()
+  expect(screen.getByText(en['management-required'])).toBeDefined()
   expect(screen.getByRole<HTMLInputElement>('switch', { name: 'Toggle bundle missing' }).disabled).toBe(true)
   expect(screen.getByRole<HTMLInputElement>('switch', { name: 'Toggle bundle core' }).disabled).toBe(true)
+})
+
+it.each([['en', en], ['zh', zh]] as const)('renders management codes and cleanup results using the %s dictionary', (_locale, dictionary) => {
+  const translate = ((key: PluginInventoryLocaleKey) => dictionary[key]) as PluginInventorySettingsTabProps['t']
+  render(<BundleManager manager={managementFixture()} t={translate} state={{
+    plugins: [], bundles: [{ name: 'plain', enabled: false, removable: true, error: { code: 'not-bundle' } }],
+    busy: false, refresh: 0, run: async () => {}, error: undefined,
+    result: { changed: true, application: 'failed', stage: 'install', target: 'plain',
+      error: { code: 'not-bundle' }, warnings: ['pending external service'], remainingDependencies: ['plain'],
+      cleanup: { name: 'plain', error: { code: 'operation-error', diagnostic: 'EACCES' },
+        packageResult: { exitCode: 1, output: 'EACCES', truncated: false, logPath: '/cleanup.log' } } },
+  }} />)
+  expect(screen.getAllByText(dictionary['not-bundle'], { exact: false }).length).toBeGreaterThan(0)
+  expect(screen.getByText(dictionary.cleanup, { exact: false })).toBeDefined()
+  expect(screen.getByText('/cleanup.log')).toBeDefined()
+  expect(screen.getByRole<HTMLInputElement>('switch').disabled).toBe(true)
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: dictionary.remove }).disabled).toBe(false)
+})
+
+it('localizes protected plugin explanations in expanded details', async () => {
+  const list: PluginInventorySettingsTabInjected['list'] = async () => ({ managementAvailable: true,
+    entries: [{ entryId: 'managed' as Snapshot['entries'][number]['entryId'], moduleName: '@fixture/managed', enabled: true, fiberPhase: 'active' }],
+  })
+  const manager = managementFixture()
+  manager.listPlugins.mockResolvedValue([{ ...(await list()).entries[0]!, readOnlyReason: 'management-required' }])
+  render(<PluginInventorySettingsTab {...props(list)} management={manager} />)
+  fireEvent.click(await screen.findByRole('button', { name: /managed, managed/ }))
+  expect(await screen.findByText(en['management-required'])).toBeDefined()
+})
+
+it('shows a completed dependency cleanup without a subprocess log', () => {
+  render(<BundleManager manager={managementFixture()} t={t} state={{
+    plugins: [], bundles: [], busy: false, refresh: 0, error: undefined, run: async () => {},
+    result: { stage: 'install', target: 'plain', changed: false, application: 'failed', cleanup: { name: 'plain' } },
+  }} />)
+  expect(screen.getByRole('alert').textContent).toContain('New dependency cleanup: plain — Applied')
 })

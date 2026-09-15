@@ -18,6 +18,7 @@ Manage the current profile's plugins without editing configuration by hand. Enab
 - [Further Exploration](#further-exploration)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Failure behavior](#failure-behavior)
 - [Dev Note](#dev-note)
 
 -----
@@ -54,7 +55,7 @@ A plugin toggle writes only its `disabled` override in the profile's `cordis.pat
 
 The service and `dsh plugin` share the package operations in [operations.ts](src/operations.ts). The launcher supplies the current profile; [DSH HMR](../hmr/README.md) serializes module reloads, file watching and management writes. Each refresh re-reads bundle selection and patch layers, updates the original root Include, and awaits removed plugin resources as well as the remaining Loader tree. Package operations hold the profile manifest lock; file watchers read the completed state after its release.
 
-Saved configuration, package-manager completion and runtime activation are separate outcomes. Failures retain partial changes and diagnostics rather than automatically restoring files or packages. No invariant companion is published because the manager reads files and Loader state directly and owns no independent state projection.
+Results contain the last attempted stage, target, saved-state change, application status and error codes. Web dictionaries render management text; pnpm and Loader diagnostics remain unmodified. Unrelated pre-existing inactive entries return warnings; new or changed failures and inactive explicit enablement targets fail the operation. The CLI inherits authentication variables and terminal descriptors; service operations use a scrubbed environment and captured output. No invariant companion is published because the manager reads files and Loader state directly and owns no independent state projection.
 
 </details>
 
@@ -108,6 +109,21 @@ Notices append context; they do not rewrite earlier messages.
 - Package failures may leave dependencies partially changed. Inactive dependencies with missing files remain removable. Diagnostic logs remain under the profile's `.plugin-manager/logs` directory.
 - Browser bundle changes require a page refresh to load the current Client module graph. Management results describe Host activation.
 - Desktop package operations remain owned by the Desktop shell.
+
+<a id="failure-behavior"></a>
+### Failure behavior
+
+Failures preserve completed steps and report the actual remaining state. Profile dependencies without valid bundle metadata remain visible and removable, with enablement unavailable.
+
+| Failed operation | Handling |
+|---|---|
+| Install: pnpm or bundle validation fails | Attempt to remove only dependencies newly added by this operation and identified unambiguously. Do not restore existing packages. Report installation failure. |
+| Enable: saving selection or loading fails | Keep the installed dependency and any saved selection. Report enablement failure; allow repair, disablement or removal. |
+| Remove: any step fails | Stop at the failed step. Preserve completed changes, retain remaining dependencies for retry, and report removal failure. Do not re-enable the bundle. |
+
+Installation finishes after pnpm and bundle validation succeed; subsequent enablement failure does not undo installation. Removal proceeds in order: remove the bundle from `dsh.profile.bundles`, unload its runtime contributions, then run `pnpm remove`. A failed step prevents subsequent steps.
+
+Installation cleanup is attempted once. If it fails or the new dependency cannot be identified, preserve the actual state and report the original failure together with cleanup diagnostics and remaining dependencies. Do not recursively undo cleanup. Cleanup covers dependencies and bundle selection only; user-authored patch configuration, application data and diagnostic logs remain untouched.
 
 <a id="dev-note"></a>
 ### Dev Note

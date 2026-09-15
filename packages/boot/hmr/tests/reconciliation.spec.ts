@@ -100,8 +100,9 @@ describe('profile reconciliation', () => {
       if (value instanceof Error) failures.push(value)
     })
     onTestFinished(() => { warn.mockRestore() })
-    const dispose = await ctx.hmr.watchConfig(filename, () =>
-      reconcileProfilePatches(ctx, [...basePatches, ...loadOptionalPatches(NAME, filename) ?? []], NAME))
+    const dispose = await ctx.hmr.watchConfig(filename, async () => {
+      await reconcileProfilePatches(ctx, [...basePatches, ...loadOptionalPatches(NAME, filename) ?? []], NAME)
+    })
     expect(watchers).toHaveLength(1)
     const watcher = watchers[0]!
     try {
@@ -143,8 +144,9 @@ describe('profile reconciliation', () => {
       // Default compose: the user layer IS the whole patch list, so a
       // fresh generation replaces the app-owned layer instead of stacking on it.
       await dispose()
-      const disposeDefault = await ctx.hmr.watchConfig(filename, () =>
-        reconcileProfilePatches(ctx, loadOptionalPatches(NAME, filename) ?? [], NAME))
+      const disposeDefault = await ctx.hmr.watchConfig(filename, async () => {
+        await reconcileProfilePatches(ctx, loadOptionalPatches(NAME, filename) ?? [], NAME)
+      })
       expect(watchers).toHaveLength(2)
       try {
         writeFileSync(filename, `- id: ${id}\n  config:\n    value: identity\n`)

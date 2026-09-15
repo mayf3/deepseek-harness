@@ -231,7 +231,8 @@ class Hmr extends Service {
         }))
         if (inputs === lastInputs) return
         lastInputs = inputs
-        await reconcileProfilePatches(this.ownerContext.root, readProfilePatches('dsh', profile), 'dsh')
+        const warnings = await reconcileProfilePatches(this.ownerContext.root, readProfilePatches('dsh', profile), 'dsh')
+        for (const diagnostic of warnings) this.ctx.logger.warn(diagnostic)
       }
       for (const filename of files) await this.watchConfig(filename, refresh)
     }
