@@ -162,9 +162,13 @@ export class DraftEditorRuntime {
 
   /**
    * Insert pasted plain text over the current editor selection
-   * (placeholder-sanitized). The paste event's own default is suppressed by
-   * the caller; PASTE_TAG makes the paste its own history boundary, so one
-   * undo never removes both the paste and typing inside the merge window.
+   * (placeholder-sanitized). The raw-text path is what splits pasted newlines
+   * into line-break nodes — the document a typed draft already has; a text node
+   * holding them instead leaves the browser reporting the whole block as the
+   * collapsed caret's geometry, which removes the scrollport's offset on the
+   * next edit. The paste event's own default is suppressed by the caller;
+   * PASTE_TAG makes the paste its own history boundary, so one undo never
+   * removes both the paste and typing inside the merge window.
    * @param text - pasted plain text.
    */
   paste(text: string): void {
@@ -173,14 +177,14 @@ export class DraftEditorRuntime {
     this.applyEdit(() => {
       const selection = $getSelection()
       if ($isRangeSelection(selection)) {
-        selection.insertText(clean)
+        selection.insertRawText(clean)
         return
       }
       // No selection yet (never-focused surface): land at the document end,
       // growing the first paragraph when the tree is empty.
       const root = $getRoot()
       if (root.getChildrenSize() === 0) root.append($createParagraphNode())
-      root.selectEnd().insertText(clean)
+      root.selectEnd().insertRawText(clean)
     }, PASTE_TAG)
   }
 
