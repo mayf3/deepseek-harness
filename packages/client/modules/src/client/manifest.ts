@@ -31,6 +31,7 @@
 
 import type {} from '@deepseek-ai/cordis'
 import type { DshClientManifest } from '@deepseek-ai/dsh-package-manifest'
+import type { ClientEntries } from './entries.ts'
 import type { ClientModuleSystem } from './system.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -371,8 +372,10 @@ export interface ClientModuleRecord {
 export interface ClientModuleLoader {
   /** Discriminant against Node's internal loader shapes ('v1'/'v2'). */
   version: 'client'
-  /** Parsed Host boot graph shared with the web entry after module-system creation. */
+  /** Latest parsed Host graph, updated by live entry reconciliation. */
   manifest: BootManifest
+  /** Page-owned entry reconciliation, shared by boot, graph updates and HMR. */
+  entries: ClientEntries
   /** Materialized-module registry: id → record. The governance-side read API for entry exports. */
   loadCache: Map<string, ClientModuleRecord>
   /**
@@ -410,7 +413,7 @@ export interface ClientModuleLoader {
 
 /** Internal construction inputs assembled by the modules bundle's bootstrap export. */
 export interface ClientModuleSystemOptions {
-  /** Parsed boot graph owned by the resulting module system. */
+  /** Boot graph validated by {@link parseBootManifest}, owned by the resulting module system. */
   manifest: BootManifest
   /** Module-table seed: platform-singleton specifier → shell instance. */
   staticModules: Record<string, unknown>
