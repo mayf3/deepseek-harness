@@ -1,3 +1,4 @@
+import { createMarkdownLabels } from './markdown-labels.ts'
 import { useMemo, useState } from 'react'
 import { Button, IconEditOutline16, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PendingQuestion, PlanReview, QuestionComposerProps } from './contract/slots.ts'
@@ -25,10 +26,7 @@ function tooltip(description: string | undefined): { title?: string } {
  * @returns The plan-review takeover for this request.
  */
 export function PlanReviewPanel({ pending, review, t }: PlanReviewPanelProps) {
-  const markdownLabels = useMemo(() => ({
-    code: { copyLabel: t('copy'), copiedLabel: t('copied') },
-    footnotes: t('markdown.footnotes'),
-  }), [t])
+  const markdownLabels = useMemo(() => createMarkdownLabels(t), [t])
   // The panel waits for the host's resolved frame before leaving, so repeated
   // clicks must not resubmit. A failed send re-enables it and shows the error.
   const [busy, setBusy] = useState(false)

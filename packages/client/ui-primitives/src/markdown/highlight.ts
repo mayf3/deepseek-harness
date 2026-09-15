@@ -9,10 +9,10 @@
  * JSON) load into the singleton at boot — the set every session renders. The
  * read card's wider extension set (the file-extension language hints the read
  * tool's `langFromPath` emits — `packages/fs/tool-fs`: python, rust, yaml,
- * markup, …) is imported lazily and registered the first time such a language
- * is requested, so a session that never opens a read card in one of those
- * languages pays neither the ~1.6 MB of grammar modules nor their synchronous
- * init. The first render of a lazy language falls back to plain text while its
+ * markup, …) and diagram source grammars are imported lazily and registered
+ * on first use, keeping their grammar modules and synchronous initialization
+ * out of sessions that never render those languages.
+ * The first render of a lazy language falls back to plain text while its
  * grammar loads, then {@link onGrammarLoaded} notifies subscribers to re-render
  * with highlighting. An unknown or absent language falls back to plain text (no
  * highlighting, still monospace) — never an error.
@@ -42,8 +42,8 @@ type LangModule = { default: typeof langTs }
 const LANGS = [langTs, langBash, langJson]
 
 /**
- * The read card's extension grammars, each behind a dynamic import so its
- * module stays out of the boot chunk until a read of that language renders.
+ * Additional source grammars, each behind a dynamic import so its module
+ * stays out of the boot chunk until that language renders.
  * Keyed by the grammar id (`LanguageRegistration.name`) the aliases resolve to.
  * `@shikijs/langs`' default export is a `LanguageRegistration[]`; the loader
  * hands the whole array to `loadLanguageSync`, which registers each entry
@@ -73,6 +73,13 @@ const LAZY_GRAMMARS = new Map<string, () => Promise<LangModule>>([
   ['less', () => import('@shikijs/langs/less')],
   ['sql', () => import('@shikijs/langs/sql')],
   ['xml', () => import('@shikijs/langs/xml')],
+  ['dot', () => import('./grammars/dot.ts')],
+  // ['mermaid', () => import('@shikijs/langs/mermaid')],
+  // Upstream's entry matches Markdown fences; CodeBlock supplies only their body.
+  ['mermaid', async () => {
+    const { default: grammars } = await import('@shikijs/langs/mermaid')
+    return { default: grammars.map(grammar => ({ ...grammar, patterns: [{ include: '#mermaid' }] })) }
+  }],
   ['lua', () => import('@shikijs/langs/lua')],
 ])
 
@@ -129,6 +136,10 @@ const LANG_ALIASES = new Map<string, string>([
   ['less', 'less'],
   ['sql', 'sql'],
   ['xml', 'xml'],
+  ['svg', 'xml'],
+  ['dot', 'dot'],
+  ['graphviz', 'dot'],
+  ['mermaid', 'mermaid'],
   ['lua', 'lua'],
 ])
 
@@ -223,6 +234,16 @@ export function subscribeGrammarLoaded(listener: () => void): () => void {
  */
 export function grammarLoadCount(): number {
   return loadCount
+}
+
+/**
+ * Read readiness without loading a grammar or invalidating unrelated source views.
+ * @param lang - Case-insensitive language hint.
+ * @returns Whether its grammar is already registered.
+ */
+export function isGrammarLoaded(lang: string | undefined): boolean {
+  const resolved = lang === undefined ? undefined : LANG_ALIASES.get(lang.toLowerCase())
+  return resolved !== undefined && highlighter().getLoadedLanguages().includes(resolved)
 }
 
 /**

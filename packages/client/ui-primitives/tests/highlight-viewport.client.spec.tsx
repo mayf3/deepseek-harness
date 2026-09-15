@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ReadBlock } from '../src/ReadBlock.tsx'
 import { CodeBlock } from '../src/markdown/CodeBlock.tsx'
@@ -100,12 +100,56 @@ describe('viewport-activated syntax highlighting', () => {
     expect(observer.disconnected).toBe(true)
   })
 
+  it.each([
+    ['mermaid', 'flowchart LR\n A[Input] --> B[Output]'],
+    ['svg', '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10"/></svg>'],
+    ['dot', 'digraph { a [label="Input"]; a -> b }'],
+  ])('defers %s source until selection, then highlights without viewport delivery', async (lang, code) => {
+    const preview = {
+      render: async () => 'data:image/svg+xml,%3Csvg%2F%3E',
+      labels: { source: 'Source', preview: 'Preview', diagram: 'Diagram', error: 'Error', zoom: 'Zoom', pending: 'Pending', close: 'Close', interaction: 'Pan and zoom' },
+    }
+    const view = render(<CodeBlock code={code} lang={lang} preview={preview} {...markdownLabels.code} />)
+    expect(view.container.querySelector('pre')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Source' }))
+    await waitFor(() => { expect(view.container.querySelector('pre.shiki')).not.toBeNull() })
+    expect(view.container.querySelector('[data-code-block-source-view]')?.hasAttribute('aria-hidden')).toBe(false)
+    expect(view.container.querySelector('pre code')?.textContent).toBe(code)
+    expect(view.container.querySelectorAll('pre span[style]').length).toBeGreaterThan(1)
+  })
+
   it('does not observe an unsupported language', () => {
     const view = render(
       <CodeBlock code="IDENTIFICATION DIVISION." lang="cobol" {...markdownLabels.code} />,
     )
     expect(view.container.querySelector('pre.shiki')).toBeNull()
     expect(IntersectionObserverStub.instances).toHaveLength(0)
+  })
+
+  it('activates retained offscreen source when a preview becomes available and keeps it highlighted', async () => {
+    const code = '<svg><rect width="10"/></svg>'
+    const props = { code, lang: 'svg', ...markdownLabels.code }
+    const view = render(<CodeBlock {...props} />)
+    const block = view.container.querySelector('.md-code-block')!
+    const observer = IntersectionObserverStub.instances[0]!
+    expect(observer.observed.has(block)).toBe(true)
+    expect(block.querySelector('pre.shiki')).toBeNull()
+
+    const preview = {
+      render: async () => 'data:image/svg+xml,%3Csvg%2F%3E',
+      labels: { source: 'Source', preview: 'Preview', diagram: 'Diagram', error: 'Error', zoom: 'Zoom', pending: 'Pending', close: 'Close', interaction: 'Pan and zoom' },
+    }
+    view.rerender(<CodeBlock {...props} preview={preview} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Source' }))
+    await waitFor(() => { expect(block.querySelector('pre.shiki')).not.toBeNull() })
+    const highlighted = block.querySelector('pre.shiki')!
+    expect(highlighted.textContent).toBe(code)
+    expect(observer.unobserved.has(block)).toBe(true)
+    expect(observer.disconnected).toBe(true)
+
+    view.rerender(<CodeBlock {...props} />)
+    expect(block.querySelector('pre.shiki')).toBe(highlighted)
+    expect(IntersectionObserverStub.instances).toHaveLength(1)
   })
 
   it('releases the shared observer when the last pending block unmounts', () => {

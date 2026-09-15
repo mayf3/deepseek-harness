@@ -9,7 +9,7 @@ import type {
 } from '../src/index.ts'
 
 export const markdownLabels: MarkdownLabels = {
-  code: { copyLabel: '复制', copiedLabel: '复制成功' },
+  code: { copyLabel: '复制', copiedLabel: '复制成功', sourceLabel: '源码', lineNumbersLabel: '行号' },
   footnotes: 'Footnotes',
 }
 

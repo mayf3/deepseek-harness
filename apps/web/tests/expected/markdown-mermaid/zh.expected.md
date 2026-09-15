@@ -1,0 +1,42 @@
+- heading "Mermaid previews" [level=1]
+- text: mermaid
+- button "放大预览"
+- button "复制"
+- button "源码"
+- button "预览" [pressed]
+- img "Mermaid 图表"
+- text: mermaid
+- button "放大预览"
+- button "复制"
+- button "源码"
+- button "预览" [pressed]
+- img "Mermaid 图表"
+- text: mermaid
+- button "放大预览" [disabled]
+- button "复制"
+- button "源码"
+- button "预览" [pressed]
+- status: 无法渲染此图表，可切换到源码查看。
+- text: mermaid
+- button "放大预览"
+- button "复制"
+- button "源码"
+- button "预览" [pressed]
+- img "Mermaid 图表"
+- text: dot
+- button "放大预览"
+- button "复制"
+- button "源码"
+- button "预览" [pressed]
+- img "Graphviz 图表"
+- text: svg
+- button "放大预览"
+- button "复制"
+- button "源码"
+- button "预览" [pressed]
+- img "SVG 预览"
+- text: html
+- button "行号"
+- button "复制"
+- text: 源码
+- code: <h2>Static HTML</h2>

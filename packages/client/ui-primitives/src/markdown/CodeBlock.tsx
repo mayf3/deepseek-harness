@@ -1,13 +1,33 @@
-import { Fragment, useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import type { CSSProperties, ReactNode, Ref } from 'react'
+/** Diagram-sized code surface with retained preview rendering and toolbar state. */
+import { memo, useRef, useState } from 'react'
+import type { Ref } from 'react'
 import clsx from 'clsx'
-import { writeClipboard } from '../clipboard.ts'
-import {
-  StreamingHighlightSession, grammarLoadCount, highlightToHtml, subscribeGrammarLoaded,
-} from './highlight.ts'
-import type { HighlightSpan, StreamingHighlightFrame } from './highlight.ts'
-import { useViewportHighlighting } from './useViewportHighlighting.ts'
+import { Tooltip } from '../Tooltip.tsx'
+import { CopyCodeButton } from './CopyCodeButton.tsx'
+import { CodeBlockSource } from './CodeBlockSource.tsx'
+import { SourcePreview } from './SourcePreview.tsx'
+import { PreviewPlaceholder } from './PreviewPlaceholder.tsx'
+import type { PreviewRenderer, SourcePreviewLabels } from './SourcePreview.tsx'
 import css from './CodeBlock.module.css'
+
+/** Renderer accepted by the public {@link CodeBlockPreview} descriptor. */
+export type CodeBlockPreviewRenderer = PreviewRenderer
+
+/** Localized output and controls for a {@link CodeBlock} preview. */
+export interface CodeBlockPreviewLabels extends SourcePreviewLabels {
+  /** Control label when source is visible. */
+  preview: string
+  /** Control label when the preview is visible. */
+  source: string
+}
+
+/** Standard source-backed content displayed by a {@link CodeBlock} preview. */
+export interface CodeBlockPreview {
+  /** Convert the source into an isolated image. */
+  render: CodeBlockPreviewRenderer
+  /** Localized failure, accessible output, and control labels. */
+  labels: CodeBlockPreviewLabels
+}
 
 export interface CodeBlockProps {
   /** The source text, rendered verbatim (trailing newline trimmed for display). */
@@ -15,7 +35,8 @@ export interface CodeBlockProps {
   /** Grammar hint (markdown fence info string or a fixed caller id); unknown = plain. */
   lang?: string | undefined
   /**
-   * The code is still growing (a streaming markdown fence): highlight through
+   * The code is still growing. Previewable fences show a placeholder without
+   * rendering or highlighting; other streaming fences highlight through
    * a per-instance {@link StreamingHighlightSession}, which re-tokenizes only
    * appended text and keeps completed line groups (and DOM) untouched. The
    * caller must keep the component instance stable across growth (a
@@ -25,9 +46,9 @@ export interface CodeBlockProps {
   streaming?: boolean | undefined
   /** Extra class merged onto the wrapper (callers position; this component draws). */
   className?: string | undefined
-  /** Ref for the stable source-content wrapper, for owners that use it as a scrollport. */
+  /** Ref for the stable content wrapper, for owners that use it as a scrollport. */
   contentRef?: Ref<HTMLDivElement> | undefined
-  /** Show a numbered gutter without adding numbers to copied source. Defaults to false. */
+  /** Initial gutter preference until the reader toggles line numbers. Defaults to false; copied source excludes numbers. */
   lineNumbers?: boolean | undefined
   /** Show the language and copy header; false when the caller supplies a toolbar. Defaults to true. */
   showHeader?: boolean | undefined
@@ -35,166 +56,77 @@ export interface CodeBlockProps {
   copyLabel: string
   /** Copy-button label during the post-copy confirmation window. */
   copiedLabel: string
+  /** Selected source-view label when no preview is available. */
+  sourceLabel: string
+  /** Localized tooltip and accessible name for the source line-number toggle. */
+  lineNumbersLabel: string
+  /** Image preview, selected initially; streaming shows a placeholder. Copy always uses source. */
+  preview?: CodeBlockPreview | undefined
 }
 
 /**
- * The `pre` attributes shiki's HTML arm emits for the css-variables theme,
- * mirrored so the streaming arm's tree is interchangeable with the settled
- * swap (`tests/streaming-code-block.client.spec.tsx` pins the two arms'
- * parity).
+ * Display source or a retained diagram with localized controls.
+ * @param props - Source, presentation preferences, complete labels and optional preview renderer.
+ * @returns A content-sized preview, a streaming preview placeholder, or full-width source.
  */
-const SHIKI_PRE_PROPS = {
-  className: 'shiki css-variables',
-  style: { backgroundColor: 'var(--shiki-background)', color: 'var(--shiki-foreground)' },
-  tabIndex: 0,
-} as const
-
-/** Completed-line group size; React reconciles groups while the DOM remains line-for-line identical. */
-const STREAMING_LINE_GROUP_SIZE = 32
-
-function renderLine(line: readonly HighlightSpan[], index: number): ReactNode {
-  return (
-    <Fragment key={index}>
-      {index > 0 && '\n'}
-      <span className="line">
-        {line.map((span, spanIndex) => <span key={spanIndex} style={span.style}>{span.text}</span>)}
-      </span>
-    </Fragment>
-  )
-}
-
-export function CodeBlock({
-  code, lang, streaming, className, contentRef, lineNumbers = false, showHeader = true, copyLabel, copiedLabel,
+export const CodeBlock = memo(function CodeBlock({
+  code, lang, streaming, className, lineNumbers = false, showHeader = true, copyLabel, copiedLabel, sourceLabel,
+  lineNumbersLabel, preview, contentRef,
 }: CodeBlockProps) {
   const trimmed = code.endsWith('\n') ? code.slice(0, -1) : code
-  const sourceLines = lineNumbers ? trimmed.split('\n') : undefined
+  const previewAvailable = preview !== undefined
+  const pendingStream = previewAvailable && streaming === true
+  const [view, setView] = useState<'source' | 'preview'>('preview')
+  const [sourceVisited, setSourceVisited] = useState(false)
+  const [numberedOverride, setNumberedOverride] = useState<boolean>()
+  const numbered = numberedOverride ?? lineNumbers
+  const [actions, setActions] = useState<HTMLSpanElement | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
-  const highlighting = useViewportHighlighting(rootRef, lang)
-  // Re-render when a lazy grammar finishes loading, so a fence that showed plain
-  // text while its language's grammar imported picks up highlighting. The
-  // snapshot value is opaque; only its change across renders drives the memo.
-  const loaded = useSyncExternalStore(subscribeGrammarLoaded, grammarLoadCount, grammarLoadCount)
-  // Streaming state lives in refs mutated inside the memo (the MarkdownText
-  // streaming-cache pattern): the session's caches carry across chunks only
-  // because the owner keys this instance stably while the fence grows.
-  const sessionRef = useRef<StreamingHighlightSession | null>(null)
-  const lineCacheRef = useRef<{
-    code: string
-    lang: string | undefined
-    generation: number
-    frame: StreamingHighlightFrame
-    groups: ReactNode[]
-    pending: ReactNode[]
-    nextLine: number
-    body: ReactNode
-  } | null>(null)
-  const settledRef = useRef(false)
-  const streamedBody = useMemo(() => {
-    if (!highlighting) {
-      sessionRef.current = null
-      lineCacheRef.current = null
-      settledRef.current = false
-      return undefined
-    }
-    if (streaming !== true) {
-      const previous = lineCacheRef.current
-      if (previous !== null && previous.code === trimmed && previous.lang === lang) {
-        settledRef.current = true
-        return previous.body
-      }
-      sessionRef.current = null
-      lineCacheRef.current = null
-      settledRef.current = true
-      return undefined
-    }
-    if (settledRef.current) {
-      sessionRef.current = null
-      lineCacheRef.current = null
-      settledRef.current = false
-    }
-    sessionRef.current ??= new StreamingHighlightSession()
-    const frame = sessionRef.current.updateFrame(trimmed, lang)
-    if (frame === undefined) {
-      lineCacheRef.current = null
-      return undefined
-    }
-    const previous = lineCacheRef.current
-    if (previous?.frame === frame && previous.code === trimmed && previous.lang === lang) {
-      return previous.body
-    }
-    const sameGeneration = previous?.generation === frame.generation
-    const groups = sameGeneration ? [...previous.groups] : []
-    let pending = sameGeneration ? [...previous.pending] : []
-    let nextLine = sameGeneration ? previous.nextLine : 0
-    for (const line of frame.appended) {
-      pending.push(renderLine(line, nextLine))
-      nextLine += 1
-      if (pending.length !== STREAMING_LINE_GROUP_SIZE) continue
-      const start = nextLine - pending.length
-      groups.push(<Fragment key={start}>{pending}</Fragment>)
-      pending = []
-    }
-    const tail = frame.tail.map((line, index) => renderLine(line, nextLine + index))
-    const tailGroup = <Fragment key={nextLine - pending.length}>{[...pending, ...tail]}</Fragment>
-    const body = <pre {...SHIKI_PRE_PROPS}><code>{groups}{tailGroup}</code></pre>
-    lineCacheRef.current = {
-      code: trimmed, lang, generation: frame.generation, frame, groups, pending, nextLine, body,
-    }
-    return body
-  }, [streaming, highlighting, trimmed, lang, loaded])
-  const html = useMemo(
-    () => (highlighting && streaming !== true && streamedBody === undefined
-      ? highlightToHtml(trimmed, lang)
-      : undefined),
-    [streaming, highlighting, streamedBody, trimmed, lang, loaded],
-  )
-  const [copied, setCopied] = useState(false)
-
-  const onCopy = useCallback(() => {
-    if (copied) return
-    /* v8 ignore next -- both arms always mount a <pre>; trimmed is the
-       typed fallback if the DOM shape ever diverges. */
-    const text = rootRef.current?.querySelector('pre')?.textContent ?? trimmed
-    void writeClipboard(text).then((ok) => {
-      if (!ok) return
-      setCopied(true)
-      window.setTimeout(() => { setCopied(false) }, 1000)
-    })
-  }, [copied, trimmed])
-
-  // shiki's HTML output is a static span tree it generated from `code` (no
-  // user HTML passes through), the sanctioned innerHTML consumption path per
-  // shiki's own docs.
-  const body = streamedBody !== undefined
-    ? streamedBody
-    : html === undefined
-      ? (
-        <pre className={css.plain}><code>{sourceLines === undefined ? trimmed : sourceLines.map((line, index) => (
-          <Fragment key={index}>{index > 0 && '\n'}<span className="line">{line}</span></Fragment>
-        ))}</code></pre>
-      )
-      : (
-        <div dangerouslySetInnerHTML={{ __html: html }} />
-      )
-
+  const showingPreview = previewAvailable && (pendingStream || view === 'preview')
   return (
-    <div ref={rootRef} className={clsx(css.block, 'md-code-block', lineNumbers && css.numbered, className)}
-      data-line-numbers={lineNumbers || undefined}
-      style={sourceLines === undefined ? undefined : {
-        '--dsl-code-block-line-number-width': `${Math.max(2, String(sourceLines.length).length)}ch`,
-      } as CSSProperties}>
-      {/* These paired attributes are stable semantic hooks for owner styling and DOM tests. */}
+    <div ref={rootRef} className={clsx(css.block, 'md-code-block', previewAvailable && css.previewable, numbered && css.numbered, className)}
+      data-code-block-header={(showHeader && previewAvailable) || undefined}
+      data-line-numbers={numbered || undefined} data-preview={showingPreview || undefined}>
       {showHeader && <div className={css.bannerWrap}>
         <div className={css.banner} data-code-block-banner>
           <div className={css.infostring}>{lang ?? ''}</div>
           <div className={css.action}>
-            <button type="button" className={css.copyButton} onClick={onCopy}>
-              {copied ? copiedLabel : copyLabel}
-            </button>
+            {!pendingStream && <>
+              {previewAvailable && <span ref={setActions} className={css.previewActionSlot} hidden={!showingPreview} />}
+              {!showingPreview && <Tooltip label={lineNumbersLabel} side="top" delayMs={500}>
+                <button type="button" className={css.iconButton} aria-label={lineNumbersLabel} aria-pressed={numbered}
+                  onClick={() => { setNumberedOverride(!numbered) }}>
+                  <svg viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hidden="true">
+                    <path d="M2 2.5h1v4m-1 0h2M1.5 10a1.25 1.25 0 0 1 2.5 0c0 1-2.5 1.5-2.5 3H4M7 4.5h7M7 11.5h7"
+                      stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              </Tooltip>}
+              <CopyCodeButton code={trimmed} copyLabel={copyLabel} copiedLabel={copiedLabel} />
+              <div className={css.segments} data-preview-selected={showingPreview || undefined}>
+                <span className={css.selection} aria-hidden="true" />
+                {previewAvailable ? <>
+                  <button type="button" aria-pressed={!showingPreview} onClick={() => { setSourceVisited(true); setView('source') }}>{preview.labels.source}</button>
+                  <button type="button" aria-pressed={showingPreview} onClick={() => { setView('preview') }}>{preview.labels.preview}</button>
+                </> : <span className={css.sourceOnly}>{sourceLabel}</span>}
+              </div>
+            </>}
           </div>
         </div>
       </div>}
-      <div ref={contentRef} className={css.content} data-code-block-content>{body}</div>
+      <div ref={contentRef} className={clsx(css.body, showingPreview && css.sourceHidden)} data-code-block-content>
+        {!pendingStream && <div className={clsx(css.source, showingPreview && css.sourceHidden)}
+          data-code-block-source-view={previewAvailable || undefined} aria-hidden={showingPreview || undefined}>
+          {(!previewAvailable || sourceVisited) && <CodeBlockSource target={rootRef} code={code} lang={lang}
+            streaming={streaming} lineNumbers={numbered} highlightImmediately={previewAvailable} />}
+        </div>}
+      </div>
+      {previewAvailable && <div className={css.previewLayer}
+        data-code-block-preview hidden={!showingPreview}>
+        {pendingStream ? <PreviewPlaceholder label={preview.labels.pending} /> :
+          <SourcePreview code={trimmed} labels={preview.labels} render={preview.render}
+            actions={actions ?? undefined} />}
+      </div>}
     </div>
   )
-}
+})
