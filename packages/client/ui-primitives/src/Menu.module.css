@@ -117,10 +117,11 @@
 }
 
 /* Arrow navigation moves real focus, so the row the keyboard is on carries the
-   same fill the pointer gets on top of the browser's own focus ring, which the
-   app's other controls keep too. */
+   same fill the pointer gets: the fill is the row's focus indication, and the
+   browser's default ring would double it. */
 .item:focus-visible:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
+  outline: none;
 }
 
 .denseList .item {
@@ -217,6 +218,7 @@
 
 .danger:focus-visible:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover-danger);
+  outline: none;
 }
 
 /* Heading row: non-interactive small grey text, padding aligned with items. */

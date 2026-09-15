@@ -34,10 +34,7 @@
 }
 
 .trigger:focus-visible {
-  /* The same fill a hovered trigger gets: the trigger is one of the row-like
-     controls of the composer, and the ring its neighbours never drew read as a
-     different kind of state. */
-  background: var(--dsw-alias-interactive-bg-hover);
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
 }
 
 .trigger:disabled {
