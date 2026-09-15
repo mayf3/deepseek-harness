@@ -427,10 +427,10 @@ describe('failure modes', () => {
 
   it('rejects malformed and duplicate chunk registrations', () => {
     const b = bench([])
-    expect(() => b.target.load({ id: 'a', chunk: '../bad.js', factory: () => ({}) }))
+    expect(() => { b.target.load({ id: 'a', chunk: '../bad.js', factory: () => ({}) }) })
       .toThrow('invalid package-local chunk "../bad.js"')
     b.target.load({ id: 'a', chunk: 'client.terminal.js', factory: () => ({}) })
-    expect(() => b.target.load({ id: 'a', chunk: 'client.terminal.js', factory: () => ({}) }))
+    expect(() => { b.target.load({ id: 'a', chunk: 'client.terminal.js', factory: () => ({}) }) })
       .toThrow('duplicate factory registration for "a/client.terminal.js"')
   })
 
