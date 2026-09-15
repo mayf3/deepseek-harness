@@ -50,6 +50,13 @@ function mount() {
   app.mount(host)
 }
 
+async function openMenu() {
+  const toggle = getByRole(host, 'button', { name: 'More page actions' })
+  fireEvent.click(toggle)
+  await nextTick()
+  return toggle
+}
+
 beforeEach(() => {
   host = document.createElement('div')
   document.body.append(host)
@@ -89,14 +96,120 @@ describe('page Markdown actions', () => {
     data.frontmatter.value = { rawMarkdownPath: `${lang === 'en-US' ? 'en/' : ''}guide/quickstart.md` }
     mount()
     await expect(`${host.innerHTML}\n`).toMatchFileSnapshot(`./expected/page-markdown-actions.${lang}.html`)
+    fireEvent.click(getByRole(host, 'button', { name: lang === 'en-US' ? 'More page actions' : '更多页面操作' }))
+    await nextTick()
+    await expect(`${host.innerHTML}\n`).toMatchFileSnapshot(`./expected/page-markdown-menu.${lang}.html`)
   })
 
-  it.each(['/', '/deepseek-harness/'])('uses the manifest index route under base %s, independent of the visible URL', (base) => {
+  it('opens from the keyboard, moves between actions, and restores focus on Escape', async () => {
+    mount()
+    const toggle = getByRole(host, 'button', { name: 'More page actions' })
+    toggle.focus()
+    fireEvent.keyDown(toggle, { key: 'ArrowDown' })
+    await nextTick()
+    const copy = getByRole(host, 'menuitem', { name: 'Copy page' })
+    const view = getByRole(host, 'menuitem', { name: 'View as Markdown (opens in a new tab)' })
+    expect(document.activeElement).toBe(copy)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.keyDown(copy, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(view)
+    fireEvent.keyDown(view, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(copy)
+    fireEvent.keyDown(copy, { key: 'End' })
+    expect(document.activeElement).toBe(view)
+    fireEvent.keyDown(view, { key: 'Home' })
+    expect(document.activeElement).toBe(copy)
+    fireEvent.keyDown(copy, { key: 'Escape' })
+    await nextTick()
+    expect(queryByRole(host, 'menu')).toBeNull()
+    expect(document.activeElement).toBe(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.keyDown(toggle, { key: 'ArrowUp' })
+    await nextTick()
+    expect(document.activeElement).toBe(getByRole(host, 'menuitem', { name: 'View as Markdown (opens in a new tab)' }))
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('dismisses on an outside pointer, focus leaving, and a second toggle click', async () => {
+    mount()
+    const toggle = await openMenu()
+    fireEvent.pointerDown(document.body)
+    await nextTick()
+    expect(queryByRole(host, 'menu')).toBeNull()
+    await openMenu()
+    fireEvent.focusOut(getByRole(host, 'menuitem', { name: 'Copy page' }), { relatedTarget: document.body })
+    await nextTick()
+    expect(queryByRole(host, 'menu')).toBeNull()
+    await openMenu()
+    fireEvent.click(toggle)
+    await nextTick()
+    expect(queryByRole(host, 'menu')).toBeNull()
+  })
+
+  it('copies from the menu in the same click and prevents another copy while it is pending', async () => {
+    const pending = deferred<Response>()
+    fetchMock.mockReturnValueOnce(pending.promise)
+    mount()
+    const toggle = await openMenu()
+    fireEvent.click(getByRole(host, 'menuitem', { name: 'Copy page' }))
+    expect(write).toHaveBeenCalledOnce()
+    await nextTick()
+    expect(queryByRole(host, 'menu')).toBeNull()
+    expect(document.activeElement).toBe(toggle)
+    await openMenu()
+    const copy = getByRole(host, 'menuitem', { name: 'Copy page' })
+    expect(copy.getAttribute('aria-disabled')).toBe('true')
+    fireEvent.click(copy)
+    expect(write).toHaveBeenCalledOnce()
+    expect(getByRole(host, 'menuitem', { name: 'View as Markdown (opens in a new tab)' }).getAttribute('href')).toBe('/en/guide/quickstart.md')
+    pending.resolve(response())
+    await waitFor(() => { expect(getByRole(host, 'status').textContent).toBe('Markdown copied.') })
+  })
+
+  it('opens the raw link from the menu and returns focus to the toggle', async () => {
+    mount()
+    const toggle = await openMenu()
+    const view = getByRole(host, 'menuitem', { name: 'View as Markdown (opens in a new tab)' })
+    view.addEventListener('click', (event) => { event.preventDefault() }, { once: true })
+    fireEvent.keyDown(view, { key: ' ' })
+    await nextTick()
+    expect(queryByRole(host, 'menu')).toBeNull()
+    expect(document.activeElement).toBe(toggle)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('removes outside-pointer listeners and closes its menu when the route changes', async () => {
+    mount()
+    const add = vi.spyOn(document, 'addEventListener')
+    const remove = vi.spyOn(document, 'removeEventListener')
+    try {
+      await openMenu()
+      const listener = add.mock.calls.find(([name]) => name === 'pointerdown')?.[1]
+      expect(listener).toBeTypeOf('function')
+      route.path = '/en/reference/'
+      data.frontmatter.value = { rawMarkdownPath: 'en/reference/index.md' }
+      await nextTick()
+      expect(queryByRole(host, 'menu')).toBeNull()
+      expect(remove).toHaveBeenCalledWith('pointerdown', listener, true)
+      await openMenu()
+      app?.unmount()
+      app = undefined
+      expect(remove.mock.calls.filter(([name]) => name === 'pointerdown')).toHaveLength(2)
+      fireEvent.pointerDown(document.body)
+      expect(host.textContent).toBe('')
+    } finally {
+      add.mockRestore()
+      remove.mockRestore()
+    }
+  })
+
+  it.each(['/', '/deepseek-harness/'])('uses the manifest index route under base %s, independent of the visible URL', async (base) => {
     data.site.value = { base }
     data.frontmatter.value = { rawMarkdownPath: 'en/reference/index.md' }
     route.path = `${base}en/reference/index.html?from=nav#api`
     mount()
-    const link = getByRole(host, 'link', { name: 'View Markdown (opens in a new tab)' })
+    await openMenu()
+    const link = getByRole(host, 'menuitem', { name: 'View as Markdown (opens in a new tab)' })
     expect(link.getAttribute('href')).toBe(`${base}en/reference/index.md`)
     expect(link.getAttribute('target')).toBe('_blank')
     expect(fetchMock).not.toHaveBeenCalled()
@@ -114,7 +227,7 @@ describe('page Markdown actions', () => {
     const pending = deferred<Response>()
     fetchMock.mockReturnValue(pending.promise)
     mount()
-    const button = getByRole(host, 'button', { name: 'Copy Markdown' })
+    const button = getByRole(host, 'button', { name: 'Copy page' })
     fireEvent.click(button)
     expect(write).toHaveBeenCalledOnce()
     expect(copied).toBeUndefined()
@@ -140,17 +253,17 @@ describe('page Markdown actions', () => {
     if (failure === 'network') fetchMock.mockRejectedValueOnce(new Error('offline'))
     else fetchMock.mockResolvedValueOnce(response('not Markdown', failure === '404' ? 404 : 200, failure === 'html' ? 'text/html' : 'text/markdown'))
     mount()
-    fireEvent.click(getByRole(host, 'button'))
+    fireEvent.click(getByRole(host, 'button', { name: 'Copy page' }))
     await waitFor(() => { expect(getByRole(host, 'status').textContent).toContain('Could not load Markdown.') })
     expect(copied).toBeUndefined()
-    fireEvent.click(getByRole(host, 'button'))
+    fireEvent.click(getByRole(host, 'button', { name: 'Copy page' }))
     await waitFor(() => { expect(getByRole(host, 'status').textContent).toBe('Markdown copied.') })
   })
 
   it('accepts static hosting that serves Markdown as plain text', async () => {
     fetchMock.mockResolvedValueOnce(response('# Plain text hosting\n', 200, 'text/plain'))
     mount()
-    fireEvent.click(getByRole(host, 'button'))
+    fireEvent.click(getByRole(host, 'button', { name: 'Copy page' }))
     await waitFor(() => { expect(getByRole(host, 'status').textContent).toBe('Markdown copied.') })
   })
 
@@ -159,7 +272,7 @@ describe('page Markdown actions', () => {
     vi.spyOn(raw, 'text').mockRejectedValueOnce(new Error('Connection closed'))
     fetchMock.mockResolvedValueOnce(raw)
     mount()
-    fireEvent.click(getByRole(host, 'button'))
+    fireEvent.click(getByRole(host, 'button', { name: 'Copy page' }))
     await waitFor(() => { expect(getByRole(host, 'status').textContent).toContain('Could not load Markdown.') })
     expect(copied).toBeUndefined()
   })
@@ -168,7 +281,7 @@ describe('page Markdown actions', () => {
     const writeDone = deferred<void>()
     write.mockImplementationOnce(() => writeDone.promise)
     mount()
-    fireEvent.click(getByRole(host, 'button'))
+    fireEvent.click(getByRole(host, 'button', { name: 'Copy page' }))
     route.path = '/en/reference/'
     data.frontmatter.value = { rawMarkdownPath: 'en/reference/index.md' }
     await nextTick()
@@ -182,10 +295,11 @@ describe('page Markdown actions', () => {
     if (missing === 'item') vi.stubGlobal('ClipboardItem', undefined)
     else vi.stubGlobal('navigator', {})
     mount()
-    fireEvent.click(getByRole(host, 'button'))
+    fireEvent.click(getByRole(host, 'button', { name: 'Copy page' }))
     await nextTick()
     expect(getByRole(host, 'status').textContent).toContain('Could not copy.')
-    expect(getByRole(host, 'link')).toBeTruthy()
+    await openMenu()
+    expect(getByRole(host, 'menuitem', { name: 'View as Markdown (opens in a new tab)' })).toBeTruthy()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -194,7 +308,7 @@ describe('page Markdown actions', () => {
     fetchMock.mockReturnValue(pending.promise)
     write.mockRejectedValueOnce(new DOMException('Denied', 'NotAllowedError'))
     mount()
-    fireEvent.click(getByRole(host, 'button'))
+    fireEvent.click(getByRole(host, 'button', { name: 'Copy page' }))
     await waitFor(() => { expect(getByRole(host, 'status').textContent).toContain('Could not copy.') })
     expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true)
     pending.reject(new DOMException('Aborted', 'AbortError'))
@@ -207,7 +321,7 @@ describe('page Markdown actions', () => {
     const pending = deferred<Response>()
     fetchMock.mockReturnValueOnce(pending.promise)
     mount()
-    fireEvent.click(getByRole(host, 'button'))
+    fireEvent.click(getByRole(host, 'button', { name: 'Copy page' }))
     const oldWrite = activeWrite
     assert(oldWrite !== undefined)
     const signal = fetchMock.mock.calls[0]?.[1]?.signal
@@ -226,7 +340,7 @@ describe('page Markdown actions', () => {
     if (change === 'unmount') expect(host.textContent).toBe('')
     else {
       expect(getByRole(host, 'status').textContent).toBe('')
-      fireEvent.click(getByRole(host, 'button', { name: change === 'route' ? 'Copy Markdown' : '复制 Markdown' }))
+      fireEvent.click(getByRole(host, 'button', { name: change === 'route' ? 'Copy page' : '复制页面' }))
       await waitFor(() => { expect(getByRole(host, 'status').textContent).toBe(change === 'route' ? 'Markdown copied.' : '已复制 Markdown。') })
       expect(fetchMock.mock.calls[1]?.[0]).toBe(change === 'route' ? '/en/reference/index.md?dsh-raw=1' : '/guide/quickstart.md?dsh-raw=1')
     }
