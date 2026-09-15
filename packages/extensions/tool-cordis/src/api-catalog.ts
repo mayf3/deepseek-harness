@@ -1465,7 +1465,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: '@Remote installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>',
         description: 'Install a package using the same pnpm implementation as dsh plugin.',
-        parameters: [{ name: 'spec', description: 'One package spec, including local paths relative to the invocation directory.' }, { name: 'options', description: 'Whether to activate the installed bundle; defaults to true.' }],
+        parameters: [{ name: 'spec', description: 'One package spec, including local paths relative to the invocation directory.' }, { name: 'options', description: 'Activation defaults to true; explicit build approvals persist for this profile before installation.' }],
         returns: 'Package-manager diagnostics and observed activation outcome.',
       },
       {
@@ -4095,7 +4095,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ChangeResult',
-    declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\';\n    stage: \'install\' | \'enable\' | \'remove\';\n    target: string;\n    enabled?: boolean;\n    error?: ManagementError;\n    warnings?: string[];\n    remainingDependencies?: string[];\n    cleanup?: {\n        name: string;\n        packageResult?: PackageResult;\n        error?: ManagementError;\n    };\n    packageResult?: PackageResult;\n}',
+    declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\';\n    stage: \'install\' | \'enable\' | \'remove\';\n    target: string;\n    enabled?: boolean;\n    error?: ManagementError;\n    warnings?: string[];\n    remainingDependencies?: string[];\n    cleanup?: {\n        name: string;\n        packageResult?: PackageResult;\n        error?: ManagementError;\n    };\n    packageResult?: PackageResult;\n    pendingBuilds?: string[];\n    approvedBuilds?: string[];\n}',
   },
   {
     name: 'ClientArtifactBaseline',
@@ -4659,7 +4659,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'InstallBundleOptions',
-    declaration: 'export interface InstallBundleOptions {\n    enabled?: boolean;\n}',
+    declaration: 'export interface InstallBundleOptions {\n    enabled?: boolean;\n    approvedBuilds?: string[];\n}',
   },
   {
     name: 'InvariantFailure',
@@ -4871,7 +4871,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ManagementError',
-    declaration: 'export interface ManagementError {\n    code: ReadOnlyReason | \'unknown-plugin\' | \'invalid-spec\' | \'ambiguous-install\' | \'not-bundle\' | \'not-removable\' | \'stop-profile\' | \'bundle-in-use\' | \'operation-error\';\n    diagnostic?: string;\n}',
+    declaration: 'export interface ManagementError {\n    code: ReadOnlyReason | \'unknown-plugin\' | \'invalid-spec\' | \'ambiguous-install\' | \'not-bundle\' | \'not-removable\' | \'stop-profile\' | \'bundle-in-use\' | \'stale-approval\' | \'operation-error\';\n    diagnostic?: string;\n}',
   },
   {
     name: 'ManualCompactAgentContext',

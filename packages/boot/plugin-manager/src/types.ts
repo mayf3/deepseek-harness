@@ -7,7 +7,7 @@ export type ReadOnlyReason = 'management-required' | 'unaddressable'
 
 /** Localizable management failure and optional external diagnostic. */
 export interface ManagementError {
-  code: ReadOnlyReason | 'unknown-plugin' | 'invalid-spec' | 'ambiguous-install' | 'not-bundle' | 'not-removable' | 'stop-profile' | 'bundle-in-use' | 'operation-error'
+  code: ReadOnlyReason | 'unknown-plugin' | 'invalid-spec' | 'ambiguous-install' | 'not-bundle' | 'not-removable' | 'stop-profile' | 'bundle-in-use' | 'stale-approval' | 'operation-error'
   diagnostic?: string
 }
 
@@ -51,9 +51,15 @@ export interface ChangeResult {
   /** One cleanup attempt, restricted to a newly added dependency. */
   cleanup?: { name: string; packageResult?: PackageResult; error?: ManagementError }
   packageResult?: PackageResult
+  /** Exact package names awaiting explicit script approval in the profile's pnpm settings. */
+  pendingBuilds?: string[]
+  /** Package script permissions saved before this installation attempt. */
+  approvedBuilds?: string[]
 }
 
 /** Bundle installation defaults to activation. */
 export interface InstallBundleOptions {
   enabled?: boolean
+  /** Explicitly allow these pending packages' scripts for this profile, then retry installation. */
+  approvedBuilds?: string[]
 }

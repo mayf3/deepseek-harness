@@ -37,13 +37,14 @@ kind: "package-reference"
 
 插件开关只更新 profile 的 `cordis.patch.yml` 中最后一条匹配覆盖项的 `disabled`；没有匹配项时追加。匹配依据是条目 id，以及覆盖项声明的模块名称。组合包开关修改 `package.json` 的有序 `dsh.profile.bundles` 列表。关闭保留依赖；开启追加到列表末尾，可能改变配置优先级。安装新组合包默认启用。home 和单次启动 patch 保留更高优先级。
 
+pnpm 11 阻止依赖脚本时，安装失败结果列出 profile 内所有待审批包名，包括此前安装留下的条目。Web 提供“允许这些脚本并重试”；工具可以在用户于对话中批准这些脚本后，通过 `install_bundle` 的 `approvedBuilds` 代表用户授权。service 验证包名仍在待审批列表中，不验证对话审批。授权按包名保存在当前 profile，允许脚本以宿主用户权限执行命令，并在再次安装失败后保留。该操作只能批准当前尚未决定的包名，不能覆盖已有拒绝或通配符规则。审批拒绝 `allowBuilds` 内的 YAML 锚点或别名。安装清理保留这些决定，重试沿用原来的启用选项。
+
 ### 配置
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `outputBytes` | `16384` | 每次操作返回的 pnpm 诊断字节上限；完整输出保留在返回的日志路径中。 |
 | `lockWaitMs` | `120000` | 获取 profile 写锁的最长等待毫秒数。 |
-| `notificationDelayMs` | `250` | 合并操作通知的延迟毫秒数。 |
 
 -----
 
@@ -75,7 +76,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-[`plugin_manager` 工具](../../../docs/tool-catalog.zh.md#deepseek-aidsh-plugin-manager) 列出插件条目和组合包，并执行影响整个 profile 的改动。结果包含保存状态变化、应用状态和包管理诊断。
+[`plugin_manager` 工具](../../../docs/tool-catalog.zh.md#deepseek-aidsh-plugin-manager) 列出插件条目和组合包，并执行影响整个 profile 的改动。结果包含保存状态变化、应用状态和包管理诊断。管理操作不会向 Agent 注入消息。
 
 #### Token 影响
 
@@ -85,24 +86,11 @@ kind: "package-reference"
 
 工具结果追加到对话中。启停其他工具可能改变后续工具声明及其缓存复用。
 
-### 配置变更通知
-
-#### 模型看到什么
-
-连续操作结果在 `notificationDelayMs` 内合并后注入每个受影响的存活 Agent。通知包含应用结果，达到配置的输出上限时标明省略的结果数，不会唤醒空闲 Agent。
-
-#### Token 影响
-
-通知按需向每个受影响 Agent 追加用户消息上下文。
-
-#### KV Cache 影响
-
-通知追加上下文，不改写先前消息。
-
 ## 已知限制与延期工作
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- Web 一次批准整个待审批列表，暂不支持逐包选择。
 - 替换已有包后需要重启进程，以加载新的 JavaScript 模块版本。
 - 仅启动时加载的 profile 不能删除当前进程启动时使用的包；停止进程后使用 `dsh plugin`。
 - 管理器不能关闭自身所需的管理组件、修改其他 profile 或编辑 agent 预设组合。
