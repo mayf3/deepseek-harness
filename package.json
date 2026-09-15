@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-root",
-  "version": "0.1.5-rc.2",
+  "version": "0.1.6-alpha.1",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -123,7 +123,7 @@
     "docs:build": "tsx website/build.ts && pnpm run verify-doc-site-fragments",
     "docs:build:mpa": "tsx website/build.ts --mpa && pnpm run verify-doc-site-fragments",
     "docs:preview": "pnpm --filter @deepseek-ai/website run preview",
-    "docs:check": "pnpm exec vitest run scripts/project-doc-site.spec.ts scripts/verify-doc-site-fragments.spec.ts && pnpm run docs:build",
+    "docs:check": "pnpm exec vitest run scripts/project-doc-site.spec.ts scripts/verify-doc-site-fragments.spec.ts website/tests/mermaid-viewer.spec.ts && pnpm run docs:build",
     "website:dev": "pnpm run docs:dev",
     "website:build": "pnpm run docs:build",
     "verify-package-readme-limitations": "tsx scripts/verify-package-readme-limitations.ts",

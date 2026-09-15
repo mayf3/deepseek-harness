@@ -265,6 +265,12 @@ export interface Config {
   readonly maxInputBytes: number
   /** Provider process-termination grace period in milliseconds. */
   readonly disposeGraceMs: number
+  /** Continuous confirmed idle time without window holds before reclamation; zero disables reclamation. */
+  readonly unattendedTimeoutMs: number
+  /** Interval between unattended shell and process observations. */
+  readonly activityPollIntervalMs: number
+  /** Delay before retrying failed owned terminal cleanup. */
+  readonly cleanupRetryMs: number
 }
 ```
 
@@ -1791,7 +1797,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/llm/plugin-package-inventory-deepseek/src/index.ts:31`](../packages/llm/plugin-package-inventory-deepseek/src/index.ts)
+来源：[`packages/llm/plugin-package-inventory-deepseek/src/index.ts:32`](../packages/llm/plugin-package-inventory-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-ptc-runtime-node"></a>
 
@@ -2028,7 +2034,7 @@ export interface JsonRpcConfig {
 ```ts config-catalog
 /** Session-log request contribution configuration. */
 export interface Config {
-  /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `false`. */
+  /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `true`. */
   enabled?: boolean
 }
 ```
@@ -3358,7 +3364,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/typert/loader/src/index.ts:47`](../packages/typert/loader/src/index.ts)
+来源：[`packages/typert/loader/src/index.ts:48`](../packages/typert/loader/src/index.ts)
 
 <a id="deepseek-aidsh-user-approval"></a>
 
@@ -3751,6 +3757,7 @@ export interface Config {
 - `@deepseek-ai/dsh-hook-protocol`（[`packages/hooks/hook-protocol/src/index.ts`](../packages/hooks/hook-protocol/src/index.ts)）
 - `@deepseek-ai/dsh-http-proxy`（[`packages/util/http-proxy/src/index.ts`](../packages/util/http-proxy/src/index.ts)）
 - `@deepseek-ai/dsh-launch-environment`（[`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts)）
+- `@deepseek-ai/dsh-lazy-require`（[`packages/util/lazy-require/src/index.ts`](../packages/util/lazy-require/src/index.ts)）
 - `@deepseek-ai/dsh-llm-mock-server`（[`packages/test-support/llm-mock-server/src/index.ts`](../packages/test-support/llm-mock-server/src/index.ts)）
 - `@deepseek-ai/dsh-loader-smoke`（[`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts)）
 - `@deepseek-ai/dsh-native-command`（[`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts)）
