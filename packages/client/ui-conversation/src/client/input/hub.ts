@@ -16,9 +16,10 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type {
-  ComposerKeyboard, DraftAttachmentId, DraftAttachmentSerializationResult, InputTriggerController,
+  DraftAttachmentId, DraftAttachmentSerializationResult, InputTriggerController,
   SessionInputResolver, SessionInput, SubmitOutcome,
 } from '../contract/input.ts'
+import type { ComposerKeyboard } from '../contract/draft-editor.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import type { PopupDismissFace } from './facade.ts'
 import { SessionInputShell } from './facade.ts'

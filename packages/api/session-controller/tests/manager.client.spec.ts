@@ -712,6 +712,64 @@ describe('remaining branches', () => {
     expect(manager.getListSnapshot().items).toBe(after.items)
   })
 
+  it('reuses refreshed rows and evicts missing rows while retaining the selection candidate', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote, S2)
+    remote.session.list.mockResolvedValue(ok({ items: [summary(S1), summary(S2)] as never[] }))
+    await manager.refreshList()
+    const first = manager.getListSnapshot()
+    expect(first.current).toBe(S2)
+
+    remote.session.list.mockResolvedValue(ok({ items: [summary(S1), summary(S2)] as never[] }))
+    await manager.refreshList()
+    expect(manager.getListSnapshot().items).toBe(first.items)
+    expect(manager.getListSnapshot().current).toBe(S2)
+
+    remote.session.list.mockResolvedValue(ok({ items: [summary(S1)] as never[] }))
+    await manager.refreshList()
+    expect(manager.getListSnapshot().items).toEqual([first.items[0]])
+    expect(manager.getListSnapshot().items[0]).toBe(first.items[0])
+    expect(manager.getListSnapshot().current).toBeUndefined()
+
+    remote.session.list.mockResolvedValue(ok({ items: [summary(S1), summary(S2)] as never[] }))
+    await manager.refreshList()
+    expect(manager.getListSnapshot().items[0]).toBe(first.items[0])
+    expect(manager.getListSnapshot().items[1]).not.toBe(first.items[1])
+    expect(manager.getListSnapshot().current).toBe(S2)
+
+    remote.session.list.mockResolvedValue(ok({ items: [] as never[] }))
+    await manager.refreshList()
+    expect(manager.getListSnapshot().items).toEqual([])
+    expect(manager.getListSnapshot().current).toBeUndefined()
+
+    remote.session.list.mockResolvedValue(ok({ items: [summary(S1)] as never[] }))
+    await manager.refreshList()
+    expect(manager.getListSnapshot().items[0]).not.toBe(first.items[0])
+  })
+
+  it('bounds cached-row ID reads linearly during repeated list refreshes', async ({ mock, remote }) => {
+    const count = 1_000
+    const summaries = Array.from({ length: count }, (_, i) => summary(`list-${i}` as SessionId))
+    const manager = makeManager(mock, remote, summaries[count - 1]!.sessionId)
+    remote.session.list.mockResolvedValue(ok({ items: summaries as never[] }))
+    await manager.refreshList()
+    const first = manager.getListSnapshot()
+    let reads = 0
+    // Instance-local accessors count membership work without a machine-dependent timing budget.
+    for (const entry of first.items) {
+      const id = entry.sessionId
+      Object.defineProperty(entry, 'sessionId', { get: () => { reads++; return id }, configurable: true })
+    }
+    for (let refresh = 0; refresh < 2; refresh++) {
+      reads = 0
+      remote.session.list.mockResolvedValue(ok({ items: summaries.map(item => ({ ...item })) as never[] }))
+      await manager.refreshList()
+      const snapshot = manager.getListSnapshot()
+      expect(snapshot.items).toBe(first.items)
+      expect(snapshot.current).toBe(summaries[count - 1]!.sessionId)
+      expect(reads).toBeLessThanOrEqual(count * 3)
+    }
+  })
+
   it('carries parentSessionId from the added event into the lineage row', ({ mock, remote }) => {
     const manager = makeManager(mock, remote)
     manager.handleSessionAdded(summary(S1, { blank: true }))

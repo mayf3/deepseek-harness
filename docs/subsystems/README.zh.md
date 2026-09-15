@@ -6,6 +6,7 @@
 
 | 页面 | 负责内容 |
 |---|---|
+| [boot.md](boot.zh.md) | 当前 profile 插件管理与 launcher 重载协调 |
 | [core.md](core.zh.md) | `packages/core` 如何控制 agent loop（智能体循环）：逐包的循环说明、agent 创建与所有权（`AgentHandle`）、`Agent` 句柄的投递/取消/拦截约定，以及全仓通用类型模式（`…Map → derived-union`、品牌化 id） |
 | [llm-streaming.md](llm-streaming.zh.md) | `packages/llm` 的对话类型——`Message`/`ContentBlock`、组装完成的模型请求、`StreamChunk` wire protocol 和适配器约定（adapter contract）、`BlockAssembler`，以及 `LlmAdapter` 提供方约定 |
 | [token-meter.md](token-meter.zh.md) | 不可变的标量与位置回放度量，附带已消费日志修订号 |
@@ -36,6 +37,7 @@
 | [sandbox.md](sandbox.zh.md) | 每会话策略解析与进程约束 seam：文件效果模式、执行/提供方策略、`ConfinedArgv`、强制执行与故障关闭错误 |
 | [ptc-runtime.md](ptc-runtime.zh.md) | PTC 执行 seam：`PtcRunRequest`/`Result`、绑定命名空间、捕获日志、`PtcRunFailure` 分类体系 |
 | [computer-use.md](computer-use.zh.md) | 按名称独占注册计算机操作提供方，以及 Cua Driver 集成选项 |
+| [browser-use.md](browser-use.zh.md) | 按名称独占注册浏览器操作提供方、提供方选项与按 Session 管理的浏览器所有权 |
 | [extensions.md](extensions.zh.md) | 带版本的动态 Cordis 插件与包、Host/Client 激活、审批、运行时检查和生命周期清理 |
 | [filesystem.md](filesystem.zh.md) | 文件系统 seam：`FsTarget`、读/写/编辑结果、观测到的文件状态、`FsErrorCode` |
 | [lsp.md](lsp.zh.md) | LSP 导航 seam：`LspQueryRequest`/`Result`、`LspProvider`/`Service`、四种操作、`LspError` |

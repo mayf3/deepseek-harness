@@ -59,9 +59,13 @@ import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
 import * as ToolJobs from '@deepseek-ai/dsh-tool-jobs'
+import BrowserUseRegistry from '@deepseek-ai/dsh-browser-use'
+import * as StagehandBrowserTools from '@deepseek-ai/dsh-experimental-browser-use-stagehand-native'
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
+import type PluginManager from '@deepseek-ai/dsh-plugin-manager'
+import * as PluginManagerTools from '@deepseek-ai/dsh-plugin-manager/tools'
 import McpResources from '@deepseek-ai/dsh-mcp-resources'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import { registerListSubagentModels } from '../packages/subagent/tool-subagent/src/list-models.ts'
@@ -198,6 +202,18 @@ export interface ToolPackage {
  */
 const TOOL_PACKAGES: ToolPackage[] = [
   {
+    pkg: '@deepseek-ai/dsh-plugin-manager',
+    dir: 'plugin-manager',
+    source: 'packages/boot/plugin-manager/src/tools.ts',
+    requires: ['ctx.tools', 'ctx.pluginManager'],
+    writes: ['tool/call', 'tool/result', 'user/message'],
+    async mount(ctx) {
+      // Schema harvest never executes a management method or opens a profile.
+      ctx.provide('pluginManager', {} as PluginManager)
+      await ctx.plugin(PluginManagerTools)
+    },
+  },
+  {
     pkg: '@deepseek-ai/dsh-mcp-resources',
     dir: 'mcp-resources',
     source: 'packages/mcp/mcp-resources/src/tools.ts',
@@ -207,6 +223,20 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(McpResources)
       ctx.mcpResources.register('catalog', {
         request: () => Promise.reject(new Error('gen-tool-catalog: MCP requests are unreachable during schema harvest')),
+      })
+    },
+  },
+  {
+    pkg: '@deepseek-ai/dsh-experimental-browser-use-stagehand-native',
+    dir: 'browser-use-stagehand-native',
+    source: 'packages/experimental/browser-use-stagehand-native/src/index.ts',
+    requires: ['ctx.browserUse', 'ctx.agents', 'ctx.tools', 'ctx.systemPrompt'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(BrowserUseRegistry)
+      await ctx.plugin(AgentRegistry)
+      await ctx.plugin(StagehandBrowserTools, {
+        mode: 'launch', model: { modelName: 'openai/gpt-5.4-mini', apiKey: 'catalog-placeholder' },
       })
     },
   },

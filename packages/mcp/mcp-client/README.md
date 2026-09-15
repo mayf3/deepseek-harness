@@ -207,7 +207,7 @@ Unchanged instructions retain identical prompt text. Updated or removed instruct
 These limits describe what you cannot do with this plugin and when it needs operational attention. They are current package constraints, not a comparison with other MCP clients or a task backlog.
 
 - **Resources are read on demand** — shipped profiles provide the [shared resource service](../mcp-resources/README.md); resource subscriptions and MCP prompt templates are unsupported.
-- **Startup and discovery timeouts are inherited from the MCP SDK** — the plugin exposes no separate connection or discovery timeout. Negotiation and discovery use the SDK's 60-second request default; discovery also uses its page limit.
+- **Startup and discovery timeouts are inherited from the MCP SDK** — the plugin exposes no separate connection or discovery timeout. Negotiation and discovery use the SDK's 60-second request default; discovery also uses its page limit. Plugin unload closes the transport to interrupt pending startup requests before awaiting teardown.
 - **Reconnect handles failed negotiation and transport close** — a failed initial probe or crashed stdio child uses the configured reconnect budget. Once HTTP is connected, request failures use the SDK transport's recovery rather than respawning the connection.
 - **Image is the only durable rich-result bridge** — PNG, JPEG, WebP, and GIF enter Native context after exact capability proof. Audio and embedded-resource payloads remain execution-local with explicit diagnostics, while resource links preserve only their name and URI as text.
 - **Invalid protocol results or output schemas fail through the SDK** — the bridge does not accept legacy `toolResult` substitutes or bypass advertised schema validation.
@@ -222,7 +222,7 @@ These limits describe what you cannot do with this plugin and when it needs oper
 This Dev Note is working context for maintainers: open design questions and directions that are not decided. It is explicitly non-authoritative — shipped behavior, limits, and accepted rationale live in the sections above, the package code, and the linked Agent Notes.
 
 - The public-name algorithm is a v1 contract pinned by tests; changing it after release would break session history and permission rules.
-- An explicit DSH-owned connection and discovery timeout is an open direction; the SDK's 60-second default bounds startup and teardown.
+- An explicit DSH-owned connection and discovery timeout is an open direction; the SDK's 60-second default bounds startup requests.
 - Reconnect ownership for Streamable HTTP is open: per-request retry is SDK behavior, and the supervisor could also own the HTTP generation.
 - MCP prompt templates need a separate user-selection and invocation mechanism.
 - The pinned MCP SDK is still evolving; a breaking upstream change requires updating the bridge.

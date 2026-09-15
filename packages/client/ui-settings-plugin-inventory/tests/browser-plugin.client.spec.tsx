@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ClientModuleLoader } from '@deepseek-ai/dsh-client-modules/client'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
@@ -8,6 +10,7 @@ import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject, NS } from '../src/client/index.ts'
 import { PluginInventorySettingsTab } from '../src/client/PluginInventorySettingsTab.tsx'
+import type { PluginEntryId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PluginInventorySettingsTabInjected } from '../src/client/PluginInventorySettingsTab.tsx'
 import { apply as hostApply } from '../src/index.ts'
 
@@ -21,6 +24,8 @@ type ListResult =
 
 async function bench() {
   const ctx = new Context()
+  const retryClient = vi.fn(async () => {})
+  ctx.provide('modules', { entries: { state: createSnapshotStore({ syncing: false, failures: [] }), retry: retryClient } } as unknown as ClientModuleLoader)
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
   ctx.provide('locale', locale)
@@ -33,7 +38,16 @@ async function bench() {
   const list = vi.fn<() => Promise<ListResult>>()
     .mockResolvedValue({ ok: true, value: EMPTY })
   ctx.provide('remote.pluginInventory', { list })
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list }
+  const listBundles = vi.fn().mockResolvedValue({ ok: true, value: [] })
+  const managed = {
+    listBundles, listPlugins: vi.fn().mockResolvedValue({ ok: true, value: [] }),
+    setPluginEnabled: vi.fn().mockResolvedValue({ ok: true, value: { changed: true, application: 'applied', stage: 'enable', target: 'plugin' } }),
+    setBundleEnabled: vi.fn().mockResolvedValue({ ok: true, value: { changed: true, application: 'applied', stage: 'enable', target: 'bundle' } }),
+    installBundle: vi.fn().mockResolvedValue({ ok: true, value: { changed: true, application: 'restart-required', stage: 'install', target: 'install' } }),
+    removeBundle: vi.fn().mockResolvedValue({ ok: true, value: { changed: true, application: 'applied', stage: 'remove', target: 'remove' } }),
+  }
+  ctx.provide('remote.pluginManager', managed)
+  return { ctx, retryClient, slots: ctx.get('slots') as SlotRegistry, locale, list, listBundles, managed }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -49,7 +63,7 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
   })
 
   it('declares only the services used by the Settings Remote contribution', () => {
-    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.pluginInventory'])
+    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.pluginInventory', 'remote.pluginManager', 'modules'])
   })
 
   it('registers a localized tab without reading the Remote eagerly', async () => {
@@ -65,8 +79,28 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(b.list).not.toHaveBeenCalled()
 
     const injected = (entry.inject as unknown as () => PluginInventorySettingsTabInjected)()
+    injected.retryClient()
+    const retryError = vi.spyOn(b.ctx.logger, 'error').mockImplementation(() => {})
+    b.retryClient.mockRejectedValueOnce(new Error('retry unavailable'))
+    injected.retryClient()
+    await vi.waitFor(() => { expect(retryError).toHaveBeenCalled() })
+    retryError.mockRestore()
     await expect(injected.list()).resolves.toEqual(EMPTY)
     expect(b.list).toHaveBeenCalledOnce()
+    await expect(injected.management?.listBundles()).resolves.toEqual([])
+    expect(b.listBundles).toHaveBeenCalledOnce()
+    const manager = injected.management!
+    await expect(manager.listPlugins()).resolves.toEqual([])
+    await expect(manager.setPluginEnabled('include:plugin' as PluginEntryId, false)).resolves.toMatchObject({ stage: 'enable', target: 'plugin' })
+    expect(b.managed.setPluginEnabled).toHaveBeenCalledWith('include:plugin', false)
+    await expect(manager.setBundleEnabled('extra', false)).resolves.toMatchObject({ stage: 'enable', target: 'bundle' })
+    expect(b.managed.setBundleEnabled).toHaveBeenCalledWith('extra', false)
+    await expect(manager.installBundle('extra@1', { enabled: false })).resolves.toMatchObject({ application: 'restart-required' })
+    expect(b.managed.installBundle).toHaveBeenCalledWith('extra@1', { enabled: false })
+    await expect(manager.removeBundle('extra')).resolves.toMatchObject({ stage: 'remove', target: 'remove' })
+    expect(b.managed.removeBundle).toHaveBeenCalledWith('extra')
+    b.listBundles.mockResolvedValueOnce({ ok: false, error: new Error('manager unavailable') })
+    await expect(manager.listBundles()).rejects.toThrow('manager unavailable')
     b.list.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
     await expect(injected.list()).rejects.toThrow('pluginInventory.list failed: REMOTE_ERROR: unavailable')
 
