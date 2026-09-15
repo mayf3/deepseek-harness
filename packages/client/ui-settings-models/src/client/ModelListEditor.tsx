@@ -22,6 +22,7 @@ import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
 import type { ModelsOperations } from './operations.ts'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
 import type { en } from './locales.ts'
+import { ModelImageInput } from './ModelImageInput.tsx'
 import styles from './ModelsSection.module.css'
 
 /**
@@ -433,6 +434,14 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
                   />
                 </label>
+                <ModelImageInput
+                  model={model}
+                  field="input"
+                  position={index + 1}
+                  disabled={disabled}
+                  t={t}
+                  onChange={(next) => { onChange(models.map((row, at) => at === index ? next : row)) }}
+                />
               </div>
             )
             : null}
