@@ -4,13 +4,20 @@ import type { PluginInventoryEntry } from '@deepseek-ai/dsh-host-plugin-inventor
 export type { PluginEntryId } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 import type { PluginEntryId } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 
-/** One running-profile entry and its persistent control availability. */
-export interface PluginInfo extends PluginInventoryEntry {
-  /** Profile patch target; absent for dynamically mounted or ambiguous entries. */
-  patchId?: string
-  /** Why the manager cannot modify this entry. */
-  readOnlyReason?: string
+/** Reasons a profile control cannot modify its target. */
+export type ReadOnlyReason = 'management-required' | 'unaddressable'
+
+/** Localizable management failure and optional external diagnostic. */
+export interface ManagementError {
+  code: ReadOnlyReason | 'unknown-plugin' | 'invalid-spec' | 'ambiguous-install' | 'not-bundle' | 'not-removable' | 'stop-profile' | 'bundle-in-use' | 'operation-error'
+  diagnostic?: string
 }
+
+/** One running-profile entry and its persistent control availability. */
+export type PluginInfo = PluginInventoryEntry & (
+  | { patchId: string; readOnlyReason?: never }
+  | { patchId?: never; readOnlyReason: ReadOnlyReason }
+)
 
 /** One row a bundle's patch declares, with its live entry while the bundle contributes it. */
 export interface BundleRowInfo {
@@ -34,8 +41,8 @@ export interface BundleInfo {
   /** Whether the profile's own dependencies hold the package; false for a bundle the dsh installation supplies. */
   installed: boolean
   removable: boolean
-  readOnlyReason?: string
-  error?: string
+  readOnlyReason?: ReadOnlyReason
+  error?: ManagementError
   /** The rows the bundle's patch inserts, in declaration order; empty when the patch cannot be read. */
   rows: BundleRowInfo[]
   /** Ids of rows the bundle's patch changes without declaring them: the built-in rows it configures or disables. */
@@ -70,7 +77,13 @@ export interface ChangeResult {
   changed: boolean
   /** `cancelled` is an installation the caller stopped, its files restored. */
   application: 'applied' | 'restart-required' | 'overridden' | 'failed' | 'cancelled'
-  message: string
+  /** Last attempted step; successful installation can proceed to enablement. */
+  stage: 'install' | 'enable' | 'remove'
+  target: string
+  enabled?: boolean
+  error?: ManagementError
+  /** Pre-existing inactive entries the operation left as they were. */
+  warnings?: string[]
   packageResult?: PackageResult
   /** The bundle an installation added, once pnpm and the bundle check accepted it. */
   bundle?: string

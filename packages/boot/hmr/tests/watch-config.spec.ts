@@ -155,6 +155,23 @@ describe('HMR exact config paths', () => {
     }
   })
 
+  it('processes native events for a watcher registered during a transaction', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-transaction-watch-'))
+    const filename = join(dir, 'plugins.yml')
+    onTestFinished(() => { rmSync(dir, { recursive: true, force: true }) })
+    const ctx = await bootHmr(dir)
+    onTestFinished(() => ctx.fiber.dispose())
+    const hmr = ctx.hmr
+    const observed = Promise.withResolvers<string>()
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation((reason) => { observed.reject(new Error(String(reason))) })
+    onTestFinished(() => { warn.mockRestore() })
+    await hmr.runExclusive(() => hmr.watchConfig(filename, async () => {
+      observed.resolve(readFileSync(filename, 'utf8'))
+    }))
+    writeFileSync(filename, 'created-after-transaction')
+    expect(await observed.promise).toBe('created-after-transaction')
+  })
+
   it('serializes refreshes and waits for them during disposal', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-config-'))
     hmrRoots.push(dir)
@@ -195,6 +212,37 @@ describe('HMR exact config paths', () => {
     expect(maxActive).toBe(1)
     expect(calls).toBe(2)
   })
+
+  it('observes consecutive writes after the previous configuration was applied', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-consecutive-'))
+    hmrRoots.push(dir)
+    const filename = join(dir, 'package.json')
+    writeFileSync(filename, 'initial')
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    let watcher!: FSWatcher
+    const previousFactory = configWatch.create
+    onTestFinished(() => { configWatch.create = previousFactory })
+    configWatch.create = (options) => {
+      watcher = new FSWatcher(options)
+      // Use Chokidar's real normalization with deterministic event delivery.
+      Reflect.set(watcher, '_readyEmitted', true)
+      queueMicrotask(() => { watcher.emit('ready') })
+      return watcher
+    }
+    const observed: string[] = []
+    await watchConfig(ctx, filename, {}, async () => {
+      const value = readFileSync(filename, 'utf8')
+      observed.push(value)
+      if (value === 'enabled') {
+        writeFileSync(filename, 'disabled')
+        await watcher._emit('change', filename)
+      }
+    })
+    writeFileSync(filename, 'enabled')
+    await watcher._emit('change', filename)
+    await vi.waitFor(() => { expect(observed).toEqual(['enabled', 'disabled']) }, { timeout: 6_000 })
+  }, 10_000)
 
   it('rejects a patch path whose parent is a regular file', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-patch-parent-'))

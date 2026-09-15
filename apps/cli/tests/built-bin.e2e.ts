@@ -115,6 +115,12 @@ function createProfileLifecycleFixture(): ProfileLifecycleFixture {
   ].join('\n'))
   writeFileSync(join(bundleDir, 'cordis.patch.yml'), [
     '- insert:',
+    '    - id: hmr-timer',
+    "      name: '@deepseek-ai/cordis-plugin-timer'",
+    '    - id: hmr',
+    "      name: '@deepseek-ai/dsh-hmr'",
+    '      config:',
+    '        root: []',
     '    - id: profile-lifecycle-fixture',
     `      name: ${pathToFileURL(join(bundleDir, 'plugin.mjs')).href}`,
     '',
@@ -279,6 +285,12 @@ function createStartupFixture(): StartupFixture {
   ].join('\n'))
   writeFileSync(join(bundleDir, 'cordis.patch.yml'), [
     '- insert:',
+    '    - id: hmr-timer',
+    "      name: '@deepseek-ai/cordis-plugin-timer'",
+    '    - id: hmr',
+    "      name: '@deepseek-ai/dsh-hmr'",
+    '      config:',
+    '        root: []',
     '    - id: startup-fixture',
     `      name: ${pathToFileURL(join(bundleDir, 'waiting.mjs')).href}`,
     '      inject: [fixtureStartup]',
@@ -666,12 +678,11 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       const dir = join(home, 'profiles', 'rescue')
       const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
         dependencies: Record<string, string>
-        dsh: { profile: { bundles: string[]; patchReload: string } }
+        dsh: { profile: { bundles: string[] } }
       }
       expect(manifest.dependencies).toEqual({})
       expect(manifest.dsh.profile).toEqual({
         bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
-        patchReload: 'live',
       })
       expect(readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')).toContain('[]')
       expect(readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8')).toContain('nodeLinker: hoisted')
@@ -802,12 +813,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     const configFile = join(fixture.home, 'config-echo')
     try {
       await waitForFile(fixture.settled)
-      // The live profile layer: even without an hmr row in the composition,
-      // the launcher mounts a config-only watcher, so an edited
-      // cordis.patch.yml lands in the running tree (the reload disposes the
-      // patched row's old fiber — observable as the disposed marker — and
-      // mounts the new config, which echoes its generation and re-writes the
-      // ready marker).
+      // The YAML HMR entry applies the patch and awaits the replaced plugin.
       rmSync(fixture.ready)
       writeFileSync(profilePatch, [
         '- id: profile-lifecycle-fixture',
@@ -909,16 +915,12 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       + "\nexport const inject = ['hmr', 'appReady']\n"
     writeFileSync(source, original)
     const hmrPatch = [
-      '- insert:',
-      '    - id: hmr-timer',
-      "      name: '@deepseek-ai/cordis-plugin-timer'",
-      '    - id: hmr',
-      "      name: '@deepseek-ai/dsh-hmr'",
-      '      config:',
-      `        root: [${JSON.stringify(join(fixture.home, 'lifecycle-bundle'))}]`,
-      '        ignored: []',
-      '        usePolling: true',
-      '        debounce: 0',
+      '- id: hmr',
+      '  config:',
+      `    root: [${JSON.stringify(join(fixture.home, 'lifecycle-bundle'))}]`,
+      '    ignored: []',
+      '    usePolling: true',
+      '    debounce: 0',
       '',
     ].join('\n')
     const patch = join(dir, 'cordis.patch.yml')
@@ -931,9 +933,9 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
           `  writeFileSync(${JSON.stringify(mounted)}, 'mounted')\n  let active = true`))
         await writeFileAtomic(patch, hmrPatch
           + '- id: profile-lifecycle-fixture\n  config:\n    generation: configuration-reloaded\n', { mode: 0o600 })
+        await waitForFile(mounted)
+        await vi.waitFor(() => { expect(readFileSync(echo, 'utf8')).toBe('configuration-reloaded') }, { timeout: SPAWN_TIMEOUT_MS })
       })
-      await waitForFile(mounted)
-      await vi.waitFor(() => { expect(readFileSync(echo, 'utf8')).toBe('configuration-reloaded') }, { timeout: SPAWN_TIMEOUT_MS })
       const replacedAgain = join(fixture.home, 'module-reloaded-again')
       writeFileSync(source, original.replace('  let active = true',
         `  writeFileSync(${JSON.stringify(replacedAgain)}, 'mounted')\n  let active = true`))
@@ -1037,6 +1039,20 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     }
   }, SPAWN_TIMEOUT_MS + 30_000)
 
+  it('forwards CLI authentication and stdin through pnpm while preserving its exit code', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-interaction-'))
+    try {
+      const child = await execa(process.execPath, [dshBin, 'plugin', '--profile', 'interactive', 'exec', process.execPath, '-e',
+        "const fs = require('node:fs'); const input = fs.readFileSync(0, 'utf8'); const auth = ['NPM_TOKEN','NODE_AUTH_TOKEN','GH_TOKEN','GITHUB_TOKEN'].every(name => process.env[name] === 'fixture-auth'); process.stdout.write(JSON.stringify({ input, auth })); process.exit(42)",
+      ], {
+        input: 'fixture-input', timeout: SPAWN_TIMEOUT_MS, killSignal: 'SIGKILL', reject: false,
+        env: { DSH_HOME: home, NPM_TOKEN: 'fixture-auth', NODE_AUTH_TOKEN: 'fixture-auth', GH_TOKEN: 'fixture-auth', GITHUB_TOKEN: 'fixture-auth' },
+      })
+      expect(child.exitCode).toBe(42)
+      expect(child.stdout).toContain('{"input":"fixture-input","auth":true}')
+    } finally { rmSync(home, { recursive: true, force: true }) }
+  }, SPAWN_TIMEOUT_MS + 30_000)
+
   it('anchors a relative add spec to the invoking directory, not the profile', async () => {
     // `dsh plugin --profile x add .` from a plugin checkout must install THAT
     // checkout — pnpm's cwd is the profile directory, so an un-anchored `.`
@@ -1085,6 +1101,50 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       rmSync(checkout, { recursive: true, force: true })
     }
   }, SPAWN_TIMEOUT_MS * 2 + 30_000)
+
+  it('reconciles a real pnpm alias without reactivating it and keeps ordinary dependencies outside the bundle list', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-alias-'))
+    try {
+      const bundle = join(home, 'bundle-source')
+      const library = join(home, 'library-source')
+      mkdirSync(bundle)
+      mkdirSync(library)
+      writeFileSync(join(bundle, 'package.json'), JSON.stringify({
+        name: 'original-bundle-name', version: '1.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } },
+      }))
+      writeFileSync(join(bundle, 'cordis.patch.yml'), '[]\n')
+      writeFileSync(join(library, 'package.json'), JSON.stringify({ name: 'ordinary-library', version: '1.0.0' }))
+      const added = await runBuiltBin([
+        'plugin', '--profile', 'alias', 'add', `bundle-alias@file:${bundle}`, `file:${library}`,
+      ], { DSH_HOME: home }, home)
+      expect(added.code).toBe(0)
+      expect(added.stderr).toContain('ordinary-library declares no dsh.bundle — installed as a plain dependency, not a profile layer')
+      const manifestPath = join(home, 'profiles', 'alias', 'package.json')
+      const installed = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+        dependencies: Record<string, string>
+        dsh: { profile: { bundles: string[] } }
+      }
+      expect(Object.keys(installed.dependencies).sort()).toEqual(['bundle-alias', 'ordinary-library'])
+      expect(installed.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base', 'bundle-alias'])
+      installed.dsh.profile.bundles = ['@deepseek-ai/dsh-base']
+      writeFileSync(manifestPath, JSON.stringify(installed))
+      const refreshed = await runBuiltBin(['plugin', '--profile', 'alias', 'root'], { DSH_HOME: home }, home)
+      expect(refreshed.code).toBe(0)
+      expect(refreshed.stderr).not.toContain('declares no dsh.bundle')
+      const active = JSON.parse(readFileSync(manifestPath, 'utf8')) as { dsh: { profile: { bundles: string[] } } }
+      expect(active.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base'])
+      const removed = await runBuiltBin(['plugin', '--profile', 'alias', 'remove', 'bundle-alias'], { DSH_HOME: home }, home)
+      expect(removed.code).toBe(0)
+      const remaining = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+        dependencies: Record<string, string>
+        dsh: { profile: { bundles: string[] } }
+      }
+      expect(Object.keys(remaining.dependencies)).toEqual(['ordinary-library'])
+      expect(remaining.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base'])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
 
   it('keeps existing dependencies inactive when package metadata gains a bundle declaration', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-update-'))

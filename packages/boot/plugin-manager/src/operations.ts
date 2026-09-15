@@ -14,6 +14,8 @@ import type { PackageResult } from './types.ts'
 /** Profile and invocation locations supplied by the launcher. */
 export interface PackageOperationContext {
   profile: string
+  /** Explicit directory for an application-owned profile; named CLI profiles resolve under home. */
+  dir?: string
   installAnchor: string
   cwd: string
   home?: string
@@ -23,6 +25,8 @@ export interface PackageOperationContext {
 export interface PackageOperationOptions {
   /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. Defaults to `pnpm`. */
   command?: string
+  /** CLI inherits authentication and terminal descriptors; service scrubs secrets and captures output. */
+  execution: 'cli' | 'service'
   signal?: AbortSignal
   outputBytes: number
   onOutput?: (text: string, stream: 'stdout' | 'stderr') => void
@@ -92,12 +96,12 @@ async function reconcile(before: ProfileManifest, dir: string, anchor: string, o
  * @param context Launcher-owned profile and resolution locations.
  * @param args Pnpm arguments, before relative path anchoring.
  * @param options Output, activation and cancellation policy.
- * @returns Exit status, bounded output, and the complete diagnostic file.
+ * @returns Exit status and diagnostic path; service output is bounded, CLI output uses inherited descriptors.
  */
 export async function runProfilePnpm(
   context: PackageOperationContext, args: readonly string[], options: PackageOperationOptions,
 ): Promise<PackageResult> {
-  const dir = resolveProfileDir(context.profile, context.home)
+  const dir = context.dir ?? resolveProfileDir(context.profile, context.home)
   const before = readProfileManifest('dsh', dir)
   const logRoot = join(dir, '.plugin-manager', 'logs')
   await mkdir(logRoot, { recursive: true, mode: 0o700 })
@@ -108,8 +112,10 @@ export async function runProfilePnpm(
   let truncated = false
   const cancellation = new AbortController()
   const child = execa(options.command ?? 'pnpm', args.map(arg => anchorPathSpec(arg, context.cwd)), {
-    cwd: dir, env: scrubbedParentEnv(), extendEnv: false, reject: false,
-    buffer: false, stdin: 'ignore', cancelSignal: options.signal === undefined
+    cwd: dir, env: options.execution === 'cli' ? process.env : scrubbedParentEnv(), extendEnv: false, reject: false,
+    stdout: options.execution === 'cli' ? 'inherit' : 'pipe',
+    stderr: options.execution === 'cli' ? 'inherit' : 'pipe',
+    buffer: false, stdin: options.execution === 'cli' ? 'inherit' : 'ignore', cancelSignal: options.signal === undefined
       ? cancellation.signal : AbortSignal.any([cancellation.signal, options.signal]),
   })
   let writes = Promise.resolve()
@@ -133,7 +139,10 @@ export async function runProfilePnpm(
   }
   let exitCode: number
   try {
-    const [completion, ...streams] = await Promise.allSettled([child, collect(child.stdout, 'stdout'), collect(child.stderr, 'stderr')])
+    const [completion, ...streams] = await Promise.allSettled([child,
+      ...child.stdout === null ? [] : [collect(child.stdout, 'stdout')],
+      ...child.stderr === null ? [] : [collect(child.stderr, 'stderr')],
+    ])
     for (const stream of streams) if (stream.status === 'rejected') throw stream.reason
     if (completion.status === 'rejected') throw completion.reason
     const result = completion.value
@@ -160,12 +169,12 @@ export async function runProfilePnpm(
 export async function runPluginCommand(
   context: PackageOperationContext, args: readonly string[], options: PackageOperationOptions,
 ): Promise<PackageResult> {
-  const dir = resolveProfileDir(context.profile, context.home)
+  const dir = context.dir ?? resolveProfileDir(context.profile, context.home)
   await mkdir(dir, { recursive: true })
   return withFileLock(join(dir, 'package.json'), async () => {
     if (!existsSync(join(dir, 'package.json'))) {
       const template = PROFILE_TEMPLATES[context.profile]
-      initProfile(dir, template?.bundles ?? DEFAULT_PROFILE_BUNDLES, template?.patchReload)
+      initProfile(dir, template?.bundles ?? DEFAULT_PROFILE_BUNDLES)
       options.onOutput?.(`dsh: initialized profile ${context.profile} at ${dir}\n`, 'stderr')
     }
     return runProfilePnpm(context, args, options)

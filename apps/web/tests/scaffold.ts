@@ -320,10 +320,12 @@ export interface LaunchOptions {
    * manifest, a symlink under the profile's `node_modules`); `enabled` also
    * lists a bundle in `dsh.profile.bundles`. The plugin manager mounts on such
    * a profile, and the root Include is mounted from the profile's own layers.
-   * `patchReload` defaults to `live`.
+   * The base bundle's `hmr` row turns on with the profile context, so
+   * configuration changes apply live; `hmr: false` disables that row through
+   * an overlay, leaving changes for the next start.
    */
   profile?: {
-    patchReload?: 'live' | 'startup'
+    hmr?: boolean
     packages: { dir: string; enabled?: boolean }[]
   }
   /**
@@ -543,6 +545,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   const surfaceContext = webRuntimeConfig?.surfaceContext !== false
   // The scaffold's own overrides, above every bundle layer like `--patch` overlays.
   const overlayPatches: PatchOptions[] = [
+    // Without HMR the profile applies configuration changes at its next start.
+    ...options.profile?.hmr === false ? [{ id: 'hmr', disabled: true }] : [],
     { id: 'session-log-deepseek', config: { enabled: false } },
     // The historical Messages fixture retains its recorded route during replay;
     // live configuration uses the shared DeepSeek route. Explicit overlays win.
@@ -707,14 +711,12 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         patches: [],
       }
     }))
-    const profilePatchReload = options.profile?.patchReload ?? 'live'
     const profile: Profile = {
       name: 'scaffold',
       dir: profileDir,
       layers: extraLayers,
       patchPath: join(profileDir, 'cordis.patch.yml'),
       patches: [],
-      patchReload: options.profile === undefined ? 'startup' : profilePatchReload,
     }
     const profileResolutionMode = options.profileResolutionMode ?? 'runtime'
     const resolutionOptions = { installAnchor: INSTALL_ANCHOR, home: harnessHome, profile }
@@ -739,15 +741,18 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         await mkdir(dirname(link), { recursive: true })
         await symlink(entry.dir, link, 'junction')
       }
-      initProfile(profileDir, bundles, profilePatchReload)
+      initProfile(profileDir, bundles)
       const manifest = readProfileManifest('dsh', profileDir)
       manifest.dependencies = dependencies
       await writeFile(join(profileDir, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
       profileContext = {
         name: 'scaffold', dir: profileDir, patchPath: profile.patchPath, installAnchor: INSTALL_ANCHOR,
-        cwd: workspaceCwd, home: harnessHome, startedBundles: bundles, patchReload: profilePatchReload,
+        cwd: workspaceCwd, home: harnessHome, startedBundles: bundles,
         overlays: overlayPatches, telemetryDisabledEnv: undefined,
       }
+      // HMR gates file-driven reloads on application readiness, which the
+      // launcher commits after boot; this direct harness is ready at once.
+      ctx.provide('appReady', { onReady: (listener) => { listener(); return () => {} } })
       ctx.provide('profileContext', profileContext)
     }
     // This direct Loader harness supplies the same root-path capability as app-boot.

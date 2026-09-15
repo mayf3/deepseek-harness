@@ -16,7 +16,7 @@ profile 启动从磁盘 module fallback 使用的同一套依赖遍历生成一�
 
 ### 唯一选包算法
 
-包遍历继续放在 `@deepseek-ai/dsh-app-boot` 的 profile 加载代码旁。磁盘 materializer 和运行时解析器消费同一个纯计划；两者都不持有另一份优先级算法。直接调用方可以选择 link、dual 或 runtime 模式，省略模式时使用 link。runtime 与 dual 仍是内部迁移和验证路径，不改变面向用户的 launcher 行为。
+包遍历继续放在 `@deepseek-ai/dsh-app-boot` 的 profile 加载代码旁。磁盘 materializer 和运行时解析器消费同一个纯计划；两者都不持有另一份优先级算法。普通 Node 调用方可以选择 link、dual 或 runtime 模式，省略模式时使用 link。打包可执行文件与 Electron Host 会选择 runtime，因为其依赖树可能位于虚拟文件系统；dual 保留为内部对比路径。
 
 安装 manifest 是第一个根。它按 BFS 依次遍历 `dependencies` 和 `peerDependencies`，每条边从声明它的 manifest 解析，同名包由第一次找到的已安装包占有。所选 bundle 随后按 profile 顺序逐根遍历；每个较早根的完整依赖图优先于所有较晚根。安装闭包中的名称被保留，bundle 包根本身不成为插件 fallback。与旧行为相同，已声明但未安装的包会被跳过。
 
@@ -74,11 +74,11 @@ runtime-only 启动流程不创建、更新或退休 symlink 和代理包。reso
 
 link、dual 与 runtime 模式使用同一种 generation schema 和依赖选择策略。link 模式持久化计算结果，runtime 模式只在进程内安装，dual 模式要求 Node 的磁盘结果与 generation 路由一致。
 
-`dsh` launcher 在调用方省略 `resolutionMode` 时选择 link 模式，因此受支持的 profile 启动保留现有文件系统行为。测试与底层嵌入方会在挂载任何 profile 条目前显式选择 runtime 或 dual。
+普通 Node 调用方省略 `resolutionMode` 时，`dsh` launcher 选择 link 模式，因此既有 npm 安装的 profile 启动保留文件系统行为。pkg 可执行文件始终选择 runtime，Electron Host 则在挂载任何 profile 条目前安装 runtime generation。测试与底层嵌入方仍可显式选择 runtime 或 dual。
 
 runtime 模式要求受支持的 Node Internal loader 接口，并且不会创建、更新或退休 fallback 链接。dual 模式保留链接写入，并在 Node 的磁盘结果与 generation 不同时失败。可写 profile 状态和包管理器事务不属于 resolver。
 
-打包载体选择、虚拟文件系统适配和 Electron ASAR 启动行为属于叠加在这套模式无关架构上的独立决策。
+pkg 与打包 Electron 载体强制使用 runtime 解析。Electron Host 通过设置 `ELECTRON_RUN_AS_NODE=1` 的 Electron 可执行文件运行，从 ASAR 读取 dsh 依赖树，并把 ASAR 中的可执行条目映射到 electron-builder 的 unpacked 目录。两种载体都不会创建、更新或删除旧解析链接。
 
 ### 性能与验证
 
@@ -106,6 +106,7 @@ generation 构造发生在启动或显式更新阶段，不属于单次 resolve�
 
 - 一次 eager 计算同时供应保留的磁盘 materializer 和运行时 generation。
 - link-only、dual 和 runtime-only 测试消费同一个 generation；runtime 启动既不写入也不退休模块解析数据。
+- pkg 与 Electron 载体选择 runtime 解析；Electron 以 Node 模式从 ASAR 承载的 dsh 依赖树执行 Host，原生可执行条目保持 unpacked。
 - ESM 与 CommonJS 适配器共享同一个路由器，并把最终解析委托给 Node，不使用 `module.registerHooks` 或替换 `_findPath`。
 - 生产 package metadata 查询不记录 Loader import 结果，也不包装 Entry、registry、tree 或 HMR 方法。
 - Node 兼容矩阵会在受支持的 loader 接口上运行主线程 resolver 规格；service 和 bootstrap 规格覆盖 Worker environment data 与安装接口，但不会启动构建后的 Worker。
@@ -114,4 +115,4 @@ generation 构造发生在启动或显式更新阶段，不属于单次 resolve�
 
 ## Consequences
 
-runtime 启动避免磁盘修改和代理 manifest，同时保留既有选包算法。代价是持续维护 Node Internal 兼容测试，并在每个自有 Worker 中最早执行自包含 bootstrap。link 保持 launcher 默认值，dual 保留迁移比较路径。在产品拥有模块缓存失效和 Worker 重启前，generation 替换只能新增映射。载体专用选择和虚拟文件系统启动集成仍属于独立工作。
+runtime 启动避免磁盘修改和代理 manifest，同时保留既有选包算法。代价是持续维护 Node Internal 兼容测试，并在每个自有 Worker 中最早执行自包含 bootstrap。link 保持普通 Node launcher 的默认值，dual 保留迁移比较路径，pkg 与 Electron 载体则强制使用 runtime 且不退休旧链接。在产品拥有模块缓存失效和 Worker 重启前，generation 替换只能新增映射。

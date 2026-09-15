@@ -20,8 +20,8 @@ import { classifyInstallFailure } from './install-failure.ts'
 import { InvalidInstallSpecError, parseInstallSpec } from './install-spec.ts'
 import { writePluginEnabled } from './patch.ts'
 import type {
-  BundleInfo, BundleRowInfo, ChangeResult, InstallBundleOptions, PackageResult, PluginChange, PluginEntryId, PluginInfo,
-  PluginInspectProblem, PluginInstallCancellation, PluginInstallRequestId, PluginSpecInspection,
+  BundleInfo, BundleRowInfo, ChangeResult, InstallBundleOptions, ManagementError, PackageResult, PluginChange, PluginEntryId, PluginInfo,
+  PluginInspectProblem, PluginInstallCancellation, PluginInstallProgress, PluginInstallRequestId, PluginSpecInspection,
 } from './types.ts'
 export type * from './types.ts'
 export { classifyInstallFailure, type InstallFailureFacts } from './install-failure.ts'
@@ -46,6 +46,8 @@ const protectedModules = new Set([
   '@deepseek-ai/cordis-plugin-include', '@deepseek-ai/dsh-api-gateway',
   '@deepseek-ai/dsh-host-webserver', '@deepseek-ai/dsh-client-modules',
   '@deepseek-ai/dsh-client-ui-settings-plugin-inventory', '@deepseek-ai/dsh-client-ui-plugin-manager',
+  '@deepseek-ai/dsh-host-plugin-inventory', '@deepseek-ai/dsh-typert-registry',
+  '@deepseek-ai/dsh-api-remotes',
   '@deepseek-ai/cordis-plugin-timer', '@deepseek-ai/dsh-client-connection',
   '@deepseek-ai/dsh-host-frontend-static', '@deepseek-ai/dsh-tools',
   '@deepseek-ai/dsh-hmr',
@@ -64,6 +66,17 @@ function flatten(rows: EntryOptions[]): EntryOptions[] {
 
 /** Preserve the exact observed diagnostic, including non-Error failures. */
 function messageOf(error: unknown): string { return error instanceof Error ? error.message : String(error) }
+
+/** An expected refusal keeps its code; anything else becomes an operation error carrying its exact diagnostic. */
+function managementError(error: unknown): ManagementError {
+  return error instanceof ManagementFailure ? { code: error.code } : { code: 'operation-error', diagnostic: messageOf(error) }
+}
+
+/** Expected management rejection; presentation belongs to the caller's locale. */
+class ManagementFailure extends Error {
+  readonly code: ManagementError['code']
+  constructor(code: ManagementError['code']) { super(code); this.code = code }
+}
 
 /** The caller stopped an installation; its files are restored before this is thrown. */
 class InstallCancelledError extends Error {
@@ -163,8 +176,8 @@ export class PluginManager extends TypertRemoteService {
       clearTimeout(this.noticeTimer)
       this.flushNotice()
     }, 'plugin-manager: package cancellation')
-    // A patch generation applied outside a manager operation — the launcher's
-    // file watcher after a CLI or hand edit — changes what the lists show.
+    // A patch generation applied outside a manager operation — HMR's file
+    // watcher after a CLI or hand edit — changes what the lists show.
     ctx.on('profile/reconciled', () => {
       if (!this.operating) ctx.emit('plugin-manager/changed', { reason: 'reload' })
     })
@@ -181,15 +194,14 @@ export class PluginManager extends TypertRemoteService {
       const actual = [...this.ctx.loader.entries()].find(row => row.id === entry.entryId)
       const candidates = rows.filter(row => row.id === actual?.options.id)
       const candidate = candidates[0]
-      const readOnlyReason = protectedModules.has(entry.moduleName) || entry.entryId === this.ownerEntryId
-        ? 'Required for plugin management.'
-        : actual?.parent.tree.ctx.fiber.entry?.id !== 'include'
-          || candidates.length !== 1 || candidate?.name !== entry.moduleName
-          ? 'This entry is not uniquely addressable by the profile patch.' : undefined
-      return { ...entry,
-        ...(candidate !== undefined && readOnlyReason === undefined ? { patchId: candidate.id } : {}),
-        ...(readOnlyReason === undefined ? {} : { readOnlyReason }),
+      if (protectedModules.has(entry.moduleName) || entry.entryId === this.ownerEntryId) {
+        return { ...entry, readOnlyReason: 'management-required' as const }
       }
+      if (candidate === undefined || candidates.length > 1 || candidate.name !== entry.moduleName
+        || actual?.parent.tree.ctx.fiber.entry?.id !== 'include') {
+        return { ...entry, readOnlyReason: 'unaddressable' as const }
+      }
+      return { ...entry, patchId: candidate.id }
     })
   }
 
@@ -211,20 +223,20 @@ export class PluginManager extends TypertRemoteService {
       try {
         const info = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
         if (info === undefined) {
-          if (enabled) bundles.push({ name, enabled, installed, removable, error: `Not a bundle: ${name}`, rows: [], overrides: [] })
+          if (enabled || installed) bundles.push({ name, enabled, installed, removable, error: { code: 'not-bundle' }, rows: [], overrides: [] })
           continue
         }
-        const readOnlyReason = this.protectsManager(name) ? 'This bundle provides plugin management components' : undefined
+        const readOnlyReason = this.protectsManager(name) ? 'management-required' as const : undefined
         const title = info.dsh?.title
         bundles.push({ name, ...(info.version === undefined ? {} : { version: info.version }),
           ...(title === undefined ? {} : { title }),
           ...(info.description === undefined || info.description === '' ? {} : { description: info.description }),
           enabled, installed, removable: removable && readOnlyReason === undefined,
           ...(readOnlyReason === undefined ? {} : { readOnlyReason }),
-          ...this.bundleRows(name, info) })
+          ...this.declaredRows(name, info) })
       } catch (error) {
         if (enabled || installed) {
-          bundles.push({ name, enabled, installed, removable, error: messageOf(error), rows: [], overrides: [] })
+          bundles.push({ name, enabled, installed, removable, error: managementError(error), rows: [], overrides: [] })
         }
       }
     }
@@ -307,15 +319,15 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote
   setPluginEnabled(id: PluginEntryId, enabled: boolean): Promise<ChangeResult> {
-    return this.change(async () => {
+    return this.change(result => this.configure(async () => {
       const row = (await this.listPlugins()).find(item => item.entryId === id)
-      if (row === undefined) throw new Error(`Unknown plugin entry: ${id}`)
-      if (row.readOnlyReason !== undefined || row.patchId === undefined) throw new Error(row.readOnlyReason)
-      await writePluginEnabled(this.profile.patchPath, row.patchId, enabled)
-      await this.reload()
+      if (row === undefined) throw new ManagementFailure('unknown-plugin')
+      if (row.readOnlyReason !== undefined) throw new ManagementFailure(row.readOnlyReason)
+      await writePluginEnabled(this.profile.patchPath, row.patchId, row.moduleName, enabled)
+      result.warnings = await this.reload(enabled ? [row.patchId] : [])
       const current = (await this.listPlugins()).find(item => item.entryId === id)
-      return current?.enabled !== enabled && this.profile.patchReload === 'live' ? 'overridden' : undefined
-    }, `Plugin ${id}: ${enabled ? 'enabled' : 'disabled'}.`, 'plugin')
+      return current?.enabled !== enabled && this.ownerContext.get('hmr') !== undefined ? 'overridden' : undefined
+    }), { stage: 'enable', target: id, enabled }, 'plugin')
   }
 
   /** Select or remove a bundle layer while retaining installed dependencies.
@@ -325,10 +337,10 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote
   setBundleEnabled(name: string, enabled: boolean): Promise<ChangeResult> {
-    return this.change(async () => {
+    return this.change(result => this.configure(async () => {
       await this.selectBundle(name, enabled)
-      await this.reload()
-    }, `Bundle ${name}: ${enabled ? 'enabled' : 'disabled'}.`, 'bundle')
+      result.warnings = await this.reload(enabled ? this.bundleRows(name).map(row => row.id) : [])
+    }), { stage: 'enable', target: name, enabled }, 'bundle')
   }
 
   /**
@@ -345,47 +357,47 @@ export class PluginManager extends TypertRemoteService {
     const control: InstallControl = { abort: new AbortController(), phase: 'installing', settled: Promise.resolve() }
     const stopped = (): boolean => control.abort.signal.aborted
     if (requestId !== undefined) this.installs.set(requestId, control)
-    let packageResult: PackageResult | undefined
-    let bundle: string | undefined
-    const result = this.change(async () => {
-      if (spec.trim() === '' || spec.startsWith('-')) throw new Error('A package spec is required')
+    const announce = (phase: PluginInstallProgress['phase']): void => {
+      if (requestId !== undefined) this.ownerContext.emit('plugin-manager/install-state', { requestId, phase })
+    }
+    const result = this.change(async (result) => {
+      if (spec.trim() === '' || spec.startsWith('-')) throw new ManagementFailure('invalid-spec')
       if (stopped()) throw new InstallCancelledError()
       const files = await this.readRestoredFiles()
       const before = readProfileManifest('dsh', this.profile.dir).dependencies ?? {}
-      if (requestId !== undefined) this.ownerContext.emit('plugin-manager/install-state', { requestId, phase: 'installing' })
-      packageResult = await this.runPnpm(['add', spec], control.abort.signal, requestId)
-      if (stopped()) {
+      announce('installing')
+      let name: string
+      try {
+        result.packageResult = await this.runPnpm(['add', spec], control.abort.signal, requestId)
+        if (stopped()) throw new InstallCancelledError()
+        if (result.packageResult.exitCode !== 0) throw new Error(result.packageResult.output)
+        const after = readProfileManifest('dsh', this.profile.dir).dependencies ?? {}
+        const installed = Object.keys(after).filter(name => before[name] !== after[name])
+        // Registry retries can retain the saved range after a partial installation.
+        if (installed.length === 0) installed.push(...Object.keys(after).filter(name => spec === name || spec.startsWith(`${name}@`)))
+        const target = installed[0]
+        if (installed.length !== 1 || target === undefined) throw new ManagementFailure('ambiguous-install')
+        name = target
+        const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
+        const manifest = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
+        if (manifest?.dsh?.bundle?.patch === undefined) throw new ManagementFailure('not-bundle')
+        loadOverlayPatches('dsh', join(dir, manifest.dsh.bundle.patch))
+      } catch (error) {
+        // pnpm has exited by now, so the files it rewrote go back as they were.
         await this.restoreFiles(files)
-        throw new InstallCancelledError()
-      }
-      if (packageResult.exitCode !== 0) {
-        await this.restoreFiles(files)
-        throw new Error(packageResult.output)
-      }
-      const after = readProfileManifest('dsh', this.profile.dir).dependencies ?? {}
-      const installed = Object.keys(after).filter(name => before[name] !== after[name])
-      // Registry retries can retain the saved range after a partial installation.
-      if (installed.length === 0) installed.push(...Object.keys(after).filter(name => spec === name || spec.startsWith(`${name}@`)))
-      const name = installed[0]
-      if (installed.length !== 1 || name === undefined) {
-        await this.restoreFiles(files)
-        throw new Error('Cannot identify one installed bundle from the dependency change')
-      }
-      const manifest = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
-      if (manifest?.dsh?.bundle?.patch === undefined) {
-        await this.restoreFiles(files)
-        throw new Error(`${name} declares no dsh.bundle.patch`)
+        throw error
       }
       control.phase = 'applying'
-      if (requestId !== undefined) this.ownerContext.emit('plugin-manager/install-state', { requestId, phase: 'applying' })
-      const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
-      loadOverlayPatches('dsh', join(dir, manifest.dsh.bundle.patch))
-      bundle = name
-      if (options?.enabled !== false) await this.selectBundle(name, true)
-      if (Object.hasOwn(before, name)) return 'restart-required'
-      await this.reload()
-    }, `Bundle installation: ${spec}.`, 'install', () => packageResult)
-      .then(outcome => (bundle === undefined ? outcome : { ...outcome, bundle }))
+      announce('applying')
+      result.bundle = name
+      result.target = name
+      result.stage = 'enable'
+      return this.configure(async () => {
+        if (options?.enabled !== false) await this.selectBundle(name, true)
+        if (Object.hasOwn(before, name)) return 'restart-required'
+        if (options?.enabled !== false) result.warnings = await this.reload()
+      })
+    }, { stage: 'install', target: spec, enabled: options?.enabled !== false }, 'install')
     /* v8 ignore next -- change() folds every failure into its result; only a lock or disposal error rejects */
     control.settled = result.then(() => undefined, () => undefined)
     return result.finally(() => { if (requestId !== undefined) this.installs.delete(requestId) })
@@ -413,25 +425,32 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote
   removeBundle(name: string): Promise<ChangeResult> {
-    let packageResult: PackageResult | undefined
-    return this.change(async () => {
-      const bundle = (await this.listBundles()).find(item => item.name === name)
-      if (bundle === undefined || !bundle.removable) throw new Error(`Bundle is not a profile-owned dependency: ${name}`)
-      if (this.profile.patchReload === 'startup' && this.profile.startedBundles.includes(name)) {
-        throw new Error('Stop this startup-only profile and remove the bundle with dsh plugin')
-      }
-      if (bundle.enabled) {
-        await this.selectBundle(name, false)
-        await this.reload()
-      }
-      packageResult = await this.runPnpm(['remove', name], undefined, undefined)
-      if (packageResult.exitCode !== 0) throw new Error(packageResult.output)
-      await this.reload()
-    }, `Bundle removed: ${name}.`, 'remove', () => packageResult)
+    return this.change(async (result) => {
+      await this.configure(async () => {
+        const bundle = (await this.listBundles()).find(item => item.name === name)
+        if (bundle === undefined || !bundle.removable) throw new ManagementFailure('not-removable')
+        if (this.ownerContext.get('hmr') === undefined && (this.profile.startedBundles.includes(name)
+          || this.bundleRows(name).some(row => [...this.ctx.loader.entries()]
+            .some(entry => entry.options.id === row.id && entry.fiber !== undefined)))) {
+          throw new ManagementFailure('stop-profile')
+        }
+        const contributions = bundle.error === undefined ? this.bundleRows(name) : []
+        if (bundle.enabled) {
+          await this.selectBundle(name, false)
+          result.warnings = await this.reload()
+        }
+        if ([...this.ctx.loader.entries()].some(entry => entry.fiber?.uid != null
+          && contributions.some(row => row.id === entry.options.id && row.name === entry.options.name))) {
+          throw new ManagementFailure('bundle-in-use')
+        }
+      })
+      result.packageResult = await this.runPnpm(['remove', name])
+      if (result.packageResult.exitCode !== 0) throw new Error(result.packageResult.output)
+    }, { stage: 'remove', target: name }, 'remove')
   }
 
   /** The rows a bundle's patch inserts and the existing rows it changes; an unreadable patch throws. */
-  private bundleRows(name: string, info: ProfileManifest): Pick<BundleInfo, 'rows' | 'overrides'> {
+  private declaredRows(name: string, info: ProfileManifest): Pick<BundleInfo, 'rows' | 'overrides'> {
     const patch = info.dsh?.bundle?.patch
     /* v8 ignore next -- bundleManifest answers only manifests that declare a patch */
     if (patch === undefined) return { rows: [], overrides: [] }
@@ -457,14 +476,14 @@ export class PluginManager extends TypertRemoteService {
 
   /** Run one pnpm command in the profile, streaming its output as install-log chunks. */
   private async runPnpm(
-    args: readonly string[], signal: AbortSignal | undefined, requestId: PluginInstallRequestId | undefined,
+    args: readonly string[], signal?: AbortSignal, requestId?: PluginInstallRequestId,
   ): Promise<PackageResult> {
     const jobId = randomUUID()
     const argv = ['pnpm', ...args]
     const cwd = this.profile.dir
     const identity = requestId === undefined ? {} : { requestId }
     const task = runProfilePnpm({ ...this.profile, profile: this.profile.name }, args, {
-      command: this.pnpmCommand,
+      execution: 'service', command: this.pnpmCommand,
       signal: signal === undefined ? this.abort.signal : AbortSignal.any([this.abort.signal, signal]),
       outputBytes: this.outputBytes, activateNewBundles: false,
       onOutput: (text, stream) => {
@@ -508,10 +527,10 @@ export class PluginManager extends TypertRemoteService {
     const manifest = readProfileManifest('dsh', this.profile.dir)
     const previous = manifest.dsh?.profile?.bundles ?? []
     if ((enabled || !previous.includes(name)) && bundleManifest(name, this.profile.dir, this.profile.installAnchor) === undefined) {
-      throw new Error(`Not a bundle: ${name}`)
+      throw new ManagementFailure('not-bundle')
     }
     if (!enabled && previous.includes(name)) {
-      if (this.protectsManager(name)) throw new Error('This bundle provides plugin management components')
+      if (this.protectsManager(name)) throw new ManagementFailure('management-required')
     }
     const bundles = enabled ? [...previous, ...previous.includes(name) ? [] : [name]] : previous.filter(item => item !== name)
     if (JSON.stringify(previous) === JSON.stringify(bundles)) return
@@ -519,46 +538,58 @@ export class PluginManager extends TypertRemoteService {
     await saveManifest(this.profile.dir, manifest)
   }
 
-  private protectsManager(name: string): boolean {
+  private bundleRows(name: string): EntryOptions[] {
     const info = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
-    if (info?.dsh?.bundle === undefined) return false
+    if (info?.dsh?.bundle === undefined) return []
     const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
-    const rows = flatten(composeEntries([loadOverlayPatches('dsh', join(dir, info.dsh.bundle.patch))]))
-    return rows.some(row => protectedModules.has(row.name) || `include:${row.id}` === this.ownerEntryId)
+    return flatten(composeEntries([loadOverlayPatches('dsh', join(dir, info.dsh.bundle.patch))]))
   }
 
-  private async reload(): Promise<void> {
-    if (this.profile.patchReload === 'startup') return
-    await reconcileProfilePatches(this.ownerContext.root, readProfilePatches('dsh', this.profile), 'dsh')
+  private protectsManager(name: string): boolean {
+    return this.bundleRows(name).some(row => protectedModules.has(row.name) || `include:${row.id}` === this.ownerEntryId)
+  }
+
+  private configure<T>(operation: () => Promise<T>): Promise<T> {
+    const hmr = this.ownerContext.get('hmr')
+    const apply = () => { this.abort.signal.throwIfAborted(); return operation() }
+    return hmr === undefined ? apply() : hmr.runExclusive(apply)
+  }
+
+  private async reload(requiredIds: readonly string[] = []): Promise<string[]> {
+    if (this.ownerContext.get('hmr') === undefined) return []
+    return reconcileProfilePatches(this.ownerContext.root, readProfilePatches('dsh', this.profile), 'dsh', requiredIds)
   }
 
   private async change(
-    operation: () => Promise<ChangeResult['application'] | void>, message: string, reason: PluginChange['reason'],
-    packageResult?: () => PackageResult | undefined,
+    operation: (result: ChangeResult) => Promise<ChangeResult['application'] | void>,
+    request: Pick<ChangeResult, 'stage' | 'target' | 'enabled'>,
+    reason: PluginChange['reason'],
   ): Promise<ChangeResult> {
     let notice: Promise<void> | undefined
     const locked = () => withFileLock(join(this.profile.dir, 'package.json'), async () => {
       this.abort.signal.throwIfAborted()
       this.operating = true
       const before = this.diskState()
-      let application: ChangeResult['application'] = this.profile.patchReload === 'live' ? 'applied' : 'restart-required'
+      const result: ChangeResult = { ...request, changed: false,
+        application: this.ownerContext.get('hmr') !== undefined ? 'applied' : 'restart-required' }
       try {
-        application = await operation() ?? application
+        result.application = await operation(result) ?? result.application
       } catch (error) {
-        application = error instanceof InstallCancelledError ? 'cancelled' : 'failed'
-        message = messageOf(error)
+        if (error instanceof InstallCancelledError) {
+          result.application = 'cancelled'
+        } else {
+          result.application = 'failed'
+          result.error = managementError(error)
+        }
       } finally {
         this.operating = false
       }
-      const result: ChangeResult = { changed: before !== this.diskState(), application, message }
-      const packages = packageResult?.()
-      if (packages !== undefined) result.packageResult = packages
+      result.changed = before !== this.diskState()
       notice = this.notify(result)
       this.ownerContext.emit('plugin-manager/changed', { reason })
       return result
     }, { waitMs: this.lockWaitMs })
-    const hmr = this.ownerContext.get('hmr')
-    const result = await (hmr === undefined ? locked() : hmr.runExclusive(locked))
+    const result = await locked()
     await notice
     return result
   }
@@ -579,7 +610,7 @@ export class PluginManager extends TypertRemoteService {
     for (const agent of agents) this.noticeAgents.add(agent)
     this.noticeDelivered ??= Promise.withResolvers<void>()
     const delivered = this.noticeDelivered.promise
-    const notice = `Profile ${this.profile.name}: ${result.message} (${result.application})`
+    const notice = JSON.stringify({ profile: this.profile.name, ...result })
     if (Buffer.byteLength(this.pendingNotice + notice) > this.outputBytes) {
       this.omittedNotices += 1
     } else {
@@ -592,7 +623,7 @@ export class PluginManager extends TypertRemoteService {
 
   private flushNotice(): void {
     this.noticeTimer = undefined
-    const text = this.pendingNotice + (this.omittedNotices === 0 ? '' : `${this.omittedNotices} additional operations omitted; query plugin_manager for current state.\n`)
+    const text = this.pendingNotice + (this.omittedNotices === 0 ? '' : JSON.stringify({ omitted: this.omittedNotices, refresh: 'plugin_manager' }) + '\n')
     this.pendingNotice = ''
     this.omittedNotices = 0
     const delivered = this.noticeDelivered

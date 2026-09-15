@@ -59,15 +59,11 @@ it('serializes mutations, rejects nesting and keeps the queue usable after failu
   expect(order).toEqual([1, 2])
 })
 
-it('holds configuration handlers behind mutations and awaits application locks', async () => {
-  const { hmr, ctx, dir } = await fixture()
+it('holds configuration handlers behind configuration mutations', async () => {
+  const { hmr, dir } = await fixture()
   const filename = join(dir, 'package.json')
   writeFileSync(filename, '{}')
   const order: string[] = []
-  ctx.on('hmr/before-reload', async (next) => {
-    order.push('lock')
-    try { await next() } finally { order.push('unlock') }
-  })
   const refreshed = Promise.withResolvers<undefined>()
   const dispose = await hmr.watchConfig(filename, async () => {
     order.push('refresh')
@@ -89,19 +85,19 @@ it('holds configuration handlers behind mutations and awaits application locks',
   await change
   await refreshed.promise
   await dispose()
-  expect(order).toEqual(['write', 'lock', 'refresh', 'unlock'])
+  expect(order).toEqual(['write', 'refresh'])
 })
 
-it('does not acquire a reload lock for an unrelated lock-file notification', async () => {
+it('reports unrelated lock-file notifications without reloading', async () => {
   const { ctx, dir, hmr } = await fixture()
-  const lock = vi.fn(async (next: () => Promise<void>) => { await next() })
-  ctx.on('hmr/before-reload', lock)
+  const loaded = vi.spyOn(ctx.loader, 'await')
+  onTestFinished(() => { loaded.mockRestore() })
   const observed = Promise.withResolvers<string>()
   ctx.on('hmr/change', (url) => { observed.resolve(url) })
   watchers.at(-1)!.emit('change', 'package.json.lock')
   expect(await observed.promise).toBe(pathToFileURL(join(realpathSync(dir), 'package.json.lock')).href)
   await hmr.runExclusive(async () => {})
-  expect(lock).not.toHaveBeenCalled()
+  expect(loaded).not.toHaveBeenCalled()
 })
 
 it('can dispose HMR from its own transaction without waiting on itself', async () => {
@@ -111,7 +107,7 @@ it('can dispose HMR from its own transaction without waiting on itself', async (
 })
 
 
-it('refreshes an Include under the application lock and skips registered exact paths', async () => {
+it('refreshes an Include through the queue and skips registered exact paths', async () => {
   const { ctx, dir, hmr } = await fixture()
   const moduleWatcher = watchers.at(-1)!
   const file = join(dir, 'nested.yml')
@@ -122,18 +118,9 @@ it('refreshes an Include under the application lock and skips registered exact p
   await ctx.loader.await()
   const include = ctx.loader.resolve(id).subtree as Include
   const refresh = vi.spyOn(include, 'refresh')
-  const order: string[] = []
-  const complete = Promise.withResolvers<undefined>()
-  ctx.on('hmr/before-reload', async (next) => {
-    order.push('lock')
-    await next()
-    order.push('unlock')
-    complete.resolve(undefined)
-  })
   moduleWatcher.emit('change', file)
-  await complete.promise
-  expect(refresh).toHaveBeenCalledOnce()
-  expect(order).toEqual(['lock', 'unlock'])
+  await vi.waitFor(() => { expect(refresh).toHaveBeenCalledOnce() })
+  await hmr.runExclusive(async () => {})
   const refreshed = Promise.withResolvers<undefined>()
   const registered = await hmr.watchConfig(file, async () => { refreshed.resolve(undefined) })
   const observed = Promise.withResolvers<string>()
@@ -148,7 +135,7 @@ it('refreshes an Include under the application lock and skips registered exact p
   expect(refresh).toHaveBeenCalledOnce()
 })
 
-it('queues cached module replacements behind package mutations and recovers after failure', async () => {
+it('queues cached module replacements behind configuration mutations and recovers after failure', async () => {
   const { ctx, dir, hmr } = await fixture()
   const file = join(dir, 'source.mjs')
   writeFileSync(file, 'export {}')

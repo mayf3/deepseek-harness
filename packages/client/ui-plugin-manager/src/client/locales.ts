@@ -109,6 +109,16 @@ export const zh = {
   confirmUninstallDescription: '卸载后它提供的功能会消失。',
   confirmUninstall: '卸载',
   actionFailed: '操作失败：{reason}',
+  reasonManagementRequired: '插件管理所需，不能停用或卸载。',
+  reasonUnaddressable: '当前 profile 的 patch 无法唯一定位这一项。',
+  reasonUnknownPlugin: '找不到该插件。',
+  reasonInvalidSpec: '请输入有效的包名或地址。',
+  reasonAmbiguousInstall: '无法从依赖变更中确定安装了哪一个包。',
+  reasonNotBundle: '这个包没有声明组合包，不能作为插件管理。',
+  reasonNotRemovable: '这个包不属于当前 profile，或者是插件管理所需的组件。',
+  reasonStopProfile: '这个 profile 没有启用 HMR，正在使用的包要停止后用 dsh plugin 卸载。',
+  reasonBundleInUse: '其他配置仍在使用这个组合包的组件，请先停用它们。',
+  reasonOperationError: 'Host 报告了一个错误。',
 } satisfies Record<string, string>
 
 /** Plugin manager locale key union. */
@@ -223,4 +233,14 @@ export const en = {
   confirmUninstallDescription: 'What it provides goes away once it is uninstalled.',
   confirmUninstall: 'Uninstall',
   actionFailed: 'The action failed: {reason}',
+  reasonManagementRequired: 'Plugin management needs it; it cannot be switched off or uninstalled.',
+  reasonUnaddressable: 'The profile patch cannot address this one uniquely.',
+  reasonUnknownPlugin: 'No such plugin.',
+  reasonInvalidSpec: 'Enter a valid package name or address.',
+  reasonAmbiguousInstall: 'Which package was installed cannot be told from the dependency change.',
+  reasonNotBundle: 'This package declares no bundle, so it cannot be managed as a plugin.',
+  reasonNotRemovable: 'This package is not owned by the profile, or plugin management needs it.',
+  reasonStopProfile: 'This profile runs without HMR; stop it and uninstall the package with dsh plugin.',
+  reasonBundleInUse: 'Other configuration still uses this bundle\'s components; switch them off first.',
+  reasonOperationError: 'The Host reported an error.',
 } satisfies Record<PluginManagerLocaleKey, string>

@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import type { BundleInfo, ChangeResult, PluginEntryId, PluginInfo, PluginInstallRequestId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { BundleInfo, ChangeResult, ManagementError, PluginEntryId, PluginInfo, PluginInstallRequestId } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { packageView, PluginManagerController, rowKey } from '../src/client/manager-store.ts'
 
@@ -24,13 +24,21 @@ const BUNDLE: BundleInfo = {
 
 const PLUGINS: PluginInfo[] = [
   { entryId: ROW_ENTRY, moduleName: 'dsh-better-sidebar', enabled: true, fiberPhase: 'active', patchId: 'sidebar' },
-  { entryId: 'include:core' as PluginEntryId, moduleName: '@deepseek-ai/dsh-base', enabled: true, fiberPhase: 'active', readOnlyReason: 'Required for plugin management.' },
+  { entryId: 'include:core' as PluginEntryId, moduleName: '@deepseek-ai/dsh-base', enabled: true, fiberPhase: 'active', readOnlyReason: 'management-required' },
 ]
 
 /** What the check answers for a registry name. */
 const INSPECTED = { status: 'accepted' as const, kind: 'registry' as const, name: 'dsh-better-sidebar', version: '1.0.0', bundle: true }
 
-const APPLIED: ChangeResult = { changed: true, application: 'applied', message: 'ok' }
+const APPLIED: ChangeResult = { changed: true, application: 'applied', stage: 'enable', target: 'dsh-better-sidebar' }
+
+/** A change the Host could not apply, with the refusal it names. */
+function failed(error?: ManagementError, packageResult?: ChangeResult['packageResult']): ChangeResult {
+  return {
+    changed: false, application: 'failed', stage: 'enable', target: 'dsh-better-sidebar',
+    ...error === undefined ? {} : { error }, ...packageResult === undefined ? {} : { packageResult },
+  }
+}
 
 function ok<T>(value: T) {
   return { ok: true as const, value }
@@ -84,14 +92,16 @@ describe('packageView', () => {
     })
     // A row the inventory no longer lists, a protected row, and a bundle the Host cannot read.
     const protectedBundle: BundleInfo = {
-      name: '@deepseek-ai/dsh-base', enabled: true, installed: false, removable: false, readOnlyReason: 'management', error: 'broken',
+      name: '@deepseek-ai/dsh-base', enabled: true, installed: false, removable: false, readOnlyReason: 'management-required',
+      error: { code: 'operation-error', diagnostic: 'broken' },
       rows: [{ rowId: 'core', moduleName: '@deepseek-ai/dsh-base', entryId: 'include:core' as PluginEntryId }, { rowId: 'gone', moduleName: 'x', entryId: 'include:gone' as PluginEntryId }],
       overrides: [],
     }
     expect(packageView(protectedBundle, PLUGINS)).toEqual({
-      name: '@deepseek-ai/dsh-base', installed: false, enabled: true, readOnlyReason: 'management', error: 'broken', overrides: [],
+      name: '@deepseek-ai/dsh-base', installed: false, enabled: true, readOnlyReason: 'management-required',
+      error: { code: 'operation-error', diagnostic: 'broken' }, overrides: [],
       rows: [
-        { rowId: 'core', moduleName: '@deepseek-ai/dsh-base', entryId: 'include:core', enabled: true, phase: 'active', readOnlyReason: 'Required for plugin management.' },
+        { rowId: 'core', moduleName: '@deepseek-ai/dsh-base', entryId: 'include:core', enabled: true, phase: 'active', readOnlyReason: 'management-required' },
         { rowId: 'gone', moduleName: 'x', entryId: 'include:gone', enabled: false, phase: null },
       ],
     })
@@ -167,23 +177,34 @@ describe('PluginManagerController', () => {
     await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'overridden', packageName: BUNDLE.name, seq: 2 }) })
   })
 
-  it('turns a change the Host could not apply, or a refused answer, into a notice carrying its words', async () => {
+  it('turns a change the Host could not apply, or a refused answer, into a notice carrying its code and words', async () => {
     const { face, state, controller } = bench({
       setBundleEnabled: vi.fn()
-        .mockResolvedValueOnce(ok({ changed: false, application: 'failed', message: 'the tree rejected it' }))
+        .mockResolvedValueOnce(ok(failed({ code: 'operation-error', diagnostic: 'the tree rejected it' })))
         .mockResolvedValueOnce(refused('gateway/internal', 'offline'))
         .mockRejectedValueOnce(new Error('transport down'))
-        .mockRejectedValueOnce('odd'),
+        .mockRejectedValueOnce('odd')
+        .mockResolvedValueOnce(ok(failed({ code: 'bundle-in-use' })))
+        .mockResolvedValueOnce(ok(failed()))
+        .mockResolvedValueOnce(ok({ ...failed(), application: 'cancelled' })),
     })
     await controller.load()
     face.setEnabled(BUNDLE.name, true)
-    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', reason: 'the tree rejected it', packageName: BUNDLE.name, seq: 1 }) })
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', code: 'operation-error', reason: 'the tree rejected it', packageName: BUNDLE.name, seq: 1 }) })
     face.setEnabled(BUNDLE.name, true)
     await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', reason: 'offline', packageName: BUNDLE.name, seq: 2 }) })
     face.setEnabled(BUNDLE.name, true)
     await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', reason: 'transport down', packageName: BUNDLE.name, seq: 3 }) })
     face.setEnabled(BUNDLE.name, true)
     await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', reason: 'odd', packageName: BUNDLE.name, seq: 4 }) })
+    // A refusal keeps its code with no words of its own; a failure without a code has neither.
+    face.setEnabled(BUNDLE.name, true)
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', code: 'bundle-in-use', reason: '', packageName: BUNDLE.name, seq: 5 }) })
+    face.setEnabled(BUNDLE.name, true)
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', reason: '', packageName: BUNDLE.name, seq: 6 }) })
+    // A change the Host stopped is said in passing.
+    face.setEnabled(BUNDLE.name, true)
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'cancelled', seq: 7 }) })
     face.dismissNotice()
     expect(state().notice).toBeNull()
   })
@@ -207,7 +228,7 @@ describe('PluginManagerController', () => {
   it('switches rows under their own busy keys and reports what the Host said', async () => {
     const gate = deferred<ReturnType<typeof ok<ChangeResult>>>()
     const { plugins, face, state, controller } = bench({
-      setPluginEnabled: vi.fn().mockReturnValueOnce(gate.promise).mockResolvedValueOnce(ok({ changed: false, application: 'failed', message: 'not addressable' })),
+      setPluginEnabled: vi.fn().mockReturnValueOnce(gate.promise).mockResolvedValueOnce(ok(failed({ code: 'unaddressable' }))),
     })
     await controller.load()
     face.setRowEnabled(ROW_ENTRY, false)
@@ -218,7 +239,7 @@ describe('PluginManagerController', () => {
     gate.resolve(ok(APPLIED))
     await vi.waitFor(() => { expect(state().busy).toEqual([]) })
     face.setRowEnabled(ROW_ENTRY, true)
-    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', reason: 'not addressable', packageName: ROW_ENTRY, seq: 1 }) })
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', code: 'unaddressable', reason: '', packageName: ROW_ENTRY, seq: 1 }) })
   })
 
   it('checks the spec, hands the run to the Host, and folds the chunks that carry its request id', async () => {
@@ -258,7 +279,7 @@ describe('PluginManagerController', () => {
     ])
     face.toggleInstallDetails()
     expect(state().install.detailsOpen).toBe(true)
-    gate.resolve(ok({ changed: true, application: 'applied', message: 'Bundle installation: dsh-new.', bundle: 'dsh-new' }))
+    gate.resolve(ok({ ...APPLIED, bundle: 'dsh-new' }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
     expect(state().install).toMatchObject({ installed: 'dsh-new', restartRequired: false, detailsOpen: true })
     // The finished install settled its run; a trailing last chunk still lands
@@ -313,7 +334,7 @@ describe('PluginManagerController', () => {
     const inspectGate = deferred<ReturnType<typeof ok<typeof INSPECTED>>>()
     const { plugins, face, state, controller } = bench({
       inspect: vi.fn().mockReturnValueOnce(inspectGate.promise).mockResolvedValue(ok(INSPECTED)),
-      installBundle: vi.fn().mockResolvedValue(ok({ changed: false, application: 'failed', message: 'ERR', packageResult: { exitCode: 1, output: 'ERR', truncated: false, logPath: '/l', kind: 'network' } })),
+      installBundle: vi.fn().mockResolvedValue(ok(failed({ code: 'operation-error', diagnostic: 'ERR' }, { exitCode: 1, output: 'ERR', truncated: false, logPath: '/l', kind: 'network' }))),
     })
     await controller.load()
     face.openInstall()
@@ -339,7 +360,7 @@ describe('PluginManagerController', () => {
     face.editInstallSpec('dsh-x')
     face.runInstall()
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
-    expect(state().install.failure).toEqual({ reason: 'ERR', kind: 'network' })
+    expect(state().install.failure).toEqual({ reason: 'ERR', code: 'operation-error', kind: 'network' })
     face.cancelInstall()
     expect(state().install).toMatchObject({ open: true, phase: 'idle', spec: 'dsh-x', failure: null, subject: null })
   })
@@ -382,14 +403,14 @@ describe('PluginManagerController', () => {
     const nextId = await started()
     expect(nextId).not.toBe(requestId)
     // The stopped run's answer, progress, and chunks belong to a request the dialog no longer has.
-    first.resolve(ok({ changed: false, application: 'cancelled', message: 'Installation cancelled' }))
+    first.resolve(ok({ ...failed(), application: 'cancelled' }))
     await Promise.resolve()
     await Promise.resolve()
     expect(state().install).toMatchObject({ requestId: nextId, phase: 'starting' })
     controller.installProgress({ requestId, phase: 'applying' })
     controller.appendLog({ requestId, jobId: 'old', argv: [], cwd: '/p', stream: 'stdout', text: 'late' })
     expect(state().install).toMatchObject({ phase: 'starting', runs: [] })
-    second.resolve(ok({ changed: true, application: 'restart-required', message: 'again', bundle: 'slow' }))
+    second.resolve(ok({ ...APPLIED, application: 'restart-required', bundle: 'slow' }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
     expect(state().install).toMatchObject({ installed: 'slow', restartRequired: true })
   })
@@ -413,7 +434,7 @@ describe('PluginManagerController', () => {
       status === 'too-late' ? null : { reason: status === 'offline' ? 'offline' : '', cancelUnconfirmed: true },
     )
     // The Host's own word that it stopped the run still ends it.
-    pending.resolve(ok({ changed: false, application: 'cancelled', message: 'Installation cancelled' }))
+    pending.resolve(ok({ ...failed(), application: 'cancelled' }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('idle') })
     expect(state().install).toMatchObject({ open: true, spec: 'slow', failure: null })
     expect(state().notice).toEqual({ kind: 'cancelled', seq: 1 })
@@ -451,7 +472,7 @@ describe('PluginManagerController', () => {
         .mockResolvedValueOnce(ok({ ...APPLIED, application: 'overridden' })),
       setBundleEnabled: vi.fn()
         .mockResolvedValueOnce(ok({ ...APPLIED, application: 'restart-required' }))
-        .mockResolvedValueOnce(ok({ changed: false, application: 'failed', message: 'the tree rejected it' })),
+        .mockResolvedValueOnce(ok(failed({ code: 'operation-error', diagnostic: 'the tree rejected it' }))),
     })
     await controller.load()
     face.enableInstalled()
@@ -480,7 +501,7 @@ describe('PluginManagerController', () => {
     face.enableInstalled()
     await vi.waitFor(() => { expect(state().install.open).toBe(false) })
     expect(plugins.setBundleEnabled).toHaveBeenCalledTimes(2)
-    expect(state().notice).toEqual({ kind: 'failed', reason: 'the tree rejected it', packageName: 'dsh-a', seq: 2 })
+    expect(state().notice).toEqual({ kind: 'failed', code: 'operation-error', reason: 'the tree rejected it', packageName: 'dsh-a', seq: 2 })
     expect(state().highlight).toBe('dsh-a')
 
     // An install that named no bundle has nothing to enable or mark: the screen just closes.
@@ -551,14 +572,12 @@ describe('PluginManagerController', () => {
     const answer = (value: ReturnType<typeof ok<ChangeResult>> | ReturnType<typeof refused>): void => {
       gates[gates.length - 1]?.resolve(value)
     }
-    const failed = (message: string, packageResult?: ChangeResult['packageResult']) =>
-      ok({ changed: false, application: 'failed' as const, message, ...packageResult === undefined ? {} : { packageResult } })
     // No chunk arrived: the Host's words are the reason, and there is no run; the kind is kept.
     await installing()
-    answer(failed('ERR_PNPM', { exitCode: 1, output: 'ERR_PNPM', truncated: false, logPath: '/l', kind: 'network' }))
+    answer(ok(failed({ code: 'operation-error', diagnostic: 'ERR_PNPM' }, { exitCode: 1, output: 'ERR_PNPM', truncated: false, logPath: '/l', kind: 'network' })))
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
     expect(state().install.runs).toEqual([])
-    expect(state().install.failure).toEqual({ reason: 'ERR_PNPM', kind: 'network' })
+    expect(state().install.failure).toEqual({ reason: 'ERR_PNPM', code: 'operation-error', kind: 'network' })
     expect(state().install.subject).toEqual({ spec: 'x', ...INSPECTED })
     // A refused answer, not a failed change, keeps the transport's words and settles the run without an exit code.
     await installing()
@@ -569,21 +588,26 @@ describe('PluginManagerController', () => {
     // A pnpm failure settles the open run with the code the answer names.
     await installing()
     controller.appendLog({ requestId, jobId: 'j', argv, cwd: '/p', stream: 'stdout', text: 'Done' })
-    answer(failed('tail', { exitCode: 7, output: 'tail', truncated: false, logPath: '/l', kind: 'unknown' }))
+    answer(ok(failed({ code: 'operation-error', diagnostic: 'tail' }, { exitCode: 7, output: 'tail', truncated: false, logPath: '/l', kind: 'unknown' })))
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
     expect(state().install.runs).toEqual([{ jobId: 'j', command: 'pnpm add x', cwd: '/p', output: 'Done', exitCode: 7 }])
     // A failure after pnpm carries no package result: a run whose last chunk came keeps its own exit code, one still open settles without.
     await installing()
     controller.appendLog({ requestId, jobId: 'j', argv, cwd: '/p', stream: 'stdout', text: 'partial', exitCode: 0 })
     controller.appendLog({ requestId, jobId: 'k', argv, cwd: '/p', stream: 'stdout', text: 'open' })
-    answer(failed('x declares no dsh.bundle.patch'))
+    answer(ok(failed({ code: 'not-bundle' })))
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
     expect(state().install.runs).toEqual([
       { jobId: 'j', command: 'pnpm add x', cwd: '/p', output: 'partial', exitCode: 0 },
       { jobId: 'k', command: 'pnpm add x', cwd: '/p', output: 'open', exitCode: null },
     ])
-    expect(state().install.failure).toEqual({ reason: 'x declares no dsh.bundle.patch' })
-    expect(plugins.installBundle).toHaveBeenCalledTimes(4)
+    expect(state().install.failure).toEqual({ reason: '', code: 'not-bundle' })
+    // A failure the Host does not explain has neither code nor words.
+    await installing()
+    answer(ok(failed()))
+    await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
+    expect(state().install.failure).toEqual({ reason: '' })
+    expect(plugins.installBundle).toHaveBeenCalledTimes(5)
     // Editing the spec after a failure starts over too.
     face.editInstallSpec('y')
     expect(state().install).toMatchObject({ phase: 'idle', spec: 'y', runs: [], failure: null })

@@ -11,6 +11,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {
   BundleInfo,
   ChangeResult,
+  ManagementError,
   PluginEntryId,
   PluginInfo,
   PluginInspectProblem,
@@ -19,6 +20,7 @@ import type {
   PluginInstallProgress,
   PluginInstallRequestId,
   PluginSpecInspection,
+  ReadOnlyReason,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
@@ -29,7 +31,9 @@ export type ManagerNotice =
   | { readonly kind: 'cancelled'; readonly seq: number }
   | {
     readonly kind: 'failed'
-    /** The Host's reason, shown verbatim. */
+    /** The Host's refusal, when the Host refused; absent when the transport failed. */
+    readonly code?: ManagementError['code']
+    /** The Host's diagnostic or the transport's words, shown verbatim; empty when the code says it all. */
     readonly reason: string
     readonly packageName?: string
     readonly seq: number
@@ -48,7 +52,7 @@ export interface PackageRow {
   /** The entry's fiber phase, null without a live fiber. */
   readonly phase: PluginInfo['fiberPhase']
   /** Why the Host refuses to switch the row, when it does. */
-  readonly readOnlyReason?: string
+  readonly readOnlyReason?: ReadOnlyReason
 }
 
 /** One bundle as the page shows it: the Host's bundle joined with the entries its rows run as. */
@@ -62,9 +66,9 @@ export interface PackageView {
   /** Whether the bundle is in the profile's layer list. */
   readonly enabled: boolean
   /** Why the Host refuses to switch the bundle off or remove it, when it does. */
-  readonly readOnlyReason?: string
+  readonly readOnlyReason?: ReadOnlyReason
   /** Why the Host cannot read the bundle, when it cannot. */
-  readonly error?: string
+  readonly error?: ManagementError
   readonly rows: readonly PackageRow[]
   /** Ids of built-in rows the bundle's patch changes. */
   readonly overrides: readonly string[]
@@ -120,11 +124,17 @@ export interface InstallState {
   /** Whether the finished run's bundle waits for the next start to load. */
   readonly restartRequired: boolean
   /**
-   * The run's failure, once one settled the dialog; `kind` classifies a pnpm
-   * failure. `cancelUnconfirmed` is a stop the Host did not confirm, shown over
-   * the running screen while the run goes on.
+   * The run's failure, once one settled the dialog: the Host's refusal
+   * `code` with its diagnostic as `reason`, or the transport's words alone;
+   * `kind` classifies a pnpm failure. `cancelUnconfirmed` is a stop the Host
+   * did not confirm, shown over the running screen while the run goes on.
    */
-  readonly failure: { readonly reason: string; readonly kind?: PluginInstallFailureKind; readonly cancelUnconfirmed?: true } | null
+  readonly failure: {
+    readonly reason: string
+    readonly code?: ManagementError['code']
+    readonly kind?: PluginInstallFailureKind
+    readonly cancelUnconfirmed?: true
+  } | null
   /** Enabling the newly installed bundle from the installed screen is crossing the wire. */
   readonly enabling: boolean
 }
@@ -197,12 +207,27 @@ type Answer<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string; readonly details?: unknown } }
 
-/** A refused answer or a change the Host could not apply, carrying what it said. */
+/** A refused answer or a change the Host could not apply, carrying what it said and, for a refusal, its code. */
 class RemoteAnswerError extends Error {
-  constructor(readonly reason: string) {
+  constructor(readonly reason: string, readonly code?: ManagementError['code']) {
     super(reason)
     this.name = 'RemoteAnswerError'
   }
+}
+
+/** The dialog's reading of a failed change: the Host's code and diagnostic, and the run's classified failure. */
+function failureOf(error: ManagementError | undefined, kind: PluginInstallFailureKind | undefined): NonNullable<InstallState['failure']> {
+  return {
+    reason: error?.diagnostic ?? '',
+    ...error === undefined ? {} : { code: error.code },
+    ...kind === undefined ? {} : { kind },
+  }
+}
+
+/** The notice a thrown failure becomes: a refusal keeps its code, anything else its words. */
+function failedNotice(error: unknown, subject: { packageName?: string }, seq: number): ManagerNotice {
+  const code = error instanceof RemoteAnswerError ? error.code : undefined
+  return { kind: 'failed', reason: reasonOf(error), ...code === undefined ? {} : { code }, ...subject, seq }
 }
 
 /** The runs with every one still open settled at `exitCode`. */
@@ -499,7 +524,7 @@ export class PluginManagerController {
       this.patchInstall({
         phase: 'failed',
         runs: settledRuns(runs, packages?.exitCode ?? null),
-        failure: { reason: result.value.message, ...packages?.kind === undefined ? {} : { kind: packages.kind } },
+        failure: failureOf(result.value.error, packages?.kind),
       })
     } else {
       this.patchInstall({
@@ -570,7 +595,7 @@ export class PluginManagerController {
       try {
         this.applied(result, name)
       } catch (error) {
-        this.patch({ notice: { kind: 'failed', reason: reasonOf(error), packageName: name, seq: ++this.noticeSeq } })
+        this.patch({ notice: failedNotice(error, { packageName: name }, ++this.noticeSeq) })
       }
     }
     this.patch({ install: IDLE_INSTALL, highlight: name })
@@ -592,7 +617,7 @@ export class PluginManagerController {
       await action()
     } catch (error) {
       // `patch` drops the notice after disposal.
-      this.patch({ notice: { kind: 'failed', reason: reasonOf(error), ...subject, seq: ++this.noticeSeq } })
+      this.patch({ notice: failedNotice(error, subject, ++this.noticeSeq) })
     } finally {
       this.patch({ busy: this.getSnapshot().busy.filter(entry => entry !== key) })
     }
@@ -602,15 +627,18 @@ export class PluginManagerController {
   /**
    * Publish a change's outcome: a refused answer or a change the Host could
    * not apply throws for {@link run} to report; a change that waits for the
-   * next start, or that a higher layer overrides, is said in passing.
+   * next start, that a higher layer overrides, or that the Host stopped is
+   * said in passing.
    */
   private applied(answer: Answer<ChangeResult>, packageName: string): void {
     if (!answer.ok) throw new RemoteAnswerError(answer.error.message)
     const result = answer.value
     switch (result.application) {
       case 'failed':
+        throw new RemoteAnswerError(result.error?.diagnostic ?? '', result.error?.code)
       case 'cancelled':
-        throw new RemoteAnswerError(result.message)
+        this.patch({ notice: { kind: 'cancelled', seq: ++this.noticeSeq } })
+        return
       case 'restart-required':
         this.patch({ notice: { kind: 'restart', packageName, seq: ++this.noticeSeq } })
         return

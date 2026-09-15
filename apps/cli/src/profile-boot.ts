@@ -2,8 +2,7 @@
  * Shared profile boot for every `dsh` surface: resolve the profile, stack its
  * patch layers (bundle layers in `dsh.profile.bundles` order, the profile's
  * own `cordis.patch.yml`, `--patch` overlays, the telemetry switch), mount the
- * tree over the profile's empty root config, apply its selected patch-reload
- * lifecycle, and wire fail-loud plus bounded shutdown.
+ * tree over the profile's empty root config, and wire fail-loud plus bounded shutdown.
  *
  * App flags are not the launcher's business: the invocation's inner arguments
  * are provided to the tree through `ctx.cmdlineArgs`, where any injected app
@@ -11,11 +10,9 @@
  * @module @deepseek-ai/dsh/profile-boot
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type {} from '@deepseek-ai/dsh-hmr'
-import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
@@ -23,6 +20,7 @@ import {
   readProfilePatches,
   createProfileResolutionGeneration,
   healProfilesModuleFallback,
+  healIsolatedProfileModuleFallback,
   initProfile,
   installFailLoud,
   loadOverlayPatches,
@@ -31,7 +29,6 @@ import {
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   resolveProfileDir,
-  reconcileProfilePatches,
   type ProfileContext,
   type Profile,
   type ProfileResolutionGeneration,
@@ -94,7 +91,7 @@ export const PROFILE_ROOT_FILENAME = 'cordis.yml'
 
 /**
  * Initialize a missing profile from one shipped template. This copies only
- * the template's bundle list and patch-reload policy; local state from the
+ * the template's bundle list; local state from the
  * same-named shipped profile is not read, and no inheritance metadata is
  * persisted. Shipped profile names are reserved, and the target directory is
  * claimed exclusively so existing or concurrent state is never reused.
@@ -141,7 +138,7 @@ export function initializeProfileFromDefault(
     )
   }
   try {
-    initProfile(dir, template.bundles, template.patchReload)
+    initProfile(dir, template.bundles)
   } catch (error) {
     try {
       rmSync(dir, { recursive: true, force: true })
@@ -194,6 +191,8 @@ interface ComposedProfile {
  * then the telemetry switch.
  * @param name - the profile name.
  * @param patchFiles - `--patch` overlay paths, in argv order.
+ * @param fromDefaultProfile - shipped template for a missing named profile.
+ * @param resolvedProfile - application-owned profile and installation.
  * @returns the profile and its patch layers.
  */
 async function composeProfile(
@@ -201,14 +200,25 @@ async function composeProfile(
   patchFiles: readonly string[],
   resolutionMode: ProfileResolutionMode,
   fromDefaultProfile?: string,
+  resolvedProfile?: ResolvedProfileRuntime,
 ): Promise<ComposedProfile> {
-  const profile = prepareProfile(name, true, fromDefaultProfile)
-  const resolutionOptions = { installAnchor: INSTALL_ANCHOR, profile }
-  const resolution = resolutionMode === 'runtime'
+  const profile = resolvedProfile?.profile ?? prepareProfile(name, true, fromDefaultProfile)
+  if (resolvedProfile !== undefined) writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
+  const resolutionOptions = { installAnchor: resolvedProfile?.installAnchor ?? INSTALL_ANCHOR, profile }
+  if (resolvedProfile !== undefined && resolutionMode !== 'runtime') healIsolatedProfileModuleFallback(resolvedProfile)
+  const resolution = resolutionMode === 'runtime' || resolvedProfile !== undefined
     ? await createProfileResolutionGeneration(resolutionOptions)
     : await healProfilesModuleFallback(resolutionOptions)
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   return { profile, resolution, overlays }
+}
+
+/** An application-owned profile and its independent installation fallback. */
+export interface ResolvedProfileRuntime {
+  /** Profile already loaded from the application's own directory. */
+  profile: Profile
+  /** Absolute package.json path of the application's dsh installation. */
+  installAnchor: string
 }
 
 /** Options for {@link runProfile}. */
@@ -217,30 +227,16 @@ export interface RunProfileOptions {
   environment: LaunchEnvironmentSnapshot
   /** The profile name to boot. */
   profile: string
+  /** Loaded application profile; bypasses named profile initialization when supplied. */
+  resolvedProfile?: ResolvedProfileRuntime | undefined
   /** Shipped template used once to initialize a missing profile. */
   fromDefaultProfile?: string | undefined
   /** `--patch` overlay paths, in argv order. */
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
-  /** Module fallback backend; production launchers omit it and retain link materialization. */
+  /** Module fallback backend; pkg executables always use runtime resolution. */
   resolutionMode?: ProfileResolutionMode
-}
-
-/**
- * Re-throw a watcher-setup failure unless a shutdown already owns the tree:
- * a signal aborted this invocation, or an app requested exit (`ctx.appExit`
- * from a fast one-shot) and the root's disposal rejected the in-flight setup
- * await. Either way the failure describes a tree that is exiting as asked,
- * not a broken watch.
- * @param ctx - the booted root context.
- * @param signal - this invocation's signal-shutdown fact.
- * @param error - the setup failure.
- */
-function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown): void {
-  if (signal.aborted) return
-  if (ctx.fiber.state !== FiberState.ACTIVE || ctx.get('loader') === undefined) return
-  throw error
 }
 
 /**
@@ -248,6 +244,7 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  * mounted plugins (or to a one-shot runner the composition mounts).
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
  * @returns the settled root context and the shutdown controller.
+ * @throws after disposing startup resources; cleanup failures retain the original error.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
   // Before the first plugin mounts and before anything can issue a request: Node's fetch ignores the
@@ -259,120 +256,78 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     (message) => { process.stderr.write(`${NAME}: ${message}\n`) },
   )
 
-  const resolutionMode = options.resolutionMode ?? 'link'
-  const composed = await composeProfile(
-    options.profile, options.patchFiles, resolutionMode, options.fromDefaultProfile,
-  )
+  const packaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
+  const resolutionMode = packaged ? 'runtime' : options.resolutionMode ?? 'link'
   const app: { current?: Context } = {}
-  const appReady = createAppReady()
-  const shutdown = createProcessShutdown(async () => {
-    await app.current?.fiber.dispose()
-    await disposeProxy()
-  })
-  const signalShutdown = new AbortController()
-  const interrupt = (code: number): void => {
-    signalShutdown.abort()
-    shutdown.interrupt(code)
-  }
-  // Signals own teardown throughout the startup window, not only after boot()
-  // settles: an inserted provider can publish before sibling rows finish mounting.
-  // SIGTERM is a supervisor's ordinary stop request and exits 0 on every
-  // surface — the launcher does not know whether the app considered its work
-  // complete; SIGINT is a user interrupt and reports 130.
-  process.on('SIGTERM', () => { interrupt(0) })
-  process.on('SIGINT', () => { interrupt(130) })
-  installFailLoud(NAME, process, async () => {
-    await app.current?.fiber.dispose()
-  })
+  let disposal: Promise<void> | undefined
+  const dispose = (): Promise<void> => disposal ??= (async () => {
+    const failures: unknown[] = []
+    for (const release of [() => app.current?.fiber.dispose(), disposeProxy]) {
+      try { await release() } catch (error) { failures.push(error) }
+    }
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'dsh: profile cleanup failed')
+  })()
+  try {
+    const composed = await composeProfile(
+      options.profile, options.patchFiles, resolutionMode, options.fromDefaultProfile, options.resolvedProfile,
+    )
+    const appReady = createAppReady()
+    const shutdown = createProcessShutdown(dispose)
+    const signalShutdown = new AbortController()
+    const interrupt = (code: number): void => {
+      signalShutdown.abort()
+      shutdown.interrupt(code)
+    }
+    // Signals own teardown throughout the startup window, not only after boot()
+    // settles: an inserted provider can publish before sibling rows finish mounting.
+    // SIGTERM is a supervisor's ordinary stop request and exits 0 on every
+    // surface — the launcher does not know whether the app considered its work
+    // complete; SIGINT is a user interrupt and reports 130.
+    process.on('SIGTERM', () => { interrupt(0) })
+    process.on('SIGINT', () => { interrupt(130) })
+    installFailLoud(NAME, process, async () => {
+      await app.current?.fiber.dispose()
+    })
 
-  const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
-  const manifestPath = join(composed.profile.dir, 'package.json')
-  const watchedFiles = [composed.profile.patchPath, homePatchPath(), manifestPath]
-  const readInputs = (): string => JSON.stringify(watchedFiles.map((filename) => {
-    try {
-      return readFileSync(filename, 'utf8')
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-      throw error
+    const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
+    const profileContext: ProfileContext = {
+      name: options.profile,
+      dir: composed.profile.dir, patchPath: composed.profile.patchPath,
+      installAnchor: options.resolvedProfile?.installAnchor ?? INSTALL_ANCHOR,
+      startedBundles: composed.profile.layers.map(layer => layer.packageName),
+      cwd: process.cwd(), home: resolveDshHome(),
+      overlays: composed.overlays, telemetryDisabledEnv: process.env.DSH_TELEMETRY_DISABLED,
     }
-  }))
-  let lastInputs = readInputs()
-  const profileContext: ProfileContext = {
-    name: options.profile,
-    dir: composed.profile.dir, patchPath: composed.profile.patchPath, installAnchor: INSTALL_ANCHOR,
-    startedBundles: composed.profile.layers.map(layer => layer.packageName),
-    cwd: process.cwd(), home: resolveDshHome(), patchReload: composed.profile.patchReload,
-    overlays: composed.overlays, telemetryDisabledEnv: process.env.DSH_TELEMETRY_DISABLED,
-  }
-  const ctx = await boot(NAME, rootConfig, readProfilePatches(NAME, profileContext), async (hostCtx) => {
-    app.current = hostCtx
-    hostCtx.provide('profileContext', profileContext)
-    hostCtx.on('hmr/before-reload', next => withFileLock(manifestPath, next))
-    // Before any config-tree entry mounts, so plugins resolve all launch-time
-    // environment values from the same immutable launch snapshot.
-    hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
-    await hostCtx.plugin(PluginPackages, resolutionMode === 'link' ? {} : {
-      generation: composed.resolution,
-      behavior: resolutionMode === 'dual' ? 'verify' : 'enforce',
-    })
-    // The command line and bounded exit request are launcher facts available
-    // to every app plugin that injects the argument snapshot.
-    provideCmdline(hostCtx, {
-      args: options.args,
-      exit: code => void shutdown.shutdown(code),
-      ready: appReady.service,
-    })
-  })
-  app.current = ctx
-  // A live-reload profile can dispose the whole tree while post-boot watcher
-  // setup is in flight — a signal or appExit. Loader presence and fiber state
-  // own liveness; the initial check skips a tree that already exited, and the
-  // catch below re-checks for an exit that landed mid-setup. Startup-frozen
-  // profiles apply every user layer above but install no HMR fallback or watcher.
-  if (composed.profile.patchReload === 'live'
-    && !signalShutdown.signal.aborted
-    && ctx.fiber.state === FiberState.ACTIVE
-    && ctx.get('loader') !== undefined) {
-    try {
-      // Config-only HMR for the live profile patch layer: dsh-base disables
-      // module reload by default, so when no profile explicitly enabled that
-      // service, mount a watch-only instance with no module roots —
-      // cordis.patch.yml edits stay live without replacing source modules. A
-      // silent skip would break the documented reload contract. HMR injects
-      // the timer service, which a bare custom profile may not mount either.
-      if (ctx.get('hmr') === undefined) {
-        if (ctx.get('timer') === undefined) {
-          await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-timer' })
-        }
-        await ctx.loader.create({ name: '@deepseek-ai/dsh-hmr', config: { root: [] } })
-        await ctx.loader.await()
-      }
-      const refresh = async (): Promise<void> => {
-        if (readInputs() === lastInputs) return
-        lastInputs = readInputs()
-        await reconcileProfilePatches(ctx, readProfilePatches(NAME, profileContext), NAME)
-      }
-      const watching = ctx.inject(['hmr'], async (owner) => {
-        for (const filename of watchedFiles) {
-          await owner.effect(() => owner.hmr.watchConfig(filename, refresh))
-        }
+    const ctx = await boot(NAME, rootConfig, readProfilePatches(NAME, profileContext, composed.profile), async (hostCtx) => {
+      app.current = hostCtx
+      hostCtx.provide('profileContext', profileContext)
+      // Before any config-tree entry mounts, so plugins resolve all launch-time
+      // environment values from the same immutable launch snapshot.
+      hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
+      await hostCtx.plugin(PluginPackages, resolutionMode === 'link' ? {} : {
+        generation: composed.resolution,
+        behavior: resolutionMode === 'dual' ? 'verify' : 'enforce',
       })
-      await watching.await()
-      // Include writes that finished while the file watchers were registering.
-      try {
-        await ctx.hmr.runExclusive(() => withFileLock(manifestPath, refresh))
-      } catch (error) {
-        ctx.logger.warn('profile reload failed')
-        ctx.logger.warn(error)
-      }
-    } catch (error) {
-      suppressShutdownError(ctx, signalShutdown.signal, error)
+      // The command line and bounded exit request are launcher facts available
+      // to every app plugin that injects the argument snapshot.
+      provideCmdline(hostCtx, {
+        args: options.args,
+        exit: code => void shutdown.shutdown(code),
+        ready: appReady.service,
+      })
+    })
+    app.current = ctx
+    if (!signalShutdown.signal.aborted
+      && ctx.fiber.state === FiberState.ACTIVE
+      && ctx.get('loader') !== undefined) {
+      appReady.commit()
     }
+    return { ctx, shutdown }
+  } catch (error) {
+    try { await dispose() } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], 'dsh: profile startup and cleanup failed')
+    }
+    throw error
   }
-  if (!signalShutdown.signal.aborted
-    && ctx.fiber.state === FiberState.ACTIVE
-    && ctx.get('loader') !== undefined) {
-    appReady.commit()
-  }
-  return { ctx, shutdown }
 }

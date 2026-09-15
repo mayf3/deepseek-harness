@@ -40,7 +40,7 @@ function fixture(): string {
   write(root, 'packages/bundle/base/package.json', { name: base, dsh: { bundle: { patch: './cordis.patch.yml' } } })
   write(root, patch, [{ insert: [{ name: core }] }])
   write(root, preset, [{ name: core }])
-  write(root, profile, `export const PROFILE_TEMPLATES = { web: { bundles: ['${base}'], patchReload: 'live' } }\n`
+  write(root, profile, `export const PROFILE_TEMPLATES = { web: { bundles: ['${base}'] } }\n`
     + `export const DEFAULT_PROFILE_BUNDLES = ['${base}']\n`)
   write(root, 'packages/experimental/prototype/package.json', { name: experimental })
   return root

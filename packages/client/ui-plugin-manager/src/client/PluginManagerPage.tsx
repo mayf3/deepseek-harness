@@ -21,7 +21,7 @@ import {
   type ConfirmState, type InstallInputError, type InstallState, type InstallSubject, type PackageRow, type PackageView,
   type PluginManagerFace,
 } from './manager-store.ts'
-import { noticeText, shortName, type Translate } from './presentation.ts'
+import { managementText, noticeText, shortName, type Translate } from './presentation.ts'
 import css from './PluginManagerPage.module.css'
 
 /** Full component props assembled by the main slot renderer. */
@@ -92,7 +92,7 @@ function RowSwitch({ row, t, busy, onChange }: {
       checked={row.enabled}
       label={t('partToggle', { name: row.rowId })}
       disabled={busy || locked}
-      {...row.readOnlyReason === undefined ? {} : { title: row.readOnlyReason }}
+      {...row.readOnlyReason === undefined ? {} : { title: managementText({ code: row.readOnlyReason }, t) }}
       onChange={onChange}
     />
   )
@@ -206,7 +206,7 @@ function EnableSwitch({ pkg, title, t, busy, onSetEnabled }: {
       checked={pkg.enabled}
       label={t('enableToggle', { name: title })}
       disabled={busy || pkg.readOnlyReason !== undefined || (!pkg.enabled && pkg.error !== undefined)}
-      {...pkg.readOnlyReason === undefined ? {} : { title: pkg.readOnlyReason }}
+      {...pkg.readOnlyReason === undefined ? {} : { title: managementText({ code: pkg.readOnlyReason }, t) }}
       onChange={onSetEnabled}
     />
   )
@@ -303,8 +303,8 @@ function PackageDetail({
           <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
         </div>
       </div>
-      {pkg.error === undefined ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {pkg.error}</p>}
-      {pkg.readOnlyReason === undefined ? null : <p className={css.reason} role="status">{pkg.readOnlyReason}</p>}
+      {pkg.error === undefined ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {managementText(pkg.error, t)}</p>}
+      {pkg.readOnlyReason === undefined ? null : <p className={css.reason} role="status">{managementText({ code: pkg.readOnlyReason }, t)}</p>}
       {pkg.version === undefined ? null : <dl className={css.facts}><dt>{t('versionLabel')}</dt><dd>{pkg.version}</dd></dl>}
       <div className={css.detailSections}>
         <RowsSection
@@ -385,12 +385,13 @@ const SUBJECT_KIND_KEYS = {
 } satisfies Record<InstallSubject['kind'], PluginManagerLocaleKey | undefined>
 
 /**
- * The failed screen's one line: a pnpm failure by its kind, any other
- * failure in the Host's words; the run's output stays behind the details.
+ * The failed screen's one line: a pnpm failure by its kind, a refusal by its
+ * code, any other failure in the Host's words; the run's output stays behind the details.
  */
 function failureText(failure: InstallState['failure'], t: Translate): string {
   if (failure === null) return t('installFailureGeneric')
   if (failure.kind !== undefined) return t(FAILURE_KIND_KEYS[failure.kind])
+  if (failure.code !== undefined) return managementText({ code: failure.code, diagnostic: failure.reason }, t)
   return failure.reason === '' ? t('installFailureGeneric') : failure.reason
 }
 

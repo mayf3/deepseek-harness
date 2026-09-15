@@ -35,11 +35,11 @@ During installation, **Cancel install** asks the Host to stop the run and shows 
 
 ### Switching a bundle
 
-A bundle's switch changes its layer selection. Live profiles recompose before the operation completes; a profile that applies patches at its next start, and a bundle a higher layer overrides, say so in a toast. A bundle the Host cannot read carries a problem tag and its reason on its page and cannot be switched on; one that provides the management components stays locked with the Host's reason. The installation's own bundles are not on the page; the Settings Plugins section's Plugin list tab inspects them.
+A bundle's switch changes its layer selection. A profile with HMR recomposes before the operation completes; one without HMR, and a bundle a higher layer overrides, say so in a toast. A bundle the Host cannot read carries a problem tag and its reason on its page and cannot be switched on; one that provides the management components stays locked. The Host answers with error codes, which the page's dictionary words; pnpm's and the Loader's own diagnostics are shown as they are. The installation's own bundles are not on the page; the Settings Plugins section's Plugin list tab inspects them.
 
 ### Switching one row of a bundle
 
-A row's switch on the bundle's page calls `pluginManager.setPluginEnabled`, which writes the row's `disabled` override into the profile's `cordis.patch.yml`. The tree recomposes at once on a live profile, so the row's host half unmounts or mounts while the rest of the bundle keeps running; a browser half the bundle's own client bundle mounts stays until the page reloads. Rows show their fiber phase as the Host runs them. The switch appears only on a bundle that is on; a row without a live entry, or one the Host will not address through the profile patch, is locked with the Host's reason. The rows a bundle's patch changes without declaring them are listed as the built-in components it changes. A list longer than ten rows gets a filter over the row ids.
+A row's switch on the bundle's page calls `pluginManager.setPluginEnabled`, which writes the row's `disabled` override into the profile's `cordis.patch.yml`. The tree recomposes at once on a profile with HMR, so the row's host half unmounts or mounts while the rest of the bundle keeps running, and the page follows the client module graph without reloading. Rows show their fiber phase as the Host runs them. The switch appears only on a bundle that is on; a row without a live entry, or one the Host will not address through the profile patch, is locked with the Host's reason. The rows a bundle's patch changes without declaring them are listed as the built-in components it changes. A list longer than ten rows gets a filter over the row ids.
 
 -----
 
@@ -90,7 +90,7 @@ None; this package neither assembles nor sends a provider request.
 
 These limits define the reach of the management view; they are current package constraints.
 
-- **Only bundles are managed** — a dependency without a bundle patch is refused before it installs and never listed; loading plain plugin modules stays a file operation.
+- **Only bundles are managed** — a dependency without a bundle patch is refused before it installs; one the profile already holds is listed as a problem that can only be uninstalled, and loading plain plugin modules stays a file operation.
 - **Rows show a phase, not a reason** — a failed row reads as failed without the Host's error text; the Host log has it.
 - **One install at a time** — the dialog runs one pnpm command; a second spec waits for the first to finish.
 - **No version picker** — the spec is typed as pnpm accepts it; the page neither lists registry versions nor offers upgrades.

@@ -101,9 +101,9 @@ describe('PluginManagerPage', () => {
     const { actions } = renderTab({
       packages: [
         pkg({ title: 'Better sidebar', description: 'A sidebar.' }),
-        pkg({ name: 'dsh-broken', enabled: false, error: 'Not a bundle: dsh-broken' }),
+        pkg({ name: 'dsh-broken', enabled: false, error: { code: 'not-bundle' } }),
         pkg({ name: '@deepseek-ai/dsh-web-app', installed: false }),
-        pkg({ name: 'dsh-protected', readOnlyReason: 'This bundle provides plugin management components' }),
+        pkg({ name: 'dsh-protected', readOnlyReason: 'management-required' }),
         pkg({ name: '@acme/dsh-tool', enabled: false }),
       ],
       busy: ['dsh-protected'],
@@ -122,7 +122,7 @@ describe('PluginManagerPage', () => {
     expect(screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'broken') })).toHaveProperty('disabled', true)
     const locked = screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'protected') })
     expect(locked).toHaveProperty('disabled', true)
-    expect(locked.getAttribute('title')).toBe('This bundle provides plugin management components')
+    expect(locked.getAttribute('title')).toBe(en.reasonManagementRequired)
   })
 
   it('opens a bundle\'s page with its facts, rows, and overrides, and uninstalls from it', () => {
@@ -152,12 +152,16 @@ describe('PluginManagerPage', () => {
     expect(actions.uninstall).toHaveBeenCalledWith('dsh-better-sidebar')
     fireEvent.click(within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', 'Better sidebar') }))
     expect(actions.setEnabled).toHaveBeenCalledWith('dsh-better-sidebar', false)
-    // A problem and a protection the Host reports read on the page; the page leaves with the crumb.
-    set({ packages: [pkg({ title: 'Better sidebar', error: 'unreadable', readOnlyReason: 'protected' })] })
+    // A problem and a protection the Host reports read on the page in the dictionary's words; the page leaves with the crumb.
+    set({ packages: [pkg({ title: 'Better sidebar', error: { code: 'operation-error', diagnostic: 'unreadable' }, readOnlyReason: 'management-required' })] })
     expect(within(detail).getByText(`${en.reasonLabel}: unreadable`)).toBeTruthy()
-    expect(within(detail).getByText('protected')).toBeTruthy()
+    expect(within(detail).getByText(en.reasonManagementRequired)).toBeTruthy()
     expect(within(detail).getByRole('button', { name: en.uninstallLabel.replace('{name}', 'Better sidebar') })).toHaveProperty('disabled', true)
     expect(within(detail).getByText(en.partsEmpty)).toBeTruthy()
+    set({ packages: [pkg({ title: 'Better sidebar', error: { code: 'not-bundle' } })] })
+    expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonNotBundle}`)).toBeTruthy()
+    set({ packages: [pkg({ title: 'Better sidebar', error: { code: 'operation-error' } })] })
+    expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonOperationError}`)).toBeTruthy()
     fireEvent.click(within(detail).getByRole('button', { name: en.backToList }))
     expect(document.querySelector('[data-plugin-detail]')).toBeNull()
     // A bundle without a description or a version says so; one that leaves the list drops back to the cards.
@@ -175,7 +179,7 @@ describe('PluginManagerPage', () => {
     const rows = Array.from({ length: 12 }, (_row, index): PackageRow => {
       const live = row({
         rowId: `row-${String(index)}`, entryId: `include:row-${String(index)}` as PluginEntryId,
-        ...index === 1 ? { readOnlyReason: 'Required for plugin management.' } : {},
+        ...index === 1 ? { readOnlyReason: 'unaddressable' as const } : {},
         ...index === 3 ? { phase: 'failed' as const } : {},
         ...index === 4 ? { phase: 'loading' as const } : {},
       })
@@ -193,7 +197,7 @@ describe('PluginManagerPage', () => {
     // A protected row, a row without a live entry, and a row with a write in flight cannot be switched.
     const locked = within(detail).getByRole('switch', { name: en.partToggle.replace('{name}', 'row-1') })
     expect(locked).toHaveProperty('disabled', true)
-    expect(locked.getAttribute('title')).toBe('Required for plugin management.')
+    expect(locked.getAttribute('title')).toBe(en.reasonUnaddressable)
     expect(within(detail).getByRole('switch', { name: en.partToggle.replace('{name}', 'row-2') })).toHaveProperty('disabled', true)
     fireEvent.click(within(detail).getByRole('switch', { name: en.partToggle.replace('{name}', 'row-2') }))
     expect(actions.setRowEnabled).toHaveBeenCalledTimes(1)
@@ -400,9 +404,13 @@ describe('PluginManagerPage', () => {
       set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: 'r', kind: kind as never } } })
       expect(screen.getByText(sentence)).toBeTruthy()
     }
-    // A failure without a kind reads in the Host's words; without words, or without a failure at all, generically.
-    set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: 'x declares no dsh.bundle.patch' } } })
-    expect(screen.getByText('x declares no dsh.bundle.patch')).toBeTruthy()
+    // A failure without a kind reads by its code, else in the Host's words; without words, or without a failure at all, generically.
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: '', code: 'not-bundle' } } })
+    expect(screen.getByText(en.reasonNotBundle)).toBeTruthy()
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: 'ERR_PNPM_ADDING_TO_ROOT', code: 'operation-error' } } })
+    expect(screen.getByText('ERR_PNPM_ADDING_TO_ROOT')).toBeTruthy()
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: 'the transport said so' } } })
+    expect(screen.getByText('the transport said so')).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: '' } } })
     expect(screen.getByText(en.installFailureGeneric)).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: null } })
@@ -478,6 +486,10 @@ describe('PluginManagerPage', () => {
       expect(screen.getByRole('alert').textContent).toContain(en.installCancelled)
       set({ notice: { kind: 'failed', reason: 'the tree rejected it', packageName: 'pkg-1', seq: 4 } })
       expect(screen.getByRole('alert').textContent).toContain(en.actionFailed.replace('{reason}', 'the tree rejected it'))
+      set({ notice: { kind: 'failed', code: 'bundle-in-use', reason: '', packageName: 'pkg-1', seq: 5 } })
+      expect(screen.getByRole('alert').textContent).toContain(en.actionFailed.replace('{reason}', en.reasonBundleInUse))
+      set({ notice: { kind: 'failed', code: 'operation-error', reason: 'EACCES', packageName: 'pkg-1', seq: 6 } })
+      expect(screen.getByRole('alert').textContent).toContain(en.actionFailed.replace('{reason}', 'EACCES'))
       // No button to press: the toast retires on its own and the store forgets it.
       expect(screen.queryByRole('button', { name: /got it/i })).toBeNull()
       expect(actions.dismissNotice).not.toHaveBeenCalled()

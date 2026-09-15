@@ -164,7 +164,7 @@ describe('web e2e: plugin manager', () => {
 describe('web e2e: startup-applied plugin management', () => {
   it('saves a bundle selection that waits for the next start and keeps its rows read-only', async () => {
     const scaffold = await launchWebScaffold({
-      profile: { patchReload: 'startup', packages: [{ dir: join(FIXTURE_PLUGINS, 'fixture-bundle') }] },
+      profile: { hmr: false, packages: [{ dir: join(FIXTURE_PLUGINS, 'fixture-bundle') }] },
     })
     let browser: Browser | undefined
     try {
