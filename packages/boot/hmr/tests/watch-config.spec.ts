@@ -196,6 +196,37 @@ describe('HMR exact config paths', () => {
     expect(calls).toBe(2)
   })
 
+  it('observes consecutive writes after the previous configuration was applied', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-consecutive-'))
+    hmrRoots.push(dir)
+    const filename = join(dir, 'package.json')
+    writeFileSync(filename, 'initial')
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    let watcher!: FSWatcher
+    const previousFactory = configWatch.create
+    onTestFinished(() => { configWatch.create = previousFactory })
+    configWatch.create = (options) => {
+      watcher = new FSWatcher(options)
+      // Use Chokidar's real normalization with deterministic event delivery.
+      Reflect.set(watcher, '_readyEmitted', true)
+      queueMicrotask(() => { watcher.emit('ready') })
+      return watcher
+    }
+    const observed: string[] = []
+    await watchConfig(ctx, filename, {}, async () => {
+      const value = readFileSync(filename, 'utf8')
+      observed.push(value)
+      if (value === 'enabled') {
+        writeFileSync(filename, 'disabled')
+        await watcher._emit('change', filename)
+      }
+    })
+    writeFileSync(filename, 'enabled')
+    await watcher._emit('change', filename)
+    await vi.waitFor(() => { expect(observed).toEqual(['enabled', 'disabled']) }, { timeout: 6_000 })
+  }, 10_000)
+
   it('rejects a patch path whose parent is a regular file', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-patch-parent-'))
     hmrRoots.push(dir)
