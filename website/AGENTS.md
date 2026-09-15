@@ -17,3 +17,5 @@ The build also emits each route's raw-Markdown twin (with a parent-level alias p
 Run `pnpm docs:check` after changing this subtree; the gate rejects additional non-ignored Markdown under `website/`.
 
 The default-theme extension owns the Mermaid fullscreen viewer. Keep its enhancements separate from Markdown projection and preserve the original SVG. Route, language, theme, and rendered-SVG changes close the active view; theme disposal releases every observer, listener, and scroll lock. The [viewer decision](../.agents/notes/implemented/feature/2026-09-14-docs-mermaid-viewer.md) explains SVG isolation and verification.
+
+Native code groups keep their radio controls in separate forms so copied search excerpts cannot clear the page's selected platform. Search excerpts display every command block because their tab controls are unavailable; the [platform-tab decision](../.agents/notes/implemented/feature/2026-09-15-docs-platform-command-tabs.md) owns the interaction and verification.

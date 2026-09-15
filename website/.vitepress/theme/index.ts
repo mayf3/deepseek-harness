@@ -4,6 +4,7 @@ import { useData, useRoute, type Theme } from 'vitepress'
 import { defineComponent, h, onBeforeUnmount, onMounted, watch } from 'vue'
 import type { MermaidViewer } from './mermaid-viewer.ts'
 import './mermaid-viewer.css'
+import './code-group.css'
 
 export default {
   extends: DefaultTheme,
