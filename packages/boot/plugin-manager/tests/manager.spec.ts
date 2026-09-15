@@ -18,6 +18,7 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { Group } from '@deepseek-ai/cordis-plugin-loader'
 import * as operations from '../src/operations.ts'
 import { parse } from 'yaml'
+import { execa } from 'execa'
 
 async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, prepare?: (ctx: Context) => void, config: Config = {}) {
   const home = mkdtempSync(join(tmpdir(), 'plugin-manager-'))
@@ -193,15 +194,17 @@ it('runs a real pnpm dependency script only after approval and cleanup retry', a
     scripts: { install: 'node build.cjs' }, dsh: { bundle: { patch: './cordis.patch.yml' } } }))
   writeFileSync(join(addon, 'build.cjs'), 'require("node:fs").writeFileSync("built.txt", "built")\n')
   writeFileSync(join(addon, 'cordis.patch.yml'), '[]\n')
+  await execa('pnpm', ['pack', '--pack-destination', profile.cwd], { cwd: addon })
+  const spec = 'file:./approval-fixture-addon-1.0.0.tgz'
   writeFileSync(join(dir, 'package.json'), '{"name":"approval-fixture","private":true}\n')
   writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - .\nnodeLinker: hoisted\nautoInstallPeers: false\nstrictDepBuilds: true\n')
-  const blocked = await manager.installBundle('file:./addon', { enabled: false })
+  const blocked = await manager.installBundle(spec, { enabled: false })
   expect(blocked, JSON.stringify(blocked)).toMatchObject({ application: 'failed', cleanup: { name: 'approval-fixture-addon' } })
   expect(blocked.pendingBuilds).toHaveLength(1)
   const built = join(dir, 'node_modules', 'approval-fixture-addon', 'built.txt')
   expect(existsSync(built)).toBe(false)
   expect(readProfileManifest('test', dir).dependencies?.['approval-fixture-addon']).toBeUndefined()
-  const allowed = await manager.installBundle('file:./addon', { enabled: false, approvedBuilds: blocked.pendingBuilds! })
+  const allowed = await manager.installBundle(spec, { enabled: false, approvedBuilds: blocked.pendingBuilds! })
   expect(allowed, JSON.stringify(allowed)).toMatchObject({ application: 'restart-required', packageResult: { exitCode: 0 } })
   expect(readFileSync(built, 'utf8')).toBe('built')
 })
