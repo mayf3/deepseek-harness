@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  HoverCard, IconAlarmClockOutline16, IconArchiveOutline20, IconBranchOutline16,
+  HoverCard, IconCloseFill14, IconAlarmClockOutline16, IconArchiveOutline20, IconBranchOutline16,
   IconEditOutline16, IconEllipsisOutline16, IconFolderClose16, IconFolderOpen16,
   IconPlusOutline16, IconTrashOutline16, IconTriangleRightFill14, Menu, relativeTime,
   StateDot,
@@ -510,5 +510,34 @@ export function SessionNodeItem({
       copyLabel={t('copy')}
       copiedLabel={t('hover.copied')}
     />
+  )
+}
+
+/**
+ * Browser-local parent directory control; removal only changes the sidebar view.
+ * @param props - selected path, expansion, host home, locale, and view actions.
+ * @returns a folder row using the Workspace row styling.
+ */
+export function ParentFolderRow({ path, expanded, home, onToggle, onRemove, t }: {
+  path: string
+  expanded: boolean
+  home: string | undefined
+  onToggle: () => void
+  onRemove: () => void
+  t: RowTranslate
+}) {
+  const label = abbreviateHomePath(path, home)
+  return (
+    <div className={css.projectRow}>
+      <button type="button" className={css.parentToggle} aria-expanded={expanded} onClick={onToggle} title={path}>
+        <IconTriangleRightFill14 className={clsx(css.arrow, expanded && css.arrowOpen)} />
+        <span className={css.title}>{label}</span>
+      </button>
+      <span className={css.rowActions}>
+        <button type="button" className={css.iconButton} aria-label={t('parentFolder.remove', { name: label })} onClick={onRemove}>
+          <IconCloseFill14 />
+        </button>
+      </span>
+    </div>
   )
 }

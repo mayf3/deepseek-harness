@@ -509,3 +509,8 @@
     transition: none;
   }
 }
+
+.parentChildren {
+  padding-inline-start: 12px;
+  min-width: 0;
+}

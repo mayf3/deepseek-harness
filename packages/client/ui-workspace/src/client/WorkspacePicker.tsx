@@ -38,6 +38,8 @@ export interface WorkspacePickFlowProps {
   useDirectoryFlow: SnapshotSelectorHook<boolean>
   /** Render this surface's directory-flow hole with the owner conversation (the entry's narrowed renderSlot). */
   renderDirectoryFlow: (owner: DirectoryFlowOwnerProps) => ReactNode
+  /** Handle a picked parent directory without registering or opening a Workspace. */
+  onPickParentFolder?: ((path: string) => void) | undefined
   /** A real Workspace was picked or created. */
   onPick: (workspaceId: WorkspaceId) => void
   /** Close the popover (outside click / Escape / post-pick). */
@@ -64,6 +66,7 @@ export function WorkspacePickFlow({
   useDirectoryFlow,
   renderDirectoryFlow,
   onPick,
+  onPickParentFolder,
   onClose,
   addOnly = false,
   side = 'bottom',
@@ -161,6 +164,11 @@ export function WorkspacePickFlow({
     open: flowOpen,
     busy: pickingFolder,
     onPicked: (path) => {
+      if (onPickParentFolder !== undefined) {
+        setFlowOpen(false)
+        onPickParentFolder(path)
+        return
+      }
       setPickingFolder(true)
       void adoptDirectory(path).finally(() => { setPickingFolder(false) })
     },

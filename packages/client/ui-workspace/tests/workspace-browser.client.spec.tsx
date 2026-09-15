@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
@@ -11,7 +11,7 @@ import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { WorkspaceBrowserProps } from '../src/client/contract/slots.ts'
+import type { DirectoryFlowOwnerProps, WorkspaceBrowserProps } from '../src/client/contract/slots.ts'
 import { createWorkspaceViewStore, FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
 import { UNGROUPED_KEY } from '../src/client/tree.ts'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
@@ -387,9 +387,9 @@ describe('WorkspaceBrowser', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     expect(screen.getByText('分组方式')).toBeTruthy() // the menu heading label
-    expect(screen.getByRole('separator')).toBeTruthy()
+    expect(screen.getAllByRole('separator')).toHaveLength(2)
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      '按工作区', '单列表', '手动排序', '最近更新',
+      '按工作区', '单列表', '手动排序', '最近更新', '添加父目录分组…',
     ])
     expect(screen.getByRole('menuitem', { name: '按工作区' }).querySelector('svg')).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '手动排序' }).querySelector('svg')).toBeTruthy()
@@ -877,6 +877,7 @@ describe('WorkspaceBrowser', () => {
   })
 
   it('opens a Host content hit, exits search, and reveals its hidden grouped row', async () => {
+    createWorkspaceViewStore().create().actions.setParentFolder('/projects', false)
     vi.useFakeTimers()
     try {
       const open = vi.fn()
@@ -1637,5 +1638,80 @@ describe('WorkspaceBrowser', () => {
     fireEvent.change(screen.getByPlaceholderText('搜索会话…'), { target: { value: 'needle' } })
     const row = screen.getByText('Needle A').closest('[role="treeitem"]') as HTMLElement
     expect(row.hasAttribute('draggable')).toBe(false)
+  })
+})
+
+
+describe('parent folders', () => {
+  it('adds a parent through the picker without creating a Workspace or Session, and restores it after reload', () => {
+    const b = mount({
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['first'])])),
+      useSessions: hook(sessionState([summary('first', 1)])),
+      renderSlot: ((_name: string, owner: DirectoryFlowOwnerProps) => owner.open
+        ? <button onClick={() => { owner.onPicked('/projects') }}>Pick parent</button> : null) as WorkspaceBrowserProps['renderSlot'],
+    })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '添加父目录分组…' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pick parent' }))
+    expect(b.props.createWorkspace).not.toHaveBeenCalled()
+    expect(b.props.startSession).not.toHaveBeenCalled()
+    const parent = screen.getByRole('treeitem', { name: '/projects' })
+    expect(within(parent).getByText('alpha')).toBeTruthy()
+    fireEvent.click(within(parent).getByRole('button', { name: '/projects' }))
+    expect(screen.queryByText('alpha')).toBeNull()
+    b.view.unmount()
+    const restored = mount({ useWorkspaces: b.props.useWorkspaces, useSessions: b.props.useSessions })
+    expect(screen.getByRole('treeitem', { name: '/projects' }).getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(screen.getByRole('button', { name: '移除父目录分组“/projects”' }))
+    expect(screen.queryByRole('treeitem', { name: '/projects' })).toBeNull()
+    expect(screen.getByText('alpha')).toBeTruthy()
+    expect(restored.props.deleteWorkspace).not.toHaveBeenCalled()
+  })
+
+  it('assigns overlapping parents once, retains empty folders, and ignores them in flat view', () => {
+    const preferences = createWorkspaceViewStore().create()
+    preferences.actions.setParentFolder('/projects', true)
+    preferences.actions.setParentFolder('/projects/team', true)
+    preferences.actions.setParentFolder('/empty', true)
+    const b = mount({ useWorkspaces: hook(workspaceState([
+      workspace('alpha', []), { ...workspace('beta', []), path: '/projects/team/beta' },
+    ])) })
+    expect(within(screen.getByRole('treeitem', { name: '/projects' })).queryByText('beta')).toBeNull()
+    expect(within(screen.getByRole('treeitem', { name: '/projects/team' })).getByText('beta')).toBeTruthy()
+    expect(screen.getAllByText('beta')).toHaveLength(1)
+    expect(within(screen.getByRole('treeitem', { name: '/empty' })).getByText('此目录下没有已添加的工作区')).toBeTruthy()
+    act(() => { b.store.actions.setGroupBy('flat') })
+    expect(screen.queryByRole('treeitem', { name: '/projects' })).toBeNull()
+    act(() => { b.store.actions.setGroupBy('workspace') })
+    expect(screen.getByRole('treeitem', { name: '/projects' })).toBeTruthy()
+    act(() => { b.store.actions.removeParentFolder('/projects/team') })
+    expect(within(screen.getByRole('treeitem', { name: '/projects' })).getByText('beta')).toBeTruthy()
+  })
+
+  it('keeps Workspace drag within its parent and uses the next displayed sibling as anchor', () => {
+    const preferences = createWorkspaceViewStore().create()
+    preferences.actions.setParentFolder('/projects', true)
+    preferences.actions.setParentFolder('/elsewhere', true)
+    const b = mount({ useWorkspaces: hook(workspaceState([
+      workspace('alpha', []), { ...workspace('outside', []), path: '/elsewhere/outside' },
+      workspace('beta', []), workspace('gamma', []),
+    ])) })
+    const alpha = screen.getByText('alpha').closest('[role="treeitem"]') as HTMLElement
+    const beta = screen.getByText('beta').closest('[role="treeitem"]') as HTMLElement
+    const outside = screen.getByText('outside').closest('[role="treeitem"]') as HTMLElement
+    fireEvent.dragStart(alpha, { dataTransfer: dragData() })
+    fireDrag(beta.parentElement as HTMLElement, 'dragOver', 100)
+    fireDrag(outside.parentElement as HTMLElement, 'dragOver', 100)
+    fireDrag(outside.parentElement as HTMLElement, 'drop', 100)
+    fireEvent.dragEnd(alpha)
+    expect(b.props.insertWorkspaceBefore).not.toHaveBeenCalled()
+    fireEvent.dragStart(beta, { dataTransfer: dragData() })
+    fireDrag(alpha.parentElement as HTMLElement, 'drop', 100)
+    fireEvent.dragEnd(beta)
+    expect(b.props.insertWorkspaceBefore).not.toHaveBeenCalled()
+    fireEvent.dragStart(alpha, { dataTransfer: dragData() })
+    fireDrag(beta.parentElement as HTMLElement, 'drop', 100)
+    fireEvent.dragEnd(alpha)
+    expect(b.props.insertWorkspaceBefore).toHaveBeenCalledWith(wid('alpha'), wid('gamma'))
   })
 })

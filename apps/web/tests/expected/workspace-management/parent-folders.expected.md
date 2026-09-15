@@ -1,0 +1,12 @@
+- treeitem "{{cwd}}/folder-group" [expanded]:
+  - button "{{cwd}}/folder-group" [expanded]:
+    - img
+    - text: {{cwd}}/folder-group
+  - group:
+    - treeitem "project-two" [expanded]:
+      - img
+      - text: project-two
+    - treeitem "New Session" [selected]
+    - treeitem "project-one" [expanded]:
+      - img
+      - text: project-one

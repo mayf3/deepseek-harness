@@ -7,6 +7,9 @@
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   'group.ungrouped': '未分组',
+  'parentFolder.add': '添加父目录分组…',
+  'parentFolder.remove': '移除父目录分组“{name}”',
+  'parentFolder.empty': '此目录下没有已添加的工作区',
   'session.new': '新会话',
   'section.workspaces': '工作区',
   'section.sessions': '会话',
@@ -77,6 +80,9 @@ export type WorkspaceKey = keyof typeof zh
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
   'group.ungrouped': 'Ungrouped',
+  'parentFolder.add': 'Add parent folder…',
+  'parentFolder.remove': 'Remove parent folder “{name}”',
+  'parentFolder.empty': 'No added workspaces in this folder',
   'session.new': 'New Session',
   'section.workspaces': 'Workspaces',
   'section.sessions': 'Sessions',

@@ -662,6 +662,47 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
+  it('groups existing Workspaces by a picked parent without creating a parent Workspace', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-parent-folders'))
+    const parentPath = join(scaffold.workspaceCwd, 'folder-group')
+    await mkdir(parentPath)
+    await addNewFolderWorkspace(parentPath, 'project-one')
+    await addNewFolderWorkspace(parentPath, 'project-two')
+    const workspaceIds = scaffold.ctx.workspaceRegistry.list().map(workspace => workspace.id)
+    const agentCount = scaffold.ctx.agents.list().length
+    await page.getByRole('button', { name: 'View options' }).click()
+    await page.getByRole('menuitem', { name: 'Add parent folder…' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Select Workspace Directory' })
+    await dialog.getByRole('button', { name: 'Edit path' }).click()
+    await dialog.locator('input[aria-label="Edit path"]').fill(parentPath)
+    await page.keyboard.press('Enter')
+    await dialog.locator('input[aria-label="Edit path"]').waitFor({ state: 'detached' })
+    await dialog.getByRole('button', { name: 'Open', exact: true }).click()
+    await dialog.waitFor({ state: 'hidden' })
+    const parent = page.getByRole('treeitem', { name: parentPath, exact: true })
+    await parent.getByText('project-two', { exact: true }).waitFor()
+    expect(await parent.getByText('project-one', { exact: true }).count()).toBe(1)
+    expect(scaffold.ctx.workspaceRegistry.list().map(workspace => workspace.id)).toEqual(workspaceIds)
+    expect(scaffold.ctx.agents.list()).toHaveLength(agentCount)
+    const expected = fileURLToPath(new URL('./expected/workspace-management/parent-folders.expected.md', import.meta.url))
+    await compareOrRefreshGolden(expected, await captureStableAria(
+      page, '[role="treeitem"][aria-label]', scaffold.workspaceCwd,
+    ), MODE)
+    await parent.getByRole('button', { name: parentPath, exact: true }).click()
+    expect(await parent.getByText('project-two', { exact: true }).count()).toBe(0)
+    const warningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    await parent.waitFor()
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    expect(await parent.getAttribute('aria-expanded')).toBe('false')
+    await parent.hover()
+    await parent.getByRole('button', { name: `Remove parent folder “${parentPath}”` }).click()
+    await parent.waitFor({ state: 'detached' })
+    await page.getByRole('tree').getByText('project-two', { exact: true }).waitFor()
+    expect(scaffold.ctx.workspaceRegistry.list().map(workspace => workspace.id)).toEqual(workspaceIds)
+    expect(tripwire.pageErrors).toEqual([])
+  })
+
   it.skipIf(MODE === 'record')('issued zero model calls and stayed clean', async () => {
     expect(tripwire.warnings).toEqual([])
     // The directory-browser aria golden is this spec's one owned artifact;
