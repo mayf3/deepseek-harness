@@ -23,7 +23,7 @@ import {
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import {
-  connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft, ZH_BROWSER_LOCALE,
+  connectFreshWorkspace, expandOwningTurnProcess, newEnglishPage, saveFailureShot, writeComposerDraft, ZH_BROWSER_LOCALE,
 } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome', import.meta.url))
@@ -290,7 +290,9 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       try {
         await input.press('Enter')
         if (MODE !== 'record') {
-          const liveTail = page.locator('[data-variant="think"][data-state="running"] [data-follow-end]')
+          const thinking = page.locator('[data-variant="think"][data-state="running"]')
+          await expect.poll(() => thinking.getByRole('button').getAttribute('aria-expanded')).toBe('false')
+          const liveTail = thinking.locator('[data-follow-end]')
           await expect.poll(async () => {
             if (await liveTail.count() !== 1) return false
             return await liveTail.evaluate((element) => {
@@ -339,6 +341,45 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     const turnEnds = sessionEvents.filter(e => e.type === 'turn/end')
     expect(turnEnds).toHaveLength(1)
     expect((turnEnds[0] as SessionEvent & { data: { reason: { kind: string } } }).data.reason.kind).toBe('completed')
+  }, 60_000)
+
+  it.skipIf(MODE === 'record')('pins an open Think header to the conversation scrollport (real layout)', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-think-sticky'))
+    // The settled turn collapses its process row, which hides the Think row.
+    // The fixture's recorded reasoning is one line, too short to overflow the
+    // scrollport, so this case proves the CSS resolves onto the Think header in
+    // a real browser (jsdom computes no sticky layout); the pinned-while-
+    // scrolling and z-rank evidence belongs to the compaction path in
+    // seeded-history.e2e.ts, whose summary length that suite controls.
+    const thinkRow = page.locator('[data-variant="think"]').first()
+    await thinkRow.waitFor({ state: 'attached', timeout: 15_000 })
+    const process = page.locator('[data-turn-process]').first()
+    const processWasOpen = await process.getAttribute('aria-expanded') === 'true'
+    try {
+      await expandOwningTurnProcess(page, thinkRow)
+      const collapsedHeader = thinkRow.locator('[data-disclosure-row]').first()
+      await collapsedHeader.waitFor({ timeout: 10_000 })
+      // Collapsed, the rule's `data-open` gate is absent and the header stays in
+      // flow. It is `relative` here — the row is the sweep-glare overlay anchor
+      // — so the assertion is the absence of `sticky`, not a specific value.
+      expect(await collapsedHeader.evaluate(element => getComputedStyle(element).position)).not.toBe('sticky')
+      await collapsedHeader.click()
+      const openHeader = page.locator('[data-variant="think"] [data-open] [data-disclosure-row]').first()
+      await openHeader.waitFor({ timeout: 10_000 })
+      const openStyle = await openHeader.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return { position: style.position, top: style.top }
+      })
+      expect(openStyle.position).toBe('sticky')
+      expect(openStyle.top).toBe('0px')
+    } finally {
+      // Restore the settled state the reload goldens below are captured in.
+      const openThinkRow = page.locator('[data-variant="think"] [data-open] [data-disclosure-row]')
+      if (await openThinkRow.count() > 0) await openThinkRow.first().click()
+      if (!processWasOpen && await process.getAttribute('aria-expanded') === 'true') await process.click()
+    }
+    await expect.poll(() => page.locator('[data-variant="think"] [data-open]').count(), { timeout: 5_000 }).toBe(0)
+    expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
   it.skipIf(MODE === 'record')('recovers the whole surface across a reload from the log alone', async () => {
@@ -456,24 +497,24 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       expect(await connectionIndicatorTextAlignment(indicator)).toBe('left')
       const snapshot = await captureStableAria(recoveryPage, '[class*="footArea"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(CONNECTION_ERROR_EXPECTED, snapshot, MODE)
-      const style = await indicator.evaluate((element) => {
+      const expectedColors = await recoveryPage.evaluate(() => {
         const probe = document.createElement('span')
         probe.style.color = 'var(--dsw-alias-state-warn-label)'
         probe.style.backgroundColor = 'var(--dsw-alias-state-warn-tertiary)'
         document.body.append(probe)
-        const actual = getComputedStyle(element)
         const reference = getComputedStyle(probe)
         const result = {
-          background: actual.backgroundColor,
-          color: actual.color,
-          referenceBackground: reference.backgroundColor,
-          referenceColor: reference.color,
+          background: reference.backgroundColor,
+          color: reference.color,
         }
         probe.remove()
         return result
       })
-      expect(style.background).toBe(style.referenceBackground)
-      expect(style.color).toBe(style.referenceColor)
+      // CSS transitions use the browser's animation clock independently of the mocked retry timers.
+      await expect.poll(() => indicator.evaluate((element) => {
+        const actual = getComputedStyle(element)
+        return { background: actual.backgroundColor, color: actual.color }
+      })).toEqual(expectedColors)
       expect(await indicator.locator('svg').count()).toBe(1)
       expect(await indicator.getAttribute('title')).toBeNull()
       rejectConnections = false

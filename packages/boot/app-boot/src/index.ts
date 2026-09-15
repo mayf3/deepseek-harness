@@ -30,6 +30,7 @@ declare module '@deepseek-ai/cordis' {
 
 export {
   composeEntries,
+  createProfileResolutionGeneration,
   DEFAULT_PROFILE_BUNDLES,
   DEFAULT_PROFILE_PATCH_RELOAD,
   healProfilesModuleFallback,
@@ -47,8 +48,16 @@ export {
   type ProfileLayer,
   type ProfileManifest,
   type ProfileModuleFallbackOptions,
+  type ProfileResolutionEntry,
+  type ProfileResolutionGeneration,
+  type ProfileResolutionMode,
   type ProfileTemplate,
 } from './profile.ts'
+export {
+  PluginPackages,
+  type PluginPackage,
+  type PluginPackagesConfig,
+} from './profile-resolution/service.ts'
 
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for
@@ -454,7 +463,7 @@ export function renderConfigDump(
   }
   let previous = base
   let previousWarnings: string[] = []
-  const provenance: { origin: string; patchedBy: string[] }[] = base.map(() => ({ origin: baseLabel, patchedBy: [] }))
+  const entryOrigins: { origin: string; patchedBy: string[] }[] = base.map(() => ({ origin: baseLabel, patchedBy: [] }))
   let composed = base
   for (let count = 1; count <= layers.length; count += 1) {
     const layer = layers[count - 1]
@@ -467,19 +476,19 @@ export function renderConfigDump(
     }
     const before = previous.map(entry => JSON.stringify(entry))
     for (let index = 0; index < composed.length; index += 1) {
-      if (index >= before.length) provenance.push({ origin: layer.label, patchedBy: [] })
-      else if (JSON.stringify(composed[index]) !== before[index]) provenance[index]?.patchedBy.push(layer.label)
+      if (index >= before.length) entryOrigins.push({ origin: layer.label, patchedBy: [] })
+      else if (JSON.stringify(composed[index]) !== before[index]) entryOrigins[index]?.patchedBy.push(layer.label)
     }
     previous = composed
     previousWarnings = warnings
   }
-  return groupedDump(composed, provenance)
+  return groupedDump(composed, entryOrigins)
 }
 
 /** Render the composed rows grouped under one source-and-patches comment per contiguous run. */
 function groupedDump(
   composed: readonly unknown[],
-  provenance: readonly { origin: string; patchedBy: string[] }[],
+  entryOrigins: readonly { origin: string; patchedBy: string[] }[],
 ): string {
   const lines: string[] = []
   let currentLabel: string | undefined
@@ -491,7 +500,7 @@ function groupedDump(
     group = []
   }
   for (let index = 0; index < composed.length; index += 1) {
-    const record = provenance[index]
+    const record = entryOrigins[index]
     /* v8 ignore next -- this array is index-aligned with composed by construction */
     if (record === undefined) continue
     const label = record.patchedBy.length === 0

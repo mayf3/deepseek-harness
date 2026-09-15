@@ -24,7 +24,7 @@ import type { Browser, ConsoleMessage, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { createMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
-import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
+import { acknowledgeReloadConnectionLoss, launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
 import {
   connectFreshWorkspace, newEnglishPage, saveFailureShot, ZH_BROWSER_LOCALE,
 } from './support.ts'
@@ -126,12 +126,18 @@ async function ensureExpanded(page: Page, column: Locator): Promise<void> {
   await column.locator('[data-sidebar-right-open]').waitFor({ timeout: 10_000 })
 }
 
-/** Reload the session's transient sidebar state before an independent gesture case. */
+/** Clear only this fixture's saved layouts before an independent gesture case. */
 async function resetSidebar(page: Page): Promise<Locator> {
+  await page.evaluate(() => {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('dsh.sidebar-right.v1.')) localStorage.removeItem(key)
+    }
+  })
   await page.reload({ waitUntil: 'load' })
   const column = page.locator('[data-rightbar-col]')
   await expandOf(page).waitFor({ timeout: 15_000 })
   await ensureExpanded(page, column)
+  await column.locator('[data-sidebar-right-guide-entry="files"]').click()
   await expect.poll(async () => await tabTitles(column)).toEqual(['Files'])
   await width(column)
   return column
@@ -389,6 +395,10 @@ describe('web e2e: shipped right Sidebar', () => {
       for (const selector of ['[data-dockkit-split-button]', '[data-sidebar-right-mode]', '[data-sidebar-right-toggle]']) {
         expect(await centreY(selector), selector).toBe(textLine)
       }
+
+      await expect.poll(async () => await tabTitles(column)).toEqual(['Start'])
+      await expect.poll(async () => await column.locator('[data-sidebar-right-guide-entry]').count()).toBe(2)
+      await column.locator('[data-sidebar-right-guide-entry="files"]').click()
 
       // A manual guide is closable beside Files and suppresses another add
       // control in its pane until it is closed.
@@ -761,10 +771,13 @@ describe('web e2e: shipped right Sidebar', () => {
       )
       await expect.poll(async () => await panes.count()).toBe(2)
 
-      const splitFiles = panes.nth(1).locator('[data-dockkit-tab]').filter({ hasText: 'Files' })
-      expect(await splitFiles.locator('[data-dockkit-tab-close]').count()).toBe(1)
-      await dragTo(page, splitFiles, await pointIn(panes.first(), 0.5, 0.5))
+      const splitGuide = panes.nth(1).locator('[data-dockkit-tab]').filter({ hasText: 'Start' })
+      expect(await splitGuide.locator('[data-dockkit-tab-close]').count()).toBe(1)
+      await dragTo(page, splitGuide, await pointIn(panes.first(), 0.5, 0.5))
       await expect.poll(async () => await tabTitles(panes.nth(1))).toEqual([SAMPLE_NAME])
+      const movedGuide = panes.first().locator('[data-dockkit-tab]').filter({ hasText: 'Start' })
+      await movedGuide.hover()
+      await movedGuide.locator('[data-dockkit-tab-close]').click()
 
       // Neither pane holds a guide, so both offer an add control.
       const filePane = panes.filter({ has: page.locator('[data-dockkit-tab-title]', { hasText: SAMPLE_NAME }) })
@@ -792,7 +805,7 @@ describe('web e2e: shipped right Sidebar', () => {
     // panel by product decision, and copy has no service method yet:
     // `duplicateTab` is a store/kit intent only, which service.client.spec.ts covers.
 
-    it('keeps each session\'s surface to itself, and restores it on return', async () => {
+    it('keeps each session\'s surface to itself across switching and page reload', async () => {
       const fx = await newEnglishPage(browser)
       const fxTripwire = watchConsole(fx)
       onTestFailed(() => saveFailureShot(fx, 'web-e2e-sidebar-right-sessions'))
@@ -835,6 +848,24 @@ describe('web e2e: shipped right Sidebar', () => {
         expect(await column.locator('[data-sidebar-right-open]').count()).toBe(1)
         expect(await wrap.getAttribute('aria-pressed')).toBe('false')
         expect(await column.locator('pre').first().innerText()).toContain('produced by the seeded turn')
+        let warningStart = fxTripwire.warnings.length
+        await fx.reload({ waitUntil: 'load' })
+        acknowledgeReloadConnectionLoss(fxTripwire, warningStart)
+        await expect.poll(records, { timeout: 15_000 }).toEqual(before)
+        await expect.poll(async () => await column.locator('pre').first().innerText()).toContain('produced by the seeded turn')
+        await column.locator('[data-sidebar-right-toggle]').click()
+        warningStart = fxTripwire.warnings.length
+        await fx.reload({ waitUntil: 'load' })
+        acknowledgeReloadConnectionLoss(fxTripwire, warningStart)
+        await fx.locator('[data-sidebar-right-expand]').waitFor()
+        expect(await column.locator('[data-sidebar-right-open]').count()).toBe(0)
+        await fx.locator('[data-sidebar-right-expand]').click()
+        await expect.poll(records, { timeout: 15_000 }).toEqual(before)
+        expect(await width(column)).toBeGreaterThan(0)
+        await column.locator('[data-sidebar-right-panel]').evaluate(async (node) => {
+          await Promise.allSettled(node.getAnimations().map(animation => animation.finished))
+        })
+        await shot(fx, 'session-layout-restored')
         expect(fxTripwire.pageErrors).toEqual([])
         expect(fxTripwire.warnings).toEqual([])
       } finally {
@@ -901,7 +932,7 @@ describe('web e2e: shipped right Sidebar', () => {
       expect(await panes.count()).toBe(2)
       expect(await splitButtons.count()).toBe(0)
 
-      // 5. A manual guide and the document float while Files stays docked.
+      // 5. The split's guide and the document float while Files stays docked.
       const floatOne = panes.last().locator('[data-dockkit-tab]').filter({ hasText: SAMPLE_NAME })
       await floatByDrag(page, floatOne)
       await expect.poll(async () => await floats.count()).toBe(1)
@@ -910,8 +941,7 @@ describe('web e2e: shipped right Sidebar', () => {
       await dragElement(page, floats.first().locator('[data-dockkit-float-grip]'), { x: box.x + 140, y: box.y + 90 })
       await expect.poll(async () => (await floats.first().boundingBox())?.x ?? box.x).not.toBe(box.x)
 
-      await panes.last().locator('[data-dockkit-add-tab]').click()
-      await expect.poll(async () => await tabTitles(panes.last())).toEqual(['Files', 'Start'])
+      await expect.poll(async () => await tabTitles(panes.last())).toEqual(['Start'])
       const second = panes.last().locator('[data-dockkit-tab]').filter({ hasText: 'Start' })
       await floatByDrag(page, second)
       await expect.poll(async () => await floats.count()).toBe(2)
@@ -966,7 +996,7 @@ describe('web e2e: shipped right Sidebar', () => {
       // Any other tab standing alone closes together with the column. Open the
       // sample file, close the guide (an ordinary close with two tabs), then
       // close the file: the column collapses in the same gesture, and the
-      // settle rule reseeds the current default, so reopening shows Files.
+      // settle rule reseeds the current default, so reopening shows Start.
       await page.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
       await expect.poll(async () => await tabTitles(column)).toEqual(['Start', SAMPLE_NAME])
       await column.locator('[data-dockkit-tab]').first().hover()
@@ -976,25 +1006,26 @@ describe('web e2e: shipped right Sidebar', () => {
       await column.locator('[data-dockkit-tab-close]').first().click()
       await expect.poll(async () => await column.locator('[data-sidebar-right-open]').count()).toBe(0)
       await expandOf(page).click()
-      await expect.poll(async () => await tabTitles(column)).toEqual(['Files'])
-      expect(await column.locator('[data-files-state="tree"]').count()).toBe(1)
+      await expect.poll(async () => await tabTitles(column)).toEqual(['Start'])
+      expect(await column.locator('[data-sidebar-right-guide]').count()).toBe(1)
 
       expect(tripwire.pageErrors).toEqual([])
       expect(tripwire.warnings).toEqual([])
     }, 90_000)
 
-    it('§9.7 returns to the default surface after a reload', async () => {
+    it('preserves the open surface after a reload', async () => {
       onTestFailed(() => saveFailureShot(page, 'web-e2e-sidebar-right-reload'))
-      await page.reload({ waitUntil: 'load' })
-      await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       const frame = page.locator('[class*="frame"]').first()
       const column = page.locator('[data-rightbar-col]')
+      await ensureExpanded(page, column)
+      const titles = await tabTitles(column)
+      await page.reload({ waitUntil: 'load' })
+      await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await column.waitFor({ state: 'attached', timeout: 15_000 })
-      // The surface is view state, not durable session data: a reload zeroes it
-      // back to the collapsed default. Expected behaviour, not a defect.
-      await expect.poll(async () => await frame.getAttribute('data-rightbar-collapsed')).toBe('true')
-      await expect.poll(async () => await expandOf(page).count()).toBe(1)
-      expect(await column.locator('[data-sidebar-right-open]').count()).toBe(0)
+      await expect.poll(async () => await tabTitles(column)).toEqual(titles)
+      await expect.poll(async () => await frame.getAttribute('data-rightbar-collapsed')).toBe(null)
+      expect(await expandOf(page).count()).toBe(0)
+      expect(await column.locator('[data-sidebar-right-open]').count()).toBe(1)
     })
 
     it('opens a context menu on right-click that the strip cannot clip', async () => {
@@ -1003,6 +1034,7 @@ describe('web e2e: shipped right Sidebar', () => {
 
       await ensureExpanded(page, column)
       await expect.poll(async () => await column.locator('[data-dockkit-tab]').count()).toBeGreaterThan(0)
+      await column.locator('[data-sidebar-right-guide-entry="files"]').click()
       await column.locator('[data-dockkit-add-tab]').click()
       await expect.poll(async () => await tabTitles(column)).toEqual(['Files', 'Start'])
       // No "more" control on the chip: the chip carries its close, and the menu
@@ -1050,6 +1082,8 @@ describe('web e2e: shipped right Sidebar', () => {
         const column = zhPage.locator('[data-rightbar-col]')
         await expandOf(zhPage).waitFor({ timeout: 20_000 })
         await expandOf(zhPage).click()
+        await expect.poll(async () => await tabTitles(column)).toEqual(['开始'])
+        await column.locator('[data-sidebar-right-guide-entry="files"]').click()
         await expect.poll(async () => await tabTitles(column)).toEqual(['文件'])
         await column.locator('[data-dockkit-add-tab]').click()
 
