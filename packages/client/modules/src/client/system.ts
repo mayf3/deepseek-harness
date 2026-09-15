@@ -93,6 +93,8 @@ export class ClientModuleSystem implements ClientModuleLoader {
   private readonly bootstrapIds = new Set<string>()
   /** In-flight script transport per URL; every row in one batch shares it. */
   private readonly pendingArrival = new Map<string, Promise<void>>()
+  /** Owner generation captured by in-flight chunk requests and advanced on invalidation. */
+  private readonly generations = new Map<string, number>()
   /** Single-resource combo URL selected by HMR after invalidating one row. */
   private readonly reloadTargets = new Map<string, { url: string; rev: string }>()
   /** Materialization re-entrancy guard: factory-form CJS cannot deliver partial exports, so a cycle is fatal. */
@@ -266,6 +268,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
     const existing = this.loadCache.get(id)
     if (existing !== undefined) return existing.exports
     if (!this.factories.has(id)) {
+      const generation = this.generations.get(ownerId) ?? 0
       const row = this.graphRows.get(ownerId)
       if (row === undefined) throw new Error(`client-modules: chunk owner "${ownerId}" is not a boot graph entry`)
       /* v8 ignore next -- the final fallback needs an impossible graph-owned factory with no recorded revision. */
@@ -277,6 +280,11 @@ export class ClientModuleSystem implements ClientModuleLoader {
         this.pendingArrival.set(url, transport)
       }
       await transport
+      if ((this.generations.get(ownerId) ?? 0) !== generation) {
+        this.factories.delete(id)
+        this.loadCache.delete(id)
+        return await this.importChunk(ownerId, fileName)
+      }
       if (!this.factories.has(id)) {
         throw new Error(`client-modules: bundle ${url} loaded without registering "${id}" via __ModuleLoader__.load`)
       }
@@ -353,6 +361,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
   invalidate(id: string, rev?: string): void {
     const normalized = stripClientSuffix(id)
     if (this.bootstrapIds.has(normalized)) return
+    this.generations.set(normalized, (this.generations.get(normalized) ?? 0) + 1)
     const row = this.graphRows.get(normalized)
     if (row !== undefined) {
       const revision = rev ?? row.rev

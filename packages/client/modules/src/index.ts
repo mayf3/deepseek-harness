@@ -208,9 +208,9 @@ function framedHash(domain: string, parts: readonly Buffer[]): string {
   return hash.digest('hex').slice(0, HASH_REVISION_LENGTH)
 }
 
-/** Hash the executable artifact served after HMR observes one plugin change. */
-function artifactRevision(bundle: Buffer): string {
-  return framedHash('plugin-artifact', [bundle])
+/** Hash one completed build generation observed through its entry artifact. */
+function artifactRevision(bundle: Buffer, baseline: ClientArtifactBaseline): string {
+  return framedHash('plugin-artifact', [bundle, Buffer.from(String(baseline.mtimeMs))])
 }
 
 /** Address one ordered plugin-file list through the shared combo route. */
@@ -665,8 +665,8 @@ export class ClientModuleRegistry extends Service {
   }
 
   /**
-   * Re-hash one bundle (the HMR watch's registration hook — the only entry
-   * point through which bundle content changes reach the graph).
+   * Publish one completed bundle generation (the HMR watch's registration
+   * hook — the only entry point through which build changes reach the graph).
    * @param id - entry id (package name).
    * @returns the new rev, or undefined for an unknown id.
    */
@@ -675,7 +675,7 @@ export class ClientModuleRegistry extends Service {
     if (record === undefined) return undefined
     const baseline = this.captureArtifactBaseline(record.meta.clientPath)
     const bundle = readFileSync(record.meta.clientPath)
-    const rev = artifactRevision(bundle)
+    const rev = artifactRevision(bundle, baseline)
     record.baseline = baseline
     if (rev === record.entry.rev) return rev
     record.entry = graphRow(id, rev, record.meta)
@@ -755,6 +755,9 @@ export class ClientModuleRegistry extends Service {
         body: artifact.sourceMapBody,
         contentType: 'application/json; charset=utf-8',
       })
+    }
+    for (const [resourceUrl, response] of this.responses) {
+      if (this.chunkRequest(new URL(resourceUrl, 'http://x')) !== undefined) responses.set(resourceUrl, response)
     }
     this.previousBatchResponses = this.batchResponses
     this.batchResponses = batchResponses
@@ -1036,8 +1039,13 @@ export class ClientModuleRegistry extends Service {
     this.notifyGraphChanged()
   }
 
-  /** Build a package-local chunk response only when its URL is requested. */
-  private chunkResponse(requestUrl: URL): LazyResponse | undefined {
+  /** Match an exact current-revision package-local chunk URL without reading its file. */
+  private chunkRequest(requestUrl: URL): {
+    record: WebPluginRecord
+    fileName: string
+    sourceMap: boolean
+    resourceUrl: string
+  } | undefined {
     const resourceUrl = `${requestUrl.pathname}${requestUrl.search}`
     for (const record of this.table.values()) {
       const prefix = `/plugins/${record.entry.id}/`
@@ -1047,29 +1055,37 @@ export class ClientModuleRegistry extends Service {
       const fileName = sourceMap ? requested.slice(0, -'.map'.length) : requested
       if (!CLIENT_CHUNK.test(fileName)) return undefined
       if (resourceUrl !== chunkUrl(record.entry.id, fileName, record.entry.rev, sourceMap)) return undefined
-      const clientPath = join(dirname(record.meta.clientPath), fileName)
-      if (!existsSync(clientPath)) return undefined
-      const sourceMapUrl = chunkUrl(record.entry.id, fileName, record.entry.rev, true)
-      const resource = (): ComboResource => ({
-        id: record.entry.id,
-        rev: record.entry.rev,
-        clientPath,
-        fileName,
-        bundle: readFileSync(clientPath),
-      })
-      const response: LazyResponse = sourceMap
-        ? {
-          body: lazyBody(() => buildComboSourceMap([resource()], this.readSourceMap, fileName)),
-          contentType: 'application/json; charset=utf-8',
-        }
-        : {
-          body: lazyBody(() => buildComboScript([resource()], sourceMapUrl)),
-          contentType: 'text/javascript; charset=utf-8',
-        }
-      this.responses.set(resourceUrl, response)
-      return response
+      return { record, fileName, sourceMap, resourceUrl }
     }
     return undefined
+  }
+
+  /** Build a package-local chunk response only when its URL is requested. */
+  private chunkResponse(requestUrl: URL): LazyResponse | undefined {
+    const request = this.chunkRequest(requestUrl)
+    if (request === undefined) return undefined
+    const { record, fileName, sourceMap, resourceUrl } = request
+    const clientPath = join(dirname(record.meta.clientPath), fileName)
+    if (!existsSync(clientPath)) return undefined
+    const sourceMapUrl = chunkUrl(record.entry.id, fileName, record.entry.rev, true)
+    const resource = (): ComboResource => ({
+      id: record.entry.id,
+      rev: record.entry.rev,
+      clientPath,
+      fileName,
+      bundle: readFileSync(clientPath),
+    })
+    const response: LazyResponse = sourceMap
+      ? {
+        body: lazyBody(() => buildComboSourceMap([resource()], this.readSourceMap, fileName)),
+        contentType: 'application/json; charset=utf-8',
+      }
+      : {
+        body: lazyBody(() => buildComboScript([resource()], sourceMapUrl)),
+        contentType: 'text/javascript; charset=utf-8',
+      }
+    this.responses.set(resourceUrl, response)
+    return response
   }
 
   private async bundleResource(method: string | undefined, url: string): Promise<{

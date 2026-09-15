@@ -320,6 +320,25 @@ describe('lazy CJS arrival', () => {
     await stale.load()
     expect(b.fetched.at(-1)).toBe(chunkUrl('a', 'client.terminal.js', 'rebuilt'))
   })
+
+  it('discards a chunk that arrives after its owner generation was invalidated', async () => {
+    const staleUrl = chunkUrl('a', 'client.terminal.js')
+    const b = bench([row('a')], {
+      a: req => ({ load: () => req.async('./client.terminal.js') }),
+    }, {
+      gated: [staleUrl],
+      chunks: { 'a/client.terminal.js': () => ({ marker: 'terminal' }) },
+    })
+    const staleEntry = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    const staleLoad = staleEntry.load()
+    expect(b.gates.has(staleUrl)).toBe(true)
+    b.loader.invalidate('a', 'rebuilt')
+    await b.loader.import('a', '', {})
+    b.gates.get(staleUrl)?.()
+
+    await expect(staleLoad).resolves.toEqual({ marker: 'terminal' })
+    expect(b.fetched).toContain(chunkUrl('a', 'client.terminal.js', 'rebuilt'))
+  })
 })
 
 describe('require resolution', () => {

@@ -10,7 +10,7 @@
  * Non-experimental client outputs reject experimental module and stylesheet
  * inputs, including origins recorded by chained source maps.
  */
-import { readFile } from 'node:fs/promises'
+import { readFile, stat, utimes } from 'node:fs/promises'
 import { existsSync, globSync, readFileSync } from 'node:fs'
 import { createRequire, isBuiltin } from 'node:module'
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path'
@@ -458,6 +458,14 @@ function asyncChunkRequirePlugin(): TsdownPlugin {
         }
       }
       return transformed.hasChanged() ? transformed : null
+    },
+    async writeBundle(outputOptions, bundle) {
+      const entry = Object.values(bundle).find(output => output.type === 'chunk' && output.isEntry)
+      if (entry === undefined || outputOptions.dir === undefined) return
+      const entryPath = resolvePath(outputOptions.dir, entry.fileName)
+      const current = await stat(entryPath)
+      const completedAt = new Date(Math.max(Date.now(), current.mtimeMs + 1))
+      await utimes(entryPath, current.atime, completedAt)
     },
   }
 }

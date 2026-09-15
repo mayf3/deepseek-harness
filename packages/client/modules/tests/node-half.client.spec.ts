@@ -1,6 +1,6 @@
 /** Node-half composition diagnostics for package metadata and built client bundles. */
 
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { SourceMap } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -576,6 +576,11 @@ describe('client bundle activation', () => {
     const stableUrl = service.graph().entries.find(entry => entry.id === stablePackage)!.url
     const stableMapUrl = mapUrl(stableUrl)
     const first = await routeRequest(route, stableMapUrl)
+    const stableChunkPath = join(dirname(stablePath), 'client.stable.js')
+    writeFileSync(stableChunkPath, 'module.exports = { generation: 1 }\n')
+    const stableRow = service.graph().entries.find(entry => entry.id === stablePackage)!
+    const stableChunkUrl = chunkUrl(stablePackage, 'client.stable.js', stableRow.rev)
+    const firstChunk = await routeRequest(route, stableChunkUrl)
 
     writeFileSync(`${stablePath}.map`, JSON.stringify({
       version: 3,
@@ -583,10 +588,12 @@ describe('client bundle activation', () => {
       mappings: 'AAAA',
       sources: ['src/second.ts'],
     }))
+    writeFileSync(stableChunkPath, 'module.exports = { generation: 2 }\n')
     writeFileSync(rebuiltPath, 'module.exports = { rebuilt: true }\n')
     service.rebuilt(rebuiltPackage)
 
     expect((await routeRequest(route, stableMapUrl)).body).toEqual(first.body)
+    expect((await routeRequest(route, stableChunkUrl)).body).toEqual(firstChunk.body)
   })
 
   it('maps packed combo sections back to each generated client bundle', async () => {
@@ -806,6 +813,29 @@ describe('client bundle activation', () => {
     expect(chunk.body.toString('utf8')).toContain(`sourceMappingURL=${url.replace('.js?', '.js.map?')}`)
     expect((await routeRequest(route, url.replace('.js?', '.js.map?'))).status).toBe(200)
     expect((await routeRequest(route, url.replace(`rev=${row.rev}`, 'rev=stale'))).status).toBe(404)
+  })
+
+  it('publishes a new chunk revision when a completed build rewrites only the entry timestamp', async () => {
+    const packageName = '@fixture/chunk-only-rebuild'
+    const clientPath = writePackage(packageName)
+    const chunkPath = join(dirname(clientPath), 'client.terminal.js')
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = { load: () => require.async("./client.terminal.js") }\n')
+    writeFileSync(chunkPath, 'module.exports = { generation: 1 }\n')
+    const { service, route } = constructWithRoute([packageName])
+    const firstRow = service.graph().entries[0]!
+    const firstUrl = chunkUrl(packageName, 'client.terminal.js', firstRow.rev)
+    expect((await routeRequest(route, firstUrl)).body.toString('utf8')).toContain('generation: 1')
+
+    writeFileSync(chunkPath, 'module.exports = { generation: 2 }\n')
+    const entryStat = statSync(clientPath)
+    const completed = new Date(entryStat.mtimeMs + 1_000)
+    utimesSync(clientPath, entryStat.atime, completed)
+    const nextRev = service.rebuilt(packageName)!
+    expect(nextRev).not.toBe(firstRow.rev)
+    expect((await routeRequest(route, firstUrl)).status).toBe(404)
+    const nextUrl = chunkUrl(packageName, 'client.terminal.js', nextRev)
+    expect((await routeRequest(route, nextUrl)).body.toString('utf8')).toContain('generation: 2')
   })
 
   it('applies sourceRoot before relocating absolute-looking section sources', async () => {
