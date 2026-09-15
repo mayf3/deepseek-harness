@@ -1,3 +1,3 @@
-- button "Ran 2 commands":
-  - text: Ran 2 commands
+- button "Ran commands":
+  - text: Ran commands
   - img

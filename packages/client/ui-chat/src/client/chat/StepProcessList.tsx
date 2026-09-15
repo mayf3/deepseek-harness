@@ -5,7 +5,7 @@ import type { ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
 import { storedTurnProcessEntry } from '../stores.ts'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
-import { processActivity, processRanges, type ProcessRange } from './step-process.ts'
+import { processActivity, processRanges, processTitle, type ProcessRange } from './step-process.ts'
 import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './StepProcessList.module.css'
 import flowCss from './ChatView.module.css'
@@ -40,12 +40,7 @@ function StepProcess({ range, nodes, ...seatProps }: SeatProps & { readonly rang
   const reveal = useCallback(() => { setOpen(true) }, [])
   const bodyRef = useSearchableHidden(!open, reveal)
   const summary = processActivity(nodes)
-  const label = range.closed
-    ? summary.counts.map(({ kind, count }) => t(
-      `message.stepProcess.count.${kind}.${count === 1 ? 'one' : 'other'}`, { count },
-    ))
-      .join(t('message.turnProcess.separator')) || t('message.stepProcess.done')
-    : t(`message.stepProcess.${summary.running ?? 'thinking'}`)
+  const label = processTitle(summary, range.closed, t)
   return (
     <div ref={rootRef} className={css.root} data-chat-flow-key={range.key}
       data-chat-anchor-key={range.key} data-chat-turn={range.turn} data-step-process>

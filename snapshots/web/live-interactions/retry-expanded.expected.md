@@ -10,11 +10,8 @@
 - button "System prompt"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
-- button "Thought for a while" [expanded]
-- button "Context injection @deepseek-ai/dsh-system-prompt"
-- group:
-  - status: Retried model request (1/5) · {{duration}}
-- button "Think The user is asking for a one-sentence description of event sourcing. This is a straightforward knowledge question that doesn't require any skill loading or tool calls."
+- button "Worked for {{duration}}" [expanded]
+- button "Retry completed"
 - paragraph: Event sourcing is a pattern where all changes to an application's state are stored as an immutable, append-only sequence of events, rather than persisting only the current state, enabling full auditability, temporal queries, and event-driven architectures.
 - button "Copy"
 - button "Good response"

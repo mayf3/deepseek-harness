@@ -72,59 +72,94 @@ export function processRanges(snapshot: ChatSnapshot): ProcessRange[] {
   return ranges
 }
 
-/** Model-work categories used by compact process titles. */
-export type ProcessActivity = 'commands' | 'read' | 'edit' | 'search' | 'tools'
+/** Tool categories used by abstract process titles. */
+export type ProcessActivity = 'read' | 'search' | 'edit' | 'commands' | 'code'
+  | 'webSearch' | 'webFetch' | 'subagents' | 'plan' | 'questions' | 'tools'
 
 function activity(name: string): ProcessActivity {
-  if (name === 'bash' || name === 'pwsh') return 'commands'
-  if (name === 'read' || name === 'read_image') return 'read'
-  if (name === 'edit' || name === 'write') return 'edit'
-  if (name === 'grep' || name === 'glob' || name === 'web_search') return 'search'
+  if (['read', 'read_image', 'list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource'].includes(name)) return 'read'
+  if (name === 'grep' || name === 'glob' || name.endsWith('_inspect')) return 'search'
+  if (['write', 'edit', 'apply_patch'].includes(name)) return 'edit'
+  if (['bash', 'pwsh', 'exec_command', 'write_stdin'].includes(name) || name.startsWith('terminal_')) return 'commands'
+  if (name === 'run_code') return 'code'
+  if (name === 'web_search') return 'webSearch'
+  if (name === 'web_fetch') return 'webFetch'
+  if (name === 'subagent' || name.startsWith('subagent_')) return 'subagents'
+  if (['todo_write', 'create_goal', 'update_goal', 'get_goal'].includes(name)) return 'plan'
+  if (name === 'ask_user_question' || name === 'request_user_input') return 'questions'
   return 'tools'
 }
 
 /**
- * Count tool calls once, deduplicate known file paths per activity, and omit runtime metadata.
- * @param nodes - process members, including reasoning and infrastructure rows.
- * @returns up to three largest work counts and the latest running tool activity.
+ * Rank categories by distinct call count, breaking ties by first appearance.
+ * @param nodes - process members, including recursive tools and retry chains.
+ * @returns all ranked categories, latest running tool category, and retry phase evidence.
  */
-// TODO: Refine step-process title rules for live activity, completed-work categories,
-// counting, top-three selection, and fallback wording; the current rules are provisional.
 export function processActivity(nodes: readonly ChatNode[]): {
   counts: readonly { kind: ProcessActivity; count: number }[]
   running: ProcessActivity | undefined
+  retrying: boolean
+  retried: boolean
 } {
   const counts = new Map<ProcessActivity, number>()
-  const files = new Map<ProcessActivity, Set<string>>()
   const seen = new Set<string>()
   let running: ProcessActivity | undefined
+  let runningTime = -Infinity
+  let retrying = false
+  let retried = false
   const visit = (tool: ToolCallBlock): void => {
     if (seen.has(tool.callId)) return
     seen.add(tool.callId)
     const call = isRunningTool(tool) ? tool : tool.call
     if (call !== null) {
       const kind = activity(call.name)
-      if (isRunningTool(tool)) running = kind
-      let count = true
-      if (kind === 'read' || kind === 'edit') {
-        let args: unknown
-        try { args = JSON.parse(call.argsRaw) } catch { /* Streaming tool arguments may be incomplete JSON. */ }
-        if (typeof args === 'object' && args !== null && 'file_path' in args && typeof args.file_path === 'string') {
-          const paths = files.get(kind) ?? new Set<string>()
-          count = !paths.has(args.file_path)
-          paths.add(args.file_path)
-          files.set(kind, paths)
-        }
+      if (isRunningTool(tool) && tool.time >= runningTime) {
+        running = kind
+        runningTime = tool.time
       }
-      if (count) counts.set(kind, (counts.get(kind) ?? 0) + 1)
+      counts.set(kind, (counts.get(kind) ?? 0) + 1)
     }
     for (const child of tool.subCalls) visit(child)
   }
   for (const node of nodes) {
     if (node.kind === 'tool-call') visit(node.data.root)
+    if (node.kind === 'model-retry') {
+      retried = true
+      retrying ||= node.data.current.retryState !== 'cancelled'
+    }
   }
   return {
-    counts: [...counts].map(([kind, count]) => ({ kind, count })).sort((a, b) => b.count - a.count).slice(0, 3),
+    counts: [...counts].map(([kind, count]) => ({ kind, count })).sort((a, b) => b.count - a.count),
     running,
+    retrying,
+    retried,
   }
+}
+
+/**
+ * Compose localized abstract status or the top three completed categories without counts.
+ * @param summary - ranked work and phase evidence for this range.
+ * @param closed - whether a following reply or turn boundary closed the range.
+ * @param t - Chat namespace translator.
+ * @returns the secondary disclosure title.
+ */
+export function processTitle(
+  summary: ReturnType<typeof processActivity>,
+  closed: boolean,
+  t: import('../contract/slots.ts').ChatViewSlotProps['t'],
+): string {
+  if (!closed) return t(`message.stepProcess.${summary.running ?? (summary.retrying ? 'retrying' : 'thinking')}`)
+  const labels = summary.counts.slice(0, 3).map(({ kind }) => t(`message.stepProcess.done.${kind}`))
+  const first = labels[0]
+  if (first === undefined) return t(`message.stepProcess.done.${summary.retried ? 'retrying' : 'thinking'}`)
+  const continuation = (label: string): string => label.charAt(0).toLowerCase() + label.slice(1)
+  const second = labels[1]
+  if (second === undefined) return first
+  if (labels.length === 2) {
+    const prefix = t('message.stepProcess.sharedPrefix')
+    const shared = prefix !== '' && first.startsWith(prefix) && second.startsWith(prefix)
+    return t('message.stepProcess.joinTwo', { first, second: continuation(shared ? second.slice(prefix.length) : second) })
+  }
+  const title = [first, ...labels.slice(1).map(continuation)].join(t('message.stepProcess.comma'))
+  return summary.counts.length > 3 ? t('message.stepProcess.more', { title }) : title
 }

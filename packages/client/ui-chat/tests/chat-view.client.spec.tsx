@@ -598,12 +598,12 @@ describe('ChatView', () => {
   })
 
   it.each([
-    ['bash', 'Ran 1 command', 'Ran 2 commands'],
-    ['read', 'Read 1 file', 'Read 2 files'],
-    ['edit', 'Edited 1 file', 'Edited 2 files'],
-    ['grep', 'Performed 1 search', 'Performed 2 searches'],
-    ['custom_tool', 'Used 1 tool', 'Used 2 tools'],
-  ])('pluralizes completed %s activity in English', (name, singular, plural) => {
+    ['bash', 'Ran commands', 'Ran commands'],
+    ['read', 'Read files', 'Read files'],
+    ['edit', 'Edited files', 'Edited files'],
+    ['grep', 'Searched code', 'Searched code'],
+    ['custom_tool', 'Called tools', 'Called tools'],
+  ])('omits call counts from completed %s activity in English', (name, singular, plural) => {
     const opening = assistant(2, 'Starting.', 2)
     const result = toolResult(3, 'first', name)
     const response = assistant(5, 'Progress.', 2, 2)
@@ -634,13 +634,13 @@ describe('ChatView', () => {
       runningCalls: [],
       partial: { turn: 2, step: 2, blocks: [{ kind: 'reasoning', text: 'private analysis' }] },
     }) })
-    expect(view.getByRole('button', { name: '正在思考' }).getAttribute('aria-expanded')).toBe('true')
+    expect(view.getByRole('button', { name: '正在分析请求' }).getAttribute('aria-expanded')).toBe('true')
     act(() => { h.setChat({
       partial: { turn: 2, step: 2, blocks: [
         { kind: 'reasoning', text: 'private analysis' }, { kind: 'text', text: 'Here is the progress.' },
       ] },
     }) })
-    expect(view.getByRole('button', { name: '运行了 1 条命令' }).getAttribute('aria-expanded')).toBe('true')
+    expect(view.getByRole('button', { name: '执行了命令' }).getAttribute('aria-expanded')).toBe('true')
     expect(view.getByText('Here is the progress.').closest('[data-step-process-body]')).toBeNull()
     expect(view.getByText('private analysis').closest('[data-step-process-body]')).toBe(body)
   })
@@ -1781,7 +1781,7 @@ describe('ChatView', () => {
       running: true,
     })
     const view = render(<h.ChatView {...h.props} />)
-    fireEvent.click(view.getByRole('button', { name: '正在思考' }))
+    fireEvent.click(view.getByRole('button', { name: '正在分析请求' }))
     const contextToggle = view.getByRole('button', { name: '上下文注入' })
     const contextRow = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="context"]')
     contextToggle.focus()

@@ -34,7 +34,7 @@ it('keeps completed step work collapsed inside an expanded turn and bounds its s
         await outer.ariaSnapshot(), webSnapshotMode())
       await outer.click()
       const group = page.locator('[data-step-process][data-chat-turn="88"]').first()
-      const toggle = group.getByRole('button', { name: 'Ran 2 commands', exact: true })
+      const toggle = group.getByRole('button', { name: 'Ran commands', exact: true })
       await toggle.waitFor()
       expect(await toggle.getAttribute('aria-expanded')).toBe('false')
       expect(await group.locator('[data-step-process-body]').getAttribute('hidden')).toBe('until-found')

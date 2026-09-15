@@ -295,6 +295,11 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
       scaffold!.workspaceCwd,
     )
     await compareOrRefreshGolden(RETRY_EXPANDED_EXPECTED, expanded, MODE)
+    await page.locator('[data-turn-process]').click()
+    const retrySummary = page.getByRole('button', { name: 'Retry completed', exact: true })
+    expect(await retrySummary.getAttribute('aria-expanded')).toBe('false')
+    await retrySummary.click()
+    await page.getByRole('status').filter({ hasText: 'Retried model request' }).waitFor()
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 120_000)
