@@ -19,7 +19,7 @@ const BUNDLE: BundleInfo = {
   installed: true,
   removable: true,
   rows: [{ rowId: 'sidebar', moduleName: 'dsh-better-sidebar', entryId: ROW_ENTRY }, { rowId: 'theme', moduleName: 'dsh-better-sidebar/theme' }],
-  overrides: ['layout'],
+  overrides: [],
 }
 
 const PLUGINS: PluginInfo[] = [
@@ -84,7 +84,7 @@ describe('packageView', () => {
   it('joins a bundle with the entries its rows run as', () => {
     expect(packageView(BUNDLE, PLUGINS)).toEqual({
       name: 'dsh-better-sidebar', version: '0.16.0', title: 'Better sidebar', description: 'A sidebar.',
-      installed: true, enabled: false, overrides: ['layout'],
+      installed: true, enabled: false,
       rows: [
         { rowId: 'sidebar', moduleName: 'dsh-better-sidebar', entryId: ROW_ENTRY, enabled: true, phase: 'active' },
         { rowId: 'theme', moduleName: 'dsh-better-sidebar/theme', enabled: false, phase: null },
@@ -99,7 +99,7 @@ describe('packageView', () => {
     }
     expect(packageView(protectedBundle, PLUGINS)).toEqual({
       name: '@deepseek-ai/dsh-base', installed: false, enabled: true, readOnlyReason: 'management-required',
-      error: { code: 'operation-error', diagnostic: 'broken' }, overrides: [],
+      error: { code: 'operation-error', diagnostic: 'broken' },
       rows: [
         { rowId: 'core', moduleName: '@deepseek-ai/dsh-base', entryId: 'include:core', enabled: true, phase: 'active', readOnlyReason: 'management-required' },
         { rowId: 'gone', moduleName: 'x', entryId: 'include:gone', enabled: false, phase: null },
@@ -204,18 +204,18 @@ describe('PluginManagerController', () => {
     })
     await controller.load()
     face.setEnabled(BUNDLE.name, true)
-    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', code: 'operation-error', reason: 'the tree rejected it', packageName: BUNDLE.name, seq: 1 }) })
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', action: 'enable', code: 'operation-error', reason: 'the tree rejected it', packageName: BUNDLE.name, seq: 1 }) })
+    face.setEnabled(BUNDLE.name, false)
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', action: 'disable', reason: 'offline', packageName: BUNDLE.name, seq: 2 }) })
     face.setEnabled(BUNDLE.name, true)
-    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', reason: 'offline', packageName: BUNDLE.name, seq: 2 }) })
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', action: 'enable', reason: 'transport down', packageName: BUNDLE.name, seq: 3 }) })
     face.setEnabled(BUNDLE.name, true)
-    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', reason: 'transport down', packageName: BUNDLE.name, seq: 3 }) })
-    face.setEnabled(BUNDLE.name, true)
-    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', reason: 'odd', packageName: BUNDLE.name, seq: 4 }) })
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', action: 'enable', reason: 'odd', packageName: BUNDLE.name, seq: 4 }) })
     // A refusal keeps its code with no words of its own; a failure without a code has neither.
     face.setEnabled(BUNDLE.name, true)
-    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', code: 'bundle-in-use', reason: '', packageName: BUNDLE.name, seq: 5 }) })
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', action: 'enable', code: 'bundle-in-use', reason: '', packageName: BUNDLE.name, seq: 5 }) })
     face.setEnabled(BUNDLE.name, true)
-    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', reason: '', packageName: BUNDLE.name, seq: 6 }) })
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', action: 'enable', reason: '', packageName: BUNDLE.name, seq: 6 }) })
     // A change the Host stopped is said in passing.
     face.setEnabled(BUNDLE.name, true)
     await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'cancelled', seq: 7 }) })
@@ -237,6 +237,11 @@ describe('PluginManagerController', () => {
     expect(state().confirm).toBeNull()
     await vi.waitFor(() => { expect(plugins.removeBundle).toHaveBeenCalledExactlyOnceWith(BUNDLE.name) })
     await vi.waitFor(() => { expect(state().busy).toEqual([]) })
+    // A refused removal names the action it was.
+    plugins.removeBundle.mockResolvedValueOnce(ok({ ...failed(), stage: 'remove', error: { code: 'not-removable' } }) as never)
+    face.uninstall(BUNDLE.name)
+    face.confirm()
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', action: 'uninstall', code: 'not-removable', reason: '', packageName: BUNDLE.name, seq: 1 }) })
   })
 
   it('switches rows under their own busy keys and reports what the Host said', async () => {
@@ -253,7 +258,7 @@ describe('PluginManagerController', () => {
     gate.resolve(ok(APPLIED))
     await vi.waitFor(() => { expect(state().busy).toEqual([]) })
     face.setRowEnabled(ROW_ENTRY, true)
-    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', code: 'unaddressable', reason: '', packageName: ROW_ENTRY, seq: 1 }) })
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', action: 'rowEnable', code: 'unaddressable', reason: '', packageName: ROW_ENTRY, seq: 1 }) })
   })
 
   it('checks the spec, hands the run to the Host, and folds the chunks that carry its request id', async () => {
@@ -515,7 +520,7 @@ describe('PluginManagerController', () => {
     face.enableInstalled()
     await vi.waitFor(() => { expect(state().install.open).toBe(false) })
     expect(plugins.setBundleEnabled).toHaveBeenCalledTimes(2)
-    expect(state().notice).toEqual({ kind: 'failed', code: 'operation-error', reason: 'the tree rejected it', packageName: 'dsh-a', seq: 2 })
+    expect(state().notice).toEqual({ kind: 'failed', action: 'enable', code: 'operation-error', reason: 'the tree rejected it', packageName: 'dsh-a', seq: 2 })
     expect(state().highlight).toBe('dsh-a')
 
     // An install that named no bundle has nothing to enable or mark: the screen just closes.

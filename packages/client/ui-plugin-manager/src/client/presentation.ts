@@ -3,7 +3,7 @@
 import type { ManagementError } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginManagerLocaleKey } from './locales.ts'
-import type { ManagerNotice } from './manager-store.ts'
+import type { FailedAction, ManagerNotice } from './manager-store.ts'
 
 /** The translate seat of the manager's dictionary. */
 export type Translate = PropsLocale<'pluginManager'>['t']
@@ -21,6 +21,15 @@ const CODE_KEYS = {
   'bundle-in-use': 'reasonBundleInUse',
   'operation-error': 'reasonOperationError',
 } satisfies Record<ManagementError['code'], PluginManagerLocaleKey>
+
+/** The sentence a failed action opens with, by what was being done. */
+const FAILED_KEYS = {
+  enable: 'failedEnable',
+  disable: 'failedDisable',
+  uninstall: 'failedUninstall',
+  rowEnable: 'failedRowEnable',
+  rowDisable: 'failedRowDisable',
+} satisfies Record<FailedAction, PluginManagerLocaleKey>
 
 /**
  * What a management error reads as: the code's sentence, or, for an
@@ -55,8 +64,9 @@ export function noticeText(notice: ManagerNotice, t: Translate): string {
     case 'restart': return t('restartNotice')
     case 'overridden': return t('overriddenNotice', { name: notice.packageName })
     case 'cancelled': return t('installCancelled')
-    case 'failed': return t('actionFailed', {
-      reason: notice.code === undefined ? notice.reason : managementText({ code: notice.code, diagnostic: notice.reason }, t),
-    })
+    case 'failed': {
+      const reason = notice.code === undefined ? notice.reason : managementText({ code: notice.code, diagnostic: notice.reason }, t)
+      return t(FAILED_KEYS[notice.action], { reason: reason === '' ? t('reasonOperationError') : reason })
+    }
   }
 }

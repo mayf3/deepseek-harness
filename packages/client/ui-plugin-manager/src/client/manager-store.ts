@@ -25,6 +25,9 @@ import type {
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { shortName } from './presentation.ts'
 
+/** The action a failed notice names. */
+export type FailedAction = 'enable' | 'disable' | 'uninstall' | 'rowEnable' | 'rowDisable'
+
 /** What the last action left to say, shown as a toast; `seq` tells one showing from the next. */
 export type ManagerNotice =
   | { readonly kind: 'restart'; readonly packageName: string; readonly seq: number }
@@ -32,6 +35,8 @@ export type ManagerNotice =
   | { readonly kind: 'cancelled'; readonly seq: number }
   | {
     readonly kind: 'failed'
+    /** What was being done when it failed. */
+    readonly action: FailedAction
     /** The Host's refusal, when the Host refused; absent when the transport failed. */
     readonly code?: ManagementError['code']
     /** The Host's diagnostic or the transport's words, shown verbatim; empty when the code says it all. */
@@ -71,8 +76,6 @@ export interface PackageView {
   /** Why the Host cannot read the bundle, when it cannot. */
   readonly error?: ManagementError
   readonly rows: readonly PackageRow[]
-  /** Ids of built-in rows the bundle's patch changes. */
-  readonly overrides: readonly string[]
 }
 
 /** The typed spec as the Host read it, on the installing, installed, and failed screens. */
@@ -226,7 +229,7 @@ function failureOf(error: ManagementError | undefined, kind: PluginInstallFailur
 }
 
 /** The notice a thrown failure becomes: a refusal keeps its code, anything else its words. */
-function failedNotice(error: unknown, subject: { packageName?: string }, seq: number): ManagerNotice {
+function failedNotice(error: unknown, subject: { action: FailedAction; packageName?: string }, seq: number): ManagerNotice {
   const code = error instanceof RemoteAnswerError ? error.code : undefined
   return { kind: 'failed', reason: reasonOf(error), ...code === undefined ? {} : { code }, ...subject, seq }
 }
@@ -268,7 +271,6 @@ export function packageView(bundle: BundleInfo, plugins: readonly PluginInfo[]):
     installed: bundle.installed,
     enabled: bundle.enabled,
     rows,
-    overrides: bundle.overrides,
     ...bundle.version === undefined ? {} : { version: bundle.version },
     ...bundle.title === undefined ? {} : { title: bundle.title },
     ...bundle.description === undefined ? {} : { description: bundle.description },
@@ -360,12 +362,12 @@ export class PluginManagerController {
       enableInstalled: () => { void this.enableInstalled() },
       clearHighlight: () => { if (this.getSnapshot().highlight !== null) this.patch({ highlight: null }) },
       setEnabled: (packageName, enabled) => {
-        void this.run(packageName, { packageName }, async () => {
+        void this.run(packageName, { packageName, action: enabled ? 'enable' : 'disable' }, async () => {
           this.applied(await this.ctx.remote.pluginManager.setBundleEnabled(packageName, enabled), packageName)
         })
       },
       uninstall: (packageName) => {
-        this.pendingConfirm = () => this.run(packageName, { packageName }, async () => {
+        this.pendingConfirm = () => this.run(packageName, { packageName, action: 'uninstall' }, async () => {
           this.applied(await this.ctx.remote.pluginManager.removeBundle(packageName), packageName)
         })
         this.patch({ confirm: { action: 'uninstall', packageName } })
@@ -373,7 +375,7 @@ export class PluginManagerController {
       confirm: () => { void this.confirm() },
       cancelConfirm: () => { this.pendingConfirm = undefined; this.patch({ confirm: null }) },
       setRowEnabled: (entryId, enabled) => {
-        void this.run(rowKey(entryId), { packageName: entryId }, async () => {
+        void this.run(rowKey(entryId), { packageName: entryId, action: enabled ? 'rowEnable' : 'rowDisable' }, async () => {
           this.applied(await this.ctx.remote.pluginManager.setPluginEnabled(entryId, enabled), entryId)
         })
       },
@@ -607,7 +609,7 @@ export class PluginManagerController {
       try {
         this.applied(result, name)
       } catch (error) {
-        this.patch({ notice: failedNotice(error, { packageName: name }, ++this.noticeSeq) })
+        this.patch({ notice: failedNotice(error, { packageName: name, action: 'enable' }, ++this.noticeSeq) })
       }
     }
     this.patch({ install: IDLE_INSTALL, highlight: name })
@@ -620,7 +622,7 @@ export class PluginManagerController {
    */
   private async run(
     key: string,
-    subject: { packageName?: string },
+    subject: { action: FailedAction; packageName?: string },
     action: () => Promise<void>,
   ): Promise<void> {
     if (this.disposed || this.getSnapshot().busy.includes(key)) return

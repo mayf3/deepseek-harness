@@ -24,7 +24,6 @@ function pkg(overrides: Partial<PackageView> = {}): PackageView {
     installed: true,
     enabled: true,
     rows: [],
-    overrides: [],
     ...overrides,
   }
 }
@@ -127,12 +126,11 @@ describe('PluginManagerPage', () => {
     expect(locked.getAttribute('title')).toBe(en.reasonManagementRequired)
   })
 
-  it('opens a bundle\'s page with its facts, rows, and overrides, and uninstalls from it', () => {
+  it('opens a bundle\'s page with its facts and rows, and uninstalls from it', () => {
     const { actions, set } = renderTab({
       packages: [pkg({
         title: 'Better sidebar', description: 'A sidebar.',
         rows: [row(), row({ rowId: 'theme', moduleName: 'dsh-better-sidebar/theme', entryId: 'include:theme' as PluginEntryId, enabled: false, phase: null })],
-        overrides: ['layout'],
       })],
     })
     fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Better sidebar') }))
@@ -144,7 +142,7 @@ describe('PluginManagerPage', () => {
     expect(document.querySelector('[data-plugin-name]')?.textContent).toBe('dsh-better-sidebar')
     expect(within(detail).getByRole('button', { name: en.backToList }).textContent).toBe(en.crumbRoot)
     expect(within(detail).getByText('A sidebar.')).toBeTruthy()
-    // The rows, in order, with their state and their module; the built-in rows the patch changes.
+    // The rows, in order, with their state and their module.
     const rows = within(detail).getAllByRole('listitem').filter(item => item.hasAttribute('data-plugin-row'))
     expect(rows.map(item => item.getAttribute('data-plugin-row'))).toEqual(['include:sidebar', 'include:theme'])
     expect(rows[1]?.getAttribute('data-state')).toBe('off')
@@ -152,8 +150,6 @@ describe('PluginManagerPage', () => {
     expect(within(detail).getByText('dsh-better-sidebar/theme')).toBeTruthy()
     expect(within(detail).getByText(en.rowPhaseActive)).toBeTruthy()
     expect(within(detail).getByText(en.partOff)).toBeTruthy()
-    expect(within(detail).getByText(en.overridesLabel)).toBeTruthy()
-    expect(within(detail).getByText('layout')).toBeTruthy()
     fireEvent.click(within(detail).getByRole('button', { name: en.uninstallLabel.replace('{name}', 'Better sidebar') }))
     expect(actions.uninstall).toHaveBeenCalledWith('dsh-better-sidebar')
     fireEvent.click(within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', 'Better sidebar') }))
@@ -490,12 +486,17 @@ describe('PluginManagerPage', () => {
       expect(screen.getByRole('alert').textContent).toContain(en.overriddenNotice.replace('{name}', 'pkg-1'))
       set({ notice: { kind: 'cancelled', seq: 3 } })
       expect(screen.getByRole('alert').textContent).toContain(en.installCancelled)
-      set({ notice: { kind: 'failed', reason: 'the tree rejected it', packageName: 'pkg-1', seq: 4 } })
-      expect(screen.getByRole('alert').textContent).toContain(en.actionFailed.replace('{reason}', 'the tree rejected it'))
-      set({ notice: { kind: 'failed', code: 'bundle-in-use', reason: '', packageName: 'pkg-1', seq: 5 } })
-      expect(screen.getByRole('alert').textContent).toContain(en.actionFailed.replace('{reason}', en.reasonBundleInUse))
-      set({ notice: { kind: 'failed', code: 'operation-error', reason: 'EACCES', packageName: 'pkg-1', seq: 6 } })
-      expect(screen.getByRole('alert').textContent).toContain(en.actionFailed.replace('{reason}', 'EACCES'))
+      // A failure names what was being done; a refusal is worded by its code, a silent one generically.
+      set({ notice: { kind: 'failed', action: 'enable', reason: 'the tree rejected it', packageName: 'pkg-1', seq: 4 } })
+      expect(screen.getByRole('alert').textContent).toContain(en.failedEnable.replace('{reason}', 'the tree rejected it'))
+      set({ notice: { kind: 'failed', action: 'uninstall', code: 'bundle-in-use', reason: '', packageName: 'pkg-1', seq: 5 } })
+      expect(screen.getByRole('alert').textContent).toContain(en.failedUninstall.replace('{reason}', en.reasonBundleInUse))
+      set({ notice: { kind: 'failed', action: 'rowDisable', code: 'operation-error', reason: 'EACCES', packageName: 'pkg-1', seq: 6 } })
+      expect(screen.getByRole('alert').textContent).toContain(en.failedRowDisable.replace('{reason}', 'EACCES'))
+      set({ notice: { kind: 'failed', action: 'disable', reason: '', packageName: 'pkg-1', seq: 7 } })
+      expect(screen.getByRole('alert').textContent).toContain(en.failedDisable.replace('{reason}', en.reasonOperationError))
+      set({ notice: { kind: 'failed', action: 'rowEnable', reason: 'x', packageName: 'pkg-1', seq: 8 } })
+      expect(screen.getByRole('alert').textContent).toContain(en.failedRowEnable.replace('{reason}', 'x'))
       // No button to press: the toast retires on its own and the store forgets it.
       expect(screen.queryByRole('button', { name: /got it/i })).toBeNull()
       expect(actions.dismissNotice).not.toHaveBeenCalled()

@@ -2,9 +2,10 @@
   - heading "添加插件" [level=2]
   - button "关闭":
     - img
-  - paragraph: 你可以从 Git 社区中获取插件 ID，例如 dsh-better-sidebar、github:someone/dsh-plugin，或输入本地路径例如 /path/to/plugin。
-  - text: 包名或地址
-  - textbox "包名或地址":
-    - /placeholder: 输入插件的包名、本地路径或 Git 地址
+  - paragraph: 粘贴插件作者提供的插件 ID、Git 仓库地址（如 GitHub 链接）或本地绝对路径。
+  - text: 插件 ID 或地址
+  - textbox "插件 ID 或地址":
+    - /placeholder: dsh-xxx、github:作者/仓库 或 /绝对路径
     - text: slow-package
+  - paragraph: 插件 ID 是安装时使用的包名，不是插件显示的名称，常见形式是 dsh-xxx 或 @作者/插件名；加 @版本 可指定版本。
   - button "安装"

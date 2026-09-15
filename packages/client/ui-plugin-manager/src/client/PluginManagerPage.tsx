@@ -2,8 +2,7 @@
  * Global plugin management: installed bundle cards, their row switches, the
  * guided install dialog with its folded pnpm output, the uninstall
  * confirmation, and the toasts an action's outcome becomes. A bundle's page
- * lists the rows it contributes as the Host runs them and the built-in rows
- * its patch changes.
+ * lists the rows it contributes as the Host runs them.
  */
 
 import { useEffect, useId, useState, type ReactNode } from 'react'
@@ -176,20 +175,6 @@ function RowsSection({ rows, t, toggle }: {
   )
 }
 
-/** The built-in rows the pack's patch changes, by id: the one thing a pack does outside its own rows. */
-function OverridesSection({ overrides, t }: { readonly overrides: readonly string[]; readonly t: Translate }): ReactNode {
-  return (
-    <section className={css.detailSection} data-plugin-overrides>
-      <div className={css.sectionHead}>
-        <h4 className={css.sectionTitle}>{t('overridesLabel')}</h4>
-      </div>
-      <ul className={css.chips}>
-        {overrides.map(id => <li key={id} className={css.chip}>{id}</li>)}
-      </ul>
-    </section>
-  )
-}
-
 /**
  * A bundle's enable switch on its card and its page: locked, saying why, for
  * one the Host protects; off and locked for one it cannot read.
@@ -257,8 +242,8 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
  * One package's page: the crumb back to the list; its icon with uninstall
  * and its switch; its title beside its version tag and problem tag; the
  * package name the title stands for, which is what installs it elsewhere;
- * its one-liner; the Host's problem when it reports one; its rows with
- * their switches; and the built-in rows it changes.
+ * its one-liner; the Host's problem when it reports one; and its rows with
+ * their switches.
  */
 function PackageDetail({
   pkg, t, busy, rowBusy,
@@ -316,7 +301,6 @@ function PackageDetail({
           t={t}
           toggle={pkg.enabled ? { busy: row => busy || rowBusy(row), onSetEnabled: onSetRowEnabled } : undefined}
         />
-        {pkg.overrides.length === 0 ? null : <OverridesSection overrides={pkg.overrides} t={t} />}
       </div>
     </div>
   )
@@ -425,6 +409,7 @@ function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onTog
   readonly onEnableNow: () => void
 }): ReactNode {
   const errorId = useId()
+  const hintId = useId()
   const { phase } = install
   if (phase === 'idle' || phase === 'checking') {
     const checking = phase === 'checking'
@@ -453,7 +438,7 @@ function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onTog
               placeholder={t('installSpecPlaceholder')}
               disabled={checking}
               aria-invalid={install.inputError !== null}
-              aria-describedby={install.inputError === null ? undefined : errorId}
+              aria-describedby={install.inputError === null ? hintId : `${errorId} ${hintId}`}
               onChange={(event) => { onEditSpec(event.currentTarget.value) }}
               onKeyDown={(event) => { if (event.key === 'Enter' && !empty && !checking) onRun() }}
             />
@@ -461,6 +446,7 @@ function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onTog
           {install.inputError === null
             ? null
             : <p id={errorId} className={css.inputError} role="alert">{t(INPUT_PROBLEM_KEYS[install.inputError.problem], { reason: install.inputError.reason })}</p>}
+          <p id={hintId} className={css.installHint}>{t('installSpecHint')}</p>
         </div>
       </Modal>
     )
