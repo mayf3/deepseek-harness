@@ -3,9 +3,11 @@ import { DESKTOP_IPC, type DshDesktopStartupApi } from '../src/ipc.ts'
 
 const electron = vi.hoisted(() => ({
   contextBridge: { exposeInMainWorld: vi.fn() },
-  ipcRenderer: { invoke: vi.fn(), on: vi.fn(), off: vi.fn() },
+  ipcRenderer: { invoke: vi.fn(), on: vi.fn(), off: vi.fn(), send: vi.fn() },
 }))
 vi.mock('electron', () => electron)
+vi.mock('../src/preload-platform.ts', () => ({ markDocumentPlatform: vi.fn() }))
+vi.mock('../src/preload-theme.ts', () => ({ syncNativeTheme: vi.fn() }))
 
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); vi.resetModules() })
 
@@ -36,4 +38,18 @@ it('provides startup controls and a removable state subscription to shell docume
   dispose()
   expect(electron.ipcRenderer.off).toHaveBeenCalledWith(DESKTOP_IPC.backendState, handler)
   expect(api).not.toHaveProperty('plugins')
+})
+
+
+it('exposes asynchronous boot only to the local application document', async () => {
+  vi.stubGlobal('location', new URL('dsh-app://app/'))
+  await import('../src/preload-app.ts')
+  const api = electron.contextBridge.exposeInMainWorld.mock.calls.find(([name]) => name === 'dshDesktopBoot')?.[1] as { ready(): Promise<unknown> }
+  await api.ready()
+  expect(electron.ipcRenderer.invoke).toHaveBeenCalledWith(DESKTOP_IPC.boot)
+  vi.resetModules()
+  electron.contextBridge.exposeInMainWorld.mockClear()
+  vi.stubGlobal('location', new URL('https://other.example/'))
+  await import('../src/preload-app.ts')
+  expect(electron.contextBridge.exposeInMainWorld.mock.calls.some(([name]) => name === 'dshDesktopBoot')).toBe(false)
 })

@@ -7,6 +7,7 @@ import type { DesktopBackendState } from './backend-controller.ts'
 /** IPC channel names kept private to the desktop application bundle. */
 export const DESKTOP_IPC = {
   localeGet: 'dsh-desktop:locale-get',
+  boot: 'dsh-desktop:boot',
   pluginsList: 'dsh-desktop:plugins-list',
   pluginsAdd: 'dsh-desktop:plugins-add',
   pluginsRemove: 'dsh-desktop:plugins-remove',
@@ -21,6 +22,7 @@ export const DESKTOP_IPC = {
   updatesCheck: 'dsh-desktop:updates-check',
   updatesInstall: 'dsh-desktop:updates-install',
   updatesState: 'dsh-desktop:updates-state',
+  nativeThemeSet: 'dsh-desktop:native-theme-set',
 } as const
 
 /** Desktop release update state rendered by desktop-owned UI. */
