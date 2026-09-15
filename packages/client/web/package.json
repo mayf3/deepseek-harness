@@ -48,7 +48,7 @@
   "files": [
     "lib/index.js",
     "lib/**/*.css",
-    "lib/types/**/*.d.ts",
-    "lib/apply-injections.js"
+    "lib/apply-injections.js",
+    "lib/types/**/*.d.ts"
   ]
 }
