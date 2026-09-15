@@ -487,7 +487,8 @@ export function rawMarkdownFiles(pages: DocsPage[] = docsPages): string[] {
  * projected over the alias route so its relative links stay correct.
  * Referenced images are copied beside the pages, keeping the same relative
  * URLs valid in both trees. Existing build files stay in place, and a name
- * collision with one fails the emission.
+ * collision with one fails the emission. Markdown files carry a UTF-8 BOM so
+ * browser navigation decodes them even when static hosting omits a charset.
  *
  * @param outDir Build output directory to emit into.
  * @param context Manifest and repository inputs, defaulting to this repository.
@@ -500,7 +501,7 @@ export function emitRawMarkdownPages(outDir: string, context: ProjectionContext 
   projectPagesInto(
     outDir,
     context,
-    (markdown, page) => rawMarkdownPageContent(markdown, page.source),
+    (markdown, page) => `\uFEFF${rawMarkdownPageContent(markdown, page.source)}`,
     [...context.pages, ...aliases],
   )
 }

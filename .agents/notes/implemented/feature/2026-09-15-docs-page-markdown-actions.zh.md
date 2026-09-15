@@ -12,7 +12,7 @@ Status: implemented
 
 [投影器](../../../../scripts/project-doc-site.ts) 根据发布 manifest（元数据清单）为普通内容页提供 `rawMarkdownPath`。[主题](../../../../website/.vitepress/theme/index.ts) 将该路径与站点 base 组合，在正文上方提供复制和查看操作。目录页使用完整的 `index.md` 路由，使相对链接在开发环境和静态构建中保持相同的位置。首页重定向和缺失页面不显示操作。原文输出不包含投影元数据。
 
-[开发中间件](../../../../website/raw-markdown.ts) 接受带有显式 `?dsh-raw=1` 标记的浏览器请求，对未发布的原文路由返回 404。脚本导入始终交给 Vite。查看链接在新标签页打开普通原文 URL；复制按需读取相同的投影正文。两种操作都不从渲染后的 DOM 重建 Markdown。
+[开发中间件](../../../../website/raw-markdown.ts) 接受带有显式 `?dsh-raw=1` 标记的浏览器请求，对未发布的原文路由返回 404。脚本导入始终交给 Vite。查看链接在新标签页打开普通原文 URL；复制按需读取相同的投影正文。生成的 Markdown 文件携带 UTF-8 BOM，因为静态托管可能省略响应字符集，导致浏览器直接访问时错误解码中文等非 ASCII 字符。Fetch 解码会在复制前移除 BOM。两种操作都不从渲染后的 DOM 重建 Markdown。
 
 [复制组件](../../../../website/.vitepress/theme/page-markdown-actions.ts) 在点击手势内调用 `clipboard.write`，并提供由 Promise 承载数据的 `text/plain` ClipboardItem。先等待网络会在要求用户激活的浏览器中丢失该激活状态。每个路由和语言组合都有独立的、带 key 的组件实例；释放时取消未完成的数据读取，防止旧写入改变新页面的反馈。已经消费数据的系统剪贴板写入无法撤回。请求失败和剪贴板失败提供本地化的手动复制指引，成功提示在写入完成后显示。被拒绝的写入可能完全不消费数据 Promise，因此该 Promise 有独立的拒绝处理器。
 

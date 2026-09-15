@@ -675,9 +675,9 @@ describe('emitRawMarkdownPages', () => {
     // The real path, because image placement proves containment via realpath.
     emitRawMarkdownPages(out, { pages, repoRoot: realpathSync(root), repositoryRef: 'abc123' })
 
-    expect(readFileSync(join(out, 'a.md'), 'utf8')).toBe('[B](./reference-root/b.md) ![logo](./logo.svg)\n')
-    expect(readFileSync(join(out, 'en/a.md'), 'utf8')).toBe('[B](./reference/b.md) ![logo](./logo.svg)\n')
-    expect(readFileSync(join(out, 'reference-root/b.md'), 'utf8')).toBe('# B\n')
+    expect(readFileSync(join(out, 'a.md'), 'utf8')).toBe('\uFEFF[B](./reference-root/b.md) ![logo](./logo.svg)\n')
+    expect(readFileSync(join(out, 'en/a.md'), 'utf8')).toBe('\uFEFF[B](./reference/b.md) ![logo](./logo.svg)\n')
+    expect(readFileSync(join(out, 'reference-root/b.md'), 'utf8')).toBe('\uFEFF# B\n')
     expect(existsSync(join(out, 'logo.svg'))).toBe(true)
     expect(existsSync(join(out, 'en/logo.svg'))).toBe(true)
   })
@@ -693,7 +693,7 @@ describe('emitRawMarkdownPages', () => {
 
     emitRawMarkdownPages(out, { pages, repoRoot: root, repositoryRef: 'abc123' })
 
-    expect(readFileSync(join(out, 'index.md'), 'utf8')).toBe('# Home\n\n[A](./a.md)\n')
+    expect(readFileSync(join(out, 'index.md'), 'utf8')).toBe('\uFEFF# Home\n\n[A](./a.md)\n')
   })
 
   it('emits a parent-level alias for an index route with links recomputed', () => {
@@ -709,8 +709,20 @@ describe('emitRawMarkdownPages', () => {
 
     emitRawMarkdownPages(out, { pages, repoRoot: root, repositoryRef: 'abc123' })
 
-    expect(readFileSync(join(out, 'guide/index.md'), 'utf8')).toBe('# C\n\n[A](../a.md)\n')
-    expect(readFileSync(join(out, 'guide.md'), 'utf8')).toBe('# C\n\n[A](./a.md)\n')
+    expect(readFileSync(join(out, 'guide/index.md'), 'utf8')).toBe('\uFEFF# C\n\n[A](../a.md)\n')
+    expect(readFileSync(join(out, 'guide.md'), 'utf8')).toBe('\uFEFF# C\n\n[A](./a.md)\n')
+  })
+
+  it('identifies UTF-8 to document readers while fetch decoding preserves the Markdown body', async () => {
+    const { root, pages } = fixture()
+    const markdown = '# 中文 → Markdown\n'
+    writeFileSync(join(root, 'docs/a.md'), markdown)
+    const out = mirrorDir()
+    emitRawMarkdownPages(out, { pages, repoRoot: root, repositoryRef: 'abc123' })
+    const bytes = readFileSync(join(out, 'a.md'))
+    expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf])
+    expect(await new Response(bytes).text()).toBe(markdown)
+    expect(fromMarkdown(bytes.toString('utf8')).children[0]?.type).toBe('heading')
   })
 
   it('refuses to overwrite a file the build already carries', () => {
