@@ -29,12 +29,12 @@
   - img
   - img
   - text: 思考 Now do all four actions. Edit intro.md, write src/util.ts, write app.local, bash append.
-- button "编辑 intro.md +3 -3":
+- button "编辑 intro.md +1 -1":
   - img
   - img
   - text: 编辑
   - button "intro.md"
-  - text: +3 -3
+  - text: +1 -1
 - button "写入 src/util.ts +3 -0":
   - img
   - img
@@ -113,7 +113,7 @@
 - button "展开全部 4 个改动文件":
   - text: 全部 4 个文件
   - img
-- text: 此主机没有可用的桌面，无法打开文件或文件夹
+- text: 此主机没有可用的桌面，无法使用外部程序打开文件或文件夹；文件仍可在侧边栏预览
 - button "在侧边栏预览 intro.md"
 - text: intro.md 标题已改为「项目说明」
 - button "在侧边栏打开 intro.md": 打开
