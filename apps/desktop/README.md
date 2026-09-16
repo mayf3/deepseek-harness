@@ -92,6 +92,8 @@ Workspace development runs the current CLI and private Desktop Host packages und
 
 ### Release versions
 
+Before each Desktop packaging run, first confirm the complete version string with the current user. Check the selected deployment, dsh base version, retained release records, and published objects, then propose the exact version for approval. Do not change release-family manifests or start packaging until the user confirms that version; the deployment setting alone does not authorize a version choice.
+
 Record the current dsh version as the base before changing any manifests. A production Desktop release uses that exact version, including any `alpha`, `beta`, or `rc` identifiers. A test release preserves the complete prerelease base and appends `.YYYYMMDD.index`; a stable base uses `-test.YYYYMMDD.index` instead.
 
 | dsh base | Production Desktop | Test Desktop example |

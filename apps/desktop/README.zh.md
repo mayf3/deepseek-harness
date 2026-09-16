@@ -92,6 +92,8 @@ Workspace 开发使用 Electron RunAsNode 运行当前 CLI 与私有 Desktop Hos
 
 ### 发布版本
 
+每次 Desktop 打包前，第一步都要与当前用户确认完整版本号。检查所选部署环境、dsh 基础版本、保留的发布记录和已发布对象，再提出准确版本供用户确认。用户确认前，不得修改发布家族清单或启动打包；仅选择部署环境不代表用户已认可版本号。
+
 修改任何清单前，记录当前 dsh 版本作为基础版本。production Desktop 使用完全相同的版本，包括其中的 `alpha`、`beta` 或 `rc` 标识。test 发布保留完整的预发布基础版本并追加 `.YYYYMMDD.index`；稳定基础版本则追加 `-test.YYYYMMDD.index`。
 
 | dsh 基础版本 | production Desktop | test Desktop 示例 |
