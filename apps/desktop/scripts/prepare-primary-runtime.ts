@@ -41,16 +41,34 @@ async function pythonArchive(target: keyof typeof lock.targets, cache: string): 
 }
 
 /**
- * Unpack a locked library wheel whose files all belong in site-packages.
+ * Identify the inputs that assemble one target's payload, excluding unrelated target locks.
+ * @param target - Desktop target whose archives are installed.
+ * @param runtimeLock - Locked interpreter and wheel inputs.
+ * @param pnpmVersion - Package-manager version copied into the payload.
+ * @returns SHA-256 payload identity for installation reuse.
+ */
+export function primaryRuntimePayloadDigest(target: keyof typeof lock.targets, runtimeLock: typeof lock, pnpmVersion: string): string {
+  const { pythonVersion, pythonRelease, nodeVersion, wheels, pythonPackages } = runtimeLock
+  // Identity preserves key order within the selected target, wheel records and distribution map, plus wheel-entry order.
+  // Bump format when extraction or assembly changes payload bytes without changing locked inputs.
+  return createHash('sha256').update(JSON.stringify({
+    format: 2, target, pythonVersion, pythonRelease, nodeVersion,
+    artifact: runtimeLock.targets[target], wheels, pythonPackages, pnpm: pnpmVersion,
+  })).digest('hex')
+}
+
+/**
+ * Unpack a locked library wheel, retaining auxiliary scripts in its distribution data directory.
  * @param archive - Hash-verified wheel archive.
  * @param destination - Absolute site-packages directory.
- * @returns Resolves after extraction; rejects wheels requiring installation into other directories.
+ * @returns Resolves after extraction without command wrappers; rejects other wheel installation schemes.
  */
 export async function unpackPrimaryRuntimeWheel(archive: string, destination: string): Promise<void> {
   await extractZip(archive, {
     dir: destination,
     onEntry: (entry) => {
-      if (entry.fileName.split('/')[0]?.endsWith('.data')) {
+      const [directory, scheme] = entry.fileName.split('/')
+      if (directory?.endsWith('.data') && scheme !== '' && scheme !== 'scripts') {
         throw new Error(`primary runtime: wheel requires unsupported installation paths: ${entry.fileName}`)
       }
     },
@@ -95,9 +113,11 @@ export async function preparePrimaryRuntime(): Promise<void> {
       desktopVersion: desktop.version,
       platform: target === 'win-x64' ? 'win32' : 'darwin',
       arch: target === 'mac-arm64' ? 'arm64' : 'x64',
+      payloadDigest: primaryRuntimePayloadDigest(target, lock, pnpm.version),
+      pythonPackages: lock.pythonPackages,
       components: {
         python: lock.pythonVersion, node: lock.nodeVersion, pnpm: pnpm.version,
-        numpy: lock.numpyVersion, pandas: lock.pandasVersion,
+        numpy: lock.pythonPackages.numpy, pandas: lock.pythonPackages.pandas,
       },
     }
     const entries = workspaceDependencyPaths(output, manifest)
@@ -121,9 +141,11 @@ export async function preparePrimaryRuntime(): Promise<void> {
 export function smokePrimaryRuntime(root: string): void {
   const manifest = JSON.parse(readFileSync(join(root, 'runtime.json'), 'utf8')) as PrimaryRuntimeManifest
   if (manifest.platform !== process.platform || manifest.arch !== process.arch) return
+  if (manifest.pythonPackages === undefined) throw new Error('primary runtime: missing Python distribution versions; prepare the payload before running its smoke checks.')
   const entries = workspaceDependencyPaths(root, manifest)
   const options = { stdio: 'inherit', timeout: 120_000 } as const
-  execFileSync(entries.python, ['-I', '-c', 'import numpy, pandas; assert numpy.arange(4).sum() == 6; assert pandas.DataFrame({"n": [1, 2]}).n.sum() == 3'], options)
+  execFileSync(entries.python, ['-I', '-B', join(import.meta.dirname, 'smoke-primary-runtime.py'), JSON.stringify(manifest.pythonPackages), manifest.components.python], options)
+  execFileSync(entries.python, ['-I', '-B', '-m', 'pip', 'check'], options)
   execFileSync(entries.node, ['-e', `if (process.versions.node !== ${JSON.stringify(manifest.components.node)}) process.exit(1)`], options)
   execFileSync(entries.node, [entries.pnpm, '--version'], options)
 }
