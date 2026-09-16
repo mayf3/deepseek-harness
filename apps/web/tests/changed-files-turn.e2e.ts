@@ -1,4 +1,4 @@
-/** A turn that edits, creates, and shell-appends files in a git workspace ends with the changed-files card; its rows open comparisons. */
+/** A turn that edits, creates, and shell-appends files in a git workspace ends with the changed-files card; its rows open the review. */
 import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -117,24 +117,34 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     expect(tripwire.warnings).toEqual([])
   })
 
-  it('opens a shell-appended file’s comparison from the snapshots and an ignored file’s from its captured copies', async () => {
+  it('reviews a shell-appended file from the snapshots and an ignored file from its captured copies in one tab', async () => {
     const card = page.locator('[data-changed-files]')
     const column = page.locator('[data-rightbar-col]')
+    const drawn = (root: ReturnType<typeof column.locator>) =>
+      root.locator('[data-diff-line]').evaluateAll(lines => lines.map(line => `${line.getAttribute('data-diff-line')}:${line.textContent}`))
     await card.getByRole('button', { name: '查看 notes.txt 的改动' }).click()
-    const notes = column.locator('[data-changes-diff][data-diff-state="text"]')
-    await notes.waitFor({ state: 'visible' })
-    expect(await column.locator('[data-dockkit-tab]').filter({ hasText: 'notes.txt' }).count()).toBe(1)
-    expect(await notes.locator('[data-diff-line]').evaluateAll(lines => lines.map(line => `${line.getAttribute('data-diff-line')}:${line.textContent}`))).toEqual([
-      'context:11 start', 'add:2+done',
-    ])
+    const review = column.locator('[data-changes-review]')
+    await review.locator('[data-review-file="notes.txt"]').waitFor({ state: 'visible' })
+    expect(await column.locator('[data-dockkit-tab]').filter({ hasText: '第 1 轮改动' }).count()).toBe(1)
+    await expect.poll(() => drawn(review)).toEqual(['context:11 start', 'add:2+done'])
     // The ignored file has no snapshot; its comparison comes from the copies captured around the write call.
-    await card.getByRole('button', { name: '查看 app.local 的改动' }).click()
-    const local = column.locator('[data-changes-diff][data-diff-state="text"]').filter({ hasText: 'mode=demo' })
-    await local.waitFor({ state: 'visible' })
-    expect(await local.locator('[data-diff-line]').evaluateAll(lines => lines.map(line => `${line.getAttribute('data-diff-line')}:${line.textContent}`))).toEqual(['add:1+mode=demo'])
-    expect(await local.getByText('本轮新建的文件').count()).toBe(1)
-    // No desktop, so the header offers no native open.
-    expect(await local.getByRole('button').count()).toBe(0)
+    await review.getByRole('button', { name: '选择要查看的文件' }).click()
+    await page.getByRole('menuitem').filter({ hasText: 'app.local' }).click()
+    await review.locator('[data-review-file="app.local"]').waitFor({ state: 'visible' })
+    await expect.poll(() => drawn(review)).toEqual(['add:1+mode=demo'])
+    expect(await review.getByText('本轮新建的文件').count()).toBe(1)
+    // A card row opens the same tab on another file; the split and wrap choices switch the drawing.
+    await card.getByRole('button', { name: '查看 intro.md 的改动' }).click()
+    await review.locator('[data-review-file="intro.md"]').waitFor({ state: 'visible' })
+    expect(await column.locator('[data-dockkit-tab]').filter({ hasText: '第 1 轮改动' }).count()).toBe(1)
+    await review.getByRole('button', { name: '左右对比' }).click()
+    await review.locator('[data-review-view="split"]').waitFor({ state: 'visible' })
+    await expect.poll(() => drawn(review)).toEqual(['del:1# 示例项目1# 项目说明', 'context:22', 'context:3一个用于演示的仓库。3一个用于演示的仓库。'])
+    await review.getByRole('button', { name: '自动换行' }).click()
+    expect(await review.locator('[data-review-view][data-review-wrap]').count()).toBe(1)
+    // No desktop, so the tools offer the sidebar file but no native open.
+    expect(await review.locator('[data-review-tool="open-file"]').count()).toBe(1)
+    expect(await review.locator('[data-review-tool="open-native"]').count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })

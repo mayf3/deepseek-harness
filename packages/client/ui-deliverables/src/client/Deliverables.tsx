@@ -9,7 +9,7 @@ import type { ChangesSummaryStore } from './changes-summary.ts'
 import { ChangedFiles } from './ChangedFiles.tsx'
 import { changesForClosing, presentedForClosing, type ChangesTurnData, type PresentedPath } from './turn-deliverables.ts'
 import type { NS } from './locales.ts'
-import { changesSummaryUrl, type ChangesDiffCoordinates } from '../changes.ts'
+import { changesSummaryUrl, type ChangesReviewCoordinates } from '../changes.ts'
 import { presentedFileUrl } from '../presented.ts'
 import { PresentedFileCard } from './PresentedFileCard.tsx'
 import css from './Deliverables.module.css'
@@ -29,8 +29,8 @@ export interface DeliverablesInjected {
   loadChangesSummary: ChangesSummaryStore['load']
   openPresented: PresentedOpenController['open']
   openChanged: PresentedOpenController['openChanged']
-  /** Open one listed file's comparison in the right Sidebar. */
-  openChangesDiff: (coordinates: ChangesDiffCoordinates) => void
+  /** Open one turn's review in the right Sidebar on the file at an index. */
+  openChangesReview: (coordinates: ChangesReviewCoordinates, index: number) => void
 }
 
 /**
@@ -52,7 +52,7 @@ export function selectDeliverables(owner: TurnTailOwnerProps): DeliverablesMatch
  * @returns the closing turn's file rows.
  */
 export function Deliverables({
-  matched, openFile, t, sessionId, useSessions, openPresented, openChanged, openChangesDiff, usePresentedOpen, usePresentedHost,
+  matched, openFile, t, sessionId, useSessions, openPresented, openChanged, openChangesReview, usePresentedOpen, usePresentedHost,
   useChangesSummary, reloadPresentedHost, loadChangesSummary,
 }: Pick<TurnTailOwnerProps, 'openFile'> & {
   matched: DeliverablesMatch
@@ -79,7 +79,7 @@ export function Deliverables({
   return <>
     {changes !== null && <ChangedFiles changes={changes} cwd={cwd} sessionId={sessionId}
       host={host === 'error' ? null : host} phases={states} t={t}
-      openDiff={(index, display) => { openChangesDiff({ sessionId, seq: changes.seq, index, display }) }}
+      openReview={(index) => { openChangesReview({ sessionId, seq: changes.seq, turn: changes.turn }, index) }}
       onOpen={(index) => { void openChanged(sessionId, changes.seq, index) }} />}
     {matched.presented.length > 0 && <div
       className={css.root}

@@ -1,4 +1,4 @@
-/** The changed-files card: a folder-opening header, per-file line counts opening each file's comparison, and a three-row fold. */
+/** The changed-files card: a folder-opening header, per-file line counts opening the turn's review on that file, and a three-row fold. */
 import { useState } from 'react'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { IconChevronDownOutline14, IconChevronUpOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -39,13 +39,13 @@ function Counts({ added, deleted, t }: { added: number; deleted: number } & Prop
 }
 
 /**
- * Render one turn's changed files. Each row opens its file's turn-start and
- * turn-end comparison in the right Sidebar; the header opens the files' common
- * folder only with a Host desktop.
+ * Render one turn's changed files. Each row opens the turn's review in the
+ * right Sidebar on that file; the header opens the files' common folder only
+ * with a Host desktop.
  * @param props - the recorded summary, Host capabilities, folder gesture status, openers, and localized copy.
  * @returns the card.
  */
-export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, openDiff, t }: {
+export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, openReview, t }: {
   /** The served summary with the sequence of the event that announced it. */
   changes: Pick<ChangesSummary, 'files' | 'total' | 'added' | 'deleted'> & { seq: number }
   cwd: string | undefined
@@ -53,8 +53,8 @@ export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, op
   host: PresentedHost | null
   phases: Record<string, PresentedOpenPhase | undefined>
   onOpen: (index: number | null) => void
-  /** Open the comparison of the file at an original summary index. */
-  openDiff: (index: number, display: string) => void
+  /** Open the turn's review on the file at an original summary index. */
+  openReview: (index: number) => void
 } & PropsLocale<typeof NS>) {
   const [expanded, setExpanded] = useState(false)
   const native = host !== null && host.available
@@ -82,7 +82,7 @@ export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, op
         <li key={file.display}>
           <button type="button" className={css.row} title={resolveWorkspacePath(cwd, file.path)}
             aria-label={t('changes.viewDiff', { name: file.display })}
-            onClick={() => { openDiff(index, file.display) }}>
+            onClick={() => { openReview(index) }}>
             <span className={css.path}>{file.display}</span>
             <span className={css.counts}>
               {file.binary === true ? t('changes.binary')

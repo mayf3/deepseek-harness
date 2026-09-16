@@ -1,4 +1,4 @@
-# Agent Note: 改动文件对比 tab
+# Agent Note: 轮次 review tab
 
 Status: implemented
 
@@ -10,13 +10,13 @@ Status: implemented
 
 ## Decision
 
-卡片的每一行在右侧 Sidebar 打开一个 `changes-diff` tab，对比该文件在轮次开始与结束时的内容。Host 侧的 [workspace-changes](../../../../packages/deliverables/workspace-changes/README.zh.md) 记录器通过 `workspaceChanges.diff(sessionId, seq, index, signal)` 提供对比；[产出物插件](../../../../packages/client/ui-deliverables/README.zh.md)注册该 tab 类型，用当前查看的 Session、宣告事件的序号和文件下标给它定址，并通过经过认证的路由读取对比。有没有 Host 桌面，行都打开对比；有桌面时 tab 头部提供用默认应用打开，先前行级别的原生打开移到那里，卡片只保留一种行为。
+卡片的每一行在右侧 Sidebar 打开本轮的 `changes-review` tab 并选中该文件：每轮一个 tab，由当前查看的 Session 和宣告事件的序号定址，头部有一个列出所有记录文件的文件选择器，一次显示一个文件在轮次开始与结束时的对比。Host 侧的 [workspace-changes](../../../../packages/deliverables/workspace-changes/README.zh.md) 记录器通过 `workspaceChanges.diff(sessionId, seq, index, signal)` 提供每个对比；[产出物插件](../../../../packages/client/ui-deliverables/README.zh.md)注册该 tab 类型，把行的文件下标作为导航参数传入，并通过经过认证的路由读取摘要和对比。头部的工具在单栏和左右视图之间切换、切换自动换行、在 Sidebar 中打开当前整个文件，有 Host 桌面时用默认应用打开它；视图与换行的选择按 tab 保留。有没有桌面，行都打开 review，先前行级别的原生打开移进 tab，卡片只保留一种行为。
 
 git 覆盖不到的文件按 Codex 的 turn diff tracker 对比其 `apply_patch` 编辑的方式对比：用整文件副本，不用 hunk。在 `write`、`edit` 或有修改作用的 `str_replace_editor` 调用运行之前，记录器本来就要等待基线快照的 `tools/pre-execute` 步骤把所指文件复制到 Session 临时目录里快照对象旁边，每轮每个路径一次；轮次结束时再复制一次该路径。副本按其字节的 SHA-1 命名，相同内容只存一份，且不需要 git。快照覆盖到的路径保留 git 的行数；其余每个被捕获的路径由两份副本的逐行对比列出，反复编辑的行只计一次，文件工具编辑之后的 shell 改动也包含在内。记录器不再读取持久化的 hunk 和由参数推出的 hunk。
 
 两个上限让副本和对比保持小。`maxFileBytes` 限制副本和为对比而读出的快照 blob；更大的文件列出时带 `oversized`，没有行数，其对比被拒绝，整文件副本因此负担得起。`diffTimeoutMs` 限制逐行对比，与 Codex 一样是 100 毫秒；超时后退化为一个替换全部行的 hunk，标记 `coarse`，因此病态的文件从不会拖住本轮记录或 tab。两者都是 Config 字段。
 
-对比在被请求时在 Host 上计算，来源是保存在所提供摘要旁边的两侧内容来源：快照树中的路径，用 `ls-tree -l` 和 `cat-file blob` 在字节上限之内读出；或者从磁盘读取的副本。git 报告为二进制的快照一侧和含 NUL 字节的副本不提供行。tab 渲染带旧新行号的 hunk，没有语法高亮；Host 已不再提供的对比、读取失败、二进制文件和过大的文件各显示一行。
+对比在被请求时在 Host 上计算，来源是保存在所提供摘要旁边的两侧内容来源：快照树中的路径，用 `ls-tree -l` 和 `cat-file blob` 在字节上限之内读出；或者从磁盘读取的副本。git 报告为二进制的快照一侧和含 NUL 字节的副本不提供行。tab 渲染带旧新行号的 hunk，没有语法高亮；左右视图把每一段删除与紧随其后的新增逐行配对。Host 已不再提供的对比、读取失败、二进制文件和过大的文件各显示一行。
 
 内容仍然只在本 Host 进程内随 Session 存活，这是卡片决定已经定下的；对比与卡片同寿命，因此 Host 重启后重新打开的对话两者都没有。
 
@@ -30,7 +30,9 @@ git 覆盖不到的文件按 Codex 的 turn diff tracker 对比其 `apply_patch`
 
 **给仓库之外的工作目录建影子仓库**仍然推迟；副本已经覆盖那里的文件工具编辑，这是用户能采取行动的部分。
 
-**tab 里的语法高亮和左右对照视图**推迟到纯 unified 视图被证明不够用时再做。
+**每个文件一个 tab**、以文件名作标题，是第一版实现；审阅一轮意味着每行一个 tab。每轮一个 tab 加文件选择器把一轮的改动放在一起，行仍然能落到自己的文件上。
+
+**tab 里的语法高亮**推迟到纯文本视图被证明不够用时再做。
 
 **保留行打开当前文件**会让对比多一次点击才能到达；当前文件仍可从正文链接和文件 tab 打开。
 
