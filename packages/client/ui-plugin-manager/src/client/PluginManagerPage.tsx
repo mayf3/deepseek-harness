@@ -235,6 +235,52 @@ function packageStatus(pkg: PackageView): 'running' | 'disabled' | 'problem' {
   return pkg.enabled ? 'running' : 'disabled'
 }
 
+/** The head every card shares: the pinwheel icon, the name that opens the page beside its tags, its one-liner, and what sits at the end. */
+function CardHead({ title, t, onOpen, tags, description, end }: {
+  readonly title: string
+  readonly t: Translate
+  readonly onOpen: () => void
+  readonly tags?: ReactNode
+  readonly description: ReactNode
+  readonly end?: ReactNode
+}): ReactNode {
+  return (
+    <div className={css.cardHead}>
+      <span className={css.cardIcon} aria-hidden="true"><IconPluginPinwheelOutline16 size={20} /></span>
+      <div className={css.cardMain}>
+        <div className={css.titleRow}>
+          <button type="button" className={`${css.cardTitle} ${css.cardOpen}`} aria-label={t('openDetail', { name: title })} onClick={onOpen}>{title}</button>
+          {tags}
+        </div>
+        {description === undefined ? null : <span className={css.cardDesc}>{description}</span>}
+      </div>
+      {end === undefined ? null : <div className={css.cardEnd}>{end}</div>}
+    </div>
+  )
+}
+
+/** The top every page shares: the crumb that leads back, then the icon with the page's actions at its right. */
+function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
+  readonly crumbLabel: string
+  readonly crumbText: string
+  readonly onBack: () => void
+  readonly icon?: ReactNode
+  readonly actions?: ReactNode
+}): ReactNode {
+  return (
+    <>
+      <button type="button" className={css.crumb} aria-label={crumbLabel} onClick={onBack}>
+        <IconChevronDownOutline14 className={css.crumbIcon} aria-hidden="true" />
+        <span>{crumbText}</span>
+      </button>
+      <div className={css.detailHead}>
+        <span className={css.cardIcon} aria-hidden="true">{icon ?? <IconPluginPinwheelOutline16 size={20} />}</span>
+        {actions}
+      </div>
+    </>
+  )
+}
+
 /** One package as a card that opens its page: its name, its one-liner, its tags, and its bundle switch. */
 function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
   readonly pkg: PackageView
@@ -253,20 +299,19 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
       data-plugin-status={status}
       {...highlighted ? { 'data-plugin-highlight': '' } : {}}
     >
-      <div className={css.cardHead}>
-        <span className={css.cardIcon} aria-hidden="true"><IconPluginPinwheelOutline16 size={20} /></span>
-        <div className={css.cardMain}>
-          <div className={css.titleRow}>
-            <button type="button" className={`${css.cardTitle} ${css.cardOpen}`} aria-label={t('openDetail', { name: title })} onClick={onOpen}>{title}</button>
+      <CardHead
+        title={title}
+        t={t}
+        onOpen={onOpen}
+        tags={(
+          <>
             {beta ? <Tag className={css.statusTag} tone="info">{t('statusBeta')}</Tag> : null}
             {status === 'problem' ? <Tag className={css.statusTag} tone="danger">{t('statusProblem')}</Tag> : null}
-          </div>
-          {description === undefined ? null : <span className={css.cardDesc}>{description}</span>}
-        </div>
-        <div className={css.cardEnd}>
-          <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
-        </div>
-      </div>
+          </>
+        )}
+        description={description}
+        end={<EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />}
+      />
     </li>
   )
 }
@@ -283,15 +328,7 @@ function ItemCard({ item, t, onOpen, renderSlot }: {
 }): ReactNode {
   return (
     <li className={`${css.card} ${css.cardLink}`} data-plugin-item={item.id}>
-      <div className={css.cardHead}>
-        <span className={css.cardIcon} aria-hidden="true"><IconPluginPinwheelOutline16 size={20} /></span>
-        <div className={css.cardMain}>
-          <div className={css.titleRow}>
-            <button type="button" className={`${css.cardTitle} ${css.cardOpen}`} aria-label={t('openDetail', { name: item.label })} onClick={onOpen}>{item.label}</button>
-          </div>
-          <span className={css.cardDesc}>{renderSlot('plugins.item', { view: 'summary' }, { only: item.id })}</span>
-        </div>
-      </div>
+      <CardHead title={item.label} t={t} onOpen={onOpen} description={renderSlot('plugins.item', { view: 'summary' }, { only: item.id })} />
     </li>
   )
 }
@@ -305,13 +342,7 @@ function ItemDetail({ item, t, onBack, renderSlot }: {
 }): ReactNode {
   return (
     <div className={css.detail} data-plugin-item-detail={item.id}>
-      <button type="button" className={css.crumb} aria-label={t('backToList')} onClick={onBack}>
-        <IconChevronDownOutline14 className={css.crumbIcon} aria-hidden="true" />
-        <span>{t('crumbRoot')}</span>
-      </button>
-      <div className={css.detailHead}>
-        <span className={css.cardIcon} aria-hidden="true"><IconPluginPinwheelOutline16 size={20} /></span>
-      </div>
+      <DetailTop crumbLabel={t('backToList')} crumbText={t('crumbRoot')} onBack={onBack} />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{item.label}</h3>
@@ -340,13 +371,7 @@ function RowDetail({ pkg, row, t, onBack, renderSlot }: {
   const key = rowConfigKey(pkg.name, row.rowId)
   return (
     <div className={css.detail} data-plugin-row-detail={key}>
-      <button type="button" className={css.crumb} aria-label={t('backToPackage', { name: title })} onClick={onBack}>
-        <IconChevronDownOutline14 className={css.crumbIcon} aria-hidden="true" />
-        <span>{title}</span>
-      </button>
-      <div className={css.detailHead}>
-        <span className={css.cardIcon} aria-hidden="true"><IconCordisPluginOutline14 size={20} /></span>
-      </div>
+      <DetailTop crumbLabel={t('backToPackage', { name: title })} crumbText={title} onBack={onBack} icon={<IconCordisPluginOutline14 size={20} />} />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{row.rowId}</h3>
@@ -391,31 +416,31 @@ function PackageDetail({
   const status = packageStatus(pkg)
   return (
     <div className={css.detail} data-plugin-detail={pkg.name}>
-      <button type="button" className={css.crumb} aria-label={t('backToList')} onClick={onBack}>
-        <IconChevronDownOutline14 className={css.crumbIcon} aria-hidden="true" />
-        <span>{t('crumbRoot')}</span>
-      </button>
-      <div className={css.detailHead}>
-        <span className={css.cardIcon} aria-hidden="true"><IconPluginPinwheelOutline16 size={20} /></span>
-        <div className={css.detailActions}>
-          {pkg.installed
-            ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className={css.danger}
-                icon={<IconTrashOutline16 size={13} />}
-                aria-label={t('uninstallLabel', { name: title })}
-                disabled={busy || pkg.readOnlyReason !== undefined}
-                onClick={onUninstall}
-              >
-                {t('uninstall')}
-              </Button>
-            )
-            : null}
-          <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
-        </div>
-      </div>
+      <DetailTop
+        crumbLabel={t('backToList')}
+        crumbText={t('crumbRoot')}
+        onBack={onBack}
+        actions={(
+          <div className={css.detailActions}>
+            {pkg.installed
+              ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={css.danger}
+                  icon={<IconTrashOutline16 size={13} />}
+                  aria-label={t('uninstallLabel', { name: title })}
+                  disabled={busy || pkg.readOnlyReason !== undefined}
+                  onClick={onUninstall}
+                >
+                  {t('uninstall')}
+                </Button>
+              )
+              : null}
+            <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
+          </div>
+        )}
+      />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{title}</h3>
