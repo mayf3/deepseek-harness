@@ -334,6 +334,7 @@ export class SessionManager {
       store = new ProjectionValueStore()
       const projections = store
       store.subscribeAny(() => {
+        // Newer history or control metadata corrects a resident Session's stale list hint.
         if (projections.values().sessionListMetadata?.blank === false) {
           this.sessions.get(sessionId)?.handleBlank(false)
         }
@@ -481,7 +482,7 @@ export class SessionManager {
           this.listPhase = 'ready'
           // Covers the empty-mutations pull (a plain baseline carries no edge).
           this.syncCompletedNotifications()
-          // Push running/blank bits down to instantiated Sessions (the list is the authoritative summary source).
+          // Sessions reconcile list blank hints with their current metadata projection.
           for (const s of this.summaries) {
             const session = this.sessions.get(s.sessionId)
             if (session === undefined) continue

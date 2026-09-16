@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-25-session-observations-and-projection-owned-client-state.md
 2026-08-25-session-observations-and-projection-owned-client-state.md: 88a4cbed008ebbb8f6733c5c55b68b9781309820
-2026-08-25-session-observations-and-projection-owned-client-state.zh.md: 9dd6ce9e2243b535c614cd5ad0862384a4536623
+2026-08-25-session-observations-and-projection-owned-client-state.zh.md: f5bd374a9e35282cb8aef03339ea95f2132f0c82

@@ -771,6 +771,7 @@ describe('web e2e: New Session after an outdated blank cache', () => {
       const stored = await scaffold.ctx.sessionPersistence.stat(id)
       if (stored === undefined) throw new Error('seeded Session is missing')
       // A durable log may advance after its last blank projection checkpoint.
+      // An unregistered Session writes only the checkpoint, leaving the persisted log intact.
       const blank = scaffold.ctx.sessions.prepare(id, {
         eventState: 'detached', seed: [], meta: stored.header, inheritedEventCount: SessionLogOffset(0),
       })

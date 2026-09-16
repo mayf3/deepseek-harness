@@ -48,6 +48,15 @@ describe('Session open', () => {
     expect(session.getSnapshot()).toMatchObject({ blank: false, running: true })
   }, COLD_BOOT_TIMEOUT_MS)
 
+  it('rejects a blank list hint when current metadata records a started conversation', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    session.projections.apply('sessionListMetadata', { blank: false, lastPromptAt: 1200 }, SessionSeq(8))
+
+    session.handleBlank(true)
+
+    expect(session.getSnapshot()).toMatchObject({ blank: false, promptAttempted: false, running: false })
+  })
+
   it('installs the tail page: cold → loading → open with window and nodes in place', async ({ mock, start }) => {
     const session = await sessionBench(mock, start, SID)
     const page = plainTurn(SessionSeq(10), 3, '问', '答')
