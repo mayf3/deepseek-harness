@@ -70,7 +70,7 @@ it('refuses recorded parent/child clock conflicts and migrates consistent copies
       }
     }
   }
-  expect(pairs).toBe(24)
+  expect(pairs).toBe(25)
   expect(withoutDescriptor).toBe(1)
   expect(conflicts.sort()).toEqual(EXPECTED_CONFLICTS)
 })
