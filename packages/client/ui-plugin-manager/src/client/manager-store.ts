@@ -23,6 +23,8 @@ import type {
   ReadOnlyReason,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ConfigLedger } from './config-ledger.ts'
 import { shortName } from './presentation.ts'
 
 /** The action a failed notice names. */
@@ -183,6 +185,8 @@ export interface PluginManagerFace {
   hooks: {
     /** Tab snapshot bound by the renderer as usePluginManager. */
     pluginManager: SnapshotStore<PluginManagerState>
+    /** The plugins carrying configuration, bound by the renderer as useConfigLedger. */
+    configLedger: HostObservable<ConfigLedger>
   }
   /** Read the Host once the tab first renders. */
   ensure: () => void
@@ -345,11 +349,12 @@ export class PluginManagerController {
 
   /**
    * Build the face the tab's slot registration injects.
-   * @returns the tab's snapshot source and its actions.
+   * @param configLedger - the projection of the plugins carrying configuration, bound beside the tab's own state.
+   * @returns the tab's snapshot sources and its actions.
    */
-  inject(): PluginManagerFace {
+  inject(configLedger: HostObservable<ConfigLedger>): PluginManagerFace {
     return {
-      hooks: { pluginManager: this.store },
+      hooks: { pluginManager: this.store, configLedger },
       ensure: () => { if (this.getSnapshot().status === 'idle') void this.load() },
       refresh: () => { void this.load() },
       openInstall: () => {

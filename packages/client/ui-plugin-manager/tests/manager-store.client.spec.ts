@@ -6,6 +6,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { BundleInfo, ChangeResult, ManagementError, PluginEntryId, PluginInfo, PluginInstallRequestId } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ConfigLedger } from '../src/client/config-ledger.ts'
 import { packageView, PluginManagerController, rowKey, sortPackages } from '../src/client/manager-store.ts'
 
 const ROW_ENTRY = 'include:sidebar' as PluginEntryId
@@ -55,6 +57,12 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+/** A configuration ledger with nothing registered, as the page binds it beside the store. */
+const NO_CONFIG: HostObservable<ConfigLedger> = {
+  getSnapshot: () => ({ items: [], bundles: new Set(), rows: new Set() }),
+  subscribe: () => () => {},
+}
+
 function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}) {
   const inventory = { list: overrides.inventory ?? vi.fn(() => Promise.resolve(ok({ entries: [], managementAvailable: true }))) }
   const plugins = {
@@ -70,7 +78,7 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
   }
   const ctx = { remote: { pluginManager: plugins, pluginInventory: inventory } } as never
   const controller = new PluginManagerController(ctx)
-  const face = controller.inject()
+  const face = controller.inject(NO_CONFIG)
   const state = () => controller.getSnapshot()
   /** The request id of the run the dialog just handed to the Host. */
   const started = async (): Promise<PluginInstallRequestId> => {
