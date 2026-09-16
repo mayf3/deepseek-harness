@@ -12,16 +12,17 @@ function processHandle() {
     killed.resolve(undefined)
     return true
   })
+  const readOutput = vi.fn(() => ({ delta: 'output', lossy: false }))
   const process: ShellProcess = {
     status: 'running', exitCode: null, signal: null, done: exited.promise,
-    readOutput: vi.fn(() => ({ delta: 'output', lossy: false })), kill,
+    readOutput, kill,
     observed: {
       stdout: { readFrom: fromByte => ({ text: 'output'.slice(fromByte), nextOffset: 6, lossy: false }) },
       stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
     },
   }
   onTestFinished(() => { exited.resolve(undefined) })
-  return { process, exited, killed, kill }
+  return { process, exited, killed, kill, readOutput }
 }
 
 describe('background job ownership during asynchronous shell startup', () => {
@@ -38,7 +39,7 @@ describe('background job ownership during asynchronous shell startup', () => {
     await Promise.resolve()
     expect(source.read(0).text).toBe('output')
     expect(source.read(0).text).toBe('output')
-    expect(child.process.readOutput).not.toHaveBeenCalled()
+    expect(child.readOutput).not.toHaveBeenCalled()
     child.process.status = 'completed'
     child.process.exitCode = 5
     child.exited.resolve(undefined)

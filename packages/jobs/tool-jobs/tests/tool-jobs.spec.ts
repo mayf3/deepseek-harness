@@ -1139,7 +1139,7 @@ describe('completion notices', () => {
     const p = producer({ owner: owner.id })
     ctx.jobs.start(p.spec)
 
-    detachAgent(owner)
+    await detachAgent(owner)
     p.settle({ status: 'completed' })
     await tick()
     expect(inject).not.toHaveBeenCalled()

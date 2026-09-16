@@ -15,7 +15,7 @@ const artifact = join(fileURLToPath(new URL('..', import.meta.url)), 'lib/typert
 
 interface BuiltInvocation {
   readonly method: string
-  readonly result: { readonly schema: { safeParse(value: unknown): { success: boolean } } }
+  readonly result: { create(): { safeParse(value: unknown): { success: boolean } } }
 }
 
 const row = {
@@ -30,10 +30,10 @@ const row = {
 describe.skipIf(!existsSync(artifact))('job Remote built codecs', () => {
   it('accept a row whose kind this program never compiled, and still reject a status outside the lifecycle', async () => {
     const { TYPERT } = await import(pathToFileURL(artifact).href) as { TYPERT: { invocations: readonly BuiltInvocation[] } }
-    const schemaOf = (method: string): BuiltInvocation['result']['schema'] => {
+    const schemaOf = (method: string): ReturnType<BuiltInvocation['result']['create']> => {
       const invocation = TYPERT.invocations.find(candidate => candidate.method === method)
       if (invocation === undefined) throw new Error(`no generated job.${method} invocation`)
-      return invocation.result.schema
+      return invocation.result.create()
     }
     expect(schemaOf('list').safeParse({ type: 'rows', jobs: [row] }).success).toBe(true)
     expect(schemaOf('follow').safeParse({ type: 'opened', job: row, from: 0 }).success).toBe(true)

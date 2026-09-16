@@ -642,7 +642,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'model/selection': ModelSelection
 ```
 
-来源：[`packages/api/session-controller/src/types.ts:40`](../packages/api/session-controller/src/types.ts)
+来源：[`packages/api/session-controller/src/types.ts:39`](../packages/api/session-controller/src/types.ts)
 
 ### `permission/*`
 
@@ -1786,13 +1786,13 @@ SHA-256: `0ddab4577db37a3e0d9e3a91761735c8ef6f5629d526ab8ecaeeea19c097c8f8`
 | `kind` | 必需 | `"plugin"` |
 | `plugin` | 必需 | `string` |
 
-<a id="persistence-type-eventagentinboxspliceddatainserted0source10"></a>
+<a id="persistence-type-eventagentinboxspliceddatainserted0source11"></a>
 
-### `event:agent/inbox/spliced.data.inserted[0].source[10]`
+### `event:agent/inbox/spliced.data.inserted[0].source[11]`
 
 SHA-256: `6a4f72e2e179e17b922f2a9392c0e1c8f8c707f32494372454850a3eb184a6e7`
 
-来源：[`packages/api/session-controller/src/types.ts:380`](../packages/api/session-controller/src/types.ts)
+来源：[`packages/api/session-controller/src/types.ts:379`](../packages/api/session-controller/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -4387,7 +4387,7 @@ SHA-256: `9d80129e13edfb6feb03ed327e6085c6ef60b97ad074244b2f5fd4667424a6a4`
 
 SHA-256: `f09e5e7acf5ff5ccd193ff2eeec015fa2ff7c29d98bc465f8c3302058d47e29b`
 
-来源：[`packages/api/session-controller/src/types.ts:86`](../packages/api/session-controller/src/types.ts)
+来源：[`packages/api/session-controller/src/types.ts:85`](../packages/api/session-controller/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -5142,7 +5142,7 @@ SHA-256: `4c965666d5b42116945bc356087cd5e1fd549e6dece560785ed60511059a8283`
 
 - [`packages/context/agent-instructions/src/state.ts#AgentInstructionSource`](#persistence-type-packagescontextagent-instructionssrcstatetsagentinstructionsource)
 - [`packages/llm/llm/src/message.ts#ToolMessageSource`](#persistence-type-packagesllmllmsrcmessagetstoolmessagesource)
-- [`event:agent/inbox/spliced.data.inserted[0].source[10]`](#persistence-type-eventagentinboxspliceddatainserted0source10)
+- [`event:agent/inbox/spliced.data.inserted[0].source[11]`](#persistence-type-eventagentinboxspliceddatainserted0source11)
 - [`event:agent/inbox/spliced.data.inserted[0].source[19]`](#persistence-type-eventagentinboxspliceddatainserted0source19)
 - [`packages/skill/tool-skill/src/index.ts#SkillCatalogSource`](#persistence-type-packagesskilltool-skillsrcindextsskillcatalogsource)
 - [`packages/skill/skill/src/index.ts#SkillInvocationSource`](#persistence-type-packagesskillskillsrcindextsskillinvocationsource)
@@ -6307,7 +6307,7 @@ SHA-256: `57f3f606ff8b6c84d9c443faace9d1dd10cca0354f37a4f515ef075f7c351b90`
 
 SHA-256: `4cd48f3e5108bd6ebedf7301c3638839b8b2b9db8dbd493974177fbdeb91a01b`
 
-来源：[`packages/api/session-controller/src/types.ts:375`](../packages/api/session-controller/src/types.ts) · [`packages/attachment/attachment/src/brand.ts:6`](../packages/attachment/attachment/src/brand.ts) · [`packages/compaction/compaction/src/brand.ts:4`](../packages/compaction/compaction/src/brand.ts) · [`packages/core/session/src/types.ts:19`](../packages/core/session/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:20`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:32`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:8`](../packages/experimental/agent-team/src/types.ts) · [`packages/feedback/message-feedback/src/types.ts:14`](../packages/feedback/message-feedback/src/types.ts) · [`packages/goal/goal/src/types.ts:17`](../packages/goal/goal/src/types.ts) · [`packages/interaction/commands/src/brand.ts:31`](../packages/interaction/commands/src/brand.ts) · [`packages/interaction/user-approval/src/types.ts:17`](../packages/interaction/user-approval/src/types.ts) · [`packages/llm/llm-retry/src/brand.ts:4`](../packages/llm/llm-retry/src/brand.ts) · [`packages/llm/llm/src/brand.ts:16`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:31`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:43`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:67`](../packages/llm/llm/src/brand.ts) · [`packages/schedule/schedule/src/types.ts:10`](../packages/schedule/schedule/src/types.ts) · [`packages/session/session-title/src/index.ts:42`](../packages/session/session-title/src/index.ts) · [`packages/session/session-title/src/types.ts:17`](../packages/session/session-title/src/types.ts) · [`packages/webhook/webhook/src/brand.ts:12`](../packages/webhook/webhook/src/brand.ts) · [`packages/webhook/webhook/src/brand.ts:6`](../packages/webhook/webhook/src/brand.ts) · [`packages/webhook/webhook/src/brand.ts:9`](../packages/webhook/webhook/src/brand.ts) · [`packages/workflow/workflow/src/types.ts:13`](../packages/workflow/workflow/src/types.ts)
+来源：[`packages/api/session-controller/src/types.ts:374`](../packages/api/session-controller/src/types.ts) · [`packages/attachment/attachment/src/brand.ts:6`](../packages/attachment/attachment/src/brand.ts) · [`packages/compaction/compaction/src/brand.ts:4`](../packages/compaction/compaction/src/brand.ts) · [`packages/core/session/src/types.ts:19`](../packages/core/session/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:20`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:32`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:8`](../packages/experimental/agent-team/src/types.ts) · [`packages/feedback/message-feedback/src/types.ts:14`](../packages/feedback/message-feedback/src/types.ts) · [`packages/goal/goal/src/types.ts:17`](../packages/goal/goal/src/types.ts) · [`packages/interaction/commands/src/brand.ts:31`](../packages/interaction/commands/src/brand.ts) · [`packages/interaction/user-approval/src/types.ts:17`](../packages/interaction/user-approval/src/types.ts) · [`packages/llm/llm-retry/src/brand.ts:4`](../packages/llm/llm-retry/src/brand.ts) · [`packages/llm/llm/src/brand.ts:16`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:31`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:43`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:67`](../packages/llm/llm/src/brand.ts) · [`packages/schedule/schedule/src/types.ts:10`](../packages/schedule/schedule/src/types.ts) · [`packages/session/session-title/src/index.ts:42`](../packages/session/session-title/src/index.ts) · [`packages/session/session-title/src/types.ts:17`](../packages/session/session-title/src/types.ts) · [`packages/webhook/webhook/src/brand.ts:12`](../packages/webhook/webhook/src/brand.ts) · [`packages/webhook/webhook/src/brand.ts:6`](../packages/webhook/webhook/src/brand.ts) · [`packages/webhook/webhook/src/brand.ts:9`](../packages/webhook/webhook/src/brand.ts) · [`packages/workflow/workflow/src/types.ts:13`](../packages/workflow/workflow/src/types.ts)
 
 `string`
 

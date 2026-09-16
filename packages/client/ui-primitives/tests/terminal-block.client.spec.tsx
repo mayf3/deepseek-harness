@@ -97,7 +97,7 @@ describe('TerminalBlock states', () => {
     expect(view.queryByRole('button')).toBeNull()
     expect(view.container.firstElementChild?.getAttribute('data-running')).toBe('')
     // Banner-only: no body, so no banner divider either.
-    expect(view.container.firstElementChild?.getAttribute('data-with-body')).toBeNull()
+    expect(view.container.firstElementChild?.getAttribute('data-body')).toBeNull()
   })
 
   it('copyText overrides the copy payload and keeps the control before any output', async () => {
@@ -116,14 +116,14 @@ describe('TerminalBlock states', () => {
     expect(view.queryByText('运行中')).toBeNull()
   })
 
-  it('running with supplied output streams the live text and keeps it copyable', () => {
+  it('running with supplied output streams the live text without a default copy control', () => {
     const view = render(<TerminalBlock command="sleep 5" running output="partial" />)
     expect(view.getByText('partial')).toBeTruthy()
     expect(view.queryByText('无输出')).toBeNull()
-    expect(view.queryByRole('button', { name: '复制' })).toBeTruthy()
+    expect(view.queryByRole('button', { name: '复制' })).toBeNull()
     expect(view.container.firstElementChild?.getAttribute('data-running')).toBe('')
     // Live output renders a body, so the banner divider returns.
-    expect(view.container.firstElementChild?.getAttribute('data-with-body')).toBe('')
+    expect(view.container.firstElementChild?.getAttribute('data-body')).toBe('')
   })
 
   it('running with an empty live stream draws neither output nor placeholder', () => {
@@ -219,6 +219,12 @@ describe('TerminalBlock status pill', () => {
   it('renders the exit-code pill for a non-zero exit', () => {
     render(<TerminalBlock command="false" output="a" exitCode={1} />)
     expect(screen.getByText('退出码 1')).toBeTruthy()
+  })
+
+  it('renders the no-exit-code pill and the error dot for a command that settled without one', () => {
+    const view = render(<TerminalBlock command="pnpm add x" output="spawn pnpm ENOENT" exitCode={null} />)
+    expect(view.getByText('未正常退出')).toBeTruthy()
+    expect(runStateOf(view.container)).toEqual({ state: 'error', label: '失败' })
   })
 
   it('renders the signal pill, which outranks the exit code', () => {

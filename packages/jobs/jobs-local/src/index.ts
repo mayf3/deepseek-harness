@@ -109,7 +109,7 @@ interface TrackedJob {
   /**
    * The spill file each pull source reported on its latest read, by source
    * index; an entry is undefined while that source keeps none. Source
-   * metadata rather than chunk provenance, so it survives ring eviction and
+   * metadata rather than per-chunk metadata, so it survives ring eviction and
    * follows a source that withdraws its file.
    */
   spillPaths: (string | undefined)[]

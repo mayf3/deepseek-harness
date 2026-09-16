@@ -148,7 +148,10 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
    */
   dismiss(name: string): void {
     for (const popup of this.live.popups.values()) {
-      if (popup.state.getSnapshot().command === name) popup.dismiss()
+      // A catalog that went stale underneath the card takes its rows away; the
+      // composer keeps the keyboard the card was holding, like every other
+      // dismissal path.
+      if (popup.state.getSnapshot().command === name) popup.dismiss({ focusComposer: true })
     }
   }
 
@@ -156,7 +159,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
    * Resolve the per-session popup controller (lazy; dies with the session
    * scope). The controller's consume callback dispatches the scoped
    * consume-token event back to this session; focusComposer reaches the
-   * composer through the overlay slot currency.
+   * session's composer through the conversation input face.
    * @param actx - session-scope ctx.
    * @returns the resident controller.
    */
@@ -173,31 +176,15 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
           ? { kind: 'span', span: segment.span }
           : { kind: 'bare-token', token: segment.token },
       }) === true,
-      focusComposer: () => { this.focusHooks.get(id)?.() },
+      // The shell took the keyboard; the composer restores it, caret included.
+      focusComposer: () => { actx.get('conversation')?.input.for(actx).focus() },
     })
     popups.set(id, controller)
     actx.effect(() => () => {
       controller.dispose()
       popups.delete(id)
-      this.focusHooks.delete(id)
     }, 'command: session popup')
     return controller
-  }
-
-  /** Composer focus hooks by session (the overlay wiring binds the textarea focus here). */
-  private readonly focusHooks = new Map<SessionId, () => void>()
-
-  /**
-   * Bind one session's composer-focus hook (overlay slot wiring; unbind on unmount).
-   * @param id - session id.
-   * @param focus - textarea focus callback.
-   * @returns the unbind disposer.
-   */
-  bindComposerFocus(id: SessionId, focus: () => void): () => void {
-    this.focusHooks.set(id, focus)
-    return () => {
-      if (this.focusHooks.get(id) === focus) this.focusHooks.delete(id)
-    }
   }
 
   /**

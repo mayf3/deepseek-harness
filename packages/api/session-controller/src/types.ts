@@ -524,22 +524,8 @@ export type SessionFollowFrame =
   | SessionEventEntry
   | { readonly type: 'assistant-stream'; readonly frame: SessionAssistantStreamFrame }
 
-/** One pending inbox occurrence in the authoritative queue snapshot. */
-export interface SessionQueuedItem {
-  readonly id: MessageId
-  readonly placement: 'queued' | 'steering' | 'context'
-  /** Prompt-RPC identity from the queued message's user source; clients retire the matching local submission echo on it. */
-  readonly rpcId?: SessionRequestId
-  /** JSON-safe message fields consumed by pending-queue presentation. */
-  readonly message: {
-    readonly id: MessageId
-    readonly content: readonly JsonValue[]
-  }
-}
-
 /** Complete live control baseline emitted once per control stream generation. */
 export interface SessionControlBaseline {
-  readonly queues: Readonly<Record<SessionId, readonly SessionQueuedItem[]>>
   readonly projections: Readonly<Record<SessionId, SessionProjectionBaseline>>
 }
 
@@ -554,7 +540,6 @@ export interface SessionProjectionUpdate {
 /** Host-wide live state stream. Each generation starts with exactly one baseline. */
 export type SessionControlFrame =
   | { readonly type: 'baseline'; readonly value: SessionControlBaseline }
-  | { readonly type: 'queue'; readonly sessionId: SessionId; readonly items: readonly SessionQueuedItem[] }
   | ({ readonly type: 'projection' } & SessionProjectionUpdate)
 
 declare module '@deepseek-ai/cordis' {

@@ -36,7 +36,7 @@ export type JobKind = JobKindMap[keyof JobKindMap]
  */
 export type JobChannel = 'stdout' | 'stderr' | 'log'
 
-/** One chunk of a job's output ring: absolute offset, text, and its provenance. */
+/** One chunk of a job's output ring: absolute offset, text, channel, and loss marker. */
 export interface JobChunk {
   /** Absolute offset of the chunk's first byte; offsets never move once assigned. */
   readonly at: number

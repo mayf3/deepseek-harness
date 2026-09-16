@@ -120,6 +120,7 @@ function terminalLabels(t: TranslateNS<typeof NS>): TerminalBlockLabels {
     signal: signal => t('terminal.signal', { signal }),
     /* v8 ignore next */
     exitCode: code => t('terminal.exitCode', { code }),
+    noExitCode: t('terminal.noExitCode'),
     running: t('terminal.running'),
     failed: t('terminal.failed'),
     done: t('terminal.done'),

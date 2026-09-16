@@ -176,10 +176,10 @@ interface JobSourceRead {
 
 ## 输出环
 
-每个 job 拥有一个有界的环。拉取源被泵入其中，`JobHandle.append` 的推送整块落地；模型通过注册表保管的游标（`JobRegistry.read`）消耗该环，任意数量的观察者按绝对字节偏移读取它（`JobRegistry.readAt`），二者互不干扰。`JobChannel` 标记 `stdout`、`stderr` 与 `log`；`log` 是只到达观察者、从不进入模型消耗式读取的生产方叙述。结算即封流并把保留量裁剪到结算上限——环没有独立的生命周期。拉取源保留的 spill 文件是 job 元数据（`JobView.output.spillPaths`，每次泵读取都会刷新），不是 chunk 的来源信息，所以环淘汰了字节之后、甚至缺口 chunk 本身也被淘汰之后，模型的丢失输出提示仍能点名该文件。浏览器通过 [`dsh-api-job-controller`](../../packages/api/job-controller/README.zh.md) 的 Remote 流 `job.list` 与 `job.follow` 触达名册与环，其帧列于下文的 Cordis API 一节。
+每个 job 拥有一个有界的环。拉取源被泵入其中，`JobHandle.append` 的推送整块落地；模型通过注册表保管的游标（`JobRegistry.read`）消耗该环，任意数量的观察者按绝对字节偏移读取它（`JobRegistry.readAt`），二者互不干扰。`JobChannel` 标记 `stdout`、`stderr` 与 `log`；`log` 是只到达观察者、从不进入模型消耗式读取的生产方叙述。结算即封流并把保留量裁剪到结算上限——环没有独立的生命周期。拉取源保留的 spill 文件是 job 元数据（`JobView.output.spillPaths`，每次泵读取都会刷新），不是逐块元数据，所以环淘汰了字节之后、甚至缺口 chunk 本身也被淘汰之后，模型的丢失输出提示仍能点名该文件。浏览器通过 [`dsh-api-job-controller`](../../packages/api/job-controller/README.zh.md) 的 Remote 流 `job.list` 与 `job.follow` 触达名册与环，其帧列于下文的 Cordis API 一节。
 
 ```ts type-equiv
-/** One chunk of a job's output ring: absolute offset, text, and its provenance. */
+/** One chunk of a job's output ring: absolute offset, text, channel, and loss marker. */
 interface JobChunk {
   /** Absolute offset of the chunk's first byte; offsets never move once assigned. */
   readonly at: number

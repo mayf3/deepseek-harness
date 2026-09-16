@@ -386,6 +386,13 @@ function nodeCompatSmokeGates(options: { cliSmoke?: boolean } = {}): Gate[] {
       'run',
       'scripts/vitest-environment.compat.spec.ts',
     ], { label: 'Vitest jsdom smoke' }),
+    pnpmExec('profile-resolution-smoke', [
+      'vitest',
+      'run',
+      'packages/boot/app-boot/tests/profile-resolution.spec.ts',
+      'packages/boot/app-boot/tests/profile-resolution-service.spec.ts',
+      'packages/boot/app-boot/tests/profile-resolution-worker-bootstrap.spec.ts',
+    ], { label: 'profile resolution smoke' }),
   ]
   if (options.cliSmoke) {
     gates.push(
@@ -772,6 +779,7 @@ function docSyncLeafGates(options: {
     pnpmExec('docs-site-projection', [
       'vitest', 'run', 'scripts/project-doc-site.spec.ts', 'scripts/verify-doc-site-fragments.spec.ts',
       'website/tests/mermaid-viewer.spec.ts',
+      'website/tests/page-markdown-actions.spec.ts', 'website/tests/raw-markdown.spec.ts',
     ], {
       label: 'documentation site checks',
     }),

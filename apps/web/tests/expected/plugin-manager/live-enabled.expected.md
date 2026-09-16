@@ -1,0 +1,28 @@
+- heading "插件" [level=1]
+- paragraph: 添加和管理插件
+- button "刷新"
+- button "添加插件":
+  - img
+  - text: 添加插件
+- heading "内置" [level=3]
+- text: "3"
+- list:
+  - listitem:
+    - button "查看 智能体团队（实验性）": 智能体团队（实验性）
+    - text: 官方 启用智能体团队协作与团队工具。
+    - switch "启用 智能体团队（实验性）"
+  - listitem:
+    - button "查看 智能体团队 Web 界面（实验性）": 智能体团队 Web 界面（实验性）
+    - text: 官方 在浏览器中查看团队成员、任务看板和成员会话。
+    - switch "启用 智能体团队 Web 界面（实验性）"
+  - listitem:
+    - button "查看 自动授权审查（实验性）": 自动授权审查（实验性）
+    - text: 官方 提供自动审查权限模式，由模型在每次工具调用前判断是否授权。
+    - switch "启用 自动授权审查（实验性）"
+- heading "已安装" [level=3]
+- text: "1"
+- list:
+  - listitem:
+    - button "查看 bundle": bundle
+    - text: "Web e2e fixture: a bundle whose one row is an inert plugin."
+    - switch "启用 bundle" [checked]
