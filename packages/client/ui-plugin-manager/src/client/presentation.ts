@@ -3,10 +3,22 @@
 import type { ManagementError } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginManagerLocaleKey } from './locales.ts'
-import type { FailedAction, ManagerNotice } from './manager-store.ts'
+import type { FailedAction, ManagerNotice, PackageView } from './manager-store.ts'
 
 /** The translate seat of the manager's dictionary. */
 export type Translate = PropsLocale<'pluginManager'>['t']
+
+const BUILTIN_COPY = new Map<string, { title: PluginManagerLocaleKey; description: PluginManagerLocaleKey }>([
+  ['@deepseek-ai/dsh-experimental-agent-team-profile', {
+    title: 'builtinAgentTeamTitle', description: 'builtinAgentTeamDescription',
+  }],
+  ['@deepseek-ai/dsh-experimental-agent-team-web-profile', {
+    title: 'builtinAgentTeamWebTitle', description: 'builtinAgentTeamWebDescription',
+  }],
+  ['@deepseek-ai/dsh-experimental-auto-review', {
+    title: 'builtinAutoReviewTitle', description: 'builtinAutoReviewDescription',
+  }],
+])
 
 /** The sentence each of the Host's refusal codes reads as. */
 const CODE_KEYS = {
@@ -52,6 +64,19 @@ export function managementText(error: { readonly code: ManagementError['code']; 
 export function shortName(name: string): string {
   const unscoped = name.startsWith('@') ? name.slice(name.indexOf('/') + 1) : name
   return unscoped.replace(/^dsh-(?:host-|client-)?/, '')
+}
+
+/**
+ * Localize known built-in packages by exact npm name at render time.
+ * @param pkg - original package identity and optional metadata description.
+ * @param t - the manager's current translate function.
+ * @returns localized copy, or the package's short name and original description.
+ */
+export function packageText(pkg: Pick<PackageView, 'name' | 'description'>, t: Translate): { title: string; description: string | undefined } {
+  const keys = BUILTIN_COPY.get(pkg.name)
+  return keys === undefined
+    ? { title: shortName(pkg.name), description: pkg.description }
+    : { title: t(keys.title), description: t(keys.description) }
 }
 
 /**

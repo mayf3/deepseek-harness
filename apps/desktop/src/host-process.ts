@@ -72,7 +72,8 @@ export class DesktopHostProcess {
    * @param inspectPort - Optional loopback inspector port for workspace development.
    * @param environment - Environment inherited by the Host and its plugin subprocesses.
    * @param onFailure - Receives the first unexpected child failure, including after readiness.
-   * @param primaryRuntime - Optional payload location for bundled script dependencies.
+   * @param primaryRuntime - Optional bundled dependency payload; when supplied, missing sibling
+   *   `office-skills` resources fail Host startup.
    * @param profileResolution - Package resolution mode for the application-owned profile.
    */
   constructor(
