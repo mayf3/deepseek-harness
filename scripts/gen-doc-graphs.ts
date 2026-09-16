@@ -151,8 +151,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'One provider-owned name per service instance. Each provider also owns its model tools; the service has no common action API, runtime selection, or Session workflow lock.',
   },
   {
-    key: 'documentConvert', pkg: 'document-convert', title: 'Office to PDF conversion',
-    mode: 'seam', implementations: ['document-convert-libreoffice'], consumers: [],
+    key: 'officeToPdf', pkg: 'office-to-pdf', title: 'Office to PDF conversion',
+    mode: 'core', consumers: [],
     note: 'Authorized Office bytes are converted on the Host using the declared native target engine, or Node WASM when no native target is declared.',
   },
   {

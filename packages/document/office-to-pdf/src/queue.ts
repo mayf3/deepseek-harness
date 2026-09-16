@@ -1,34 +1,35 @@
 /** Bounded source admission, shared content conversion, and caller-owned PDF delivery. */
 import { createHash } from 'node:crypto'
-import { DocumentConvertError, DocumentConvertKey, type DocumentExtension, type DocumentConverterGeneration,
-  type DocumentConvertRequest, type DocumentConvertResult } from '@deepseek-ai/dsh-document-convert'
+import { OfficeToPdfError } from './errors.ts'
+import { OfficeToPdfKey, type OfficeToPdfGeneration } from './identity.ts'
+import type { OfficeExtension, OfficeToPdfRequest, OfficeToPdfResult } from './types.ts'
 import type { Config } from './index.ts'
 
-type Converted = Pick<DocumentConvertResult, 'pdf' | 'missingFonts'>
-type Convert = (bytes: Uint8Array, extension: DocumentExtension, signal: AbortSignal) => Promise<Converted>
+type Converted = Pick<OfficeToPdfResult, 'pdf' | 'missingFonts'>
+type Convert = (bytes: Uint8Array, extension: OfficeExtension, signal: AbortSignal) => Promise<Converted>
 interface Reader {
   job: Job
   readonly source: string
-  readonly priority: DocumentConvertRequest['priority']
-  readonly resolve: (value: DocumentConvertResult) => void
+  readonly priority: OfficeToPdfRequest['priority']
+  readonly resolve: (value: OfficeToPdfResult) => void
   readonly reject: (error: unknown) => void
   readonly cleanup: () => void
 }
 interface Job {
-  readonly request: DocumentConvertRequest
+  readonly request: OfficeToPdfRequest
   readonly controller: AbortController
   readonly readers: Set<Reader>
   readonly sources: Set<string>
-  priority: DocumentConvertRequest['priority']
+  priority: OfficeToPdfRequest['priority']
   state: 'queued' | 'running' | 'finished'
 }
 
 /** One converter generation owns every queued source, conversion, reader, and retained PDF. */
 export class ConversionQueue {
-  private readonly ready = new Map<DocumentConvertKey, DocumentConvertResult>()
-  private readonly aliases = new Map<string, DocumentConvertKey>()
+  private readonly ready = new Map<OfficeToPdfKey, OfficeToPdfResult>()
+  private readonly aliases = new Map<string, OfficeToPdfKey>()
   private readonly sources = new Map<string, Job>()
-  private readonly digests = new Map<DocumentConvertKey, Job>()
+  private readonly digests = new Map<OfficeToPdfKey, Job>()
   private readonly queue: Job[] = []
   private readonly tasks = new Set<Promise<void>>()
   private readonly jobs = new Set<Job>()
@@ -44,7 +45,7 @@ export class ConversionQueue {
    * @param generation - provider lifetime; prevents reuse after engine or font replacement.
    * @param convert - executes one admitted conversion and settles after scratch cleanup.
    */
-  constructor(private readonly config: Config, private readonly generation: DocumentConverterGeneration,
+  constructor(private readonly config: Config, private readonly generation: OfficeToPdfGeneration,
     private readonly convert: Convert) {}
 
   /**
@@ -53,11 +54,11 @@ export class ConversionQueue {
    * @param signal - this reader's cancellation; the final reader cancels shared work.
    * @returns independent PDF bytes; busy or canceled readers reject without releasing active engine capacity early.
    */
-  async read(request: DocumentConvertRequest, signal?: AbortSignal): Promise<DocumentConvertResult> {
+  async read(request: OfficeToPdfRequest, signal?: AbortSignal): Promise<OfficeToPdfResult> {
     signal?.throwIfAborted()
     if (this.disposed) throw this.unavailable()
     if (request.source.bytes !== undefined && request.source.bytes > this.config.maxInputBytes) {
-      throw new DocumentConvertError('input-too-large', 'The Office source exceeds maxInputBytes.')
+      throw new OfficeToPdfError('input-too-large', 'The Office source exceeds maxInputBytes.')
     }
     const source = JSON.stringify([request.source.key, request.source.version, request.extension])
     const alias = this.aliases.get(source)
@@ -87,7 +88,7 @@ export class ConversionQueue {
     const shared = job
     if (request.priority === 'foreground') shared.priority = 'foreground'
     this.readers++
-    const promise = new Promise<DocumentConvertResult>((resolve, reject) => {
+    const promise = new Promise<OfficeToPdfResult>((resolve, reject) => {
       const abort = (): void => {
         this.release(reader)
         const reason: unknown = signal?.reason
@@ -114,9 +115,9 @@ export class ConversionQueue {
     await Promise.allSettled(this.tasks)
   }
 
-  private busy(): DocumentConvertError { return new DocumentConvertError('busy', 'The document converter has reached its admission limit.') }
-  private unavailable(): DocumentConvertError { return new DocumentConvertError('unavailable', 'The document converter is unavailable.') }
-  private copy(result: DocumentConvertResult): DocumentConvertResult {
+  private busy(): OfficeToPdfError { return new OfficeToPdfError('busy', 'The document converter has reached its admission limit.') }
+  private unavailable(): OfficeToPdfError { return new OfficeToPdfError('unavailable', 'The document converter is unavailable.') }
+  private copy(result: OfficeToPdfResult): OfficeToPdfResult {
     return { ...result, pdf: Uint8Array.from(result.pdf), missingFonts: [...result.missingFonts] }
   }
   private release(reader: Reader): void {
@@ -177,10 +178,10 @@ export class ConversionQueue {
     signal.throwIfAborted()
     const input = await job.request.source.read(signal, reserved)
     signal.throwIfAborted()
-    if (input.version !== job.request.source.version) throw new DocumentConvertError('source-changed', 'The source changed while waiting for conversion.')
-    if (input.bytes.byteLength > reserved) throw new DocumentConvertError('input-too-large', 'The source exceeds its reserved read capacity.')
+    if (input.version !== job.request.source.version) throw new OfficeToPdfError('source-changed', 'The source changed while waiting for conversion.')
+    if (input.bytes.byteLength > reserved) throw new OfficeToPdfError('input-too-large', 'The source exceeds its reserved read capacity.')
     const digest = createHash('sha256').update(job.request.extension).update('\0').update(input.bytes).digest('hex')
-    const key = DocumentConvertKey(`${this.generation}:${digest}`)
+    const key = OfficeToPdfKey(`${this.generation}:${digest}`)
     const cached = this.ready.get(key)
     if (cached !== undefined) {
       this.ready.delete(key)
@@ -207,7 +208,7 @@ export class ConversionQueue {
     } finally { if (this.digests.get(key) === job) this.digests.delete(key) }
   }
 
-  private finish(job: Job, result: DocumentConvertResult): void {
+  private finish(job: Job, result: OfficeToPdfResult): void {
     for (const source of job.sources) this.sources.delete(source)
     if (this.ready.has(result.cacheKey)) {
       for (const source of job.sources) {
@@ -218,10 +219,10 @@ export class ConversionQueue {
     }
     for (const reader of job.readers) { this.release(reader); reader.resolve(this.copy(result)) }
   }
-  private retain(result: DocumentConvertResult): void {
+  private retain(result: OfficeToPdfResult): void {
     if (result.pdf.byteLength > this.config.maxCachedBytes) return
     while (this.ready.size >= this.config.maxCachedEntries || this.cachedBytes + result.pdf.byteLength > this.config.maxCachedBytes) {
-      const [key, oldest] = this.ready.entries().next().value as [DocumentConvertKey, DocumentConvertResult]
+      const [key, oldest] = this.ready.entries().next().value as [OfficeToPdfKey, OfficeToPdfResult]
       this.ready.delete(key)
       this.cachedBytes -= oldest.pdf.byteLength
       for (const [source, digest] of this.aliases) if (digest === key) this.aliases.delete(source)

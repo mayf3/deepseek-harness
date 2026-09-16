@@ -3,7 +3,7 @@ description: "通过独立发布的 LibreOffice kit 在 Host 转换 Office 文�
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-document-convert-libreoffice
+# @deepseek-ai/dsh-office-to-pdf
 
 [English](README.md) | 中文
 
@@ -25,7 +25,9 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-[Web bundle](../../bundle/web-app/README.zh.md)以 `document-convert` 条目挂载此提供方。独立组合通过 `cordis.yml` 条目挂载 `@deepseek-ai/dsh-document-convert-libreoffice`。
+[Web bundle](../../bundle/web-app/README.zh.md)以 `office-to-pdf` 条目挂载此提供方。独立组合通过 `cordis.yml` 条目挂载 `@deepseek-ai/dsh-office-to-pdf`。
+
+调用方通过 `ctx.officeToPdf.convert()` 提交已授权源的标识、版本、可选字节数、延迟的有界读取、Office 扩展名和调度优先级。源版本变化会拒绝转换。结果包含调用方拥有的 PDF 字节、缺失字体、缓存键和转换 generation；配置替换后 generation 随之改变。取消以原因为拒绝值，转换失败使用 `OfficeToPdfError`。
 
 此 provider 依赖独立发布的 [`@deepseek-ai/libreoffice-kit`](https://github.com/deepseek-harness/libreoffice-kit/tree/main/packages/entry) npm API，kit 版本为 `0.0.1`。应用打包选择 kit 的 `optionalDependencies` 中声明的匹配原生包；目标没有声明原生包时选择 WASM。已声明的原生引擎缺失时拒绝打包，不会选择 WASM。[平台引擎决策](../../../.agents/notes/implemented/architecture/2026-09-15-platform-office-engines.zh.md)定义安装与打包策略；[发布归属决策](../../../.agents/notes/implemented/architecture/2026-09-14-independent-libreoffice-kit.zh.md)定义独立 kit 与 Harness 各自的职责。
 
@@ -38,7 +40,7 @@ kind: "package-reference"
 | `maxImageResolution` | `192` | 最大光栅图像 DPI；覆盖 kit 的默认值 `144`。 |
 | `fontFallbacks` | kit 默认值 | 有序字体族优先组；每组至少包含两个含非空白字符的名称。 |
 
-[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-document-convert-libreoffice)定义全部字体、归档和图像设置。`fontDirectories` 接受绝对目录；省略时使用 kit 的平台默认值。显式 `fontFallbacks` 替换 kit 的默认分组。已安装的请求字体仍优先使用，缺失字形仍可由其他系统字体提供。原生引擎可能在应用这些优先规则前选中已安装的度量兼容字体。
+[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-office-to-pdf)定义全部字体、归档和图像设置。`fontDirectories` 接受绝对目录；省略时使用 kit 的平台默认值。显式 `fontFallbacks` 替换 kit 的默认分组。已安装的请求字体仍优先使用，缺失字形仍可由其他系统字体提供。原生引擎可能在应用这些优先规则前选中已安装的度量兼容字体。
 
 提供方按转换 generation、Office 扩展名和精确源字节的 SHA-256 保留成功 PDF。有界的源版本索引在授权 stat 后避免重读已知内容；内容标识也会在不同源路径之间共享转换。达到任一保留上限时，最近最少使用的 PDF 及其别名一同移除。不保留失败或超过缓存上限的结果。每个结果具有独立的 PDF 与字体缓冲区。已就绪别名命中不占用读取方名额；同一源的最后一个读取方离开时，立即释放其在途定位信息。源的最后一个读取方取消后，再次打开该源会重新读取字节，再按内容摘要共享转换，即使其他源仍保持该转换运行或其 PDF 已就绪。
 
@@ -65,7 +67,7 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## 延伸阅读
 
-- [渲染服务](../document-convert/README.zh.md) — 输入和结果所有权。
+- [Office 转 PDF](../../../docs/subsystems/office-to-pdf.zh.md) — 组合与输入、结果所有权。
 - [工作区文件](../../api/workspace-files/README.zh.md) — Session 文件授权与有界读取。
 
 -----

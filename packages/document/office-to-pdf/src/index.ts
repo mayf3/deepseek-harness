@@ -3,12 +3,25 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { createConverter, type Converter, type ConverterOptions } from '@deepseek-ai/libreoffice-kit'
-import { DocumentConverter, DocumentConvertError, DocumentConverterGeneration, type DocumentExtension, type DocumentConvertRequest, type DocumentConvertResult } from '@deepseek-ai/dsh-document-convert'
 import z from '@deepseek-ai/schemastery'
+import { OfficeToPdfError } from './errors.ts'
+import { OfficeToPdfGeneration } from './identity.ts'
+import type { OfficeExtension, OfficeToPdfRequest, OfficeToPdfResult } from './types.ts'
 import { readPdf } from './output.ts'
 import { ConversionQueue } from './queue.ts'
+
+export * from './errors.ts'
+export * from './identity.ts'
+export * from './types.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Shared Host conversion of already-authorized Office bytes to PDF. */
+    officeToPdf: OfficeToPdf
+  }
+}
 
 /** Provider concurrency and kit rendering/font configuration. */
 export interface Config {
@@ -81,9 +94,10 @@ interface Slot {
 }
 
 /** A provider lifetime owns all converters, queued calls, and temporary files. */
-export class LibreOfficeConverter extends DocumentConverter {
+export class OfficeToPdf extends Service {
   static Config = Config
-  readonly generation = DocumentConverterGeneration(randomUUID())
+  /** Changes whenever engine, font, or conversion configuration is replaced. */
+  readonly generation: OfficeToPdfGeneration = OfficeToPdfGeneration(randomUUID())
   private readonly slots: Slot[] = []
   private readonly queue: ConversionQueue
   private readonly options: ConverterOptions
@@ -93,7 +107,7 @@ export class LibreOfficeConverter extends DocumentConverter {
    * @param config - resolved rendering, font, and concurrency limits.
    */
   constructor(ctx: Context, private readonly config: Config) {
-    super(ctx)
+    super(ctx, 'officeToPdf')
     if (config.fontDirectories?.some(path => !isAbsolute(path))) throw new Error('fontDirectories must contain absolute paths.')
     if (config.maxSourceBytes < config.maxInputBytes) throw new Error('maxSourceBytes must be at least maxInputBytes.')
     const { fontDirectories, fontFallbacks, timeoutMs, maxInputBytes, maxOutputBytes, maxImageResolution,
@@ -115,11 +129,18 @@ export class LibreOfficeConverter extends DocumentConverter {
     })
   }
 
-  convert(request: DocumentConvertRequest, signal?: AbortSignal): Promise<DocumentConvertResult> {
+  /**
+   * Convert Office bytes without modifying the source or writing Session events.
+   * @param request - authorized metadata and deferred bounded source read.
+   * @param signal - caller cancellation; provider disposal also stops active work.
+   * @returns caller-owned PDF bytes after conversion and scratch cleanup settle; canceled readers reject independently.
+   * @throws {OfficeToPdfError} Invalid input, unusable output, or engine failure; cancellation rejects with its reason.
+   */
+  convert(request: OfficeToPdfRequest, signal?: AbortSignal): Promise<OfficeToPdfResult> {
     return this.queue.read(request, signal)
   }
 
-  private async convertBytes(bytes: Uint8Array, extension: DocumentExtension, signal: AbortSignal): Promise<Pick<DocumentConvertResult, 'pdf' | 'missingFonts'>> {
+  private async convertBytes(bytes: Uint8Array, extension: OfficeExtension, signal: AbortSignal): Promise<Pick<OfficeToPdfResult, 'pdf' | 'missingFonts'>> {
     signal.throwIfAborted()
     let slot = this.slots.find(candidate => !candidate.busy)
     if (slot === undefined) { slot = { busy: false }; this.slots.push(slot) }
@@ -134,7 +155,7 @@ export class LibreOfficeConverter extends DocumentConverter {
       }
       const converter = await slot.converter
       signal.throwIfAborted()
-      directory = await mkdtemp(join(tmpdir(), 'dsh-document-convert-'))
+      directory = await mkdtemp(join(tmpdir(), 'dsh-office-to-pdf-'))
       const inputPath = join(directory, `source.${extension}`)
       const outputPath = join(directory, 'converted.pdf')
       await writeFile(inputPath, bytes, { flag: 'wx', mode: 0o600, signal })
@@ -144,20 +165,20 @@ export class LibreOfficeConverter extends DocumentConverter {
       let pdf: Uint8Array
       try { pdf = await readPdf(outputPath, this.config.maxOutputBytes, signal) }
       catch (cause) {
-        if (cause instanceof DocumentConvertError) throw cause
-        throw new DocumentConvertError('invalid-output', 'The converter PDF could not be read.', { cause })
+        if (cause instanceof OfficeToPdfError) throw cause
+        throw new OfficeToPdfError('invalid-output', 'The converter PDF could not be read.', { cause })
       }
       signal.throwIfAborted()
       return { pdf, missingFonts: result.missingFonts }
     } catch (cause) {
       signal.throwIfAborted()
-      if (cause instanceof DocumentConvertError) throw cause
+      if (cause instanceof OfficeToPdfError) throw cause
       const code = typeof cause === 'object' && cause !== null && 'code' in cause ? cause.code : undefined
       switch (code) {
         case 'input-too-large': case 'output-too-large': case 'invalid-document': case 'unsupported-format':
         case 'invalid-output': case 'timeout': case 'unavailable':
-          throw new DocumentConvertError(code, 'LibreOffice conversion failed.', { cause })
-        default: throw new DocumentConvertError('failed', 'LibreOffice conversion failed.', { cause })
+          throw new OfficeToPdfError(code, 'LibreOffice conversion failed.', { cause })
+        default: throw new OfficeToPdfError('failed', 'LibreOffice conversion failed.', { cause })
       }
     } finally {
       try { if (directory !== undefined) await rm(directory, { recursive: true, force: true }) }
@@ -166,4 +187,4 @@ export class LibreOfficeConverter extends DocumentConverter {
   }
 }
 
-export default LibreOfficeConverter
+export default OfficeToPdf

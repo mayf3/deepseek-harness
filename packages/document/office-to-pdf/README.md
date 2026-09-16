@@ -3,7 +3,7 @@ description: "Host Office conversion with the independently published LibreOffic
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-document-convert-libreoffice
+# @deepseek-ai/dsh-office-to-pdf
 
 English | [中文](README.zh.md)
 
@@ -25,7 +25,9 @@ Convert Office documents to PDFs on the Host computer. Targets with a declared n
 <a id="use-this-package"></a>
 ## Use this package
 
-The [Web bundle](../../bundle/web-app/README.md) mounts this provider as `document-convert`. Independent compositions mount `@deepseek-ai/dsh-document-convert-libreoffice` as a `cordis.yml` row.
+The [Web bundle](../../bundle/web-app/README.md) mounts this provider as `office-to-pdf`. Independent compositions mount `@deepseek-ai/dsh-office-to-pdf` as a `cordis.yml` row.
+
+Callers submit authorized source identity, version, optional byte size, a deferred bounded read, Office extension, and scheduling priority through `ctx.officeToPdf.convert()`. A changed source version rejects conversion. Results contain caller-owned PDF bytes, missing fonts, a cache key, and a conversion generation that changes on configuration replacement. Cancellation rejects with its reason; conversion failures use `OfficeToPdfError`.
 
 The provider depends on the independently published [`@deepseek-ai/libreoffice-kit`](https://github.com/deepseek-harness/libreoffice-kit/tree/main/packages/entry) npm API at kit version `0.0.1`. Application packaging selects the matching native package declared in the kit’s `optionalDependencies`, or WASM when no native package is declared for that target. A missing declared native engine rejects packaging without selecting WASM. The [platform engine decision](../../../.agents/notes/implemented/architecture/2026-09-15-platform-office-engines.md) defines installation and packaging; the [release ownership decision](../../../.agents/notes/implemented/architecture/2026-09-14-independent-libreoffice-kit.md) defines the independent kit and Harness responsibilities.
 
@@ -38,7 +40,7 @@ The provider depends on the independently published [`@deepseek-ai/libreoffice-k
 | `maxImageResolution` | `192` | Maximum raster-image DPI; overrides the kit default of `144`. |
 | `fontFallbacks` | Kit defaults | Ordered font-family preference groups; each group requires at least two names containing non-whitespace characters. |
 
-The [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-document-convert-libreoffice) owns the full font, archive, and image settings. `fontDirectories` accepts absolute directories; omission uses the kit platform defaults. Explicit `fontFallbacks` replaces the kit's default groups. Installed requested fonts retain precedence, and other system fonts remain eligible for uncovered glyphs. Native engines can select installed metric-compatible fonts before these preferences.
+The [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-office-to-pdf) owns the full font, archive, and image settings. `fontDirectories` accepts absolute directories; omission uses the kit platform defaults. Explicit `fontFallbacks` replaces the kit's default groups. Installed requested fonts retain precedence, and other system fonts remain eligible for uncovered glyphs. Native engines can select installed metric-compatible fonts before these preferences.
 
 The provider retains successful PDFs by converter generation, Office extension, and SHA-256 of the exact source bytes. A bounded source-version index avoids rereading known content after an authorized stat; content identity also shares conversion across different source paths. Least-recently-used PDFs leave at either retention limit, together with their aliases. Failures and oversized cache entries are not retained. Every result has independent PDF/font buffers. Ready alias hits consume no reader slot; active source locators are released when their last reader leaves. Reopening a source after its final reader cancels rereads its bytes before sharing by digest, even if another source kept the conversion alive or its PDF is ready.
 
@@ -65,7 +67,7 @@ Each concurrent slot lazily creates and reuses one kit converter. The provider w
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Rendering service](../document-convert/README.md) — input and result ownership.
+- [Office to PDF](../../../docs/subsystems/office-to-pdf.md) — composition and input/result ownership.
 - [Workspace Files](../../api/workspace-files/README.md) — Session file authorization and bounded reads.
 
 -----

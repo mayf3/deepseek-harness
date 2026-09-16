@@ -225,8 +225,8 @@
       name: '@deepseek-ai/dsh-client-ui-sidebar-right'
 
 
-    - id: document-convert
-      name: '@deepseek-ai/dsh-document-convert-libreoffice'
+    - id: office-to-pdf
+      name: '@deepseek-ai/dsh-office-to-pdf'
 
     # The right Sidebar's document tab: bounded file reads with selectable
     # Markdown, code, HTML, PDF, and plain-text renderers.

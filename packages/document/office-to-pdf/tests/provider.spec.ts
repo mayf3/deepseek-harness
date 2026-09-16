@@ -1,23 +1,22 @@
 /** Disk output, resource bounds, and cancellation around the external kit. */
 import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { DocumentSourceKey, type DocumentConvertRequest } from '@deepseek-ai/dsh-document-convert'
 import { Context } from '@deepseek-ai/cordis'
 import type { Converter, ConverterOptions } from '@deepseek-ai/libreoffice-kit'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import LibreOfficeConverter, { Config } from '../src/index.ts'
+import OfficeToPdf, { Config, OfficeSourceKey, type OfficeToPdfRequest } from '../src/index.ts'
 
 const kit = vi.hoisted(() => ({ create: vi.fn<(options?: ConverterOptions) => Promise<Converter>>() }))
 vi.mock('@deepseek-ai/libreoffice-kit', () => ({ createConverter: kit.create }))
 
 const pdf = Buffer.from('%PDF-1.7\npreview\n%%EOF\n')
 const input = new Uint8Array([80, 75, 3, 4])
-const request: DocumentConvertRequest = { extension: 'docx', priority: 'foreground', source: {
-  key: DocumentSourceKey('source'), version: 'v1', bytes: input.length,
+const request: OfficeToPdfRequest = { extension: 'docx', priority: 'foreground', source: {
+  key: OfficeSourceKey('source'), version: 'v1', bytes: input.length,
   read: async () => ({ bytes: input, version: 'v1' }),
 } }
-function distinct(index: number): DocumentConvertRequest {
-  return { ...request, source: { ...request.source, key: DocumentSourceKey(`source-${index}`),
+function distinct(index: number): OfficeToPdfRequest {
+  return { ...request, source: { ...request.source, key: OfficeSourceKey(`source-${index}`),
     read: async () => ({ bytes: new Uint8Array([80, 75, 3, index]), version: 'v1' }) } }
 }
 let ctx: Context
@@ -35,9 +34,9 @@ beforeEach(() => {
 })
 afterEach(async () => { await ctx.fiber.dispose() })
 
-async function mount(config: Partial<Config> = {}): Promise<LibreOfficeConverter> {
-  await ctx.plugin(LibreOfficeConverter, config)
-  return ctx.documentConvert as LibreOfficeConverter
+async function mount(config: Partial<Config> = {}): Promise<OfficeToPdf> {
+  await ctx.plugin(OfficeToPdf, config)
+  return ctx.officeToPdf
 }
 
 it('preserves the kit font defaults when font configuration is omitted', async () => {
@@ -231,12 +230,12 @@ it('rejects caller cancellation before allocating any conversion resources', asy
 })
 
 it('rejects relative font directories during provider configuration', async () => {
-  expect(() => new LibreOfficeConverter(ctx, Config({ fontDirectories: ['relative/fonts'] })))
+  expect(() => new OfficeToPdf(ctx, Config({ fontDirectories: ['relative/fonts'] })))
     .toThrow('fontDirectories must contain absolute paths')
 })
 
 it('rejects source capacity below one permitted input before allocating a converter', () => {
-  expect(() => new LibreOfficeConverter(ctx, Config({ maxInputBytes: 4, maxSourceBytes: 3 })))
+  expect(() => new OfficeToPdf(ctx, Config({ maxInputBytes: 4, maxSourceBytes: 3 })))
     .toThrow('maxSourceBytes must be at least maxInputBytes')
   expect(kit.create).not.toHaveBeenCalled()
 })

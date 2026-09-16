@@ -1,6 +1,6 @@
 {
-  "name": "@deepseek-ai/dsh-document-convert",
-  "description": "Authorized Office bytes to PDF rendering service",
+  "name": "@deepseek-ai/dsh-office-to-pdf",
+  "description": "Shared Office-to-PDF conversion with bounded queues and caching",
   "version": "0.1.6-alpha.1",
   "publishConfig": {
     "access": "public"
@@ -12,19 +12,19 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-    "directory": "packages/document/document-convert"
+    "directory": "packages/document/office-to-pdf"
   },
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json",
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
-    },
-    "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    }
   },
   "files": [
     "lib/index.js",
@@ -35,9 +35,13 @@
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@deepseek-ai/cordis-plugin-include": "workspace:^"
   },
   "dependencies": {
+    "@deepseek-ai/libreoffice-kit": "0.0.1",
+    "@deepseek-ai/schemastery": "workspace:^",
     "@deepseek-ai/dsh-brand": "workspace:^"
   }
 }
