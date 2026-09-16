@@ -238,6 +238,14 @@ describe('ReviewTab', () => {
     expect(side('left').map(line => line.getAttribute('data-diff-line'))).toEqual(['context', 'del', 'add', 'context', 'del', 'del'])
     expect(side('left').map(line => line.textContent)).toEqual(['1a', '2b', '', '3d', '10x', '20z'])
     expect(side('right').map(line => line.textContent)).toEqual(['1a', '2B', '3c', '4d', '11y', ''])
+    // The two sides scroll sideways together, whichever side the reader drags.
+    const [left, right] = ['left', 'right'].map(name => view.container.querySelector(`[data-diff-side="${name}"]`) as HTMLDivElement)
+    fireEvent.scroll(left!, { target: { scrollLeft: 40 } })
+    expect(right!.scrollLeft).toBe(40)
+    fireEvent.scroll(right!, { target: { scrollLeft: 15 } })
+    expect(left!.scrollLeft).toBe(15)
+    fireEvent.scroll(right!, { target: { scrollLeft: 15 } })
+    expect(left!.scrollLeft).toBe(15)
     expect(view.getByRole('button', { name: en['review.splitAria'] }).getAttribute('aria-pressed')).toBe('true')
     // Wrapped lines vary in height, so both sides share one row per pair.
     fireEvent.click(view.getByRole('button', { name: en['review.wrapAria'] }))

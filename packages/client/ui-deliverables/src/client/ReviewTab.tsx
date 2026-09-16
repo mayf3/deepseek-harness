@@ -3,8 +3,8 @@
  * selected file's turn-start and turn-end comparison drawn unified or side by
  * side, wrapped or scrolling, and controls to open the file itself.
  */
-import { useEffect, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode, UIEvent } from 'react'
 import {
   Button, IconChevronDownOutline14, IconCodeOutline16, IconPanelLeftOutline16, IconRightUpOutline16, IconWrapLinesOutline16, Menu, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -271,16 +271,24 @@ function hunkHeader(hunk: WorkspaceDiffHunk): string {
 }
 
 /**
- * The side-by-side view without wrapping: two columns that scroll sideways on
- * their own, so a long line on one side never runs under the other. Every
- * line is one fixed-height row, which keeps the sides aligned.
+ * The side-by-side view without wrapping: two columns that clip their long
+ * lines and scroll sideways together, so a long line on one side never runs
+ * under the other and both sides show the same columns of text. Every line is
+ * one fixed-height row, which keeps the sides aligned.
  */
 function SplitColumns({ hunks }: { hunks: readonly WorkspaceDiffHunk[] }): ReactNode {
   const paired = useMemo(() => hunks.map(hunk => ({ header: hunkHeader(hunk), rows: splitRows(hunk) })), [hunks])
+  const columns = useRef<Record<'left' | 'right', HTMLDivElement | null>>({ left: null, right: null })
+  // Mirror one side's horizontal offset onto the other; the mirrored side's own scroll event then finds nothing to change.
+  const follow = (side: 'left' | 'right') => (event: UIEvent<HTMLDivElement>): void => {
+    const other = columns.current[side === 'left' ? 'right' : 'left']
+    if (other !== null && other.scrollLeft !== event.currentTarget.scrollLeft) other.scrollLeft = event.currentTarget.scrollLeft
+  }
   return (
     <div className={css.columns}>
       {(['left', 'right'] as const).map(side => (
-        <div key={side} className={css.column} data-diff-side={side}>
+        <div key={side} className={css.column} data-diff-side={side}
+          ref={(element) => { columns.current[side] = element }} onScroll={follow(side)}>
           {paired.map((hunk, position) => (
             <section key={position} className={css.hunk}>
               <div className={css.hunkHeader}>{hunk.header}</div>
