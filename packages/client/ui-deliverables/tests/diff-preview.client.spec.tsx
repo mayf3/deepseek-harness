@@ -6,7 +6,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { changesDiffAddress, changesDiffUrl, parseChangesDiffAddress, type ChangesDiff } from '../src/changes.ts'
 import { ChangesDiffStore } from '../src/client/changes-diff.ts'
-import { DiffPreview, hunkRows, type DiffPreviewInjected, type DiffPreviewProps } from '../src/client/DiffPreview.tsx'
+import { DiffPreview, hunkRows, MAX_RENDERED_LINES, renderedHunks, type DiffPreviewInjected, type DiffPreviewProps } from '../src/client/DiffPreview.tsx'
 import { changesDiffDefinition } from '../src/client/diff-definition.ts'
 import { PresentedOpenController } from '../src/client/present-open.ts'
 import { en, zh } from '../src/client/locales.ts'
@@ -208,6 +208,25 @@ describe('DiffPreview', () => {
     controller.host.set('error')
     rerender()
     expect(view.queryByRole('button')).toBeNull()
+  })
+
+  it('stops drawing after the rendered-line cap and says so', () => {
+    const long = (count: number, prefix = '+'): string[] => Array.from({ length: count }, (_, at) => `${prefix}line ${at}`)
+    const whole = { oldStart: 1, oldLines: 0, newStart: 1, newLines: MAX_RENDERED_LINES + 2, lines: long(MAX_RENDERED_LINES + 2) }
+    const cut = renderedHunks([whole])
+    expect(cut.truncated).toBe(true)
+    expect(cut.hunks[0]!.lines).toHaveLength(MAX_RENDERED_LINES)
+    const small = { oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-a', '+b'] }
+    expect(renderedHunks([small, small])).toEqual({ hunks: [small, small], truncated: false })
+    // A later hunk past the budget is dropped whole, an earlier one shortened.
+    const two = renderedHunks([{ ...whole, lines: long(MAX_RENDERED_LINES) }, small])
+    expect(two.hunks).toHaveLength(1)
+    expect(two.truncated).toBe(true)
+    const diffs = new ChangesDiffStore()
+    diffs.state.set({ [URL_]: { ...text, hunks: [{ ...whole, lines: long(MAX_RENDERED_LINES + 1) }] } })
+    const { view } = mount(diffs)
+    expect(view.container.querySelectorAll('[data-diff-line]')).toHaveLength(MAX_RENDERED_LINES)
+    expect(view.container.querySelector('[data-diff-truncated]')?.textContent).toBe(`Showing the first ${MAX_RENDERED_LINES} lines`)
   })
 
   it('refuses an address it did not mint', () => {

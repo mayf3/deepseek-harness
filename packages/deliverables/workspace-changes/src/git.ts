@@ -189,19 +189,22 @@ export interface TreeBlob {
 export async function treeBlob(
   git: GitRunner, workspace: GitWorkspace, tree: string, path: string, signal: AbortSignal,
 ): Promise<TreeBlob | null> {
-  const result = ok(await git.run(['ls-tree', '-z', '-l', tree, '--', path], { cwd: workspace.root, env: workspace.env, signal }), 'git ls-tree')
-  const entry = result.stdout.split('\0')[0] ?? ''
+  // The path is a pathspec; literal matching keeps `*`, `?`, and `[` in a file name from selecting another entry.
+  const result = ok(await git.run(['ls-tree', '-z', '-l', tree, '--', path], {
+    cwd: workspace.root, env: { ...workspace.env, GIT_LITERAL_PATHSPECS: '1' }, signal,
+  }), 'git ls-tree')
+  const entry = result.stdout.split('\0')[0] as string
   const match = /^\d+ (\S+) ([0-9a-f]+) +(\d+)\t/.exec(entry)
   if (match === null || match[1] !== 'blob') return null
   return { oid: match[2] as string, size: Number(match[3]) }
 }
 
 /**
- * The text of one blob.
+ * The text of one blob whose size {@link treeBlob} reported within the cap.
  * @param git - command runner.
  * @param workspace - addressed repository.
  * @param oid - blob id.
- * @param maxBytes - inclusive byte cap; a larger blob throws.
+ * @param maxBytes - inclusive byte cap the caller checked the blob's size against.
  * @param signal - cancellation.
  * @returns the blob decoded as UTF-8.
  */
@@ -209,6 +212,7 @@ export async function blobText(
   git: GitRunner, workspace: GitWorkspace, oid: string, maxBytes: number, signal: AbortSignal,
 ): Promise<string> {
   const result = ok(await git.run(['cat-file', 'blob', oid], { cwd: workspace.root, env: workspace.env, maxBytes, signal }), 'git cat-file')
+  /* v8 ignore next -- callers size the blob with treeBlob first; a blob is immutable, so the cap cannot be exceeded here. */
   if (result.truncated) throw new Error(`blob ${oid} exceeds ${maxBytes} bytes`)
   return result.stdout
 }

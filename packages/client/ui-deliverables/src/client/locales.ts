@@ -43,7 +43,6 @@ export const zh = {
   'changes.deleted': '-{count}',
   'changes.binary': '二进制',
   'changes.openFolder': '打开改动文件所在的文件夹',
-  'changes.openFile': '用默认应用打开 {name}',
   'changes.all': '全部 {count} 个文件',
   'changes.expandAria': '展开全部 {count} 个改动文件',
   'changes.collapse': '收起',
@@ -61,6 +60,7 @@ export const zh = {
   'diff.deleted': '本轮删除的文件',
   'diff.unchanged': '两侧内容相同',
   'diff.coarse': '逐行对比超时，按整个文件替换显示',
+  'diff.truncated': '只显示前 {count} 行',
   'diff.openNative': '用默认应用打开',
   'diff.openNativeError': '打开失败，点击重试',
 }
@@ -105,7 +105,6 @@ export const en: Record<DeliverablesKey, string> = {
   'changes.deleted': '-{count}',
   'changes.binary': 'binary',
   'changes.openFolder': 'Open the folder containing the changed files',
-  'changes.openFile': 'Open {name} in default app',
   'changes.all': 'All {count} files',
   'changes.expandAria': 'Show all {count} changed files',
   'changes.collapse': 'Collapse',
@@ -123,6 +122,7 @@ export const en: Record<DeliverablesKey, string> = {
   'diff.deleted': 'Deleted in this turn',
   'diff.unchanged': 'Both sides hold the same lines',
   'diff.coarse': 'Line comparison timed out; shown as a whole-file replacement',
+  'diff.truncated': 'Showing the first {count} lines',
   'diff.openNative': 'Open in default app',
   'diff.openNativeError': 'Could not open. Click to retry.',
 }

@@ -46,18 +46,19 @@ interface Repository {
 /** The turn-start snapshot of a located repository. */
 interface Baseline extends Repository { tree: string }
 
-/** Where one side of a listed file's content lives. */
+/** Where one readable side of a listed file's content lives. */
 type ContentSource =
   /** A path in a snapshot tree; absence, size, and text are read from git when asked for. */
   | { kind: 'snapshot'; repository: Repository; tree: string; path: string }
-  | Capture
+  | Exclude<Capture, { kind: 'oversized' }>
 
-/** The two sides of one listed file, kept beside the served summary. */
-interface FileSources {
-  before: ContentSource
-  after: ContentSource
-  binary: boolean
-}
+/**
+ * What a listed file's comparison is served from: a refusal decided when the
+ * turn was recorded, or the two sides to read and compare when asked for.
+ */
+type FileSources =
+  | { refusal: 'binary' | 'oversized' }
+  | { refusal?: undefined; before: ContentSource; after: ContentSource }
 
 /** A served summary with the content sources of its listed files, index-aligned with `summary.files`. */
 interface TurnRecord {
@@ -89,7 +90,7 @@ function freshState(turn: number): TurnState {
 /** A listed file with the sources of its two sides. */
 interface Listed { file: WorkspaceChangedFile; sources: FileSources }
 
-/** A read side larger than the byte cap. */
+/** A snapshot side larger than the byte cap. */
 const OVERSIZED = Symbol('oversized')
 
 /**
@@ -224,8 +225,7 @@ export class TurnRecorder {
     const sources = record?.sources[index]
     if (file === undefined || sources === undefined) return undefined
     const { path, display } = file
-    if (sources.binary) return { kind: 'binary', path, display }
-    if (file.oversized === true) return { kind: 'oversized', path, display }
+    if (sources.refusal !== undefined) return { kind: sources.refusal, path, display }
     const combined = AbortSignal.any([signal, this.lifetime.signal])
     try {
       const [before, after] = await Promise.all([this.readSide(sources.before, combined), this.readSide(sources.after, combined)])
@@ -285,12 +285,11 @@ export class TurnRecorder {
     return this.repository
   }
 
-  /** One side's text, null for an absent file, or {@link OVERSIZED} for a side beyond the byte cap. */
+  /** One side's text, null for an absent file, or {@link OVERSIZED} for a snapshot side beyond the byte cap. */
   private async readSide(source: ContentSource, signal: AbortSignal): Promise<string | null | typeof OVERSIZED> {
     switch (source.kind) {
       case 'absent': return null
-      case 'oversized': return OVERSIZED
-      case 'file': return readFile(source.file, 'utf8')
+      case 'file': return readFile(source.file, { encoding: 'utf8', signal })
       case 'snapshot': {
         const { git, workspace } = source.repository
         const blob = await treeBlob(git, workspace, source.tree, source.path, signal)
@@ -318,10 +317,9 @@ export class TurnRecorder {
         const absolute = resolve(root, entry.path)
         listed.set(absolute, {
           file: changedFile(paths, root, absolute, entry),
-          sources: {
+          sources: entry.binary ? { refusal: 'binary' } : {
             before: { kind: 'snapshot', repository, tree: baseline.tree, path: entry.oldPath ?? entry.path },
             after: { kind: 'snapshot', repository, tree: after, path: entry.path },
-            binary: entry.binary,
           },
         })
       }
@@ -348,10 +346,7 @@ export class TurnRecorder {
       const before = state.captures.get(absolute) as Capture
       const after = await captureFile(absolute, join(await this.scratchDir(), 'captures'), this.env.maxFileBytes)
       if (after === undefined || sameCapture(before, after)) continue
-      listed.set(absolute, {
-        file: changedFile(paths, root, absolute, await this.capturedCounts(before, after)),
-        sources: { before, after, binary: isBinary(before) || isBinary(after) },
-      })
+      listed.set(absolute, await this.compared(paths, root, absolute, before, after))
     }
     const sorted = [...listed.values()].sort((a, b) => compareDisplay(a.file, b.file))
     // An empty list after an earlier in-turn record supersedes that record.
@@ -373,13 +368,20 @@ export class TurnRecorder {
     state.recordedAfterSeq = event.seq
   }
 
-  /** Line counts of a captured pair; none for a binary or oversized side. */
-  private async capturedCounts(before: Capture, after: Capture): Promise<Counts> {
-    if (before.kind === 'oversized' || after.kind === 'oversized') return { added: 0, deleted: 0, binary: false, oversized: true }
-    if (isBinary(before) || isBinary(after)) return { added: 0, deleted: 0, binary: true }
-    const text = async (side: Capture): Promise<string | null> => side.kind === 'file' ? readFile(side.file, 'utf8') : null
+  /**
+   * The listing of a captured pair: an oversized side lists the file without
+   * counts and refuses its comparison, a binary side likewise, and two text
+   * sides carry the counts of their line comparison.
+   */
+  private async compared(paths: Paths, root: string, absolute: string, before: Capture, after: Capture): Promise<Listed> {
+    const list = (counts: Counts, sources: FileSources): Listed => ({ file: changedFile(paths, root, absolute, counts), sources })
+    if (before.kind === 'oversized' || after.kind === 'oversized') {
+      return list({ added: 0, deleted: 0, binary: false, oversized: true }, { refusal: 'oversized' })
+    }
+    if (isBinary(before) || isBinary(after)) return list({ added: 0, deleted: 0, binary: true }, { refusal: 'binary' })
+    const text = async (side: typeof before): Promise<string | null> => side.kind === 'file' ? readFile(side.file, 'utf8') : null
     const { added, deleted } = compareText(await text(before), await text(after), this.env.diffTimeoutMs)
-    return { added, deleted, binary: false }
+    return list({ added, deleted, binary: false }, { before, after })
   }
 }
 

@@ -27,6 +27,9 @@ export interface DiffPreviewInjected {
 /** The body's composed props: the tab it draws, its injected face, and its copy. */
 export type DiffPreviewProps = PropsRuntime<'sidebar.right.pane.tab'> & InjectFace<DiffPreviewInjected> & PropsLocale<typeof NS>
 
+/** Lines drawn before the tab stops; a coarse comparison of a file near the byte cap would otherwise draw every line. */
+export const MAX_RENDERED_LINES = 5000
+
 /** One drawn line of a hunk with its line numbers on each side. */
 interface DiffRow {
   kind: 'add' | 'del' | 'context'
@@ -111,14 +114,32 @@ export function DiffPreview({
   )
 }
 
+/**
+ * The hunks to draw, cut at {@link MAX_RENDERED_LINES} lines in total.
+ * @param hunks - served hunks.
+ * @returns the hunks with the last one shortened as needed, and whether anything was cut.
+ */
+export function renderedHunks(hunks: readonly WorkspaceDiffHunk[]): { hunks: WorkspaceDiffHunk[]; truncated: boolean } {
+  let budget = MAX_RENDERED_LINES
+  const kept: WorkspaceDiffHunk[] = []
+  for (const hunk of hunks) {
+    if (budget === 0) return { hunks: kept, truncated: true }
+    kept.push(hunk.lines.length <= budget ? hunk : { ...hunk, lines: hunk.lines.slice(0, budget) })
+    budget -= Math.min(budget, hunk.lines.length)
+  }
+  return { hunks: kept, truncated: hunks.some((hunk, at) => kept[at] !== hunk) }
+}
+
 /** The hunks of a text comparison with their line numbers. */
 function TextDiff({ diff, t }: { diff: Extract<ChangesDiff, { kind: 'text' }> } & PropsLocale<typeof NS>): ReactNode {
   const note = noteOf(diff)
+  const { hunks, truncated } = useMemo(() => renderedHunks(diff.hunks), [diff.hunks])
   return (
     <div className={css.body}>
       {note !== undefined && <p className={css.note}>{t(note)}</p>}
       {diff.coarse && <p className={css.note} data-diff-coarse>{t('diff.coarse')}</p>}
-      {diff.hunks.map((hunk, position) => (
+      {truncated && <p className={css.note} data-diff-truncated>{t('diff.truncated', { count: String(MAX_RENDERED_LINES) })}</p>}
+      {hunks.map((hunk, position) => (
         <section key={position} className={css.hunk}>
           <div className={css.hunkHeader}>{`@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`}</div>
           {hunkRows(hunk).map((row, at) => (

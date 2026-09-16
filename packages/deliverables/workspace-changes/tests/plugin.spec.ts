@@ -151,8 +151,29 @@ describe('workspace-changes in a repository', () => {
     expect(await diff(7)).toBeUndefined()
     expect(await ctx.workspaceChanges.diff(session.id, seq + 1, 0, signal)).toBeUndefined()
     expect(await ctx.workspaceChanges.diff(SessionId('elsewhere'), seq, 0, signal)).toBeUndefined()
+    // A caller's abort fails the read while the Session lives; disposal under a running read answers undefined.
+    const aborted = AbortSignal.abort()
+    await expect(ctx.workspaceChanges.diff(session.id, seq, 0, aborted)).rejects.toThrow()
+    await expect(ctx.workspaceChanges.diff(session.id, seq, 1, aborted)).rejects.toThrow('aborted')
+    const pending = ctx.workspaceChanges.diff(session.id, seq, 1, signal)
     ctx.emit('session/disposed', session)
+    expect(await pending).toBeUndefined()
     expect(await diff(0)).toBeUndefined()
+  })
+
+  it('records nothing and stays quiet about captures for a working directory that no longer exists', async () => {
+    const root = await scratchDir('dsh-workspace-changes-gone-', cleanups)
+    const cwd = join(root, 'gone')
+    const { ctx } = await boot()
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
+    const session = ctx.sessions.create(SessionId('gone'), { meta: { cwd } })
+    startTurn(session, 1)
+    await settle(ctx, session)
+    await mutate(ctx, session, 1, 'write', { file_path: 'w.txt', content: 'w\n' }, () => Promise.resolve())
+    endTurn(session, 1)
+    await settle(ctx, session)
+    expect(changes(ctx, session)).toEqual([])
+    expect(warn.mock.calls.filter(call => String(call[0]).startsWith('workspace-changes:'))).toHaveLength(1)
   })
 
   it('places files above the working directory and outside the repository by their display rule', async () => {
@@ -351,33 +372,52 @@ describe('workspace-changes without a repository', () => {
 
   it('lists oversized and binary captured files without counts and serves no lines for them', async () => {
     const cwd = await scratchDir('dsh-workspace-changes-bounds-', cleanups)
+    // The recorder places its temporary directory under the platform temp root; point that root at a scratch directory.
+    const tempRoot = await scratchDir('dsh-workspace-changes-temp-', cleanups)
+    const previousTmp = process.env.TMPDIR
+    process.env.TMPDIR = tempRoot
+    cleanups.push(async () => { if (previousTmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previousTmp })
     await writeFile(join(cwd, 'grows.txt'), 'small\n')
+    await writeFile(join(cwd, 'huge.txt'), 'a'.repeat(20))
+    await writeFile(join(cwd, 'mixed.dat'), Uint8Array.of(65, 0, 66))
+    await mkdir(join(cwd, 'already-dir'))
     const { ctx } = await boot({ maxFileBytes: 16 })
     const session = ctx.sessions.create(SessionId('bounds'), { meta: { cwd } })
     startTurn(session, 1)
     await settle(ctx, session)
     await mutate(ctx, session, 1, 'write', { file_path: 'grows.txt', content: 'x' }, () => writeFile(join(cwd, 'grows.txt'), 'x'.repeat(17)))
+    // Both sides beyond the cap are never known to match, so the file is listed rather than dropped.
+    await mutate(ctx, session, 1, 'write', { file_path: 'huge.txt', content: 'b' }, () => writeFile(join(cwd, 'huge.txt'), 'b'.repeat(20)))
+    // An oversized side outranks a binary one in the card and the tab alike.
+    await mutate(ctx, session, 1, 'write', { file_path: 'mixed.dat', content: 'x' }, () => writeFile(join(cwd, 'mixed.dat'), 'x'.repeat(17)))
     await mutate(ctx, session, 1, 'write', { file_path: 'shrinks.txt', content: 'x' }, () => writeFile(join(cwd, 'shrinks.txt'), 'x'))
     await mutate(ctx, session, 1, 'write', { file_path: 'bin.dat', content: 'x' }, () => writeFile(join(cwd, 'bin.dat'), Uint8Array.of(65, 0, 66)))
-    // A directory at the path is neither absent nor a file, so the path is not tracked.
+    // A directory at the path, before or after the call, is neither absent nor a file, so the path is not tracked.
     await mutate(ctx, session, 1, 'write', { file_path: 'dir', content: 'x' }, () => mkdir(join(cwd, 'dir')))
+    await mutate(ctx, session, 1, 'write', { file_path: 'already-dir', content: 'x' }, () => Promise.resolve())
     endTurn(session, 1)
     await settle(ctx, session)
     const [recorded] = changes(ctx, session)
     expect(recorded!.files).toEqual([
       { path: 'bin.dat', display: 'bin.dat', added: 0, deleted: 0, binary: true },
       { path: 'grows.txt', display: 'grows.txt', added: 0, deleted: 0, oversized: true },
+      { path: 'huge.txt', display: 'huge.txt', added: 0, deleted: 0, oversized: true },
+      { path: 'mixed.dat', display: 'mixed.dat', added: 0, deleted: 0, oversized: true },
       { path: 'shrinks.txt', display: 'shrinks.txt', added: 1, deleted: 0 },
     ])
     const seq = announcedSeq(session)
     expect(await ctx.workspaceChanges.diff(session.id, seq, 0, signal)).toEqual({ kind: 'binary', path: 'bin.dat', display: 'bin.dat' })
-    expect(await ctx.workspaceChanges.diff(session.id, seq, 1, signal)).toEqual({ kind: 'oversized', path: 'grows.txt', display: 'grows.txt' })
-    expect(await ctx.workspaceChanges.diff(session.id, seq, 2, signal)).toMatchObject({ kind: 'text', before: false, after: true, hunks: [{ lines: ['+x'] }] })
+    for (const index of [1, 2, 3]) {
+      expect(await ctx.workspaceChanges.diff(session.id, seq, index, signal)).toMatchObject({ kind: 'oversized', path: recorded!.files[index]!.path })
+    }
+    expect(await ctx.workspaceChanges.diff(session.id, seq, 4, signal)).toMatchObject({ kind: 'text', before: false, after: true, hunks: [{ lines: ['+x'] }] })
     // Every copy lives under the Session's temporary directory and goes with it.
-    const scratch = (await readdir(tmpdir())).filter(name => name.startsWith('dsh-workspace-changes-'))
-    expect(scratch.length).toBeGreaterThan(0)
+    const [scratch, ...others] = await readdir(tempRoot)
+    expect(others).toEqual([])
+    expect(scratch).toMatch(/^dsh-workspace-changes-/)
+    expect((await readdir(join(tempRoot, scratch!, 'captures'))).length).toBeGreaterThan(0)
     ctx.emit('session/disposed', session)
-    await settle(ctx, session)
+    await vi.waitFor(async () => { expect(await readdir(tempRoot)).toEqual([]) })
   })
 
   it('drops a disposed session’s recorder and starts afresh on its next turn', async () => {

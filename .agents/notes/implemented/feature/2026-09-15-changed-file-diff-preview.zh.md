@@ -36,7 +36,7 @@ git 覆盖不到的文件按 Codex 的 turn diff tracker 对比其 `apply_patch`
 
 ## Consequences
 
-每次文件工具编辑在 Host 上每轮读写一次整个文件，受 `maxFileBytes` 限制，即使快照也覆盖该路径；Session 的临时目录保存副本直到释放。未覆盖文件的对比行数是首尾对比，不是累加。一次对比最多花费两次 `ls-tree`、两次 `cat-file` 和一次有界的逐行对比。
+每次文件工具编辑在 Host 上每轮读写一次整个文件，受 `maxFileBytes` 限制，即使快照也覆盖该路径；Session 的临时目录保存副本直到释放。未覆盖文件的对比行数是首尾对比，不是累加；两侧都超过上限的文件列为 `oversized` 而不是丢掉，因为没读过的内容永远不能认定为没有改动。一次对比最多花费两次 `ls-tree`、两次 `cat-file` 和一次有界的逐行对比；超时的对比携带两侧的全部行，最多两倍 `maxFileBytes`，tab 最多绘制其中 5000 行。对比路由会把所列文件在 Host 上记录时的完整文本送到浏览器，包括被忽略的文件、工作目录之上的仓库文件和工作区外的文件，而摘要路由只送路径和行数，Sidebar 的文件预览也限定在工作区根目录之内；这些编辑是用户授权的，因此接受这一点，并记入两个 README。
 
 `WorkspaceChangedFile` 类型新增 `oversized`，`WorkspaceChanges` 新增 `diff`，两个提供给客户端的类型 `WorkspaceDiffHunk` 和 `WorkspaceFileDiff` 加入子系统页面。Session 日志不变。改动文件卡片的行在两种语言里都标为打开该文件的改动，因此录制的 Web 场景的黄金文件变了；同一场景现在会从快照打开一个 shell 追加过的文件的对比，从副本打开一个被忽略文件的对比。
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-11-turn-changed-files-card.md
-2026-09-11-turn-changed-files-card.md: 3afae2c21ebba63c83f5cba5e2d1d01960f25684
-2026-09-11-turn-changed-files-card.zh.md: 782e8857834763ad4efbc6d79fb2832577b510ff
+2026-09-11-turn-changed-files-card.md: c0c5a3da59cbc82a215ef8970f8e32f65578af6f
+2026-09-11-turn-changed-files-card.zh.md: 2b647f31e351a5aea8e911aee17fc7f457124301

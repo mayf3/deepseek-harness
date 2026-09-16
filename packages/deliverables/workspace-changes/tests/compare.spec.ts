@@ -35,5 +35,8 @@ describe('compareText', () => {
     expect(result.hunks[0]).toMatchObject({ oldStart: 1, oldLines: 4000, newStart: 1, newLines: 4000 })
     expect(result.hunks[0]!.lines[0]).toBe('-old 0')
     expect(result.hunks[0]!.lines.at(-1)).toBe('+new 3999')
+    const created = compareText(null, `${after}\n${before}`, 1)
+    expect(created.coarse).toBe(true)
+    expect(created).toMatchObject({ added: 8000, deleted: 0, hunks: [{ oldStart: 1, oldLines: 0, newStart: 1, newLines: 8000 }] })
   })
 })

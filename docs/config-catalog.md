@@ -3647,8 +3647,8 @@ export interface Config {
   /** Maximum files carried by one summary; `total` still reports the complete count. */
   maxFiles: number
   /**
-   * Bytes a file may hold to be captured around a file-tool edit or read from a snapshot for its comparison;
-   * a larger file is listed without counts or comparison.
+   * Bytes a file may hold to be captured around a file-tool edit or read from a snapshot for its comparison.
+   * A larger file gets no comparison; one captured around a file-tool edit is also listed without counts.
    */
   maxFileBytes: number
   /** Milliseconds a line comparison may run before it degrades to whole-file replacement. */

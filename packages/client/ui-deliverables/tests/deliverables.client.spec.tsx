@@ -641,6 +641,10 @@ describe('ChangedFiles card', () => {
     controller.state.set({ '/api/changes.open?sessionId=child-session&seq=5': 'error' })
     const { view: failed } = renderCard(controller)
     expect(failed.getByText(en['changes.folderError']).closest('[data-error]')).toBeTruthy()
+    failed.unmount()
+    controller.state.set({ '/api/changes.open?sessionId=child-session&seq=5': 'nativeUnavailable' })
+    const { view: unmapped } = renderCard(controller)
+    expect(unmapped.getByText(en['changes.folderError']).closest('[data-error]')).toBeTruthy()
   })
 
   it('renders without a fold for three files or fewer and beside delivery cards', () => {
@@ -773,6 +777,11 @@ describe('plugin registration', () => {
     await tabFace.loadChangesDiff(SessionId('child-session'), 5, 1)
     expect(tabFace.hooks.changesDiff.getSnapshot()['/api/changes.diff?sessionId=child-session&seq=5&index=1']).toEqual({ kind: 'binary', path: 'src/a.ts', display: 'src/a.ts' })
     expect(tabFace.hooks.presentedHost).toBe(face.hooks.presentedHost)
+    fetcher.mockResolvedValueOnce(Response.json({ name: 'desktop', available: true, fileManager: 'finder' }))
+    await tabFace.reloadPresentedHost()
+    fetcher.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await tabFace.openChanged(SessionId('child-session'), 5, 1)
+    expect(tabFace.hooks.presentedOpen.getSnapshot()['/api/changes.open?sessionId=child-session&seq=5&index=1']).toBe('opened')
     ctx.emit('connection/reset')
     expect(tabFace.hooks.changesDiff.getSnapshot()).toEqual({})
     // A turn that produced nothing yields no vocabulary at all.
