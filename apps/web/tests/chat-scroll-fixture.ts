@@ -4,6 +4,7 @@
 // without depending on CSS-module names or virtualizer DOM positions.
 import {
   ToolCallId,
+  type MessageSource,
   createAssistantMessage,
   createSystemMessage,
   createToolResultMessage,
@@ -25,6 +26,8 @@ export interface ChatScrollFixtureOptions {
   readonly title: string
   /** Number of closed turns to generate. */
   readonly turns?: number
+  /** Optional non-human input claimed to start each Turn. */
+  readonly wakingInput?: { readonly source: MessageSource; readonly content: string }
 }
 
 /** Semantic marker helpers returned with a generated fixture. */
@@ -196,24 +199,30 @@ export function createChatScrollFixture(options: ChatScrollFixtureOptions): Chat
   const session = Session.create(SessionId(`chat-scroll-${options.markerPrefix.toLowerCase()}-template`))
 
   for (let turn = 1; turn <= turns; turn += 1) {
+    const input = createUserMessage({
+      content: text(options.wakingInput?.content ??
+        `${markers.user(turn)} Review the long-running conversation state for turn ${String(turn)}. `
+        + 'Keep the visible message stable while history, tools, and new output change around it.'),
+      source: options.wakingInput?.source ?? { kind: 'user' },
+    })
+    if (options.wakingInput !== undefined) {
+      session.append('agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [input] })
+    }
     session.append('turn/start', {
       turn,
     })
+    if (options.wakingInput !== undefined) {
+      session.append('agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] })
+    }
     session.append('step/start', { turn, step: 1 })
     // Native V3 installs the protected system head before any user surface.
     if (turn === 1) appendSystemPrompt(session, turn, 1)
-    const user = session.append('user/message', createUserMessage({
-      content: text(
-        `${markers.user(turn)} Review the long-running conversation state for turn ${String(turn)}. `
-        + 'Keep the visible message stable while history, tools, and new output change around it.',
-      ),
-      source: { kind: 'user' },
-    }), { surfaceOp: 'append' })
+    const user = session.append('user/message', input, { surfaceOp: 'append' })
     if (turn === 1) {
       session.append('session/title', {
         title: options.title,
-        messageSeqs: [user.seq],
-        source: { kind: 'fallback' },
+        messageSeqs: options.wakingInput === undefined ? [user.seq] : [],
+        source: { kind: options.wakingInput === undefined ? 'fallback' : 'user' },
       })
     }
 

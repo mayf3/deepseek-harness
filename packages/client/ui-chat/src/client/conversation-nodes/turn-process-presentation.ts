@@ -39,7 +39,7 @@ function derivePresentation(
   let openingHumanAnchor: number | undefined
   for (const key of keys) {
     const node = nodes.get(key) as ChatNode | undefined
-    if ((node?.kind === 'user' || node?.kind === 'steering')
+    if ((node?.kind === 'user' || node?.kind === 'steering' || node?.kind === 'turn-trigger')
       && (spec.controlAnchorSeq === location.turn.start?.seq || node.anchorSeq < spec.controlAnchorSeq)) {
       openingHumanAnchor = Math.min(openingHumanAnchor ?? node.anchorSeq, node.anchorSeq)
     }
@@ -50,7 +50,7 @@ function derivePresentation(
   for (const key of keys) {
     const node = nodes.get(key) as ChatNode | undefined
     if (node === undefined || node.kind === 'turn-process') continue
-    if ((node.kind === 'user' || node.kind === 'steering')
+    if ((node.kind === 'user' || node.kind === 'steering' || node.kind === 'turn-trigger')
       && (openingHumanAnchor === undefined || node.anchorSeq > openingHumanAnchor)
       && (spec.answerAnchorSeq === null || node.anchorSeq < spec.answerAnchorSeq)) {
       compactAnswer = false

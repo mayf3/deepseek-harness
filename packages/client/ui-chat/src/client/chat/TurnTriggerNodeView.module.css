@@ -1,0 +1,29 @@
+.root {
+  min-width: 0;
+  border-radius: 12px;
+  background: var(--dsw-alias-markdown-code-block);
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 16px;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.icon { flex: none; color: var(--dsw-alias-state-business-primary); }
+.title { flex: none; font-weight: 500; }
+.subject { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subject, .time, .metadata, .explanation { color: var(--dsw-alias-label-secondary); }
+.time { flex: none; margin-left: auto; font-size: 12px; }
+.chevron, .openChevron { flex: none; color: var(--dsw-alias-label-secondary); }
+.openChevron { transform: rotate(180deg); }
+.body { padding: 0 16px 16px 44px; }
+.metadata { font-size: 12px; }
+.explanation { margin: 10px 0; }
+.content { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }

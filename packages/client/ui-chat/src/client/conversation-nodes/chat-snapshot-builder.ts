@@ -336,7 +336,7 @@ function turnProcessPresentations(
     const location = node.location
     if (location.kind !== 'turn' && location.kind !== 'step') continue
     const current: TurnProcessPresentation = presentations.get(location.turn.turn) ?? {}
-    if ((node.kind === 'user' || node.kind === 'steering')
+    if ((node.kind === 'user' || node.kind === 'steering' || node.kind === 'turn-trigger')
       && (current.control?.data.controlAnchorSeq === location.turn.start?.seq
         || node.anchorSeq < (current.control?.data.controlAnchorSeq ?? Number.POSITIVE_INFINITY))) {
       presentations.set(location.turn.turn, {
@@ -738,6 +738,7 @@ function legacyContribution(raw: ChatConversationViewNode): LegacyContribution {
     case 'user':
     case 'steering':
     case 'context':
+    case 'turn-trigger':
     case 'command':
     case 'compaction':
     case 'turn-error':

@@ -19,7 +19,7 @@ export interface ProcessRange {
   readonly turn: number | undefined
 }
 
-const INDEPENDENT = new Set(['user', 'steering', 'model-retry', 'turn-error', 'turn-max-tokens', 'turn-tail', 'turn-process'])
+const INDEPENDENT = new Set(['user', 'steering', 'turn-trigger', 'model-retry', 'turn-error', 'turn-max-tokens', 'turn-tail', 'turn-process'])
 
 /**
  * Divide loaded rows without altering durable nodes or response order.

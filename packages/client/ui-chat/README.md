@@ -117,3 +117,5 @@ None.
 </details>
 
 **Runtime invariant:** No companion is published. Conversation and Slot registration enforce Chat target consistency.
+
+Non-human input claimed from the next-turn Inbox appears as an independent trigger notice above the Turn control. A first-step next-step claim also qualifies when that Turn has no next-turn claim or human input in its next-step batch. Ordinary pre-step injections remain context rows. The notice stays visible in every work-details mode, defaults to collapsed, and expands its source and original notification independently of process folding. Titles recognize schedules, jobs, goals, agent/team messages, webhooks, and Cordis runner outcomes; unknown sources or status formats retain generic attribution. User-attributed SDK and delegated inputs remain user messages because the log does not distinguish their caller.

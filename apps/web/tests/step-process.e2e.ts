@@ -80,3 +80,45 @@ it('keeps completed step work collapsed inside an expanded turn and bounds its s
     await scaffold.close()
   }
 })
+
+it('keeps a waking notice above and independent of the turn disclosure', async () => {
+  const fixture = createChatScrollFixture({ markerPrefix: 'TURN_TRIGGER', title: 'Background task notice', turns: 1,
+    wakingInput: { source: { kind: 'plugin', plugin: 'tool-jobs', form: 'notice', summary: 'PR merge check completed' },
+      content: 'background job bash-39 (bash: PR merge check) finished [status: completed, exit code 0]. Read its output with job_output.' } })
+  const scaffold = await launchWebScaffold({})
+  try {
+    const log = fixture.log.trimEnd().split('\n').map((line, index) => index === 0 ? line
+      : JSON.stringify({ ...JSON.parse(line) as Record<string, unknown>, time: 1_800_000_000_000 })).join('\n') + '\n'
+    await seedSession(scaffold, log, 'turn-trigger-e2e')
+    const browser = await chromium.launch()
+    try {
+      const page = await newEnglishPage(browser, 900)
+      await page.goto(scaffold.authenticatedUrl)
+      await page.getByText('Ungrouped', { exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Search sessions' }).click()
+      await page.getByRole('textbox', { name: 'Search sessions...', exact: true }).fill('PR merge check')
+      const results = page.getByRole('tree', { name: 'Search results' }).getByRole('treeitem')
+      await expect.poll(() => results.count(), { timeout: 60_000 }).toBe(1)
+      await results.click()
+      const notice = page.locator('[data-turn-trigger]')
+      const button = notice.getByRole('button')
+      const outer = page.locator('[data-turn-process="1"]')
+      await notice.waitFor()
+      expect(await button.getAttribute('aria-expanded')).toBe('false')
+      expect(await button.textContent()).toContain('Background task completed')
+      const noticeBox = await notice.boundingBox()
+      const outerBox = await outer.boundingBox()
+      expect(noticeBox!.y + noticeBox!.height).toBeLessThan(outerBox!.y)
+      await compareOrRefreshGolden(fileURLToPath(new URL('./expected/step-process/trigger-collapsed.md', import.meta.url)),
+        (await notice.ariaSnapshot()).replace(/\d\d:\d\d/g, 'HH:mm'), webSnapshotMode())
+      await button.click()
+      await compareOrRefreshGolden(fileURLToPath(new URL('./expected/step-process/trigger-expanded.md', import.meta.url)),
+        (await notice.ariaSnapshot()).replace(/\d\d:\d\d/g, 'HH:mm'), webSnapshotMode())
+      await outer.click()
+      await outer.click()
+      expect(await button.getAttribute('aria-expanded')).toBe('true')
+      expect(await notice.isVisible()).toBe(true)
+      await page.screenshot({ path: '/tmp/dsh-turn-trigger-expanded.png' })
+    } finally { await browser.close() }
+  } finally { await scaffold.close() }
+})

@@ -21,7 +21,7 @@ interface ReferencedSteeringMessageNode extends SteeringMessageNode {
   readonly skillNames?: readonly string[]
 }
 
-type MessageNode = ReferencedUserMessageNode | ReferencedSteeringMessageNode | ContextMessageNode
+type MessageNode = ReferencedUserMessageNode | ReferencedSteeringMessageNode | (ContextMessageNode & { readonly waking?: boolean })
 
 declare module '../contract/chat-nodes.ts' {
   interface ChatNodeDataMap {
@@ -31,6 +31,8 @@ declare module '../contract/chat-nodes.ts' {
     steering: ReferencedSteeringMessageNode
     /** Non-user context injected into model history. */
     context: ContextMessageNode
+    /** Non-human input that starts a Turn. */
+    'turn-trigger': ContextMessageNode
   }
 }
 
@@ -53,8 +55,18 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
     if (match.event.type !== 'user/message') throw new Error('input-message start requires user/message')
     const event = match.event
     if (event.data.source.kind !== 'user') {
+      const nextTurn = reader.previous<InboxState>('inbox-next-turn')?.state
+      const nextStep = reader.previous<InboxState>('inbox-next-step')?.state
+      const location = match.location
+      const turnStart = location.kind === 'step' ? location.turn.start?.seq : undefined
+      const idleSteer = location.kind === 'step' && location.step.step === 1
+        && turnStart !== undefined && (nextStep?.claimSeq ?? -1) > turnStart
+        && (nextTurn?.claimSeq ?? -1) < turnStart && nextStep?.claimedHuman === false
+        && nextStep.currentClaimed.has(String(event.data.id))
+
       return {
         kind: 'context',
+        waking: nextTurn?.currentClaimed.has(String(event.data.id)) === true || idleSteer,
         seq: event.seq,
         time: event.time,
         content: event.data.content,
@@ -85,7 +97,10 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
   update: context => context.state,
   buildViewNode: (context) => {
     if (context.state === undefined) return null
-    return chatNode(context, context.state.kind, context.state.seq, context.state)
+    const waking = context.state.kind === 'context'
+      && context.start?.event.type === 'user/message'
+      && context.state.waking === true
+    return chatNode(context, waking ? 'turn-trigger' : context.state.kind, context.state.seq, context.state)
   },
 }
 

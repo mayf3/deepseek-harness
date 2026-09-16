@@ -21,7 +21,7 @@ import { chatViewDefinition } from '../src/client/conversation-nodes/chat-snapsh
 import { commandDefinition } from '../src/client/conversation-nodes/command.ts'
 import { compactionDefinition } from '../src/client/conversation-nodes/compaction.ts'
 import { unknownFallbackDefinition } from '../src/client/conversation-nodes/fallback.ts'
-import { nextStepInboxDefinition } from '../src/client/conversation-nodes/inbox.ts'
+import { nextStepInboxDefinition, nextTurnInboxDefinition } from '../src/client/conversation-nodes/inbox.ts'
 import { messageDefinition } from '../src/client/conversation-nodes/message.ts'
 import { inspectRequestPrompt } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { requestPromptDefinition, systemMessageDefinition } from '../src/client/conversation-nodes/request-prompt.ts'
@@ -37,6 +37,7 @@ import type {
 
 const DEFINITIONS: readonly ConversationNodeDefinition[] = [
   nextStepInboxDefinition,
+  nextTurnInboxDefinition,
   messageDefinition,
   systemMessageDefinition(inspectSystemPrompt),
   requestPromptDefinition(inspectRequestPrompt),
@@ -2524,5 +2525,52 @@ describe('built-in conversation node Definitions', () => {
       command: { commandId: 'command-1', name: 'compact', outcome: { kind: 'success' } },
       compaction: { summary: 'manual summary', summaryEventSeq: 20 },
     })
+  })
+})
+
+
+describe('non-human turn triggers', () => {
+  it.each(['next-turn', 'next-step'] as const)('classifies non-human opening claims (%s)', (target) => {
+    const message = { ...textMessage('wake', 'scheduled task'), source: { kind: 'plugin', plugin: 'schedule' } }
+    const value = assembler([
+      at(1, 'agent/inbox/spliced', { target, start: 0, inserted: [message] }),
+      at(2, 'turn/start', { turn: 1 }),
+      at(3, 'agent/inbox/spliced', { target, start: 0, removedCount: 1, inserted: [] }),
+      at(4, 'step/start', { turn: 1, step: 1 }),
+      at(5, 'user/message', message, { surfaceOp: 'append' }),
+      at(6, 'user/message', { ...textMessage('policy', 'AGENTS.md'), source: { kind: 'plugin', plugin: 'instructions' } },
+        { surfaceOp: 'append' }),
+    ])
+    const current = snapshot(value)
+    const kinds = current.order.map(key => current.nodes.get(key)?.kind)
+    expect(kinds).toEqual(['turn-trigger', 'turn-process', 'context'])
+  })
+
+  it.each([1, 2])('keeps next-step context inside a human turn (step %s)', (step) => {
+    const human = textMessage('human', 'work')
+    const notice = { ...textMessage('notice', 'background result'), source: { kind: 'plugin', plugin: 'tool-jobs' } }
+    const value = assembler([
+      at(1, 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [human] }),
+      at(2, 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [notice] }),
+      at(3, 'turn/start', { turn: 1 }),
+      at(4, 'agent/inbox/spliced', { target: 'next-step', start: 0, removedCount: 1, inserted: [] }),
+      at(5, 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] }),
+      at(6, 'step/start', { turn: 1, step }),
+      at(7, 'user/message', notice, { surfaceOp: 'append' }),
+      at(8, 'user/message', human, { surfaceOp: 'append' }),
+    ])
+    expect([...snapshot(value).nodes.values()].map(value => value.kind)).not.toContain('turn-trigger')
+  })
+
+  it('does not reinterpret user-attributed SDK input as an external trigger', () => {
+    const message = textMessage('sdk', 'work')
+    const value = assembler([
+      at(1, 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [message] }),
+      at(2, 'turn/start', { turn: 1 }),
+      at(3, 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] }),
+      at(4, 'step/start', { turn: 1, step: 1 }),
+      at(5, 'user/message', message, { surfaceOp: 'append' }),
+    ])
+    expect(snapshot(value).order.map(key => snapshot(value).nodes.get(key)?.kind)).toEqual(['user', 'turn-process'])
   })
 })
