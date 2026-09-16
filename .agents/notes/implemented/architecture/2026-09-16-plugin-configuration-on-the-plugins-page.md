@@ -22,7 +22,7 @@ A plugin's settings lived in Settings, on the Plugins section's configuration ta
 
 ## Consequences
 
-- A bundle's browser half registers a form with one slot registration and its own dictionary; the bundle's patch must declare the row under the id in the key, and the registration exists while the bundle is on.
+- A bundle's browser half registers a form with one slot registration and its own dictionary; the bundle's patch must declare the row under the id in the key, and the registration exists while the row that carries the bundle's browser half is on: `dsh-client-modules` attaches that half to the row whose specifier is the bare package name, so a row-level page keyed to a subpath row disappears with the root row, not with its own.
 - The four pages, their forms, and the settings write path are unchanged; `ui-settings-plugins` keeps its name for the section it still owns while its pages live on the Plugins page.
 - Settings lists the inventory only; the settings goldens that carried the Plugins nav entry and the configuration tab were re-recorded.
 

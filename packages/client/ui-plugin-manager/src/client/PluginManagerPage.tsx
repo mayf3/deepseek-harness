@@ -181,21 +181,20 @@ function RowsSection({ rows, t, toggle, configure }: {
                 <div className={css.rowLine}>
                   <span className={css.rowIcon} aria-hidden="true"><IconCordisPluginOutline14 /></span>
                   <div className={css.rowMain}>
-                    <span className={css.rowId}>{row.rowId}</span>
+                    {configure?.has(row) === true
+                      ? (
+                        <button type="button" className={css.rowOpen} aria-label={t('configureRow', { name: row.rowId })} onClick={() => { configure.open(row) }}>
+                          <span className={css.rowId}>{row.rowId}</span>
+                          <IconChevronRightOutline14 className={css.rowOpenIcon} aria-hidden="true" />
+                        </button>
+                      )
+                      : <span className={css.rowId}>{row.rowId}</span>}
                     <span className={css.rowModule}>{row.moduleName}</span>
                   </div>
                   <span className={css.rowState}>
                     <StateDot state={rowDotState(row)} size={8} />
                     {rowStateText(row, t)}
                   </span>
-                  {configure?.has(row) === true
-                    ? (
-                      <button type="button" className={css.rowConfigure} aria-label={t('configureRow', { name: row.rowId })} onClick={() => { configure.open(row) }}>
-                        <span>{t('configure')}</span>
-                        <IconChevronRightOutline14 aria-hidden="true" />
-                      </button>
-                    )
-                    : null}
                   {toggle === undefined
                     ? null
                     : <RowSwitch row={row} t={t} busy={toggle.busy(row)} onChange={(enabled) => { toggle.onSetEnabled(row, enabled) }} />}
@@ -633,7 +632,10 @@ function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onTog
                       <span className={css.guideIndex} aria-hidden="true">{index + 1}</span>
                       <div className={css.guideMain}>
                         <span className={css.guideTitle}>{t(titleKey)}</span>
-                        <code className={css.guideExample}>{t(exampleKey)}</code>
+                        <span className={css.guideExample}>
+                          <span className={css.guideExampleLabel}>{t('installGuideExampleLabel')}</span>
+                          <code>{t(exampleKey)}</code>
+                        </span>
                         <span className={css.guideHint}>{t(hintKey)}</span>
                       </div>
                       <Button
