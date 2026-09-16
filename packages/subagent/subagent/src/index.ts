@@ -190,14 +190,14 @@ interface BrowserPromptSource {
 export interface Config {
   /** Maximum live children sharing uninterrupted continuable parent links; defaults to 8. */
   maxActiveSubagents?: number
-  /** Default delegation depth for tools without an explicit limit; defaults to 3. */
+  /** Default delegation depth for tools without an explicit limit; defaults to 1. */
   maxDepth?: number
 }
 
 /** Named provider registry with one-shot runs, durable discovery, and continuable-child operations. */
 export class SubagentRuntime extends TypertRemoteService {
   static Config: z<Config> = z.object({
-    maxDepth: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER).default(3),
+    maxDepth: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER).default(1),
     maxActiveSubagents: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(8),
   })
   private settingsSource: () => Config

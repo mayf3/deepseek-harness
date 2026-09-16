@@ -2594,7 +2594,7 @@ Source: [`packages/storage/storage-sqlite/src/index.ts:24`](../packages/storage/
 export interface Config {
   /** Maximum live children sharing uninterrupted continuable parent links; defaults to 8. */
   maxActiveSubagents?: number
-  /** Default delegation depth for tools without an explicit limit; defaults to 3. */
+  /** Default delegation depth for tools without an explicit limit; defaults to 1. */
   maxDepth?: number
 }
 ```
@@ -3293,7 +3293,7 @@ export interface Config {
    * start; the tool remains model-visible so runtime policy owns rejection.
    * `'provider-managed'` is for an out-of-process provider whose recursion
    * budget belongs to the child runtime or its own deployment. Omission reads
-   * the current Host subagent depth setting (default `3`) at each delegation.
+   * the current Host subagent depth setting (default `1`) at each delegation.
    */
   maxDepth?: number | 'provider-managed'
 }
