@@ -10,9 +10,9 @@ The Desktop shell replaces Electron's default application menu with a custom tem
 
 ## Decision
 
-On macOS the template declares `{ role: 'fileMenu' }` before the Edit menu and `{ role: 'windowMenu' }` after it, and a separator-delimited run of `hide`, `hideOthers`, and `unhide` before Quit in the application submenu. Close Window (⌘W) closes the focused window, Minimize (⌘M) and Zoom act on it, Bring All to Front raises every application window, and Hide (⌘H), Hide Others (⌥⌘H), and Show All hide the application with focus handed to the previous one. The File menu holds only Close Window, and the Window menu holds only Minimize, Zoom, and Bring All to Front. Windows and Linux keep the application and Edit menus.
+On macOS the template declares `{ role: 'fileMenu' }` before the Edit menu and `{ role: 'windowMenu' }` after it, and a separator-delimited run of `hide`, `hideOthers`, and `unhide` before Quit in the application submenu. Those roles contribute only the standard items; no Services submenu, window list, or other macOS default is declared. Windows and Linux keep the application and Edit menus.
 
-Electron supplies the role labels as English literals rather than from Desktop's locale dictionaries, as the existing Edit menu does; a zh-CN Electron 44 run still reports "Close Window" and "Minimize". No custom close, minimize, or hide code is added: ⌘W destroys the window through Electron's own role, and the Dock icon recreates it only when no Desktop window remains open, because `activate` calls `focusPrimaryWindow` only with zero windows.
+Electron's role labels are English string literals inside Electron (`lib/browser/api/menu-item-roles.ts`, `filemenu`, `windowmenu`, `close`, `minimize`, `hide`) with no locale lookup, and Electron re-applies them to the native menu items before the menu is shown, so a non-English Desktop shows them in English; the existing Edit menu behaves the same way. No custom close, minimize, or hide code is added: ⌘W destroys the window through Electron's own role.
 
 ## Alternatives considered
 
@@ -24,12 +24,12 @@ Electron supplies the role labels as English literals rather than from Desktop's
 
 **Declare the File and Window menus on every platform.** The same template declares Ctrl+W there; with one window, closing it invokes `window-all-closed` and quits the application, turning a window shortcut into an unrequested quit path.
 
-**Recreate the main window on Dock activation regardless of other windows.** The plugin window can outlive the main window, so gating `activate` on `mainWindow` instead of `BrowserWindow.getAllWindows()` would make the Dock behavior hold in every case. That changes window lifecycle beyond restoring the suppressed platform commands, so the README instead states the condition under which the Dock icon reopens the window.
+**Recreate the main window on Dock activation regardless of other windows.** The plugin window can outlive the main window, so gating `activate` on `mainWindow` instead of `BrowserWindow.getAllWindows()` would let a Dock click always restore the main window. That changes window lifecycle beyond restoring the suppressed platform commands, so the existing `activate` condition stays.
 
 ## Consequences
 
-macOS regains the window and application commands the custom menu suppressed, at the cost of four menu roles the [Desktop README](../../../../apps/desktop/README.md) must keep explaining. The labels stay English on a non-English Desktop, which the README states.
+macOS regains the window and application commands the custom menu suppressed, at the cost of four menu roles. The labels stay English on a non-English Desktop.
 
 ## Testing
 
-A `apps/desktop/tests/main-startup.spec.ts` case pins the declared menu roles per platform, including the macOS hide commands. Role-based menu items execute natively, so a programmatic `click()` and the vitest Electron mock cannot exercise the shortcuts; a real Electron 44 run of the same template showed Close Window (⌘W), Minimize (⌘M), Hide (⌘H), Hide Others (⌥⌘H), and Show All present only after this change, with the role labels unchanged under `--lang=zh-CN`.
+A `apps/desktop/tests/main-startup.spec.ts` case pins the declared menu roles per platform, including the macOS hide commands. Role-based menu items execute natively, so a programmatic `click()` and the vitest Electron mock cannot exercise the shortcuts; a real Electron 44 run of the same template showed the standard File, Window, and application items present only after this change, with the same English labels while `app.getLocale()`, `getSystemLocale()`, and `getPreferredSystemLanguages()` all reported `zh-CN`.

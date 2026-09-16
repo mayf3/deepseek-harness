@@ -52,7 +52,7 @@ Electron 根据应用语言选择类型化的英文或中文 shell 文案，并�
 
 Electron 原生“编辑”菜单为当前聚焦窗口提供撤销、重做、剪切、复制、粘贴和全选命令及平台快捷键。右键点击可编辑输入区域会打开不带快捷键标注的这些命令，其可用状态由 Chromium 提供；选中的只读文本提供“复制”命令。
 
-macOS 还会获得标准的 File 和 Window 菜单以及应用隐藏命令；由于自定义应用菜单会替换 Electron 的默认菜单，这些必须显式声明：Close Window（⌘W）关闭当前窗口，Minimize（⌘M）和 Zoom 作用于当前窗口，Bring All to Front 抬高应用的每个窗口，应用菜单提供 Hide（⌘H）、Hide Others（⌥⌘H）和 Show All。这些标签由 Electron 以英文提供，不使用 Desktop 的语言词典，现有的 Edit 菜单也是如此。关闭最后一个 Desktop 窗口后 dsh Host 继续运行，点击 Dock 图标会重新打开主窗口。Windows 和 Linux 只保留应用菜单和 Edit 菜单。
+macOS 上自定义应用菜单还会声明标准的 File、Window 和应用菜单，因为替换 Electron 的默认菜单会丢掉 Close Window（⌘W）、Minimize（⌘M）和 Hide（⌘H）。Windows 和 Linux 保留应用菜单和 Edit 菜单。
 
 ### 运行时与插件激活
 
