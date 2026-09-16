@@ -95,6 +95,8 @@ slot scope 是闭集 `root | session-maybe | session`：
 
 `conversation` 是 `session-maybe` 的常驻外壳：`ConversationRoot`、HeroShell、Workspace picker、root 持有的 scrollport 与 composer stack，以及 overlay chain 的 fallback 外框，在无会话 → blank 会话的切换中保持 React 实例。两个严格 session entry 只填入固定区域，不改变该树的父级：`conversation.session.header` 在 scrollport 上方承载 breadcrumb／tab／action，`conversation.session` 在其内部承载 view ring 与 draft mirror；二者共享同一个 session scope chat store。composer bar（`conversation.composer.bar`）本身即为 `session-maybe`：无 session 时，其 machine faces 和消息动作保持惰性，整张虚线卡片可经指针打开现有 Workspace picker，只读 textarea 也可通过 Enter 或 Space 打开。session 出现后同一实例（含 textarea）转为 live；其余输入 slot 保持严格 `session`，在此之前不派发任何内容。blank → engaging/active 的 InputBar 不因 phase 翻转而重建。
 
+blank Session 保留 header 的 leading 与 corner slot，让右侧栏展开入口等导航控件在首条消息之前即可使用。标题、actions、utilities 和 View tabs 在 blank phase 中继续隐藏。header 仍要求已选中的 Session；Files 与 Terminal 入口使用该 Session 的工作区和执行服务，无需已有 Turn 记录。
+
 - 运行时内建第一条：`'session'` 钩子——`useSession` 本身走同一机制，无特判。
 - Concurrent 纪律：渲染平面只从 hooks 格读（uSES 一致性保证）；props 格回调只在事件 handler 空间用；描述符解析 render-safe（幂等缓存、废弃渲染残留由 prune 收尸）。
 - 第三方组件值零依赖，类型一行 type-only import（declaration merging 进 `SessionStandardProps` / `SessionMaybeStandardProps`）。
