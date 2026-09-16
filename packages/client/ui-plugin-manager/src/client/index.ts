@@ -3,7 +3,8 @@
  * management page it opens in the main column. The page installs, enables,
  * disables, and removes the bundles of the Host's profile through the
  * `pluginManager` Remote and switches their rows in the profile's user layer.
- * Configuring a plugin stays in Settings.
+ * A plugin that carries its own configuration renders it on this page through
+ * the slots the page declares (`slot-contract.ts`).
  */
 
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -21,12 +22,16 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-plugin-manager/types'
 import { PluginManagerPage } from './PluginManagerPage.tsx'
 import { PluginsPanelIcon } from './PluginsPanelIcon.tsx'
+import { configLedgerSource } from './config-ledger.ts'
 import { PluginManagerController } from './manager-store.ts'
 import { en, zh, type PluginManagerLocaleKey } from './locales.ts'
+import type {} from './slot-contract.ts'
 
 export type { PluginManagerPageProps } from './PluginManagerPage.tsx'
+export type { ConfigLedger, OfficialItem } from './config-ledger.ts'
 export type { PluginManagerFace } from './manager-store.ts'
 export type { PluginManagerLocaleKey } from './locales.ts'
+export type { PluginConfigViewProps } from './slot-contract.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -71,13 +76,20 @@ export function apply(ctx: ClientContext): void {
   }, 'ui-plugin-manager: host invalidations')
 
   // The page is a global panel: it belongs to the profile, not to a Session,
-  // and the sidebar's entry selects it. How a plugin is configured stays in
-  // Settings; this page is what is installed and switched on.
+  // and the sidebar's entry selects it. What is installed and switched on is
+  // the page's own; a plugin's configuration arrives through the slots the
+  // page declares here, so the page never names a configurable plugin.
+  const configLedger = configLedgerSource(ctx)
   ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main',
     key: PANEL_ID,
     locale: NS,
-    inject: () => controller.inject(),
+    inject: () => controller.inject(configLedger),
+    children: {
+      'plugins.item': { kind: 'list', scope: 'root' },
+      'plugins.bundle.config': { kind: 'keyed', scope: 'root' },
+      'plugins.row.config': { kind: 'keyed', scope: 'root' },
+    },
   }, PluginManagerPage))
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
     name: 'sidebar.panellist',

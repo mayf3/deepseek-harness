@@ -44,6 +44,21 @@ describe('recorded-session corpus policy', () => {
       .toThrow('Session corpus lacks v3 coverage: adjacent-migration')
   })
 
+  it('retains retired tools in the current format without claiming migration coverage', () => {
+    const retired = {
+      key: 'web/retired', selectedVersions: [SESSION_FORMAT_VERSION],
+      retained: { version: SESSION_FORMAT_VERSION, coverage: ['retired-tools'] as const },
+    }
+    expect(assertSnapshotCorpusPolicy([current, baseline, completeV0, ...adjacent, retired]).retainedScenarios)
+      .toBe(2 + adjacent.length)
+    expect(() => assertSnapshotCorpusPolicy([current, completeV0, retired]))
+      .toThrow('coverage: adjacent-migration')
+    expect(() => assertSnapshotCorpusPolicy([current, completeV0, ...adjacent, {
+      ...retired, selectedVersions: [SESSION_FORMAT_VERSION + 1],
+      retained: { ...retired.retained, version: SESSION_FORMAT_VERSION + 1 },
+    }])).toThrow('retained Session format must precede')
+  })
+
   it('requires v0 coverage from v0 fixtures', () => {
     expect(() => assertSnapshotCorpusPolicy([baseline, ...adjacent]))
       .toThrow('Session corpus lacks v0 coverage')
