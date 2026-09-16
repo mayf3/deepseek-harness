@@ -89,7 +89,11 @@ const harness = await vi.hoisted(async () => {
     popup,
     socketHeaders: vi.fn(),
     menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn(() => ({ popup })) },
-    dialog: { showOpenDialog: vi.fn(), showErrorBox: vi.fn(), showMessageBox: vi.fn<(options: MessageBoxOptions) => Promise<MessageBoxReturnValue>>() },
+    dialog: {
+      showOpenDialog: vi.fn(),
+      showErrorBox: vi.fn(),
+      showMessageBox: vi.fn<(options: MessageBoxOptions) => Promise<MessageBoxReturnValue>>(),
+    },
     openExternal: vi.fn(),
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
     mutateFailure: vi.fn<() => void>(),
