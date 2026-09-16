@@ -332,9 +332,13 @@ export class SessionManager {
     let store = this.projectionStores.get(sessionId)
     if (store === undefined) {
       store = new ProjectionValueStore()
-      // List rows project off store keys (title); any-key changes re-enter
-      // the manager's own batched rebuild channel.
-      store.subscribeAny(() => { this.notifier.markDirty() })
+      const projections = store
+      store.subscribeAny(() => {
+        if (projections.values().sessionListMetadata?.blank === false) {
+          this.sessions.get(sessionId)?.handleBlank(false)
+        }
+        this.notifier.markDirty()
+      })
       this.projectionStores.set(sessionId, store)
     }
     return store
@@ -900,8 +904,12 @@ export class SessionManager {
       const projectionStore = this.projectionStores.get(summary.sessionId)
       const title = projectionStore?.get('title')
       const projectionValues = projectionStore?.values()
+      const metadata = projectionValues?.sessionListMetadata
       return {
         ...summary,
+        // Cached list hints can precede a history opening or control update.
+        blank: summary.blank && metadata?.blank !== false,
+        updatedAt: Math.max(summary.updatedAt, metadata?.lastPromptAt ?? 0),
         ...(typeof title === 'string' && title !== '' ? { title } : {}),
         ...(projectionValues === undefined ? {} : { projectionValues }),
       }
