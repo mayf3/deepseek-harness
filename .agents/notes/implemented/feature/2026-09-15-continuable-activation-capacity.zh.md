@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-Subagent 服务通过 `maxActiveSubagents` 配置容量，默认值为 16。每个存活的根代理拥有一个进程内池，各层可续接 Activation 通过引用共享该池。根代理自身不计入。一次性运行和外部提供方工作不进入此池。委派深度仍独立配置。
+Subagent 服务通过 `maxActiveSubagents` 配置容量，默认值为 8。每个存活的根代理拥有一个进程内池，各层可续接 Activation 通过引用共享该池。根代理自身不计入。一次性运行和外部提供方工作不进入此池。委派深度仍独立配置。
 
 Activation registry 在新建或冷恢复重建首次让出执行前预占唯一名额。在 Activation 接管名额前，由 materialization 负责回滚；未发布回滚和失败的 materialization 可以安全地释放同一个 token。handle 释放先于名额归还，名额归还先于父代理完成通知。向已有 Activation 发送消息复用其名额。
 

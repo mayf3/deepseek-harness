@@ -10,7 +10,7 @@ Depth limits bound nesting but permit wide concurrent delegation. Background Job
 
 ## Decision
 
-The subagent service configures `maxActiveSubagents`, defaulting to 16. Each live root has one process-local pool, shared by reference through its continuable Activations at every depth. The root itself is excluded. One-shot runs and external-provider work do not enter this pool. Delegation depth remains independently configured.
+The subagent service configures `maxActiveSubagents`, defaulting to 8. Each live root has one process-local pool, shared by reference through its continuable Activations at every depth. The root itself is excluded. One-shot runs and external-provider work do not enter this pool. Delegation depth remains independently configured.
 
 The Activation registry reserves a unique slot before fresh or cold-resume reconstruction yields. The materialization owns rollback until the Activation owns the slot; unpublished rollback and failed materialization may both release the same token safely. Handle disposal precedes release, which precedes parent settlement notification. Sending to an existing Activation reuses its slot.
 

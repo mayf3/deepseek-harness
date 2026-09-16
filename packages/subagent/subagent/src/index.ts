@@ -187,14 +187,14 @@ interface BrowserPromptSource {
 
 /** Host configuration for continuable subagent capacity. */
 export interface Config {
-  /** Maximum live continuable children across one root's tree, excluding the root; defaults to 16. */
+  /** Maximum live continuable children across one root's tree, excluding the root; defaults to 8. */
   maxActiveSubagents?: number
 }
 
 /** Named provider registry with one-shot runs, durable discovery, and continuable-child operations. */
 export class SubagentRuntime extends TypertRemoteService {
   static Config: z<Config> = z.object({
-    maxActiveSubagents: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(16),
+    maxActiveSubagents: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(8),
   })
   private providers = new Map<string, SubagentProvider>()
   private continuations: SubagentContinuationManager | undefined
