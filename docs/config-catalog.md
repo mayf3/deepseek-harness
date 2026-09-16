@@ -548,56 +548,6 @@ export interface Config {
 
 Source: [`packages/credentials/credentials-local/src/index.ts:64`](../packages/credentials/credentials-local/src/index.ts)
 
-<a id="deepseek-aidsh-document-convert-libreoffice"></a>
-
-## `@deepseek-ai/dsh-document-convert-libreoffice`
-
-```ts config-catalog
-/** Provider concurrency and kit rendering/font configuration. */
-export interface Config {
-  /** Maximum simultaneous conversions; queued callers remain cancellable. */
-  maxConcurrentConversions: number
-  /** Maximum metadata-only jobs awaiting source admission. */
-  maxQueuedJobs: number
-  /** Maximum outstanding conversion readers. */
-  maxReaders: number
-  /** Maximum reserved bytes across admitted source reads and conversions. */
-  maxSourceBytes: number
-  /** Maximum concurrent background jobs; zero refuses speculative work. */
-  maxBackgroundConversions: number
-  /** Maximum retained content-addressed PDFs. */
-  maxCachedEntries: number
-  /** Maximum retained PDF bytes. */
-  maxCachedBytes: number
-  /** Maximum retained source-version aliases to cached content. */
-  maxSourceEntries: number
-  /** Conversion deadline in milliseconds; excludes the DSH queue. */
-  timeoutMs: number
-  /** Maximum authorized source bytes. */
-  maxInputBytes: number
-  /** Maximum complete PDF bytes. */
-  maxOutputBytes: number
-  /** Exported raster-image DPI. */
-  maxImageResolution: number
-  /** Maximum OOXML ZIP entries. */
-  maxArchiveEntries: number
-  /** Maximum total declared uncompressed OOXML bytes. */
-  maxUncompressedBytes: number
-  /** Absolute font roots; omission uses the kit's platform defaults. */
-  fontDirectories?: string[]
-  /** Ordered font-family preference groups; omission retains the kit defaults. */
-  fontFallbacks?: string[][]
-  /** Maximum physical font files indexed by each converter. */
-  maxFontFiles: number
-  /** Maximum individual font-file bytes. */
-  maxFontFileBytes: number
-  /** Maximum original font bytes loaded for a conversion. */
-  maxLoadedFontBytes: number
-}
-```
-
-Source: [`packages/document/document-convert-libreoffice/src/index.ts:14`](../packages/document/document-convert-libreoffice/src/index.ts)
-
 <a id="deepseek-aidsh-experimental-agent-team"></a>
 
 ## `@deepseek-ai/dsh-experimental-agent-team`
@@ -1767,6 +1717,56 @@ export interface Config {
 ```
 
 Source: [`packages/feedback/message-feedback/src/index.ts:40`](../packages/feedback/message-feedback/src/index.ts)
+
+<a id="deepseek-aidsh-office-to-pdf"></a>
+
+## `@deepseek-ai/dsh-office-to-pdf`
+
+```ts config-catalog
+/** Provider concurrency and kit rendering/font configuration. */
+export interface Config {
+  /** Maximum simultaneous conversions; queued callers remain cancellable. */
+  maxConcurrentConversions: number
+  /** Maximum metadata-only jobs awaiting source admission. */
+  maxQueuedJobs: number
+  /** Maximum outstanding conversion readers. */
+  maxReaders: number
+  /** Maximum reserved bytes across admitted source reads and conversions. */
+  maxSourceBytes: number
+  /** Maximum concurrent background jobs; zero refuses speculative work. */
+  maxBackgroundConversions: number
+  /** Maximum retained content-addressed PDFs. */
+  maxCachedEntries: number
+  /** Maximum retained PDF bytes. */
+  maxCachedBytes: number
+  /** Maximum retained source-version aliases to cached content. */
+  maxSourceEntries: number
+  /** Conversion deadline in milliseconds; excludes the DSH queue. */
+  timeoutMs: number
+  /** Maximum authorized source bytes. */
+  maxInputBytes: number
+  /** Maximum complete PDF bytes. */
+  maxOutputBytes: number
+  /** Exported raster-image DPI. */
+  maxImageResolution: number
+  /** Maximum OOXML ZIP entries. */
+  maxArchiveEntries: number
+  /** Maximum total declared uncompressed OOXML bytes. */
+  maxUncompressedBytes: number
+  /** Absolute font roots; omission uses the kit's platform defaults. */
+  fontDirectories?: string[]
+  /** Ordered font-family preference groups; omission retains the kit defaults. */
+  fontFallbacks?: string[][]
+  /** Maximum physical font files indexed by each converter. */
+  maxFontFiles: number
+  /** Maximum individual font-file bytes. */
+  maxFontFileBytes: number
+  /** Maximum original font bytes loaded for a conversion. */
+  maxLoadedFontBytes: number
+}
+```
+
+Source: [`packages/document/office-to-pdf/src/index.ts:27`](../packages/document/office-to-pdf/src/index.ts)
 
 <a id="deepseek-aidsh-permission-presets"></a>
 
@@ -3805,7 +3805,6 @@ Abstract service classes — a deployment loads a concrete implementation packag
 - `@deepseek-ai/dsh-attachment` — abstract `AttachmentStore` ([`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts))
 - `@deepseek-ai/dsh-compaction` — abstract `CompactionEngine` ([`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts))
 - `@deepseek-ai/dsh-credentials` — abstract `CredentialProvider` ([`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts))
-- `@deepseek-ai/dsh-document-convert` — abstract `DocumentConverter` ([`packages/document/document-convert/src/index.ts`](../packages/document/document-convert/src/index.ts))
 - `@deepseek-ai/dsh-file-reference` — abstract `FileReferenceService` ([`packages/context/file-reference/src/index.ts`](../packages/context/file-reference/src/index.ts))
 - `@deepseek-ai/dsh-fs` — abstract `FileSystem` ([`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker` — abstract `DirectoryPicker` ([`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts))

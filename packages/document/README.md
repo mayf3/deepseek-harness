@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Convert authorized Office files to reusable PDFs on the Host. The conversion family provides a shared conversion operation and a LibreOffice kit provider. Targets with a declared native engine use it; other targets use Node WASM.
+Convert authorized Office files to reusable PDFs on the Host. The shared service converts through LibreOffice kit. Targets with a declared native engine use it; other targets use Node WASM.
 
 ## Table of Contents
 
@@ -26,8 +26,7 @@ Each package owns its configuration and lifetime rules; the subsystem reference 
 
 | Package | Role | ctx key |
 |---|---|---|
-| [document-convert](document-convert/README.md) | Authorized Office bytes to complete PDF results | `ctx.documentConvert` |
-| [document-convert-libreoffice](document-convert-libreoffice/README.md) | Host kit provider with cancellable concurrency and private scratch files | `ctx.documentConvert` |
+| [office-to-pdf](office-to-pdf/README.md) | Authorized Office bytes to complete PDFs with bounded queues and caching | `ctx.officeToPdf` |
 
 -----
 
@@ -36,7 +35,7 @@ Each package owns its configuration and lifetime rules; the subsystem reference 
 
 Consumers own source authorization and presentation.
 
-- [Document conversion](../../docs/subsystems/document-convert.md) — shared operation and generated service reference.
+- [Document conversion](../../docs/subsystems/office-to-pdf.md) — shared operation and generated service reference.
 - [Independent kit ownership](../../.agents/notes/implemented/architecture/2026-09-14-independent-libreoffice-kit.md) — engine distribution and application integration.
 - [Workspace Files](../api/workspace-files/README.md) — authorized bounded source reads.
 

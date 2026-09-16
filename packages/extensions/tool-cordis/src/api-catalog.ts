@@ -875,25 +875,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
-    key: 'documentConvert',
-    summary: 'Load one provider subclass per context; consumers own source authorization.',
-    description: 'Load one provider subclass per context; consumers own source authorization.',
-    methods: [
-      {
-        signature: 'abstract readonly generation: DocumentConverterGeneration',
-        description: 'Changes whenever engine, font, or conversion configuration is replaced.',
-        parameters: [],
-      },
-      {
-        signature: 'abstract convert(request: DocumentConvertRequest, signal?: AbortSignal): Promise<DocumentConvertResult>',
-        description: 'Convert Office bytes without modifying the source or writing Session events.',
-        parameters: [{ name: 'request', description: 'authorized metadata and deferred bounded source read.' }, { name: 'signal', description: 'caller cancellation; provider disposal also stops active work.' }],
-        returns: 'caller-owned PDF bytes after conversion and scratch cleanup settle; canceled readers reject independently.',
-        throws: ['{DocumentConvertError} Invalid input, unusable output, or engine failure; cancellation rejects with its reason.'],
-      },
-    ],
-  },
-  {
     key: 'fileReferences',
     summary: 'Host capability for cancellable file-reference discovery.',
     description: 'Host capability for cancellable file-reference discovery.',
@@ -1386,6 +1367,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Delete one item after checking its version; absence succeeds without an event.',
         parameters: [{ name: 'request', description: 'Session, message, and observed item version.' }],
         returns: 'the stable absent postcondition or an explicit failure.',
+      },
+    ],
+  },
+  {
+    key: 'officeToPdf',
+    summary: 'A provider lifetime owns all converters, queued calls, and temporary files.',
+    description: 'A provider lifetime owns all converters, queued calls, and temporary files.',
+    methods: [
+      {
+        signature: 'readonly generation: OfficeToPdfGeneration = OfficeToPdfGeneration(randomUUID())',
+        description: 'Changes whenever engine, font, or conversion configuration is replaced.',
+        parameters: [],
+      },
+      {
+        signature: 'convert(request: OfficeToPdfRequest, signal?: AbortSignal): Promise<OfficeToPdfResult>',
+        description: 'Convert Office bytes without modifying the source or writing Session events.',
+        parameters: [{ name: 'request', description: 'authorized metadata and deferred bounded source read.' }, { name: 'signal', description: 'caller cancellation; provider disposal also stops active work.' }],
+        returns: 'caller-owned PDF bytes after conversion and scratch cleanup settle; canceled readers reject independently.',
+        throws: ['{OfficeToPdfError} Invalid input, unusable output, or engine failure; cancellation rejects with its reason.'],
       },
     ],
   },
@@ -4443,34 +4443,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface DirectoryRegistrationHandle {\n    (): void;\n    replace(entries: readonly LlmConfigurableProvider[]): void;\n}',
   },
   {
-    name: 'DocumentConverterGeneration',
-    declaration: 'export type DocumentConverterGeneration = Branded<\'DocumentConverterGeneration\'>;',
-  },
-  {
-    name: 'DocumentConvertKey',
-    declaration: 'export type DocumentConvertKey = Branded<\'DocumentConvertKey\'>;',
-  },
-  {
-    name: 'DocumentConvertPriority',
-    declaration: 'export type DocumentConvertPriority = \'foreground\' | \'background\';',
-  },
-  {
-    name: 'DocumentConvertRequest',
-    declaration: 'export interface DocumentConvertRequest {\n    readonly extension: DocumentExtension;\n    readonly priority: DocumentConvertPriority;\n    readonly source: {\n        readonly key: DocumentSourceKey;\n        readonly version: string;\n        readonly bytes?: number;\n        read(signal: AbortSignal, maxBytes: number): Promise<{\n            readonly bytes: Uint8Array;\n            readonly version: string;\n        }>;\n    };\n}',
-  },
-  {
-    name: 'DocumentConvertResult',
-    declaration: 'export interface DocumentConvertResult {\n    readonly pdf: Uint8Array;\n    readonly missingFonts: string[];\n    readonly cacheKey: DocumentConvertKey;\n    readonly generation: DocumentConverterGeneration;\n}',
-  },
-  {
-    name: 'DocumentExtension',
-    declaration: 'export type DocumentExtension = \'doc\' | \'docx\' | \'xls\' | \'xlsx\' | \'ppt\' | \'pptx\';',
-  },
-  {
-    name: 'DocumentSourceKey',
-    declaration: 'export type DocumentSourceKey = Branded<\'DocumentSourceKey\'>;',
-  },
-  {
     name: 'Domain',
     declaration: 'export interface Domain<S extends DomainSpec> {\n    readonly name: string;\n    readonly global: DomainGlobalHandleOf<S>;\n    table<N extends keyof S[\'tables\'] & string>(name: N): KvTable<TableKeyOf<S, N>, TableValueOf<S, N>>;\n    close(): Promise<void>;\n}',
   },
@@ -5113,6 +5085,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ObjectJsonSchema',
     declaration: 'export type ObjectJsonSchema = JsonSchemaNode & {\n    type: \'object\';\n};',
+  },
+  {
+    name: 'OfficeExtension',
+    declaration: 'export type OfficeExtension = \'doc\' | \'docx\' | \'xls\' | \'xlsx\' | \'ppt\' | \'pptx\';',
+  },
+  {
+    name: 'OfficeSourceKey',
+    declaration: 'export type OfficeSourceKey = Branded<\'OfficeSourceKey\'>;',
+  },
+  {
+    name: 'OfficeToPdfGeneration',
+    declaration: 'export type OfficeToPdfGeneration = Branded<\'OfficeToPdfGeneration\'>;',
+  },
+  {
+    name: 'OfficeToPdfKey',
+    declaration: 'export type OfficeToPdfKey = Branded<\'OfficeToPdfKey\'>;',
+  },
+  {
+    name: 'OfficeToPdfPriority',
+    declaration: 'export type OfficeToPdfPriority = \'foreground\' | \'background\';',
+  },
+  {
+    name: 'OfficeToPdfRequest',
+    declaration: 'export interface OfficeToPdfRequest {\n    readonly extension: OfficeExtension;\n    readonly priority: OfficeToPdfPriority;\n    readonly source: {\n        readonly key: OfficeSourceKey;\n        readonly version: string;\n        readonly bytes?: number;\n        read(signal: AbortSignal, maxBytes: number): Promise<{\n            readonly bytes: Uint8Array;\n            readonly version: string;\n        }>;\n    };\n}',
+  },
+  {
+    name: 'OfficeToPdfResult',
+    declaration: 'export interface OfficeToPdfResult {\n    readonly pdf: Uint8Array;\n    readonly missingFonts: string[];\n    readonly cacheKey: OfficeToPdfKey;\n    readonly generation: OfficeToPdfGeneration;\n}',
   },
   {
     name: 'OneShotSubagentDescriptorData',
