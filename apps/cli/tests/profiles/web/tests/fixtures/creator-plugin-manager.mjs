@@ -12,6 +12,14 @@ export function apply(ctx, config) {
   })
   async function inspect(phase) {
     const handles = []
+    let activeSession
+    let answer = 'rejected'
+    const approvals = []
+    const disposeApproval = ctx.on('approval/request', (request, next) => {
+      if (request.toolName !== 'plugin_manager') return next()
+      approvals.push(answer)
+      return Promise.resolve(answer)
+    }, { prepend: true })
     const make = async id => {
       const handle = await ctx.agents.create({ sessionId: id, cwd: process.cwd(),
         setup: scope => ctx.agentPresets.mount(scope, 'cordis').then(() => undefined) })
@@ -25,13 +33,15 @@ export function apply(ctx, config) {
       const manage = args => ctx.tools.execute({ name: 'plugin_manager', arguments: args, agent: first,
         callId: `${phase}-manage`, signal: new AbortController().signal })
       ctx.permissionPresets.set(first.session, 'workspace-write')
+      first.session.append('turn/start', { turn: 1 })
+      activeSession = first.session
       const denied = await manage({ action: 'install_bundle', target: config.bundle })
       const afterDenied = names(first)
       const bundlesAfterDenied = await ctx.pluginManager.listBundles()
-      ctx.permissionPresets.set(first.session, 'danger-full-access')
+      answer = 'allowed-once'
       const result = phase === 'initial'
         ? JSON.parse((await manage({ action: 'install_bundle', target: config.bundle })).value)
-        : ctx.pluginManager.listBundles()
+        : await ctx.pluginManager.listBundles()
       const second = await make(`${phase}-second`)
       const after = names(first)
       const other = names(second)
@@ -39,8 +49,10 @@ export function apply(ctx, config) {
         callId: `${phase}-ping`, signal: new AbortController().signal })
       const removed = phase === 'restart'
         ? JSON.parse((await manage({ action: 'remove_bundle', target: '@test/creator-mcp' })).value) : undefined
-      return { before, denied, afterDenied, bundlesAfterDenied, result, after, other, ping, removed, remaining: names(first) }
+      return { approvals, permission: ctx.permissionPresets.current(first.session), before, denied, afterDenied, bundlesAfterDenied, result, after, other, ping, removed, remaining: names(first) }
     } finally {
+      disposeApproval()
+      activeSession?.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
       await Promise.all(handles.map(handle => handle.dispose()))
     }
   }

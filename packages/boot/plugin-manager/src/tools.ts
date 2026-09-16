@@ -3,6 +3,8 @@ import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from './index.ts'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
+import type {} from '@deepseek-ai/dsh-user-approval'
+import { approveEscalation } from '@deepseek-ai/dsh-sandbox'
 import type { PluginEntryId } from './types.ts'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
@@ -15,7 +17,7 @@ export const inject = ['tools', 'pluginManager', 'sandboxPolicy']
 export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'plugin_manager',
-    description: 'List plugins or bundles in the current profile, enable or disable them, install a bundle, or remove an installed bundle. Requires danger-full-access permission for every action. Changes affect every session in this profile. List first to obtain exact identifiers. Package installation can execute allowed build scripts. Live profiles apply changes immediately; startup profiles require restart.',
+    description: 'List plugins or bundles in the current profile, enable or disable them, install a bundle, or remove an installed bundle. Every action requires danger-full-access permission or approval for this call. Approval does not change the session permission mode. Changes affect every session in this profile. List first to obtain exact identifiers. Package installation can execute allowed build scripts. Live profiles apply changes immediately; startup profiles require restart.',
     parameters: {
       action: { type: 'string', required: true, enum: ['list_plugins', 'list_bundles', 'set_plugin', 'set_bundle', 'install_bundle', 'remove_bundle'], description: 'Management operation.' },
       target: { type: 'string', description: 'Plugin entry id, bundle package name, or installation spec, according to action.' },
@@ -30,9 +32,12 @@ export function apply(ctx: Context): void {
     },
     async execute(args, exec) {
       const policy = ctx.sandboxPolicy.resolve(exec.agent === undefined ? {} : { session: exec.agent.session })
-      if (policy.mode !== 'danger-full-access') {
-        throw new Error('plugin_manager requires danger-full-access permission. Ask the user to switch this session to Full access before retrying.')
-      }
+      await approveEscalation({
+        requestedMode: 'danger-full-access', effectiveMode: policy.mode, subject: 'plugin management operation',
+        justification: `plugin_manager ${JSON.stringify(args)}. Profile changes persist across sessions; installed Host code runs outside the workspace sandbox.`,
+      }, { approver: ctx.get('approval'), agent: exec.agent, callId: exec.callId,
+        toolName: 'plugin_manager', signal: exec.signal })
+      exec.signal.throwIfAborted()
       const manager = ctx.pluginManager
       switch (args.action) {
         case 'list_plugins':

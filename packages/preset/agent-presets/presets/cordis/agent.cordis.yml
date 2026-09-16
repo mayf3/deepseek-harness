@@ -1,5 +1,7 @@
-# The `cordis` agent preset: the standard coding agent, plus the ability to
-# read and write the runtime it is running in.
+# TRUST: Plugin Manager installs persistent, profile-wide code that runs in the Host
+# process outside the workspace sandbox. Every call needs Full access or single-call
+# approval; granting a call does not change the session permission mode.
+# The `cordis` agent preset adds runtime inspection and persistent plugin management.
 #
 # It exists so a person can ask an agent to author another agent. Everything in
 # `standard` is here unchanged; Creator adds persistent plugin management,
