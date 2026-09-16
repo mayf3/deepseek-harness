@@ -23,6 +23,8 @@ export interface AdapterDependencies {
   connection(): Connection
   /** Resolve the key named by that same generation. */
   apiKey(connection: Connection): Promise<string>
+  /** DSH account token for an eligible official endpoint. */
+  accountToken?(connection: Connection): Promise<string | undefined>
   /** Stable anonymous Harness identity. */
   userId(): string
   /** Current attachment service; absence is valid for text requests. */
@@ -92,9 +94,12 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
     const { messages, versions } = await prepareImages(
       options.messages, connection, options.model, this.dependencies.attachments(), this.dependencies.imageAccess, signal,
     )
-    const key = await this.dependencies.apiKey(connection)
-    const files = new RequestFiles(this.dependencies.files(), { baseURL: connection.baseURL, apiKey: key, protocol: 'messages' },
-      connection.filePolicy, connection.filesApiTimeoutMs, signal, activity)
+    const accountToken = await this.dependencies.accountToken?.(connection)
+    const key = accountToken ?? await this.dependencies.apiKey(connection)
+    const files = new RequestFiles(this.dependencies.files(), {
+      baseURL: connection.baseURL, apiKey: key, accountCredential: accountToken !== undefined, protocol: 'messages',
+    },
+    connection.filePolicy, connection.filesApiTimeoutMs, signal, activity)
     let inline = false
     while (true) {
       signal.throwIfAborted()
@@ -124,7 +129,8 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
         headers: {
           ...attributionHeaders(),
           'content-type': 'application/json', 'accept': 'text/event-stream',
-          'x-api-key': key, 'anthropic-version': '2023-06-01',
+          ...accountToken === undefined ? { 'x-api-key': key } : { 'x-dsh-auth-token': accountToken },
+          'anthropic-version': '2023-06-01',
           ...fileIds === undefined || fileIds.size === 0 ? {} : { 'anthropic-beta': MESSAGES_FILES_BETA },
           'x-deepseek-harness-user-id': this.dependencies.userId(),
           ...options.sessionId === undefined ? {} : { 'x-deepseek-harness-session-id': String(options.sessionId) },

@@ -94,6 +94,8 @@ Host 配置 `credentialOnboarding` 默认为 `true`。Electron preload 标记会
 
 -----
 
+`settings.models.sign-in` 插槽让账号登录在凭证编辑器之前提供选择；没有贡献者时直接显示编辑器。关闭账号选择弹窗会结束整个引导步骤。从账号菜单显式重新打开时，即使已有提供者配置，也会进入同一个编辑器。
+
 <a id="model-experience"></a>
 ## 模型体验
 

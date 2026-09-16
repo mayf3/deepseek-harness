@@ -1,3 +1,4 @@
+vi.mock('../src/web-document.ts', () => ({ authenticateWebHost: async () => 'test-cookie', serveWebDocument: vi.fn(), forwardWebRequest: vi.fn() }))
 /** Preview startup must use the same Host and workspace transition as ordinary Desktop startup. */
 
 import { afterEach, expect, it, vi } from 'vitest'
@@ -6,7 +7,7 @@ import { DESKTOP_IPC } from '../src/ipc.ts'
 
 const state = vi.hoisted(() => ({
   quit: vi.fn(),
-  startHost: vi.fn().mockResolvedValue({ url: 'http://127.0.0.1:3080/?token=test' }),
+  startHost: vi.fn().mockResolvedValue({ url: 'http://127.0.0.1:3080/?token=test', injections: [] }),
   stopHost: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   loadWorkspace: vi.fn<(url: string) => Promise<void>>().mockResolvedValue(undefined),
   showWorkspace: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('electron', () => ({
     isPackaged: false,
     name: 'Harness',
     requestSingleInstanceLock: () => true,
+    setAsDefaultProtocolClient: vi.fn(),
     whenReady: () => Promise.resolve(),
     getLocale: () => 'en',
     getAppPath: () => '/development-app',
@@ -37,7 +39,7 @@ vi.mock('electron', () => ({
   BrowserWindow: class {
     constructor(options: unknown) { state.windowOptions = options }
     private ready: (() => void) | undefined
-    webContents = { mainFrame: { url: 'http://127.0.0.1:3080/?token=test' }, setWindowOpenHandler: vi.fn(), on: vi.fn(), send: vi.fn(), openDevTools: vi.fn() }
+    webContents = { mainFrame: { url: 'dsh-app://app/' }, setWindowOpenHandler: vi.fn(), on: vi.fn(), send: vi.fn(), openDevTools: vi.fn() }
     static getAllWindows() { return [] }
     once(name: string, callback: () => void) { if (name === 'ready-to-show') this.ready = callback; return this }
     on() { return this }
@@ -47,6 +49,8 @@ vi.mock('electron', () => ({
     async loadURL(url: string) { state.contents = this.webContents; await state.loadWorkspace(url); this.ready?.() }
   },
   net: { fetch: vi.fn() },
+  nativeTheme: { themeSource: 'system' },
+  session: { defaultSession: { webRequest: { onBeforeSendHeaders: vi.fn() } } },
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
   ipcMain: {
     handle: (name: string, callback: (...args: unknown[]) => unknown) => { state.handlers.set(name, callback) },
@@ -72,6 +76,7 @@ vi.mock('../src/welcome-backend.ts', () => ({
   connectDesktopWelcome: async () => ({
     read: async () => ({ hasApiKey: true, writable: true, localePreference: state.preference }),
     save: async () => ({ ok: true }),
+    account: { watch: () => () => {}, state: async () => ({ status: 'signed-out', attempt: null }) },
   }),
 }))
 vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: vi.fn() }))
@@ -102,12 +107,12 @@ it('starts the Host for a forced welcome preview and opens the workspace on skip
   await import('../src/main.ts')
   await vi.waitFor(() => { expect(state.operations).toBeDefined() })
   expect(state.startHost).toHaveBeenCalledOnce()
-  expect(state.loadWorkspace).toHaveBeenCalledExactlyOnceWith('dsh-app://shell/startup.html')
+  expect(state.loadWorkspace).toHaveBeenCalledExactlyOnceWith('dsh-app://app/')
   expect(state.showWorkspace).not.toHaveBeenCalled()
   state.loadWorkspace.mockClear()
   expect(state.welcomeLocale).toMatchObject({ id: 'zh-CN' })
   await state.operations!.skip()
-  expect(state.loadWorkspace).toHaveBeenCalledExactlyOnceWith('http://127.0.0.1:3080/?token=test')
+  expect(state.loadWorkspace).not.toHaveBeenCalled()
   expect(state.showWorkspace).toHaveBeenCalledOnce()
   expect(state.windowOptions).toMatchObject({
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 18 }, vibrancy: 'sidebar' } : {}),

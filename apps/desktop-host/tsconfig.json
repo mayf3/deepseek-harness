@@ -25,6 +25,9 @@
     },
     {
       "path": "../../packages/host/webserver"
+    },
+    {
+      "path": "../../packages/credentials/deepseek-account"
     }
   ]
 }

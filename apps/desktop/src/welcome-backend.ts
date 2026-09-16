@@ -1,9 +1,11 @@
 /** Native welcome operations using the shared Web authentication and RPC APIs. */
 
 import { randomUUID } from 'node:crypto'
+import { desktopAccountBackend, type DesktopAccountBackend } from './account-backend.ts'
 
 /** Metadata needed before the native entry or workspace becomes visible. */
 export interface WelcomeState {
+  readonly loggedIn: boolean
   readonly hasApiKey: boolean
   readonly writable: boolean
   readonly localePreference: string | null
@@ -11,6 +13,7 @@ export interface WelcomeState {
 
 /** Narrow operations available to the native welcome flow. */
 export interface DesktopWelcomeBackend {
+  readonly account: DesktopAccountBackend
   /** @returns Configured-key presence and the shared language preference, without credential values. */
   read(): Promise<WelcomeState>
   /**
@@ -33,6 +36,7 @@ function record(value: unknown): value is Record<string, unknown> {
 export async function connectDesktopWelcome(
   authenticatedUrl: string,
   send: (input: string, init?: RequestInit) => Promise<Response>,
+  cookies: () => Promise<string> = () => Promise.resolve(''),
 ): Promise<DesktopWelcomeBackend> {
   const origin = new URL(authenticatedUrl).origin
   const authenticated = await send(authenticatedUrl, { credentials: 'include' })
@@ -54,6 +58,7 @@ export async function connectDesktopWelcome(
     }
     return envelope.result.value
   }
+  const account = desktopAccountBackend(origin, invoke, cookies)
   const settingsAndReference = async () => {
     const settings = await invoke({ namespace: 'settings', method: 'describe', args: {} })
     if (!record(settings) || !Array.isArray(settings.namespaces)) throw new Error('desktop welcome: missing settings namespaces')
@@ -95,12 +100,14 @@ export async function connectDesktopWelcome(
       throw new Error('desktop welcome: invalid locale preference')
     }
     return {
+      loggedIn: (await account.state()).status === 'credential-stored',
       hasApiKey: Object.values(states).some(value => record(value) && value.configured === true),
       writable: states[ref].writable === true,
       localePreference: locale.value.preference ?? null,
     }
   }
   return {
+    account,
     read,
     async save(apiKey) {
       if (!/^[\x21-\x7e]+$/.test(apiKey)) return { ok: false }

@@ -1,0 +1,62 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-base);
+}
+
+.header {
+  box-sizing: border-box;
+  height: 48px;
+  flex: none;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  app-region: drag;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding-top: 8px;
+}
+
+.trafficLights {
+  display: none;
+  width: 60.667px;
+  height: 14px;
+  flex: none;
+}
+
+:global(html[data-platform="darwin"]) .trafficLights {
+  display: block;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 9px 6px;
+  border: none;
+  border-radius: 28px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  white-space: nowrap;
+  cursor: pointer;
+  app-region: no-drag;
+}
+
+.viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  color: var(--dsw-alias-label-secondary);
+}

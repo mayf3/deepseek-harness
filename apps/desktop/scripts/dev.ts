@@ -82,7 +82,7 @@ async function launchElectron(previewWelcome: boolean): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { 'skip-build': { type: 'boolean', default: false } } })
+  const { values } = parseArgs({ options: { 'skip-build': { type: 'boolean', default: false }, 'preview-welcome': { type: 'boolean', default: false } } })
   if (!values['skip-build']) {
     await runPackageScript('build', REPOSITORY_ROOT)
     await runPackageScript('build', APP_ROOT)

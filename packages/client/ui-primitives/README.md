@@ -92,6 +92,8 @@ The atoms cannot read the application locale, so every piece of user-facing copy
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+Menu.listClassName styles the menu card independently of the anchor wrapper, including in portal mode.
+
 <details>
 <summary>Implementation internals — click to expand</summary>
 

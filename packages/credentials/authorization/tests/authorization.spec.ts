@@ -463,3 +463,45 @@ describe('the settled fan-out', () => {
     expect(await ctx.credentials.readRecord(KEY)).toEqual({ kind: 'grant', payload: { token: 'granted' } })
   })
 })
+
+it('rejects a commit attempted after local cancellation', async () => {
+  const ctx = await harness()
+  const ready = Promise.withResolvers<AuthorizationSession>()
+  const finish = Promise.withResolvers<undefined>()
+  ctx.authorization.registerFlow({
+    key: KEY, label: 'Account', methods: [{ id: 'browser', label: 'Browser' }],
+    run: (session) => { ready.resolve(session); return finish.promise },
+  })
+  const running = ctx.authorization.begin({ key: KEY, interaction: surface() })
+  const session = await ready.promise
+  ctx.authorization.cancel(KEY)
+  try {
+    await expect(running).resolves.toEqual({ status: 'cancelled' })
+    await expect(session.commit({ kind: 'grant', payload: { token: 'late' } })).rejects.toThrow()
+    expect(await ctx.credentials.readRecord(KEY)).toBeUndefined()
+  } finally { finish.resolve(undefined) }
+})
+
+it('finishes an admitted commit without reporting cancellation during storage', async () => {
+  const ctx = await harness()
+  const admitted = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const modify = ctx.credentials.modifyRecord.bind(ctx.credentials)
+  const write = vi.spyOn(ctx.credentials, 'modifyRecord').mockImplementation(async (key, mutate) => {
+    admitted.resolve(undefined)
+    await release.promise
+    return modify(key, mutate)
+  })
+  ctx.authorization.registerFlow({
+    key: KEY, label: 'Account', methods: [{ id: 'browser', label: 'Browser' }],
+    run: session => session.commit({ kind: 'grant', payload: { token: 'saved' } }),
+  })
+  const running = ctx.authorization.begin({ key: KEY, interaction: surface() })
+  try {
+    await admitted.promise
+    ctx.authorization.cancel(KEY)
+    release.resolve(undefined)
+    await expect(running).resolves.toEqual({ status: 'authorized' })
+    expect(await ctx.credentials.readRecord(KEY)).toMatchObject({ payload: { token: 'saved' } })
+  } finally { release.resolve(undefined); write.mockRestore() }
+})

@@ -61,6 +61,7 @@ export type SettingsRootInjected = {
 export type SettingsRootComponentProps =
   PropsRuntime<'sidebar.settings'>
   & PropsRenderSlots<
+    | 'settings.launcher'
     | 'settings.trigger'
     | 'settings.header'
     | 'settings.action'

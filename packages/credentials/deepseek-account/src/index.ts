@@ -1,0 +1,74 @@
+/** Account Service Definition shared by platform, API, and model consumers. */
+import { Context, Service } from '@deepseek-ai/cordis'
+import type { AccountDetails, AccountView, SignInAttemptId } from './types.ts'
+export type { AccountDetails, AccountProfile, AccountWallet, AccountLinks, AccountView, SignInAttemptId, SignInAttemptView, SignInErrorCode } from './types.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    deepseekAccount: DeepSeekAccount
+  }
+}
+
+/** Host-only credentials for an embedded Platform document; never expose through account RPC. */
+export interface PlatformSession {
+  readonly origin: string
+  readonly token: string
+}
+
+/** Account operations; only Host consumers can obtain a request credential. */
+export abstract class DeepSeekAccount extends Service {
+  /** @param ctx - context owning this account implementation. */
+  constructor(ctx: Context) { super(ctx, 'deepseekAccount') }
+  /**
+   * Read stored-account presence and the latest login attempt.
+   * @returns a snapshot without credentials or PKCE secrets.
+   */
+  abstract getState(): Promise<AccountView>
+  /**
+   * Query Platform profile independently of wallet balances.
+   * @returns profile outcome, or null if signed out or the grant changed during the query.
+   */
+  abstract getProfile(): Promise<AccountDetails['profile'] | null>
+  /**
+   * Query Platform recharge-wallet balances independently of profile data.
+   * @returns balance outcome, or null if signed out or the grant changed during the query.
+   */
+  abstract getBalance(): Promise<AccountDetails['balance'] | null>
+  /**
+   * Join an active attempt or start browser authorization.
+   * @param locale - active UI language for a new attempt; joining retains its original language.
+   * @param callbackOrigin - browser-accessible loopback HTTP origin, including any SSH local port.
+   * @param client - initiating UI, used to return from a failed exchange.
+   * @returns the initial snapshot without waiting for browser approval.
+   */
+  abstract startSignIn(locale: string, callbackOrigin: string, client: 'web' | 'desktop'): Promise<AccountView>
+  /**
+   * Cancel only the named attempt; committing attempts settle before returning.
+   * @param id - attempt identity from this Host.
+   * @returns state after cancellation or an already-started commit.
+   */
+  abstract cancelSignIn(id: SignInAttemptId): Promise<AccountView>
+  /**
+   * Remove the local grant while retaining API keys and tasks; the provider revokes it in the background.
+   * @returns the signed-out state after local removal; remote failures never restore the grant.
+   */
+  abstract signOut(): Promise<AccountView>
+  /**
+   * Subscribe to snapshots including a complete initial state.
+   * @param signal - subscription lifetime; ending it never cancels login.
+   * @returns complete snapshots as account state changes.
+   */
+  abstract watch(signal: AbortSignal): AsyncIterable<AccountView>
+  /**
+   * Resolve a credential only for the official HTTPS API origin.
+   * @param url - actual request destination or API base URL.
+   * @returns stored token, or undefined for other origins or a signed-out account.
+   */
+  abstract resolveToken(url: string): Promise<string | undefined>
+  /**
+   * Read credentials for the configured Platform origin, bound to their issuing environment.
+   * @returns a Host-only snapshot, or null while signed out.
+   */
+  abstract getPlatformSession(): Promise<PlatformSession | null>
+}
+export default DeepSeekAccount

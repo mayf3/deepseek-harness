@@ -5,6 +5,7 @@ import { loadLayeredEnv, loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
 import { runProfile } from '@deepseek-ai/dsh/profile-boot'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-deepseek-account'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import * as desktopOffice from './office.ts'
 
@@ -70,6 +71,26 @@ async function main(): Promise<void> {
     source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
     root: join(resolveDshHome(), 'dsh-runtimes', 'dsh-primary-runtime'),
   })
+  const account = ctx.get('deepseekAccount')
+  if (account !== undefined) {
+    const publish = async (): Promise<void> => {
+      const session = await account.getPlatformSession()
+      if (process.connected) process.send?.({ type: 'platform-session', session })
+    }
+    await publish()
+    ctx.effect(() => {
+      const lifetime = new AbortController()
+      const updates = (async () => {
+        for await (const _state of account.watch(lifetime.signal)) {
+          if (lifetime.signal.aborted) break
+          await publish()
+        }
+      })().catch(() => {
+        if (process.connected) process.send?.({ type: 'platform-session', session: null })
+      })
+      return async () => { lifetime.abort(); await updates }
+    })
+  }
   const url = ctx.connection.authenticatedUrl(`http://127.0.0.1:${String(ctx.webServer.port)}`)
   if (process.connected) process.send?.({ type: 'ready', url, injections: ctx.webServer.collectIndexInjections() }, (error) => { if (error !== null) console.error(error) })
 }

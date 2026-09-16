@@ -37,6 +37,9 @@ function createWindow() {
 beforeEach(() => { electron.create.mockReset(); electron.handlers.clear() })
 
 const operations = {
+  startSignIn: async () => ({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out' as const, attempt: null }),
+  cancelSignIn: async () => ({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out' as const, attempt: null }),
+  reopenSignIn: async () => undefined,
   saveApiKey: () => Promise.resolve({ ok: true as const }),
   skip: () => Promise.resolve(),
 }
@@ -56,7 +59,7 @@ describe('desktop welcome window', () => {
     if (platform === 'darwin') {
       expect(options.vibrancy).toBe('titlebar')
       expect(options.visualEffectState).toBe('active')
-      expect(options.trafficLightPosition).toEqual({ x: 16, y: 21 })
+      expect(options.trafficLightPosition).toEqual({ x: 21, y: 21 })
     } else if (platform === 'win32') {
       expect(options.backgroundMaterial).toBe('acrylic')
       expect(options.titleBarOverlay).toMatchObject({ height: 42 })
@@ -107,7 +110,7 @@ describe('desktop welcome window', () => {
     electron.create.mockReturnValue(window)
     const saveApiKey = vi.fn(operations.saveApiKey)
     const skip = vi.fn(operations.skip)
-    await openWelcomeWindow(resolveDesktopLocale('en'), { saveApiKey, skip })
+    await openWelcomeWindow(resolveDesktopLocale('en'), { ...operations, saveApiKey, skip })
     const own = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
     const save = electron.handlers.get(WELCOME_IPC.saveApiKey)!
     await expect(save({ sender: {}, senderFrame: {} }, 'sk-test')).rejects.toThrow('unowned frame')

@@ -1,0 +1,55 @@
+# Agent Note: DeepSeek 账号浏览器登录
+
+Status: implemented
+
+[English](2026-09-14-deepseek-account-login.md) | 中文
+
+登录申请保存发起界面的语言，使浏览器授权跟随桌面或设置页的语言，不依赖平台默认值。
+
+## 问题
+
+桌面登录必须在浏览器、UI 和 Host 之间保留本地取消意图，并只在凭证保存后宣告成功。
+
+## 决策
+
+账号服务定义将 UI 和模型使用方与平台协议实现分开。平台提供者注册 AuthorizationFlow，并保存按所有者寻址的 GrantRecord。账号是否存在从存储派生。登录尝试保留在内存中，通过账号 Remote 控制器提供安全快照。
+
+本地取消具有决定权。提供者停止回调并忽略迟到的兑换结果；auth_cancel 使用 request_id 和原始 PKCE verifier 作废远程申请及未兑换的 code。后台请求不延迟本地取消，失败也不会恢复登录。session.commit 在第一次 await 前同步准入持久化，并拒绝已取消的流程。准入后的取消等待提交结果。回调只有在授权结束确认存储后才跳转 auth_exchange.biz_data.authorized_url。
+
+授权在 Host webServer 上注册临时 /oauth/callback 路由。已鉴权的发起客户端提供浏览器可访问的本机 HTTP 来源，包含 SSH 本地转发端口。不支持非本机域名反向代理。清理仅移除路由，保留共享连接。兑换失败返回 Web 登录界面，或通过账号状态聚焦 Desktop；重试由用户明确发起。PKCE 私密数据不经过 UI 传输。模型和文件请求的 token 仅为 https://api.deepseek.com 解析；请求拒绝重定向。本机开发授权记录不能认证生产请求。API Key 引用独立保存。
+
+平台导航与授权共享 Cordis 配置中同一个经过校验的 platformOrigin。私有 profile patch 或环境表达式提供部署来源，开发地址不进入仓库。
+
+## 替代方案
+
+把协议放在 Electron 会为 Web 使用方重复实现，并让外壳拥有凭证。把 token 放入 DEEPSEEK_API_KEY 会丢失账号授权与用户 API Key 的区别。在持久化前将浏览器回调视为成功会产生虚假成功。等待远程取消确认会使本地取消依赖网络。这些方案均被拒绝。
+
+## 影响
+
+退出登录先删除本地授权，再使用捕获的 token 调用 Platform POST /auth-api/v0/users/logout。远程失败不会恢复登录态。首次请求失败后，提供者最多重试五次，使用可配置的指数退避，默认从一秒开始。重试任务只保留旧 token，不改变后续登录态，并在提供者关闭时结束，不持久化。本地凭证删除成功后才发布已退出状态。退出登录位于侧边栏账号菜单；账号设置负责资料、余额和登录。两者通过框架 hook 读取插件持有的同一条 Host 状态流。
+
+API Key 与账号记录独立保存。账号 token 没有过期或刷新流程；退登重试耗尽后，已从本地删除的 token 在远端仍可能有效。资料和余额查询失败保留登录态；授权尝试的有效期仅适用于 token 签发前。同一授权 token 可认证已配置签发来源上的 Platform current 和 get_user_summary 查询。Host 原样保留 Platform 脱敏后的联系方式并丢弃响应 token；账号变化使未完成结果失效。UI 显示 normal_wallets 充值余额，不合并赠送钱包。
+
+账号插件通过 settings.models.sign-in 提供选择、等待、失败和超时对话框。模型包保留凭证就绪检查和现有 API Key 编辑器；设置外壳协调显式重开，避免登录与 API Key 引导同时挂载冲突的对话框。
+
+Platform 内嵌通过私有 Node IPC 将授权从 Host 传给 Electron，再经沙箱 preload 一次性传给受信任的 Platform 主 frame。preload 在页面脚本执行前执行一次同步 IPC；主进程仅校验调用来源并返回已准备的内存数据。Platform 此后同步读取 token，无需就绪接口。初始化失败时保留内嵌模式，由 getter 抛错。账号 UI 投影仍不包含凭证。Platform 文档能够读取此凭证，因此其脚本安全也是账号保护的一部分；上下文隔离保护原生能力，不能隐藏有意返回给文档的 token。替换或移除授权会销毁文档及其临时会话。
+
+支持问卷仅通过显式预填字段接收 Platform UID 和已有的环境信息，URL 不包含账号 token 或脱敏联系方式。账号提供者为此投影 current-user 的 UID；UI 使用最新账号快照，避免退出登录后复用旧 UID。
+
+私有代理开发可通过 rewriteBrowserOrigin 显式将授权页和完成页映射到 platformOrigin。两者保留固定路径和完整查询字符串；仅放宽来源而不做映射会让浏览器离开配置的环境。发布配置要求浏览器地址同源。
+
+DSH 授权通过 x-dsh-auth-token 请求头鉴权 Platform、推理和 Files 请求，不加 Bearer 前缀。API Key 继续使用各协议的认证方式。
+
+资料和充值钱包余额分别通过 getProfile 与 getBalance 查询。客户端在各自返回时立即更新，余额请求慢或失败不会延迟侧边栏用户名显示。账号变化使两种进行中的查询结果失效。
+
+## 验证
+
+提供者测试覆盖真实本机回调、错误 state、延迟兑换取消、凭证持久化、退出和官方来源限制。桌面测试覆盖原生操作桥接与本地化入口。手动开发联调使用平台 dev middleware Mock 和真实 Electron Host，包括在浏览器批准前取消。生产后端凭证及安装器 scheme 注册仍需发布环境验证。
+
+## 相关记录
+
+[凭证记录与流程](2026-08-13-credential-records-and-authorization-flows.zh.md)仍是通用凭证依据。[桌面外壳](2026-09-10-desktop-web-wrapper.zh.md)负责传输组合。
+
+开发环境认证通过配置的平台来源上的显式 Host 请求头 requestHeaders 完成。提供者拒绝重定向和保留请求头覆盖，防止开发环境 Cookie 替换账号授权或跟随浏览器跳转地址。特定环境的认证协议不属于账号提供者。
+
+Host 在 auth_init 中发送 client_type（desktop 或 web），供 Platform 选择完成页交互。Web 失败时关闭授权标签页，原标签页接收 Host 状态，不使用 Web UI 返回地址。后端接受 localhost 回调。DSH 保留浏览器提供的 localhost 主机名和端口，不做 DNS 解析或 IP 字面量转换。

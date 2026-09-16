@@ -149,6 +149,7 @@ describe('DeepSeekFilesClient', () => {
     const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       expect(requestUrl(url)).toBe('https://api.deepseek.com/files')
       expect(init?.method).toBe('POST')
+      expect(init?.redirect).toBe('error')
       const headers = new Headers(init?.headers)
       expect(headers.get('authorization')).toBe('Bearer key')
       expect(headers.get('user-agent')).toBe(userAgent())
@@ -381,4 +382,18 @@ describe('DeepSeekFilesClient', () => {
     })
     await expect(client.delete(DeepSeekFileId('file-api-one'))).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
   })
+})
+
+it.each(['chat-completions', 'messages'] as const)('authenticates %s Files with the raw DSH token', async (protocol) => {
+  const client = new DeepSeekFilesClient({
+    baseURL: 'https://api.deepseek.com', apiKey: 'account-token', accountCredential: true, protocol,
+    fetch: (_url, init) => {
+      const headers = new Headers(init?.headers)
+      expect(headers.get('x-dsh-auth-token')).toBe('account-token')
+      expect(headers.has('authorization')).toBe(false)
+      expect(headers.has('x-api-key')).toBe(false)
+      return Promise.resolve(new Response(JSON.stringify({ object: 'list', data: [], has_more: false }), { status: 200 }))
+    },
+  })
+  await client.list()
 })

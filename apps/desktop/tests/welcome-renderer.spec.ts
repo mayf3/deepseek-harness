@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { JSDOM } from 'jsdom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveDesktopLocale } from '../src/locale.ts'
+import type { AccountView } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { WelcomeSaveResult } from '../src/welcome-api.ts'
 
 const html = readFileSync(new URL('../renderer/welcome.html', import.meta.url), 'utf8')
@@ -13,6 +14,10 @@ function mount(language = 'zh-CN') {
   const dom = new JSDOM(html, { runScripts: 'outside-only' })
   opened.push(dom)
   const api = {
+    onAccountState: vi.fn((_listener: (state: AccountView) => void) => () => undefined),
+    startSignIn: vi.fn(async () => ({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null })),
+    cancelSignIn: vi.fn(async () => ({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null })),
+    reopenSignIn: vi.fn(async () => undefined),
     ...resolveDesktopLocale(language),
     saveApiKey: vi.fn<(value: string) => Promise<WelcomeSaveResult>>().mockResolvedValue({ ok: true }),
     skip: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -147,4 +152,17 @@ describe('desktop welcome presentation', () => {
     expect(html).toContain("default-src 'none'")
     expect(html).toContain("form-action 'none'")
   })
+})
+
+it.each(['zh-CN', 'en'])('renders %s timeout with manual retry and API-key alternative', async (language) => {
+  const view = mount(language)
+  const receive = view.api.onAccountState.mock.calls[0]![0]
+  receive({ status: 'signed-out', links: { usageUrl: '', topUpUrl: '' }, attempt: { id: 'expired' as NonNullable<AccountView['attempt']>['id'], phase: 'expired' } })
+  expect(view.button('#auth-retry').hidden).toBe(false)
+  expect(view.button('#auth-api-key').hidden).toBe(false)
+  expect(view.api.startSignIn).not.toHaveBeenCalled()
+  await expect(view.copy() + view.document.querySelector('#auth-description')!.textContent + '\n').toMatchFileSnapshot(`./expected/welcome/${language}-timeout.expected.txt`)
+  view.button('#auth-api-key').click()
+  expect(view.document.querySelector('#auth-page')!.hasAttribute('hidden')).toBe(true)
+  expect(view.document.querySelector('#key-form')!.hasAttribute('hidden')).toBe(false)
 })

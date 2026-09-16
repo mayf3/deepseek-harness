@@ -46,6 +46,8 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
+可选的 settings.launcher 贡献接收 wide 和 openSettings，以提供侧边栏账号菜单；未注册时，外壳保留普通设置按钮。
+
 <details>
 <summary>实现细节——点击展开</summary>
 

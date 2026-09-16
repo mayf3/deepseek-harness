@@ -178,6 +178,10 @@
     { "path": "./packages/experimental/computer-use-cua-driver-native" },
     { "path": "./packages/client/ui-sidebar-documentpreview/tsconfig.host.json" },
     { "path": "./packages/document/office-to-pdf" },
+
+    { "path": "./packages/api/account-controller" },
+    { "path": "./packages/credentials/deepseek-account-platform" },
+    { "path": "./packages/credentials/deepseek-account" },
     { "path": "./packages/client/ui-deliverables/tsconfig.host.json" },
     { "path": "./vendor/cosmokit" },
     { "path": "./vendor/schemastery" },

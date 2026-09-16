@@ -227,3 +227,7 @@ This Dev Note is non-authoritative working context: undecided directions and not
 </details>
 
 **Runtime invariant:** No companion is published. This package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam.
+
+When the account provider is mounted, its stored token takes priority only for https://api.deepseek.com. Other origins and signed-out accounts retain the configured API-key reference. Chat and Files requests reject redirects. Signing out removes only the account grant and preserves API keys.
+
+DSH account tokens use x-dsh-auth-token without a Bearer prefix for both inference protocols and all Files operations. API keys retain each protocol’s existing authentication header.

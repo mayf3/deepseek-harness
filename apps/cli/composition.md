@@ -48,6 +48,10 @@ flowchart LR
   cfg --> plugin_dsh_base_llm_retry
   plugin_dsh_base_settings["settings<br/>@deepseek-ai/dsh-settings-file"]
   cfg --> plugin_dsh_base_settings
+  plugin_dsh_base_authorization["authorization<br/>@deepseek-ai/dsh-authorization"]
+  cfg --> plugin_dsh_base_authorization
+  plugin_dsh_base_deepseek_account["deepseek-account<br/>@deepseek-ai/dsh-deepseek-account-platform"]
+  cfg --> plugin_dsh_base_deepseek_account
   plugin_dsh_base_credentials["credentials<br/>@deepseek-ai/dsh-credentials-local"]
   cfg --> plugin_dsh_base_credentials
   plugin_dsh_base_llm_pi_ai["llm-pi-ai<br/>@deepseek-ai/dsh-llm-pi-ai"]
@@ -210,6 +214,8 @@ flowchart LR
 | `jobs` | `@deepseek-ai/dsh-jobs-local` |
 | `llm-retry` | `@deepseek-ai/dsh-llm-retry` |
 | `settings` | `@deepseek-ai/dsh-settings-file` |
+| `authorization` | `@deepseek-ai/dsh-authorization` |
+| `deepseek-account` | `@deepseek-ai/dsh-deepseek-account-platform` |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` |
 | `llm-pi-ai` | `@deepseek-ai/dsh-llm-pi-ai` |
 | `session-persistence-jsonl` | `@deepseek-ai/dsh-session-persistence-jsonl` |

@@ -74,6 +74,8 @@ export function isFilesQuotaError(error: unknown): error is DeepSeekFilesError {
 interface FilesApiOptions {
   baseURL: string
   apiKey: string
+  /** Use the DSH account header; omitted for ordinary API keys. */
+  accountCredential?: boolean
   protocol: DeepSeekProtocol
   fetch?: typeof fetch
 }
@@ -144,6 +146,7 @@ function providerErrorDetail(value: unknown): { message?: string; detail: string
 /** Direct Files client retaining the configured URL root and refusing redirects before credentials can leave its origin. */
 export class DeepSeekFilesClient {
   private readonly baseURL: string
+  private readonly accountCredential: boolean
   private readonly apiKey: string
   private readonly fetchImpl: typeof fetch
   private readonly protocol: DeepSeekProtocol
@@ -154,6 +157,7 @@ export class DeepSeekFilesClient {
    */
   constructor(options: FilesApiOptions) {
     this.apiKey = options.apiKey
+    this.accountCredential = options.accountCredential === true
     this.fetchImpl = options.fetch ?? globalThis.fetch
     this.protocol = options.protocol
     this.baseURL = this.protocol === 'messages'
@@ -171,10 +175,11 @@ export class DeepSeekFilesClient {
     try {
       const headers = new Headers(attributionHeaders())
       if (this.protocol === 'messages') {
-        headers.set('x-api-key', this.apiKey)
+        if (!this.accountCredential) headers.set('x-api-key', this.apiKey)
         headers.set('anthropic-version', '2023-06-01')
         headers.set('anthropic-beta', MESSAGES_FILES_BETA)
-      } else headers.set('authorization', `Bearer ${this.apiKey}`)
+      } else if (!this.accountCredential) headers.set('authorization', `Bearer ${this.apiKey}`)
+      if (this.accountCredential) headers.set('x-dsh-auth-token', this.apiKey)
       response = await this.fetchImpl(`${this.baseURL}${path}`, {
         ...init,
         redirect: 'error',

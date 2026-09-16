@@ -101,6 +101,12 @@
     # `$DSH_HOME/.credentials.yaml`, with project and user `.env` fallbacks.
     # Adapters resolve references per request; the Models page writes only the
     # managed document, which is never materialized into the process environment.
+    - id: authorization
+      name: '@deepseek-ai/dsh-authorization'
+
+    - id: deepseek-account
+      name: '@deepseek-ai/dsh-deepseek-account-platform'
+
     - id: credentials
       name: '@deepseek-ai/dsh-credentials-local'
 

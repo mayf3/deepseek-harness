@@ -4,9 +4,21 @@
     "rootDir": "src",
     "outDir": "lib/types"
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../../packages/boot/app-boot" },
-    { "path": "../../packages/util/home-paths" }
+    {
+      "path": "../../packages/boot/app-boot"
+    },
+    {
+      "path": "../../packages/util/home-paths"
+    },
+    {
+      "path": "../../packages/credentials/deepseek-account"
+    },
+    {
+      "path": "../../packages/api/gateway/tsconfig.host.json"
+    }
   ]
 }

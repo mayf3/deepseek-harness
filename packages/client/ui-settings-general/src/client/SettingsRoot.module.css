@@ -74,20 +74,16 @@
   backdrop-filter: var(--dsw-mask-blur);
 }
 
-/* Panel (figma Settings 501:29947): r24, white; the figma lv3 effects are
-   superseded by the shared elevation treatment; figma's 1080x700 is shrunk to 800 wide.
-   One height for every section, taken from the viewport rather than the
-   content: sections differ by hundreds of pixels (a settings list against the
-   composition editor), and a content-sized panel would resize under the
-   pointer on every nav click. Whatever does not fit scrolls in `.options`. */
+/* Settings 2552:26025 uses a shared 760×500 panel; longer sections scroll
+   inside the options column without moving the navigation. */
 .panel {
   position: relative;
   z-index: 1;
   display: flex;
-  width: 800px;
-  height: min(800px, calc(100vh - 48px));
+  width: 760px;
+  height: min(500px, calc(100vh - 48px));
   max-width: calc(100vw - 48px);
-  border-radius: 32px;
+  border-radius: 24px;
   overflow: hidden;
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-elevation-prominent);

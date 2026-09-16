@@ -1,3 +1,4 @@
+import type { SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 /** Native welcome window and its presentation-only renderer. */
 
 import { join } from 'node:path'
@@ -26,7 +27,7 @@ export function welcomeWindowOptions(platform: NodeJS.Platform, locale: DesktopL
     backgroundColor: platform === 'darwin' || platform === 'win32' ? '#00000000' : '#FFFFFF',
     ...(platform === 'darwin' ? {
       titleBarStyle: 'hidden',
-      trafficLightPosition: { x: 16, y: 21 },
+      trafficLightPosition: { x: 21, y: 21 },
       vibrancy: 'titlebar',
       visualEffectState: 'active',
     } as const : {}),
@@ -69,9 +70,23 @@ export async function openWelcomeWindow(locale: DesktopLocale, operations: Welco
     assertSender(event)
     await operations.skip()
   })
+  ipcMain.handle(WELCOME_IPC.start, async (event) => { assertSender(event); return operations.startSignIn() })
+  ipcMain.handle(WELCOME_IPC.cancel, async (event, id: unknown) => {
+    assertSender(event)
+    if (typeof id !== 'string') throw new Error('desktop welcome: invalid attempt')
+    return operations.cancelSignIn(id as SignInAttemptId)
+  })
+  ipcMain.handle(WELCOME_IPC.reopen, async (event, id: unknown) => {
+    assertSender(event)
+    if (typeof id !== 'string') throw new Error('desktop welcome: invalid attempt')
+    return operations.reopenSignIn(id as SignInAttemptId)
+  })
   window.once('closed', () => {
     ipcMain.removeHandler(WELCOME_IPC.saveApiKey)
     ipcMain.removeHandler(WELCOME_IPC.skip)
+    ipcMain.removeHandler(WELCOME_IPC.start)
+    ipcMain.removeHandler(WELCOME_IPC.cancel)
+    ipcMain.removeHandler(WELCOME_IPC.reopen)
   })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event) => { event.preventDefault() })

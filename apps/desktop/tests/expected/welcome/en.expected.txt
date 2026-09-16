@@ -1,5 +1,5 @@
 DeepSeek Harness
 DeepSeek Harness
 Go deeper with DeepSeek
-Sign in [disabled]
+Sign in
 Add API Key

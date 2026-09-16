@@ -24,6 +24,8 @@ export interface DeepSeekFilePolicy {
 export interface DeepSeekFileConnection {
   baseURL: string
   apiKey: string
+  /** Use the DSH account header; omitted for ordinary API keys. */
+  accountCredential?: boolean
   /** Files wire protocol selected by the resolved connection. */
   protocol: DeepSeekProtocol
 }
@@ -139,6 +141,7 @@ export class DeepSeekFileStore {
     return new DeepSeekFilesClient({
       baseURL: connection.baseURL,
       apiKey: connection.apiKey,
+      ...connection.accountCredential === undefined ? {} : { accountCredential: connection.accountCredential },
       protocol: connection.protocol,
       ...this.fetchImpl === undefined ? {} : { fetch: this.fetchImpl },
     })

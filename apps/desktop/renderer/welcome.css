@@ -282,3 +282,9 @@ body {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+.auth-expired { gap: 12px; padding-top: 28px; }
+.auth-expired h1 { font-size: 20px; line-height: 24px; font-weight: 400; letter-spacing: normal; }
+.auth-expired p { line-height: 16px; letter-spacing: normal; }
+
+.welcome.expired-page { padding-bottom: 60px; }

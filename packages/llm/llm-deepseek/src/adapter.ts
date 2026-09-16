@@ -23,6 +23,7 @@ export class DeepSeekAdapter extends LlmAdapter {
         return new DeepSeekMessagesAdapter({
           connection: () => connection,
           apiKey: this.dependencies.resolveApiKey,
+          ...this.dependencies.resolveAccountToken === undefined ? {} : { accountToken: this.dependencies.resolveAccountToken },
           userId: this.dependencies.resolveUserId,
           attachments: () => this.dependencies.resolveAttachments?.(),
           imageAccess: (ref) => {

@@ -66,7 +66,7 @@ function declare(slots: SlotRegistry): () => void {
 }
 
 describe('ui-settings-models apply', () => {
-  it('lets a native shell own credential onboarding while retaining settings and the notice', async () => {
+  it('keeps manual credential onboarding available when the native shell owns automatic onboarding', async () => {
     const { ctx, slots } = await bench()
     declare(slots)
     try {
@@ -78,7 +78,9 @@ describe('ui-settings-models apply', () => {
       for (const row of rows) if (row.kind === 'global') vi.stubGlobal(row.name, row.value)
       const plugin = ctx.plugin({ inject: [...inject], apply })
       await plugin.await()
-      expect(slots.entries('settings.onboarding').map(entry => entry.options.id)).toEqual(['welcome-notice'])
+      expect(slots.entries('settings.onboarding').map(entry => entry.options.id)).toEqual(['welcome-notice', 'deepseek-official'])
+      const onboarding = slots.entries('settings.onboarding').find(entry => entry.options.id === 'deepseek-official')!
+      expect((onboarding.inject as () => { automatic: boolean })().automatic).toBe(false)
       expect(slots.entries('settings.section').map(entry => entry.options.id)).toEqual(['models'])
       await plugin.dispose()
       expect(slots.entries('settings.onboarding')).toEqual([])

@@ -97,6 +97,7 @@ export function apply(ctx: ClientContext): void {
     t,
   })
   const deepSeekOnboardingInjected = (): DeepSeekOnboardingInjected => ({
+    automatic: credentialOnboarding,
     controller,
     hooks: { models: controller.store },
     operations,
@@ -151,12 +152,11 @@ export function apply(ctx: ClientContext): void {
     order: -100,
     inject: welcomeInjected,
   }, WelcomeNotice))
-  if (credentialOnboarding) {
-    ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
-      name: 'settings.onboarding',
-      id: 'deepseek-official',
-      order: 0,
-      inject: deepSeekOnboardingInjected,
-    }, DeepSeekOnboardingDialog))
-  }
+  ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
+    name: 'settings.onboarding',
+    id: 'deepseek-official',
+    children: { 'settings.models.sign-in': { kind: 'single', scope: 'root' } },
+    order: 0,
+    inject: deepSeekOnboardingInjected,
+  }, DeepSeekOnboardingDialog))
 }

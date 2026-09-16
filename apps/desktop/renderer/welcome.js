@@ -41,15 +41,21 @@ function renderBusy() {
   form.setAttribute('aria-busy', String(busy))
 }
 
-document.querySelector('#api-key').addEventListener('click', () => {
+function openApiKey() {
+  authPageVisible = false
+  document.querySelector('#auth-page').hidden = true
+  document.querySelector('#auth-actions').hidden = true
   document.querySelector('#tagline').hidden = true
   document.querySelector('#entry-actions').hidden = true
   form.hidden = false
   document.querySelector('#key-actions').hidden = false
   welcome.setAttribute('aria-labelledby', 'key-title')
+  welcome.classList.remove('expired-page')
   welcome.classList.add('key-page')
   input.focus()
-})
+}
+document.querySelector('#api-key').addEventListener('click', openApiKey)
+document.querySelector('#auth-api-key').addEventListener('click', openApiKey)
 
 back.addEventListener('click', () => {
   if (busy) return
@@ -111,3 +117,78 @@ skip.addEventListener('click', async () => {
 })
 
 renderBusy()
+
+
+let authAttempt
+let authPageVisible = false
+const authPage = document.querySelector('#auth-page')
+const authActions = document.querySelector('#auth-actions')
+const authStatus = document.querySelector('#auth-status')
+const authReopen = document.querySelector('#auth-reopen')
+const authRetry = document.querySelector('#auth-retry')
+const authCancel = document.querySelector('#auth-cancel')
+authReopen.textContent = messages.welcomeAuthReopen
+authRetry.textContent = messages.welcomeAuthRetry
+document.querySelector('#auth-api-key').textContent = messages.welcomeApiKey
+authCancel.textContent = messages.welcomeAuthCancel
+
+function showAccount(state) {
+  const attempt = state.attempt
+  if (!authPageVisible && !form.hidden) return
+  if (attempt === null && !authPageVisible) return
+  authAttempt = attempt
+  if (attempt?.phase === 'cancelled') {
+    welcome.setAttribute('aria-labelledby', 'tagline')
+    authPageVisible = false
+    authPage.hidden = true
+    authActions.hidden = true
+    document.querySelector('#tagline').hidden = false
+    document.querySelector('#entry-actions').hidden = false
+    return
+  }
+  authPageVisible = true
+  welcome.setAttribute('aria-labelledby', 'auth-status')
+  authPage.hidden = false
+  authActions.hidden = false
+  document.querySelector('#tagline').hidden = true
+  document.querySelector('#entry-actions').hidden = true
+  const phase = attempt?.phase ?? 'failed'
+  const failed = ['expired', 'failed'].includes(phase)
+  authStatus.textContent = phase === 'initializing' ? messages.welcomeAuthStarting
+    : phase === 'waiting-browser' ? messages.welcomeAuthWaiting
+      : phase === 'expired' ? messages.welcomeAuthExpired
+        : phase === 'failed' ? messages.welcomeAuthFailed : messages.welcomeAuthExchanging
+  document.querySelector('#auth-description').hidden = phase !== 'expired'
+  document.querySelector('#auth-description').textContent = messages.welcomeAuthExpiredDescription
+  authPage.classList.toggle('auth-expired', phase === 'expired')
+  welcome.classList.toggle('expired-page', phase === 'expired')
+  document.querySelector('#auth-api-key').hidden = !failed
+  authCancel.hidden = failed
+  authReopen.hidden = failed
+  authReopen.disabled = phase !== 'waiting-browser'
+  authRetry.hidden = !failed
+  authCancel.disabled = phase === 'committing' || phase === 'succeeded' || (phase === 'initializing' && !attempt?.id)
+}
+
+async function startSignIn() {
+  authPageVisible = true
+  showAccount({ attempt: { phase: 'initializing' } })
+  try { showAccount(await api.startSignIn()) }
+  catch { showAccount({ attempt: null }) }
+}
+document.querySelector('#sign-in').addEventListener('click', startSignIn)
+authRetry.addEventListener('click', startSignIn)
+authCancel.addEventListener('click', async () => {
+  authCancel.disabled = true
+  try {
+    if (authAttempt?.id) showAccount(await api.cancelSignIn(authAttempt.id))
+    else showAccount({ attempt: { phase: 'cancelled' } })
+  } catch { authCancel.disabled = false }
+})
+authReopen.addEventListener('click', async () => {
+  if (!authAttempt?.id) return
+  try { await api.reopenSignIn(authAttempt.id) }
+  catch { authStatus.textContent = messages.welcomeAuthFailed }
+})
+const stopAccount = api.onAccountState(showAccount)
+window.addEventListener('pagehide', stopAccount, { once: true })

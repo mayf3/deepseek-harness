@@ -94,6 +94,8 @@ These pages cover the settings base, the seams this page joins, and the design r
 
 -----
 
+The `settings.models.sign-in` slot lets account login offer a choice before the credential editor; without a contributor the editor renders directly. Closing the account choice completes the whole onboarding step. Explicit reopening from the account menu enters the same editor even when a provider is already configured.
+
 <a id="model-experience"></a>
 ## Model Experience
 

@@ -1,0 +1,49 @@
+// @vitest-environment jsdom
+/** Login choices, timeout recovery, and manual cancellation. */
+import { cleanup, fireEvent, render, screen, act } from '@testing-library/react'
+import { afterEach, expect, it, vi } from 'vitest'
+import type { AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
+import { SignInDialog } from '../src/client/SignInDialog.tsx'
+import { en, zh } from '../src/client/locales.ts'
+
+afterEach(cleanup)
+const id = 'login-attempt' as SignInAttemptId
+function mount(attempt: AccountView['attempt'], copy: typeof en | typeof zh = en) {
+  const start = vi.fn(async () => {})
+  const cancel = vi.fn(async () => {})
+  const close = vi.fn()
+  const useApiKey = vi.fn()
+  const props = { start, cancel, close, useApiKey, t: (key: keyof typeof en) => copy[key],
+    account: { view: { status: 'signed-out' as const, attempt, links: { usageUrl: 'https://platform.deepseek.com/usage', topUpUrl: 'https://platform.deepseek.com/top_up' } }, details: undefined, failed: false } }
+  render(<SignInDialog {...props} />)
+  return props
+}
+it.each([en, zh])('offers sign in or the existing API key editor', async (copy) => {
+  const props = mount(null, copy)
+  await expect(`${screen.getByRole('dialog').textContent}\n`).toMatchFileSnapshot(`./expected/login-${copy === en ? 'en' : 'zh'}.txt`)
+  fireEvent.click(screen.getByRole('button', { name: copy.addApiKey }))
+  expect(props.useApiKey).toHaveBeenCalledOnce()
+  expect(props.start).not.toHaveBeenCalled()
+})
+it.each([en, zh])('requires a user action after timeout', async (copy) => {
+  const props = mount({ id, phase: 'expired', errorCode: 'expired' }, copy)
+  expect(props.start).not.toHaveBeenCalled()
+  await expect(`${screen.getByRole('dialog').textContent}\n`).toMatchFileSnapshot(`./expected/login-timeout-${copy === en ? 'en' : 'zh'}.txt`)
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.retry })) })
+  expect(props.start).toHaveBeenCalledOnce()
+})
+it.each([en, zh])('shows waiting actions and cancels before dismissing', async (copy) => {
+  const props = mount({ id, phase: 'waiting-browser', authorizeUrl: 'https://platform.deepseek.com/dsh/authorize?state=example' }, copy)
+  expect(screen.getByRole('button', { name: copy.waiting }).hasAttribute('disabled')).toBe(true)
+  await expect(`${screen.getByRole('dialog').textContent}\n`).toMatchFileSnapshot(`./expected/login-waiting-${copy === en ? 'en' : 'zh'}.txt`)
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.cancel })) })
+  expect(props.cancel).toHaveBeenCalledExactlyOnceWith(id)
+  expect(props.close).toHaveBeenCalledOnce()
+})
+it('keeps an admitted credential commit open on Escape and close', () => {
+  const props = mount({ id, phase: 'committing' })
+  fireEvent.keyDown(document, { key: 'Escape' })
+  fireEvent.click(screen.getByRole('button', { name: en.close }))
+  expect(props.close).not.toHaveBeenCalled()
+  expect(props.cancel).not.toHaveBeenCalled()
+})

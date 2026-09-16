@@ -1,0 +1,412 @@
+/** Platform PKCE account provider; browser approval never bypasses local cancellation. */
+import { randomBytes, randomUUID, createHash, timingSafeEqual } from 'node:crypto'
+import type { ServerResponse } from 'node:http'
+import type {} from '@deepseek-ai/dsh-host-webserver'
+import { arch, platform, release } from 'node:os'
+import { finished } from 'node:stream/promises'
+import { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
+import { z } from 'zod'
+import { DeepSeekAccount, type AccountDetails, type AccountView, type SignInAttemptId, type SignInAttemptView } from '@deepseek-ai/dsh-deepseek-account'
+import { credentialKey } from '@deepseek-ai/dsh-credentials'
+import type { AuthorizationSession } from '@deepseek-ai/dsh-authorization'
+import { readAccountDetail } from './details.ts'
+import { revokeAccount, type LogoutRetryPolicy } from './logout.ts'
+import { PlatformAuthError, platformHeaders, platformOrigin, browserUrl, requestPlatform, initialization, exchange, loginOrigin } from './protocol.ts'
+
+const KEY = credentialKey('deepseek-account-platform', 'default')
+const DEVICE = credentialKey('deepseek-account-platform', 'device')
+const grant = z.object({ version: z.literal(1), token: z.string().min(1), issuer: z.url() })
+const device = z.object({ id: z.uuid() })
+
+/** Deployment-specific platform and request deadlines. */
+export interface Config {
+  /** Platform origin serving auth-api and browser pages. */
+  platformOrigin?: string
+  /** Allow HTTP only on loopback for the development Mock. */
+  allowLoopbackHttp?: boolean
+  /** Map authorization and completion pages to platformOrigin for private development proxies. */
+  rewriteBrowserOrigin?: boolean
+  /** Host-only headers sent exclusively to platformOrigin; account authorization cannot be overridden. */
+  requestHeaders?: Record<string, string>
+  /** Deadline for each platform HTTP request. */
+  requestTimeoutMs?: number
+  /** Additional logout attempts after the first request fails, at most five. */
+  logoutMaxRetries?: number
+  /** Delay before the first logout retry; each later delay doubles. */
+  logoutRetryDelayMs?: number
+  /** Upper bound for the entire local attempt, even if the server advertises a longer TTL. */
+  attemptTimeoutMs?: number
+}
+/** Validated deployment choices. */
+export const Config = Schema.object({
+  platformOrigin: Schema.string().default('https://platform.deepseek.com'),
+  allowLoopbackHttp: Schema.boolean().default(false),
+  rewriteBrowserOrigin: Schema.boolean().default(false),
+  requestHeaders: Schema.dict(Schema.string().role('secret')).default({}),
+  requestTimeoutMs: Schema.number().min(1).max(120_000).default(30_000),
+  logoutMaxRetries: Schema.number().min(0).max(5).step(1).default(5),
+  logoutRetryDelayMs: Schema.number().min(1).max(60_000).default(1_000),
+  attemptTimeoutMs: Schema.number().min(1).max(3_600_000).default(600_000),
+})
+
+interface Attempt {
+  locale: 'en_US' | 'zh_CN'
+  view: SignInAttemptView
+  controller: AbortController
+  done: Promise<void>
+  running: Promise<void>
+  origin: string
+  client: 'web' | 'desktop'
+  disposeCallback?: () => Promise<void>
+  callback?: ServerResponse
+  completionUrl?: string
+}
+
+/** The platform implementation owns login state and its opaque stored grant. */
+export class PlatformAccount extends DeepSeekAccount {
+  static inject = ['credentials', 'authorization']
+  static Config = Config
+  private readonly origin: string
+  private readonly rewriteBrowserOrigin: boolean
+  private readonly requestHeaders: Record<string, string>
+  private readonly requestTimeout: number
+  private readonly attemptTimeout: number
+  private readonly logoutPolicy: LogoutRetryPolicy
+  private readonly logoutLifetime = new AbortController()
+  private readonly revocations = new Set<Promise<void>>()
+  private attempt: Attempt | undefined
+  private readonly listeners = new Set<() => void>()
+  private detailsLifetime = new AbortController()
+  private closed = false
+  private removing: Promise<AccountView> | undefined
+
+  /** @param ctx - Host with authorization and credentials services. @param config - deployment options. */
+  constructor(ctx: Context, config: Config = {}) {
+    super(ctx)
+    const resolved = Config(config)
+    this.origin = platformOrigin(resolved.platformOrigin, resolved.allowLoopbackHttp)
+    this.rewriteBrowserOrigin = resolved.rewriteBrowserOrigin
+    this.requestHeaders = platformHeaders(resolved.requestHeaders)
+    this.requestTimeout = resolved.requestTimeoutMs
+    this.attemptTimeout = resolved.attemptTimeoutMs
+    this.logoutPolicy = {
+      maxRetries: resolved.logoutMaxRetries, delayMs: resolved.logoutRetryDelayMs, requestTimeoutMs: this.requestTimeout,
+    }
+    ctx.authorization.registerFlow({
+      key: KEY, label: 'DeepSeek', methods: [{ id: 'browser', label: 'DeepSeek' }],
+      run: (session) => {
+        const attempt = this.attempt
+        if (attempt === undefined) return Promise.reject(new PlatformAuthError('protocol'))
+        attempt.running = this.run(session)
+        return attempt.running
+      },
+    })
+    ctx.on('credentials/record-updated', (key) => {
+      if (key !== KEY) return
+      this.invalidateDetails()
+      this.changed()
+    })
+    ctx.effect(() => async () => {
+      this.closed = true
+      this.logoutLifetime.abort()
+      this.invalidateDetails()
+      const active = this.attempt
+      if (active !== undefined) {
+        if (active.view.phase !== 'committing') active.controller.abort()
+        await active.done
+      }
+      await this.removing
+      await Promise.all(this.revocations)
+      this.changed()
+    }, 'account: active attempt lifetime')
+  }
+
+  override async getState(): Promise<AccountView> {
+    const record = await this.ctx.credentials.readRecord(KEY)
+    if (record !== undefined && (record.kind !== 'grant' || !grant.safeParse(record.payload).success)) {
+      throw new PlatformAuthError('storage')
+    }
+    return {
+      status: record === undefined ? 'signed-out' : 'credential-stored', attempt: this.attempt?.view ?? null,
+      links: { usageUrl: new URL('/usage', this.origin).href, topUpUrl: new URL('/top_up', this.origin).href },
+    }
+  }
+
+  override getProfile(): Promise<AccountDetails['profile'] | null> { return this.getDetail('profile') }
+
+  override getBalance(): Promise<AccountDetails['balance'] | null> { return this.getDetail('balance') }
+
+  private async getDetail<K extends keyof AccountDetails>(field: K): Promise<AccountDetails[K] | null> {
+    const lifetime = this.detailsLifetime
+    if (this.closed) return null
+    const record = await this.ctx.credentials.readRecord(KEY)
+    if (record === undefined || lifetime.signal.aborted) return null
+    if (record.kind !== 'grant') throw new PlatformAuthError('storage')
+    const parsed = grant.safeParse(record.payload)
+    if (!parsed.success) throw new PlatformAuthError('storage')
+    // A private origin override must never forward a grant issued by another environment.
+    if (parsed.data.issuer !== this.origin) throw new PlatformAuthError('protocol')
+    const details = await readAccountDetail(field, this.origin, parsed.data.token,
+      AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]), this.requestHeaders)
+    return this.detailsLifetime !== lifetime ? null : details
+  }
+
+  override async getPlatformSession(): Promise<{ origin: string; token: string } | null> {
+    const lifetime = this.detailsLifetime
+    if (this.closed) return null
+    const record = await this.ctx.credentials.readRecord(KEY)
+    if (record === undefined || lifetime.signal.aborted) return null
+    if (record.kind !== 'grant') throw new PlatformAuthError('storage')
+    const parsed = grant.safeParse(record.payload)
+    if (!parsed.success) throw new PlatformAuthError('storage')
+    if (parsed.data.issuer !== this.origin) throw new PlatformAuthError('protocol')
+    return { origin: this.origin, token: parsed.data.token }
+  }
+
+  override async resolveToken(url: string): Promise<string | undefined> {
+    const destination = new URL(url)
+    if (destination.origin !== 'https://api.deepseek.com' || destination.username || destination.password) return undefined
+    const record = await this.ctx.credentials.readRecord(KEY)
+    if (record === undefined) return undefined
+    if (record.kind !== 'grant') throw new PlatformAuthError('storage')
+    const result = grant.safeParse(record.payload)
+    if (!result.success) throw new PlatformAuthError('storage')
+    // Development grants cannot authenticate production model or file requests.
+    const issuer = new URL(result.data.issuer)
+    if (['localhost', '127.0.0.1', '[::1]'].includes(issuer.hostname) || result.data.token.startsWith('dsh_mock_')) return undefined
+    return result.data.token
+  }
+
+  override async startSignIn(locale: string, callbackOrigin: string, client: 'web' | 'desktop'): Promise<AccountView> {
+    if (this.removing !== undefined) await this.removing
+    const origin = loginOrigin(callbackOrigin)
+    if (this.closed) throw new PlatformAuthError('protocol')
+    if (this.attempt !== undefined && ['initializing', 'waiting-browser', 'exchanging', 'committing'].includes(this.attempt.view.phase)) {
+      return this.getState()
+    }
+    const previous = this.attempt
+    if (previous !== undefined) {
+      await previous.done
+      // Disposal can close the provider while the previous attempt settles.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (this.closed) throw new PlatformAuthError('protocol')
+      if (this.attempt !== previous) return this.getState()
+    }
+    const attempt: Attempt = {
+      origin, client,
+      locale: locale.toLowerCase().split(/[-_]/)[0] === 'zh' ? 'zh_CN' : 'en_US',
+      view: { id: randomUUID() as SignInAttemptId, phase: 'initializing' },
+      controller: new AbortController(), done: Promise.resolve(), running: Promise.resolve(),
+    }
+    this.attempt = attempt
+    attempt.done = this.ctx.authorization.begin({
+      key: KEY, signal: attempt.controller.signal,
+      interaction: { notify: () => undefined, prompt: () => Promise.reject(new PlatformAuthError('protocol')) },
+    }).then((outcome) => {
+      this.update(attempt, { phase: outcome.status === 'authorized' ? 'succeeded' : 'cancelled' })
+      if (outcome.status === 'authorized' && attempt.completionUrl !== undefined) {
+        attempt.callback?.writeHead(302, { location: attempt.completionUrl, 'cache-control': 'no-store' }).end()
+      } else attempt.callback?.writeHead(204, { 'cache-control': 'no-store' }).end()
+    }).catch((error: unknown) => {
+      const code = error instanceof PlatformAuthError ? error.code : 'protocol'
+      console.info('[deepseek-account] sign-in failed', { errorCode: code })
+      this.update(attempt, { phase: code === 'expired' ? 'expired' : 'failed', errorCode: code })
+      this.finishFailedCallback(attempt)
+    }).then(async () => {
+      // begin() may report cancellation before the HTTP work observes its signal.
+      await attempt.running.catch(() => undefined)
+      if (attempt.callback !== undefined) {
+        await finished(attempt.callback, { cleanup: true }).catch(() => undefined)
+      }
+      await attempt.disposeCallback?.()
+    })
+    this.changed()
+    return this.getState()
+  }
+
+  override async cancelSignIn(id: SignInAttemptId): Promise<AccountView> {
+    const attempt = this.attempt
+    if (attempt?.view.id === id) {
+      if (attempt.view.phase !== 'committing') {
+        attempt.controller.abort()
+        this.ctx.authorization.cancel(KEY)
+      }
+      await attempt.done
+    }
+    return this.getState()
+  }
+
+  override signOut(): Promise<AccountView> {
+    this.removing ??= (async () => {
+      if (this.closed) throw new PlatformAuthError('protocol')
+      if (this.attempt !== undefined) await this.cancelSignIn(this.attempt.view.id)
+      const record = await this.ctx.credentials.readRecord(KEY)
+      if (record !== undefined) {
+        if (record.kind !== 'grant') throw new PlatformAuthError('storage')
+        const parsed = grant.safeParse(record.payload)
+        if (!parsed.success) throw new PlatformAuthError('storage')
+        if (parsed.data.issuer !== this.origin) throw new PlatformAuthError('protocol')
+        await this.ctx.credentials.deleteRecord(KEY)
+        this.revoke(parsed.data.token)
+      }
+      this.attempt = undefined
+      this.changed()
+      return this.getState()
+    })().finally(() => { this.removing = undefined })
+    return this.removing
+  }
+
+  override async *watch(signal: AbortSignal): AsyncIterable<AccountView> {
+    let dirty = true
+    let wake: (() => void) | undefined
+    const changed = (): void => { dirty = true; wake?.() }
+    this.listeners.add(changed)
+    signal.addEventListener('abort', changed, { once: true })
+    try {
+      while (!this.closed && !signal.aborted) {
+        if (dirty) { dirty = false; yield await this.getState(); continue }
+        await new Promise<void>((resolve) => { wake = resolve })
+      }
+    } finally {
+      this.listeners.delete(changed)
+      signal.removeEventListener('abort', changed)
+    }
+  }
+
+  private revoke(token: string): void {
+    if (this.closed) return
+    const revocation = revokeAccount(this.origin, token, this.logoutPolicy,
+      this.logoutLifetime.signal, this.requestHeaders).finally(() => { this.revocations.delete(revocation) })
+    this.revocations.add(revocation)
+  }
+
+  private invalidateDetails(): void {
+    this.detailsLifetime.abort()
+    this.detailsLifetime = new AbortController()
+  }
+
+  private changed(): void { for (const listener of this.listeners) listener() }
+
+  private update(attempt: Attempt, value: Partial<SignInAttemptView>): void {
+    if (this.attempt !== attempt) return
+    const { authorizeUrl: _url, ...rest } = attempt.view
+    attempt.view = { ...rest, ...value }
+    this.changed()
+  }
+
+  private async run(session: AuthorizationSession): Promise<void> {
+    const attempt = this.attempt
+    if (attempt === undefined) throw new PlatformAuthError('protocol')
+    const webServer = this.ctx.get('webServer')
+    if (webServer === undefined) throw new PlatformAuthError('protocol')
+    const verifier = randomBytes(32).toString('base64url')
+    const state = randomBytes(32).toString('base64url')
+    const challenge = createHash('sha256').update(verifier).digest('base64url')
+    let requestId: string | undefined
+    const code = Promise.withResolvers<string>()
+    // Callback requests may precede initialization settlement; the rejection is observed immediately.
+    void code.promise.catch(() => undefined)
+    const deadline = new AbortController()
+    const signal = AbortSignal.any([session.signal, deadline.signal])
+    let timer = setTimeout(() =>{  deadline.abort() }, this.attemptTimeout)
+    const abort = (): void => { code.reject(new PlatformAuthError('expired')) }
+    signal.addEventListener('abort', abort, { once: true })
+    try {
+      attempt.disposeCallback = this.ctx.effect(() => webServer.register({
+        kind: 'exact', path: '/oauth/callback', handler: (req, res) => {
+          let url: URL
+          try { url = new URL(req.url ?? '/', 'http://127.0.0.1') }
+          catch { res.writeHead(400, { 'cache-control': 'no-store' }).end(); return }
+          const receivedCode = url.searchParams.get('code')
+          const receivedState = url.searchParams.get('state') ?? ''
+          const validState = Buffer.byteLength(receivedState) === Buffer.byteLength(state)
+            && timingSafeEqual(Buffer.from(receivedState), Buffer.from(state))
+          if (req.method !== 'GET' || url.pathname !== '/oauth/callback' || !validState || !receivedCode
+            || url.searchParams.getAll('state').length !== 1 || url.searchParams.getAll('code').length !== 1) {
+            res.writeHead(400, { 'cache-control': 'no-store' }).end(); return
+          }
+          if (signal.aborted || attempt.callback !== undefined || attempt.view.phase !== 'waiting-browser') {
+            res.writeHead(410, { 'cache-control': 'no-store' }).end(); return
+          }
+          attempt.callback = res
+          code.resolve(receivedCode)
+        },
+      }), 'account: browser callback')
+      signal.throwIfAborted()
+      const redirectUri = `${attempt.origin}/oauth/callback`
+      const init = initialization.safeParse(await this.request('auth_init', {
+        code_challenge: challenge, code_challenge_method: 'S256', state, redirect_uri: redirectUri, locale: attempt.locale,
+        client_type: attempt.client,
+      }, signal))
+      if (!init.success) throw new PlatformAuthError('protocol')
+      const authorizeUrl = browserUrl(init.data.authorize_url, this.origin, '/dsh/authorize', this.rewriteBrowserOrigin)
+      const requestIds = new URL(authorizeUrl).searchParams.getAll('request_id')
+      if (requestIds.length !== 1 || !requestIds[0]) throw new PlatformAuthError('protocol')
+      requestId = requestIds[0]
+      signal.throwIfAborted()
+      const expires = Math.min(this.attemptTimeout, init.data.expires_in * 1000)
+      clearTimeout(timer)
+      timer = setTimeout(() =>{  deadline.abort() }, expires)
+      this.update(attempt, { phase: 'waiting-browser', authorizeUrl, expiresAt: Date.now() + expires })
+      const receivedCode = await code.promise
+      signal.throwIfAborted()
+      this.update(attempt, { phase: 'exchanging' })
+      const deviceRecord = await this.ctx.credentials.modifyRecord(DEVICE, current => Promise.resolve(current === undefined
+        ? { kind: 'grant', payload: { id: randomUUID() } } : undefined))
+      if (deviceRecord?.kind !== 'grant') throw new PlatformAuthError('storage')
+      const identity = device.parse(deviceRecord.payload)
+      const result = exchange.safeParse(await this.request('auth_exchange', {
+        code: receivedCode, code_verifier: verifier, redirect_uri: redirectUri,
+        device_id: identity.id, device_model: `${platform()}-${arch()}`, os_version: `${platform()} ${release()}`,
+      }, signal))
+      if (!result.success) throw new PlatformAuthError('protocol')
+      attempt.completionUrl = browserUrl(result.data.authorized_url, this.origin, '/dsh/authorized', this.rewriteBrowserOrigin)
+      signal.throwIfAborted()
+      this.update(attempt, { phase: 'committing' })
+      clearTimeout(timer)
+      try { await session.commit({ kind: 'grant', payload: { version: 1, token: result.data.token, issuer: this.origin } }) }
+      catch { throw new PlatformAuthError('storage') }
+    } catch (error) {
+      if (deadline.signal.aborted) throw new PlatformAuthError('expired')
+      throw error
+    } finally {
+      if (signal.aborted && requestId !== undefined) this.cancelRequest(requestId, verifier)
+      clearTimeout(timer)
+      signal.removeEventListener('abort', abort)
+      // begin() settles the browser response and removes only this attempt’s route.
+    }
+  }
+
+  private cancelRequest(requestId: string, verifier: string): void {
+    if (this.closed) return
+    const cancellation = this.request('auth_cancel', { request_id: requestId, code_verifier: verifier },
+      this.logoutLifetime.signal).then(() => undefined, () => {
+      // Remote cancellation failures never reverse local cancellation or expose verifier diagnostics.
+    }).finally(() => { this.revocations.delete(cancellation) })
+    this.revocations.add(cancellation)
+  }
+
+  private request(method: string, body: unknown, signal: AbortSignal): Promise<unknown> {
+    return requestPlatform(this.origin, method, body,
+      AbortSignal.any([signal, AbortSignal.timeout(this.requestTimeout)]), this.requestHeaders)
+  }
+
+  private finishFailedCallback(attempt: Attempt): void {
+    if (attempt.client === 'web') {
+      const nonce = randomBytes(16).toString('base64url')
+      const message = attempt.locale === 'zh_CN' ? '登录失败，请关闭此标签页并在原页面重试。'
+        : 'Sign-in failed. Close this tab and try again in the original tab.'
+      attempt.callback?.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
+        'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; frame-ancestors 'none'`,
+        'referrer-policy': 'no-referrer',
+      }).end(`<!doctype html><html lang="${attempt.locale === 'zh_CN' ? 'zh-CN' : 'en'}"><meta charset="utf-8"><title>${message}</title>`
+        + `<body><p>${message}</p><script nonce="${nonce}">window.close()</script></body></html>`)
+    } else {
+      // Native account subscribers focus the login window; retain the browser’s Platform document.
+      attempt.callback?.writeHead(204, { 'cache-control': 'no-store' }).end()
+    }
+  }
+}
+export default PlatformAccount

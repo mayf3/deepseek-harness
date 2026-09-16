@@ -194,7 +194,8 @@ export class ChatCompletionsAdapter extends LlmAdapter {
         )
       }
     }
-    const apiKey = await this.config.resolveApiKey(connection)
+    const accountToken = await this.config.resolveAccountToken?.(connection)
+    const apiKey = accountToken ?? await this.config.resolveApiKey(connection)
     const userId = this.config.resolveUserId()
     const consumer = new AbortController()
     const upstream = options.signal === undefined
@@ -206,6 +207,7 @@ export class ChatCompletionsAdapter extends LlmAdapter {
       watchdog.signal,
       connection,
       apiKey,
+      accountToken !== undefined,
       userId,
       attachments,
       () => { watchdog.pulse() },
@@ -250,12 +252,13 @@ export class ChatCompletionsAdapter extends LlmAdapter {
     signal: AbortSignal,
     connection: DeepSeekConnectionOptions,
     apiKey: string,
+    accountCredential: boolean,
     userId: AnonymousUserId,
     attachments: AttachmentStore | undefined,
     onActivity: () => void,
   ): AsyncIterable<StreamChunk> {
     const headers = {
-      'authorization': `Bearer ${apiKey}`,
+      ...accountCredential ? { 'x-dsh-auth-token': apiKey } : { authorization: `Bearer ${apiKey}` },
       'content-type': 'application/json',
       'accept': 'text/event-stream',
       ...attributionHeaders(),
@@ -268,7 +271,7 @@ export class ChatCompletionsAdapter extends LlmAdapter {
         : {},
     }
 
-    const fileConnection = { baseURL: connection.baseURL, apiKey, protocol: connection.protocol }
+    const fileConnection = { baseURL: connection.baseURL, apiKey, accountCredential, protocol: connection.protocol }
     const model = connection.models.find(entry => entry.id === options.model)
     const resolveImageAccess = attachments === undefined
       ? undefined
@@ -328,6 +331,7 @@ export class ChatCompletionsAdapter extends LlmAdapter {
       let response: Response
       try {
         response = await fetch(`${connection.baseURL}/chat/completions`, {
+          redirect: 'error',
           method: 'POST',
           headers,
           body: extensions.payload,
