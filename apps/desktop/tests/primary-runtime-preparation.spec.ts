@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { zipSync } from 'fflate'
 import { expect, it } from 'vitest'
-import { downloadPrimaryRuntimeAsset, primaryRuntimePayloadDigest, smokePrimaryRuntime, unpackPrimaryRuntimeWheel } from '../scripts/prepare-primary-runtime.ts'
+import { downloadPrimaryRuntimeAsset, prepareOfficeSkillAssets, primaryRuntimePayloadDigest, smokePrimaryRuntime, unpackPrimaryRuntimeWheel } from '../scripts/prepare-primary-runtime.ts'
 import lock from '../scripts/primary-runtime-lock.json' with { type: 'json' }
 
 const libraryWheel = Buffer.from('UEsDBAoAAAAAAASeLl0sYMPjDAAAAAwAAAAJAAAAc2FtcGxlLnB5c2FtcGxlID0gNDIKUEsBAh4DCgAAAAAABJ4uXSxgw+MMAAAADAAAAAkAAAAAAAAAAQAAAKSBAAAAAHNhbXBsZS5weVBLBQYAAAAAAQABADcAAAAzAAAAAAA=', 'base64')
@@ -106,4 +106,26 @@ it('rejects library files requiring an unsupported installation scheme', async (
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+it('copies complete Office resources outside the application archive and removes obsolete assets', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'desktop-office-assets-'))
+  try {
+    const source = join(root, 'package', 'assets')
+    const destination = join(root, 'Contents', 'Resources', 'runtime', 'office-skills')
+    await mkdir(join(source, 'scripts'), { recursive: true })
+    await writeFile(join(source, 'scripts', 'check_office.py'), 'print("checker")\n')
+    for (const name of ['office-docx', 'office-pptx', 'office-xlsx']) {
+      await mkdir(join(source, name))
+      await writeFile(join(source, name, 'SKILL.md'), `# ${name}\n`)
+    }
+    await prepareOfficeSkillAssets(source, destination)
+    await writeFile(join(destination, 'obsolete.py'), 'old helper')
+    await prepareOfficeSkillAssets(source, destination)
+    for (const name of ['office-docx', 'office-pptx', 'office-xlsx']) {
+      expect(await readFile(join(destination, name, 'SKILL.md'), 'utf8')).toBe(`# ${name}\n`)
+    }
+    expect(await readFile(join(destination, 'scripts', 'check_office.py'), 'utf8')).toBe('print("checker")\n')
+    await expect(readFile(join(destination, 'obsolete.py'))).rejects.toMatchObject({ code: 'ENOENT' })
+  } finally { await rm(root, { recursive: true, force: true }) }
 })

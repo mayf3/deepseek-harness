@@ -2404,6 +2404,22 @@ export interface Config {
 
 来源：[`packages/skill/skill-filesystem/src/index.ts:49`](../packages/skill/skill-filesystem/src/index.ts)
 
+<a id="deepseek-aidsh-skill-office"></a>
+
+## `@deepseek-ai/dsh-skill-office`
+
+依赖：`skills`
+
+```ts config-catalog
+/** Office skill resource location. */
+export interface Config {
+  /** Absolute assets directory containing the three skill folders and shared scripts; defaults to packaged assets. */
+  assetRoot?: string
+}
+```
+
+来源：[`packages/skill/skill-office/src/index.ts:15`](../packages/skill/skill-office/src/index.ts)
+
 <a id="deepseek-aidsh-spill-local"></a>
 
 ## `@deepseek-ai/dsh-spill-local`
