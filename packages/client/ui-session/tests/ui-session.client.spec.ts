@@ -39,7 +39,7 @@ function createSessionsBench(_ctx: Context): SessionsBench {
     byId: {},
     current: undefined,
     phase: 'ready',
-    subagentsByParent: {},
+    projectionsBySession: {},
     jobsBySession: {},
     currentAddress: undefined,
   })

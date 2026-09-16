@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
+import { createSessionFormatCatalogWithChildren, sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
 import { sessionFormatLogFilename } from '@deepseek-ai/dsh-session-format'
 import { packPreviewFixture } from '../src/preview.ts'
 import { packVfsOverlay } from '../src/pack.ts'
@@ -36,7 +36,7 @@ function source() {
 
 function restore(bytes: Uint8Array | undefined) {
   const [header, ...rows] = text(bytes).trimEnd().split('\n').map(row => JSON.parse(row) as unknown)
-  const reader = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation: 'current' })
+  const reader = createSessionFormatCatalogWithChildren([]).createRestore(header, { recovery: 'strict', validation: 'current' })
   for (const row of rows) reader.decodeRow(row)
   return reader.finish()
 }
@@ -51,11 +51,42 @@ describe('Node preparation of Preview Session data', () => {
     for (const [path, bytes] of Object.entries(original.files)) expect(projected.files[path], path).toEqual(bytes)
     for (const path of currentFiles) {
       const sourcePath = path.replace(/\/session\.v\d+\.jsonl$/u, '/session.v3.jsonl')
-      expect(restore(projected.files[path])).toEqual(restore(original.files[sourcePath]))
+      const historical = restore(original.files[sourcePath])
+      const current = restore(projected.files[path])
+      const appended = path.includes('/preview-showcase/') ? [
+        { version: 0, childId: 'preview-architecture-review', childCreatedAt: 1787472100000, mode: 'one-shot', label: 'Review preview architecture' },
+        { version: 0, childId: 'preview-follow-up-builder', childCreatedAt: 1787472200000, mode: 'continuable', label: 'Continue preview verification' },
+      ].map((data, index) => ({ type: 'subagent/catalog', seq: historical.events.length + index,
+        time: historical.events.at(-1)!.time, data })) : []
+      expect(current).toEqual({ ...historical, events: [...historical.events, ...appended] })
       expect(JSON.parse(text(projected.files[path]).split('\n')[0]!)).toMatchObject({ version: currentVersion })
     }
     expect(packPreviewFixture(fixture.trees).image).toEqual(projected.image)
     expect(packVfsOverlay(fixture.trees).files).toEqual(original.files)
+  })
+
+  it.each(['missing-descriptor', 'other-root', 'other-origin', 'current-child'] as const)('collects only direct subagent children in the same root: %s', (mode) => {
+    const fixture = source()
+    const parent = fixture.put(3)
+    const childDirectory = join(fixture.trees[0]!.directory, 'sessions', mode === 'other-root' ? 'other' : 'project', 'child')
+    mkdirSync(childDirectory, { recursive: true })
+    const version = mode === 'current-child' ? currentVersion : 3
+    const child = { type: 'session', version, id: 'child', createdAt: 2, isSeeded: false,
+      delegationDepth: 1, parentSession: 'example', ...(mode === 'other-origin' ? {} : { origin: 'subagent' }) }
+    const descriptor = { type: 'subagent/descriptor', seq: 0, time: 3,
+      data: { version: 3, mode: 'one-shot', provider: 'spawn' } }
+    writeFileSync(join(childDirectory, sessionFormatLogFilename(version)),
+      JSON.stringify(child) + '\n' + (mode === 'current-child' ? JSON.stringify(descriptor) + '\n' : ''))
+    const before = readFileSync(parent)
+    if (mode === 'missing-descriptor') {
+      expect(() => packPreviewFixture(fixture.trees)).toThrow('requires exactly one own supported subagent descriptor')
+    } else {
+      const packed = packPreviewFixture(fixture.trees)
+      expect(restore(packed.files[`home/sessions/project/example/${sessionFormatLogFilename(currentVersion)}`]).events)
+        .toEqual(mode === 'current-child' ? [{ type: 'subagent/catalog', seq: 0, time: 1,
+          data: { version: 0, childId: 'child', childCreatedAt: 2, mode: 'one-shot' } }] : [])
+    }
+    expect(readFileSync(parent)).toEqual(before)
   })
 
   it('uses the highest generation and leaves an already-current image byte-identical', () => {

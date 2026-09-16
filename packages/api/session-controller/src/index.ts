@@ -1,6 +1,7 @@
 /** Session Remote owner: cold reads, explicit Agent commands, and live control state. */
 
 import { hostname } from 'node:os'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { errorChain } from '@deepseek-ai/dsh-llm'
@@ -8,7 +9,7 @@ import type {} from '@deepseek-ai/dsh-client-file-upload'
 import { canOpenNativePath, nativeFileManager, openNativePath, revealNativePath } from '@deepseek-ai/dsh-native-command'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
-import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
+import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
   ApiSessionAgentController,
@@ -51,6 +52,9 @@ import type {
   SessionSearchValue,
   SessionSelectModelRequest,
   SessionSelectModelValue,
+  SessionProjectionsRequest,
+  SessionProjectionsValue,
+  SessionProjectionValues,
   SessionUpdateQueueRequest,
   SessionUpdateQueueValue,
 } from './types.ts'
@@ -149,6 +153,13 @@ export class SessionController extends TypertRemoteService {
     ctx.on('session/disposed', (session) => {
       ctx.emit('api-session/removed', session.id)
     })
+    const publishAgentAvailability = ({ agent }: { agent: Agent }): undefined => {
+      if (ctx.sessions.get(agent.id) === agent.session) {
+        ctx.emit('api-session/added', this.listState.summaryFor(agent.session))
+      }
+    }
+    ctx.on('agent/created', publishAgentAvailability)
+    ctx.on('agent/disposed', publishAgentAvailability)
     ctx.on('agent/status', ({ agent, status }) => {
       ctx.emit('api-session/status', agent.id, status === 'running')
     })
@@ -400,6 +411,36 @@ export class SessionController extends TypertRemoteService {
   @Remote({ mode: 'stream' })
   follow(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame> {
     return this.history.follow(request, signal)
+  }
+
+  /**
+   * Read all registered projections without activating an Agent.
+   * @param request - Session whose current values are required.
+   * @param signal - cancellation for the Session observation.
+   * @returns complete baseline, or null when the Session does not exist.
+   */
+  @Remote('projections')
+  async projections(request: SessionProjectionsRequest, signal: AbortSignal): Promise<SessionProjectionsValue> {
+    const { sessionId } = request
+    if (sessionId.length === 0) {
+      throw new RemoteError('gateway/bad-request', 'sessionId must not be empty', {})
+    }
+    try {
+      using observation = await this.ctx.sessionQuery.observeSession(sessionId, { signal })
+      const projections = observation.projections
+      if (projections === undefined) {
+        throw new RemoteError('session/projections-unavailable', 'Session projections are unavailable', {})
+      }
+      return { asOfSeq: projections.asOfSeq, values: projections.values as SessionProjectionValues }
+    } catch (error: unknown) {
+      if (error instanceof SessionQueryError && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') return null
+      if (signal.aborted
+        || (error instanceof SessionQueryError && error.code === 'SESSION_QUERY_ABORTED')) {
+        throw new RemoteError('gateway/cancelled', 'Session projection read was cancelled', {}, { cause: error })
+      }
+      if (error instanceof RemoteError) throw error
+      throw new RemoteError('gateway/internal', 'Session projection read failed', {}, { cause: error })
+    }
   }
 
   /**

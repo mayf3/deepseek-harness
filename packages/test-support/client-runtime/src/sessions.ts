@@ -197,7 +197,7 @@ export class TestSessions implements ISessions {
 
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
-    method: 'create' | 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
+    method: 'create' | 'open' | 'openSubagent' | 'refreshProjections'
       | 'clear' | 'refresh' | 'search' | 'fork'
     args: unknown[]
   }[] = []
@@ -216,7 +216,7 @@ export class TestSessions implements ISessions {
   constructor(private readonly stabilize: Stabilizer, private readonly rootCtx: Context) {
     this.list = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'ready',
-      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+      projectionsBySession: {}, jobsBySession: {}, currentAddress: undefined,
     })
   }
 
@@ -464,20 +464,22 @@ export class TestSessions implements ISessions {
     })
   }
 
-  /** Resolve the current fixture's retained catalog address. */
+  /** Resolve a retained or loaded-catalog address without selecting the fixture. */
   subagentAddress(id: SessionId): SubagentAddress | undefined {
-    const address = this.list.getSnapshot().currentAddress
-    return address?.childSessionId === id ? address : undefined
+    const { currentAddress, projectionsBySession } = this.list.getSnapshot()
+    if (currentAddress?.childSessionId === id) return currentAddress
+    for (const [parentId, catalog] of Object.entries(projectionsBySession)) {
+      const child = catalog.values.subagentCatalog?.find(entry => entry.id === id)
+      if (child !== undefined) {
+        return { parentSessionId: parentId as SessionId, childSessionId: id, mode: child.mode }
+      }
+    }
+    return undefined
   }
 
-  /** Record catalog consumption; fixture callers drive snapshots explicitly. */
-  setSubagentCatalogOpen(parentSessionId: SessionId, open: boolean): void {
-    this.calls.push({ method: 'setSubagentCatalogOpen', args: [parentSessionId, open] })
-  }
-
-  /** Record a catalog refresh; fixture callers drive snapshots explicitly. */
-  refreshSubagents(parentSessionId: SessionId): Promise<void> {
-    this.calls.push({ method: 'refreshSubagents', args: [parentSessionId] })
+  /** Record a projection refresh; fixture callers drive snapshots explicitly. */
+  refreshProjections(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'refreshProjections', args: [sessionId] })
     return Promise.resolve()
   }
 

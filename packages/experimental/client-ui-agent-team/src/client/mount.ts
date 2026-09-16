@@ -53,8 +53,11 @@ function registerUi(ctx: ClientContext): void {
     async openTeammate(sessionId: SessionId, member: TeamRosterMember): Promise<void> {
       if (member.role !== 'teammate') return
       const parentSessionId = leadSessionId(sessionId)
-      await sessions.refreshSubagents(parentSessionId)
+      await sessions.refreshProjections(parentSessionId)
       if (sessions.list.getSnapshot().current !== sessionId) return
+      const catalog = sessions.list.getSnapshot().projectionsBySession[parentSessionId]
+      const child = catalog?.values.subagentCatalog?.find(entry => entry.id === member.id)
+      if (child === undefined) return
       sessions.openSubagent({
         parentSessionId,
         childSessionId: member.id,

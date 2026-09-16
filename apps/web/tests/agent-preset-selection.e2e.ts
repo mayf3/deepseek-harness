@@ -34,6 +34,9 @@ const MENU_EXPECTED = join(SNAPSHOT_DIR, 'menu.expected.md')
 const HEADER_EXPECTED = join(SNAPSHOT_DIR, 'header.expected.md')
 const MODE = webSnapshotMode()
 const SEED_ID = 'agent-preset-selection-web-e2e'
+const SEED_TIME = 1784974100000
+const SEEDED_CHILD_ID = sessionId('agent-preset-selection-child')
+const SEEDED_CHILD_CREATED_AT = 1784974100100
 /** A project skill only a preset that mounts `skill-filesystem` can discover. */
 const SKILL_NAME = 'preset-catalog-demo'
 /** The preset whose rows resolve and then refuse to start. */
@@ -87,13 +90,12 @@ async function seedWorkspaceSkill(workspaceCwd: string): Promise<void> {
  * @returns a tokenized session log ending on a closed turn.
  */
 function seedLog(): string {
-  const time = 1784974100000
   const at = (index: number, event: Record<string, unknown>): string =>
-    JSON.stringify({ ...event, seq: index, time: time + index })
+    JSON.stringify({ ...event, seq: index, time: SEED_TIME + index })
   return [
     JSON.stringify({
       type: 'session', version: SESSION_FORMAT_VERSION, id: '{{sessionId}}',
-      createdAt: time, cwd: '{{cwd}}/workspace', isSeeded: false, delegationDepth: 0,
+      createdAt: SEED_TIME, cwd: '{{cwd}}/workspace', isSeeded: false, delegationDepth: 0,
     }),
     at(0, { type: 'turn/start', data: { turn: 1, trigger: { kind: 'message', source: { kind: 'user', rpcId: 'seed' } } } }),
     at(1, { type: 'step/start', data: { turn: 1, step: 1 } }),
@@ -114,7 +116,17 @@ function seedLog(): string {
     }),
     at(4, { type: 'session/title', data: { title: 'Seeded turn', messageSeqs: [3], source: { kind: 'fallback' } } }),
     at(5, { type: 'step/end', data: { turn: 1, step: 1 } }),
-    at(6, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } }),
+    at(6, {
+      type: 'subagent/catalog',
+      data: {
+        version: 0,
+        childId: SEEDED_CHILD_ID,
+        childCreatedAt: SEEDED_CHILD_CREATED_AT,
+        mode: 'one-shot',
+        label: 'header order probe',
+      },
+    }),
+    at(7, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } }),
   ].join('\n')
 }
 
@@ -125,13 +137,11 @@ function seedLog(): string {
  * @param parentId - the seeded session whose header the browser opens.
  */
 async function seedSubagent(scaffold: WebScaffold, parentId: SessionId): Promise<void> {
-  const childId = sessionId('agent-preset-selection-child')
-  const createdAt = 1784974100100
   const header: SessionHeader = {
     version: SESSION_FORMAT_VERSION,
-    id: childId,
+    id: SEEDED_CHILD_ID,
     isSeeded: false,
-    createdAt,
+    createdAt: SEEDED_CHILD_CREATED_AT,
     cwd: scaffold.workspaceCwd,
     parentSession: parentId,
     origin: 'subagent',
@@ -143,13 +153,13 @@ async function seedSubagent(scaffold: WebScaffold, parentId: SessionId): Promise
     {
       type: 'turn/start',
       seq: 0,
-      time: createdAt,
+      time: SEEDED_CHILD_CREATED_AT,
       data: { turn: 1, trigger: { kind: 'message', source: { kind: 'user' } } },
     },
     {
       type: 'user/message',
       seq: 1,
-      time: createdAt + 1,
+      time: SEEDED_CHILD_CREATED_AT + 1,
       data: createUserMessage({
         content: [{ type: 'text', text: 'Check the session-header action order.' }],
         source: { kind: 'user' },
@@ -159,7 +169,7 @@ async function seedSubagent(scaffold: WebScaffold, parentId: SessionId): Promise
     {
       type: 'subagent/descriptor',
       seq: 2,
-      time: createdAt + 2,
+      time: SEEDED_CHILD_CREATED_AT + 2,
       data: snapshotSubagentDescriptor({
         mode: 'one-shot', provider: 'spawn', label: 'header order probe',
       }),
@@ -167,7 +177,7 @@ async function seedSubagent(scaffold: WebScaffold, parentId: SessionId): Promise
     {
       type: 'turn/end',
       seq: 3,
-      time: createdAt + 3,
+      time: SEEDED_CHILD_CREATED_AT + 3,
       data: { turn: 1, reason: { kind: 'completed' } },
     },
   ] as SessionEvent[])

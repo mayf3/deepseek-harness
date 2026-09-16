@@ -9,7 +9,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { SubagentListEntry } from '@deepseek-ai/dsh-subagent'
+import type { SubagentCatalogEntry } from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
@@ -47,12 +47,15 @@ class GatedAdapter extends LlmAdapter {
 const testToolSignal = new AbortController().signal
 
 const roots: string[] = []
-afterEach(() => {
+const contexts: Context[] = []
+afterEach(async () => {
+  for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
 async function setupWith(adapter: MockAdapter | GatedAdapter) {
   const ctx = new Context()
+  contexts.push(ctx)
   await mountAgentLoopTestDependencies(ctx)
   const root = mkdtempSync(join(tmpdir(), 'dsh-tool-list-agents-'))
   roots.push(root)
@@ -126,7 +129,7 @@ describe('dsh-tool-subagent-control/list-agents', () => {
     expect(text(result)).toBe('(no subagents)')
   })
 
-  it('renders children and diagnostics in array order with registry-derived statuses', async () => {
+  it('renders direct children in array order with registry statuses', async () => {
     const { ctx, parent } = await setup([textResponse('done')])
     const started = await ctx.subagents.startContinuable({
       provider: 'spawn',
@@ -138,43 +141,36 @@ describe('dsh-tool-subagent-control/list-agents', () => {
     // Pin the render deterministically past the service: the tool is a thin
     // adapter, so its fixed text forms are what this test pins. Status comes
     // from the live Agent registry, stubbed per candidate id.
-    const entries: SubagentListEntry[] = [
+    const entries: SubagentCatalogEntry[] = [
       {
-        kind: 'child',
         id: SessionId('one-shot-child'),
+        createdAt: 1,
         label: 'finished once',
         mode: 'one-shot',
-        activity: 'inactive',
-        hasChildren: false,
       },
       {
-        kind: 'child',
         id: started.childId,
+        createdAt: 2,
         label: 'real child',
         mode: 'continuable',
-        activity: 'inactive',
-        hasChildren: false,
       },
       {
-        kind: 'child',
         id: SessionId('running-child'),
+        createdAt: 3,
         label: 'still working',
         mode: 'continuable',
-        activity: 'running',
-        hasChildren: true,
       },
       {
-        kind: 'child',
         id: SessionId('waiting-child'),
+        createdAt: 4,
         label: 'waiting on descendants',
         mode: 'continuable',
-        activity: 'running',
-        hasChildren: true,
       },
-      { kind: 'diagnostic', id: SessionId('broken-child'), reason: 'corrupt' },
     ]
     ctx.subagents.listChildren = () => Promise.resolve(entries)
-    const agents = new Map<string, { status: 'running' | 'idle' }>([
+    const agents = new Map<string, {
+      status: 'running' | 'idle'
+    }>([
       ['running-child', { status: 'running' }],
       ['waiting-child', { status: 'idle' }],
     ])
@@ -186,12 +182,11 @@ describe('dsh-tool-subagent-control/list-agents', () => {
     expect(text(result)).toBe(
       `${started.childId} [ready] — real child\n`
       + 'running-child [running] — still working\n'
-      + 'waiting-child [idle] — waiting on descendants\n'
-      + 'broken-child [diagnostic: corrupt]',
+      + 'waiting-child [idle] — waiting on descendants',
     )
   })
 
-  it('resolves omitted scope to children and forwards the tool cancellation signal', async () => {
+  it('resolves omitted scope to children and passes the parent id and cancellation signal', async () => {
     const { ctx, parent } = await setup([])
     const signal = new AbortController().signal
     const listChildren = vi.spyOn(ctx.subagents, 'listChildren').mockResolvedValue([])
@@ -247,6 +242,7 @@ describe('dsh-tool-subagent-control/list-agents', () => {
 
   it('unregisters with its plugin fiber (HMR safety)', async () => {
     const ctx = new Context()
+    contexts.push(ctx)
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
     await ctx.plugin(SubagentRuntime)

@@ -13,9 +13,6 @@ import type {
 import type {} from '@deepseek-ai/dsh-schedule/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
-import {
-  indexSubagentDescendants, type SubagentDescendantSummary,
-} from './subagent-lineage.ts'
 
 /** Group key for Sessions outside every Workspace. */
 export const UNGROUPED_KEY = ''
@@ -48,7 +45,7 @@ export interface SessionNode {
   /** A Session-scoped UI consumer is awaiting this user. */
   pendingInteraction?: SessionPendingInteractionStatus
   running: boolean
-  /** Running descendants connected through uninterrupted subagent-origin lineage. */
+  /** Running direct children in the loaded subagent catalog. */
   runningSubagentCount: number
   /** Finished running while not selected and not yet opened (the green "done" reminder dot). */
   completed: boolean
@@ -87,7 +84,7 @@ export interface SearchResultNode {
   /** A Session-scoped UI consumer is awaiting this user. */
   pendingInteraction?: SessionPendingInteractionStatus
   running: boolean
-  /** Running descendants connected through uninterrupted subagent-origin lineage. */
+  /** Running direct children in the loaded subagent catalog. */
   runningSubagentCount: number
   /** Finished running while not selected and not yet opened (the green "done" reminder dot). */
   completed: boolean
@@ -308,7 +305,7 @@ function visiblePendingKind(kind: string | undefined): SessionPendingInteraction
 
 function sessionNode(
   s: SessionSummary,
-  descendants: ReadonlyMap<SessionId, SubagentDescendantSummary>,
+  list: SessionListState,
   pendingInteractions: SessionPendingInteractions,
 ): SessionNode {
   const pendingInteraction = visiblePendingKind(pendingInteractions.get(s.id)?.kind)
@@ -317,7 +314,10 @@ function sessionNode(
     title: sessionTitle(s),
     blank: s.blank,
     running: s.running,
-    runningSubagentCount: descendants.get(s.id)?.runningCount ?? 0,
+    runningSubagentCount: list.projectionsBySession[s.id]?.values.subagentCatalog?.reduce(
+      (count, child) => count + (list.byId[child.id]?.running === true ? 1 : 0),
+      0,
+    ) ?? 0,
     completed: s.completed === true,
     hasActiveSchedule: hasActiveSchedule(s),
     updatedAt: s.updatedAt,
@@ -349,7 +349,6 @@ export function deriveGroups(
 ): GroupNode[] {
   const archived = new Set(archivedSessionIds)
   const expandedGroups = new Set(view.expandedGroups)
-  const descendants = indexSubagentDescendants(list.byId)
   const currentGroup = list.current === undefined
     ? undefined
     : owningGroupKey(workspaces, list.current)
@@ -366,7 +365,7 @@ export function deriveGroups(
       expanded,
       containsCurrent: g.key === currentGroup,
       sessions: expanded
-        ? g.sessions.map(session => sessionNode(session, descendants, pendingInteractions))
+        ? g.sessions.map(session => sessionNode(session, list, pendingInteractions))
         : [],
     })
   }
@@ -402,9 +401,7 @@ export function deriveFlat(
   sessionIds: readonly SessionId[],
   pendingInteractions: SessionPendingInteractions,
 ): SessionNode[] {
-  const descendants = indexSubagentDescendants(list.byId)
-  return sessionIds
-    .map(id => sessionNode(list.byId[id] as SessionSummary, descendants, pendingInteractions))
+  return sessionIds.map(id => sessionNode(list.byId[id] as SessionSummary, list, pendingInteractions))
 }
 
 /**
@@ -432,7 +429,6 @@ export function deriveSearchResults(
   const q = query.trim().toLowerCase()
   if (q === '') return { items: [], hasMore: false }
   const archived = new Set(archivedSessionIds)
-  const descendants = indexSubagentDescendants(list.byId)
 
   const workspaceBySession = new Map<SessionId, string>()
   for (const workspace of workspaces) {
@@ -486,7 +482,10 @@ export function deriveSearchResults(
         title: sessionTitle(summary),
         workspace: labelOf(summary),
         running: summary.running,
-        runningSubagentCount: descendants.get(summary.id)?.runningCount ?? 0,
+        runningSubagentCount: list.projectionsBySession[summary.id]?.values.subagentCatalog?.reduce(
+          (count, child) => count + (list.byId[child.id]?.running === true ? 1 : 0),
+          0,
+        ) ?? 0,
         ...(pendingInteraction === undefined
           ? {}
           : { pendingInteraction }),

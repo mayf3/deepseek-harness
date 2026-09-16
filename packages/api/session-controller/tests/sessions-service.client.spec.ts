@@ -62,12 +62,12 @@ type FeedRow = {
   origin?: 'subagent'
   running?: boolean
   blank?: boolean
-  projections?: Record<string, unknown>
+  projections?: import('../src/types.ts').SessionProjectionValues
 }
 
 async function feedList(b: Bench, rows: FeedRow[]): Promise<void> {
   b.mock.remote.session.list.mockResolvedValue(ok({
-    items: rows.map(r => ({
+    items: rows.map(r => ({ agentAvailable: true,
       sessionId: sid(r.id), updatedAt: 1, running: r.running ?? false, blank: r.blank ?? false,
       ...(r.cwd !== undefined ? { cwd: r.cwd } : {}),
       ...(r.parentId !== undefined ? { parentSessionId: sid(r.parentId) } : {}),
@@ -76,7 +76,7 @@ async function feedList(b: Bench, rows: FeedRow[]): Promise<void> {
         ? {}
         : { projections: { asOfSeq: 0, values: r.projections } }),
     })),
-  }) as never)
+  }))
   await b.svc.refresh()
   await Promise.resolve() // manager notifier flush
 }
@@ -116,7 +116,7 @@ describe('list store projection', () => {
   it('reflects live increments (host stream via manager) into the store', async ({ bench }) => {
     const b = bench()
     await feedList(b, [{ id: 's1' }])
-    b.svc.handleSessionAdded({
+    b.svc.handleSessionAdded({ agentAvailable: true,
       sessionId: sid('s2'), updatedAt: 2, running: false, blank: true,
     })
     await Promise.resolve()
@@ -149,6 +149,23 @@ describe('search', () => {
 })
 
 describe('scope tree', () => {
+  it('opens a conversation from follow projections without a second projection request', async ({ bench }) => {
+    const b = bench()
+    b.mock.stream(FOLLOW, followScript(ok({
+      records: [], hasMore: false,
+      projections: { asOfSeq: 0, values: { subagentCatalog: [{
+        id: sid('child'), createdAt: 1, mode: 'one-shot',
+      }] } },
+    })))
+    await feedList(b, [{ id: 's1' }])
+    b.svc.open(sid('s1'))
+    await vi.waitFor(() => {
+      expect(b.svc.list.getSnapshot().projectionsBySession[sid('s1')]?.values.subagentCatalog)
+        .toEqual([{ id: sid('child'), createdAt: 1, mode: 'one-shot' }])
+    })
+    expect(b.mock.remote.session.projections).not.toHaveBeenCalled()
+  })
+
   it('publishes transient Assistant chunks and the named durable v2 settlement through one event source', async ({ bench }) => {
     const b = bench()
     await feedList(b, [{ id: 's1' }])
@@ -544,7 +561,7 @@ describe('Agent scope disposal lifecycle', () => {
     const b = bench()
     const readiness = b.ctx.plugin(() => undefined)
     await readiness
-    b.svc.handleSessionAdded({
+    b.svc.handleSessionAdded({ agentAvailable: true,
       sessionId: sid('live'), updatedAt: 1, running: false, blank: true,
     })
     await Promise.resolve()
@@ -834,72 +851,60 @@ describe('binding and stage lifecycle', () => {
 describe('catalog-addressed navigation', () => {
   it('uses catalog labels for a listed addressed route', async ({ bench }) => {
     const b = bench()
-    b.mock.remote.subagents.list.mockImplementation((payload) => {
-      const parentSessionId = payload
-      if (parentSessionId === sid('root')) {
-        return Promise.resolve(ok({
-          entries: [{
-            kind: 'child', id: sid('child'), mode: 'continuable', label: 'Child',
-            activity: 'inactive', hasChildren: true,
-          }] as never[],
-          parentAvailable: true,
-        }))
+    b.mock.remote.session.projections.mockImplementation((payload) => {
+      const { sessionId } = payload as { sessionId: SessionId }
+      if (sessionId === sid('root')) {
+        return Promise.resolve(ok({ asOfSeq: 0, values: { subagentCatalog: [{ createdAt: 1,
+          id: sid('child'), mode: 'continuable', label: 'Child',
+        }] } }))
       }
-      if (parentSessionId === sid('child')) {
-        return Promise.resolve(ok({
-          entries: [{
-            kind: 'child', id: sid('grandchild'), mode: 'continuable', label: 'Grandchild',
-            activity: 'inactive', hasChildren: false,
-          }] as never[],
-          parentAvailable: false,
-        }))
+      if (sessionId === sid('child')) {
+        return Promise.resolve(ok({ asOfSeq: 0, values: { subagentCatalog: [{ createdAt: 1,
+          id: sid('grandchild'), mode: 'continuable', label: 'Grandchild',
+        }] } }))
       }
-      return Promise.resolve(ok({ entries: [], parentAvailable: false }))
+      return Promise.resolve(ok({ asOfSeq: 0, values: { subagentCatalog: [] } }))
     })
     await feedList(b, [
       { id: 'root' },
       { id: 'child', cwd: '/summary-child', parentId: 'root', origin: 'subagent' },
       { id: 'grandchild', cwd: '/summary-grandchild', parentId: 'child', origin: 'subagent' },
     ])
-    await b.svc.refreshSubagents(sid('root'))
-    await b.svc.refreshSubagents(sid('child'))
+    await b.svc.refreshProjections(sid('root'))
+    await b.svc.refreshProjections(sid('child'))
     b.svc.openSubagent({
-      parentSessionId: sid('child'), childSessionId: sid('grandchild'), mode: 'continuable',
+      parentSessionId: sid('child'),
+      childSessionId: sid('grandchild'),
+      mode: 'continuable',
     })
 
     expect(b.svc.list.getSnapshot().byId[sid('child')]?.displayTitle).toBe('Child')
     expect(b.svc.list.getSnapshot().byId[sid('grandchild')]?.displayTitle).toBe('Grandchild')
   })
 
-  it('projects a directly opened descendant route without retaining ancestor scopes or addresses', async ({ bench }) => {
+  it('resolves catalog addresses for never-selected ancestors without opening their scopes', async ({ bench }) => {
     const b = bench()
-    b.mock.remote.subagents.list.mockImplementation((payload) => {
-      const parentSessionId = payload
-      if (parentSessionId === sid('root')) {
-        return Promise.resolve(ok({
-          entries: [{
-            kind: 'child', id: sid('child'), mode: 'continuable', label: 'Child',
-            activity: 'inactive', hasChildren: true,
-          }] as never[],
-          parentAvailable: true,
-        }))
+    b.mock.remote.session.projections.mockImplementation((payload) => {
+      const { sessionId } = payload as { sessionId: SessionId }
+      if (sessionId === sid('root')) {
+        return Promise.resolve(ok({ asOfSeq: 0, values: { subagentCatalog: [{ createdAt: 1,
+          id: sid('child'), mode: 'continuable', label: 'Child',
+        }] } }))
       }
-      if (parentSessionId === sid('child')) {
-        return Promise.resolve(ok({
-          entries: [{
-            kind: 'child', id: sid('grandchild'), mode: 'continuable', label: 'Grandchild',
-            activity: 'inactive', hasChildren: false,
-          }] as never[],
-          parentAvailable: false,
-        }))
+      if (sessionId === sid('child')) {
+        return Promise.resolve(ok({ asOfSeq: 0, values: { subagentCatalog: [{ createdAt: 1,
+          id: sid('grandchild'), mode: 'continuable', label: 'Grandchild',
+        }] } }))
       }
-      return Promise.resolve(ok({ entries: [], parentAvailable: false }))
+      return Promise.resolve(ok({ asOfSeq: 0, values: { subagentCatalog: [] } }))
     })
     await feedList(b, [{ id: 'root' }])
-    await b.svc.refreshSubagents(sid('root'))
-    await b.svc.refreshSubagents(sid('child'))
+    await b.svc.refreshProjections(sid('root'))
+    await b.svc.refreshProjections(sid('child'))
     b.svc.openSubagent({
-      parentSessionId: sid('child'), childSessionId: sid('grandchild'), mode: 'continuable',
+      parentSessionId: sid('child'),
+      childSessionId: sid('grandchild'),
+      mode: 'continuable',
     })
 
     const list = b.svc.list.getSnapshot()
@@ -907,12 +912,20 @@ describe('catalog-addressed navigation', () => {
     expect(list.byId[sid('child')]).toMatchObject({ parentId: sid('root'), origin: 'subagent' })
     expect(list.byId[sid('grandchild')]).toMatchObject({ parentId: sid('child'), origin: 'subagent' })
     expect(b.svc.binding(sid('child'))).toBeUndefined()
-    expect(b.svc.subagentAddress(sid('child'))).toBeUndefined()
+    expect(b.svc.subagentAddress(sid('child'))).toEqual({
+      parentSessionId: sid('root'),
+      childSessionId: sid('child'),
+      mode: 'continuable',
+    })
+    expect(b.svc.binding(sid('child'))).toBeUndefined()
+    expect(b.svc.list.getSnapshot().currentAddress?.childSessionId).toBe(sid('grandchild'))
 
     b.svc.open(sid('child'))
     expect(b.svc.list.getSnapshot().current).toBe(sid('child'))
     expect(b.svc.subagentAddress(sid('child'))).toEqual({
-      parentSessionId: sid('root'), childSessionId: sid('child'), mode: 'continuable',
+      parentSessionId: sid('root'),
+      childSessionId: sid('child'),
+      mode: 'continuable',
     })
   })
 })
@@ -1040,7 +1053,7 @@ describe('scope lifecycle rides the list mirror (entity parity: no client-side p
     const b = bench()
     await feedList(b, [])
     expect(b.svc.scope(sid('s-new'))).toBeUndefined() // not in view: no scope, no exceptions
-    b.svc.handleSessionAdded({
+    b.svc.handleSessionAdded({ agentAvailable: true,
       sessionId: sid('s-new'), updatedAt: 2, running: false, blank: true, cwd: '/w/a',
     })
     await Promise.resolve()
@@ -1100,7 +1113,7 @@ describe('blank mirror', () => {
   it('takes session-added blank=true as the hidden birth and list blank as reconnect authority', async ({ bench }) => {
     const b = bench()
     await feedList(b, [])
-    b.svc.handleSessionAdded({
+    b.svc.handleSessionAdded({ agentAvailable: true,
       sessionId: sid('s-new'), updatedAt: 2, running: false, blank: true, cwd: '/w/a',
     })
     await Promise.resolve()

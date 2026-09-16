@@ -184,16 +184,13 @@ function navigableMembers(
   phases: readonly WorkflowRunPhaseData[],
   parentId: SessionId,
 ): readonly SessionId[] {
-  const ordinary = new Set(sessions.ids)
+  const catalog = sessions.projectionsBySession[parentId]
   const result: SessionId[] = []
   for (const phase of phases) {
     for (const member of phase.members) {
-      const summary = sessions.byId[member.childId]
+      const child = catalog?.values.subagentCatalog?.find(entry => entry.id === member.childId)
       if (member.status === 'running'
-        && ordinary.has(member.childId)
-        && summary?.origin === 'subagent'
-        && summary.parentId === parentId
-        && summary.running) {
+        && child !== undefined && sessions.byId[child.id]?.running === true) {
         result.push(member.childId)
       }
     }
