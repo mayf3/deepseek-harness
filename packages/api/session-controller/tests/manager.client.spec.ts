@@ -61,6 +61,28 @@ describe('SessionManager instances', () => {
     expect(session.getSnapshot().running).toBe(true) // list preceded instantiation
   })
 
+  it('initializes blankness from metadata published before the Session and list exist', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    const published = Promise.withResolvers<undefined>()
+    const stopObserving = manager.subscribe(() => { published.resolve(undefined) })
+    try {
+      manager.handleControlFrame({ type: 'projection', sessionId: S1,
+        key: 'sessionListMetadata', value: { blank: false, lastPromptAt: 1200 }, seq: 8 })
+      manager.handleControlFrame({ type: 'projection', sessionId: S2,
+        key: 'sessionListMetadata', value: { blank: true, lastPromptAt: null }, seq: 2 })
+      // The initial notification must finish while neither Session is resident.
+      await published.promise
+
+      expect(manager.getListSnapshot().items).toEqual([])
+      expect(manager.get(S1).getSnapshot()).toMatchObject({ blank: false, running: false })
+      expect(manager.get(S2).getSnapshot()).toMatchObject({ blank: true, running: false })
+      expect(manager.get('fk-unobserved' as SessionId).getSnapshot().blank).toBe(true)
+    } finally {
+      stopObserving()
+      await manager.dispose()
+    }
+  })
+
 })
 
 describe('list lifecycle', () => {

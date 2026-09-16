@@ -279,6 +279,7 @@ export class SessionManager {
   /**
    * Lazy build: return the existing instance or construct one (no auto-open —
    * open is triggered by the container's select callback).
+   * New instances reconcile retained metadata before returning.
    * @param sessionId - the session to get.
    * @returns the resident instance.
    */
@@ -302,6 +303,9 @@ export class SessionManager {
           // durable history, even though child rows do not carry `blank`.
           session.handleBlank(false)
           session.handleRunning(child.activity === 'running')
+        } else {
+          // Retained metadata may have notified before this Session existed.
+          session.handleBlank(true)
         }
       }
     }

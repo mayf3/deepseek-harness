@@ -120,7 +120,7 @@ Client 本地交互状态也继续留在本地：loading 和 error 状态、打�
 
 ### 领域应用
 
-- **Title 与 list metadata。** Cached projection hints 可以渲染已有 title，并判断 blankness 或 recency。Hints 缺失时这些事实保持未知；listing 期间只有有界小日志策略可以解析它们。Client 使用当前 metadata projection 对账列表行：非空白事实会将 Session 排除在空白复用之外，较晚的 prompt 时间用于最近活动排序。过期列表响应不能覆盖较新的 history 或 control projection。
+- **Title 与 list metadata。** Cached projection hints 可以渲染已有 title，并判断 blankness 或 recency。Hints 缺失时这些事实保持未知；listing 期间只有有界小日志策略可以解析它们。Client 使用当前 metadata projection 对账列表行：非空白事实会将 Session 排除在空白复用之外，较晚的 prompt 时间用于最近活动排序。Projection store 的生命周期长于惰性创建的 Client Session 实例，因此实例化时即使尚无列表行，也会读取已保留的元数据。过期列表响应不能覆盖较新的 history 或 control projection。
 - **Model selection。** `model/selection` 记录完整 provider、model 和可选 reasoning effort。`modelSelection` 区分上一请求使用的 route，以及等待 request header 消费的较晚 selection。
 - **Agent preset。** Projection 从不可变 Session metadata 初始化，并随 preset-selection event 推进。对于现有 Session，缺失或 `null` 值不会替换成部署默认值。
 - **Subagent identity。** `subagent` unit 仍是唯一 descriptor interpreter。Listing 从共享 corpus 获得 candidate，并通过 live state、projection cache 或 observation 解析值，不自行扫描 event。
