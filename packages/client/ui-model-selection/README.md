@@ -35,6 +35,9 @@ Models stay grouped by provider. The composer menu shows model and effort names 
 
 When the Host reports that no adapter serves the session's route, this plugin raises a composer block and the input goes inert with its own copy; recovering clears it without a reload. A `null` before the first load or after one failed never blocks, and catalog membership never blocks either — a route serving a model it does not advertise is missing from the groups yet usable.
 
+When another writer owns the Session, model-selection failures tell the user to quit other running DSH instances and retry.
+
+
 -----
 
 <a id="understand-the-implementation"></a>

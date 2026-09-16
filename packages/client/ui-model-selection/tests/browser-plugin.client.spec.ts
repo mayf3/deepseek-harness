@@ -14,6 +14,7 @@ import { createScope } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ModelSelection, ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { CommandContribution, PopupSelectSpec, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
@@ -74,6 +75,7 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
   // Whether the Host reports an adapter for the current route; the composer
   // block follows this, never catalog membership.
   let routable = true
+  let selectionFailure: RemoteError<'session/agent-busy'> | undefined
   const sessionRemote = {
     modelCatalog: () => {
       calls.models += 1
@@ -89,6 +91,7 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
     },
     selectModel: (payload: { sessionId: SessionId; provider: string; model: string; reasoningEffort?: string }) => {
       calls.select += 1
+      if (selectionFailure !== undefined) return Promise.resolve({ ok: false as const, error: selectionFailure })
       selected = {
         provider: payload.provider,
         model: payload.model,
@@ -173,6 +176,9 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
     },
     seat: () => seats.get('conversation.input.model')!,
     hostCurrent: () => selected,
+    rejectSelection: () => {
+      selectionFailure = new RemoteError('session/agent-busy', 'writer held', { reason: 'session-already-owned' })
+    },
     setHostCurrent: (selection: ModelSelection) => { defaultSelection = selection },
     setProjected: (id: SessionId, value: ModelSelectionProjection) => { projections.get(id)?.set(value) },
     address: (id: SessionId) => { addressed.add(id) },
@@ -184,6 +190,18 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
 const projection = (id: string) => ({ sessionId: sid(id) })
 
 describe('ui-model-selection dual entry', () => {
+  it('carries writer contention to the model seat and localizes the command failure', async () => {
+    const b = await bench()
+    b.mint('owned')
+    const input = projection('owned')
+    const options = await b.popup().options(input, new AbortController().signal)
+    b.rejectSelection()
+    await expect(b.popup().onSelect(options[0]!, input)).rejects.toThrow(zh['error.sessionInUse'])
+    expect(b.ctx.modelDirectories.directoryFor(sid('owned')).store.getSnapshot()).toMatchObject({
+      status: 'error', sessionInUse: true,
+    })
+  })
+
   it('registers the /model contribution and the composer model seat', async () => {
     const b = await bench()
     expect(b.contribution().name).toBe('model')

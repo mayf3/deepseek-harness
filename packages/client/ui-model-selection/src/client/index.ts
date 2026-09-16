@@ -164,7 +164,12 @@ export function apply(ctx: ClientContext): void {
           if (selection === undefined) {
             throw new Error('this provider\'s catalog failed to load — pick a model from a loaded group')
           }
-          await directory.select(selection)
+          try {
+            await directory.select(selection)
+          } catch (error: unknown) {
+            if (directory.store.getSnapshot().sessionInUse === true) throw new Error(t('error.sessionInUse'))
+            throw error
+          }
         },
       },
     }), 'ui-model-selection: /model contribution')

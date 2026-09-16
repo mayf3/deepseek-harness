@@ -33,6 +33,8 @@ export interface ModelDirectoryState {
   status: 'idle' | 'loading' | 'ready' | 'selecting' | 'error'
   /** Whole-request or selection failure text; null when none. */
   error: string | null
+  /** Whether the selection failed because another writer owns the Session. */
+  sessionInUse?: boolean
 }
 
 /** One session's shared directory controller; disposed with the session scope. */
@@ -88,7 +90,7 @@ export class ModelDirectory {
   async select(selection: ModelSelection): Promise<void> {
     this.assertAvailable()
     const generation = ++this.generation
-    this.store.update((s) => { s.status = 'selecting'; s.error = null })
+    this.store.update((s) => { s.status = 'selecting'; s.error = null; s.sessionInUse = false })
     const result = await this.sessions.selectModel({
       sessionId: this.sessionId,
       provider: selection.provider,
@@ -102,7 +104,12 @@ export class ModelDirectory {
       return
     }
     if (!result.ok) {
-      this.store.update((s) => { s.status = 'error'; s.error = `${result.error.code}: ${result.error.message}` })
+      this.store.update((s) => {
+        s.status = 'error'
+        s.error = `${result.error.code}: ${result.error.message}`
+        s.sessionInUse = result.error.code === 'session/agent-busy'
+          && result.error.details.reason === 'session-already-owned'
+      })
       throw new Error(`session.selectModel failed: ${result.error.code}: ${result.error.message}`)
     }
     this.store.update((s) => { s.status = 'ready'; s.error = null })
@@ -145,6 +152,7 @@ export class ModelDirectory {
           this.store.update((state) => {
             state.status = 'error'
             state.error = catalog.error
+            state.sessionInUse = false
           })
         }
         return

@@ -62,6 +62,8 @@ Disabled Send and Stop buttons suppress their tooltips, including a Stop button 
 
 File chips and editable skill references share a whole-reference hover background and follow the composer's line height and text baseline. The first click delegates preview opening to the registered reference source immediately, including the first click of a double-click sequence. Subsequent clicks retain native text selection; an existing noncollapsed selection suppresses pointer preview activation. Previewing does not change the draft, its clipboard projection, or submission.
 
+When another writer owns the Session, the send-error toast asks the user to quit other running DSH instances and retry.
+
 <a id="temporary-composer-entries"></a>
 ## Temporary composer entries
 

@@ -283,7 +283,12 @@ export function ModelSelect(
     const message = directory.getSnapshot().error
     if (message !== null) {
       toastSeq.current += 1
-      setToast({ seq: toastSeq.current, text: t('error.action', { message }) })
+      setToast({
+        seq: toastSeq.current,
+        text: directory.getSnapshot().sessionInUse === true
+          ? t('error.sessionInUse')
+          : t('error.action', { message }),
+      })
     }
   }
 
