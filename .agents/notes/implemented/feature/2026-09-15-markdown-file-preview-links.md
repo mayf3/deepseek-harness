@@ -14,12 +14,34 @@ Settled Assistant Markdown passes explicit local link destinations to the Chat f
 
 The existing [Sidebar navigation](../architecture/2026-09-05-sidebar-tab-types-and-navigation.md) owns Session addressing, tab reuse, and preview selection. The Host file service retains access checks and missing-file errors. Inline-code produced-file matching remains independent. External URLs retain their protocol allowlist; queries, fragment-only destinations, unsupported fragments, malformed escapes, and invalid line ranges remain inert.
 
+The Web file-reference prompt asks for a link on every existing-file mention outside commands, configuration expressions, and code blocks, including repeats and tables. Names default to a basename or clear alias with minimal disambiguating parents. Precise labels use `filename:24` or `filename:24–30`, while destinations keep the parser's `#L24` or `#L24-L30` syntax. The renderer preserves model-authored text; it does not rewrite labels to enforce the prompt.
+
 ## Alternatives considered
 
-- Allow relative browser anchors: those navigate the application URL instead of requesting Session file content.
-- Require a produced-file entry: this excludes ordinary read-only explanations.
-- Add a new preview service: Chat already supplies the required opener and line parameter.
+**Relative browser anchors.** They navigate the application URL instead of requesting Session file content.
+
+**Require a produced-file entry.** This excludes ordinary read-only explanations.
+
+**Add a preview service.** Chat already supplies the required opener and line parameter.
+
+**Filename-first or display-only prompt variants.** The three-variant development comparison favored A for occurrence-level link coverage and the user preferred its output. B produced more answers with no missing links, so these observations do not establish a universal winner. Visible `#L` suffixes were rejected in favor of the familiar colon notation; retaining anchor syntax in destinations preserves existing navigation.
 
 ## Consequences
 
-Source references need no new Session event or model prompt. Links become active when the message settles. A range selects its first line; the preview does not highlight a multi-line selection. Unit tests cover destination parsing and callback wiring; the keyless `markdown-file-links` Web snapshot covers file content, line navigation, and tab reuse through the shipped composition.
+Source references need no new Session event. The static Web guidance is logged through the existing system-message mechanism. Links become active when the message settles. A range selects its first line; the preview does not highlight a multi-line selection. Unit tests cover destination parsing and callback wiring; the keyless `markdown-file-links` Web snapshot covers file content, colon labels, line navigation, and tab reuse through the shipped composition. Web prompt sidecars pin the assembled guidance.
+
+## Prompt evaluation
+
+The development comparison ran four read-only tasks three times per variant. E counts eligible existing-file mentions, L valid links, M missing links, and I invalid links; E = L + M + I. A timed out once without a final answer; that attempt remains a failure and is excluded only from content denominators. These descriptive measurements are neither a weighted quality score nor a holdout evaluation.
+
+| Metric | A | B | C |
+| --- | ---: | ---: | ---: |
+| Completed first answers / attempts | 11/12 | 12/12 | 12/12 |
+| Valid-link coverage L/E | 453/476 (95.2%) | 539/585 (92.1%) | 467/592 (78.9%) |
+| Missing / invalid links | 23 / 0 | 45 / 1 | 124 / 1 |
+| Answers with M = I = 0 | 2/11 | 5/12 | 4/12 |
+| Unnecessary directory labels / named labels | 149/373 | 200/471 | 166/403 |
+| Full-path labels / named labels | 44/373 | 89/471 | 118/403 |
+| Balanced 11-answer coverage | 95.2% | 93.0% | 79.0% |
+
+The colon revision is a separate development run. Its first three answers contained 28 mixed `:start-Lend` suffixes, retained as failures. Explicitly forbidding both `#` and `L` in the suffix yielded 51 structurally valid links in one repeated explanation, but no colon labels, three missing links, and 27 unnecessary directory qualifiers. A subsequent user-accepted demo produced 18 structurally valid links, including three colon labels and no mixed suffix. Neither run establishes reliable compliance or exhaustive factual accuracy. Authentication failures, the timeout, and all first answers remain in the local experiment archive; PR #4255 carries the extended 69-row metrics and task-rubric tables.

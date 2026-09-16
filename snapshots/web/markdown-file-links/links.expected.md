@@ -1,9 +1,9 @@
 - paragraph:
-  - button "Source at line 24"
+  - button "src/example.txt:24–30"
   - text: ·
-  - button "Absolute at line 30"
+  - button "src/example.txt:30"
   - text: ·
-  - button "Other example"
+  - button "other/example.txt"
   - text: ·
   - button "Missing file"
   - text: ·

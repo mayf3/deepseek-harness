@@ -33,7 +33,7 @@ describe('web e2e: Markdown file links', () => {
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.locator('[role="treeitem"]').first().click()
     await page.locator('[role="treeitem"]').nth(1).click()
-    await page.getByRole('button', { name: 'Source at line 24', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'src/example.txt:24–30', exact: true }).waitFor()
     await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
   }, 120_000)
 
@@ -44,7 +44,7 @@ describe('web e2e: Markdown file links', () => {
 
   it('previews relative and absolute links at the requested line without duplicate tabs', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-markdown-file-links'))
-    const source = page.getByRole('button', { name: 'Source at line 24', exact: true })
+    const source = page.getByRole('button', { name: 'src/example.txt:24–30', exact: true })
     const prose = await source.locator('..').ariaSnapshot()
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'links.expected.md'), prose, MODE)
     const beforeUrl = page.url()
@@ -53,7 +53,7 @@ describe('web e2e: Markdown file links', () => {
     await expect.poll(() => column.locator('[data-textpreview-target="24"]').textContent()).toBe('source line 24\n')
     await expect.poll(() => column.locator('[data-textpreview-path]').textContent())
       .toBe(join(scaffold.workspaceCwd, 'src/example.txt'))
-    const absolute = page.getByRole('button', { name: 'Absolute at line 30', exact: true })
+    const absolute = page.getByRole('button', { name: 'src/example.txt:30', exact: true })
     await absolute.focus()
     await absolute.press('Enter')
     await expect.poll(() => column.locator('[data-textpreview-target="30"]').textContent()).toBe('source line 30\n')
@@ -64,7 +64,7 @@ describe('web e2e: Markdown file links', () => {
     const artifacts = fileURLToPath(new URL('../../../.artifacts', import.meta.url))
     await mkdir(artifacts, { recursive: true })
     await page.screenshot({ path: join(artifacts, 'markdown-file-links.png'), animations: 'disabled' })
-    await page.getByRole('button', { name: 'Other example', exact: true }).click()
+    await page.getByRole('button', { name: 'other/example.txt', exact: true }).click()
     await expect.poll(() => column.locator('[data-textpreview-path]').textContent())
       .toBe(join(scaffold.workspaceCwd, 'other/example.txt'))
     await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('other file\n')

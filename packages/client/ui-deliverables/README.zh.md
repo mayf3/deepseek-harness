@@ -50,7 +50,7 @@ Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于声明交�
 <details>
 <summary>实现细节——点击展开</summary>
 
-Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，要求模型点名成功创建或修改的主要文件，并把这些文件以及正文中提到的其他本轮变更文件写成 Markdown 行内代码。浏览器半部把组合 `ProducedFiles` 与显式交付的包装组件注册进 chat 视图的 `conversation.chat.turnTail` 洞。`deliverablesDefinition` 根据 `write`、`edit` 和有修改作用的 `str_replace_editor` 命令中经过校验的原始参数，把每个轮次成功的第一方修改调用折叠进 `DeliverablesTurnData`。读取、删除、不受支持的工具、格式错误的调用和失败结果不贡献任何条目。新的修改工具必须增加显式 Client contribution 才能加入列表。本包还提供 chat 视图按收尾消息查询的 `chatFileMentions` 服务；把插件组合出去会同时移除两个表面，视图的空链以零成本留下。
+Node 半部注册[模型体验](#model-experience)所述的静态 `ui:deliverable-file-references` 系统提示词段。显式 Markdown 链接使用共享的 [Markdown 渲染器](../ui-primitives/README.zh.md)；行内代码匹配仍仅限产出或交付文件。浏览器半部把组合 `ProducedFiles` 与显式交付的包装组件注册进 chat 视图的 `conversation.chat.turnTail` 洞。`deliverablesDefinition` 根据 `write`、`edit` 和有修改作用的 `str_replace_editor` 命令中经过校验的原始参数，把每个轮次成功的第一方修改调用折叠进 `DeliverablesTurnData`。读取、删除、不受支持的工具、格式错误的调用和失败结果不贡献任何条目。新的修改工具必须增加显式 Client contribution 才能加入列表。本包还提供 chat 视图按收尾消息查询的 `chatFileMentions` 服务；把插件组合出去会同时移除两个表面，视图的空链以零成本留下。
 
 原生打开使用经过认证的 POST，通过当前查看的会话、事件序号和原始文件索引定位声明。Host 读取声明及当前查看的会话 header，将其中的 cwd 传给 `workspaceFiles.stat`；未记录 cwd 时使用部署的工作目录。它与侧栏预览使用同一组合文件系统，无需启动 Agent，子会话也适用。原生操作要求规范化的进程路径能从 Host 路径映射回同一进程路径。提供方没有这种映射时返回 422，卡片提示使用侧栏预览；Host 上存在同名文件并不足够。同一份桌面可用性配置同时约束信息查询和实际执行。编辑会影响后续打开的内容；删除后返回错误。不创建文件内容副本或附件。插件释放时取消并等待进行中的原生打开请求。
 
@@ -77,11 +77,11 @@ Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，�
 
 #### 模型看到的内容
 
-一段固定提示词要求模型在最终回复中点名成功创建或修改的主要文件，并将这些文件以及正文中提到的其他本轮变更文件写成采用精确路径或唯一 basename 的 Markdown 行内代码，例如 `out/report.html`。
+提示词要求模型在成功创建或修改文件后点名主要产出，并链接命令、配置表达式和代码块以外的每次现有文件提及，包括重复提及和表格。标签默认使用文件名或清楚的别名，仅添加足以区分文件的父目录。精确引用显示为 `filename:24` 或 `filename:24–30`；目标保留完整相对路径或绝对路径，以及 `#L24` 或 `#L24-L30` 锚点。显示后缀不含 `#` 或 `L`。
 
 #### Token 影响
 
-加载本包时增加一段固定提示词。[present 工具](../../fs/tool-present/README.zh.md#model-experience)拥有交付 schema 和结果文本。
+加载本包时增加一段包含产出提醒和文件引用指导的固定提示词。[present 工具](../../fs/tool-present/README.zh.md#model-experience)拥有交付 schema 和结果文本。
 
 #### KV Cache 影响
 
@@ -95,7 +95,7 @@ Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，�
 这些限制界定了当前产出物词表。它们是当前包约束，不是通用文件链接对比或任务积压。
 
 - **提及匹配只认精确路径或唯一 basename**——后缀式提及保持惰性；等真实的收尾消息形态产生需求后再放宽匹配规则。
-- **终端创建的文件需要显式交付**——调用 `present` 声明后才会显示交付卡片和可点击引用。
+- **终端创建的文件需要显式交付**——调用 `present` 声明后才会显示交付卡片和行内代码引用；显式 Markdown 链接可以直接引用现有文件。
 - **声明不保存文件内容**：重新打开或转移 Session 后，源文件仍需能被当前查看的 Session 文件系统访问。文件缺失、为目录或最终路径为符号链接时返回 404。
 - **目录没有打开目标**——标签项在右侧 Sidebar 的文本预览中打开文件，该预览仅支持文件，不提供原生文件夹打开动作。
 

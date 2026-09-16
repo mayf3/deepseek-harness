@@ -50,7 +50,7 @@ The closing prose links produced or delivered paths: an inline-code token resolv
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Node half registers the static `ui:deliverable-file-references` system-prompt section asking the model to mention primary files from successful creation or modification calls and to write those and any other changed-file references as Markdown inline code. The browser half registers a wrapper around `ProducedFiles` and explicit deliveries into the chat view's `conversation.chat.turnTail` hole. `deliverablesDefinition` folds each Turn's successful first-party mutation calls into `DeliverablesTurnData` from the validated raw arguments of `write`, `edit`, and mutating `str_replace_editor` commands. Reads, deletes, unsupported tools, malformed calls, and failed results contribute nothing. A new mutation tool needs an explicit Client contribution before it joins the list. The package also provides the `chatFileMentions` service the chat view consults per closing message; composing the plugin out removes both surfaces and leaves the view's empty chain at zero cost.
+The Node half registers the static `ui:deliverable-file-references` system-prompt section described under [Model Experience](#model-experience). Explicit Markdown links use the shared [Markdown renderer](../ui-primitives/README.md); inline-code matching remains limited to produced or delivered files. The browser half registers a wrapper around `ProducedFiles` and explicit deliveries into the chat view's `conversation.chat.turnTail` hole. `deliverablesDefinition` folds each Turn's successful first-party mutation calls into `DeliverablesTurnData` from the validated raw arguments of `write`, `edit`, and mutating `str_replace_editor` commands. Reads, deletes, unsupported tools, malformed calls, and failed results contribute nothing. A new mutation tool needs an explicit Client contribution before it joins the list. The package also provides the `chatFileMentions` service the chat view consults per closing message; composing the plugin out removes both surfaces and leaves the view's empty chain at zero cost.
 
 Native opening uses an authenticated POST addressed by the viewed Session, event sequence, and original file index. The Host reads the viewed Session header with the declaration and passes its cwd, or the deployment workspace root when absent, to `workspaceFiles.stat`. This uses the same composed filesystem as Sidebar previews and does not activate an Agent, including for child Sessions. Native actions require the canonical process path to map from a Host path back to that same process path. Providers without this mapping return 422 and the card directs the user to Sidebar preview; a same-named Host file is insufficient. The same configured desktop availability governs metadata and execution. Edits affect subsequent opens; deletion returns an error. No file-content copy or attachment is created. Plugin disposal cancels and awaits pending native-open requests.
 
@@ -77,11 +77,11 @@ Read these pages when the deliverables surface is not enough. They move from the
 
 #### What the model sees
 
-One fixed paragraph instructs the model to name primary files from successful creation or modification calls in its final response and to format those and any other changed-file references as exact-path or unique-basename Markdown inline code, such as `out/report.html`.
+The guidance asks the model to name primary outputs after successful creation or modification and link every existing-file mention outside commands, configuration expressions, and code blocks, including repeats and tables. Labels default to filenames or clear aliases, with only enough parent directories to distinguish files. Precise references display `filename:24` or `filename:24–30`; their destinations retain full relative or absolute paths with `#L24` or `#L24-L30` anchors. The display suffix contains neither `#` nor `L`.
 
 #### Token effect
 
-One fixed prompt paragraph whenever this package is loaded. The [present tool](../../fs/tool-present/README.md#model-experience) owns the delivery schema and result text.
+One fixed paragraph containing an output reminder and file-reference guidance whenever this package is loaded. The [present tool](../../fs/tool-present/README.md#model-experience) owns the delivery schema and result text.
 
 #### KV Cache effect
 
@@ -95,7 +95,7 @@ The section is static at first-party order 9000 for the lifetime of the package 
 These limits define the current deliverables vocabulary. They are current package constraints, not a general file-linking comparison or a task backlog.
 
 - **Mention matching is exact path or unique basename only** — a suffix mention stays inert; widening the matcher is deferred until a real closing-message shape needs it.
-- **Terminal-created files require explicit delivery** — call `present` to make them available as delivery cards and clickable references.
+- **Terminal-created files require explicit delivery** — call `present` to make them available as delivery cards and inline-code references; explicit Markdown links can reference existing files directly.
 - **Declarations do not preserve file contents** — reopening or transferring a Session requires source files accessible through the viewed Session’s filesystem. Missing files, directories, and final symbolic links return 404.
 - **Directories have no destination** — chips open files in the right Sidebar's text preview, which shows files only; the former native folder handoff is gone rather than replaced.
 
