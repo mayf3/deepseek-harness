@@ -25,13 +25,13 @@ Two planes, and the choice is not about how "agent-related" something feels — 
 
 A preset is a directory holding one `agent.cordis.yml`, optionally beside a `preset.yml` carrying display metadata — `name` and `description` (and, for shipped presets, a roster `order`). Write the metadata too: a preset without it shows up in every picker as its bare directory name.
 
-Locally authored presets live one directory per preset under `${DSH_HOME:-$HOME/.dsh}/.agent-presets/`, and the shipped set sits beside the deployment's own config. Use those when the user asks where to look. A deployment can configure other roots; read its preset configuration before choosing a filesystem path. The Remote roster identifies presets by id and does not expose filesystem paths.
+Locally authored presets live one directory per preset under `${DSH_HOME:-$HOME/.dsh}/.agent-presets/`, and the shipped set sits beside the deployment's own config. Use those when the user asks where to look. For deployment overrides, read `${DSH_HOME:-$HOME/.dsh}/profiles/<profile>/cordis.patch.yml`, `${DSH_HOME:-$HOME/.dsh}/cordis.patch.yml`, and any launch `--patch` files for the `agent-presets` row's `roots` and `includeUserRoot`. Obtain the active profile and extra patch paths from the user when they are not in the task context; do not guess a different profile.
 
 ## Authoring a preset
 
-Use the existing `agentPresets` Remote operations to list, read, and copy presets when an authenticated client is available. Discover their current signatures through `cordis_inspect_list` and the Host Service provider's `listService` query. Inspection documents APIs; it does not invoke them.
+Use shell and file tools to locate the installed `@deepseek-ai/dsh-agent-presets` package under the active profile's `node_modules` or the deployment installation. Its `presets/<id>/` directory contains each shipped preset. If those files are unavailable, ask the user to copy the preset through the Web preset picker and provide the copied directory; runtime API inspection does not execute Remote methods.
 
-A filesystem copy of the complete source directory is also supported. Locate the shipped preset by reading the deployment's `agent-presets` package; copy it into a new directory under the configured writable preset root. Preserve its skills and assets, set `name` and `description` in `preset.yml`, and remove the copied roster `order`. Never overwrite an existing preset id or the installed source.
+Copy the complete source directory, including skills and assets, into a new `${DSH_HOME:-$HOME/.dsh}/.agent-presets/<new-id>/` directory (or the explicitly configured writable root). Refuse an existing destination. Set `name` and `description` in `preset.yml` and remove the copied roster `order`. Never overwrite the installed source.
 
 Edit the copy's `agent.cordis.yml` with the normal file tools. Writes outside the workspace follow the active filesystem approval policy. For profile-wide capabilities, author a workspace bundle and install it with `plugin_manager`; load `cordis-plugin-development` for packaging guidance.
 
@@ -44,7 +44,7 @@ A preset row that publishes a service needs an `isolate` realm containing both t
   name: cordis:group
   group: true
   isolate:
-    workflows: true
+    workflowEngine: true
   config:
     - id: workflow-ptc
       name: '@deepseek-ai/dsh-workflow-ptc'
@@ -56,7 +56,7 @@ A preset row that publishes a service needs an `isolate` realm containing both t
 
 ## Verify a preset
 
-Read the roster to confirm discovery, then start a session with the new preset and inspect its visible tools. A healthy roster entry proves the file is discoverable; only composition verifies imports, configuration, service dependencies, and isolation. Report activation failures with their entry and diagnostic, correct the copied preset, and repeat the session check.
+Check the edited YAML and referenced local files with file tools. Ask the user to select the new preset in the Web picker and start a session; this authoring agent cannot invoke the preset Remote API or start a Web session through inspection. Once the user provides a running session or browser control, inspect the visible tools and any activation diagnostic. File validation alone does not verify imports, service dependencies, or isolation. Report which checks ran and leave activation unverified until that session check succeeds.
 
 ## Native product subagents
 

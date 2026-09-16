@@ -85,6 +85,14 @@ describe('Typert-backed Cordis catalog', () => {
     )
   })
 
+  it('includes referenced framework enums in the runtime declaration closure', () => {
+    const { projector, model } = projection()
+    const rendered = projector.renderRuntimeApi(model)
+    expect(rendered).toContain("name: 'FiberState'")
+    expect(rendered).toContain('enum FiberState')
+    expect(rendered).toContain('ACTIVE,')
+  })
+
   it('resolves each key to the declaration a caller meets, and drops keys no plugin provides', { timeout: 480_000 }, () => {
     const byKey = new Map(projection().model.services.map(service => [service.key, service]))
     // An interface-typed key is described by its Service Definition: that is where

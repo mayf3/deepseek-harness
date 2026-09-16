@@ -16,6 +16,10 @@ The model sees two read-only Cordis inspection tools. Generated-code define/run/
 
 Visual creation requests default to an installed Client plugin rendered in the current Web page unless the user names another destination. The development skill supplies a minimal package and effect-owned Client registration. Discovery ends when the required APIs are known; a working first version is installed before optional visual refinement. Verification uses the connected page where available. Browser authentication or operating-system setup is not a prerequisite for plugin installation, and a mock preview cannot establish an in-app result.
 
+Desktop supplies its bundled pnpm entry and Electron Node invocation through launcher-owned profile facts. Plugin Manager uses that invocation for installation, removal, and registry inspection, retaining the ordinary profile transaction and activation behavior. Its environment applies only to package subprocesses; ordinary Host subprocesses do not inherit the private Node launcher path. CLI profiles retain their configured PATH command.
+
+Historical Cordis sessions declare `retired-tools` coverage at their exact format version, including when it equals the current writer. They are immutable replay inputs; their tool call/result data is compared after persistence and their cards render without registering retired tools. This coverage does not count toward migration coverage. The retained runner write APIs remain for programmatic and browser consumers; removing them requires replacing those consumers together.
+
 ## Alternatives considered
 
 Generic entry CRUD and an MCP-specific management API duplicate operations expressible as bundle files plus existing installation and enablement. They are unnecessary for prompt-driven installation. Moving generated-code versioning into Plugin Manager retains two lifecycles without providing ordinary package persistence.

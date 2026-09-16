@@ -73,9 +73,9 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots'],
       apply(ctx) {
-        ctx.effect(() => ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+        ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
           name: 'conversation.composer.dock', id: 'my-decoration', order: 5,
-        }, Decoration)), 'my-decoration.slot');
+        }, Decoration));
       },
     };
   },

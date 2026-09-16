@@ -3,9 +3,10 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
-  captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedSession,
+  captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedSession, readPersistedEvents, parseSeedFixture, realizeSeedFixture,
   watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { expandOwningTurnProcess, newEnglishPage } from './support.ts'
@@ -38,6 +39,11 @@ describe.skipIf(MODE === 'record')('web e2e: historical Cordis cards', () => {
   })
 
   it('renders recorded definition source and lifecycle results without registering retired tools', async () => {
+    const persisted = await readPersistedEvents(scaffold, SessionId(SEED_ID))
+    const expected = parseSeedFixture(realizeSeedFixture(scaffold, await readFile(FIXTURE, 'utf8'), SEED_ID)).events
+    const tools = (events: typeof persisted) => events.filter(event => event.type === 'tool/call' || event.type === 'tool/result')
+      .map(event => ({ type: event.type, data: event.data }))
+    expect(tools(persisted)).toEqual(tools(expected))
     const names = scaffold.ctx.tools.schemas().map(tool => tool.name)
     expect(names).not.toEqual(expect.arrayContaining(['cordis_define']))
     const define = page.locator('[data-tool="cordis_define"]').first()
