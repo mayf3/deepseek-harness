@@ -18,7 +18,7 @@ An undeclared or empty input field displays the installed model input types, the
 
 **Independent model-row renderers.** Adapter-specific defaults and model discovery remain with their editors, but duplicate presentation creates avoidable visual drift. Shared rows keep those behaviors independent of field layout.
 
-**Keep the image-support selector.** Settings-file-only capability editing leaves custom vision models effectively text-only. A selector with an explicit Default option preserves visible pi-ai catalog inheritance; a two-state image switch would misrepresent inherited vision support as disabled. The requested checkbox interface instead exposes both input types directly, resolving inherited capabilities before enabling edits. Merely opening a row still preserves inheritance; restoring it after a checkbox edit requires removing the input field in settings or resetting the catalog override.
+**Keep the image-support selector.** Settings-file-only capability editing leaves custom vision models effectively text-only. A selector with an explicit Default option preserves visible pi-ai catalog inheritance; a two-state image switch would misrepresent inherited vision support as disabled. The checkbox interface exposes both input types directly, resolving inherited capabilities before enabling edits. Merely opening a row still preserves inheritance; restoring it after a checkbox edit requires removing the input field in settings or resetting the catalog override.
 
 **Allow no checked types.** DeepSeek rejects an empty list and pi-ai treats it as inheritance. Keeping a nonempty selection prevents the same gesture from meaning different things across adapters.
 

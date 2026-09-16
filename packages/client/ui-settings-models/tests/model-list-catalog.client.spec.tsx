@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Catalog reads preserve draft ownership and discard responses for a previous provider. */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ModelListEditor } from '../src/client/ModelListEditor.tsx'
 import type { ModelDiscoveryOutcome, ModelsOperations } from '../src/client/operations.ts'
@@ -80,4 +80,28 @@ it('inherits catalog inputs once an incomplete draft has a model id', async () =
   rerender(<ModelListEditor {...props} models={[{ id: 'vision' }]} />)
   expect(image.checked).toBe(true)
   expect(onChange).toHaveBeenCalledTimes(1)
+})
+
+it('restores inherited image input after a failed catalog read is retried manually', async () => {
+  const discover = vi.fn<ModelsOperations['discoverModels']>()
+    .mockResolvedValueOnce({ kind: 'refused', message: 'Catalog unavailable' })
+    .mockResolvedValueOnce({ kind: 'found', models: [{ id: 'vision', inputModalities: ['text', 'image'] }] })
+  const onChange = vi.fn()
+  render(<ModelListEditor
+    models={[{ id: 'vision' }]} onChange={onChange} catalogProvider="openai"
+    probe={{ settingsNs: 'llm-pi-ai', provider: 'openai' }} disabled={false} t={key => en[key]}
+    operations={operations(discover)}
+  />)
+  await screen.findByText('Catalog unavailable')
+  fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+  const image = screen.getByRole<HTMLInputElement>('checkbox', { name: en.modelInputImage })
+  expect(image.checked).toBe(false)
+
+  fireEvent.click(screen.getByRole('button', { name: en.fetchModels }))
+  const picker = await screen.findByRole('dialog', { name: en.fetchTitle })
+  fireEvent.click(within(picker).getByRole('button', { name: en.cancel }))
+  expect(image.checked).toBe(true)
+  expect(screen.queryByText('Catalog unavailable')).toBeNull()
+  expect(discover).toHaveBeenCalledTimes(2)
+  expect(onChange).not.toHaveBeenCalled()
 })

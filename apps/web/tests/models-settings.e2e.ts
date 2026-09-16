@@ -57,6 +57,18 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await scaffold?.close()
   })
 
+  it('rejects layout checks without an explicit viewport before resizing the page', async () => {
+    const context = await browser.newContext({ viewport: null })
+    try {
+      const unsized = await context.newPage()
+      await expect(assertModelInputLayout(unsized, unsized.locator('body')))
+        .rejects.toThrow('Model input layout checks require an explicit viewport')
+      expect(unsized.viewportSize()).toBeNull()
+    } finally {
+      await context.close()
+    }
+  })
+
   it('opens the add card over the dormant directory vocabulary', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-empty'))
     await page.getByRole('button', { name: '设置', exact: true }).click()

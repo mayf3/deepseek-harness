@@ -426,10 +426,6 @@
   line-height: 18px;
 }
 
-/* The rules use this stylesheet's token vocabulary —
-   `--dsw-alias-border-subtle`, `--dsw-alias-text-tertiary`, and
-   `--dsw-alias-text-primary` are undefined here and would resolve to their
-   light-mode literals. */
 .modelList {
   display: flex;
   flex-direction: column;
