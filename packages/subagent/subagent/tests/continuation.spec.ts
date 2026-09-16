@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -31,6 +32,13 @@ import {
   continuationManager,
   dropContinuationActivation,
 } from './continuation-internals.ts'
+
+/** Writable settings isolated to one test Context. */
+class MemorySettings extends SettingsProvider {
+  get writable(): boolean { return true }
+  protected load(): Promise<Record<string, unknown>> { return Promise.resolve({}) }
+  protected persist(_ns: SettingsNamespace, _section: Record<string, unknown>): Promise<void> { return Promise.resolve() }
+}
 
 type Script = ConstructorParameters<typeof MockAdapter>[0]
 
@@ -257,6 +265,55 @@ describe('continuable activation capacity', () => {
     try {
       await expect(ctx.plugin(SubagentRuntime, { maxActiveSubagents })).rejects.toThrow()
     } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('layers editable depth over composition and removes the section on disposal', async () => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(MemorySettings)
+      const fiber = await ctx.plugin(SubagentRuntime, { maxDepth: 4 })
+      expect(ctx.subagents.resolveMaxDepth()).toBe(4)
+      await ctx.settings.update('subagent', { maxDepth: 0 })
+      expect(ctx.subagents.resolveMaxDepth()).toBe(0)
+      expect(ctx.subagents.resolveMaxDepth(2)).toBe(2)
+      expect(ctx.subagents.resolveMaxDepth('provider-managed')).toBeUndefined()
+      await expect(ctx.settings.update('subagent', { maxDepth: -0 })).rejects.toThrow()
+      await expect(ctx.settings.update('subagent', { maxDepth: -1 })).rejects.toThrow()
+      await expect(ctx.settings.update('subagent', { maxDepth: 1.5 })).rejects.toThrow()
+      await expect(ctx.settings.update('subagent', { maxActiveSubagents: 0 })).rejects.toThrow()
+      expect(ctx.subagents.resolveMaxDepth()).toBe(0)
+      await ctx.settings.replace('subagent', {})
+      expect(ctx.subagents.resolveMaxDepth()).toBe(4)
+      await fiber.dispose()
+      expect(ctx.settings.describe().some(section => section.ns === 'subagent')).toBe(false)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('applies capacity edits to an existing root without stopping resident children', async () => {
+    const release = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter(Array.from({ length: 4 }, () => ({ chunks: textResponse('done'), gate: release.promise })))
+    const { ctx, parent } = await setupWith(adapter, { maxActiveSubagents: 1 })
+    parkParent(ctx, parent)
+    try {
+      await ctx.plugin(MemorySettings)
+      const first = await ctx.subagents.startContinuable(startSpec(parent))
+      await expect(ctx.subagents.startContinuable(startSpec(parent))).rejects.toMatchObject({ code: 'ACTIVATION_LIMIT_REACHED' })
+      await ctx.settings.update('subagent', { maxActiveSubagents: 2 })
+      const second = await ctx.subagents.startContinuable(startSpec(parent))
+      await ctx.settings.update('subagent', { maxActiveSubagents: 1 })
+      expect(ctx.agents.get(first.childId)).toBeDefined()
+      expect(ctx.agents.get(second.childId)).toBeDefined()
+      await expect(ctx.subagents.startContinuable(startSpec(parent))).rejects.toMatchObject({ code: 'ACTIVATION_LIMIT_REACHED' })
+      await ctx.settings.update('subagent', { maxActiveSubagents: 3 })
+      const third = await ctx.subagents.startContinuable(startSpec(parent))
+      release.resolve(undefined)
+      await Promise.all([first, second, third].map(child => waitNoActivation(ctx, child.childId)))
+    } finally {
+      release.resolve(undefined)
       await ctx.fiber.dispose()
     }
   })

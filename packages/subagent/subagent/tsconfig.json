@@ -76,6 +76,9 @@
     },
     {
       "path": "../../util/chunked-list"
+    },
+    {
+      "path": "../../settings/settings"
     }
   ]
 }

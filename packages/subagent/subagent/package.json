@@ -80,7 +80,8 @@
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
     "@deepseek-ai/dsh-user-approval": "workspace:^",
     "@deepseek-ai/dsh-util-time": "workspace:^",
-    "@deepseek-ai/dsh-permission-presets": "workspace:^"
+    "@deepseek-ai/dsh-permission-presets": "workspace:^",
+    "@deepseek-ai/dsh-settings": "workspace:^"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-agent-presets": {
@@ -112,6 +113,9 @@
     },
     "@deepseek-ai/dsh-user-approval": {
       "optional": true
+    },
+    "@deepseek-ai/dsh-settings": {
+      "optional": true
     }
   },
   "devDependencies": {
@@ -139,6 +143,7 @@
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
     "@deepseek-ai/dsh-user-approval": "workspace:^",
     "@deepseek-ai/dsh-util-time": "workspace:^",
-    "@deepseek-ai/dsh-permission-presets": "workspace:^"
+    "@deepseek-ai/dsh-permission-presets": "workspace:^",
+    "@deepseek-ai/dsh-settings": "workspace:^"
   }
 }
