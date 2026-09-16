@@ -723,8 +723,8 @@ describe('auditStartupEntries', () => {
 
       Plugins waiting for services (3):
         Plugin                 Missing services
-        web-runtime            webServer
         connection (required)  webRuntime
+        web-runtime            webServer
         unknown                unknown"
     `)
     expect(warn).not.toHaveBeenCalled()
@@ -760,6 +760,38 @@ describe('loadOverlayPatches', () => {
 })
 
 describe('boot', () => {
+  it('retains import errors and inactive-entry metadata after disposing the startup tree', async () => {
+    const dir = tmp()
+    const config = join(dir, 'cordis.yml')
+    writeFileSync(config, '- id: webserver\n  name: ./missing.mjs\n')
+    const failure = await boot(NAME, config).catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(StartupError)
+    const error = failure as StartupError
+    expect(error.entries).toEqual([{
+      id: 'webserver', module: './missing.mjs', required: true, fiberState: undefined,
+      outcome: { kind: 'failed', error: 'failed to import' },
+    }])
+    expect(error.startup?.configurationPath).toBe(config)
+    expect(error.startup?.messages.some(message => message.args.some(arg => arg instanceof Error && arg.message.includes('missing.mjs')))).toBe(true)
+  })
+
+  it('stops collecting startup diagnostics after a successful boot', async () => {
+    const dir = tmp()
+    const config = join(dir, 'cordis.yml')
+    writeFileSync(config, '[]\n')
+    let exporters = 0
+    const ctx = await boot(NAME, config, undefined, (host) => {
+      exporters = host.logger.exporters.size
+      host.logger.info('startup information')
+      host.logger.warn('startup warning')
+    })
+    try {
+      expect(ctx.logger.exporters.size).toBe(exporters - 1)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('boots a leaf config through the real Loader and settles the tree', async () => {
     const dir = tmp()
     writeFileSync(join(dir, 'noop.mjs'), 'export const name = "noop"\nexport function apply() {}\n')

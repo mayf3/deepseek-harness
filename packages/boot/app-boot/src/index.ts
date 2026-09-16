@@ -724,8 +724,38 @@ interface InactiveEntry {
     | { kind: 'pending'; missing: string[] }
 }
 
-/** Startup audit failure whose message is a complete CLI diagnostic; cause retains plugin errors. */
-export class StartupError extends Error {}
+/** Inactive plugin metadata without retaining its Context or Fiber. */
+interface StartupEntryDiagnostic {
+  id: string
+  module: string
+  required: boolean
+  fiberState: FiberState | undefined
+  outcome: InactiveEntry['outcome']
+}
+
+/** Startup warning or error arguments, including import errors with no Fiber. */
+interface StartupLogRecord {
+  ts: number
+  name: string
+  type: string
+  args: readonly unknown[]
+}
+
+/** Startup audit failure with a concise message and original diagnostic data. */
+export class StartupError extends Error {
+  /** Root configuration and startup logs, attached by boot after disposal. */
+  startup?: { configurationPath: string; messages: readonly StartupLogRecord[] }
+
+  /**
+   * @param message - concise terminal diagnostic.
+   * @param entries - inactive plugin metadata and original failure values.
+   */
+  constructor(message: string, readonly entries: readonly StartupEntryDiagnostic[]) {
+    super(message, {
+      cause: new AggregateError(entries.flatMap(({ outcome }) => outcome.kind === 'failed' ? [outcome.error] : []), 'Plugin activation failures'),
+    })
+  }
+}
 
 /**
  * Collect Loader activation failures and disabled-expression errors. Failed
@@ -798,6 +828,7 @@ function startupDiagnostic(binName: string, failures: readonly InactiveEntry[], 
   const lines = [`${binName}: startup failed: ${String(required.size)} required ${required.size === 1 ? 'plugin' : 'plugins'} did not activate`]
   const failed = failures.flatMap(({ entry, outcome }) => outcome.kind === 'failed' ? [{ entry, outcome }] : [])
   const pending = failures.flatMap(({ entry, outcome }) => outcome.kind === 'pending' ? [{ entry, outcome }] : [])
+  pending.sort((left, right) => Number(required.has(right.entry)) - Number(required.has(left.entry)))
   const label = (entry: Entry): string => `${entry.options.id}${required.has(entry) ? ' (required)' : ''}`
   if (failed.length > 0) {
     lines.push('', `Failed plugins (${String(failed.length)}):`)
@@ -841,9 +872,9 @@ export async function auditStartupEntries(
   const required = new Set(failures.filter(({ entry }) => entry === bootstrapIncludes.get(ctx)
     || requiredStartupEntryIds.has(entry.options.id)).map(({ entry }) => entry))
   if (required.size > 0) {
-    throw new StartupError(startupDiagnostic(binName, failures, required), {
-      cause: new AggregateError(failures.flatMap(({ outcome }) => outcome.kind === 'failed' ? [outcome.error] : []), 'Plugin activation failures'),
-    })
+    throw new StartupError(startupDiagnostic(binName, failures, required), failures.map(({ entry, outcome }) => ({
+      id: entry.options.id, module: entry.options.name, required: required.has(entry), fiberState: entry.fiber?.state, outcome,
+    })))
   }
   if (failures.length > 0) warn(activationDiagnostic(binName, failures))
 }
@@ -887,6 +918,13 @@ export async function boot(
   bareModuleBaseUrl?: string,
 ): Promise<Context> {
   const ctx = new Context()
+  const startupLogs: StartupLogRecord[] = []
+  const stopStartupLogs = ctx.logger.exporter({
+    levels: { default: 2 },
+    export: ({ ts, name, type, args }) => {
+      if (type === 'warn' || type === 'error') startupLogs.push({ ts, name, type, args })
+    },
+  })
   // Two failure labels: `prepare` runs before any config-tree entry mounts,
   // so its failure is host setup, not the plugin tree.
   let stage = 'host preparation failed'
@@ -916,7 +954,10 @@ export async function boot(
     // fiber.ts hardening) and a repeated call returns the settled single-shot
     // result, so this await cannot reject and replace `cause`.
     await ctx.fiber.dispose()
-    if (cause instanceof StartupError) throw cause
+    if (cause instanceof StartupError) {
+      cause.startup = { configurationPath: absoluteConfigPath, messages: startupLogs }
+      throw cause
+    }
     const detail = cause instanceof Error ? cause.message : String(cause)
     // A wrapper can carry an activation error whose original stack names the failed plugin.
     let deepest: unknown = cause
@@ -929,6 +970,8 @@ export async function boot(
       ? `\n${deepest.stack ?? deepest.message}\n${deepest.errors.map(formatActivationError).join('\n')}`
       : deepest instanceof Error && deepest !== cause ? `\n${deepest.stack ?? deepest.message}` : ''
     throw new Error(`${binName}: ${stage}: ${detail}${stack}`, { cause })
+  } finally {
+    await stopStartupLogs()
   }
 }
 

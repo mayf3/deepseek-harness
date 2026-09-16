@@ -9,7 +9,9 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { loadLayeredEnv, StartupError } from '@deepseek-ai/dsh-app-boot'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { parseDshArgs } from './args.ts'
+import { reportStartupFailure } from './startup-diagnostics.ts'
 
 // Both the source tree (apps/cli/src) and the bundled bin (apps/cli/lib) sit
 // one directory under apps/cli, so the checked-in manifest resolves with the
@@ -26,18 +28,25 @@ function readVersion(): string {
  * @returns a promise that settles when the selected command mode finishes.
  */
 export async function runCli(): Promise<void> {
-  const invocation = parseDshArgs(process.argv.slice(2), readVersion())
+  const version = readVersion()
+  const invocation = parseDshArgs(process.argv.slice(2), version)
 
   switch (invocation.mode) {
     case 'profile': {
       const { runProfile } = await import('./profile-boot.ts')
-      await runProfile({
-        environment: loadLayeredEnv('dsh'),
-        profile: invocation.profile,
-        fromDefaultProfile: invocation.fromDefaultProfile,
-        patchFiles: invocation.patches,
-        args: invocation.args,
-      })
+      try {
+        await runProfile({
+          environment: loadLayeredEnv('dsh'),
+          profile: invocation.profile,
+          fromDefaultProfile: invocation.fromDefaultProfile,
+          patchFiles: invocation.patches,
+          args: invocation.args,
+        })
+      } catch (error) {
+        if (!(error instanceof StartupError)) throw error
+        await reportStartupFailure(error, { home: resolveDshHome(), version, profile: invocation.profile })
+        process.exitCode = 1
+      }
       break
     }
     case 'plugin': {
@@ -62,11 +71,5 @@ export async function runCli(): Promise<void> {
 }
 
 if (import.meta.main) {
-  try {
-    await runCli()
-  } catch (error) {
-    if (!(error instanceof StartupError)) throw error
-    process.stderr.write(`${error.message}\n`)
-    process.exitCode = 1
-  }
+  await runCli()
 }
