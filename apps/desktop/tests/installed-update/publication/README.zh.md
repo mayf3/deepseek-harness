@@ -61,6 +61,8 @@ node --import tsx apps/desktop/scripts/publish-installed-update.ts publish-feed 
 
 人工请求的后续操作验证已匹配对象，不重写它们。`alreadyPublished: true` 表示核对已存在的目标 feed，不是一次新发布；发布时间使用原操作证据。非预期 feed 字节会使操作停止，包括尝试用版本 1 替换版本 2。崩溃可能留下 `publication.lock`；确认没有发布者运行并保留失败记录后，才由操作者移除这个准确的空目录。绝不为了绕过活跃发布者而删除锁。
 
+qualification COS 版本查询的总截止时间为 30 秒，对象读取与 PUT 的总截止时间为 15 分钟。到期会中止底层 HTTP 请求，并在释放操作锁前等待请求关闭；持续传输不会延长时限。
+
 <a id="dev-note"></a>
 
 ## 开发备注

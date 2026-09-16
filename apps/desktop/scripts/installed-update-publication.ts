@@ -201,10 +201,10 @@ export async function executeInstalledUpdatePublication(
     return join(record, 'result.json')
   } catch (error) {
     result.failure = 'operation stopped; inspect the retained stage and remote state before any further publication'
-    if (typeof error === 'object' && error !== null && '$metadata' in error && typeof error.$metadata === 'object' && error.$metadata !== null) {
-      const metadata = error.$metadata as { httpStatusCode?: unknown }
-      if (typeof metadata.httpStatusCode === 'number' && metadata.httpStatusCode >= 100 && metadata.httpStatusCode <= 599) {
-        result.httpStatus = metadata.httpStatusCode
+    if (typeof error === 'object' && error !== null && 'statusCode' in error) {
+      const statusCode = error.statusCode
+      if (typeof statusCode === 'number' && statusCode >= 100 && statusCode <= 599) {
+        result.httpStatus = statusCode
       }
     }
     throw new Error(`installed update: publication stopped; record: ${record ?? 'not allocated'}`)

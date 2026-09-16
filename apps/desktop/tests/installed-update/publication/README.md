@@ -61,6 +61,8 @@ Diagnose `403 AccessDenied` by the exact API: `GetBucketVersioning`, `GetObject`
 
 A manually requested later operation verifies matching objects without rewriting them. `alreadyPublished: true` means reconciliation of an existing desired feed, not a new publication; use the original operation's evidence for publication timing. Unexpected feed bytes stop the operation, including attempted replacement of version 2 with version 1. A crash can leave `publication.lock`; confirm no publisher remains and preserve failed records before an operator removes that exact empty directory. Never delete a lock to bypass an active publisher.
 
+Qualification COS version queries have a 30-second total deadline, and object reads and PUTs have a 15-minute total deadline. Expiration aborts the underlying HTTP requests and waits for closure before releasing the operation lock; ongoing transfer activity does not extend the budget.
+
 <a id="dev-note"></a>
 
 ## Dev Note

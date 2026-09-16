@@ -1,12 +1,19 @@
 /** Fixed test-COS transport; callers authorize writes separately from local planning. */
 import { createReadStream } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { GetBucketVersioningCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { Readable, Writable } from 'node:stream'
+import { cosOperation } from './cos-operation.ts'
+import { createDesktopCos, DESKTOP_COS_REGION } from './desktop-cos.ts'
 import { loadDesktopPackageEnvironment } from './desktop-package-environment.mjs'
 import type { InstalledUpdatePublicationStore, InstalledUpdateRemoteObject } from './installed-update-publication.ts'
 
 const BUCKET = 'bj-toc-download-test-1320056602'
 const ORIGIN = 'https://download-test.deepseek.com'
+
+/** COS reports a missing key through this error code; no other status means absence. */
+function isMissingObject(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'NoSuchKey'
+}
 
 async function hashStream(stream: AsyncIterable<Uint8Array>): Promise<InstalledUpdateRemoteObject> {
   const hash = createHash('sha512')
@@ -17,16 +24,20 @@ async function hashStream(stream: AsyncIterable<Uint8Array>): Promise<InstalledU
 
 /**
  * Create a fixed test transport from .env.windows, passing only test upload credentials to the SDK.
- * @returns Store and explicit disposal; no request is sent by construction and no signing process is launched.
+ * Version queries have a 30-second total deadline; object reads and PUTs have 15 minutes.
+ * Expiration aborts HTTP requests and waits for closure before releasing the publication operation.
+ * @returns Store whose writes are streamed and therefore cannot be repeated by the SDK.
  */
-export function createInstalledUpdateCos(): InstalledUpdatePublicationStore & { dispose(): void } {
+export function createInstalledUpdateCos(): InstalledUpdatePublicationStore {
   const environment = loadDesktopPackageEnvironment('win32')
   if (environment.DSH_DESKTOP_AUTO_UPDATE_ENV !== 'test' || environment.DOWNLOAD_TEST_ORIGIN !== ORIGIN
     || environment.DOWNLOAD_TEST_COS_BUCKET !== BUCKET || !environment.DOWNLOAD_TEST_COS_SECRET_ID?.trim()
     || !environment.DOWNLOAD_TEST_COS_SECRET_KEY?.trim()) throw new Error('installed update: complete test upload settings are required')
-  const client = new S3Client({ region: 'Auto', endpoint: 'https://cos.ap-beijing.myqcloud.com', maxAttempts: 1,
-    requestChecksumCalculation: 'WHEN_REQUIRED', responseChecksumValidation: 'WHEN_REQUIRED',
-    credentials: { accessKeyId: environment.DOWNLOAD_TEST_COS_SECRET_ID, secretAccessKey: environment.DOWNLOAD_TEST_COS_SECRET_KEY } })
+  const credentials = {
+    secretId: environment.DOWNLOAD_TEST_COS_SECRET_ID,
+    secretKey: environment.DOWNLOAD_TEST_COS_SECRET_KEY,
+  }
+  const client = () => createDesktopCos(credentials)
   const keyAllowed = (key: string): void => {
     if (!/^dsh-desk\/(?:bin|feeds)\/qualification\/[a-f0-9]{24}\/win-x64\/[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(key)) {
       throw new Error('installed update: COS key must stay in the Windows qualification namespace')
@@ -34,22 +45,27 @@ export function createInstalledUpdateCos(): InstalledUpdatePublicationStore & { 
   }
   return {
     async versioningDisabled() {
-      const response = await client.send(new GetBucketVersioningCommand({ Bucket: BUCKET }), { abortSignal: AbortSignal.timeout(30_000) })
-      return response.$metadata.httpStatusCode === 200 && response.Status === undefined
+      const cos = client()
+      const response = await cosOperation(cos, 30_000, () => cos.getBucketVersioning({ Bucket: BUCKET, Region: DESKTOP_COS_REGION }))
+      const status: 'Enabled' | 'Suspended' | undefined = response.VersioningConfiguration.Status
+      return response.statusCode === 200 && status === undefined
     },
     async read(key) {
       keyAllowed(key)
+      const hash = createHash('sha512')
+      let size = 0
+      // Output keeps the object out of memory and makes the SDK wait for the write to finish.
+      const output = new Writable({
+        write(bytes: Buffer, _encoding, done) { hash.update(bytes); size += bytes.length; done() },
+      })
       try {
-        const response = await client.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }), {
-          abortSignal: AbortSignal.timeout(900_000),
-        })
-        if (!response.Body) throw new Error('installed update: missing COS response body')
-        // This transport uses the Node S3 handler, whose body is an async-iterable stream.
-        return await hashStream(response.Body as AsyncIterable<Uint8Array>)
+        const cos = client()
+        await cosOperation(cos, 900_000, () => cos.getObject({ Bucket: BUCKET, Region: DESKTOP_COS_REGION, Key: key, Output: output }))
       } catch (error) {
-        if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'NoSuchKey') return null
+        if (isMissingObject(error)) return null
         throw error
-      }
+      } finally { output.destroy() }
+      return { sha512: hash.digest('base64'), size }
     },
     async publicRead(url) {
       const parsed = new URL(url)
@@ -78,21 +94,19 @@ export function createInstalledUpdateCos(): InstalledUpdatePublicationStore & { 
       if (size !== object.size || sha512.digest('base64') !== object.sha512) {
         throw new Error('installed update: upload input bytes changed')
       }
-      const body = 'path' in object.source ? createReadStream(object.source.path) : object.source.contents
-      const command = new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentLength: object.size,
-        ContentMD5: md5.digest('base64'), ContentType: key.endsWith('.yml') ? 'application/yaml' : 'application/octet-stream',
-        CacheControl: 'no-store' })
-      if (object.forbidOverwrite) command.middlewareStack.add(next => async (args) => {
-        // S3's serialize step supplies the HTTP request before this build middleware.
-        const request = args.request as { headers: Record<string, string> }
-        request.headers['x-cos-forbid-overwrite'] = 'true'
-        return next(args)
-      }, { step: 'build', name: 'qualificationForbidOverwrite' })
+      const headers: Record<string, string> = { 'Content-MD5': md5.digest('base64') }
+      if (object.forbidOverwrite) headers['x-cos-forbid-overwrite'] = 'true'
+      const body = 'path' in object.source
+        ? createReadStream(object.source.path)
+        : Readable.from([Buffer.from(object.source.contents)])
       try {
-        const response = await client.send(command, { abortSignal: AbortSignal.timeout(900_000) })
-        return response.$metadata.requestId === undefined ? {} : { requestId: response.$metadata.requestId }
-      } finally { if (typeof body !== 'string') body.destroy() }
+        const cos = client()
+        const response = await cosOperation(cos, 900_000, () => cos.putObject({
+          Bucket: BUCKET, Region: DESKTOP_COS_REGION, Key: key, Body: body,
+          ContentLength: object.size, ContentType: key.endsWith('.yml') ? 'application/yaml' : 'application/octet-stream',
+          CacheControl: 'no-store', Headers: headers }))
+        return response.RequestId === undefined ? {} : { requestId: response.RequestId }
+      } finally { body.destroy() }
     },
-    dispose() { client.destroy() },
   }
 }

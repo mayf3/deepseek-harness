@@ -26,7 +26,7 @@ class Store implements InstalledUpdatePublicationStore {
   }
   async put(key: string, object: Parameters<InstalledUpdatePublicationStore['put']>[1]) {
     this.writes.push({ key, immutable: object.forbidOverwrite })
-    if (this.failure === 'write') throw new Error('fixture-secret-must-not-be-recorded')
+    if (this.failure === 'write') throw Object.assign(new Error('fixture-secret-must-not-be-recorded'), { statusCode: 503 })
     if (object.forbidOverwrite && this.objects.has(key)) throw new Error('object exists')
     const bytes = 'path' in object.source ? await readFile(object.source.path) : Buffer.from(object.source.contents)
     expect(digest(bytes)).toEqual({ sha512: object.sha512, size: object.size })
@@ -154,6 +154,7 @@ describe('qualification publication sequencing', () => {
         const results = await Promise.all(paths.map(path => readFile(join(records, path, 'result.json'), 'utf8')))
         const record = results.find(value => (JSON.parse(value) as { success: unknown }).success === false)!
         expect(JSON.parse(record)).toMatchObject({ success: false })
+        if (failure === 'write') expect(JSON.parse(record)).toMatchObject({ httpStatus: 503 })
         expect(record).not.toContain('fixture-secret')
         expect(await readdir(join(manifest, '..'))).not.toContain('publication.lock')
       })

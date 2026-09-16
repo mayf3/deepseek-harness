@@ -2,8 +2,8 @@
 
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import { S3Client } from '@aws-sdk/client-s3'
 import type { DesktopPackageTargetName } from './package-target.ts'
+import { createDesktopCos } from './desktop-cos.ts'
 import { loadDesktopPackageEnvironment } from './desktop-package-environment.mjs'
 import { createDesktopUploadPlan } from './desktop-upload-plan.ts'
 import { uploadDesktopRelease } from './desktop-upload-run.ts'
@@ -34,22 +34,12 @@ async function main(): Promise<void> {
   const name = targetName(target)
   const environment = loadDesktopPackageEnvironment(name === 'win-x64' ? 'win32' : 'darwin')
   const plan = await createDesktopUploadPlan(name, { environment })
-  const client = new S3Client({
-    maxAttempts: 1,
-    region: 'Auto',
-    endpoint: 'https://cos.ap-beijing.myqcloud.com',
-    credentials: {
-      accessKeyId: requiredEnvironmentValue(environment, plan.secretIdEnvName),
-      secretAccessKey: requiredEnvironmentValue(environment, plan.secretKeyEnvName),
-    },
+  const cos = createDesktopCos({
+    secretId: requiredEnvironmentValue(environment, plan.secretIdEnvName),
+    secretKey: requiredEnvironmentValue(environment, plan.secretKeyEnvName),
   })
   process.stdout.write(`desktop upload: ${plan.target} ${plan.version} -> ${plan.publicUrl}\n`)
-  try {
-    await uploadDesktopRelease(plan, client, resolve(import.meta.dirname, '../.desktop-build/upload-records'))
-  }
-  finally {
-    client.destroy()
-  }
+  await uploadDesktopRelease(plan, cos, resolve(import.meta.dirname, '../.desktop-build/upload-records'))
 }
 
 if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) {

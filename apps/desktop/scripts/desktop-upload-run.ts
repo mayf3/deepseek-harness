@@ -3,12 +3,17 @@ import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { PutObjectCommand, type S3Client } from '@aws-sdk/client-s3'
+import { Readable } from 'node:stream'
+import type COS from 'cos-nodejs-sdk-v5'
 import type { DesktopUploadArtifact, DesktopUploadPlan } from './desktop-upload-plan.ts'
+import { DESKTOP_COS_REGION } from './desktop-cos.ts'
 import { recordPackagingEvent } from './packaging-run.mjs'
 
 const FAILURE_CODES = new Set(['AccessDenied', 'InternalError', 'NoSuchBucket', 'BadDigest', 'SignatureDoesNotMatch',
   'RequestTimeout', 'TimeoutError', 'AbortError', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ENOSPC', 'EACCES', 'EPERM', 'ENOENT'])
+
+/** Object keys fingerprinted into every upload record to bind evidence to this uploader. */
+const UPLOADER_SOURCES = ['desktop-upload-run.ts', 'upload-target.ts', 'desktop-upload-plan.ts', 'desktop-cos.ts']
 
 async function fingerprint(artifact: DesktopUploadArtifact) {
   const sha512 = createHash('sha512')
@@ -24,15 +29,12 @@ async function fingerprint(artifact: DesktopUploadArtifact) {
 }
 
 function receipt(value: unknown): object {
-  if (typeof value !== 'object' || value === null || !('$metadata' in value)) return {}
-  const metadata = value.$metadata
-  if (typeof metadata !== 'object' || metadata === null) return {}
+  if (typeof value !== 'object' || value === null) return {}
+  const response = value as { statusCode?: unknown; RequestId?: unknown }
   return {
-    ...('httpStatusCode' in metadata && typeof metadata.httpStatusCode === 'number'
-      ? { httpStatus: metadata.httpStatusCode } : {}),
-    ...('requestId' in metadata && typeof metadata.requestId === 'string' && /^[\w+/=.-]{1,256}$/u.test(metadata.requestId)
-      ? { requestId: metadata.requestId } : {}),
-    ...('attempts' in metadata && typeof metadata.attempts === 'number' ? { attempts: metadata.attempts } : {}),
+    ...(typeof response.statusCode === 'number' ? { httpStatus: response.statusCode } : {}),
+    ...(typeof response.RequestId === 'string' && /^[\w+/=.-]{1,256}$/u.test(response.RequestId)
+      ? { requestId: response.RequestId } : {}),
   }
 }
 
@@ -43,14 +45,25 @@ function failureReceipt(error: unknown): object {
   return { errorCode, ...receipt(error) }
 }
 
+function streamedBody(artifact: DesktopUploadArtifact): Readable {
+  return artifact.contents === undefined
+    ? createReadStream(artifact.path)
+    : Readable.from([Buffer.from(artifact.contents)])
+}
+
 /**
  * Upload an already validated release, flushing intent and response evidence around every PUT.
+ *
+ * Each object is sent as one streamed PUT with an explicit length and Content-MD5, which is also
+ * what keeps the COS SDK's internal retry path unreachable: it repeats a request only when the
+ * body is not a stream. This function never retries either, so every confirmed PUT is the only
+ * write for its key.
  * @param plan Validated release metadata; credential values must not be included.
- * @param client Caller-owned COS client configured with maxAttempts: 1.
+ * @param cos Caller-owned client from the Desktop COS factory in `desktop-cos.ts`.
  * @param recordsRoot Local retained evidence parent, outside disposable artifact directories.
  * @returns Fresh record directory after all PUTs succeed; errors retain partial evidence and stop later PUTs.
  */
-export async function uploadDesktopRelease(plan: DesktopUploadPlan, client: S3Client, recordsRoot: string): Promise<string> {
+export async function uploadDesktopRelease(plan: DesktopUploadPlan, cos: COS, recordsRoot: string): Promise<string> {
   await mkdir(recordsRoot, { recursive: true })
   const directory = await mkdtemp(join(recordsRoot, `${plan.environment}-${plan.target}-`))
   process.stdout.write(`desktop upload: record ${directory}\n`)
@@ -63,7 +76,6 @@ export async function uploadDesktopRelease(plan: DesktopUploadPlan, client: S3Cl
   try {
     await writeFile(join(directory, 'events.jsonl'), '', { flag: 'wx', mode: 0o600, flush: true })
     recordPackagingEvent(directory, { type: 'upload-start', environment: plan.environment, target: plan.target, version: plan.version })
-    if (await client.config.maxAttempts() !== 1) throw new Error('desktop upload: automatic retries must be disabled')
     const artifacts = []
     for (const artifact of plan.artifacts) {
       stage = 'hash-input'
@@ -71,7 +83,7 @@ export async function uploadDesktopRelease(plan: DesktopUploadPlan, client: S3Cl
       artifacts.push({ ...artifact, ...await fingerprint(artifact) })
     }
     const sourceSha256: Record<string, string> = {}
-    for (const filename of ['desktop-upload-run.ts', 'upload-target.ts', 'desktop-upload-plan.ts']) {
+    for (const filename of UPLOADER_SOURCES) {
       sourceSha256[filename] = createHash('sha256').update(await readFile(join(import.meta.dirname, filename))).digest('hex')
     }
     await writeFile(join(directory, 'plan.json'), `${JSON.stringify({ schemaVersion: 1,
@@ -85,15 +97,16 @@ export async function uploadDesktopRelease(plan: DesktopUploadPlan, client: S3Cl
       stage = 'put'
       recordPackagingEvent(directory, { type: 'put-intent', key, size: artifact.size, sha512: artifact.sha512,
         channelMetadata: artifact.channelMetadata })
-      const body = artifact.contents ?? createReadStream(artifact.path)
+      const body = streamedBody(artifact)
       try {
-        const response = await client.send(new PutObjectCommand({ Bucket: plan.bucket, Key: key,
-          Body: body, ContentLength: artifact.size, ContentMD5: artifact.md5, ContentType: artifact.contentType }))
+        const response = await cos.putObject({ Bucket: plan.bucket, Region: DESKTOP_COS_REGION, Key: key,
+          Body: body, ContentLength: artifact.size, ContentType: artifact.contentType,
+          Headers: { 'Content-MD5': artifact.md5 } })
         confirmedPuts++
         stage = 'record-response'
-        recordPackagingEvent(directory, { type: 'put-confirmed', key, ...receipt(response) })
+        recordPackagingEvent(directory, { type: 'put-confirmed', key, attempts: 1, ...receipt(response) })
       } finally {
-        if (typeof body !== 'string') body.destroy()
+        body.destroy()
       }
       process.stdout.write(`desktop upload: uploaded ${key}\n`)
     }
