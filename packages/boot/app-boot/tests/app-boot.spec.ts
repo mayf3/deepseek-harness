@@ -780,13 +780,17 @@ describe('boot', () => {
     const config = join(dir, 'cordis.yml')
     writeFileSync(config, '[]\n')
     let exporters = 0
+    const messages: unknown[][] = []
     const ctx = await boot(NAME, config, undefined, (host) => {
+      host.logger.exporter({ levels: { default: 2 }, export: ({ args }) => { messages.push(args) } })
       exporters = host.logger.exporters.size
       host.logger.info('startup information')
       host.logger.warn('startup warning')
     })
     try {
       expect(ctx.logger.exporters.size).toBe(exporters - 1)
+      ctx.logger.warn('warning after startup')
+      expect(messages).toEqual([['startup information'], ['startup warning'], ['warning after startup']])
     } finally {
       await ctx.fiber.dispose()
     }
