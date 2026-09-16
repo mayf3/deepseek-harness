@@ -68,7 +68,7 @@ Agent（智能体）可以加载 Word、PowerPoint 和 Excel 工作流，默认�
 
 - [skill 注册表](../skill/README.zh.md)——发现与优先级。
 - [skill 工具](../tool-skill/README.zh.md)——模型可见目录与正文。
-- [文件交付](../../fs/tool-present/README.zh.md)——当前源路径交付。
+- [文件交付](../../deliverables/tool-present/README.zh.md)——当前源路径交付。
 
 -----
 

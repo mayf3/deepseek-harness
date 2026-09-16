@@ -68,7 +68,7 @@ The provider registers three bundled candidates and reads their descriptions fro
 
 - [Skill registry](../skill/README.md) — discovery and precedence.
 - [Skill tool](../tool-skill/README.md) — model-visible catalogs and bodies.
-- [File delivery](../../fs/tool-present/README.md) — current source-path delivery.
+- [File delivery](../../deliverables/tool-present/README.md) — current source-path delivery.
 
 -----
 
