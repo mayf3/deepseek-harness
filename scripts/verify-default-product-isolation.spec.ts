@@ -69,6 +69,45 @@ describe('default product isolation', () => {
     expect(verifyDefaultProductIsolation(root).failures).toEqual([])
   })
 
+  it('ships an optional bundle switched off: its graph is outside the product, its name stays out of imports and defaults', () => {
+    const root = fixture()
+    const layer = '@deepseek-ai/dsh-experimental-layer'
+    write(root, 'packages/experimental/layer/package.json', {
+      name: layer, dependencies: { [experimental]: 'workspace:^' }, dsh: { bundle: { patch: './cordis.patch.yml' } },
+    })
+    write(root, 'packages/experimental/layer/cordis.patch.yml', [{ insert: [{ name: experimental }] }])
+    manifest(root, 'apps/cli/package.json', { dependencies: { [core]: 'workspace:^', [layer]: 'workspace:^' } })
+    write(root, profile, `export const PROFILE_TEMPLATES = { web: { bundles: ['${base}'] } }\n`
+      + `export const DEFAULT_PROFILE_BUNDLES = ['${base}']\n`
+      + `export const OPTIONAL_BUNDLES = ['${layer}']\n`)
+    expect(verifyDefaultProductIsolation(root)).toMatchObject({ failures: [], packageCount: 5 })
+
+    // The exception covers the dependency edge alone: a runtime import or a default template still names the product.
+    write(root, 'apps/cli/src/bin.ts', `import '${layer}'\n`)
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(`apps/cli/src/bin.ts -> ${layer}`)
+    write(root, 'apps/cli/src/bin.ts', 'export {}\n')
+    write(root, profile, `export const PROFILE_TEMPLATES = { web: { bundles: ['${base}', '${layer}'] } }\n`
+      + `export const DEFAULT_PROFILE_BUNDLES = ['${base}']\n`
+      + `export const OPTIONAL_BUNDLES = ['${layer}']\n`)
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(`optional bundle ${layer} must not be a default bundle`)
+  })
+
+  it('requires each optional bundle to be a runtime dependency that declares a bundle patch', () => {
+    const root = fixture()
+    write(root, profile, `export const PROFILE_TEMPLATES = { web: { bundles: ['${base}'] } }\n`
+      + `export const DEFAULT_PROFILE_BUNDLES = ['${base}']\n`
+      + `export const OPTIONAL_BUNDLES = ['${experimental}']\n`)
+    const failures = verifyDefaultProductIsolation(root).failures.join('\n')
+    expect(failures).toContain(`optional bundle ${experimental} must be a runtime dependency of apps/cli`)
+    expect(failures).toContain(`optional bundle ${experimental} must declare dsh.bundle.patch`)
+
+    // An experimental runtime dependency the list does not name is still a product requirement.
+    write(root, profile, `export const PROFILE_TEMPLATES = { web: { bundles: ['${base}'] } }\n`
+      + `export const DEFAULT_PROFILE_BUNDLES = ['${base}']\n`)
+    manifest(root, 'apps/cli/package.json', { dependencies: { [core]: 'workspace:^', [experimental]: 'workspace:^' } })
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(`@deepseek-ai/dsh dependencies -> ${experimental}`)
+  })
+
   it.each(['dependencies', 'optionalDependencies', 'peerDependencies'])(
     'rejects transitive experimental %s',
     (section) => {
