@@ -26,7 +26,8 @@ function makeWindow() {
   let destroyed = false
   const instance = Object.assign(new EventEmitter(), { webContents: Object.assign(new EventEmitter(), {
     setWindowOpenHandler: vi.fn<(handler: () => { action: string }) => void>() }),
-  show: vi.fn(), focus: vi.fn(), setMenu: vi.fn(), loadURL: vi.fn(async () => {}), isDestroyed: () => destroyed,
+  show: vi.fn(), focus: vi.fn(), setMenu: vi.fn(), loadFile: vi.fn(async () => {}),
+  loadURL: vi.fn(async () => {}), isDestroyed: () => destroyed,
   destroy: () => { if (!destroyed) { destroyed = true; instance.emit('closed') } } })
   return instance
 }
@@ -58,13 +59,47 @@ it('opens a sandboxed window on explicit action and coalesces logins without aut
     session: browserSession, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
     webviewTag: false, devTools: false } })
   expect(native.create.mock.calls[0]![0].webPreferences?.preload).toBeUndefined()
-  expect(window.loadURL).toHaveBeenCalledWith('https://policy.example.com/')
+  expect(window.loadFile).toHaveBeenCalledWith('renderer/policy-login-loading.html', { query: { label: '正在加载登录页面…' } })
+  // The placeholder is the first document: the remote page waits for it.
+  expect(window.loadURL).not.toHaveBeenCalled()
+  await vi.waitFor(() => { expect(window.loadURL).toHaveBeenCalledWith('https://policy.example.com/') })
+  expect(window.loadFile).toHaveBeenCalledTimes(1)
   window.webContents.emit('did-navigate', {}, 'https://accounts.feishu.cn/open-apis/authen/v1/index?state=secret')
   expect(window.isDestroyed()).toBe(false)
   window.webContents.emit('did-navigate', {}, 'https://policy.example.com/')
   expect(await pending).toBe('returned')
   expect(record.mock.calls).toEqual([['opened'], ['returned']])
   expect(browserSession.fetch).not.toHaveBeenCalled()
+})
+
+it('shows the placeholder without letting it outlive the first remote document', async () => {
+  const placeholder = { resourceType: 'mainFrame', url: 'file:///app/renderer/policy-login-loading.html?label=x' }
+  const callback = vi.fn()
+  // The window's own placeholder is the one document the filter accepts locally.
+  browserSession.webRequest.onBeforeRequest.mock.calls[0]![0](placeholder, callback)
+  expect(callback).toHaveBeenCalledWith({ cancel: false })
+  window.loadFile.mockRejectedValueOnce(new Error('missing renderer document'))
+  const pending = auth.login()
+  // A placeholder that cannot load must not fail the login or hold it back.
+  window.webContents.emit('did-fail-load', {}, -6, 'ERR_FILE_NOT_FOUND', placeholder.url, true)
+  expect(window.isDestroyed()).toBe(false)
+  await vi.waitFor(() => { expect(window.loadURL).toHaveBeenCalledWith('https://policy.example.com/') })
+  // Entering the placeholder never covers the remote page: it is replaced by
+  // navigation and is never loaded again.
+  window.webContents.emit('did-navigate', {}, 'https://policy.example.com/')
+  expect(await pending).toBe('returned')
+  expect(window.loadFile).toHaveBeenCalledTimes(1)
+})
+
+it('cancels a login closed while the placeholder is still loading, without starting the remote page', async () => {
+  const loading = Promise.withResolvers<undefined>()
+  window.loadFile.mockReturnValueOnce(loading.promise)
+  const pending = auth.login()
+  window.destroy()
+  expect(await pending).toBe('cancelled')
+  loading.resolve(undefined)
+  await Promise.resolve()
+  expect(window.loadURL).not.toHaveBeenCalled()
 })
 
 it.each(['will-navigate', 'will-redirect'])('refuses unapproved %s targets without logging OAuth data', async (eventName) => {

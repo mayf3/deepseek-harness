@@ -6,6 +6,12 @@ import type { DesktopLocale } from './locale.ts'
 const FEISHU_ORIGINS = ['https://open.feishu.cn', 'https://accounts.feishu.cn',
   'https://passport.feishu.cn', 'https://login.feishu.cn']
 
+/** Packaged placeholder document; it is the window's first document and needs no network. */
+const LOGIN_LOADING_PAGE = 'renderer/policy-login-loading.html'
+
+/** File name of that placeholder, for recognizing its own load and load failures. */
+const LOGIN_LOADING_FILE = 'policy-login-loading.html'
+
 /** Navigation completion is not proof of authentication or a valid update policy. */
 export type DesktopPolicyLoginResult = 'returned' | 'cancelled' | 'failed'
 
@@ -35,7 +41,7 @@ export class DesktopPolicyTestAuth {
     this.browserSession.on('will-download', (event) => { event.preventDefault() })
     this.browserSession.webRequest.onBeforeRequest((details, callback) => {
       const document = details.resourceType === 'mainFrame' || details.resourceType === 'subFrame'
-      const cancel = document && !this.allowed(details.url)
+      const cancel = document && !this.isLoadingDocument(details.url) && !this.allowed(details.url)
       callback({ cancel })
       if (cancel) this.rejectLogin?.()
     })
@@ -96,8 +102,8 @@ export class DesktopPolicyTestAuth {
     })
     contents.on('will-attach-webview', (event) => { event.preventDefault() })
     contents.on('login', (event, _details, _authInfo, callback) => { event.preventDefault(); callback() })
-    contents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
-      if (mainFrame && code !== -3) finish('failed')
+    contents.on('did-fail-load', (_event, code, _description, url, mainFrame) => {
+      if (mainFrame && code !== -3 && !this.isLoadingDocument(url)) finish('failed')
     })
     contents.on('render-process-gone', () => { finish('failed') })
     contents.on('did-navigate', (_event, value) => {
@@ -105,7 +111,17 @@ export class DesktopPolicyTestAuth {
       if (url.origin === this.origin && (url.pathname === '/' || url.pathname === '/feishu_auth_callback')) finish('returned')
     })
     this.record('opened')
-    void window.loadURL(`${this.origin}/`).catch(() => { finish('failed') })
+    const loadLogin = (): void => {
+      if (settled || window.isDestroyed()) return
+      void window.loadURL(`${this.origin}/`).catch(() => { finish('failed') })
+    }
+    // The remote page can take seconds to paint. The packaged placeholder is the
+    // window's first document, so the window shows local feedback immediately
+    // and the first committed remote document replaces it: nothing overlays the
+    // third-party page, and no later subresource keeps a placeholder on screen.
+    // A placeholder that cannot load leaves the window blank, as before.
+    void window.loadFile(LOGIN_LOADING_PAGE,
+      { query: { label: this.locale.messages.policyLoginLoading } }).then(loadLogin, loadLogin)
     return result.promise
   }
 
@@ -124,5 +140,16 @@ export class DesktopPolicyTestAuth {
     try { url = new URL(value) } catch { return false }
     return url.protocol === 'https:' && url.username === '' && url.password === ''
       && (url.origin === this.origin || FEISHU_ORIGINS.includes(url.origin))
+  }
+
+  /**
+   * Recognize the owned placeholder document. Only the request filter and the
+   * load-failure handler accept it; navigation events still require {@link allowed},
+   * so the remote page cannot steer the window back to a local file.
+   */
+  private isLoadingDocument(value: string): boolean {
+    let url: URL
+    try { url = new URL(value) } catch { return false }
+    return url.protocol === 'file:' && url.pathname.endsWith(`/${LOGIN_LOADING_FILE}`)
   }
 }
