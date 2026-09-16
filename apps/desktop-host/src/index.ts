@@ -6,7 +6,7 @@ import { runProfile } from '@deepseek-ai/dsh/profile-boot'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import * as workspaceDependencies from './workspace-dependencies.ts'
+import * as desktopOffice from './office.ts'
 
 async function main(): Promise<void> {
   const runtimeDir = process.argv[2] as string
@@ -32,7 +32,7 @@ async function main(): Promise<void> {
   })
   process.once('disconnect', () => { void stop() })
   const { ctx } = await application
-  await ctx.plugin(workspaceDependencies, {
+  await ctx.plugin(desktopOffice, {
     source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
     root: join(resolveDshHome(), 'dsh-runtimes', 'dsh-primary-runtime'),
   })
