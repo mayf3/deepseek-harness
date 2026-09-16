@@ -1,15 +1,19 @@
-/** Browser lifetime for the isolated XLSX parser. */
+/** Browser lifetime for the isolated spreadsheet parser. */
 import workerSource from './worker.ts?raw'
-import type { ExcelLimits, ExcelPreview } from './convert.ts'
+import type { ExcelFormat } from './format.ts'
+import type { ExcelLimits, ExcelPreview } from './model.ts'
 
 /**
  * Parse workbook bytes in a disposable Worker, copying the retained preview buffer.
  * @param bytes - Borrowed complete file bytes.
+ * @param format - Format selected by the registered filename suffix.
  * @param limits - File, matrix, and elapsed-time limits.
  * @param signal - Document body's lifetime.
  * @returns Parsed sheets; rejects with a locale key on parser failures.
  */
-export function parseExcel(bytes: Uint8Array<ArrayBuffer>, limits: ExcelLimits, signal: AbortSignal): Promise<ExcelPreview> {
+export function parseExcel(
+  bytes: Uint8Array<ArrayBuffer>, format: ExcelFormat, limits: ExcelLimits, signal: AbortSignal,
+): Promise<ExcelPreview> {
   signal.throwIfAborted()
   if (bytes.byteLength > limits.maxBytes) return Promise.reject(new Error('tooLarge'))
   return new Promise((resolve, reject) => {
@@ -42,7 +46,7 @@ export function parseExcel(bytes: Uint8Array<ArrayBuffer>, limits: ExcelLimits, 
       if (message.ok === true && 'value' in message && validPreview(message.value)) {
         finish()
         resolve(message.value)
-      } else if (message.ok === false && 'code' in message && ['invalid', 'tooLarge', 'timeout'].includes(String(message.code))) {
+      } else if (message.ok === false && 'code' in message && ['invalid', 'tooLarge', 'timeout', 'encoding'].includes(String(message.code))) {
         finish()
         reject(new Error(String(message.code)))
       } else fail()
@@ -50,7 +54,7 @@ export function parseExcel(bytes: Uint8Array<ArrayBuffer>, limits: ExcelLimits, 
     signal.addEventListener('abort', abort, { once: true })
     try {
       const copy = bytes.slice()
-      worker.postMessage({ bytes: copy, limits }, [copy.buffer])
+      worker.postMessage({ bytes: copy, format, limits }, [copy.buffer])
     } catch (error) { finish(); reject(new Error('invalid', { cause: error })) }
   })
 }

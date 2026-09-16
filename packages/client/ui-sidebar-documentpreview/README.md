@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Preview files in the right Sidebar and choose among registered renderers. Markdown and code support paged text; PDF, HTML, common images, and XLSX receive complete bytes; unknown extensions use plain text. Word and PowerPoint documents convert locally to PDF; Excel workbooks open in the browser. The tab provides file status, renderer selection, wrap, and automatic or manual reload. Plugins can add local opening controls to the header and unsupported-preview empty state.
+Preview files in the right Sidebar and choose among registered renderers. Markdown and code support paged text; PDF, HTML, common images, and spreadsheets receive complete bytes; unknown extensions use plain text. Word and PowerPoint documents convert locally to PDF; spreadsheets open in the browser. The tab provides file status, renderer selection, wrap, and automatic or manual reload. Plugins can add local opening controls to the header and unsupported-preview empty state.
 
 ## Table of Contents
 
@@ -66,17 +66,19 @@ Initial reads, additional pages, and HTML/PDF/image preparation share the ongoin
 <a id="excel-preview"></a>
 ## Excel preview
 
-Open `.xlsx` directly in the browser with worksheet tabs, cell selection, copying, and a read-only formula bar. The viewer retains fonts, solid fills, borders, number formats, rich text, merged cells, row and column sizes, hidden rows/columns/sheets, and frozen headings. It displays saved formula results without recalculating; missing results receive a notice. Legacy `.xls` files require saving as `.xlsx`. Excel preview does not call the Office conversion service.
+Open `.xlsx`, `.xls`, `.csv`, and `.tsv` directly in the browser with worksheet tabs, cell selection, copying, and a read-only formula bar. XLSX retains fonts, solid fills, borders, number formats, rich text, merged cells, row and column sizes, hidden rows/columns/sheets, and frozen headings. XLS retains saved values, formulas, number formats, merges, and available row/column metadata; fonts, borders, and frozen panes are unsupported. Workbooks display saved formula results without recalculating; missing results receive a notice. Spreadsheet preview does not call the Office conversion service.
+
+CSV and TSV default to the spreadsheet viewer and also offer Plain text. Commas and tabs delimit their fields respectively; quoted separators, escaped quotes, multiline fields, empty fields, and unequal row lengths are supported. The first row remains data. Values remain literal strings, including leading zeros, dates, booleans, and formula-looking text. Text files accept UTF-8 or BOM-marked UTF-16; invalid encoding receives conversion guidance. Malformed quoted fields fail the table preview rather than silently dropping data.
 
 Configure `excel` on the same `ui-sidebar-documentpreview` entry. These limits complement the Host's complete-file read limit; they do not cap browser process memory or decompression allocations.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `excel.maxBytes` | `16777216` (16 MiB) | Maximum compressed XLSX bytes |
+| `excel.maxBytes` | `16777216` (16 MiB) | Maximum source file bytes |
 | `excel.maxCells` | `250000` | Maximum combined rectangular worksheet area, including empty cells |
 | `excel.timeoutMs` | `15000` | Maximum parser Worker lifetime in milliseconds |
 
-The lazy Excel chunk bundles MIT-licensed FortuneSheet and ExcelJS. A package-local, React-independent adapter maps ExcelJS data to FortuneSheet cells. Each parse owns a disposable Worker and transfers a copy of retained file bytes; replacement, unmount, failure, and timeout terminate that Worker. The stylesheet is scoped to the Excel preview. Charts, drawings/images, pivot tables, conditional formatting, editing, recalculation, and export are unsupported; font availability, Excel column-width approximation, and theme-tint approximation can affect fidelity. Hyperlinks display as text without loading their targets.
+The lazy Excel chunk bundles FortuneSheet, ExcelJS for XLSX, SheetJS CE for XLS, and PapaParse for CSV/TSV. Package-local, React-independent adapters map parser output directly to FortuneSheet cells and share cell formatting and initial selection. Third-party license texts remain in the published chunk; SheetJS CE retains its Apache-2.0 terms. Each parse owns a disposable Worker and transfers a copy of retained file bytes; replacement, unmount, failure, and timeout terminate that Worker. The stylesheet is scoped to the Excel preview. Charts, drawings/images, pivot tables, conditional formatting, editing, recalculation, and export are unsupported; font availability, Excel column-width approximation, and theme-tint approximation can affect fidelity. Hyperlinks display as text without loading their targets.
 
 <a id="office-preview"></a>
 ## Office preview

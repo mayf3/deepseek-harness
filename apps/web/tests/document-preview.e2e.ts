@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vit
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { realOfficeBytes } from './office-fixture.ts'
 import { excelFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/excel-fixture.ts'
+import { xlsFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/xls-fixture.ts'
 import { pdfFixture, selectionPdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
@@ -245,6 +246,9 @@ else process.exit(1);
       ...[90, 180, 270].map(rotation => writeFile(join(cwd, `rotated-${rotation}.pdf`), pdfFixture(4, rotation))),
       writeFile(join(cwd, 'selection.pdf'), selectionPdfFixture()),
       writeFile(join(cwd, 'budget.xlsx'), await excelFixture()),
+      writeFile(join(cwd, 'budget.xls'), xlsFixture()),
+      writeFile(join(cwd, 'table.csv'), '00123,"中文,字段","=SUM(1,2)"\n2024-03-01,,TRUE'),
+      writeFile(join(cwd, 'table.tsv'), '00123\t"中文\t字段"\t=SUM(1,2)\n2024-03-01\t\tTRUE'),
       ...['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].map(extension => writeFile(join(cwd, `unavailable.${extension}`), Buffer.from('PK\u0003\u0004OFFICE_BINARY_PREVIEW'))),
       writeFile(join(cwd, 'clip.mp4'), Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])),
     ])
@@ -770,20 +774,63 @@ else process.exit(1);
     await page.keyboard.press('ControlOrMeta+C')
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('42\n')
     await successShot(page, 'excel-cached-formula')
-    await openFile('unavailable.xls')
-    const legacyGuidance = 'Save this legacy Excel file as .xlsx to preview it.'
-    await preview.getByText(legacyGuidance, { exact: true }).waitFor()
-    await openFile('unavailable.xlsx')
-    const invalidExcel = 'This Excel file could not be opened. It may be damaged or password protected.'
-    await preview.getByText(invalidExcel, { exact: true }).waitFor()
+    await openFile('budget.xls')
+    await excel.getByText('预算', { exact: true }).waitFor({ state: 'visible' })
+    await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
+    await excel.locator('.fortune-sheet-overlay').click({ position: { x: 70, y: 30 } })
+    await expect.poll(() => excel.locator('.fortune-fx-input').innerText()).toBe('旧版预算')
+    await page.keyboard.press('ControlOrMeta+C')
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('旧版预算')
+    await excel.getByText('明细', { exact: true }).click()
+    await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
+    await successShot(page, 'excel-legacy')
+    const invalidExcel = 'This spreadsheet could not be opened. Check its format, contents, or password protection.'
+    for (const extension of ['xls', 'xlsx']) {
+      await openFile(`unavailable.${extension}`)
+      await preview.getByText(invalidExcel, { exact: true }).waitFor()
+    }
     sections.push([
       '## Browser Excel preview', '',
       '- Opens without the Office conversion service',
       '- Sheets: 季度预算 | 公式与格式; hidden worksheet omitted',
       '- Cached XLOOKUP result copied: 42; typing leaves it unchanged',
       '- Formula bar is read-only; PDF body and editing toolbar absent',
-      `- Legacy guidance: ${legacyGuidance}`,
-      `- Invalid XLSX: ${invalidExcel}`,
+      '- XLS: merged title copied; worksheet selection retained',
+      `- Invalid XLS/XLSX: ${invalidExcel}`,
+    ].join('\n'))
+
+    for (const extension of ['csv', 'tsv']) {
+      await openFile(`table.${extension}`)
+      await expect.poll(() => viewer.innerText()).toBe('Spreadsheet')
+      await excel.getByText(extension.toUpperCase(), { exact: true }).waitFor()
+      await excel.locator('.fortune-sheet-overlay').click({ position: { x: 70, y: 30 } })
+      await expect.poll(() => excel.locator('.fortune-fx-input').innerText()).toBe('00123')
+      await page.keyboard.press('ControlOrMeta+C')
+      await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('00123\n')
+      await page.keyboard.press('ArrowRight')
+      await page.keyboard.press('ArrowRight')
+      await page.keyboard.press('ControlOrMeta+C')
+      await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('=SUM(1,2)\n')
+      await viewer.click()
+      await page.getByRole('menuitem', { name: 'Plain text', exact: true }).click()
+      await expect.poll(() => preview.locator('[data-textpreview-line]').count()).toBe(2)
+      expect((await preview.locator('[data-textpreview-line]').allTextContents()).join('\n')).toContain('00123')
+      await viewer.click()
+      await page.getByRole('menuitem', { name: 'Spreadsheet', exact: true }).click()
+      await excel.getByText(extension.toUpperCase(), { exact: true }).waitFor()
+      await writeFile(join(cwd, `table.${extension}`), extension === 'csv' ? '00999,更新' : '00999\t更新')
+      await preview.locator('[data-textpreview-tool="reload"]').click()
+      await expect.poll(() => excel.locator('.fortune-fx-input').innerText()).toBe('00999')
+      await excel.locator('.fortune-sheet-overlay').click({ position: { x: 70, y: 30 } })
+      await page.keyboard.press('ControlOrMeta+C')
+      await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('00999\n')
+      await successShot(page, `excel-${extension}`)
+    }
+    sections.push(['## Delimited spreadsheets', '',
+      '- CSV and TSV default to Spreadsheet; Plain text remains selectable',
+      '- Copied ID: 00123; copied literal formula: =SUM(1,2)',
+      '- Plain-text round trip retains complete source lines',
+      '- Reload replaces parsed cells: 00123 -> 00999',
     ].join('\n'))
 
     await openFile('notes.unknown')

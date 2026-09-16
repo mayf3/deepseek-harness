@@ -506,9 +506,9 @@ export interface Config {
     /** Maximum readers including source and renderer metadata lookups. */
     maxReaders: number
   }
-  /** Browser Excel parser and dense spreadsheet allocation limits. */
+  /** Browser spreadsheet parser and dense cell allocation limits. */
   excel: {
-    /** Maximum compressed workbook bytes. */
+    /** Maximum source file bytes. */
     maxBytes: number
     /** Maximum combined rectangular cell area across worksheets. */
     maxCells: number

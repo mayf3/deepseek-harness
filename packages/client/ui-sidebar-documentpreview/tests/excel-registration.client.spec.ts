@@ -22,15 +22,14 @@ it('registers complete binary reads and removes the slot and locale on disposal'
   const fiber = ctx.plugin({ apply: (scope) => { apply(scope, limits) } })
   try {
     await fiber.await()
-    for (const path of ['budget.XLSX', 'legacy.xls']) {
+    for (const path of ['budget.XLSX', 'legacy.xls', 'table.CSV', 'table.tsv']) {
       const candidate = registry.candidates(path)[0]!
       expect(candidate).toMatchObject({ loading: 'bytes-complete', wrap: false, binaryExtensions: ['xlsx', 'xls'] })
-      expect(candidate.title()).toBe('Excel')
-      expect(candidate.read).toBeUndefined()
-      expect(candidate.bodyId).toBeUndefined()
+      expect(candidate.title()).toBe('Spreadsheet')
+      expect(binaryDocumentPath(registry.getSnapshot(), path)).toBe(/\.(xlsx|xls)$/iu.test(path))
     }
     expect(registerLocale).toHaveBeenCalledWith('sidebarExcel', { zh, en })
-    expect(register).toHaveBeenCalledWith(expect.objectContaining({ locale: 'sidebarExcel', inject: expect.any(Function) as unknown }), LazyExcelBody)
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({ locale: 'sidebarExcel', inject: expect.any(Function) }), LazyExcelBody)
     const options = register.mock.calls[0]![0] as { inject: () => unknown }
     expect(options.inject()).toEqual({ limits })
   } finally { await fiber.dispose() }

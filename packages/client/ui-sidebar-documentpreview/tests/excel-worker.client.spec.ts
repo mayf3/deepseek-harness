@@ -12,7 +12,7 @@ it('returns parsed sheets and bounded failure categories', async () => {
   await import('../src/client/excel/worker.ts')
   const handle: (event: MessageEvent) => void = globalThis.onmessage!
   const message = (bytes: Uint8Array<ArrayBuffer>, maxCells = 250_000) => {
-    handle({ data: { bytes, limits: { ...Config({}).excel, maxCells } } } as MessageEvent)
+    handle({ data: { bytes, format: 'xlsx', limits: { ...Config({}).excel, maxCells } } } as MessageEvent)
   }
   message(await excelFixture())
   await vi.waitFor(() => { expect(post).toHaveBeenCalledWith(expect.objectContaining({ ok: true })) })
@@ -32,6 +32,6 @@ it('reports an unexpected parser failure as an invalid workbook', async () => {
   })
   await import('../src/client/excel/worker.ts')
   const handle: (event: MessageEvent) => void = globalThis.onmessage!
-  handle({ data: { bytes: new Uint8Array(), limits: Config({}).excel } } as MessageEvent)
+  handle({ data: { bytes: new Uint8Array(), format: 'xlsx', limits: Config({}).excel } } as MessageEvent)
   await vi.waitFor(() => { expect(post).toHaveBeenCalledWith({ ok: false, code: 'invalid' }) })
 })

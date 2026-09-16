@@ -65,6 +65,7 @@
     "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "workspace:^",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
+    "@deepseek-ai/dsh-office-to-pdf": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@deepseek-ai/dsh-office-to-pdf": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
@@ -72,6 +73,7 @@
     "@fortune-sheet/core": "1.0.4",
     "@fortune-sheet/react": "1.0.4",
     "@testing-library/react": "^16.1.0",
+    "@types/papaparse": "^5.3.16",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "clsx": "^2.0.0",
@@ -79,9 +81,11 @@
     "exceljs": "4.4.0",
     "fast-xml-parser": "5.11.1",
     "fflate": "^0.8.3",
+    "papaparse": "5.5.3",
     "pdfjs-dist": "6.3.289",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "files": [
     "lib/index.js",

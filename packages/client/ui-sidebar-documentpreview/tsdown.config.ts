@@ -17,7 +17,11 @@ function excelLicenseBanner(): string {
   const fortune = readFileSync(join(import.meta.dirname, 'licenses/FortuneSheet.txt'), 'utf8')
   const excel = readFileSync(join(dirname(require.resolve('exceljs/package.json')), 'LICENSE'), 'utf8')
   const xml = readFileSync(join(dirname(dirname(require.resolve('fast-xml-parser'))), 'LICENSE'), 'utf8')
-  return ['//! Bundled spreadsheet license notices', ...`${fortune}\n${excel}\n${xml}`.trimEnd().split('\n').map(line => `// ${line}`)].join('\n')
+  const csv = readFileSync(join(dirname(require.resolve('papaparse/package.json')), 'LICENSE'), 'utf8')
+  const xlsRoot = dirname(require.resolve('xlsx'))
+  const xls = readdirSync(xlsRoot).filter(name => /^(LICENSE|NOTICE)(\.|$)/u.test(name)).sort()
+    .map(name => readFileSync(join(xlsRoot, name), 'utf8')).join('\n')
+  return ['//! Bundled spreadsheet license notices', ...`${fortune}\n${excel}\n${xml}\n${csv}\n${xls}`.trimEnd().split('\n').map(line => `// ${line}`)].join('\n')
 }
 
 /** License files for PDF.js and the data embedded beside its runtime. */
@@ -68,10 +72,19 @@ const excelWorker: NonNullable<UserConfig['plugins']> = [{
   resolveId(source) { return source === './worker.ts?raw' ? '\0dsh-excel-worker-source' : null },
   async load(id) {
     if (id !== '\0dsh-excel-worker-source') return null
+    const parent = this
     const worker = await Rolldown.rolldown({
       input: join(import.meta.dirname, 'src/client/excel/worker.ts'), platform: 'browser',
       resolve: { mainFields: ['browser', 'module', 'main'], aliasFields: [['browser']] },
       transform: { define: { 'process.env.NODE_ENV': JSON.stringify('production') } },
+      plugins: [{
+        name: 'dsh-excel-worker-dependencies',
+        async resolveId(source, importer) {
+          // The outer build's license analysis must also see imports embedded in Worker text.
+          if (importer?.startsWith(join(import.meta.dirname, 'src')) && !source.startsWith('.')) await parent.resolve(source, importer)
+          return null
+        },
+      }],
     })
     try {
       const result = await worker.generate({ format: 'iife', minify: true })

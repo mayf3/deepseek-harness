@@ -78,8 +78,15 @@
 - Sheets: 季度预算 | 公式与格式; hidden worksheet omitted
 - Cached XLOOKUP result copied: 42; typing leaves it unchanged
 - Formula bar is read-only; PDF body and editing toolbar absent
-- Legacy guidance: Save this legacy Excel file as .xlsx to preview it.
-- Invalid XLSX: This Excel file could not be opened. It may be damaged or password protected.
+- XLS: merged title copied; worksheet selection retained
+- Invalid XLS/XLSX: This spreadsheet could not be opened. Check its format, contents, or password protection.
+
+## Delimited spreadsheets
+
+- CSV and TSV default to Spreadsheet; Plain text remains selectable
+- Copied ID: 00123; copied literal formula: =SUM(1,2)
+- Plain-text round trip retains complete source lines
+- Reload replaces parsed cells: 00123 -> 00999
 
 ## Unknown suffix
 

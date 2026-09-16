@@ -42,8 +42,8 @@ function runPnpm(args: string[], cwd: string, timeout: number): string {
     : run(entrypoint, args, cwd, timeout)
 }
 
-describe('published PDF.js licenses', () => {
-  it.skipIf(!existsSync(bundlePath))('keeps every bundled license in the packed PDF chunk', ({ task }) => {
+describe('published document preview licenses', () => {
+  it.skipIf(!existsSync(bundlePath))('keeps bundled licenses in the packed lazy chunks', ({ task }) => {
     expect(existsSync(pdfChunkPath)).toBe(true)
     const output = mkdtempSync(join(tmpdir(), 'dsh-document-preview-pack-'))
     try {
@@ -70,13 +70,18 @@ describe('published PDF.js licenses', () => {
       expect(excel).toContain('//! Bundled spreadsheet license notices')
       expect(excel).toContain('Copyright (c) 2022 Suzhou Ruilisi Technology Co., Ltd')
       expect(excel).toContain('Permission is hereby granted, free of charge')
+      for (const dependency of ['xlsx', 'papaparse']) {
+        const root = dirname(require.resolve(dependency === 'xlsx' ? dependency : `${dependency}/package.json`))
+        const license = readFileSync(join(root, 'LICENSE'), 'utf8').trimEnd()
+        expect(excel).toContain(license.split('\n').map(line => `// ${line}`).join('\n'))
+      }
       let initialized = false
       runInNewContext(excel, { window: { __ModuleLoader__: { load: (registration: {
         factory: (resolve: (specifier: string) => unknown) => { ExcelBody: unknown }
       }) => {
         const loaded = registration.factory((specifier) => {
           if (specifier === '@deepseek-ai/dsh-client-ui-primitives') return {}
-          if (specifier === 'react' || specifier === 'react/jsx-runtime' || specifier === 'react-dom') return require(specifier) as unknown
+          if (specifier === 'react' || specifier === 'react/jsx-runtime' || specifier === 'react-dom') return require(specifier)
           throw new Error(`Unexpected browser dependency: ${specifier}`)
         })
         expect(typeof loaded.ExcelBody).toBe('function')
