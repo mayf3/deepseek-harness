@@ -8,7 +8,7 @@
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
+import { loadLayeredEnv, StartupError } from '@deepseek-ai/dsh-app-boot'
 import { parseDshArgs } from './args.ts'
 
 // Both the source tree (apps/cli/src) and the bundled bin (apps/cli/lib) sit
@@ -62,5 +62,11 @@ export async function runCli(): Promise<void> {
 }
 
 if (import.meta.main) {
-  await runCli()
+  try {
+    await runCli()
+  } catch (error) {
+    if (!(error instanceof StartupError)) throw error
+    process.stderr.write(`${error.message}\n`)
+    process.exitCode = 1
+  }
 }

@@ -28,11 +28,11 @@ This policy governs [Web host boot](2026-07-24-web-config-tree-boot-and-transpor
 
 ## Consequences
 
-Stable required entry ids are part of application assembly. Renaming one requires updating the list and its tests. Optional plugin failures remain visible in Loader state and stderr without tearing down active siblings. Required failures use the same detailed import, activation, or pending-service diagnostic before app-boot disposes the root.
+Stable required entry ids are part of application assembly. Renaming one requires updating the list and its tests. Optional plugin failures remain visible in Loader state and stderr without tearing down active siblings. Required failures combine every inactive entry into one diagnostic, separating failed plugins from pending services and marking required entries. `StartupError` retains the original failures as its cause after app-boot disposes the root. The CLI prints its message once and exits with code 1, avoiding duplicate wrapper stacks while preserving plugin stacks, nested causes, and aggregate members. Unrelated exceptions remain unhandled.
 
 ## Testing
 
-App-boot unit tests cover absent and disabled required ids, optional import failure, config evaluation failure, synchronous and asynchronous `apply()` failure, pending dependencies, and required failure teardown. The built Web-profile acceptance serves the full UI with optional failures and exits nonzero without readiness when the required HTTP port is occupied or `modules` or `connection` cannot activate.
+App-boot unit tests cover absent and disabled required ids, optional import failure, config evaluation failure, synchronous and asynchronous `apply()` failure, pending dependencies, and required failure teardown. Unit expectations pin diagnostic grouping and preservation of original error objects. The built Web-profile acceptance asserts a single port-conflict stack without Node wrapper output, serves the full UI with optional failures and exits nonzero without readiness when the required HTTP port is occupied or `modules` or `connection` cannot activate.
 
 The [Web process matrix](../../../../apps/cli/tests/profiles/web/tests/web-failure-matrix.expected.e2e.ts) independently exercises optional and required failures at startup and after native patch-file edits. Authenticated HTTP requests and plugin lifecycle files distinguish a usable application from a surviving process. These keyless process checks complement the [controlled-delivery unit tests](../testing/2026-09-09-user-patch-hmr-test-delivery.md): unit tests isolate reconciliation failures, while the process tests also require the shipped launcher, native watcher, and bounded shutdown to work together.
 

@@ -28,11 +28,11 @@ Required id 为 `agent-loop`、`webserver`、`modules`、`connection`、`headles
 
 ## 后果
 
-稳定的 required entry id 是应用 assembly 的一部分。重命名时必须同步更新 list 与测试。Optional plugin failure 会保留在 Loader state 和 stderr 中，但不会拆卸 active sibling。Required failure 使用相同的详细 import、activation 或 pending-service 诊断，然后由 app-boot 拆卸 root。
+稳定的 required entry id 是应用 assembly 的一部分。重命名时必须同步更新 list 与测试。Optional plugin failure 会保留在 Loader state 和 stderr 中，但不会拆卸 active sibling。Required failure 将所有 inactive entry 合并到一份诊断中，区分失败插件与等待服务的插件，并标记 required entry。App-boot 拆卸 root 后，`StartupError` 仍以 cause 保留原始失败。CLI 仅输出其消息一次，并以退出码 1 结束，避免重复的包装堆栈，同时保留插件堆栈、嵌套原因和聚合错误成员。其他异常继续作为未处理异常抛出。
 
 ## 测试
 
-App-boot 单元测试覆盖缺失和禁用的 required id、optional import failure、config evaluation failure、同步和异步 `apply()` failure、pending dependency，以及 required failure teardown。构建后的 Web-profile acceptance 会在 optional failure 存在时继续提供完整 UI，并在 required HTTP port 被占用或 `modules`、`connection` 无法激活时以非零码退出，且不报告就绪。
+App-boot 单元测试覆盖缺失和禁用的 required id、optional import failure、config evaluation failure、同步和异步 `apply()` failure、pending dependency，以及 required failure teardown。单元预期输出固定诊断分组和原始错误对象的保留行为。构建后的 Web-profile acceptance 断言端口冲突堆栈只输出一次且不包含 Node 包装输出，并会在 optional failure 存在时继续提供完整 UI，并在 required HTTP port 被占用或 `modules`、`connection` 无法激活时以非零码退出，且不报告就绪。
 
 [Web 进程矩阵](../../../../apps/cli/tests/profiles/web/tests/web-failure-matrix.expected.e2e.ts)分别验证启动时和原生补丁文件修改后的 optional 与 required 失败。经过认证的 HTTP 请求和插件生命周期文件区分可用应用与仅存活的进程。这些无需密钥的进程检查与[受控事件投递单元测试](../testing/2026-09-09-user-patch-hmr-test-delivery.zh.md)互补：单元测试隔离配置协调失败，进程测试还要求随附启动器、原生监听器和有界关闭流程协同工作。
 

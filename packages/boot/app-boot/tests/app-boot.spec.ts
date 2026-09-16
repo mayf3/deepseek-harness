@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import {
-  addHarnessSourceSection, auditStartupEntries, boot,
+  addHarnessSourceSection, auditStartupEntries, boot, StartupError,
   FAIL_LOUD_RELEASE_TIMEOUT_MS, HARNESS_SOURCE_SECTION,
   installFailLoud, loadEnv, loadLayeredEnv, loadOverlayPatches, resolveConfigPath, type FailLoudProcess,
 } from '../src/index.ts'
@@ -587,7 +587,7 @@ describe('auditStartupEntries', () => {
     }]), NAME, warn)
     const detail = `${id} (./plugin.mjs): disabled expression failed: ${error.stack!}`
     if (required) {
-      await expect(result).rejects.toThrow(`required startup failure: 1 entry did not activate\n${detail}`)
+      await expect(result).rejects.toThrow(`  ${id} (required)\n    Package: ./plugin.mjs\n    disabled expression failed: ${error.stack!.replaceAll('\n', '\n    ')}`)
       expect(warn).not.toHaveBeenCalled()
     } else {
       await expect(result).resolves.toBeUndefined()
@@ -670,18 +670,64 @@ describe('auditStartupEntries', () => {
     expect(diagnostic).toContain('unexpected-state (./unexpected-state.mjs): fiber state 1')
   })
 
-  it.each(requiredIds)('rejects required %s failures after warning about optional failures', async (id) => {
+  it.each(requiredIds)('combines required %s and optional failures without a separate warning', async (id) => {
     const warn = vi.fn()
     const requiredError = new Error('address already in use')
     const optionalError = new Error('todo unavailable')
-    await expect(auditStartupEntries(ctxWith([
+    const error = await auditStartupEntries(ctxWith([
       { fiber: fiber(3, requiredError), options: { id, name: './required.mjs' } },
       { fiber: fiber(3, optionalError), options: { id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo' } },
-    ]), NAME, warn)).rejects.toThrow([
-      'required startup failure: 1 entry did not activate',
-      `${id} (./required.mjs): ${requiredError.stack!}`,
-    ].join('\n'))
-    expect(warn).toHaveBeenCalledWith(`${NAME}: warning: 1 entry did not activate\ntool-todo (@deepseek-ai/dsh-tool-todo): ${optionalError.stack!}\n`)
+    ]), NAME, warn).catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(StartupError)
+    expect((error as Error).message).toContain(`${NAME}: startup failed: 1 required plugin did not activate`)
+    expect((error as Error).message).toContain(`  ${id} (required)\n    Package: ./required.mjs`)
+    expect((error as Error).message).toContain('  tool-todo\n    Package: @deepseek-ai/dsh-tool-todo')
+    expect(((error as Error).cause as AggregateError).errors).toEqual([requiredError, optionalError])
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('retains nested and shared errors in a fatal diagnostic without duplicating them', async () => {
+    const leaf = new Error('leaf failure')
+    leaf.stack = 'Error: leaf failure\n    at plugin.mjs:1:2'
+    const aggregate = new AggregateError([leaf, 'plain failure'], 'activation failed', { cause: leaf })
+    aggregate.stack = 'AggregateError: activation failed\n    at plugin.mjs:3:4'
+    const error = await auditStartupEntries(ctxWith([
+      { fiber: fiber(3, aggregate), options: { id: 'webserver', name: './plugin.mjs' } },
+    ]), NAME, vi.fn()).catch((error: unknown) => error)
+    expect((error as Error).message).toContain('AggregateError: activation failed')
+    expect((error as Error).message).toContain('    Error: leaf failure\n        at plugin.mjs:1:2')
+    expect((error as Error).message.match(/leaf failure/gu)).toHaveLength(1)
+    expect((error as Error).message).toContain('    plain failure')
+    expect(((error as Error).cause as AggregateError).errors).toEqual([aggregate])
+  })
+
+  it('groups original failure stacks and pending services in one startup diagnostic', async () => {
+    const original = new Error('listen EADDRINUSE: address already in use 127.0.0.1:3080')
+    original.stack = `${original.name}: ${original.message}\n    at Server.listen (node:net:1:2)`
+    const warn = vi.fn()
+    const error = await auditStartupEntries(ctxWith([
+      { fiber: fiber(0, undefined, { webServer: {} }), options: { id: 'web-runtime', name: './web.mjs' } },
+      { fiber: fiber(3, original), options: { id: 'webserver', name: '@deepseek-ai/dsh-host-webserver' } },
+      { fiber: fiber(0, undefined, { webRuntime: {} }), options: { id: 'connection', name: './connection.mjs' } },
+      { fiber: fiber(0), options: { id: 'unknown', name: './unknown.mjs' } },
+    ]), NAME, warn).catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(StartupError)
+    expect((error as Error).message).toMatchInlineSnapshot(`
+      "dsh-test-bin: startup failed: 2 required plugins did not activate
+
+      Failed plugins (1):
+        webserver (required)
+          Package: @deepseek-ai/dsh-host-webserver
+          Error: listen EADDRINUSE: address already in use 127.0.0.1:3080
+              at Server.listen (node:net:1:2)
+
+      Plugins waiting for services (3):
+        Plugin                 Missing services
+        web-runtime            webServer
+        connection (required)  webRuntime
+        unknown                unknown"
+    `)
+    expect(warn).not.toHaveBeenCalled()
   })
 
   it('rejects a required entry pending on an injected service', async () => {
@@ -689,7 +735,7 @@ describe('auditStartupEntries', () => {
       fiber: fiber(0, undefined, { headlessStartup: {} }),
       options: { id: 'headless-runner', name: '@deepseek-ai/dsh-headless' },
     }]), NAME, vi.fn())).rejects.toThrow(
-      'headless-runner (@deepseek-ai/dsh-headless): pending (waiting for service: headlessStartup)',
+      'headless-runner (required)  headlessStartup',
     )
   })
 })
@@ -960,7 +1006,7 @@ describe('boot', () => {
     ['import', undefined, '', 'failed to import'],
     ['config schema', 'export const Config = { "~standard": { version: 1, vendor: "app-boot-test", validate() { return { issues: [{ message: "schema failure" }] } } } }\nexport function apply() {}\n', '', 'schema failure'],
     ['config expression', 'export function apply() {}\n', '  config: { value: !!js "JSON.parse(\'invalid\')" }\n', 'SyntaxError'],
-    ['disabled expression', 'export function apply() {}\n', '  disabled: !!js "JSON.parse(\'invalid\')"\n', 'required startup failure: 1 entry did not activate\nwebserver (./required.mjs): disabled expression failed: SyntaxError'],
+    ['disabled expression', 'export function apply() {}\n', '  disabled: !!js "JSON.parse(\'invalid\')"\n', 'disabled expression failed: SyntaxError'],
     ['sync apply', 'export function apply() { throw new Error("sync failure") }\n', '', 'sync failure'],
     ['async apply', 'export async function apply() { await Promise.resolve(); throw new Error("async failure") }\n', '', 'async failure'],
     ['missing dependency', 'export const inject = ["missingRequiredService"]\nexport function apply() {}\n', '', 'missingRequiredService'],
@@ -995,8 +1041,8 @@ describe('boot', () => {
     ].join('\n'))
 
     await expect(boot(NAME, join(dir, 'cordis.yml'))).rejects.toThrow(new RegExp([
-      'plugin tree failed to load: required startup failure: 1 entry did not activate',
-      String.raw`webserver \(\.\/required-failure\.mjs\):`,
+      'startup failed: 1 required plugin did not activate',
+      String.raw`webserver \(required\)`,
       'required apply failure',
     ].join(String.raw`[\s\S]*`)))
     disposed = (globalThis as { __DSH_REQUIRED_TEST_DISPOSED__?: boolean }).__DSH_REQUIRED_TEST_DISPOSED__ ?? false

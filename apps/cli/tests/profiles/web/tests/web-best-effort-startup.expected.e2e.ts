@@ -210,7 +210,7 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () 
       : 'inject: [webProbeMissingRequiredService]'
     const diagnostic = failure === 'disabled expression'
       ? 'disabled expression failed: SyntaxError'
-      : 'pending (waiting for service: webProbeMissingRequiredService)'
+      : 'webProbeMissingRequiredService'
     writeFileSync(fixture.patch, `${readFileSync(fixture.patch, 'utf8')}- id: ${id}\n  ${patch}\n`)
     try {
       const result = await execa(process.execPath, [
@@ -238,8 +238,9 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () 
       expect(result.signal).toBeUndefined()
       expect(result.exitCode).toBe(1)
       expect(result.stdout).not.toContain('dsh web: http://')
-      expect(result.stderr).toContain('required startup failure')
-      expect(result.stderr).toContain(`${id} (@deepseek-ai/dsh-client-${id}): ${diagnostic}`)
+      expect(result.stderr).toContain('startup failed:')
+      expect(result.stderr).toContain(`${id} (required)`)
+      expect(result.stderr).toContain(diagnostic)
       expect(readFileSync(fixture.events, 'utf8')).toBe('good apply\ngood dispose\n')
     } finally {
       rmSync(fixture.root, { recursive: true, force: true })
@@ -289,8 +290,15 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () 
       expect(result.signal).toBeUndefined()
       expect(result.exitCode).toBe(1)
       expect(result.stdout).not.toContain('dsh web: http://')
-      expect(result.stderr).toContain('required startup failure')
-      expect(result.stderr).toContain('EADDRINUSE')
+      expect(result.stderr).toContain('startup failed:')
+      expect(result.stderr).toContain('dsh: startup failed: 2 required plugins did not activate')
+      expect(result.stderr).toContain('Failed plugins (1):')
+      expect(result.stderr).toContain('  webserver (required)\n    Package: @deepseek-ai/dsh-host-webserver')
+      expect(result.stderr).toContain('Plugins waiting for services (')
+      expect(result.stderr).toMatch(/connection \(required\) +webRuntime/u)
+      expect(result.stderr).toContain('at Server.setupListenHandle')
+      expect(result.stderr.match(/EADDRINUSE/gu)).toHaveLength(1)
+      expect(result.stderr).not.toMatch(/dsh: warning:|\[cause\]|at boot \(|at runCli \(|Node\.js v/u)
     } finally {
       await new Promise<void>((resolve, reject) => {
         blocker.close((error) => { if (error === undefined) resolve(); else reject(error) })
