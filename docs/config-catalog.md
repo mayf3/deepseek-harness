@@ -2578,10 +2578,12 @@ Source: [`packages/storage/storage-sqlite/src/index.ts:24`](../packages/storage/
 export interface Config {
   /** Maximum live continuable children across one root's tree, excluding the root; defaults to 8. */
   maxActiveSubagents?: number
+  /** Default delegation depth for tools without an explicit limit; defaults to 3. */
+  maxDepth?: number
 }
 ```
 
-Source: [`packages/subagent/subagent/src/index.ts:189`](../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:190`](../packages/subagent/subagent/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-acp"></a>
 
@@ -3268,13 +3270,14 @@ export interface Config {
     deny?: string[]
   }
   /**
-   * Maximum child depth: a non-negative safe integer (default `3`; `0` forbids
-   * delegation entirely), or `'provider-managed'` to send no cap. A numeric cap
+   * Maximum child depth: a non-negative safe integer (`0` forbids delegation),
+   * or `'provider-managed'` to send no cap. A numeric cap
    * requires the provider's `depthLimit` capability (mount fails loud
    * otherwise). The provider checks the calling agent's current depth at every
    * start; the tool remains model-visible so runtime policy owns rejection.
    * `'provider-managed'` is for an out-of-process provider whose recursion
-   * budget belongs to the child runtime or its own deployment.
+   * budget belongs to the child runtime or its own deployment. Omission reads
+   * the current Host subagent depth setting (default `3`) at each delegation.
    */
   maxDepth?: number | 'provider-managed'
 }

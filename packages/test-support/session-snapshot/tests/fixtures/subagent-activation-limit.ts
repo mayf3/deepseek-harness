@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 
 export const name = 'subagent-activation-limit'
-export const inject = ['agents']
+export const inject = ['agents', 'settings', 'subagents']
 
 /** Order parent admission and child completion without elapsed-time assumptions. */
 export function apply(ctx: Context): void {
@@ -13,6 +13,7 @@ export function apply(ctx: Context): void {
   })
   ctx.on('agent/pre-step', async ({ agent }, next) => {
     if (agent.session.header.parentSession !== undefined) await parentClosed.promise
+    else await ctx.settings.update('subagent', { maxActiveSubagents: 1 })
     return next()
   })
 }

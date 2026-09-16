@@ -1,0 +1,64 @@
+- dialog "设置":
+  - navigation:
+    - text: 设置
+    - button "通用设置":
+      - img
+      - text: 通用设置
+    - button "模型":
+      - img
+      - text: 模型
+    - button "插件":
+      - img
+      - text: 插件
+    - button "Agent 预设":
+      - img
+      - text: Agent 预设
+    - button "已归档会话":
+      - img
+      - text: 已归档会话
+  - button "打开配置文件"
+  - button "关闭":
+    - img
+    - text: 关闭
+  - heading "插件" [level=2]
+  - paragraph: 配置和查看本部署已安装的插件。
+  - tablist "插件视图":
+    - tab "插件配置" [selected]
+    - tab "插件列表"
+  - tabpanel "插件配置":
+    - list:
+      - listitem:
+        - 'button "展开设置: 终端"':
+          - text: 终端 限制 agent 运行的每一条命令。
+          - img
+      - listitem:
+        - 'button "展开设置: Agent 循环"':
+          - text: Agent 循环 Agent 如何派发工具调用。
+          - img
+      - listitem:
+        - 'button "收起设置: Subagent 限制" [expanded]':
+          - text: Subagent 限制 设置委派的最大深度，以及可同时在线的子代理数量。
+          - img
+        - text: 最大深度 已覆盖
+        - button "恢复默认"
+        - textbox "最大深度":
+          - /placeholder: ""
+          - text: "2"
+        - paragraph: 主代理的深度为 0。设为 1 时仅允许直接子代理；设为 0 时禁用委派。工具显式配置的深度优先。
+        - text: 同时在线上限 已覆盖
+        - button "恢复默认"
+        - textbox "同时在线上限":
+          - /placeholder: ""
+          - text: "12"
+        - paragraph: 同一主代理的所有可续接后代共享额度。等待中的子代理也计入；主代理不计入。
+        - paragraph: 保存后用于后续委派。调低在线上限不会终止已有子代理。一次性运行和外部代理不占用在线额度。
+        - button "放弃修改" [disabled]
+        - button "保存" [disabled]
+      - listitem:
+        - 'button "展开设置: Subagent 模型"':
+          - text: Subagent 模型 控制 Agent 为 Subagent 选择模型的权限。
+          - img
+      - listitem:
+        - 'button "展开设置: 网页搜索"':
+          - text: 网页搜索 DeepSeek 搜索提供方。
+          - img

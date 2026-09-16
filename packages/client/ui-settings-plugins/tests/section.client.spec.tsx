@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { SubagentLimitsCard, type SubagentLimitsCardProps } from '../src/client/SubagentLimitsCard.tsx'
+import type { SubagentLimitsCardState } from '../src/client/subagent-limits-card-controller.ts'
 import { AgentLoopCard } from '../src/client/AgentLoopCard.tsx'
 import type { AgentLoopCardProps } from '../src/client/AgentLoopCard.tsx'
 import { BashCard } from '../src/client/BashCard.tsx'
@@ -567,5 +569,25 @@ describe('WebSearchCard', () => {
       ['maxUses', '4'],
     ])
     expect(actions.resetField.mock.calls).toEqual([['baseURL'], ['maxUses']])
+  })
+})
+
+
+describe('SubagentLimitsCard', () => {
+  it('edits, resets and disables each limit while saving', () => {
+    const store = createSnapshotStore<SubagentLimitsCardState>({ ...settled, dirty: true, maxDepth: { ...field('3'), overridden: true }, maxActiveSubagents: { ...field('8'), overridden: true } })
+    const actions = cardActions()
+    const props = { ...actions, t, useSubagentLimitsCard: bindSnapshotSelector(store) } as unknown as SubagentLimitsCardProps
+    render(<SubagentLimitsCard {...props} />)
+    fireEvent.click(screen.getByText(en.subagentLimitsTitle))
+    fireEvent.change(screen.getByLabelText(en.subagentMaxDepth), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText(en.subagentMaxActive), { target: { value: '12' } })
+    expect(actions.edit.mock.calls).toEqual([['maxDepth', '2'], ['maxActiveSubagents', '12']])
+    for (const button of screen.getAllByRole('button', { name: en.reset })) fireEvent.click(button)
+    expect(actions.resetField.mock.calls).toEqual([['maxDepth'], ['maxActiveSubagents']])
+    act(() => { store.set({ ...store.getSnapshot(), saving: true }) })
+    expect(screen.getByLabelText(en.subagentMaxDepth)).toHaveProperty('disabled', true)
+    act(() => { store.set({ ...store.getSnapshot(), saving: false, writable: false }) })
+    expect(screen.getByLabelText(en.subagentMaxActive)).toHaveProperty('disabled', true)
   })
 })

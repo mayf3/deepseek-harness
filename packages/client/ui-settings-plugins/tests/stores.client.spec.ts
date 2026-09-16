@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError, stubSettingsScope, type StubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { CardForm, numberField, textField } from '../src/client/card-form.ts'
+import { SubagentLimitsCardController, type SubagentLimitsSettings } from '../src/client/subagent-limits-card-controller.ts'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-card-controller.ts'
 import { BashCardController, type BashSettings } from '../src/client/bash-card-controller.ts'
 import {
@@ -1156,5 +1157,35 @@ describe('ConfigurablePluginsTabController', () => {
 
     expect(controller.inject().hooks.configurablePlugins.getSnapshot())
       .toEqual({ loaded: true, namespaces: [] })
+  })
+})
+
+
+describe('SubagentLimitsCardController', () => {
+  it('validates staged limits, saves them, and restores composed defaults', async () => {
+    const host = stubSettingsScope<SubagentLimitsSettings>()
+    const face = new SubagentLimitsCardController(host.scope).inject()
+    const state = () => face.hooks.subagentLimitsCard.getSnapshot()
+    host.publish({ status: 'ready', writable: true, value: { maxDepth: 3, maxActiveSubagents: 8 }, base: { maxDepth: 3, maxActiveSubagents: 8 }, user: {} })
+    acceptWrites(host)
+    expect(state().maxActiveSubagents.text).toBe('8')
+    for (const draft of ['-1', '1.5', '9007199254740992', 'wat', '-0']) {
+      face.edit('maxDepth', draft)
+      expect(state().invalid).toBe(true)
+    }
+    face.edit('maxDepth', '0')
+    face.edit('maxActiveSubagents', '0')
+    expect(state().invalid).toBe(true)
+    face.edit('maxActiveSubagents', '12')
+    expect(host.set).not.toHaveBeenCalled()
+    face.save()
+    await vi.waitFor(() => { expect(state().saving).toBe(false) })
+    expect(host.scope.getSnapshot().value).toEqual({ maxDepth: 0, maxActiveSubagents: 12 })
+    face.resetField('maxDepth')
+    face.edit('maxActiveSubagents', '')
+    expect(state().invalid).toBe(false)
+    face.save()
+    await vi.waitFor(() => { expect(state().saving).toBe(false) })
+    expect(host.scope.getSnapshot().value).toEqual({ maxDepth: 3, maxActiveSubagents: 8 })
   })
 })

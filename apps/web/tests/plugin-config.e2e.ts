@@ -74,8 +74,8 @@ describe('web e2e: plugin configuration section', () => {
 
     // Every card the shipped web composition exposes: the shell executor, the
     // agent loop, subagent selection, and the DeepSeek search provider.
-    await dialog.getByText('Subagent', { exact: true }).waitFor({ timeout: 10_000 })
-    expect(await dialog.getByRole('button', { name: '展开设置: Subagent' }).count()).toBe(1)
+    await dialog.getByText('Subagent 模型', { exact: true }).waitFor({ timeout: 10_000 })
+    expect(await dialog.getByRole('button', { name: '展开设置: Subagent 模型' }).count()).toBe(1)
     await dialog.getByText('终端', { exact: true }).waitFor({ timeout: 10_000 })
     expect(await dialog.getByText('Agent 循环', { exact: true }).count()).toBe(1)
     expect(await dialog.getByText('网页搜索', { exact: true }).count()).toBe(1)
@@ -87,10 +87,39 @@ describe('web e2e: plugin configuration section', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('saves subagent limits and resets them to the deployment defaults', async () => {
+    const dialog = await openPlugins()
+    await dialog.getByRole('button', { name: '展开设置: Subagent 限制', exact: true }).click()
+    const depth = dialog.getByLabel('最大深度', { exact: true })
+    const capacity = dialog.getByLabel('同时在线上限', { exact: true })
+    expect(await depth.inputValue()).toBe('3')
+    expect(await capacity.inputValue()).toBe('8')
+    await depth.fill('2')
+    await capacity.fill('12')
+    await dialog.getByRole('button', { name: '保存', exact: true }).click()
+    await dialog.getByRole('button', { name: '展开设置: Subagent 限制', exact: true }).waitFor()
+    await expect.poll(settingsDocument).toContain('maxActiveSubagents: 12')
+    await expect.poll(settingsDocument).toContain('maxDepth: 2')
+    await dialog.getByRole('button', { name: '展开设置: Subagent 限制', exact: true }).click()
+    const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'subagent-limits.expected.md'), snapshot, MODE)
+    await depth.fill('1.5')
+    expect(await dialog.getByRole('button', { name: '保存', exact: true }).isDisabled()).toBe(true)
+    await depth.fill('2')
+    await dialog.getByRole('button', { name: '恢复默认', exact: true }).first().click()
+    await dialog.getByRole('button', { name: '恢复默认', exact: true }).first().click()
+    await dialog.getByRole('button', { name: '保存', exact: true }).click()
+    await dialog.getByRole('button', { name: '展开设置: Subagent 限制', exact: true }).waitFor()
+    await dialog.getByRole('button', { name: '展开设置: Subagent 限制', exact: true }).click()
+    expect(await depth.inputValue()).toBe('3')
+    expect(await capacity.inputValue()).toBe('8')
+    await dialog.getByRole('button', { name: '收起设置: Subagent 限制', exact: true }).click()
+  })
+
   it('persists selected adapter routes as the subagent model allowlist', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-config-subagent-model-selection'))
     const dialog = await openPlugins()
-    await dialog.getByText('Subagent', { exact: true }).click()
+    await dialog.getByText('Subagent 模型', { exact: true }).click()
     const toggle = dialog.getByRole('switch', { name: '允许 Agent 为 Subagent 选择模型' })
 
     await toggle.click()
@@ -100,7 +129,7 @@ describe('web e2e: plugin configuration section', () => {
     await firstModel.check()
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
 
-    const expandSubagent = dialog.getByRole('button', { name: '展开设置: Subagent' })
+    const expandSubagent = dialog.getByRole('button', { name: '展开设置: Subagent 模型' })
     await expandSubagent.waitFor({ timeout: 5_000 })
     await expect.poll(async () => (await settingsDocument()).includes('subagent-model-selection:'), { timeout: 10_000 })
       .toBe(true)
@@ -218,6 +247,6 @@ describe('web e2e: plugin configuration section', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['section.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['section.expected.md', 'subagent-limits.expected.md'])
   })
 })

@@ -11,6 +11,17 @@ export type PluginsSettingsLocaleKey =
   | 'webSearchTitle' | 'webSearchDescription'
   | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
   | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
+  | 'subagentLimitsTitle'
+  | 'subagentLimitsDescription'
+  | 'subagentMaxDepth'
+  | 'subagentMaxDepthHint'
+  | 'subagentMaxActive'
+  | 'subagentMaxActiveHint'
+  | 'subagentDepthEyebrow'
+  | 'subagentCapacityEyebrow'
+  | 'subagentDepthInvalid'
+  | 'subagentCapacityInvalid'
+  | 'subagentLimitsApplies'
   | 'subagentModelSelectionTitle' | 'subagentModelSelectionDescription'
   | 'subagentModelSelectionToggle' | 'subagentModelSelectionChoose' | 'subagentModelSelectionAllowed'
   | 'subagentModelSelectionLoading' | 'subagentModelSelectionLoadFailed' | 'subagentModelSelectionRetry'
@@ -57,7 +68,18 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: 'Leave blank to use the provider default.',
   webSearchMaxUses: 'Max searches per request',
   webSearchMaxUsesHint: 'How many times one request may search before it must answer.',
-  subagentModelSelectionTitle: 'Subagent',
+  subagentLimitsTitle: 'Subagent limits',
+  subagentLimitsDescription: 'Set how deep delegation can go and how many subagents can stay online.',
+  subagentMaxDepth: 'Maximum depth',
+  subagentMaxDepthHint: 'The main agent is depth 0. Set 1 for direct children only, or 0 to disable delegation. Explicit tool limits take precedence.',
+  subagentMaxActive: 'Online limit',
+  subagentMaxActiveHint: 'Shared by all continuable descendants of one main agent. Waiting subagents also count; the main agent does not.',
+  subagentDepthEyebrow: 'Delegation depth',
+  subagentCapacityEyebrow: 'Shared capacity',
+  subagentDepthInvalid: 'Enter a whole number of 0 or more.',
+  subagentCapacityInvalid: 'Enter a whole number of 1 or more.',
+  subagentLimitsApplies: 'Saved limits apply to future delegation attempts. Lowering capacity keeps existing subagents online. One-shot and external runs do not count toward capacity.',
+  subagentModelSelectionTitle: 'Subagent models',
   subagentModelSelectionDescription: 'Control which models agents may choose for subagents.',
   subagentModelSelectionToggle: 'Allow agents to choose models for subagents',
   subagentModelSelectionChoose: 'When enabled, agents can choose a provider, model, and reasoning effort for each subagent from the authorized models below. Applies only to new sessions.',
@@ -113,7 +135,18 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: '留空则使用提供方默认地址。',
   webSearchMaxUses: '单次请求最多搜索次数',
   webSearchMaxUsesHint: '一次请求在必须作答前最多可以搜索多少次。',
-  subagentModelSelectionTitle: 'Subagent',
+  subagentLimitsTitle: 'Subagent 限制',
+  subagentLimitsDescription: '设置委派的最大深度，以及可同时在线的子代理数量。',
+  subagentMaxDepth: '最大深度',
+  subagentMaxDepthHint: '主代理的深度为 0。设为 1 时仅允许直接子代理；设为 0 时禁用委派。工具显式配置的深度优先。',
+  subagentMaxActive: '同时在线上限',
+  subagentMaxActiveHint: '同一主代理的所有可续接后代共享额度。等待中的子代理也计入；主代理不计入。',
+  subagentDepthEyebrow: '委派层级',
+  subagentCapacityEyebrow: '共享额度',
+  subagentDepthInvalid: '请输入不小于 0 的整数。',
+  subagentCapacityInvalid: '请输入不小于 1 的整数。',
+  subagentLimitsApplies: '保存后用于后续委派。调低在线上限不会终止已有子代理。一次性运行和外部代理不占用在线额度。',
+  subagentModelSelectionTitle: 'Subagent 模型',
   subagentModelSelectionDescription: '控制 Agent 为 Subagent 选择模型的权限。',
   subagentModelSelectionToggle: '允许 Agent 为 Subagent 选择模型',
   subagentModelSelectionChoose: '开启后，Agent 可以从下方授权模型中，为每个 Subagent 选择提供方、模型和推理强度。仅影响新会话。',

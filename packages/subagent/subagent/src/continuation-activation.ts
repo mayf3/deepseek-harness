@@ -41,13 +41,11 @@ import type { ActivationObserver, ActivationTerminal } from './lifecycle.ts'
 class ActivationPool {
   private readonly slots = new Set<symbol>()
 
-  constructor(private readonly capacity: number) {}
-
   /** Reserve before reconstruction; the returned release also tolerates unpublished rollback. */
-  reserve(): () => void {
-    if (this.slots.size >= this.capacity) {
+  reserve(capacity: number): () => void {
+    if (this.slots.size >= capacity) {
       throw new SubagentError(
-        `subagent limit reached (${this.capacity} active children); wait for an existing child to finish `
+        `subagent limit reached (${capacity} active children); wait for an existing child to finish `
         + 'or complete this work with the current agents',
         'ACTIVATION_LIMIT_REACHED',
       )
@@ -207,7 +205,7 @@ export class ContinuableActivationRegistry {
       childId: SessionId,
       parent: Agent,
     ) => ActivationObserver,
-    private readonly maxActiveSubagents: number,
+    private readonly maxActiveSubagents: () => number,
   ) {
     // Ordinary Cordis owner effects unwind in reverse registration order, which
     // cannot express the dynamic child graph. Register the private scope's
@@ -488,7 +486,7 @@ export class ContinuableActivationRegistry {
     inputs.signal.throwIfAborted()
     const lineage = this.liveLineage(inputs.parent)
     const pool = this.resident.get(inputs.parent.id)?.pool ?? this.rootPool(inputs.parent)
-    const releaseSlot = pool.reserve()
+    const releaseSlot = pool.reserve(this.maxActiveSubagents())
     const settled = Promise.withResolvers<void>()
     const materialization: Materialization = {
       lineage,
@@ -607,7 +605,7 @@ export class ContinuableActivationRegistry {
   private rootPool(parent: Agent): ActivationPool {
     let pool = this.rootPools.get(parent)
     if (pool === undefined) {
-      pool = new ActivationPool(this.maxActiveSubagents)
+      pool = new ActivationPool()
       this.rootPools.set(parent, pool)
     }
     return pool
