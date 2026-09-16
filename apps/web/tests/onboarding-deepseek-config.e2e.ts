@@ -205,10 +205,8 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await settings.getByText('自定义设置').click()
     expect(await settings.getByLabel('模型 ID 1').inputValue()).toBe('deepseek-flash')
     expect(await settings.getByLabel('显示名称 1').inputValue()).toBe('DeepSeek-V41-Flash')
-    expect(await settings.getByLabel('模型 ID 2').inputValue()).toBe('deepseek-v4-flash')
-    expect(await settings.getByLabel('模型 ID 3').inputValue()).toBe('deepseek-v4-pro')
-    expect(await settings.getByLabel('模型 ID 4').inputValue()).toBe('deepseek-v4-flash-vision-exp')
-    expect(await settings.getByRole('button', { name: /删除模型/ }).count()).toBe(4)
+    expect(await settings.getByLabel('模型 ID 2').inputValue()).toBe('deepseek-v4-pro')
+    expect(await settings.getByRole('button', { name: /删除模型/ }).count()).toBe(2)
     await settings.getByRole('button', { name: '模型选项 1' }).click()
     expect(await settings.getByLabel('图片输入 1').inputValue()).toBe('enabled')
     const defaultModels = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
@@ -225,12 +223,12 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await expect(scaffold.ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-flash')).resolves.toMatchObject({
       name: 'Configured Flash', inputModalities: ['text'], systemPromptUpdate: 'in-history',
     })
-    await expect(scaffold.ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-v4-flash-vision-exp')).resolves.toMatchObject({
-      inputModalities: ['text', 'image'],
+    await expect(scaffold.ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-v4-pro')).resolves.toMatchObject({
+      name: 'DeepSeek-V4-Pro', inputModalities: ['text'],
     })
     await deepSeek.locator('xpath=ancestor::li').getByRole('button', { name: '编辑' }).click()
     await settings.getByText('自定义设置').click()
-    for (let index = 0; index < 4; index++) {
+    for (let index = 0; index < 2; index++) {
       await settings.getByRole('button', { name: /删除模型/ }).first().click()
     }
     await settings.getByRole('button', { name: '添加模型' }).click()
