@@ -64,7 +64,7 @@ it('keeps the newest event, hides for connection priority, and invokes only the 
   try {
     await f.emit(available)
     await act(async () => { f.status.resolve({ phase: 'idle' }) })
-    fireEvent.click(screen.getByRole('button', { name: '检查到新版本' }))
+    fireEvent.click(screen.getByRole('button', { name: '新版本' }))
     await act(async () => {})
     expect(f.open).toHaveBeenCalledOnce()
     f.view.rerender(<f.Indicator hidden />)
@@ -103,7 +103,7 @@ it('accepts initial status, coalesces actions, and ignores late events and actio
   const pending = Promise.withResolvers<undefined>()
   try {
     await act(async () => { f.status.resolve(available) })
-    expect(screen.getByRole('button', { name: '检查到新版本' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '新版本' })).toBeTruthy()
     await f.emit({ phase: 'verifying', version: available.version })
     f.source.open()
     expect(f.open).not.toHaveBeenCalled()
@@ -133,8 +133,8 @@ it('renders the same semantic update in the active Web locale', async () => {
   const f = fixture()
   try {
     await f.emit(available)
-    expect(screen.getByRole('button', { name: '检查到新版本' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '新版本' })).toBeTruthy()
     f.view.rerender(<f.Indicator dictionary={en} />)
-    expect(screen.getByRole('button', { name: 'New Update' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Update' })).toBeTruthy()
   } finally { f.view.unmount(); f.status.resolve(available) }
 })

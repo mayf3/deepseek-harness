@@ -1,8 +1,14 @@
+/* The entry's seat is the Settings foot row, which bleeds 2px past the sidebar
+   content box for the Settings hover surface. The New Session bar and panel
+   rows instead keep a 2px inset inside that box, so this entry gives back both
+   2px offsets and ends on their trailing edge rather than flush against the
+   sidebar edge. */
 .indicator {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   flex: none;
+  margin-inline-end: 4px;
   padding: 1px 8px;
   border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 20%, transparent);
   border-radius: 6px;

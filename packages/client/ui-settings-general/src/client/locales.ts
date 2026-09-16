@@ -3,7 +3,7 @@
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   'trigger': '设置',
-  'desktop.update.available': '检查到新版本',
+  'desktop.update.available': '新版本',
   'desktop.update.checking': '正在检查更新…',
   'desktop.update.progress': '{percent}%…',
   'desktop.update.verifying': '正在校验更新文件…',
@@ -37,7 +37,7 @@ export type SettingsKey = keyof typeof zh
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
   'trigger': 'Settings',
-  'desktop.update.available': 'New Update',
+  'desktop.update.available': 'Update',
   'desktop.update.checking': 'Checking for updates…',
   'desktop.update.progress': '{percent}%…',
   'desktop.update.verifying': 'Verifying update files…',
