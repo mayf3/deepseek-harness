@@ -240,15 +240,12 @@
 
 .projectRow:hover .rowActions,
 .sessionRow:hover .rowActions,
-.projectRow:focus-within .rowActions,
-.sessionRow:focus-within .rowActions,
 .projectRow.menuOpen .rowActions,
 .sessionRow.menuOpen .rowActions {
   display: inline-flex;
 }
 
 .sessionRow:hover .time,
-.sessionRow:focus-within .time,
 .sessionRow.menuOpen .time {
   display: none;
 }

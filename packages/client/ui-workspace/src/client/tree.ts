@@ -508,12 +508,11 @@ function folderPath(path: string): string {
 /**
  * Find the nearest registered ancestor, excluding the Workspace directory itself.
  * Paths use Host spelling; matching is case-sensitive, like Workspace identity.
- * @param path - Workspace directory; absent for Ungrouped.
+ * @param path - Workspace directory.
  * @param parents - registered Workspace directory paths.
  * @returns the owning parent path, or undefined when no parent contains the Workspace.
  */
-export function owningParentFolder(path: string | undefined, parents: readonly string[]): string | undefined {
-  if (path === undefined) return undefined
+export function owningParentFolder(path: string, parents: readonly string[]): string | undefined {
   const child = folderPath(path)
   let owner: string | undefined
   let length = -1

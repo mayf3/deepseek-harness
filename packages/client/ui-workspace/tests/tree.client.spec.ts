@@ -587,7 +587,6 @@ describe('workspaceLabel', () => {
   })
 })
 
-
 describe('parent folder membership', () => {
   it.each([
     ['/git/app', ['/git'], '/git'],
@@ -596,7 +595,6 @@ describe('parent folder membership', () => {
     ['/git/team/app', ['/git', '/git/team'], '/git/team'],
     ['/git/team/app', ['/git/team', '/git'], '/git/team'],
     ['/git/app', ['/'], '/'],
-    [undefined, ['/git'], undefined],
     ['/git/app', [], undefined],
     [String.raw`C:\git\app`, ['C:/git/'], 'C:/git/'],
     [String.raw`\\server\share\app`, [String.raw`\\server\share`], String.raw`\\server\share`],

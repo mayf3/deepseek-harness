@@ -1742,6 +1742,74 @@ describe('Workspace tree grouping', () => {
     expect(screen.getByText('Child')).toBeTruthy()
   })
 
+  it('drops after an expanded parent through its last descendant', () => {
+    const outside = { ...workspace('outside', []), path: '/outside' }
+    const tail = { ...workspace('tail', []), path: '/tail' }
+    const b = mount({ useWorkspaces: hook(workspaceState([outside, root, team, child, tail])) })
+    section('Projects').getBoundingClientRect = () => ({
+      top: 0, bottom: 200, left: 0, right: 200, width: 200, height: 200,
+      x: 0, y: 0, toJSON: () => ({}),
+    })
+    const source = screen.getByText('outside').closest('[role="treeitem"]')!
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    fireDrag(section('Child'), 'dragOver', 190)
+    fireDrag(section('Child'), 'drop', 190)
+    fireEvent.dragEnd(source)
+    expect(b.props.insertWorkspaceBefore).toHaveBeenCalledExactlyOnceWith(wid('outside'), wid('tail'))
+  })
+
+  it('avoids a Host reorder when only descendants separate adjacent siblings', () => {
+    const outside = { ...workspace('outside', []), path: '/outside' }
+    const b = mount({ useWorkspaces: hook(workspaceState([root, child, outside])) })
+    section('outside').getBoundingClientRect = () => ({
+      top: 0, bottom: 200, left: 0, right: 200, width: 200, height: 200,
+      x: 0, y: 0, toJSON: () => ({}),
+    })
+    const source = screen.getByText('Projects').closest('[role="treeitem"]')!
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    fireDrag(section('outside'), 'drop', 10)
+    fireEvent.dragEnd(source)
+    expect(b.props.insertWorkspaceBefore).not.toHaveBeenCalled()
+  })
+
+  it('moves a parent with its descendants while preserving their order', () => {
+    const outside = { ...workspace('outside', []), path: '/outside' }
+    const other = workspace('other', [])
+    const b = mount({ useWorkspaces: hook(workspaceState([root, team, child, other, outside])) })
+    const source = screen.getByText('Projects').closest('[role="treeitem"]')!
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    fireDrag(section('outside'), 'drop', 100)
+    fireEvent.dragEnd(source)
+    expect(b.props.insertWorkspaceBefore).toHaveBeenCalledExactlyOnceWith(root.workspaceId, undefined)
+    rerender(b, { useWorkspaces: hook(workspaceState([team, child, other, outside, root])) })
+    expect(screen.getAllByRole('treeitem').map(row => row.textContent)).toEqual([
+      'outside', 'Projects', 'Team', 'Child', 'other',
+    ])
+    expect(within(section('Team')).getByText('Child')).toBeTruthy()
+  })
+
+  it('keeps a saved ancestor collapse and highlights the current descendant', () => {
+    const b = mount({ useWorkspaces: hook(workspaceState([root, team, child])) })
+    fireEvent.click(screen.getByText('Projects'))
+    rerender(b, {
+      useSessions: hook(sessionState([summary('child-session', 1)], { current: sid('child-session') })),
+    })
+    expect(screen.queryByText('Child')).toBeNull()
+    expect(b.store.getSnapshot().groupExpansion.root).toBe(false)
+    expect(section('Projects').querySelector('[class*="folderActive"]')).not.toBeNull()
+  })
+
+  it('reveals a search hit without persisting default-expanded ancestors', () => {
+    const b = mount({
+      useWorkspaces: hook(workspaceState([root, team, child])),
+      useSessions: hook(sessionState([summary('child-session', 1)])),
+    })
+    fireEvent.change(screen.getByPlaceholderText('搜索会话…'), { target: { value: 'child-session' } })
+    fireEvent.click(screen.getByRole('treeitem'))
+    expect(b.store.getSnapshot().groupExpansion).toEqual({ child: true })
+    expect(screen.getByText('child-session')).toBeTruthy()
+  })
+
   it('keeps Workspace drag within its parent and uses the next displayed sibling as anchor', () => {
     const b = mount({ useWorkspaces: hook(workspaceState([
       workspace('alpha', []), { ...workspace('outside', []), path: '/elsewhere/outside' },

@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-15-sidebar-parent-folders.md
-2026-09-15-sidebar-parent-folders.md: 236d0be6cbe12538c76608af62b9448d313f7739
-2026-09-15-sidebar-parent-folders.zh.md: 3e243326dab6502061f2d3d2c5df0fbf88cfd699

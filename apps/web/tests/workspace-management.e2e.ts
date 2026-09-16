@@ -705,7 +705,29 @@ describe('web e2e: workspace management (create / rename / grouping / hover affo
       page, '[aria-label="Workspace actions for folder-group"] >> xpath=ancestor::*[contains(@class, "groupSection")][1]',
       scaffold.workspaceCwd,
     ), MODE)
+    const sourceWorkspace = scaffold.ctx.workspaceRegistry.list().find(workspace => workspace.title === 'xx')!
+    await sourceWorkspace.setTitle('drag-source')
+    const dragSource = page.getByRole('treeitem').filter({ has: page.getByText('drag-source', { exact: true }) })
+    await dragSource.waitFor()
+    await dragSource.dragTo(parent, { targetPosition: { x: 10, y: 3 } })
+    await expect.poll(() => {
+      const ordered = scaffold.ctx.workspaceRegistry.list()
+      return ordered.findIndex(workspace => workspace.id === sourceWorkspace.id)
+        < ordered.findIndex(workspace => workspace.id === parentWorkspace.id)
+    }, { timeout: 10_000 }).toBe(true)
+    const lastChild = section.getByRole('treeitem', { name: 'project-one', exact: true })
+    const targetBounds = (await lastChild.boundingBox())!
+    const sectionBounds = (await section.boundingBox())!
+    expect(targetBounds.y + targetBounds.height / 2).toBeGreaterThan(sectionBounds.y + sectionBounds.height / 2)
+    await dragSource.dragTo(lastChild)
+    await expect.poll(() => {
+      const ordered = scaffold.ctx.workspaceRegistry.list()
+      return ordered.findIndex(workspace => workspace.id === sourceWorkspace.id)
+        > ordered.findIndex(workspace => workspace.id === parentWorkspace.id)
+    }, { timeout: 10_000 }).toBe(true)
+    await section.getByText('project-two', { exact: true }).waitFor()
     await parent.click()
+    expect(await parent.locator('[class*="folderActive"]').count()).toBe(1)
     expect(await section.getByText('project-two', { exact: true }).count()).toBe(0)
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })

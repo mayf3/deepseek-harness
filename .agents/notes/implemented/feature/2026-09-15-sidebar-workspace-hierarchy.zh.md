@@ -2,7 +2,7 @@
 
 Status: implemented
 
-[English](2026-09-15-sidebar-parent-folders.md) | 中文
+[English](2026-09-15-sidebar-workspace-hierarchy.md) | 中文
 
 ## 问题
 
@@ -12,7 +12,7 @@ Status: implemented
 
 侧栏默认将 Workspace 显示为同级分组。在**视图选项 → 分组方式**中选择**按工作区树**后，侧栏从已注册的 Workspace 路径派生递归层级。所选模式保存在现有的浏览器本地视图存储中。每个 Workspace 位于最近的严格祖先下；相同路径不会成为自己的父级。比较遵循目录分隔符和 Host 的大小写拼写，不解析符号链接别名。同级项目保留 Host 顺序。
 
-添加目录会直接注册普通 Workspace 并打开其 Session。父 Workspace 保留自己的 Session 和标准行操作。现有的浏览器本地展开状态同时控制子 Workspace 和父级自己的 Session 行；没有显式偏好时，祖先默认展开。所有行的高亮与点击区域等宽，内容按层级缩进。Workspace 拖拽限制在同级之间，搜索导航会展开全部祖先。
+添加目录会直接注册普通 Workspace 并打开其 Session。父 Workspace 保留自己的 Session 和标准行操作，子 Workspace 位于父级自己的 Session 之前。现有的浏览器本地展开状态同时控制子 Workspace 和父级自己的 Session 行；没有显式偏好时，祖先默认展开。显式折叠也会隐藏当前 Session，但祖先文件夹图标会标识它所在的子树。所有行的高亮与点击区域等宽，内容按层级缩进。Workspace 拖拽限制在同级之间；后代落点交给最近的兼容祖先，同级位置未变时不写入 Host 顺序，搜索导航会展开全部祖先。
 
 ## 考虑过的替代方案
 
@@ -26,6 +26,6 @@ Status: implemented
 
 ## 结果
 
-用户可以折叠相关项目，而不改变 Session 归属。删除祖先会保留子工作区注册；独立的 [Workspace 删除语义](2026-07-27-workspace-registration-deletion.zh.md)仍决定被删除 Workspace 自身 Session 的处理，该决策继续有效。浏览器本地折叠偏好不跨浏览器同步，嵌套取决于规范路径拼写。
+用户可以折叠相关项目，而不改变 Session 归属。删除祖先会保留子工作区注册；独立的 [Workspace 删除语义](2026-07-27-workspace-registration-deletion.zh.md)仍决定被删除 Workspace 自身 Session 的处理，该决策继续有效。浏览器本地折叠偏好不跨浏览器同步，嵌套取决于分隔符归一化后的注册路径拼写。
 
-纯路径测试覆盖严格祖先关系、路径段边界、POSIX 反斜杠和 Windows 分隔符。组件与浏览器场景覆盖默认同级分组、树形模式选择与恢复、直接添加、后续注册、父级独立 Session、折叠恢复、搜索展开、同级排序及整行等宽。
+纯路径测试覆盖严格祖先关系、路径段边界、POSIX 反斜杠和 Windows 分隔符。组件与浏览器场景覆盖默认同级分组、树形模式选择与恢复、直接添加、后续注册、父级独立 Session、折叠恢复、搜索展开、通过后代落点进行同级排序、父级子树移动、折叠当前会话提示及整行等宽。

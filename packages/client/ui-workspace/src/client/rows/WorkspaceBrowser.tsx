@@ -161,7 +161,7 @@ interface WorkspaceDragState {
   over: { id: WorkspaceId; half: 'before' | 'after' } | null
 }
 
-/** Resolve an insertion side from the full rendered workspace group. */
+/** Resolve an insertion side across the Workspace header, descendants, and Sessions. */
 function workspaceGroupHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' | 'after' {
   const rect = e.currentTarget.getBoundingClientRect()
   return e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
@@ -247,6 +247,13 @@ function SessionTree({
       return [workspace.workspaceId, path === undefined ? undefined : keysByPath.get(path)]
     }))
   }, [nestWorkspaces, workspaces])
+  const currentAncestors = useMemo(() => {
+    const keys = new Set<string>()
+    for (let key = currentGroup === undefined ? undefined : parents.get(currentGroup); key !== undefined; key = parents.get(key)) {
+      keys.add(key)
+    }
+    return keys
+  }, [currentGroup, parents])
   const expandedGroups = useMemo(() => {
     const ancestorKeys = new Set<string | undefined>(parents.values())
     return [...workspaces.map(workspace => workspace.workspaceId), UNGROUPED_KEY]
@@ -261,7 +268,9 @@ function SessionTree({
   )
   useEffect(() => {
     for (let key = revealGroup; key !== undefined; key = parents.get(key)) {
-      if (groupExpansion[key] !== true) setGroupExpanded(key, true)
+      if (groupExpansion[key] === false || (key === revealGroup && groupExpansion[key] !== true)) {
+        setGroupExpanded(key, true)
+      }
     }
   }, [groupExpansion, parents, revealGroup, setGroupExpanded])
   useEffect(() => {
@@ -334,22 +343,33 @@ function SessionTree({
     if (rowIndex === -1) return
     const anchor = over.half === 'before' ? over.id : siblings[rowIndex + 1]?.workspaceId
     if (anchor === activeDrag.workspaceId) return
-    const sourceIndex = workspaces.findIndex(workspace => workspace.workspaceId === activeDrag.workspaceId)
+    const sourceIndex = siblings.findIndex(workspace => workspace.workspaceId === activeDrag.workspaceId)
     const anchorIndex = anchor === undefined
-      ? workspaces.length
-      : workspaces.findIndex(workspace => workspace.workspaceId === anchor)
+      ? siblings.length
+      : siblings.findIndex(workspace => workspace.workspaceId === anchor)
     if (sourceIndex !== -1 && (anchorIndex === sourceIndex || anchorIndex === sourceIndex + 1)) return
     insertWorkspaceBefore(activeDrag.workspaceId, anchor).catch((reason: unknown) => {
       console.warn('workspace reorder rejected:', reason)
     })
   }
-  const rootGroups = groups.filter(group => parents.get(group.key) === undefined)
+  const childrenByParent = useMemo(() => {
+    const children = new Map<string | undefined, GroupNode[]>()
+    for (const group of groups) {
+      const parent = parents.get(group.key)
+      const siblings = children.get(parent)
+      if (siblings === undefined) children.set(parent, [group])
+      else siblings.push(group)
+    }
+    return children
+  }, [groups, parents])
+  const rootGroups = childrenByParent.get(undefined) ?? []
   const workspaceDropAtListStart = rootGroups[0]?.workspaceId !== undefined
     && workspaceDrag?.over?.id === rootGroups[0].workspaceId
     && workspaceDrag.over.half === 'before'
 
   const renderGroup = (group: GroupNode, depth: number): ReactNode => {
     const workspaceId = group.workspaceId
+    const children = childrenByParent.get(group.key) ?? []
     const compatibleDrag = workspaceDrag !== null && parents.get(workspaceDrag.workspaceId) === parents.get(group.key)
     const collapsed = collapsedSessionRows(group.sessions)
     const sessionsExpanded = expandedSessionGroups.includes(group.key)
@@ -383,7 +403,7 @@ function SessionTree({
         commitWorkspaceDrag(workspaceDrag, { id: workspaceId, half })
       }
     return (
-    // Group section: header row + expanded top-level session rows. The
+    // Group section: header, descendant Workspaces, and own Session rows. The
     // inter-group breathing room is the section's own margin
     // (WorkspaceBrowser.module.css).
       <div
@@ -398,10 +418,11 @@ function SessionTree({
           ? undefined
           : (e) => {
             e.preventDefault()
+            if (hoverWorkspace === undefined && parents.get(group.key) !== undefined) return
             e.stopPropagation()
             if (hoverWorkspace === undefined) {
               e.dataTransfer.dropEffect = 'none'
-              setWorkspaceDrag({ ...workspaceDrag, over: null })
+              if (workspaceDrag.over !== null) setWorkspaceDrag({ ...workspaceDrag, over: null })
             } else {
               e.dataTransfer.dropEffect = 'move'
               hoverWorkspace(workspaceGroupHalf(e))
@@ -411,6 +432,7 @@ function SessionTree({
           ? undefined
           : (e) => {
             e.preventDefault()
+            if (dropWorkspace === undefined && parents.get(group.key) !== undefined) return
             e.stopPropagation()
             if (dropWorkspace === undefined) {
               workspaceDropCommitted.current = true
@@ -422,6 +444,7 @@ function SessionTree({
       >
         <ProjectRowItem
           group={group}
+          containsCurrentDescendant={currentAncestors.has(group.key)}
           home={home}
           t={t}
           onToggle={() => {
@@ -450,9 +473,9 @@ function SessionTree({
               },
             }}
         />
-        {group.expanded && groups.some(child => parents.get(child.key) === group.key) && (
-          <div role="group" className={css.parentChildren}>
-            {groups.filter(child => parents.get(child.key) === group.key).map(child => renderGroup(child, depth + 1))}
+        {group.expanded && children.length > 0 && (
+          <div role="group">
+            {children.map(child => renderGroup(child, depth + 1))}
           </div>
         )}
         {(sessionsExpanded
