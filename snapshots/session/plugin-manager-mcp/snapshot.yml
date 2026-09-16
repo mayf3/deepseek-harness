@@ -3,6 +3,7 @@ scenario: plugin-manager-mcp
 profile: headless
 composition: plugin-manager-mcp
 recording: live
+permission: danger-full-access
 header:
   class: plugin-manager-mcp
   pin: true

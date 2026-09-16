@@ -2,11 +2,12 @@
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from './index.ts'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type { PluginEntryId } from './types.ts'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 /** Required services for the management tool. */
-export const inject = ['tools', 'pluginManager']
+export const inject = ['tools', 'pluginManager', 'sandboxPolicy']
 
 /** Register one management tool for discovery and the four persistent actions.
  * @param ctx Agent-scoped tool registration context.
@@ -14,7 +15,7 @@ export const inject = ['tools', 'pluginManager']
 export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'plugin_manager',
-    description: 'List plugins or bundles in the current profile, enable or disable them, install a bundle, or remove an installed bundle. Changes affect every session in this profile. List first to obtain exact identifiers. Package installation can execute allowed build scripts. Live profiles apply changes immediately; startup profiles require restart.',
+    description: 'List plugins or bundles in the current profile, enable or disable them, install a bundle, or remove an installed bundle. Requires danger-full-access permission for every action. Changes affect every session in this profile. List first to obtain exact identifiers. Package installation can execute allowed build scripts. Live profiles apply changes immediately; startup profiles require restart.',
     parameters: {
       action: { type: 'string', required: true, enum: ['list_plugins', 'list_bundles', 'set_plugin', 'set_bundle', 'install_bundle', 'remove_bundle'], description: 'Management operation.' },
       target: { type: 'string', description: 'Plugin entry id, bundle package name, or installation spec, according to action.' },
@@ -27,7 +28,11 @@ export function apply(ctx: Context): void {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: value }],
     },
-    async execute(args) {
+    async execute(args, exec) {
+      const policy = ctx.sandboxPolicy.resolve(exec.agent === undefined ? {} : { session: exec.agent.session })
+      if (policy.mode !== 'danger-full-access') {
+        throw new Error('plugin_manager requires danger-full-access permission. Ask the user to switch this session to Full access before retrying.')
+      }
       const manager = ctx.pluginManager
       switch (args.action) {
         case 'list_plugins':

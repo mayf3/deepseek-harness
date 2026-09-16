@@ -3,6 +3,10 @@ import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import SandboxPolicy, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
+import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import type PluginManager from '../src/index.ts'
 import * as tool from '../src/tools.ts'
@@ -12,7 +16,7 @@ function resultText(result: Awaited<ReturnType<ToolRuntime['execute']>>): string
   return result.value
 }
 
-async function fixture() {
+async function fixture(mode: 'read-only' | 'workspace-write' | 'danger-full-access' = 'danger-full-access') {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   const manager = {
@@ -26,11 +30,39 @@ async function fixture() {
   ctx.provide('pluginManager', manager as unknown as PluginManager)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(SessionProjections)
+  await ctx.plugin(SandboxPolicy, { mode })
   const fiber = await ctx.plugin(tool)
-  const call = (args: unknown) => ctx.tools.execute({ name: 'plugin_manager', arguments: args,
+  const call = (args: unknown, agent?: Agent) => ctx.tools.execute({ name: 'plugin_manager', arguments: args,
+    ...agent === undefined ? {} : { agent },
     callId: ToolCallId('manager-call'), signal: new AbortController().signal })
   return { ctx, manager, call, fiber }
 }
+
+it.each(['read-only', 'workspace-write'] as const)('denies every management action in %s before accessing the manager', async (mode) => {
+  const { call, manager } = await fixture(mode)
+  for (const action of ['list_plugins', 'list_bundles', 'set_plugin', 'set_bundle', 'install_bundle', 'remove_bundle']) {
+    const result = await call({ action, target: 'bundle', enabled: true })
+    expect(result.isError).toBe(true)
+    expect(JSON.stringify(result.content)).toContain('plugin_manager requires danger-full-access permission')
+  }
+  for (const method of Object.values(manager)) expect(method).not.toHaveBeenCalled()
+})
+
+it('checks the calling session on each execution, including after permission is revoked', async () => {
+  const { call, manager } = await fixture()
+  const id = SessionId('manager-permissions')
+  const session = Session.create(id, undefined, { version: SESSION_FORMAT_VERSION, id, createdAt: 0, isSeeded: false })
+  const agent = { session } as unknown as Agent
+  setSandboxMode(session, 'workspace-write')
+  expect((await call({ action: 'list_plugins' }, agent)).isError).toBe(true)
+  expect(manager.listPlugins).not.toHaveBeenCalled()
+  setSandboxMode(session, 'danger-full-access')
+  expect((await call({ action: 'list_plugins' }, agent)).isError).toBe(false)
+  setSandboxMode(session, 'read-only')
+  expect((await call({ action: 'list_plugins' }, agent)).isError).toBe(true)
+  expect(manager.listPlugins).toHaveBeenCalledTimes(1)
+})
 
 it('paginates inventories with an explicit continuation and total', async () => {
   const { call } = await fixture()

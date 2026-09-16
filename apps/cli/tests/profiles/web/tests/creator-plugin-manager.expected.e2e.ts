@@ -10,6 +10,9 @@ import { startHttpMcpFixture } from '../../../../../../packages/mcp/mcp-client/t
 
 interface Observation {
   before: string[]
+  denied: { isError: boolean; content: unknown }
+  afterDenied: string[]
+  bundlesAfterDenied: { name: string }[]
   after: string[]
   other: string[]
   remaining: string[]
@@ -72,6 +75,10 @@ it('configures MCP on a live profile, restores it on restart, and removes its to
     expect(initial.before).not.toContain(retired)
   }
   expect(initial.before).not.toContain('mcp__demo__ping')
+  expect(initial.denied.isError).toBe(true)
+  expect(JSON.stringify(initial.denied.content)).toContain('plugin_manager requires danger-full-access permission')
+  expect(initial.afterDenied).toEqual(initial.before)
+  expect(initial.bundlesAfterDenied.map(bundle => bundle.name)).not.toContain('@test/creator-mcp')
   expect(initial.result).toMatchObject({ application: 'applied', changed: true })
   expect(initial.after).toContain('mcp__demo__ping')
   expect(initial.other).toContain('mcp__demo__ping')
