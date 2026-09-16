@@ -64,6 +64,7 @@ const harness = await vi.hoisted(async () => {
       readonly node: string, readonly runtime: string, readonly profile: string,
       readonly inspectPort?: number, readonly environment?: NodeJS.ProcessEnv, readonly onFailure?: (error: Error) => void,
       readonly primaryRuntime?: string, readonly profileResolution?: string,
+      readonly packageManager?: { pnpm: string; nodeBin: string },
     ) { hosts.push(this) }
   }
   const app = Object.assign(new EventEmitter(), {

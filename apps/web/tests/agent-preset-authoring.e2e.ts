@@ -48,6 +48,7 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     userRoot = await realpath(await mkdtemp(join(tmpdir(), 'dsh-web-e2e-presets-')))
     scaffold = await launchWebScaffold({
       extraOverlayPath: OVERLAY,
+      profile: { packages: [] },
       agentPresets: {
         // The shipped root is the plugin's own, prepended before this.
         roots: [{ path: userRoot, trust: 'user' }],
