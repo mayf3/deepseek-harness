@@ -23,7 +23,7 @@ Status: implemented
 ## 备选方案
 
 - **彩色 Word/Excel/PPT/PDF 链接图形。** 否决：固定品牌填充违反图标集 currentColor-only 规则，因此这些扩展名并入单一的 outline `document` 图形。较大的文件卡片 primitive 改用各自不同的 current-color 轮廓。
-- **每个扩展名一个链接图标。** 收敛为六个类别：14px 下超出肉眼可分辨数量的图形只会增加噪音。28px 的 `FileTypeIcon` 拥有更精细的文件身份，按站点的 favicon 以后仍可在同一 `url` 类别之下引入。
+- **每个扩展名一个链接图标。** 收敛为六个类别：14px 下超出肉眼可分辨数量的图形只会增加噪音。28px 的 `FileTypeIcon` 拥有更精细的文件身份；按站点标记后来在同一 `url` 类别之下引入（[已知站点链接标记](2026-09-16-known-site-link-marks.zh.md)）。
 - **链接继续用 `state-business-primary`。** 更深的链接蓝（试过 blue-600/650/700 又回退）会连带焦点环和状态点；专用别名把未来的调色收敛到一行。
 - **给 ToolRow 路径链接加图形。** 否决：工具行保持更安静的灰色点线示能，在已经很密的行里加前置图形会造成图标堆叠。
 

@@ -23,7 +23,7 @@ Coverage: a LinkIcon unit spec (one distinct glyph per kind, classification tabl
 ## Alternatives considered
 
 - **Colored Word/Excel/PPT/PDF link glyphs.** Rejected: fixed brand fills break the icon set's currentColor-only rule, so those extensions fold into the single outline `document` glyph. The larger file-card primitive uses distinct current-color silhouettes instead.
-- **Per-extension link icons.** Collapsed to six categories: more glyphs than the eye can parse at 14px adds noise. The 28px `FileTypeIcon` owns the more detailed file identities, and per-site favicons remain possible later behind the same `url` category.
+- **Per-extension link icons.** Collapsed to six categories: more glyphs than the eye can parse at 14px adds noise. The 28px `FileTypeIcon` owns the more detailed file identities, and per-site marks arrived later behind the same `url` category ([known-site link marks](2026-09-16-known-site-link-marks.md)).
 - **Keeping links on `state-business-primary`.** Darker link blues (blue-600/650/700 were auditioned and reverted) would have dragged focus rings and state dots along; the dedicated alias localizes any future tuning to one line.
 - **Glyphs on ToolRow path links.** Rejected: tool rows keep their quieter grey dotted affordance, and leading glyphs there would stack icons in already dense rows.
 

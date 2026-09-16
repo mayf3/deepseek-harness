@@ -2,7 +2,8 @@
 // in one settled keyless turn — the regression anchor for unifying link
 // styles. One fixture turn produces:
 // - prose: Markdown link, reference-style link, mailto link, inline-code URL,
-//   produced-file mention, plus inert contrasts (ambiguous basename, unwritten
+//   produced-file mention, a known-site link carrying that site's own leading
+//   mark, plus inert contrasts (ambiguous basename, unwritten
 //   file, command code, URL-with-flags code, javascript: destination,
 //   footnote superscript, remote image, fenced code block with its copy chrome)
 // - artifacts: seven produced files (chips overflow into the "+N" remainder
@@ -55,6 +56,9 @@ const MAILTO_URL = 'mailto:owner@example.test'
 const SOURCE_URL = 'https://docs.example.test/links'
 const INERT_SOURCE_URL = 'ftp://mirror.example.test/spec'
 const FETCH_URL = 'https://docs.example.test/tokens'
+// A mapped host, so the prose pins that the leading glyph is the site's mark
+// rather than the globe the unmapped docs host keeps.
+const REPO_URL = 'https://github.com/deepseek-harness/deepseek-harness'
 
 /** One-part text content for a built message. */
 function text(value: string): { type: 'text'; text: string }[] {
@@ -256,6 +260,8 @@ function galleryFixture(imageUrl: string): string {
         `Docs: [style guide](${GUIDE_URL}) and \`${API_URL}\`; see [the release notes][rel], `
         + `contact [the maintainer](${MAILTO_URL}), and check the fine print[^1].`,
         '',
+        `Upstream: [the repository](${REPO_URL}).`,
+        '',
         `Inert contrasts: \`curl ${API_URL}\`, \`javascript:alert(1)\`, and \`pnpm run build\`.`,
         '',
         'Wrote `report.html` plus two `style.css` copies; `notes.md` untouched.',
@@ -421,6 +427,13 @@ describe('web e2e: clickable links gallery', () => {
       expect.soft(await styleOf(link, 'text-decoration-line'), `${name} at rest`).toBe('none')
       expect.soft(await link.locator('svg').count(), `${name} glyph`).toBe(1)
     }
+    // A mapped host leads with its own mark; the unmapped docs host keeps the
+    // globe in the same seat.
+    const repoLink = markdown.locator(`a[href="${REPO_URL}"]`)
+    expect(await repoLink.count()).toBe(1)
+    const repoMark = await repoLink.locator('svg path').getAttribute('d')
+    const globeMark = await guideLink.locator('svg path').getAttribute('d')
+    expect(repoMark).not.toBe(globeMark)
     await guideLink.hover()
     expect(await styleOf(guideLink, 'text-decoration-line')).toBe('underline')
     expect(await styleOf(guideLink, 'text-decoration-style')).toBe('dotted')
