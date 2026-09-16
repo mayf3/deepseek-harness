@@ -4,7 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, posix } from 'node:path'
 import { isSessionFormatJsonObject, parseSessionFormatLogFilename, sessionFormatLogFilename } from '@deepseek-ai/dsh-session-format'
-import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
+import { createSessionFormatCatalogWithChildren, historicalSessionFormatCatalog, sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
+import { historicalChildCatalogSource } from '@deepseek-ai/dsh-session-format-v3-to-v4'
 import { packVfsOverlay, type ImageTree, type PackOverlayResult } from './pack.ts'
 import type { ImageFiles } from './transform-image.ts'
 
@@ -26,7 +27,7 @@ interface PreviewSession {
 export function packPreviewFixture(trees: readonly ImageTree[]): PackOverlayResult {
   const original = packVfsOverlay(trees)
   const successors = new Map<string, string>()
-  for (const source of selectedSessions(original.files)) {
+  const sources = selectedSessions(original.files).map((source) => {
     const text = new TextDecoder('utf-8', { fatal: true }).decode(source.bytes)
     if (!text.endsWith('\n')) throw new Error(`preview fixture: ${source.path} has a torn physical tail`)
     const [headerLine = '', ...rows] = text.slice(0, -1).split('\n')
@@ -34,10 +35,20 @@ export function packPreviewFixture(trees: readonly ImageTree[]): PackOverlayResu
     if (!isSessionFormatJsonObject(header) || header['version'] !== source.version || header['id'] !== source.id) {
       throw new Error(`preview fixture: ${source.path} disagrees with its Session header`)
     }
-    const restore = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation: 'current' })
-    for (const row of rows) restore.decodeRow(JSON.parse(row))
-    const artifact = restore.finish()
+    const catalog = source.version <= 3 ? historicalSessionFormatCatalog : sessionFormatCatalog
+    const restore = catalog.createRestore(header, { recovery: 'strict', validation: 'current' })
+    const events: unknown[] = rows.map(row => JSON.parse(row) as unknown)
+    for (const event of events) restore.decodeRow(event)
+    return { ...source, header, events, artifact: restore.finish() }
+  })
+  for (const source of sources) {
     if (source.version === sessionFormatCatalog.currentVersion) continue
+    const children = sources.filter(child => posix.dirname(child.directory) === posix.dirname(source.directory)
+      && child.artifact.header.parentSession === source.id && child.artifact.header.origin === 'subagent')
+      .map(child => ({ ...historicalChildCatalogSource(child.artifact), sourcePath: child.path }))
+    const restore = createSessionFormatCatalogWithChildren(children).createRestore(source.header, { recovery: 'strict', validation: 'current' })
+    for (const event of source.events) restore.decodeRow(event)
+    const artifact = restore.finish()
     const encodedHeader = sessionFormatCatalog.encodeCurrentHeader(artifact.header, artifact.inheritedEventCount)
     const encodedEvents = artifact.events.map(event => sessionFormatCatalog.encodeCurrentEvent(event))
     const verification = sessionFormatCatalog.createRestore(encodedHeader, { recovery: 'strict', validation: 'current' })

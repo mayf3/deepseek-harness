@@ -37,7 +37,7 @@ VFS 镜像打包器：把一份合成 profile 变成浏览器 worker 挂载为�
 
 仓库适配器还声明 `webworker-runtime/tests/fixtures/` 下仅用于 preview 的 fixture（测试前置数据） tree。CLI 会把每套具名 fixture 打成一份独立的确定性 overlay 归档，并写出浏览器可读的 manifest（元数据清单）。Overlay 文件绕过 npm 发布视图和模块可达性排除规则，因此点目录与示例源码会完整保留；其挂载位置仅限 `home/` 与 `workspace/`。`packVfsOverlay` 将所有文件视为不透明字节。
 
-`packPreviewFixture` 在 Node 中通过 [Session 格式目录](../../session/session-format-catalog/README.zh.md)准备每个 fixture 目录里最新的规范原始 Session 代际。它严格恢复源文件、编码并严格校验当前后继文件，然后将后继文件与未改变的源文件一同打包。如果选中的代际格式错误、不受支持或属于未来版本，构建会拒绝，不回退。临时后继文件在打包后删除。浏览器以写模式打开时即可使用当前数据，无需调用 Node 的迁移校验 Worker。投影缓存仍由其所属包校验；较早代际不能提供当前折叠检查点。
+`packPreviewFixture` 在 Node 中通过 [Session 格式目录](../../session/session-format-catalog/README.zh.md)准备每个 fixture 目录里最新的规范原始 Session 代际。它从同一 fixture 根目录收集直属子 Session 的发现证据，再补全历史父目录。它严格恢复源文件、编码并严格校验当前后继文件，然后将后继文件与未改变的源文件一同打包。如果选中的代际格式错误、不受支持或属于未来版本，构建会拒绝，不回退。临时后继文件在打包后删除。浏览器以写模式打开时即可使用当前数据，无需调用 Node 的迁移校验 Worker。投影缓存仍由其所属包校验；较早代际不能提供当前折叠检查点。
 
 -----
 
