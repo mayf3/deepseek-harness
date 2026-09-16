@@ -3,10 +3,6 @@
   padding: 16px 0;
 }
 
-.section + .section {
-  border-top: 0.5px solid var(--dsw-alias-border-l2);
-}
-
 .heading {
   margin: 0;
   font-size: 13px;
