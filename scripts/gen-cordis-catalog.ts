@@ -260,6 +260,7 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
   WorkspaceChangesSummary: 'deliverables.md',
+  WorkspaceFileDiff: 'deliverables.md',
   Reload: 'boot.md',
   PluginInfo: 'boot.md',
   BundleInfo: 'boot.md',

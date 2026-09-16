@@ -1,8 +1,16 @@
-/** Display, durable, and temporary path rules. */
+/** Display, durable, canonical, and temporary path rules. */
+import { mkdir, realpath, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { compareDisplay, displayPathOf, durablePathOf, isTemporaryPath, temporaryRoots } from '../src/paths.ts'
+import { afterEach, describe, expect, it } from 'vitest'
+import { canonicalPath, compareDisplay, displayPathOf, durablePathOf, isTemporaryPath, temporaryRoots } from '../src/paths.ts'
+import { scratchDir } from './support.ts'
+
+const cleanups: Array<() => Promise<unknown>> = []
+afterEach(async () => {
+  for (const cleanup of cleanups.reverse()) await cleanup()
+  cleanups.length = 0
+})
 
 const cwd = '/home/u/proj/pkg'
 const root = '/home/u/proj'
@@ -34,6 +42,22 @@ describe('temporary paths', () => {
     expect(isTemporaryPath('/tmpfoo/x', roots)).toBe(false)
     expect(isTemporaryPath('/home/u/x', roots)).toBe(false)
     expect(await temporaryRoots(['/definitely/missing/root'])).toEqual(['/definitely/missing/root'])
+  })
+})
+
+describe('canonicalPath', () => {
+  it('resolves a missing file through the nearest existing ancestor, so its spelling is stable before and after creation', async () => {
+    const root = await scratchDir('dsh-canonical-', cleanups)
+    const real = join(root, 'real')
+    await mkdir(join(real, 'nested'), { recursive: true })
+    await symlink(real, join(root, 'link'))
+    const resolvedReal = await realpath(real)
+    expect(await canonicalPath(join(root, 'link', 'nested'))).toBe(join(resolvedReal, 'nested'))
+    expect(await canonicalPath(join(root, 'link', 'nested', 'new.txt'))).toBe(join(resolvedReal, 'nested', 'new.txt'))
+    expect(await canonicalPath(join(root, 'link', 'missing', 'deeper', 'new.txt'))).toBe(join(resolvedReal, 'missing', 'deeper', 'new.txt'))
+    // Nothing but the root exists above this path, so its spelling is kept as given on every platform.
+    expect(await canonicalPath('/definitely/missing/root/file')).toBe('/definitely/missing/root/file')
+    expect(await canonicalPath(join(root, 'link', 'a'))).toBe(join(resolvedReal, 'a'))
   })
 })
 

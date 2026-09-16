@@ -1,10 +1,12 @@
 /**
  * Summarizes the files each top-level turn changed from git working-tree
- * snapshots taken at turn start and turn end plus the hunks file tools persist
- * for paths git does not cover. Each summary is announced by a `workspace/changes`
- * Session event that carries only the turn number and is served through the
- * `workspaceChanges` service until the Session is disposed. Outside a git
- * repository, or without git, the summary lists file-tool edits only.
+ * snapshots taken at turn start and turn end, plus whole-file captures taken
+ * around each file-tool edit for paths git does not cover, and serves each
+ * listed file's before-and-after comparison on demand. Each summary is
+ * announced by a `workspace/changes` Session event that carries only the turn
+ * number; summaries and comparisons are served through the `workspaceChanges`
+ * service until the Session is disposed. Outside a git repository, or without
+ * git, the summary lists file-tool edits only.
  */
 import { homedir, tmpdir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
@@ -17,7 +19,9 @@ import { GitRunner } from './git.ts'
 import { TurnRecorder } from './recorder.ts'
 import type { WorkspaceChanges } from './types.ts'
 
-export type { WorkspaceChangedFile, WorkspaceChanges, WorkspaceChangesSummary } from './types.ts'
+export type {
+  WorkspaceChangedFile, WorkspaceChanges, WorkspaceChangesSummary, WorkspaceDiffHunk, WorkspaceFileDiff,
+} from './types.ts'
 
 /** Stable Loader identity. */
 export const name = 'workspace-changes'
@@ -25,7 +29,7 @@ export const name = 'workspace-changes'
 /** Services used to run git and observe turns. */
 export const inject = ['subprocess']
 
-/** Snapshot bounds. Invalid values fail plugin load. */
+/** Snapshot, capture, and comparison bounds. Invalid values fail plugin load. */
 export interface Config {
   /** Milliseconds one git command may run before the turn's record is abandoned. */
   timeoutMs: number
@@ -33,6 +37,13 @@ export interface Config {
   outputMaxBytes: number
   /** Maximum files carried by one summary; `total` still reports the complete count. */
   maxFiles: number
+  /**
+   * Bytes a file may hold to be captured around a file-tool edit or read from a snapshot for its comparison.
+   * A larger file gets no comparison; one captured around a file-tool edit is also listed without counts.
+   */
+  maxFileBytes: number
+  /** Milliseconds a line comparison may run before it degrades to whole-file replacement. */
+  diffTimeoutMs: number
 }
 
 /** Schemastery validation for {@link Config}. */
@@ -40,6 +51,8 @@ export const Config: z<Config> = z.object({
   timeoutMs: z.number().default(30_000),
   outputMaxBytes: z.number().default(8 * 1024 * 1024),
   maxFiles: z.number().default(500),
+  maxFileBytes: z.number().default(2 * 1024 * 1024),
+  diffTimeoutMs: z.number().default(100),
 })
 
 function eligible(session: Session): string | undefined {
@@ -72,15 +85,16 @@ async function resolveGit(ctx: Context, signal: AbortSignal): Promise<string | n
 }
 
 /**
- * Observe top-level turns of every Session whose working directory lies in a
- * git repository, announce their change summaries, and serve them as
- * `workspaceChanges`.
+ * Observe top-level turns of every Session with a working directory, capture
+ * file-tool edits, announce change summaries, and serve them with their
+ * comparisons as `workspaceChanges`.
  * @param ctx - host context with `subprocess`.
  * @param config - validated bounds.
  */
 export function apply(ctx: Context, config: Config): void {
   for (const [field, value] of [
     ['timeoutMs', config.timeoutMs], ['outputMaxBytes', config.outputMaxBytes], ['maxFiles', config.maxFiles],
+    ['maxFileBytes', config.maxFileBytes], ['diffTimeoutMs', config.diffTimeoutMs],
   ] as const) {
     if (!Number.isSafeInteger(value) || value < 1) throw new Error(`workspace-changes requires a positive integer ${field}`)
   }
@@ -97,7 +111,10 @@ export function apply(ctx: Context, config: Config): void {
     lifetime.abort()
     await Promise.all([...recorders.keys()].map(forget))
   })
-  const service: WorkspaceChanges = { summary: (sessionId, seq) => byId.get(sessionId)?.summary(seq) }
+  const service: WorkspaceChanges = {
+    summary: (sessionId, seq) => byId.get(sessionId)?.summary(seq),
+    diff: (sessionId, seq, index, signal) => byId.get(sessionId)?.diff(seq, index, signal) ?? Promise.resolve(undefined),
+  }
   ctx.provide('workspaceChanges', service)
   let runner: Promise<GitRunner | null> | undefined
   const gitRunner = (): Promise<GitRunner | null> => {
@@ -115,6 +132,7 @@ export function apply(ctx: Context, config: Config): void {
     if (recorder === undefined) {
       recorder = new TurnRecorder(session, cwd, {
         git: gitRunner(), tempRoot: tmpdir(), maxFiles: config.maxFiles,
+        maxFileBytes: config.maxFileBytes, diffTimeoutMs: config.diffTimeoutMs,
         warn: (message) => { ctx.logger.warn(message) },
       })
       recorders.set(session, recorder)
@@ -128,8 +146,7 @@ export function apply(ctx: Context, config: Config): void {
       if (cwd !== undefined) recorderFor(session, cwd).start(event.data.turn)
       return
     }
-    if (event.type === 'tool/call') recorders.get(session)?.observeCall(event)
-    else if (event.type === 'tool/result') recorders.get(session)?.observe(event)
+    if (event.type === 'tool/result') recorders.get(session)?.observe(event)
     else if (event.type === 'turn/end') recorders.get(session)?.end(event.data.turn)
   })
   ctx.on('session/disposed', (session) => { void forget(session) })
@@ -138,7 +155,11 @@ export function apply(ctx: Context, config: Config): void {
   })
   ctx.on('tools/pre-execute', async (exec, next) => {
     const session = exec.agent?.session
-    if (session !== undefined) await recorders.get(session)?.settled()
+    const recorder = session === undefined ? undefined : recorders.get(session)
+    if (recorder !== undefined) {
+      recorder.capture(exec.name, exec.arguments)
+      await recorder.settled()
+    }
     return next()
   })
 }

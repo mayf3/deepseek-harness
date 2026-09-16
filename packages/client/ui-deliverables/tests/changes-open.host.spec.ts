@@ -1,7 +1,7 @@
 /** The change summary route and the changed-file and common-folder native opens over the Host-served summaries. */
 import { mkdtemp, rm, writeFile, mkdir, realpath, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import { WorkspaceFiles } from '@deepseek-ai/dsh-api-workspace-files'
 import { Context } from '@deepseek-ai/cordis'
@@ -10,10 +10,13 @@ import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import type { SessionEventReadRequest } from '@deepseek-ai/dsh-session-query'
-import type { WorkspaceChangedFile, WorkspaceChangesSummary } from '@deepseek-ai/dsh-workspace-changes/types'
+import type { WorkspaceChangedFile, WorkspaceChangesSummary, WorkspaceFileDiff } from '@deepseek-ai/dsh-workspace-changes/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { commonChangedFolder, registerPresentOpen } from '../src/present-open.ts'
-import { changedFileUrl, changesSummaryUrl, CHANGES_OPEN_PATH, CHANGED_FILES_PATH, isChangedFile, isChangesEvent, isChangesSummary } from '../src/changes.ts'
+import { registerPresentOpen } from '../src/present-open.ts'
+import {
+  changedFileUrl, changesDiffUrl, changesSummaryUrl, CHANGES_DIFF_PATH, CHANGES_OPEN_PATH, CHANGED_FILES_PATH, isChangedFile, isChangesDiff,
+  isChangesEvent, isChangesSummary,
+} from '../src/changes.ts'
 
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => {
@@ -50,7 +53,13 @@ async function fixture() {
   })
   ctx.provide('sessionQuery', { readEvent } as never)
   const summary = vi.fn((sessionId: SessionId, seq: number) => sessionId === 'owner' && seq === 9 ? data : undefined)
-  ctx.provide('workspaceChanges', { summary })
+  const comparison: WorkspaceFileDiff = {
+    kind: 'text', path: 'src/lib/a.ts', display: 'src/lib/a.ts', before: true, after: true, coarse: false,
+    hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-a', '+b'] }],
+  }
+  const diff = vi.fn(async (sessionId: SessionId, seq: number, index: number, _signal: AbortSignal) =>
+    sessionId === 'owner' && seq === 9 && index === 0 ? comparison : undefined)
+  ctx.provide('workspaceChanges', { summary, diff })
   const opener = vi.fn(async (_request: { path: string; action?: 'reveal' }, _signal: AbortSignal) => ({ opened: true as const }))
   ctx.provide('sessionController', { openWorkspacePath: opener, workspaceDesktop: () => ({ name: 'desktop', available: true, fileManager: 'finder' }) } as never)
   const connection = new HostConnectionService(ctx, [], {} as BrowserAuth)
@@ -61,7 +70,8 @@ async function fixture() {
   const handler = connection.createSharedFetchHandler('/api')
   const open = (query = '?sessionId=owner&seq=9&index=0') => handler.fetch(new Request(`http://localhost${CHANGES_OPEN_PATH}${query}`, { method: 'POST' }))
   const read = (query = '?sessionId=owner&seq=9') => handler.fetch(new Request(`http://localhost${CHANGED_FILES_PATH}${query}`))
-  return { root, cwd, ctx, data, readEvent, open, read, opener, outside, summary }
+  const compare = (query = '?sessionId=owner&seq=9&index=0') => handler.fetch(new Request(`http://localhost${CHANGES_DIFF_PATH}${query}`))
+  return { root, cwd, ctx, data, readEvent, open, read, compare, comparison, diff, opener, outside, summary }
 }
 
 describe('change summary route', () => {
@@ -82,11 +92,47 @@ describe('change summary route', () => {
   })
 })
 
+describe('change comparison route', () => {
+  it('serves the Host-computed comparison, 404 once it is gone, and 500 when the read fails', async () => {
+    const { compare, comparison, diff } = await fixture()
+    expect(changesDiffUrl(SessionId('owner'), 9, 0)).toBe(`${CHANGES_DIFF_PATH}?sessionId=owner&seq=9&index=0`)
+    const response = await compare()
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(await response.json()).toEqual(comparison)
+    expect(diff).toHaveBeenLastCalledWith('owner', 9, 0, expect.any(AbortSignal))
+    expect((await compare('?sessionId=owner&seq=9&index=1')).status).toBe(404)
+    expect((await compare('?sessionId=owner&seq=8&index=0')).status).toBe(404)
+    expect((await compare('?sessionId=other&seq=9&index=0')).status).toBe(404)
+    for (const bad of ['', '?seq=9&index=0', '?sessionId=owner&seq=9', '?sessionId=owner&seq=9&index=-1', '?sessionId=owner&seq=x&index=0']) {
+      expect((await compare(bad)).status).toBe(400)
+    }
+    diff.mockRejectedValueOnce(new Error('/private/objects'))
+    const failed = await compare()
+    expect(failed.status).toBe(500)
+    expect(await failed.text()).not.toContain('/private/objects')
+  })
+
+  it('validates served comparisons', () => {
+    const text = { kind: 'text', path: 'a', display: 'a', before: true, after: false, coarse: true, hunks: [] }
+    expect(isChangesDiff(text)).toBe(true)
+    expect(isChangesDiff({ ...text, hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 0, lines: ['-x', ' y', '+z'] }] })).toBe(true)
+    expect(isChangesDiff({ kind: 'binary', path: 'a', display: 'a' })).toBe(true)
+    expect(isChangesDiff({ kind: 'oversized', path: 'a', display: 'a' })).toBe(true)
+    expect(isChangesDiff({ kind: 'other', path: 'a', display: 'a' })).toBe(false)
+    expect(isChangesDiff({ kind: 'binary', path: '', display: 'a' })).toBe(false)
+    expect(isChangesDiff({ ...text, before: 'yes' })).toBe(false)
+    expect(isChangesDiff({ ...text, hunks: [{ oldStart: -1, oldLines: 1, newStart: 1, newLines: 0, lines: [] }] })).toBe(false)
+    expect(isChangesDiff({ ...text, hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 0, lines: ['x'] }] })).toBe(false)
+    expect(isChangesDiff({ ...text, hunks: [null] })).toBe(false)
+    expect(isChangesDiff(null)).toBe(false)
+  })
+})
+
 describe('changed files native open route', () => {
   it('opens a listed file inside or outside the workspace with its verified Host path', async () => {
     const { cwd, open, opener, outside } = await fixture()
     expect(changedFileUrl(SessionId('owner'), 9, 0)).toBe(`${CHANGES_OPEN_PATH}?sessionId=owner&seq=9&index=0`)
-    expect(changedFileUrl(SessionId('owner'), 9, null)).toBe(`${CHANGES_OPEN_PATH}?sessionId=owner&seq=9`)
     const response = await open()
     expect(response.status).toBe(204)
     expect(response.headers.get('cache-control')).toBe('no-store')
@@ -95,20 +141,7 @@ describe('changed files native open route', () => {
     expect(opener.mock.lastCall?.[0].path).toBe(await realpath(outside))
   })
 
-  it('opens the deepest folder containing the workspace files, falling back to the workspace', async () => {
-    const { cwd, open, opener, data } = await fixture()
-    expect((await open('?sessionId=owner&seq=9')).status).toBe(204)
-    expect(opener).toHaveBeenLastCalledWith({ path: await realpath(join(cwd, 'src')) }, expect.any(AbortSignal))
-    data.files = [changed('../escaped.ts', '../escaped.ts'), changed('/etc/hosts', '/etc/hosts')]
-    expect((await open('?sessionId=owner&seq=9')).status).toBe(204)
-    expect(opener.mock.lastCall?.[0].path).toBe(await realpath(cwd))
-    const w = resolve('/w')
-    expect(commonChangedFolder(w, [changed('a/b/c.ts'), changed('a/d.ts'), changed(resolve('/x/y.ts'))])).toBe(resolve(w, 'a'))
-    expect(commonChangedFolder(w, [changed(resolve('/x/y.ts'))])).toBe(w)
-    expect(commonChangedFolder(w, [changed('../up.ts')])).toBe(w)
-  })
-
-  it.each(['', '?seq=9', '?sessionId=owner', '?sessionId=owner&seq=9&index=-1', '?sessionId=owner&seq=9&index=1.5', '?sessionId=owner&seq=x'])(
+  it.each(['', '?seq=9', '?sessionId=owner', '?sessionId=owner&seq=9', '?sessionId=owner&seq=9&index=-1', '?sessionId=owner&seq=9&index=1.5', '?sessionId=owner&seq=x'])(
     'rejects invalid coordinates before reading: %s', async (query) => {
       const { open, readEvent } = await fixture()
       expect((await open(query)).status).toBe(400)
@@ -123,8 +156,6 @@ describe('changed files native open route', () => {
     expect(readEvent).not.toHaveBeenCalled()
     await unlink(join(cwd, 'src', 'lib', 'a.ts'))
     expect((await open()).status).toBe(404)
-    await rm(join(cwd, 'src'), { recursive: true })
-    expect((await open('?sessionId=owner&seq=9')).status).toBe(404)
     expect(opener).not.toHaveBeenCalled()
   })
 
@@ -135,7 +166,6 @@ describe('changed files native open route', () => {
     desktop.mockRestore()
     const mapping = vi.spyOn(ctx.fs, 'processPathFromHostPath').mockReturnValue(undefined)
     expect((await open()).status).toBe(422)
-    expect((await open('?sessionId=owner&seq=9')).status).toBe(422)
     mapping.mockRestore()
     opener.mockRejectedValueOnce(new Error('/private/host/path'))
     const failed = await open()
@@ -147,6 +177,8 @@ describe('changed files native open route', () => {
   it('validates served summaries and logged announcements', () => {
     expect(isChangedFile({ path: 'a', display: 'a', added: 1, deleted: 2, binary: true })).toBe(true)
     expect(isChangedFile({ path: 'a', display: 'a', added: 1, deleted: 2, binary: false })).toBe(false)
+    expect(isChangedFile({ path: 'a', display: 'a', added: 0, deleted: 0, oversized: true })).toBe(true)
+    expect(isChangedFile({ path: 'a', display: 'a', added: 0, deleted: 0, oversized: 1 })).toBe(false)
     expect(isChangedFile({ path: '', display: 'a', added: 1, deleted: 2 })).toBe(false)
     expect(isChangedFile({ path: 'a', display: '', added: 1, deleted: 2 })).toBe(false)
     expect(isChangedFile({ path: 'a', display: 'a', added: 1.5, deleted: 2 })).toBe(false)

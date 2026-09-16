@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import { GitRunner, diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree } from '../src/git.ts'
+import { GitRunner, blobText, diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree, treeBlob } from '../src/git.ts'
 import { TurnRecorder } from '../src/recorder.ts'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { git, scratchDir, startTurn, toolCall } from './support.ts'
@@ -129,6 +129,27 @@ describe('repository edge cases', () => {
   })
 })
 
+describe('treeBlob and blobText', () => {
+  it('locates a blob by its literal path, sizes it, reads it, and reports trees and missing paths as null', async () => {
+    const cwd = await scratchDir('dsh-git-blob-', cleanups)
+    git(cwd, 'init', '-q', '-b', 'main')
+    await mkdir(join(cwd, 'dir'))
+    await writeFile(join(cwd, 'dir', 'inner.txt'), 'inner\n')
+    await writeFile(join(cwd, 'a[1].txt'), 'bracket\n')
+    await writeFile(join(cwd, 'a1.txt'), 'plain\n')
+    const { git: runnerGit } = await runner()
+    const workspace = await locateGitWorkspace(runnerGit, cwd, objectsIn(await scratchDir('dsh-git-store-', cleanups)), signal)
+    if (workspace === null) throw new Error('repository not located')
+    const tree = await snapshotTree(runnerGit, workspace, signal)
+    const bracket = await treeBlob(runnerGit, workspace, tree, 'a[1].txt', signal)
+    expect(bracket).toEqual({ oid: git(cwd, 'hash-object', 'a[1].txt').trim(), size: 8 })
+    expect(await blobText(runnerGit, workspace, bracket!.oid, 64, signal)).toBe('bracket\n')
+    expect(await treeBlob(runnerGit, workspace, tree, 'dir', signal)).toBeNull()
+    expect(await treeBlob(runnerGit, workspace, tree, 'missing.txt', signal)).toBeNull()
+    expect(await treeBlob(runnerGit, workspace, tree, 'dir/inner.txt', signal)).toMatchObject({ size: 6 })
+  })
+})
+
 describe('TurnRecorder', () => {
   it('stays silent when disposed while git work is pending, and warns on failures otherwise', async () => {
     const cwd = await scratchDir('dsh-recorder-', cleanups)
@@ -138,7 +159,7 @@ describe('TurnRecorder', () => {
     let release!: (runner: GitRunner | null) => void
     const gate = new Promise<GitRunner | null>((resolve) => { release = resolve })
     const tempRoot = await scratchDir('dsh-git-store-', cleanups)
-    const env = { git: gate, tempRoot, maxFiles: 10, warn: (m: string) => { warnings.push(m) } }
+    const env = { git: gate, tempRoot, maxFiles: 10, maxFileBytes: 1024, diffTimeoutMs: 100, warn: (m: string) => { warnings.push(m) } }
     const disposed = new TurnRecorder(session, cwd, env)
     disposed.start(1)
     await new Promise(resolve => setTimeout(resolve, 5))
@@ -161,7 +182,10 @@ describe('TurnRecorder', () => {
   it('removes its snapshot objects on disposal and never creates them outside a repository', async () => {
     const tempRoot = await scratchDir('dsh-git-store-', cleanups)
     const { ctx, git: runnerGit } = await runner()
-    const env = { git: Promise.resolve(runnerGit), tempRoot, maxFiles: 10, warn: (m: string) => { throw new Error(m) } }
+    const env = {
+      git: Promise.resolve(runnerGit), tempRoot, maxFiles: 10, maxFileBytes: 1024, diffTimeoutMs: 100,
+      warn: (m: string) => { throw new Error(m) },
+    }
     const plain = new TurnRecorder(ctx.sessions.create(SessionId('plain'), { meta: { cwd: tempRoot } }), tempRoot, env)
     plain.start(1)
     await plain.settled()
@@ -187,7 +211,10 @@ describe('TurnRecorder', () => {
     await mkdir(tempRoot)
     const { ctx, git: runnerGit } = await runner()
     const session = ctx.sessions.create(SessionId('tmp-in-tree'), { meta: { cwd } })
-    const env = { git: Promise.resolve(runnerGit), tempRoot, maxFiles: 10, warn: (m: string) => { throw new Error(m) } }
+    const env = {
+      git: Promise.resolve(runnerGit), tempRoot, maxFiles: 10, maxFileBytes: 1024, diffTimeoutMs: 100,
+      warn: (m: string) => { throw new Error(m) },
+    }
     const recorder = new TurnRecorder(session, cwd, env)
     startTurn(session, 1)
     recorder.start(1)

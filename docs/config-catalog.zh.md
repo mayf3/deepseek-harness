@@ -3658,7 +3658,7 @@ export interface Config {
 依赖： `subprocess`
 
 ```ts config-catalog
-/** Snapshot bounds. Invalid values fail plugin load. */
+/** Snapshot, capture, and comparison bounds. Invalid values fail plugin load. */
 export interface Config {
   /** Milliseconds one git command may run before the turn's record is abandoned. */
   timeoutMs: number
@@ -3666,10 +3666,17 @@ export interface Config {
   outputMaxBytes: number
   /** Maximum files carried by one summary; `total` still reports the complete count. */
   maxFiles: number
+  /**
+   * Bytes a file may hold to be captured around a file-tool edit or read from a snapshot for its comparison.
+   * A larger file gets no comparison; one captured around a file-tool edit is also listed without counts.
+   */
+  maxFileBytes: number
+  /** Milliseconds a line comparison may run before it degrades to whole-file replacement. */
+  diffTimeoutMs: number
 }
 ```
 
-来源： [`packages/deliverables/workspace-changes/src/index.ts:29`](../packages/deliverables/workspace-changes/src/index.ts)
+来源： [`packages/deliverables/workspace-changes/src/index.ts:36`](../packages/deliverables/workspace-changes/src/index.ts)
 
 ## 无配置的可加载插件
 

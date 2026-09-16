@@ -1,7 +1,7 @@
 /** Path classification and display forms for changed files. */
 import { realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { isAbsolute, relative, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 
 /**
  * Slash-separated form of a native relative path.
@@ -40,16 +40,26 @@ export async function temporaryRoots(candidates: readonly string[] = ['/tmp', tm
 }
 
 /**
- * Symlink-resolved path when the target exists, otherwise the lexical path.
+ * Symlink-resolved path. A path that does not exist yet is resolved through
+ * its nearest existing ancestor, so a file created through a directory
+ * symlink has the same canonical spelling before and after it exists.
  * @param path - absolute path.
- * @returns the canonical spelling git reports for an existing path.
+ * @returns the canonical spelling git reports for the path.
  */
 export async function canonicalPath(path: string): Promise<string> {
-  try {
-    return await realpath(path)
-  } catch {
-    // A missing or unreadable target keeps its lexical spelling.
-    return path
+  const missing: string[] = []
+  let head = path
+  while (true) {
+    try {
+      return join(await realpath(head), ...missing)
+    } catch {
+      // A missing or unreadable component is kept lexically under its nearest resolvable ancestor;
+      // a path with no existing ancestor but the root keeps its spelling entirely.
+      const parent = dirname(head)
+      if (parent === head || dirname(parent) === parent) return path
+      missing.unshift(basename(head))
+      head = parent
+    }
   }
 }
 

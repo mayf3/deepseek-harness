@@ -32,14 +32,13 @@ export class PresentedOpenController {
   }
 
   /**
-   * Open one recorded changed file, or the changed files' common folder, in
-   * the Host's default application.
+   * Open one recorded changed file in the Host's default application.
    * @param sessionId - viewed Session.
    * @param seq - durable workspace/changes event sequence.
-   * @param index - original file index within that event, or null for the common folder.
+   * @param index - original file index within that event.
    * @returns after the Host acknowledges opening or the error state is published.
    */
-  openChanged(sessionId: SessionId, seq: number, index: number | null): Promise<void> {
+  openChanged(sessionId: SessionId, seq: number, index: number): Promise<void> {
     return this.openUrl(changedFileUrl(sessionId, seq, index), 'open')
   }
 

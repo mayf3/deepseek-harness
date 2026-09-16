@@ -2179,6 +2179,16 @@
     },
     {
       "doc": "docs/subsystems/deliverables.md",
+      "symbol": "WorkspaceDiffHunk",
+      "source": "packages/deliverables/workspace-changes/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/deliverables.md",
+      "symbol": "WorkspaceFileDiff",
+      "source": "packages/deliverables/workspace-changes/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/deliverables.md",
       "symbol": "WorkspaceChanges",
       "source": "packages/deliverables/workspace-changes/src/types.ts"
     }
