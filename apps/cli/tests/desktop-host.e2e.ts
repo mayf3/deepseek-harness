@@ -3,7 +3,7 @@
 import { fork } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { finished } from 'node:stream/promises'
 import { expect, it, onTestFinished } from 'vitest'
@@ -33,8 +33,8 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
   writeFileSync(join(modules, 'dsh', 'package.json'), '{"type":"module","exports":{"./profile-boot":"./profile-boot.js"}}')
   writeFileSync(join(modules, 'dsh', 'profile-boot.js'), `
     import { writeFileSync } from 'node:fs';
-    export function runProfile() {
-      process.send({ type: 'booting' });
+    export function runProfile(options) {
+      process.send({ type: 'booting', packageManager: options.packageManager });
       return new Promise((resolve, reject) => process.once('disconnect', () => {
         if (${String(fail)}) { reject(new Error('fixture boot failure')); return; }
         resolve({ ctx: { plugin: async () => {}, connection: { authenticatedUrl: value => value }, webServer: { port: 19387 } },
@@ -44,7 +44,9 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
   `)
   const entry = join(root, 'index.js')
   copyFileSync(join(hostDirectory, 'lib', 'index.js'), entry)
-  const child = fork(entry, [root, root], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+  const pnpm = join(root, 'bundled-pnpm.mjs')
+  const nodeBin = join(root, 'bin')
+  const child = fork(entry, [root, root, root, 'runtime', pnpm, nodeBin], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
   let stderr = ''
   child.stderr!.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk })
   const exited = new Promise<number | null>(resolve => child.once('exit', resolve))
@@ -55,11 +57,17 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
     rmSync(root, { recursive: true, force: true })
   })
   try {
-    await new Promise<void>((resolve, reject) => {
-      child.once('message', () => { resolve() })
+    const boot = await new Promise<{
+      packageManager: { command: string; args: string[]; env: Record<string, string> }
+    }>((resolve, reject) => {
+      child.once('message', resolve)
       child.once('error', reject)
       child.once('exit', (code) => { reject(new Error(`Host exited before booting: ${String(code)} ${stderr}`)) })
     })
+    expect(boot.packageManager.command).toBe(process.execPath)
+    expect(boot.packageManager.args).toEqual(['--expose-internals', pnpm])
+    expect(boot.packageManager.env.ELECTRON_RUN_AS_NODE).toBe('1')
+    expect(boot.packageManager.env.PATH).toBe(`${nodeBin}${delimiter}${process.env.PATH ?? ''}`)
     child.disconnect()
     expect(await exited).toBe(fail ? 1 : 0)
     await drained
