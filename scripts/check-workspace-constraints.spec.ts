@@ -198,3 +198,11 @@ it('requires the shared Web injection entry in the published payload', () => {
     ...manifest, files: ['lib/index.js', 'lib/**/*.css', 'lib/types/**/*.d.ts'],
   } })).toEqual([expect.stringContaining('package.json files must be')])
 })
+
+it('requires Office skill bodies and helpers in the published payload', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../packages/skill/skill-office/package.json', import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+  expect(checkWorkspaceManifest({ dir: 'packages/skill/skill-office', manifest })).toEqual([])
+  expect(checkWorkspaceManifest({ dir: 'packages/skill/skill-office', manifest: {
+    ...manifest, files: ['lib/index.js', 'lib/types/**/*.d.ts'],
+  } })).toEqual([expect.stringContaining('package.json files must be')])
+})
