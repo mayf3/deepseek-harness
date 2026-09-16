@@ -7,15 +7,35 @@
  */
 import type { ReactElement } from 'react'
 import {
+  siAliexpress,
+  siApple,
+  siBaidu,
   siBilibili,
   siCsdn,
+  siDuckduckgo,
+  siEbay,
+  siFacebook,
   siGithub,
   siGitlab,
+  siGoogle,
+  siInstagram,
   siJuejin,
   siMdnwebdocs,
+  siNetflix,
   siNpm,
   siPypi,
+  siQq,
+  siQuora,
+  siReddit,
+  siSinaweibo,
+  siSpotify,
   siStackoverflow,
+  siTaobao,
+  siTelegram,
+  siTiktok,
+  siV2ex,
+  siWechat,
+  siWhatsapp,
   siWikipedia,
   siX,
   siYcombinator,
@@ -25,9 +45,12 @@ import {
 import type { SimpleIcon } from 'simple-icons'
 
 /**
- * Host suffix to site mark. A host matches a suffix when it equals it or is a
- * subdomain of it, so `gist.github.com` and `en.wikipedia.org` resolve without
- * their own entries.
+ * Host suffix to site mark, covering the developer sites the transcript
+ * usually cites plus the mainstream search, video, social, shopping, and
+ * reference sites a general audience links. A host matches a suffix when it
+ * equals it or is a subdomain of it, and the longest matching suffix wins, so
+ * `weixin.qq.com` keeps WeChat while `qq.com` keeps QQ and `gist.github.com`
+ * needs no entry of its own.
  */
 const SITE_HOSTS: Readonly<Record<string, SimpleIcon>> = {
   'github.com': siGithub,
@@ -48,6 +71,28 @@ const SITE_HOSTS: Readonly<Record<string, SimpleIcon>> = {
   'zhihu.com': siZhihu,
   'juejin.cn': siJuejin,
   'csdn.net': siCsdn,
+  'google.com': siGoogle,
+  'baidu.com': siBaidu,
+  'duckduckgo.com': siDuckduckgo,
+  'tiktok.com': siTiktok,
+  'netflix.com': siNetflix,
+  'spotify.com': siSpotify,
+  'facebook.com': siFacebook,
+  'instagram.com': siInstagram,
+  'reddit.com': siReddit,
+  'telegram.org': siTelegram,
+  't.me': siTelegram,
+  'weixin.qq.com': siWechat,
+  'qq.com': siQq,
+  'whatsapp.com': siWhatsapp,
+  'wa.me': siWhatsapp,
+  'weibo.com': siSinaweibo,
+  'taobao.com': siTaobao,
+  'aliexpress.com': siAliexpress,
+  'ebay.com': siEbay,
+  'quora.com': siQuora,
+  'v2ex.com': siV2ex,
+  'apple.com': siApple,
 }
 
 /**
@@ -65,10 +110,15 @@ function siteIcon(href: string): SimpleIcon | undefined {
     // Not an absolute URL: nothing here can name a host.
     return undefined
   }
+  let match: SimpleIcon | undefined
+  let matched = 0
   for (const [suffix, icon] of Object.entries(SITE_HOSTS)) {
-    if (host === suffix || host.endsWith(`.${suffix}`)) return icon
+    if ((host === suffix || host.endsWith(`.${suffix}`)) && suffix.length > matched) {
+      match = icon
+      matched = suffix.length
+    }
   }
-  return undefined
+  return match
 }
 
 /** Props for {@link siteGlyph}: the destination plus the shared icon sizing seat. */

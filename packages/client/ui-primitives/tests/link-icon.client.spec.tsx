@@ -64,7 +64,7 @@ describe('LinkIcon', () => {
   })
 })
 
-/** One host per mapped site, plus three aliases that must resolve to a mark already listed. */
+/** One host per mapped site, plus aliases that must resolve to a mark already listed. */
 const SITE_URLS: string[] = [
   'https://github.com/org/repo',
   'https://gist.github.com/abc',
@@ -83,6 +83,26 @@ const SITE_URLS: string[] = [
   'https://zhuanlan.zhihu.com/p/1',
   'https://juejin.cn/post/1',
   'https://blog.csdn.net/post/1',
+  'https://www.google.com/search?q=1',
+  'https://baike.baidu.com/item/1',
+  'https://duckduckgo.com/?q=1',
+  'https://www.tiktok.com/@x',
+  'https://www.netflix.com/title/1',
+  'https://open.spotify.com/track/1',
+  'https://www.facebook.com/x',
+  'https://www.instagram.com/x',
+  'https://www.reddit.com/r/x',
+  'https://t.me/x',
+  'https://weixin.qq.com/x',
+  'https://im.qq.com/x',
+  'https://wa.me/1',
+  'https://weibo.com/x',
+  'https://item.taobao.com/item.htm?id=1',
+  'https://www.aliexpress.com/item/1',
+  'https://www.ebay.com/itm/1',
+  'https://www.quora.com/q/1',
+  'https://www.v2ex.com/t/1',
+  'https://www.apple.com/mac',
 ]
 
 /** The single path data of the mark a URL renders. */
@@ -96,10 +116,10 @@ describe('LinkIcon site marks', () => {
     const globe = render(<LinkIcon kind="url" />).container.querySelector('path')!.getAttribute('d')
     const marks = SITE_URLS.map(glyphPath)
     expect(marks).not.toContain(globe)
-    // Seventeen destinations, fourteen mapped sites: the three extra GitHub
-    // hosts share the GitHub mark, and any fifteenth mark means the site list
-    // grew without this expectation moving with it.
-    expect(new Set(marks).size).toBe(14)
+    // Thirty-seven destinations, thirty-four mapped sites: the three extra
+    // GitHub hosts share the GitHub mark, and any other number means the site
+    // list grew without this expectation moving with it.
+    expect(new Set(marks).size).toBe(34)
   })
 
   it('resolves the aliases of one site to the same mark', () => {
@@ -111,6 +131,13 @@ describe('LinkIcon site marks', () => {
     expect(glyphPath('https://en.wikipedia.org/wiki/Harness')).toBe(glyphPath('https://www.wikipedia.org'))
     expect(glyphPath('https://youtu.be/dQw4w9WgXcQ')).toBe(glyphPath('https://m.youtube.com/watch?v=1'))
     expect(glyphPath('https://twitter.com/x')).toBe(glyphPath('https://x.com/x'))
+    expect(glyphPath('https://telegram.org/x')).toBe(glyphPath('https://t.me/x'))
+    expect(glyphPath('https://whatsapp.com/x')).toBe(glyphPath('https://wa.me/1'))
+  })
+
+  it('keeps the longer suffix mark for a subdomain of a mapped host', () => {
+    // weixin.qq.com ends in qq.com as well, so the longest match has to win.
+    expect(glyphPath('https://weixin.qq.com/x')).not.toBe(glyphPath('https://im.qq.com/x'))
   })
 
   it.each([
