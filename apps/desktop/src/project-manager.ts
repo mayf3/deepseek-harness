@@ -10,6 +10,7 @@ import {
   openSync,
   closeSync,
   readFileSync,
+  realpathSync,
   unlinkSync,
   writeFileSync,
   writeSync,
@@ -214,7 +215,7 @@ export class DesktopProjectManager {
   private async runPnpm(projectDir: string, args: readonly string[]): Promise<void> {
     await new Promise<void>((settle, reject) => {
       const child = spawn(this.runtime.node, ['--expose-internals', this.runtime.pnpm, ...args], {
-        cwd: projectDir,
+        cwd: realpathSync(projectDir),
         env: desktopNodeEnvironment(this.runtime.node, this.runtime.nodeBin, process.env),
         stdio: ['ignore', 'pipe', 'pipe'],
       })
@@ -273,16 +274,18 @@ export class DesktopProjectManager {
 
   private async withLock<T>(operation: () => T | Promise<T>): Promise<T> {
     mkdirSync(this.paths.profile, { recursive: true, mode: 0o700 })
+    // Windows exclusive creation through a directory junction can return EEXIST for an absent lock.
+    const lockPath = join(realpathSync(this.paths.profile), 'lock')
     let descriptor: number
     try {
-      descriptor = openSync(this.paths.lock, 'wx', 0o600)
+      descriptor = openSync(lockPath, 'wx', 0o600)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-        const lock = lstatSync(this.paths.lock)
+        const lock = lstatSync(lockPath)
         if (lock.isSymbolicLink() || !lock.isFile()) {
           throw new Error('desktop project: package transaction lock is not a regular file')
         }
-        const owner = Number.parseInt(readFileSync(this.paths.lock, 'utf8').trim(), 10)
+        const owner = Number.parseInt(readFileSync(lockPath, 'utf8').trim(), 10)
         let active = !Number.isSafeInteger(owner) || owner <= 0
         if (!active) {
           try {
@@ -293,8 +296,8 @@ export class DesktopProjectManager {
           }
         }
         if (active) throw new Error('desktop project: another package transaction is active')
-        unlinkSync(this.paths.lock)
-        descriptor = openSync(this.paths.lock, 'wx', 0o600)
+        unlinkSync(lockPath)
+        descriptor = openSync(lockPath, 'wx', 0o600)
       } else {
         throw error
       }
@@ -306,7 +309,7 @@ export class DesktopProjectManager {
     } finally {
       this.lockDescriptor = undefined
       closeSync(descriptor)
-      unlinkSync(this.paths.lock)
+      unlinkSync(lockPath)
     }
   }
 }

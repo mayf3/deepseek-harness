@@ -8,6 +8,8 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import * as workspaceDependencies from './workspace-dependencies.ts'
 
+import { installDesktopUpdateTaskControl } from './update-tasks.ts'
+
 async function main(): Promise<void> {
   const runtimeDir = process.argv[2] as string
   const projectDir = process.argv[3] as string
@@ -21,17 +23,38 @@ async function main(): Promise<void> {
     patchFiles: [],
     args: ['--no-open', '--port', '19387'],
   })
-  const stop = async (): Promise<void> => {
+  let stopping: Promise<void> | undefined
+  const control: { updateTasks?: ReturnType<typeof installDesktopUpdateTaskControl> } = {}
+  const send = (message: object): Promise<void> => new Promise((resolve, reject) => {
+    if (!process.connected || process.send === undefined) { resolve(); return }
+    process.send(message, (error) => { if (error === null) resolve(); else reject(error) })
+  })
+  const stop = (): Promise<void> => stopping ??= (async () => {
     // Startup failure is reported by main; shutdown only owns a tree that booted.
     const running = await application.catch(() => undefined)
     await running?.shutdown.shutdown(0)
+    await send({ type: 'shutdown-complete' })
     if (process.connected) process.disconnect()
-  }
-  process.on('message', (message: { type?: string } | null) => {
-    if (message?.type === 'shutdown') void stop()
+  })()
+  process.on('message', (message: unknown) => {
+    if (typeof message !== 'object' || message === null || !('type' in message)) return
+    if (message.type === 'shutdown') { void stop(); return }
+    if (message.type !== 'update-tasks' || !('requestId' in message) || !Number.isSafeInteger(message.requestId)
+      || !('action' in message) || !['inspect', 'lock', 'unlock'].includes(String(message.action))) return
+    void (async () => {
+      try {
+        if (stopping !== undefined || control.updateTasks === undefined) throw new Error('desktop update: Host is unavailable')
+        const active = await control.updateTasks(message.action as 'inspect' | 'lock' | 'unlock')
+        await send({ type: 'update-tasks', requestId: message.requestId, active })
+      } catch (error) {
+        await send({ type: 'update-tasks', requestId: message.requestId, active: true,
+          error: error instanceof Error ? error.message : String(error) })
+      }
+    })().catch((error: unknown) => { console.error(error) })
   })
   process.once('disconnect', () => { void stop() })
   const { ctx } = await application
+  control.updateTasks = installDesktopUpdateTaskControl(ctx)
   await ctx.plugin(workspaceDependencies, {
     source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
     root: join(resolveDshHome(), 'dsh-runtimes', 'dsh-primary-runtime'),

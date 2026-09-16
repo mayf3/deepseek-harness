@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import wineVmModule from 'app-builder-lib/out/vm/WineVm.js'
+import { beginWindowsSigningAttempt } from './windows-signing-state.mjs'
 
 const execFileAsync = promisify(execFile)
 const { WineVmManager } = wineVmModule
@@ -67,7 +68,28 @@ function resolveCertificateFile(value) {
   if (certificate.ca || !certificate.keyUsage?.includes(CODE_SIGNING_EKU)) {
     throw new Error(`Windows code-signing certificate file must contain a non-CA Code Signing certificate: ${path}`)
   }
-  return path
+  return { path, certificate }
+}
+
+/**
+ * Pin updater verification to the release certificate's organization, country, and common name.
+ *
+ * @param {string | undefined} certificateFile Public Windows Code Signing certificate file.
+ * @returns {string} Distinguished-name attributes consumed by electron-updater.
+ */
+export function resolveWindowsUpdatePublisher(certificateFile) {
+  const { certificate } = resolveCertificateFile(certificateFile)
+  const subject = certificate.toLegacyObject().subject
+  // These attributes have identical names in OpenSSL and Windows certificate subjects.
+  return ['CN', 'O', 'C'].map((key) => {
+    const value = subject[key]
+    if (typeof value !== 'string' || value.trim() === '') {
+      throw new Error(`Windows update publisher requires one nonempty ${key} certificate attribute`)
+    }
+    const escaped = value.replace(/[\\",;+\x00-\x20]/gu,
+      character => `\\${character.charCodeAt(0).toString(16).padStart(2, '0')}`)
+    return `${key}=${escaped}`
+  }).join(',')
 }
 
 function resolveSignTool(value) {
@@ -136,11 +158,11 @@ export function buildWindowsSigningEnvironment(environment, input) {
 /**
  * Serialize SafeNet signing and stop all queued tasks after the first failure.
  *
- * @param {{ certificateFile?: string, signTool?: string, tokenPin?: string, keyContainer?: string, commandInterpreter?: string }} options Release signing configuration.
+ * @param {{ certificateFile?: string, signTool?: string, tokenPin?: string, keyContainer?: string, commandInterpreter?: string, runDirectory?: string, stateDirectory?: string }} options Release identity, supervised run, and test-only isolated interlock directory.
  * @returns {(configuration: { path: string, hash: string, isNest: boolean }) => Promise<void>} The signing hook.
  */
 export function createWindowsTokenSigner(options) {
-  const certificateFile = resolveCertificateFile(options.certificateFile)
+  const { path: certificateFile } = resolveCertificateFile(options.certificateFile)
   const signTool = resolveSignTool(options.signTool)
   const { keyContainer, tokenPin } = resolveTokenIdentity(options)
   const commandInterpreter = options.commandInterpreter
@@ -154,9 +176,11 @@ export function createWindowsTokenSigner(options) {
       }
       await repairDanglingAuthenticodeDirectory(configuration.path)
       const secrets = [tokenPin]
+      const attempt = beginWindowsSigningAttempt({ runDirectory: options.runDirectory,
+        stateDirectory: options.stateDirectory, target: configuration.path })
       let result
       try {
-        result = await execFileAsync(commandInterpreter, [
+        const operation = execFileAsync(commandInterpreter, [
           '/d',
           '/v:off',
           '/c',
@@ -173,10 +197,15 @@ export function createWindowsTokenSigner(options) {
           }),
           windowsHide: true,
         })
+        attempt.started(operation.child?.pid ?? null)
+        result = await operation
       }
       catch (error) {
-        throw createRedactedWindowsSigningError(error, configuration.path, secrets)
+        const failure = createRedactedWindowsSigningError(error, configuration.path, secrets)
+        attempt.failure(typeof error.code === 'number' || typeof error.code === 'string' ? error.code : null, failure.message)
+        throw failure
       }
+      attempt.success()
       const stdout = redactedSigningOutput(result.stdout, secrets)
       const stderr = redactedSigningOutput(result.stderr, secrets)
       if (stdout !== '') process.stdout.write(stdout)

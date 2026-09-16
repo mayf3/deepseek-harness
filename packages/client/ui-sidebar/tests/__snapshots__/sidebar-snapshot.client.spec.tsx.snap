@@ -44,6 +44,10 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
           width="18"
           xmlns="http://www.w3.org/2000/svg"
         />
+        <div
+          data-slot="sidebar.toggle.badge"
+          style="display: contents;"
+        />
       </button>
     </div>
     <button

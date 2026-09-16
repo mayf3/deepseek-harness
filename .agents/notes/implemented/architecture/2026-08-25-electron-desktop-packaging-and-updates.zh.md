@@ -67,13 +67,21 @@ Desktop 在直接修改 profile 前停止 Host。包操作失败后保留部分�
 
 ## 更新与恢复
 
-Electron 更新只使用一个 `electron-updater` 发布流和签名 `electron-builder` 产物。该版本就是 Desktop 发布版本；不存在独立 dsh manifest、兼容范围或仅更新 dsh 的操作。前台安装会等待正在进行的后台检查，而不会把检查结果复用成安装结果。更新弹窗下载并安装 Electron 产物，然后重启进入新发布。
+共享 Web Host 通过 Connection 的请求 waterfall 接纳已认证的 HTTP API 请求。Desktop 的安装锁拒绝新请求，同时统计已接纳的响应传输和真实 Agent／job 工作；它不会取消进行中的任务。Electron 仅接受所属主窗口中、位于当前 Host origin 的顶层 frame 发起的更新操作。安装既要求进程成功退出，也要求收到共享 profile 清理完成后发送的 IPC 确认：profile runner 超时后可能以零退出码强制退出，因此仅凭退出码不足以判断清理成功。
+
+Desktop 在排他创建锁文件和启动 pnpm 前解析 profile 目录的实际路径。否则，Windows 目录 junction 可能让排他创建报告不存在的锁已存在，或让子进程无法创建嵌套包目录。锁仍位于同一 profile 内，并保留 PID 归属校验。
+
+Electron 更新只使用一个 `electron-updater` 发布流和签名 `electron-builder` 产物。该版本就是 Desktop 发布版本；不存在独立 dsh manifest、兼容范围或仅更新 dsh 的操作。[更新策略提案](../../proposed/feature/2026-09-08-desktop-update-policy-and-installation.zh.md)负责固定 Nightly 和独立的下载／重启授权；本记录继续负责发布身份、签名和发布完整性。
 
 [立即显示窗口决策](2026-09-09-desktop-immediate-window-and-direct-start.zh.md)负责本地加载页、直接启动 Host 和主窗口恢复。profile 协调遵循[内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)。
 
-`DSH_DESKTOP_AUTO_UPDATE_ENV` 默认为测试部署，也可以选择生产部署，并同时决定目标专用的 generic-provider URL 与 COS 目标。发布自动化通过 `DOWNLOAD_TEST_ORIGIN` 提供测试 HTTPS origin，并通过 `DOWNLOAD_TEST_COS_BUCKET` 或 `DOWNLOAD_PROD_COS_BUCKET` 提供各部署的 bucket；可变的测试路由与 COS 存储身份不写入源码，部署基础设施变更时无需发布新代码，而公开的生产 origin 仍固定。打包只解析公开更新 URL、禁止 electron-builder 发布、从子进程环境中删除每个 COS 凭据字段，并且只有在 electron-builder 以及每个签名或公证 hook 成功后才写入完成记录。目标上传还必须提供所选 bucket，随后会先要求完成记录、根 dsh 版本、Desktop 版本、根据版本得出的频道元数据、产物名称、大小与 SHA-512 全部一致，再读取所选凭据或发送数据。它先上传不可变且带版本的更新载荷与所有独立 blockmap，最后替换 electron-builder 生成的频道元数据，并且不会删除历史对象。稳定版本使用 `latest` 元数据名称，预发布版本则使用语义化版本的第一个预发布标识符。NSIS 把 blockmap 嵌入已签名的可执行文件，macOS ZIP 则使用独立 blockmap；两者都让 electron-updater 在平台支持时只下载变化的数据块，而应用替换与本地 pnpm 包操作仍是两个独立操作。
+`DSH_DESKTOP_AUTO_UPDATE_ENV` 默认为测试环境，也可选择生产环境，并同时决定目标专用的 generic-provider URL 与 COS 目标。部署配置提供测试 origin 和 bucket 身份；生产使用 `https://download.deepseek.com`。打包排除凭据，并仅在签名和公证完成后记录完成状态。上传在读取凭据前验证完成记录、目标、共同版本号、文件名、大小和 SHA-512。带版本的二进制文件和 blockmap 位于 `dsh-desk/bin/<target>/`；可变 YAML 在二进制文件上传后写入 `dsh-desk/feeds/<target>/`。固定 Nightly 与额外的稳定版元数据遵循更新策略。上传将缓存头交给部署基础设施管理，并保留历史对象以供差分更新。发布操作人员负责串行发布同一目标并验证公网字节；仓库测试不等于云端交付验收。
 
 ## 安全与发布策略
+
+Windows NSIS 分发包含固定版本构建器生成的独立 `.exe.blockmap`。上传拒绝缺失或空 blockmap，并在发布 feed 前上传它。构建器的外部映射元数据不要求 `blockMapSize`；要求该 web-installer 字段会拒绝有效 NSIS 产物。回归 fixture 执行真实 blockmap 生成器，并证明修复前不匹配的验证会失败。文件验证仍不能证明签名合格或已安装应用升级成功。
+
+本地 Windows COS 上传通过[凭据启动器](../../../../apps/desktop/scripts/upload-with-credentials.ps1)读取仓库外经 DPAPI 加密的 CLIXML 凭据对象。显式选择部署环境，避免根据文件名路由凭据；默认动作只检查本地子进程注入，不连接 COS。只有显式上传才调用发布上传程序。解密后的凭据仅存在于进程内存和上传子进程环境中，不进入命令参数或持久环境设置。启动器清除该子进程的无关密钥及 Node 预加载钩子，不显示原始 stderr，并遮盖 stdout 中的凭据值。DPAPI 将文件绑定到 Windows 用户和机器，但不能隔离以同一用户身份运行的其他代码。[Windows 凭据测试](../../../../apps/desktop/tests/upload-with-credentials.spec.ts)覆盖本地注入、父进程状态不变及拒绝时不输出密钥；云端授权和签名发布上传需要单独验收。
 
 核心 dsh 和私有 Desktop Host 只来自签名应用的资源树。插件安装把包规格交给 pnpm，包括本地和远程来源，但不接受原始 pnpm 命令。pnpm 负责依赖解析和 profile 的 `allowBuilds` 策略；Host 加载已启用的 bundle。
 
@@ -93,7 +101,13 @@ Windows 应用替换遵循[目录安装决策](2026-09-11-windows-directory-inst
 
 分架构构建报告实际组件级压缩体积和安装体积。
 
+Windows updater 在 `win.signtoolOptions.publisherName` 中固定公开发布证书的 `CN`、`O` 和 `C`，electron-builder 将其写入已安装应用的 `app-update.yml`。仅提供自定义签名回调不会产生这项元数据，字段缺失时 electron-updater 会跳过验签。这些属性在 Node/OpenSSL 与 Windows 证书主题中使用相同名称；发布者序列化会转义 DN 分隔符，并拒绝缺失或多值身份属性。保留身份而非证书指纹，允许同一发布者续期证书；身份变更需要单独验收转换流程。[真实文件验签检查](../../../../apps/desktop/scripts/test-windows-update-signature.mjs) 验证匹配、身份不符和未签名输入，不执行文件；这与已安装应用升级验收分开进行。
+
 ## 实现
+
+发布[上传执行器](../../../../apps/desktop/scripts/desktop-upload-run.ts)要求两种部署环境都保留持久化本地证据。它在发送请求前保存已验证目标、产物哈希和 feed 字节，每次 PUT 前刷盘意图、之后刷盘可用响应元数据，上传或证据写入失败即停止。SDK 禁用重试，因为结果不确定的写入必须保留为一次可检查的尝试，不能静默重复更新可变 feed。终端断连后，仅有终端输出无法确定哪次操作已完成；原始 SDK 错误可能暴露签名请求数据，因此不予记录。记录独立于产物清理保留，但本地存储不是远端审计服务，缺少最终结果不能证明远端失败。上传回执不认证 CDN 传播。发布者保留记录并独立验证公网字节。
+
+Windows 打包通过[监督程序](../../../../apps/desktop/scripts/packaging-run.mjs)保留每次运行的脱敏输出和带时间戳的阶段／签名事件。[硬件锁定机制](../../../../apps/desktop/scripts/windows-signing-state.mjs)在调用命令解释器前记录意图，失败或运行中断后仍在同一账户的不同进程间保留。致命通知会终止所属阶段的进程树；失败运行绝不生成发布完成记录。只有签名成功才释放锁定状态。恢复必须由操作者明确批准，因为进程内的已拒绝 Promise 无法在重新启动构建后保护令牌。这些记录证明应用级操作，不代表 CSP 内部的 PIN 尝试次数。测试使用假签名和真实隔离进程树，绝不使用发布令牌。
 
 | 表面 | 实现 |
 |---|---|
@@ -105,6 +119,8 @@ Windows 应用替换遵循[目录安装决策](2026-09-11-windows-directory-inst
 `dev:desktop` 会构建当前 workspace，把已构建 CLI 包、私有 Desktop Host 包及其依赖链接投影为一次性项目，使用隔离的 Harness home，打开 Main、Renderer 和 Host 调试器，并在不准备发布资源的情况下启动未打包 Electron。开发运行时为独立的插件 profile 提供工作区链接；插件管理和恢复使用与打包应用相同的流程。固定的 macOS arm64、macOS x64 与 Windows x64 打包命令会把同一目标传给运行时准备、dsh 准备和 electron-builder；每条命令还提供未封装安装器的变体，用于在生成安装器前验证发布路径。
 
 ## 考虑过的替代方案
+
+**将本地 COS 密钥持久保存在明文文件或用户环境中。** 两者都会使上传调用之外的进程能够读取密钥。仓库外的 DPAPI 文件避免明文存储，同时允许专用发布进程解密；同用户进程仍能访问凭据，这是明确保留的限制。
 
 **使用 Electron 的 Node.js 执行 dsh。** 这可以减小包体积，但会让 dsh 耦合到 Electron 的 Node 补丁、fuse、原生 ABI、TLS 行为和进程生命周期。内置上游 Node.js 可以让 dsh 继续使用其受支持运行时。
 
@@ -123,6 +139,8 @@ Windows 应用替换遵循[目录安装决策](2026-09-11-windows-directory-inst
 **把 Windows EV 私钥导出到 PFX 文件。** 外部提供的公开叶证书让 SignTool 构造签名，`/csp` 与 `/kc` 则定位硬件密钥。EV 私钥保持不可导出，并留在 Token 上。
 
 **把凭据写进已跟踪脚本或系统环境。** 本地平台文件把配置限制在单个 checkout，并使打包输入明确。代价是凭据以明文落盘：构建账号需要限制文件访问权限，CI 必须清理临时配置，Git 与发布文件映射都必须排除真实配置。已提交的模板不含凭据；Windows CMD 只包含变量引用，签名串行执行并在首次失败后停止，文件格式不会免除 Token 的错误 PIN 计数。
+
+**依赖构建器队列或单实例 Promise 控制失败。** 构建器在一个文件失败后仍会继续处理其他文件，新签名器实例也不会保留已拒绝的 Promise。持久化的单账户锁定状态和父进程控制的终止机制阻止这些继续执行路径；任何超时都不会自动授权再次尝试。
 
 **让 electron-builder 或通用目录同步直接发布。** 直接发布可能在所有引用产物就绪前暴露频道元数据，可能把陈旧或其他目标的文件混入发布，也无法证明已完成签名的构建仍与当前 dsh 版本一致。目标专用且经过校验的上传可以明确控制发布顺序与发布身份。
 
@@ -171,3 +189,5 @@ Windows 应用替换遵循[目录安装决策](2026-09-11-windows-directory-inst
 ## 相关提案
 
 [内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)负责核心资源与外部插件依赖。[薄壳决策](2026-09-10-desktop-web-wrapper.zh.md)取代无端口传输与私有后端组合。发布身份、签名、进程归属及仅限 Electron 的包授权仍由本记录负责。
+
+[桌面更新提案](../../proposed/feature/2026-09-08-desktop-update-policy-and-installation.zh.md)定义待实现的交互与强制策略变更；签名、发布身份与发布完整性仍由本记录负责。

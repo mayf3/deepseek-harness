@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { validateDesktopPackageEnvironment } from '../scripts/desktop-package-environment.mjs'
+import { createPackagingRun } from '../scripts/packaging-run.mjs'
 import {
   buildWindowsSigningEnvironment,
   createRedactedWindowsSigningError,
@@ -18,7 +19,8 @@ vi.mock('node:child_process', async (importOriginal) => {
   return { ...actual, execFile: vi.fn() }
 })
 
-vi.mock('node:crypto', () => ({
+vi.mock('node:crypto', async importOriginal => ({
+  ...await importOriginal<typeof import('node:crypto')>(),
   X509Certificate: class {
     readonly ca = false
     readonly keyUsage = ['1.3.6.1.5.5.7.3.3']
@@ -46,6 +48,7 @@ describe('Windows token signing', () => {
       await writeFile(path, 'fixture')
       validateDesktopPackageEnvironment({
         DSH_DESKTOP_APP_ID: 'com.example.desktop', DOWNLOAD_TEST_ORIGIN: 'https://updates.example.com',
+        DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
         DSH_DESKTOP_WINDOWS_CER_FILE: certificateFile, DSH_DESKTOP_WINDOWS_SIGNTOOL: signTool,
         DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'fixture-pin', DSH_DESKTOP_WINDOWS_KEY_CONTAINER: 'fixture-container',
       }, { platform: 'win32', arch: 'x64' })
@@ -55,12 +58,22 @@ describe('Windows token signing', () => {
         callback(Object.assign(new Error('signing failed'), { stderr: 'SignTool Error: No private key is available.', code: 1 }))
         return undefined as unknown as ReturnType<typeof execFile>
       })
-      const sign = createWindowsTokenSigner({ certificateFile, signTool, tokenPin: 'fixture-pin', keyContainer: 'fixture-container' })
+      const run = createPackagingRun(join(directory, 'records'), {})
+      const options = { certificateFile, signTool, tokenPin: 'fixture-pin', keyContainer: 'fixture-container',
+        runDirectory: run.directory, stateDirectory: join(directory, 'state') }
+      const sign = createWindowsTokenSigner(options)
       const task = { path, hash: 'sha256', isNest: false }
       const results = await Promise.allSettled([sign(task), sign(task), sign(task)])
       expect(results.map(result => result.status)).toEqual(['rejected', 'rejected', 'rejected'])
       await expect(sign(task)).rejects.toThrow('No private key is available.')
+      const laterRun = createPackagingRun(join(directory, 'records'), {})
+      await expect(createWindowsTokenSigner({ ...options, runDirectory: laterRun.directory })(task)).rejects.toThrow('interlock unavailable')
       expect(execFile).toHaveBeenCalledTimes(1)
+      const records = await readFile(join(run.directory, 'events.jsonl'), 'utf8')
+      expect(records).toContain('sign-start')
+      expect(records).toContain('sign-failure')
+      expect(records).not.toContain('fixture-pin')
+      expect(await readFile(join(options.stateDirectory, 'attempt.json'), 'utf8')).toContain(run.directory.replaceAll('\\', '\\\\'))
     } finally {
       vi.mocked(execFile).mockReset()
       await rm(directory, { recursive: true, force: true })

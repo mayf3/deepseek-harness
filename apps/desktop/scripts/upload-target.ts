@@ -1,16 +1,12 @@
 /** Upload one validated Desktop release to its Tencent COS update directory. */
 
-import { createReadStream } from 'node:fs'
-import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { S3Client } from '@aws-sdk/client-s3'
 import type { DesktopPackageTargetName } from './package-target.ts'
 import { loadDesktopPackageEnvironment } from './desktop-package-environment.mjs'
-import {
-  createDesktopUploadPlan,
-  type DesktopUploadArtifact,
-} from './desktop-upload-plan.ts'
+import { createDesktopUploadPlan } from './desktop-upload-plan.ts'
+import { uploadDesktopRelease } from './desktop-upload-run.ts'
 
 const SUPPORTED_TARGETS = new Set<DesktopPackageTargetName>(['mac-arm64', 'mac-x64', 'win-x64'])
 
@@ -29,29 +25,6 @@ function requiredEnvironmentValue(environment: NodeJS.ProcessEnv, name: string):
   return value
 }
 
-async function putArtifact(
-  client: S3Client,
-  bucket: string,
-  artifact: DesktopUploadArtifact,
-): Promise<void> {
-  const details = await stat(artifact.path)
-  const body = createReadStream(artifact.path)
-  try {
-    await client.send(new PutObjectCommand({
-      Bucket: bucket,
-      Key: artifact.key,
-      Body: body,
-      ContentLength: details.size,
-      ContentType: artifact.contentType,
-      CacheControl: artifact.cacheControl,
-    }))
-  }
-  finally {
-    body.destroy()
-  }
-  process.stdout.write(`desktop upload: uploaded ${artifact.key}\n`)
-}
-
 async function main(): Promise<void> {
   const { positionals } = parseArgs({ args: process.argv.slice(2), allowPositionals: true })
   const target = positionals[0]
@@ -62,6 +35,7 @@ async function main(): Promise<void> {
   const environment = loadDesktopPackageEnvironment(name === 'win-x64' ? 'win32' : 'darwin')
   const plan = await createDesktopUploadPlan(name, { environment })
   const client = new S3Client({
+    maxAttempts: 1,
     region: 'Auto',
     endpoint: 'https://cos.ap-beijing.myqcloud.com',
     credentials: {
@@ -71,7 +45,7 @@ async function main(): Promise<void> {
   })
   process.stdout.write(`desktop upload: ${plan.target} ${plan.version} -> ${plan.publicUrl}\n`)
   try {
-    for (const artifact of plan.artifacts) await putArtifact(client, plan.bucket, artifact)
+    await uploadDesktopRelease(plan, client, resolve(import.meta.dirname, '../.desktop-build/upload-records'))
   }
   finally {
     client.destroy()
@@ -79,8 +53,8 @@ async function main(): Promise<void> {
 }
 
 if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) {
-  main().catch((error: unknown) => {
-    process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`)
+  main().catch(() => {
+    process.stderr.write('desktop upload: failed; inspect the printed record directory if allocated. No automatic retry; reconcile remote state before another upload.\n')
     process.exitCode = 1
   })
 }
