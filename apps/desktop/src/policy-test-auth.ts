@@ -74,7 +74,7 @@ export class DesktopPolicyTestAuth {
     const window = new BrowserWindow({ width: 720, height: 760, ...(parent === undefined ? {} : { parent }),
       title: this.locale.messages.policyLoginTitle, autoHideMenuBar: true,
       webPreferences: { session: this.browserSession, nodeIntegration: false, contextIsolation: true,
-        sandbox: true, webSecurity: true, webviewTag: false, devTools: false, spellcheck: false } })
+        sandbox: true, webSecurity: true, webviewTag: false, devTools: true, spellcheck: false } })
     this.pending = result.promise
     this.window = window
     let settled = false
@@ -93,6 +93,11 @@ export class DesktopPolicyTestAuth {
     window.on('closed', () => { finish('cancelled') })
     window.on('page-title-updated', (event) => { event.preventDefault() })
     const contents = window.webContents
+    contents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown' || input.key !== 'F12' || input.isAutoRepeat) return
+      event.preventDefault()
+      contents.openDevTools({ mode: 'detach' })
+    })
     contents.setWindowOpenHandler(() => ({ action: 'deny' }))
     contents.on('will-navigate', (event, url) => {
       if (!this.allowed(url)) { event.preventDefault(); finish('failed') }

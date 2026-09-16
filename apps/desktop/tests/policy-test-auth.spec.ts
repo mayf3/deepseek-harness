@@ -25,7 +25,7 @@ function makeSession() {
 function makeWindow() {
   let destroyed = false
   const instance = Object.assign(new EventEmitter(), { webContents: Object.assign(new EventEmitter(), {
-    setWindowOpenHandler: vi.fn<(handler: () => { action: string }) => void>() }),
+    setWindowOpenHandler: vi.fn<(handler: () => { action: string }) => void>(), openDevTools: vi.fn() }),
   show: vi.fn(), focus: vi.fn(), setMenu: vi.fn(), loadFile: vi.fn(async () => {}),
   loadURL: vi.fn(async () => {}), isDestroyed: () => destroyed,
   destroy: () => { if (!destroyed) { destroyed = true; instance.emit('closed') } } })
@@ -57,7 +57,7 @@ it('opens a sandboxed window on explicit action and coalesces logins without aut
   expect(native.create).toHaveBeenCalledTimes(1)
   expect(native.create.mock.calls[0]![0]).toMatchObject({ title: '登录测试环境', webPreferences: {
     session: browserSession, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
-    webviewTag: false, devTools: false } })
+    webviewTag: false, devTools: true } })
   expect(native.create.mock.calls[0]![0].webPreferences?.preload).toBeUndefined()
   expect(window.loadFile).toHaveBeenCalledWith('renderer/policy-login-loading.html', { query: { label: '正在加载登录页面…' } })
   // The placeholder is the first document: the remote page waits for it.
@@ -70,6 +70,22 @@ it('opens a sandboxed window on explicit action and coalesces logins without aut
   expect(await pending).toBe('returned')
   expect(record.mock.calls).toEqual([['opened'], ['returned']])
   expect(browserSession.fetch).not.toHaveBeenCalled()
+})
+
+it('opens only the Feishu login window DevTools on a single F12 keydown', () => {
+  void auth.login()
+  const preventDefault = vi.fn()
+  const press = (type: string, key: string, isAutoRepeat = false) => {
+    window.webContents.emit('before-input-event', { preventDefault }, { type, key, isAutoRepeat })
+  }
+  press('keyDown', 'F11')
+  press('keyUp', 'F12')
+  press('keyDown', 'F12', true)
+  expect(window.webContents.openDevTools).not.toHaveBeenCalled()
+  expect(preventDefault).not.toHaveBeenCalled()
+  press('keyDown', 'F12')
+  expect(preventDefault).toHaveBeenCalledOnce()
+  expect(window.webContents.openDevTools).toHaveBeenCalledExactlyOnceWith({ mode: 'detach' })
 })
 
 it('shows the placeholder without letting it outlive the first remote document', async () => {
