@@ -60,7 +60,7 @@ pnpm run gen-session-format-catalog
 <a id="current-version-consumers"></a>
 ## 4. 更新当前版本消费方
 
-追踪每个当前版本消费方，包括 Session 创建与恢复、JSONL 文件名选择与发布、catalog 的当前编码器与恢复器、投影缓存的代际身份、回放与快照归一化，以及 TypeScript/Python SDK 录制。当值表示当前版本时使用写入器常量；在已发布 codec 和历史 fixture 中保留字面历史版本。通过各自所有者更新当前文档与生成参考。
+追踪每个当前版本消费方，包括 Session 创建与恢复、JSONL 文件名选择与发布、catalog 的当前编码器与恢复器、投影缓存的代际身份、回放与快照归一化、[物理 fixture 布局校验](../../scripts/session-fixture-layout.ts)，以及 TypeScript/Python SDK 录制。当值表示当前版本时使用写入器常量；在已发布 codec 和历史 fixture 中保留字面历史版本。通过各自所有者更新当前文档与生成参考。
 
 不要自动提升无关版本。请求包装层的 `sessionFormatVersion` 标识嵌入的 Session 代际；外层 schema 版本有自己的含义。投影单元状态版本同样不能替代缓存的 Session 代际身份。
 

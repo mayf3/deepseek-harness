@@ -550,6 +550,31 @@ function pinOf(scenario: HeadlessScenario): HeadlessScenario {
   return pin
 }
 
+function spillReferenceSource(events: readonly JsonObject[], label: string): JsonObject {
+  const messages = events.filter((event) => {
+    const source = (event.data as JsonObject | undefined)?.source as JsonObject | undefined
+    return event.type === 'user/message' && source?.kind === 'session-reference'
+  })
+  expect(messages, `${label}: reference message count`).toHaveLength(1)
+  const source = (messages[0]!.data as JsonObject).source as JsonObject
+  expect(source).toMatchObject({ kind: 'session-reference', form: 'recall', version: 1 })
+  const references = source.references as JsonObject[]
+  expect(references, `${label}: referenced Session count`).toHaveLength(1)
+  expect(references[0]?.sessionId, `${label}: referenced Session id`).toBe('reference-source')
+  return references[0]!
+}
+
+function sessionReferenceSpillExpected(actual: readonly JsonObject[], expectedLog: string, recordedVersion: number): JsonObject[] {
+  const expected = records(expectedLog)
+  const actualReference = spillReferenceSource(actual, 'actual session-reference-spill')
+  const expectedReference = spillReferenceSource(expected, 'expected session-reference-spill')
+  // source-session.ts creates reference-source anew with Session.create() for each run.
+  expect(actualReference.capturedFormatVersion, 'fresh reference-source generation').toBe(SESSION_FORMAT_VERSION)
+  expect(expectedReference.capturedFormatVersion, 'recorded reference-source generation').toBe(recordedVersion)
+  expectedReference.capturedFormatVersion = SESSION_FORMAT_VERSION
+  return expected
+}
+
 /** Require successful verification and the complete canonical event before refresh can write a fixture. */
 async function verifySessionQuerySpill(log: string, spillRoot: string, locatorRoot: string): Promise<void> {
   const events = parseSessionLog(log)
@@ -999,6 +1024,23 @@ describe('headless recorded-session snapshots', () => {
     }
   })
 
+  it('session-reference-spill validates captured generations before adapting its fresh source expectation', async () => {
+    const fixture = await readFile(join(snapshotsRoot, 'session-reference-spill/session.v3.jsonl'), 'utf8')
+    const recordedVersion = sessionHeaderVersion(fixture, 'session-reference-spill fixture')
+    expect(recordedVersion).toBe(3)
+    const normalized = normalizeSessionSnapshots([fixture], contextOf([fixture]))[0]!
+    const actual = records(normalized)
+    spillReferenceSource(actual, 'fresh source').capturedFormatVersion = SESSION_FORMAT_VERSION
+
+    expect(sessionReferenceSpillExpected(actual, normalized, recordedVersion)).toEqual(actual)
+    expect(() => sessionReferenceSpillExpected(records(normalized), normalized, recordedVersion))
+      .toThrow('fresh reference-source generation')
+    expect(() => sessionReferenceSpillExpected(actual, normalized, SESSION_FORMAT_VERSION))
+      .toThrow('recorded reference-source generation')
+    expect(spillReferenceSource(records(normalized), 'unchanged fixture').capturedFormatVersion).toBe(3)
+    expect(await readFile(join(snapshotsRoot, 'session-reference-spill/session.v3.jsonl'), 'utf8')).toBe(fixture)
+  })
+
   for (const scenario of scenarios) {
     const skipped = scenario.manifest.platform === 'posix' && process.platform === 'win32'
       || scenario.manifest.platform === 'pwsh' && !hasPwsh
@@ -1160,7 +1202,15 @@ describe('headless recorded-session snapshots', () => {
       const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext, { nativeWriterOutput: true })
       const expectedSnapshots = normalizeSessionSnapshots(expected, contextOf(expected), { nativeWriterOutput: true })
       for (const [index, actual] of actualSnapshots.entries()) {
-        expect(records(actual), `${scenario.name}: session ${index}`).toEqual(records(expectedSnapshots[index] as string))
+        const actualRecords = records(actual)
+        const expectedRecords = scenario.name === 'session-reference-spill' && index === 0
+          ? sessionReferenceSpillExpected(
+            actualRecords,
+            expectedSnapshots[index] as string,
+            sessionHeaderVersion(expected[index] as string, 'session-reference-spill fixture'),
+          )
+          : records(expectedSnapshots[index] as string)
+        expect(actualRecords, `${scenario.name}: session ${index}`).toEqual(expectedRecords)
       }
       await verifyHeaders(scenario, actualLogs, actualContext)
 

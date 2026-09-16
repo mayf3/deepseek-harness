@@ -11,6 +11,7 @@ import {
 
 const HEADER = `  {"type":"session","version":${SESSION_FORMAT_VERSION},"id":"fixture","createdAt":1,"isSeeded":false,"delegationDepth":0}  `
 const root = resolve(import.meta.dirname, '..')
+const historicalVersions = Array.from({ length: SESSION_FORMAT_VERSION }, (_, version) => version)
 const FIXTURE_MESSAGE = createAssistantMessage({
   content: [{ type: 'text', text: 'part-0part-1part-2part-3' }],
   source: { provider: 'mock', model: 'mock' },
@@ -133,8 +134,8 @@ describe('canonicalSessionFixture', () => {
     expect(() => decodedBody(canonical!)).toThrow(/session snapshot line 3:.*empty optional header fields must be omitted/)
   })
 
-  it.each([0, 1, 2])('preserves physically valid v%i bytes without requiring migration to current', (version) => {
-    const header = { type: 'session', version, id: 'historical', createdAt: 1, delegationDepth: 0, ...(version === 2 ? { isSeeded: false } : {}) }
+  it.each(historicalVersions)('preserves physically valid v%i bytes without requiring migration to current', (version) => {
+    const header = { type: 'session', version, id: 'historical', createdAt: 1, delegationDepth: 0, ...(version >= 2 ? { isSeeded: false } : {}) }
     const content = [
       JSON.stringify(header),
       JSON.stringify({ type: 'user/message', data: { role: 'user', id: 'historical-user', source: { kind: 'user' }, content: [] }, surfaceOp: 'append' }),
@@ -143,16 +144,16 @@ describe('canonicalSessionFixture', () => {
     expect(canonicalSessionFixture(content)).toBe(content)
   })
 
-  it.each([0, 1, 2])('rejects v%i sequence gaps and invalid source-event ranges with source line diagnostics', (version) => {
-    const header = JSON.stringify({ type: 'session', version, id: 'historical', createdAt: 1, delegationDepth: 0, ...(version === 2 ? { isSeeded: false } : {}) })
+  it.each(historicalVersions)('rejects v%i sequence gaps and invalid source-event ranges with source line diagnostics', (version) => {
+    const header = JSON.stringify({ type: 'session', version, id: 'historical', createdAt: 1, delegationDepth: 0, ...(version >= 2 ? { isSeeded: false } : {}) })
     expect(() => canonicalSessionFixture(`${header}\n{"type":"feedback/record","seq":3,"data":{"text":"gap"}}\n`, 'gap.jsonl'))
       .toThrow(/gap\.jsonl: session snapshot line 2:.*seq/)
     expect(() => canonicalSessionFixture(`${header}\n{"type":"feedback/record","data":{},"sourceEventSeqs":[[2,0]]}\n`, 'range.jsonl'))
       .toThrow(/range\.jsonl: session snapshot line 2:/)
   })
 
-  it.each([0, 1, 2])('finalizes the v%i source inherited cut', (version) => {
-    const header = { type: 'session', version, id: 'historical', createdAt: 1, delegationDepth: 0, ...(version === 2 ? { isSeeded: true } : { seedLength: 1 }) }
+  it.each(historicalVersions)('finalizes the v%i source inherited cut', (version) => {
+    const header = { type: 'session', version, id: 'historical', createdAt: 1, delegationDepth: 0, ...(version >= 2 ? { isSeeded: true } : { seedLength: 1 }) }
     expect(() => canonicalSessionFixture(`${JSON.stringify(header)}\n`, 'cut.jsonl'))
       .toThrow(/cut\.jsonl: session snapshot line 1:.*(?:inherited|seed)/)
   })

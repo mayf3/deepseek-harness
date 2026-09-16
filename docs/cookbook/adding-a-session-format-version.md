@@ -60,7 +60,7 @@ Prove strict restoration through `sessionFormatCatalog.createRestore(header, { r
 <a id="current-version-consumers"></a>
 ## 4. Update current-version consumers
 
-Trace each current-version consumer, including Session creation/restoration, JSONL filename selection and publication, the catalog's current encoder/restorer, projection-cache generation identity, replay and snapshot normalization, and TypeScript/Python SDK recordings. Use the writer constant where a value means current; keep literal historical versions in released codecs and historical fixtures. Update current documentation and generated references through their owners.
+Trace each current-version consumer, including Session creation/restoration, JSONL filename selection and publication, the catalog's current encoder/restorer, projection-cache generation identity, replay and snapshot normalization, [physical fixture-layout validation](../../scripts/session-fixture-layout.ts), and TypeScript/Python SDK recordings. Use the writer constant where a value means current; keep literal historical versions in released codecs and historical fixtures. Update current documentation and generated references through their owners.
 
 Do not bump unrelated versions automatically. A request wrapper's `sessionFormatVersion` identifies its embedded Session generation; its outer schema version has its own meaning. Projection-unit state versions likewise do not replace the cache's Session-generation identity.
 
