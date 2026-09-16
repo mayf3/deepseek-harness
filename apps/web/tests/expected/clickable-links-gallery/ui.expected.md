@@ -145,7 +145,7 @@
 - paragraph:
   - text: "Upstream:"
   - link "the repository":
-    - /url: https://github.com/deepseek-harness/deepseek-harness
+    - /url: https://github.com/example/link-gallery
   - text: .
 - paragraph:
   - text: "Inert contrasts:"

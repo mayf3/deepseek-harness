@@ -2,8 +2,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
-import { WebBlock as LocalizedWebBlock } from '../src/index.ts'
-import { LinkIcon } from '../src/index.ts'
+import { LinkIcon, WebBlock as LocalizedWebBlock } from '../src/index.ts'
 import type {
   WebFetchBlockProps, WebSearchBlockProps, WebSourceView,
 } from '../src/index.ts'
@@ -109,7 +108,7 @@ describe('WebBlock search card', () => {
     expect(anchor.getAttribute('rel')).toBe('noopener noreferrer')
   })
 
-  it('leads a source and a fetched url on a known site with that site mark', () => {
+  it("leads a source and a fetched url on a known site with that site's mark", () => {
     /** The mark a link leads with, as its path data. */
     const mark = (element: Element): string | null => element.querySelector('a svg path')!.getAttribute('d')
     const view = render(<WebBlock kind="search" truncated={false} sources={[

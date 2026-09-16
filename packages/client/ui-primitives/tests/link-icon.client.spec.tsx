@@ -64,10 +64,11 @@ describe('LinkIcon', () => {
   })
 })
 
-/** One host per mapped site, plus the aliases that must resolve to a mark already listed. */
+/** One host per mapped site, plus three aliases that must resolve to a mark already listed. */
 const SITE_URLS: string[] = [
   'https://github.com/org/repo',
   'https://gist.github.com/abc',
+  'https://org.github.io/repo',
   'https://raw.githubusercontent.com/org/repo/main/a.ts',
   'https://gitlab.com/org/repo',
   'https://www.npmjs.com/package/x',
@@ -77,7 +78,7 @@ const SITE_URLS: string[] = [
   'https://en.wikipedia.org/wiki/Harness',
   'https://news.ycombinator.com/item?id=1',
   'https://youtu.be/dQw4w9WgXcQ',
-  'https://twitter.com/x',
+  'https://x.com/x',
   'https://www.bilibili.com/video/BV1',
   'https://zhuanlan.zhihu.com/p/1',
   'https://juejin.cn/post/1',
@@ -95,14 +96,16 @@ describe('LinkIcon site marks', () => {
     const globe = render(<LinkIcon kind="url" />).container.querySelector('path')!.getAttribute('d')
     const marks = SITE_URLS.map(glyphPath)
     expect(marks).not.toContain(globe)
-    // Sixteen destinations, fourteen mapped sites: the GitHub aliases and the
-    // X alias share their site's mark, and any other duplicate is a mapping bug.
+    // Seventeen destinations, fourteen mapped sites: the three extra GitHub
+    // hosts share the GitHub mark, and any fifteenth mark means the site list
+    // grew without this expectation moving with it.
     expect(new Set(marks).size).toBe(14)
   })
 
   it('resolves the aliases of one site to the same mark', () => {
     const github = glyphPath('https://github.com/org/repo')
     expect(glyphPath('https://gist.github.com/abc')).toBe(github)
+    expect(glyphPath('https://org.github.io/repo')).toBe(github)
     expect(glyphPath('https://raw.githubusercontent.com/org/repo/main/a.ts')).toBe(github)
     expect(glyphPath('https://www.npmjs.com/package/x')).toBe(glyphPath('https://npmjs.com/package/x'))
     expect(glyphPath('https://en.wikipedia.org/wiki/Harness')).toBe(glyphPath('https://www.wikipedia.org'))
@@ -116,7 +119,7 @@ describe('LinkIcon site marks', () => {
     ['a host that only ends in a mapped name', 'https://notgithub.com/a'],
     ['a non-http scheme', 'mailto:owner@example.com'],
     ['a destination that is not a URL', 'src/index.ts'],
-    ['a hostless URL', 'https:///a'],
+    ['a single-label host', 'https:///a'],
   ])('keeps the globe for %s', (_case, href) => {
     const globe = render(<LinkIcon kind="url" />).container.querySelector('svg')!.outerHTML
     expect(render(<LinkIcon kind="url" href={href} />).container.querySelector('svg')!.outerHTML).toBe(globe)

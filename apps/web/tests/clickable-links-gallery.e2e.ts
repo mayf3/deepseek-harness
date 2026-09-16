@@ -58,7 +58,7 @@ const INERT_SOURCE_URL = 'ftp://mirror.example.test/spec'
 const FETCH_URL = 'https://docs.example.test/tokens'
 // A mapped host, so the prose pins that the leading glyph is the site's mark
 // rather than the globe the unmapped docs host keeps.
-const REPO_URL = 'https://github.com/deepseek-harness/deepseek-harness'
+const REPO_URL = 'https://github.com/example/link-gallery'
 
 /** One-part text content for a built message. */
 function text(value: string): { type: 'text'; text: string }[] {
