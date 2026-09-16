@@ -88,14 +88,14 @@ export interface ScopedStandardSourceBinding extends StandardSourceBinding {
 
 /** One installed source of bindings for a non-root Slot scope. */
 export interface SlotScopeAdapter {
-  /** Binding that follows the current selection, including its absent projection. */
+  /** Default binding inherited by scoped entries, including its absent projection. */
   readonly current: HostObservable<StandardSourceBinding>
   /**
-   * Resolve an already-materialized binding.
-   * @param key - scope identity.
-   * @returns the binding, or `undefined` when the identity is unavailable.
+   * Resolve a stable observable for an explicit scope target or explicit absence.
+   * @param target - domain-owned Provider target, or absence.
+   * @returns the target's current standard-source binding.
    */
-  resolve(key: string): ScopedStandardSourceBinding | undefined
+  bindingSource(target: SessionAreaProps['session']): HostObservable<StandardSourceBinding>
   /**
    * Render the scope owner's area seat over the current binding. The renderer
    * binds this function to the standard `SessionProvider` prop without owning
