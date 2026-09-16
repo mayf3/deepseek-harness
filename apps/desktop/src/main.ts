@@ -37,7 +37,8 @@ const recovery = new DesktopFatalRecovery({
   stop: () => { shuttingDown = true; return stopForRecovery() },
   disablePlugins: async () => {
     const manager = new DesktopProjectManager(resolveDesktopPaths(), runtimeResources())
-    await manager.disableAllPlugins()
+    const backupPath = await manager.disableAllPlugins()
+    console.info('Desktop profile recovery completed:', { profilePatchBackup: backupPath ?? null, homePatch: 'unchanged' })
   },
   exit: () => { app.quit() },
   restart: () => { app.relaunch(); app.quit() },

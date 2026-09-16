@@ -143,6 +143,11 @@
   - superscript: "1"
   - text: .
 - paragraph:
+  - text: "Upstream:"
+  - link "the repository":
+    - /url: https://github.com/example/link-gallery
+  - text: .
+- paragraph:
   - text: "Inert contrasts:"
   - code: curl https://docs.example.test/api
   - text: ","
