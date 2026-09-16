@@ -245,6 +245,14 @@
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
 
+    # Plugin management: the sidebar Plugins page installs, enables, disables,
+    # and removes the profile's bundles through the `pluginManager` Remote.
+    # Without a profile-backed Host it reports itself unavailable.
+    - id: ui-plugin-manager
+      name: '@deepseek-ai/dsh-client-ui-plugin-manager'
+
+    # Read-only Plugin list tab in the Settings Plugins section; the built-in
+    # bundles the sidebar page leaves out are inspected here.
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
 
@@ -369,6 +377,9 @@
 # the criterion for host-plane ownership — injection resolves before any session
 # exists, so there is no agent to key by. Behind a preset realm those variables
 # would never reach the model's shell at all.
+
+- id: tool-plugin-manager
+  disabled: true
 
 - id: tool-bash
   disabled: true

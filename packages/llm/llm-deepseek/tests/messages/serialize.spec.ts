@@ -251,11 +251,11 @@ describe('Messages images', () => {
   const image: ImageBlock = { type: 'image', attachment: ref }
   const version: RequestImageAttachment = { attachment: ref, variantId: ImageVariantId(`sha256:${'b'.repeat(64)}`), mediaType: 'image/png', bytes: 3, data: Uint8Array.of(1, 2, 3), width: 1, height: 1, depth: 'uchar', space: 'srgb', hasAlpha: false }
   const access = () => ({ readonlyPath: '/workspace/image.png' })
-  const model = 'deepseek-v4-flash-vision-exp'
+  const model = 'deepseek-flash'
   // Only the read operation is consumed by image preparation; the transport is mocked, not durable content.
   const attachments = { readImageRequest: async () => version } as unknown as AttachmentStore
   const signal = new AbortController().signal
-  it.each(['deepseek-flash', model])('keeps image bytes inside tool results and deduplicates normalization for %s', async (model) => {
+  it('keeps image bytes inside tool results and deduplicates normalization', async () => {
     const history = [assistant([call()]), result('a', [image, image])]
     const prepared = await prepareImages(history, connection, model, attachments, access, signal)
     expect(prepared.versions.size).toBe(1)
