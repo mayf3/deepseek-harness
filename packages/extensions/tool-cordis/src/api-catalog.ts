@@ -3124,6 +3124,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'workspaceChanges',
+    summary: 'Serves the summaries the recorder keeps for live Sessions.',
+    description: 'Serves the summaries the recorder keeps for live Sessions.',
+    methods: [
+      {
+        signature: 'summary(sessionId: SessionId, seq: number): WorkspaceChangesSummary | undefined',
+        description: 'The summary announced by one `workspace/changes` event.',
+        parameters: [{ name: 'sessionId', description: 'the Session that appended the event.' }, { name: 'seq', description: 'the event\'s sequence number.' }],
+        returns: 'the summary, or undefined once its Session was disposed or when this Host never recorded it.',
+      },
+    ],
+  },
+  {
     key: 'workspaceController',
     summary: 'Host service backing the generated `ctx.remote.workspace` namespace.',
     description: 'Host service backing the generated `ctx.remote.workspace` namespace.',
@@ -6913,6 +6926,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceByteRange',
     declaration: 'export interface WorkspaceByteRange {\n    readonly offset?: number;\n    readonly length?: number;\n}',
+  },
+  {
+    name: 'WorkspaceChangedFile',
+    declaration: 'export interface WorkspaceChangedFile {\n    path: string;\n    display: string;\n    added: number;\n    deleted: number;\n    binary?: true;\n}',
+  },
+  {
+    name: 'WorkspaceChangesSummary',
+    declaration: 'export interface WorkspaceChangesSummary {\n    turn: number;\n    cwd: string;\n    files: WorkspaceChangedFile[];\n    total: number;\n    added: number;\n    deleted: number;\n    snapshot?: {\n        before: string;\n        after: string;\n    };\n}',
   },
   {
     name: 'WorkspaceCreateRequest',

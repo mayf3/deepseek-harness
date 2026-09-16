@@ -3104,7 +3104,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/fs/tool-present/src/index.ts:15`](../packages/fs/tool-present/src/index.ts)
+来源：[`packages/deliverables/tool-present/src/index.ts:15`](../packages/deliverables/tool-present/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
@@ -3650,6 +3650,26 @@ export interface Config {
 ```
 
 来源： [`packages/workflow/workflow-ptc/src/index.ts:32`](../packages/workflow/workflow-ptc/src/index.ts)
+
+<a id="deepseek-aidsh-workspace-changes"></a>
+
+## `@deepseek-ai/dsh-workspace-changes`
+
+依赖： `subprocess`
+
+```ts config-catalog
+/** Snapshot bounds. Invalid values fail plugin load. */
+export interface Config {
+  /** Milliseconds one git command may run before the turn's record is abandoned. */
+  timeoutMs: number
+  /** Bytes of git output retained per command; a larger diff listing abandons the record. */
+  outputMaxBytes: number
+  /** Maximum files carried by one summary; `total` still reports the complete count. */
+  maxFiles: number
+}
+```
+
+来源： [`packages/deliverables/workspace-changes/src/index.ts:29`](../packages/deliverables/workspace-changes/src/index.ts)
 
 ## 无配置的可加载插件
 
