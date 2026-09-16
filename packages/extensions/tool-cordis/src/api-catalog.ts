@@ -4510,10 +4510,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type FeedbackCategory = \'task-result\' | \'instruction-following\' | \'product-interaction\' | \'service-stability\' | \'resource-cost\' | \'security-privacy-permission\' | \'other\';',
   },
   {
-    name: 'FiberState',
-    declaration: 'export type FiberState = FiberStateEnum;',
-  },
-  {
     name: 'FileAttachmentRef',
     declaration: 'export interface FileAttachmentRef {\n    attachmentId: AttachmentId;\n    name: string;\n    bytes: number;\n}',
   },
