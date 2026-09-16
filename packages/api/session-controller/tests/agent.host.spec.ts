@@ -255,6 +255,16 @@ describe('ApiSession Agent lookup and recovery', () => {
     })
   })
 
+  it('retains resume diagnostics without a persistence service', async () => {
+    const { ctx, agents } = await harness()
+    const meta = header('memory-only-resume')
+    ctx.sessions.create(meta.id, { meta })
+    vi.spyOn(ctx.agents, 'resume').mockRejectedValue(new Error('factory unavailable'))
+    await expect(agents.resolveAgent(meta.id)).resolves.toMatchObject({
+      error: { code: 'gateway/internal', message: expect.stringContaining('factory unavailable') as string },
+    })
+  })
+
   it('requires projected observations before activation', async () => {
     const { agents } = await harness()
     const meta = header('unprojected-observation')

@@ -10,7 +10,7 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
-import { SessionAlreadyOwnedError, type SessionInspection } from '@deepseek-ai/dsh-session-persistence'
+import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-typert-registry'
@@ -215,9 +215,12 @@ export class ApiSessionAgentController {
       if (racedSession !== undefined && hasApiSessionSubagentOwner(this.ctx, racedSession, undefined)) {
         return { error: apiSessionSubagentOwnershipError(sessionId) }
       }
-      if (error instanceof SessionAlreadyOwnedError) {
-        return {
-          error: new RemoteError('session/agent-busy', error.message, { reason: 'session-already-owned' }),
+      if (this.ctx.get('sessionPersistence') !== undefined) {
+        const { SessionAlreadyOwnedError } = await import('@deepseek-ai/dsh-session-persistence')
+        if (error instanceof SessionAlreadyOwnedError) {
+          return {
+            error: new RemoteError('session/agent-busy', error.message, { reason: 'session-already-owned' }),
+          }
         }
       }
       return {
