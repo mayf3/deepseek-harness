@@ -53,10 +53,10 @@ export async function canonicalPath(path: string): Promise<string> {
     try {
       return join(await realpath(head), ...missing)
     } catch {
-      // A missing or unreadable component is kept lexically under its nearest resolvable ancestor.
+      // A missing or unreadable component is kept lexically under its nearest resolvable ancestor;
+      // a path with no existing ancestor but the root keeps its spelling entirely.
       const parent = dirname(head)
-      /* v8 ignore next -- the filesystem root always resolves, so the walk ends before reaching it. */
-      if (parent === head) return path
+      if (parent === head || dirname(parent) === parent) return path
       missing.unshift(basename(head))
       head = parent
     }

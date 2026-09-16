@@ -128,7 +128,8 @@ export function changedFileUrl(sessionId: SessionId, seq: number, index: number)
  * @param coordinates - viewed Session, announcing event, and turn.
  * @returns a `dsh-resource://changes-review/session/…` address.
  */
-export function changesReviewAddress({ sessionId, seq, turn }: ChangesReviewCoordinates): string {
+export function changesReviewAddress(coordinates: ChangesReviewCoordinates): string {
+  const { sessionId, seq, turn } = coordinates
   return `${CHANGES_REVIEW_ADDRESS}${encodeURIComponent(sessionId)}/${seq}/${turn}`
 }
 

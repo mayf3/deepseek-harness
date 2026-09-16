@@ -133,15 +133,23 @@ function handleChangesSummary(ctx: Context, request: Request): Response {
   return Response.json({ turn, files, total, added, deleted } satisfies ChangesSummary, { headers: { 'cache-control': 'no-store' } })
 }
 
-/** One listed file's comparison; 404 once the Host no longer serves the summary or the index names no file. */
-async function handleChangesDiff(ctx: Context, request: Request): Promise<Response> {
+/** A changed file's coordinates from a route query, or the 400 to answer with. */
+function changedFileCoordinates(request: Request): { id: SessionId; seq: number; index: number } | Response {
   const query = new URL(request.url).searchParams
   const id = query.get('sessionId')
   const seq = coordinate(query.get('seq'))
   const index = coordinate(query.get('index'))
   if (!id || seq === undefined || index === undefined) return new Response('Invalid changed file coordinates.', { status: 400 })
+  return { id: id as SessionId, seq, index }
+}
+
+/** One listed file's comparison; 404 once the Host no longer serves the summary or the index names no file. */
+async function handleChangesDiff(ctx: Context, request: Request): Promise<Response> {
+  const coordinates = changedFileCoordinates(request)
+  if (coordinates instanceof Response) return coordinates
+  const { id, seq, index } = coordinates
   try {
-    const diff = await ctx.workspaceChanges.diff(id as SessionId, seq, index, request.signal)
+    const diff = await ctx.workspaceChanges.diff(id, seq, index, request.signal)
     if (diff === undefined) return new Response('Change comparison unavailable.', { status: 404 })
     return Response.json(diff, { headers: { 'cache-control': 'no-store' } })
   } catch (error: unknown) {
@@ -151,20 +159,18 @@ async function handleChangesDiff(ctx: Context, request: Request): Promise<Respon
 }
 
 async function handleChangesOpen(ctx: Context, request: Request): Promise<Response> {
-  const query = new URL(request.url).searchParams
-  const id = query.get('sessionId')
-  const seq = coordinate(query.get('seq'))
-  const index = coordinate(query.get('index'))
-  if (!id || seq === undefined || index === undefined) return new Response('Invalid changed file coordinates.', { status: 400 })
+  const coordinates = changedFileCoordinates(request)
+  if (coordinates instanceof Response) return coordinates
+  const { id, seq, index } = coordinates
   try {
     request.signal.throwIfAborted()
     if (!ctx.sessionController.workspaceDesktop().available) return new Response('Host desktop unavailable.', { status: 409 })
-    const changes = ctx.workspaceChanges.summary(id as SessionId, seq)
+    const changes = ctx.workspaceChanges.summary(id, seq)
     if (changes === undefined) return new Response('Change summary unavailable.', { status: 404 })
     const workspaceRoot = changes.cwd
     const file = changes.files[index]
     if (file === undefined) return new Response('Changed file not found in this summary.', { status: 404 })
-    const { absolutePath: path } = await ctx.workspaceFiles.stat({ sessionId: id as SessionId, workspaceRoot }, file.path, request.signal)
+    const { absolutePath: path } = await ctx.workspaceFiles.stat({ sessionId: id, workspaceRoot }, file.path, request.signal)
     return await openVerified(ctx, request, path, 'open')
   } catch (error: unknown) {
     request.signal.throwIfAborted()

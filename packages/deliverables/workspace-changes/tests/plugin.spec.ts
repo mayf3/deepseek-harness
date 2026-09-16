@@ -374,9 +374,16 @@ describe('workspace-changes without a repository', () => {
     const cwd = await scratchDir('dsh-workspace-changes-bounds-', cleanups)
     // The recorder places its temporary directory under the platform temp root; point that root at a scratch directory.
     const tempRoot = await scratchDir('dsh-workspace-changes-temp-', cleanups)
-    const previousTmp = process.env.TMPDIR
-    process.env.TMPDIR = tempRoot
-    cleanups.push(async () => { if (previousTmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previousTmp })
+    // POSIX reads TMPDIR, Windows reads TMP then TEMP.
+    const previous = { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP }
+    for (const name of ['TMPDIR', 'TMP', 'TEMP'] as const) process.env[name] = tempRoot
+    cleanups.push(async () => {
+      for (const name of ['TMPDIR', 'TMP', 'TEMP'] as const) {
+        if (previous[name] === undefined) Reflect.deleteProperty(process.env, name); else process.env[name] = previous[name]
+      }
+    })
+    // Other tooling may create its own directories under the redirected temp root; only the recorder's count.
+    const recorderDirs = async (): Promise<string[]> => (await readdir(tempRoot)).filter(name => name.startsWith('dsh-workspace-changes-'))
     await writeFile(join(cwd, 'grows.txt'), 'small\n')
     await writeFile(join(cwd, 'huge.txt'), 'a'.repeat(20))
     await writeFile(join(cwd, 'mixed.dat'), Uint8Array.of(65, 0, 66))
@@ -412,12 +419,12 @@ describe('workspace-changes without a repository', () => {
     }
     expect(await ctx.workspaceChanges.diff(session.id, seq, 4, signal)).toMatchObject({ kind: 'text', before: false, after: true, hunks: [{ lines: ['+x'] }] })
     // Every copy lives under the Session's temporary directory and goes with it.
-    const [scratch, ...others] = await readdir(tempRoot)
+    const [scratch, ...others] = await recorderDirs()
     expect(others).toEqual([])
-    expect(scratch).toMatch(/^dsh-workspace-changes-/)
-    expect((await readdir(join(tempRoot, scratch!, 'captures'))).length).toBeGreaterThan(0)
+    expect(scratch).toBeDefined()
+    expect((await readdir(join(tempRoot, scratch as string, 'captures'))).length).toBeGreaterThan(0)
     ctx.emit('session/disposed', session)
-    await vi.waitFor(async () => { expect(await readdir(tempRoot)).toEqual([]) })
+    await vi.waitFor(async () => { expect(await recorderDirs()).toEqual([]) })
   })
 
   it('drops a disposed session’s recorder and starts afresh on its next turn', async () => {

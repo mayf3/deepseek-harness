@@ -55,7 +55,9 @@ describe('canonicalPath', () => {
     expect(await canonicalPath(join(root, 'link', 'nested'))).toBe(join(resolvedReal, 'nested'))
     expect(await canonicalPath(join(root, 'link', 'nested', 'new.txt'))).toBe(join(resolvedReal, 'nested', 'new.txt'))
     expect(await canonicalPath(join(root, 'link', 'missing', 'deeper', 'new.txt'))).toBe(join(resolvedReal, 'missing', 'deeper', 'new.txt'))
+    // Nothing but the root exists above this path, so its spelling is kept as given on every platform.
     expect(await canonicalPath('/definitely/missing/root/file')).toBe('/definitely/missing/root/file')
+    expect(await canonicalPath(join(root, 'link', 'a'))).toBe(join(resolvedReal, 'a'))
   })
 })
 
