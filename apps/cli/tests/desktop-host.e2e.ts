@@ -1,9 +1,9 @@
 /** Built Desktop Host lifecycle with Electron disconnecting before profile startup settles. */
 
 import { fork } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { finished } from 'node:stream/promises'
 import { expect, it, onTestFinished } from 'vitest'
@@ -11,7 +11,15 @@ import { expect, it, onTestFinished } from 'vitest'
 it.each([false, true])('settles startup after parent IPC disconnect (boot failure: %s)', async (fail) => {
   const root = mkdtempSync(join(tmpdir(), 'desktop-disconnect-'))
   const modules = join(root, 'node_modules', '@deepseek-ai')
-  for (const name of ['dsh-app-boot', 'dsh', 'dsh-home-paths', 'dsh-tools']) mkdirSync(join(modules, name), { recursive: true })
+  const hostDirectory = fileURLToPath(new URL('../../desktop-host/', import.meta.url))
+  const manifest = JSON.parse(readFileSync(join(hostDirectory, 'package.json'), 'utf8')) as { dependencies: Record<string, string> }
+  const stubbed = new Set(['@deepseek-ai/dsh-app-boot', '@deepseek-ai/dsh', '@deepseek-ai/dsh-home-paths', '@deepseek-ai/dsh-tools'])
+  for (const name of Object.keys(manifest.dependencies)) {
+    const destination = join(root, 'node_modules', name)
+    mkdirSync(dirname(destination), { recursive: true })
+    if (stubbed.has(name)) mkdirSync(destination)
+    else symlinkSync(realpathSync(join(hostDirectory, 'node_modules', name)), destination, 'junction')
+  }
   for (const [name, source] of [
     ['dsh-home-paths', `export const resolveDshHome = () => ${JSON.stringify(root)}`],
     ['dsh-tools', 'export const defineTool = value => value'],
@@ -35,7 +43,7 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
     }
   `)
   const entry = join(root, 'index.js')
-  copyFileSync(fileURLToPath(new URL('../../desktop-host/lib/index.js', import.meta.url)), entry)
+  copyFileSync(join(hostDirectory, 'lib', 'index.js'), entry)
   const child = fork(entry, [root, root], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
   let stderr = ''
   child.stderr!.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk })
