@@ -875,6 +875,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'documentRender',
+    summary: 'Load one provider subclass per context; consumers own source authorization.',
+    description: 'Load one provider subclass per context; consumers own source authorization.',
+    methods: [
+      {
+        signature: 'abstract readonly generation: DocumentRendererGeneration',
+        description: 'Changes whenever engine, font, or rendering configuration is replaced.',
+        parameters: [],
+      },
+      {
+        signature: 'abstract render(request: DocumentRenderRequest, signal?: AbortSignal): Promise<DocumentRenderResult>',
+        description: 'Convert Office bytes without modifying the source or writing Session events.',
+        parameters: [{ name: 'request', description: 'authorized metadata and deferred bounded source read.' }, { name: 'signal', description: 'caller cancellation; provider disposal also stops active work.' }],
+        returns: 'caller-owned PDF bytes after conversion and scratch cleanup settle; canceled readers reject independently.',
+        throws: ['{DocumentRenderError} Invalid input, unusable output, or engine failure; cancellation rejects with its reason.'],
+      },
+    ],
+  },
+  {
     key: 'fileReferences',
     summary: 'Host capability for cancellable file-reference discovery.',
     description: 'Host capability for cancellable file-reference discovery.',
@@ -3228,6 +3247,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'one complete base64 window with offset zero and eof true; oversized files fail with too-large.',
       },
       {
+        signature: 'async readAllBounded( workspaceFileScope: WorkspaceFileScope, path: string, maxBytes: number, signal: AbortSignal, ): Promise<WorkspaceFileBytes>',
+        description: 'Read a complete authorized file within a Host consumer\'s reserved byte capacity.',
+        parameters: [{ name: 'workspaceFileScope', description: 'Session authorization and execution scope.' }, { name: 'path', description: 'absolute or workspace-relative file path.' }, { name: 'maxBytes', description: 'positive reserved capacity; the configured full-file cap still applies.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'complete base64 bytes; reads at most the effective limit plus one overflow sentinel.',
+      },
+      {
         signature: '@Remote async readRelated( workspaceFileScope: WorkspaceFileScope, path: string, relativePath: string, signal: AbortSignal, ): Promise<WorkspaceFileBytes>',
         description: 'Read a complete file relative to another file\'s directory, including outside the workspace.',
         parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'base file, absolute or workspace-relative.' }, { name: 'relativePath', description: 'relative filesystem path, not a URL or absolute path.' }, { name: 'signal', description: 'caller cancellation.' }],
@@ -4447,6 +4472,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DirectoryRegistrationHandle',
     declaration: 'export interface DirectoryRegistrationHandle {\n    (): void;\n    replace(entries: readonly LlmConfigurableProvider[]): void;\n}',
+  },
+  {
+    name: 'DocumentExtension',
+    declaration: 'export type DocumentExtension = \'doc\' | \'docx\' | \'xls\' | \'xlsx\' | \'ppt\' | \'pptx\';',
+  },
+  {
+    name: 'DocumentRendererGeneration',
+    declaration: 'export type DocumentRendererGeneration = Branded<\'DocumentRendererGeneration\'>;',
+  },
+  {
+    name: 'DocumentRenderKey',
+    declaration: 'export type DocumentRenderKey = Branded<\'DocumentRenderKey\'>;',
+  },
+  {
+    name: 'DocumentRenderPriority',
+    declaration: 'export type DocumentRenderPriority = \'foreground\' | \'background\';',
+  },
+  {
+    name: 'DocumentRenderRequest',
+    declaration: 'export interface DocumentRenderRequest {\n    readonly extension: DocumentExtension;\n    readonly priority: DocumentRenderPriority;\n    readonly source: {\n        readonly key: DocumentSourceKey;\n        readonly version: string;\n        readonly bytes?: number;\n        read(signal: AbortSignal, maxBytes: number): Promise<{\n            readonly bytes: Uint8Array;\n            readonly version: string;\n        }>;\n    };\n}',
+  },
+  {
+    name: 'DocumentRenderResult',
+    declaration: 'export interface DocumentRenderResult {\n    readonly pdf: Uint8Array;\n    readonly missingFonts: string[];\n    readonly cacheKey: DocumentRenderKey;\n    readonly generation: DocumentRendererGeneration;\n}',
+  },
+  {
+    name: 'DocumentSourceKey',
+    declaration: 'export type DocumentSourceKey = Branded<\'DocumentSourceKey\'>;',
   },
   {
     name: 'Domain',

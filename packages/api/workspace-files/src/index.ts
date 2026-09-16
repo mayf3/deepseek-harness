@@ -276,8 +276,22 @@ export class WorkspaceFiles extends TypertRemoteService {
    */
   @Remote
   async readAll(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes> {
+    return this.readAllBounded(workspaceFileScope, path, this.config.maxFileBytes, signal)
+  }
+
+  /**
+   * Read a complete authorized file within a Host consumer's reserved byte capacity.
+   * @param workspaceFileScope - Session authorization and execution scope.
+   * @param path - absolute or workspace-relative file path.
+   * @param maxBytes - positive reserved capacity; the configured full-file cap still applies.
+   * @param signal - caller cancellation.
+   * @returns complete base64 bytes; reads at most the effective limit plus one overflow sentinel.
+   */
+  async readAllBounded(
+    workspaceFileScope: WorkspaceFileScope, path: string, maxBytes: number, signal: AbortSignal,
+  ): Promise<WorkspaceFileBytes> {
     const { target, info } = await this.locateFile(workspaceFileScope, path, signal)
-    const limit = this.config.maxFileBytes
+    const limit = Math.min(this.config.maxFileBytes, maxBytes)
     if (info.size !== undefined && info.size > limit) {
       throw new RemoteError('workspace-file/too-large', `"${path}" exceeds the ${limit} byte full-file cap`, { path, limit })
     }

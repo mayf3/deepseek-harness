@@ -51,6 +51,17 @@ describe('workspaceFiles.readAll', () => {
   })
 })
 
+it('applies the smaller Host reservation before reading a complete file', async () => {
+  await writeFile(join(harness.workspace, 'reserved'), '1234')
+  const read = vi.spyOn(harness.ctx.fs, 'readByteRange')
+  const files = harness.endpoint({ maxFileBytes: 8 })
+  expect(await failureOf(files.readAllBounded(harness.scope, 'reserved', 3, signal())))
+    .toEqual({ code: 'workspace-file/too-large', details: { path: 'reserved', limit: 3 } })
+  expect(read).not.toHaveBeenCalled()
+  expect((await files.readAllBounded(harness.scope, 'reserved', 4, signal())).bytes).toBe(4)
+  expect(read.mock.calls[0]![1]).toEqual({ offset: 0, length: 5 })
+})
+
 describe('workspaceFiles.readRelated', () => {
   it('resolves relative paths from the base file directory on the Host', async () => {
     await mkdir(join(harness.workspace, 'nested'))
