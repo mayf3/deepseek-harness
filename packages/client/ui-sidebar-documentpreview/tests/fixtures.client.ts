@@ -122,9 +122,18 @@ export function harness(script: Record<number, RemoteResult<WorkspaceFileText>> 
   onTestFinished(() => { controller.abort() })
   const tabActions = { openResource: vi.fn(), openTab: vi.fn(), close: vi.fn(), replace: vi.fn() }
   const definitions = [textBodyDefinition(() => t('viewer.text'))]
-  const renderSlot: TextPreviewProps['renderSlot'] = (_key, owner, opts) => createElement(TextBody, {
-    ...owner, useTabInfo: opts.hookContext, sessionId: SESSION, useResource,
-  } as unknown as DocumentPreviewProps)
+  // The document seat renders the plain body; the file-handoff seats render a
+  // marker carrying what the owner handed them.
+  const renderSlot: TextPreviewProps['renderSlot'] = (key: string, owner: unknown, opts?: { hookContext?: unknown }) =>
+    key === 'sidebar.right.tab.document'
+      ? createElement(TextBody, {
+        ...owner as object, useTabInfo: opts?.hookContext, sessionId: SESSION, useResource,
+      } as unknown as DocumentPreviewProps)
+      : createElement('div', {
+        'data-slot': key,
+        'data-slot-file': (owner as { file: SessionFile }).file.path,
+        'data-slot-path': (owner as { absolutePath: string }).absolutePath,
+      })
   const props = (navigation: { params?: unknown; revision: number } = { revision: 1 }) => ({
     useTabInfo: () => ({
       sidebar: { expanded: true, fullscreen: false },

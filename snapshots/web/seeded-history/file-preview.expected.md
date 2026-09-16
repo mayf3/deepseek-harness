@@ -3,4 +3,7 @@
   - img
 - button "Read the file again":
   - img
+- button "Open"
+- button "More ways to open":
+  - img
 - text: alpha

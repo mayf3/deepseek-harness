@@ -1,0 +1,132 @@
+/**
+ * Document-header split button: the main button opens the previewed file in
+ * its default application, the chevron's menu adds the file-manager reveal.
+ * Both path controls share the gesture hook declared here.
+ */
+import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
+import {
+  IconChevronDownOutline14, IconFolderOpenOutline16, IconRightUpOutline16, Menu, Tooltip,
+} from '@deepseek-ai/dsh-client-ui-primitives'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
+import type { OpenInAppPathAction, OpenInAppPathFailure } from './open-path.ts'
+import { useOpenFailureToast } from './open-failure-toast.tsx'
+import type { NS } from './locales.ts'
+import css from './OpenPathAction.module.css'
+
+/** Desktop availability and the gesture carrier injected into both path controls. */
+export interface OpenPathInjected {
+  hooks: {
+    openInAppDesktop: ObservableSnapshot<boolean | null>
+  }
+  loadDesktop: () => Promise<void>
+  openPath: (path: string, action: OpenInAppPathAction) => Promise<OpenInAppPathFailure | null>
+}
+
+/** Full props of the document-header contribution. */
+export type OpenPathActionProps =
+  PropsRuntime<'sidebar.right.tab.document.actions'>
+  & PropsLocale<typeof NS>
+  & InjectFace<OpenPathInjected>
+
+/** What one path control needs from its props: the file, the injected face, and copy. */
+type PathGestureProps = Pick<OpenPathActionProps, 'absolutePath' | 'useOpenInAppDesktop' | 'loadDesktop' | 'openPath'> & {
+  t: TranslateNS<typeof NS>
+}
+
+/**
+ * Desktop availability, this control's own pending state, and a gesture
+ * runner announcing failures through this control's toast. Only the control
+ * that ran the gesture disables while it settles; failure never persists on
+ * the control.
+ * @param props - the file's Host path, the injected face, and copy.
+ * @returns availability, pending, the toast to render, and the runner.
+ */
+export function usePathGesture({ absolutePath, useOpenInAppDesktop, loadDesktop, openPath, t }: PathGestureProps): {
+  available: boolean
+  pending: boolean
+  toast: ReactNode
+  act: (action: OpenInAppPathAction) => void
+} {
+  const desktop = useOpenInAppDesktop(value => value)
+  const [pending, setPending] = useState(false)
+  const { toast, show } = useOpenFailureToast()
+  useEffect(() => {
+    if (desktop === null) void loadDesktop()
+  }, [desktop, loadDesktop])
+  return {
+    available: desktop === true,
+    pending,
+    toast,
+    act: (action) => {
+      setPending(true)
+      void openPath(absolutePath, action).then((failure) => {
+        if (failure !== null) show(t(`path.${failure}`))
+      }).finally(() => { setPending(false) })
+    },
+  }
+}
+
+/**
+ * Render the split button, or nothing until the Host reports a desktop.
+ * @param props - the previewed file, the injected face, and copy.
+ * @returns the split button with its menu and toast, or null.
+ */
+export function OpenPathAction(props: OpenPathActionProps): ReactNode {
+  const { t } = props
+  const [menuOpen, setMenuOpen] = useState(false)
+  const { available, pending, toast, act } = usePathGesture(props)
+  if (!available) return null
+  const run = (action: OpenInAppPathAction): void => {
+    setMenuOpen(false)
+    act(action)
+  }
+  return (
+    <>
+      <Menu
+        className={css.menuAnchor}
+        open={menuOpen && !pending}
+        autoFocus
+        portal
+        dense
+        align="end"
+        onClose={() => { setMenuOpen(false) }}
+        items={[
+          { id: 'open', icon: <IconRightUpOutline16 size={16} className={css.menuIcon} />, label: t('path.defaultApp') },
+          { id: 'reveal', icon: <IconFolderOpenOutline16 />, label: t('path.reveal') },
+        ]}
+        onSelect={(id) => { run(id === 'reveal' ? 'reveal' : 'open') }}
+        anchor={(
+          <div className={css.split} data-open-path data-state={pending ? 'busy' : 'idle'}>
+            <Tooltip label={t('path.open.tooltip')} side="bottom" delayMs={500}>
+              <button
+                type="button"
+                className={css.main}
+                disabled={pending}
+                data-open-path-open
+                onClick={() => { run('open') }}
+              >
+                {t('path.open')}
+              </button>
+            </Tooltip>
+            <button
+              type="button"
+              className={css.chevron}
+              disabled={pending}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen && !pending}
+              aria-label={t('path.more')}
+              data-open-path-more
+              onClick={() => { setMenuOpen(value => !value) }}
+            >
+              <IconChevronDownOutline14 size={11} />
+            </button>
+          </div>
+        )}
+      />
+      {toast}
+    </>
+  )
+}

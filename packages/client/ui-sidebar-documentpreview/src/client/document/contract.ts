@@ -2,6 +2,7 @@
 import type { PropsRuntime, SlotHookFactory } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UseSidebarRightTabInfo } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { RefCallback } from 'react'
+import type { SessionFile } from '../rpc.ts'
 
 /** One loaded text window, retaining source line positions. */
 export interface DocumentTextPage {
@@ -39,6 +40,34 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
         hooks: {
           tabInfo: SlotHookFactory<'sidebar.right.tab.document', UseSidebarRightTabInfo>
         }
+      }
+    }
+    /**
+     * Header toolbar contributions acting on the previewed file, rendered
+     * after the preview's own controls once the file's Host path is known.
+     */
+    'sidebar.right.tab.document.actions': {
+      kind: 'list'
+      scope: 'session'
+      owner: {
+        /** The previewed file: the Session the read runs under and the path handed to the Host. */
+        readonly file: SessionFile
+        /** The file's absolute path on the Host, from its metadata. */
+        readonly absolutePath: string
+      }
+    }
+    /**
+     * Empty-state contributions for a file this preview cannot render,
+     * offered where Retry would stand once the file's Host path is known.
+     */
+    'sidebar.right.tab.document.unpreviewable': {
+      kind: 'list'
+      scope: 'session'
+      owner: {
+        /** The previewed file: the Session the read runs under and the path handed to the Host. */
+        readonly file: SessionFile
+        /** The file's absolute path on the Host, from its metadata. */
+        readonly absolutePath: string
       }
     }
   }
