@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { IpcMainInvokeEvent } from 'electron'
+import type { IpcMainInvokeEvent, MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron'
 import { DESKTOP_IPC } from '../src/ipc.ts'
@@ -89,7 +89,10 @@ const harness = await vi.hoisted(async () => {
     failWindow(error: Error) { windowFailure = error },
     popup,
     socketHeaders: vi.fn(),
-    menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn(() => ({ popup })) },
+    menu: {
+      setApplicationMenu: vi.fn(),
+      buildFromTemplate: vi.fn((_items: MenuItemConstructorOptions[]) => ({ popup })),
+    },
     dialog: {
       showOpenDialog: vi.fn(),
       showErrorBox: vi.fn(),
@@ -200,6 +203,20 @@ describe('desktop main startup', () => {
       expect(window.options).not.toHaveProperty('vibrancy')
     }
     expect(harness.hosts).toHaveLength(0)
+  })
+
+  it.each(['darwin', 'win32', 'linux'] as const)('adds the standard window menus only on macOS (%s)', async (platform) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const template = harness.menu.buildFromTemplate.mock.calls
+      .map(call => call[0] as MenuItemConstructorOptions[])
+      .find(items => items.some(item => item.role === 'editMenu'))
+    if (template === undefined) throw new Error('application menu missing')
+    expect(template.map(item => item.role ?? item.label)).toEqual(platform === 'darwin'
+      ? ['Desktop test', 'fileMenu', 'editMenu', 'windowMenu']
+      : ['Application', 'editMenu'])
+    expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
   })
 
   it('attaches Host socket credentials only to the owned application origin and window', async () => {

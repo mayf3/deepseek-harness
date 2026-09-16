@@ -427,6 +427,11 @@ async function main(): Promise<void> {
     void pluginWindow.loadURL(`${SCHEME}://shell/plugin-manager.html`)
   }
 
+  // A custom application menu replaces Electron's default menu, so macOS needs
+  // its standard File and Window menus declared explicitly.
+  const standardMenus: MenuItemConstructorOptions[] = process.platform === 'darwin'
+    ? [{ role: 'fileMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]
+    : [{ role: 'editMenu' }]
   Menu.setApplicationMenu(Menu.buildFromTemplate([{
     label: process.platform === 'darwin' ? app.name : messages.application,
     submenu: [
@@ -439,7 +444,7 @@ async function main(): Promise<void> {
       { type: 'separator' },
       { role: 'quit' },
     ],
-  }, { role: 'editMenu' }]))
+  }, ...standardMenus]))
 
   const createMainWindow = (): BrowserWindow => {
     const window = createWindow(appPreload, true)
