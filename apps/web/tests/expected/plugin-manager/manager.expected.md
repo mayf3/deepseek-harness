@@ -8,17 +8,17 @@
 - text: "3"
 - list:
   - listitem:
-    - button "查看 experimental-agent-team-profile": experimental-agent-team-profile
-    - text: 官方 Experimental profile bundle enabling Agent Teams over dsh-base
-    - switch "启用 experimental-agent-team-profile"
+    - button "查看 智能体团队（实验性）": 智能体团队（实验性）
+    - text: 官方 启用智能体团队协作与团队工具。
+    - switch "启用 智能体团队（实验性）"
   - listitem:
-    - button "查看 experimental-agent-team-web-profile": experimental-agent-team-web-profile
-    - text: 官方 Experimental Web profile layer for Agent Teams Remote and UI plugins
-    - switch "启用 experimental-agent-team-web-profile"
+    - button "查看 智能体团队 Web 界面（实验性）": 智能体团队 Web 界面（实验性）
+    - text: 官方 在浏览器中查看团队成员、任务看板和成员会话。
+    - switch "启用 智能体团队 Web 界面（实验性）"
   - listitem:
-    - button "查看 experimental-auto-review": experimental-auto-review
-    - text: 官方 Per-tool LLM authorization review for the DeepSeek Harness Auto permission preset
-    - switch "启用 experimental-auto-review"
+    - button "查看 自动授权审查（实验性）": 自动授权审查（实验性）
+    - text: 官方 提供自动审查权限模式，由模型在每次工具调用前判断是否授权。
+    - switch "启用 自动授权审查（实验性）"
 - heading "已安装" [level=3]
 - text: "1"
 - list:

@@ -26,7 +26,11 @@ App-boot 负责已安装依赖发现、安装目录优先的 bundle 声明解析
 
 本记录部分取代[打包决策](2026-08-25-electron-desktop-packaging-and-updates.zh.md)中的私有组合与无端口传输。该设计避免监听端口，并使用分帧字节管道避免 Base64 膨胀与跨版本 V8 序列化。共享 HTTP 放弃无端口保证，将服务与认证交给已有 Web 实现。发布身份、签名、进程归属及原生壳功能仍是有效决策。
 
+本地应用的原生目录选择通过窄 preload IPC 调用 Electron 的窗口所属对话框。Main 仅接受当前应用窗口中位于 `dsh-app://app` 的主框架请求；shell、远程页面和子框架均不能调用。并发请求共用待完成的对话框，窗口销毁后丢弃选择结果。Web 后端选择和 Host 浏览由共享实现负责。
+
 ## Alternatives considered
+
+**在 Electron 中使用 Host 操作系统选择器。** Host 的 macOS AppleScript 对话框没有 Electron 父窗口，无法可靠跟随应用焦点。Electron 负责本地对话框，Web 保留 Host 选择器；取消和错误不会启动第二个选择器。
 
 **维护第二套后端组合与传输。** 这允许应用不监听端口，但每项 Web 路由、重载行为、认证变化和流式能力都需要 Desktop 实现或明确省略。只有无法使用 Web 实现、且足以承担持续维护成本的桌面产品需求，才支持重新引入这种方案。
 
