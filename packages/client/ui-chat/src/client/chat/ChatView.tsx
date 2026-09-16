@@ -127,7 +127,8 @@ export function ChatView({
   const openError = useSession(s => s.openError)
   const hasMore = useSession(s => s.hasMore)
   const loadingOlder = useSession(s => s.loadingOlder)
-  const compactTranscript = useTranscriptView(mode => mode === 'compact')
+  const transcriptMode = useTranscriptView(mode => mode)
+  const compactTranscript = transcriptMode === 'compact'
   const [fileOpenError, setFileOpenError] = useState<{ path: string; message: string } | null>(null)
   const [fileOpenBusy, setFileOpenBusy] = useState(false)
   // Close/retry must ignore a settlement that started before the latest
@@ -229,6 +230,7 @@ export function ChatView({
               useChatNodeProcess={useChatNodeProcess}
               historyIncomplete={hasMore}
               compactTranscript={compactTranscript}
+              expandedSteps={transcriptMode === 'expanded'}
               useStore={useStore}
               actions={actions}
               cwd={cwd}

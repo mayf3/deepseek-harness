@@ -11,7 +11,9 @@
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
 - button "Failed" [disabled] [expanded]
-- button "Retry completed"
+- button "Analysis completed"
+- group:
+  - status: Retried model request (2/2) · {{duration}}
 - status:
   - text: This turn failedupstream 503
   - code: SERVER

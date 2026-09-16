@@ -1743,7 +1743,7 @@ describe('ChatView', () => {
     expect(processRow.getAttribute('hidden')).toBe('until-found')
   })
 
-  it('switches completed Turns between the persisted Normal and Compact modes', () => {
+  it('switches completed Turns between the persisted Expanded and Compact modes', () => {
     const process = assistant(2, 'inspect', 1, 1)
     const h = makeHarness({
       nodes: [user(1, 'question'), process, assistant(4, 'final answer', 1, 2)],
@@ -1755,13 +1755,31 @@ describe('ChatView', () => {
     expect(turnProcessControl(view.container)?.getAttribute('aria-expanded')).toBe('false')
     expect(processRow.getAttribute('hidden')).toBe('until-found')
 
-    act(() => { h.setTranscriptView('normal') })
+    act(() => { h.setTranscriptView('expanded') })
     expect(turnProcessControl(view.container)).toBeNull()
     expect(processRow.getAttribute('hidden')).toBeNull()
 
     act(() => { h.setTranscriptView('compact') })
     expect(turnProcessControl(view.container)?.getAttribute('aria-expanded')).toBe('false')
     expect(processRow.getAttribute('hidden')).toBe('until-found')
+  })
+
+  it('switches secondary defaults between Detailed and Expanded and permits manual toggles', () => {
+    const h = makeHarness({ nodes: [user(1, 'question'), context(2, 'work', 1), assistant(3, 'answer')],
+      turnEnds: new Map([[1, 4]]) })
+    const view = render(<h.ChatView {...h.props} />)
+    act(() => { h.setTranscriptView('detailed') })
+    expect(turnProcessControl(view.container)).toBeNull()
+    const body = view.container.querySelector('[data-step-process-body]')!
+    const toggle = view.container.querySelector<HTMLButtonElement>('[data-step-process] > button')!
+    expect(body.getAttribute('hidden')).toBe('until-found')
+    act(() => { h.setTranscriptView('expanded') })
+    expect(body.hasAttribute('hidden')).toBe(false)
+    fireEvent.click(toggle)
+    expect(body.getAttribute('hidden')).toBe('until-found')
+    act(() => { h.setTranscriptView('detailed') })
+    fireEvent.click(toggle)
+    expect(body.hasAttribute('hidden')).toBe(false)
   })
 
   it('folds final-step reasoning under the fallback title when every summary count is zero', () => {

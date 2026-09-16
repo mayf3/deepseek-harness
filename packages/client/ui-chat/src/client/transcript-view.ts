@@ -1,4 +1,4 @@
-/** Host-backed completed-Turn transcript presentation policy. */
+/** Host-backed work details presentation policy. */
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -22,7 +22,7 @@ export class TranscriptViewPolicy {
 
   /**
    * Publish and persist one explicit user choice.
-   * @param mode - Normal or Compact transcript presentation.
+   * @param mode - Compact, Detailed, or Expanded work details.
    */
   setMode(mode: TranscriptViewMode): void {
     if (this.mode.getSnapshot() === mode) return
@@ -33,7 +33,8 @@ export class TranscriptViewPolicy {
   /** Adopt the latest accepted Host section without writing it back. */
   private adopt(): void {
     const section = this.host.getSnapshot().value
-    if (section === undefined || this.mode.getSnapshot() === section.transcriptView) return
-    this.mode.set(section.transcriptView)
+    if (section === undefined) return
+    const mode = section.transcriptView === 'normal' ? 'expanded' : section.transcriptView
+    if (this.mode.getSnapshot() !== mode) this.mode.set(mode)
   }
 }

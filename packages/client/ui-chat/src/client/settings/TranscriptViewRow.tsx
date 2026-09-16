@@ -1,4 +1,4 @@
-/** General Settings row for completed-Turn transcript presentation. */
+/** General Settings row for work details presentation. */
 
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -12,7 +12,7 @@ export interface TranscriptViewRowInjected {
     /** Persisted transcript preference bound as useTranscriptView. */
     transcriptView: SnapshotStore<TranscriptViewMode>
   }
-  /** Change the completed-Turn transcript presentation. */
+  /** Change the work details presentation. */
   setTranscriptView: (mode: TranscriptViewMode) => void
 }
 
@@ -23,8 +23,9 @@ export type TranscriptViewRowProps =
   & InjectFace<TranscriptViewRowInjected>
 
 const OPTIONS: readonly { id: TranscriptViewMode; label: ChatKey }[] = [
-  { id: 'normal', label: 'settings.transcript.normal' },
   { id: 'compact', label: 'settings.transcript.compact' },
+  { id: 'detailed', label: 'settings.transcript.detailed' },
+  { id: 'expanded', label: 'settings.transcript.expanded' },
 ]
 
 /**
@@ -34,9 +35,7 @@ const OPTIONS: readonly { id: TranscriptViewMode; label: ChatKey }[] = [
  */
 export function TranscriptViewRow({ useTranscriptView, setTranscriptView, t }: TranscriptViewRowProps) {
   const mode = useTranscriptView(value => value)
-  const selectedLabel = mode === 'normal'
-    ? 'settings.transcript.normal'
-    : 'settings.transcript.compact'
+  const selectedLabel = `settings.transcript.${mode}` as const
   return (
     <PreferenceRow
       title={t('settings.transcript.title')}

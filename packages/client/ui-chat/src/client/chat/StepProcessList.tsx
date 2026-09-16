@@ -1,5 +1,5 @@
 /** Nested process disclosures retain the existing whole-turn visibility owner. */
-import { memo, useCallback, useId, useState, type ComponentProps } from 'react'
+import { memo, useCallback, useEffect, useId, useState, type ComponentProps } from 'react'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
@@ -12,20 +12,25 @@ import css from './StepProcessList.module.css'
 import flowCss from './ChatView.module.css'
 
 type SeatProps = Omit<ComponentProps<typeof ChatNodeSeat>, 'nodeKey'>
-type ListProps = SeatProps & { readonly useChat: ChatViewSlotProps['useChat'] }
+type ListProps = SeatProps & { readonly useChat: ChatViewSlotProps['useChat']; readonly expandedSteps: boolean }
 
-/** Ordered chat seats with default-collapsed work between assistant responses. */
-export const ChatNodeList = memo(function ChatNodeList({ useChat, ...seatProps }: ListProps) {
+/** Ordered chat seats with configurable process defaults between assistant responses. */
+export const ChatNodeList = memo(function ChatNodeList({ useChat, expandedSteps, ...seatProps }: ListProps) {
   const snapshot = useChat(value => value)
   return processRanges(snapshot).map(range => range.process
-    ? <StepProcess key={range.key} range={range}
+    ? <StepProcess key={range.key} range={range} expandedSteps={expandedSteps}
       nodes={range.seats.map(seat => snapshot.nodes.get(seat.nodeKey) as ChatNode)} {...seatProps} />
     : <ChatNodeSeat key={range.key} {...seatProps} {...range.seats[0]} />)
 })
 
-function StepProcess({ range, nodes, ...seatProps }: SeatProps & { readonly range: ProcessRange; readonly nodes: readonly ChatNode[] }) {
+function StepProcess({ range, nodes, expandedSteps, ...seatProps }: SeatProps & {
+  readonly range: ProcessRange
+  readonly nodes: readonly ChatNode[]
+  readonly expandedSteps: boolean
+}) {
   const { useChatNodeProcess, useStore, actions, t } = seatProps
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(expandedSteps)
+  useEffect(() => { setOpen(expandedSteps) }, [expandedSteps])
   const bodyId = useId()
   const presentation = useChatNodeProcess(range.seats[0].nodeKey)
   const spec = presentation?.spec

@@ -20,19 +20,19 @@ describe('TranscriptViewPolicy', () => {
     current = () => policy.mode.getSnapshot()
 
     expect(policy.mode.getSnapshot()).toBe('compact')
-    policy.setMode('normal')
-    expect(policy.mode.getSnapshot()).toBe('normal')
-    expect(observed).toEqual(['transcriptView=normal:normal'])
-    expect(host.set).toHaveBeenCalledWith('transcriptView', 'normal')
+    policy.setMode('expanded')
+    expect(policy.mode.getSnapshot()).toBe('expanded')
+    expect(observed).toEqual(['transcriptView=expanded:expanded'])
+    expect(host.set).toHaveBeenCalledWith('transcriptView', 'expanded')
   })
 
   it('adopts Host state and ignores identical writes', () => {
     const host = stubSettingsScope<ChatSettings>()
     const policy = new TranscriptViewPolicy(host.scope)
 
-    host.publish({ status: 'ready', value: { transcriptView: 'normal', performanceUsage: 'detailed' }, revision: 1, writable: true })
-    expect(policy.mode.getSnapshot()).toBe('normal')
-    policy.setMode('normal')
+    host.publish({ status: 'ready', value: { transcriptView: 'expanded', performanceUsage: 'detailed' }, revision: 1, writable: true })
+    expect(policy.mode.getSnapshot()).toBe('expanded')
+    policy.setMode('expanded')
     expect(host.set).not.toHaveBeenCalled()
 
     host.publish({ value: { transcriptView: 'compact', performanceUsage: 'detailed' }, revision: 2 })
@@ -41,7 +41,17 @@ describe('TranscriptViewPolicy', () => {
 
   it('adopts an accepted section standing at construction', () => {
     const host = stubSettingsScope<ChatSettings>()
-    host.publish({ status: 'ready', value: { transcriptView: 'normal', performanceUsage: 'detailed' }, revision: 1, writable: true })
-    expect(new TranscriptViewPolicy(host.scope).mode.getSnapshot()).toBe('normal')
+    host.publish({ status: 'ready', value: { transcriptView: 'expanded', performanceUsage: 'detailed' }, revision: 1, writable: true })
+    expect(new TranscriptViewPolicy(host.scope).mode.getSnapshot()).toBe('expanded')
   })
+  it('reads legacy normal as expanded without rewriting saved settings', () => {
+    const host = stubSettingsScope<ChatSettings>()
+    host.publish({ status: 'ready', value: { transcriptView: 'normal', performanceUsage: 'detailed' }, revision: 1, writable: true })
+    const policy = new TranscriptViewPolicy(host.scope)
+    expect(policy.mode.getSnapshot()).toBe('expanded')
+    expect(host.set).not.toHaveBeenCalled()
+    policy.setMode('detailed')
+    expect(host.set).toHaveBeenCalledWith('transcriptView', 'detailed')
+  })
+
 })

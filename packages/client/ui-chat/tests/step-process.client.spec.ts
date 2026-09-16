@@ -78,16 +78,15 @@ describe('process activity summary', () => {
     expect(titles(names)).toEqual([chinese, english])
   })
 
-  it('uses analysis fallback and preserves retry evidence after completion', () => {
+  it('keeps retry rows independent of secondary process groups in every phase', () => {
     expect(titles([], false)).toEqual(['正在分析请求', 'Analyzing the request'])
     expect(titles([])).toEqual(['已完成分析', 'Analysis completed'])
     for (const state of ['scheduled', 'started', 'cancelled'] as const) {
       const snapshot = chatSnapshotFixture({ nodes: [retry(state)] })
-      const summary = processActivity(snapshot.nodes.values() as ChatNode[])
-      expect(processTitle(summary, false, makeTranslate(en))).toBe(state === 'cancelled' ? 'Analyzing the request' : 'Trying again')
-      expect(processTitle(summary, true, makeTranslate(en))).toBe('Retry completed')
-      expect(processTitle(summary, true, makeTranslate(zh))).toBe('已完成重试')
-      expect(processTitle({ ...summary, running: 'read' }, false, makeTranslate(zh))).toBe('正在读取文件')
+      const ranges = processRanges(snapshot)
+      const retryRange = ranges.find(range => range.seats.some(seat => snapshot.nodes.get(seat.nodeKey)?.kind === 'model-retry'))!
+      expect(retryRange.process).toBe(false)
+      expect(retryRange.seats).toHaveLength(1)
     }
   })
 
