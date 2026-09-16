@@ -1,4 +1,4 @@
-/** Profile recovery shared by Web launchers and the Desktop shell. */
+/** Filesystem recovery for callers that own profile shutdown and write exclusion. */
 
 import { existsSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
@@ -13,14 +13,16 @@ import { writeProfileBundles } from './profile-plugins.ts'
  * @param binName - Diagnostic prefix for invalid profile manifests.
  * @param profileDir - Profile directory to recover without loading its plugins.
  * @param bundles - Ordered bundles to enable after recovery.
- * @returns Renamed patch path with a unique `.bak-<timestamp>` suffix in Unix milliseconds, or undefined if absent.
+ * @returns Backup path with a Unix millisecond timestamp and optional collision ordinal, or undefined if absent.
  */
 export function sanitizeProfile(binName: string, profileDir: string, bundles: readonly string[]): string | undefined {
   const manifest = existsSync(join(profileDir, 'package.json')) ? readProfileManifest(binName, profileDir) : undefined
   const patchPath = join(profileDir, PROFILE_PATCH_FILENAME)
-  let timestamp = Date.now()
-  let backupPath: string | undefined = `${patchPath}.bak-${timestamp}`
-  while (existsSync(backupPath)) backupPath = `${patchPath}.bak-${++timestamp}`
+  const backupBase = `${patchPath}.bak-${Date.now()}`
+  let backupPath: string | undefined = backupBase
+  let ordinal = 0
+  // Caller-owned write exclusion keeps the selected destination absent until rename.
+  while (existsSync(backupPath)) backupPath = `${backupBase}-${++ordinal}`
   try {
     renameSync(patchPath, backupPath)
   } catch (error) {

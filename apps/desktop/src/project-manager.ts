@@ -123,12 +123,11 @@ export class DesktopProjectManager {
 
   /**
    * Back up the profile patch and disable third-party bundles without loading application resources.
-   * @returns Completion of the locked profile write; the caller must stop the Host first.
+   * The caller must stop the Host first.
+   * @returns Backup path after the locked profile write, or undefined if the patch was absent.
    */
-  async disableAllPlugins(): Promise<void> {
-    await this.withLock(() => {
-      sanitizeProfile('dsh', this.paths.profile, WEB_PROFILE.bundles)
-    })
+  async disableAllPlugins(): Promise<string | undefined> {
+    return this.withLock(() => sanitizeProfile('dsh', this.paths.profile, WEB_PROFILE.bundles))
   }
 
   /** Read the dsh version supplied by this application's verified resources. */

@@ -18,10 +18,10 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-function fixture(name = 'web') {
+function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'dsh-profile-sanitize-'))
   roots.push(root)
-  const dir = join(root, 'profiles', name)
+  const dir = join(root, 'profiles', 'web')
   const bundles = PROFILE_TEMPLATES.web!.bundles
   initProfile(dir, [...bundles, 'broken-plugin'])
   const manifestPath = join(dir, 'package.json')
@@ -32,8 +32,8 @@ function fixture(name = 'web') {
   return { root, dir, bundles, manifest, manifestPath, patch }
 }
 
-it.each(['web', 'desktop'])('recovers the %s profile without loading its broken plugins or patch', (name) => {
-  const { dir, bundles, manifest, patch } = fixture(name)
+it('recovers a profile without loading its broken plugins or patch', () => {
+  const { dir, bundles, manifest, patch } = fixture()
   const packageDir = join(dir, 'node_modules', 'broken-plugin')
   mkdirSync(packageDir, { recursive: true })
   const pluginManifest = join(packageDir, 'package.json')
@@ -57,9 +57,12 @@ it('preserves previous backups across retries and later recovery actions', () =>
   writeFileSync(patch, 'second patch')
   const second = sanitizeProfile('test', dir, bundles)!
   expect(first).toBe(`${patch}.bak-${timestamp}`)
-  expect(second).toBe(`${patch}.bak-${timestamp + 1}`)
+  expect(second).toBe(`${patch}.bak-${timestamp}-1`)
+  writeFileSync(patch, 'third patch')
+  expect(sanitizeProfile('test', dir, bundles)).toBe(`${patch}.bak-${timestamp}-2`)
   expect(readFileSync(first, 'utf8')).toBe(': broken YAML')
   expect(readFileSync(second, 'utf8')).toBe('second patch')
+  expect(readFileSync(`${patch}.bak-${timestamp}-2`, 'utf8')).toBe('third patch')
 })
 
 it('does not create an absent profile and backs up a patch even without a manifest', () => {

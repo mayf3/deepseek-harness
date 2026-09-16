@@ -116,10 +116,11 @@ describe('desktop external plugin profile', () => {
     const patch = join(manager.paths.profile, 'cordis.patch.yml')
     writeFileSync(patch, ': broken')
     const uninitialized = new DesktopProjectManager(manager.paths, { ...manager.runtime, dsh: 'missing-runtime' })
-    await uninitialized.disableAllPlugins()
+    const backupPath = await uninitialized.disableAllPlugins()
     expect(existsSync(patch)).toBe(false)
     const backups = readdirSync(manager.paths.profile).filter(name => name.startsWith('cordis.patch.yml.bak-'))
     expect(backups).toHaveLength(1)
+    expect(backupPath).toBe(join(manager.paths.profile, backups[0]!))
     expect(readFileSync(join(manager.paths.profile, backups[0]!), 'utf8')).toBe(': broken')
     expect(existsSync(join(manager.paths.profile, 'node_modules/plugin/package.json'))).toBe(true)
     const manifest = JSON.parse(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8')) as {
@@ -135,7 +136,7 @@ describe('desktop external plugin profile', () => {
 
   it('needs no runtime or package manifest when no plugins have been installed', async () => {
     const { manager } = setup()
-    await manager.disableAllPlugins()
+    await expect(manager.disableAllPlugins()).resolves.toBeUndefined()
     expect(existsSync(join(manager.paths.profile, 'package.json'))).toBe(false)
     expect(existsSync(manager.paths.lock)).toBe(false)
   })
