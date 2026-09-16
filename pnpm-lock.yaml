@@ -12,7 +12,7 @@ overrides:
 patchedDependencies:
   '@earendil-works/pi-ai@0.85.1': b9bcce474fb2ac44633dff0fa722816a5bff5451b4575d5874035ea14ba70a4f
   '@electron/osx-sign@1.3.3': 280e7b2816caf01423097d24e79107a66afeb563a348630ce9928ae8499a5861
-  '@fortune-sheet/react@1.0.4': a278da43acb4f5f15b3703592688b952db02aeedb1e6900d20dbd5db38d4cb38
+  '@fortune-sheet/react@1.0.4': 7863d250d98c4d56197e88baae7f06423dae0581995e1755f98506da14a29ca6
   '@yao-pkg/pkg@6.21.0': 75891fc22b277c145cafeab83e41baf4a70f5b8fe6dc0801c6a0b922d7ee88c7
   node-pty@1.2.0-beta.15: b40ae545608897914bd25fb009c97eeac478c34e8a910298ddcb01b746534bb0
 
@@ -4546,7 +4546,7 @@ importers:
         version: 1.0.4
       '@fortune-sheet/react':
         specifier: 1.0.4
-        version: 1.0.4(patch_hash=a278da43acb4f5f15b3703592688b952db02aeedb1e6900d20dbd5db38d4cb38)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        version: 1.0.4(patch_hash=7863d250d98c4d56197e88baae7f06423dae0581995e1755f98506da14a29ca6)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@testing-library/react':
         specifier: ^16.1.0
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -21544,7 +21544,7 @@ snapshots:
       '@formulajs/formulajs': 2.9.3
       tiny-emitter: 2.1.0
 
-  '@fortune-sheet/react@1.0.4(patch_hash=a278da43acb4f5f15b3703592688b952db02aeedb1e6900d20dbd5db38d4cb38)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+  '@fortune-sheet/react@1.0.4(patch_hash=7863d250d98c4d56197e88baae7f06423dae0581995e1755f98506da14a29ca6)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
       '@fortune-sheet/core': 1.0.4
       '@types/regenerator-runtime': 0.13.8

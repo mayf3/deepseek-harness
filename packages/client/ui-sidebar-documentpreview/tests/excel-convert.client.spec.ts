@@ -24,7 +24,9 @@ describe('Excel conversion', () => {
     expect(first.config).toMatchObject({ rowlen: { 0: 48 }, columnlen: { 0: 173 }, merge: { '0_0': { rs: 1, cs: 4 } } })
     expect(first.config!.borderInfo).toContainEqual({ rangeType: 'cell', value: { row_index: 1, col_index: 0, b: { style: 1, color: '#DCE2ED' } } })
     expect(first.frozen).toEqual({ type: 'rangeBoth', range: { row_focus: 1, column_focus: 0 } })
+    expect(first.luckysheet_select_save).toEqual([{ row: [0, 0], column: [0, 3], row_focus: 0, column_focus: 0 }])
     const second = sheets[1]!
+    expect(second.luckysheet_select_save).toEqual([{ row: [0, 0], column: [0, 0], row_focus: 0, column_focus: 0 }])
     expect(second.celldata).toEqual(expect.arrayContaining([
       expect.objectContaining({ r: 0, c: 0, v: expect.objectContaining({ f: '=_xlfn.XLOOKUP(1,{1},{42})', v: 42, m: '42' }) as unknown }),
       expect.objectContaining({ r: 1, c: 0, v: expect.objectContaining({ f: '=SUM(1,2)', m: '' }) as unknown }),

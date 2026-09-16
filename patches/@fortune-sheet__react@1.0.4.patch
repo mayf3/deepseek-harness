@@ -1,5 +1,5 @@
 diff --git a/dist/index.esm.js b/dist/index.esm.js
-index c4486a2b38bec4eff10cdfda4d3748d40bfb71ba..f866bc54a2787e3fbe27256ed7513c95393d9e8c 100644
+index c4486a2b38bec4eff10cdfda4d3748d40bfb71ba..173172b84976b1e25bcca1fb0faa2bb87459dbe7 100644
 --- a/dist/index.esm.js
 +++ b/dist/index.esm.js
 @@ -921,7 +921,7 @@ var InputBox = function InputBox() {
@@ -11,8 +11,28 @@ index c4486a2b38bec4eff10cdfda4d3748d40bfb71ba..f866bc54a2787e3fbe27256ed7513c95
        setContext(function (ctx) {
          var flowdata = getFlowdata(ctx);
          if (!_.isNil(flowdata) && ctx.forceFormulaRef) {
+@@ -6908,7 +6908,8 @@ var SheetItem = function SheetItem(_ref) {
+         draftCtx.scrollLeft = 0;
+         draftCtx.scrollTop = 0;
+         draftCtx.luckysheet_select_status = false;
+-        draftCtx.luckysheet_select_save = undefined;
++        var currentSheet = draftCtx.luckysheetfile.find(function (s) { return s.id === draftCtx.currentSheetId; });
++        draftCtx.luckysheet_select_save = currentSheet && currentSheet.luckysheet_select_save;
+       }
+       draftCtx.luckysheet_selection_range = [];
+     });
+@@ -10693,7 +10694,8 @@ var SheetListItem = function SheetListItem(_ref) {
+         draftCtx.scrollLeft = 0;
+         draftCtx.scrollTop = 0;
+         draftCtx.luckysheet_select_status = false;
+-        draftCtx.luckysheet_select_save = undefined;
++        var currentSheet = draftCtx.luckysheetfile.find(function (s) { return s.id === draftCtx.currentSheetId; });
++        draftCtx.luckysheet_select_save = currentSheet && currentSheet.luckysheet_select_save;
+       }
+       draftCtx.luckysheet_selection_range = [];
+     });
 diff --git a/dist/index.js b/dist/index.js
-index e4045518773578e3faaa3a58985a5585f9683088..469b0159ee6e9b308276c971fe9f7e659e229d21 100644
+index e4045518773578e3faaa3a58985a5585f9683088..5b89eaa8e5f78e3ddc204f4b88b25c002653a92b 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -932,7 +932,7 @@ var InputBox = function InputBox() {
@@ -24,3 +44,23 @@ index e4045518773578e3faaa3a58985a5585f9683088..469b0159ee6e9b308276c971fe9f7e65
        setContext(function (ctx) {
          var flowdata = core.getFlowdata(ctx);
          if (!___default['default'].isNil(flowdata) && ctx.forceFormulaRef) {
+@@ -6919,7 +6919,8 @@ var SheetItem = function SheetItem(_ref) {
+         draftCtx.scrollLeft = 0;
+         draftCtx.scrollTop = 0;
+         draftCtx.luckysheet_select_status = false;
+-        draftCtx.luckysheet_select_save = undefined;
++        var currentSheet = draftCtx.luckysheetfile.find(function (s) { return s.id === draftCtx.currentSheetId; });
++        draftCtx.luckysheet_select_save = currentSheet && currentSheet.luckysheet_select_save;
+       }
+       draftCtx.luckysheet_selection_range = [];
+     });
+@@ -10704,7 +10705,8 @@ var SheetListItem = function SheetListItem(_ref) {
+         draftCtx.scrollLeft = 0;
+         draftCtx.scrollTop = 0;
+         draftCtx.luckysheet_select_status = false;
+-        draftCtx.luckysheet_select_save = undefined;
++        var currentSheet = draftCtx.luckysheetfile.find(function (s) { return s.id === draftCtx.currentSheetId; });
++        draftCtx.luckysheet_select_save = currentSheet && currentSheet.luckysheet_select_save;
+       }
+       draftCtx.luckysheet_selection_range = [];
+     });

@@ -16,7 +16,7 @@ Preview is read-only and retains formula text alongside saved results. It does n
 
 A disposable browser Worker contains parser CPU work. A compressed-byte limit precedes parsing, a combined rectangular-area limit precedes FortuneSheet matrix allocation, and a timeout terminates stalled parsing. These limits do not claim a hard memory sandbox. Styles are scoped to the renderer; external hyperlinks are text only.
 
-The pinned FortuneSheet React dependency carries a [small patch](../../../../patches/@fortune-sheet__react@1.0.4.patch) that skips the input box's read-only layout state update unless formula-reference highlighting is enabled. The unconditional update otherwise causes a maximum-update-depth failure when switching worksheets under React 19. The browser scenario covers the failure through the bundled ESM entry; the CommonJS entry receives the same fix. Recheck this patch when upgrading FortuneSheet.
+The pinned FortuneSheet React dependency carries a [small patch](../../../../patches/@fortune-sheet__react@1.0.4.patch) that skips the input box's read-only layout state update unless formula-reference highlighting is enabled. The unconditional update otherwise causes a maximum-update-depth failure when switching worksheets under React 19. Sheet activation also retains the adapter's complete initial selection instead of clearing it and leaving an empty or invalid address. The browser scenario covers these failures through the bundled ESM entry; the CommonJS entry receives the same fixes. Recheck this patch when upgrading FortuneSheet.
 
 ## Alternatives considered
 

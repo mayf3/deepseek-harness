@@ -760,6 +760,7 @@ else process.exit(1);
     expect(await preview.locator('[data-pdf-preview]').count()).toBe(0)
     expect(await excel.locator('.fortune-toolbar').count()).toBe(0)
     await excel.getByText('公式与格式', { exact: true }).click()
+    await expect.poll(() => excel.locator('.fortune-name-box').innerText()).toBe('A1')
     await excel.locator('.fortune-sheet-overlay').click({ position: { x: 70, y: 30 } })
     await expect.poll(() => excel.locator('.fortune-fx-input').innerText()).toBe('=_xlfn.XLOOKUP(1,{1},{42})')
     expect(await excel.locator('.fortune-fx-input').getAttribute('contenteditable')).toBe('false')

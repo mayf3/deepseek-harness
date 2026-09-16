@@ -114,6 +114,11 @@ export async function convertExcel(bytes: Uint8Array<ArrayBuffer>, limits: Excel
       row: Math.max(1, worksheet.rowCount), column: Math.max(1, worksheet.columnCount),
       config, celldata, showGridLines: view?.showGridLines !== false,
       defaultRowHeight: worksheet.properties.defaultRowHeight * 96 / 72,
+      luckysheet_select_save: [{
+        row: [0, (config.merge['0_0']?.rs ?? 1) - 1],
+        column: [0, (config.merge['0_0']?.cs ?? 1) - 1],
+        row_focus: 0, column_focus: 0,
+      }],
     }
     if (worksheet.properties.defaultColWidth !== undefined) sheet.defaultColWidth = columnPixels(worksheet.properties.defaultColWidth)
     if (view?.state === 'frozen' && (view.xSplit || view.ySplit)) {
