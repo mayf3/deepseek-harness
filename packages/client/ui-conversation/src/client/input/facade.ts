@@ -452,6 +452,16 @@ export class SessionInputShell implements SessionInput {
     this.notices.set({ level, text, seq: this.noticeSeq })
   }
 
+  /**
+   * Return the keyboard to the composer with the caret it last held. Lexical's
+   * own focus restores its stored selection; a bare DOM focus on the
+   * contenteditable would land the caret at the start instead.
+   */
+  focus(): void {
+    this.editor.getRootElement()?.focus({ preventScroll: true })
+    this.editor.focus()
+  }
+
   // ---- wiring-layer extras (not on the frozen SessionInput face) ----
 
   /**
