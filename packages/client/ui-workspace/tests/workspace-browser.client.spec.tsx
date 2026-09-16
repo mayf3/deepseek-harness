@@ -389,7 +389,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByText('分组方式')).toBeTruthy() // the menu heading label
     expect(screen.getByRole('separator')).toBeTruthy()
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      '按工作区', '单列表', '手动排序', '最近更新',
+      '按工作区', '按工作区树', '单列表', '手动排序', '最近更新',
     ])
     expect(screen.getByRole('menuitem', { name: '按工作区' }).querySelector('svg')).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '手动排序' }).querySelector('svg')).toBeTruthy()
@@ -413,6 +413,42 @@ describe('WorkspaceBrowser', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('menu')).toBeNull()
     expect(b.store.getSnapshot().groupBy).toBe('workspace')
+  })
+
+  it('keeps Workspaces as siblings by default and restores the selected tree grouping', () => {
+    const workspaces = hook(workspaceState([
+      { ...workspace('root', [], 'Projects'), path: '/projects' },
+      workspace('child', ['child-session'], 'Child'),
+    ]))
+    const sessions = hook(sessionState([summary('child-session', 1)]))
+    const b = mount({ useWorkspaces: workspaces, useSessions: sessions })
+    const parentSection = () => screen.getByText('Projects').closest<HTMLElement>('[class*="groupSection"]')!
+    const choose = (name: string) => {
+      fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+      fireEvent.click(screen.getByRole('menuitem', { name }))
+    }
+    expect(b.store.getSnapshot().groupBy).toBe('workspace')
+    expect(screen.getByText('Child')).toBeTruthy()
+    expect(within(parentSection()).queryByText('Child')).toBeNull()
+    choose('按工作区树')
+    expect(b.store.getSnapshot().groupBy).toBe('workspace-tree')
+    expect(within(parentSection()).getByText('Child')).toBeTruthy()
+    fireEvent.click(screen.getByText('Projects'))
+    expect(screen.queryByText('Child')).toBeNull()
+    choose('按工作区')
+    expect(screen.getByText('Child')).toBeTruthy()
+    expect(within(parentSection()).queryByText('Child')).toBeNull()
+    choose('按工作区树')
+    expect(screen.queryByText('Child')).toBeNull()
+    b.view.unmount()
+    const restored = mount({ useWorkspaces: workspaces, useSessions: sessions })
+    expect(restored.store.getSnapshot().groupBy).toBe('workspace-tree')
+    expect(screen.queryByText('Child')).toBeNull()
+    fireEvent.click(screen.getByText('Projects'))
+    expect(within(parentSection()).getByText('Child')).toBeTruthy()
+    choose('单列表')
+    expect(screen.queryByText('Projects')).toBeNull()
+    expect(screen.getByText('child-session')).toBeTruthy()
   })
 
   it('persists flat-list drag order locally and applies Last updated within that account', async () => {
@@ -877,6 +913,7 @@ describe('WorkspaceBrowser', () => {
   })
 
   it('opens a Host content hit, exits search, and reveals its hidden grouped row', async () => {
+    createWorkspaceViewStore().create().actions.setGroupBy('workspace-tree')
     createWorkspaceViewStore().create().actions.setGroupExpanded('root', false)
     vi.useFakeTimers()
     try {
@@ -1643,7 +1680,10 @@ describe('WorkspaceBrowser', () => {
 })
 
 
-describe('automatic Workspace hierarchy', () => {
+describe('Workspace tree grouping', () => {
+  beforeEach(() => {
+    createWorkspaceViewStore().create().actions.setGroupBy('workspace-tree')
+  })
   const root = { ...workspace('root', ['root-session'], 'Projects'), path: '/projects' }
   const team = workspace('team', ['team-session'], 'Team')
   const child = { ...workspace('child', ['child-session'], 'Child'), path: '/projects/team/child' }
@@ -1698,7 +1738,7 @@ describe('automatic Workspace hierarchy', () => {
     expect(screen.getByText('Child')).toBeTruthy()
     act(() => { restored.store.actions.setGroupBy('flat') })
     expect(screen.queryByText('Projects')).toBeNull()
-    act(() => { restored.store.actions.setGroupBy('workspace') })
+    act(() => { restored.store.actions.setGroupBy('workspace-tree') })
     expect(screen.getByText('Child')).toBeTruthy()
   })
 

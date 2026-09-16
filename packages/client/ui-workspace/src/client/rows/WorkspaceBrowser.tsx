@@ -27,7 +27,7 @@ import {
   pinCurrentBlank, reconcileManualOrder, UNGROUPED_KEY, visibleSessionIds,
 } from '../tree.ts'
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
-import { FLAT_SESSION_ORDER_KEY } from '../stores.ts'
+import { FLAT_SESSION_ORDER_KEY, type SessionGroupBy } from '../stores.ts'
 import { WorkspacePickFlow } from '../WorkspacePicker.tsx'
 import css from './WorkspaceBrowser.module.css'
 
@@ -98,9 +98,9 @@ function useNativeDragAcceptance(active: boolean): void {
 
 /** Grouping and ordering menu; own open state so it resets with the wide chrome. */
 function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
-  groupBy: 'workspace' | 'flat'
+  groupBy: SessionGroupBy
   orderBy: SessionOrderBy
-  onGroupPick: (mode: 'workspace' | 'flat') => void
+  onGroupPick: (mode: SessionGroupBy) => void
   onOrderPick: (mode: SessionOrderBy) => void
   t: WorkspaceBrowserProps['t']
 }) {
@@ -112,6 +112,7 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
       items={[
         { type: 'label' as const, id: 'group-by', text: t('groupBy.label') },
         { id: 'workspace', label: t('groupBy.workspace') },
+        { id: 'workspace-tree', label: t('groupBy.workspaceTree') },
         { id: 'flat', label: t('groupBy.flat') },
         { type: 'separator' as const, id: 'order-by-separator' },
         { type: 'label' as const, id: 'order-by', text: t('orderBy.label') },
@@ -120,7 +121,7 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
       ]}
       selectedIds={[groupBy, orderBy]}
       onSelect={(id) => {
-        if (id === 'workspace' || id === 'flat') onGroupPick(id)
+        if (id === 'workspace' || id === 'workspace-tree' || id === 'flat') onGroupPick(id)
         else if (id === 'manual' || id === 'updated') onOrderPick(id)
         setOpen(false)
       }}
@@ -181,9 +182,11 @@ type SessionTreeProps = Pick<
   ungroupedSessionIds: readonly SessionId[]
   /** Whether the current Workspace stream has a complete Host baseline. */
   workspaceReady: boolean
-  /** Explicit persisted zero-or-five-session state by Workspace group. */
+  /** Nest Workspaces under their nearest registered ancestors. */
+  nestWorkspaces: boolean
+  /** Explicit persisted group expansion, including descendants in tree mode. */
   groupExpansion: Readonly<Record<string, boolean>>
-  /** Persist one Workspace group's zero-or-five-session state. */
+  /** Persist one Workspace group's expansion. */
   setGroupExpanded: (key: string, expanded: boolean) => void
   /** Save a drag order and select Manual. */
   setSessionOrder: (accountKey: string, order: readonly string[]) => void
@@ -210,7 +213,7 @@ function SessionTree({
   workspaceReady, usePanelInfo,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
   insertWorkspaceBefore,
-  groupExpansion, setGroupExpanded,
+  nestWorkspaces, groupExpansion, setGroupExpanded,
   setSessionOrder, home, t,
   revealSessionId, onSessionRevealed,
 }: SessionTreeProps) {
@@ -236,13 +239,14 @@ function SessionTree({
     setGroupExpanded(currentGroup, true)
   }, [current, currentGroup, setGroupExpanded, groupExpansion])
   const parents = useMemo(() => {
+    if (!nestWorkspaces) return new Map<string, WorkspaceId | undefined>()
     const keysByPath = new Map(workspaces.map(workspace => [workspace.path, workspace.workspaceId]))
     const paths = [...keysByPath.keys()]
     return new Map<string, WorkspaceId | undefined>(workspaces.map((workspace) => {
       const path = owningParentFolder(workspace.path, paths)
       return [workspace.workspaceId, path === undefined ? undefined : keysByPath.get(path)]
     }))
-  }, [workspaces])
+  }, [nestWorkspaces, workspaces])
   const expandedGroups = useMemo(() => {
     const ancestorKeys = new Set<string | undefined>(parents.values())
     return [...workspaces.map(workspace => workspace.workspaceId), UNGROUPED_KEY]
@@ -1247,6 +1251,7 @@ export function WorkspaceBrowser({
                 workspaces={orderedWorkspaces}
                 ungroupedSessionIds={orderedUngroupedSessionIds}
                 workspaceReady={workspaceReady}
+                nestWorkspaces={groupBy === 'workspace-tree'}
                 groupExpansion={groupExpansion}
                 setGroupExpanded={actions.setGroupExpanded}
                 setSessionOrder={saveSessionOrder}

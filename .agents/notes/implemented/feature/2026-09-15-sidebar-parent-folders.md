@@ -10,11 +10,13 @@ A flat Workspace list makes related projects hard to browse when many directorie
 
 ## Decision
 
-The sidebar derives a recursive hierarchy from registered Workspace paths. Each Workspace appears under its nearest strict ancestor; path equality never creates a self-parent. Comparison respects directory separators and Host case spelling, without resolving symlink aliases. Siblings retain their Host order.
+The sidebar defaults to sibling Workspace sections. Selecting **Workspace Tree** in **View options → Group by** derives a recursive hierarchy from registered Workspace paths. The selected mode persists in the existing browser-local viewing store. Each Workspace appears under its nearest strict ancestor; path equality never creates a self-parent. Comparison respects directory separators and Host case spelling, without resolving symlink aliases. Siblings retain their Host order.
 
 Adding a directory registers a normal Workspace and opens its Session directly. Parent Workspaces retain their own Sessions and standard row actions. The existing browser-local expansion state controls both child Workspaces and the parent's Session rows; ancestors default to expanded when no explicit preference exists. All rows have equal-width fills and hit targets, with content indentation per level. Workspace drag stays among siblings, and search navigation expands every ancestor.
 
 ## Alternatives considered
+
+**Tree grouping by default:** this hides projects under ancestors even when users want to browse every Workspace directly. An explicit viewing mode preserves the default layout without adding a confirmation to directory adoption.
 
 **Recursive Workspace membership:** this changes the working-directory invariant and makes a Session eligible for multiple accounts. Display nesting needs neither change.
 
@@ -26,4 +28,4 @@ Adding a directory registers a normal Workspace and opens its Session directly. 
 
 Users can collapse related projects without changing Session ownership. Deleting an ancestor preserves child registrations; the independent [Workspace deletion semantics](2026-07-27-workspace-registration-deletion.md) still govern the deleted Workspace's own Sessions. That decision remains active. Browser-local collapse preferences do not synchronize, and canonical path spelling determines nesting.
 
-Pure path tests cover strict ancestry, segment boundaries, POSIX backslashes, and Windows separators. Component and browser scenarios exercise direct addition, later registrations, independent parent Sessions, collapse restoration, search revelation, sibling sorting, and equal-width rows.
+Pure path tests cover strict ancestry, segment boundaries, POSIX backslashes, and Windows separators. Component and browser scenarios exercise default sibling grouping, tree-mode selection and restoration, direct addition, later registrations, independent parent Sessions, collapse restoration, search revelation, sibling sorting, and equal-width rows.
