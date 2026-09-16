@@ -10,7 +10,7 @@
 - button "System prompt"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
-- button "Worked for {{duration}}" [expanded]
+- button "Stopped" [disabled] [expanded]
 - button "Analysis completed"
 - paragraph: partial
 - text: Stopped

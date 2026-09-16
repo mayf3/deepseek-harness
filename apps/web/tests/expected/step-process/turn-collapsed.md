@@ -1,3 +1,3 @@
-- button "Worked for 0s":
-  - text: Worked for 0s
+- button "Took 0s":
+  - text: Took 0s
   - img

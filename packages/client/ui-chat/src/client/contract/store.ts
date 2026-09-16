@@ -4,12 +4,12 @@
 export type ToolCallId = string
 
 /**
- * Manual disclosure override: null records a collapsed live Turn; a Step records
- * an expanded completed answer, with zero reserved for completion without an answer.
+ * Manual disclosure override for an expanded completed answer.
+ * Zero represents completion without an answer.
  */
 export interface TurnProcessViewEntry {
   readonly turn: number
-  readonly answerStep: number | null
+  readonly answerStep: number
 }
 
 /** Per-Session state shared only by the Chat view and details surface. */

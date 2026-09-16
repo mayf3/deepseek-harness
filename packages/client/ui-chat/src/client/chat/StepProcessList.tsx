@@ -3,6 +3,7 @@ import { memo, useCallback, useId, useState, type ComponentProps } from 'react'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
+import { turnProcessAlwaysOpen } from '../contract/turn-process.ts'
 import { storedTurnProcessEntry } from '../stores.ts'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { processActivity, processRanges, processTitle, type ProcessRange } from './step-process.ts'
@@ -29,14 +30,15 @@ function StepProcess({ range, nodes, ...seatProps }: SeatProps & { readonly rang
   const presentation = useChatNodeProcess(range.seats[0].nodeKey)
   const spec = presentation?.spec
   const stored = useStore(state => spec === undefined ? undefined : storedTurnProcessEntry(state, spec.turn))
-  const liveProcess = presentation !== undefined && !presentation.turnClosed
+  const alwaysOpen = (presentation !== undefined && !presentation.turnClosed)
+    || nodes.some(turnProcessAlwaysOpen)
   const outerFoldable = seatProps.compactTranscript
     && (!seatProps.historyIncomplete || presentation?.turnStarted === true)
     && spec !== undefined
-  const outerHidden = outerFoldable && (liveProcess ? stored?.answerStep === null : stored?.answerStep !== (spec.answerStep ?? 0))
+  const outerHidden = outerFoldable && !alwaysOpen && stored?.answerStep !== (spec.answerStep ?? 0)
   const revealOuter = useCallback(() => {
-    if (spec !== undefined) actions.setTurnProcessOpen(spec.turn, liveProcess ? null : (spec.answerStep ?? 0), true)
-  }, [actions, spec, liveProcess])
+    if (spec !== undefined && !alwaysOpen) actions.setTurnProcessOpen(spec.turn, (spec.answerStep ?? 0), true)
+  }, [actions, spec, alwaysOpen])
   const rootRef = useSearchableHidden(outerHidden, revealOuter)
   const reveal = useCallback(() => { setOpen(true) }, [])
   const bodyRef = useSearchableHidden(!open, reveal)

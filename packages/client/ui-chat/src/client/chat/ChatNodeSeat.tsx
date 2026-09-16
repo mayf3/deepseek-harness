@@ -3,7 +3,7 @@ import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationLocationDataStore, ConversationTurnDataMap } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
-import { TURN_PROCESS_INDEPENDENT_KINDS } from '../contract/turn-process.ts'
+import { TURN_PROCESS_INDEPENDENT_KINDS, turnProcessAlwaysOpen } from '../contract/turn-process.ts'
 import { storedTurnProcessEntry } from '../stores.ts'
 import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './ChatView.module.css'
@@ -61,12 +61,13 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     ? storedEntry
     : undefined
   const liveProcess = processPresentation !== undefined && !processPresentation.turnClosed
-  const processOpen = liveProcess ? storedEntry?.answerStep !== null : processEntry !== undefined
+  const alwaysOpen = liveProcess || turnProcessAlwaysOpen(routedNode)
+  const processOpen = alwaysOpen || processEntry !== undefined
   const setOpen = useCallback((open: boolean) => {
-    if (processSpec !== undefined) {
-      actions.setTurnProcessOpen(processSpec.turn, liveProcess ? null : (processSpec.answerStep ?? 0), open)
+    if (processSpec !== undefined && !alwaysOpen) {
+      actions.setTurnProcessOpen(processSpec.turn, (processSpec.answerStep ?? 0), open)
     }
-  }, [actions, processSpec, liveProcess])
+  }, [actions, processSpec, alwaysOpen])
   const processWindowReady = processSpec !== undefined
     && processPresentation !== undefined
     && compactTranscript

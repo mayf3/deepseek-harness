@@ -6,7 +6,7 @@ type ChatActions = {
   setTurnProcessOpen: (
     draft: ChatStoreState,
     turn: number,
-    answerStep: number | null,
+    answerStep: number,
     open: boolean,
   ) => void
 }
@@ -34,7 +34,7 @@ export function createChatStore(): EngineStoreHandle<ChatStoreState, ChatActions
     actions: {
       setTurnProcessOpen: (draft, turn, answerStep, open) => {
         const index = draft.turnProcesses.findIndex(entry => entry.turn === turn)
-        if (answerStep === null ? open : !open) {
+        if (!open) {
           if (index >= 0) draft.turnProcesses.splice(index, 1)
           return
         }

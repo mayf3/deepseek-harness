@@ -10,7 +10,8 @@
 - button "System prompt"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
-- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Failed" [disabled] [expanded]
+- button "Analysis completed"
 - status:
   - text: This turn failedAPI key is invalid
   - code: AUTH

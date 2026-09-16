@@ -10,9 +10,8 @@
 - button "System prompt"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
-- button "Context injection @deepseek-ai/dsh-system-prompt"
-- group:
-  - status: Retried model request (2/2) · {{duration}}
+- button "Failed" [disabled] [expanded]
+- button "Retry completed"
 - status:
   - text: This turn failedupstream 503
   - code: SERVER

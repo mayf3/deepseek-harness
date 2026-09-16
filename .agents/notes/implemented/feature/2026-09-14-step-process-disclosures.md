@@ -24,7 +24,7 @@ Whole-turn folding checks each Turn independently: while history is paginated, i
 
 **Include infrastructure labels in summaries.** Prompt assembly, injected context, and permission metadata do not describe the model's work and make compact titles harder to scan.
 
-The whole-turn control appears at the start event, defaults to expanded during execution, and updates elapsed time every second. Completion fixes the clock and defaults to collapsed; live overrides do not carry into the completed answer generation.
+The whole-turn control appears at the start event and remains expanded and disabled during execution, displaying `Worked for …` with a minimum of 1s. Normal completion fixes the clock, displays `Took …`, and defaults to collapsed. Cancellation and failure display `Stopped` and `Failed` respectively and remain expanded with a disabled control.
 
 ## Consequences
 

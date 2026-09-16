@@ -29,7 +29,7 @@ it('keeps completed step work collapsed inside an expanded turn and bounds its s
       const outer = page.locator('[data-turn-process="88"]')
       await outer.waitFor()
       expect(await page.getByRole('button', { name: 'Load earlier', exact: true }).count()).toBe(1)
-      expect(await outer.textContent()).toMatch(/^Worked for /)
+      expect(await outer.textContent()).toMatch(/^Took /)
       await compareOrRefreshGolden(fileURLToPath(new URL('./expected/step-process/turn-collapsed.md', import.meta.url)),
         await outer.ariaSnapshot(), webSnapshotMode())
       await outer.click()

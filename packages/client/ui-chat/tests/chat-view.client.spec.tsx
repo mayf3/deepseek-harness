@@ -580,9 +580,9 @@ describe('Chat node rendering', () => {
 
 describe('ChatView', () => {
   it.each([
-    [4_000, 'Worked for 4s'],
-    [65_000, 'Worked for 1m 05s'],
-    [3_665_000, 'Worked for 1h 01m 05s'],
+    [4_000, 'Took 4s'],
+    [65_000, 'Took 1m 05s'],
+    [3_665_000, 'Took 1h 01m 05s'],
   ])('labels the whole turn with its logged duration (%i ms)', (duration, label) => {
     const h = makeHarness({
       nodes: [user(1, 'question'), reasoningAssistant(2, 'analysis'), assistant(3, 'answer', 1, 2)],
@@ -595,6 +595,28 @@ describe('ChatView', () => {
     fireEvent.click(toggle)
     expect(toggle.textContent).toBe(label)
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it.each([
+    [{ kind: 'aborted', reason: { kind: 'user' } }, 'Stopped', '已停止'],
+    [{ kind: 'error', error: { code: 'UNKNOWN', message: 'failed' } }, 'Failed', '处理失败'],
+  ] as const)('keeps %s turns expanded with a disabled title', (reason, english, chinese) => {
+    const snapshot = chatSnapshotFixture({
+      nodes: [user(1, 'question'), context(2, 'work', 1), assistant(3, 'answer')],
+      turnEnds: new Map([[1, 4]]),
+      turnTimings: new Map([[1, { startTime: 10_000, endTime: 12_000 }]]),
+    })
+    Object.assign(snapshot.timeline.turns.get(1)!.end!, { data: { turn: 1, reason } })
+    const h = makeHarness({ chat: snapshot })
+    const view = render(<h.ChatView {...h.props} />)
+    const toggle = view.getByRole('button', { name: chinese }) as HTMLButtonElement
+    expect(toggle.disabled).toBe(true)
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(view.container.querySelector('[data-step-process]')?.hasAttribute('hidden')).toBe(false)
+    h.props.t = makeTranslate(en, commonEn)
+    view.rerender(<h.ChatView {...h.props} />)
+    expect(view.getByRole('button', { name: english })).toBe(toggle)
   })
 
   it.each([
@@ -1489,7 +1511,7 @@ describe('ChatView', () => {
       turnEnds: new Map([[1, 6]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    const toggle = view.getByRole('button', { name: '工作了 4秒' })
+    const toggle = view.container.querySelector<HTMLButtonElement>('[data-turn-process]')!
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(toggle.getAttribute('data-turn-process-tool-calls')).toBe('1')
     expect(toggle.getAttribute('data-turn-process-messages')).toBe('1')
@@ -1515,12 +1537,12 @@ describe('ChatView', () => {
     expect(members.map(member => member.getAttribute('hidden'))).toEqual([null, null, null, null])
 
     act(() => { h.set({ nodes: [user(1, 'question'), first] }) })
-    expect(view.getByRole('button', { name: '工作了 4秒' }).getAttribute('aria-expanded')).toBe('false')
+    expect(view.container.querySelector<HTMLButtonElement>('[data-turn-process]')!.getAttribute('aria-expanded')).toBe('false')
     expect(members[0]?.getAttribute('hidden')).toBeNull()
     act(() => { h.set({
       nodes: [user(1, 'question'), first, toolResult(3, 'a'), toolResult(4, 'b', 'subagent'), second],
     }) })
-    const renewedToggle = view.getByRole('button', { name: '工作了 4秒' })
+    const renewedToggle = view.container.querySelector<HTMLButtonElement>('[data-turn-process]')!
     expect(renewedToggle.getAttribute('aria-expanded')).toBe('true')
     expect(members[0]?.getAttribute('hidden')).toBeNull()
   })
@@ -1672,24 +1694,24 @@ describe('ChatView', () => {
         turnTimings: new Map([[1, { startTime: 10_000 }]]) })
       h.props.t = makeTranslate(en, commonEn)
       const view = render(<h.ChatView {...h.props} />)
-      const toggle = view.getByRole('button', { name: 'Worked for 0s' })
+      const toggle = view.getByRole('button', { name: 'Worked for 1s' })
       expect(toggle.getAttribute('aria-expanded')).toBe('true')
       act(() => { vi.advanceTimersByTime(2_000) })
       expect(toggle.textContent).toBe('Worked for 2s')
       fireEvent.click(toggle)
-      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect((toggle as HTMLButtonElement).disabled).toBe(true)
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
       act(() => { h.set({ nodes: [user(1, 'question'), context(2, 'working context', 1)] }) })
       const group = view.container.querySelector('[data-step-process]')!
-      expect(group.getAttribute('hidden')).toBe('until-found')
-      fireEvent.click(toggle)
       expect(group.getAttribute('hidden')).toBeNull()
       act(() => { h.set({ nodes: [user(1, 'question'), context(2, 'working context', 1), ...(hasAnswer ? [assistant(3, 'answer')] : [])],
         running: false, turnEnds: new Map([[1, 4]]),
         turnTimings: new Map([[1, { startTime: 10_000, endTime: 12_000 }]]) }) })
       expect(toggle.getAttribute('aria-expanded')).toBe('false')
       expect(group.getAttribute('hidden')).toBe('until-found')
+      expect((toggle as HTMLButtonElement).disabled).toBe(false)
       act(() => { vi.advanceTimersByTime(3_000) })
-      expect(toggle.textContent).toBe('Worked for 2s')
+      expect(toggle.textContent).toBe('Took 2s')
       view.unmount()
     } finally {
       cleanup()
