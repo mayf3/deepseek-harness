@@ -1,7 +1,7 @@
 import { once } from 'node:events'
 import { createServer } from 'node:http'
 import { describe, expect, it, vi } from 'vitest'
-import { userAgent } from '@deepseek-ai/dsh-llm'
+import { LlmError, userAgent } from '@deepseek-ai/dsh-llm'
 import { DeepSeekFileId } from '../src/common/file-id.ts'
 import {
   DeepSeekFilesClient,
@@ -32,6 +32,40 @@ describe('DeepSeekFilesClient', () => {
   function messagesFile(overrides: Record<string, unknown> = {}) {
     return { id: 'file-api-one', type: 'file', size_bytes: 3, created_at: '2026-09-12T13:02:46.677853363+00:00', filename: 'image.png', mime_type: 'image/png', ...overrides }
   }
+
+  describe.each(['messages', 'chat-completions'] as const)('%s successful response JSON', (protocol) => {
+    it.each((['upload', 'list', 'retrieve', 'delete'] as const).flatMap(operation =>
+      ['', '{"id":'].map(body => ({ operation, body })),
+    ))('rejects malformed $operation JSON with the operation and HTTP status ($body)', async ({ operation, body }) => {
+      const fetchImpl = vi.fn<typeof fetch>(async () => new Response(body, { status: 200 }))
+      const client = new DeepSeekFilesClient({ protocol, baseURL: 'https://files.example', apiKey: 'test-key', fetch: fetchImpl })
+      const operations = {
+        upload: () => client.upload({ data: Uint8Array.of(1), mediaType: 'image/png', filename: 'image.png', expiresAfterSeconds: 3_600 }),
+        list: () => client.list(),
+        retrieve: () => client.retrieve(DeepSeekFileId('file-api-one')),
+        delete: () => client.delete(DeepSeekFileId('file-api-one')),
+      }
+      const error = await operations[operation]().catch((caught: unknown) => caught)
+      expect(error).toBeInstanceOf(LlmError)
+      if (!(error instanceof LlmError)) throw error
+      expect(error.cause).toBeInstanceOf(SyntaxError)
+      expect(error).toMatchObject({
+        code: 'INVALID_RESPONSE',
+        message: `DeepSeek Files API returned invalid JSON for ${operation} (HTTP 200).`,
+        failure: { status: 200 },
+      })
+      expect(fetchImpl).toHaveBeenCalledOnce()
+    })
+
+    it.each([new TypeError('body transport failed'), new DOMException('body aborted', 'AbortError')])(
+      'preserves a non-JSON body-read failure: %s', async (failure) => {
+        const client = new DeepSeekFilesClient({ protocol, baseURL: 'https://files.example', apiKey: 'test-key',
+          fetch: async () => new Response(new ReadableStream({ start(controller) { controller.error(failure) } })),
+        })
+        await expect(client.retrieve(DeepSeekFileId('file-api-one'))).rejects.toBe(failure)
+      },
+    )
+  })
 
   it('uploads Messages files beneath the literal configured root and bounds reuse without expiry metadata', async () => {
     const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
