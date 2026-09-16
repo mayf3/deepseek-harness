@@ -1,6 +1,6 @@
 /** Launch the Desktop profile through the Web application and report its URL to Electron. */
 
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { loadLayeredEnv, loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
 import { runProfile } from '@deepseek-ai/dsh/profile-boot'
 import type {} from '@deepseek-ai/dsh-client-connection'
@@ -20,6 +20,17 @@ async function main(): Promise<void> {
     resolvedProfile: { profile, installAnchor },
     patchFiles: [],
     args: ['--no-open', '--port', '19387'],
+    ...(process.argv[6] === undefined ? {} : {
+      packageManager: {
+        command: process.execPath,
+        args: ['--expose-internals', process.argv[6]],
+        env: {
+          ELECTRON_RUN_AS_NODE: '1',
+          DSH_DESKTOP_NODE_EXECUTABLE: process.execPath,
+          PATH: `${process.argv[7] ?? ''}${delimiter}${process.env.PATH ?? ''}`,
+        },
+      },
+    }),
   })
   const stop = async (): Promise<void> => {
     // Startup failure is reported by main; shutdown only owns a tree that booted.
