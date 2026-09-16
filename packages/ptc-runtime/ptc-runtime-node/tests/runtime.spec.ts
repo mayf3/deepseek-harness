@@ -59,7 +59,7 @@ describe('Node program process', () => {
     expect(value.env).toEqual([])
     expect(value.status).toBe(0)
     expect(value.error).toBeNull()
-    const nativeKeys = ['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP']
+    const nativeKeys = ['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'ELECTRON_RUN_AS_NODE']
     // CoreFoundation initializes this entry independently when a macOS child starts.
     if (process.platform === 'darwin') nativeKeys.push('__CF_USER_TEXT_ENCODING')
     expect(value.childKeys.filter(key => !nativeKeys.includes(key.toUpperCase()))).toEqual([])
