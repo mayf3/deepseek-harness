@@ -54,3 +54,30 @@ it('uses provider input defaults for a model absent from the installed catalog',
   fireEvent.click(text)
   expect(onChange).toHaveBeenCalledWith([{ id: 'custom', input: ['text', 'image'] }])
 })
+
+it('inherits catalog inputs once an incomplete draft has a model id', async () => {
+  const onChange = vi.fn()
+  const props = {
+    onChange, catalogProvider: 'openai',
+    probe: { settingsNs: 'llm-pi-ai', provider: 'openai' },
+    disabled: false, t: (key: keyof typeof en) => en[key],
+    operations: operations(() => Promise.resolve({
+      kind: 'found', models: [{ id: 'vision', inputModalities: ['text', 'image'] }],
+    })),
+  }
+  const { rerender } = render(<ModelListEditor {...props} models={[{}]} />)
+  fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+  const image = screen.getByRole<HTMLInputElement>('checkbox', { name: en.modelInputImage })
+  await waitFor(() => { expect(image.disabled).toBe(false) })
+  expect(screen.getByRole<HTMLInputElement>('checkbox', { name: en.modelInputText }).checked).toBe(true)
+  expect(image.checked).toBe(false)
+  expect(onChange).not.toHaveBeenCalled()
+
+  const id = screen.getByLabelText<HTMLInputElement>(`${en.modelId} 1`)
+  expect(id.value).toBe('')
+  fireEvent.change(id, { target: { value: 'vision' } })
+  expect(onChange).toHaveBeenCalledExactlyOnceWith([{ id: 'vision' }])
+  rerender(<ModelListEditor {...props} models={[{ id: 'vision' }]} />)
+  expect(image.checked).toBe(true)
+  expect(onChange).toHaveBeenCalledTimes(1)
+})

@@ -522,6 +522,35 @@ describe('endpoint interrogation', () => {
     expect(mutate).not.toHaveBeenCalled()
   })
 
+  it('inherits a custom provider default input and persists an explicit model override', async () => {
+    const { discover, mutate } = await mountSection({
+      providers: {
+        'acme-gateway': {
+          api: 'openai-completions', baseURL: 'https://gateway.acme.example/v1',
+          defaultInput: ['text', 'image'], models: [{ id: 'custom' }],
+        },
+      },
+      declaredRoutes: ['acme-gateway'],
+    })
+    openEditor('acme-gateway')
+    expandModel(1)
+    const types = within(screen.getByRole('group', { name: `${en.modelInputTypes} 1` }))
+    expect(types.getByRole<HTMLInputElement>('checkbox', { name: en.modelInputText }).checked).toBe(true)
+    const image = types.getByRole<HTMLInputElement>('checkbox', { name: en.modelInputImage })
+    expect(image.checked).toBe(true)
+    expect(image.disabled).toBe(false)
+    expect(discover).not.toHaveBeenCalled()
+    expect(mutate).not.toHaveBeenCalled()
+
+    fireEvent.click(image)
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    expect(firstMutate(mutate).ops).toEqual([{
+      op: 'set', path: ['providers', 'acme-gateway', 'models'],
+      value: [{ id: 'custom', input: ['text'] }],
+    }])
+  })
+
   it('asks the endpoint the form shows, with a key that is not yet stored', async () => {
     const discover = vi.fn(() => Promise.resolve(ok([{ id: 'acme-large', contextWindow: 65_536 }])))
     await mountSection({ discover })
