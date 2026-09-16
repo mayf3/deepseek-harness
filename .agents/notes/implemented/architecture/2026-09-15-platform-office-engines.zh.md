@@ -26,4 +26,6 @@ Python sidecar 组装仅复制所选引擎及其依赖闭包。wheel 打包和�
 
 声明了原生目标的分发物省去 WASM 资源，其余目标保留 WASM 的资源和字体要求。锁定的 kit 声明了 macOS/Windows ARM64 和 x64 原生包，因此当前 Linux 分发物选择 WASM；kit 发布版本可以新增 Linux 原生目标，无需修改 Harness 的选择规则。这不扩展 Harness 支持的发布平台。Harness 的 sidecar、wheel 和运行时解析测试覆盖已声明原生目标与 WASM 选择，包括原生包缺失。新包字节在发布前需要 kit 资格验证和匹配的依赖完整性记录。
 
+新增引擎包标识还需要更新 `scripts/gen-third-party-notices.ts` 中的 `LIBREOFFICE_PACKAGES`、`pnpm-workspace.yaml` 中适用的 `minimumReleaseAgeExclude` 条目，以及 [kit 归属记录](2026-09-14-independent-libreoffice-kit.zh.md)中的包列表。许可证允许列表仍使用明确的包标识。
+
 [公开 Python 发布工作流](../../../../.github/workflows/python-release.yml)拒绝任何大于等于 100,000,000 字节的 wheel。只选择一个引擎会减少载荷，但不能据此认定运行时 wheel 已满足此限制；npm 引擎发布、本地转换与 wheel 上传资格是不同的验证。

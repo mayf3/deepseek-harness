@@ -26,4 +26,6 @@ Python sidecar assembly copies only the selected engine and its dependency closu
 
 Distributions with a declared native target omit WASM assets. Other targets retain WASM resource and font requirements. The pinned kit declares macOS/Windows ARM64 and x64 native packages, so current Linux distributions select WASM; a kit release can add a native Linux target without changing Harness’s selection rule. This does not expand Harness’s supported release platforms. Harness sidecar, wheel, and runtime-resolution tests cover both declared native targets and WASM selection, including missing native packages. New package bytes require kit qualification and matching dependency integrity records before publication.
 
+A new engine package identity also requires updates to `LIBREOFFICE_PACKAGES` in `scripts/gen-third-party-notices.ts`, any applicable `minimumReleaseAgeExclude` entry in `pnpm-workspace.yaml`, and the package list in the [kit ownership note](2026-09-14-independent-libreoffice-kit.md). The license allowlist remains explicit.
+
 The [public Python release workflow](../../../../.github/workflows/python-release.yml) rejects any wheel at or above 100,000,000 bytes. Selecting one engine reduces payload size but does not establish that a runtime wheel meets this limit; npm engine publication and local conversion are separate from wheel upload eligibility.

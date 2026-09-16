@@ -92,7 +92,7 @@ export class ConversionQueue {
       const abort = (): void => {
         this.release(reader)
         const reason: unknown = signal?.reason
-        reject(reason instanceof Error ? reason : new Error('Document rendering cancelled', { cause: reason }))
+        reject(reason instanceof Error ? reason : new Error('Office conversion cancelled', { cause: reason }))
         if (reader.job.readers.size === 0) this.cancel(reader.job)
         // Cancellation or demotion can unblock queued background work.
         this.drain()
