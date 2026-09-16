@@ -7,15 +7,17 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
 import type { PluginManagerPageProps } from '../src/client/PluginManagerPage.tsx'
 import { rowKey, type InstallState, type PackageRow, type PackageView, type PluginManagerState } from '../src/client/manager-store.ts'
-import { en, type PluginManagerLocaleKey } from '../src/client/locales.ts'
+import { en, zh, type PluginManagerLocaleKey } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
-const t = ((key: PluginManagerLocaleKey, params?: Record<string, string>): string =>
+const translate = (dict: typeof en): PluginManagerPageProps['t'] => ((key: PluginManagerLocaleKey, params?: Record<string, string>): string =>
   Object.entries(params ?? {}).reduce(
     (text, [name, value]) => text.replaceAll(`{${name}}`, value),
-    en[key],
+    dict[key],
   )) as PluginManagerPageProps['t']
+
+const t = translate(en)
 
 function pkg(overrides: Partial<PackageView> = {}): PackageView {
   return {
@@ -74,8 +76,13 @@ function renderTab(state: Partial<PluginManagerState> = {}) {
     ...actions,
     usePluginManager: bindSnapshotSelector(store),
   } as unknown as PluginManagerPageProps
-  render(<PluginManagerPage {...props} />)
-  return { store, actions, set: (next: Partial<PluginManagerState>) => { act(() => { store.set({ ...store.getSnapshot(), ...next }) }) } }
+  const { rerender } = render(<PluginManagerPage {...props} />)
+  return {
+    store,
+    actions,
+    set: (next: Partial<PluginManagerState>) => { act(() => { store.set({ ...store.getSnapshot(), ...next }) }) },
+    setLanguage: (dict: typeof en) => { rerender(<PluginManagerPage {...props} t={translate(dict)} />) },
+  }
 }
 
 describe('PluginManagerPage', () => {
@@ -140,12 +147,58 @@ describe('PluginManagerPage', () => {
     const { actions } = renderTab({
       packages: [pkg({ name: '@deepseek-ai/dsh-experimental-agent-team-profile', installed: false, optional: true, enabled: false })],
     })
-    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'experimental-agent-team-profile') }))
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', en.builtinAgentTeamTitle) }))
     const detail = document.querySelector('[data-plugin-detail]') as HTMLElement
     expect(within(detail).getByText(en.statusOfficial)).toBeTruthy()
-    expect(within(detail).queryByRole('button', { name: en.uninstallLabel.replace('{name}', 'experimental-agent-team-profile') })).toBeNull()
-    fireEvent.click(within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', 'experimental-agent-team-profile') }))
+    expect(within(detail).queryByRole('button', { name: en.uninstallLabel.replace('{name}', en.builtinAgentTeamTitle) })).toBeNull()
+    fireEvent.click(within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', en.builtinAgentTeamTitle) }))
     expect(actions.setEnabled).toHaveBeenCalledExactlyOnceWith('@deepseek-ai/dsh-experimental-agent-team-profile', true)
+  })
+
+  it.each([
+    ['agent-team-profile', 'builtinAgentTeamTitle', 'builtinAgentTeamDescription'],
+    ['agent-team-web-profile', 'builtinAgentTeamWebTitle', 'builtinAgentTeamWebDescription'],
+    ['auto-review', 'builtinAutoReviewTitle', 'builtinAutoReviewDescription'],
+  ] as const)('localizes %s across cards, details, switches, and uninstall confirmation', (suffix, titleKey, descriptionKey) => {
+    const name = `@deepseek-ai/dsh-experimental-${suffix}`
+    const { actions, set, setLanguage } = renderTab({ packages: [pkg({ name, description: 'Original metadata.' })] })
+    const assertCard = (dict: typeof en) => {
+      expect(screen.getByRole('button', { name: dict.openDetail.replace('{name}', dict[titleKey]) }).textContent).toBe(dict[titleKey])
+      expect(screen.getByText(dict[descriptionKey])).toBeTruthy()
+      expect(screen.getByRole('switch', { name: dict.enableToggle.replace('{name}', dict[titleKey]) })).toBeTruthy()
+      expect(screen.queryByText('Original metadata.')).toBeNull()
+    }
+    assertCard(en)
+    setLanguage(zh)
+    assertCard(zh)
+    fireEvent.click(screen.getByRole('switch', { name: zh.enableToggle.replace('{name}', zh[titleKey]) }))
+    expect(actions.setEnabled).toHaveBeenCalledExactlyOnceWith(name, false)
+    fireEvent.click(screen.getByRole('button', { name: zh.openDetail.replace('{name}', zh[titleKey]) }))
+    for (const dict of [zh, en]) {
+      setLanguage(dict)
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe(dict[titleKey])
+      expect(screen.getByText(dict[descriptionKey])).toBeTruthy()
+      expect(document.querySelector('[data-plugin-name]')?.textContent).toBe(name)
+      expect(screen.getByRole('switch', { name: dict.enableToggle.replace('{name}', dict[titleKey]) })).toBeTruthy()
+      expect(screen.getByRole('button', { name: dict.uninstallLabel.replace('{name}', dict[titleKey]) })).toBeTruthy()
+    }
+    fireEvent.click(screen.getByRole('button', { name: en.uninstallLabel.replace('{name}', en[titleKey]) }))
+    expect(actions.uninstall).toHaveBeenCalledExactlyOnceWith(name)
+    set({ confirm: { action: 'uninstall', packageName: name } })
+    for (const dict of [en, zh]) {
+      setLanguage(dict)
+      expect(screen.getByRole('dialog', { name: dict.confirmUninstallTitle.replace('{name}', dict[titleKey]) })).toBeTruthy()
+    }
+  })
+
+  it('preserves metadata for another scope with the same short name', () => {
+    const name = '@acme/dsh-experimental-agent-team-profile'
+    const { setLanguage } = renderTab({ packages: [pkg({ name, description: 'Third-party description.' })] })
+    setLanguage(zh)
+    fireEvent.click(screen.getByRole('button', { name: zh.openDetail.replace('{name}', 'experimental-agent-team-profile') }))
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('experimental-agent-team-profile')
+    expect(screen.getByText('Third-party description.')).toBeTruthy()
+    expect(document.querySelector('[data-plugin-name]')?.textContent).toBe(name)
   })
 
   it('opens a guide under the field and drops an example into it', () => {
