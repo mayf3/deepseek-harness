@@ -36,28 +36,34 @@
           - text: Agent 循环 Agent 如何派发工具调用。
           - img
       - listitem:
-        - 'button "收起设置: Subagent 限制" [expanded]':
-          - text: Subagent 限制 设置委派的最大深度，以及可同时在线的子代理数量。
+        - 'button "收起设置: Subagent" [expanded]':
+          - text: Subagent 设置 Subagent 的递归层级、数量和模型。
           - img
-        - text: 最大深度 已覆盖
-        - button "恢复默认"
-        - textbox "最大深度":
-          - /placeholder: ""
-          - text: "2"
-        - paragraph: 主代理的深度为 0。设为 1 时仅允许直接子代理；设为 0 时禁用委派。工具显式配置的深度优先。
-        - text: 同时在线上限 已覆盖
-        - button "恢复默认"
-        - textbox "同时在线上限":
-          - /placeholder: ""
-          - text: "12"
-        - paragraph: 同一主代理的所有可续接后代共享额度。等待中的子代理也计入；主代理不计入。
-        - paragraph: 保存后用于后续委派。调低在线上限不会终止已有子代理。一次性运行和外部代理不占用在线额度。
+        - region "运行限制":
+          - heading "运行限制" [level=3]
+          - text: 最大递归深度
+          - button "最大递归深度说明":
+            - img
+          - text: 已覆盖
+          - button "恢复默认"
+          - textbox "最大递归深度":
+            - /placeholder: ""
+            - text: "2"
+          - text: Subagent 总数上限
+          - button "Subagent 总数上限说明":
+            - img
+          - text: 已覆盖
+          - button "恢复默认"
+          - textbox "Subagent 总数上限":
+            - /placeholder: ""
+            - text: "12"
+        - region "模型选择":
+          - heading "模型选择" [level=3]
+          - text: 允许 Agent 为 Subagent 选择模型
+          - switch "允许 Agent 为 Subagent 选择模型"
+          - paragraph: 关闭后，Subagent 使用配置的默认模型或继承父 Agent 的模型；已选模型会保留。
         - button "放弃修改" [disabled]
         - button "保存" [disabled]
-      - listitem:
-        - 'button "展开设置: Subagent 模型"':
-          - text: Subagent 模型 控制 Agent 为 Subagent 选择模型的权限。
-          - img
       - listitem:
         - 'button "展开设置: 网页搜索"':
           - text: 网页搜索 DeepSeek 搜索提供方。

@@ -1931,8 +1931,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-settings-plugins BashCard',
       'client-ui-settings-plugins AgentLoopCard',
-      'client-ui-settings-plugins SubagentLimitsCard key \'subagent\'',
-      'client-ui-settings-plugins SubagentModelSelectionCard',
+      'client-ui-settings-plugins SubagentCard key \'subagent\'',
+      'client-ui-settings-plugins SubagentCard',
       'client-ui-settings-plugins WebSearchCard',
     ],
     replaceRisk: 'shadows-shipped-ui',

@@ -1,0 +1,16 @@
+.section {
+  min-width: 0;
+  padding: 16px 0;
+}
+
+.section + .section {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+}

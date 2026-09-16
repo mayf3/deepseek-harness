@@ -25,7 +25,7 @@ Use the **Plugins** settings section to configure the plugins exposed by the cur
 <a id="use-this-package"></a>
 ## Use this package
 
-Open the Plugins section in Settings and select the **Plugin configuration** tab to edit the host-plane plugins this deployment composes. The cards appear in this order: the shell executor (`bash`), the agent loop's tool-call parallelism (`agent-loop`), subagent limits (`subagent`), subagent model selection (`subagent-model-selection`), and the DeepSeek search provider (`web-search-deepseek`).
+Open the Plugins section in Settings and select the **Plugin configuration** tab to edit the host-plane plugins this deployment composes. The cards appear in this order: the shell executor (`bash`), the agent loop's tool-call parallelism (`agent-loop`), Subagent delegation limits and model selection (`subagent` and `subagent-model-selection`), and the DeepSeek search provider (`web-search-deepseek`).
 
 ### What appears here
 
@@ -35,9 +35,11 @@ The tab reads which settings namespaces the Host serves and dispatches one slot 
 
 A card stages what the user types and writes it only when they save. Each control renders staged text, so what is on screen is exactly what a save would store; **Discard** drops the drafts, and a card holding unsaved edits says so on its header even while collapsed. A successful save collapses the card after the read-back confirms the writes; a failed save keeps the card open, reports the failure, and retains the drafts for correction. A reset stages the composed default rather than writing immediately, and a draft the field does not accept blocks the save instead of being dropped. The Host is the only authority on whether a value was accepted.
 
-The **Subagent limits** card presents depth and online capacity side by side, stacking on narrow screens. It validates whole-number drafts, preserves explicit tool depth overrides, and explains that capacity includes waiting continuable children while excluding the root, one-shot runs, and external providers. Saving applies to later delegation attempts; lowering capacity does not stop existing children.
+The **Subagent** card groups delegation limits and model selection under one disclosure and one save/discard footer. **Maximum recursion depth** and **Subagent count limit** appear side by side, stacking on narrow screens. Information buttons reveal a two-row depth example and the shared count rule; validation errors remain visible below the input. Depth retains explicit tool overrides. Capacity counts live continuable descendants across all recursion levels, including waiting children and excluding the root, one-shot runs, and external providers. Saving applies to later delegation attempts; lowering capacity does not stop existing children.
 
-The Subagent models card stages its permission switch and exact model checkboxes together. Enabling requires at least one selected adapter route. Saving submits `enabled` and `allowedModels` in one mutation fenced by the revision where that draft began; a newer Host revision marks the draft failed instead of restoring a revoked route. Disabling retains the selected routes for later reuse. Available models are grouped by provider, while saved routes absent from the current catalog appear last and remain removable. Adapter names and model descriptions remain live directory metadata and are not stored, and the card refreshes them after adapter changes, settings commits, and reconnects.
+The model selection section stages its permission switch and exact model checkboxes together. Enabling requires at least one selected adapter route. Saving submits `enabled` and `allowedModels` in one mutation fenced by the revision where that draft began; a newer Host revision marks the draft failed instead of restoring a revoked route. Disabling retains the selected routes for later reuse. Available models are grouped by provider, while saved routes absent from the current catalog appear last and remain removable. Adapter names and model descriptions remain live directory metadata and are not stored, and the card refreshes them after adapter changes, settings commits, and reconnects.
+
+Saving the Subagent card validates both sections and writes their drafts through their existing namespaces. These writes are independent: if one fails, the card stays open with that draft retained, and retry writes only the remaining draft. The model-only registration renders the same card when the deployment serves model selection without limits.
 
 ### Secret-role fields
 
