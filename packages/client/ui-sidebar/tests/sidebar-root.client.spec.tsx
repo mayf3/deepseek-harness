@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ReactNode } from 'react'
 import type {
   SidebarFooterActionOwnerProps, SidebarRootComponentProps, SidebarSectionOwnerProps,
@@ -190,6 +191,33 @@ describe('SidebarRoot shell', () => {
     const b = mountShell({ collapsed: true })
     expect(b.regionOwner().wide).toBe(false)
     expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
+  })
+
+  it('shows only the badge bubble while the rail badge is hovered inside the toggle', () => {
+    vi.useFakeTimers()
+    render(<SidebarRoot
+      collapsed width={56}
+      useSessions={neverHook} useSessionPendingInteraction={useSessionPendingInteraction}
+      usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])}
+      useResource={useResource} useWorkspaces={neverHook}
+      startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
+      renderSlot={((key: string) => key === 'sidebar.toggle.badge'
+        ? <Tooltip label="Update — V1.2.3"><span data-testid="badge" /></Tooltip>
+        : null) as SidebarRootComponentProps['renderSlot']}
+    />)
+    const toggle = screen.getByRole('button', { name: 'Open sidebar' })
+    fireEvent.mouseEnter(toggle)
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(screen.getByRole('tooltip').textContent).toBe('Open sidebar')
+    // The badge's own bubble replaces the toggle's rather than stacking on it,
+    // even after the toggle's longer hover delay has elapsed.
+    fireEvent.mouseEnter(screen.getByTestId('badge'))
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(screen.getAllByRole('tooltip').map(bubble => bubble.textContent)).toEqual(['Update — V1.2.3'])
+    fireEvent.mouseLeave(screen.getByTestId('badge'), { relatedTarget: toggle })
+    expect(screen.getByRole('tooltip').textContent).toBe('Open sidebar')
+    fireEvent.mouseLeave(toggle)
+    expect(screen.queryByRole('tooltip')).toBeNull()
   })
 })
 
