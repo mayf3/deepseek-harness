@@ -6,7 +6,7 @@ export interface WindowsRuntimeSignature {
 }
 
 /**
- * Read Windows trust, timestamp and signer identity without accessing the private key.
+ * Read Windows trust, timestamp and signer identity using the engine's bundled modules, without accessing the private key.
  * @param path File to inspect.
  * @returns Authenticode verification result.
  */

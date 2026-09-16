@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { signWindowsPrimaryRuntime, windowsRuntimeCode } from '../scripts/sign-primary-runtime.ts'
-import { preserveWindowsRuntimeSignature } from '../scripts/windows-runtime-signature.mjs'
+import { inspectWindowsRuntimeSignature, preserveWindowsRuntimeSignature } from '../scripts/windows-runtime-signature.mjs'
 import { createPackagingRun } from '../scripts/packaging-run.mjs'
 
 const roots: string[] = []
@@ -122,6 +122,12 @@ it('refuses an empty runtime without declaring successful validation', async () 
   await expect(signWindowsPrimaryRuntime(root, { thumbprint, sign: vi.fn(), smoke, record: () => {} })).rejects.toThrow('no Windows code')
   expect(smoke).not.toHaveBeenCalled()
 })
+
+it.skipIf(process.platform !== 'win32')('reads a Windows system signature without using signing hardware', async () => {
+  const signature = await inspectWindowsRuntimeSignature(join(process.env.SystemRoot!, 'System32', 'cmd.exe'))
+  expect(signature.status).toBe('Valid')
+  expect(signature.thumbprint).toMatch(/^[A-F\d]{40}$/iu)
+}, 70_000)
 
 it('preserves only identical, valid runtime copies and records verification without signing', async () => {
   const sourceRoot = await realpath(await fixture(['python.exe']))
