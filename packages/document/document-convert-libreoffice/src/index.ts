@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { createConverter, type Converter, type ConverterOptions } from '@deepseek-ai/libreoffice-kit'
-import { DocumentRenderer, DocumentRenderError, DocumentRendererGeneration, type DocumentExtension, type DocumentRenderRequest, type DocumentRenderResult } from '@deepseek-ai/dsh-document-render'
+import { DocumentConverter, DocumentConvertError, DocumentConverterGeneration, type DocumentExtension, type DocumentConvertRequest, type DocumentConvertResult } from '@deepseek-ai/dsh-document-convert'
 import z from '@deepseek-ai/schemastery'
 import { readPdf } from './output.ts'
-import { RenderQueue } from './queue.ts'
+import { ConversionQueue } from './queue.ts'
 
 /** Provider concurrency and kit rendering/font configuration. */
 export interface Config {
@@ -81,11 +81,11 @@ interface Slot {
 }
 
 /** A provider lifetime owns all converters, queued calls, and temporary files. */
-export class LibreOfficeRenderer extends DocumentRenderer {
+export class LibreOfficeConverter extends DocumentConverter {
   static Config = Config
-  readonly generation = DocumentRendererGeneration(randomUUID())
+  readonly generation = DocumentConverterGeneration(randomUUID())
   private readonly slots: Slot[] = []
-  private readonly queue: RenderQueue
+  private readonly queue: ConversionQueue
   private readonly options: ConverterOptions
 
   /**
@@ -103,7 +103,7 @@ export class LibreOfficeRenderer extends DocumentRenderer {
       ...(fontDirectories === undefined ? {} : { fontDirectories }),
       ...(fontFallbacks === undefined ? {} : { fontFallbacks }),
     }
-    this.queue = new RenderQueue(config, this.generation, (bytes, extension, signal) => this.convert(bytes, extension, signal))
+    this.queue = new ConversionQueue(config, this.generation, (bytes, extension, signal) => this.convertBytes(bytes, extension, signal))
     ctx.effect(() => async () => {
       await this.queue.dispose()
       const results = await Promise.allSettled(this.slots.map(async (slot) => {
@@ -115,11 +115,11 @@ export class LibreOfficeRenderer extends DocumentRenderer {
     })
   }
 
-  render(request: DocumentRenderRequest, signal?: AbortSignal): Promise<DocumentRenderResult> {
+  convert(request: DocumentConvertRequest, signal?: AbortSignal): Promise<DocumentConvertResult> {
     return this.queue.read(request, signal)
   }
 
-  private async convert(bytes: Uint8Array, extension: DocumentExtension, signal: AbortSignal): Promise<Pick<DocumentRenderResult, 'pdf' | 'missingFonts'>> {
+  private async convertBytes(bytes: Uint8Array, extension: DocumentExtension, signal: AbortSignal): Promise<Pick<DocumentConvertResult, 'pdf' | 'missingFonts'>> {
     signal.throwIfAborted()
     let slot = this.slots.find(candidate => !candidate.busy)
     if (slot === undefined) { slot = { busy: false }; this.slots.push(slot) }
@@ -134,7 +134,7 @@ export class LibreOfficeRenderer extends DocumentRenderer {
       }
       const converter = await slot.converter
       signal.throwIfAborted()
-      directory = await mkdtemp(join(tmpdir(), 'dsh-document-render-'))
+      directory = await mkdtemp(join(tmpdir(), 'dsh-document-convert-'))
       const inputPath = join(directory, `source.${extension}`)
       const outputPath = join(directory, 'converted.pdf')
       await writeFile(inputPath, bytes, { flag: 'wx', mode: 0o600, signal })
@@ -144,20 +144,20 @@ export class LibreOfficeRenderer extends DocumentRenderer {
       let pdf: Uint8Array
       try { pdf = await readPdf(outputPath, this.config.maxOutputBytes, signal) }
       catch (cause) {
-        if (cause instanceof DocumentRenderError) throw cause
-        throw new DocumentRenderError('invalid-output', 'The converter PDF could not be read.', { cause })
+        if (cause instanceof DocumentConvertError) throw cause
+        throw new DocumentConvertError('invalid-output', 'The converter PDF could not be read.', { cause })
       }
       signal.throwIfAborted()
       return { pdf, missingFonts: result.missingFonts }
     } catch (cause) {
       signal.throwIfAborted()
-      if (cause instanceof DocumentRenderError) throw cause
+      if (cause instanceof DocumentConvertError) throw cause
       const code = typeof cause === 'object' && cause !== null && 'code' in cause ? cause.code : undefined
       switch (code) {
         case 'input-too-large': case 'output-too-large': case 'invalid-document': case 'unsupported-format':
         case 'invalid-output': case 'timeout': case 'unavailable':
-          throw new DocumentRenderError(code, 'LibreOffice conversion failed.', { cause })
-        default: throw new DocumentRenderError('failed', 'LibreOffice conversion failed.', { cause })
+          throw new DocumentConvertError(code, 'LibreOffice conversion failed.', { cause })
+        default: throw new DocumentConvertError('failed', 'LibreOffice conversion failed.', { cause })
       }
     } finally {
       try { if (directory !== undefined) await rm(directory, { recursive: true, force: true }) }
@@ -166,4 +166,4 @@ export class LibreOfficeRenderer extends DocumentRenderer {
   }
 }
 
-export default LibreOfficeRenderer
+export default LibreOfficeConverter

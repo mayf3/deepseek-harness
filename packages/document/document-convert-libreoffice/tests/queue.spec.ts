@@ -1,18 +1,18 @@
 /** Controlled source and engine completions exercise admission and shared content ownership. */
-import { DocumentSourceKey, DocumentRendererGeneration, type DocumentRenderRequest } from '@deepseek-ai/dsh-document-render'
+import { DocumentSourceKey, DocumentConverterGeneration, type DocumentConvertRequest } from '@deepseek-ai/dsh-document-convert'
 import { expect, it, onTestFinished, vi } from 'vitest'
-import { RenderQueue } from '../src/queue.ts'
+import { ConversionQueue } from '../src/queue.ts'
 import { Config } from '../src/index.ts'
 
 const output = { pdf: new Uint8Array([37, 80, 68, 70]), missingFonts: ['Font'] }
-function source(key: string, byte = 1, priority: DocumentRenderRequest['priority'] = 'foreground') {
-  const read = vi.fn<DocumentRenderRequest['source']['read']>().mockResolvedValue({ bytes: new Uint8Array([byte]), version: 'v1' })
-  const request: DocumentRenderRequest = { extension: 'docx', priority, source: { key: DocumentSourceKey(key), version: 'v1', bytes: 1, read } }
+function source(key: string, byte = 1, priority: DocumentConvertRequest['priority'] = 'foreground') {
+  const read = vi.fn<DocumentConvertRequest['source']['read']>().mockResolvedValue({ bytes: new Uint8Array([byte]), version: 'v1' })
+  const request: DocumentConvertRequest = { extension: 'docx', priority, source: { key: DocumentSourceKey(key), version: 'v1', bytes: 1, read } }
   return { read, request }
 }
 function harness(config: Partial<Config> = {}) {
-  const convert = vi.fn<ConstructorParameters<typeof RenderQueue>[2]>().mockResolvedValue(output)
-  const queue = new RenderQueue(Config(config), DocumentRendererGeneration('test'), convert)
+  const convert = vi.fn<ConstructorParameters<typeof ConversionQueue>[2]>().mockResolvedValue(output)
+  const queue = new ConversionQueue(Config(config), DocumentConverterGeneration('test'), convert)
   onTestFinished(() => queue.dispose())
   return { queue, convert }
 }
@@ -290,7 +290,7 @@ it('keeps a synchronous abort replacement shareable after the old conversion set
   const h = harness({ maxConcurrentConversions: 2 })
   const firstEntered = Promise.withResolvers<undefined>(), firstComplete = Promise.withResolvers<typeof output>()
   const replacementEntered = Promise.withResolvers<undefined>(), replacementComplete = Promise.withResolvers<typeof output>()
-  const replacementSpawned = Promise.withResolvers<{ work: ReturnType<RenderQueue['read']> }>()
+  const replacementSpawned = Promise.withResolvers<{ work: ReturnType<ConversionQueue['read']> }>()
   const a = source('a'), caller = new AbortController()
   const pending: Promise<unknown>[] = []
   h.convert.mockImplementationOnce((_bytes, _extension, signal) => {
@@ -332,11 +332,11 @@ it('keeps a synchronous abort replacement shareable after the old conversion set
   }
 })
 
-it('separates Office extensions and renderer generations in content identity', async () => {
+it('separates Office extensions and converter generations in content identity', async () => {
   const h = harness(), a = source('a')
   const first = await h.queue.read(a.request)
   const otherFormat = await h.queue.read({ ...a.request, extension: 'pptx' })
-  const other = new RenderQueue(Config({}), DocumentRendererGeneration('replacement'), h.convert)
+  const other = new ConversionQueue(Config({}), DocumentConverterGeneration('replacement'), h.convert)
   onTestFinished(() => other.dispose())
   const replacement = await other.read(a.request)
   expect(first.cacheKey).not.toBe(otherFormat.cacheKey)

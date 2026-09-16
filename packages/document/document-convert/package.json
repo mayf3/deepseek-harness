@@ -1,6 +1,6 @@
 {
-  "name": "@deepseek-ai/dsh-document-render-libreoffice",
-  "description": "Host Office conversion with native macOS/Windows engines and Linux Node WASM",
+  "name": "@deepseek-ai/dsh-document-convert",
+  "description": "Authorized Office bytes to PDF rendering service",
   "version": "0.1.6-alpha.1",
   "publishConfig": {
     "access": "public"
@@ -12,32 +12,32 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-    "directory": "packages/document/document-render-libreoffice"
+    "directory": "packages/document/document-convert"
   },
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
+    "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-document-render": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-document-render": "workspace:^",
-    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/cordis-plugin-include": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
-    "@deepseek-ai/libreoffice-kit": "0.0.1",
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@deepseek-ai/dsh-brand": "workspace:^"
   }
 }

@@ -1,34 +1,34 @@
 /** Bounded source admission, shared content conversion, and caller-owned PDF delivery. */
 import { createHash } from 'node:crypto'
-import { DocumentRenderError, DocumentRenderKey, type DocumentExtension, type DocumentRendererGeneration,
-  type DocumentRenderRequest, type DocumentRenderResult } from '@deepseek-ai/dsh-document-render'
+import { DocumentConvertError, DocumentConvertKey, type DocumentExtension, type DocumentConverterGeneration,
+  type DocumentConvertRequest, type DocumentConvertResult } from '@deepseek-ai/dsh-document-convert'
 import type { Config } from './index.ts'
 
-type Converted = Pick<DocumentRenderResult, 'pdf' | 'missingFonts'>
+type Converted = Pick<DocumentConvertResult, 'pdf' | 'missingFonts'>
 type Convert = (bytes: Uint8Array, extension: DocumentExtension, signal: AbortSignal) => Promise<Converted>
 interface Reader {
   job: Job
   readonly source: string
-  readonly priority: DocumentRenderRequest['priority']
-  readonly resolve: (value: DocumentRenderResult) => void
+  readonly priority: DocumentConvertRequest['priority']
+  readonly resolve: (value: DocumentConvertResult) => void
   readonly reject: (error: unknown) => void
   readonly cleanup: () => void
 }
 interface Job {
-  readonly request: DocumentRenderRequest
+  readonly request: DocumentConvertRequest
   readonly controller: AbortController
   readonly readers: Set<Reader>
   readonly sources: Set<string>
-  priority: DocumentRenderRequest['priority']
+  priority: DocumentConvertRequest['priority']
   state: 'queued' | 'running' | 'finished'
 }
 
-/** One renderer generation owns every queued source, conversion, reader, and retained PDF. */
-export class RenderQueue {
-  private readonly ready = new Map<DocumentRenderKey, DocumentRenderResult>()
-  private readonly aliases = new Map<string, DocumentRenderKey>()
+/** One converter generation owns every queued source, conversion, reader, and retained PDF. */
+export class ConversionQueue {
+  private readonly ready = new Map<DocumentConvertKey, DocumentConvertResult>()
+  private readonly aliases = new Map<string, DocumentConvertKey>()
   private readonly sources = new Map<string, Job>()
-  private readonly digests = new Map<DocumentRenderKey, Job>()
+  private readonly digests = new Map<DocumentConvertKey, Job>()
   private readonly queue: Job[] = []
   private readonly tasks = new Set<Promise<void>>()
   private readonly jobs = new Set<Job>()
@@ -44,7 +44,7 @@ export class RenderQueue {
    * @param generation - provider lifetime; prevents reuse after engine or font replacement.
    * @param convert - executes one admitted conversion and settles after scratch cleanup.
    */
-  constructor(private readonly config: Config, private readonly generation: DocumentRendererGeneration,
+  constructor(private readonly config: Config, private readonly generation: DocumentConverterGeneration,
     private readonly convert: Convert) {}
 
   /**
@@ -53,11 +53,11 @@ export class RenderQueue {
    * @param signal - this reader's cancellation; the final reader cancels shared work.
    * @returns independent PDF bytes; busy or canceled readers reject without releasing active engine capacity early.
    */
-  async read(request: DocumentRenderRequest, signal?: AbortSignal): Promise<DocumentRenderResult> {
+  async read(request: DocumentConvertRequest, signal?: AbortSignal): Promise<DocumentConvertResult> {
     signal?.throwIfAborted()
     if (this.disposed) throw this.unavailable()
     if (request.source.bytes !== undefined && request.source.bytes > this.config.maxInputBytes) {
-      throw new DocumentRenderError('input-too-large', 'The Office source exceeds maxInputBytes.')
+      throw new DocumentConvertError('input-too-large', 'The Office source exceeds maxInputBytes.')
     }
     const source = JSON.stringify([request.source.key, request.source.version, request.extension])
     const alias = this.aliases.get(source)
@@ -87,7 +87,7 @@ export class RenderQueue {
     const shared = job
     if (request.priority === 'foreground') shared.priority = 'foreground'
     this.readers++
-    const promise = new Promise<DocumentRenderResult>((resolve, reject) => {
+    const promise = new Promise<DocumentConvertResult>((resolve, reject) => {
       const abort = (): void => {
         this.release(reader)
         const reason: unknown = signal?.reason
@@ -114,9 +114,9 @@ export class RenderQueue {
     await Promise.allSettled(this.tasks)
   }
 
-  private busy(): DocumentRenderError { return new DocumentRenderError('busy', 'The document renderer has reached its admission limit.') }
-  private unavailable(): DocumentRenderError { return new DocumentRenderError('unavailable', 'The document renderer is unavailable.') }
-  private copy(result: DocumentRenderResult): DocumentRenderResult {
+  private busy(): DocumentConvertError { return new DocumentConvertError('busy', 'The document converter has reached its admission limit.') }
+  private unavailable(): DocumentConvertError { return new DocumentConvertError('unavailable', 'The document converter is unavailable.') }
+  private copy(result: DocumentConvertResult): DocumentConvertResult {
     return { ...result, pdf: Uint8Array.from(result.pdf), missingFonts: [...result.missingFonts] }
   }
   private release(reader: Reader): void {
@@ -177,10 +177,10 @@ export class RenderQueue {
     signal.throwIfAborted()
     const input = await job.request.source.read(signal, reserved)
     signal.throwIfAborted()
-    if (input.version !== job.request.source.version) throw new DocumentRenderError('source-changed', 'The source changed while waiting for conversion.')
-    if (input.bytes.byteLength > reserved) throw new DocumentRenderError('input-too-large', 'The source exceeds its reserved read capacity.')
+    if (input.version !== job.request.source.version) throw new DocumentConvertError('source-changed', 'The source changed while waiting for conversion.')
+    if (input.bytes.byteLength > reserved) throw new DocumentConvertError('input-too-large', 'The source exceeds its reserved read capacity.')
     const digest = createHash('sha256').update(job.request.extension).update('\0').update(input.bytes).digest('hex')
-    const key = DocumentRenderKey(`${this.generation}:${digest}`)
+    const key = DocumentConvertKey(`${this.generation}:${digest}`)
     const cached = this.ready.get(key)
     if (cached !== undefined) {
       this.ready.delete(key)
@@ -207,7 +207,7 @@ export class RenderQueue {
     } finally { if (this.digests.get(key) === job) this.digests.delete(key) }
   }
 
-  private finish(job: Job, result: DocumentRenderResult): void {
+  private finish(job: Job, result: DocumentConvertResult): void {
     for (const source of job.sources) this.sources.delete(source)
     if (this.ready.has(result.cacheKey)) {
       for (const source of job.sources) {
@@ -218,10 +218,10 @@ export class RenderQueue {
     }
     for (const reader of job.readers) { this.release(reader); reader.resolve(this.copy(result)) }
   }
-  private retain(result: DocumentRenderResult): void {
+  private retain(result: DocumentConvertResult): void {
     if (result.pdf.byteLength > this.config.maxCachedBytes) return
     while (this.ready.size >= this.config.maxCachedEntries || this.cachedBytes + result.pdf.byteLength > this.config.maxCachedBytes) {
-      const [key, oldest] = this.ready.entries().next().value as [DocumentRenderKey, DocumentRenderResult]
+      const [key, oldest] = this.ready.entries().next().value as [DocumentConvertKey, DocumentConvertResult]
       this.ready.delete(key)
       this.cachedBytes -= oldest.pdf.byteLength
       for (const [source, digest] of this.aliases) if (digest === key) this.aliases.delete(source)

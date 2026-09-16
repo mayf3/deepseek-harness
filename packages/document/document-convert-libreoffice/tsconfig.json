@@ -15,7 +15,7 @@
       "path": "../../../vendor/schemastery"
     },
     {
-      "path": "../document-render"
+      "path": "../document-convert"
     }
   ]
 }

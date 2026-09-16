@@ -7,8 +7,8 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include, { applyEntryPatches } from '@deepseek-ai/cordis-plugin-include'
 import { loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
-import { DocumentSourceKey, type DocumentRenderRequest } from '@deepseek-ai/dsh-document-render'
-import * as LibreOfficeProvider from '@deepseek-ai/dsh-document-render-libreoffice'
+import { DocumentSourceKey, type DocumentConvertRequest } from '@deepseek-ai/dsh-document-convert'
+import * as LibreOfficeProvider from '@deepseek-ai/dsh-document-convert-libreoffice'
 import { expect, it, onTestFinished } from 'vitest'
 
 it('loads one shared conversion row and retains caller-owned PDFs after disposal', async () => {
@@ -20,9 +20,9 @@ it('loads one shared conversion row and retains caller-owned PDFs after disposal
   })
   const rows = loadOverlayPatches('conversion-test', fileURLToPath(new URL('../cordis.patch.yml', import.meta.url)))
     .flatMap(patch => patch.insert ?? [])
-    .filter(row => row.name === '@deepseek-ai/dsh-document-render-libreoffice')
-  expect(rows.map(row => row.id)).toEqual(['document-render'])
-  const configured = applyEntryPatches(rows, [{ id: 'document-render', config: { maxConcurrentConversions: 1 } }],
+    .filter(row => row.name === '@deepseek-ai/dsh-document-convert-libreoffice')
+  expect(rows.map(row => row.id)).toEqual(['document-convert'])
+  const configured = applyEntryPatches(rows, [{ id: 'document-convert', config: { maxConcurrentConversions: 1 } }],
     (message) => { throw new Error(message) })
   const configPath = join(directory, 'cordis.yml')
   await writeFile(configPath, JSON.stringify(configured))
@@ -33,19 +33,19 @@ it('loads one shared conversion row and retains caller-owned PDFs after disposal
   ctx.loader.internal = {
     version: 'v2',
     async import(specifier: string) {
-      if (specifier !== '@deepseek-ai/dsh-document-render-libreoffice') throw new Error(`Unexpected plugin: ${specifier}`)
+      if (specifier !== '@deepseek-ai/dsh-document-convert-libreoffice') throw new Error(`Unexpected plugin: ${specifier}`)
       return LibreOfficeProvider
     },
   } as unknown as NonNullable<typeof ctx.loader.internal>
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
   await ctx.loader.await()
-  const entry = [...ctx.loader.entries()].find(candidate => candidate.options.id === 'document-render')!
+  const entry = [...ctx.loader.entries()].find(candidate => candidate.options.id === 'document-convert')!
   await entry.fiber!.await()
   expect(ctx.get('documentRenderController')).toBeUndefined()
   expect(ctx.get('skills')).toBeUndefined()
   const bytes = await readFile(new URL('./fixtures/document-conversion.docx', import.meta.url))
   let reads = 0
-  const request = (key: string): DocumentRenderRequest => ({
+  const request = (key: string): DocumentConvertRequest => ({
     extension: 'docx', priority: 'foreground',
     source: { key: DocumentSourceKey(key), version: 'fixture', bytes: bytes.length,
       async read(signal, maxBytes) {
@@ -56,8 +56,8 @@ it('loads one shared conversion row and retains caller-owned PDFs after disposal
       },
     },
   })
-  const provider = ctx.documentRender
-  const [first, second] = await Promise.all([provider.render(request('first')), provider.render(request('second'))])
+  const provider = ctx.documentConvert
+  const [first, second] = await Promise.all([provider.convert(request('first')), provider.convert(request('second'))])
   expect(reads).toBe(2)
   expect(Buffer.from(first.pdf).subarray(0, 5).toString()).toBe('%PDF-')
   expect(first.cacheKey).toBe(second.cacheKey)
@@ -66,11 +66,11 @@ it('loads one shared conversion row and retains caller-owned PDFs after disposal
   expect(first.missingFonts).not.toBe(second.missingFonts)
   first.pdf.fill(0)
   first.missingFonts.push('caller-owned')
-  const cached = await provider.render(request('first'))
+  const cached = await provider.convert(request('first'))
   expect(reads).toBe(2)
   expect(cached.pdf).toEqual(second.pdf)
   expect(cached.missingFonts).toEqual(second.missingFonts)
   await ctx.fiber.dispose()
   expect(Buffer.from(cached.pdf).subarray(0, 5).toString()).toBe('%PDF-')
-  await expect(provider.render(request('first'))).rejects.toMatchObject({ code: 'unavailable' })
+  await expect(provider.convert(request('first'))).rejects.toMatchObject({ code: 'unavailable' })
 })

@@ -10,7 +10,9 @@ Office preview and explicit document inspection can request the same conversion.
 
 ## Decision
 
-The [Host provider](../../../../packages/document/document-render-libreoffice/README.md) owns a shared conversion queue and transient content cache. Authorized source metadata enters admission before source bytes are loaded. The source callback receives reserved byte capacity and returns its read version; changed sources fail without publishing aliases. Exact source bytes and Office extension determine the digest. Each renderer lifetime adds a generation so engine/font/configuration replacement invalidates reuse.
+The `document-convert` service returns complete PDF bytes. Page rasterization and user presentation remain separate consumers, so conversion naming does not imply image rendering or preview UI.
+
+The [Host provider](../../../../packages/document/document-convert-libreoffice/README.md) owns a shared conversion queue and transient content cache. Authorized source metadata enters admission before source bytes are loaded. The source callback receives reserved byte capacity and returns its read version; changed sources fail without publishing aliases. Exact source bytes and Office extension determine the digest. Each renderer lifetime adds a generation so engine/font/configuration replacement invalidates reuse.
 
 A bounded source-version index avoids repeated reads after authorization; the digest remains the identity for sharing conversion across distinct paths. Ready PDFs use an entry/byte-bounded LRU. Queued jobs contain metadata and deferred callbacks. Reader, queue, source-byte, and conversion limits also apply before work completes. Each active source locator belongs to live readers, so cancellation cannot grow retained source metadata independently of reader admission. Unknown source sizes reserve the input cap; cancellation retains active capacity until actual read/conversion cleanup settles.
 

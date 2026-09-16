@@ -37,6 +37,7 @@
       "@deepseek-ai/dsh-experimental-browser-use-stagehand-native": ["./packages/experimental/browser-use-stagehand-native/src/index.ts"],
       "@deepseek-ai/dsh-experimental-browser-use-runtime/mcp": ["./packages/experimental/browser-use-runtime/src/mcp.ts"],
 
+      "@deepseek-ai/dsh-document-convert/types": ["./packages/document/document-convert/src/types.ts"],
       "@deepseek-ai/dsh-api-terminal-controller": ["./packages/api/terminal-controller/src/index.ts"],
       "@deepseek-ai/dsh-api-terminal-controller/types": ["./packages/api/terminal-controller/src/types.ts"],
       "@deepseek-ai/dsh-api-terminal-controller/client": ["./packages/api/terminal-controller/src/client/index.ts"],
@@ -324,8 +325,8 @@
       "@deepseek-ai/dsh-credentials-local": ["./packages/credentials/credentials-local/src"],
       "@deepseek-ai/dsh-deepseek-llm-api-extensions": ["./packages/llm/deepseek-llm-api-extensions/src"],
       "@deepseek-ai/dsh-deque": ["./packages/util/deque/src"],
-      "@deepseek-ai/dsh-document-render": ["./packages/document/document-render/src"],
-      "@deepseek-ai/dsh-document-render-libreoffice": ["./packages/document/document-render-libreoffice/src"],
+      "@deepseek-ai/dsh-document-convert": ["./packages/document/document-convert/src"],
+      "@deepseek-ai/dsh-document-convert-libreoffice": ["./packages/document/document-convert-libreoffice/src"],
       "@deepseek-ai/dsh-file-reference": ["./packages/context/file-reference/src"],
       "@deepseek-ai/dsh-file-reference-local": ["./packages/context/file-reference-local/src"],
       "@deepseek-ai/dsh-fs": ["./packages/fs/fs/src"],

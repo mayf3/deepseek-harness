@@ -73,7 +73,7 @@ dsh --profile web --no-open --port 8080
 <details>
 <summary>实现细节——点击展开</summary>
 
-此 bundle 由一个补丁和一个运行时胶水插件组成。存储栈与投影缓存来自 `dsh-base`；Web 叠加层的工作区和消息反馈条目消费共享的 `storageDomain` 服务。补丁重述 base 有意省略的界面专用值，插入 Web 专用宿主条目和浏览器插件列表，再将 Agent 层移到预设后面。胶水插件负责 dist 服务、信任采样、提示词段落、bash 变量和就绪通知。`document-render` 条目为宿主消费者挂载一个延迟创建引擎的 [Office 转换提供方](../../document/document-render-libreoffice/README.zh.md)，使用此 bundle 的 Desktop 组合也共享该提供方。
+此 bundle 由一个补丁和一个运行时胶水插件组成。存储栈与投影缓存来自 `dsh-base`；Web 叠加层的工作区和消息反馈条目消费共享的 `storageDomain` 服务。补丁重述 base 有意省略的界面专用值，插入 Web 专用宿主条目和浏览器插件列表，再将 Agent 层移到预设后面。胶水插件负责 dist 服务、信任采样、提示词段落、bash 变量和就绪通知。`document-convert` 条目为宿主消费者挂载一个延迟创建引擎的 [Office 转换提供方](../../document/document-convert-libreoffice/README.zh.md)，使用此 bundle 的 Desktop 组合也共享该提供方。
 
 ### patch 语义
 
