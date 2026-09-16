@@ -40,6 +40,8 @@ Electron 拥有 `.dsh/profiles/desktop` 保留 profile。[内置运行时决策]
 
 渲染进程使用 `nodeIntegration: false`、`contextIsolation: true` 和 `sandbox: true`。Preload 暴露类型化 RPC、生命周期、更新、locale 与桌面插件操作，而不暴露原始 `ipcRenderer`、文件系统访问、shell 命令或 pnpm 参数。Electron 根据应用 locale 选择类型化的中英文字典，并以英文作为 fallback；菜单、原生对话框与插件管理渲染进程使用这些由 locale 持有的文案。
 
+应用菜单以原生 About role 和分隔线开头。Electron 关于面板负责各平台的显示、无障碍支持和关闭行为；静态发布信息若使用自定义渲染进程，会重复承担这些职责。面板读取与更新器相同的发布标识 `app.getVersion()`，并隐藏独立的应用包构建号。图标使用打包的平台图案：Windows 读取独立 PNG 资源，macOS 使用应用图标。发布描述符未记录发布日期，因此面板不展示日期。菜单与面板输入由归属桌面端的预期输出 fixture 覆盖；原生外观仍需平台 GUI 验收。
+
 ## 文件系统布局
 
 ```text

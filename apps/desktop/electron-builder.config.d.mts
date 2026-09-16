@@ -14,7 +14,10 @@ export interface DesktopElectronBuilderConfig {
   ]
   readonly extraMetadata: { readonly dshDesktopAppId: string }
   readonly asarUnpack: readonly string[]
-  readonly extraResources: readonly [{ readonly from: string, readonly to: 'runtime' }]
+  readonly extraResources: readonly [
+    { readonly from: string, readonly to: 'runtime' },
+    { readonly from: string, readonly to: 'icon.png' },
+  ]
   readonly mac: {
     readonly identity: string | undefined
     readonly forceCodeSigning: boolean

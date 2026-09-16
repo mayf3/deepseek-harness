@@ -40,6 +40,8 @@ The browser Web UI, dsh backend, existing `dsh plugin` CLI, user npm, and user p
 
 The renderer uses `nodeIntegration: false`, `contextIsolation: true`, and `sandbox: true`. Preload exposes typed RPC, lifecycle, update, locale, and desktop-plugin actions rather than raw `ipcRenderer`, filesystem access, shell commands, or pnpm arguments. Electron selects a typed English or Chinese dictionary from its application locale and falls back to English; menus, native dialogs, and the plugin-management renderer use that locale-owned copy.
 
+The application menu starts with the native About role and a separator. Electron's About panel owns platform presentation, accessibility, and dismissal; a custom renderer would duplicate those responsibilities for static release information. The panel reads `app.getVersion()`, the same release identity as the updater, and suppresses a separate bundle build number. It uses the packaged platform icon, with a standalone PNG resource for Windows and the application icon on macOS. Release dates are absent because the release descriptor does not record them. Menu and panel inputs have an owner-local expected-output fixture; native appearance still requires platform GUI qualification.
+
 ## Filesystem layout
 
 ```text

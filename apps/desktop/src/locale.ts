@@ -2,6 +2,7 @@
 
 export const en = {
   application: 'Application',
+  aboutMenu: 'About DeepSeek Harness',
   startupFailed: 'DeepSeek Harness is unavailable',
   fatalSummary: 'The application could not start or stopped unexpectedly.',
   diagnosticTruncated: '… Error details shortened. The full diagnostic was written to the Electron console.',
@@ -107,6 +108,7 @@ export type DesktopMessages = { readonly [Key in keyof typeof en]: string }
 
 export const zh = {
   application: '应用',
+  aboutMenu: '关于 DeepSeek Harness',
   startupFailed: 'DeepSeek Harness 无法使用',
   fatalSummary: '应用无法启动或已意外停止。',
   diagnosticTruncated: '… 错误详情已截短，完整诊断已写入 Electron 控制台。',

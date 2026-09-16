@@ -645,9 +645,20 @@ async function main(): Promise<void> {
     void pluginWindow.loadURL(`${SCHEME}://shell/plugin-manager.html`)
   }
 
+  app.setAboutPanelOptions({
+    applicationName: 'DeepSeek Harness',
+    applicationVersion: app.getVersion(),
+    // The release has no separate build number; omit Electron's bundle version.
+    version: '',
+    copyright: '',
+    iconPath: development ? join(app.getAppPath(), 'resources', 'icon-windows.png')
+      : join(process.resourcesPath, 'icon.png'),
+  })
   Menu.setApplicationMenu(Menu.buildFromTemplate([{
     label: process.platform === 'darwin' ? app.name : messages.application,
     submenu: [
+      { label: messages.aboutMenu, role: 'about' },
+      { type: 'separator' },
       {
         label: messages.pluginsMenu,
         accelerator: 'CmdOrCtrl+,',

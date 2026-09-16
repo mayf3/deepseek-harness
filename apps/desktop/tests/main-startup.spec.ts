@@ -106,9 +106,10 @@ const harness = await vi.hoisted(async () => {
     isPackaged: true,
     name: 'Desktop test',
     whenReady: () => Promise.resolve(),
-    getLocale: () => 'en-US',
+    getLocale: (): string => 'en-US',
     getVersion: () => '1.0.0',
     getAppPath: () => 'desktop-test-app',
+    setAboutPanelOptions: vi.fn<(options: Electron.AboutPanelOptionsOptions) => void>(),
     requestSingleInstanceLock: () => true,
     exit: vi.fn(),
     relaunch: vi.fn(),
@@ -289,6 +290,25 @@ afterEach(async () => {
 })
 
 describe('desktop main startup', () => {
+  it.each([
+    ['darwin', true, 'en-US'],
+    ['darwin', false, 'zh-CN'],
+    ['win32', true, 'zh-CN'],
+    ['win32', false, 'en-US'],
+  ] as const)('offers the native About panel before other commands on %s (packaged=%s, locale=%s)', async (platform, packaged, locale) => {
+    vi.stubGlobal('process', { ...process, platform })
+    harness.app.isPackaged = packaged
+    vi.spyOn(harness.app, 'getLocale').mockReturnValue(locale)
+    await readyForUpdate()
+    const submenu = harness.menu.mock.calls[0]![0][0]!.submenu
+    if (!Array.isArray(submenu)) throw new Error('Application menu is missing')
+    const options = harness.app.setAboutPanelOptions.mock.calls[0]![0]
+    const expected = JSON.parse(readFileSync(new URL('./expected/about-panel.json', import.meta.url), 'utf8')) as Record<string, unknown>
+    expect({ menu: submenu.slice(0, 2), options: { ...options, iconPath: '<app icon>' } }).toEqual(expected[locale])
+    expect(options.iconPath).toBe(packaged ? join('desktop-test-resources', 'icon.png')
+      : join('desktop-test-app', 'resources', 'icon-windows.png'))
+  })
+
   it('shows one explained startup login before Host readiness and joins concurrent checks without reopening it', async () => {
     harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test',
       allowedPageOrigins: ['https://downloads.example.com'], intervalMs: 1000, jitter: 0 }
