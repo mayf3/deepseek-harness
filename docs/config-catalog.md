@@ -233,7 +233,7 @@ Source: [`packages/api/settings-controller/src/index.ts:36`](../packages/api/set
 
 ## `@deepseek-ai/dsh-api-terminal-controller`
 
-Requires: `subprocess` · `sandboxPolicy` · `sessionProjections` · `typert`
+Requires: `subprocess` · `sandboxPolicy` · `typert`
 
 ```ts config-catalog
 /** Deployment limits and an optional shell profile. */
@@ -272,7 +272,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/terminal-controller/src/index.ts:28`](../packages/api/terminal-controller/src/index.ts)
+Source: [`packages/api/terminal-controller/src/index.ts:26`](../packages/api/terminal-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-workspace-files"></a>
 
