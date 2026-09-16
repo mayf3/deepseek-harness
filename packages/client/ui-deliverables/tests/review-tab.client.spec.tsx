@@ -232,15 +232,22 @@ describe('ReviewTab', () => {
     expect(store.getSnapshot().byTab[TAB]?.split).toBe(true)
     const body = view.container.querySelector('[data-review-view]')
     expect(body?.getAttribute('data-review-view')).toBe('split')
+    expect(body?.hasAttribute('data-review-wrap')).toBe(false)
+    // Without wrapping each side is its own column, so a long line scrolls within its side.
+    const side = (name: string) => [...view.container.querySelectorAll(`[data-diff-side="${name}"] [data-diff-line]`)]
+    expect(side('left').map(line => line.getAttribute('data-diff-line'))).toEqual(['context', 'del', 'add', 'context', 'del', 'del'])
+    expect(side('left').map(line => line.textContent)).toEqual(['1a', '2b', '', '3d', '10x', '20z'])
+    expect(side('right').map(line => line.textContent)).toEqual(['1a', '2B', '3c', '4d', '11y', ''])
+    expect(view.getByRole('button', { name: en['review.splitAria'] }).getAttribute('aria-pressed')).toBe('true')
+    // Wrapped lines vary in height, so both sides share one row per pair.
+    fireEvent.click(view.getByRole('button', { name: en['review.wrapAria'] }))
+    expect(view.container.querySelector('[data-review-view]')?.hasAttribute('data-review-wrap')).toBe(true)
+    expect(view.container.querySelectorAll('[data-diff-side]')).toHaveLength(0)
     const rows = [...view.container.querySelectorAll('[data-diff-line]')]
     expect(rows.map(row => row.getAttribute('data-diff-line'))).toEqual(['context', 'del', 'add', 'context', 'del', 'del'])
     expect(rows[1]?.textContent).toBe('2b2B')
     expect(rows[2]?.textContent).toBe('3c')
     expect(rows[5]?.textContent).toBe('20z')
-    expect(view.getByRole('button', { name: en['review.splitAria'] }).getAttribute('aria-pressed')).toBe('true')
-    expect(body?.hasAttribute('data-review-wrap')).toBe(false)
-    fireEvent.click(view.getByRole('button', { name: en['review.wrapAria'] }))
-    expect(view.container.querySelector('[data-review-view]')?.hasAttribute('data-review-wrap')).toBe(true)
     expect(store.getSnapshot().byTab[TAB]).toMatchObject({ split: true, wrap: true })
   })
 

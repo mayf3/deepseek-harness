@@ -567,7 +567,7 @@ describe('ChangedFiles card', () => {
     expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 5)]).toBe('loading')
   })
 
-  it('summarizes the turn, folds after three rows, opens the review on each row, and opens the folder natively', () => {
+  it('summarizes the turn, folds after three rows, and opens the review from the header and each row', () => {
     const { props, openFile, view } = renderCard()
     const card = view.container.querySelector('[data-changed-files]')
     if (!(card instanceof HTMLElement)) throw new Error('changed-files card missing')
@@ -581,8 +581,8 @@ describe('ChangedFiles card', () => {
     fireEvent.click(within(card).getByRole('button', { name: 'View changes to config/feature-flags.json' }))
     expect(props.openChangesReview).toHaveBeenLastCalledWith({ sessionId: 'child-session', seq: 5, turn: 1 }, 1)
     expect(props.openChanged).not.toHaveBeenCalled()
-    fireEvent.click(within(card).getByRole('button', { name: 'Open the folder containing the changed files' }))
-    expect(props.openChanged).toHaveBeenLastCalledWith('child-session', 5, null)
+    fireEvent.click(within(card).getByRole('button', { name: 'Review this turn’s changes in the sidebar' }))
+    expect(props.openChangesReview).toHaveBeenLastCalledWith({ sessionId: 'child-session', seq: 5, turn: 1 }, 0)
     expect(openFile).not.toHaveBeenCalled()
     const expand = within(card).getByRole('button', { name: 'Show all 5 changed files' })
     expect(expand.getAttribute('aria-expanded')).toBe('false')
@@ -600,16 +600,17 @@ describe('ChangedFiles card', () => {
     expect(within(card).getAllByRole('listitem')).toHaveLength(3)
   })
 
-  it('still opens the review on each row and offers no folder action without a desktop', () => {
+  it('opens the review the same way without a desktop', () => {
     const controller = new PresentedOpenController()
     const { openFile, props, view } = renderCard(controller, zh)
     controller.host.set('error')
     view.rerender(<Deliverables {...props} matched={{ changes, presented: [] }} openFile={openFile} sessionId={SessionId('child-session')} t={makeTranslate(zh)} />)
-    expect(view.queryByRole('button', { name: '打开改动文件所在的文件夹' })).toBeNull()
+    expect(view.getByRole('button', { name: '在侧边栏查看本轮改动' })).toBeTruthy()
     controller.host.set({ name: 'server', available: false, fileManager: null })
     view.rerender(<Deliverables {...props} matched={{ changes, presented: [] }} openFile={openFile} sessionId={SessionId('child-session')} t={makeTranslate(zh)} />)
     expect(view.getByText('已编辑 11 个文件')).toBeTruthy()
-    expect(view.queryByRole('button', { name: '打开改动文件所在的文件夹' })).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: '在侧边栏查看本轮改动' }))
+    expect(props.openChangesReview).toHaveBeenLastCalledWith({ sessionId: 'child-session', seq: 5, turn: 1 }, 0)
     fireEvent.click(view.getByRole('button', { name: '查看 config/design-token 的改动' }))
     expect(props.openChangesReview).toHaveBeenLastCalledWith({ sessionId: 'child-session', seq: 5, turn: 1 }, 0)
     expect(openFile).not.toHaveBeenCalled()
@@ -617,34 +618,19 @@ describe('ChangedFiles card', () => {
     expect(view.getByRole('button', { name: '展开全部 5 个改动文件' }).textContent).toContain('全部 5 个文件')
   })
 
-  it('shows folder gesture states in place of the totals and keeps row counts through native opens', () => {
+  it('keeps every count in place whatever the native-open gestures of the review tab are doing', () => {
     const controller = new PresentedOpenController()
     controller.state.set({
       '/api/changes.open?sessionId=child-session&seq=5&index=0': 'opening',
       '/api/changes.open?sessionId=child-session&seq=5&index=1': 'error',
-      '/api/changes.open?sessionId=child-session&seq=5': 'opened',
     })
     const { view } = renderCard(controller)
-    // Row gestures belong to the comparison tab; the card keeps every row's counts.
+    // Native-open gestures belong to the review tab; the card shows counts only.
     expect(view.queryByText(en['presented.opening'])).toBeNull()
     expect(view.queryByText(en['presented.error'])).toBeNull()
     expect(view.getByText('+42')).toBeTruthy()
     expect(view.getByText('+143')).toBeTruthy()
-    // A completed folder open leaves the summed counts in place.
     expect(view.getByText('+1,232')).toBeTruthy()
-    view.unmount()
-    controller.state.set({ '/api/changes.open?sessionId=child-session&seq=5': 'opening' })
-    const { view: pending } = renderCard(controller)
-    expect(pending.getByText(en['changes.folderOpening'])).toBeTruthy()
-    expect((pending.getByRole('button', { name: 'Open the folder containing the changed files' }) as HTMLButtonElement).disabled).toBe(true)
-    pending.unmount()
-    controller.state.set({ '/api/changes.open?sessionId=child-session&seq=5': 'error' })
-    const { view: failed } = renderCard(controller)
-    expect(failed.getByText(en['changes.folderError']).closest('[data-error]')).toBeTruthy()
-    failed.unmount()
-    controller.state.set({ '/api/changes.open?sessionId=child-session&seq=5': 'nativeUnavailable' })
-    const { view: unmapped } = renderCard(controller)
-    expect(unmapped.getByText(en['changes.folderError']).closest('[data-error]')).toBeTruthy()
   })
 
   it('renders without a fold for three files or fewer and beside delivery cards', () => {
@@ -768,8 +754,8 @@ describe('plugin registration', () => {
     expect(face.hooks.changesSummary.getSnapshot()).toEqual({})
     await face.openPresented(SessionId('child-session'), 2, 0)
     expect(face.hooks.presentedOpen.getSnapshot()['/api/present.open?sessionId=child-session&seq=2&index=0']).toBe('opened')
-    await face.openChanged(SessionId('child-session'), 5, null)
-    expect(face.hooks.presentedOpen.getSnapshot()['/api/changes.open?sessionId=child-session&seq=5']).toBe('opened')
+    await face.openChanged(SessionId('child-session'), 5, 0)
+    expect(face.hooks.presentedOpen.getSnapshot()['/api/changes.open?sessionId=child-session&seq=5&index=0']).toBe('opened')
     face.openChangesReview({ sessionId: SessionId('child-session'), seq: 5, turn: 3 }, 1)
     expect(openResource).toHaveBeenCalledWith('dsh-resource://changes-review/session/child-session/5/3', { params: { index: 1 } })
     expect((registered as { title(address: string): string }).title('dsh-resource://changes-review/session/child-session/5/3')).toBe('Review · turn 3')

@@ -110,8 +110,8 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     expect(await card.getByText('已编辑 4 个文件', { exact: true }).count()).toBe(1)
     expect(await card.getByRole('listitem').count()).toBe(3)
     expect(await card.getByRole('button', { name: '展开全部 4 个改动文件' }).count()).toBe(1)
-    // Without a Host desktop the header is a label; every row opens its comparison in the Sidebar.
-    expect(await card.getByRole('button', { name: '打开改动文件所在的文件夹' }).count()).toBe(0)
+    // The header and every row open the turn's review in the Sidebar, with or without a Host desktop.
+    expect(await card.getByRole('button', { name: '在侧边栏查看本轮改动' }).count()).toBe(1)
     expect(await card.getByRole('button', { name: '查看 notes.txt 的改动' }).count()).toBe(1)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
@@ -122,8 +122,11 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     const column = page.locator('[data-rightbar-col]')
     const drawn = (root: ReturnType<typeof column.locator>) =>
       root.locator('[data-diff-line]').evaluateAll(lines => lines.map(line => `${line.getAttribute('data-diff-line')}:${line.textContent}`))
-    await card.getByRole('button', { name: '查看 notes.txt 的改动' }).click()
     const review = column.locator('[data-changes-review]')
+    // The header lands on the first listed file; a row lands on its own.
+    await card.getByRole('button', { name: '在侧边栏查看本轮改动' }).click()
+    await review.locator('[data-review-file="app.local"]').waitFor({ state: 'visible' })
+    await card.getByRole('button', { name: '查看 notes.txt 的改动' }).click()
     await review.locator('[data-review-file="notes.txt"]').waitFor({ state: 'visible' })
     expect(await column.locator('[data-dockkit-tab]').filter({ hasText: '第 1 轮改动' }).count()).toBe(1)
     await expect.poll(() => drawn(review)).toEqual(['context:11 start', 'add:2+done'])
@@ -139,9 +142,11 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     expect(await column.locator('[data-dockkit-tab]').filter({ hasText: '第 1 轮改动' }).count()).toBe(1)
     await review.getByRole('button', { name: '左右对比' }).click()
     await review.locator('[data-review-view="split"]').waitFor({ state: 'visible' })
-    await expect.poll(() => drawn(review)).toEqual(['del:1# 示例项目1# 项目说明', 'context:22', 'context:3一个用于演示的仓库。3一个用于演示的仓库。'])
+    await expect.poll(() => drawn(review.locator('[data-diff-side="left"]'))).toEqual(['del:1# 示例项目', 'context:2', 'context:3一个用于演示的仓库。'])
+    expect(await drawn(review.locator('[data-diff-side="right"]'))).toEqual(['del:1# 项目说明', 'context:2', 'context:3一个用于演示的仓库。'])
     await review.getByRole('button', { name: '自动换行' }).click()
-    expect(await review.locator('[data-review-view][data-review-wrap]').count()).toBe(1)
+    await review.locator('[data-review-view][data-review-wrap]').waitFor({ state: 'visible' })
+    await expect.poll(() => drawn(review)).toEqual(['del:1# 示例项目1# 项目说明', 'context:22', 'context:3一个用于演示的仓库。3一个用于演示的仓库。'])
     // No desktop, so the tools offer the sidebar file but no native open.
     expect(await review.locator('[data-review-tool="open-file"]').count()).toBe(1)
     expect(await review.locator('[data-review-tool="open-native"]').count()).toBe(0)

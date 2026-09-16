@@ -52,7 +52,7 @@ export function selectDeliverables(owner: TurnTailOwnerProps): DeliverablesMatch
  * @returns the closing turn's file rows.
  */
 export function Deliverables({
-  matched, openFile, t, sessionId, useSessions, openPresented, openChanged, openChangesReview, usePresentedOpen, usePresentedHost,
+  matched, openFile, t, sessionId, useSessions, openPresented, openChangesReview, usePresentedOpen, usePresentedHost,
   useChangesSummary, reloadPresentedHost, loadChangesSummary,
 }: Pick<TurnTailOwnerProps, 'openFile'> & {
   matched: DeliverablesMatch
@@ -77,10 +77,8 @@ export function Deliverables({
     if (host === null) void reloadPresentedHost()
   }, [host, reloadPresentedHost])
   return <>
-    {changes !== null && <ChangedFiles changes={changes} cwd={cwd} sessionId={sessionId}
-      host={host === 'error' ? null : host} phases={states} t={t}
-      openReview={(index) => { openChangesReview({ sessionId, seq: changes.seq, turn: changes.turn }, index) }}
-      onOpen={(index) => { void openChanged(sessionId, changes.seq, index) }} />}
+    {changes !== null && <ChangedFiles changes={changes} cwd={cwd} t={t}
+      openReview={(index) => { openChangesReview({ sessionId, seq: changes.seq, turn: changes.turn }, index) }} />}
     {matched.presented.length > 0 && <div
       className={css.root}
       data-after-changes={changes !== null || undefined}

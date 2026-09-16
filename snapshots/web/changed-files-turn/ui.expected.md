@@ -102,7 +102,7 @@
   - code:
     - button "在侧边栏打开 notes.txt": notes.txt
   - text: 的追加则完全走 bash。
-- text: 已编辑 4 个文件 +6 -1
+- button "在侧边栏查看本轮改动": 已编辑 4 个文件 +6 -1
 - list:
   - listitem:
     - button "查看 app.local 的改动": app.local +1 -0

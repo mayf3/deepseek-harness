@@ -261,6 +261,46 @@ function FileBody({ state, split, wrap, retry, t }: {
   return <TextDiff diff={state} split={split} wrap={wrap} t={t} />
 }
 
+/** The kind a paired row carries: a deletion or addition on either side, otherwise context. */
+function splitRowKind(row: SplitRow): DiffRow['kind'] {
+  return row.left?.kind === 'del' ? 'del' : row.right?.kind === 'add' ? 'add' : 'context'
+}
+
+function hunkHeader(hunk: WorkspaceDiffHunk): string {
+  return `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`
+}
+
+/**
+ * The side-by-side view without wrapping: two columns that scroll sideways on
+ * their own, so a long line on one side never runs under the other. Every
+ * line is one fixed-height row, which keeps the sides aligned.
+ */
+function SplitColumns({ hunks }: { hunks: readonly WorkspaceDiffHunk[] }): ReactNode {
+  const paired = useMemo(() => hunks.map(hunk => ({ header: hunkHeader(hunk), rows: splitRows(hunk) })), [hunks])
+  return (
+    <div className={css.columns}>
+      {(['left', 'right'] as const).map(side => (
+        <div key={side} className={css.column} data-diff-side={side}>
+          {paired.map((hunk, position) => (
+            <section key={position} className={css.hunk}>
+              <div className={css.hunkHeader}>{hunk.header}</div>
+              {hunk.rows.map((row, at) => {
+                const cell = row[side]
+                return (
+                  <div key={at} className={`${css.sideLine} ${cell === undefined ? css.empty : css[cell.kind]}`} data-diff-line={splitRowKind(row)}>
+                    <span className={css.number}>{cell?.no ?? ''}</span>
+                    <span className={css.text}>{cell?.text ?? ''}</span>
+                  </div>
+                )
+              })}
+            </section>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /** The hunks of a text comparison with their line numbers, unified or side by side. */
 function TextDiff({ diff, split, wrap, t }: { diff: Extract<ChangesDiff, { kind: 'text' }>; split: boolean; wrap: boolean } & PropsLocale<typeof NS>): ReactNode {
   const note = noteOf(diff)
@@ -270,11 +310,11 @@ function TextDiff({ diff, split, wrap, t }: { diff: Extract<ChangesDiff, { kind:
       {note !== undefined && <p className={css.note}>{t(note)}</p>}
       {diff.coarse && <p className={css.note} data-diff-coarse>{t('diff.coarse')}</p>}
       {truncated && <p className={css.note} data-diff-truncated>{t('diff.truncated', { count: String(MAX_RENDERED_LINES) })}</p>}
-      {hunks.map((hunk, position) => (
+      {split && !wrap ? <SplitColumns hunks={hunks} /> : hunks.map((hunk, position) => (
         <section key={position} className={css.hunk}>
-          <div className={css.hunkHeader}>{`@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`}</div>
+          <div className={css.hunkHeader}>{hunkHeader(hunk)}</div>
           {split ? splitRows(hunk).map((row, at) => (
-            <div key={at} className={css.splitLine} data-diff-line={row.left?.kind === 'del' ? 'del' : row.right?.kind === 'add' ? 'add' : 'context'}>
+            <div key={at} className={css.splitLine} data-diff-line={splitRowKind(row)}>
               <span className={`${css.cell} ${row.left === undefined ? css.empty : css[row.left.kind]}`}>
                 <span className={css.number}>{row.left?.no ?? ''}</span>
                 <span className={css.text}>{row.left?.text ?? ''}</span>

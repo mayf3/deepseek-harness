@@ -1,7 +1,7 @@
 /** The change summary route and the changed-file and common-folder native opens over the Host-served summaries. */
 import { mkdtemp, rm, writeFile, mkdir, realpath, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import { WorkspaceFiles } from '@deepseek-ai/dsh-api-workspace-files'
 import { Context } from '@deepseek-ai/cordis'
@@ -12,7 +12,7 @@ import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import type { SessionEventReadRequest } from '@deepseek-ai/dsh-session-query'
 import type { WorkspaceChangedFile, WorkspaceChangesSummary, WorkspaceFileDiff } from '@deepseek-ai/dsh-workspace-changes/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { commonChangedFolder, registerPresentOpen } from '../src/present-open.ts'
+import { registerPresentOpen } from '../src/present-open.ts'
 import {
   changedFileUrl, changesDiffUrl, changesSummaryUrl, CHANGES_DIFF_PATH, CHANGES_OPEN_PATH, CHANGED_FILES_PATH, isChangedFile, isChangesDiff,
   isChangesEvent, isChangesSummary,
@@ -133,7 +133,6 @@ describe('changed files native open route', () => {
   it('opens a listed file inside or outside the workspace with its verified Host path', async () => {
     const { cwd, open, opener, outside } = await fixture()
     expect(changedFileUrl(SessionId('owner'), 9, 0)).toBe(`${CHANGES_OPEN_PATH}?sessionId=owner&seq=9&index=0`)
-    expect(changedFileUrl(SessionId('owner'), 9, null)).toBe(`${CHANGES_OPEN_PATH}?sessionId=owner&seq=9`)
     const response = await open()
     expect(response.status).toBe(204)
     expect(response.headers.get('cache-control')).toBe('no-store')
@@ -142,20 +141,7 @@ describe('changed files native open route', () => {
     expect(opener.mock.lastCall?.[0].path).toBe(await realpath(outside))
   })
 
-  it('opens the deepest folder containing the workspace files, falling back to the workspace', async () => {
-    const { cwd, open, opener, data } = await fixture()
-    expect((await open('?sessionId=owner&seq=9')).status).toBe(204)
-    expect(opener).toHaveBeenLastCalledWith({ path: await realpath(join(cwd, 'src')) }, expect.any(AbortSignal))
-    data.files = [changed('../escaped.ts', '../escaped.ts'), changed('/etc/hosts', '/etc/hosts')]
-    expect((await open('?sessionId=owner&seq=9')).status).toBe(204)
-    expect(opener.mock.lastCall?.[0].path).toBe(await realpath(cwd))
-    const w = resolve('/w')
-    expect(commonChangedFolder(w, [changed('a/b/c.ts'), changed('a/d.ts'), changed(resolve('/x/y.ts'))])).toBe(resolve(w, 'a'))
-    expect(commonChangedFolder(w, [changed(resolve('/x/y.ts'))])).toBe(w)
-    expect(commonChangedFolder(w, [changed('../up.ts')])).toBe(w)
-  })
-
-  it.each(['', '?seq=9', '?sessionId=owner', '?sessionId=owner&seq=9&index=-1', '?sessionId=owner&seq=9&index=1.5', '?sessionId=owner&seq=x'])(
+  it.each(['', '?seq=9', '?sessionId=owner', '?sessionId=owner&seq=9', '?sessionId=owner&seq=9&index=-1', '?sessionId=owner&seq=9&index=1.5', '?sessionId=owner&seq=x'])(
     'rejects invalid coordinates before reading: %s', async (query) => {
       const { open, readEvent } = await fixture()
       expect((await open(query)).status).toBe(400)
@@ -170,8 +156,6 @@ describe('changed files native open route', () => {
     expect(readEvent).not.toHaveBeenCalled()
     await unlink(join(cwd, 'src', 'lib', 'a.ts'))
     expect((await open()).status).toBe(404)
-    await rm(join(cwd, 'src'), { recursive: true })
-    expect((await open('?sessionId=owner&seq=9')).status).toBe(404)
     expect(opener).not.toHaveBeenCalled()
   })
 
@@ -182,7 +166,6 @@ describe('changed files native open route', () => {
     desktop.mockRestore()
     const mapping = vi.spyOn(ctx.fs, 'processPathFromHostPath').mockReturnValue(undefined)
     expect((await open()).status).toBe(422)
-    expect((await open('?sessionId=owner&seq=9')).status).toBe(422)
     mapping.mockRestore()
     opener.mockRejectedValueOnce(new Error('/private/host/path'))
     const failed = await open()

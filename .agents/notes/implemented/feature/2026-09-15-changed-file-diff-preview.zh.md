@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-卡片的每一行在右侧 Sidebar 打开本轮的 `changes-review` tab 并选中该文件：每轮一个 tab，由当前查看的 Session 和宣告事件的序号定址，头部有一个列出所有记录文件的文件选择器，一次显示一个文件在轮次开始与结束时的对比。Host 侧的 [workspace-changes](../../../../packages/deliverables/workspace-changes/README.zh.md) 记录器通过 `workspaceChanges.diff(sessionId, seq, index, signal)` 提供每个对比；[产出物插件](../../../../packages/client/ui-deliverables/README.zh.md)注册该 tab 类型，把行的文件下标作为导航参数传入，并通过经过认证的路由读取摘要和对比。头部的工具在单栏和左右视图之间切换、切换自动换行、在 Sidebar 中打开当前整个文件，有 Host 桌面时用默认应用打开它；视图与换行的选择按 tab 保留。有没有桌面，行都打开 review，先前行级别的原生打开移进 tab，卡片只保留一种行为。
+卡片的每一行在右侧 Sidebar 打开本轮的 `changes-review` tab 并选中该文件，卡片头部则在第一个文件上打开它：每轮一个 tab，由当前查看的 Session 和宣告事件的序号定址，头部有一个列出所有记录文件的文件选择器，一次显示一个文件在轮次开始与结束时的对比。Host 侧的 [workspace-changes](../../../../packages/deliverables/workspace-changes/README.zh.md) 记录器通过 `workspaceChanges.diff(sessionId, seq, index, signal)` 提供每个对比；[产出物插件](../../../../packages/client/ui-deliverables/README.zh.md)注册该 tab 类型，把行的文件下标作为导航参数传入，并通过经过认证的路由读取摘要和对比。头部的工具在单栏和左右视图之间切换、切换自动换行、在 Sidebar 中打开当前整个文件，有 Host 桌面时用默认应用打开它；视图与换行的选择按 tab 保留。有没有桌面，行和头部都打开 review，先前行级别的原生打开和头部的打开文件夹都移进 tab，卡片只保留一种行为。
 
 git 覆盖不到的文件按 Codex 的 turn diff tracker 对比其 `apply_patch` 编辑的方式对比：用整文件副本，不用 hunk。在 `write`、`edit` 或有修改作用的 `str_replace_editor` 调用运行之前，记录器本来就要等待基线快照的 `tools/pre-execute` 步骤把所指文件复制到 Session 临时目录里快照对象旁边，每轮每个路径一次；轮次结束时再复制一次该路径。副本按其字节的 SHA-1 命名，相同内容只存一份，且不需要 git。快照覆盖到的路径保留 git 的行数；其余每个被捕获的路径由两份副本的逐行对比列出，反复编辑的行只计一次，文件工具编辑之后的 shell 改动也包含在内。记录器不再读取持久化的 hunk 和由参数推出的 hunk。
 

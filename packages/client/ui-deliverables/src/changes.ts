@@ -8,7 +8,7 @@ export const CHANGED_FILES_PATH = '/api/changes.summary'
 /** Authenticated GET route serving one listed file's turn-start and turn-end comparison while its Session lives. */
 export const CHANGES_DIFF_PATH = '/api/changes.diff'
 
-/** Authenticated POST route for opening a changed file, or the changed files' common folder, on the Host desktop. */
+/** Authenticated POST route for opening a changed file on the Host desktop. */
 export const CHANGES_OPEN_PATH = '/api/changes.open'
 
 /** Resource-address prefix of a turn's review tab in the right Sidebar. */
@@ -112,16 +112,14 @@ export function changesDiffUrl(sessionId: SessionId, seq: number, index: number)
 }
 
 /**
- * Build authenticated coordinates for a changed file or the changed files' common folder.
+ * Build authenticated coordinates for a changed file's native open.
  * @param sessionId - owning Session.
  * @param seq - workspace/changes event sequence.
- * @param index - original index in the summary's files array, or null for the common folder.
+ * @param index - original index in the summary's files array.
  * @returns same-origin action URL.
  */
-export function changedFileUrl(sessionId: SessionId, seq: number, index: number | null): string {
-  const query = new URLSearchParams({ sessionId, seq: String(seq) })
-  if (index !== null) query.set('index', String(index))
-  return `${CHANGES_OPEN_PATH}?${query}`
+export function changedFileUrl(sessionId: SessionId, seq: number, index: number): string {
+  return `${CHANGES_OPEN_PATH}?${new URLSearchParams({ sessionId, seq: String(seq), index: String(index) })}`
 }
 
 /**

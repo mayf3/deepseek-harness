@@ -1,13 +1,10 @@
-/** The changed-files card: a folder-opening header, per-file line counts opening the turn's review on that file, and a three-row fold. */
+/** The changed-files card: a header and per-file rows that open the turn's review, and a three-row fold. */
 import { useState } from 'react'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { IconChevronDownOutline14, IconChevronUpOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { changedFileUrl, type ChangesSummary } from '../changes.ts'
-import type { PresentedHost } from '../presented.ts'
+import type { ChangesSummary } from '../changes.ts'
 import { IconCodeBracketsOutline16 } from './icons.tsx'
-import type { PresentedOpenPhase } from './present-open.ts'
 import type { NS } from './locales.ts'
 import css from './ChangedFiles.module.css'
 
@@ -15,20 +12,6 @@ import css from './ChangedFiles.module.css'
 const COLLAPSED_ROWS = 3
 
 const GROUPED = new Intl.NumberFormat('en-US')
-
-/**
- * Folder gesture state worth showing in place of the totals: pending, or
- * failed. A completed open shows the totals again. The card never reveals, so
- * only open phases occur.
- */
-function gesture(phase: PresentedOpenPhase | undefined): { key: 'presented.opening' | 'presented.error' | 'presented.nativeUnavailable'; failed: boolean } | undefined {
-  switch (phase) {
-    case 'opening': return { key: 'presented.opening', failed: false }
-    case 'error': return { key: 'presented.error', failed: true }
-    case 'nativeUnavailable': return { key: 'presented.nativeUnavailable', failed: true }
-    default: return undefined
-  }
-}
 
 /** Added and deleted line counts in the card's colors. */
 function Counts({ added, deleted, t }: { added: number; deleted: number } & PropsLocale<typeof NS>) {
@@ -39,44 +22,29 @@ function Counts({ added, deleted, t }: { added: number; deleted: number } & Prop
 }
 
 /**
- * Render one turn's changed files. Each row opens the turn's review in the
- * right Sidebar on that file; the header opens the files' common folder only
- * with a Host desktop.
- * @param props - the recorded summary, Host capabilities, folder gesture status, openers, and localized copy.
+ * Render one turn's changed files. The header opens the turn's review in the
+ * right Sidebar on its first file; each row opens it on that row's file.
+ * @param props - the recorded summary, the review opener, and localized copy.
  * @returns the card.
  */
-export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, openReview, t }: {
+export function ChangedFiles({ changes, cwd, openReview, t }: {
   /** The served summary with the sequence of the event that announced it. */
   changes: Pick<ChangesSummary, 'files' | 'total' | 'added' | 'deleted'> & { seq: number }
   cwd: string | undefined
-  sessionId: SessionId
-  host: PresentedHost | null
-  phases: Record<string, PresentedOpenPhase | undefined>
-  onOpen: (index: number | null) => void
   /** Open the turn's review on the file at an original summary index. */
   openReview: (index: number) => void
 } & PropsLocale<typeof NS>) {
   const [expanded, setExpanded] = useState(false)
-  const native = host !== null && host.available
   const foldable = changes.files.length > COLLAPSED_ROWS
   const rows = foldable && !expanded ? changes.files.slice(0, COLLAPSED_ROWS) : changes.files
-  const folder = gesture(phases[changedFileUrl(sessionId, changes.seq, null)])
-  const summary = <>
-    <span className={css.tile}><IconCodeBracketsOutline16 size={18} /></span>
-    <span className={css.titles}>
-      <span className={css.title}>{t('changes.title', { count: String(changes.total) })}</span>
-      <span className={css.stat} role={folder === undefined ? undefined : 'status'} data-error={folder?.failed || undefined}>
-        {folder === undefined
-          ? <Counts t={t} added={changes.added} deleted={changes.deleted} />
-          : t(folder.failed ? 'changes.folderError' : 'changes.folderOpening')}
-      </span>
-    </span>
-  </>
   return <div className={css.card} data-changed-files>
-    {native
-      ? <button type="button" className={css.header} aria-label={t('changes.openFolder')}
-        disabled={folder !== undefined && !folder.failed} onClick={() => { onOpen(null) }}>{summary}</button>
-      : <div className={css.header}>{summary}</div>}
+    <button type="button" className={css.header} aria-label={t('changes.openReview')} onClick={() => { openReview(0) }}>
+      <span className={css.tile}><IconCodeBracketsOutline16 size={18} /></span>
+      <span className={css.titles}>
+        <span className={css.title}>{t('changes.title', { count: String(changes.total) })}</span>
+        <span className={css.stat}><Counts t={t} added={changes.added} deleted={changes.deleted} /></span>
+      </span>
+    </button>
     <ul className={css.list}>
       {rows.map((file, index) => (
         <li key={file.display}>
