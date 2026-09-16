@@ -1494,7 +1494,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Current profile facts; scheduling and mutation belong to their callers.',
     methods: [
       {
-        signature: 'readonly packageManager?: ProfilePackageManager',
+        signature: 'readonly packageManager?: ProfilePnpmInvocation',
         description: 'Packaged applications supply their bundled runtime instead of a PATH executable.',
         parameters: [],
       },
@@ -5179,8 +5179,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n    info?: ToolErrorInfo;\n} | {\n    kind: \'cancel\';\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
   },
   {
-    name: 'ProfilePackageManager',
-    declaration: 'export interface ProfilePackageManager {\n    readonly command: string;\n    readonly args: readonly string[];\n    readonly env: Readonly<Record<string, string>>;\n}',
+    name: 'ProfilePnpmInvocation',
+    declaration: 'export interface ProfilePnpmInvocation {\n    readonly command: string;\n    readonly args: readonly string[];\n    readonly env: Readonly<Record<string, string>>;\n}',
   },
   {
     name: 'ProjectionChangeListener',

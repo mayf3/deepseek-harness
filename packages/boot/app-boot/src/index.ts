@@ -17,7 +17,7 @@ import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '
 import Group from '@deepseek-ai/cordis-plugin-group'
 import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-export { readProfilePatches, resolveTelemetryPatch, type ProfileContext, type ProfilePackageManager } from './profile-context.ts'
+export { readProfilePatches, resolveTelemetryPatch, type ProfileContext, type ProfilePnpmInvocation } from './profile-context.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
 export {
