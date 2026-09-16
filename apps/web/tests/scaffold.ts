@@ -1255,12 +1255,7 @@ export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, i
   }).join('\n')
 }
 
-/**
- * Parse a committed web seed fixture through the replay reader.
- * @param fixtureText - session JSONL fixture contents.
- * @returns the current header line, parsed header, and logical events.
- */
-/** Give a migrated fixture stream positive relative timing before its final wall-clock rebase. */
+/** Give reconstructed V0/V1 chunk streams positive intervals before the final wall-clock rebase. */
 function spreadMigratedSeedStream(
   stream: SessionEvent<'assistant/message'>['data']['stream'],
 ): SessionEvent<'assistant/message'>['data']['stream'] {
@@ -1277,6 +1272,12 @@ function spreadMigratedSeedStream(
   })
 }
 
+/**
+ * Parse a committed web seed fixture through the replay reader.
+ * Embedded streams retain their recorded timing; V0/V1 chunk streams receive positive relative intervals.
+ * @param fixtureText - session JSONL fixture contents.
+ * @returns the current header line, parsed header, and logical events.
+ */
 export function parseSeedFixture(fixtureText: string): {
   headerLine: string
   header: Record<string, unknown>
@@ -1291,7 +1292,7 @@ export function parseSeedFixture(fixtureText: string): {
   const header = JSON.parse(headerLine) as Record<string, unknown>
   if (header.type !== 'session') throw new Error('seed fixture must start with a session header')
   const events = parseSessionLog(current).map((event) => {
-    if (sourceHeader.version === SESSION_FORMAT_VERSION) return event
+    if (sourceHeader.version !== 0 && sourceHeader.version !== 1) return event
     if (event.type === 'assistant/message') {
       return { ...event, data: { ...event.data, stream: spreadMigratedSeedStream(event.data.stream) } }
     }

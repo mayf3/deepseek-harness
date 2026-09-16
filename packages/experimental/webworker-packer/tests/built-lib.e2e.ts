@@ -76,6 +76,7 @@ it('loads both tarballs through plain Node and mounts their base image and overl
     import * as packer from '@deepseek-ai/dsh-experimental-webworker-packer'
     import * as runtime from '@deepseek-ai/dsh-experimental-webworker-runtime'
     import * as client from '@deepseek-ai/dsh-experimental-webworker-runtime/client'
+    import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
     for (const name of ['webworker-packer', 'webworker-runtime']) {
       assert.equal(import.meta.resolve('@deepseek-ai/dsh-experimental-' + name),
         new URL('./node_modules/@deepseek-ai/dsh-experimental-' + name + '/lib/index.js', import.meta.url).href)
@@ -93,6 +94,14 @@ it('loads both tarballs through plain Node and mounts their base image and overl
     const overlay = packer.packVfsOverlay([{ mount: 'workspace', directory: fileURLToPath(new URL('./overlay', import.meta.url)) }])
     runtime.loadVfsOverlay(await runtime.inflateImage(overlay.image, 'packed overlay'), '/dsh', vfs)
     assert.equal(vfs.readFileSync('/dsh/workspace/hello.txt', 'utf8'), 'packed worker pair\\n')
+    mkdirSync('home/sessions/project/preview', { recursive: true })
+    const historical = JSON.stringify({ type: 'session', version: 3, id: 'preview', createdAt: 1, isSeeded: false, delegationDepth: 0 }) + '\\n'
+    writeFileSync('home/sessions/project/preview/session.v3.jsonl', historical)
+    const prepared = packer.packPreviewFixture([{ mount: 'home', directory: fileURLToPath(new URL('./home', import.meta.url)) }])
+    runtime.loadVfsOverlay(await runtime.inflateImage(prepared.image, 'prepared preview'), '/dsh', vfs)
+    assert.equal(vfs.readFileSync('/dsh/home/sessions/project/preview/session.v3.jsonl', 'utf8'), historical)
+    const current = JSON.parse(vfs.readFileSync('/dsh/home/sessions/project/preview/session.v' + sessionFormatCatalog.currentVersion + '.jsonl', 'utf8'))
+    assert.equal(current.version, sessionFormatCatalog.currentVersion)
     console.log('packed image and overlay mounted')
   `
   await writeFile(join(root, 'consumer.mjs'), script)

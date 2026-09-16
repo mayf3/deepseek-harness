@@ -99,6 +99,8 @@ Current encode 以单条 record 为单位。Provider 在主线程每个 slice �
 
 发布的 `lib/worker.cjs` 将 JavaScript workspace 依赖一起打包，使每个新 verifier 无需解析并编译它们的运行时模块图。Worker 只通过普通 request/result 消息通信，与 host 不共享 service 或 class identity，因此可以这样处理。Host build 应用现有 TypeScript 与 Typert 转换；Client pass 跳过这个 Node-only package，不会用未经转换的源代码覆盖 worker。Native add-on 保持 external。Verification、scheduler admission、termination 与 durable publication 仍在 writable open 返回前完成。Built-worker 冒烟测试把 package manifest 与 worker 复制到隔离的临时 package，移除环境中的模块搜索路径，接受有效 generation，并拒绝错误的 event count。
 
+[浏览器 preview 打包器](../../../../packages/experimental/webworker-packer/README.zh.md)在 Node 中为随包 Session 数据准备当前代际后继。浏览器 host 未实现 `node:worker_threads`，因此打包阶段的准备同时保留不可变 fixture 代际与运行时 JSONL 的 Worker 校验要求。
+
 Preparation 会把 cancellation 传给 source read，并在现有的约 500 ms Decode yield 边界观察它。`publish()` 一旦开始，encode、Worker verification 与 publication 不接收 caller cancellation，并运行到终态；write open 会在之后再次检查 caller signal。已经发布的 generation 绝不会回滚。
 
 Stage pipeline 终止于一份 prepared current artifact。[历史 Session 只读迁移准备](2026-09-05-read-only-session-migration-preparation.zh.md)定义 read open 如何立即消费该 artifact，以及 write open 如何在返回 append 权限前完成 encode、verification 与 publication。
