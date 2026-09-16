@@ -54,11 +54,12 @@
           - text: 最大输出 token 数
           - textbox "最大输出 token 数 1":
             - /placeholder: 256K
-          - text: 图片输入
-          - combobox "图片输入 1":
-            - option "默认（仅文本）"
-            - option "支持" [selected]
-            - option "不支持"
+          - group "输入类型 1":
+            - text: 输入类型
+            - checkbox "文本" [checked]
+            - text: 文本
+            - checkbox "图片" [checked]
+            - text: 图片
           - textbox "模型 ID 2":
             - /placeholder: 模型 ID
             - text: deepseek-v4-pro
