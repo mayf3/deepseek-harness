@@ -86,6 +86,23 @@ Workspace development runs the current CLI and private Desktop Host packages und
 
 ## Package
 
+<a id="release-versions"></a>
+
+### Release versions
+
+Record the current dsh version as the base before changing any manifests. A production Desktop release uses that exact version, including any `alpha`, `beta`, or `rc` identifiers. A test release preserves the complete prerelease base and appends `.YYYYMMDD.index`; a stable base uses `-test.YYYYMMDD.index` instead.
+
+| dsh base | Production Desktop | Test Desktop example |
+|---|---|---|
+| `0.1.6-alpha.1` | `0.1.6-alpha.1` | `0.1.6-alpha.1.20260916.1` |
+| `0.1.6-beta.2` | `0.1.6-beta.2` | `0.1.6-beta.2.20260916.1` |
+| `0.1.6-rc.3` | `0.1.6-rc.3` | `0.1.6-rc.3.20260916.1` |
+| `0.1.6` | `0.1.6` | `0.1.6-test.20260916.1` |
+
+Use the actual creation date in Asia/Shanghai. For each base and date, start the index at 1 and increment after checking retained release records and published objects; never reuse a published version. Derive once from the recorded base, not from a manifest already carrying a test suffix. The final root, Desktop, bundled dsh, private Desktop Host, and other release-family manifests must all carry the same derived version. Test distribution does not publish the corresponding unsuffixed base.
+
+Version derivation does not change the fixed update channel or `nightly.yml` / `nightly-mac.yml` filenames. SemVer orders `0.1.6-alpha.1 < 0.1.6-alpha.1.20260916.1 < 0.1.6-alpha.2`, and a stable base's test version precedes that stable release. Clients only accept a greater version: replacing a feed cannot move an installed higher version to a lower corrected version. Such clients need manual installation; keep automatic downgrade disabled. The [version decision](../../.agents/notes/implemented/process/2026-09-16-desktop-release-version-derivation.md) explains why the channel does not supply the prerelease identifier.
+
 Packaging, upload, and manual macOS signature verification read `apps/desktop/.env.windows` or `.env.macos`, selected by target platform. Copy the [Windows template](.env.windows.example) or [macOS template](.env.macos.example) and fill in the local settings; Git ignores both local files, and packaged artifacts exclude them. Release fields come only from the target file, without fallback to system or shell variables; `PATH`, proxies, and build-tool settings remain inherited. Files use UTF-8 with optional BOM; relative certificate, SignTool, Apple API key, and keychain paths resolve from `apps/desktop`, values are not shell-expanded, and passwords containing `#` or spaces need quotes. CI also creates the target file before invoking packaging.
 
 Every package command checks the application ID, update origin, and mode-specific signing configuration before building or downloading. macOS checks the identity, Team ID, one complete notarization strategy, readable local `CSC_LINK` p12 file, explicit `CSC_KEY_PASSWORD`, and referenced API key and keychain files; Windows checks the public code-signing certificate, SignTool file, container name, and PIN format. Windows preparation-only and explicit unsigned builds do not require signing credentials. Configuration checks do not authenticate the PIN, log in to the token, unlock a keychain, or contact Apple; actual signing and notarization perform those checks. Run the same checks separately:

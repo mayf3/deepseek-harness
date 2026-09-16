@@ -10,7 +10,9 @@ An installed-update walkthrough needs two increasing versions with a shared appl
 
 ## Decision
 
-The [material preparer](../../../../apps/desktop/scripts/prepare-installed-update-runtime.ts) accepts a retained test-only manifest with a random identity and distribution namespace. It copies a verified source runtime into separate synthetic Nightly versions, changes only release-family versions and matching dependency references, and seals and verifies both inventories. The original runtime is verified again and its descriptor hash must remain unchanged. Existing output directories are not overwritten; a failed copy retains a failure record and cannot create a completion receipt.
+Version derivation follows the [release version decision](../process/2026-09-16-desktop-release-version-derivation.md); this record continues to govern material, application identity, and user-data isolation.
+
+The [material preparer](../../../../apps/desktop/scripts/prepare-installed-update-runtime.ts) accepts a retained test-only manifest with a random identity and distribution namespace. It copies a verified source runtime into separate derived test versions, changes only release-family versions and matching dependency references, and seals and verifies both inventories. The original runtime is verified again and its descriptor hash must remain unchanged. Existing output directories are not overwritten; a failed copy retains a failure record and cannot create a completion receipt.
 
 The generated bootstrap validates the installed package identity before importing production main. Each version assigns the same application-data subdirectory to its test Electron profile, Harness home, and external journals. Environment values inherited from the first launch do not determine those paths. The manifest reader rejects changed test destinations, identities, and directory locations. The [operator guide](../../../../apps/desktop/tests/installed-update/README.md) distinguishes source preparation, private runtime copies, and signed installed-app qualification.
 

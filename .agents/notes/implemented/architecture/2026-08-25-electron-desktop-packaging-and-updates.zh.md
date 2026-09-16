@@ -18,6 +18,8 @@ DeepSeek Harness 需要一个复用 Web UI 的 Electron 桌面应用。该应用
 
 ## 决策
 
+共享版本的 production/test 派生遵循[发布版本决策](../process/2026-09-16-desktop-release-version-derivation.zh.md)，本记录的包版本一致性要求保持适用。
+
 交付小型 Electron 壳和固定版本 pnpm；[运行时决策](2026-09-11-desktop-electron-node-runtime.zh.md)持有可执行文件选择。[薄壳决策](2026-09-10-desktop-web-wrapper.zh.md)负责 Host 启动与传输：私有 Host 运行共享 Web profile runner，Electron 加载其认证 HTTP URL，子进程 IPC 承载生命周期消息。
 
 Electron 拥有 `.dsh/profiles/desktop` 保留 profile。[内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)负责核心资源存储、外部插件依赖、共享包链接和 profile 协调。私有 Desktop Host 保持独立于公共 CLI 包，且不会发布到 npm。

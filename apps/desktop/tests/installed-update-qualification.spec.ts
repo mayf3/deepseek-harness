@@ -8,8 +8,8 @@ import { describe, expect, it } from 'vitest'
 import { collectInstalledUpdateJournals, createInstalledUpdateRun, inspectInstalledUpdateJournals } from '../scripts/installed-update-qualification.ts'
 import { DesktopUpdateJournal } from '../src/update-journal.ts'
 
-const versions = ['0.1.6-nightly.20260914.1', '0.1.6-nightly.20260914.2'] as const
-const source = { version: '0.1.5-rc.2', commit: 'a'.repeat(40), dirtyFiles: [' M apps/desktop/example.ts'] }
+const versions = ['0.1.6-alpha.1.20260916.1', '0.1.6-alpha.1.20260916.2'] as const
+const source = { version: '0.1.6-alpha.1', commit: 'a'.repeat(40), dirtyFiles: [' M apps/desktop/example.ts'] }
 interface CollectionReport {
   readonly evidence: unknown
   readonly files: readonly { path: string; sha256: string; bytes: number }[]
@@ -60,6 +60,14 @@ describe('installed-update qualification materials', () => {
       })
     },
   )
+
+  it.each(['alpha.1', 'beta.2', 'rc.3', 'test'])('accepts dated %s versions', async (prefix) => {
+    await fixture(async (directory) => {
+      const pair = [`0.1.6-${prefix}.20260916.1`, `0.1.6-${prefix}.20260916.2`] as const
+      const run = await createInstalledUpdateRun(directory, pair, source)
+      expect(run.versions).toEqual(pair)
+    })
+  })
 
   it('rejects an invalid source commit before allocating material', async () => {
     await fixture(async (directory) => {
