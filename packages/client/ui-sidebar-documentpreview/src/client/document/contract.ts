@@ -16,10 +16,20 @@ export interface DocumentTextPage {
  */
 export type DocumentContent =
   | { readonly kind: 'text'; readonly text: string; readonly pages: readonly DocumentTextPage[]; readonly eof: boolean }
-  | { readonly kind: 'bytes'; readonly data: Uint8Array<ArrayBuffer> }
+  | { readonly kind: 'bytes'; readonly data: Uint8Array<ArrayBuffer>; readonly missingFonts?: readonly string[] | undefined }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
+    /** Renderer-owned notice above the document scrollport, selected by the reader id. */
+    'sidebar.right.tab.document.notice': {
+      kind: 'keyed'
+      scope: 'session'
+      owner: {
+        readonly resourceAddress: string
+        readonly sourceVersion: string | undefined
+        readonly content: DocumentContent
+      }
+    }
     /** Document body selected by a registered implementation id. */
     'sidebar.right.tab.document': {
       kind: 'keyed'

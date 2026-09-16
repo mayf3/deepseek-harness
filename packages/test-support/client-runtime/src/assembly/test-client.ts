@@ -17,7 +17,7 @@ import type { RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import { act } from '@testing-library/react'
 import { createInProcessModules, loadPluginModules } from './modules.ts'
 import { assertPlan, graphFromRoster, type AssemblyPlan } from './roster.ts'
-import { REMOTES_PACKAGE, remoteNamespacesOf, remoteProxiesPlugin } from './remote-proxies.ts'
+import { REMOTE_INSTALLERS, remoteNamespacesOf, remoteProxiesPlugin } from './remote-proxies.ts'
 
 /** Carrier options. */
 export interface TestClientOptions {
@@ -166,12 +166,12 @@ export class TestClient {
    * `installConnection`, while this path supplies the mock carrier, uses
    * default recovery timings, and captures the current page hostname once for
    * later reloads. A caller-provided Connection row remains unchanged and owns
-   * its readiness behavior. The `@deepseek-ai/dsh-api-remotes` row is
-   * dropped from the roster: its generated Remote clients exist only in built
+   * its readiness behavior. The generated Remote installer rows are
+   * dropped from the roster: their Remote clients exist only in built
    * `lib/`, and the `remote.<ns>` services the roster injects (plus the
    * namespaces the mock has rules for at this point) are provided as
    * contract-free proxies over the same Connection instead; a `provide` entry
-   * for that row is refused. On any failure the context is disposed, an owned
+   * for these rows is refused. On any failure the context is disposed, an owned
    * mount removed, and this client's hold on the shims released before the
    * original error is rethrown.
    * @param plan - roster and annotations.
@@ -185,12 +185,12 @@ export class TestClient {
     options: TestClientOptions = {},
   ): Promise<TestClient> {
     assertPlan(plan)
-    if (plan.provide?.[REMOTES_PACKAGE] !== undefined) {
-      throw new Error(`client-test-runtime: ${REMOTES_PACKAGE} cannot be provided; its remote.<ns> services are the tier's proxies`)
+    for (const name of REMOTE_INSTALLERS) {
+      if (plan.provide?.[name] !== undefined) {
+        throw new Error(`client-test-runtime: ${name} cannot be provided; its remote.<ns> services are the tier's proxies`)
+      }
     }
-    const roster = plan.roster.rows.some(row => row.name === REMOTES_PACKAGE)
-      ? plan.roster.without([REMOTES_PACKAGE])
-      : plan.roster
+    const roster = plan.roster.without(REMOTE_INSTALLERS.filter(name => plan.roster.rows.some(row => row.name === name)))
     const ctx = new Context()
     const pageLocation = typeof location === 'undefined'
       ? undefined

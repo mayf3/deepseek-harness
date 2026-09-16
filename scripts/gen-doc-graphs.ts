@@ -151,8 +151,12 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'One provider-owned name per service instance. Each provider also owns its model tools; the service has no common action API, runtime selection, or Session workflow lock.',
   },
   {
+    key: 'documentRenderController', pkg: 'api-document-render-controller', title: 'Host Office preview Remote',
+    mode: 'core', note: 'Authorizes Session file reads and returns rendered PDF bytes with the source identity.',
+  },
+  {
     key: 'officeToPdf', pkg: 'office-to-pdf', title: 'Office to PDF conversion',
-    mode: 'core', consumers: [],
+    mode: 'core', consumers: ['api-document-render-controller'],
     note: 'Authorized Office bytes are converted on the Host using the declared native target engine, or Node WASM when no native target is declared.',
   },
   {

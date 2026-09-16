@@ -1,0 +1,31 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
+  },
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../document/office-to-pdf"
+    },
+    {
+      "path": "../workspace-files/tsconfig.host.json"
+    },
+    {
+      "path": "../../util/brand"
+    }
+  ],
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "src/client"
+  ]
+}

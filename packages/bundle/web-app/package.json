@@ -122,7 +122,8 @@
     "open": "^11.0.0",
     "@deepseek-ai/dsh-api-terminal-controller": "workspace:^",
     "@deepseek-ai/dsh-client-ui-sidebar-terminal": "workspace:^",
-    "@deepseek-ai/dsh-office-to-pdf": "workspace:^"
+    "@deepseek-ai/dsh-office-to-pdf": "workspace:^",
+    "@deepseek-ai/dsh-api-document-render-controller": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -132,8 +133,16 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@deepseek-ai/dsh-fs": "workspace:^",
+    "@deepseek-ai/dsh-fs-local": "workspace:^",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-session-projection": "workspace:^",
     "@deepseek-ai/dsh-shell-env": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^"
+    "@deepseek-ai/dsh-system-prompt": "workspace:^",
+    "@deepseek-ai/dsh-typert-registry": "workspace:^",
+    "@deepseek-ai/libreoffice-kit": "0.0.1"
   }
 }

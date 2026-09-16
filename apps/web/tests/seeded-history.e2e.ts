@@ -436,24 +436,29 @@ describe('web e2e: seeded history renders through cold resume', () => {
     await fileLink.waitFor({ timeout: 10_000 })
     const frame = page.locator('[style*="grid-template-columns"]').first()
     expect(await frame.getAttribute('data-rightbar-collapsed')).toBe('true')
-    await fileLink.click()
-    await expect.poll(() => frame.getAttribute('data-rightbar-collapsed'), { timeout: 5_000 }).toBe(null)
     const column = page.locator('[data-rightbar-col]')
-    await expect.poll(() => column.locator('[data-dockkit-tab-title]').allTextContents(), { timeout: 5_000 }).toEqual(['a.txt'])
-    // Path label survives from the recorded args (a.txt).
-    await expect.poll(() => page.getByText('a.txt', { exact: false }).count(), { timeout: 5_000 }).toBeGreaterThan(0)
-    const path = column.locator('[data-textpreview-path]')
-    const absolutePath = join(scaffold.workspaceCwd, 'a.txt')
-    await expect.poll(() => path.textContent()).toBe(absolutePath)
-    expect(await path.getAttribute('title')).toBe(absolutePath)
-    await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
-    const preview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
-    await compareOrRefreshGolden(FILE_PREVIEW_EXPECTED, preview, MODE)
-    // Put the column back so the later goldens see the default frame.
-    await column.locator('[data-sidebar-right-toggle]').click()
-    await expect.poll(() => frame.getAttribute('data-rightbar-collapsed'), { timeout: 5_000 }).toBe('true')
-    await page.getByRole('button', { name: 'Open right sidebar', exact: true }).waitFor({ state: 'visible' })
-    await page.getByRole('navigation', { name: 'Turn navigation', exact: true }).waitFor({ state: 'visible' })
+    try {
+      await fileLink.click()
+      await expect.poll(() => frame.getAttribute('data-rightbar-collapsed'), { timeout: 5_000 }).toBe(null)
+      await expect.poll(() => column.locator('[data-dockkit-tab-title]').allTextContents(), { timeout: 5_000 }).toEqual(['a.txt'])
+      // Path label survives from the recorded args (a.txt).
+      await expect.poll(() => page.getByText('a.txt', { exact: false }).count(), { timeout: 5_000 }).toBeGreaterThan(0)
+      const path = column.locator('[data-textpreview-path]')
+      const absolutePath = join(scaffold.workspaceCwd, 'a.txt')
+      await expect.poll(() => path.textContent()).toBe(absolutePath)
+      expect(await path.getAttribute('title')).toBe(absolutePath)
+      await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
+      const preview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
+      await compareOrRefreshGolden(FILE_PREVIEW_EXPECTED, preview, MODE)
+    } finally {
+      // Later cases share this page and require the sidebar closed even after a failed assertion.
+      if (await frame.getAttribute('data-rightbar-collapsed') !== 'true') {
+        await column.locator('[data-sidebar-right-toggle]').click()
+        await expect.poll(() => frame.getAttribute('data-rightbar-collapsed'), { timeout: 5_000 }).toBe('true')
+      }
+      await page.getByRole('button', { name: 'Open right sidebar', exact: true }).waitFor({ state: 'visible' })
+      await page.getByRole('navigation', { name: 'Turn navigation', exact: true }).waitFor({ state: 'visible' })
+    }
   })
 
   it.skipIf(MODE === 'record')('expands the cold-resumed compact summary and pins its header while scrolling', async () => {

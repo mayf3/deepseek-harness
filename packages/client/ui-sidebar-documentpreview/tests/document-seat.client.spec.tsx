@@ -56,6 +56,7 @@ async function boot() {
   const workspaceFiles = { read, readAll: bytes }
   rt.ctx.provide('remote', { workspaceFiles } as never)
   rt.ctx.provide('remote.workspaceFiles', workspaceFiles as never)
+  rt.ctx.provide('remote.session', {} as never)
   rt.ctx.effect(() => rt.ctx.resources.register({
     protocol: 'file',
     open: async function* (_address, { signal }) {

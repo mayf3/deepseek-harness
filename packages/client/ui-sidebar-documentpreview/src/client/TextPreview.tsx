@@ -82,7 +82,7 @@ export interface TextPreviewInjected extends TextInjected {
 /** The body's composed props: the tab, its navigation, the shared store and face, and copy. */
 export type TextPreviewProps =
   & PropsRuntime<'sidebar.right.pane.tab'>
-  & PropsRenderSlots<'sidebar.right.tab.document'>
+  & PropsRenderSlots<'sidebar.right.tab.document' | 'sidebar.right.tab.document.notice'>
   & PropsStore<TextStore>
   & InjectFace<TextPreviewInjected>
   & PropsLocale<'sidebarDocumentPreview'>
@@ -109,11 +109,14 @@ export function TextPreview({
     if (matched.length > 0 && binaryDocumentPath(definitions, file.path)) return matched
     if (matched.length === 0 && unviewable) return matched
     const fallback = definitions.find(definition => definition.id === PLAIN_BODY_ID)
-    return fallback === undefined ? matched : [...matched, fallback]
+    const supportsText = matched.length === 0
+      || matched.some(definition => definition.supportsText?.(file.path) ?? definition.loading === 'text-pages')
+    return fallback === undefined || !supportsText ? matched : [...matched, fallback]
   }, [definitions, file.path, unviewable])
   const selected = candidates.find(candidate => candidate.id === state?.rendererId) ?? candidates[0]
   const mode = selected?.loading
-  const current = (state?.mode ?? 'text-pages') === mode ? state : undefined
+  const readerId = selected?.read === undefined ? undefined : selected.id
+  const current = (state?.mode ?? 'text-pages') === mode && state?.readerId === readerId ? state : undefined
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const scrollportRef = useRef<HTMLElement | null>(null)
   const storedScrollTopRef = useRef(0)
@@ -147,8 +150,8 @@ export function TextPreview({
   useEffect(() => {
     if (started || !canRead || mode === undefined) return
     if (mode === 'text-pages') loadPage(tab.id, file, 1, signal, meta.value?.version)
-    else loadAll(tab.id, file, signal, meta.value?.version)
-  }, [started, tab.id, file, signal, loadPage, loadAll, canRead, mode, meta.value?.version])
+    else loadAll(tab.id, file, signal, meta.value?.version, selected)
+  }, [started, tab.id, file, signal, loadPage, loadAll, canRead, mode, selected, meta.value?.version])
 
   // Come back where the reader was once there is content to scroll: on a remount,
   // after a reload rebuilt the content, or after the selected renderer changed.
@@ -188,7 +191,9 @@ export function TextPreview({
 
   const content = useMemo((): DocumentContent | undefined => {
     if (mode === 'bytes-complete') {
-      return current?.complete === undefined ? undefined : { kind: 'bytes', data: current.complete.data }
+      return current?.complete === undefined ? undefined : {
+        kind: 'bytes', data: current.complete.data, missingFonts: current.complete.missingFonts,
+      }
     }
     if (current === undefined || loaded.length === 0) return undefined
     return { kind: 'text', pages: loaded, text: loaded.filter(page => page.lines > 0).map(page => page.text).join('\n'), eof: current.eof }
@@ -233,7 +238,7 @@ export function TextPreview({
   const reload = (): void => {
     if (!canRead) return
     if (mode === 'text-pages') reloadPages(tab.id, file, signal, meta.value?.version)
-    else reloadAll(tab.id, file, signal, meta.value?.version)
+    else reloadAll(tab.id, file, signal, meta.value?.version, selected)
   }
   return (
     <div className={css.preview} data-textpreview-state="text" data-textpreview-url={tab.contentId} data-document-preview={selected.id}>
@@ -316,6 +321,9 @@ export function TextPreview({
           </button>
         </Tooltip>
       </div>
+      {content !== undefined && renderSlot('sidebar.right.tab.document.notice', {
+        resourceAddress: tab.contentId, sourceVersion: current?.complete?.version, content,
+      }, { entryKey: selected.id })}
       <div
         ref={bindBody}
         className={clsx(css.body, state.wrap && css.wrap)}
@@ -337,7 +345,7 @@ export function TextPreview({
         {content !== undefined && renderSlot('sidebar.right.tab.document', {
           resourceAddress: tab.contentId, content, wrap: state.wrap, scrollportRef: bindScrollport,
         }, {
-          entryKey: selected.id, hookContext: useTabInfo,
+          entryKey: selected.bodyId ?? selected.id, hookContext: useTabInfo,
           fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,
         })}
         {current?.failure !== undefined && (hasContent

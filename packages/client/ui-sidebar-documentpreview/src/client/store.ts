@@ -35,6 +35,8 @@ export interface TextTabState {
   rendererId?: string
   /** Current display-loading mode; absent before the first read. */
   mode?: DocumentLoadMode
+  /** Custom reader that prepared the complete bytes; absent means an ordinary file read. */
+  readerId?: string
   /** Full byte result used by complete-file renderers. */
   complete?: DocumentFileBytes
   /** The file version the loaded pages belong to; absent before the first page. */
@@ -88,7 +90,7 @@ function bucket(state: TextState, tabId: TabId): TextTabState {
 /** The preview store's write set; every action names the tab it writes. */
 type TextActions = {
   selected: (draft: TextState, tabId: TabId, rendererId: string | undefined) => void
-  loading: (draft: TextState, tabId: TabId, mode?: DocumentLoadMode, observedVersion?: string) => void
+  loading: (draft: TextState, tabId: TabId, mode?: DocumentLoadMode, observedVersion?: string, readerId?: string) => void
   complete: (draft: TextState, tabId: TabId, file: DocumentFileBytes) => void
   page: (draft: TextState, tabId: TabId, page: WorkspaceFileText) => void
   failed: (draft: TextState, tabId: TabId, failure: RemoteFailure) => void
@@ -121,10 +123,13 @@ export function createTextStore(): EngineStoreHandle<TextState, TextActions> {
        * @param tabId - the tab being drawn.
        * @param mode - selected renderer's loading mode.
        * @param observedVersion - metadata version at read start; later pages retain the initial observation.
+       * @param readerId - custom reader preparing complete bytes.
        */
-      loading: (d, tabId: TabId, mode?: DocumentLoadMode, observedVersion?: string) => {
+      loading: (d, tabId: TabId, mode?: DocumentLoadMode, observedVersion?: string, readerId?: string) => {
         const state = bucket(d, tabId)
         if (state.version === undefined && !state.loading) state.observedVersion = observedVersion
+        if (readerId === undefined) delete state.readerId
+        else state.readerId = readerId
         state.loading = true
         state.failure = undefined
         if (mode !== undefined) state.mode = mode

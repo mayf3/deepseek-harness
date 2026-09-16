@@ -2413,7 +2413,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/**\n * Contents prepared by the preview owner using ordinary file reads.\n * Byte arrays are transient UI input, never persisted layout or Session data.\n */\nexport type DocumentContent =\n  | { readonly kind: \'text\'; readonly text: string; readonly pages: readonly DocumentTextPage[]; readonly eof: boolean }\n  | { readonly kind: \'bytes\'; readonly data: Uint8Array<ArrayBuffer> }',
+      '/**\n * Contents prepared by the preview owner using ordinary file reads.\n * Byte arrays are transient UI input, never persisted layout or Session data.\n */\nexport type DocumentContent =\n  | { readonly kind: \'text\'; readonly text: string; readonly pages: readonly DocumentTextPage[]; readonly eof: boolean }\n  | { readonly kind: \'bytes\'; readonly data: Uint8Array<ArrayBuffer>; readonly missingFonts?: readonly string[] | undefined }',
     ],
     ownerPropsReferences: [
       'DocumentTextPage',
@@ -2448,6 +2448,53 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:34',
+  },
+  {
+    key: 'sidebar.right.tab.document.notice',
+    kind: 'keyed',
+    scope: 'session',
+    summary: 'Renderer-owned notice above the document scrollport, selected by the reader id.',
+    doc: 'Renderer-owned notice above the document scrollport, selected by the reader id.',
+    registerOptions: [
+      {
+        name: 'key',
+        requirement: 'required',
+        type: 'string',
+        doc: 'Your cell key: the entry renders where the owner dispatches this exact key. Registering an already-occupied key replaces that occupant.',
+      },
+    ],
+    ownerProps: [
+      '/**\n * Contents prepared by the preview owner using ordinary file reads.\n * Byte arrays are transient UI input, never persisted layout or Session data.\n */\nexport type DocumentContent =\n  | { readonly kind: \'text\'; readonly text: string; readonly pages: readonly DocumentTextPage[]; readonly eof: boolean }\n  | { readonly kind: \'bytes\'; readonly data: Uint8Array<ArrayBuffer>; readonly missingFonts?: readonly string[] | undefined }',
+    ],
+    ownerPropsReferences: [
+      'DocumentTextPage',
+    ],
+    standardProps: [
+      'useResource: UseResource',
+      'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
+      'usePanelInfo: UsePanelInfo',
+      'useSessions: UseSessions',
+      'useSessionPendingInteraction: UseSessionPendingInteraction',
+      'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
+      'useChat: UseChat',
+      'useConversation: UseConversation',
+      'useInput: SnapshotSelectorHook<InputState>',
+      'inputActions: InputActions',
+      'useSession: SessionSnapshotSelector',
+      'sessionId: SessionId',
+      'useProjection: UseProjection',
+      'useTrajectory: UseTrajectory',
+    ],
+    keyDomain: 'open: any string the owner dispatches (no compile-time key set), already taken: @deepseek-ai/dsh-client-ui-sidebar-documentpreview/office',
+    hookContext: '',
+    slotInject: '',
+    declaredBy: 'an entry in \'sidebar.right.pane.tab\' (client-ui-sidebar-documentpreview), so it exists while that entry is mounted',
+    occupants: [
+      'client-ui-sidebar-documentpreview FontNotice key \'@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office\'',
+    ],
+    replaceRisk: 'shadows-shipped-ui',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document.notice\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document.notice\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
     source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:24',
   },
   {

@@ -10,6 +10,8 @@ The [document package family](../../packages/document/README.md) converts Office
 |---|---|
 | [office-to-pdf](../../packages/document/office-to-pdf/README.md) | `ctx.officeToPdf`: shared LibreOffice conversion, bounded admission, and PDF caching |
 | [Web bundle](../../packages/bundle/web-app/README.md) | One configurable conversion provider shared by Host consumers |
+| [document-render-controller](../../packages/api/document-render-controller/README.md) | Session-authorized source reads and the `documentRender` Remote namespace |
+| [Office preview Client](../../packages/client/ui-sidebar-documentpreview/README.md#office-preview) | Office extension selection, PDF reuse, and missing-font notices |
 
 ## Requests and results
 
@@ -26,6 +28,14 @@ The [document package family](../../packages/document/README.md) converts Office
 
 The provider admits the deferred read before allocating source bytes, shares conversions by content identity, and removes its private scratch directory before returning. Returned PDF bytes remain valid after provider disposal. Source and PDF bytes do not enter Session storage. Consumers can use [Workspace Files](../../packages/api/workspace-files/README.md) for authorized bounded reads.
 
+## Preview reads
+
+`RenderedDocumentBytes` extends the workspace byte response with `missingFonts` and `generation`; the original source identity accompanies the converted PDF.
+
+The controller authorizes metadata and defers the bounded source read through the Session's [Workspace Files](../../packages/api/workspace-files/README.md) service, passes the read callback to the renderer, and returns the PDF as base64 with the source absolute path and freshness version. Source access failures pass through; engine failures expose a classified reason without diagnostics. Both the complete-file read limit and renderer input limit apply. Conversion does not activate an Agent or append events.
+
+The controller's Client entry mounts the generated Remote descriptor. The shared Document Preview package registers Office formats with complete-byte loading and its existing PDF.js Worker. Each preview read rechecks renderer generation, source authorization, and version before sharing an in-flight conversion or cached PDF. Connection resets and plugin disposal cancel requests and clear cached bytes. Missing services show localized configuration guidance.
+
 ## Engine selection and limits
 
 The external [`@deepseek-ai/libreoffice-kit`](https://github.com/deepseek-harness/libreoffice-kit) Node API selects its precompiled engines. The kit has an independent version and release workflow, defined by the [release ownership decision](../../.agents/notes/implemented/architecture/2026-09-14-independent-libreoffice-kit.md). Application builds install the published npm packages. Application packaging requires the target’s declared native engine, or Node WASM when the kit declares no native engine for that target. The [platform engine decision](../../.agents/notes/implemented/architecture/2026-09-15-platform-office-engines.md) defines installation and packaging. Invalid metadata, missing required assets, and conversion errors reject without switching engines. Conversion uses disk input and output paths on the Host, with no browser conversion engine or font RPC.
@@ -39,6 +49,33 @@ The [Host provider configuration](../../packages/document/office-to-pdf/README.m
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxdocumentrendercontroller--documentrendercontroller"></a>
+
+### `ctx.documentRenderController` — `DocumentRenderController`
+
+Converts authorized bytes without activating an Agent or appending Session events.
+
+```ts cordis-catalog
+/**
+ * Read and convert one Office file using the Session's ordinary filesystem authorization.
+ * @param workspaceFileScope - Session header lookup shared with workspaceFiles.
+ * @param path - absolute or workspace-relative Office path.
+ * @param priority - foreground preview or speculative background work.
+ * @param signal - Remote cancellation; disposal also cancels outstanding reads and conversions.
+ * @returns complete base64 PDF with original source identity and missing font families.
+ */
+@Remote async render( workspaceFileScope: WorkspaceFileScope, path: string, priority: OfficeToPdfPriority, signal: AbortSignal, ): Promise<RenderedDocumentBytes>
+
+/**
+ * Read the current rendering generation before reusing a Client PDF.
+ * @param signal - Remote caller cancellation.
+ * @returns provider lifetime, replaced with rendering, font, or engine configuration.
+ */
+@Remote generation(signal: AbortSignal): OfficeToPdfGeneration
+```
+
+Source: [`packages/api/document-render-controller/src/index.ts`](../../packages/api/document-render-controller/src/index.ts)
 
 <a id="ctxofficetopdf--officetopdf"></a>
 

@@ -875,6 +875,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'documentRenderController',
+    summary: 'Converts authorized bytes without activating an Agent or appending Session events.',
+    description: 'Converts authorized bytes without activating an Agent or appending Session events.',
+    methods: [
+      {
+        signature: '@Remote async render( workspaceFileScope: WorkspaceFileScope, path: string, priority: OfficeToPdfPriority, signal: AbortSignal, ): Promise<RenderedDocumentBytes>',
+        description: 'Read and convert one Office file using the Session\'s ordinary filesystem authorization.',
+        parameters: [{ name: 'workspaceFileScope', description: 'Session header lookup shared with workspaceFiles.' }, { name: 'path', description: 'absolute or workspace-relative Office path.' }, { name: 'priority', description: 'foreground preview or speculative background work.' }, { name: 'signal', description: 'Remote cancellation; disposal also cancels outstanding reads and conversions.' }],
+        returns: 'complete base64 PDF with original source identity and missing font families.',
+      },
+      {
+        signature: '@Remote generation(signal: AbortSignal): OfficeToPdfGeneration',
+        description: 'Read the current rendering generation before reusing a Client PDF.',
+        parameters: [{ name: 'signal', description: 'Remote caller cancellation.' }],
+        returns: 'provider lifetime, replaced with rendering, font, or engine configuration.',
+      },
+    ],
+  },
+  {
     key: 'fileReferences',
     summary: 'Host capability for cancellable file-reference discovery.',
     description: 'Host capability for cancellable file-reference discovery.',
@@ -5369,6 +5388,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RemoteEventHostInfo',
     declaration: 'export interface RemoteEventHostInfo {\n    readonly home: string;\n}',
+  },
+  {
+    name: 'RenderedDocumentBytes',
+    declaration: 'export interface RenderedDocumentBytes extends WorkspaceFileBytes {\n    readonly missingFonts: string[];\n    readonly generation: OfficeToPdfGeneration;\n}',
   },
   {
     name: 'ReplayEnvelope',

@@ -1,4 +1,5 @@
 /** File-extension preview registrations; component dispatch belongs to the keyed document slot. */
+import type { ReadDocumentBytes } from '../rpc.ts'
 import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
 import { documentFileName, matchedSuffixLength, normalizeSuffix } from './suffix.ts'
 
@@ -23,8 +24,18 @@ export interface DocumentPreviewDefinition {
   readonly title: () => string
   /** Content delivery mode supplied by the document owner. */
   readonly loading: DocumentLoadMode
+  /**
+   * Whether the source supports plain-text viewing; defaults to true for text-pages and false for bytes-complete.
+   * @param path - decoded source file path.
+   * @returns whether the toolbar may offer the plain-text fallback.
+   */
+  readonly supportsText?: (path: string) => boolean
   /** Whether the implementation consumes the document's wrap preference. */
   readonly wrap?: boolean
+  /** Existing keyed document body to reuse; omitted uses this registration’s id. */
+  readonly bodyId?: string
+  /** Prepare complete bytes through a renderer-owned read; source identity and version must be preserved. */
+  readonly read?: ReadDocumentBytes
 }
 
 /**

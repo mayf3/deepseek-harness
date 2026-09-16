@@ -21,6 +21,9 @@ import type { ClientPluginModule } from './roster.ts'
 /** The assembly row the proxies stand in for; its generated clients exist only in built `lib/`. */
 export const REMOTES_PACKAGE = '@deepseek-ai/dsh-api-remotes'
 
+/** Generated Remote installers replaced by namespace proxies in source-only assemblies. */
+export const REMOTE_INSTALLERS = [REMOTES_PACKAGE, '@deepseek-ai/dsh-api-document-render-controller'] as const
+
 const PREFIX = 'remote.'
 
 /**

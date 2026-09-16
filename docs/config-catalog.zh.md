@@ -448,6 +448,29 @@ export interface Config {
 
 来源：[`packages/client/hmr/src/index.ts:30`](../packages/client/hmr/src/index.ts)
 
+<a id="deepseek-aidsh-client-ui-sidebar-documentpreview"></a>
+
+## `@deepseek-ai/dsh-client-ui-sidebar-documentpreview`
+
+```ts config-catalog
+/** Transient Office conversion reuse within one Client connection. */
+export interface Config {
+  /** Retained PDF limits; pending conversions share cancellation by reader lifetime. */
+  office: {
+    /** Maximum retained completed PDFs. */
+    maxCachedEntries: number
+    /** Maximum retained PDF bytes, counted by each binary buffer's byteLength. */
+    maxCachedBytes: number
+    /** Maximum unsettled Host conversion RPCs, including cancellation teardown. */
+    maxPending: number
+    /** Maximum readers including source and renderer metadata lookups. */
+    maxReaders: number
+  }
+}
+```
+
+来源：[`packages/client/ui-sidebar-documentpreview/src/config.ts:5`](../packages/client/ui-sidebar-documentpreview/src/config.ts)
+
 <a id="deepseek-aidsh-compaction-basic"></a>
 
 ## `@deepseek-ai/dsh-compaction-basic`
@@ -3707,6 +3730,7 @@ export interface Config {
 
 - `@deepseek-ai/dsh-acp-app` — 需要 `cmdlineArgs`（[`packages/bundle/acp-app/src/index.ts`](../packages/bundle/acp-app/src/index.ts)）
 - `@deepseek-ai/dsh-agent`（[`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts)）
+- `@deepseek-ai/dsh-api-document-render-controller` — 需要 `workspaceFiles` · `officeToPdf`（[`packages/api/document-render-controller/src/index.ts`](../packages/api/document-render-controller/src/index.ts)）
 - `@deepseek-ai/dsh-api-remotes` — 需要 `typertGateway`（[`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts)）
 - `@deepseek-ai/dsh-api-workspace-controller` — 需要 `typert` · `workspaceRegistry`（[`packages/api/workspace-controller/src/index.ts`](../packages/api/workspace-controller/src/index.ts)）
 - `@deepseek-ai/dsh-authorization` — 需要 `credentials`（[`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts)）
@@ -3747,7 +3771,6 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-settings-plugins`（[`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-unarchive-sessions`（[`packages/client/ui-settings-unarchive-sessions/src/index.ts`](../packages/client/ui-settings-unarchive-sessions/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-sidebar`（[`packages/client/ui-sidebar/src/index.ts`](../packages/client/ui-sidebar/src/index.ts)）
-- `@deepseek-ai/dsh-client-ui-sidebar-documentpreview`（[`packages/client/ui-sidebar-documentpreview/src/index.ts`](../packages/client/ui-sidebar-documentpreview/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-sidebar-files`（[`packages/client/ui-sidebar-files/src/index.ts`](../packages/client/ui-sidebar-files/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-sidebar-right`（[`packages/client/ui-sidebar-right/src/index.ts`](../packages/client/ui-sidebar-right/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-sidebar-terminal`（[`packages/client/ui-sidebar-terminal/src/index.ts`](../packages/client/ui-sidebar-terminal/src/index.ts)）

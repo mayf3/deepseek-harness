@@ -9,6 +9,7 @@
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceFileBytes, WorkspaceFileRange, WorkspaceFileText } from '@deepseek-ai/dsh-api-workspace-files/types'
+import type { OfficeToPdfGeneration } from '@deepseek-ai/dsh-office-to-pdf/types'
 import { parseFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 
 /** The slice of the Client Remote this package calls. */
@@ -82,21 +83,30 @@ export function createReadPage(remote: WorkspaceFilesReadRemote): ReadWorkspaceF
 }
 
 /** Complete document bytes borrowed read-only by renderers; copy before transferring to a Worker. */
-export type DocumentFileBytes = Omit<WorkspaceFileBytes, 'data'> & { readonly data: Uint8Array<ArrayBuffer> }
+export type DocumentFileBytes = Omit<DocumentWireBytes, 'data'> & { readonly data: Uint8Array<ArrayBuffer> }
+
+/** Complete wire bytes, optionally annotated by a converting reader. */
+export type DocumentWireBytes = WorkspaceFileBytes & {
+  readonly missingFonts?: readonly string[]
+  readonly generation?: OfficeToPdfGeneration
+}
 
 /**
  * Read a complete file through the Host endpoint.
  * @param file - Session and path decoded from the tab address.
  * @param signal - owning tab lifetime.
- * @returns complete wire bytes, including declared failures.
+ * @returns complete binary bytes, including declared failures.
  */
-export type ReadDocumentBytes = (file: SessionFile, signal: AbortSignal) => Promise<RemoteResult<WorkspaceFileBytes>>
+export type ReadDocumentBytes = (file: SessionFile, signal: AbortSignal) => Promise<RemoteResult<DocumentFileBytes>>
 
 /**
  * Decode one successful Remote byte result for document renderers.
  * @param file - Host byte result with base64 data.
  * @returns the same metadata with native bytes; malformed base64 throws.
  */
-export function documentFileBytes(file: WorkspaceFileBytes): DocumentFileBytes {
-  return { ...file, data: Uint8Array.from(atob(file.data), character => character.charCodeAt(0)) }
+export function documentFileBytes(file: DocumentWireBytes): DocumentFileBytes {
+  const binary = atob(file.data)
+  const data = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index++) data[index] = binary.charCodeAt(index)
+  return { ...file, data }
 }

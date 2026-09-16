@@ -10,6 +10,8 @@
 |---|---|
 | [office-to-pdf](../../packages/document/office-to-pdf/README.zh.md) | `ctx.officeToPdf`：共享 LibreOffice 转换、有界准入和 PDF 缓存 |
 | [Web bundle](../../packages/bundle/web-app/README.zh.md) | 由宿主消费者共享的单个可配置转换提供方 |
+| [document-render-controller](../../packages/api/document-render-controller/README.zh.md) | 经 Session 授权的源文件读取与 `documentRender` Remote 命名空间 |
+| [Office 预览 Client](../../packages/client/ui-sidebar-documentpreview/README.zh.md#office-preview) | Office 扩展名选择、PDF 复用和缺失字体提示 |
 
 ## 请求和结果
 
@@ -21,10 +23,18 @@
 |---|---|
 | `pdf` | 调用方拥有的 `Uint8Array`，包含完整 PDF |
 | `missingFonts` | 本次转换无法使用的文档请求字体名称 |
-| `cacheKey` | 不透明的转换 generation 加扩展名与源内容身份 |
+| `cacheKey` | 不透明的渲染 generation 加扩展名与源内容身份 |
 | `generation` | 提供方生命周期；替换后缓存 PDF 不再可复用 |
 
 提供方先准入延迟读取，再分配源文件字节；按内容身份共享转换，并在返回前删除私有临时目录。返回的 PDF 字节在提供方释放后仍有效。源文件和 PDF 字节不会进入 Session 存储。消费者可通过[工作区文件](../../packages/api/workspace-files/README.zh.md)执行已授权的有界读取。
+
+## 预览读取
+
+`RenderedDocumentBytes` 在工作区字节响应上增加 `missingFonts` 和 `generation`；转换后的 PDF 附带原始源文件身份。
+
+控制器通过 Session 的[工作区文件](../../packages/api/workspace-files/README.zh.md)服务授权元数据，并向渲染器传递延迟的有界源读取回调，并以 base64 返回 PDF，同时保留源文件绝对路径和新鲜度版本。源访问失败直接传递；引擎失败只暴露分类原因，不含诊断信息。完整文件读取上限和渲染器输入上限同时适用。转换不激活 Agent 或追加事件。
+
+控制器的 Client 入口挂载生成的 Remote 描述符。共享文档预览包使用完整字节加载和现有 PDF.js Worker 注册 Office 格式。每次预览读取都会重新检查渲染 generation、源文件授权和版本，再共享进行中的转换或缓存 PDF。连接重置和插件卸载会取消请求并清空缓存字节。缺少服务时显示本地化配置引导。
 
 ## 引擎选择和限制
 
@@ -39,6 +49,33 @@
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxdocumentrendercontroller--documentrendercontroller"></a>
+
+### `ctx.documentRenderController` — `DocumentRenderController`
+
+Converts authorized bytes without activating an Agent or appending Session events.
+
+```ts cordis-catalog
+/**
+ * Read and convert one Office file using the Session's ordinary filesystem authorization.
+ * @param workspaceFileScope - Session header lookup shared with workspaceFiles.
+ * @param path - absolute or workspace-relative Office path.
+ * @param priority - foreground preview or speculative background work.
+ * @param signal - Remote cancellation; disposal also cancels outstanding reads and conversions.
+ * @returns complete base64 PDF with original source identity and missing font families.
+ */
+@Remote async render( workspaceFileScope: WorkspaceFileScope, path: string, priority: OfficeToPdfPriority, signal: AbortSignal, ): Promise<RenderedDocumentBytes>
+
+/**
+ * Read the current rendering generation before reusing a Client PDF.
+ * @param signal - Remote caller cancellation.
+ * @returns provider lifetime, replaced with rendering, font, or engine configuration.
+ */
+@Remote generation(signal: AbortSignal): OfficeToPdfGeneration
+```
+
+Source: [`packages/api/document-render-controller/src/index.ts`](../../packages/api/document-render-controller/src/index.ts)
 
 <a id="ctxofficetopdf--officetopdf"></a>
 

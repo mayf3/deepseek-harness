@@ -20,9 +20,8 @@ import type { BoundActions } from '@deepseek-ai/dsh-client-store'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ReadDocumentBytes, ReadWorkspaceFilePage, SessionFile } from './rpc.ts'
-import { documentFileBytes } from './rpc.ts'
 import type { TextStore } from './store.ts'
-import type { DocumentLoadMode } from './document/registry.ts'
+import type { DocumentLoadMode, DocumentPreviewDefinition } from './document/registry.ts'
 
 /** The preview's injected business face, as the body receives it. */
 export interface TextInjected {
@@ -50,20 +49,26 @@ export interface TextInjected {
   readonly reloadPages: (tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string) => void
   /**
    * Read the complete file for a whole-file renderer.
+   * @param reader - optional renderer-owned conversion and identity.
    * @param tabId - owning tab.
    * @param file - the session and workspace path the tab's address names.
    * @param signal - tab lifetime.
    * @param observedVersion - metadata version observed at read start.
    */
-  readonly loadAll: (tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string) => void
+  readonly loadAll: (
+    tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string, reader?: DocumentPreviewDefinition,
+  ) => void
   /**
    * Discard the old complete result and read again.
+   * @param reader - optional renderer-owned conversion and identity.
    * @param tabId - owning tab.
    * @param file - the session and workspace path the tab's address names.
    * @param signal - tab lifetime.
    * @param observedVersion - metadata version observed at read start.
    */
-  readonly reloadAll: (tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string) => void
+  readonly reloadAll: (
+    tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string, reader?: DocumentPreviewDefinition,
+  ) => void
 }
 
 /**
@@ -75,6 +80,8 @@ interface TabReads {
   generation: number
   version: string | undefined
   mode: DocumentLoadMode
+  readerId?: string
+  controller?: AbortController
 }
 
 /**
@@ -97,14 +104,18 @@ export function textFace(
       const created: TabReads = { generation: 0, version: undefined, mode: 'text-pages' }
       tabs.set(tabId, created)
       signal.addEventListener('abort', () => {
+        created.controller?.abort()
         tabs.delete(tabId)
         actions.forget(tabId)
       }, { once: true })
       return created
     }
-    const modeOf = (tabId: TabId, signal: AbortSignal, mode: DocumentLoadMode): TabReads => {
+    const modeOf = (tabId: TabId, signal: AbortSignal, mode: DocumentLoadMode, readerId?: string): TabReads => {
       const reads = readsOf(tabId, signal)
-      if (reads.mode !== mode) {
+      if (reads.mode !== mode || reads.readerId !== readerId) {
+        reads.controller?.abort()
+        if (readerId === undefined) delete reads.readerId
+        else reads.readerId = readerId
         reads.mode = mode
         reads.generation++
         reads.version = undefined
@@ -133,45 +144,49 @@ export function textFace(
         actions.page(tabId, result.value)
       })
     }
-    const loadAll = (tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string): void => {
+    const loadAll = (
+      tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string, reader?: DocumentPreviewDefinition,
+    ): void => {
       if (signal.aborted) return
-      const reads = modeOf(tabId, signal, 'bytes-complete')
-      const { generation } = reads
-      actions.loading(tabId, 'bytes-complete', observedVersion)
-      void readAll(file, signal).then((result) => {
-        if (signal.aborted || reads.generation !== generation) return
+      const readerId = reader?.read === undefined ? undefined : reader.id
+      const reads = modeOf(tabId, signal, 'bytes-complete', readerId)
+      reads.controller?.abort()
+      const controller = new AbortController()
+      reads.controller = controller
+      const lifetime = AbortSignal.any([signal, controller.signal])
+      actions.loading(tabId, 'bytes-complete', observedVersion, readerId)
+      void (reader?.read ?? readAll)(file, lifetime).then((result) => {
+        if (lifetime.aborted) return
         if (!result.ok) {
           actions.failed(tabId, result.error)
           return
         }
-        let file
-        try {
-          file = documentFileBytes(result.value)
-        } catch (error) {
-          actions.failed(tabId, Object.assign(
-            new Error('document file byte response has malformed base64 data', { cause: error }),
-            { name: 'RemoteError', isDSHRemoteError: true as const, code: 'gateway/internal' as const, details: {} },
-          ))
-          return
-        }
+        const file = result.value
         reads.version = file.version
         actions.complete(tabId, file)
+      }, (error: unknown) => {
+        if (lifetime.aborted) return
+        actions.failed(tabId, Object.assign(
+          new Error(error instanceof Error ? error.message : String(error), { cause: error }),
+          { name: 'RemoteError', isDSHRemoteError: true as const, code: 'gateway/internal' as const, details: {} },
+        ))
       })
     }
     const restart = (
-      tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string, mode: DocumentLoadMode = 'text-pages',
+      tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string, mode: DocumentLoadMode = 'text-pages', reader?: DocumentPreviewDefinition,
     ): void => {
       if (signal.aborted) return
       const reads = readsOf(tabId, signal)
+      reads.controller?.abort()
       reads.generation += 1
       reads.version = undefined
       actions.reset(tabId)
       if (mode === 'text-pages') loadPage(tabId, file, 1, signal, observedVersion)
-      else loadAll(tabId, file, signal, observedVersion)
+      else loadAll(tabId, file, signal, observedVersion, reader)
     }
     return {
       loadPage, reloadPages: restart, loadAll,
-      reloadAll: (tabId, file, signal, observedVersion) => { restart(tabId, file, signal, observedVersion, 'bytes-complete') },
+      reloadAll: (tabId, file, signal, observedVersion, reader) => { restart(tabId, file, signal, observedVersion, 'bytes-complete', reader) },
     }
   }
 }
