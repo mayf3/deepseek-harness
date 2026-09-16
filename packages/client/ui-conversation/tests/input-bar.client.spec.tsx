@@ -170,11 +170,12 @@ function bench(over?: BenchOptions) {
     SessionProvider: ({ children }) => children,
     useSession: bindSnapshotSelector(session),
     useConversation: bindSnapshotSelector(createSnapshotStore(conversationFixture())),
-    useSessionPendingInteraction: bindSnapshotSelector(createSnapshotStore(new Map())),
+    useSessionStatus: bindSnapshotSelector(createSnapshotStore(new Map())),
+    useSessionRetainInfo: () => undefined,
     useResource,
     useSessions: bindSnapshotSelector(createSnapshotStore<SessionListState>({
-      ids: [], byId: {}, current: undefined, phase: 'ready',
-      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+      ids: [], byId: {}, phase: 'ready',
+      subagentsByParent: {}, jobsBySession: {},
     })),
     useWorkspaces: bindSnapshotSelector(createSnapshotStore({
       items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
