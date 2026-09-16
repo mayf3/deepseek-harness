@@ -63,6 +63,7 @@ Node 半部注册[模型体验](#model-experience)所述的静态 `ui:deliverabl
 
 当产出物面不够用时阅读以下页面。它们从该行进入 turn-tail 洞与词表背后的决策。
 
+- [文件引用评测](evals/file-references/README.zh.md) — 冻结提示词、任务、人工 rubric 和可复算的开发评测汇总。
 - [ui-conversation](../ui-conversation/README.zh.md)——声明 `conversation.chat.turnTail` 洞并渲染收尾正文。
 - [工作区文件链接](../../../.agents/notes/implemented/feature/2026-07-31-web-workspace-file-links.zh.md)——产出文件行背后的决策；其 Host 打开路径已被[右侧 Sidebar](../../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.zh.md)取代。
 - [行内文件提及](../../../.agents/notes/archived/feature/2026-08-07-web-inline-file-mentions.md)——收尾正文可点击提及背后的决策。

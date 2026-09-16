@@ -1,0 +1,1 @@
+请 review packages/util/lazy-require 的实现、测试和 README，指出值得修复的问题；没有确认的问题也请直说，并说明你检查了哪些行为。只读分析，不修改文件，不调用子代理。

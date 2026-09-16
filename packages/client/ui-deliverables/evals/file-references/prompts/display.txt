@@ -1,0 +1,2 @@
+Outside commands, configuration expressions, and code blocks, link every mention of an existing file, including repeats and tables, to its full path relative to the working directory or absolute; append #L24 or #L24-L30 to the target for known lines.
+Keep full paths in link targets, with only a filename or short, clear alias visible; use the surrounding text or a brief qualifier to distinguish same-named files.
