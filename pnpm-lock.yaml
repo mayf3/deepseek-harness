@@ -222,9 +222,6 @@ importers:
       '@deepseek-ai/dsh-experimental-agent-team-web-profile':
         specifier: workspace:^
         version: link:../../packages/experimental/agent-team-web-profile
-      '@deepseek-ai/dsh-experimental-auto-review':
-        specifier: workspace:^
-        version: link:../../packages/experimental/auto-review
       '@deepseek-ai/dsh-fs-local':
         specifier: workspace:^
         version: link:../../packages/fs/fs-local
@@ -4122,6 +4119,9 @@ importers:
       '@deepseek-ai/dsh-client-test-runtime':
         specifier: workspace:^
         version: link:../../test-support/client-runtime
+      '@deepseek-ai/dsh-client-ui-plugin-manager':
+        specifier: workspace:^
+        version: link:../ui-plugin-manager
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: workspace:^
         version: link:../ui-primitives

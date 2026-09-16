@@ -1,5 +1,5 @@
 ---
-description: "Manage the profile's plugin bundles and their rows from the Web sidebar."
+description: "Manage the profile's plugin bundles, their rows, and the plugins' configuration from the Web sidebar."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use the **Plugins** entry in the Web sidebar to manage the profile's installed bundles and the official bundles the installation ships switched off. Switch bundles and their rows on and off, install a bundle after the Host has read what the spec names, watch pnpm's output, stop a run, and enable what it added. Uninstalling asks for confirmation. Global configuration remains in Settings.
+Use the **Plugins** entry in the Web sidebar to manage the profile's installed bundles and the official bundles the installation ships switched off. Switch bundles and their rows on and off, install a bundle after the Host has read what the spec names, watch pnpm's output, stop a run, and enable what it added. Uninstalling asks for confirmation. A plugin that registers a configuration page is edited here, on its own page; Settings keeps the read-only inventory.
 
 ## Table of Contents
 
@@ -25,15 +25,15 @@ Use the **Plugins** entry in the Web sidebar to manage the profile's installed b
 <a id="use-this-package"></a>
 ## Use this package
 
-Select **Plugins** in the sidebar. The page reads the inventory and the bundles through `api-remotes` when first opened; a Host without a managed profile shows the page as unavailable. **Built in** comes first and lists the bundles the installation ships for switching on, each tagged official, off until switched on and without an uninstall; **Installed** lists the bundles the profile holds. Cards are listed by name, so switching a bundle on or off does not move its card. A dependency without a bundle patch is not a plugin and is not listed unless the profile selects it, in which case it carries a problem tag. Global configuration remains in the Settings **Plugins** section.
+Select **Plugins** in the sidebar. The page reads the inventory and the bundles through `api-remotes` when first opened; a Host without a managed profile shows the page as unavailable. **Official** comes first and lists the bundles the installation ships for switching on — off until switched on, without an uninstall, and tagged **Beta** where the feature is one — followed by the official plugins that registered a configuration page; **Installed** lists the bundles the profile holds. Cards are listed by name, so switching a bundle on or off does not move its card. A dependency without a bundle patch is not a plugin and is not listed unless the profile selects it, in which case it carries a problem tag. Global configuration remains in the Settings **Plugins** section.
 
-The built-in Agent Teams, Agent Teams Web UI, and Auto Authorization Review bundles have localized names and descriptions that follow the UI language. Their detail pages retain the full npm package name; other packages display their short package name and original description.
+The Agent Teams, Agent Teams Web UI, and Auto Authorization Review packages have localized names and descriptions that follow the UI language. Their detail pages retain the full npm package name; other packages display their short package name and original description.
 
 ### Installing a bundle
 
 **Add plugin** takes a package name with an optional version, a Git address, a tarball, or an absolute local path; the dialog says a package name is what follows `dsh plugin add` in a README. **Not sure what to enter?** under the field opens a guide that shows the three common forms with an example each; **Use example** drops one into the field. **Install** first asks the Host to read what the spec names (`pluginManager.inspect`): a name the list already shows, a name the registry does not have, a path without a package, a package without a bundle patch, or a spec pnpm would refuse comes back under the field as one sentence, with the spec kept for editing. An accepted spec opens the installing screen, which shows the package's name, one-liner, and version as the Host read them and folds pnpm's command and output behind **Show install details**. A finished install offers **Enable now**, which switches the new bundle on, closes the dialog, and scrolls the list to it; closing instead leaves it installed and off. A failed install says what went wrong in one line — the registry or network could not be reached, the package was not found, the disk is full, the profile is not writable, pnpm blocked a build script — with pnpm's output behind the details and **Retry** at hand; the Host has already put the profile files back. When pnpm blocked a dependency's install scripts, the failed screen lists the packages whose scripts wait for permission and offers **Allow these scripts and retry** in place of **Retry**; the Host saves the permission in the profile's `pnpm-workspace.yaml`, which a failed run leaves as pnpm wrote it, then runs pnpm again, and the installed screen names what was allowed. A successful installation does not certify that a module can activate.
 
-During installation, **Cancel install** asks the Host to stop the run and shows **Stopping installation…** until the Host confirms. Loading the bundle cannot be cancelled. Once confirmed, the dialog returns to the spec, ready to install again, and a toast says the installation was cancelled; the manifest and lockfile are back as they were, while downloaded files can remain. Closing the dialog is blocked while the Host owns the operation. A connection error does not confirm cancellation: the running screen says so and cancelling can be tried again.
+During installation, **Cancel install** asks the Host to stop the run and shows **Stopping installation…** until the Host confirms. Loading the bundle cannot be cancelled. Once confirmed, the dialog returns to the spec, ready to install again, and a toast says the installation was cancelled; the manifest and lockfile are back as they were, while downloaded files can remain. Closing the dialog while the run is in progress asks the Host to stop it the same way, and the dialog closes once the Host confirms; while the Host prepares, stops, or loads, the dialog cannot be closed. A connection error does not confirm cancellation: the running screen says so and cancelling can be tried again.
 
 ### Switching a bundle
 
@@ -42,6 +42,20 @@ A bundle's page shows its full package name under the title, the spec that insta
 ### Switching one row of a bundle
 
 A row's switch on the bundle's page calls `pluginManager.setPluginEnabled`, which writes the row's `disabled` override into the profile's `cordis.patch.yml`. The tree recomposes at once on a profile with HMR, so the row's host half unmounts or mounts while the rest of the bundle keeps running, and the page follows the client module graph without reloading. Rows show their fiber phase as the Host runs them. The switch appears only on a bundle that is on; a row without a live entry, or one the Host will not address through the profile patch, is locked with the Host's reason. A list longer than ten rows gets a filter over the row ids.
+
+### Configuration pages
+
+A plugin that carries its own configuration renders it on this page rather than in Settings, through three slots the page declares: `plugins.item` (list) for an official plugin, listed in the Official group by its `label`; `plugins.bundle.config` (keyed by the bundle's package name) for a bundle's own configuration, shown on the bundle's page between its description and its rows; and `plugins.row.config` (keyed by `<package name>#<row id>`) for one row's configuration, which gives that row a **Configure** control opening the row's page. The page asks every entry for two views through its owner props: `view: 'summary'` for the one-liner under the title, `view: 'page'` for the form with its own save control. Only a save writes: the page draws the title, icon, and crumb, and the entry's form drops its staged edits when the page is left. The four host-plane pages the installation ships — the shell executor, the agent loop, subagent model selection, and the DeepSeek search provider — come from [ui-settings-plugins](../ui-settings-plugins/README.md), registered while the Host serves their namespaces. A bundle's browser half registers the same way:
+
+```tsx ignore-check
+ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
+  name: 'plugins.row.config',
+  key: '@acme/dsh-sidebar#sidebar',
+  locale: 'acmeSidebar',
+}, ({ t, view }) => view === 'summary' ? t('summary') : <SidebarForm t={t} />))
+```
+
+The bundle's patch must declare the row under that id, and the registration exists while the bundle is on, so a bundle that is off shows no configure control.
 
 -----
 
@@ -61,6 +75,10 @@ The browser plugin registers the `plugins` sidebar entry and its `main` panel th
 
 `PluginManagerController` owns the bundle views, busy keys, notices, install progress and the uninstall confirmation. Each read asks the inventory whether the Host manages a profile, then joins `listBundles` with `listPlugins` into one view per bundle, whose rows carry the live entry's enablement and fiber phase. It coalesces overlapping reads, refreshes after operations, on `plugin-manager/changed`, and on reconnect, and ignores late results after disposal. Install output is grouped by job id. The install dialog moves `idle → checking → starting → running → done | failed`, with `cancelling` and `applying` as the Host reports them. The check runs under an `AbortController` that going back or closing aborts, and its settlement is dropped; a run is stopped only through `pluginManager.cancelInstall`, whose answer the dialog waits for. A change the Host could not apply, a restart it waits for, and an override by a higher layer become toasts that retire on their own.
 
+### Configuration slots
+
+The page's `main` registration declares `plugins.item`, `plugins.bundle.config`, and `plugins.row.config` as its children, so the slots exist while the page does and a registrant's `ctx.slots.inject` waits for them. `configLedgerSource` projects the three ledgers into one observable — the official items in ledger order with their labels resolved in the active locale, and the bundle and row keys — cached until a ledger or the locale moves; the page binds it as `useConfigLedger` beside the store and never names a configurable plugin itself. Which page is open is page-local state: the cards, a bundle, an official plugin, or a row of a bundle. A registration lives with the browser half that made it. `dsh-client-modules` attaches a package's browser half to the Loader row whose specifier is the bare package name, so every page a bundle registers, for itself or for any of its rows, goes away when that row is switched off; a sub-plugin whose page must outlive the other rows ships as its own package.
+
 </details>
 
 -----
@@ -73,6 +91,7 @@ These pages cover the sidebar, the Remote calls, and the Host-side manager.
 - [ui-sidebar](../ui-sidebar/README.md) — the panel list the Plugins entry registers into; [ui-layout](../ui-layout/README.md) — the main slot the page occupies.
 - [api-remotes](../../api/remotes/README.md) — the Remote BFF surface behind `pluginManager.*` and `pluginInventory.*`.
 - [plugin-manager](../../boot/plugin-manager/README.md) — the Host-side manager this page drives.
+- [ui-settings-plugins](../ui-settings-plugins/README.md) — the official configuration pages that register into this page's slots.
 
 -----
 

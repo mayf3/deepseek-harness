@@ -8,15 +8,16 @@ import type { FailedAction, ManagerNotice, PackageView } from './manager-store.t
 /** The translate seat of the manager's dictionary. */
 export type Translate = PropsLocale<'pluginManager'>['t']
 
-const BUILTIN_COPY = new Map<string, { title: PluginManagerLocaleKey; description: PluginManagerLocaleKey }>([
+/** The official packages with copy of their own, and whether each is a beta feature the page tags as such. */
+const BUILTIN_COPY = new Map<string, { title: PluginManagerLocaleKey; description: PluginManagerLocaleKey; beta: boolean }>([
   ['@deepseek-ai/dsh-experimental-agent-team-profile', {
-    title: 'builtinAgentTeamTitle', description: 'builtinAgentTeamDescription',
+    title: 'builtinAgentTeamTitle', description: 'builtinAgentTeamDescription', beta: true,
   }],
   ['@deepseek-ai/dsh-experimental-agent-team-web-profile', {
-    title: 'builtinAgentTeamWebTitle', description: 'builtinAgentTeamWebDescription',
+    title: 'builtinAgentTeamWebTitle', description: 'builtinAgentTeamWebDescription', beta: true,
   }],
   ['@deepseek-ai/dsh-experimental-auto-review', {
-    title: 'builtinAutoReviewTitle', description: 'builtinAutoReviewDescription',
+    title: 'builtinAutoReviewTitle', description: 'builtinAutoReviewDescription', beta: true,
   }],
 ])
 
@@ -67,16 +68,18 @@ export function shortName(name: string): string {
 }
 
 /**
- * Localize known built-in packages by exact npm name at render time.
+ * Localize known official packages by exact npm name at render time.
  * @param pkg - original package identity and optional metadata description.
  * @param t - the manager's current translate function.
- * @returns localized copy, or the package's short name and original description.
+ * @returns localized copy and whether the package is a beta feature, or the package's short name and original description.
  */
-export function packageText(pkg: Pick<PackageView, 'name' | 'description'>, t: Translate): { title: string; description: string | undefined } {
+export function packageText(
+  pkg: Pick<PackageView, 'name' | 'description'>, t: Translate,
+): { title: string; description: string | undefined; beta: boolean } {
   const keys = BUILTIN_COPY.get(pkg.name)
   return keys === undefined
-    ? { title: shortName(pkg.name), description: pkg.description }
-    : { title: t(keys.title), description: t(keys.description) }
+    ? { title: shortName(pkg.name), description: pkg.description, beta: false }
+    : { title: t(keys.title), description: t(keys.description), beta: keys.beta }
 }
 
 /**
