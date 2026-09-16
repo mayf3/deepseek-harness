@@ -462,7 +462,7 @@ describe('ConversationRoot resident composer', () => {
     expect(seat?.contains(fallback)).toBe(true)
   })
 
-  it('hero phase: same textarea, hero chrome, no header, picker switches the workspace', () => {
+  it('hero phase: keeps sidebar controls accessible while hiding conversation chrome', () => {
     const b = mount(
       sessionSnapshotOf({ blank: true }),
       [
@@ -474,7 +474,11 @@ describe('ConversationRoot resident composer', () => {
     const host = b.view.container.querySelector('[data-conversation-scroll]')
     const header = b.view.container.querySelector('header')
     expect(host).not.toBeNull()
-    expect(header?.getAttribute('aria-hidden')).toBe('true')
+    expect(header?.getAttribute('aria-hidden')).not.toBe('true')
+    expect(b.view.getByTestId('view-conversation.session.header.corner')).toBeTruthy()
+    expect(b.view.queryByRole('tablist')).toBeNull()
+    expect(b.slotCalls).not.toContain('conversation.session.header.utilities')
+    expect(b.slotCalls).not.toContain('conversation.session.header.actions')
     expect(b.view.getByText('探索未至之境')).toBeTruthy()
     expect(b.view.getByText('预览版')).toBeTruthy()
     expect(b.view.queryByTestId('view-chat')).toBeNull()

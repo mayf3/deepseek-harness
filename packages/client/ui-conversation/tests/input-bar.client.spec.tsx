@@ -31,7 +31,7 @@ import type {
 import type { DraftAttachmentId } from '../src/client/contract/input.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
-import { zh } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as GlobalStandardProps['useResource']
@@ -1529,6 +1529,17 @@ describe('insertText (scoped event body)', () => {
 })
 
 describe('strips and variants', () => {
+  it.each([zh, en])('shows localized guidance when another writer owns the Session', (dictionary) => {
+    const send = bench({
+      promptError: {
+        op: 'send',
+        error: new RemoteError('session/writer-held', 'internal writer diagnostic', { sessionId: SID }),
+      },
+      t: makeTranslate(dictionary, commonZh),
+    })
+    expect(send.view.getByRole('alert').textContent).toBe(dictionary['error.sessionInUse'])
+  })
+
   it('announces promptError as a fading toast (ordinary failure — no transaction UI, no Retry)', () => {
     vi.useFakeTimers()
     try {

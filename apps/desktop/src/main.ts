@@ -37,7 +37,8 @@ const recovery = new DesktopFatalRecovery({
   stop: () => { shuttingDown = true; return stopForRecovery() },
   disablePlugins: async () => {
     const manager = new DesktopProjectManager(resolveDesktopPaths(), runtimeResources())
-    await manager.disableAllPlugins()
+    const backupPath = await manager.disableAllPlugins()
+    console.info('Desktop profile recovery completed:', { profilePatchBackup: backupPath ?? null, homePatch: 'unchanged' })
   },
   exit: () => { app.quit() },
   restart: () => { app.relaunch(); app.quit() },
@@ -219,7 +220,7 @@ async function main(): Promise<void> {
       hostInspectPort, process.env, onFailure,
       development ? join(app.getAppPath(), '.desktop-build', 'targets', `${process.platform === 'darwin' ? 'mac' : 'win'}-${process.arch}`, 'runtime', 'primary-runtime')
         : join(process.resourcesPath, 'runtime', 'primary-runtime'),
-      development ? 'link' : 'runtime')
+      development ? 'link' : 'runtime', resources)
     return {
       start: async () => {
         const ready = await host.start()

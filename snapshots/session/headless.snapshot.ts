@@ -1,5 +1,6 @@
 /** Recorded-session replay through the shipped headless `dsh` profile. */
 
+import { startHttpMcpFixture } from '../../packages/mcp/mcp-client/tests/http-fixture.ts'
 import { cp, copyFile, mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -1042,6 +1043,7 @@ describe('headless recorded-session snapshots', () => {
       let finalWorkspace: WorkspaceSnapshotEntry[] | undefined
       const spillRoot = await mkdtemp(join(tmpdir(), 'acp-snap-spill-'))
       const locatorRoot = snapshotSpillRoot(join(scenario.dir, fixtureFiles[0] as string))
+      const mcpDemo = scenario.name === 'plugin-manager-mcp' ? await startHttpMcpFixture() : undefined
       let result: Awaited<ReturnType<typeof runLoaderSmoke>>
       try {
         result = await runLoaderSmoke({
@@ -1082,6 +1084,7 @@ describe('headless recorded-session snapshots', () => {
             } : {}),
             NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
             DSH_TELEMETRY_DISABLED: '1',
+            ...(mcpDemo === undefined ? {} : { DSH_MCP_DEMO_URL: mcpDemo.url }),
           },
           prepare: async (cwd) => {
             if (scenario.manifest.workspace?.parent === 'outside-temp') assertWorkspaceOutsideTemp(cwd)
@@ -1091,6 +1094,11 @@ describe('headless recorded-session snapshots', () => {
                 materializeProfilePatch(source, cwd, 'headless', join(cwd, patchRoot), index)
               }
             })
+            if (mcpDemo !== undefined) {
+              const profileDir = join(cwd, '.dsh/profiles/headless')
+              await mkdir(profileDir, { recursive: true })
+              await copyFile(join(scenario.dir, 'profile.patch.yml'), join(profileDir, 'cordis.patch.yml'))
+            }
             await seedWorkspace(scenario, cwd)
             initialWorkspace = await captureWorkspaceSnapshot(cwd, {
               ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
@@ -1098,6 +1106,15 @@ describe('headless recorded-session snapshots', () => {
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
+            if (mcpDemo !== undefined) {
+              const log = actualLogs[0]!.content
+              expect(log).toContain('mcp__demo__ping')
+              expect(log).toContain('pong')
+              expect(mcpDemo.calls).toEqual(['ping'])
+              const saved = await readFile(join(cwd, '.dsh/profiles/headless/cordis.patch.yml'), 'utf8')
+              expect(saved).toContain('id: demo')
+              expect(saved).toContain('disabled: false')
+            }
             if (scenario.name === 'session-query-spill') {
               await verifySessionQuerySpill(actualLogs[0]!.content, spillRoot, locatorRoot)
             }
@@ -1121,6 +1138,7 @@ describe('headless recorded-session snapshots', () => {
           },
         })
       } finally {
+        await mcpDemo?.close()
         await rm(spillRoot, { recursive: true, force: true })
       }
 

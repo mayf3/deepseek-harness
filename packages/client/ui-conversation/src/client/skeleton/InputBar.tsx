@@ -99,11 +99,15 @@ export const InputBar = memo(function InputBar({
   // an unresolved promptError deliberately re-announces it once — the failure
   // is still pending, and a transient banner is its only surface. Attachment
   // rejections show product copy keyed by the wire reason — whichever domain
-  // refused them; other codes are developer-facing and keep the raw message
-  // plus code.
+  // refused them. Writer contention has localized recovery guidance; other
+  // failures retain the diagnostic message and code.
   useEffect(() => {
     if (promptError === null) return
     const { error } = promptError
+    if (error.code === 'session/writer-held') {
+      showToast(t('error.sessionInUse'))
+      return
+    }
     showToast(error.code === 'session/attachment-invalid' || error.code === 'subagent/attachment-invalid'
       ? attachmentErrorText(t, error.details.reason, imageLimits)
       : `${error.message} (${error.code})`)
