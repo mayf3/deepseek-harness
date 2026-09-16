@@ -52,7 +52,7 @@ Electron chooses typed English or Chinese shell copy from its application locale
 
 Electron's native Edit menu supplies undo, redo, cut, copy, paste, and select-all commands and platform shortcuts for the focused window. Right-clicking an editable field opens these commands without shortcut labels, with availability supplied by Chromium; selected read-only text offers Copy.
 
-macOS also receives the standard File and Window menus, which the custom application menu must declare because it replaces Electron's default menu: Close Window (⌘W) closes the focused window, and Minimize (⌘M), Zoom, and Bring All to Front act on it. Closing the main window leaves the dsh Host running; the Dock icon opens the window again. Windows and Linux keep the application and Edit menus only.
+macOS also receives the standard File and Window menus and the application hide commands, which the custom application menu must declare because it replaces Electron's default menu: Close Window (⌘W) closes the focused window, Minimize (⌘M) and Zoom act on it, Bring All to Front raises every application window, and the application menu offers Hide (⌘H), Hide Others (⌥⌘H), and Show All. Electron supplies these labels in English rather than from Desktop's locale-owned copy, as the existing Edit menu does. Closing the last Desktop window leaves the dsh Host running, and the Dock icon then opens the main window again. Windows and Linux keep the application and Edit menus only.
 
 ### Runtime and plugin activation
 

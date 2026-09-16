@@ -3,6 +3,7 @@ import type { IpcMainInvokeEvent, MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron'
 import { DESKTOP_IPC } from '../src/ipc.ts'
+import { en } from '../src/locale.ts'
 
 vi.mock('../src/web-document.ts', () => ({ authenticateWebHost: async () => 'test-cookie', serveWebDocument: vi.fn(), forwardWebRequest: vi.fn() }))
 
@@ -205,17 +206,23 @@ describe('desktop main startup', () => {
     expect(harness.hosts).toHaveLength(0)
   })
 
-  it.each(['darwin', 'win32', 'linux'] as const)('adds the standard window menus only on macOS (%s)', async (platform) => {
+  it.each(['darwin', 'win32', 'linux'] as const)('adds the standard macOS window commands only on macOS (%s)', async (platform) => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
     await import('../src/main.ts')
     await harness.preparing.promise
+    const describeItem = (item: MenuItemConstructorOptions): string | undefined =>
+      item.role ?? (item.type === 'separator' ? 'separator' : item.label)
     const template = harness.menu.buildFromTemplate.mock.calls
-      .map(call => call[0] as MenuItemConstructorOptions[])
+      .map(call => call[0])
       .find(items => items.some(item => item.role === 'editMenu'))
     if (template === undefined) throw new Error('application menu missing')
-    expect(template.map(item => item.role ?? item.label)).toEqual(platform === 'darwin'
+    expect(template.map(describeItem)).toEqual(platform === 'darwin'
       ? ['Desktop test', 'fileMenu', 'editMenu', 'windowMenu']
       : ['Application', 'editMenu'])
+    const application = template[0]!.submenu as MenuItemConstructorOptions[]
+    expect(application.map(describeItem)).toEqual(platform === 'darwin'
+      ? [en.pluginsMenu, en.checkUpdatesMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
+      : [en.pluginsMenu, en.checkUpdatesMenu, 'separator', 'quit'])
     expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
   })
 
