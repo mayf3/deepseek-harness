@@ -18,7 +18,7 @@ Desktop 携带独立的 Python、Node.js 和 pnpm 分发包，并在 Python 的 
 
 该产物随 Desktop 版本发布。`runtime.json` 记录 Desktop 版本、目标平台和组件版本；匹配的安装会被复用，版本不同时在完整暂存副本完成后替换目录。添加到该目录的 Python 包在同一版本内保留，升级时随应用基线一起替换。目录替换失败时保留之前的安装；解释器仍在运行时，Windows 可能拒绝替换。
 
-该工具不修改 PATH、环境变量或用户包管理器配置。pnpm 的全局包、命令入口和 store 保留自身默认值及用户设置，包括环境不支持全局安装时的原生错误。不提供独立依赖更新器。[第一方 Runtime 决策](../../.agents/notes/implemented/feature/2026-09-14-desktop-primary-runtime.zh.md)记录这些选择。
+Desktop 私有的 `runtime/bin` 目录仅添加到包安装进程，不进入 PTC 和 agent shell 从 Host 继承的 PATH。该工具不修改 PATH、环境变量或用户包管理器配置。pnpm 的全局包、命令入口和 store 保留自身默认值及用户设置，包括环境不支持全局安装时的原生错误。不提供独立依赖更新器。[第一方 Runtime 决策](../../.agents/notes/implemented/feature/2026-09-14-desktop-primary-runtime.zh.md)记录这些选择。
 
 Node 准备内置解释器和 Python 库，无需系统 Python 或 pip。[下载锁](scripts/primary-runtime-lock.json)固定解释器压缩包及目标平台 wheel 的 URL 和哈希；pnpm 使用 Desktop 构建依赖锁。支持的库 wheel 直接解压到 site-packages；需要其他安装目录的 wheel 会被拒绝，不生成包的命令行包装器。本机目标检查在清理暂存目录后以及 macOS 签名后执行内置解释器及 numpy/pandas 运算。独立 Node 可执行文件获得 V8 所需的 JIT 权限。跨目标执行和签名安装需要对应的发布主机。`dev:desktop` 和 `start:desktop` 都会在启动 Electron 前准备 `.desktop-build/targets/<target>/runtime/primary-runtime`；首次准备可能需要下载锁定的依赖。准备未完成时，启动命令不能报告成功退出。
 

@@ -456,6 +456,7 @@ describe('desktop main startup', () => {
       profileResolution: 'runtime',
       profile: 'desktop-test-profile',
     })
+    expect(harness.hosts[0]!.environment).toBe(process.env)
     expect(harness.hosts[0]!.start).toHaveBeenCalledTimes(1)
     expect(harness.windows).toHaveLength(1)
     expect(window.urls).toEqual(['dsh-app://app/'])
