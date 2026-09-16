@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-16-unified-model-input-controls.md
-2026-09-16-unified-model-input-controls.md: 8a9320a4d142c461b35de6d907685be66a5836ec
-2026-09-16-unified-model-input-controls.zh.md: c19f62b7ed0e05eee1f770ff01a2047e714773f3
+2026-09-16-unified-model-input-controls.md: 12f5f8ba7654115576f33e54d0c80bc54c5f1efd
+2026-09-16-unified-model-input-controls.zh.md: 4c5bd7fdcc7f3091da35865183cc19f25bd1c1d3

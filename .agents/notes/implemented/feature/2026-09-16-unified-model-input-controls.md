@@ -22,6 +22,8 @@ An undeclared or empty input field displays the installed model input types, the
 
 **Allow no checked types.** DeepSeek rejects an empty list and pi-ai treats it as inheritance. Keeping a nonempty selection prevents the same gesture from meaning different things across adapters.
 
+**Keep image limits when disabling DeepSeek images.** This leaves a configuration that the adapter refuses to save. Clearing the image-specific limits makes the selected text-only state valid while preserving unrelated model fields.
+
 ## Consequences
 
 Users can edit text-only, image-only, and combined declarations through one layout. Configuration declares upstream capabilities; it does not add image processing to a text-only model. Removing a pi-ai input declaration can change effective capabilities as catalog or provider defaults change. DeepSeek image limits need reconfiguration after images are disabled. Provider routing and [catalog recovery](../bug-fix/2026-09-07-pi-ai-settings-catalog-recovery.md) retain their existing owners. Component checks cover defaults, exact selections, metadata preservation, and disabled controls; browser scenarios cover saved adapter capabilities, reopened selections, the separate input-type row, and installed vision metadata across discovery, adoption, and reopening.
