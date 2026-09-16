@@ -161,6 +161,8 @@ export type QueueAction =
 
 /** One Session list entry. */
 export interface SessionSummary {
+  /** Whether this Session currently owns a live Agent. */
+  readonly agentAvailable: boolean
   readonly sessionId: SessionId
   readonly updatedAt: number
   readonly running: boolean
@@ -191,6 +193,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
       readonly requestedCwd: string
       readonly existingCwd?: string
     }
+    'session/projections-unavailable': Record<string, never>
     'session/agent-busy': { readonly reason: string }
     'session/invalid-time-zone': { readonly value: string }
     'session/workspace-attach-failed': { readonly sessionId: SessionId; readonly workspaceId: string }
@@ -391,6 +394,14 @@ export type SessionAddress =
     readonly mode: 'one-shot' | 'continuable'
   }
 
+/** One non-activating Session projection read. */
+export interface SessionProjectionsRequest {
+  readonly sessionId: SessionId
+}
+
+/** Complete Session projection baseline; null when the Session does not exist. */
+export type SessionProjectionsValue = SessionProjectionBaseline | null
+
 /** One raw Session event in the Remote journal. */
 export interface SessionEventEntry {
   readonly type: 'event'
@@ -559,9 +570,10 @@ export type SessionControlFrame =
 declare module '@deepseek-ai/cordis' {
   interface Events {
     /**
-     * A Session became visible to Session list consumers.
+     * A Session became visible or its Agent was created or disposed.
+     * Consumers upsert the summary and replace its current running and availability state.
      * @mode emit
-     * @param summary - initial list row for the Session.
+     * @param summary - current list row for the Session.
      */
     'api-session/added'(summary: SessionSummary): void
     /**

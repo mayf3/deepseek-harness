@@ -72,7 +72,7 @@ function fakeSessions(ctx: Context): { sessions: ISessions; binding: SessionBind
     byId: {},
     current: undefined,
     phase: 'ready',
-    subagentsByParent: {},
+    projectionsBySession: {},
     jobsBySession: {},
     currentAddress: undefined,
   })
@@ -83,8 +83,7 @@ function fakeSessions(ctx: Context): { sessions: ISessions; binding: SessionBind
     open: () => {},
     openSubagent: () => {},
     subagentAddress: () => undefined,
-    setSubagentCatalogOpen: () => {},
-    refreshSubagents: () => Promise.reject(new Error('unused fake Sessions operation')),
+    refreshProjections: () => Promise.reject(new Error('unused fake Sessions operation')),
     clear: () => {},
     refresh: () => Promise.reject(new Error('unused fake Sessions operation')),
     search: () => Promise.reject(new Error('unused fake Sessions operation')),

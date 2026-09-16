@@ -193,14 +193,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'address', description: 'catalog-derived parent and child ids.' }],
       },
       {
-        signature: 'setSubagentCatalogOpen(parentSessionId: SessionId, open: boolean): void',
-        description: 'Mark whether a catalog menu is consuming live membership updates.',
-        parameters: [{ name: 'parentSessionId', description: 'catalog owner.' }, { name: 'open', description: 'current menu state.' }],
-      },
-      {
-        signature: 'refreshSubagents(parentSessionId: SessionId): Promise<void>',
-        description: 'Refresh one direct-child catalog.',
-        parameters: [{ name: 'parentSessionId', description: 'catalog owner.' }],
+        signature: 'refreshProjections(sessionId: SessionId): Promise<void>',
+        description: 'Load all Session projections once per connection; retry an unsuccessful initial read.',
+        parameters: [{ name: 'sessionId', description: 'Session to inspect without opening its conversation.' }],
         returns: 'completion of the current or newly started refresh.',
       },
       {

@@ -41,7 +41,7 @@ function props(jobs: readonly JobView[] | undefined): JobListActionProps {
     byId: {},
     current: SESSION,
     phase: 'ready',
-    subagentsByParent: {},
+    projectionsBySession: {},
     jobsBySession: jobs === undefined ? {} : { [SESSION]: jobs },
     currentAddress: undefined,
   } satisfies SessionListState

@@ -4,6 +4,7 @@ import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-
 import type { SessionPendingInteractionBase } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { ScheduleId, ScheduleRecord } from '@deepseek-ai/dsh-schedule/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionProjectionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
   deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey,
   pinCurrentBlank, reconcileManualOrder, visibleSessionIds, workspaceLabel, UNGROUPED_KEY,
@@ -20,7 +21,17 @@ const list = (...items: SessionSummary[]): SessionListState => ({
   ids: items.map(item => item.id),
   byId: Object.fromEntries(items.map(item => [item.id, item])),
   current: undefined,
-  phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+  phase: 'ready', projectionsBySession: {}, jobsBySession: {}, currentAddress: undefined,
+})
+const catalog = (
+  ...entries: Array<{ id: string; activity: 'running' | 'inactive' }>
+): SessionProjectionSnapshot => ({
+  values: { subagentCatalog: entries.map(entry => ({
+    id: sid(entry.id), mode: 'continuable', label: entry.id,
+    createdAt: 1,
+  })) },
+  state: 'ready',
+  error: null,
 })
 const workspace = (id: string, sessionIds: string[], title = id): WorkspaceView => ({
   workspaceId: wid(id), path: `/projects/${id}`, title,
@@ -214,7 +225,7 @@ describe('deriveGroups', () => {
     ).items.map(node => [node.id, node.hasActiveSchedule])).toEqual(expected)
   })
 
-  it('hides subagent-origin sessions without hiding ordinary forks', () => {
+  it('hides subagent-origin sessions and reads direct running counts from catalogs', () => {
     const parent = summary('parent', 1)
     const subagent = {
       ...summary('subagent', 3), parentId: parent.id, origin: 'subagent' as const, running: true,
@@ -226,7 +237,18 @@ describe('deriveGroups', () => {
     const forkChild = {
       ...summary('fork-child', 5), parentId: fork.id, origin: 'subagent' as const, running: true,
     }
-    const sessions = { ...list(parent, fork, subagent, grandchild, forkChild), current: subagent.id }
+    const sessions = {
+      ...list(parent, fork, subagent, grandchild, forkChild),
+      current: subagent.id,
+      projectionsBySession: {
+        [parent.id]: catalog(
+          { id: 'subagent', activity: 'running' },
+          { id: 'inactive-child', activity: 'inactive' },
+        ),
+        [fork.id]: catalog({ id: 'fork-child', activity: 'running' }),
+        [subagent.id]: catalog({ id: 'grandchild', activity: 'running' }),
+      },
+    }
     const groups = deriveGroups(
       sessions,
       [workspace('first', ['parent', 'fork', 'subagent', 'grandchild', 'fork-child'])],
@@ -237,16 +259,16 @@ describe('deriveGroups', () => {
 
     expect(groups[0]!.sessions.map(node => node.id)).toEqual([parent.id, fork.id])
     expect(groups[0]!.sessionCount).toBe(2)
-    expect(groups[0]!.sessions[0]).toMatchObject({ running: false, runningSubagentCount: 2 })
+    expect(groups[0]!.sessions[0]).toMatchObject({ running: false, runningSubagentCount: 1 })
     expect(groups[0]!.sessions[1]).toMatchObject({ running: false, runningSubagentCount: 1 })
     expect(deriveFlat(sessions, visibleSessionIds(sessions, noArchive), noAttention)
       .map(node => [node.id, node.runningSubagentCount])).toEqual([
-      [parent.id, 2], [fork.id, 1],
+      [parent.id, 1], [fork.id, 1],
     ])
     expect(deriveSearchResults(
       sessions, [workspace('first', ['parent', 'fork'])], 'parent', noArchive,
       noAttention, { items: [], hasMore: false }, 10,
-    ).items[0]).toMatchObject({ id: parent.id, runningSubagentCount: 2 })
+    ).items[0]).toMatchObject({ id: parent.id, runningSubagentCount: 1 })
   })
 
   it('ignores fork lineage and sorts every ungrouped session as a top-level row', () => {

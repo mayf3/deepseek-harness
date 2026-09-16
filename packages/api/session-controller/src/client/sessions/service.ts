@@ -32,7 +32,7 @@ import type { AgentContext, ISessions } from '../contract/sessions.ts'
 import { createScope, scopeOf as scopeTagOf } from '../scope.ts'
 import { SessionManager } from './manager.ts'
 import type { SessionRemotes } from './remotes.ts'
-import type { SessionListPhase, SessionSearchResultItem, SubagentCatalogSnapshot } from './manager.ts'
+import type { SessionListPhase, SessionSearchResultItem, SessionProjectionSnapshot } from './manager.ts'
 import type { Session } from './session.ts'
 
 /** Session list row projected from the host list RPC plus live stream increments. */
@@ -74,8 +74,8 @@ export interface SessionListState {
   current: SessionId | undefined
   /** Arrival lifecycle projected 1:1 from the manager snapshot (see SessionListPhase): empty-with-ready means "truly no sessions". */
   phase: SessionListPhase
-  /** Direct durable catalogs keyed by their selected parent address. */
-  subagentsByParent: Readonly<Record<SessionId, SubagentCatalogSnapshot>>
+  /** Shared projection values and explicit-read state, including unopened Sessions. */
+  projectionsBySession: Readonly<Record<SessionId, SessionProjectionSnapshot>>
   /**
    * Background jobs each session can see, mirrored last-wins from Session
    * Controller's control baseline and `jobs` frames. A missing key is an empty
@@ -233,7 +233,7 @@ export class ClientSessions implements ISessions {
     )
     this.list = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'pending',
-      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+      projectionsBySession: {}, jobsBySession: {}, currentAddress: undefined,
     })
     // The manager owns wire truth; the store is its projection. Manager
     // notifications are already microtask-batched.
@@ -283,27 +283,18 @@ export class ClientSessions implements ISessions {
    * Resolve an already discovered direct-parent address without opening it.
    * Feature plugins use this to avoid Agent-bound RPCs in persisted child views.
    * @param id - possible addressed child id.
-   * @returns The retained address, when present.
+   * @returns A retained or loaded-catalog address, without retaining a new selection or scope.
    */
   subagentAddress(id: SessionId): SubagentAddress | undefined {
     return this.manager.subagentAddress(id)
   }
 
   /**
-   * Inform the Session Controller whether a catalog menu is consuming membership updates.
-   * @param parentSessionId - selected parent.
-   * @param open - menu state.
+   * Load all Session projections once per connection; retry an unsuccessful initial read.
+   * @param sessionId - Session to inspect without opening its conversation.
    */
-  setSubagentCatalogOpen(parentSessionId: SessionId, open: boolean): void {
-    this.manager.setSubagentCatalogOpen(parentSessionId, open)
-  }
-
-  /**
-   * Refresh one direct-child catalog.
-   * @param parentSessionId - catalog owner.
-   */
-  refreshSubagents(parentSessionId: SessionId): Promise<void> {
-    return this.manager.refreshSubagents(parentSessionId)
+  refreshProjections(sessionId: SessionId): Promise<void> {
+    return this.manager.refreshProjections(sessionId)
   }
 
   /**
@@ -532,7 +523,6 @@ export class ClientSessions implements ISessions {
      * cannot miss; kept so a future current writer cannot crash the notify. */
     if (record !== undefined) {
       void record.session.open()
-      void this.manager.refreshSubagents(current)
     }
   }
 
@@ -576,7 +566,7 @@ export class ClientSessions implements ISessions {
   /** Project the manager's list snapshot into the store (title derivation is display-only). */
   private projectList(): void {
     const {
-      items, current, phase, subagentsByParent, jobsBySession, currentAddress,
+      items, current, phase, projectionsBySession, jobsBySession, currentAddress,
     } = this.manager.getListSnapshot()
     const ids: SessionId[] = []
     const byId: Record<SessionId, SessionSummary> = {}
@@ -604,9 +594,9 @@ export class ClientSessions implements ISessions {
       while (address !== undefined && !seen.has(address.childSessionId)) {
         const childId = address.childSessionId
         seen.add(childId)
-        const child = subagentsByParent[address.parentSessionId]?.entries
-          .find(entry => entry.kind === 'child' && entry.id === childId)
-        if (child?.kind !== 'child') break
+        const child = projectionsBySession[address.parentSessionId]?.values.subagentCatalog
+          ?.find(entry => entry.id === childId)
+        if (child === undefined) break
         const displayTitle = child.label ?? childId
         const summary = byId[childId]
         if (summary === undefined) {
@@ -615,16 +605,14 @@ export class ClientSessions implements ISessions {
             displayTitle,
             parentId: address.parentSessionId,
             origin: 'subagent',
-            running: child.activity === 'running',
+            running: false,
             blank: false,
             updatedAt: 0,
           }
         } else if (summary.displayTitle !== displayTitle) {
           byId[childId] = { ...summary, displayTitle }
         }
-        const parent = byId[address.parentSessionId]
-        if (parent !== undefined && parent.origin !== 'subagent') break
-        address = this.manager.navigationAddress(address.parentSessionId)
+        address = this.manager.subagentAddress(address.parentSessionId)
       }
     }
     const persisted = this.selection.getSnapshot().sessionId
@@ -642,7 +630,7 @@ export class ClientSessions implements ISessions {
         ...(currentAddress === undefined ? {} : { subagentAddress: currentAddress }),
       })
     }
-    this.list.set({ ids, byId, current, phase, subagentsByParent, jobsBySession, currentAddress })
+    this.list.set({ ids, byId, current, phase, projectionsBySession, jobsBySession, currentAddress })
     this.pruneScopes()
   }
 

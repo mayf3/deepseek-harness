@@ -304,7 +304,9 @@ const listState = (overrides: Partial<SessionListState> = {}): SessionListState 
   },
   current: PARENT_ID,
   phase: 'ready',
-  subagentsByParent: {},
+  projectionsBySession: { [PARENT_ID]: { state: 'ready', error: null, values: { subagentCatalog: [
+    { createdAt: 1, id: CHILD_ID, mode: 'one-shot' },
+  ] } } },
   jobsBySession: {},
   currentAddress: undefined,
   ...overrides,
@@ -664,6 +666,10 @@ describe('WorkflowRunPanel', () => {
   it('defers normal completion collapse until focused member content loses focus', () => {
     const sessions = listState({
       ids: [PARENT_ID, CHILD_ID, SECOND_ID],
+      projectionsBySession: { [PARENT_ID]: { state: 'ready', error: null, values: { subagentCatalog: [
+        { createdAt: 1, id: CHILD_ID, mode: 'one-shot' },
+        { createdAt: 1, id: SECOND_ID, mode: 'one-shot' },
+      ] } } },
       byId: {
         ...listState().byId,
         [SECOND_ID]: {
@@ -825,40 +831,32 @@ describe('WorkflowRunPanel', () => {
     expect(screen.getByRole('button', { name: /未分阶段/ }).getAttribute('aria-expanded')).toBe('true')
   })
 
-  it('opens only a running ordinary-list subagent proven to have this parent', () => {
+  it('opens a running member confirmed by the direct parent catalog', () => {
     const data: WorkflowRunChatData = {
       name: 'audit', status: 'running', phases: [phase()],
     }
     const openSession = vi.fn()
-    render(<WorkflowRunPanel {...panelProps(data, listState(), openSession)} />)
+    const sessions = listState()
+    render(<WorkflowRunPanel {...panelProps(data, sessions, openSession)} />)
     fireEvent.click(screen.getByRole('button', { name: '打开 worker' }))
     expect(openSession).toHaveBeenCalledWith('child-1')
   })
 
-  it('promotes a running member when its ordinary Session row arrives', () => {
+  it('promotes a running member when its parent catalog arrives', () => {
     const data: WorkflowRunChatData = {
       name: 'audit', status: 'running', phases: [phase()],
     }
-    const view = render(<WorkflowRunPanel {...panelProps(data, listState({ ids: [PARENT_ID] }))} />)
+    const view = render(<WorkflowRunPanel {...panelProps(data, listState({ projectionsBySession: {} }))} />)
     expect(screen.queryByRole('button', { name: '打开 worker' })).toBeNull()
     view.rerender(<WorkflowRunPanel {...panelProps(data, listState())} />)
     expect(screen.getByRole('button', { name: '打开 worker' })).toBeTruthy()
   })
 
   it.each([
-    ['not in ordinary list', listState({ ids: [PARENT_ID] }), 'running'],
-    ['remote row', listState({ byId: {
-      ...listState().byId,
-      [CHILD_ID]: { ...listState().byId[CHILD_ID]!, origin: undefined },
-    } }), 'running'],
-    ['wrong parent', listState({ byId: {
-      ...listState().byId,
-      [CHILD_ID]: { ...listState().byId[CHILD_ID]!, parentId: 'other' as SessionId },
-    } }), 'running'],
-    ['list terminal', listState({ byId: {
-      ...listState().byId,
-      [CHILD_ID]: { ...listState().byId[CHILD_ID]!, running: false },
-    } }), 'running'],
+    ['catalog absent', listState({ projectionsBySession: {} }), 'running'],
+    ['catalog empty', listState({ projectionsBySession: { [PARENT_ID]: { state: 'ready', error: null, values: { subagentCatalog: [] } } } }), 'running'],
+    ['wrong parent', listState({ projectionsBySession: { ['other' as SessionId]: { state: 'ready', error: null, values: { subagentCatalog: [{ createdAt: 1, id: CHILD_ID, mode: 'one-shot' }] } } } }), 'running'],
+    ['child inactive', listState({ byId: { ...listState().byId, [CHILD_ID]: { ...listState().byId[CHILD_ID]!, running: false } } }), 'running'],
     ['member terminal', listState(), 'completed'],
   ] as const)('does not navigate when %s', (_name, sessions, memberStatus) => {
     const data: WorkflowRunChatData = {

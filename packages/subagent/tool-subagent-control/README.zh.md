@@ -54,7 +54,7 @@ kind: "package-reference"
 
 ### list_agents
 
-列出调用方 agent 下方的可继续子级：`children`（默认）只显示直接子级，`descendants` 按稳定前序遍历整棵树，并为每个条目标注其持久化直接父级会话 ID 与深度。状态来自在线 Agent 注册表——`running`、`idle` 或 `ready`。一次性子级因无法接受 `send_message` 而被有意排除，无法读取的候选项以诊断信息呈现。
+列出调用方 agent 下方的可继续子级：`children`（默认）从父目录读取直接子级，不打开子日志；`descendants` 按稳定前序遍历整棵树，并为每个条目标注其持久化直接父级会话 ID 与深度。状态来自在线 Agent 注册表——`running`、`idle` 或 `ready`。一次性子级因无法接受 `send_message` 而被有意排除，无法读取的候选项仅在 `descendants` 作用域中以诊断信息呈现。
 
 -----
 
@@ -150,7 +150,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-按稳定目录顺序，每个可继续子级占一行：`<id> [<status>] — <label>`（`running` 表示驱动器活跃，`idle` 表示驻留但处于轮次之间，`ready` 表示仅存于存储，可恢复而非终态），另为无法读取的候选项渲染 `<id> [diagnostic: <reason>]`。`descendants` 作用域会在每行标签的破折号之前按前序插入 ` parent=<id> depth=<n>`。一次性子级会被有意排除；`(no subagents)` 表示投影后没有留下可继续子级或诊断信息。
+按稳定目录顺序，每个可继续子级占一行：`<id> [<status>] — <label>`（`running` 表示驱动器活跃，`idle` 表示驻留但处于轮次之间，`ready` 表示仅存于存储，可恢复而非终态）。仅 `descendants` 作用域会为无法读取的候选项添加 `<id> [diagnostic: <reason>]`。`descendants` 作用域会在每行标签的破折号之前按前序插入 ` parent=<id> depth=<n>`。一次性子级会被有意排除；`(no subagents)` 表示投影后没有留下可继续子级或诊断信息。
 
 #### Token 影响
 

@@ -25,6 +25,7 @@ async function bench(options: {
   registrationFailure?: boolean
   remoteFailure?: 'view' | 'update'
   refreshGate?: Promise<void>
+  catalog?: 'missing' | 'empty'
 } = {}) {
   const ctx = new Context()
   const calls: { method: string; args: unknown[] }[] = []
@@ -86,8 +87,23 @@ async function bench(options: {
   })
   const navigation: unknown[] = []
   let current = options.addressed === true ? CHILD : SESSION
+  const projectionsBySession = options.catalog === 'missing'
+    ? {}
+    : {
+      [SESSION]: { state: 'ready' as const, error: null, values: { subagentCatalog: options.catalog === 'empty' ? [] : [{ createdAt: 1, id: CHILD,
+        mode: 'continuable' as const,
+        label: 'worker' as const,
+      }] } },
+    }
   ctx.provide('sessions', {
-    list: { getSnapshot: () => ({ current }) },
+    list: { getSnapshot: () => ({ current, projectionsBySession }) },
+    subagentAddress: (id: SessionId) => options.addressed === true && id === CHILD
+      ? {
+        parentSessionId: SESSION,
+        childSessionId: CHILD,
+        mode: 'continuable' as const,
+      }
+      : undefined,
     binding: (id: SessionId) => options.addressed === true && id === CHILD
       ? { session: { getSnapshot: () => ({
         subagent: {
@@ -99,7 +115,7 @@ async function bench(options: {
         },
       }) } }
       : undefined,
-    refreshSubagents: (id: SessionId) => {
+    refreshProjections: (id: SessionId) => {
       navigation.push(['refresh', id])
       return options.refreshGate ?? Promise.resolve()
     },
@@ -279,6 +295,22 @@ describe('ui-team browser plugin', () => {
     refresh.resolve(undefined)
     await opening
     expect(b.navigation).toEqual([['refresh', SESSION]])
+  })
+
+  it('does not open a teammate missing from the parent catalog', async () => {
+    for (const catalog of ['missing', 'empty'] as const) {
+      const b = await bench({ catalog })
+      const actions = (b.entry()!.inject as unknown as () => TeamActionInjected)()
+      await actions.openTeammate(SESSION, {
+        id: CHILD,
+        name: 'worker',
+        role: 'teammate',
+        status: 'inactive',
+        diagnostics: [],
+      })
+      expect(b.navigation).toEqual([['refresh', SESSION]])
+      await b.fiber.dispose()
+    }
   })
 
   it('re-registers after the conversation header slot is collapsed and declared again', async () => {

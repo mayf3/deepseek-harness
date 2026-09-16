@@ -162,19 +162,6 @@
   margin-top: 4px;
 }
 
-.disabled {
-  color: var(--dsw-alias-label-dimmed);
-  cursor: not-allowed;
-}
-
-.disabled:hover {
-  background: transparent;
-}
-
-.loadingRow {
-  cursor: default;
-}
-
 .disclosure,
 .disclosureSpace {
   flex: none;

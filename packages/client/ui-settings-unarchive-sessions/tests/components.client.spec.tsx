@@ -29,7 +29,7 @@ function sessionState(sessions: readonly SessionSummary[], phase: SessionListSta
     byId: Object.fromEntries(sessions.map(session => [session.id, session])),
     current: undefined,
     phase,
-    subagentsByParent: {},
+    projectionsBySession: {},
     jobsBySession: {},
     currentAddress: undefined,
   }

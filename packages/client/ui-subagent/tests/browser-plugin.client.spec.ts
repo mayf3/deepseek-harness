@@ -35,21 +35,26 @@ function sessionsWith(sessions: SessionSummary[]) {
   for (const s of sessions) byId[s.id] = s
   const snapshot = { ids: sessions.map(s => s.id), byId, current: undefined } as unknown as SessionListState
   const actionCalls: { method: string; args: unknown[] }[] = []
+  const address: SubagentAddress = {
+    parentSessionId: sid('parent'),
+    childSessionId: sid('c1'),
+    mode: 'continuable',
+  }
   return {
     list: {
       getSnapshot: () => snapshot,
       subscribe: () => () => {},
     },
     actionCalls,
+    subagentAddress: (childSessionId: SessionId) => childSessionId === address.childSessionId
+      ? address
+      : undefined,
     openSubagent: (address: SubagentAddress) => {
       actionCalls.push({ method: 'openSubagent', args: [address] })
     },
-    refreshSubagents: (parentSessionId: SessionId) => {
-      actionCalls.push({ method: 'refreshSubagents', args: [parentSessionId] })
+    refreshProjections: (parentSessionId: SessionId) => {
+      actionCalls.push({ method: 'refreshProjections', args: [parentSessionId] })
       return Promise.resolve()
-    },
-    setSubagentCatalogOpen: (parentSessionId: SessionId, open: boolean) => {
-      actionCalls.push({ method: 'setSubagentCatalogOpen', args: [parentSessionId, open] })
     },
   }
 }
@@ -105,11 +110,9 @@ describe('apply', () => {
     }
     actions.openChild(address)
     actions.refresh(sid('parent'))
-    actions.setCatalogOpen(sid('parent'), true)
     expect(face.actionCalls).toEqual([
       { method: 'openSubagent', args: [address] },
-      { method: 'refreshSubagents', args: [sid('parent')] },
-      { method: 'setSubagentCatalogOpen', args: [sid('parent'), true] },
+      { method: 'refreshProjections', args: [sid('parent')] },
     ])
 
     const composerEntry = ctx.slots.entries('conversation.composer')

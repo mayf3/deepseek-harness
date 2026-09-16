@@ -68,8 +68,9 @@ export function flattenLineage(
       return
     }
     visited.add(s.sessionId)
+    const { agentAvailable: _agentAvailable, ...row } = s
     out.push({
-      ...s,
+      ...row,
       completed: completed?.has(s.sessionId) ?? false,
       depth,
     })

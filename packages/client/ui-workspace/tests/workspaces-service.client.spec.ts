@@ -57,7 +57,7 @@ function sessionState(
     byId: Object.fromEntries(summaries.map(item => [item.id, item])),
     current,
     phase,
-    subagentsByParent: {},
+    projectionsBySession: {},
     jobsBySession: {},
     currentAddress: undefined,
   }

@@ -25,11 +25,11 @@ Use this package to browse every subagent conversation beneath a parent session,
 <a id="use-this-package"></a>
 ## Use this package
 
-The session header keeps the current session title as the lineage breadcrumb and, when the session has subagent descendants, appends a `/` count trigger before the header's action row; the trigger opens the descendant catalog, counts the complete subagent-only lineage, stops at ordinary forks, and shows ongoing activity when any counted descendant is running. Select any depth to open that child's conversation with its exact `{parentSessionId, childSessionId, mode}` address.
+The session header keeps the current session title as the lineage breadcrumb and appends a `/` count trigger when its direct catalog has entries or a read has failed. An absent catalog, an empty loading catalog, or a successfully loaded empty catalog hides the count trigger. The trigger opens that direct catalog, reports its total and running counts, and loads nested catalogs only when their rows expand. Select any depth to open that child's conversation with its exact `{parentSessionId, childSessionId, mode}` address.
 
 ### Browsing the tree
 
-Rows display mode plus `running`/`inactive` activity and an optional log-backed title; the trailing column stacks total durable provider usage above active-turn duration. Keyboard navigation works with ArrowRight/ArrowLeft to expand and collapse branches and ArrowUp/ArrowDown, Home, End, and Escape to navigate or close the tree. An unlabeled one-shot row falls back to its session id; corrupt, unsupported, or unavailable rows remain readable but disabled.
+Rows display mode plus `running`/`inactive` activity and an optional log-backed title; the trailing column stacks total durable provider usage above active-turn duration. Keyboard navigation works with ArrowRight/ArrowLeft to expand and collapse branches and ArrowUp/ArrowDown, Home, End, and Escape to navigate or close the tree. An unlabeled one-shot row falls back to its session id. A row is a known leaf only after its own catalog loads empty.
 
 ### Continuing a conversation
 
@@ -51,11 +51,13 @@ The catalog and composer behavior are specified by the [Web subagent conversatio
 
 ### Catalog derivation
 
-The header lineage renderer reads `subagentsByParent` and session summaries through the standard `useSessions` hook. The compact tree remains direct-catalog authoritative: each healthy row's `hasChildren` hint determines disclosure before interaction, a catalog level reserves the disclosure column only when at least one healthy row is a branch, and expanding a branch immediately reserves one disabled loading row per known direct descendant before lazily replacing them with that child's authoritative catalog. Every visible branch is reported to the runtime so membership frames cause a debounced refresh only where the tree is being consumed.
+The header lineage renderer reads `projectionsBySession` through the standard `useSessions` hook. The renderer selects `subagentCatalog` from each Session’s shared values for membership, disclosure, and counts; Session summaries supply activity, titles, and usage. Expanding a row loads its initial catalog when needed. Live projection frames update every loaded level without menu subscriptions or repeated membership queries. A row remains expandable while its catalog is absent, loading, or failed, and becomes a known leaf after a ready empty catalog.
+
+Breadcrumb addresses derive from the selected address and loaded catalogs in the Session-list snapshot, including never-selected ancestors.
 
 ### Duration and tokens
 
-Token totals sum the four disjoint `tokenUsage` buckets. Duration sums completed `subagentTiming` turns, advances once per second only for an open turn on a running child, and freezes after the child becomes inactive; an interrupted open turn is bounded by its same-cut `active.through`, never by newer session metadata.
+Each visible catalog level advances its own clock while it contains a running child; collapsing the level or closing the menu releases that clock. Token totals sum the four disjoint `tokenUsage` buckets. Duration sums completed `subagentTiming` turns, advances once per second only for an open turn on a running child, and freezes after the child becomes inactive; an interrupted open turn is bounded by its same-cut `active.through`, never by newer session metadata.
 
 ### Composer election
 

@@ -50,21 +50,16 @@ export interface ISessions {
   /**
    * Resolve an already discovered direct-parent address without opening it.
    * @param id - possible addressed child id.
-   * @returns the retained address, when present.
+   * @returns a retained or loaded-catalog address, without retaining a new selection or scope.
    */
   subagentAddress(id: SessionId): SubagentAddress | undefined
+
   /**
-   * Mark whether a catalog menu is consuming live membership updates.
-   * @param parentSessionId - catalog owner.
-   * @param open - current menu state.
-   */
-  setSubagentCatalogOpen(parentSessionId: SessionId, open: boolean): void
-  /**
-   * Refresh one direct-child catalog.
-   * @param parentSessionId - catalog owner.
+   * Load all Session projections once per connection; retry an unsuccessful initial read.
+   * @param sessionId - Session to inspect without opening its conversation.
    * @returns completion of the current or newly started refresh.
    */
-  refreshSubagents(parentSessionId: SessionId): Promise<void>
+  refreshProjections(sessionId: SessionId): Promise<void>
 
   /** Clear the current selection into the no-session view state. */
   clear(): void

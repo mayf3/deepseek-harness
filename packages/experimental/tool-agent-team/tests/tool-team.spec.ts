@@ -594,18 +594,27 @@ describe('dsh-tool-team', () => {
   })
 
   it('reinstalls Team scope before a cold-resumed teammate request', async () => {
-    const { ctx, lead, adapter } = await setup([textResponse('first'), 'hang', 'hang'])
+    const { ctx, lead, adapter } = await setup([textResponse('first'), textResponse('lead received settlement'), 'hang'])
     const spawned = await execute(ctx, lead, 'spawn_teammate', {
       name: 'cold-worker', description: 'cold worker', prompt: 'finish once',
     })
     const childId = spawnedChildId(spawned)
     await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
+    expect(await ctx.subagents.listChildren(lead.id)).toContainEqual(expect.objectContaining({
+      id: childId,
+      mode: 'continuable',
+    }))
+    await vi.waitFor(() => {
+      expect(adapter.requests.filter(request => request.sessionId === lead.id)).toHaveLength(1)
+    })
+    await lead.whenIdle()
 
-    await ctx.agentTeams.sendMessage(lead, {
+    const receipt = await ctx.agentTeams.sendMessage(lead, {
       target: 'cold-worker',
       content: [{ type: 'text', text: 'resume with Team scope' }],
       signal: SIGNAL,
     })
+    expect(receipt.status).toBe('accepted')
     const resumed = await waitRunning(ctx, childId)
     expect((await assembly(ctx, resumed)).tools.map(schema => schema.name)
       .filter(name => TOOL_NAMES.includes(name)).sort()).toEqual(TOOL_NAMES)

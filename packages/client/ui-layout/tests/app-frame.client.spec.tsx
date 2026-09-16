@@ -78,7 +78,7 @@ function mountFrame(windowWidth = frameWidth) {
     },
     current: selectedSession,
     phase: 'ready',
-    subagentsByParent: {},
+    projectionsBySession: {},
     jobsBySession: {},
     currentAddress: undefined,
   })

@@ -48,7 +48,7 @@ One-shot children run once and settle with a single result, plus an optional str
 
 ### Messaging, interrupting, and discovering
 
-Every exact live Agent can use `sendMessage()` with a direct continuable child; a resident continuable child can also use it with its direct parent. A working target receives the Agent message through Steer at its nearest step; an idle target starts a turn, and only a direct child can be cold-resumed. The parent can also interrupt a running descendant or list its children at any time. A browser continuation prompt independently selects Queue or Steer and may carry image parts: the Host admits and persists each image batch through the attachment store before the child inbox accepts the message, and refuses delivery when the child's declared model does not accept image input. Discovery covers both shapes: the service lists direct children and the full descendant tree — mode, activity, and lineage — reading live session state and optional persistence, without loading any child.
+Every exact live Agent can use `sendMessage()` with a direct continuable child; a resident continuable child can also use it with its direct parent. A working target receives the Agent message through Steer at its nearest step; an idle target starts a turn, and only a direct child can be cold-resumed. The parent can also interrupt a running descendant or list its children at any time. A browser continuation prompt independently selects Queue or Steer and may carry image parts: the Host admits and persists each image batch through the attachment store before the child inbox accepts the message, and refuses delivery when the child's declared model does not accept image input. Direct-child discovery reads the parent-owned `subagentCatalog` projection. `listChildren(parentSessionId, signal?)` owns a live-preferred Session observation and returns the catalog asynchronously without reading child logs. It forwards cancellation and releases the observation after materialization. Materialization preserves parent event order in O(D) time for D facts. Complete descendant discovery retains the Session corpus and child identity projection; neither path loads or resumes a child Agent.
 
 ### Failure and recovery
 
@@ -83,9 +83,10 @@ This section explains how the service is built and where the observable behavior
 | [`src/inbox.ts`](src/inbox.ts) | Activation-local Queue and Steer admission plus the synchronous closing cutoff |
 | [`src/types.ts`](src/types.ts) | Public request, result, and provider contracts |
 | [`src/descriptor.ts`](src/descriptor.ts) | Versioned `subagent/descriptor` session-event vocabulary |
+| [`src/catalog.ts`](src/catalog.ts) | Parent-owned `subagent/catalog` event and chunked host projection |
 | [`src/child-agent.ts`](src/child-agent.ts) | Child composition, delegated policy, depth helpers |
-| [`src/list-children.ts`](src/list-children.ts) | Discovery over the live session store and optional persistence |
-| [`src/control.ts`](src/control.ts) | Browser control assembly: catalog activity sampling, browser-zone validation, failure codes |
+| [`src/list-children.ts`](src/list-children.ts) | Direct parent-catalog reads and complete descendant-corpus reads |
+| [`src/control.ts`](src/control.ts) | Browser control request validation and stable failure codes |
 | [`src/control-types.ts`](src/control-types.ts) | Client-safe catalog row, control requests, receipts, and failures |
 
 ### One-shot flow

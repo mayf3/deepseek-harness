@@ -151,6 +151,26 @@ describe('sessions', () => {
     await runtime.dispose()
   })
 
+  it('resolves loaded catalog addresses without changing selection', async () => {
+    const runtime = await runtimeWithFrame()
+    try {
+      const parent = 'parent' as SessionId
+      const child = 'child' as SessionId
+      runtime.sessions.list.update((draft) => {
+        draft.projectionsBySession = {
+          [parent]: { state: 'ready', error: null, values: { subagentCatalog: [{ createdAt: 1, id: child, mode: 'continuable', label: 'worker' }] } },
+        }
+      })
+      expect(runtime.sessions.subagentAddress(child)).toEqual({
+        parentSessionId: parent, childSessionId: child, mode: 'continuable',
+      })
+      expect(runtime.sessions.subagentAddress(parent)).toBeUndefined()
+      expect(runtime.sessions.list.getSnapshot().currentAddress).toBeUndefined()
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
   it('records service-face calls and retains catalog addresses only for addressed selection', async () => {
     const runtime = await runtimeWithFrame()
     await runtime.sessions.add({ id: 's1' })
@@ -168,8 +188,7 @@ describe('sessions', () => {
     await runtime.sessions.updateSummary('s1', { displayTitle: 'renamed', running: true })
     expect(runtime.sessions.list.getSnapshot().byId['s1' as SessionId])
       .toMatchObject({ displayTitle: 'renamed', running: true })
-    runtime.sessions.setSubagentCatalogOpen('s2' as SessionId, true)
-    await runtime.sessions.refreshSubagents('s2' as SessionId)
+    await runtime.sessions.refreshProjections('s2' as SessionId)
     runtime.sessions.open('s1' as SessionId)
     await runtime.flush()
     expect(runtime.sessions.list.getSnapshot().current).toBe('s1')
@@ -182,8 +201,7 @@ describe('sessions', () => {
     })).resolves.toBe('s1')
     expect(runtime.sessions.calls).toEqual([
       { method: 'openSubagent', args: [address] },
-      { method: 'setSubagentCatalogOpen', args: ['s2', true] },
-      { method: 'refreshSubagents', args: ['s2'] },
+      { method: 'refreshProjections', args: ['s2'] },
       { method: 'open', args: ['s1'] },
       { method: 'clear', args: [] },
       { method: 'fork', args: [{ sessionId: 's1', atSeq: 7, increaseTitle: true }] },

@@ -81,7 +81,6 @@ function sessionClient(remote: SessionTransportRemote): SessionRemotes {
     ),
     commands: { execute: () => Promise.reject(new Error('stream tests never run commands')) },
     subagents: {
-      list: () => Promise.reject(new Error('stream tests never read the subagent catalog')),
       prompt: () => Promise.reject(new Error('stream tests never prompt a subagent')),
       interruptByParent: () => Promise.reject(new Error('stream tests never interrupt a subagent')),
     },
