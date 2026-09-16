@@ -6,6 +6,8 @@ The desktop application is an Electron shell around the complete dsh Web applica
 
 Desktop’s local native directory flow opens an Electron folder dialog attached to the application window, restoring, showing, and focusing that window first. Concurrent requests share one dialog; cancellation returns no path and failures remain retryable. Ordinary Web uses the Host chooser. Browse mode lists Host directories. On Linux without zenity or kdialog, automatic selection uses browse instead of the Electron dialog.
 
+Creator and the Web Plugin Manager use Desktop’s bundled pnpm under Electron Node mode without requiring pnpm on PATH. The private Node launcher environment applies only to package operations.
+
 ## Key technical decisions
 
 The original artwork lives in `resources/icon.png` and `resources/icon.svg`; platform adaptations retain the whale and gradients in `resources/icon-windows.*` and `resources/icon-macos.*`. Export each platform SVG as a transparent 1024×1024 PNG. Electron-builder generates the multi-size ICO for the Windows application, installer, and uninstaller ([Windows icon requirements](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction)). The installation pages use matching artwork in both themes; the uninstaller's welcome and finish pages share `installer/assets/uninstaller-sidebar.png`, converted to a 164×314 BMP during preparation.
