@@ -57,16 +57,7 @@ import {
   writesCurrentSessionFixtures,
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
-import {
-  auditStartupEntries,
-  composeEntries,
-  createProfileResolutionGeneration,
-  healProfilesModuleFallback,
-  loadOverlayPatches,
-  PluginPackages,
-  type Profile,
-  type ProfileResolutionMode,
-} from '@deepseek-ai/dsh-app-boot'
+import type { Profile, ProfileContext, ProfileResolutionMode } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type {
@@ -92,7 +83,22 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
-import { REPO_ROOT, requireDist } from './support.ts'
+import { REPO_ROOT, requireBuilt, requireDist } from './support.ts'
+
+type AppBoot = typeof import('@deepseek-ai/dsh-app-boot')
+let builtAppBoot: AppBoot | undefined
+
+/**
+ * The launcher's own module, as built: the manager and HMR plugins the profile
+ * loads reload the tree through this copy's registry of the root Include, so
+ * the scaffold mounts through the same copy rather than the source import.
+ * Resolved on the first launch, which needs the build anyway, so the fixture
+ * helpers this module also exports load without one.
+ */
+function appBoot(): AppBoot {
+  builtAppBoot ??= requireBuilt('@deepseek-ai/dsh-app-boot') as AppBoot
+  return builtAppBoot
+}
 
 // Host-side web e2e cannot import a browser package: doing so would pull that
 // package's complete TS project into this graph. Mirrored from
@@ -313,6 +319,21 @@ export interface LaunchOptions {
    */
   extraInstallAnchors?: string[]
   /**
+   * Manage the scaffold profile the way the launcher does: a `profileContext`
+   * over the profile directory, whose manifest lists the shipped web bundles
+   * and each package directory here as an installed dependency (`file:` in the
+   * manifest, a symlink under the profile's `node_modules`); `enabled` also
+   * lists a bundle in `dsh.profile.bundles`. The plugin manager mounts on such
+   * a profile, and the root Include is mounted from the profile's own layers.
+   * The base bundle's `hmr` row turns on with the profile context, so
+   * configuration changes apply live; `hmr: false` disables that row through
+   * an overlay, leaving changes for the next start.
+   */
+  profile?: {
+    hmr?: boolean
+    packages: { dir: string; enabled?: boolean }[]
+  }
+  /**
    * Replay fixture (session.jsonl) served by the inserted dsh-llm-replay row
    * in replay/refresh modes; ignored in record mode (the real adapter
    * answers). Omit for scenarios issuing no model calls — a stray stream then
@@ -436,6 +457,10 @@ async function cleanupScaffoldWorld(ctx: Context, workspaceCwd: string, persiste
  */
 export async function launchWebScaffold(options: LaunchOptions = {}): Promise<WebScaffold> {
   requireDist()
+  const {
+    auditStartupEntries, composeEntries, createProfileResolutionGeneration, healProfilesModuleFallback, initProfile,
+    mountRootInclude, readProfileManifest, readProfilePatches, loadOverlayPatches, PluginPackages,
+  } = appBoot()
   const mode = webSnapshotMode()
   const replayFixture = options.replayFixture === undefined
     ? undefined
@@ -527,9 +552,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     surfaceContext?: boolean
   } | undefined
   const surfaceContext = webRuntimeConfig?.surfaceContext !== false
-  const patches: PatchOptions[] = [
-    ...basePatches,
-    ...surfacePatches,
+  // The scaffold's own overrides, above every bundle layer like `--patch` overlays.
+  const overlayPatches: PatchOptions[] = [
+    // Without HMR the profile applies configuration changes at its next start.
+    ...options.profile?.hmr === false ? [{ id: 'hmr', disabled: true }] : [],
     { id: 'session-log-deepseek', config: { enabled: false } },
     // The historical Messages fixture retains its recorded route during replay;
     // live configuration uses the shared DeepSeek route. Explicit overlays win.
@@ -657,6 +683,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         config: messages ? {} : { protocol: 'chat-completions' } },
     ],
   ]
+  const patches: PatchOptions[] = [...basePatches, ...surfacePatches, ...overlayPatches]
 
   // Sessions inherit the gateway's process.cwd() default; run the boot from
   // the temp workspace so tool cwd, session cwd, and fixtures agree.
@@ -709,6 +736,34 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     const rootConfig = join(profileDir, 'cordis.yml')
     await writeFile(rootConfig, '[]\n')
     ctx.baseUrl = pathToFileURL(profileDir).href + '/'
+    let profileContext: ProfileContext | undefined
+    if (options.profile !== undefined) {
+      // A real profile: the shipped web bundles plus each fixture package,
+      // installed the way `dsh plugin add` leaves them.
+      const dependencies: Record<string, string> = {}
+      const bundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
+      for (const entry of options.profile.packages) {
+        const manifest = JSON.parse(await readFile(join(entry.dir, 'package.json'), 'utf8')) as { name: string }
+        dependencies[manifest.name] = `file:${entry.dir}`
+        if (entry.enabled === true) bundles.push(manifest.name)
+        const link = join(profileDir, 'node_modules', manifest.name)
+        await mkdir(dirname(link), { recursive: true })
+        await symlink(entry.dir, link, 'junction')
+      }
+      initProfile(profileDir, bundles)
+      const manifest = readProfileManifest('dsh', profileDir)
+      manifest.dependencies = dependencies
+      await writeFile(join(profileDir, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
+      profileContext = {
+        name: 'scaffold', dir: profileDir, patchPath: profile.patchPath, installAnchor: INSTALL_ANCHOR,
+        cwd: workspaceCwd, home: harnessHome, startedBundles: bundles,
+        overlays: overlayPatches, telemetryDisabledEnv: undefined,
+      }
+      // HMR gates file-driven reloads on application readiness, which the
+      // launcher commits after boot; this direct harness is ready at once.
+      ctx.provide('appReady', { onReady: (listener) => { listener(); return () => {} } })
+      ctx.provide('profileContext', profileContext)
+    }
     // This direct Loader harness supplies the same root-path capability as app-boot.
     ctx.provide('dshHomePath', dshHomePath)
     // A host with no command line still provides one: the web bundle's startup
@@ -726,16 +781,23 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       behavior: profileResolutionMode === 'dual' ? 'verify' : 'enforce',
     })
     await ctx.plugin(Loader)
-    ctx.loader.builtins.include = Include
-    // `cordis:group` beside it, exactly as `boot()` registers it: a group row is
-    // how a preset gives one `isolate` realm to a provider and its consumers,
-    // and a preset resolving package names from its own directory cannot reach
-    // `@deepseek-ai/cordis-plugin-group` by name.
-    ctx.loader.builtins.group = Group
-    await ctx.loader.create({
-      name: 'cordis:include',
-      config: { path: pathToFileURL(rootConfig).href, patches },
-    })
+    if (profileContext === undefined) {
+      ctx.loader.builtins.include = Include
+      // `cordis:group` beside it, exactly as `boot()` registers it: a group row is
+      // how a preset gives one `isolate` realm to a provider and its consumers,
+      // and a preset resolving package names from its own directory cannot reach
+      // `@deepseek-ai/cordis-plugin-group` by name.
+      ctx.loader.builtins.group = Group
+      await ctx.loader.create({
+        name: 'cordis:include',
+        config: { path: pathToFileURL(rootConfig).href, patches },
+      })
+    } else {
+      // The launcher's own mount, so the manager's reloads find the root Include
+      // and compose the same layers the profile files name; bare names still
+      // resolve through the resolution generation above, as in the direct mount.
+      await mountRootInclude(ctx, rootConfig, readProfilePatches('dsh', profileContext))
+    }
     await ctx.loader.await()
     await auditStartupEntries(ctx, 'web e2e scaffold')
     if (options.welcomeNoticePending !== true) {

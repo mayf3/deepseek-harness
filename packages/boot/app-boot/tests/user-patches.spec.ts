@@ -335,6 +335,9 @@ describe('profile reconciliation settlement', () => {
     const ctx = new Context()
     onTestFinished(() => ctx.fiber.dispose())
     await expect(reconcileProfilePatches(ctx, [], NAME)).rejects.toThrow('profile reload requires the root Include entry')
+    // A Loader without the pinned root id is no better.
+    await ctx.plugin(Loader)
+    await expect(reconcileProfilePatches(ctx, [], NAME)).rejects.toThrow('profile reload requires the root Include entry')
   })
 
   it('removes a previously failed entry without reporting its old activation error', async () => {

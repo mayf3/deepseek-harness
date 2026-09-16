@@ -737,6 +737,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PropsStore<H> = H extends StoreHandle<infer T, infer A> ? {\n    useStore: SnapshotSelectorHook<T>;\n    actions: BakedActions<T, A>;\n} : object;',
   },
   {
+    name: 'QueueAction',
+    declaration: 'export type QueueAction = {\n    readonly kind: \'edit\';\n    readonly content: readonly ContentBlock[];\n} | {\n    readonly kind: \'remove\';\n} | {\n    readonly kind: \'steer\';\n};',
+  },
+  {
     name: 'RemoteHostFacts',
     declaration: 'export interface RemoteHostFacts {\n    readonly home: string | undefined;\n    readonly isLoopback: boolean;\n}',
   },
@@ -814,7 +818,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionSnapshot',
-    declaration: 'export interface SessionSnapshot {\n    readonly sessionId: SessionId;\n    readonly queue: readonly QueuedMessage[];\n    readonly pendingSubmissions: readonly PendingSubmission[];\n    readonly running: boolean;\n    readonly subagent: {\n        readonly address: SubagentAddress;\n        readonly parentAvailable?: boolean;\n    } | null;\n    readonly removed: boolean;\n    readonly openState: OpenState;\n    readonly openError: RemoteFailure | null;\n    readonly hasMore: boolean;\n    readonly loadingOlder: boolean;\n    readonly promptError: PromptError | null;\n    readonly blank: boolean;\n    readonly lastAgentError: string | null;\n    readonly promptAttempted: boolean;\n    readonly awaitingFirstTurn: boolean;\n}',
+    declaration: 'export interface SessionSnapshot {\n    readonly sessionId: SessionId;\n    readonly pendingSubmissions: readonly PendingSubmission[];\n    readonly running: boolean;\n    readonly subagent: {\n        readonly address: SubagentAddress;\n        readonly parentAvailable?: boolean;\n    } | null;\n    readonly removed: boolean;\n    readonly openState: OpenState;\n    readonly openError: RemoteFailure | null;\n    readonly hasMore: boolean;\n    readonly loadingOlder: boolean;\n    readonly promptError: PromptError | null;\n    readonly blank: boolean;\n    readonly lastAgentError: string | null;\n    readonly promptAttempted: boolean;\n    readonly awaitingFirstTurn: boolean;\n}',
   },
   {
     name: 'SessionStandardProps',
@@ -915,10 +919,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ThemeTokens',
     declaration: 'export type ThemeTokens = Record<string, string>;',
-  },
-  {
-    name: 'Translate',
-    declaration: 'export type Translate<K extends string = string> = (key: K, params?: Record<string, unknown>) => string;',
   },
   {
     name: 'TranslateNS',

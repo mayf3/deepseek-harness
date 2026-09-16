@@ -19,6 +19,7 @@ export function apply(ctx: Context): void {
       action: { type: 'string', required: true, enum: ['list_plugins', 'list_bundles', 'set_plugin', 'set_bundle', 'install_bundle', 'remove_bundle'], description: 'Management operation.' },
       target: { type: 'string', description: 'Plugin entry id, bundle package name, or installation spec, according to action.' },
       enabled: { type: 'boolean', description: 'Required for set operations; defaults to true for installation.' },
+      approvedBuilds: { type: 'array', items: { type: 'string' }, description: 'For install_bundle: pass names from pendingBuilds only after the user explicitly approves running their install scripts in the conversation. This grants persistent permission for this profile.' },
       offset: { type: 'number', description: 'Zero-based list offset; defaults to 0.' },
       limit: { type: 'number', description: 'List page size, from 1 to 100; defaults to 25.' },
     },
@@ -50,7 +51,10 @@ export function apply(ctx: Context): void {
         }
         case 'install_bundle':
           if (args.target === undefined) throw new Error('target package spec is required')
-          return JSON.stringify(await manager.installBundle(args.target, args.enabled === undefined ? {} : { enabled: args.enabled }))
+          return JSON.stringify(await manager.installBundle(args.target, {
+            ...args.enabled === undefined ? {} : { enabled: args.enabled },
+            ...args.approvedBuilds === undefined ? {} : { approvedBuilds: args.approvedBuilds },
+          }))
         case 'remove_bundle':
           if (args.target === undefined) throw new Error('target bundle name is required')
           return JSON.stringify(await manager.removeBundle(args.target))

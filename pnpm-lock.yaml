@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  extract-zip>yauzl: 3.4.0
   '@deepseek-ai/cosmokit': link:vendor/cosmokit
   '@deepseek-ai/schemastery': link:vendor/schemastery
 
@@ -212,6 +213,15 @@ importers:
       '@deepseek-ai/dsh-cordis-client-runner':
         specifier: workspace:^
         version: link:../../packages/extensions/cordis-client-runner
+      '@deepseek-ai/dsh-experimental-agent-team-profile':
+        specifier: workspace:^
+        version: link:../../packages/experimental/agent-team-profile
+      '@deepseek-ai/dsh-experimental-agent-team-web-profile':
+        specifier: workspace:^
+        version: link:../../packages/experimental/agent-team-web-profile
+      '@deepseek-ai/dsh-experimental-auto-review':
+        specifier: workspace:^
+        version: link:../../packages/experimental/auto-review
       '@deepseek-ai/dsh-fs-local':
         specifier: workspace:^
         version: link:../../packages/fs/fs-local
@@ -414,9 +424,6 @@ importers:
       '@deepseek-ai/dsh-experimental-agent-team':
         specifier: workspace:^
         version: link:../../packages/experimental/agent-team
-      '@deepseek-ai/dsh-experimental-agent-team-profile':
-        specifier: workspace:^
-        version: link:../../packages/experimental/agent-team-profile
       '@deepseek-ai/dsh-experimental-ptc-runtime-python':
         specifier: workspace:^
         version: link:../../packages/experimental/ptc-runtime-python
@@ -565,6 +572,9 @@ importers:
       extract-zip:
         specifier: ^2.0.1
         version: 2.0.1(supports-color@9.4.0)
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
       js-yaml:
         specifier: ^4.2.0
         version: 4.3.1
@@ -1524,21 +1534,15 @@ importers:
       '@deepseek-ai/cordis-plugin-timer':
         specifier: workspace:^
         version: link:../../../vendor/timer
-      '@deepseek-ai/dsh-agent':
+      '@deepseek-ai/dsh-brand':
         specifier: workspace:^
-        version: link:../../core/agent
+        version: link:../../util/brand
       '@deepseek-ai/dsh-hmr':
         specifier: workspace:^
         version: link:../hmr
       '@deepseek-ai/dsh-host-plugin-inventory':
         specifier: workspace:^
         version: link:../../host/plugin-inventory
-      '@deepseek-ai/dsh-llm':
-        specifier: workspace:^
-        version: link:../../llm/llm
-      '@deepseek-ai/dsh-session':
-        specifier: workspace:^
-        version: link:../../core/session
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
         version: link:../../subprocess/subprocess
@@ -2117,6 +2121,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-plan':
         specifier: workspace:^
         version: link:../../client/ui-plan
+      '@deepseek-ai/dsh-client-ui-plugin-manager':
+        specifier: workspace:^
+        version: link:../../client/ui-plugin-manager
       '@deepseek-ai/dsh-client-ui-reference':
         specifier: workspace:^
         version: link:../../client/ui-reference
@@ -2823,6 +2830,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
       '@deepseek-ai/dsh-api-remotes':
         specifier: workspace:^
         version: link:../../api/remotes
@@ -3592,6 +3602,60 @@ importers:
       react:
         specifier: ^18.2.0
         version: 18.3.1
+
+  packages/client/ui-plugin-manager:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-remotes':
+        specifier: workspace:^
+        version: link:../../api/remotes
+      '@deepseek-ai/dsh-client-locale':
+        specifier: workspace:^
+        version: link:../locale
+      '@deepseek-ai/dsh-client-store':
+        specifier: workspace:^
+        version: link:../store
+      '@deepseek-ai/dsh-client-test-runtime':
+        specifier: workspace:^
+        version: link:../../test-support/client-runtime
+      '@deepseek-ai/dsh-client-ui-layout':
+        specifier: workspace:^
+        version: link:../ui-layout
+      '@deepseek-ai/dsh-client-ui-primitives':
+        specifier: workspace:^
+        version: link:../ui-primitives
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: workspace:^
+        version: link:../ui-renderer
+      '@deepseek-ai/dsh-client-ui-sidebar':
+        specifier: workspace:^
+        version: link:../ui-sidebar
+      '@deepseek-ai/dsh-client-ui-slots':
+        specifier: workspace:^
+        version: link:../ui-slots
+      '@deepseek-ai/dsh-plugin-manager':
+        specifier: workspace:^
+        version: link:../../boot/plugin-manager
+      '@deepseek-ai/dsh-util-crypto':
+        specifier: workspace:^
+        version: link:../../util/crypto
+      '@testing-library/react':
+        specifier: ^16.1.0
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
 
   packages/client/ui-primitives:
     devDependencies:
@@ -6180,7 +6244,7 @@ importers:
         version: link:../../../vendor/schemastery
       '@puppeteer/browsers':
         specifier: 3.2.2
-        version: 3.2.2(yauzl@2.10.0)
+        version: 3.2.2(yauzl@3.4.0)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -6232,10 +6296,6 @@ importers:
         version: 4.22.4
 
   packages/experimental/client-ui-agent-team:
-    dependencies:
-      react:
-        specifier: ^18.2.0
-        version: 18.3.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -6282,6 +6342,9 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
       react-dom:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
@@ -16070,9 +16133,6 @@ packages:
     engines: {node: ^6 || ^7 || ^8 || ^9 || ^10 || ^11 || ^12 || >=13.7}
     hasBin: true
 
-  buffer-crc32@0.2.13:
-    resolution: {integrity: sha512-VO9Ht/+p3SN7SKWqcrgEzjGbRSJYTx+Q1pTQC0wrWqHx0vpJraQ6GtHx8tvcg1rlK1byhU5gccxgOgj7B0TDkQ==}
-
   buffer-equal-constant-time@1.0.1:
     resolution: {integrity: sha512-zRpUiDwd/xk6ADqPMATG8vc9VPrkck7T07OIx0gnjmJAnHnTVXNQG3vfvWNuiZIkwu9KrKdA1iJKfsfTVxE6NA==}
 
@@ -16902,9 +16962,6 @@ packages:
   fast-xml-parser@5.7.3:
     resolution: {integrity: sha512-C0AaNuC+mscy6vrAQKAc/rMq+zAPHodfHGZu4sGVehvAQt/JLG1O5zEcYcXSY5zSqr4YVgxsB+pHXTq0i7eDlg==}
     hasBin: true
-
-  fd-slicer@1.1.0:
-    resolution: {integrity: sha512-cE1qsB/VwyQozZ+q1dGxR8LBYNZeofhEdUNGSMbQD3Gw2lAzX9Zb3uIU6Ebc/Fmyjo9AWWfnn0AUCHqtevs/8g==}
 
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
@@ -19543,8 +19600,9 @@ packages:
     resolution: {integrity: sha512-2rAgRKu54VsHkqI0/tYkmluGXHD4KW7yZoycuqDQ15QOTnc2VVfy0nN/1eMhnQLO00A+dwtK20xuCnc1YGeUyg==}
     engines: {node: ^20.19.0 || ^22.12.0 || >=23}
 
-  yauzl@2.10.0:
-    resolution: {integrity: sha512-p4a9I6X6nu6IhoGmBqAcbJy1mlC4j27vEPZX9F4L4/vZT3Lyq1VkFHw/V/PUcB9Buo+DG3iHkT0x3Qya58zc3g==}
+  yauzl@3.4.0:
+    resolution: {integrity: sha512-jIH9yLR9wqr0wOS0TpBvo/g/2UgZH5qePVbjgRliiF0BYvOZyaBknKsF+x9Iht0O6sqgnB93rCICdOZFecJuDw==}
+    engines: {node: '>=12'}
 
   yocto-queue@0.1.0:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
@@ -21532,12 +21590,12 @@ snapshots:
 
   '@publint/pack@0.1.4': {}
 
-  '@puppeteer/browsers@3.2.2(yauzl@2.10.0)':
+  '@puppeteer/browsers@3.2.2(yauzl@3.4.0)':
     dependencies:
       modern-tar: 0.8.5
       yargs: 18.1.0
     optionalDependencies:
-      yauzl: 2.10.0
+      yauzl: 3.4.0
 
   '@quansync/fs@1.0.0':
     dependencies:
@@ -22892,8 +22950,6 @@ snapshots:
       node-releases: 2.0.51
       update-browserslist-db: 1.2.3(browserslist@4.28.6)
 
-  buffer-crc32@0.2.13: {}
-
   buffer-equal-constant-time@1.0.1: {}
 
   buffer-from@1.1.2: {}
@@ -23845,7 +23901,7 @@ snapshots:
     dependencies:
       debug: 4.4.3(supports-color@9.4.0)
       get-stream: 5.2.0
-      yauzl: 2.10.0
+      yauzl: 3.4.0
     optionalDependencies:
       '@types/yauzl': 2.10.3
     transitivePeerDependencies:
@@ -23878,10 +23934,6 @@ snapshots:
       fast-xml-builder: 1.2.0
       path-expression-matcher: 1.5.0
       strnum: 2.4.0
-
-  fd-slicer@1.1.0:
-    dependencies:
-      pend: 1.2.0
 
   fdir@6.5.0(picomatch@4.0.4):
     optionalDependencies:
@@ -26847,10 +26899,9 @@ snapshots:
       y18n: 5.0.8
       yargs-parser: 22.0.0
 
-  yauzl@2.10.0:
+  yauzl@3.4.0:
     dependencies:
-      buffer-crc32: 0.2.13
-      fd-slicer: 1.1.0
+      pend: 1.2.0
 
   yocto-queue@0.1.0: {}
 
