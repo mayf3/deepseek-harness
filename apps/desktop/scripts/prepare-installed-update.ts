@@ -35,7 +35,7 @@ async function main(): Promise<void> {
   }
   if ((command !== 'init' && command !== 'inspect') || original === undefined || successor === undefined
     || extra.length !== 0 || (command === 'init' && directory !== undefined) || (command === 'inspect' && directory === undefined)) {
-    throw new Error('usage: prepare-installed-update.ts init <original-nightly> <successor-nightly> | bootstrap <run.json> | runtime <run.json> | application <run.json> | files <run.json> <version> | collect <run.json> <journal-directory> | inspect <original-nightly> <successor-nightly> <journal-directory>')
+    throw new Error('usage: prepare-installed-update.ts init <original-test-version> <successor-test-version> | bootstrap <run.json> | runtime <run.json> | application <run.json> | files <run.json> <version> | collect <run.json> <journal-directory> | inspect <original-test-version> <successor-test-version> <journal-directory>')
   }
   if (command === 'inspect') {
     const evidence = await inspectInstalledUpdateJournals(directory!, [original, successor])

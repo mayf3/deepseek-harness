@@ -21,10 +21,12 @@ Prepare a private test application and fresh test distribution namespace, then l
 
 ## Prepare materials
 
-From the repository root with dependencies installed, allocate a run with two increasing numeric Nightly versions. This writes only an ignored local manifest; it does not build, sign, upload, install, or read credentials.
+From the repository root with dependencies installed, allocate a run with two increasing derived test versions. This writes only an ignored local manifest; it does not build, sign, upload, install, or read credentials.
+
+The examples use base version `0.1.6-alpha.1`. Before creating new material, substitute the actual base, Asia/Shanghai date, and unused index according to the [release version rules](../../README.md#release-versions).
 
 ```powershell
-node --import tsx apps/desktop/scripts/prepare-installed-update.ts init 0.1.6-nightly.20260914.1 0.1.6-nightly.20260914.2
+node --import tsx apps/desktop/scripts/prepare-installed-update.ts init 0.1.6-alpha.1.20260916.1 0.1.6-alpha.1.20260916.2
 ```
 
 Retain the returned `run.json` and reuse its random identity and `qualification/<id>` paths for both packages. The source commit and dirty-file list identify the starting checkout, not the contents of a later package. Record final build source identifiers and artifact hashes separately; do not regenerate the manifest midway through an update.
@@ -45,7 +47,7 @@ The `application` command copies built main/preload modules, renderer files, and
 The [packaging entry](../../scripts/package-installed-update.ts) defaults to checks. A retained signing interlock rejects before credentials are loaded; it never clears that interlock. With no interlock, checks load `.env.windows`, validate prepared inputs, and launch no child. Run this from the repository root with one exact version:
 
 ```powershell
-node --import tsx apps/desktop/scripts/package-installed-update.ts "<run.json>" 0.1.6-nightly.20260914.1 --check
+node --import tsx apps/desktop/scripts/package-installed-update.ts "<run.json>" 0.1.6-alpha.1.20260916.1 --check
 ```
 
 Actual packaging remains unverified and requires separate hardware-recovery approval and a present operator. The `--execute` mode requires a terminal and an exact confirmation containing the version and run ID; there is no piped approval option. It rechecks the interlock and exclusively allocates that version's `packaging` directory. The supervised child builds only that version, disables publication, strips unrelated credentials, and stops on failure or a 15-minute overall deadline. This deadline does not bound individual CSP authentication attempts. Records retain source/tool hashes, redacted output, events, and artifact file hashes; an existing attempt or output refuses reuse. `builderCompleted` and a successful supervisor result do not establish package verification, signature acceptance, or installation success; `packageVerification` remains `pending` until those checks are performed independently.
@@ -57,7 +59,7 @@ The Windows [read-only signature helper](../../scripts/installed-update-signatur
 The [package verifier](../../scripts/verify-installed-update-package.ts) checks the final installer before extracting it with a reviewed local 7-Zip executable. Supply absolute paths for the manifest, trusted public certificate, and tool; never select a tool extracted from the installer being verified. This command creates a fresh `verification/check-*` directory, preserves partial records, and fails immediately when the installer is absent:
 
 ```powershell
-node --import tsx apps/desktop/scripts/verify-installed-update-package.ts "<run.json>" 0.1.6-nightly.20260914.1 "<public.cer>" "<reviewed-7za.exe>"
+node --import tsx apps/desktop/scripts/verify-installed-update-package.ts "<run.json>" 0.1.6-alpha.1.20260916.1 "<public.cer>" "<reviewed-7za.exe>"
 ```
 
 The verifier checks actual archived application identity, entry, frozen application bytes, updater dependency versions, feed/cache/publisher configuration, and the bundled Harness runtime against prepared inputs. Changed runtime executables require separate signature checks; other runtime bytes must match. It rejects unsafe archive paths before extraction and records installer, application, and runtime-executable signatures. Before success, it rechecks installer, feed/blockmap, manifest, certificate, and tool hashes. `passed` covers these checks only: dependency bytes are not frozen, and installer registration, startup, upgrade, and data retention remain explicit manual checks. Real archive reading has been observed on a retained older package; complete signed-package verification for the prepared versions remains pending.
@@ -92,7 +94,7 @@ The intentional 404 is a check-failure case, not the later interrupted-download 
 Retain the manifest, build records, original feeds, binary hashes, publication receipts and readbacks, fault setup/removal evidence, screenshots, and all process journals. Installer logs and test data may contain private paths or content; review before sharing. The inspector is read-only and copies only milestone references, not raw diagnostics. Replace the directory placeholder and use the manifest's exact versions:
 
 ```powershell
-node --import tsx apps/desktop/scripts/prepare-installed-update.ts inspect 0.1.6-nightly.20260914.1 0.1.6-nightly.20260914.2 "<journal-directory>"
+node --import tsx apps/desktop/scripts/prepare-installed-update.ts inspect 0.1.6-alpha.1.20260916.1 0.1.6-alpha.1.20260916.2 "<journal-directory>"
 ```
 
 Exit 0 means the ordered journal milestones are present; exit 2 means missing milestones; exit 1 means input or command validation failed. A failure/retry sequence cannot combine different version 1 processes. A successor started before the original process quit is not counted; clock changes can leave evidence incomplete and require investigation. `recordedFlow: complete` is not overall acceptance. The report always requires independent operator checks for publication timing, network failure and recovery, installer completion and path, preserved data, and screenshots and confirmations.

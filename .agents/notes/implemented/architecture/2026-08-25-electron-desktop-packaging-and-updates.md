@@ -18,6 +18,8 @@ The current GUI protocol binds the Web client and backend release. Independently
 
 ## Decision
 
+Production/test derivation of the shared version follows the [release version decision](../process/2026-09-16-desktop-release-version-derivation.md); this record still governs package-version equality.
+
 Ship a small Electron shell and pinned pnpm; the [runtime decision](2026-09-11-desktop-electron-node-runtime.md) owns the executable choice. The [thin-wrapper decision](2026-09-10-desktop-web-wrapper.md) owns Host boot and transport: the private Host runs the shared Web profile runner, Electron loads its authenticated HTTP URL, and child IPC carries lifecycle messages.
 
 Electron owns the reserved profile at `.dsh/profiles/desktop`. The [bundled-runtime decision](2026-09-08-desktop-bundled-runtime-and-external-plugins.md) owns core resource storage, external plugin dependencies, shared package links, and profile reconciliation. The private Desktop Host remains outside the public CLI package and is never published to npm.

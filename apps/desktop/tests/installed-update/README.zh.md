@@ -21,10 +21,12 @@ description: "Windows 已安装应用更新的人工清单，覆盖下载失败�
 
 ## 准备物料
 
-在已安装依赖的仓库根目录中，用两个递增的纯数字 Nightly 版本创建批次。这只写入已忽略的本地清单，不构建、签名、上传、安装或读取凭据。
+在已安装依赖的仓库根目录中，用两个递增的派生测试版本创建批次。这只写入已忽略的本地清单，不构建、签名、上传、安装或读取凭据。
+
+示例以 `0.1.6-alpha.1` 为基础版本。创建新物料前，按[发布版本规则](../../README.zh.md#release-versions)替换为实际基础版本、北京时间日期和未使用的序号。
 
 ```powershell
-node --import tsx apps/desktop/scripts/prepare-installed-update.ts init 0.1.6-nightly.20260914.1 0.1.6-nightly.20260914.2
+node --import tsx apps/desktop/scripts/prepare-installed-update.ts init 0.1.6-alpha.1.20260916.1 0.1.6-alpha.1.20260916.2
 ```
 
 保留返回的 `run.json`，两个安装包复用其中的随机身份与 `qualification/<id>` 路径。源提交与脏文件列表标识起始工作区，不代表后续安装包内容。最终构建来源和产物哈希另行记录；不要在更新中途重新生成清单。
@@ -45,7 +47,7 @@ node --import tsx apps/desktop/scripts/prepare-installed-update.ts application "
 [打包入口](../../scripts/package-installed-update.ts)默认只检查。保留的签名保护锁会在读取凭据前使其拒绝；入口绝不清除此锁。没有保护锁时，检查会加载 `.env.windows`、校验准备输入，不启动子进程。在仓库根目录使用一个准确版本执行：
 
 ```powershell
-node --import tsx apps/desktop/scripts/package-installed-update.ts "<run.json>" 0.1.6-nightly.20260914.1 --check
+node --import tsx apps/desktop/scripts/package-installed-update.ts "<run.json>" 0.1.6-alpha.1.20260916.1 --check
 ```
 
 实际打包仍未验证，必须另行获得硬件恢复授权并有操作者在场。`--execute` 模式要求终端和包含版本、批次 ID 的准确确认，没有管道批准选项。它再次检查保护锁，并独占创建该版本的 `packaging` 目录。受监督子进程只构建该版本、禁用发布、移除无关凭据，失败或达到 15 分钟整体期限时停止。该期限不限制单次 CSP 内部认证尝试。记录保留源码/工具哈希、脱敏输出、事件和产物文件哈希；已有尝试或输出拒绝复用。`builderCompleted` 与监督程序成功结果不证明包验证、验签或安装成功；独立完成这些检查前，`packageVerification` 保持 `pending`。
@@ -57,7 +59,7 @@ Windows [只读签名检查器](../../scripts/installed-update-signature.mjs)使
 [安装包检查器](../../scripts/verify-installed-update-package.ts)先校验最终安装包，再使用经过审查的本地 7-Zip 可执行文件解包。清单、可信公钥证书和工具均须提供绝对路径；绝不选择从待验安装包中解出的工具。此命令创建全新的 `verification/check-*` 目录，保留部分记录，安装包缺失时立即失败：
 
 ```powershell
-node --import tsx apps/desktop/scripts/verify-installed-update-package.ts "<run.json>" 0.1.6-nightly.20260914.1 "<public.cer>" "<reviewed-7za.exe>"
+node --import tsx apps/desktop/scripts/verify-installed-update-package.ts "<run.json>" 0.1.6-alpha.1.20260916.1 "<public.cer>" "<reviewed-7za.exe>"
 ```
 
 检查器核对实际归档内的应用身份、入口、冻结应用字节、updater 依赖版本、feed/缓存/发布者配置，并将内置 Harness 运行时与准备输入比较。发生变化的运行时可执行文件须单独验签；其他运行时字节必须一致。它在解包前拒绝不安全归档路径，记录安装器、应用及运行时可执行文件的签名。成功前再次核对安装包、feed/blockmap、清单、证书和工具哈希。`passed` 仅覆盖这些检查：依赖字节未冻结，安装器注册、启动、升级和数据保留仍是明确的人工检查项。保留的旧包已完成真实归档读取；本批次准备版本的完整签名包检查仍待执行。
@@ -92,7 +94,7 @@ node --import tsx apps/desktop/scripts/verify-installed-update-package.ts "<run.
 保留清单、构建记录、原始 feed、二进制哈希、发布回执与回读、故障设置和移除证据、截图及全部进程日志。安装器日志与测试数据可能包含私有路径或内容，分享前须审查。检查器只读，仅复制里程碑引用，不复制原始诊断。替换目录占位符并使用清单中的准确版本：
 
 ```powershell
-node --import tsx apps/desktop/scripts/prepare-installed-update.ts inspect 0.1.6-nightly.20260914.1 0.1.6-nightly.20260914.2 "<journal-directory>"
+node --import tsx apps/desktop/scripts/prepare-installed-update.ts inspect 0.1.6-alpha.1.20260916.1 0.1.6-alpha.1.20260916.2 "<journal-directory>"
 ```
 
 退出码 0 表示按序日志标记齐全；退出码 2 表示缺少标记；退出码 1 表示输入或命令验证失败。失败重试序列不能拼接不同版本 1 进程。早于原进程退出就启动的后继进程不计入；系统时间变化可能导致证据不完整，需要调查。`recordedFlow: complete` 不等于整体验收通过。报告始终要求独立人工检查发布时间、网络失败与恢复、安装器完成与路径、数据保留以及截图和确认。

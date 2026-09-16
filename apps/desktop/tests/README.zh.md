@@ -82,7 +82,7 @@ Chromium headless shell revision 1228 已安装在忽略目录 `.desktop-build/p
 
 TODO（暂缓实施的桌面体验）：从确认安装到新工作区可用，提供连续状态反馈。旧应用说明任务收尾，旧进程退出后由安装器展示进度，新应用展示启动状态。仅对可测量的安装工作显示真实百分比，任务收尾和启动使用不定进度反馈；不增加确认操作。优化耗时前补齐安装器交接、文件替换、进程启动和窗口首次可见的时间戳。这是待办，不是已实现行为，也不属于本轮错误文案与发布流程修复。
 
-2026-09-14，经操作者授权的构建在 `.desktop-build/qualification/installed-update-r5dYNH/` 中生成签名 `0.1.6-nightly.20260914.1` 和 `0.1.6-nightly.20260914.2` 安装包，两者共用私有身份和 test feed。每次受监督构建记录 15 次成功签名，没有签名失败；此计数不测量令牌内部认证次数。版本目录内的 `verification/check-KaQ0AB/result.json` 和 `verification/check-nO2tMM/result.json` 通过真实 updater／Authenticode 验签、时间戳、归档路径、冻结应用字节、运行时内容及内嵌更新设置检查。安装包分别为 155,855,536 和 155,854,520 字节。保留的授权和事故归档记录了基于成功单文件探针的软件保护锁恢复；当前令牌登录状态和剩余次数没有查询。上述构建与检查没有执行安装器或写入远端 feed。这些本地回执验证文件，不证明已安装版本升级成功。
+2026-09-14，经操作者授权的构建在 `.desktop-build/qualification/installed-update-r5dYNH/` 中生成签名 `0.1.6-nightly.20260914.1` 和 `0.1.6-nightly.20260914.2` 安装包，两者共用私有身份和 test feed。每次受监督构建记录 15 次成功签名，没有签名失败；此计数不测量令牌内部认证次数。版本目录内的 `verification/check-KaQ0AB/result.json` 和 `verification/check-nO2tMM/result.json` 通过真实 updater／Authenticode 验签、时间戳、归档路径、冻结应用字节、运行时内容及内嵌更新设置检查。安装包分别为 155,855,536 和 155,854,520 字节。保留的授权和事故归档记录了基于成功单文件探针的软件保护锁恢复；当前令牌登录状态和剩余次数没有查询。上述构建与检查没有执行安装器或写入远端 feed。这些本地回执验证文件，不证明已安装版本升级成功。 此处 Nightly 版本号仅标识历史验收物料；新发布使用[发布版本规则](../README.zh.md#release-versions)。
 
 2026-09-14 的 `local-updater-k1Sbo5` 通过 17 个真实 Electron／本地服务器场景，包括同弹窗安装确认和稍后更新。完整工作区报告 `electron-workspace-updates-7J0rLB` 记录了使用编译主入口、真实 preload 和真实 Host 进程的 10 个场景，包括强更停止任务失败及恢复。两次运行均不执行安装器。八个定向套件通过 94 个回归，覆盖强更渲染、版本绑定批准、过期 frame 拒绝、剪贴板失败、任务恢复及 Windows／macOS 单次提醒适配器。这些替身不认证原生通知展示。
 

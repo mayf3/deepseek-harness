@@ -31,7 +31,7 @@ export interface InstalledUpdateRun {
 /**
  * Allocate a new local run and retain its manifest without reading release credentials.
  * @param parent Ignored material directory; each invocation acquires a separate child atomically.
- * @param versions Explicit original and successor Nightly versions, in increasing order.
+ * @param versions Explicit original and successor test versions, in increasing order.
  * @param source Source version, Git commit, and dirty-file list captured before material preparation.
  * @returns The retained run manifest; no package or publication is implied by its presence.
  */
@@ -57,9 +57,10 @@ export async function createInstalledUpdateRun(
 }
 
 function validateVersions(versions: readonly [string, string]): void {
-  if (versions.some(version => valid(version) !== version || !/^\d+\.\d+\.\d+-nightly\.[0-9.]+$/u.test(version))
+  const pattern = /^\d+\.\d+\.\d+-(?:nightly\.[0-9.]+|[0-9A-Za-z.-]+\.\d{8}\.[1-9]\d*)$/u
+  if (versions.some(version => valid(version) !== version || !pattern.test(version))
     || !gt(versions[1], versions[0])) {
-    throw new Error('installed update: two increasing numeric Nightly versions are required')
+    throw new Error('installed update: two increasing dated test versions are required')
   }
 }
 
