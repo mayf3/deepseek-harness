@@ -13,6 +13,7 @@ vi.mock('node:fs', async (importOriginal) => {
 
 const roots: string[] = []
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.mocked(renameSync).mockClear()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -38,7 +39,7 @@ it.each(['web', 'desktop'])('recovers the %s profile without loading its broken 
   const pluginManifest = join(packageDir, 'package.json')
   writeFileSync(pluginManifest, '{broken')
   const backup = sanitizeProfile('test', dir, bundles)
-  expect(backup).toMatch(/cordis\.patch\.yml\.bak-[\da-f-]+$/u)
+  expect(backup).toMatch(/cordis\.patch\.yml\.bak-\d{13}$/u)
   expect(existsSync(patch)).toBe(false)
   expect(readFileSync(backup!, 'utf8')).toBe(': broken YAML')
   expect(readFileSync(pluginManifest, 'utf8')).toBe('{broken')
@@ -48,12 +49,15 @@ it.each(['web', 'desktop'])('recovers the %s profile without loading its broken 
 })
 
 it('preserves previous backups across retries and later recovery actions', () => {
+  const timestamp = 1_789_555_200_000
+  vi.spyOn(Date, 'now').mockReturnValue(timestamp)
   const { dir, bundles, patch } = fixture()
   const first = sanitizeProfile('test', dir, bundles)!
   expect(sanitizeProfile('test', dir, bundles)).toBeUndefined()
   writeFileSync(patch, 'second patch')
   const second = sanitizeProfile('test', dir, bundles)!
-  expect(second).not.toBe(first)
+  expect(first).toBe(`${patch}.bak-${timestamp}`)
+  expect(second).toBe(`${patch}.bak-${timestamp + 1}`)
   expect(readFileSync(first, 'utf8')).toBe(': broken YAML')
   expect(readFileSync(second, 'utf8')).toBe('second patch')
 })
