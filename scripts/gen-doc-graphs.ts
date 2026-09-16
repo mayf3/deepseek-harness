@@ -153,7 +153,7 @@ const SERVICE_ROLES: ServiceRole[] = [
   {
     key: 'documentConvert', pkg: 'document-convert', title: 'Office to PDF conversion',
     mode: 'seam', implementations: ['document-convert-libreoffice'], consumers: [],
-    note: 'Authorized Office bytes are converted on the Host using native engines on macOS/Windows and Node WASM on Linux.',
+    note: 'Authorized Office bytes are converted on the Host using the declared native target engine, or Node WASM when no native target is declared.',
   },
   {
     key: 'attachments',

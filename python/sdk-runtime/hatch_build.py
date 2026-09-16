@@ -74,7 +74,6 @@ class RuntimeBuildHook(BuildHookInterface):
             )
         expected_executable = matches[0][1]
         target = next(name for name, value in _PLATFORMS.items() if value[0] == platform_tag)
-        engine = "wasm" if target.startswith("linux-") else target.replace("win-", "win32-").replace("macos-", "darwin-")
         runtime_dir = Path(self.root) / "src" / "deepseek_harness_runtime" / "runtime"
         runtime_files = sorted(
             runtime_dir.glob("deepseek-harness-sdk-runtime-*") if runtime_dir.is_dir() else []
@@ -96,9 +95,15 @@ class RuntimeBuildHook(BuildHookInterface):
             )
         for executable in runtime_files:
             if executable == office:
-                for required in ("@deepseek-ai/libreoffice-kit/package.json", f"@deepseek-ai/libreoffice-kit-{engine}/prebuilds.json"):
-                    if not (office / "node_modules" / required).is_file():
-                        raise RuntimeError(f"runtime Office dependency is missing: {office / required}")
+                adapter = office / "node_modules/@deepseek-ai/libreoffice-kit/package.json"
+                if not adapter.is_file():
+                    raise RuntimeError(f"runtime Office dependency is missing: {adapter}")
+                native = target.replace("win-", "win32-").replace("macos-", "darwin-")
+                declared = json.loads(adapter.read_text(encoding="utf-8")).get("optionalDependencies", {})
+                engine = native if f"@deepseek-ai/libreoffice-kit-{native}" in declared else "wasm"
+                required = office / "node_modules" / f"@deepseek-ai/libreoffice-kit-{engine}/prebuilds.json"
+                if not required.is_file():
+                    raise RuntimeError(f"runtime Office dependency is missing: {required}")
                 continue
             if not executable.is_file():
                 raise RuntimeError(f"runtime executable is not a file: {executable}")

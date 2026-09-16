@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Convert authorized Office files to reusable PDFs on the Host. The conversion family provides a shared conversion operation and a LibreOffice kit provider. macOS and Windows use their matching native engine; Linux uses Node WASM.
+Convert authorized Office files to reusable PDFs on the Host. The conversion family provides a shared conversion operation and a LibreOffice kit provider. Targets with a declared native engine use it; other targets use Node WASM.
 
 ## Table of Contents
 

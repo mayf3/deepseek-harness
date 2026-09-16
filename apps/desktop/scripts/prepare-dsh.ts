@@ -28,6 +28,7 @@ import {
 } from './macos-runtime.ts'
 import { resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import { desktopRuntimeFileExclusion } from './runtime-file-policy.ts'
+import { selectOfficeEngine } from '../../../scripts/libreoffice-engine.ts'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const BUILD_PATHS = resolveDesktopTargetBuildPaths()
@@ -123,10 +124,12 @@ async function main(): Promise<void> {
     const targetName = resolveDesktopBuildTarget()
     const target = { platform: process.platform, arch: targetName.endsWith('arm64') ? 'arm64' : 'x64' }
     const modules = join(BUILD_ROOT, 'node_modules')
+    const officeManifest = JSON.parse(readFileSync(join(modules, '@deepseek-ai/libreoffice-kit/package.json'), 'utf8'))
+    const officeEngine = selectOfficeEngine(officeManifest, target)
     mkdirSync(DSH_OUTPUT_ROOT, { recursive: true })
     cpSync(modules, join(DSH_OUTPUT_ROOT, 'node_modules'), {
       recursive: true, dereference: true,
-      filter: source => desktopRuntimeFileExclusion(relative(modules, source), target) === undefined,
+      filter: source => desktopRuntimeFileExclusion(relative(modules, source), target, officeEngine) === undefined,
     })
     writeFileSync(join(DSH_OUTPUT_ROOT, 'package.json'), `${JSON.stringify({
       name: '@deepseek-ai/dsh-desktop-runtime', private: true, version: release.version, type: 'module',
@@ -137,7 +140,6 @@ async function main(): Promise<void> {
         throw new Error(`desktop runtime: missing private Host file ${file}`)
       }
     }
-    const officeEngine = target.platform === 'linux' ? 'wasm' : `${target.platform}-${target.arch}`
     if (!existsSync(join(DSH_OUTPUT_ROOT, 'node_modules', '@deepseek-ai', `libreoffice-kit-${officeEngine}`, 'prebuilds.json'))) {
       throw new Error(`desktop runtime: missing required LibreOffice engine ${officeEngine}`)
     }

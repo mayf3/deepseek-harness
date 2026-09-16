@@ -72,7 +72,7 @@ The verification surface has three tiers. Mechanism tier: the measured conclusio
 
 Manual-driving caveat: the bin treats stdin EOF as "the client is gone" and disposes immediately, so a short-lived pipe aborts an in-flight turn — pipe-driven runs must keep stdin open until the turn ends.
 
-The installed-wheel `sdk-office` scenario copies the target's complete payload to a private temporary directory, requires exactly one target backend (WASM on Linux, native on macOS/Windows), and converts DOCX once through the shipped SDK profile with that engine. It checks that the kit module resolves inside the relocated directory, that conversion reports the expected backend, and that the output contains PDF bytes. Wheel validation checks the declared engine assets and native helper execute bit; CI uploads the completed wheel, so nested helper permissions stay inside the ZIP archive.
+The installed-wheel `sdk-office` scenario copies the target's complete payload to a private temporary directory, requires exactly one target backend (the declared native target, or WASM when no native target is declared), and converts DOCX once through the shipped SDK profile with that engine. It checks that the kit module resolves inside the relocated directory, that conversion reports the expected backend, and that the output contains PDF bytes. Wheel validation checks the declared engine assets and native helper execute bit; CI uploads the completed wheel, so nested helper permissions stay inside the ZIP archive.
 
 ## Alternatives considered
 
