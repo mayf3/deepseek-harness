@@ -5,7 +5,7 @@ import type { SessionPendingInteractionBase } from '@deepseek-ai/dsh-client-ui-s
 import type { ScheduleId, ScheduleRecord } from '@deepseek-ai/dsh-schedule/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey,
+  deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey, owningParentFolder,
   pinCurrentBlank, reconcileManualOrder, visibleSessionIds, workspaceLabel, UNGROUPED_KEY,
 } from '../src/client/tree.ts'
 import { createWorkspaceViewStore } from '../src/client/stores.ts'
@@ -584,5 +584,23 @@ describe('workspaceLabel', () => {
     expect(workspaceLabel('/projects/demo/')).toBe('demo')
     expect(workspaceLabel('C:\\projects\\demo\\')).toBe('demo')
     expect(workspaceLabel('/')).toBe('/')
+  })
+})
+
+describe('parent folder membership', () => {
+  it.each([
+    ['/git/app', ['/git'], '/git'],
+    ['/git', ['/git/'], undefined],
+    ['/git-other/app', ['/git'], undefined],
+    ['/git/team/app', ['/git', '/git/team'], '/git/team'],
+    ['/git/team/app', ['/git/team', '/git'], '/git/team'],
+    ['/git/app', ['/'], '/'],
+    ['/git/app', [], undefined],
+    [String.raw`C:\git\app`, ['C:/git/'], 'C:/git/'],
+    [String.raw`\\server\share\app`, [String.raw`\\server\share`], String.raw`\\server\share`],
+    [String.raw`/git/a\b`, ['/git/a'], undefined],
+    ['/Git/app', ['/git'], undefined],
+  ])('groups %s under its nearest registered ancestor', (path, parents, expected) => {
+    expect(owningParentFolder(path, parents)).toBe(expected)
   })
 })

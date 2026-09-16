@@ -128,8 +128,10 @@ root
 │        ├─ settings.models.provider-card
 │        ├─ settings.models.footer
 │        └─ settings.plugins.tab
-│           └─ settings.plugin.item
 ├─ main
+│  ├─ plugins.item
+│  ├─ plugins.bundle.config
+│  ├─ plugins.row.config
 │  └─ main.conversation
 │     ├─ conversation.session
 │     │  └─ conversation.view

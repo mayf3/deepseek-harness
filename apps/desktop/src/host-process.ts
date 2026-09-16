@@ -72,7 +72,9 @@ export class DesktopHostProcess {
    * @param inspectPort - Optional loopback inspector port for workspace development.
    * @param environment - Environment inherited by the Host and its plugin subprocesses.
    * @param onFailure - Receives the first unexpected child failure, including after readiness.
-   * @param primaryRuntime - Optional payload location for bundled script dependencies.
+   * @param primaryRuntime - Optional bundled dependency payload; when supplied, missing sibling
+   *   `office-skills` resources fail Host startup.
+   * @param packageManager - Bundled pnpm entry and Node launcher directory, scoped to package operations.
    * @param profileResolution - Package resolution mode for the application-owned profile.
    */
   constructor(
@@ -84,6 +86,7 @@ export class DesktopHostProcess {
     private readonly onFailure?: (error: Error) => void,
     private readonly primaryRuntime?: string,
     private readonly profileResolution: 'link' | 'runtime' = 'link',
+    private readonly packageManager?: { readonly pnpm: string; readonly nodeBin: string },
   ) {}
 
   /**
@@ -101,6 +104,7 @@ export class DesktopHostProcess {
       this.projectDir,
       this.primaryRuntime ?? join(this.runtimeDir, '..', 'runtime', 'primary-runtime'),
       this.profileResolution,
+      ...this.packageManager === undefined ? [] : [this.packageManager.pnpm, this.packageManager.nodeBin],
     ], {
       cwd: this.projectDir,
       env: desktopNodeEnvironment(this.node, undefined, this.environment),

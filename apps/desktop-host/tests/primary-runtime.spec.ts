@@ -24,6 +24,7 @@ async function fixture() {
   const manifest: PrimaryRuntimeManifest = {
     desktopVersion: '1.0.0', platform: process.platform === 'win32' ? 'win32' : 'darwin', arch: process.arch,
     components: { python: '3.12.14', node: '24.21.0', pnpm: '11.7.0', numpy: '2.3.5', pandas: '3.0.1' },
+    pythonPackages: { 'python-docx': '1.2.0', 'python-pptx': '1.0.2', openpyxl: '3.1.5' },
   }
   const paths = workspaceDependencyPaths(source, manifest)
   for (const path of [paths.python, paths.node, paths.pnpm]) {
@@ -39,16 +40,18 @@ async function fixture() {
 it.each(['win32', 'darwin'])('returns %s interpreter and package paths', (platform) => {
   const manifest: PrimaryRuntimeManifest = { desktopVersion: '1', platform, arch: 'x64', components: { python: '3.12.14', node: '24.21.0', pnpm: '11.7.0', numpy: '2.3.5', pandas: '3.0.1' } }
   const paths = workspaceDependencyPaths('/runtime', manifest)
+  expect(paths.pythonDistributions).toEqual({})
   expect(paths.python).toBe(join('/runtime', 'dependencies', 'python', ...(platform === 'win32' ? ['python.exe'] : ['bin', 'python3'])))
   expect(paths.pythonPackages).toBe(join('/runtime', 'dependencies', 'python', ...(platform === 'win32' ? ['Lib'] : ['lib', 'python3.12']), 'site-packages'))
 })
 
 it.skipIf(process.platform === 'linux')('installs offline, reuses the same release, and leaves environment and user packages unchanged', async () => {
-  const { source, root } = await fixture()
+  const { source, root, manifest } = await fixture()
   const environment = { ...process.env }
   const installed = await installPrimaryRuntime(source, root)
   await writeFile(join(installed.pythonPackages, 'user-package.py'), 'user content')
   expect(await installPrimaryRuntime(source, root)).toEqual(installed)
+  expect(installed.pythonDistributions).toEqual(manifest.pythonPackages)
   expect(await readFile(join(installed.pythonPackages, 'user-package.py'), 'utf8')).toBe('user content')
   expect(process.env).toEqual(environment)
 })
@@ -60,6 +63,43 @@ it.skipIf(process.platform === 'linux')('replaces release components and recover
   await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, desktopVersion: '2.0.0' }))
   await installPrimaryRuntime(source, root)
   expect((await readPrimaryRuntime(root)).desktopVersion).toBe('2.0.0')
+})
+
+it.skipIf(process.platform === 'linux')('replaces dependencies when the locked payload changes without a Desktop version change', async () => {
+  const { source, root, manifest } = await fixture()
+  const first = { ...manifest, payloadDigest: 'a'.repeat(64), pythonPackages: { 'python-docx': '1.1.2' } }
+  await writeFile(join(source, 'runtime.json'), JSON.stringify(first))
+  const installed = await installPrimaryRuntime(source, root)
+  await writeFile(join(installed.pythonPackages, 'old-package.py'), 'old dependency')
+  const next = { ...first, payloadDigest: 'b'.repeat(64), pythonPackages: { 'python-docx': '1.2.0' } }
+  await writeFile(join(source, 'runtime.json'), JSON.stringify(next))
+  await writeFile(join(workspaceDependencyPaths(source, next).pythonPackages, 'new-package.py'), 'new dependency')
+  await installPrimaryRuntime(source, root)
+  expect(await readPrimaryRuntime(root)).toEqual(next)
+  expect(await readFile(join(installed.pythonPackages, 'new-package.py'), 'utf8')).toBe('new dependency')
+  await expect(readFile(join(installed.pythonPackages, 'old-package.py'))).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it.skipIf(process.platform === 'linux')('upgrades a release manifest without a payload digest', async () => {
+  const { source, root, manifest } = await fixture()
+  await installPrimaryRuntime(source, root)
+  await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, payloadDigest: 'a'.repeat(64), pythonPackages: { 'python-docx': '1.2.0' } }))
+  await installPrimaryRuntime(source, root)
+  expect((await readPrimaryRuntime(root)).payloadDigest).toBe('a'.repeat(64))
+})
+
+it.skipIf(process.platform === 'linux')('replaces changed payload bytes when only the digest changes', async () => {
+  const { source, root, manifest } = await fixture()
+  const first = { ...manifest, payloadDigest: 'a'.repeat(64), pythonPackages: { 'python-docx': '1.2.0' } }
+  const sourceFile = join(workspaceDependencyPaths(source, first).pythonPackages, 'library.py')
+  await writeFile(join(source, 'runtime.json'), JSON.stringify(first))
+  await writeFile(sourceFile, 'first wheel bytes')
+  const installed = await installPrimaryRuntime(source, root)
+  await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...first, payloadDigest: 'b'.repeat(64) }))
+  await writeFile(sourceFile, 'repacked wheel bytes')
+  await installPrimaryRuntime(source, root)
+  expect(await readFile(join(installed.pythonPackages, 'library.py'), 'utf8')).toBe('repacked wheel bytes')
+  expect((await readPrimaryRuntime(root)).pythonPackages).toEqual(first.pythonPackages)
 })
 
 it.skipIf(process.platform === 'linux')('keeps the installed release when the replacement payload is incomplete', async () => {
@@ -87,6 +127,29 @@ it('rejects malformed metadata and incompatible targets', async () => {
   await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, arch: process.arch === 'x64' ? 'arm64' : 'x64' }))
   await expect(installPrimaryRuntime(source, root)).rejects.toThrow('incompatible')
   await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, components: { ...manifest.components, python: '../escape' } }))
+  await expect(readPrimaryRuntime(source)).rejects.toThrow('invalid metadata')
+})
+
+it.each([['numpy', 'numpy'], ['pandas', 'pandas'], ['Numpy', 'numpy'], ['PANDAS', 'pandas']] as const)('rejects conflicting %s component and distribution versions', async (distribution, name) => {
+  const { source, manifest } = await fixture()
+  await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, pythonPackages: { [distribution]: '0.0.1' } }))
+  await expect(readPrimaryRuntime(source)).rejects.toThrow(`conflicting ${name} distribution version`)
+  const consistent = { ...manifest, pythonPackages: { [distribution]: manifest.components[name] } }
+  await writeFile(join(source, 'runtime.json'), JSON.stringify(consistent))
+  expect(await readPrimaryRuntime(source)).toEqual(consistent)
+})
+
+it.each([
+  { payloadDigest: 'invalid' },
+  { pythonPackages: ['python-docx'] },
+  { pythonPackages: { 'python-docx': '../escape' } },
+  { pythonPackages: { '../escape': '1.2.0' } },
+  { pythonPackages: { numpy: '2.3.5', Numpy: '2.3.5' } },
+  { pythonPackages: { Pillow: '12.3.0', pillow: '12.3.0' } },
+  { pythonPackages: { typing_extensions: '4.16.0', 'typing.extensions': '4.16.0' } },
+])('rejects invalid locked payload metadata: %j', async (invalid) => {
+  const { source, manifest } = await fixture()
+  await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, ...invalid }))
   await expect(readPrimaryRuntime(source)).rejects.toThrow('invalid metadata')
 })
 

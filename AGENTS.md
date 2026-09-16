@@ -25,6 +25,7 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   terminal/             persistent terminals
   ptc-runtime/          PTC execution
   sandbox/              process confinement
+  deliverables/         turn deliverables
   fs/                   filesystem access
   lsp/                  language servers
   skill/                skill loading

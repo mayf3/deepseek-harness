@@ -79,13 +79,13 @@ describe('desktop host process', () => {
 
   it('passes external dependencies and runtime profile resolution to the Host', async () => {
     const runtime = projectWithHost(HTTP_HOST.replace('runtime: process.argv[2]',
-      'primaryRuntime: process.argv[4], profileResolution: process.argv[5], runtime: process.argv[2]'))
+      'pnpm: process.argv[6], nodeBin: process.argv[7], primaryRuntime: process.argv[4], profileResolution: process.argv[5], runtime: process.argv[2]'))
     const primaryRuntime = join(runtime, 'external-primary-runtime')
     const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env,
-      undefined, primaryRuntime, 'runtime')
+      undefined, primaryRuntime, 'runtime', { pnpm: join(runtime, 'pnpm.mjs'), nodeBin: join(runtime, 'bin') })
     hosts.push(host)
     const { url } = await host.start()
-    expect(await (await fetch(url)).json()).toMatchObject({ primaryRuntime, profileResolution: 'runtime' })
+    expect(await (await fetch(url)).json()).toMatchObject({ primaryRuntime, profileResolution: 'runtime', pnpm: join(runtime, 'pnpm.mjs'), nodeBin: join(runtime, 'bin') })
   })
 
   it('reports a fatal event after readiness once', async () => {

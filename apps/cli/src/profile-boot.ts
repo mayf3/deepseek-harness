@@ -235,6 +235,8 @@ export interface RunProfileOptions {
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
+  /** Application-owned package runtime, scoped to plugin package operations. */
+  packageManager?: ProfileContext['packageManager']
   /** Module fallback backend; pkg executables always use runtime resolution. */
   resolutionMode?: ProfileResolutionMode
 }
@@ -293,6 +295,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
     const profileContext: ProfileContext = {
       name: options.profile,
+      ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
       dir: composed.profile.dir, patchPath: composed.profile.patchPath,
       installAnchor: options.resolvedProfile?.installAnchor ?? INSTALL_ANCHOR,
       startedBundles: composed.profile.layers.map(layer => layer.packageName),
