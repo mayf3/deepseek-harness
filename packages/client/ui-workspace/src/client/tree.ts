@@ -498,3 +498,30 @@ export function deriveSearchResults(
     hasMore: content.hasMore || ordered.length > limit,
   }
 }
+
+/** Normalize separators for comparison without interpreting POSIX backslashes as separators. */
+function folderPath(path: string): string {
+  const windows = /^[A-Za-z]:[/\\]/.test(path) || path.startsWith('\\\\')
+  return (windows ? path.replaceAll('\\', '/') : path).replace(/\/+$/, '')
+}
+
+/**
+ * Find the nearest registered ancestor, excluding the Workspace directory itself.
+ * Paths use Host spelling; matching is case-sensitive, like Workspace identity.
+ * @param path - Workspace directory.
+ * @param parents - registered Workspace directory paths.
+ * @returns the owning parent path, or undefined when no parent contains the Workspace.
+ */
+export function owningParentFolder(path: string, parents: readonly string[]): string | undefined {
+  const child = folderPath(path)
+  let owner: string | undefined
+  let length = -1
+  for (const parent of parents) {
+    const root = folderPath(parent)
+    if (root.length > length && child !== root && child.startsWith(`${root}/`)) {
+      owner = parent
+      length = root.length
+    }
+  }
+  return owner
+}
