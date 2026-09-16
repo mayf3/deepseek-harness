@@ -99,35 +99,6 @@ RESTART_SECOND_PROMPT = "Complete the second isolated Python SDK process turn."
 RESTART_SECOND_TEXT = "PROCESS_TWO_OK"
 RESTART_FIRST_SESSION_ID = "process-one"
 RESTART_SECOND_SESSION_ID = "process-two"
-SNAPSHOT_PLUGIN_CODE = """\
-return (ctx) => {
-  ctx.on('tools/pre-execute', (exec, next) => {
-    if (exec.name !== 'snapshot_double' || exec.arguments.value !== -1) return next()
-    return {
-      kind: 'deny',
-      reason: 'Auto review rejected tool "snapshot_double"; its body was not executed',
-      info: {
-        name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED',
-        reason: '  transport raw\\r\\nreason  ',
-      },
-    }
-  })
-  harness.registerTool(ctx, harness.defineTool({
-    name: 'snapshot_double',
-    description: 'Double a number for executable snapshot verification.',
-    parameters: { value: { type: 'number', required: true } },
-    output: {
-      schema: { type: 'number' },
-      render(_args, value) {
-        return [{ type: 'text', text: String(value) }]
-      }
-    },
-    async execute(args) {
-      return args.value * 2
-    }
-  }))
-}
-"""
 SNAPSHOT_WORKFLOW_SCRIPT = (
     "phase('Delegate')\n"
     f"const reply = await agent('{SNAPSHOT_WORKFLOW_CHILD_PROMPT}', {{ label: 'workflow-child' }})\n"
@@ -404,16 +375,12 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
     if prompt == SNAPSHOT_WORKFLOW_CHILD_PROMPT:
         return text_chunks("WORKFLOW_CHILD_OK")
     if prompt == SNAPSHOT_PROMPT:
-        assert_advertised_tool(body, "cordis_define")
+        assert_advertised_tool(body, "snapshot_double")
+        assert_advertised_tool(body, "run_code")
         return tool_call_chunks(
-            "advanced-define",
-            "cordis_define",
-            {
-                "plugin": {"kind": "new", "idPrefix": "snap"},
-                "name": "Snapshot Double",
-                "purpose": "Expose a deterministic doubling tool for executable snapshot verification.",
-                "code": {"host": SNAPSHOT_PLUGIN_CODE},
-            },
+            "advanced-code", "run_code",
+            {"code": "return await tools.snapshot_double({ value: 21 })",
+             "description": "Call the configured Plugin tool"},
         )
     if prompt == RESTART_FIRST_PROMPT:
         return text_chunks(RESTART_FIRST_TEXT)
@@ -578,33 +545,9 @@ def advanced_tool_followup(
     """Advance the executable snapshot's deterministic parent tool chain."""
     if not call_id.startswith("advanced-"):
         return None
-    if call_id == "advanced-define" and tool_name == "cordis_define":
-        if "Defined snap-1/pkg-1 (Snapshot Double)" not in tool_text:
-            raise AssertionError(f"cordis_define returned no dynamic Package ids: {tool_text}")
-        if "snapshot_double" in advertised_tool_names(body):
-            raise AssertionError("snapshot_double was advertised before cordis_run")
-        assert_advertised_tool(body, "cordis_run")
-        return tool_call_chunks(
-            "advanced-run",
-            "cordis_run",
-            {"pluginId": "snap-1", "packageId": "pkg-1", "mode": "run"},
-        )
-    if call_id == "advanced-run" and tool_name == "cordis_run":
-        if "snap-1/pkg-1 is running (run-1)" not in tool_text:
-            raise AssertionError(f"cordis_run returned no running Package ids: {tool_text}")
-        assert_advertised_tool(body, "run_code")
-        assert_advertised_tool(body, "snapshot_double")
-        return tool_call_chunks(
-            "advanced-code",
-            "run_code",
-            {
-                "code": "return await tools.snapshot_double({ value: 21 })",
-                "description": "Run the temporary Plugin tool",
-            },
-        )
     if call_id == "advanced-code" and tool_name == "run_code":
         if "42" not in tool_text:
-            raise AssertionError(f"run_code returned no dynamic-tool value: {tool_text}")
+            raise AssertionError(f"run_code returned no configured-tool value: {tool_text}")
         return tool_call_chunks("advanced-denied-native", "snapshot_double", {"value": -1})
     if call_id == "advanced-denied-native" and tool_name == "snapshot_double":
         if 'Auto review rejected tool "snapshot_double"; its body was not executed' not in tool_text:
@@ -647,17 +590,6 @@ def advanced_tool_followup(
     if call_id == "advanced-workflow" and tool_name == "workflow":
         if "WORKFLOW_CHILD_OK" not in tool_text:
             raise AssertionError(f"workflow returned no expected child value: {tool_text}")
-        assert_advertised_tool(body, "cordis_undefine")
-        return tool_call_chunks(
-            "advanced-undefine",
-            "cordis_undefine",
-            {"pluginId": "snap-1"},
-        )
-    if call_id == "advanced-undefine" and tool_name == "cordis_undefine":
-        if "Removed dynamic Plugin snap-1 and all of its Packages." not in tool_text:
-            raise AssertionError(f"cordis_undefine returned no removal result: {tool_text}")
-        if "snapshot_double" in advertised_tool_names(body):
-            raise AssertionError("snapshot_double remained advertised after cordis_undefine")
         return text_chunks(SNAPSHOT_FINAL_TEXT)
     raise AssertionError(f"unexpected advanced tool follow-up: {call_id} {tool_name}: {tool_text}")
 
@@ -1331,6 +1263,9 @@ def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) 
         sessions = dsh_home / "sessions"
         patch = write_advanced_profile_patch(root, "snapshot.patch.yml", sessions)
         feedback_patch = write_profile_patch(root, "feedback.patch.yml", sessions, [{"insert": [
+            {"id": "snapshot-tool", "name": (
+                Path(__file__).resolve().parent / "fixtures/python-snapshot-tool.mjs"
+            ).as_uri()},
             {"id": "snapshot-image-offload", "name": (
                 Path(__file__).resolve().parent / "fixtures/python-snapshot-image-offload.mjs"
             ).as_uri(), "config": {"parentSessionId": SNAPSHOT_SESSION_ID}},

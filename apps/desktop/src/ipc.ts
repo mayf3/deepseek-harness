@@ -1,5 +1,6 @@
 /** Typed preload operations exposed only by the Electron shell. */
 
+import type { IpcMainInvokeEvent } from 'electron'
 import type { DesktopPluginRecord } from './project-manager.ts'
 import type { DesktopLocale } from './locale.ts'
 
@@ -8,6 +9,7 @@ export const DESKTOP_IPC = {
   localeGet: 'dsh-desktop:locale-get',
   boot: 'dsh-desktop:boot',
   bootFailed: 'dsh-desktop:boot-failed',
+  directoryPick: 'dsh-desktop:directory-pick',
   pluginsList: 'dsh-desktop:plugins-list',
   pluginsAdd: 'dsh-desktop:plugins-add',
   pluginsRemove: 'dsh-desktop:plugins-remove',
@@ -41,5 +43,22 @@ export interface DshDesktopApi {
     check(): Promise<DesktopUpdateState>
     install(): Promise<void>
     subscribe(listener: (state: DesktopUpdateState) => void): () => void
+  }
+}
+
+/** Scheme of Desktop-owned application and shell documents. */
+export const SCHEME = 'dsh-app'
+
+/**
+ * Reject IPC outside the allowed Desktop document origins.
+ * @param event - IPC caller whose frame URL supplies the origin.
+ * @param hostnames - Desktop document hosts allowed for this operation.
+ */
+export function assertDesktopSender(event: IpcMainInvokeEvent, hostnames: readonly string[]): void {
+  const senderFrame = event.senderFrame
+  if (senderFrame === null) throw new Error('dsh desktop: rejected IPC without a sender frame')
+  const url = new URL(senderFrame.url)
+  if (url.protocol !== `${SCHEME}:` || !hostnames.includes(url.hostname)) {
+    throw new Error('dsh desktop: rejected IPC from an unowned renderer')
   }
 }
