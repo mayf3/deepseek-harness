@@ -38,6 +38,7 @@ import Group from '@deepseek-ai/cordis-plugin-group'
 import {
   captureExpectedWorkspaceSnapshot,
   captureWorkspaceSnapshot,
+  type CaptureWorkspaceSnapshotOptions,
   assertSessionFixtureVersion,
   formatSystemPromptSnapshot,
   formatToolSchemasSnapshot,
@@ -136,13 +137,16 @@ export function webSnapshotMode(): WebSnapshotMode {
  * Compare a session-driven Web scenario's complete workspace with its committed independent expected state.
  * @param scenarioDir - Absolute recorded-session scenario directory.
  * @param workspaceRoot - Absolute cwd used by the controlled session.
+ * @param options - Root entries the scenario owns outside the expected state, such as a `.git` directory it initialized.
  */
-export async function assertFinalWorkspaceSnapshot(scenarioDir: string, workspaceRoot: string): Promise<void> {
+export async function assertFinalWorkspaceSnapshot(
+  scenarioDir: string, workspaceRoot: string, options: CaptureWorkspaceSnapshotOptions = {},
+): Promise<void> {
   const manifestPath = join(scenarioDir, 'snapshot.yml')
   const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
   expect(manifest.workspace?.final, `${manifest.scenario ?? scenarioDir}: mutating Web scenario declares workspace.final`)
     .toBe(true)
-  const actual = await captureWorkspaceSnapshot(workspaceRoot)
+  const actual = await captureWorkspaceSnapshot(workspaceRoot, options)
   const expected = await captureExpectedWorkspaceSnapshot(join(scenarioDir, 'workspace.expected'))
   expect(actual, `${manifest.scenario ?? scenarioDir}: complete final workspace`).toEqual(expected)
 }
