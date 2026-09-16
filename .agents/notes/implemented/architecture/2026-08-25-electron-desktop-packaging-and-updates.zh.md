@@ -91,7 +91,7 @@ macOS 签名必须提供本地 p12 及显式导出密码。打包调用从导入
 
 [固定版本的 osx-sign 补丁](../../../../patches/@electron__osx-sign@1.3.3.patch)在两种已发布模块构建中使用 `lstat`，因此 Framework 的文件和目录别名不会触发重复签名。选定的上游版本能够跳过这些别名前，仍需保留该补丁。PAK 文件由外层 bundle 签名记录完整性；逐个签名会增加串行时间戳请求，但不会增加资源完整性保护。Desktop 保留全部语言文件，只跳过其单独签名。可执行代码仍使用 Developer ID 签名、安全时间戳和 hardened runtime。[签名器遍历回归测试](../../../../apps/desktop/tests/macos-signing-walk.spec.ts)使用真实 Framework 别名执行已安装依赖；发布验收仍要求严格应用验证、公证和启动。
 
-Windows 发布打包通过 `/f` 向已配置且与 SafeNet 兼容的 SignTool 提供 `DSH_DESKTOP_WINDOWS_CER_FILE` 指定的公开 EV 叶证书，并通过必需的 `DSH_DESKTOP_WINDOWS_KEY_CONTAINER` 标识匹配的私钥。证书文件保留在源码仓库之外，私钥仍留在 USB Token 上。electron-builder hook 把每个产物交给采用 CRLF 的 `windows-sign.cmd`；该 CMD 只调用一次 SignTool，并指定 SafeNet `/kc "[{{PIN}}]=容器"` 值与 CSP、SHA-256 文件摘要和 DigiCert SHA-256 RFC 3161 时间戳。hook 不会改用其他 SignTool，也不会重试失败的请求。打包编排不会把任何 `DSH_DESKTOP_WINDOWS_*` 字段传给构建与 运行时准备子进程，只会把证书路径、SignTool 路径、密钥容器和 PIN 传入 electron-builder。签名器在已清理的 CMD 环境中只提供经过校验的签名字段；CMD 会禁用延迟展开，在 SignTool 启动前清除这些字段，并仅在 SignTool 必需的命令行中保留 PIN。所有对外诊断都会替换 PIN，而且只能允许专用构建账号和管理员检查该 runner。签名器会在企业 Code Integrity 检查 electron-builder 的临时 NSIS bootstrap 前先为该可执行文件签名；对于生成的可执行文件，只有证书表条目指向文件末尾之外时，才会在最终签名前清除该条目。SignTool、证书、容器、PIN、Token 或签名不可用时，打包会在产生未签名产物前失败。共享 Web server 负责前端与客户端模块响应。插件安装器 API 只对 Electron 持有的管理 GUI 可用，不存在于浏览器应用或后端 RPC 中。
+Windows 发布打包通过 `/f` 向已配置且与 SafeNet 兼容的 SignTool 提供 `DSH_DESKTOP_WINDOWS_CER_FILE` 指定的公开 EV 叶证书，并通过必需的 `DSH_DESKTOP_WINDOWS_KEY_CONTAINER` 标识匹配的私钥。证书文件保留在源码仓库之外，私钥仍留在 USB Token 上。electron-builder hook 把每个产物交给采用 CRLF 的 `windows-sign.cmd`；该 CMD 只调用一次 SignTool，并指定 SafeNet `/kc "[{{PIN}}]=容器"` 值与 CSP、SHA-256 文件摘要和 DigiCert SHA-256 RFC 3161 时间戳。hook 不会改用其他 SignTool，也不会重试失败的请求。打包编排不会把任何 `DSH_DESKTOP_WINDOWS_*` 字段传给构建与 运行时准备子进程，只会把证书路径、SignTool 路径、密钥容器和 PIN 传入签名预检、运行时签名与 electron-builder。签名器在已清理的 CMD 环境中只提供经过校验的签名字段；CMD 会禁用延迟展开，在 SignTool 启动前清除这些字段，并仅在 SignTool 必需的命令行中保留 PIN。所有对外诊断都会替换 PIN，而且只能允许专用构建账号和管理员检查该 runner。签名器会在企业 Code Integrity 检查 electron-builder 的临时 NSIS bootstrap 前先为该可执行文件签名；对于生成的可执行文件，只有证书表条目指向文件末尾之外时，才会在最终签名前清除该条目。SignTool、证书、容器、PIN、Token 或签名不可用时，打包会在产生未签名产物前失败。共享 Web server 负责前端与客户端模块响应。插件安装器 API 只对 Electron 持有的管理 GUI 可用，不存在于浏览器应用或后端 RPC 中。
 
 Windows 打包调用强制设置 `ELECTRON_BUILDER_7Z_FILTER=BCJ`。内置的 7-Zip 24.09 编码器会为 ARM64 PE 文件自动选择 ARM64 过滤器，但 `nsis-resources-3.4.1` 中的 NSIS 解码器会在解压时遗漏这些条目。使用实际 NSIS 插件的原生解压验证表明，自动过滤会丢失两个 `node-pty` ARM64 二进制文件，而 BCJ 可以逐字节还原二者。使用兼容的过滤器能够保留依赖内容与运行时完整性，无需删除特定架构的文件或削弱校验。
 
@@ -106,6 +106,8 @@ Windows 应用替换遵循[目录安装决策](2026-09-11-windows-directory-inst
 Windows updater 在 `win.signtoolOptions.publisherName` 中固定公开发布证书的 `CN`、`O` 和 `C`，electron-builder 将其写入已安装应用的 `app-update.yml`。仅提供自定义签名回调不会产生这项元数据，字段缺失时 electron-updater 会跳过验签。这些属性在 Node/OpenSSL 与 Windows 证书主题中使用相同名称；发布者序列化会转义 DN 分隔符，并拒绝缺失或多值身份属性。保留身份而非证书指纹，允许同一发布者续期证书；身份变更需要单独验收转换流程。[真实文件验签检查](../../../../apps/desktop/scripts/test-windows-update-signature.mjs) 验证匹配、身份不符和未签名输入，不执行文件；这与已安装应用升级验收分开进行。
 
 ## 实现
+
+Windows 签名打包在耗时构建阶段前执行[一次小探针预检](../../../../apps/desktop/scripts/windows-signing-preflight.ts)。静态检查失败或遗留锁都会阻止访问硬件；只有正式签名器、时间戳服务和证书验证一次成功，才继续构建。探针保留在私有审计目录中，绝不执行。受监督阶段设有时限，避免无人处理的认证弹窗让构建无限等待。驱动可能缓存认证，因此预检成功不等于独立验证 PIN；流程不会为证明这一点而注销令牌或重试。后续运行时、签名器和构建器失败仍阻止发布完成。显式未签名及仅准备模式跳过所有硬件操作，而不只是此次预检。测试在不使用发布令牌的情况下覆盖失败顺序和凭据隔离；真实令牌验收仍由发布主机操作人员负责。
 
 发布[上传执行器](../../../../apps/desktop/scripts/desktop-upload-run.ts)要求两种部署环境都保留持久化本地证据。它在发送请求前保存已验证目标、产物哈希和 feed 字节，每次 PUT 前刷盘意图、之后刷盘可用响应元数据，上传或证据写入失败即停止。SDK 禁用重试，因为结果不确定的写入必须保留为一次可检查的尝试，不能静默重复更新可变 feed。终端断连后，仅有终端输出无法确定哪次操作已完成；原始 SDK 错误可能暴露签名请求数据，因此不予记录。记录独立于产物清理保留，但本地存储不是远端审计服务，缺少最终结果不能证明远端失败。上传回执不认证 CDN 传播。发布者保留记录并独立验证公网字节。
 

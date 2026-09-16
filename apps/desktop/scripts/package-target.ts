@@ -301,7 +301,14 @@ async function main(): Promise<void> {
   } finally { run?.finish(success) }
 }
 
-async function packageTarget(
+/**
+ * Prepare one release only after its signing preflight, without publishing from the builder.
+ * @param invocation Validated host, target and packaging mode.
+ * @param environment File-owned release configuration.
+ * @param run Windows stage supervisor; required for signed Windows packaging.
+ * @returns Resolves after preparation or complete packaging; any failed stage prevents a release record.
+ */
+export async function packageTarget(
   invocation: DesktopPackageInvocation,
   environment: NodeJS.ProcessEnv,
   run: ReturnType<typeof createPackagingRun> | undefined,
@@ -324,6 +331,13 @@ async function packageTarget(
   for (const name of WINDOWS_SIGNING_ENV_NAMES) {
     if (!invocation.unsigned && environment[name] !== undefined) electronBuilderEnv[name] = environment[name]
   }
+  const signPrimaryRuntime = target.platform === 'win32' && !invocation.unsigned && !invocation.prepareOnly
+  if (signPrimaryRuntime) {
+    if (run === undefined) throw new Error('desktop package: signed Windows packaging requires a supervised run')
+    await run.run('preflight:windows-signing', process.execPath,
+      ['--import', 'tsx/esm', join(APP_ROOT, 'scripts/windows-signing-preflight.ts')],
+      { cwd: APP_ROOT, env: electronBuilderEnv, timeoutMs: 60_000 })
+  }
   await execute(['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
   await execute(['run', 'release:pack', '--family', 'dsh', '--out', buildPaths.packedDsh], buildEnv, REPOSITORY_ROOT)
   await execute([
@@ -344,7 +358,6 @@ async function packageTarget(
     '--pack-destination',
     buildPaths.packedLandlock,
   ], buildEnv, REPOSITORY_ROOT)
-  const signPrimaryRuntime = target.platform === 'win32' && !invocation.unsigned && !invocation.prepareOnly
   await execute(['run', 'prepare:runtime', ...(signPrimaryRuntime ? ['--defer-primary-runtime-smoke'] : [])], targetEnv)
   if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime'], electronBuilderEnv)
   await execute(['run', 'prepare:packages'], targetEnv)
