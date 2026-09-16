@@ -52,6 +52,7 @@ function dependencyNames(manifest: Readonly<Record<string, unknown>>, section: s
 
 /**
  * Select workspace dependencies rooted at dsh and its private Host; npm resolves external packages.
+ * Reads the repository workspace manifest and package manifests to distinguish required local packages from npm-resolved externals.
  * @param available - Packed packages indexed by package name.
  * @returns Selected packages sorted by name.
  */
