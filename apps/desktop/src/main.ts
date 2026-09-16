@@ -20,7 +20,6 @@ import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
 import { installDesktopDirectoryPicker } from './directory-picker.ts'
-import { desktopNodeEnvironment } from './node-environment.ts'
 import { DesktopBackendController } from './backend-controller.ts'
 import { DESKTOP_IPC, SCHEME, assertDesktopSender, type DesktopUpdateState } from './ipc.ts'
 import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
@@ -217,7 +216,7 @@ async function main(): Promise<void> {
   const backend = new DesktopBackendController((onFailure) => {
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
-      hostInspectPort, desktopNodeEnvironment(resources.node, resources.nodeBin, process.env), onFailure,
+      hostInspectPort, process.env, onFailure,
       development ? join(app.getAppPath(), '.desktop-build', 'targets', `${process.platform === 'darwin' ? 'mac' : 'win'}-${process.arch}`, 'runtime', 'primary-runtime')
         : join(process.resourcesPath, 'runtime', 'primary-runtime'),
       development ? 'link' : 'runtime')
