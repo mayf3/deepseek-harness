@@ -1,4 +1,4 @@
-# Agent Note: Bounded shared Office rendering
+# Agent Note: Bounded shared Office conversion
 
 Status: implemented
 
@@ -12,7 +12,7 @@ Office preview and explicit document inspection can request the same conversion.
 
 The `office-to-pdf` service returns complete PDF bytes. Page rasterization and user presentation remain separate consumers, so conversion naming does not imply image rendering or preview UI.
 
-The [Host provider](../../../../packages/document/office-to-pdf/README.md) owns a shared conversion queue and transient content cache. Authorized source metadata enters admission before source bytes are loaded. The source callback receives reserved byte capacity and returns its read version; changed sources fail without publishing aliases. Exact source bytes and Office extension determine the digest. Each renderer lifetime adds a generation so engine/font/configuration replacement invalidates reuse.
+The [Host provider](../../../../packages/document/office-to-pdf/README.md) owns a shared conversion queue and transient content cache. Authorized source metadata enters admission before source bytes are loaded. The source callback receives reserved byte capacity and returns its read version; changed sources fail without publishing aliases. Exact source bytes and Office extension determine the digest. Each converter lifetime adds a generation so engine/font/configuration replacement invalidates reuse.
 
 A bounded source-version index avoids repeated reads after authorization; the digest remains the identity for sharing conversion across distinct paths. Ready PDFs use an entry/byte-bounded LRU. Queued jobs contain metadata and deferred callbacks. Reader, queue, source-byte, and conversion limits also apply before work completes. Each active source locator belongs to live readers, so cancellation cannot grow retained source metadata independently of reader admission. Unknown source sizes reserve the input cap; cancellation retains active capacity until actual read/conversion cleanup settles.
 
@@ -34,4 +34,4 @@ Foreground preview and explicit QA requests precede background work. Disabling b
 
 The cache is transient and cannot bypass source authorization. Oversized PDFs can be returned without retention, and failed or canceled conversions are retried on a later explicit request. Source reservations measure binary bytes; base64 expansion, engine RSS, caller-retained output, and PDF.js page memory remain outside those limits. With one configured conversion slot, foreground work waits for an already-running background conversion to finish.
 
-Controlled source and engine completions verify pre-read admission, content joining, priority, cancellation isolation, delayed resource release, LRU/alias limits, stale versions, and renderer replacement. Loader composition and native conversion checks exercise the shared provider independently of presentation consumers.
+Controlled source and engine completions verify pre-read admission, content joining, priority, cancellation isolation, delayed resource release, LRU/alias limits, stale versions, and converter replacement. Loader composition and native conversion checks exercise the shared provider independently of presentation consumers.

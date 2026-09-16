@@ -23,7 +23,7 @@ afterEach(() => { io.opened = undefined; vi.restoreAllMocks() })
 const pdf = Buffer.from('%PDF-1.7\npreview\n%%EOF\n')
 
 async function output(): Promise<{ directory: string; path: string; handles: FileHandle[] }> {
-  const directory = await mkdtemp(join(tmpdir(), 'dsh-render-output-'))
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-office-to-pdf-output-'))
   const handles: FileHandle[] = []
   onTestFinished(async () => {
     try { await Promise.all(handles.map(file => file.close())) }
