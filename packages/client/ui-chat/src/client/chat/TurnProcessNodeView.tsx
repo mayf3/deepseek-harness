@@ -26,7 +26,7 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
   const running = turn?.status === 'open'
   const reason = turn?.end?.data.reason.kind
   const duration = turn?.start === undefined ? undefined
-    : formatRunDuration(Math.max(running ? 1000 : 0, (turn.end?.time ?? now) - turn.start.time), t)
+    : formatRunDuration(Math.max(1000, (turn.end?.time ?? now) - turn.start.time), t)
   // Other end reasons retain elapsed time; only cancellation and failure replace it.
   const label = reason === 'aborted' ? t('message.stopped')
     : reason === 'error' ? t('message.turnProcess.failed')

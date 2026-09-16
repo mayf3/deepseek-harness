@@ -580,6 +580,9 @@ describe('Chat node rendering', () => {
 
 describe('ChatView', () => {
   it.each([
+    [0, 'Took 1s'],
+    [250, 'Took 1s'],
+    [999, 'Took 1s'],
     [4_000, 'Took 4s'],
     [65_000, 'Took 1m 05s'],
     [3_665_000, 'Took 1h 01m 05s'],
