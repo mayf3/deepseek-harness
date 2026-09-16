@@ -585,13 +585,17 @@ function SubjectCard({ subject, t }: { readonly subject: InstallSubject; readonl
  * and failed screens over the same subject card. A failed run that left
  * install scripts undecided shows them for approval in place of plain retry.
  */
-function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onToggleDetails, onEnableNow, onApproveBuilds }: {
+function InstallDialog({
+  install, t, onClose, onEditSpec, onRun, onCancel, onCancelAndClose, onToggleDetails, onEnableNow, onApproveBuilds,
+}: {
   readonly install: InstallState
   readonly t: Translate
   readonly onClose: () => void
   readonly onEditSpec: (text: string) => void
   readonly onRun: () => void
   readonly onCancel: () => void
+  /** The close control while the Host runs the install: stop the run, then close. */
+  readonly onCancelAndClose: () => void
   readonly onToggleDetails: () => void
   readonly onEnableNow: () => void
   readonly onApproveBuilds: () => void
@@ -706,7 +710,13 @@ function InstallDialog({ install, t, onClose, onEditSpec, onRun, onCancel, onTog
                 <span>{t('installEdit')}</span>
               </button>
             )}
-          <button type="button" className={css.wizardClose} aria-label={t('close')} disabled={pending} onClick={onClose}>
+          <button
+            type="button"
+            className={css.wizardClose}
+            aria-label={t(phase === 'running' ? 'installCloseCancels' : 'close')}
+            disabled={pending && phase !== 'running'}
+            onClick={phase === 'running' ? onCancelAndClose : onClose}
+          >
             <IconCloseOutline16 size={14} />
           </button>
         </div>
@@ -972,6 +982,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         onEditSpec={props.editInstallSpec}
         onRun={props.runInstall}
         onCancel={props.cancelInstall}
+        onCancelAndClose={props.cancelInstallAndClose}
         onToggleDetails={props.toggleInstallDetails}
         onEnableNow={props.enableInstalled}
         onApproveBuilds={props.approveBuildsAndRetry}

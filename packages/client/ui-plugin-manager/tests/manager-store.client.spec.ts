@@ -467,6 +467,33 @@ describe('PluginManagerController', () => {
     expect(state().notice).toEqual({ kind: 'cancelled', seq: 1 })
   })
 
+  it.each(['cancelled', 'too-late'] as const)('closes the dialog once the Host confirms the stop its close control asked for, and stays on %s', async (status) => {
+    const pending = deferred<ReturnType<typeof ok<ChangeResult>>>()
+    const { plugins, face, state, controller, started } = bench({
+      installBundle: vi.fn().mockReturnValue(pending.promise),
+      cancelInstall: vi.fn().mockResolvedValue(ok({ status })),
+    })
+    // Before a run exists there is nothing to stop, and the dialog stays as it is.
+    face.openInstall()
+    face.cancelInstallAndClose()
+    expect(state().install).toMatchObject({ open: true, phase: 'idle' })
+    face.editInstallSpec('slow')
+    face.runInstall()
+    const requestId = await started()
+    controller.installProgress({ requestId, phase: 'installing' })
+    face.cancelInstallAndClose()
+    expect(state().install.phase).toBe('cancelling')
+    if (status === 'cancelled') {
+      await vi.waitFor(() => { expect(state().install).toMatchObject({ open: false, phase: 'idle', spec: '' }) })
+      expect(state().notice).toEqual({ kind: 'cancelled', seq: 1 })
+    } else {
+      await vi.waitFor(() => { expect(state().install.phase).toBe('applying') })
+      expect(state().install.open).toBe(true)
+    }
+    expect(plugins.cancelInstall).toHaveBeenCalledExactlyOnceWith(requestId)
+    pending.resolve(ok({ ...failed(), application: 'cancelled' }))
+  })
+
   it.each([false, true])('drops a stop the Host confirms once the run settled, or after disposal (%s)', async (dispose) => {
     const answer = deferred<ReturnType<typeof ok<ChangeResult>>>()
     const cancellation = deferred<ReturnType<typeof ok<{ status: 'cancelled' }>>>()

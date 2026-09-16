@@ -68,6 +68,7 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     editInstallSpec: vi.fn(),
     runInstall: vi.fn(),
     cancelInstall: vi.fn(),
+    cancelInstallAndClose: vi.fn(),
     toggleInstallDetails: vi.fn(),
     approveBuildsAndRetry: vi.fn(),
     enableInstalled: vi.fn(),
@@ -460,11 +461,13 @@ describe('PluginManagerPage', () => {
     // Before the first chunk there is no location to name.
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'running', subject, detailsOpen: true } })
     expect(screen.getByText(en.terminalNoOutput)).toBeTruthy()
-    // Cancel and the back control each ask the Host to stop the run; close waits for the Host's word.
+    // Cancel and the back control each ask the Host to stop the run; the close control asks too, and closes once the Host confirms.
     fireEvent.click(screen.getByRole('button', { name: en.installCancel }))
     fireEvent.click(screen.getByRole('button', { name: en.installEditAria }))
     expect(actions.cancelInstall).toHaveBeenCalledTimes(2)
-    expect(screen.getByRole('button', { name: en.close })).toHaveProperty('disabled', true)
+    expect(screen.queryByRole('button', { name: en.close })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.installCloseCancels }))
+    expect(actions.cancelInstallAndClose).toHaveBeenCalledOnce()
     expect(actions.closeInstall).not.toHaveBeenCalled()
   })
 
