@@ -7,8 +7,8 @@ const ROWS = { flushMs: 5 }
 describe('streamJobRows', () => {
   it('opens with the visible set and re-sends it after each coalesced lifecycle burst', async () => {
     const ctx = await harness()
-    const alice = registerAgent(ctx, 'alice')
-    const bob = registerAgent(ctx, 'bob')
+    const alice = await registerAgent(ctx, 'alice')
+    const bob = await registerAgent(ctx, 'bob')
     startJob(ctx, { label: 'shared' })
     const mine = startJob(ctx, { label: 'mine', owner: alice.id })
     startJob(ctx, { label: 'theirs', owner: bob.id })
@@ -35,7 +35,7 @@ describe('streamJobRows', () => {
 
   it('follows progress, stopping, and registration commits', async () => {
     const ctx = await harness()
-    const alice = registerAgent(ctx, 'alice')
+    const alice = await registerAgent(ctx, 'alice')
     const job = startJob(ctx, { label: 'first', owner: alice.id, slowStop: true })
     const abort = new AbortController()
     const iterator = streamJobRows(ctx.jobs, { sessionId: alice.id }, ROWS, abort.signal)[Symbol.asyncIterator]()
@@ -54,7 +54,7 @@ describe('streamJobRows', () => {
 
   it('drops an owner\'s rows when its lifecycle ends, keeping the unowned set', async () => {
     const ctx = await harness()
-    const alice = registerAgent(ctx, 'alice')
+    const alice = await registerAgent(ctx, 'alice')
     startJob(ctx, { label: 'shared' })
     startJob(ctx, { label: 'mine', owner: alice.id })
     const abort = new AbortController()

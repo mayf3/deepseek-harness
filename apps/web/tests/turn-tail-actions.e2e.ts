@@ -201,8 +201,8 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     await timeTrigger.click()
     const timeDialog = page.getByRole('dialog', { name: 'Turn time and speed' })
     expect(await timeDialog.count()).toBe(1)
-    expect(await timeDialog.getByText(/tok\/s/).count()).toBe(0)
-    expect(await timeDialog.getByText('Time to first token (TTFT)', { exact: true }).count()).toBe(0)
+    expect(await timeDialog.getByText(/tok\/s/).count()).toBeGreaterThan(0)
+    expect(await timeDialog.getByText('Time to first token (TTFT)', { exact: true }).count()).toBe(1)
     await page.keyboard.press('Escape')
     await trigger.click()
 

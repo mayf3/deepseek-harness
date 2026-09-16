@@ -110,7 +110,7 @@ describe('observeJobOutput', () => {
 
   it('reads owned output through the request session and rejects foreign, bad, and unknown input', async () => {
     const ctx = await harness()
-    const owner = registerAgent(ctx, 'alice')
+    const owner = await registerAgent(ctx, 'alice')
     const job = startJob(ctx, { label: 'secret', owner: owner.id })
     job.append('classified')
     await job.settle({ status: 'completed' })
@@ -184,7 +184,7 @@ describe('observeJobOutput', () => {
 
   it("closes with the removed job's terminal projection when the owner's teardown drops it mid-observation", async () => {
     const ctx = await harness()
-    const owner = registerAgent(ctx, 'observer-owner')
+    const owner = await registerAgent(ctx, 'observer-owner')
     const job = startJob(ctx, { label: 'torn down', owner: owner.id })
     job.append('partial')
     const { frames, done } = observed(ctx, { jobId: job.id, sessionId: owner.id })
@@ -223,7 +223,7 @@ describe('JobController', () => {
     return ctx
   }
 
-  function liveOwner(ctx: Context, rawId: string): Agent {
+  async function liveOwner(ctx: Context, rawId: string): Promise<Agent> {
     const session = ctx.sessions.create(SessionId(rawId))
     const owner = {
       id: session.id,
@@ -232,7 +232,7 @@ describe('JobController', () => {
       status: 'idle',
       ctx,
     } as unknown as Agent
-    ctx.agents.register(owner)
+    await ctx.agents.register(owner)
     return owner
   }
 
@@ -248,7 +248,7 @@ describe('JobController', () => {
 
   it('observe reads an owned job through the request session', async () => {
     const ctx = await controllerHarness()
-    const owner = liveOwner(ctx, 'observing-session')
+    const owner = await liveOwner(ctx, 'observing-session')
     const job = startJob(ctx, { label: 'owned run', owner: owner.id })
     job.append('hi')
     await job.settle({ status: 'completed' })
@@ -279,7 +279,7 @@ describe('JobController', () => {
 
   it('rows mirrors the session-visible set and follows a settlement', async () => {
     const ctx = await controllerHarness()
-    const owner = liveOwner(ctx, 'listing-session')
+    const owner = await liveOwner(ctx, 'listing-session')
     const owned = startJob(ctx, { label: 'owned', owner: owner.id })
     startJob(ctx, { label: 'shared' })
 

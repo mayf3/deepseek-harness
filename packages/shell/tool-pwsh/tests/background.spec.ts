@@ -67,7 +67,7 @@ class FakePwsh extends ShellExecutor {
     throw new Error('foreground is not exercised here')
   }
 
-  override start(spec: ShellExecSpec): ShellProcess {
+  override async start(spec: ShellExecSpec): Promise<ShellProcess> {
     return this.backgroundHandler(spec)
   }
 }

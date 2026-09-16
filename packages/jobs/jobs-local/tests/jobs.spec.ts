@@ -59,9 +59,9 @@ async function disposeAgentScope(agent: Agent): Promise<void> {
 }
 
 /** Register a stub agent so the registry can resolve it as a live owner. */
-function liveAgent(ctx: Context, rawId: string, presetScope?: ScopeKey): Agent {
+async function liveAgent(ctx: Context, rawId: string, presetScope?: ScopeKey): Promise<Agent> {
   const agent = stubAgent(ctx, rawId, presetScope)
-  ctx.agents.register(agent)
+  await ctx.agents.register(agent)
   return agent
 }
 
@@ -180,8 +180,8 @@ describe('LocalJobRegistry.start', () => {
     const withoutControls = createScope(ctx, {})
     await attachControllerIn(withControls.ctx)
 
-    const served = liveAgent(ctx, 'served', scopeOf(withControls.ctx))
-    const unserved = liveAgent(ctx, 'unserved', scopeOf(withoutControls.ctx))
+    const served = await liveAgent(ctx, 'served', scopeOf(withControls.ctx))
+    const unserved = await liveAgent(ctx, 'unserved', scopeOf(withoutControls.ctx))
 
     expect(() => ctx.jobs.start(producer({ owner: served }).spec)).not.toThrow()
     expect(() => ctx.jobs.start(producer({ owner: unserved }).spec))
@@ -198,7 +198,7 @@ describe('LocalJobRegistry.start', () => {
     // The host-plane composition's own controls: no scope, so the global layer
     // holds them and every owner's read includes it.
     await attachControllerIn(ctx)
-    const scoped = liveAgent(ctx, 'scoped', scopeOf(createScope(ctx, {}).ctx))
+    const scoped = await liveAgent(ctx, 'scoped', scopeOf(createScope(ctx, {}).ctx))
 
     expect(() => ctx.jobs.start(producer({ owner: scoped }).spec)).not.toThrow()
     expect(() => ctx.jobs.start(producer().spec)).not.toThrow()
@@ -288,18 +288,18 @@ describe('LocalJobRegistry.start', () => {
   it('buckets by exact owner: a same-session replacement and the unowned bucket count separately', async () => {
     const ctx = await harness({ maxConcurrentJobsPerOwner: 1 })
     const oldOwner = stubAgent(ctx, 'shared-session')
-    const detachOld = ctx.agents.register(oldOwner)
+    const detachOld = await ctx.agents.register(oldOwner)
     const oldTask = producer({ owner: oldOwner })
     ctx.jobs.start(oldTask.spec)
 
-    liveAgent(ctx, 'other-session')
+    await liveAgent(ctx, 'other-session')
     expect(() => ctx.jobs.start({ ...producer().spec, owner: SessionId('other-session') })).not.toThrow()
 
     // The session id resolves to whichever agent is live now; a replacement
     // instance starts with its own bucket even while the old job runs on.
-    detachOld()
+    await detachOld()
     const replacement = stubAgent(ctx, 'shared-session')
-    ctx.agents.register(replacement)
+    await ctx.agents.register(replacement)
     expect(() => ctx.jobs.start(producer({ owner: replacement }).spec)).not.toThrow()
 
     ctx.jobs.start(producer().spec)
@@ -605,7 +605,7 @@ describe('LocalJobRegistry.wait', () => {
 describe('LocalJobRegistry owner isolation', () => {
   it('fences every view operation to the owning session and keeps unowned jobs open', async () => {
     const ctx = await harness()
-    const owner = liveAgent(ctx, 'owner')
+    const owner = await liveAgent(ctx, 'owner')
     const other = stubAgent(ctx, 'other')
 
     const owned = ctx.jobs.start(producer({ owner }).spec)
@@ -627,8 +627,8 @@ describe('LocalJobRegistry owner isolation', () => {
 
   it('list() shows only caller-owned plus unowned jobs', async () => {
     const ctx = await harness()
-    const alice = liveAgent(ctx, 'alice')
-    const bob = liveAgent(ctx, 'bob')
+    const alice = await liveAgent(ctx, 'alice')
+    const bob = await liveAgent(ctx, 'bob')
 
     const aliceTask = ctx.jobs.start(producer({ owner: alice }).spec)
     const bobTask = ctx.jobs.start(producer({ owner: bob }).spec)
@@ -660,7 +660,7 @@ describe('LocalJobRegistry owner isolation', () => {
     expect(ctx.jobs.list(ghost.id)).toEqual([])
 
     // A later valid registration must still attach cleanup for the live instance.
-    ctx.agents.register(ghost)
+    await ctx.agents.register(ghost)
     const cancels: (string | undefined)[] = []
     let settle!: (outcome: JobOutcome) => void
     const id = ctx.jobs.start({
@@ -681,10 +681,10 @@ describe('LocalJobRegistry owner isolation', () => {
   it('binds a session id to the agent that is live now, and reads stay keyed by that id', async () => {
     const ctx = await harness()
     const staleOwner = stubAgent(ctx, 'owner')
-    const unregisterStale = ctx.agents.register(staleOwner)
-    unregisterStale()
+    const unregisterStale = await ctx.agents.register(staleOwner)
+    await unregisterStale()
     const currentOwner = stubAgent(ctx, 'owner')
-    ctx.agents.register(currentOwner)
+    await ctx.agents.register(currentOwner)
 
     const current = producer({ owner: currentOwner })
     const id = ctx.jobs.start(current.spec)
@@ -704,7 +704,7 @@ describe('LocalJobRegistry owner isolation', () => {
 describe('LocalJobRegistry owner cleanup', () => {
   it('drains the owner: cancels live jobs, awaits settlement, removes the rows', async () => {
     const ctx = await harness()
-    const owner = liveAgent(ctx, 'owner')
+    const owner = await liveAgent(ctx, 'owner')
     const seen = collect(ctx, { owner: owner.id }, ['removed'])
 
     // The producer settles only when cancelled — models a child that stops on request.
@@ -732,7 +732,7 @@ describe('LocalJobRegistry owner cleanup', () => {
 
   it('announces teardown settlements with cause teardown', async () => {
     const ctx = await harness()
-    const owner = liveAgent(ctx, 'owner')
+    const owner = await liveAgent(ctx, 'owner')
     const seen = collect(ctx, { owners: 'all' }, ['settled'])
 
     let settle!: (outcome: JobOutcome) => void
@@ -752,7 +752,7 @@ describe('LocalJobRegistry owner cleanup', () => {
 
   it('attaches one cleanup per owner and drains all owned jobs with the scope', async () => {
     const ctx = await harness()
-    const owner = liveAgent(ctx, 'owner')
+    const owner = await liveAgent(ctx, 'owner')
 
     const first = producer({ owner })
     const second = producer({ owner })
@@ -769,7 +769,7 @@ describe('LocalJobRegistry owner cleanup', () => {
   it('does not let an old scope cleanup cancel a same-session replacement job', async () => {
     const ctx = await harness()
     const oldOwner = stubAgent(ctx, 'owner')
-    const detachOld = ctx.agents.register(oldOwner)
+    const detachOld = await ctx.agents.register(oldOwner)
     const cancels: string[] = []
 
     function start(label: string): JobId {
@@ -786,9 +786,9 @@ describe('LocalJobRegistry owner cleanup', () => {
     }
 
     start('old job')
-    detachOld()
+    await detachOld()
     const replacement = stubAgent(ctx, 'owner')
-    ctx.agents.register(replacement)
+    await ctx.agents.register(replacement)
     const replacementId = start('replacement job')
 
     await disposeAgentScope(oldOwner)
@@ -804,7 +804,7 @@ describe('LocalJobRegistry owner cleanup', () => {
     await ctx.plugin(AgentRegistry)
     const tasksFiber = await ctx.plugin(LocalJobRegistry)
     ctx.jobs.attachController('test-controller')
-    const owner = liveAgent(ctx, 'owner')
+    const owner = await liveAgent(ctx, 'owner')
     const ownerCleanupEffects = () => owner.ctx.fiber.getEffects()
       .filter(effect => effect.label === 'jobs.ownerCleanup()')
 
@@ -826,7 +826,7 @@ describe('LocalJobRegistry owner cleanup', () => {
   it('force-fails a throwing teardown cancel without awaiting producer done, first outcome wins', async () => {
     const ctx = await harness()
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
-    const owner = liveAgent(ctx, 'owner')
+    const owner = await liveAgent(ctx, 'owner')
     const seen = collect(ctx, { owners: 'all' }, ['settled'])
 
     let settle!: (outcome: JobOutcome) => void
@@ -937,7 +937,7 @@ describe('LocalJobRegistry disposal', () => {
     await ctx.plugin(AgentRegistry)
     const tasksFiber = await ctx.plugin(LocalJobRegistry)
     ctx.jobs.attachController('test-controller')
-    const owner = liveAgent(ctx, 'owner')
+    const owner = await liveAgent(ctx, 'owner')
     let settle!: (outcome: JobOutcome) => void
     ctx.jobs.start({
       kind: 'bash',
@@ -971,7 +971,7 @@ describe('LocalJobRegistry disposal', () => {
         pluginCtx.jobs.events.subscribe({ owners: 'scope' }, () => {})
       },
     })
-    const owner = liveAgent(ctx, 'joined', scopeOf(standing.ctx))
+    const owner = await liveAgent(ctx, 'joined', scopeOf(standing.ctx))
     expect(() => ctx.jobs.start(producer({ owner }).spec)).not.toThrow()
 
     await mount.dispose()
@@ -1002,7 +1002,7 @@ describe('LocalJobRegistry disposal', () => {
 describe('LocalJobRegistry events', () => {
   it('announces registration, progress, stopping, and settlement with the committed projection', async () => {
     const ctx = await harness()
-    const owner = liveAgent(ctx, 'alice')
+    const owner = await liveAgent(ctx, 'alice')
     const seen = collect(ctx, { owner: owner.id }, ['registered', 'progress', 'stopping', 'settled'])
 
     const p = producer({ owner })
@@ -1035,8 +1035,8 @@ describe('LocalJobRegistry events', () => {
 
   it('announces the owner-disposal removal, and stays silent when that owner had none', async () => {
     const ctx = await harness()
-    const owner = liveAgent(ctx, 'alice')
-    const bystander = liveAgent(ctx, 'bob')
+    const owner = await liveAgent(ctx, 'alice')
+    const bystander = await liveAgent(ctx, 'bob')
     const p = producer({ owner })
     ctx.jobs.start(p.spec)
 
@@ -1068,7 +1068,7 @@ describe('LocalJobRegistry events', () => {
 
   it('announces the stopping transition during owner teardown, before settlement', async () => {
     const ctx = await harness()
-    const owner = liveAgent(ctx, 'alice')
+    const owner = await liveAgent(ctx, 'alice')
     const p = producer({ owner })
     ctx.jobs.start(p.spec)
 
@@ -1094,8 +1094,8 @@ describe('LocalJobRegistry events', () => {
     const ctx = await harness()
     const mount = createScope(ctx, {})
     const otherMount = createScope(ctx, {})
-    const alice = liveAgent(ctx, 'alice', scopeOf(mount.ctx))
-    const bob = liveAgent(ctx, 'bob', scopeOf(otherMount.ctx))
+    const alice = await liveAgent(ctx, 'alice', scopeOf(mount.ctx))
+    const bob = await liveAgent(ctx, 'bob', scopeOf(otherMount.ctx))
     const everyone = collect(ctx, { owners: 'all' }, ['output'])
     const scoped: string[] = []
     await mount.ctx.plugin({
@@ -1317,7 +1317,7 @@ describe('LocalJobRegistry output ring', () => {
     const ctx = await harness()
     const warn = vi.fn()
     ctx.logger.warn = warn as never
-    const owner = liveAgent(ctx, 'owner')
+    const owner = await liveAgent(ctx, 'owner')
     const p = producer({ owner })
     const id = ctx.jobs.start(p.spec)
     p.job().append('partial')
@@ -1393,7 +1393,7 @@ describe('LocalJobRegistry pull sources', () => {
     const ctx = await harness({ pumpPollMs: 1 })
     const warn = vi.fn()
     ctx.logger.warn = warn as never
-    const owner = liveAgent(ctx, 'owner')
+    const owner = await liveAgent(ctx, 'owner')
     const source: JobOutputSource = {
       read: fromByte => ({ text: 'x', nextOffset: fromByte + 1, lossy: false }),
     }

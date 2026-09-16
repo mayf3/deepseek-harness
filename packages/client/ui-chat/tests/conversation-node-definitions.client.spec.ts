@@ -1056,8 +1056,15 @@ describe('built-in conversation node Definitions', () => {
     const finalNode = (node(finalizedPacked, 'assistant-step')?.data as AssistantChatData).finalNode
     expect(finalNode).toMatchObject({
       blocks: [{ kind: 'text', text: 'done' }],
-      timing: { firstTokenTime: null },
+      timing: { firstTokenTime: 1_999 },
     })
+
+    const windowed = assembler(finalizedInputs.slice(2), true)
+    const timing = () => (node(snapshot(windowed), 'assistant-step')?.data as AssistantChatData).finalNode?.timing
+    expect(timing()).toMatchObject({ stepStartTime: null, firstTokenTime: 1_999 })
+    windowed.prepend(finalizedInputs.slice(0, 2), false)
+    windowed.flush()
+    expect(timing()).toEqual(finalNode?.timing)
 
     const namedToolHistory = [
       at(40, 'turn/start', { turn: 3 }),
@@ -1083,7 +1090,7 @@ describe('built-in conversation node Definitions', () => {
     const namedTool = (node(namedToolPacked, 'assistant-step')?.data as AssistantChatData).finalNode
     expect(namedTool).toMatchObject({
       blocks: [{ kind: 'tool-call', callId: 'call-2', name: 'read', argsRaw: '' }],
-      timing: { firstTokenTime: null },
+      timing: { firstTokenTime: 4_000 },
     })
   })
 
@@ -1135,7 +1142,8 @@ describe('built-in conversation node Definitions', () => {
         subCallId: 'child',
         name: 'read',
         arguments: { path: 'README.md' },
-        isError: false,
+        isError: true,
+        error: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED', reason: 'blocked' },
         content: [{ type: 'text', text: 'contents' }],
       }),
       at(16, 'tool/result', {
@@ -1146,7 +1154,10 @@ describe('built-in conversation node Definitions', () => {
     ], true)
     const before = node(snapshot(history), 'tool-call')
     expect((before?.data as ToolChatData).root.subCalls).toMatchObject([
-      { kind: 'tool-result', callId: 'child', parentCallId: 'history-root', call: { name: 'read' } },
+      {
+        kind: 'tool-result', callId: 'child', parentCallId: 'history-root', call: { name: 'read' },
+        error: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED', reason: 'blocked' },
+      },
     ])
 
     history.prepend([
@@ -1165,7 +1176,10 @@ describe('built-in conversation node Definitions', () => {
     const after = node(snapshot(history), 'tool-call')
     expect(after?.key).toBe(before?.key)
     expect((after?.data as ToolChatData).root.subCalls).toMatchObject([
-      { kind: 'tool-result', callId: 'child', parentCallId: 'history-root', call: { name: 'read' } },
+      {
+        kind: 'tool-result', callId: 'child', parentCallId: 'history-root', call: { name: 'read' },
+        error: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED', reason: 'blocked' },
+      },
     ])
 
     const firstChild = (after?.data as ToolChatData).root.subCalls[0]
@@ -1433,7 +1447,7 @@ describe('built-in conversation node Definitions', () => {
 
     expect(node(snapshot(value), 'context')?.data).toMatchObject({
       kind: 'context',
-      provenance: { role: 'inject', label: 'demo-skill' },
+      producer: { role: 'inject', label: 'demo-skill' },
       form: 'instructions',
     })
   })

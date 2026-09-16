@@ -34,7 +34,7 @@ import { ESCALATION_TARGETS, approveEscalation, validateEscalationArgs } from '@
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { ShellRunResult, ShellProcess } from '@deepseek-ai/dsh-shell'
 import { parseExitStatus } from '@deepseek-ai/dsh-shell'
-import { processOutcome, processSources } from './background.ts'
+import { processJob, processOutcome, processSources } from './background.ts'
 import { renderPwshResult } from './render.ts'
 import type { RenderablePwshResult } from './render.ts'
 
@@ -387,14 +387,13 @@ export function apply(ctx: Context, config: Config = {}): void {
           label: args.command,
           ...exec.agent ? { owner: exec.agent.id } : {},
           output: processSources(() => proc),
-          run: () => {
-            const started = ctx.shell.start(ctx.shell.resolve(request))
-            proc = started
-            return {
-              cancel: () => void started.kill(),
-              done: started.done.then(() => processOutcome(started, escalationModes)),
-            }
-          },
+          run: () => processJob(
+            async (signal) => {
+              proc = await ctx.shell.start(ctx.shell.resolve({ ...request, signal }))
+              return proc
+            },
+            started => processOutcome(started, escalationModes),
+          ),
         })
         return { kind: 'background' as const, jobId: id }
       }
