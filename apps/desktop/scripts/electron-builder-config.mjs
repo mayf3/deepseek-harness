@@ -19,6 +19,7 @@ import { resolveDesktopAutoUpdateConfig } from './desktop-auto-update-environmen
 import { resolveDesktopPolicyEnvironment } from './desktop-policy-environment.mjs'
 import { desktopTargetBuildPaths, resolveDesktopBuildTarget } from './desktop-build-paths.mjs'
 import { installWindowsDirectoryInstaller } from './windows-directory-installer.mjs'
+import { preserveWindowsRuntimeSignature } from './windows-runtime-signature.mjs'
 import {
   resolveMacOSAppUpdateFeed,
   verifyMacOSAppUpdateConfig,
@@ -54,19 +55,25 @@ export function createElectronBuilderConfig(
   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
   const macOSSigning = packagesMacOS ? resolveMacOSSigningEnvironment(env) : undefined
   if (packagesMacOS) resolveMacOSNotarizationEnvironment(env)
+  const buildPaths = desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch))
+  let primaryRuntimeDestination
   const windowsSigner = packagesWindows && !unsigned
     ? createWindowsTokenSigner({
         certificateFile: env.DSH_DESKTOP_WINDOWS_CER_FILE,
         signTool: env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
         tokenPin: env.DSH_DESKTOP_WINDOWS_TOKEN_PIN,
         keyContainer: env.DSH_DESKTOP_WINDOWS_KEY_CONTAINER,
+        preserveSignature: async path => primaryRuntimeDestination === undefined ? false : preserveWindowsRuntimeSignature(path, {
+          sourceRoot: join(buildPaths.runtime, 'primary-runtime'),
+          destinationRoot: primaryRuntimeDestination,
+          runDirectory: env.DSH_DESKTOP_PACKAGING_RUN_DIR,
+        }),
       })
     : undefined
   if (windowsSigner !== undefined) {
     installWindowsNsisBootstrapSigner({ sign: windowsSigner })
   }
   const update = unsigned ? undefined : resolveDesktopAutoUpdateConfig(env, resolvedPlatform, resolvedArch)
-  const buildPaths = desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch))
   if (preparedRuntime !== undefined) buildPaths.dsh = preparedRuntime
   return {
     appId,
@@ -123,7 +130,8 @@ export function createElectronBuilderConfig(
       sign: true,
       writeUpdateInfo: false,
     },
-    beforePack: async () => {
+    beforePack: async context => {
+      if (windowsSigner !== undefined) primaryRuntimeDestination = join(context.appOutDir, 'resources', 'runtime', 'primary-runtime')
       if (policy === undefined) return
       const { resolveDesktopPolicyConfig } = await import('../lib/types/mandatory-update-policy.js')
       resolveDesktopPolicyConfig(policy)

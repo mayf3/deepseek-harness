@@ -42,6 +42,7 @@ export interface DesktopElectronBuilderConfig {
     readonly installerLanguages: readonly ['en_US', 'zh_CN']
   }
   readonly beforeBuild: () => Promise<boolean>
+  readonly beforePack: (context: { readonly appOutDir: string }) => Promise<void>
   readonly artifactBuildCompleted: (artifact: { readonly file: string }) => Promise<void> | undefined
   readonly publish: readonly [{ readonly provider: 'generic', readonly url: string }] | null
 }

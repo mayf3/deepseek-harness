@@ -1,8 +1,10 @@
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { signWindowsPrimaryRuntime, windowsRuntimeCode } from '../scripts/sign-primary-runtime.ts'
+import { preserveWindowsRuntimeSignature } from '../scripts/windows-runtime-signature.mjs'
+import { createPackagingRun } from '../scripts/packaging-run.mjs'
 
 const roots: string[] = []
 const thumbprint = 'A'.repeat(40)
@@ -119,4 +121,26 @@ it('refuses an empty runtime without declaring successful validation', async () 
   const smoke = vi.fn()
   await expect(signWindowsPrimaryRuntime(root, { thumbprint, sign: vi.fn(), smoke, record: () => {} })).rejects.toThrow('no Windows code')
   expect(smoke).not.toHaveBeenCalled()
+})
+
+it('preserves only identical, valid runtime copies and records verification without signing', async () => {
+  const sourceRoot = await realpath(await fixture(['python.exe']))
+  const destinationRoot = await realpath(await fixture(['python.exe']))
+  const run = createPackagingRun(join(sourceRoot, 'records'), {})
+  const inspect = vi.fn(async () => valid)
+  const options = { sourceRoot, destinationRoot, runDirectory: run.directory, inspect }
+  const path = join(destinationRoot, 'python.exe')
+  expect(await preserveWindowsRuntimeSignature(join(`${destinationRoot}-other`, 'python.exe'), options)).toBe(false)
+  expect(inspect).not.toHaveBeenCalled()
+  expect(await preserveWindowsRuntimeSignature(path, options)).toBe(true)
+  expect(await readFile(join(run.directory, 'events.jsonl'), 'utf8')).toContain('primary-runtime-copy-verified')
+  inspect.mockResolvedValueOnce({ ...valid, status: 'NotSigned' })
+  await expect(preserveWindowsRuntimeSignature(path, options)).rejects.toThrow('copied signature is NotSigned')
+  await writeFile(path, 'changed executable')
+  await expect(preserveWindowsRuntimeSignature(path, options)).rejects.toThrow('copied executable changed')
+  await rm(path)
+  await symlink(sourceRoot, join(destinationRoot, 'linked'), process.platform === 'win32' ? 'junction' : 'dir')
+  await mkdir(join(sourceRoot, 'linked'))
+  await writeFile(join(sourceRoot, 'linked', 'python.exe'), await readFile(join(sourceRoot, 'python.exe')))
+  await expect(preserveWindowsRuntimeSignature(join(destinationRoot, 'linked', 'python.exe'), options)).rejects.toThrow('linked copy')
 })

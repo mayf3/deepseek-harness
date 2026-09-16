@@ -1,19 +1,12 @@
 /** Sign Windows runtime code before executing it, retaining vendor signatures and fail-stop hardware protection. */
-import { execFile } from 'node:child_process'
 import { X509Certificate } from 'node:crypto'
 import { lstat, open, readdir, readFile } from 'node:fs/promises'
 import { extname, join, resolve } from 'node:path'
-import { promisify } from 'node:util'
-import { createWindowsTokenSigner, scrubWindowsSigningEnvironment } from './windows-sign.mjs'
+import { createWindowsTokenSigner } from './windows-sign.mjs'
+import { inspectWindowsRuntimeSignature, type WindowsRuntimeSignature } from './windows-runtime-signature.mjs'
 import { failPackagingRun, recordPackagingEvent } from './packaging-run.mjs'
 import { resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import { smokePrimaryRuntime } from './prepare-primary-runtime.ts'
-
-interface RuntimeSignature {
-  status: string
-  timestamped: boolean
-  thumbprint: string | null
-}
 
 /**
  * Enumerate Windows code without following links or treating foreign .node files as PE binaries.
@@ -49,25 +42,10 @@ export async function windowsRuntimeCode(root: string): Promise<string[]> {
   return files.sort()
 }
 
-async function inspectSignature(path: string): Promise<RuntimeSignature> {
-  const { stdout, stderr } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-    '$ErrorActionPreference="Stop"; $s=Get-AuthenticodeSignature -LiteralPath $env:DSH_RUNTIME_VERIFY_FILE; [pscustomobject]@{status=[string]$s.Status;timestamped=($null -ne $s.TimeStamperCertificate);thumbprint=$s.SignerCertificate.Thumbprint}|ConvertTo-Json -Compress'], {
-    env: { ...scrubWindowsSigningEnvironment(process.env), DSH_RUNTIME_VERIFY_FILE: path },
-    encoding: 'utf8', windowsHide: true, timeout: 60_000, maxBuffer: 64 * 1024,
-  })
-  const value: unknown = JSON.parse(stdout)
-  if (stderr || typeof value !== 'object' || value === null || !('status' in value) || typeof value.status !== 'string'
-    || !('timestamped' in value) || typeof value.timestamped !== 'boolean' || !('thumbprint' in value)
-    || !(value.thumbprint === null || typeof value.thumbprint === 'string' && /^[A-F\d]{40}$/iu.test(value.thumbprint))) {
-    throw new Error(`primary runtime: invalid signature inspection: ${path}`)
-  }
-  return { status: value.status, timestamped: value.timestamped, thumbprint: value.thumbprint }
-}
-
 interface RuntimeSigningOptions {
   thumbprint: string
   sign: ReturnType<typeof createWindowsTokenSigner>
-  inspect?: (path: string) => Promise<RuntimeSignature>
+  inspect?: (path: string) => Promise<WindowsRuntimeSignature>
   record: (event: object) => void
   smoke: (root: string) => void
 }
@@ -79,7 +57,7 @@ interface RuntimeSigningOptions {
  * @returns Resolves only after sequential signatures, verification and execution; no retries.
  */
 export async function signWindowsPrimaryRuntime(root: string, options: RuntimeSigningOptions): Promise<void> {
-  const inspect = options.inspect ?? inspectSignature
+  const inspect = options.inspect ?? inspectWindowsRuntimeSignature
   const files = await windowsRuntimeCode(root)
   if (files.length === 0) throw new Error('primary runtime: no Windows code found')
   const unsigned: string[] = []

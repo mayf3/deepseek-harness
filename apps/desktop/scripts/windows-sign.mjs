@@ -158,7 +158,7 @@ export function buildWindowsSigningEnvironment(environment, input) {
 /**
  * Serialize SafeNet signing and stop all queued tasks after the first failure.
  *
- * @param {{ certificateFile?: string, signTool?: string, tokenPin?: string, keyContainer?: string, commandInterpreter?: string, runDirectory?: string, stateDirectory?: string }} options Release identity, supervised run, and test-only isolated interlock directory.
+ * @param {{ certificateFile?: string, signTool?: string, tokenPin?: string, keyContainer?: string, commandInterpreter?: string, runDirectory?: string, stateDirectory?: string, preserveSignature?: (path: string) => Promise<boolean> }} options Release identity, supervised run, verified-copy preservation, and test-only isolated interlock directory.
  * @returns {(configuration: { path: string, hash: string, isNest: boolean }) => Promise<void>} The signing hook.
  */
 export function createWindowsTokenSigner(options) {
@@ -174,6 +174,7 @@ export function createWindowsTokenSigner(options) {
       if (configuration.hash !== 'sha256') {
         throw new Error(`Windows release signing requires SHA-256, received ${configuration.hash}`)
       }
+      if (await options.preserveSignature?.(configuration.path)) return
       await repairDanglingAuthenticodeDirectory(configuration.path)
       const secrets = [tokenPin]
       const attempt = beginWindowsSigningAttempt({ runDirectory: options.runDirectory,

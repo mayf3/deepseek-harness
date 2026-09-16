@@ -35,6 +35,7 @@ export function createWindowsTokenSigner(options: {
   commandInterpreter?: string | undefined
   runDirectory?: string | undefined
   stateDirectory?: string | undefined
+  preserveSignature?: (path: string) => Promise<boolean>
 }): (
   configuration: {
     path: string

@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { resolveWindowsUpdatePublisher } from '../scripts/windows-sign.mjs'
+import * as runtimeSignatures from '../scripts/windows-runtime-signature.mjs'
+
+vi.mock('../lib/types/mandatory-update-policy.js', () => import('../src/mandatory-update-policy.ts'))
 
 vi.mock('../scripts/windows-sign.mjs', async importOriginal => ({
   ...await importOriginal<typeof import('../scripts/windows-sign.mjs')>(),
@@ -92,6 +95,16 @@ describe('Windows update publisher', () => {
       expect(typeof config.win.signtoolOptions.sign).toBe('function')
       const manager = new WindowsSignToolManager({ platformSpecificBuildOptions: config.win, getCscLink: () => undefined })
       expect(await manager.computedPublisherName.value).toEqual(['CN=Publisher,O=Company,C=CN'])
+      const preservation = vi.spyOn(runtimeSignatures, 'preserveWindowsRuntimeSignature').mockResolvedValue(true)
+      try {
+        const appOutDir = join(file, '..', 'win-unpacked')
+        await config.beforePack({ appOutDir })
+        const path = join(appOutDir, 'resources', 'runtime', 'primary-runtime', 'python.exe')
+        await config.win.signtoolOptions.sign!({ path, hash: 'sha256', isNest: false })
+        expect(preservation).toHaveBeenCalledWith(path, expect.objectContaining({
+          destinationRoot: join(appOutDir, 'resources', 'runtime', 'primary-runtime'),
+        }))
+      } finally { preservation.mockRestore() }
     })
   })
 })

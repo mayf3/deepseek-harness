@@ -37,6 +37,29 @@ const CERTIFICATE_FILE = 'C:\\release\\server.cer'
 const SIGN_SCRIPT = resolve(import.meta.dirname, '../scripts/windows-sign.cmd')
 
 describe('Windows token signing', () => {
+  it('preserves verified copies without hardware and rejects the entire queue after preservation failure', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'dsh-windows-copy-signature-'))
+    try {
+      const certificateFile = join(directory, 'server.cer')
+      const signTool = join(directory, 'signtool.exe')
+      await writeFile(certificateFile, 'code-signing-certificate-fixture')
+      await writeFile(signTool, 'fixture')
+      const preserveSignature = vi.fn(async () => true)
+      const sign = createWindowsTokenSigner({ certificateFile, signTool, tokenPin: 'fixture-pin',
+        keyContainer: 'fixture-container', preserveSignature })
+      const task = { path: join(directory, 'copy.exe'), hash: 'sha256', isNest: false }
+      await sign(task)
+      expect(execFile).not.toHaveBeenCalled()
+      preserveSignature.mockRejectedValueOnce(new Error('copy changed'))
+      const results = await Promise.allSettled([sign(task), sign(task), sign(task)])
+      expect(results.map(result => result.status)).toEqual(['rejected', 'rejected', 'rejected'])
+      expect(preserveSignature).toHaveBeenCalledTimes(2)
+      expect(execFile).not.toHaveBeenCalled()
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it('stops concurrent and subsequent signing tasks after a PIN failure', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'dsh-windows-pin-failure-'))
     try {
