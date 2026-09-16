@@ -11,6 +11,7 @@ import extractZip from 'extract-zip'
 import { x as extractTar } from 'tar'
 import { workspaceDependencyPaths, type PrimaryRuntimeManifest } from '../../desktop-host/src/primary-runtime.ts'
 import { resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
+import { scrubWindowsSigningEnvironment } from './windows-sign.mjs'
 import lock from './primary-runtime-lock.json' with { type: 'json' }
 
 /**
@@ -59,9 +60,10 @@ export async function unpackPrimaryRuntimeWheel(archive: string, destination: st
 
 /**
  * Materialize the selected Desktop target's primary runtime in its build resources.
- * @returns Resolves after dependency installation and native-target execution checks.
+ * @param options - Signed Windows packaging defers execution until its supervised signing stage.
+ * @returns Resolves after materialization and, unless deferred, native-target execution checks.
  */
-export async function preparePrimaryRuntime(): Promise<void> {
+export async function preparePrimaryRuntime(options: { deferSmoke?: boolean } = {}): Promise<void> {
   const target = resolveDesktopBuildTarget()
   const paths = resolveDesktopTargetBuildPaths()
   const artifact = lock.targets[target]
@@ -111,7 +113,7 @@ export async function preparePrimaryRuntime(): Promise<void> {
   } finally {
     rmSync(staging, { recursive: true, force: true })
   }
-  smokePrimaryRuntime(join(paths.runtime, 'primary-runtime'))
+  if (!options.deferSmoke) smokePrimaryRuntime(join(paths.runtime, 'primary-runtime'))
 }
 
 /**
@@ -122,8 +124,8 @@ export function smokePrimaryRuntime(root: string): void {
   const manifest = JSON.parse(readFileSync(join(root, 'runtime.json'), 'utf8')) as PrimaryRuntimeManifest
   if (manifest.platform !== process.platform || manifest.arch !== process.arch) return
   const entries = workspaceDependencyPaths(root, manifest)
-  const options = { stdio: 'inherit', timeout: 120_000 } as const
-  execFileSync(entries.python, ['-I', '-c', 'import numpy, pandas; assert numpy.arange(4).sum() == 6; assert pandas.DataFrame({"n": [1, 2]}).n.sum() == 3'], options)
+  const options = { stdio: 'inherit', timeout: 120_000, env: scrubWindowsSigningEnvironment(process.env) } as const
+  execFileSync(entries.python, ['-I', '-c', 'import decimal, xml.parsers.expat, lzma, uuid, numpy, pandas; assert numpy.arange(4).sum() == 6; assert pandas.DataFrame({"n": [1, 2]}).n.sum() == 3'], options)
   execFileSync(entries.node, ['-e', `if (process.versions.node !== ${JSON.stringify(manifest.components.node)}) process.exit(1)`], options)
   execFileSync(entries.node, [entries.pnpm, '--version'], options)
 }
