@@ -18,6 +18,8 @@ Node 下载并校验完整锁定 wheel 集的哈希，将这些仅含库的压�
 
 macOS 仅向独立 Node 可执行文件授予 `com.apple.security.cs.allow-jit`。缺少此权限的强化运行时签名会阻止 V8 分配代码区域。解释器和库的 smoke 检查在签名后以及暂存清理后执行；签名有效本身不能证明程序可运行。
 
+Desktop ZIP 解压通过定向依赖覆盖为 `extract-zip` 固定 `yauzl` 3.4.0。2.x 读取器在 Node 26 上可能无法完成较大 deflate 条目的读取（[上游问题](https://github.com/thejoshwolfe/yauzl/issues/176)）；保留现有解压器可保留其路径校验和 wheel 条目检查。开发启动器使用顶层 await，避免准备未完成却成功退出。大压缩 wheel 回归测试检查完整的解压字节。
+
 ## Alternatives considered
 
 **只使用系统解释器。** 无法保证可用性或预装 numpy 和 pandas。

@@ -14,9 +14,6 @@ async function main() {
   document.querySelector('#installed-heading').textContent = messages.installed
   document.querySelector('#empty').textContent = messages.noPlugins
 
-  document.querySelector('#recovery-description').textContent = messages.recoveryDescription
-  document.querySelector('#retry').textContent = messages.retry
-  document.querySelector('#disable-all').textContent = messages.disableAll
 
   const list = document.querySelector('#plugins')
   const empty = document.querySelector('#empty')
@@ -37,9 +34,6 @@ async function main() {
   }
 
   async function render() {
-    const backend = await api.backend.status()
-    document.querySelector('#recovery').hidden = backend.phase !== 'error'
-    document.querySelector('#startup-error').textContent = backend.phase === 'error' ? backend.message : ''
     const plugins = await api.plugins.list()
     list.replaceChildren(...plugins.map(plugin => {
       const item = document.createElement('li')
@@ -128,8 +122,6 @@ async function main() {
     updateForm.hidden = true
     updateTrigger.focus()
   })
-  document.querySelector('#retry').addEventListener('click', () => void run(() => api.backend.retry(), messages.retry))
-  document.querySelector('#disable-all').addEventListener('click', () => void run(() => api.plugins.disableAll(), messages.changingActivation))
   refresh.addEventListener('click', () => void load(messages.refreshing, messages.refreshed))
 
   await load(messages.loadingPlugins, '')

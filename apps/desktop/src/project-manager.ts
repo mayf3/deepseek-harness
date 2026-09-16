@@ -10,7 +10,6 @@ import {
   openSync,
   closeSync,
   readFileSync,
-  readdirSync,
   unlinkSync,
   writeFileSync,
   writeSync,
@@ -23,7 +22,6 @@ import {
   verifyDesktopCorePackageSet,
 } from './core-package-set.ts'
 import type { DesktopPaths } from './paths.ts'
-import { removeOwnedDirectory } from './owned-directory.ts'
 import type { DesktopRelease } from './release.ts'
 import { readDesktopRuntime, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 import {
@@ -31,6 +29,7 @@ import {
   unlinkProfileModuleFallback, writeProfileBundles, type ProfileTemplate,
 } from '@deepseek-ai/dsh-app-boot'
 import { migrateDesktopProfileLinks } from './profile-packages.ts'
+import { cleanProfileCorePackages } from './profile-core-cleanup.ts'
 
 /** Desktop plugin record derived from the installed profile. */
 export interface DesktopPluginRecord {
@@ -48,11 +47,11 @@ export interface DesktopRuntimeExecutables {
   readonly dsh: string
 }
 
-/** Hooks that stop the backend before profile writes and restart it after success. */
+/** Hooks that stop the backend before profile writes and restart it after each attempted change. */
 export interface DesktopProjectHooks {
   /** Stop the active backend and await process exit before modifying its files. */
   beforeChange(): Promise<void>
-  /** Start the modified profile after package preparation succeeds. */
+  /** Start the current profile even when package preparation failed with partial writes. */
   afterChange(): Promise<void>
 }
 
@@ -62,7 +61,6 @@ export type DesktopProjectMutation =
   | { readonly type: 'plugin-remove'; readonly name: string }
   | { readonly type: 'plugin-update'; readonly name: string; readonly version: string }
   | { readonly type: 'plugin-toggle'; readonly name: string; readonly enabled: boolean }
-  | { readonly type: 'plugins-disable-all' }
 
 const PROJECT_NAME = '@deepseek-ai/dsh-desktop-runtime'
 const DSH_PACKAGE = '@deepseek-ai/dsh'
@@ -124,33 +122,19 @@ export class DesktopProjectManager {
   }
 
   /**
-   * Reinitialize the profile, deleting configuration and third-party packages without a backup.
-   * @param hooks - Stop the Host before resetting files; restart after preparation succeeds.
-   * @returns Completion of reset; the held lock and shared product data are preserved.
+   * Disable third-party bundles without loading application resources or deleting plugin files.
+   * @returns Completion of the locked profile write; the caller must stop the Host first.
    */
-  async resetConfiguration(hooks: DesktopProjectHooks): Promise<void> {
-    await this.withLock(async () => {
-      await hooks.beforeChange()
-      this.descriptor = this.readRuntime()
-      for (const entry of readdirSync(this.paths.profile, { withFileTypes: true })) {
-        const path = join(this.paths.profile, entry.name)
-        if (path === this.paths.lock) continue
-        if (entry.isDirectory()) removeOwnedDirectory(path)
-        else unlinkSync(path)
-      }
-      createPluginProfile(this.paths.profile)
-      await hooks.afterChange()
+  async disableAllPlugins(): Promise<void> {
+    await this.withLock(() => {
+      if (!existsSync(join(this.paths.profile, 'package.json'))) return
+      writeProfileBundles(this.paths.profile, readProfileManifest('dsh', this.paths.profile), WEB_PROFILE.bundles)
     })
   }
 
   /** Read the dsh version supplied by this application's verified resources. */
   dshVersion(): string {
     return this.currentRuntime().release.version
-  }
-
-  /** @returns Whether application resources support profile recovery. */
-  canRecoverProfile(): boolean {
-    return this.descriptor !== undefined && existsSync(this.runtime.node) && existsSync(this.runtime.dsh)
   }
 
   private currentRuntime(): DesktopRuntimeDescriptor {
@@ -167,10 +151,14 @@ export class DesktopProjectManager {
     return { binName: 'dsh', profileDir, installAnchor: join(this.runtime.dsh, 'node_modules', DSH_PACKAGE, 'package.json') }
   }
 
-  /** Load application metadata and initialize missing profile files without installing packages. */
-  async applyRelease(): Promise<void> {
+  /**
+   * Load application metadata and prepare the external plugin profile without installing packages.
+   * @param production - Remove application-owned profile packages before packaged Host startup.
+   */
+  async applyRelease(production = false): Promise<void> {
     await this.withLock(() => {
       this.descriptor = this.readRuntime()
+      cleanProfileCorePackages(this.paths.profile, this.descriptor.sharedPackages.map(entry => entry.name), production)
       migrateProfileSettings(this.paths.profile)
       migrateDesktopProfileLinks(this.paths.profile)
       createPluginProfile(this.paths.profile)
@@ -183,16 +171,19 @@ export class DesktopProjectManager {
       this.currentRuntime()
       if (!existsSync(this.paths.profile)) throw new Error('desktop project: active profile is not installed')
       await hooks.beforeChange()
-      if (mutation.type === 'plugins-disable-all') {
-        writeProfileBundles(this.paths.profile, readProfileManifest('dsh', this.paths.profile), WEB_PROFILE.bundles)
-      } else {
+      try {
         await this.applyMutation(this.paths.profile, mutation)
+      } catch (error) {
+        try { await hooks.afterChange() } catch (restartError) {
+          throw new AggregateError([error, restartError], 'Desktop package operation and backend restart failed')
+        }
+        throw error
       }
       await hooks.afterChange()
     })
   }
 
-  private async applyMutation(projectDir: string, mutation: Exclude<DesktopProjectMutation, { type: 'plugins-disable-all' }>): Promise<void> {
+  private async applyMutation(projectDir: string, mutation: DesktopProjectMutation): Promise<void> {
     const location = this.pluginLocation(projectDir)
     const before = readProfilePlugins(location)
     const bundles = before.manifest.dsh?.profile?.bundles ?? []

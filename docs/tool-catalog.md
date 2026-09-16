@@ -77,6 +77,13 @@ List plugins or bundles in the current profile, enable or disable them, install 
       "type": "boolean",
       "description": "Required for set operations; defaults to true for installation."
     },
+    "approvedBuilds": {
+      "type": "array",
+      "description": "For install_bundle: pass names from pendingBuilds only after the user explicitly approves running their install scripts in the conversation. This grants persistent permission for this profile.",
+      "items": {
+        "type": "string"
+      }
+    },
     "offset": {
       "type": "number",
       "description": "Zero-based list offset; defaults to 0."

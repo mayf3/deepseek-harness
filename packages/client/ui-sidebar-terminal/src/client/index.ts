@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import { TerminalGuideIcon } from './TerminalIcon.tsx'
 import { TerminalGuide, type TerminalGuideInjected } from './TerminalGuide.tsx'
-import { TerminalBody } from './TerminalBody.tsx'
+import { LazyTerminalBody } from './LazyTerminalBody.tsx'
 import { TerminalTitle } from './TerminalTitle.tsx'
 import { TerminalRecovery, type TerminalRecoveryInjected } from './TerminalRecovery.tsx'
 import { TerminalCleanup, type TerminalCleanupInjected } from './TerminalCleanup.tsx'
@@ -76,7 +76,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab', key: id, locale: namespace,
       inject: (sessionId): TerminalBodyInjected => ({ ...inject(sessionId), hooks: { theme } }),
-    }, TerminalBody,
+    }, LazyTerminalBody,
   )), 'ui-sidebar-terminal.body')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab.title', key: id, locale: namespace, inject }, TerminalTitle,

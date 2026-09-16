@@ -36,6 +36,7 @@ export {
   composeEntries,
   createProfileResolutionGeneration,
   DEFAULT_PROFILE_BUNDLES,
+  OPTIONAL_BUNDLES,
   healProfilesModuleFallback,
   healIsolatedProfileModuleFallback,
   unlinkProfileModuleFallback,

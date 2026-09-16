@@ -23,6 +23,8 @@ export interface PackageOperationContext {
 
 /** Output and cancellation policy for one pnpm operation. */
 export interface PackageOperationOptions {
+  /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. Defaults to `pnpm`. */
+  command?: string
   /** CLI inherits authentication and terminal descriptors; service scrubs secrets and captures output. */
   execution: 'cli' | 'service'
   signal?: AbortSignal
@@ -109,7 +111,7 @@ export async function runProfilePnpm(
   let output = Buffer.alloc(0)
   let truncated = false
   const cancellation = new AbortController()
-  const child = execa('pnpm', args.map(arg => anchorPathSpec(arg, context.cwd)), {
+  const child = execa(options.command ?? 'pnpm', args.map(arg => anchorPathSpec(arg, context.cwd)), {
     cwd: dir, env: options.execution === 'cli' ? process.env : scrubbedParentEnv(), extendEnv: false, reject: false,
     stdout: options.execution === 'cli' ? 'inherit' : 'pipe',
     stderr: options.execution === 'cli' ? 'inherit' : 'pipe',
@@ -177,4 +179,48 @@ export async function runPluginCommand(
     }
     return runProfilePnpm(context, args, options)
   }, options.lockWaitMs === undefined ? undefined : { waitMs: options.lockWaitMs })
+}
+
+/** What one registry lookup answered. */
+export interface PackageViewResult {
+  /** pnpm's exit code, null when it ended without one or never started. */
+  exitCode: number | null
+  stdout: string
+  stderr: string
+  /** The lookup ran past its bound and was killed. */
+  timedOut: boolean
+  /** The failure of starting pnpm at all, when that is what happened. */
+  cause?: unknown
+}
+
+/** Bounds of one registry lookup. */
+export interface PackageViewOptions {
+  /** The pnpm executable name or path. Defaults to `pnpm`. */
+  command?: string
+  /** Ends the lookup early; the caller's signal, when it has one. */
+  signal?: AbortSignal
+  /** Bound on the lookup, in milliseconds. */
+  timeoutMs: number
+}
+
+/**
+ * Ask the registry what a spec names through `pnpm view`, run in the profile
+ * directory so the registry, proxy, and authentication settings of an install apply.
+ * @param dir Profile directory.
+ * @param spec One registry spec: a package name with an optional range.
+ * @param options Cancellation and the time bound.
+ * @returns pnpm's exit, output, and how the lookup ended.
+ */
+export async function viewProfilePackage(dir: string, spec: string, options: PackageViewOptions): Promise<PackageViewResult> {
+  const result = await execa(options.command ?? 'pnpm', ['view', spec, 'name', 'version', 'description', 'dsh', '--json'], {
+    cwd: dir, env: scrubbedParentEnv(), extendEnv: false, reject: false, stdin: 'ignore',
+    timeout: options.timeoutMs, ...options.signal === undefined ? {} : { cancelSignal: options.signal },
+  })
+  const cause = result.exitCode === undefined && !result.timedOut && !result.isCanceled
+    ? Object.assign(new Error(result.shortMessage), { code: result.code })
+    : undefined
+  return {
+    exitCode: result.exitCode ?? null, stdout: result.stdout, stderr: result.stderr, timedOut: result.timedOut,
+    ...cause === undefined ? {} : { cause },
+  }
 }
