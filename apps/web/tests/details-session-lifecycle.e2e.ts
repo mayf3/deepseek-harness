@@ -198,8 +198,13 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     expect(sessionEvents).not.toContain('turn/start')
     expect(sessionEvents).not.toContain('user/message')
     await blankColumn.locator('[data-dockkit-tab][aria-selected="true"]').hover()
-    await blankColumn.locator('[data-dockkit-tab][aria-selected="true"] [data-dockkit-tab-close]').click()
-    await expect.poll(() => scaffold.ctx.terminalController.list(agent.id)).toEqual([])
+    // The tab disappears before the Host finishes process cleanup; close responds after quiescence.
+    const [closed] = await Promise.all([
+      page.waitForResponse('**/api/terminal/close'),
+      blankColumn.locator('[data-dockkit-tab][aria-selected="true"] [data-dockkit-tab-close]').click(),
+    ])
+    expect((await closed.json()).result.ok).toBe(true)
+    expect(scaffold.ctx.terminalController.list(agent.id)).toEqual([])
     await blankColumn.locator('[data-dockkit-tab]').filter({ hasText: 'before-chat.md' }).click()
     await compareOrRefreshGolden(BLANK_EXPECTED, [
       '# Blank Session workspace sidebar', '',
