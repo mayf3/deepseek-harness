@@ -45,6 +45,9 @@ function StepProcess({ range, nodes, expandedSteps, ...seatProps }: SeatProps & 
     if (spec !== undefined && !alwaysOpen) actions.setTurnProcessOpen(spec.turn, (spec.answerStep ?? 0), true)
   }, [actions, spec, alwaysOpen])
   const rootRef = useSearchableHidden(outerHidden, revealOuter)
+  useEffect(() => {
+    if (outerHidden && rootRef.current?.hasAttribute('hidden')) setOpen(false)
+  }, [outerHidden, rootRef])
   const reveal = useCallback(() => { setOpen(true) }, [])
   const bodyRef = useSearchableHidden(!open, reveal)
   const summary = processActivity(nodes)

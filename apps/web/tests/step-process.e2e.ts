@@ -65,6 +65,12 @@ it('keeps completed step work collapsed inside an expanded turn and bounds its s
       expect(geometry.scrollable).toBe(true)
       expect(geometry.top).toBeGreaterThan(0)
       await page.screenshot({ path: '/tmp/dsh-step-process-expanded.png' })
+      await outer.click()
+      await outer.click()
+      expect(await toggle.getAttribute('aria-expanded')).toBe('false')
+      await toggle.click()
+      const resetGeometry = await body.evaluate(element => ({ height: element.clientHeight, scroll: element.scrollHeight }))
+      expect(resetGeometry.scroll).toBeLessThanOrEqual(resetGeometry.height)
       await toggle.click()
       expect(await toggle.getAttribute('aria-expanded')).toBe('false')
     } finally {

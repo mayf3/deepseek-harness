@@ -1764,6 +1764,20 @@ describe('ChatView', () => {
     expect(processRow.getAttribute('hidden')).toBe('until-found')
   })
 
+  it('resets nested process disclosures when the whole Turn closes', () => {
+    const h = makeHarness({ nodes: [user(1, 'question'), context(2, 'work', 1), assistant(3, 'answer')],
+      turnEnds: new Map([[1, 4]]) })
+    const view = render(<h.ChatView {...h.props} />)
+    const outer = turnProcessControl(view.container)!
+    fireEvent.click(outer)
+    const inner = view.container.querySelector<HTMLButtonElement>('[data-step-process] > button')!
+    fireEvent.click(inner)
+    expect(inner.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(outer)
+    fireEvent.click(outer)
+    expect(inner.getAttribute('aria-expanded')).toBe('false')
+  })
+
   it('switches secondary defaults between Detailed and Expanded and permits manual toggles', () => {
     const h = makeHarness({ nodes: [user(1, 'question'), context(2, 'work', 1), assistant(3, 'answer')],
       turnEnds: new Map([[1, 4]]) })

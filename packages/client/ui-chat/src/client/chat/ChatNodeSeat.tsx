@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationLocationDataStore, ConversationTurnDataMap } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
@@ -107,6 +107,12 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     if (processMember) setOpen(true)
   }, [processMember, setOpen])
   const wrapperRef = useSearchableHidden(processHidden, revealProcess)
+  const [disclosureReset, setDisclosureReset] = useState(0)
+  useEffect(() => {
+    if (processMember && processHidden && wrapperRef.current?.hasAttribute('hidden')) {
+      setDisclosureReset(value => value + 1)
+    }
+  }, [processMember, processHidden, wrapperRef])
   const owner = useMemo<ChatNodeOwnerProps | null>(() => node === undefined
     ? null
     : {
@@ -141,17 +147,19 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       data-turn-process-hidden={processHidden || undefined}
       data-turn-process-answer={compactAnswer || undefined}
     >
-      {renderSlot('conversation.chat.node', routedOwner, {
-        entryKey: routedNode.kind,
-        hookContext: turnData,
-        fallback: (
-          <JsonBlock
-            label={t('message.unknownSurface', { type: routedNode.kind })}
-            payload={routedNode.data}
-            truncatedLabel={total => t('json.truncated', { total })}
-          />
-        ),
-      })}
+      <Fragment key={disclosureReset}>
+        {renderSlot('conversation.chat.node', routedOwner, {
+          entryKey: routedNode.kind,
+          hookContext: turnData,
+          fallback: (
+            <JsonBlock
+              label={t('message.unknownSurface', { type: routedNode.kind })}
+              payload={routedNode.data}
+              truncatedLabel={total => t('json.truncated', { total })}
+            />
+          ),
+        })}
+      </Fragment>
     </div>
   )
 })

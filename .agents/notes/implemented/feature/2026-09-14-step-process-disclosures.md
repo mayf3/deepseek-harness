@@ -30,4 +30,4 @@ Work details provides Compact, Detailed, and Expanded defaults for the two discl
 
 ## Consequences
 
-The grouping changes presentation only and adds no Session events or model input. Tool names determine categories; unmatched custom tools use the generic category. Disclosure state is local to the mounted chat view. Pagination that changes a group's first member may reset its expansion. Existing per-tool disclosures remain available inside the capped process area.
+The grouping changes presentation only and adds no Session events or model input. Tool names determine categories; unmatched custom tools use the generic category. Disclosure state is local to the mounted chat view. Closing the whole Turn resets nested process groups and remounts hidden process renderers so tool and detail disclosures start collapsed when reopened. Pagination that changes a group's first member may reset its expansion. Existing per-tool disclosures remain available inside the capped process area.
