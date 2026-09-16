@@ -87,8 +87,11 @@ it.each(['read-only', 'workspace-write'] as const)('approves each action once in
   const audit = agent.session.snapshotEvents().filter(event => event.type.startsWith('approval/'))
   expect(audit).toHaveLength(12)
   expect(audit[0]).toMatchObject({ type: 'approval/asked', data: {
-    toolName: 'plugin_manager', callId: 'manager-call', reason: expect.stringContaining('"action":"list_plugins"'),
+    toolName: 'plugin_manager', callId: 'manager-call',
   } })
+  const request = audit[0]
+  if (request?.type !== 'approval/asked') throw new Error('Expected an approval request')
+  expect(request.data.reason).toContain('"action":"list_plugins"')
   expect(audit[1]).toMatchObject({ type: 'approval/decided', data: { outcome: 'allowed-once' } })
   dispose()
   expect((await call({ action: 'list_plugins' }, agent)).isError).toBe(true)
@@ -101,9 +104,8 @@ it.each(['rejected', 'cancelled', 'unavailable'] as const)('does not mutate the 
   const agent = activeAgent()
   expect((await call({ action: 'install_bundle', target: 'bundle' }, agent)).isError).toBe(true)
   expect(manager.installBundle).not.toHaveBeenCalled()
-  expect(agent.session.snapshotEvents()).toContainEqual(expect.objectContaining({
-    type: 'approval/decided', data: expect.objectContaining({ outcome }),
-  }))
+  expect(agent.session.snapshotEvents().filter(event => event.type === 'approval/decided')
+    .map(event => event.data.outcome)).toEqual([outcome])
 })
 
 it('rejects never policy without prompting and keeps full-access calls prompt-free', async () => {
