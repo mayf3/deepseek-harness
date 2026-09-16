@@ -83,13 +83,22 @@ function controllerBench(sources: InputTriggerSource[] = [], key = 'a') {
 /** Real-service bench: a sessions face resolving scope tags to session ids. */
 async function serviceBench() {
   const root = new Context()
+  const bindings = new Map<SessionId, { sessionId: SessionId; session: { sessionId: SessionId }; ctx: Context }>()
   root.provide('sessions', {
     scopeOf: (c: Context) => scopeOf(c),
-  })
+    sessionOf: (ctx: Context) => [...bindings.values()].find(binding => binding.ctx === ctx)?.session,
+    binding: (id: SessionId) => bindings.get(id),
+  } as never)
   await root.plugin(InputTriggerService).await()
   const inputTriggers = root.get('inputTriggers') as InputTriggerService
   const mint = (key: string) => {
-    const scope = createScope(root, sid(key))
+    const id = sid(key)
+    const scope = createScope(root, id)
+    const binding = { sessionId: id, session: { sessionId: id }, ctx: scope.ctx }
+    bindings.set(id, binding)
+    scope.ctx.effect(() => () => {
+      if (bindings.get(id) === binding) bindings.delete(id)
+    })
     return { actx: scope.ctx, fiber: scope.fiber }
   }
   return { root, inputTriggers, mint }
@@ -174,7 +183,7 @@ describe('sessionOf', () => {
 
   it('throws off an unscoped context', async () => {
     const { root, inputTriggers } = await serviceBench()
-    expect(() => inputTriggers.sessionOf(root)).toThrow(/requires a session scope/)
+    expect(() => inputTriggers.sessionOf(root)).toThrow(/requires a retained Session scope/)
   })
 
   it('warms the roster once at controller birth with the session projection', async () => {
