@@ -114,8 +114,11 @@ it('keeps a waking notice above and independent of the turn disclosure', async (
       await button.click()
       await compareOrRefreshGolden(fileURLToPath(new URL('./expected/step-process/trigger-expanded.md', import.meta.url)),
         (await notice.ariaSnapshot()).replace(/\d\d:\d\d/g, 'HH:mm'), webSnapshotMode())
-      await outer.click()
-      await outer.click()
+      expect(await outer.isEnabled()).toBe(false)
+      expect(await outer.getAttribute('aria-expanded')).toBeNull()
+      expect(await outer.locator('svg').count()).toBe(0)
+      await compareOrRefreshGolden(fileURLToPath(new URL('./expected/step-process/empty-turn.md', import.meta.url)),
+        await outer.ariaSnapshot(), webSnapshotMode())
       expect(await button.getAttribute('aria-expanded')).toBe('true')
       expect(await notice.isVisible()).toBe(true)
       await page.screenshot({ path: '/tmp/dsh-turn-trigger-expanded.png' })

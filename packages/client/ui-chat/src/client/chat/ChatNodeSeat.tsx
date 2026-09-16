@@ -91,10 +91,11 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     : {
       spec: processSpec,
       foldable,
+      hasContent: processPresentation?.hasExternalProcess === true || processSpec.inlineReasoning,
       open: processOpen,
       setOpen,
     }, [
-    foldable, processOpen, processSpec, setOpen,
+    foldable, processOpen, processSpec, processPresentation?.hasExternalProcess, setOpen,
   ])
   const controllerInactive = routedNode?.kind === 'turn-process'
     && !foldable

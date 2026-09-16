@@ -101,6 +101,8 @@ export interface ChatNodeOwnerProps {
 export interface TurnProcessOwnerProps {
   readonly spec: TurnProcessSpec
   readonly foldable: boolean
+  /** Whether the Turn contains process rows or inline reasoning to disclose. */
+  readonly hasContent: boolean
   readonly open: boolean
   setOpen(open: boolean): void
 }

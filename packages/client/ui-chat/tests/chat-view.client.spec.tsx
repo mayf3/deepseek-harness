@@ -600,6 +600,21 @@ describe('ChatView', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('keeps the elapsed label without a disclosure when a turn contains only its answer', () => {
+    const h = makeHarness({
+      nodes: [user(1, 'question'), assistant(3, 'answer', 1, 1)],
+      turnEnds: new Map([[1, 4]]),
+      turnTimings: new Map([[1, { startTime: 10_000, endTime: 10_000 }]]),
+    })
+    h.props.t = makeTranslate(en, commonEn)
+    const view = render(<h.ChatView {...h.props} />)
+    const label = view.getByRole('button', { name: 'Took 1s' }) as HTMLButtonElement
+    expect(label.disabled).toBe(true)
+    expect(label.hasAttribute('aria-expanded')).toBe(false)
+    expect(label.querySelector('svg')).toBeNull()
+    expect(view.getByText('answer')).toBeTruthy()
+  })
+
   it.each([
     [{ kind: 'aborted', reason: { kind: 'user' } }, 'Stopped', '已停止'],
     [{ kind: 'error', error: { code: 'UNKNOWN', message: 'failed' } }, 'Failed', '处理失败'],
@@ -1698,13 +1713,14 @@ describe('ChatView', () => {
       h.props.t = makeTranslate(en, commonEn)
       const view = render(<h.ChatView {...h.props} />)
       const toggle = view.getByRole('button', { name: 'Worked for 1s' })
-      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      expect(toggle.getAttribute('aria-expanded')).toBeNull()
       act(() => { vi.advanceTimersByTime(2_000) })
       expect(toggle.textContent).toBe('Worked for 2s')
       fireEvent.click(toggle)
       expect((toggle as HTMLButtonElement).disabled).toBe(true)
-      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      expect(toggle.getAttribute('aria-expanded')).toBeNull()
       act(() => { h.set({ nodes: [user(1, 'question'), context(2, 'working context', 1)] }) })
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
       const group = view.container.querySelector('[data-step-process]')!
       expect(group.getAttribute('hidden')).toBeNull()
       act(() => { h.set({ nodes: [user(1, 'question'), context(2, 'working context', 1), ...(hasAnswer ? [assistant(3, 'answer')] : [])],

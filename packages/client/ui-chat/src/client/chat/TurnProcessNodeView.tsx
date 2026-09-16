@@ -41,15 +41,15 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
       data-turn-process-messages={node.data.messageCount}
       data-turn-process-tool-calls={node.data.toolCallCount}
       data-turn-process-subagents={node.data.subagentCount}
-      disabled={turnProcessAlwaysOpen(node)}
-      aria-expanded={open}
+      disabled={!turnProcess.hasContent || turnProcessAlwaysOpen(node)}
+      aria-expanded={turnProcess.hasContent ? open : undefined}
       onClick={(event) => {
         event.currentTarget.focus()
         turnProcess.setOpen(!open)
       }}
     >
       <span className={css.label}>{label}</span>
-      <IconChevronDownOutlineRegular className={css.chevron} />
+      {turnProcess.hasContent && <IconChevronDownOutlineRegular className={css.chevron} />}
     </button>
   )
 })
