@@ -6,7 +6,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { cp } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import extractZip from 'extract-zip'
 import { x as extractTar } from 'tar'
 import { workspaceDependencyPaths, type PrimaryRuntimeManifest } from '../../desktop-host/src/primary-runtime.ts'
@@ -76,6 +76,17 @@ export async function unpackPrimaryRuntimeWheel(archive: string, destination: st
 }
 
 /**
+ * Copy the skill package's complete asset tree to ordinary filesystem resources.
+ * @param source - The package's assets directory.
+ * @param destination - Desktop runtime resource directory outside ASAR.
+ * @returns Resolves after replacing the external assets with the complete package tree.
+ */
+export async function prepareOfficeSkillAssets(source: string, destination: string): Promise<void> {
+  rmSync(destination, { recursive: true, force: true })
+  await cp(source, destination, { recursive: true, dereference: true })
+}
+
+/**
  * Materialize the selected Desktop target's primary runtime in its build resources.
  * @returns Resolves after dependency installation and native-target execution checks.
  */
@@ -131,6 +142,9 @@ export async function preparePrimaryRuntime(): Promise<void> {
   } finally {
     rmSync(staging, { recursive: true, force: true })
   }
+  const hostRequire = createRequire(resolve(import.meta.dirname, '..', '..', 'desktop-host', 'package.json'))
+  await prepareOfficeSkillAssets(join(dirname(hostRequire.resolve('@deepseek-ai/dsh-skill-office/package.json')), 'assets'),
+    join(paths.runtime, 'office-skills'))
   smokePrimaryRuntime(join(paths.runtime, 'primary-runtime'))
 }
 
@@ -144,7 +158,8 @@ export function smokePrimaryRuntime(root: string): void {
   if (manifest.pythonPackages === undefined) throw new Error('primary runtime: missing Python distribution versions; prepare the payload before running its smoke checks.')
   const entries = workspaceDependencyPaths(root, manifest)
   const options = { stdio: 'inherit', timeout: 120_000 } as const
-  execFileSync(entries.python, ['-I', '-B', join(import.meta.dirname, 'smoke-primary-runtime.py'), JSON.stringify(manifest.pythonPackages), manifest.components.python], options)
+  execFileSync(entries.python, ['-I', '-B', join(import.meta.dirname, 'smoke-primary-runtime.py'), JSON.stringify(manifest.pythonPackages),
+    manifest.components.python, join(dirname(root), 'office-skills', 'scripts', 'check_office.py')], options)
   execFileSync(entries.python, ['-I', '-B', '-m', 'pip', 'check'], options)
   execFileSync(entries.node, ['-e', `if (process.versions.node !== ${JSON.stringify(manifest.components.node)}) process.exit(1)`], options)
   execFileSync(entries.node, [entries.pnpm, '--version'], options)
