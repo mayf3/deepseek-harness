@@ -25,7 +25,7 @@ import type { DesktopPaths } from './paths.ts'
 import type { DesktopRelease } from './release.ts'
 import { readDesktopRuntime, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 import {
-  initProfile, PROFILE_TEMPLATES, readProfileManifest, readProfilePlugins, reconcileProfilePlugins,
+  initProfile, PROFILE_TEMPLATES, readProfilePlugins, reconcileProfilePlugins, sanitizeProfile,
   unlinkProfileModuleFallback, writeProfileBundles, type ProfileTemplate,
 } from '@deepseek-ai/dsh-app-boot'
 import { migrateDesktopProfileLinks } from './profile-packages.ts'
@@ -122,13 +122,12 @@ export class DesktopProjectManager {
   }
 
   /**
-   * Disable third-party bundles without loading application resources or deleting plugin files.
+   * Back up the profile patch and disable third-party bundles without loading application resources.
    * @returns Completion of the locked profile write; the caller must stop the Host first.
    */
   async disableAllPlugins(): Promise<void> {
     await this.withLock(() => {
-      if (!existsSync(join(this.paths.profile, 'package.json'))) return
-      writeProfileBundles(this.paths.profile, readProfileManifest('dsh', this.paths.profile), WEB_PROFILE.bundles)
+      sanitizeProfile('dsh', this.paths.profile, WEB_PROFILE.bundles)
     })
   }
 

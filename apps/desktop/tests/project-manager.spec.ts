@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -109,7 +109,7 @@ describe('desktop external plugin profile', () => {
     await expect(manager.applyRelease()).resolves.toBeUndefined()
   })
 
-  it('disables plugins before runtime initialization and preserves configuration and package files', async () => {
+  it('disables plugins before runtime initialization and backs up the patch while preserving package files', async () => {
     const { manager } = setup()
     await manager.applyRelease()
     await manager.mutate({ type: 'plugin-add', spec: 'plugin@1.0.0' }, hooks())
@@ -117,7 +117,10 @@ describe('desktop external plugin profile', () => {
     writeFileSync(patch, ': broken')
     const uninitialized = new DesktopProjectManager(manager.paths, { ...manager.runtime, dsh: 'missing-runtime' })
     await uninitialized.disableAllPlugins()
-    expect(readFileSync(patch, 'utf8')).toBe(': broken')
+    expect(existsSync(patch)).toBe(false)
+    const backups = readdirSync(manager.paths.profile).filter(name => name.startsWith('cordis.patch.yml.bak-'))
+    expect(backups).toHaveLength(1)
+    expect(readFileSync(join(manager.paths.profile, backups[0]!), 'utf8')).toBe(': broken')
     expect(existsSync(join(manager.paths.profile, 'node_modules/plugin/package.json'))).toBe(true)
     const manifest = JSON.parse(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8')) as {
       dependencies: Record<string, string>
@@ -126,6 +129,8 @@ describe('desktop external plugin profile', () => {
     expect(manifest.dependencies.plugin).toBe('1.0.0')
     expect(manifest.dsh.profile.bundles).not.toContain('plugin')
     expect(manifest.dsh.profile.bundles).toContain('@deepseek-ai/dsh-web-app')
+    await manager.applyRelease()
+    expect(readFileSync(patch, 'utf8')).toContain('[]')
   })
 
   it('needs no runtime or package manifest when no plugins have been installed', async () => {

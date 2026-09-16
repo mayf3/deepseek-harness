@@ -60,6 +60,8 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 挂载 profile 条目前，`dsh` launcher 会从安装依赖图与有序 bundle 依赖图计算一份不可变的 package resolution generation。默认 link 模式会物化现有的共享 fallback 链接与 profile 自有 fallback 链接，因此受支持的启动行为保持不变。内部调用方和测试工具可以改用 runtime 模式，把 generation 安装到 Node 的 ESM 与 CommonJS resolver；也可以使用 dual 模式，同时物化并校验同一份 generation。
 
+`sanitizeProfile(binName, profileDir, bundles)` 为 Web 启动器和 Desktop 提供文件恢复，无需加载插件或解析 patch。调用前必须停止 profile 并排除并发 profile 写入。它将 profile 的 `cordis.patch.yml` 重命名为带唯一 `.bak-<uuid>` 后缀的同目录备份，并恢复调用方指定的 bundle 列表，保留已安装包和其他 manifest 字段。返回值为备份路径；patch 不存在时返回 `undefined`，缺失的 profile 不会被创建。下次启动的 profile 初始化会重新创建空 patch。home 级 patch 不变。无效 profile JSON 在修改前报错；后续错误向调用方抛出，保留已完成的修改供重试。
+
 ### 预览生效配置
 
 启动前，你可以打印应用将挂载的确切配置：dump 会以 `!!js` 表达式原样展示组合后的条目列表，并按注释分组标明每个源文件及其 patch 层，输出是一份可加载的 YAML 文档。未匹配到任何行的 patch 会连同其层标签一起报告；配置缺失、无法解析或字段无效都会使 dump 失败。
