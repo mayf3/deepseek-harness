@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 /**
- * ui-deliverables browser half: the derivation contract of
- * `producedForClosing` over engine-published Turn data, the row's rendering
- * and opener wiring, and the plugin registrations' fiber-teardown removal
- * (HMR safety) against the real SlotRegistry.
+ * ui-deliverables browser half: the derivation contract of produced paths,
+ * recorded changes, and deliveries over engine-published Turn data, the
+ * changed-files card's rendering and opener wiring, and the plugin
+ * registrations' fiber-teardown removal (HMR safety) against the real
+ * SlotRegistry.
  */
 import { Context } from '@deepseek-ai/cordis'
 import { cleanup, fireEvent, render, within } from '@testing-library/react'
@@ -22,26 +23,33 @@ import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-c
 import type { ChatFileMentions, TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { Deliverables, selectDeliverables, type DeliverablesInjected } from '../src/client/Deliverables.tsx'
+import type { ReviewInjected } from '../src/client/ReviewTab.tsx'
+import { ChangesSummaryStore } from '../src/client/changes-summary.ts'
+import { changesSummaryUrl, type ChangesSummary } from '../src/changes.ts'
 import { PresentedOpenController } from '../src/client/present-open.ts'
-import { ProducedFiles } from '../src/client/ProducedFiles.tsx'
 import {
-  basename, deliverablesDefinition, presentedForClosing, producedFileMentions, producedForClosing, selectProducedFiles,
-  type DeliverablesTurnData,
+  basename, changesForClosing, deliverablesDefinition, presentedForClosing, producedFileMentions, producedForClosing,
+  selectProducedFiles, type DeliverablesTurnData,
 } from '../src/client/turn-deliverables.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 
-function openProps(controller = new PresentedOpenController()) {
+function openProps(controller = new PresentedOpenController(), summaries = new ChangesSummaryStore()) {
   controller.host.set({ name: 'desktop', available: true, fileManager: 'finder' })
   const sessions: SessionListState = { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined }
   return {
     useSessions: <T,>(select: (state: SessionListState) => T): T => select(sessions),
     reloadPresentedHost: vi.fn(() => controller.loadHost()),
+    useChangesSummary: <T,>(select: (state: ReturnType<typeof summaries.state.getSnapshot>) => T): T =>
+      select(summaries.state.getSnapshot()),
+    loadChangesSummary: vi.fn((...args: Parameters<ChangesSummaryStore['load']>) => summaries.load(...args)),
     usePresentedHost: <T,>(select: (state: ReturnType<typeof controller.host.getSnapshot>) => T): T =>
       select(controller.host.getSnapshot()),
     openPresented: vi.fn((...args: Parameters<PresentedOpenController['open']>) => controller.open(...args)),
+    openChanged: vi.fn((...args: Parameters<PresentedOpenController['openChanged']>) => controller.openChanged(...args)),
+    openChangesReview: vi.fn<DeliverablesInjected['openChangesReview']>(),
     usePresentedOpen: <T,>(select: (state: ReturnType<typeof controller.state.getSnapshot>) => T): T =>
       select(controller.state.getSnapshot()),
   }
@@ -424,58 +432,215 @@ describe('produced-file Turn data', () => {
   })
 })
 
-describe('ProducedFiles row', () => {
-  const t = makeTranslate(zh)
-
-  it('renders the bounded chips and opens the file it was clicked for', () => {
-    const paths = ['deep/a.html', 'b.css', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts', 'h.ts']
-    const openFile = vi.fn<(path: string) => void>()
-
-    const view = render(<ProducedFiles matched={paths} openFile={openFile} t={t} />)
-    expect(view.getByText('本轮文件改动')).toBeTruthy()
-    const row = view.container.querySelector('[data-produced-files-row]')
-    if (!(row instanceof HTMLElement)) throw new Error('produced row missing')
-    expect(within(row).getAllByRole('button')).toHaveLength(6)
-    expect(within(row).getByText('+ 2 个文件')).toBeTruthy()
-    const chip = view.getByRole('button', { name: '打开 deep/a.html' })
-    expect(chip.textContent).toBe('a.html')
-    expect(chip.getAttribute('title')).toBe('deep/a.html')
-    expect(view.queryByRole('button', { name: '打开 g.ts' })).toBeNull()
-    fireEvent.click(chip)
-    // The row hands over the path it was given; where it opens is the
-    // Sidebar's decision, not this row's.
-    expect(openFile).toHaveBeenCalledWith('deep/a.html')
+const changedFile = (display: string, added = 1, deleted = 0, extra: { binary?: true; oversized?: true; path?: string } = {}) =>
+  ({
+    path: extra.path ?? display, display, added, deleted,
+    ...extra.binary === true ? { binary: true as const } : {},
+    ...extra.oversized === true ? { oversized: true as const } : {},
   })
 
-  it('renders a remainder counter after every chip but the last when every file fits', () => {
-    const view = render(<ProducedFiles matched={['a.md', 'b.md', 'c.md']} openFile={() => {}} t={t} />)
-    const row = view.container.querySelector('[data-produced-files-row]')
-    if (!(row instanceof HTMLElement)) throw new Error('produced row missing')
-    expect(within(row).getAllByRole('button')).toHaveLength(3)
-    // One counter per chip that could be the last visible one; the final chip hides nothing.
-    expect([...row.querySelectorAll('[data-shown]')].map(node => node.getAttribute('data-shown'))).toEqual(['1', '2'])
+const changesEvent = (seq: number, turn = 1) => at(seq, 'workspace/changes', { turn })
+
+describe('announced changes Turn data', () => {
+  it('keeps the latest valid announcement of the turn and ignores malformed ones', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      changesEvent(2),
+      at(3, 'workspace/changes', { turn: 'x' }),
+      at(4, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      changesEvent(5),
+      at(6, 'turn/start', { turn: 2 }),
+    ])
+    const owner = tailOwner(deliverablesOf(value), 4)
+    expect(changesForClosing(owner)).toEqual({ seq: 5 })
+    expect(selectDeliverables(owner)).toEqual({ changes: { seq: 5 }, presented: [] })
+    expect(changesForClosing(tailOwner(deliverablesOf(value, 2), 8))).toBeNull()
+    expect(selectDeliverables(tailOwner(deliverablesOf(value, 2), 8))).toBeNull()
+    expect(changesForClosing(tailOwner(undefined, 8))).toBeNull()
   })
 
-  it('offers no folder action, because a directory has no preview to open', () => {
+  it('preserves Turn data identity across unrelated appends', () => {
+    const value = assembler([at(1, 'turn/start', { turn: 1 }), changesEvent(2)])
+    const first = deliverablesOf(value)
+    value.append(call(3, 'later', 'read', { file_path: 'a.ts' }))
+    value.flush()
+    expect(deliverablesOf(value)).toBe(first)
+  })
+})
+
+describe('ChangedFiles card', () => {
+  const files = [
+    changedFile('config/design-token', 42, 11), changedFile('config/feature-flags.json', 143, 32),
+    changedFile('config/launch-plan.yaml', 654, 9), changedFile('src/index.ts', 393, 274),
+    changedFile('~/.zshrc', 0, 0, { binary: true, path: '/home/u/.zshrc' }),
+  ]
+  const changes = { seq: 5 }
+  const served: ChangesSummary = { turn: 1, files, total: 11, added: 1232, deleted: 326 }
+
+  /** A store already holding the summary the Host served for the announced sequence. */
+  function servedStore(summary: ChangesSummary = served, seq = 5) {
+    const summaries = new ChangesSummaryStore()
+    summaries.state.set({ [changesSummaryUrl(SessionId('child-session'), seq)]: summary })
+    return summaries
+  }
+
+  function renderCard(
+    controller = new PresentedOpenController(), locale = en, matched = { changes, presented: [] as never[] }, summaries = servedStore(),
+  ) {
+    const props = openProps(controller, summaries)
+    props.openChanged.mockResolvedValue(undefined)
     const openFile = vi.fn<(path: string) => void>()
-    const overflowing = ['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md', 'g.md']
-    const view = render(<ProducedFiles matched={overflowing} openFile={openFile} t={t} />)
-    expect(view.queryByRole('button', { name: '在文件夹中显示' })).toBeNull()
-    // Nothing in the row reaches the local machine any more.
+    const view = render(<Deliverables {...props} matched={matched} openFile={openFile} sessionId={SessionId('child-session')} t={makeTranslate(locale)} />)
+    return { props, openFile, view }
+  }
+
+  it('reads the announced summary once and renders nothing while it loads, when it is gone, or when it lists no file', async () => {
+    const summaries = new ChangesSummaryStore()
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (url.endsWith('seq=5')) return Response.json(served)
+      if (url.endsWith('seq=6')) return Response.json({ turn: 1, files: [], total: 0, added: 0, deleted: 0 })
+      return new Response('gone', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { props, view } = renderCard(new PresentedOpenController(), en, { changes, presented: [] as never[] }, summaries)
+    expect(view.container.querySelector('[data-changed-files]')).toBeNull()
+    expect(props.loadChangesSummary).toHaveBeenCalledWith('child-session', 5)
+    await vi.waitFor(() => { expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 5)]).toEqual(served) })
+    view.rerender(<Deliverables {...props} matched={{ changes, presented: [] }} openFile={() => {}} sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
+    expect(view.getByText('Edited 11 files')).toBeTruthy()
+    for (const seq of [6, 7]) {
+      view.rerender(<Deliverables {...props} matched={{ changes: { seq }, presented: [] }} openFile={() => {}} sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
+      await vi.waitFor(() => { expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), seq)]).not.toBe('loading') })
+      view.rerender(<Deliverables {...props} matched={{ changes: { seq }, presented: [] }} openFile={() => {}} sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
+      expect(view.container.querySelector('[data-changed-files]')).toBeNull()
+    }
+    expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 7)]).toBe('missing')
+    await summaries.load(SessionId('child-session'), 5)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    // A replaced connection forgets every read; a later mount asks the new Host again.
+    summaries.reset()
+    expect(summaries.state.getSnapshot()).toEqual({})
+    fetchMock.mockRejectedValueOnce(new Error('offline'))
+    await summaries.load(SessionId('child-session'), 5)
+    expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 5)]).toBe('missing')
+    fetchMock.mockResolvedValueOnce(Response.json({ turn: 'x' }))
+    await summaries.load(SessionId('child-session'), 8)
+    expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 8)]).toBe('missing')
+    await summaries.dispose()
+    await summaries.load(SessionId('child-session'), 9)
+    expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 9)]).toBeUndefined()
+  })
+
+  it('sums the header from the Host totals, not from the capped list', () => {
+    const capped = servedStore({ turn: 1, files: files.slice(0, 1), total: 2, added: 50, deleted: 20 })
+    const { view } = renderCard(new PresentedOpenController(), en, { changes, presented: [] as never[] }, capped)
+    expect(view.getByText('Edited 2 files')).toBeTruthy()
+    expect(view.getByText('+50')).toBeTruthy()
+    expect(view.getByText('-20')).toBeTruthy()
+  })
+
+  it('lets no read started before a reset publish afterwards', async () => {
+    const summaries = new ChangesSummaryStore()
+    let settle!: (response: Response) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => { settle = resolve })))
+    const stale = summaries.load(SessionId('child-session'), 5)
+    summaries.reset()
+    const url = changesSummaryUrl(SessionId('child-session'), 5)
+    expect(summaries.state.getSnapshot()[url]).toBeUndefined()
+    settle(Response.json(served))
+    await stale
+    // The reset abandoned the read; a later mount asks the new Host afresh.
+    expect(summaries.state.getSnapshot()[url]).toBeUndefined()
+    await summaries.dispose()
+  })
+
+  it('drops a read that settles after disposal', async () => {
+    const summaries = new ChangesSummaryStore()
+    let settle!: (response: Response) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => { settle = resolve })))
+    const loading = summaries.load(SessionId('child-session'), 5)
+    expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 5)]).toBe('loading')
+    const disposal = summaries.dispose()
+    settle(Response.json(served))
+    await Promise.all([loading, disposal])
+    expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 5)]).toBe('loading')
+  })
+
+  it('summarizes the turn, folds after three rows, and opens the review from the header and each row', () => {
+    const { props, openFile, view } = renderCard()
+    const card = view.container.querySelector('[data-changed-files]')
+    if (!(card instanceof HTMLElement)) throw new Error('changed-files card missing')
+    expect(within(card).getByText('Edited 11 files')).toBeTruthy()
+    expect(within(card).getByText('+1,232')).toBeTruthy()
+    expect(within(card).getByText('-326')).toBeTruthy()
+    expect(within(card).getAllByRole('listitem')).toHaveLength(3)
+    expect(within(card).getByText('config/design-token')).toBeTruthy()
+    expect(within(card).getByText('+42')).toBeTruthy()
+    expect(within(card).queryByText('src/index.ts')).toBeNull()
+    fireEvent.click(within(card).getByRole('button', { name: 'View changes to config/feature-flags.json' }))
+    expect(props.openChangesReview).toHaveBeenLastCalledWith({ sessionId: 'child-session', seq: 5, turn: 1 }, 1)
+    expect(props.openChanged).not.toHaveBeenCalled()
+    fireEvent.click(within(card).getByRole('button', { name: 'Review this turn’s changes in the sidebar' }))
+    expect(props.openChangesReview).toHaveBeenLastCalledWith({ sessionId: 'child-session', seq: 5, turn: 1 }, 0)
     expect(openFile).not.toHaveBeenCalled()
+    const expand = within(card).getByRole('button', { name: 'Show all 5 changed files' })
+    expect(expand.getAttribute('aria-expanded')).toBe('false')
+    expect(expand.textContent).toContain('All 5 files')
+    fireEvent.click(expand)
+    expect(within(card).getAllByRole('listitem')).toHaveLength(5)
+    expect(within(card).getByText('binary')).toBeTruthy()
+    expect(within(card).getByRole('button', { name: 'View changes to ~/.zshrc' }).getAttribute('title')).toBe('/home/u/.zshrc')
+    fireEvent.click(within(card).getByRole('button', { name: 'View changes to ~/.zshrc' }))
+    expect(props.openChangesReview).toHaveBeenLastCalledWith({ sessionId: 'child-session', seq: 5, turn: 1 }, 4)
+    const collapse = within(card).getByRole('button', { name: 'Collapse changed files' })
+    expect(collapse.getAttribute('aria-expanded')).toBe('true')
+    expect(card.lastElementChild).toBe(collapse)
+    fireEvent.click(collapse)
+    expect(within(card).getAllByRole('listitem')).toHaveLength(3)
   })
 
-  it('uses singular English copy when exactly one file is hidden', () => {
-    const view = render(
-      <ProducedFiles
-        matched={['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md', 'g.md']}
-        openFile={() => {}}
-        t={makeTranslate(en)}
-      />,
-    )
-    const row = view.container.querySelector('[data-produced-files-row]')
-    if (!(row instanceof HTMLElement)) throw new Error('produced row missing')
-    expect(within(row).getByText('+ 1 file')).toBeTruthy()
+  it('opens the review the same way without a desktop', () => {
+    const controller = new PresentedOpenController()
+    const { openFile, props, view } = renderCard(controller, zh)
+    controller.host.set('error')
+    view.rerender(<Deliverables {...props} matched={{ changes, presented: [] }} openFile={openFile} sessionId={SessionId('child-session')} t={makeTranslate(zh)} />)
+    expect(view.getByRole('button', { name: '在侧边栏查看本轮改动' })).toBeTruthy()
+    controller.host.set({ name: 'server', available: false, fileManager: null })
+    view.rerender(<Deliverables {...props} matched={{ changes, presented: [] }} openFile={openFile} sessionId={SessionId('child-session')} t={makeTranslate(zh)} />)
+    expect(view.getByText('已编辑 11 个文件')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: '在侧边栏查看本轮改动' }))
+    expect(props.openChangesReview).toHaveBeenLastCalledWith({ sessionId: 'child-session', seq: 5, turn: 1 }, 0)
+    fireEvent.click(view.getByRole('button', { name: '查看 config/design-token 的改动' }))
+    expect(props.openChangesReview).toHaveBeenLastCalledWith({ sessionId: 'child-session', seq: 5, turn: 1 }, 0)
+    expect(openFile).not.toHaveBeenCalled()
+    expect(props.openChanged).not.toHaveBeenCalled()
+    expect(view.getByRole('button', { name: '展开全部 5 个改动文件' }).textContent).toContain('全部 5 个文件')
+  })
+
+  it('keeps every count in place whatever the native-open gestures of the review tab are doing', () => {
+    const controller = new PresentedOpenController()
+    controller.state.set({
+      '/api/changes.open?sessionId=child-session&seq=5&index=0': 'opening',
+      '/api/changes.open?sessionId=child-session&seq=5&index=1': 'error',
+    })
+    const { view } = renderCard(controller)
+    // Native-open gestures belong to the review tab; the card shows counts only.
+    expect(view.queryByText(en['presented.opening'])).toBeNull()
+    expect(view.queryByText(en['presented.error'])).toBeNull()
+    expect(view.getByText('+42')).toBeTruthy()
+    expect(view.getByText('+143')).toBeTruthy()
+    expect(view.getByText('+1,232')).toBeTruthy()
+  })
+
+  it('renders without a fold for three files or fewer and beside delivery cards', () => {
+    const short = servedStore({ turn: 1, files: [...files.slice(0, 1), changedFile('huge.bin', 0, 0, { oversized: true })], total: 2, added: 185, deleted: 43 })
+    const { view } = renderCard(new PresentedOpenController(), en, { changes, presented: [{ path: 'report.pdf', seq: 6, index: 0 }] as never[] }, short)
+    expect(view.getByText('Edited 2 files')).toBeTruthy()
+    expect(view.getByText('too large')).toBeTruthy()
+    expect(view.queryByRole('button', { name: /Show all|Collapse changed/ })).toBeNull()
+    expect(view.container.querySelectorAll('[data-presented-file]')).toHaveLength(1)
+    expect(view.container.querySelector('[data-presented-files-row]')?.parentElement?.getAttribute('data-after-changes')).toBe('true')
   })
 })
 
@@ -515,8 +680,17 @@ describe('plugin registration', () => {
     // The owning view's child declaration, stood up by a bench root entry.
     ctx.slots.register({
       name: 'root',
-      children: { 'conversation.chat.turnTail': { kind: 'chain', scope: 'session' }, 'tool.call.toolview': { kind: 'keyed', scope: 'session' } },
+      children: {
+        'conversation.chat.turnTail': { kind: 'chain', scope: 'session' },
+        'tool.call.toolview': { kind: 'keyed', scope: 'session' },
+        'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
+      },
     } as never, () => null)
+    const registerTab = vi.fn(() => () => { registered = undefined })
+    let registered: unknown
+    ctx.provide('sidebarRightTabs', { register: (definition: unknown) => { registered = definition; return registerTab() } } as never)
+    const openResource = vi.fn()
+    ctx.provide('sidebarRight', { openResource } as never)
     // ui-theme's Appearance row binds a durable scope through these two.
     const session = {
       canOpenWorkspacePath: () => Promise.resolve({ ok: true as const, value: true }),
@@ -536,6 +710,9 @@ describe('plugin registration', () => {
     expect(entry).toBeDefined()
     expect(ctx.slots.entries('tool.call.toolview')).toHaveLength(1)
     expect(entry?.inject).toBeDefined()
+    expect(registered).toMatchObject({ kind: 'changes-review', patterns: ['dsh-resource://changes-review/**'] })
+    const [tabEntry] = ctx.slots.entries('sidebar.right.pane.tab')
+    expect(tabEntry?.options.key).toBe('@deepseek-ai/dsh-client-ui-deliverables')
 
     // The prose face is live while the plugin is: a produced turn yields a
     // resolver whose matches open through the owner-supplied opener.
@@ -568,10 +745,35 @@ describe('plugin registration', () => {
     fetcher.mockResolvedValueOnce(Response.json({ name: 'desktop', available: true, fileManager: 'finder' }))
     await face.reloadPresentedHost()
     expect(face.hooks.presentedHost.getSnapshot()).toMatchObject({ name: 'desktop' })
+    fetcher.mockResolvedValueOnce(Response.json({ turn: 1, files: [], total: 0, added: 0, deleted: 0 }))
+    await face.loadChangesSummary(SessionId('child-session'), 5)
+    expect(face.hooks.changesSummary.getSnapshot()['/api/changes.summary?sessionId=child-session&seq=5']).toEqual({ turn: 1, files: [], total: 0, added: 0, deleted: 0 })
     ctx.emit('connection/reset')
     expect(face.hooks.presentedHost.getSnapshot()).toBeNull()
+    // The replaced connection may reach a Host that no longer serves the summaries read so far.
+    expect(face.hooks.changesSummary.getSnapshot()).toEqual({})
     await face.openPresented(SessionId('child-session'), 2, 0)
     expect(face.hooks.presentedOpen.getSnapshot()['/api/present.open?sessionId=child-session&seq=2&index=0']).toBe('opened')
+    await face.openChanged(SessionId('child-session'), 5, 0)
+    expect(face.hooks.presentedOpen.getSnapshot()['/api/changes.open?sessionId=child-session&seq=5&index=0']).toBe('opened')
+    face.openChangesReview({ sessionId: SessionId('child-session'), seq: 5, turn: 3 }, 1)
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://changes-review/session/child-session/5/3', { params: { index: 1 } })
+    expect((registered as { title(address: string): string }).title('dsh-resource://changes-review/session/child-session/5/3')).toBe('Review · turn 3')
+    const tabFace = tabEntry!.inject!(SessionId('child-session') as never) as unknown as ReviewInjected
+    fetcher.mockResolvedValueOnce(Response.json({ turn: 3, files: [], total: 0, added: 0, deleted: 0 }))
+    await tabFace.loadChangesSummary(SessionId('child-session'), 6)
+    expect(tabFace.hooks.changesSummary.getSnapshot()['/api/changes.summary?sessionId=child-session&seq=6']).toEqual({ turn: 3, files: [], total: 0, added: 0, deleted: 0 })
+    fetcher.mockResolvedValueOnce(Response.json({ kind: 'binary', path: 'src/a.ts', display: 'src/a.ts' }))
+    await tabFace.loadChangesDiff(SessionId('child-session'), 5, 1)
+    expect(tabFace.hooks.changesDiff.getSnapshot()['/api/changes.diff?sessionId=child-session&seq=5&index=1']).toEqual({ kind: 'binary', path: 'src/a.ts', display: 'src/a.ts' })
+    expect(tabFace.hooks.presentedHost).toBe(face.hooks.presentedHost)
+    fetcher.mockResolvedValueOnce(Response.json({ name: 'desktop', available: true, fileManager: 'finder' }))
+    await tabFace.reloadPresentedHost()
+    fetcher.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await tabFace.openChanged(SessionId('child-session'), 5, 1)
+    expect(tabFace.hooks.presentedOpen.getSnapshot()['/api/changes.open?sessionId=child-session&seq=5&index=1']).toBe('opened')
+    ctx.emit('connection/reset')
+    expect(tabFace.hooks.changesDiff.getSnapshot()).toEqual({})
     // A turn that produced nothing yields no vocabulary at all.
     expect(service?.forClosing(tailOwner(undefined, 2), SessionId('viewed-session'))).toBeUndefined()
 
@@ -585,6 +787,8 @@ describe('plugin registration', () => {
     unsubscribe()
     expect(ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
     expect(ctx.slots.entries('tool.call.toolview')).toHaveLength(0)
+    expect(ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(0)
+    expect(registered).toBeUndefined()
     // Fiber teardown retracts the service: the consumer's ctx.get sees the off state.
     expect((ctx as unknown as { get(name: string): unknown }).get('chatFileMentions')).toBeUndefined()
   })
@@ -636,7 +840,7 @@ describe('presented files', () => {
     expect(props.openPresented).toHaveBeenCalledWith('child-session', 2, 0, 'open')
     fireEvent.click(view.getByRole('button', { name: 'Collapse delivered files' }))
     expect(view.container.querySelectorAll('[data-presented-file]')).toHaveLength(4)
-    expect(view.queryByText('Files changed')).toBeNull()
+    expect(view.container.querySelector('[data-changed-files]')).toBeNull()
   })
 })
 
@@ -648,22 +852,25 @@ it.each([null, [], 'invalid'])('declines non-object delivery data: %j', (data) =
 it.each([{}, { turn: '1', callId: 'bad', files: [] },
   { turn: 1.5, callId: 'bad', files: [] }, { turn: 0, callId: 'bad', files: [] },
   { turn: 1, files: [] }, { turn: 1, callId: '', files: [] }, { turn: 1, callId: 'bad', files: null },
-])('ignores malformed delivery data and keeps the existing produced row: %j', (data) => {
+])('ignores malformed delivery data and keeps the recorded changes card: %j', (data) => {
   const value = assembler([
     at(1, 'turn/start', { turn: 1 }),
     call(2, 'write-a', 'write', { file_path: 'a.txt', content: 'a' }),
     result(3, 'write-a'),
     at(4, 'deliverables/presented', data),
+    at(5, 'workspace/changes', { turn: 1 }),
   ])
-  const owner = tailOwner(deliverablesOf(value), 5)
+  const owner = tailOwner(deliverablesOf(value), 6)
   const matched = selectDeliverables(owner)!
-  const view = render(<Deliverables {...openProps()} matched={matched} openFile={owner.openFile} sessionId={SessionId('session')} t={makeTranslate(en)} />)
-  expect(view.getByText('Files changed')).toBeTruthy()
+  const summaries = new ChangesSummaryStore()
+  summaries.state.set({ [changesSummaryUrl(SessionId('session'), 5)]: { turn: 1, files: [{ path: 'a.txt', display: 'a.txt', added: 1, deleted: 0 }], total: 1, added: 1, deleted: 0 } })
+  const view = render(<Deliverables {...openProps(new PresentedOpenController(), summaries)} matched={matched} openFile={owner.openFile} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  expect(view.getByText('Edited 1 files')).toBeTruthy()
   expect(view.queryByText('Deliverables')).toBeNull()
 })
 
 it('shows descriptions and falls back to file metadata without hiding extensionless deliveries', () => {
-  const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented: [
+  const view = render(<Deliverables {...openProps()} matched={{ changes: null, presented: [
     { path: 'out/report.txt', description: 'Quarterly summary', seq: 2, index: 0 },
     { path: 'LICENSE', seq: 2, index: 1 },
   ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
@@ -673,18 +880,9 @@ it('shows descriptions and falls back to file metadata without hiding extensionl
   expect(view.getByText('report.txt')).toBeTruthy()
 })
 
-it('marks delivery cards that directly follow the produced-files row', () => {
-  const shared = { ...openProps(), openFile: () => {}, sessionId: SessionId('session'), t: makeTranslate(en) }
-  const presented = [{ path: 'report.txt', seq: 2, index: 0 }]
-  const view = render(<Deliverables {...shared} matched={{ produced: ['source.ts'], presented }} />)
-  expect(view.getByText('Files changed')).toBeTruthy()
-  expect(view.container.querySelector('[data-presented-files-row]')?.parentElement
-    ?.getAttribute('data-after-produced-files')).toBe('true')
-})
-
 it('distinguishes PDF, Word, Markdown, and code files with compact decorative card icons', () => {
   const paths = ['report.pdf', 'report.docx', 'README.md', 'index.tsx']
-  const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented:
+  const view = render(<Deliverables {...openProps()} matched={{ changes: null, presented:
     paths.map((path, index) => ({ path, seq: 2, index })),
   }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   const icons = [...view.container.querySelectorAll('[data-presented-file]')].map((card) => {
@@ -697,7 +895,7 @@ it('distinguishes PDF, Word, Markdown, and code files with compact decorative ca
 })
 
 it('lets one delivered file span the complete row without an expansion control', () => {
-  const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented: [
+  const view = render(<Deliverables {...openProps()} matched={{ changes: null, presented: [
     { path: 'report.pdf', seq: 2, index: 0 },
   ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.container.querySelector('[data-presented-files-row]')?.getAttribute('data-single')).toBe('true')
@@ -709,7 +907,7 @@ it.each(['opening', 'opened', 'error'] as const)('shows the %s state and permits
   const controller = new PresentedOpenController()
   controller.state.set({ '/api/present.open?sessionId=session&seq=2&index=0': phase })
   const props = openProps(controller)
-  const view = render(<Deliverables {...props} matched={{ produced: [], presented: [
+  const view = render(<Deliverables {...props} matched={{ changes: null, presented: [
     { path: 'report.txt', seq: 2, index: 0 },
   ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.getByText(en[`presented.${phase}`])).toBeTruthy()
@@ -720,7 +918,7 @@ it.each(['opening', 'opened', 'error'] as const)('shows the %s state and permits
 it('explains a missing desktop and retries failed Host metadata', () => {
   const controller = new PresentedOpenController()
   const props = openProps(controller)
-  const matched = { produced: [], presented: [{ path: 'file.txt', seq: 2, index: 0 }] }
+  const matched = { changes: null, presented: [{ path: 'file.txt', seq: 2, index: 0 }] }
   controller.host.set('error')
   const view = render(<Deliverables {...props} matched={matched} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   props.reloadPresentedHost.mockResolvedValue(undefined)
@@ -732,14 +930,15 @@ it('explains a missing desktop and retries failed Host metadata', () => {
 })
 
 
-it('loads desktop information only when delivery cards appear', () => {
+it('loads desktop information once the tail renders and not again while it is known', () => {
   const controller = new PresentedOpenController()
   const props = openProps(controller)
   controller.host.set(null)
   props.reloadPresentedHost.mockResolvedValue(undefined)
   const shared = { ...props, openFile: () => {}, sessionId: SessionId('session'), t: makeTranslate(en) }
-  const view = render(<Deliverables {...shared} matched={{ produced: ['source.ts'], presented: [] }} />)
-  expect(props.reloadPresentedHost).not.toHaveBeenCalled()
-  view.rerender(<Deliverables {...shared} matched={{ produced: [], presented: [{ path: 'report.txt', seq: 2, index: 0 }] }} />)
+  const view = render(<Deliverables {...shared} matched={{ changes: { seq: 2 }, presented: [] }} />)
+  expect(props.reloadPresentedHost).toHaveBeenCalledOnce()
+  controller.host.set({ name: 'desktop', available: true, fileManager: 'finder' })
+  view.rerender(<Deliverables {...shared} matched={{ changes: null, presented: [{ path: 'report.txt', seq: 2, index: 0 }] }} />)
   expect(props.reloadPresentedHost).toHaveBeenCalledOnce()
 })
