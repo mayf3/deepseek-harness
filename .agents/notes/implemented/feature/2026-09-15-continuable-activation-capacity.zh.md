@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-Subagent 服务通过 `maxActiveSubagents` 配置容量，默认值为 8。每个存活的根代理拥有一个进程内池，各层可续接 Activation 通过引用共享该池。根代理自身不计入。一次性运行和外部提供方工作不进入此池。委派深度仍独立配置。
+Subagent 服务通过 `maxActiveSubagents` 配置容量，默认值为 8。每个存活的非可续接父代理拥有一个进程内池，通过连续的可续接父子关系按引用共享。池的所有者自身不计入。一次性运行和外部提供方工作不进入此池。一次性中间父代理为其可续接子代理建立独立的池；跨一次性代理的容量池继承暂不实现。委派深度仍独立配置。
 
 Activation registry 在新建或冷恢复重建首次让出执行前预占唯一名额。在 Activation 接管名额前，由 materialization 负责回滚；未发布回滚和失败的 materialization 可以安全地释放同一个 token。handle 释放先于名额归还，名额归还先于父代理完成通知。向已有 Activation 发送消息复用其名额。
 
@@ -26,7 +26,7 @@ Host 在组合配置之上注册 `subagent` 设置分节。每次预占读取当
 
 ## Consequences
 
-有待处理收件箱内容或所拥有后代的空闲 Activation 仍占名额。容量耗尽时，即使历史子代理存在，冷恢复也可能失败。名额不构成 token 或累计费用预算，也不协调多个 Harness 进程。
+有待处理收件箱内容或所拥有后代的空闲 Activation 仍占名额。容量耗尽时，即使历史子代理存在，冷恢复也可能失败；浏览器消息将其报告为 `subagent/delivery-unavailable`。名额不构成 token 或累计费用预算，也不协调多个 Harness 进程。
 
 [可续接生命周期决策](2026-07-28-continuable-subagent-conversations.zh.md) 仍负责完成判定和先子后父的清理。本容量策略扩展该生命周期，不修改持久 Session 数据。
 

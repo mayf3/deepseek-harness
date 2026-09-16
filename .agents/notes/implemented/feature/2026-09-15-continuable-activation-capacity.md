@@ -10,7 +10,7 @@ Depth limits bound nesting but permit wide concurrent delegation. Background Job
 
 ## Decision
 
-The subagent service configures `maxActiveSubagents`, defaulting to 8. Each live root has one process-local pool, shared by reference through its continuable Activations at every depth. The root itself is excluded. One-shot runs and external-provider work do not enter this pool. Delegation depth remains independently configured.
+The subagent service configures `maxActiveSubagents`, defaulting to 8. Each live non-continuable parent owns one process-local pool, shared by reference through uninterrupted continuable parent links. The pool owner itself is excluded. One-shot runs and external-provider work do not enter this pool. A one-shot intermediate parent starts a separate pool for its continuable children; cross-one-shot capacity inheritance is deferred. Delegation depth remains independently configured.
 
 The Activation registry reserves a unique slot before fresh or cold-resume reconstruction yields. The materialization owns rollback until the Activation owns the slot; unpublished rollback and failed materialization may both release the same token safely. Handle disposal precedes release, which precedes parent settlement notification. Sending to an existing Activation reuses its slot.
 
@@ -26,7 +26,7 @@ Waiting for capacity can deadlock when every slot belongs to a parent waiting fo
 
 ## Consequences
 
-Idle Activations with pending inbox work or owned descendants still occupy slots. Cold resume can fail at capacity even though the historical child exists. Slots do not impose a token or cumulative spending budget, and they do not coordinate multiple harness processes.
+Idle Activations with pending inbox work or owned descendants still occupy slots. Cold resume can fail at capacity even though the historical child exists; browser prompts report this as `subagent/delivery-unavailable`. Slots do not impose a token or cumulative spending budget, and they do not coordinate multiple harness processes.
 
 The [continuable lifecycle decision](2026-07-28-continuable-subagent-conversations.md) retains ownership of settlement and child-first teardown. This capacity policy extends that lifecycle without changing durable Session data.
 

@@ -37,7 +37,7 @@ import { SubagentInbox } from './inbox.ts'
 import type { SubagentDelivery } from './inbox.ts'
 import type { ActivationObserver, ActivationTerminal } from './lifecycle.ts'
 
-/** Process-local slots shared by every continuable descendant of one live root. */
+/** Process-local slots shared through uninterrupted continuable parent links. */
 class ActivationPool {
   private readonly slots = new Set<symbol>()
 
@@ -45,7 +45,7 @@ class ActivationPool {
   reserve(capacity: number): () => void {
     if (this.slots.size >= capacity) {
       throw new SubagentError(
-        `subagent limit reached (${capacity} active children); wait for an existing child to finish `
+        `subagent limit reached (active child limit: ${capacity}); wait for an existing child to finish `
         + 'or complete this work with the current agents',
         'ACTIVATION_LIMIT_REACHED',
       )

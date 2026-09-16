@@ -2578,7 +2578,7 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 ```ts config-catalog
 /** Host configuration for continuable subagent capacity. */
 export interface Config {
-  /** Maximum live continuable children across one root's tree, excluding the root; defaults to 8. */
+  /** Maximum live children sharing uninterrupted continuable parent links; defaults to 8. */
   maxActiveSubagents?: number
   /** Default delegation depth for tools without an explicit limit; defaults to 3. */
   maxDepth?: number

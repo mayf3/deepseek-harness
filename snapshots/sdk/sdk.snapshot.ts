@@ -817,7 +817,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         const denied = records(ordered[0]!.content).find(record => record.type === 'tool/result'
           && JSON.stringify(record).includes('call_over_capacity'))
         expect(denied).toMatchObject({ data: {
-          message: { content: [{ isError: true, content: [{ type: 'text', text: expect.stringContaining('subagent limit reached (1 active children)') }] }] },
+          message: { content: [{ isError: true, content: [{ type: 'text', text: expect.stringContaining('subagent limit reached (active child limit: 1)') }] }] },
         } })
       }
       if (scenario.name === 'tool-error-details') {
