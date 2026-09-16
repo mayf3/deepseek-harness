@@ -151,8 +151,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'One provider-owned name per service instance. Each provider also owns its model tools; the service has no common action API, runtime selection, or Session workflow lock.',
   },
   {
-    key: 'documentRender', pkg: 'document-render', title: 'Office to PDF rendering',
-    mode: 'seam', implementations: ['document-render-libreoffice'], consumers: [],
+    key: 'documentConvert', pkg: 'document-convert', title: 'Office to PDF conversion',
+    mode: 'seam', implementations: ['document-convert-libreoffice'], consumers: [],
     note: 'Authorized Office bytes are converted on the Host using native engines on macOS/Windows and Node WASM on Linux.',
   },
   {

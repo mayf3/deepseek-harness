@@ -14,32 +14,32 @@ export type DocumentSourceKey = Branded<'DocumentSourceKey'>
 export function DocumentSourceKey(key: string): DocumentSourceKey { return brandString<DocumentSourceKey>(key) }
 
 /** One provider lifetime, including its engine, rendering settings, and font configuration. */
-export type DocumentRendererGeneration = Branded<'DocumentRendererGeneration'>
+export type DocumentConverterGeneration = Branded<'DocumentConverterGeneration'>
 /**
  * Label a provider lifetime.
  * @param value - unique generation created by the provider.
- * @returns branded renderer generation.
+ * @returns branded converter generation.
  */
-export function DocumentRendererGeneration(value: string): DocumentRendererGeneration {
-  return brandString<DocumentRendererGeneration>(value)
+export function DocumentConverterGeneration(value: string): DocumentConverterGeneration {
+  return brandString<DocumentConverterGeneration>(value)
 }
 
 /** Provider generation and source-content digest; consumers must not parse it. */
-export type DocumentRenderKey = Branded<'DocumentRenderKey'>
+export type DocumentConvertKey = Branded<'DocumentConvertKey'>
 /**
- * Label a renderer-owned content identity.
+ * Label a converter-owned content identity.
  * @param value - generation and content identity created by the provider.
  * @returns branded conversion identity.
  */
-export function DocumentRenderKey(value: string): DocumentRenderKey { return brandString<DocumentRenderKey>(value) }
+export function DocumentConvertKey(value: string): DocumentConvertKey { return brandString<DocumentConvertKey>(value) }
 
 /** Foreground previews and explicit QA precede speculative background conversion. */
-export type DocumentRenderPriority = 'foreground' | 'background'
+export type DocumentConvertPriority = 'foreground' | 'background'
 
 /** Source authorization and metadata lookup must finish before submitting a request. */
-export interface DocumentRenderRequest {
+export interface DocumentConvertRequest {
   readonly extension: DocumentExtension
-  readonly priority: DocumentRenderPriority
+  readonly priority: DocumentConvertPriority
   readonly source: {
     readonly key: DocumentSourceKey
     readonly version: string
@@ -56,16 +56,16 @@ export interface DocumentRenderRequest {
 }
 
 /** Successful conversion; failed and interrupted conversions reject instead. */
-export interface DocumentRenderResult {
+export interface DocumentConvertResult {
   /** Caller-owned complete PDF, valid after provider disposal. */
   readonly pdf: Uint8Array
   /** Requested OOXML font families unavailable to this conversion; binary Office formats return an empty list. */
   readonly missingFonts: string[]
-  readonly cacheKey: DocumentRenderKey
-  readonly generation: DocumentRendererGeneration
+  readonly cacheKey: DocumentConvertKey
+  readonly generation: DocumentConverterGeneration
 }
 
 /** Failures a conversion consumer can present without exposing engine diagnostics. */
-export type DocumentRenderErrorCode =
+export type DocumentConvertErrorCode =
   | 'input-too-large' | 'output-too-large' | 'invalid-document' | 'unsupported-format'
   | 'invalid-output' | 'timeout' | 'unavailable' | 'failed' | 'busy' | 'source-changed'

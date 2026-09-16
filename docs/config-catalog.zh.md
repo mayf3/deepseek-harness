@@ -550,9 +550,9 @@ export interface Config {
 
 来源：[`packages/credentials/credentials-local/src/index.ts:64`](../packages/credentials/credentials-local/src/index.ts)
 
-<a id="deepseek-aidsh-document-render-libreoffice"></a>
+<a id="deepseek-aidsh-document-convert-libreoffice"></a>
 
-## `@deepseek-ai/dsh-document-render-libreoffice`
+## `@deepseek-ai/dsh-document-convert-libreoffice`
 
 ```ts config-catalog
 /** Provider concurrency and kit rendering/font configuration. */
@@ -598,7 +598,7 @@ export interface Config {
 }
 ```
 
-源码： [`packages/document/document-render-libreoffice/src/index.ts:14`](../packages/document/document-render-libreoffice/src/index.ts)
+源码： [`packages/document/document-convert-libreoffice/src/index.ts:14`](../packages/document/document-convert-libreoffice/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-agent-team"></a>
 
@@ -3850,7 +3850,7 @@ export interface Config {
 - `@deepseek-ai/dsh-attachment` — 抽象 `AttachmentStore`（[`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts)）
 - `@deepseek-ai/dsh-compaction` — 抽象 `CompactionEngine`（[`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts)）
 - `@deepseek-ai/dsh-credentials` — 抽象 `Credentials`（[`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts)）
-- `@deepseek-ai/dsh-document-render` — 抽象 `DocumentRenderer`（[`packages/document/document-render/src/index.ts`](../packages/document/document-render/src/index.ts)）
+- `@deepseek-ai/dsh-document-convert` — 抽象 `DocumentConverter`（[`packages/document/document-convert/src/index.ts`](../packages/document/document-convert/src/index.ts)）
 - `@deepseek-ai/dsh-file-reference` — 抽象 `FileReferenceService`（[`packages/context/file-reference/src/index.ts`](../packages/context/file-reference/src/index.ts)）
 - `@deepseek-ai/dsh-fs` — 抽象 `FileSystem`（[`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker` — 抽象 `DirectoryPicker`（[`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts)）

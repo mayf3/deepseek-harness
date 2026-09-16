@@ -3,13 +3,13 @@ description: "Host Office 转换和可复用 PDF 结果的包索引。"
 kind: "package-group"
 ---
 
-# document/ — Office 渲染
+# document/ — Office 转换
 
 [English](README.md) | 中文
 
 ## 摘要
 
-在宿主上将已授权的 Office 文件转换为可复用的 PDF。渲染包族提供共享转换操作和 LibreOffice kit 提供方。macOS 和 Windows 使用匹配的原生引擎；Linux 使用 Node WASM。
+在宿主上将已授权的 Office 文件转换为可复用的 PDF。转换包族提供共享转换操作和 LibreOffice kit 提供方。macOS 和 Windows 使用匹配的原生引擎；Linux 使用 Node WASM。
 
 ## 目录
 
@@ -22,12 +22,12 @@ kind: "package-group"
 <a id="packages"></a>
 ## 包
 
-每个包负责自身配置和生命周期规则；子系统参考描述共享渲染操作。
+每个包负责自身配置和生命周期规则；子系统参考描述共享转换操作。
 
 | 包 | 职责 | ctx 键 |
 |---|---|---|
-| [document-render](document-render/README.zh.md) | 将已授权 Office 字节转换为完整 PDF 结果 | `ctx.documentRender` |
-| [document-render-libreoffice](document-render-libreoffice/README.zh.md) | 使用可取消并发和私有临时文件的 Host kit 提供方 | `ctx.documentRender` |
+| [document-convert](document-convert/README.zh.md) | 将已授权 Office 字节转换为完整 PDF 结果 | `ctx.documentConvert` |
+| [document-convert-libreoffice](document-convert-libreoffice/README.zh.md) | 使用可取消并发和私有临时文件的 Host kit 提供方 | `ctx.documentConvert` |
 
 -----
 
@@ -36,7 +36,7 @@ kind: "package-group"
 
 消费者负责源文件授权与展示。
 
-- [文档渲染](../../docs/subsystems/document-render.zh.md) — 共享操作和生成的服务参考。
+- [文档转换](../../docs/subsystems/document-convert.zh.md) — 共享操作和生成的服务参考。
 - [独立 kit 所有权](../../.agents/notes/implemented/architecture/2026-09-14-independent-libreoffice-kit.zh.md) — 引擎分发与应用集成。
 - [工作区文件](../api/workspace-files/README.zh.md) — 已授权的有界源文件读取。
 

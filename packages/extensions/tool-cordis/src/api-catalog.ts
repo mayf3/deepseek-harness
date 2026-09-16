@@ -875,21 +875,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
-    key: 'documentRender',
+    key: 'documentConvert',
     summary: 'Load one provider subclass per context; consumers own source authorization.',
     description: 'Load one provider subclass per context; consumers own source authorization.',
     methods: [
       {
-        signature: 'abstract readonly generation: DocumentRendererGeneration',
-        description: 'Changes whenever engine, font, or rendering configuration is replaced.',
+        signature: 'abstract readonly generation: DocumentConverterGeneration',
+        description: 'Changes whenever engine, font, or conversion configuration is replaced.',
         parameters: [],
       },
       {
-        signature: 'abstract render(request: DocumentRenderRequest, signal?: AbortSignal): Promise<DocumentRenderResult>',
+        signature: 'abstract convert(request: DocumentConvertRequest, signal?: AbortSignal): Promise<DocumentConvertResult>',
         description: 'Convert Office bytes without modifying the source or writing Session events.',
         parameters: [{ name: 'request', description: 'authorized metadata and deferred bounded source read.' }, { name: 'signal', description: 'caller cancellation; provider disposal also stops active work.' }],
         returns: 'caller-owned PDF bytes after conversion and scratch cleanup settle; canceled readers reject independently.',
-        throws: ['{DocumentRenderError} Invalid input, unusable output, or engine failure; cancellation rejects with its reason.'],
+        throws: ['{DocumentConvertError} Invalid input, unusable output, or engine failure; cancellation rejects with its reason.'],
       },
     ],
   },
@@ -4474,28 +4474,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface DirectoryRegistrationHandle {\n    (): void;\n    replace(entries: readonly LlmConfigurableProvider[]): void;\n}',
   },
   {
+    name: 'DocumentConverterGeneration',
+    declaration: 'export type DocumentConverterGeneration = Branded<\'DocumentConverterGeneration\'>;',
+  },
+  {
+    name: 'DocumentConvertKey',
+    declaration: 'export type DocumentConvertKey = Branded<\'DocumentConvertKey\'>;',
+  },
+  {
+    name: 'DocumentConvertPriority',
+    declaration: 'export type DocumentConvertPriority = \'foreground\' | \'background\';',
+  },
+  {
+    name: 'DocumentConvertRequest',
+    declaration: 'export interface DocumentConvertRequest {\n    readonly extension: DocumentExtension;\n    readonly priority: DocumentConvertPriority;\n    readonly source: {\n        readonly key: DocumentSourceKey;\n        readonly version: string;\n        readonly bytes?: number;\n        read(signal: AbortSignal, maxBytes: number): Promise<{\n            readonly bytes: Uint8Array;\n            readonly version: string;\n        }>;\n    };\n}',
+  },
+  {
+    name: 'DocumentConvertResult',
+    declaration: 'export interface DocumentConvertResult {\n    readonly pdf: Uint8Array;\n    readonly missingFonts: string[];\n    readonly cacheKey: DocumentConvertKey;\n    readonly generation: DocumentConverterGeneration;\n}',
+  },
+  {
     name: 'DocumentExtension',
     declaration: 'export type DocumentExtension = \'doc\' | \'docx\' | \'xls\' | \'xlsx\' | \'ppt\' | \'pptx\';',
-  },
-  {
-    name: 'DocumentRendererGeneration',
-    declaration: 'export type DocumentRendererGeneration = Branded<\'DocumentRendererGeneration\'>;',
-  },
-  {
-    name: 'DocumentRenderKey',
-    declaration: 'export type DocumentRenderKey = Branded<\'DocumentRenderKey\'>;',
-  },
-  {
-    name: 'DocumentRenderPriority',
-    declaration: 'export type DocumentRenderPriority = \'foreground\' | \'background\';',
-  },
-  {
-    name: 'DocumentRenderRequest',
-    declaration: 'export interface DocumentRenderRequest {\n    readonly extension: DocumentExtension;\n    readonly priority: DocumentRenderPriority;\n    readonly source: {\n        readonly key: DocumentSourceKey;\n        readonly version: string;\n        readonly bytes?: number;\n        read(signal: AbortSignal, maxBytes: number): Promise<{\n            readonly bytes: Uint8Array;\n            readonly version: string;\n        }>;\n    };\n}',
-  },
-  {
-    name: 'DocumentRenderResult',
-    declaration: 'export interface DocumentRenderResult {\n    readonly pdf: Uint8Array;\n    readonly missingFonts: string[];\n    readonly cacheKey: DocumentRenderKey;\n    readonly generation: DocumentRendererGeneration;\n}',
   },
   {
     name: 'DocumentSourceKey',
