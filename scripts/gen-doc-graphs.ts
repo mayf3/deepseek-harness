@@ -63,6 +63,7 @@ type EventReceiverKind = 'context' | 'agent-dispatch' | 'events-service'
 const GROUP_ORDER = [
   'util',
   'attachment',
+  'document',
   'llm',
   'core',
   'typert',
@@ -148,6 +149,11 @@ const SERVICE_ROLES: ServiceRole[] = [
     implementations: ['experimental-computer-use-cua-driver-mcp', 'experimental-computer-use-cua-driver-native'],
     consumers: ['experimental-computer-use-cua-driver-mcp', 'experimental-computer-use-cua-driver-native'],
     note: 'One provider-owned name per service instance. Each provider also owns its model tools; the service has no common action API, runtime selection, or Session workflow lock.',
+  },
+  {
+    key: 'documentRender', pkg: 'document-render', title: 'Office to PDF rendering',
+    mode: 'seam', implementations: ['document-render-libreoffice'], consumers: [],
+    note: 'Authorized Office bytes are converted on the Host using native engines on macOS/Windows and Node WASM on Linux.',
   },
   {
     key: 'attachments',

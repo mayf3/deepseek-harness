@@ -225,6 +225,9 @@
       name: '@deepseek-ai/dsh-client-ui-sidebar-right'
 
 
+    - id: document-render
+      name: '@deepseek-ai/dsh-document-render-libreoffice'
+
     # The right Sidebar's document tab: bounded file reads with selectable
     # Markdown, code, HTML, PDF, and plain-text renderers.
     - id: ui-sidebar-documentpreview

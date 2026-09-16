@@ -82,6 +82,8 @@ The provider waits for the Host's `ready` frame before its first `stat`, queues 
 
 One supervised `changes` stream serves every followed file in a Session. Followers match absolute paths with backslashes normalized to slashes. Carrier loss reconnects through the Gateway supervisor; a Host-ended or terminally failed feed ends its followers and leaves their last metadata readable until reopened. The last follower leaving disposes the stream, a successor waits for that disposal, and plugin teardown awaits all pending closes. The provider declares `ResourceProtocolMap.file`; the text preview declares its Sidebar line-navigation parameters.
 
+Host consumers can call `readAllBounded(scope, path, maxBytes, signal)` after reserving input capacity. The smaller of that reservation and `maxFileBytes` applies; the read allocates at most one additional overflow sentinel byte.
+
 -----
 
 <a id="understand-the-implementation"></a>

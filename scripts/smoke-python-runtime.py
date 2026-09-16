@@ -19,6 +19,7 @@ import sysconfig
 import tempfile
 import threading
 import time
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
@@ -776,7 +777,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--scenario",
-        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-minimal-in-history", "sdk-fs-search", "sdk-spawn-node", "sdk-mcp", "sdk-snapshot", "sdk-restart", "sdk-profile-plugin", "sdk-live", "runner", "direct"),
+        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-minimal-in-history", "sdk-fs-search", "sdk-spawn-node", "sdk-mcp", "sdk-snapshot", "sdk-restart", "sdk-profile-plugin", "sdk-office", "sdk-live", "runner", "direct"),
         default="all",
     )
     parser.add_argument("--exe", type=Path)
@@ -795,12 +796,19 @@ def main() -> None:
         parser.error("--scenario sdk-profile-plugin requires --installed-wheel")
     if args.installed_wheel:
         args.exe = assert_installed_wheel_environment()
-    if args.scenario in {"all", "sdk-custom", "sdk-minimal", "sdk-minimal-in-history", "sdk-fs-search", "sdk-spawn-node", "sdk-snapshot", "sdk-restart", "runner", "direct"} and args.exe is None:
-        parser.error("--exe is required for custom, minimal, fs-search, spawn-node, snapshot, restart, runner, and direct scenarios")
+    if args.scenario in {"all", "sdk-custom", "sdk-minimal", "sdk-minimal-in-history", "sdk-fs-search", "sdk-spawn-node", "sdk-snapshot", "sdk-restart", "sdk-office", "runner", "direct"} and args.exe is None:
+        parser.error("--exe is required for custom, minimal, fs-search, spawn-node, snapshot, restart, office, runner, and direct scenarios")
     if args.update_snapshots and args.scenario not in {"all", "sdk-minimal", "sdk-minimal-in-history", "sdk-snapshot", "sdk-restart"}:
         parser.error("--update-snapshots requires --scenario sdk-minimal, sdk-minimal-in-history, sdk-snapshot, sdk-restart, or all")
     if args.exe is not None and not args.exe.is_file():
         parser.error(f"runtime executable does not exist: {args.exe}")
+
+    if args.scenario in {"all", "sdk-office"}:
+        assert args.exe is not None
+        smoke_sdk_office(args.exe.resolve())
+    if args.scenario == "sdk-office":
+        print("smoke-python-runtime: sdk-office passed")
+        return
 
     if args.scenario in {"all", "runner"}:
         assert args.exe is not None
@@ -848,6 +856,69 @@ def main() -> None:
         if not MockModelHandler.requests:
             raise AssertionError("mock model endpoint received no requests")
     print(f"smoke-python-runtime: {args.scenario} passed")
+
+
+def smoke_sdk_office(executable: Path) -> None:
+    """Relocate the wheel payload and convert a real DOCX with the target platform engine."""
+    from deepseek_harness import DeepSeekHarness
+
+    with tempfile.TemporaryDirectory(prefix="dsh-sdk-office-") as temporary:
+        root = Path(temporary).resolve()
+        relocated = root / executable.name
+        stem = executable.name.removesuffix(".exe")
+        for source in executable.parent.glob(f"{stem}*"):
+            destination = root / source.name
+            if source.is_dir():
+                shutil.copytree(source, destination)
+            else:
+                shutil.copy2(source, destination)
+        office = root / f"{stem}-office"
+        expected_backend = "wasm" if sys.platform == "linux" else "native"
+        engines = [
+            json.loads(manifest.read_text())["engine"]["kind"]
+            for manifest in (office / "node_modules/@deepseek-ai").glob("libreoffice-kit-*/prebuilds.json")
+        ]
+        if engines != [expected_backend]:
+            raise AssertionError(f"Office sidecar must contain only {expected_backend}: {engines}")
+        plugin = root / "office.mjs"
+        shutil.copy2(Path(__file__).resolve().parent / "fixtures/python-sdk-office.mjs", plugin)
+        document = root / "document.docx"
+        with zipfile.ZipFile(document, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')
+            archive.writestr("_rels/.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
+            archive.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Python Office wheel</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>')
+
+        mode = expected_backend
+        output = root / f"{mode}.pdf"
+        result_path = root / f"{mode}.json"
+        patch = root / f"{mode}.patch.yml"
+        patch.write_text(json.dumps([{"insert": [{
+            "id": "python-sdk-office-smoke",
+            "name": plugin.as_uri(),
+            "config": {"input": str(document), "output": str(output), "result": str(result_path)},
+        }]}]))
+        with DeepSeekHarness(
+            provider="deepseek-official",
+            model="smoke-model",
+            cwd=str(root),
+            dsh_bin=str(relocated),
+            dsh_home=str(root / f"home-{mode}"),
+            patches=(str(patch),),
+            api_key="sk-keyless-smoke",
+            base_url="http://127.0.0.1:9",
+            env={"DSH_PERMISSION_MODE": "danger-full-access", "DSH_TELEMETRY_DISABLED": "1"},
+            request_timeout_seconds=180,
+        ):
+            pass
+        result = json.loads(result_path.read_text())
+        if result["backend"] != expected_backend:
+            raise AssertionError(f"Office conversion did not use {expected_backend}: {result}")
+        if not result["moduleUrl"].startswith(office.as_uri() + "/"):
+            raise AssertionError(f"Office module was not loaded from the relocated wheel: {result}")
+        pdf = output.read_bytes()
+        if len(pdf) < 100 or not pdf.startswith(b"%PDF-"):
+            raise AssertionError(f"Office conversion produced an invalid PDF at {output}")
+        print(f"smoke-python-runtime: relocated Office {result['backend']} DOCX produced {len(pdf)} PDF bytes")
 
 
 def assert_installed_wheel_environment() -> Path:

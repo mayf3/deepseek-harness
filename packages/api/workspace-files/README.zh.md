@@ -82,6 +82,8 @@ kind: "package-reference"
 
 每个 Session 的所有被跟随文件共用一条受监督的 `changes` 流。跟随者按反斜杠归一为斜杠的绝对路径匹配。载体掉线由 Gateway 监督器重连；Host 结束或终态失败的流会结束其跟随者，最后的元数据仍可读取，直到重新打开。最后一个跟随者离开时释放流，后继流等待该释放完成，插件拆除等待所有在途关闭。提供者声明 `ResourceProtocolMap.file`；文本预览声明其 Sidebar 行号导航参数。
 
+Host 消费者可在预留输入容量后调用 `readAllBounded(scope, path, maxBytes, signal)`。采用预留值与 `maxFileBytes` 的较小值；读取最多额外分配一个超限哨兵字节。
+
 -----
 
 <a id="understand-the-implementation"></a>
