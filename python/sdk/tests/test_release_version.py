@@ -164,6 +164,7 @@ def test_stage_runtime_rejects_a_noncanonical_executable_name(tmp_path: Path) ->
 @pytest.mark.parametrize("platform_tag,selected", [
     ("manylinux_2_28_x86_64", "wasm"), ("macosx_14_0_arm64", "darwin-arm64"),
     ("macosx_14_0_x86_64", "darwin-x64"), ("win_amd64", "win32-x64"),
+    ("manylinux_2_28_x86_64", "linux-x64"), ("macosx_14_0_arm64", "wasm"),
 ])
 @pytest.mark.parametrize("invalid", [None, "asset", "missing-engine", "foreign-engine", "helper-mode"])
 def test_office_wheel_requires_only_target_engine(
@@ -177,7 +178,9 @@ def test_office_wheel_requires_only_target_engine(
     engine = ({"kind": "native", "executable": "bin/helper"} if native else
               {"kind": "wasm", "loader": "loader.cjs", "wasm": "engine.wasm", "data": "engine.data", "metadata": "fonts.json"})
     with zipfile.ZipFile(wheel, "w") as archive:
-        archive.writestr(f"{root}/@deepseek-ai/libreoffice-kit/package.json", "{}")
+        archive.writestr(f"{root}/@deepseek-ai/libreoffice-kit/package.json", json.dumps({
+            "optionalDependencies": {f"@deepseek-ai/libreoffice-kit-{selected}": "0.0.1"},
+        }))
         base = f"{root}/@deepseek-ai/libreoffice-kit-{selected}"
         if invalid != "missing-engine":
             archive.writestr(f"{base}/prebuilds.json", json.dumps({"engine": engine}))

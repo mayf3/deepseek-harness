@@ -6,10 +6,11 @@
  * node_modules tree, including nested package containers.
  * @param path - Path relative to the production node_modules directory.
  * @param target - Platform and architecture of the Electron Node runtime.
+ * @param officeEngine - Engine selected from the installed kit manifest.
  * @returns Omission reason, or undefined when the entry must be copied.
  */
 export function desktopRuntimeFileExclusion(
-  path: string, target: { platform: NodeJS.Platform; arch: string },
+  path: string, target: { platform: NodeJS.Platform; arch: string }, officeEngine: string,
 ): string | undefined {
   const parts = path.split(/[\\/]/u)
   if (parts.some(part => ['.bin', '.pnpm', '.modules.yaml', '.pnpm-workspace-state-v1.json'].includes(part))) {
@@ -24,8 +25,7 @@ export function desktopRuntimeFileExclusion(
   const name = packageParts.slice(0, nameParts).join('/')
   const entry = packageParts.slice(nameParts).join('/')
   if (name.startsWith('@deepseek-ai/libreoffice-kit-')) {
-    const engine = target.platform === 'linux' ? 'wasm' : `${target.platform}-${target.arch}`
-    if (name !== `@deepseek-ai/libreoffice-kit-${engine}`) return 'LibreOffice other platform'
+    if (name !== `@deepseek-ai/libreoffice-kit-${officeEngine}`) return 'LibreOffice other platform'
   }
   if (name === 'fs-ext' && /^build\/(?:Release|Debug)\/(?:obj(?:\/|$)|fs_ext\.(?:exp|lib|pdb|iobj|ipdb)$)/u.test(entry)) {
     return 'fs-ext compiler output'

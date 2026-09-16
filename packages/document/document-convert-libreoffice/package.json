@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-document-convert-libreoffice",
-  "description": "Host Office conversion with native macOS/Windows engines and Linux Node WASM",
+  "description": "Host Office conversion with a declared native target engine or Node WASM",
   "version": "0.1.6-alpha.1",
   "publishConfig": {
     "access": "public"

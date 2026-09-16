@@ -237,7 +237,9 @@ def verify_office_payload(archive: zipfile.ZipFile, office_modules: str, platfor
         raise RuntimeError("Office dependency is missing: libreoffice-kit")
     engines = f"{office_modules}/@deepseek-ai"
     target = next(name for name, value in PLATFORMS.items() if value[0] == platform_tag)
-    selected = "wasm" if target.startswith("linux-") else target.replace("win-", "win32-").replace("macos-", "darwin-")
+    native_target = target.replace("win-", "win32-").replace("macos-", "darwin-")
+    declared = json.loads(archive.read(adapter)).get("optionalDependencies", {})
+    selected = native_target if f"@deepseek-ai/libreoffice-kit-{native_target}" in declared else "wasm"
     for required in (f"libreoffice-kit-{selected}/prebuilds.json",):
         if f"{engines}/{required}" not in names:
             raise RuntimeError(f"Office dependency is missing: {required}")

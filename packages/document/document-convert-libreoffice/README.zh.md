@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在宿主计算机上将 Office 文档转换为 PDF。macOS 和 Windows 使用匹配的原生 LibreOffice 引擎；Linux 使用 Node WASM。提供方支持 DOC、DOCX、XLS、XLSX、PPT 和 PPTX。OOXML 转换返回缺失字体名称；二进制 Office 转换返回空列表。
+在宿主计算机上将 Office 文档转换为 PDF。声明了原生 LibreOffice 引擎的目标使用原生引擎，其余目标使用 Node WASM。提供方支持 DOC、DOCX、XLS、XLSX、PPT 和 PPTX。OOXML 转换返回缺失字体名称；二进制 Office 转换返回空列表。
 
 ## 目录
 
@@ -27,7 +27,7 @@ kind: "package-reference"
 
 [Web bundle](../../bundle/web-app/README.zh.md)以 `document-convert` 条目挂载此提供方。独立组合通过 `cordis.yml` 条目挂载 `@deepseek-ai/dsh-document-convert-libreoffice`。
 
-此 provider 依赖独立发布的 [`@deepseek-ai/libreoffice-kit`](https://github.com/deepseek-harness/libreoffice-kit/tree/main/packages/entry) npm API，kit 版本为 `0.0.1`。npm 选择匹配的 macOS/Windows 原生包或仅限 Linux 的 WASM 包。macOS/Windows 缺少原生引擎时拒绝转换，不会选择 WASM。[平台引擎决策](../../../.agents/notes/implemented/architecture/2026-09-15-platform-office-engines.zh.md)定义安装与打包策略；[发布归属决策](../../../.agents/notes/implemented/architecture/2026-09-14-independent-libreoffice-kit.zh.md)定义独立 kit 与 Harness 各自的职责。
+此 provider 依赖独立发布的 [`@deepseek-ai/libreoffice-kit`](https://github.com/deepseek-harness/libreoffice-kit/tree/main/packages/entry) npm API，kit 版本为 `0.0.1`。应用打包选择 kit 的 `optionalDependencies` 中声明的匹配原生包；目标没有声明原生包时选择 WASM。已声明的原生引擎缺失时拒绝打包，不会选择 WASM。[平台引擎决策](../../../.agents/notes/implemented/architecture/2026-09-15-platform-office-engines.zh.md)定义安装与打包策略；[发布归属决策](../../../.agents/notes/implemented/architecture/2026-09-14-independent-libreoffice-kit.zh.md)定义独立 kit 与 Harness 各自的职责。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|

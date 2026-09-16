@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 摘要
 
-在宿主上将已授权的 Office 文件转换为可复用的 PDF。转换包族提供共享转换操作和 LibreOffice kit 提供方。macOS 和 Windows 使用匹配的原生引擎；Linux 使用 Node WASM。
+在宿主上将已授权的 Office 文件转换为可复用的 PDF。转换包族提供共享转换操作和 LibreOffice kit 提供方。声明了原生引擎的目标使用原生引擎，其余目标使用 Node WASM。
 
 ## 目录
 

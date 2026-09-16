@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/document/document-convert-libreoffice/README.md
-README.md: 1c287b714ace289fa03f8be6da722fbe78e64065
-README.zh.md: 796d14c3bd873a3a6a24d4691f0d406d0894a122
+README.md: c083215ea2e3fa067043dac045becd892e0ca406
+README.zh.md: d10c1a14792c80b3608b3302958de4546b817cda
