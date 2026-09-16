@@ -49,14 +49,14 @@
   border: 0;
   border-radius: 6px;
   background: none;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
 }
 
 .helpButton:hover,
 .helpButton[aria-expanded='true'] {
   background: var(--dsw-alias-bg-layer-4);
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .helpButton:focus-visible {

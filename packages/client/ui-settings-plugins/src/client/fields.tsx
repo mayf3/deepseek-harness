@@ -70,7 +70,7 @@ export function ValueField(props: Omit<FieldProps, 'hint'> & {
               <button type="button" className={css.helpButton}
                 aria-label={props.help.label} aria-expanded={helpOpen} aria-controls={helpId}
                 onClick={() => { setHelpOpen(!helpOpen) }}>
-                <IconInfoOutline14 />
+                <IconInfoOutline14 size={12} />
               </button>
             )
             : null}
