@@ -39,7 +39,8 @@ export interface SessionSummary {
   /** Local ownership counts; Host metadata refreshes cannot overwrite them. */
   readonly retainedBy: SessionRetainInfo['retainedBy']
   /**
-   * Blankness from the Host summary reconciled with `sessionListMetadata`.
+   * New Session presentation and reuse eligibility, derived from the Host
+   * summary, `sessionListMetadata`, and client acceptance/running observations.
    * New Session reuses a blank one targeting the same workspace. Filtering
    * stays with the consumer: the store carries every row, while the Workspace
    * browser shows only the selected blank entry.

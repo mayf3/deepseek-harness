@@ -87,6 +87,9 @@ export class SessionManager {
   private readonly sessions = new Map<SessionId, Session>()
   /** In-flight Session disposals remain here after instances leave `sessions`, so manager disposal can await quiescence. */
   private readonly sessionDisposals = new Set<Promise<void>>()
+  /** Accepted/running presentation must survive a later empty-history list response. */
+  private readonly engagedSessions = new Set<SessionId>()
+  private disposed = false
   /** Per-session projection value stores, retained independently of instance arrival (the
    *  title-snapshot precedent, generalized): push frames land here whether or not the Session
    *  is instantiated (list rows read the 'title' key), and an instantiated Session adopts the
@@ -184,6 +187,7 @@ export class SessionManager {
     if (session !== expected) return Promise.resolve()
     this.sessions.delete(sessionId)
     this.addresses.delete(sessionId)
+    this.pruneEngagement(sessionId)
     return this.startSessionDisposal(session)
   }
 
@@ -192,6 +196,10 @@ export class SessionManager {
    * @returns once catalog requests and every Session stream have stopped.
    */
   async dispose(): Promise<void> {
+    this.disposed = true
+    this.listMutations = null
+    this.listInflight = null
+    this.engagedSessions.clear()
     const reads = [...this.projectionInflight.values()]
     for (const { controller } of reads) controller.abort()
     this.projectionInflight.clear()
@@ -235,7 +243,7 @@ export class SessionManager {
       // instance (consistency when the list precedes open).
       const summary = this.summaries.find(s => s.sessionId === sessionId)
       if (summary !== undefined) {
-        session.handleBlank(summary.blank)
+        session.handleBlank(this.effectiveBlank(summary))
         session.handleRunning(summary.running)
       } else {
         const address = this.addresses.get(sessionId)
@@ -268,10 +276,26 @@ export class SessionManager {
       // The sender's local first-send flip mirrors into the list row so the
       // session surfaces (lists filter on blank) before any host frame lands.
       onEngaged: (engaged) => {
+        if (this.disposed || !this.retainsSession(engaged.sessionId)) return
+        this.engagedSessions.add(engaged.sessionId)
         this.recordMutation({ kind: 'engaged', sessionId: engaged.sessionId })
+        this.sessions.get(engaged.sessionId)?.handleBlank(false)
       },
       projections: this.projectionStore(sessionId),
     })
+  }
+
+  private effectiveBlank(summary: SessionSummary): boolean {
+    return summary.blank && !this.engagedSessions.has(summary.sessionId)
+  }
+
+  private retainsSession(sessionId: SessionId): boolean {
+    return this.sessions.has(sessionId) || this.addresses.has(sessionId)
+      || this.summaries.some(summary => summary.sessionId === sessionId)
+  }
+
+  private pruneEngagement(sessionId: SessionId): void {
+    if (!this.retainsSession(sessionId)) this.engagedSessions.delete(sessionId)
   }
 
   /** Resident per-session projection store (create-on-demand; outlives instantiation). */
@@ -367,15 +391,31 @@ export class SessionManager {
           const baseline: SessionSummary[] = this.listPhase === 'pending'
             ? [...result.value.items]
             : mergeOrderedBaseline(established, result.value.items, summary => summary.sessionId)
-          this.summaries = mutations.reduce(applyMutation, baseline)
+          // A removal supersedes running observed in the pull, including after re-addition.
+          const removedSincePull = new Set<SessionId>()
+          for (const mutation of mutations) {
+            if (mutation.kind === 'remove') removedSincePull.add(mutation.sessionId)
+          }
+          for (const s of baseline) {
+            if (s.running && !removedSincePull.has(s.sessionId)) this.engagedSessions.add(s.sessionId)
+          }
+          const summaries = mutations.reduce(applyMutation, baseline)
+          this.summaries = summaries
+          // A full list can remove identities without a removal frame.
+          const listedIds = new Set(summaries.map(summary => summary.sessionId))
+          for (const sessionId of this.engagedSessions) {
+            if (!listedIds.has(sessionId) && !this.sessions.has(sessionId) && !this.addresses.has(sessionId)) {
+              this.engagedSessions.delete(sessionId)
+            }
+          }
           this.listState = 'idle'
           this.listPhase = 'ready'
           this.updateParentAvailability()
-          // Sessions reconcile list blank hints with their current metadata projection.
+          // Resident Sessions and list rows share one display blank, reconciled with the metadata projection.
           for (const s of this.summaries) {
             const session = this.sessions.get(s.sessionId)
             if (session === undefined) continue
-            session.handleBlank(s.blank)
+            session.handleBlank(this.effectiveBlank(s))
             session.handleRunning(s.running)
           }
           // Land each row's projection block in the per-session value store
@@ -524,6 +564,7 @@ export class SessionManager {
 
   /** Apply immediately and retain for replay when a list response is in flight. */
   private recordMutation(mutation: SessionListMutation): void {
+    if (this.disposed) return
     this.listMutations?.push(mutation)
     this.summaries = applyMutation(this.summaries, mutation)
     this.notifier.markDirty()
@@ -599,7 +640,8 @@ export class SessionManager {
    */
   handleSessionAdded(summary: SessionSummary): void {
     this.mergeSummary(summary)
-    this.sessions.get(summary.sessionId)?.handleBlank(summary.blank)
+    if (!this.disposed && summary.running) this.engagedSessions.add(summary.sessionId)
+    this.sessions.get(summary.sessionId)?.handleBlank(this.effectiveBlank(summary))
     if (summary.projections !== undefined) this.applyListBlock(summary.sessionId, summary.projections)
   }
 
@@ -644,6 +686,7 @@ export class SessionManager {
     if (!durableSubagent && (catalog === undefined || catalog.length === 0)) {
       this.projectionStores.delete(sessionId)
     }
+    this.pruneEngagement(sessionId)
     this.projectionInflight.get(sessionId)?.controller.abort()
     this.projectionInflight.delete(sessionId)
     this.projectionLoads.delete(sessionId)
@@ -660,6 +703,7 @@ export class SessionManager {
    * @param running - current Agent running state.
    */
   handleSessionStatus(sessionId: SessionId, running: boolean): void {
+    if (!this.disposed && running) this.engagedSessions.add(sessionId)
     this.recordMutation({ kind: 'status', sessionId, running, agentAvailable: true })
     this.updateParentAvailability()
     this.sessions.get(sessionId)?.handleRunning(running)
@@ -716,7 +760,7 @@ export class SessionManager {
       return {
         ...summary,
         // Cached list hints can precede a history opening or control update.
-        blank: summary.blank && metadata?.blank !== false,
+        blank: this.effectiveBlank(summary) && metadata?.blank !== false,
         updatedAt: Math.max(summary.updatedAt, metadata?.lastPromptAt ?? 0),
         ...(typeof title === 'string' && title !== '' ? { title } : {}),
         ...(projectionValues === undefined ? {} : { projectionValues }),
@@ -786,8 +830,7 @@ function applyMutation(summaries: readonly SessionSummary[], mutation: SessionLi
     case 'remove':
       return summaries.filter(summary => summary.sessionId !== mutation.sessionId)
     case 'status':
-      // running:true doubles as the cross-client blank flip (a blank session
-      // never runs, so the first running frame proves a message landed).
+      // Running converts display state; it does not establish durable history.
       return summaries.map(summary => summary.sessionId === mutation.sessionId
         && (summary.running !== mutation.running
           || summary.agentAvailable !== mutation.agentAvailable || (mutation.running && summary.blank))
