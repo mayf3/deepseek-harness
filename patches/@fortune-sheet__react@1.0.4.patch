@@ -1,0 +1,26 @@
+diff --git a/dist/index.esm.js b/dist/index.esm.js
+index c4486a2b38bec4eff10cdfda4d3748d40bfb71ba..f866bc54a2787e3fbe27256ed7513c95393d9e8c 100644
+--- a/dist/index.esm.js
++++ b/dist/index.esm.js
+@@ -921,7 +921,7 @@ var InputBox = function InputBox() {
+     return {};
+   }, [context.luckysheetfile, context.currentSheetId, context.luckysheetCellUpdate, firstSelection]);
+   useLayoutEffect(function () {
+-    if (!context.allowEdit) {
++    if (!context.allowEdit && context.forceFormulaRef) {
+       setContext(function (ctx) {
+         var flowdata = getFlowdata(ctx);
+         if (!_.isNil(flowdata) && ctx.forceFormulaRef) {
+diff --git a/dist/index.js b/dist/index.js
+index e4045518773578e3faaa3a58985a5585f9683088..469b0159ee6e9b308276c971fe9f7e659e229d21 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -932,7 +932,7 @@ var InputBox = function InputBox() {
+     return {};
+   }, [context.luckysheetfile, context.currentSheetId, context.luckysheetCellUpdate, firstSelection]);
+   React.useLayoutEffect(function () {
+-    if (!context.allowEdit) {
++    if (!context.allowEdit && context.forceFormulaRef) {
+       setContext(function (ctx) {
+         var flowdata = core.getFlowdata(ctx);
+         if (!___default['default'].isNil(flowdata) && ctx.forceFormulaRef) {

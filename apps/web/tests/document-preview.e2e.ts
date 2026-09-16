@@ -9,6 +9,7 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { realOfficeBytes } from './office-fixture.ts'
+import { excelFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/excel-fixture.ts'
 import { pdfFixture, selectionPdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
@@ -243,6 +244,7 @@ else process.exit(1);
       writeFile(join(cwd, 'user-unit.pdf'), pdfFixture(2)),
       ...[90, 180, 270].map(rotation => writeFile(join(cwd, `rotated-${rotation}.pdf`), pdfFixture(4, rotation))),
       writeFile(join(cwd, 'selection.pdf'), selectionPdfFixture()),
+      writeFile(join(cwd, 'budget.xlsx'), await excelFixture()),
       ...['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].map(extension => writeFile(join(cwd, `unavailable.${extension}`), Buffer.from('PK\u0003\u0004OFFICE_BINARY_PREVIEW'))),
       writeFile(join(cwd, 'clip.mp4'), Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])),
     ])
@@ -751,16 +753,37 @@ else process.exit(1);
       '- Plain-text option and viewer picker: hidden',
     ].join('\n'))
 
-    const spreadsheetStates: string[] = []
-    for (const extension of ['xls', 'xlsx']) {
-      await openFile(`unavailable.${extension}`)
-      const spreadsheet = column.locator('[data-textpreview-state="unsupported"]')
-      await spreadsheet.waitFor({ timeout: 15_000 })
-      expect(await spreadsheet.getByText('Preview is not available for this file type yet.', { exact: true }).count()).toBe(1)
-      await spreadsheet.locator('[data-open-path-unpreviewable]').waitFor({ timeout: 15_000 })
-      spreadsheetStates.push(`${extension.toUpperCase()}: unsupported / Open in default app`)
-    }
-    sections.push(['## Spreadsheet preview', '', `- ${spreadsheetStates.join('\n- ')}`].join('\n'))
+    await openFile('budget.xlsx')
+    const excel = preview.locator('[data-excel-preview]')
+    await excel.getByText('季度预算', { exact: true }).waitFor({ state: 'visible' })
+    await successShot(page, 'excel-budget')
+    expect(await preview.locator('[data-pdf-preview]').count()).toBe(0)
+    expect(await excel.locator('.fortune-toolbar').count()).toBe(0)
+    await excel.getByText('公式与格式', { exact: true }).click()
+    await excel.locator('.fortune-sheet-overlay').click({ position: { x: 70, y: 30 } })
+    await expect.poll(() => excel.locator('.fortune-fx-input').innerText()).toBe('=_xlfn.XLOOKUP(1,{1},{42})')
+    expect(await excel.locator('.fortune-fx-input').getAttribute('contenteditable')).toBe('false')
+    await page.keyboard.press('ControlOrMeta+C')
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('42\n')
+    await page.keyboard.type('999')
+    await page.keyboard.press('ControlOrMeta+C')
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('42\n')
+    await successShot(page, 'excel-cached-formula')
+    await openFile('unavailable.xls')
+    const legacyGuidance = 'Save this legacy Excel file as .xlsx to preview it.'
+    await preview.getByText(legacyGuidance, { exact: true }).waitFor()
+    await openFile('unavailable.xlsx')
+    const invalidExcel = 'This Excel file could not be opened. It may be damaged or password protected.'
+    await preview.getByText(invalidExcel, { exact: true }).waitFor()
+    sections.push([
+      '## Browser Excel preview', '',
+      '- Opens without the Office conversion service',
+      '- Sheets: 季度预算 | 公式与格式; hidden worksheet omitted',
+      '- Cached XLOOKUP result copied: 42; typing leaves it unchanged',
+      '- Formula bar is read-only; PDF body and editing toolbar absent',
+      `- Legacy guidance: ${legacyGuidance}`,
+      `- Invalid XLSX: ${invalidExcel}`,
+    ].join('\n'))
 
     await openFile('notes.unknown')
     const plainLines = preview.locator('[data-textpreview-line]')
@@ -956,12 +979,6 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
         await expect.poll(async () => (await preview.locator('[data-pdf-text]').allTextContents()).join(''), { timeout: 30_000 }).toContain('中文文档')
         if (['doc', 'ppt'].includes(extension)) expect(await warning.count()).toBe(0)
         await successShot(page, `office-${extension}`)
-      }
-      expect(convert).toHaveBeenCalledTimes(4)
-      for (const extension of ['xls', 'xlsx']) {
-        await openPreviewFile(column, filesTab, preview, `chinese.${extension}`)
-        await preview.getByText('Preview is not available for this file type yet.', { exact: true }).waitFor({ timeout: 15_000 })
-        expect(await preview.getByRole('img', { name: 'PDF page 1', exact: true }).count()).toBe(0)
       }
       expect(convert).toHaveBeenCalledTimes(4)
       await openPreviewFile(column, filesTab, preview, 'chinese.docx')

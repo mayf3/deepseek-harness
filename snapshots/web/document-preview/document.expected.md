@@ -72,10 +72,14 @@
 - Binary text shown: false
 - Plain-text option and viewer picker: hidden
 
-## Spreadsheet preview
+## Browser Excel preview
 
-- XLS: unsupported / Open in default app
-- XLSX: unsupported / Open in default app
+- Opens without the Office conversion service
+- Sheets: 季度预算 | 公式与格式; hidden worksheet omitted
+- Cached XLOOKUP result copied: 42; typing leaves it unchanged
+- Formula bar is read-only; PDF body and editing toolbar absent
+- Legacy guidance: Save this legacy Excel file as .xlsx to preview it.
+- Invalid XLSX: This Excel file could not be opened. It may be damaged or password protected.
 
 ## Unknown suffix
 

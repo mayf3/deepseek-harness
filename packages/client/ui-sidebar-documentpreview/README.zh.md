@@ -9,13 +9,14 @@ kind: "package-reference"
 
 ## 概述
 
-在右侧 Sidebar 预览文件，并切换已注册的渲染器。Markdown 和代码支持分页文本；PDF、HTML 和常见图片接收完整字节；未知扩展名使用纯文本。Word 与 PowerPoint 文档在本地转换为 PDF；Excel 工作簿使用不支持预览的空态。tab 提供文件状态、渲染器选择、换行以及自动或手动重新载入。插件可在头部和不支持预览的空态中添加本地打开控件。
+在右侧 Sidebar 预览文件，并切换已注册的渲染器。Markdown 和代码支持分页文本；PDF、HTML、常见图片和 XLSX 接收完整字节；未知扩展名使用纯文本。Word 与 PowerPoint 文档在本地转换为 PDF；Excel 工作簿在浏览器内打开。tab 提供文件状态、渲染器选择、换行以及自动或手动重新载入。插件可在头部和不支持预览的空态中添加本地打开控件。
 
 ## 目录
 
 - [注册了什么](#what-it-registers)
 - [地址](#addresses)
 - [怎么读](#how-it-reads)
+- [Excel 预览](#excel-preview)
 - [Office 预览](#office-preview)
 - [导航](#navigation)
 - [模型体验](#model-experience)
@@ -62,10 +63,25 @@ PNG、JPEG、GIF、WebP、BMP、ICO 和 SVG 通过 Blob URL 在 `<img>` 静态�
 
 首次读取、追加页及 HTML/PDF/图片准备共用 ongoing `StateDot` loading，其标签暴露给辅助技术，并遵循减少动态效果偏好；内容出现前的每个等待都把 loading 居中在面板中，打开文件到正文出现始终是同一位置的一个标记。下一页加载期间保留已显示的内容。PDF 正文仅在 PDF 预览挂载时加载包内 `client.pdf.js` chunk；PDF.js、Worker 源码和内嵌支持数据不会进入启动 `client.js`。PDF 页面贴边占满面板宽度，组成一个纵向连续序列并在接近视口时惰性渲染；未渲染的页以安静的 3:4 占位块保持位置。PDF.js 官方 TextLayerBuilder 在与画面重合的文字层上管理选区边界和复制文本规范化。配套样式不高亮空白换行；对齐同时考虑 PDF 页面单位、页面旋转与视口宽度变化，页面释放时取消两层渲染。纯图片 PDF 不包含可选取的文字。代码预览默认显示源码行号，但复制文本不包含行号；纯文本与代码使用相同字号和行高。代码直接坐在分栏自身的背景上，而不是会话卡片的填充色；复制条与占满剩余高度的内部滚动区相邻，因此横纵滚动条都从复制控件下方开始。
 
+<a id="excel-preview"></a>
+## Excel 预览
+
+直接在浏览器中打开 `.xlsx`，支持工作表标签、单元格选择、复制和只读公式栏。查看器保留字体、纯色填充、边框、数字格式、富文本、合并单元格、行列尺寸、隐藏行列及工作表，以及冻结标题。它显示已保存的公式结果而不重新计算；缺少结果时显示提示。旧版 `.xls` 文件需要另存为 `.xlsx`。Excel 预览不调用 Office 转换服务。
+
+在同一个 `ui-sidebar-documentpreview` 条目上配置 `excel`。这些限制补充 Host 的完整文件读取限制，但不限制浏览器进程内存或解压分配量。
+
+| 字段 | 默认值 | 含义 |
+|---|---|---|
+| `excel.maxBytes` | `16777216`（16 MiB） | 最大压缩 XLSX 字节数 |
+| `excel.maxCells` | `250000` | 所有工作表矩形区域的最大合计单元格数，包含空单元格 |
+| `excel.timeoutMs` | `15000` | 解析 Worker 的最长存活时间，单位毫秒 |
+
+惰性 Excel chunk 打包 MIT 许可的 FortuneSheet 和 ExcelJS。包内独立于 React 的适配层将 ExcelJS 数据映射为 FortuneSheet 单元格。每次解析拥有一个独立可释放的 Worker，并传输所保留文件字节的副本；内容替换、卸载、失败或超时都会终止该 Worker。样式表仅作用于 Excel 预览区域。暂不支持图表、绘图/图片、数据透视表、条件格式、编辑、重新计算和导出；字体可用性、Excel 列宽近似和主题色明暗近似会影响保真度。超链接显示为文本，不加载目标地址。
+
 <a id="office-preview"></a>
 ## Office 预览
 
-将 `.doc`、`.docx`、`.ppt` 和 `.pptx` 打开为 PDF 预览，使用与 PDF 文件相同的加载状态、控件、取消和文本选择能力。`.xls` 与 `.xlsx` 不注册 Sidebar 渲染器：它们不请求转换，直接显示不支持预览的提示；Host 报告存在桌面时，还提供用系统默认应用打开的控件。[Host 提供方](../../document/office-to-pdf/README.zh.md)仍为其他消费者保留电子表格转换 API。受支持的无效文件、转换失败和超时会显示本地化消息。缺少 Host 服务时显示配置引导。
+将 `.doc`、`.docx`、`.ppt` 和 `.pptx` 打开为 PDF 预览，使用与 PDF 文件相同的加载状态、控件、取消和文本选择能力。[Host 提供方](../../document/office-to-pdf/README.zh.md)负责本地转换，并为其他消费者保留电子表格转换 API。受支持的无效文件、转换失败和超时会显示本地化消息。缺少 Host 服务时显示配置引导。
 
 [Web bundle](../../bundle/web-app/README.zh.md) 以 `ui-sidebar-documentpreview` 挂载本包。通过该条目的 `office` 设置配置临时 Office 缓存；[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-client-ui-sidebar-documentpreview)定义可接受的值。设置注入到每个页面；修改 YAML 后重新加载浏览器页面。
 
@@ -108,7 +124,7 @@ Office 注册、加载、缓存和字体提示位于 `src/client/office/`。Offi
 
 <a id="known-limitations-and-deferred-work"></a>
 - **预览而非编辑。** 查看器不提供文件编辑或共享搜索接口；目录地址以 `not-regular-file` 失败。未知扩展名使用纯文本读取，仍受其 UTF-8/NUL 检查限制。
-- **Office 转换限制。** 预览不启动原生 Office 编辑器，也不下载引擎。Excel 工作簿不提供预览，在桌面 Host 上改为提供用系统默认应用打开的控件。二进制 `.doc` 和 `.ppt` 文件不返回缺失字体诊断。转换保真度与资源限制由 [LibreOffice 提供方](../../document/office-to-pdf/README.zh.md)负责。
+- **Office 转换限制。** 预览不启动原生 Office 编辑器，也不下载引擎。二进制 `.doc` 和 `.ppt` 文件不返回缺失字体诊断。转换保真度与资源限制由 [LibreOffice 提供方](../../document/office-to-pdf/README.zh.md)负责。
 - **文本顺序分页，完整文件受限。** 定位到较深处的源码行需要先加载此前各页；PDF、HTML 和图片必须取得 Host `maxFileBytes` 上限内的完整结果。
 - **字节视图不恢复滚动位置。** PDF、HTML 与图片的渲染器重新挂载或重新载入时可能回到顶部；图片适配面板宽度、不产生横向滚动，HTML iframe 的滚动属于其不透明浏览上下文。
 - **本地 HTML 依赖集合有限。** 只打包直接引用的经典 `.js` 脚本和 `.css` 样式表。浏览器解析的资源仍受浏览器源与网络规则限制；iframe 不获得运行时文件读取桥接。

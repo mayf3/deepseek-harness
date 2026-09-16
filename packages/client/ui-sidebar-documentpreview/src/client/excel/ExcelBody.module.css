@@ -1,0 +1,48 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  white-space: normal;
+  font-family: var(--dsw-font, sans-serif);
+}
+
+.workbook {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  color-scheme: light;
+}
+
+.notice {
+  flex: none;
+  margin: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
+}
+
+.status {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 16px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.loadingIcon {
+  display: flex;
+  animation: turn 0.8s linear infinite;
+}
+
+@keyframes turn {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingIcon { animation: none; }
+}

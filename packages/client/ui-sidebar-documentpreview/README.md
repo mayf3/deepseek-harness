@@ -9,13 +9,14 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Preview files in the right Sidebar and choose among registered renderers. Markdown and code support paged text; PDF, HTML, and common images receive complete bytes; unknown extensions use plain text. Word and PowerPoint documents convert locally to PDF; Excel workbooks use the unsupported-preview state. The tab provides file status, renderer selection, wrap, and automatic or manual reload. Plugins can add local opening controls to the header and unsupported-preview empty state.
+Preview files in the right Sidebar and choose among registered renderers. Markdown and code support paged text; PDF, HTML, common images, and XLSX receive complete bytes; unknown extensions use plain text. Word and PowerPoint documents convert locally to PDF; Excel workbooks open in the browser. The tab provides file status, renderer selection, wrap, and automatic or manual reload. Plugins can add local opening controls to the header and unsupported-preview empty state.
 
 ## Table of Contents
 
 - [What it registers](#what-it-registers)
 - [Addresses](#addresses)
 - [How it reads](#how-it-reads)
+- [Excel preview](#excel-preview)
 - [Office preview](#office-preview)
 - [Navigation](#navigation)
 - [Model Experience](#model-experience)
@@ -62,10 +63,25 @@ Shared copy comes from `sidebarDocumentPreview`; each builtin renderer owns its 
 
 Initial reads, additional pages, and HTML/PDF/image preparation share the ongoing `StateDot` loader, which exposes its label to assistive technology and respects reduced-motion preferences; every wait before content exists centres the loader in the pane, so opening a file shows one indicator in one position until the body appears. Loaded pages stay visible while another page loads. The PDF body loads its package-local `client.pdf.js` chunk only when a PDF preview mounts; PDF.js, its Worker source, and embedded support data stay out of the startup `client.js`. PDF pages fill the pane's width edge to edge as one vertical sequence and render lazily near the viewport; an unrendered page holds its place as a quiet 3:4 placeholder block. PDF.js’s official TextLayerBuilder manages selection boundaries and normalized copying over an aligned text layer. Its companion styles keep blank line breaks unhighlighted; alignment accounts for PDF page units, page rotation, and viewport resizing, and page disposal cancels both layers. Image-only PDFs contain no selectable text. Code previews show source line numbers by default without including them in copied text; plain text uses the same font size and line height as code. Code sits on the pane's own background rather than the chat card's fill; its banner is adjacent to a full-height inner scrollport, so both scrollbars begin below the copy control.
 
+<a id="excel-preview"></a>
+## Excel preview
+
+Open `.xlsx` directly in the browser with worksheet tabs, cell selection, copying, and a read-only formula bar. The viewer retains fonts, solid fills, borders, number formats, rich text, merged cells, row and column sizes, hidden rows/columns/sheets, and frozen headings. It displays saved formula results without recalculating; missing results receive a notice. Legacy `.xls` files require saving as `.xlsx`. Excel preview does not call the Office conversion service.
+
+Configure `excel` on the same `ui-sidebar-documentpreview` entry. These limits complement the Host's complete-file read limit; they do not cap browser process memory or decompression allocations.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `excel.maxBytes` | `16777216` (16 MiB) | Maximum compressed XLSX bytes |
+| `excel.maxCells` | `250000` | Maximum combined rectangular worksheet area, including empty cells |
+| `excel.timeoutMs` | `15000` | Maximum parser Worker lifetime in milliseconds |
+
+The lazy Excel chunk bundles MIT-licensed FortuneSheet and ExcelJS. A package-local, React-independent adapter maps ExcelJS data to FortuneSheet cells. Each parse owns a disposable Worker and transfers a copy of retained file bytes; replacement, unmount, failure, and timeout terminate that Worker. The stylesheet is scoped to the Excel preview. Charts, drawings/images, pivot tables, conditional formatting, editing, recalculation, and export are unsupported; font availability, Excel column-width approximation, and theme-tint approximation can affect fidelity. Hyperlinks display as text without loading their targets.
+
 <a id="office-preview"></a>
 ## Office preview
 
-Open `.doc`, `.docx`, `.ppt`, and `.pptx` as PDF previews with the same loading state, controls, cancellation, and selectable text as PDF files. `.xls` and `.xlsx` do not register a Sidebar renderer: they show the unsupported-preview message without requesting conversion and offer the system default application when the Host reports a desktop. The [Host provider](../../document/office-to-pdf/README.md) retains its spreadsheet conversion API for other consumers. Invalid supported files, conversion failures, and timeouts receive localized messages. Missing Host services show configuration guidance.
+Open `.doc`, `.docx`, `.ppt`, and `.pptx` as PDF previews with the same loading state, controls, cancellation, and selectable text as PDF files. The [Host provider](../../document/office-to-pdf/README.md) performs local conversion and retains its spreadsheet conversion API for other consumers. Invalid supported files, conversion failures, and timeouts receive localized messages. Missing Host services show configuration guidance.
 
 The [Web bundle](../../bundle/web-app/README.md) mounts this package as `ui-sidebar-documentpreview`. Configure its transient Office cache through that entry's `office` settings; the [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-client-ui-sidebar-documentpreview) defines accepted values. Settings are embedded in each served page; reload the browser page after changing YAML.
 
@@ -108,7 +124,7 @@ No direct effect; what the user reads here never enters a model request.
 
 <a id="known-limitations-and-deferred-work"></a>
 - **Preview, not editing.** The viewers provide no file editing or shared search interface; a directory address fails with `not-regular-file`. Unknown extensions use the plain-text reader and remain subject to its UTF-8/NUL checks.
-- **Office conversion limits.** The preview does not launch native Office editors or download an engine. Excel workbooks are not previewed and instead offer the system default application on desktop Hosts. Binary `.doc` and `.ppt` files return no missing-font diagnostics. Conversion fidelity and resource limits belong to the [LibreOffice provider](../../document/office-to-pdf/README.md).
+- **Office conversion limits.** The preview does not launch native Office editors or download an engine. Binary `.doc` and `.ppt` files return no missing-font diagnostics. Conversion fidelity and resource limits belong to the [LibreOffice provider](../../document/office-to-pdf/README.md).
 - **Sequential text and bounded complete files.** Deep source lines require the preceding pages; PDF, HTML, and images require a complete result within the Host's `maxFileBytes` cap.
 - **Byte-view scroll state is not restored.** PDF, HTML, and images can return to the top when their renderer remounts or reloads; images fit the pane's width and never scroll horizontally, and HTML iframe scrolling belongs to its opaque browsing context.
 - **Finite local HTML dependencies.** Only direct classic `.js` and stylesheet `.css` references are packed. Browser-resolved resources retain browser origin and network restrictions; no runtime file-read bridge is exposed to the iframe.
