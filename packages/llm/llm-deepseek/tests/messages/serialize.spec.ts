@@ -149,8 +149,20 @@ describe('Messages request conversion', () => {
     expect(() => body(messages)).toThrow(/tool/)
   })
 
-  it.each(['{', '[]'])('rejects invalid historical tool input %s', (arguments_) => {
-    expect(() => body([assistant([{ type: 'tool-call', id: ToolCallId('a'), name: 'read', arguments: arguments_ }]), result()])).toThrow()
+  it.each(['{', '', '[]', 'null', '42', 'true', '"text"', '{"description":"最快，但"某个说法"没有证据。"}'])('uses empty input for malformed or non-object historical tool arguments %s', (arguments_) => {
+    const message = assistant([{ type: 'tool-call', id: ToolCallId('a'), name: 'read', arguments: arguments_ }])
+    const history = [user(), message, createToolResultMessage({ callId: ToolCallId('a'), content: [{ type: 'text', text: 'Invalid arguments' }], isError: true }), user('Continue')]
+    const saved = JSON.stringify(history)
+    const restored = JSON.parse(saved) as Message[]
+    expect(body(restored).messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'a', name: 'read', input: {} }] },
+      { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: 'a', content: [{ type: 'text', text: 'Invalid arguments' }], is_error: true },
+        { type: 'text', text: 'Continue' },
+      ] },
+    ])
+    expect(JSON.stringify(restored)).toBe(saved)
   })
 
   it('preserves own signed thinking, omits absent signatures and validates durable metadata', () => {
@@ -214,11 +226,16 @@ describe('Messages request conversion', () => {
     expect(() => readReplay(damaged, MODEL, () => { throw failure })).toThrow(failure)
   })
 
-  it('still rejects invalid tool JSON after discarding unusable replay metadata', () => {
+  it.each([1, 2])('uses empty historical tool input with replay version %s', (version) => {
     const message = createAssistantMessage({ content: [{ type: 'tool-call', id: ToolCallId('a'), name: 'read', arguments: '{' }], source: {
-      provider: 'deepseek-official', model: MODEL, replayState: { response: {}, blocks: [] },
+      provider: 'deepseek-official', model: MODEL, replayState: { response: { kind: 'deepseek-messages', version, model: MODEL }, blocks: [{ type: 'tool-call' }] },
     } })
-    expect(() => body([message, result()])).toThrow(/historical tool input is invalid JSON/)
+    const saved = JSON.stringify(message)
+    const onDegrade = vi.fn()
+    const request = serialize(options(), connection, [message, result()], new Map(), () => undefined, onDegrade)
+    expect(request.messages[0]?.content).toEqual([{ type: 'tool_use', id: 'a', name: 'read', input: {} }])
+    expect(onDegrade).toHaveBeenCalledTimes(version === 1 ? 0 : 1)
+    expect(JSON.stringify(message)).toBe(saved)
   })
 })
 

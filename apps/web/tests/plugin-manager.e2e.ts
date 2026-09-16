@@ -88,6 +88,44 @@ describe('web e2e: plugin manager', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('updates built-in names and descriptions when the UI language changes', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-locale'))
+    const panel = await openPluginsPanel()
+    await panel.getByRole('button', { name: '查看 智能体团队（实验性）' }).click()
+    const packageName = panel.locator('[data-plugin-name]')
+    expect(await packageName.textContent()).toBe('@deepseek-ai/dsh-experimental-agent-team-profile')
+    expect(await panel.getByText('启用智能体团队协作与团队工具。').count()).toBe(1)
+    try {
+      await page.getByRole('button', { name: '设置', exact: true }).click()
+      await page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '中文' }).click()
+      await page.getByRole('menuitem', { name: 'English' }).click()
+      await page.getByRole('dialog', { name: 'Settings' }).waitFor()
+      await page.keyboard.press('Escape')
+      await panel.getByRole('heading', { name: 'Experimental Agent Teams', exact: true }).waitFor()
+      expect(await packageName.textContent()).toBe('@deepseek-ai/dsh-experimental-agent-team-profile')
+      expect(await panel.getByText('Enable agent team collaboration and team tools.').count()).toBe(1)
+      await panel.getByRole('button', { name: 'Back to plugins' }).click()
+      for (const title of ['Experimental Agent Teams', 'Experimental Agent Teams Web UI', 'Experimental Auto Authorization Review']) {
+        await panel.getByRole('button', { name: `View ${title}`, exact: true }).waitFor()
+        expect(await panel.getByRole('switch', { name: `Enable ${title}`, exact: true }).count()).toBe(1)
+      }
+      expect(await panel.getByText('View team members, the task board, and teammate sessions in the browser.').count()).toBe(1)
+      expect(await panel.getByText('Add an Auto review permission mode that uses the model to assess authorization before each tool call.').count()).toBe(1)
+    } finally {
+      if (await page.locator('html').getAttribute('lang') === 'en') {
+        if (await page.getByRole('dialog', { name: 'Settings' }).count() === 0) {
+          await page.getByRole('button', { name: 'Settings', exact: true }).click()
+        }
+        await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'English' }).click()
+        await page.getByRole('menuitem', { name: '中文' }).click()
+        await page.getByRole('dialog', { name: '设置' }).waitFor()
+      }
+      await closeSettings()
+    }
+    await panel.getByRole('button', { name: '查看 智能体团队（实验性）', exact: true }).waitFor()
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
   it('checks a spec before installing it and words what the check refused', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-install'))
     const panel = await openPluginsPanel()

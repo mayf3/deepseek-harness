@@ -21,7 +21,7 @@ import {
   type ConfirmState, type InstallInputError, type InstallState, type InstallSubject, type PackageRow, type PackageView,
   type PluginManagerFace,
 } from './manager-store.ts'
-import { managementText, noticeText, shortName, type Translate } from './presentation.ts'
+import { managementText, noticeText, packageText, type Translate } from './presentation.ts'
 import css from './PluginManagerPage.module.css'
 
 /** Full component props assembled by the main slot renderer. */
@@ -213,7 +213,7 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
   readonly onOpen: () => void
   readonly onSetEnabled: (enabled: boolean) => void
 }): ReactNode {
-  const title = shortName(pkg.name)
+  const { title, description } = packageText(pkg, t)
   const status = packageStatus(pkg)
   return (
     <li
@@ -230,7 +230,7 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
             {pkg.optional ? <Tag className={css.statusTag} tone="info">{t('statusOfficial')}</Tag> : null}
             {status === 'problem' ? <Tag className={css.statusTag} tone="danger">{t('statusProblem')}</Tag> : null}
           </div>
-          {pkg.description === undefined ? null : <span className={css.cardDesc}>{pkg.description}</span>}
+          {description === undefined ? null : <span className={css.cardDesc}>{description}</span>}
         </div>
         <div className={css.cardEnd}>
           <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
@@ -262,7 +262,7 @@ function PackageDetail({
   readonly onUninstall: () => void
   readonly onSetRowEnabled: (row: PackageRow, enabled: boolean) => void
 }): ReactNode {
-  const title = shortName(pkg.name)
+  const { title, description } = packageText(pkg, t)
   const status = packageStatus(pkg)
   return (
     <div className={css.detail} data-plugin-detail={pkg.name}>
@@ -299,7 +299,7 @@ function PackageDetail({
           {status === 'problem' ? <Tag className={css.statusTag} tone="danger">{t('statusProblem')}</Tag> : null}
         </div>
         <p className={css.detailName}><code data-plugin-name>{pkg.name}</code></p>
-        <p className={css.detailDesc}>{pkg.description ?? t('noDescription')}</p>
+        <p className={css.detailDesc}>{description ?? t('noDescription')}</p>
       </div>
       {pkg.error === undefined ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {managementText(pkg.error, t)}</p>}
       {pkg.readOnlyReason === undefined ? null : <p className={css.reason} role="status">{managementText({ code: pkg.readOnlyReason }, t)}</p>}
@@ -635,7 +635,7 @@ function ConfirmDialog({ confirm, t, onConfirm, onCancel }: {
   readonly onConfirm: () => void
   readonly onCancel: () => void
 }): ReactNode {
-  const name = shortName(confirm.packageName)
+  const { title: name } = packageText({ name: confirm.packageName }, t)
   return (
     <Modal
       open

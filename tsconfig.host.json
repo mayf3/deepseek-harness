@@ -150,6 +150,7 @@
     "scripts/client-bundle-purity.spec.ts"
   ],
   "references": [
+    { "path": "./packages/skill/skill-office" },
     { "path": "./packages/browser-use/browser-use" },
     { "path": "./packages/experimental/browser-use-runtime" },
     { "path": "./packages/experimental/browser-use-playwright-mcp" },
