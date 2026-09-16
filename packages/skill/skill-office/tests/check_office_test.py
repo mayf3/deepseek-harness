@@ -14,6 +14,11 @@ P = "http://schemas.openxmlformats.org/presentationml/2006/main"
 A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 S = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+STRICT_W = "http://purl.oclc.org/ooxml/wordprocessingml/main"
+STRICT_P = "http://purl.oclc.org/ooxml/presentationml/main"
+STRICT_A = "http://purl.oclc.org/ooxml/drawingml/main"
+STRICT_S = "http://purl.oclc.org/ooxml/spreadsheetml/main"
+STRICT_R = "http://purl.oclc.org/ooxml/officeDocument/relationships"
 PKG = "http://schemas.openxmlformats.org/package/2006/relationships"
 
 
@@ -23,14 +28,14 @@ class OfficeCheckTest(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
 
-    def package(self, suffix, parts):
+    def package(self, suffix, parts, compression=zipfile.ZIP_STORED):
         primary, mime = {
             "docx": ("word/document.xml", "wordprocessingml.document.main+xml"),
             "pptx": ("ppt/presentation.xml", "presentationml.presentation.main+xml"),
             "xlsx": ("xl/workbook.xml", "spreadsheetml.sheet.main+xml"),
         }[suffix]
         path = self.root / ("中文 document." + suffix)
-        with zipfile.ZipFile(path, "w") as archive:
+        with zipfile.ZipFile(path, "w", compression=compression) as archive:
             archive.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
                              f'<Override PartName="/{primary}" ContentType="application/vnd.openxmlformats-officedocument.{mime}"/></Types>')
             for name, content in parts.items():
@@ -154,6 +159,33 @@ class OfficeCheckTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(report["summary"], {"sheets": [{"name": "Data", "cells": 3, "formulas": 1}], "formulas_evaluated": False})
 
+    def test_strict_ooxml_namespaces_are_inspected(self):
+        docx = self.package("docx", {
+            "word/document.xml": f'<w:document xmlns:w="{STRICT_W}"><w:body><w:p><w:r><w:t>Strict Word</w:t></w:r></w:p></w:body></w:document>',
+        })
+        self.assertEqual(self.run_check(docx, "--contains", "Strict Word")[0], 0)
+
+        pptx = self.package("pptx", {
+            "ppt/presentation.xml": f'<p:presentation xmlns:p="{STRICT_P}" xmlns:r="{STRICT_R}"><p:sldIdLst><p:sldId id="256" r:id="r1"/></p:sldIdLst></p:presentation>',
+            "ppt/_rels/presentation.xml.rels": f'<Relationships xmlns="{PKG}"><Relationship Id="r1" Target="slides/slide1.xml"/></Relationships>',
+            "ppt/slides/slide1.xml": f'<p:sld xmlns:p="{STRICT_P}" xmlns:a="{STRICT_A}"><a:p><a:r><a:t>Strict Slides</a:t></a:r></a:p></p:sld>',
+        })
+        self.assertEqual(self.run_check(pptx, "--contains", "Strict Slides", "--count", "1")[0], 0)
+
+        xlsx = self.package("xlsx", {
+            "xl/workbook.xml": f'''<workbook xmlns="{STRICT_S}" xmlns:r="{STRICT_R}"><sheets>
+              <sheet name="First" sheetId="1" r:id="r1"/><sheet name="Second" sheetId="2" r:id="r2"/>
+            </sheets></workbook>''',
+            "xl/_rels/workbook.xml.rels": f'''<Relationships xmlns="{PKG}">
+              <Relationship Id="r1" Target="worksheets/sheet1.xml"/><Relationship Id="r2" Target="worksheets/sheet2.xml"/>
+            </Relationships>''',
+            "xl/worksheets/sheet1.xml": f'<worksheet xmlns="{STRICT_S}"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Strict Sheet</t></is></c></row></sheetData></worksheet>',
+            "xl/worksheets/sheet2.xml": f'<worksheet xmlns="{STRICT_S}"><sheetData/></worksheet>',
+        })
+        code, report = self.run_check(xlsx, "--contains", "Strict Sheet", "--count", "2")
+        self.assertEqual(code, 0)
+        self.assertEqual([sheet["name"] for sheet in report["summary"]["sheets"]], ["First", "Second"])
+
     def test_xlsx_checks_only_cell_referenced_shared_strings(self):
         parts = {
             "xl/workbook.xml": f'<workbook xmlns="{S}" xmlns:r="{R}"><sheets><sheet name="Data" sheetId="1" r:id="r1"/></sheets></workbook>',
@@ -211,6 +243,24 @@ class OfficeCheckTest(unittest.TestCase):
         code, report = self.run_check(path)
         self.assertEqual(code, 1)
         self.assertIn("encrypted", report["checks"][0]["detail"])
+
+    def test_corrupt_deflate_member_returns_json_package_failure(self):
+        path = self.package("docx", {
+            "word/document.xml": f'<w:document xmlns:w="{W}"><w:body/></w:document>',
+        }, compression=zipfile.ZIP_DEFLATED)
+        with zipfile.ZipFile(path) as archive:
+            member = archive.getinfo("word/document.xml")
+        data = bytearray(path.read_bytes())
+        name_length = int.from_bytes(data[member.header_offset + 26:member.header_offset + 28], "little")
+        extra_length = int.from_bytes(data[member.header_offset + 28:member.header_offset + 30], "little")
+        compressed = member.header_offset + 30 + name_length + extra_length
+        data[compressed] = 0x07  # BTYPE=3 is reserved and invalid in a DEFLATE block.
+        path.write_bytes(data)
+        code, report = self.run_check(path)
+        self.assertEqual(code, 1)
+        self.assertEqual(report["checks"][0]["id"], "package")
+        self.assertEqual(report["checks"][0]["status"], "fail")
+        self.assertTrue(report["checks"][0]["detail"])
 
     def test_invalid_zip_and_xml_fail_and_output_cannot_overwrite_input(self):
         path = self.root / "broken.docx"

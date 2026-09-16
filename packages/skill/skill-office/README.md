@@ -41,7 +41,7 @@ Relative paths, missing resources, and skill files without a YAML frontmatter de
 
 ### Structural checks
 
-The shared Python checker reads DOCX, PPTX, or XLSX without modifying the source. It validates ZIP/XML and internal package relationships, reports document structure, and optionally checks required text or slide/sheet count. DOCX text assertions cover the main body, section-referenced headers and footers, and body-referenced footnotes and endnotes; comments, glossary text, and unreferenced parts or notes do not satisfy them. It uses only the Python standard library. Invalid packages, encrypted ZIP members, and report-file write failures produce a JSON failure report on stdout. A passing report does not establish appearance, feature preservation, or calculated formula results.
+The shared Python checker reads DOCX, PPTX, or XLSX without modifying the source. It recognizes Transitional and Strict OOXML namespaces, validates ZIP/XML and internal package relationships, reports document structure, and optionally checks required text or slide/sheet count. DOCX text assertions cover the main body, section-referenced headers and footers, and body-referenced footnotes and endnotes; comments, glossary text, and unreferenced parts or notes do not satisfy them. It uses only the Python standard library. Invalid packages, corrupt or encrypted ZIP members, and report-file write failures produce a JSON failure report on stdout. A passing report does not establish appearance, feature preservation, or calculated formula results.
 
 -----
 
