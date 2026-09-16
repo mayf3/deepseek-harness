@@ -269,6 +269,23 @@ function writeDraft(shell: SessionInputShell, text: string): void {
   act(() => { shell.setDraft(text) })
 }
 
+describe('composer focus handoff', () => {
+  it('focus() returns the keyboard to the editor through Lexical, not a bare DOM focus', () => {
+    const { shell, textarea } = bench()
+    writeDraft(shell, 'draft text')
+    textarea.blur()
+    expect(document.activeElement).not.toBe(textarea)
+
+    const lexicalFocus = vi.spyOn(shell.editor, 'focus')
+    act(() => { shell.focus() })
+    expect(document.activeElement).toBe(textarea)
+    // Lexical's own focus restores its stored selection; a bare DOM focus would
+    // land the caret at the start of the draft. jsdom carries no caret, so the
+    // selection itself is asserted in the browser lane.
+    expect(lexicalFocus).toHaveBeenCalled()
+  })
+})
+
 describe('composer placeholder visibility', () => {
   it.each([' ', '   ', '\t', '\n'])('hides for whitespace %j and returns after deletion', async (draft) => {
     const { view, shell, textarea, button, sink, props } = bench()
@@ -1598,6 +1615,18 @@ describe('command launcher chrome and control seats', () => {
     expect(toggleCommandMenu).toHaveBeenCalledExactlyOnceWith({ start: 2, end: 7 })
     act(() => { menuLauncher.set('command') })
     expect(launcher.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('opening the command menu from the button puts the keyboard in the editor first', () => {
+    const toggleCommandMenu = vi.fn()
+    const { view, textarea } = bench({ toggleCommandMenu })
+    // Tab to the button and activate it: the keyboard is on the button, and the
+    // menu is a combobox whose arrows live on the editor.
+    textarea.blur()
+    expect(document.activeElement).not.toBe(textarea)
+    fireEvent.click(view.getByLabelText('添加文件或调用指令'))
+    expect(document.activeElement).toBe(textarea)
+    expect(toggleCommandMenu).toHaveBeenCalledTimes(1)
   })
 
   it('a registered entry fills its seat and receives the locked owner prop', () => {
