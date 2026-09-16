@@ -41,7 +41,7 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 
 分叉复制截至选中已结束轮次的历史，并包含其 `turn/end`。该位置之后的事件均被排除，包括排队输入和模型设置变更。省略锚点或锚点超出日志末尾时，选择最后一个已结束轮次；位于未结束轮次内的锚点会被拒绝。
 
-恢复会话时若已有写句柄占用，返回 `session/agent-busy`，reason 为 `session-already-owned`；其他恢复失败仍返回 `gateway/internal`。
+恢复会话时若已有写句柄占用，返回 `session/writer-held`，并携带会话 id；其他恢复失败仍返回 `gateway/internal`。
 
 <a id="session-media-references"></a>
 ## 会话媒体引用

@@ -164,11 +164,10 @@ export function apply(ctx: ClientContext): void {
           if (selection === undefined) {
             throw new Error('this provider\'s catalog failed to load — pick a model from a loaded group')
           }
-          try {
-            await directory.select(selection)
-          } catch (error: unknown) {
-            if (directory.store.getSnapshot().sessionInUse === true) throw new Error(t('error.sessionInUse'))
-            throw error
+          const result = await directory.select(selection)
+          if (!result.ok) {
+            if (result.error.code === 'session/writer-held') throw new Error(t('error.sessionInUse'))
+            throw result.error
           }
         },
       },
@@ -192,8 +191,8 @@ export function apply(ctx: ClientContext): void {
             if (available) directory.load().catch(() => { /* surfaced on the store */ })
           },
           select: (selection: ModelSelection) => available
-            ? directory.select(selection).then(() => true, () => false)
-            : Promise.resolve(false),
+            ? directory.select(selection)
+            : Promise.resolve(undefined),
         }
       },
     }, ModelSelect))

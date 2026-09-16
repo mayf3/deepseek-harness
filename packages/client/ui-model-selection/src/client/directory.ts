@@ -8,7 +8,7 @@ import type {
   ModelCatalogFailure, ModelProviderGroup, ModelSelection, ModelSelectionProjection,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import type { TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteResult, TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ModelCatalogDirectory } from './catalog.ts'
@@ -33,8 +33,6 @@ export interface ModelDirectoryState {
   status: 'idle' | 'loading' | 'ready' | 'selecting' | 'error'
   /** Whole-request or selection failure text; null when none. */
   error: string | null
-  /** Whether the selection failed because another writer owns the Session. */
-  sessionInUse?: boolean
 }
 
 /** One session's shared directory controller; disposed with the session scope. */
@@ -84,13 +82,14 @@ export class ModelDirectory {
   /**
    * Select the complete provider/model/reasoning selection. The durable
    * projection frame updates the shared current; failures surface on the store
-   * and throw so each entry's own retry surface engages.
+   * and return with the operation so each entry can present its own failure.
    * @param selection - provider, provider-owned model id, and optional adapter-owned effort.
- */
-  async select(selection: ModelSelection): Promise<void> {
+   * @returns the selection outcome, including the original Remote failure.
+   */
+  async select(selection: ModelSelection): Promise<RemoteResult<void>> {
     this.assertAvailable()
     const generation = ++this.generation
-    this.store.update((s) => { s.status = 'selecting'; s.error = null; s.sessionInUse = false })
+    this.store.update((s) => { s.status = 'selecting'; s.error = null })
     const result = await this.sessions.selectModel({
       sessionId: this.sessionId,
       provider: selection.provider,
@@ -100,20 +99,18 @@ export class ModelDirectory {
         : { reasoningEffort: selection.reasoningEffort },
     })
     if (this.disposed || generation !== this.generation) {
-      if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-      return
+      return result.ok ? { ok: true, value: undefined } : result
     }
     if (!result.ok) {
       this.store.update((s) => {
         s.status = 'error'
         s.error = `${result.error.code}: ${result.error.message}`
-        s.sessionInUse = result.error.code === 'session/agent-busy'
-          && result.error.details.reason === 'session-already-owned'
       })
-      throw new Error(`session.selectModel failed: ${result.error.code}: ${result.error.message}`)
+      return result
     }
     this.store.update((s) => { s.status = 'ready'; s.error = null })
     this.syncInputs()
+    return { ok: true, value: undefined }
   }
 
   /**
@@ -152,7 +149,6 @@ export class ModelDirectory {
           this.store.update((state) => {
             state.status = 'error'
             state.error = catalog.error
-            state.sessionInUse = false
           })
         }
         return

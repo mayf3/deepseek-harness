@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ComponentProps } from 'react'
@@ -57,7 +59,7 @@ describe('ModelSelect reasoning effort', () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())
     const select = vi.fn(async (selection: ModelSelection) => {
       directory.set(state({ current: selection }))
-      return true
+      return { ok: true as const, value: undefined }
     })
     render(<ModelSelect
       locked={false}
@@ -106,7 +108,7 @@ describe('ModelSelect reasoning effort', () => {
       available
       directory={directory}
       load={vi.fn()}
-      select={vi.fn().mockResolvedValue(true)}
+      select={vi.fn().mockResolvedValue({ ok: true, value: undefined })}
       t={t}
     />)
 
@@ -122,7 +124,7 @@ describe('ModelSelect reasoning effort', () => {
     const directory = createSnapshotStore(state({
       current: { provider: 'deepseek-official', model: 'removed-model' },
     }))
-    const select = vi.fn().mockResolvedValue(true)
+    const select = vi.fn().mockResolvedValue({ ok: true, value: undefined })
     render(<ModelSelect
       locked={false}
       available
@@ -154,7 +156,7 @@ describe('ModelSelect reasoning effort', () => {
       available
       directory={directory}
       load={vi.fn()}
-      select={vi.fn().mockResolvedValue(true)}
+      select={vi.fn().mockResolvedValue({ ok: true, value: undefined })}
       t={t}
     />)
 
@@ -179,8 +181,11 @@ describe('ModelSelect reasoning effort', () => {
     }]
     const directory = createSnapshotStore<ModelDirectoryState>(state({ groups }))
     const select = vi.fn(async () => {
-      directory.set(state({ groups, status: 'error', sessionInUse, error: 'session/model-unavailable: session already contains images' }))
-      return false
+      const error = sessionInUse
+        ? new RemoteError('session/writer-held', 'writer held', { sessionId: SessionId('owned') })
+        : new RemoteError('session/model-unavailable', 'session already contains images', { provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+      directory.set(state({ groups, status: 'error', error: 'unrelated catalog refresh' }))
+      return { ok: false as const, error }
     })
     render(<ModelSelect
       locked={false}
@@ -213,7 +218,7 @@ describe('ModelSelect reasoning effort', () => {
         available
         directory={createSnapshotStore(state())}
         load={vi.fn()}
-        select={vi.fn().mockResolvedValue(true)}
+        select={vi.fn().mockResolvedValue({ ok: true, value: undefined })}
         t={t}
       />)
       const trigger = screen.getByRole('button', { name: /选择模型/ })
@@ -246,7 +251,7 @@ describe('ModelSelect reasoning effort', () => {
       available={false}
       directory={createSnapshotStore(state())}
       load={load}
-      select={vi.fn().mockResolvedValue(false)}
+      select={vi.fn().mockResolvedValue(undefined)}
       t={t}
     />)
 
@@ -257,7 +262,7 @@ describe('ModelSelect reasoning effort', () => {
 
 describe('ModelSelect keyboard walk', () => {
   function mountOpen() {
-    const select = vi.fn().mockResolvedValue(true)
+    const select = vi.fn().mockResolvedValue({ ok: true, value: undefined })
     render(<ModelSelect
       locked={false}
       available
@@ -322,7 +327,7 @@ describe('ModelSelect keyboard walk', () => {
       available
       directory={createSnapshotStore(state())}
       load={vi.fn()}
-      select={vi.fn().mockResolvedValue(true)}
+      select={vi.fn().mockResolvedValue({ ok: true, value: undefined })}
       t={t}
     />)
     const trigger = screen.getByRole('button', { name: /选择模型/ })
@@ -369,7 +374,7 @@ describe('ModelSelect keyboard walk', () => {
       available
       directory={directory}
       load={vi.fn()}
-      select={vi.fn().mockResolvedValue(true)}
+      select={vi.fn().mockResolvedValue({ ok: true, value: undefined })}
       t={t}
     />)
     const trigger = screen.getByRole('button', { name: /选择模型/ })
@@ -431,7 +436,7 @@ describe('ModelSelect keyboard walk', () => {
       available
       directory={createSnapshotStore(state({ current: { provider: 'gone', model: 'gone' } }))}
       load={vi.fn()}
-      select={vi.fn().mockResolvedValue(true)}
+      select={vi.fn().mockResolvedValue({ ok: true, value: undefined })}
       t={t}
     />)
     fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))

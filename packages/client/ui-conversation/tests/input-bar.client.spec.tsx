@@ -1533,7 +1533,7 @@ describe('strips and variants', () => {
     const send = bench({
       promptError: {
         op: 'send',
-        error: new RemoteError('session/agent-busy', 'internal writer diagnostic', { reason: 'session-already-owned' }),
+        error: new RemoteError('session/writer-held', 'internal writer diagnostic', { sessionId: SID }),
       },
       t: makeTranslate(dictionary, commonZh),
     })

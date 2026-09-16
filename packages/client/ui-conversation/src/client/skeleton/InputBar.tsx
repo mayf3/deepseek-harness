@@ -104,7 +104,7 @@ export const InputBar = memo(function InputBar({
   useEffect(() => {
     if (promptError === null) return
     const { error } = promptError
-    if (error.code === 'session/agent-busy' && error.details.reason === 'session-already-owned') {
+    if (error.code === 'session/writer-held') {
       showToast(t('error.sessionInUse'))
       return
     }

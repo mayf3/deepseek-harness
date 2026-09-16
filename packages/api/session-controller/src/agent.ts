@@ -58,7 +58,7 @@ export class ApiSessionPresetConflict extends Error {
 }
 
 /** Failures produced while resolving one ordinary Session identity to its live Agent. */
-export type ApiSessionAgentError = RemoteError<'session/not-found' | 'session/agent-busy' | 'gateway/internal'>
+export type ApiSessionAgentError = RemoteError<'session/not-found' | 'session/agent-busy' | 'session/writer-held' | 'gateway/internal'>
 
 /** Result of resolving one ordinary Session identity to its live Agent. */
 export type ApiSessionAgentResult =
@@ -215,13 +215,8 @@ export class ApiSessionAgentController {
       if (racedSession !== undefined && hasApiSessionSubagentOwner(this.ctx, racedSession, undefined)) {
         return { error: apiSessionSubagentOwnershipError(sessionId) }
       }
-      if (this.ctx.get('sessionPersistence') !== undefined) {
-        const { SessionAlreadyOwnedError } = await import('@deepseek-ai/dsh-session-persistence')
-        if (error instanceof SessionAlreadyOwnedError) {
-          return {
-            error: new RemoteError('session/agent-busy', error.message, { reason: 'session-already-owned' }),
-          }
-        }
+      if (error instanceof Error && error.name === 'SessionAlreadyOwnedError') {
+        return { error: new RemoteError('session/writer-held', error.message, { sessionId }) }
       }
       return {
         error: new RemoteError(
