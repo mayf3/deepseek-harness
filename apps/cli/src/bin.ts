@@ -45,7 +45,7 @@ export async function runCli(): Promise<void> {
       } catch (error) {
         if (!(error instanceof StartupError)) throw error
         await reportStartupFailure(error, { home: resolveDshHome(), version, profile: invocation.profile })
-        process.exitCode = 1
+        process.exit(1)
       }
       break
     }

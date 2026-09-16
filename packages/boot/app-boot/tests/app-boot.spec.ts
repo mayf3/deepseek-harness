@@ -775,6 +775,42 @@ describe('boot', () => {
     expect(error.startup?.messages.some(message => message.args.some(arg => arg instanceof Error && arg.message.includes('missing.mjs')))).toBe(true)
   })
 
+  it('retains warnings and errors from asynchronous failed-startup cleanup', async () => {
+    const dir = tmp()
+    const marker = join(dir, 'cleanup.txt')
+    writeFileSync(join(dir, 'cleanup.mjs'), `
+      import { writeFileSync } from 'node:fs'
+      export function apply(ctx) {
+        ctx.effect(() => async () => {
+          await Promise.resolve()
+          writeFileSync(${JSON.stringify(marker)}, 'ran')
+          ctx.logger.warn('plugin cleanup warning')
+          throw new Error('plugin cleanup error')
+        })
+      }
+    `)
+    const config = join(dir, 'cordis.yml')
+    writeFileSync(config, '- id: cleanup\n  name: ./cleanup.mjs\n- id: webserver\n  name: ./missing.mjs\n')
+    let root!: Context
+    const failure = await boot(NAME, config, undefined, (ctx) => {
+      root = ctx
+      ctx.effect(() => async () => {
+        await Promise.resolve()
+        ctx.logger.warn('root cleanup warning')
+      })
+    }).catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(StartupError)
+    expect(readFileSync(marker, 'utf8')).toBe('ran')
+    const messages = (failure as StartupError).startup!.messages
+    const args = messages.flatMap(message => message.args)
+    expect(args).toContain('plugin cleanup warning')
+    expect(args).toContain('root cleanup warning')
+    expect(args.some(value => value instanceof Error && value.message.includes('plugin cleanup error'))).toBe(true)
+    const count = messages.length
+    root.logger.warn('after boot rejected')
+    expect(messages).toHaveLength(count)
+  })
+
   it('stops collecting startup diagnostics after a successful boot', async () => {
     const dir = tmp()
     const config = join(dir, 'cordis.yml')

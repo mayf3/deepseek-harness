@@ -919,7 +919,10 @@ export async function boot(
 ): Promise<Context> {
   const ctx = new Context()
   const startupLogs: StartupLogRecord[] = []
-  const stopStartupLogs = ctx.logger.exporter({
+  // The collector must outlive root disposal to retain asynchronous cleanup errors.
+  const diagnostics = new Context()
+  diagnostics.logger = ctx.logger
+  diagnostics.logger.exporter({
     levels: { default: 2 },
     export: ({ ts, name, type, args }) => {
       if (type === 'warn' || type === 'error') startupLogs.push({ ts, name, type, args })
@@ -971,7 +974,7 @@ export async function boot(
       : deepest instanceof Error && deepest !== cause ? `\n${deepest.stack ?? deepest.message}` : ''
     throw new Error(`${binName}: ${stage}: ${detail}${stack}`, { cause })
   } finally {
-    await stopStartupLogs()
+    await diagnostics.fiber.dispose()
   }
 }
 

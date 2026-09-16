@@ -13,21 +13,31 @@ interface StartupDiagnosticContext {
   profile: string
 }
 
+/** Wait for stderr to finish the write before the failed process exits. */
+function writeStderr(text: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    process.stderr.write(text, (error) => {
+      if (error) reject(error)
+      else resolve()
+    })
+  })
+}
+
 /**
  * Print the startup summary and save a private, uniquely named report under DSH_HOME/logs.
  * Failed writes print the complete report to stderr instead of claiming a saved path.
  * @param error - startup audit failure retaining plugin metadata and original errors.
  * @param context - resolved Harness home, application version, and selected profile.
- * @param write - terminal output sink; defaults to stderr.
- * @returns after the report is saved or its write failure and content have been printed.
+ * @param write - terminal output sink; awaited before returning, defaults to stderr.
+ * @returns after saving or printing the report and completing terminal writes.
  */
 export async function reportStartupFailure(
   error: StartupError,
   context: StartupDiagnosticContext,
-  write: (text: string) => void = text => void process.stderr.write(text),
+  write: (text: string) => void | Promise<void> = writeStderr,
 ): Promise<void> {
   const now = new Date().toISOString()
-  const report = inspect({
+  const report = 'WARNING: Raw diagnostics may contain configuration or credential values from plugin errors. Review before sharing.\n\n' + inspect({
     timestamp: now,
     dshVersion: context.version,
     nodeVersion: process.version,
@@ -44,15 +54,15 @@ export async function reportStartupFailure(
     getters: false,
     colors: false,
   }) + '\n'
-  write(`${error.message}\n`)
+  await write(`${error.message}\n`)
   const logDir = join(context.home, 'logs')
   const logPath = join(logDir, `startup-${now.replaceAll(':', '-')}-${randomUUID()}.log`)
   try {
     await mkdir(logDir, { recursive: true, mode: 0o700 })
     await writeFile(logPath, report, { flag: 'wx', mode: 0o600 })
   } catch (writeError) {
-    write(`\ndsh: warning: could not write startup diagnostics: ${String(writeError)}\nFull diagnostics:\n${report}`)
+    await write(`\ndsh: warning: could not write startup diagnostics: ${String(writeError)}\nFull diagnostics:\n${report}`)
     return
   }
-  write(`\nFull diagnostics: ${logPath}\n`)
+  await write(`\nFull diagnostics: ${logPath}\n`)
 }

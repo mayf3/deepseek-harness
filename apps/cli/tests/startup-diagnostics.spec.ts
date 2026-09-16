@@ -27,11 +27,45 @@ function startupError(reason: unknown): StartupError {
 describe('startup diagnostic files', () => {
   it('prints the summary and saved path to stderr by default', async () => {
     const dir = await home()
-    const write = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation((_text, callback?: BufferEncoding | ((error?: Error | null) => void)) => {
+      if (typeof callback === 'function') callback()
+      return true
+    })
     onTestFinished(() => { write.mockRestore() })
     await reportStartupFailure(startupError('failed'), { home: dir, version: '1.2.3', profile: 'web' })
-    expect(write).toHaveBeenCalledWith(expect.stringContaining('dsh: startup failed:'))
-    expect(write).toHaveBeenCalledWith(expect.stringContaining(`Full diagnostics: ${join(dir, 'logs')}`))
+    expect(write).toHaveBeenCalledWith(expect.stringContaining('dsh: startup failed:'), expect.any(Function))
+    expect(write).toHaveBeenCalledWith(expect.stringContaining(`Full diagnostics: ${join(dir, 'logs')}`), expect.any(Function))
+  })
+
+  it('waits for stderr completion before resolving', async () => {
+    const dir = await home()
+    const pending: Array<() => void> = []
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation((_text, callback?: BufferEncoding | ((error?: Error | null) => void)) => {
+      if (typeof callback === 'function') pending.push(() => { callback() })
+      return false
+    })
+    onTestFinished(() => { write.mockRestore() })
+    let finished = false
+    const report = reportStartupFailure(startupError('failed'), { home: dir, version: '1.2.3', profile: 'web' })
+      .then(() => { finished = true })
+    expect(pending).toHaveLength(1)
+    pending.shift()!()
+    await vi.waitFor(() => { expect(pending).toHaveLength(1) })
+    expect(finished).toBe(false)
+    pending.shift()!()
+    await report
+    expect(finished).toBe(true)
+  })
+
+  it('rejects when stderr cannot complete the write', async () => {
+    const dir = await home()
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation((_text, callback?: BufferEncoding | ((error?: Error | null) => void)) => {
+      if (typeof callback === 'function') callback(new Error('stderr closed'))
+      return false
+    })
+    onTestFinished(() => { write.mockRestore() })
+    await expect(reportStartupFailure(startupError('failed'), { home: dir, version: '1.2.3', profile: 'web' }))
+      .rejects.toThrow('stderr closed')
   })
 
   it('retains original error properties, causes, aggregate members, cycles, and long values', async () => {
@@ -57,6 +91,9 @@ describe('startup diagnostic files', () => {
     const path = join(dir, 'logs', files[0]!)
     expect(chunks.join('')).toBe(`${error.message}\n\nFull diagnostics: ${path}\n`)
     const report = await readFile(path, 'utf8')
+    expect(report.startsWith(
+      'WARNING: Raw diagnostics may contain configuration or credential values from plugin errors. Review before sharing.\n\n',
+    )).toBe(true)
     for (const text of [
       'dshVersion: \'1.2.3\'', "profile: 'web'", process.version, 'configurationPath:', '/example/cordis.yml',
       "module: './waiting.mjs'", 'required: false', 'fiberState: 0', "missing: [ 'webServer'", 'messages:',

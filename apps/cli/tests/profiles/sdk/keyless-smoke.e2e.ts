@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -333,6 +333,47 @@ describe('Python SDK dsh profile keyless smoke', () => {
       await rm(root, { recursive: true, force: true })
     }
   }, 40_000)
+
+  it.each([false, true])('exits after startup failure with stdin open (logs blocked: %s)', async (blocked) => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-startup-exit-'))
+    const home = join(root, '.dsh')
+    const patch = join(root, 'failure.yml')
+    await mkdir(home)
+    if (blocked) await writeFile(join(home, 'logs'), 'blocked')
+    await writeFile(patch, '- id: agent-loop\n  config:\n    maxParallelToolCalls: 0\n')
+    const child = execa(process.execPath, [
+      '--import', 'tsx/esm', binScript, '--profile', 'sdk', '--patch', patch,
+    ], {
+      cwd: repoRoot,
+      env: { DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1', DEEPSEEK_API_KEY: 'keyless-no-call' },
+      stdin: 'pipe',
+      stripFinalNewline: false,
+      timeout: 25_000,
+      killSignal: 'SIGKILL',
+      reject: false,
+    })
+    try {
+      const result = await child
+      expect(result.timedOut, result.stderr).toBe(false)
+      expect(result.signal, result.stderr).toBeUndefined()
+      expect(result.exitCode, result.stderr).toBe(1)
+      expect(result.stderr).toContain('startup failed:')
+      expect(result.stderr).toContain('maxParallelToolCalls')
+      if (blocked) {
+        expect(result.stderr).toContain('Full diagnostics:\nWARNING: Raw diagnostics')
+        expect(result.stderr.trimEnd()).toMatch(/\}$/u)
+      } else {
+        const files = await readdir(join(home, 'logs'))
+        expect(files).toHaveLength(1)
+        expect(result.stderr).toContain(`Full diagnostics: ${join(home, 'logs', files[0]!)}\n`)
+      }
+    } finally {
+      child.stdin.end()
+      child.kill('SIGKILL')
+      await child
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 30_000)
 
   it('rejects an invalid max-token success env value', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-python-sdk-runtime-invalid-'))
