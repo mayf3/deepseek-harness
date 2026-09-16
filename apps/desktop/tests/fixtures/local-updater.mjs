@@ -278,8 +278,18 @@ async function main() {
         }
         await until("document.getElementById('title')?.textContent === '需要更新'")
         assert.equal(await window.webContents.executeJavaScript("document.querySelector('#title b') === null"), true)
-        window.close()
-        assert.equal(window.isDestroyed(), false)
+        if (process.platform === 'win32') {
+          assert.equal(window.isMovable(), true)
+          assert.equal(window.isResizable(), true)
+          assert.equal(window.isMaximizable(), true)
+          const bounds = window.getBounds()
+          window.setPosition(bounds.x + 20, bounds.y + 20)
+          assert.notDeepEqual(window.getBounds(), bounds)
+          window.maximize()
+          assert.equal(window.isMaximized(), true)
+          window.unmaximize()
+          assert.equal(window.isMaximized(), false)
+        }
         assert.equal(await window.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))"), false)
         assert.equal(window.isDestroyed(), false)
         assert.equal(f.installations.length, 0)
@@ -341,8 +351,6 @@ async function main() {
           await writeFile(join(root, name), (await window.webContents.capturePage()).toPNG())
           dialogScreenshots.push(name)
         }
-        window.close()
-        assert.equal(window.isDestroyed(), false)
         assert.equal(policy.state.blocking, true)
         assert.equal(f.installations.length, 0)
         server.policy('clear')

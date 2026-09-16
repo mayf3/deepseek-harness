@@ -8,12 +8,12 @@ import type { DesktopPolicyState } from '../src/mandatory-update-policy.ts'
 import type { DesktopUpdateState } from '../src/ipc.ts'
 
 const native = vi.hoisted(() => ({ handlers: new Map<string, (...args: unknown[]) => unknown>(),
-  open: vi.fn<(...args: unknown[]) => Promise<void>>(), write: vi.fn(), read: vi.fn() }))
+  open: vi.fn<(...args: unknown[]) => Promise<void>>(), write: vi.fn(), read: vi.fn(), quit: vi.fn() }))
 vi.mock('electron', () => ({ ipcMain: {
   handle: (channel: string, handler: (...args: unknown[]) => unknown) => native.handlers.set(channel, handler),
   removeHandler: (channel: string) => native.handlers.delete(channel),
-}, shell: { openExternal: native.open }, clipboard: { writeText: native.write, readText: native.read } }))
-vi.mock('../src/update-overlay.ts', () => ({ createUpdateOverlay: () => window }))
+}, app: { quit: native.quit }, shell: { openExternal: native.open }, clipboard: { writeText: native.write, readText: native.read } }))
+vi.mock('../src/update-overlay.ts', () => ({ createMandatoryUpdateWindow: () => window }))
 
 let window: ReturnType<typeof fakeWindow>
 let ui: DesktopMandatoryUpdateWindow | undefined
@@ -120,4 +120,13 @@ it('rejects same-URL child frames and removes quit from renderer privileges', ()
   const event = { sender: window.webContents, senderFrame: { ...window.webContents.mainFrame } }
   expect(() => native.handlers.get(MANDATORY_IPC.status)!(event)).toThrow(/unowned/)
   expect(() => f.action('quit')).toThrow(/invalid action/)
+})
+
+it('exits the application when the mandatory window is closed without clearing the policy', () => {
+  const f = setup()
+  const event = { preventDefault: vi.fn() }
+  window.emit('close', event)
+  expect(event.preventDefault).toHaveBeenCalledOnce()
+  expect(native.quit).toHaveBeenCalledOnce()
+  expect(f.view().policy.blocking).toBe(true)
 })
