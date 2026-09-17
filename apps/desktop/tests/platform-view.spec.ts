@@ -3,7 +3,9 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { BrowserWindow, IpcMainEvent } from 'electron'
 import { DesktopPlatformView, platformBounds } from '../src/platform-view.ts'
 
-const state = vi.hoisted(() => ({ views: [] as unknown[], sessions: [] as unknown[], openExternal: vi.fn(async () => {}) }))
+const state = vi.hoisted(() => ({
+  views: [] as unknown[], sessions: [] as unknown[], openExternal: vi.fn(async () => {}), loadFailure: undefined as unknown,
+}))
 vi.mock('electron', () => ({
   shell: { openExternal: state.openExternal },
   session: { fromPartition: vi.fn((partition: string) => {
@@ -18,7 +20,8 @@ vi.mock('electron', () => ({
     webContents = Object.assign(new EventEmitter(), {
       mainFrame: { url: 'https://platform.deepseek.com/usage' },
       session: { clearStorageData: vi.fn(async () => {}) },
-      setWindowOpenHandler: vi.fn(), loadURL: vi.fn(async (_url: string) => {}),
+      setWindowOpenHandler: vi.fn(),
+      loadURL: vi.fn(async (_url: string) => { if (state.loadFailure !== undefined) throw state.loadFailure }),
       isDestroyed: () => false, close: vi.fn(),
     })
     setVisible = vi.fn()
@@ -27,9 +30,11 @@ vi.mock('electron', () => ({
   },
 }))
 
-afterEach(() => { state.views.length = 0; state.sessions.length = 0; vi.clearAllMocks() })
+afterEach(() => { state.views.length = 0; state.sessions.length = 0; state.loadFailure = undefined; vi.clearAllMocks() })
 function setup() {
-  const owner = { contentView: { addChildView: vi.fn(), removeChildView: vi.fn() }, isDestroyed: () => false } as unknown as BrowserWindow
+  const owner = Object.assign(new EventEmitter(), {
+    webContents: new EventEmitter(), contentView: { addChildView: vi.fn(), removeChildView: vi.fn() }, isDestroyed: () => false,
+  }) as unknown as BrowserWindow
   const manager = new DesktopPlatformView('/bundled/preload.cjs')
   manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
   return { manager, owner }
@@ -73,6 +78,17 @@ it('destroys old documents on sign-out or credential replacement', async () => {
   manager.setSession(null)
   expect(second.close).toHaveBeenCalledOnce()
   await expect(manager.open(owner, 'usage', bounds)).rejects.toThrow()
+})
+
+it('keeps the view when the Platform document replaces its own URL during the first load', async () => {
+  const { manager, owner } = setup()
+  state.loadFailure = Object.assign(new Error("ERR_ABORTED (-3) loading 'https://platform.deepseek.com/usage'"), { code: 'ERR_ABORTED' })
+  await manager.open(owner, 'usage', bounds)
+  expect(view().setVisible).toHaveBeenCalledWith(true)
+  expect(view().webContents.close).not.toHaveBeenCalled()
+  state.loadFailure = Object.assign(new Error("ERR_FAILED (-2) loading 'https://platform.deepseek.com/usage'"), { code: 'ERR_FAILED' })
+  await expect(manager.open(owner, 'usage', bounds)).rejects.toThrow('ERR_FAILED')
+  expect(view().webContents.close).toHaveBeenCalledOnce()
 })
 
 it('blocks cross-origin navigation and redirects', async () => {
@@ -168,4 +184,52 @@ it.each(['usage', 'top-up'] as const)('selects the configured frontend deploymen
   manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret', embeddedPageDist: 'another' })
   expect(previous.close).toHaveBeenCalledOnce()
   manager.close()
+})
+
+
+it('removes the native view when its application document reloads, without renderer cleanup', async () => {
+  const { manager, owner } = setup()
+  await manager.open(owner, 'usage', bounds)
+  const child = view()
+  owner.webContents.emit('did-start-navigation', {}, 'dsh-app://app/', false, true)
+  expect(owner.contentView.removeChildView).toHaveBeenCalledWith(child)
+  expect(child.webContents.close).toHaveBeenCalledOnce()
+  expect(owner.webContents.listenerCount('did-start-navigation')).toBe(0)
+  expect(owner.listenerCount('closed')).toBe(0)
+})
+
+it('retains the view on same-document and subframe navigation', async () => {
+  const { manager, owner } = setup()
+  await manager.open(owner, 'usage', bounds)
+  owner.webContents.emit('did-start-navigation', {}, 'dsh-app://app/#account', true, true)
+  owner.webContents.emit('did-start-navigation', {}, 'about:blank', false, false)
+  expect(view().webContents.close).not.toHaveBeenCalled()
+  manager.close()
+})
+
+it.each(['render-process-gone', 'destroyed', 'closed'])('removes the view on owner %s', async (event) => {
+  const { manager, owner } = setup()
+  await manager.open(owner, 'usage', bounds)
+  const child = view()
+  ;(event === 'closed' ? owner : owner.webContents).emit(event)
+  expect(child.webContents.close).toHaveBeenCalledOnce()
+  expect(owner.webContents.listenerCount('destroyed')).toBe(0)
+  expect(owner.webContents.listenerCount('render-process-gone')).toBe(0)
+})
+
+
+it('does not reveal a pending view after the owner reloads or remove a replacement view', async () => {
+  const { manager, owner } = setup()
+  const loading = manager.open(owner, 'usage', bounds)
+  const previous = view()
+  owner.webContents.emit('did-start-navigation', {}, 'dsh-app://app/', false, true)
+  await manager.open(owner, 'top-up', bounds)
+  const current = view()
+  await loading
+  expect(previous.setVisible.mock.calls).toEqual([[false]])
+  expect(current.setVisible).toHaveBeenLastCalledWith(true)
+  expect(current.webContents.close).not.toHaveBeenCalled()
+  expect(owner.webContents.listenerCount('did-start-navigation')).toBe(1)
+  manager.close()
+  expect(owner.webContents.listenerCount('did-start-navigation')).toBe(0)
 })

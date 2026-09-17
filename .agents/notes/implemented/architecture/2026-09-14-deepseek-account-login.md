@@ -58,6 +58,6 @@ The macOS development launcher registers an isolated, ad-hoc-signed application 
 
 Exchange user data supplies the first profile read after credential commit, avoiding a second request before displaying the username. The Host retains only projected UI fields in the active attempt, matched to its token and consumed once; later reads use current. Missing or malformed user data does not discard successful authorization.
 
-The embedded Platform document stays hidden during loading because native child views cover renderer overlays. Only the current document may become visible after loading; returning or signing out invalidates pending visibility changes.
+The embedded Platform document stays hidden during loading because native child views cover renderer overlays. Only the current document may become visible after loading; returning or signing out invalidates pending visibility changes. Native ownership also ends when the application document reloads or is replaced, its renderer terminates, or its window closes. React effect cleanup alone is insufficient because document teardown may never execute it. Same-document and subframe navigation preserve the view.
 
 Separate accountRequestHeaders route account data and embedded Platform traffic independently of authorization and logout. Cookie overrides merge by name, retaining deployment authentication. Host passes the resolved headers over private process IPC; Electron injects them only at the configured origin and omits them from bootstrap.

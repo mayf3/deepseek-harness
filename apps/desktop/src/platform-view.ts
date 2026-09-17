@@ -30,6 +30,7 @@ export class DesktopPlatformView {
   private account: PlatformSession | null = null
   private view: WebContentsView | undefined
   private owner: BrowserWindow | undefined
+  private releaseOwner: (() => void) | undefined
   private generation = 0
 
   /** @param preload - bundled sandboxed Platform preload path. */
@@ -79,6 +80,21 @@ export class DesktopPlatformView {
     } })
     this.view = view
     this.owner = owner
+    const closeOwnedView = () => { if (this.view === view) this.close() }
+    const navigateOwner = (_event: Electron.Event, _url: string, isInPlace: boolean, isMainFrame: boolean) => {
+      if (isMainFrame && !isInPlace) closeOwnedView()
+    }
+    // Renderer document replacement does not run React effect cleanup.
+    owner.webContents.on('did-start-navigation', navigateOwner)
+    owner.webContents.on('render-process-gone', closeOwnedView)
+    owner.webContents.on('destroyed', closeOwnedView)
+    owner.on('closed', closeOwnedView)
+    this.releaseOwner = () => {
+      owner.webContents.removeListener('did-start-navigation', navigateOwner)
+      owner.webContents.removeListener('render-process-gone', closeOwnedView)
+      owner.webContents.removeListener('destroyed', closeOwnedView)
+      owner.removeListener('closed', closeOwnedView)
+    }
     // External payment and documentation pages open without the embedded session or token.
     view.webContents.setWindowOpenHandler(({ url }) => {
       const destination = new URL(url)
@@ -107,11 +123,17 @@ export class DesktopPlatformView {
       const url = new URL(page === 'usage' ? '/usage' : '/top_up', account.origin)
       if (account.embeddedPageDist) url.searchParams.set('dist', account.embeddedPageDist)
       await view.webContents.loadURL(url.href)
-      if (generation === this.generation && this.view === view) view.setVisible(true)
     } catch (error) {
-      if (generation === this.generation) this.close()
-      throw error
+      // A Platform document may replace its own URL before the first load settles (for example to
+      // consume an embedded deployment parameter); that aborts loadURL with ERR_ABORTED instead of
+      // reporting a failed document, so the owned view stays open like the application window.
+      const aborted = error instanceof Error && 'code' in error && error.code === 'ERR_ABORTED'
+      if (!aborted) {
+        if (generation === this.generation) this.close()
+        throw error
+      }
     }
+    if (generation === this.generation && this.view === view) view.setVisible(true)
   }
 
   /** @param bounds - current application viewport rectangle. */
@@ -137,6 +159,8 @@ export class DesktopPlatformView {
     this.generation++
     const view = this.view
     this.view = undefined
+    this.releaseOwner?.()
+    this.releaseOwner = undefined
     if (view === undefined) return
     if (this.owner !== undefined && !this.owner.isDestroyed()) this.owner.contentView.removeChildView(view)
     this.owner = undefined

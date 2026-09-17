@@ -352,7 +352,7 @@ Sign in opens the configured platform page in the system browser. The Host owns 
 
 An expired login displays a timeout heading with explicit Sign in again and Add API Key actions. Opening the API-key form dismisses the authorization view; late account-state notifications do not replace an in-progress key entry.
 
-Embedded Platform views remain hidden until document loading completes so the renderer loading indicator stays visible. Closing or replacing a pending view prevents it from appearing later.
+Embedded Platform views remain hidden until document loading completes so the renderer loading indicator stays visible. Closing or replacing a pending view prevents it from appearing later. Reloading or replacing the owning application document, renderer termination, and window closure also destroy the native view without relying on React cleanup.
 
 Private Platform deployment headers are injected by the embedded browser session only for its configured origin, including document and API requests. Cookie overrides merge by name. Cross-origin requests discard deployment headers; bootstrap exposes only origin and token.
 

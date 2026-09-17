@@ -540,6 +540,19 @@ describe('desktop main startup', () => {
     expect(harness.hosts).toHaveLength(0)
   })
 
+  it('serves packaged shell documents instead of rejecting the shell origin', async () => {
+    const { protocol } = await import('electron')
+    const { serveWebDocument } = await import('../src/web-document.ts')
+    vi.mocked(serveWebDocument).mockResolvedValue(new Response('shell document'))
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const handler = vi.mocked(protocol.handle).mock.calls[0]![1] as unknown as (request: Request) => Promise<Response>
+    const request = new Request('dsh-app://shell/update-dialog.html')
+    expect(await (await handler(request)).text()).toBe('shell document')
+    expect(serveWebDocument).toHaveBeenCalledWith(request, join('desktop-test-app', 'renderer'))
+    expect((await handler(new Request('dsh-app://foreign/index.html'))).status).toBe(404)
+  })
+
   it('follows the Windows primary document language and palette without trusting other frames', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     await import('../src/main.ts')
