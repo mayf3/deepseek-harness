@@ -884,7 +884,7 @@ describe('plugin lifecycle', () => {
     await ctx.plugin(SlotRegistry).await()
     ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
     ctx.provide('remote', { $on: () => () => {} } as never)
-    ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+    ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope, developerTools: { enabled: { getSnapshot: () => true, subscribe: () => () => {} } } } as never)
     const sessions = new TestSessions(async (action) => { await action() }, ctx)
     ctx.provide('sessions', sessions)
     const openSession = vi.fn(async () => {})

@@ -36,6 +36,7 @@ export function DefaultConversationViews({
   return (
     <div className={css.viewArea}>
       {viewId !== undefined && renderSlot('conversation.view', {
+        availableViews: tabs,
         viewRequest,
         openView,
         completeViewRequest: actions.completeViewRequest,

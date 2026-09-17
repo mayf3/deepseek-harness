@@ -555,6 +555,12 @@ describe('SettingsScopeBinder.bind', () => {
     })
     await fiber.await()
     expect(scope.getSnapshot()).toMatchObject({ status: 'unavailable', mode: 'memory', writable: false })
+    const preference = ctx.settingsScope.developerTools
+    expect(fiber.ctx.settingsScope.developerTools).toBe(preference)
+    await preference.setEnabled(true)
+    expect(fiber.ctx.settingsScope.developerTools.enabled.getSnapshot()).toBe(true)
+    await fiber.ctx.settingsScope.developerTools.setEnabled(false)
+    expect(preference.enabled.getSnapshot()).toBe(false)
     await fiber.dispose()
     expect(describeCall).not.toHaveBeenCalled()
   })

@@ -82,7 +82,7 @@ export interface ChatNodeOwnerProps {
   /** Open the current source file of a skill referenced by a sent message. */
   openSkill: (name: string) => void
   openFile: (path: string, options?: OpenFileOptions) => void
-  inspectCall: (callId: ToolCallId) => void
+  inspectCall?: ((callId: ToolCallId) => void) | undefined
   forkAt: (seq: number) => void
   /**
    * Session-authorized image loader, down-threaded from the Chat view so a

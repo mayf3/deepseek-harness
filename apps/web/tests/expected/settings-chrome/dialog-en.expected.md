@@ -22,6 +22,6 @@
   - text: px Conversation display Controls process content in completed turns
   - button "Compact"
   - text: Developer tools Show tools and information for debugging and troubleshooting
-  - switch "Developer tools" [checked]
+  - switch "Developer tools"
   - text: Send behavior while busy What Enter and the Send button do while the agent is running; Cmd/Ctrl+Enter uses the other behavior
   - button "Queue"

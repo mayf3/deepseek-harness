@@ -21,3 +21,20 @@ it('preserves static content and removes navigation, policy overrides and active
   expect(parsed.querySelector('style')?.textContent).toContain('color: red')
   expect(parsed.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,AA==')
 })
+
+it('preserves document styling and removes navigation inside nested templates and SVG animation', () => {
+  const html = createBasicHtmlDocument(new TextEncoder().encode(`<html lang="zh" class="dark"><head><link rel="preconnect" href="https://example.invalid"></head><body style="margin:0" dir="rtl">
+    <noscript><meta http-equiv="refresh" content="0;url=https://example.invalid"></noscript>
+    <div><template shadowrootmode="open"><template><a href="https://example.invalid">Nested</a><iframe src="https://example.invalid"></iframe></template></template></div>
+    <svg><a href="https://example.invalid"><set attributeName="href" to="https://example.invalid"/><animate attributeName="href" values="https://example.invalid"/></a></svg>
+  </body></html>`))
+  const parsed = new DOMParser().parseFromString(html, 'text/html')
+  expect(parsed.documentElement.lang).toBe('zh')
+  expect(parsed.documentElement.className).toBe('dark')
+  expect(parsed.body.style.margin).toBe('0px')
+  expect(parsed.body.dir).toBe('rtl')
+  expect(parsed.querySelectorAll('noscript, link, set, animate')).toHaveLength(0)
+  const nested = parsed.querySelector('template')!.content.querySelector('template')!.content
+  expect(nested.querySelector('a')!.hasAttribute('href')).toBe(false)
+  expect(nested.querySelector('iframe')).toBeNull()
+})

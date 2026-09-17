@@ -20,7 +20,7 @@ async function baseContext(): Promise<Context> {
   await ctx.plugin(SlotRegistry).await()
   ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
   ctx.provide('remote', { $on: () => () => {} } as never)
-  ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope, developerTools: { enabled: { getSnapshot: () => true, subscribe: () => () => {} } } } as never)
   await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
   return ctx
 }

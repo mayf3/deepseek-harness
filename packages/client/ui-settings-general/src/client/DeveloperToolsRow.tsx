@@ -20,15 +20,18 @@ export function DeveloperToolsRow({ useDeveloperTools, setEnabled, t }:
   PropsRuntime<'settings.general.item'> & PropsLocale<'settings'> & InjectFace<DeveloperToolsRowInjected>) {
   const enabled = useDeveloperTools(value => value)
   const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
   return <div className={css.row}>
     <div>
       <div className={css.title}>{t('developerTools.title')}</div>
       <div className={css.description}>{t('developerTools.description')}</div>
+      {failed && <div role="alert">{t('developerTools.error')}</div>}
     </div>
     <Switch checked={enabled} disabled={busy} label={t('developerTools.title')}
       onChange={(next) => {
+        setFailed(false)
         setBusy(true)
-        void setEnabled(next).finally(() => { setBusy(false) })
+        void setEnabled(next).catch(() => { setFailed(true) }).finally(() => { setBusy(false) })
       }} />
   </div>
 }

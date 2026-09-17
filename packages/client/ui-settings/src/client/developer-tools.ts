@@ -1,5 +1,5 @@
 /** One accepted preference drives every developer-tool consumer. */
-import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { DeveloperToolsSettings } from '../developer-tools-settings.ts'
 import type { SettingsScope } from './settings-contract.ts'
 
@@ -7,21 +7,34 @@ import type { SettingsScope } from './settings-contract.ts'
 export class DeveloperToolsPreference {
   /** Accepted enablement, observable through renderer-bound hooks. */
   readonly enabled: ObservableSnapshot<boolean>
+  private readonly local = createSnapshotStore(false)
 
   /** @param scope - settings-owned namespace controller. */
   constructor(private readonly scope: SettingsScope<DeveloperToolsSettings>) {
-    this.enabled = {
+    this.enabled = scope.getSnapshot().mode === 'memory' ? this.local : {
       getSnapshot: () => scope.getSnapshot().value?.enabled ?? false,
-      subscribe: listener => scope.subscribe(listener),
+      subscribe: (listener) => {
+        let previous = this.enabled.getSnapshot()
+        return scope.subscribe(() => {
+          const next = this.enabled.getSnapshot()
+          if (next === previous) return
+          previous = next
+          listener()
+        })
+      },
     }
   }
 
   /**
-   * Persist a choice using the settings transport's ordered write and recovery policy.
+   * Persist a Host choice with ordered writes, or update the shared browser-local choice.
    * @param enabled - requested developer-tool mode.
-   * @returns settlement after the write or recovery read.
+   * @returns settlement after local publication, the Host write or its recovery read.
    */
   setEnabled(enabled: boolean): Promise<void> {
+    if (this.scope.getSnapshot().mode === 'memory') {
+      this.local.set(enabled)
+      return Promise.resolve()
+    }
     return this.scope.set('enabled', enabled)
   }
 }

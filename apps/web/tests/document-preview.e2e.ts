@@ -132,6 +132,11 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       previewNetworkRequests += 1
       await route.fulfill({ status: 200, contentType: 'image/png', body: TINY_PNG })
     })
+    const blockedRequests: string[] = []
+    await page.route('https://blocked-preview.invalid/**', async (route) => {
+      blockedRequests.push(route.request().url())
+      await route.fulfill({ status: 200, contentType: 'text/html', body: 'ESCAPED' })
+    })
     const markdownText = [
       '# Markdown smoke', '', 'Rendered from the workspace.', '',
       ...Array.from({ length: (PAGE_LINES - 4) / 2 }, (_, index) => [`Paragraph ${index + 1}: ${'visible prefix '.repeat(20)}`, '']).flat(),
@@ -142,6 +147,15 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       'const tail = "CODE_TAIL";',
     ]
     await Promise.all([
+      writeFile(join(cwd, 'hostile.html'), `<!doctype html><html lang="en" class="dark"><head>
+        <link rel="preconnect" href="https://blocked-preview.invalid">
+        <noscript><meta http-equiv="refresh" content="0;url=https://blocked-preview.invalid/refresh"></noscript>
+        </head><body style="margin:0"><h1>Static adversarial preview</h1>
+        <a id="plain-link" href="https://blocked-preview.invalid/plain">Plain link</a>
+        <div><template shadowrootmode="open"><a id="shadow-link" href="https://blocked-preview.invalid/shadow">Shadow link</a><template><iframe src="https://blocked-preview.invalid/frame"></iframe></template></template></div>
+        <svg><a id="svg-link" href="https://blocked-preview.invalid/svg"><text y="20">SVG link</text><set attributeName="href" to="https://blocked-preview.invalid/set"/><animate attributeName="href" values="https://blocked-preview.invalid/animate"/></a></svg>
+        <img src="https://blocked-preview.invalid/image"><iframe src="https://blocked-preview.invalid/direct-frame"></iframe>
+        </body></html>`),
       writeFile(join(cwd, 'smoke.md'), markdownText),
       writeFile(join(cwd, 'pages.ts'), codeLines.join('\n')),
       writeFile(join(cwd, 'notes.unknown'), 'UNKNOWN_SUFFIX\nPlain fallback.'),
@@ -273,6 +287,20 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       `- Viewers: ${markdownViewers.join(' -> ')}`,
       `- Same tab: ${String(await markdownTab.getAttribute('data-dockkit-tab') === markdownTabId)}`,
     ].join('\n'))
+
+    await openFile('hostile.html')
+    const hostileFrame = page.frameLocator('[data-html-preview]')
+    await hostileFrame.getByRole('heading', { name: 'Static adversarial preview' }).waitFor()
+    expect(await hostileFrame.locator('html').getAttribute('class')).toBe('dark')
+    expect(await hostileFrame.locator('body').evaluate(node => getComputedStyle(node).margin)).toBe('0px')
+    for (const id of ['plain-link', 'shadow-link', 'svg-link']) {
+      const link = hostileFrame.locator(`#${id}`)
+      expect(await link.getAttribute('href')).toBeNull()
+      await link.click()
+    }
+    expect(await hostileFrame.locator('noscript, link, set, animate, iframe').count()).toBe(0)
+    expect(blockedRequests).toEqual([])
+    await hostileFrame.getByRole('heading', { name: 'Static adversarial preview' }).waitFor()
 
     await openFile('smoke.html')
     await expect.poll(() => viewer.innerText()).toBe('HTML')

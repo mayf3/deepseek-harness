@@ -38,6 +38,7 @@ async function bench() {
   const runtime = await SlotTestRuntime.create()
   const chatSettings = stubSettingsScope<ChatSettings>()
   runtime.ctx.provide('settingsScope', {
+    developerTools: { enabled: { getSnapshot: () => true, subscribe: () => () => {} } },
     bind: ({ namespace }: { namespace: string }) => namespace === CHAT_SETTINGS_NAMESPACE
       ? chatSettings.scope
       : stubSettingsScope().scope,

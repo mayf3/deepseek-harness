@@ -214,6 +214,11 @@ describe('Conversation inject API', () => {
     expect(header.instance.store.getSnapshot().view).toBe('chat')
 
     removeTrajectory()
+    await b.runtime.flush()
+    activate.mockClear()
+    body.injected.openView('trajectory', 'hidden-call')
+    expect(activate).not.toHaveBeenCalled()
+    expect(body.instance.store.getSnapshot().view).toBe('chat')
     removeChat()
     await b.runtime.dispose()
   })

@@ -208,3 +208,17 @@ describe('SettingsDocumentAction', () => {
     expect(screen.getByRole('button', { name: 'Open configuration file' })).toBeTruthy()
   })
 })
+
+it('reports a failed developer-tool write and allows retry', async () => {
+  const state = createSnapshotStore(false)
+  const setEnabled = vi.fn().mockRejectedValueOnce(new Error('offline')).mockImplementation(async (enabled: boolean) => { state.set(enabled) })
+  render(<DeveloperToolsRow {...kit} t={t} useDeveloperTools={bindSnapshotSelector(state)} setEnabled={setEnabled} />)
+  const toggle = screen.getByRole('switch', { name: 'Developer tools' })
+  fireEvent.click(toggle)
+  expect((await screen.findByRole('alert')).textContent).toBe('Could not save. Please try again.')
+  expect(toggle.hasAttribute('disabled')).toBe(false)
+  expect(toggle.getAttribute('aria-checked')).toBe('false')
+  fireEvent.click(toggle)
+  await waitFor(() => { expect(toggle.getAttribute('aria-checked')).toBe('true') })
+  expect(screen.queryByRole('alert')).toBeNull()
+})
