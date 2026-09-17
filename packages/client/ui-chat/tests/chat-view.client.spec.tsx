@@ -282,8 +282,6 @@ function makeHarness(
   }> = []
   const renderCommandSlot = ((_key: string, _owner: object, opts?: { fallback?: React.ReactNode }) =>
     opts?.fallback ?? null) as unknown as React.ComponentProps<typeof CommandNodeView>['renderSlot']
-  const renderTurnTail = ((_key: string, _owner: object) => null) as unknown as
-    React.ComponentProps<typeof TurnTailNodeView>['renderSlotChain']
   const renderTurnTailSlot = (() => null) as unknown as
     React.ComponentProps<typeof TurnTailNodeView>['renderSlot']
   let nodeSlotOverride: React.ComponentProps<typeof ChatNodeSeat>['renderSlot'] | undefined
@@ -335,7 +333,6 @@ function makeHarness(
           <TurnTailNodeView
             {...nodeProps<'turn-tail'>()}
             renderSlot={renderTurnTailSlot}
-            renderSlotChain={renderTurnTail}
             SessionProvider={props.SessionProvider}
           />
         )
@@ -408,6 +405,7 @@ function makeHarness(
     completeViewRequest: () => {},
     openFile,
     openSkill,
+    openExternalLink: vi.fn(),
     loadOlder,
     loadThrough,
     loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
@@ -507,6 +505,16 @@ function installScrollMetrics(element: HTMLElement, initialHeight: number, clien
 }
 
 describe('Chat node rendering', () => {
+
+  it('opens Markdown references to unmodified files with line navigation', () => {
+    const h = makeHarness({
+      nodes: [user(1, 'explain'), assistant(2, '[source](src/index.ts#L24-L30)', 1)],
+      turnEnds: new Map([[1, 2]]),
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    fireEvent.click(view.getByRole('button', { name: 'source' }))
+    expect(h.openFile).toHaveBeenCalledWith('src/index.ts', { line: 24 })
+  })
 
   it('threads the injected file-mention vocabulary into the closing prose only', () => {
     const wrote = (seq: number, callId: string): ToolResultNode => ({

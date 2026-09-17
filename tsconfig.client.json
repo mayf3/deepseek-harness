@@ -91,6 +91,7 @@
     { "path": "./packages/client/ui-dockkit" },
     { "path": "./packages/client/ui-sidebar-right" },
     { "path": "./packages/client/ui-sidebar-documentpreview/tsconfig.client.json" },
+    { "path": "./packages/client/ui-sidebar-browser" },
     { "path": "./packages/client/ui-sidebar-files" },
     { "path": "./packages/client/ui-jobs" },
     { "path": "./packages/client/ui-schedule" },

@@ -124,6 +124,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'The dsh launcher supplies data-only profile locations and composition inputs; reload scheduling belongs to dsh-hmr.',
   },
   {
+    key: 'connection',
+    pkg: 'client-connection',
+    title: 'Authenticated browser transport',
+    mode: 'core',
+    consumers: ['api-gateway', 'host-frontend-static'],
+    note: 'Owns browser authentication and shared HTTP request dispatch; API adapters register endpoints and streams.',
+  },
+  {
     key: 'mcpResources',
     pkg: 'mcp-resources',
     title: 'Scoped MCP resource access',
