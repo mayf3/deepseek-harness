@@ -75,6 +75,7 @@ const ROSTER_HIDDEN = {
 async function bench(options: {
   failSettingsUpdate?: boolean
   selectGate?: Promise<void>
+  settingsRosterGate?: Promise<undefined>
 } = {}) {
   const ctx = new Context()
   // The host's answer, mutable so a spec can move the default the way the
@@ -88,6 +89,8 @@ async function bench(options: {
   const calls: string[] = []
   let savedDefault = 'standard'
   let selectionEnabled = true
+  let settingsSaved = false
+  const settingsRosterStarted = Promise.withResolvers<undefined>()
   // The row reads `describe` to learn whether this browser may write at all,
   // and its default write is the one op this spec records.
   const settings = {
@@ -113,6 +116,7 @@ async function bench(options: {
       ROSTER = !selectionEnabled
         ? ROSTER_HIDDEN
         : savedDefault === 'minimal' ? ROSTER_MOVED : ROSTER_ONE
+      settingsSaved = true
       return Promise.resolve({ ok: true as const, value: {} })
     },
     openAgentPresetDirectory: (agentPreset: string) => {
@@ -127,7 +131,14 @@ async function bench(options: {
   // `inject`, and the property is what `ctx.remote.agentPresets` reads,
   // because the double is a plain provided object rather than a Service.
   const agentPresets = {
-    list: () => { calls.push('list'); return Promise.resolve(ROSTER) },
+    list: () => {
+      calls.push('list')
+      if (settingsSaved) {
+        settingsRosterStarted.resolve(undefined)
+        if (options.settingsRosterGate !== undefined) return options.settingsRosterGate.then(() => ROSTER)
+      }
+      return Promise.resolve(ROSTER)
+    },
     read: () => Promise.resolve({
       ok: true as const,
       value: { agentPreset: 'standard', trust: 'system', content: '' },
@@ -148,7 +159,7 @@ async function bench(options: {
   ctx.provide('remote.agentPresets', agentPresets as never)
   Object.assign(remote, { agentPresets })
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault, remote }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault, remote, settingsRosterStarted: settingsRosterStarted.promise }
 }
 
 function declareRoot(slots: SlotRegistry): () => void {
@@ -235,10 +246,70 @@ function sessionsDouble(ctx: Context, state: {
     }),
     /** Push a list change the way the runtime's store does. */
     notify: () => { for (const fn of listeners) fn() },
+    listenerCount: () => listeners.size,
   }
 }
 
+async function settingsWithoutChip(initialPreset: string, settingsRosterGate?: Promise<undefined>) {
+  const b = await bench(settingsRosterGate === undefined ? {} : { settingsRosterGate })
+  declareRoot(b.slots)
+  const sessions = sessionsDouble(b.ctx, {
+    current: 'blank',
+    byId: { blank: { id: 'blank', blank: true, projectionValues: { agentPreset: initialPreset } } },
+  })
+  const bindingOwner = b.ctx.plugin({ apply() {} })
+  await bindingOwner.await()
+  sessions.binding('blank')!.ctx = bindingOwner.ctx
+  b.ctx.provide('sessions', sessions as never)
+  const feature = b.ctx.plugin({ inject: [...inject], apply })
+  await feature.await()
+  const section = (b.slots.entries('settings.section')[0]!
+    .inject as unknown as () => AgentPresetSectionInjected)()
+  await section.load()
+  expect(b.slots.entries('conversation.hero.agentPreset')).toHaveLength(0)
+  return { ...b, bindingOwner, feature, section, sessions }
+}
+
 describe('ui-agent-preset apply', () => {
+  const settingsActions = [
+    { action: 'makeDefault', initial: 'standard', selected: 'minimal', run: (section: AgentPresetSectionInjected) => section.makeDefault('minimal') },
+    { action: 'setPickerVisible', initial: 'minimal', selected: 'standard', run: (section: AgentPresetSectionInjected) => section.setPickerVisible(false) },
+  ]
+
+  it.each(settingsActions)('synchronizes $action before the chip mounts', async ({ initial, selected, run }) => {
+    const b = await settingsWithoutChip(initial)
+    try {
+      await run(b.section)
+      expect(b.calls.filter(call => call.startsWith('select:'))).toEqual([`select:${selected}`])
+      expect(b.sessions.listenerCount()).toBe(1)
+    } finally {
+      await b.ctx.fiber.dispose()
+    }
+    expect(b.sessions.listenerCount()).toBe(0)
+  })
+
+  it.each(settingsActions.flatMap(action => (['feature', 'binding'] as const).map(owner => ({ ...action, owner }))))(
+    'does not finish $action into a disposed $owner before the chip mounts',
+    async ({ initial, run, owner }) => {
+      const saved = Promise.withResolvers<undefined>()
+      const b = await settingsWithoutChip(initial, saved.promise)
+      const operation = run(b.section)
+      try {
+        expect(b.sessions.listenerCount()).toBe(1)
+        await b.settingsRosterStarted
+        await (owner === 'feature' ? b.feature : b.bindingOwner).dispose()
+        expect(b.sessions.listenerCount()).toBe(0)
+        saved.resolve(undefined)
+        await operation
+        expect(b.calls.filter(call => call.startsWith('select:'))).toEqual([])
+      } finally {
+        saved.resolve(undefined)
+        await operation
+        await b.ctx.fiber.dispose()
+      }
+    },
+  )
+
   it('keeps the host Loader entry inert', () => {
     expect(hostApply).not.toThrow()
   })

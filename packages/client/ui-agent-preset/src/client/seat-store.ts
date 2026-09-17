@@ -63,6 +63,7 @@ export class AgentPresetSeatController {
 
   /** Only the newest roster read may publish after overlapping refreshes. */
   private loadGeneration = 0
+  /** Completion of the active Host selection; Settings choices wait before staging. */
   private pendingSelection: Promise<undefined> | undefined
 
   constructor(
