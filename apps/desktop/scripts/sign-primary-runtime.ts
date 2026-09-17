@@ -1,9 +1,10 @@
 /** Sign Windows runtime code before executing it, retaining vendor signatures and fail-stop hardware protection. */
 import { X509Certificate } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, realpath } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { createWindowsTokenSigner } from './windows-sign.mjs'
-import { signWindowsCode, type WindowsCodeSigningOptions } from './windows-runtime-signature.mjs'
+import { inspectWindowsRuntimeSignature, signWindowsCode, type WindowsCodeSigningOptions } from './windows-runtime-signature.mjs'
+import { createCachedSigner, signatureCacheIdentity } from './windows-signature-cache.mjs'
 import { failPackagingRun, recordPackagingEvent } from './packaging-run.mjs'
 import { resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import { smokePrimaryRuntime } from './prepare-primary-runtime.ts'
@@ -51,11 +52,19 @@ async function main(): Promise<void> {
   const thumbprint = new X509Certificate(await readFile(certificateFile)).fingerprint.replaceAll(':', '')
   try {
     const paths = resolveDesktopTargetBuildPaths()
+    const record = (event: object): void => { recordPackagingEvent(runDirectory, event) }
+    const sign = createWindowsTokenSigner({ certificateFile, signTool: process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
+      keyContainer: process.env.DSH_DESKTOP_WINDOWS_KEY_CONTAINER, tokenPin: process.env.DSH_DESKTOP_WINDOWS_TOKEN_PIN })
+    const identity = await signatureCacheIdentity([
+      await realpath(certificateFile), await realpath(process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL!),
+      join(import.meta.dirname, 'windows-sign.cmd'), join(import.meta.dirname, 'windows-sign.mjs'),
+      join(import.meta.dirname, 'windows-timestamp.mjs'),
+    ])
     const options = {
       thumbprint,
-      sign: createWindowsTokenSigner({ certificateFile, signTool: process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
-        keyContainer: process.env.DSH_DESKTOP_WINDOWS_KEY_CONTAINER, tokenPin: process.env.DSH_DESKTOP_WINDOWS_TOKEN_PIN }),
-      record: (event: object) => { recordPackagingEvent(runDirectory, event) },
+      sign: createCachedSigner({ root: join(paths.root, 'signature-cache'), identity, thumbprint,
+        sign, inspect: inspectWindowsRuntimeSignature, record }),
+      record,
     }
     if (process.argv.includes('--dsh')) {
       const version = JSON.parse(await readFile(join(paths.dsh, 'package.json'), 'utf8')).version as string

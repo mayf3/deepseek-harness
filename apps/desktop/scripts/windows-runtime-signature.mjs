@@ -5,6 +5,7 @@ import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { scrubWindowsSigningEnvironment } from './windows-sign.mjs'
 import { recordPackagingEvent } from './packaging-run.mjs'
+import { inspectSignaturesBatched } from './windows-signature-batch.mjs'
 
 /**
  * Read Windows trust, timestamp and signer identity using the engine's bundled modules, without accessing the private key.
@@ -22,13 +23,13 @@ export async function inspectWindowsRuntimeSignature(path) {
   if (stderr || typeof value !== 'object' || value === null || typeof value.status !== 'string'
     || typeof value.timestamped !== 'boolean'
     || !(value.thumbprint === null || typeof value.thumbprint === 'string' && /^[A-F\d]{40}$/iu.test(value.thumbprint))) {
-    throw new Error(`primary runtime: invalid signature inspection: ${path}`)
+    throw new Error(`Windows code: invalid signature inspection: ${path}`)
   }
   return { status: value.status, timestamped: value.timestamped, thumbprint: value.thumbprint }
 }
 
 /**
- * Preserve a copied primary-runtime executable only after signature and exact-byte verification.
+ * Preserve a copied runtime executable only after signature and exact-byte verification.
  * @param {string} path Signing-hook target.
  * @param {{sourceRoot: string, destinationRoot: string, runDirectory: string, inspect?: typeof inspectWindowsRuntimeSignature}} options Prepared and copied runtime roots with retained audit directory.
  * @returns {Promise<boolean>} True for a verified runtime copy; false for targets outside that directory.
@@ -38,12 +39,12 @@ export async function preserveWindowsRuntimeSignature(path, options) {
   if (!suffix || suffix === '..' || suffix.startsWith(`..${sep}`) || isAbsolute(suffix)) return false
   const source = join(options.sourceRoot, suffix)
   for (const file of [source, path]) {
-    if (await realpath(file) !== resolve(file)) throw new Error(`primary runtime: linked copy is not signable: ${file}`)
+    if (await realpath(file) !== resolve(file)) throw new Error(`Windows code: linked copy is not signable: ${file}`)
   }
   const [prepared, copied] = await Promise.all([readFile(source), readFile(path)])
-  if (!prepared.equals(copied)) throw new Error(`primary runtime: copied executable changed: ${path}`)
+  if (!prepared.equals(copied)) throw new Error(`Windows code: copied executable changed: ${path}`)
   const signature = await (options.inspect ?? inspectWindowsRuntimeSignature)(path)
-  if (signature.status !== 'Valid') throw new Error(`primary runtime: copied signature is ${signature.status}: ${path}`)
+  if (signature.status !== 'Valid') throw new Error(`Windows code: copied signature is ${signature.status}: ${path}`)
   recordPackagingEvent(options.runDirectory, { type: 'primary-runtime-copy-verified', path, ...signature })
   return true
 }
@@ -84,6 +85,7 @@ export async function windowsRuntimeCode(root) {
 
 /** Drain each public-key verification batch before signing or reporting a failure. */
 async function inspectWindowsCode(files, inspect) {
+  if (inspect === inspectWindowsRuntimeSignature) return inspectSignaturesBatched(files)
   const signatures = []
   for (let offset = 0; offset < files.length; offset += 4) {
     const results = await Promise.allSettled(files.slice(offset, offset + 4).map(path => inspect(path)))
