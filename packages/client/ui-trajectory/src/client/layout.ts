@@ -122,15 +122,13 @@ function inputCellDetail(node: InputNode, t: TrajectoryTranslate): Pick<
   | 'timeSeconds'
   | 'startedAt'
 > {
-  // An empty text block yields an empty preview; treat it as absent so an
-  // image-bearing record still labels its row instead of rendering blank.
   const preview = previewContent(node.content)
   const previewMarkdown = preview === '' ? undefined : preview
   const images = imageBlockCount(node.content)
   const files = fileBlockCount(node.content)
   const attachmentSummary = [
     images > 0
-      ? t('layout.imageOnly', { count: images })
+      ? t('layout.imageCount', { count: images })
       : undefined,
     files > 0 ? t('layout.fileAttachments', { count: files }) : undefined,
   ].filter((value): value is string => value !== undefined).join(' · ')
@@ -808,7 +806,7 @@ function summarizeAssistantActivity(
     return t('layout.toolCallOnly')
   }
   const images = blocks.filter(block => block.kind === 'image').length
-  if (images > 0) return t('layout.imageOnly', { count: images })
+  if (images > 0) return t('layout.imageCount', { count: images })
   return ''
 }
 
@@ -1089,7 +1087,7 @@ function summarizeResult(
     }
   }
   const images = imageBlockCount(node.content)
-  if (images > 0) return { result: t('layout.imageOnly', { count: images }) }
+  if (images > 0) return { result: t('layout.imageCount', { count: images }) }
   return { result: t('record.noOutput') }
 }
 
@@ -1116,7 +1114,7 @@ function detailResult(node: ToolResultNode, t: TrajectoryTranslate): string {
     .join('\n')
   if (text !== '') return text
   const images = imageBlockCount(node.content)
-  if (images > 0) return t('layout.imageOnly', { count: images })
+  if (images > 0) return t('layout.imageCount', { count: images })
   if (
     node.content.length === 0
     || node.content.every(block =>

@@ -12,7 +12,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
@@ -24,6 +24,7 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/file-upload-r
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/session.v3.jsonl', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/ui.expected.md', import.meta.url))
 const TRAJECTORY_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/trajectory.expected.md', import.meta.url))
+const TRAJECTORY_STATUS_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/trajectory-status.expected.md', import.meta.url))
 const OVERRIDE = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/replay.override.json', import.meta.url))
 const DRAFT_EXPECTED = fileURLToPath(new URL('./expected/file-upload-round/draft.expected.md', import.meta.url))
 const HISTORY_EXPECTED = fileURLToPath(new URL('./expected/file-upload-round/history.expected.md', import.meta.url))
@@ -385,11 +386,53 @@ describe('web e2e: generic file upload through the real assembly', () => {
     expect(await inspectTrajectoryAttachments()).toBe(liveTrajectory)
   })
 
+  it.skipIf(MODE === 'record')('keeps thumbnail loading and retry feedback inside the attachment row', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-thumbnail-status'))
+    const releaseRead = Promise.withResolvers<undefined>()
+    const read = vi.spyOn(scaffold.ctx.attachments, 'readImage').mockImplementationOnce(async () => {
+      await releaseRead.promise
+      throw new Error('fixture image read failed')
+    })
+    try {
+      // Reload clears the browser image cache so the real image slot observes the delayed read.
+      const warningStart = tripwire.warnings.length
+      await page.reload({ waitUntil: 'load' })
+      acknowledgeReloadConnectionLoss(tripwire, warningStart)
+      await page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
+      await page.getByRole('row', { name: `USER, Images ×1 · Files ×1 · ${PROMPT}`, exact: true }).click()
+      await page.getByRole('tab', { name: 'Preview', exact: true }).click()
+      const panel = page.getByRole('tabpanel')
+      const thumbnail = panel.locator('[data-variant="thumbnail"]')
+      await thumbnail.waitFor()
+      await expect.poll(() => read.mock.calls.length).toBe(1)
+      const feedbackFits = () => thumbnail.evaluate(element => element.scrollHeight <= element.clientHeight
+        && element.scrollWidth <= element.clientWidth)
+      expect(await feedbackFits()).toBe(true)
+      const loading = await captureStableAria(page, '[role="tabpanel"] [aria-label="Attachments"]', scaffold.workspaceCwd)
+
+      releaseRead.resolve(undefined)
+      const retry = panel.getByRole('button', { name: 'Image failed to load; click to retry', exact: true })
+      await retry.waitFor()
+      expect(await feedbackFits()).toBe(true)
+      const failed = await captureStableAria(page, '[role="tabpanel"] [aria-label="Attachments"]', scaffold.workspaceCwd)
+      await retry.focus()
+      await retry.press('Enter')
+      await panel.getByRole('img', { name: IMAGE_NAMES[0]!, exact: true }).waitFor()
+      expect(read).toHaveBeenCalledTimes(2)
+      await compareOrRefreshGolden(TRAJECTORY_STATUS_EXPECTED, [
+        '# Loading', loading, '# Failed', failed,
+      ].join('\n\n'), MODE)
+    } finally {
+      releaseRead.resolve(undefined)
+      read.mockRestore()
+    }
+  })
+
   it.skipIf(MODE === 'record')('stayed clean and kept the exact fixture inventory', async () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.v3.jsonl', 'replay.override.json', 'ui.expected.md', 'trajectory.expected.md',
+      'session.v3.jsonl', 'replay.override.json', 'ui.expected.md', 'trajectory.expected.md', 'trajectory-status.expected.md',
     ])
   })
 })
