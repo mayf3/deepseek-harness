@@ -18,10 +18,20 @@ describe('Markdown file links', () => {
     const openFile = vi.fn()
     const view = render(<MarkdownText text={`[source](${target})`} openFile={openFile} />)
     const link = view.getByRole('button', { name: 'source' })
-    expect(link.getAttribute('title')).toBe(target)
+    expect(link.getAttribute('title')).toBe(path)
     fireEvent.click(link)
     expect(openFile).toHaveBeenCalledWith(path, options)
     expect(view.container.querySelector('a')).toBeNull()
+  })
+
+  it.each(['', '![](https://example.com/image.png)'])('names an empty label %s with the decoded path', (label) => {
+    const view = render(<MarkdownText text={`[${label}](docs/My%20Notes.md)`} openFile={vi.fn()} />)
+    expect(view.getByRole('button', { name: 'docs/My Notes.md' })).toBeTruthy()
+  })
+
+  it('preserves an image label’s alternative text as the accessible name', () => {
+    const view = render(<MarkdownText text={'[![diagram](https://example.com/image.png)](src/a.ts)'} openFile={vi.fn()} />)
+    expect(view.getByRole('button', { name: 'diagram' })).toBeTruthy()
   })
 
   it('handles reference links and code labels without nesting file-mention buttons', () => {

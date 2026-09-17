@@ -556,7 +556,7 @@ function renderAnchor(url: string, children: ReactNode[], key: Key, glyph = true
       <button
         key={key}
         type="button"
-        className={css.fileMention}
+        className={clsx(css.fileMention, css.fileLink)}
         title={file.path}
         onClick={() => { openFile(file.path, file.line === undefined ? undefined : { line: file.line }) }}
       >

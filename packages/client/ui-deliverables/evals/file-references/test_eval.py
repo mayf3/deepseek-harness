@@ -1,11 +1,14 @@
 """Keyless checks for retained failures and honest evaluation denominators."""
 import json
 import os
+import signal
+import subprocess
+import time
 from pathlib import Path
 import sys
 import tempfile
 import unittest
-from run import execute, digest
+from run import execute, digest, process_group_running
 from summarize import aggregate, observations
 
 
@@ -50,17 +53,53 @@ class EvaluationTests(unittest.TestCase):
             for name, value in expected.items():
                 self.assertEqual(digest(owner / folder / (name + '.txt')), value)
 
-    def test_descendant_ignoring_term_is_reaped(self):
+    def test_zombie_group_has_no_running_work(self):
+        child = subprocess.Popen([sys.executable, '-c',
+            'import time; print("ready", flush=True); time.sleep(60)'],
+            stdout=subprocess.PIPE, text=True, start_new_session=True)
+        try:
+            self.assertEqual(child.stdout.readline(), 'ready\n')
+            self.assertTrue(process_group_running(child.pid))
+            child.kill()
+            deadline = time.monotonic() + 5
+            while not subprocess.check_output(['ps', '-p', str(child.pid), '-o', 'stat='], text=True).strip().startswith('Z'):
+                if time.monotonic() >= deadline:
+                    self.fail('Killed child did not reach zombie state')
+                time.sleep(.01)
+            # Deliberately leave our child unreaped while checking the same group.
+            if sys.platform == 'linux':
+                os.killpg(child.pid, 0)
+            self.assertFalse(process_group_running(child.pid))
+        finally:
+            child.kill()
+            child.communicate()
+
+    def test_successful_leader_does_not_leave_a_term_ignoring_descendant_running(self):
         with tempfile.TemporaryDirectory() as root:
             slot = Path(root)
             task = slot / 'task.txt'
             task.write_text('task')
-            code = 'import json, subprocess, sys, time; child=subprocess.Popen([sys.executable,"-c","import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); time.sleep(60)"]); print(json.dumps({"pid":child.pid}),flush=True); time.sleep(60)'
-            result = execute([sys.executable, '-c', code], slot, task, slot, .3)
-            self.assertTrue(result['timedOut'])
-            pid = json.loads((slot / 'stdout.jsonl').read_text())['pid']
-            with self.assertRaises(ProcessLookupError):
-                os.kill(pid, 0)
+            descendant = 'import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print("ready",flush=True); time.sleep(60)'
+            code = f"""import json, subprocess, sys
+child = subprocess.Popen([sys.executable, '-c', {descendant!r}], stdout=subprocess.PIPE, text=True)
+assert child.stdout.readline() == 'ready\\n'
+print(json.dumps({{'pid': child.pid}}), flush=True)
+print(json.dumps({{'type': 'final', 'text': 'done'}}), flush=True)
+"""
+            result = execute([sys.executable, '-c', code], slot, task, slot, 10)
+            pid = json.loads((slot / 'stdout.jsonl').read_text().splitlines()[0])['pid']
+            try:
+                self.assertFalse(result['timedOut'])
+                self.assertEqual(result['exitCode'], 0)
+                self.assertTrue(result['nonemptyFinal'])
+                self.assertIsNone(result['teardownError'])
+                state = subprocess.run(['ps', '-p', str(pid), '-o', 'stat='], capture_output=True, text=True, check=False)
+                self.assertTrue(state.returncode == 1 or state.stdout.strip().startswith('Z'))
+            finally:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
     def test_historical_counts_reproduce_report(self):
         source = Path(__file__).parent / 'results/2026-09-16/observations.json'

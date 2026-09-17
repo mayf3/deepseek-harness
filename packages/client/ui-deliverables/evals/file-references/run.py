@@ -19,8 +19,15 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def process_group_running(pgid):
+    """Report live group members; zombies have exited and await their parent's reap."""
+    rows = subprocess.check_output(['ps', '-A', '-o', 'pgid=', '-o', 'stat='], text=True)
+    return any(int(group) == pgid and not state.startswith('Z')
+               for group, state in (row.split() for row in rows.splitlines()))
+
+
 def execute(command, workspace, task, slot, timeout):
-    """Preserve first output and reap the owned process group, including on interruption."""
+    """Preserve first output, reap the launcher, and await termination of its process group."""
     started = time.monotonic()
     timed_out = False
     interrupted = False
@@ -51,11 +58,7 @@ def execute(command, workspace, task, slot, timeout):
         pass
     deadline = time.monotonic() + 5
     teardown_error = None
-    while True:
-        try:
-            os.killpg(child.pid, 0)
-        except ProcessLookupError:
-            break
+    while process_group_running(child.pid):
         if time.monotonic() >= deadline:
             teardown_error = 'Owned process group did not finish teardown'
             break
@@ -108,7 +111,7 @@ def main():
     if args.output:
         if not output.is_relative_to(REPO / '.artifacts'):
             parser.error('--output must be inside repository .artifacts/')
-        output.mkdir(mode=0o700)
+        output.mkdir(mode=0o700, parents=True)
     output.chmod(0o700)
     env_args = ['--env-file=' + str(args.env_file.resolve())] if args.env_file else []
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=REPO, text=True).strip()

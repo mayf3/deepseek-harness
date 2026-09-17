@@ -21,7 +21,7 @@ This owner-local evaluation compares file-reference guidance using four unchange
 <a id="run-a-cohort"></a>
 ## Run a cohort
 
-Requires Python 3.9+, a POSIX host, Node and repository dependencies, and a built checkout (`pnpm run build`). Run from the repository root. Supply the normal DSH environment file with `--env-file`, or inherit its environment; the runner does not read credential values. `--model` is explicit, with the DeepSeek provider and high reasoning effort. Each attempt gets fresh DSH home, agent home, Session, and an archived HEAD workspace; the executable is this checkout's built `dsh --profile headless` launcher.
+Requires Python 3.9+, a POSIX host with `ps`, Node and repository dependencies, and a built checkout (`pnpm run build`). Run from the repository root. Supply the normal DSH environment file with `--env-file`, or inherit its environment; the runner does not read credential values. `--model` is explicit, with the DeepSeek provider and high reasoning effort. Each attempt gets fresh DSH home, agent home, Session, and an archived HEAD workspace; the executable is this checkout's built `dsh --profile headless` launcher.
 
 For one real smoke, set `DSH_EVAL_ENV` to your normal environment-file path and run:
 
@@ -29,9 +29,9 @@ For one real smoke, set `DSH_EVAL_ENV` to your normal environment-file path and 
 python3 packages/client/ui-deliverables/evals/file-references/run.py --variant a-colon --case plan --repetitions 1 --model deepseek-flash --env-file "$DSH_EVAL_ENV"
 ```
 
-Omit `--variant`, `--case`, and `--repetitions` for the original three variants, four tasks, and three repetitions. `--prepare-only` records inputs without calling the API. The default 480-second attempt bound can be shortened with `--timeout`. Runs execute serially and stop at the first failed attempt; no retry or resume replaces an output. The printed directory lives under ignored `.artifacts/file-reference-evals/`, retaining input hashes, source archive, outputs, workspaces, Sessions, and failures. A supplied `--output` must be new and inside `.artifacts/`.
+Omit `--variant`, `--case`, and `--repetitions` for the original three variants, four tasks, and three repetitions. `--prepare-only` records inputs without calling the API. The default 480-second attempt bound can be shortened with `--timeout`. Runs execute serially and stop at the first failed attempt; no retry or resume replaces an output. The printed directory lives under ignored `.artifacts/file-reference-evals/`, retaining input hashes, source archive, outputs, workspaces, Sessions, and failures. A supplied `--output` must be new and inside `.artifacts/`; missing parent directories are created. The runner reaps the launcher and waits for every process-group member to terminate; zombies awaiting their parent’s reap do not count as running work.
 
-The portable runner uses the normal read-only sandbox and never-approval policy. Evaluator files are removed from the task workspace, but host/runtime/network resources are shared: this is not hermetic isolation. Inspect recorded tool activity for out-of-workspace access. Its controls differ from historical R3's macOS-specific guards and parallel scheduling; compare only within the new cohort, not by pooling it with R3. The archive pins source HEAD while the launcher hash identifies the build; rebuild after runtime changes.
+The portable runner uses the normal read-only sandbox and never-approval policy. Evaluator files are removed from the task workspace, but host/runtime/network resources are shared: this is not hermetic isolation. Inspect recorded tool activity for out-of-workspace access. Its controls differ from historical R3's macOS-specific guards and parallel scheduling; compare only within the new cohort, not by pooling it with R3. The archive pins source HEAD while the launcher hash identifies the build; rebuild after runtime changes. Treatment files retain their embedded newline and omit the shipped section’s leading output reminder, so the evaluated text is not byte-identical to the shipped section and cohort numbers do not measure that full section.
 
 <a id="review-and-summarize"></a>
 ## Review and summarize
@@ -45,7 +45,7 @@ python3 packages/client/ui-deliverables/evals/file-references/summarize.py packa
 python3 -m unittest discover -s packages/client/ui-deliverables/evals/file-references -p 'test_*.py' -v
 ```
 
-It validates nonnegative counts, E = L + M + I, duplicate attempts, and fresh-answer hashes. It reports planned/attempted/answered counts, missing audits, valid-link coverage, perfect audited answers, and timeouts. It does not automatically infer missing-file mentions or judge semantic correctness. These keyless Python checks validate the evaluation tools; they are manually invoked and do not add a real-API CI job.
+It validates nonnegative counts, E = L + M + I, duplicate attempts, and fresh-answer hashes. It reports planned/attempted/answered counts, missing audits, valid-link coverage, perfect audited answers, and timeouts. It does not automatically infer missing-file mentions or judge semantic correctness. These keyless Python checks validate the evaluation tools, historical input hashes, and process cleanup in the Linux PR CI job. The package’s normal Vitest suite checks the final colon treatment against the shipped guidance and that guidance in every Web prompt sidecar. No real-API CI job is added.
 
 <a id="preserved-results"></a>
 ## Preserved results
