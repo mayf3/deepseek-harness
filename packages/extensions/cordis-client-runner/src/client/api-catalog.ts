@@ -183,14 +183,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'The sessions-service face injected as `ctx.sessions`.',
     methods: [
       {
-        signature: 'open(id: SessionId): void',
-        description: 'Select a session as current.',
-        parameters: [{ name: 'id', description: 'session id (must exist in the list; unknown ids fail loud).' }],
+        signature: 'retain(target: SessionTarget, options: SessionRetainOptions): SessionReference',
+        description: 'Retain an exact Client generation and start its shared initial history opening.',
+        parameters: [{ name: 'target', description: 'known identity or durable direct-parent address.' }, { name: 'options', description: 'required consumer source and optional independent waiter cancellation.' }],
+        returns: 'an owned reference immediately; await `reference.ready` when the initial open attempt must settle first.',
       },
       {
-        signature: 'openSubagent(address: SubagentAddress): void',
-        description: 'Open a healthy catalog child through its exact direct-parent address.',
-        parameters: [{ name: 'address', description: 'catalog-derived parent and child ids.' }],
+        signature: 'using<T>(target: SessionTarget, options: SessionRetainOptions, operation: (reference: SessionReference) => T | Promise<T>): Promise<T>',
+        description: 'Hold one reference through callback settlement, including synchronous and asynchronous failures.',
+        parameters: [{ name: 'target', description: 'Session to acquire.' }, { name: 'options', description: 'source and acquisition cancellation.' }, { name: 'operation', description: 'callback using the reference only until its returned value or Promise settles.' }],
+        returns: 'the callback result after release; acquisition and callback failures propagate unchanged.',
+      },
+      {
+        signature: 'retainInfo(id: SessionId): ObservableSnapshot<SessionRetainInfo>',
+        description: 'Observe local reference counts without retaining, creating a scope, or opening history. The returned source keeps stable identity across same-id generations and remains allocated until the Client root is disposed, even after its final subscriber leaves.',
+        parameters: [{ name: 'id', description: 'explicit Session identity; Host existence is not implied.' }],
+        returns: 'a stable read-only source across same-id generations, with zero counts when none is live.',
       },
       {
         signature: 'setSubagentCatalogOpen(parentSessionId: SessionId, open: boolean): void',
@@ -211,22 +219,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'fork(opts: { sessionId: SessionId; atSeq?: number; increaseTitle?: boolean }): Promise<SessionId>',
-        description: 'Fork a session from a completed-turn prefix of the source; on resolution the child is in the list store and `open()` can target it.',
+        description: 'Fork a session from a completed-turn prefix of the source; on resolution the child is in the catalog and may be explicitly retained.',
         parameters: [{ name: 'opts', description: 'source session id, the optional event seq anchoring the cut (the boundary is the first turn/end at or after it; an in-log anchor in an open turn is unavailable rather than clipped backward), and whether to increment an inherited durable title before resolving.' }],
         returns: 'the child session id.',
         throws: ['when the fork fails, or when a requested child-title rename fails after creation.'],
       },
       {
         signature: 'scope(id: SessionId): AgentContext | undefined',
-        description: 'Resolve an Agent-scoped context view (use-and-discard).',
+        description: 'Borrow an already-retained Agent-scoped Context without extending its lifetime.',
         parameters: [{ name: 'id', description: 'session id.' }],
-        returns: 'scoped ctx, or undefined for a session neither listed nor already scoped.',
+        returns: 'the live scoped Context, or undefined without a retained generation.',
       },
       {
         signature: 'binding(id: SessionId): SessionBinding | undefined',
-        description: 'Resolve the stable session binding (scope-addressed assembly feed).',
+        description: 'Borrow an already-retained Session binding without extending its lifetime.',
         parameters: [{ name: 'id', description: 'session id.' }],
-        returns: 'binding, or undefined for a session neither listed nor already scoped.',
+        returns: 'the live binding, or undefined without a retained generation.',
       },
     ],
   },
@@ -327,9 +335,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Workspace archive and directory operations consumed by Client UI domains.',
     methods: [
       {
-        signature: 'openSession(sessionId: SessionId): void',
+        signature: 'openSession(target: SessionTarget): void',
         description: 'Select a Session and show its Conversation as one UI navigation action.',
-        parameters: [{ name: 'sessionId', description: 'listed or retained Session to display.' }],
+        parameters: [{ name: 'target', description: 'known Session identity or durable direct-parent subagent address to display.' }],
       },
       {
         signature: 'openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>',
@@ -722,7 +730,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PropsRenderSlots',
-    declaration: 'export type PropsRenderSlots<S extends keyof SlotMap & string> = {\n    renderSlot: RenderSlotFn<Exclude<S, ChainKeysOf<S>>>;\n    readonly __renders?: ((key: S) => void) | undefined;\n} & ([\n    ChainKeysOf<S>\n] extends [\n    never\n] ? object : {\n    renderSlotChain: <K extends ChainKeysOf<S>>(key: K, owner: OwnerOf<K>, opts?: ChainRenderOpts) => ReactNode;\n}) & (\'session\' extends ScopeOf<S> ? {\n    SessionProvider: SessionProviderComponent;\n} : object);',
+    declaration: 'export type PropsRenderSlots<S extends keyof SlotMap & string> = {\n    renderSlot: RenderSlotFn<Exclude<S, ChainKeysOf<S>>>;\n    readonly __renders?: ((key: S) => void) | undefined;\n} & ([\n    ChainKeysOf<S>\n] extends [\n    never\n] ? object : {\n    renderSlotChain: <K extends ChainKeysOf<S>>(key: K, owner: OwnerOf<K>, opts?: ChainRenderOpts) => ReactNode;\n}) & ([\n    Extract<ScopeOf<S>, \'session\' | \'session-maybe\'>\n] extends [\n    never\n] ? object : {\n    SessionProvider: SessionProviderComponent;\n});',
   },
   {
     name: 'PropsRuntime',
@@ -766,7 +774,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionAreaProps',
-    declaration: 'export interface SessionAreaProps {\n    empty?: (() => ReactNode) | undefined;\n    children: ReactNode;\n}',
+    declaration: 'export interface SessionAreaProps {\n    readonly session?: SlotScopeTargetMap[keyof SlotScopeTargetMap & \'session\'] | undefined;\n    empty?: (() => ReactNode) | undefined;\n    children: ReactNode;\n}',
   },
   {
     name: 'SessionAssistantSettlementEntry',
@@ -809,8 +817,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SessionProviderComponent = (props: SessionAreaProps) => ReactNode;',
   },
   {
+    name: 'SessionReference',
+    declaration: 'export interface SessionReference extends Disposable {\n    readonly sessionId: SessionId;\n    readonly binding: SessionBinding;\n    readonly ready: Promise<SessionBinding>;\n    release(): void;\n}',
+  },
+  {
+    name: 'SessionReferenceSource',
+    declaration: 'export type SessionReferenceSource = Extract<keyof SessionReferenceSourceMap, string>;',
+  },
+  {
+    name: 'SessionReferenceSourceMap',
+    declaration: 'export interface SessionReferenceSourceMap {\n    controllerOperation: unknown;\n    gateway: unknown;\n}',
+  },
+  {
     name: 'SessionRequestId',
     declaration: 'export type SessionRequestId = Branded<\'session-request-id\'>;',
+  },
+  {
+    name: 'SessionRetainInfo',
+    declaration: 'export interface SessionRetainInfo {\n    readonly referenceCount: number;\n    readonly retainedBy: Readonly<Partial<Record<SessionReferenceSource, number>>>;\n}',
+  },
+  {
+    name: 'SessionRetainOptions',
+    declaration: 'export interface SessionRetainOptions {\n    readonly source: SessionReferenceSource;\n    readonly signal?: AbortSignal | undefined;\n}',
   },
   {
     name: 'SessionSearchResultItem',
@@ -823,6 +851,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionStandardProps',
     declaration: 'export interface SessionStandardProps {\n}',
+  },
+  {
+    name: 'SessionTarget',
+    declaration: 'export type SessionTarget = SessionId | SubagentAddress;',
   },
   {
     name: 'SlotComponent',
@@ -859,6 +891,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SlotScope',
     declaration: 'export type SlotScope = \'root\' | \'session-maybe\' | \'session\';',
+  },
+  {
+    name: 'SlotScopeTargetMap',
+    declaration: 'export interface SlotScopeTargetMap {\n}',
   },
   {
     name: 'SlotSpec',

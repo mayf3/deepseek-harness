@@ -4,21 +4,29 @@
 - button "添加插件":
   - img
   - text: 添加插件
-- heading "内置" [level=3]
-- text: "3"
+- heading "官方" [level=3]
+- text: "6"
 - list:
   - listitem:
-    - button "查看 experimental-agent-team-profile": experimental-agent-team-profile
-    - text: 官方 Experimental profile bundle enabling Agent Teams over dsh-base
-    - switch "启用 experimental-agent-team-profile"
+    - button "查看 智能体团队": 智能体团队
+    - text: Beta 启用智能体团队协作与团队工具。
+    - switch "启用 智能体团队"
   - listitem:
-    - button "查看 experimental-agent-team-web-profile": experimental-agent-team-web-profile
-    - text: 官方 Experimental Web profile layer for Agent Teams Remote and UI plugins
-    - switch "启用 experimental-agent-team-web-profile"
+    - button "查看 智能体团队 Web 界面": 智能体团队 Web 界面
+    - text: Beta 在浏览器中查看团队成员、任务看板和成员会话。
+    - switch "启用 智能体团队 Web 界面"
   - listitem:
-    - button "查看 experimental-auto-review": experimental-auto-review
-    - text: 官方 Per-tool LLM authorization review for the DeepSeek Harness Auto permission preset
-    - switch "启用 experimental-auto-review"
+    - button "查看 终端": 终端
+    - text: 限制 agent 运行的每一条命令。
+  - listitem:
+    - button "查看 Agent 循环": Agent 循环
+    - text: Agent 如何派发工具调用。
+  - listitem:
+    - button "查看 Subagent": Subagent
+    - text: 控制 Agent 为 Subagent 选择模型的权限。
+  - listitem:
+    - button "查看 网页搜索": 网页搜索
+    - text: DeepSeek 搜索提供方。
 - heading "已安装" [level=3]
 - text: "1"
 - list:

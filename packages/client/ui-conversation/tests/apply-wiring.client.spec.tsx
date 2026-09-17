@@ -17,9 +17,8 @@ async function bench(options: { declareConversation?: boolean } = {}) {
   runtime.ctx.provide('uiWorkspace', {
     openWorkspace: vi.fn(async (_workspaceId: unknown, beforeOpen: (id: SessionId) => void) => {
       beforeOpen(SID)
-      runtime.sessions.open(SID)
     }),
-    openSession: (id: SessionId) => { runtime.sessions.open(id) },
+    openSession: vi.fn(),
   } as never)
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
@@ -87,8 +86,9 @@ describe('target-neutral Conversation apply wiring', () => {
 
   it('binds a cached locale-aware View roster only to its shell entries', async () => {
     const b = await bench()
-    await b.runtime.sessions.add({ id: SID }, { current: false })
-    expect(b.runtime.ctx.uiSession.adapter.resolve(SID)?.hooks.conversationViews).toBeUndefined()
+    await b.runtime.sessions.add({ id: SID })
+    using reference = b.runtime.sessions.retain(SID)
+    expect(b.runtime.ctx.uiSession.adapter.bindingSource(reference).getSnapshot().hooks.conversationViews).toBeUndefined()
     const header = b.runtime.slots.entries('conversation.session.header')[0]
     const source = (header?.inject?.() as {
       hooks: { conversationViews: ObservableSnapshot<readonly ViewTab[]> }

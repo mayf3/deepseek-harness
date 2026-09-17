@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { JsonBlock, MarkdownText } from './markdown-test-components.tsx'
+import { LinkIcon } from '../src/index.ts'
 import { cjkFriendlyStrong } from '../src/markdown/cjkFriendlyStrong.ts'
 import { mathCompatibility } from '../src/markdown/mathCompatibility.ts'
 
@@ -307,6 +308,14 @@ describe('MarkdownText', () => {
     expect(screen.getByText('file diagram')).toBeTruthy()
     expect(screen.getByText('script diagram')).toBeTruthy()
     expect(screen.getByText('mail diagram')).toBeTruthy()
+  })
+
+  it('leads a known site link with its own mark and an unknown host with the globe', () => {
+    const { container } = render(<MarkdownText text={'[repo](https://github.com/org/repo) [docs](https://example.com/a)'} />)
+    const marks = [...container.querySelectorAll('p a svg path')].map(path => path.getAttribute('d'))
+    const globe = render(<LinkIcon kind="url" />).container.querySelector('path')!.getAttribute('d')
+    const github = render(<LinkIcon kind="url" href="https://github.com/a" />).container.querySelector('path')!.getAttribute('d')
+    expect(marks).toEqual([github, globe])
   })
 
   it('keeps incomplete streaming Markdown renderable', () => {

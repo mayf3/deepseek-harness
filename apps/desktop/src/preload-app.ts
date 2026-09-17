@@ -1,7 +1,7 @@
-/** Origin-scoped boot bridge and read-only update presentation with native confirmation actions. */
+/** Origin-scoped boot, native directory selection, and update presentation with native confirmation actions. */
 
 import { contextBridge, ipcRenderer } from 'electron'
-import { DESKTOP_IPC, type DshDesktopProductApi, type DesktopUpdatePresentation } from './ipc.ts'
+import { DESKTOP_IPC, SCHEME, type DshDesktopProductApi, type DesktopUpdatePresentation } from './ipc.ts'
 import { markDocumentPlatform } from './preload-platform.ts'
 import { syncNativeTheme } from './preload-theme.ts'
 
@@ -18,7 +18,10 @@ const product: DshDesktopProductApi = {
   },
 }
 
-if (location.protocol === 'dsh-app:' && location.hostname === 'app') {
+if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
+  contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
+    pick: () => ipcRenderer.invoke(DESKTOP_IPC.directoryPick) as Promise<string | null>,
+  })
   contextBridge.exposeInMainWorld('dshDesktopBoot', {
     ready: () => ipcRenderer.invoke(DESKTOP_IPC.boot) as Promise<unknown>,
     failed: (message: string) => ipcRenderer.invoke(DESKTOP_IPC.bootFailed, message) as Promise<void>,
@@ -28,4 +31,4 @@ if (location.protocol === 'dsh-app:' && location.hostname === 'app') {
 markDocumentPlatform()
 syncNativeTheme()
 // Main-process IPC also verifies the owning window and top frame.
-contextBridge.exposeInMainWorld('dshDesktop', location.protocol === 'dsh-app:' && location.hostname === 'app' ? product : { protocolVersion: 1 })
+contextBridge.exposeInMainWorld('dshDesktop', location.protocol === `${SCHEME}:` && location.hostname === 'app' ? product : { protocolVersion: 1 })

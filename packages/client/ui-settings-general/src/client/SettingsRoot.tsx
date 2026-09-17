@@ -146,9 +146,11 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   const connectionState = useConnectionState(state => state)
   const previousConnectionState = useRef(connectionState)
   const onboardingSteps = useOnboardingSteps(s => s)
-  const onboardingActive = useSessions(state =>
-    state.phase === 'ready'
-    && (state.current === undefined || state.byId[state.current]?.blank === true))
+  const onboardingActive = useSessions((state) => {
+    const main = Object.values(state.byId)
+      .find(session => (session.retainedBy.mainView ?? 0) > 0)
+    return state.phase === 'ready' && (main === undefined || main.blank)
+  })
   const onboardingStep = onboardingActive
     ? onboardingSteps.find(step => !completedOnboarding.has(step.id))
     : undefined

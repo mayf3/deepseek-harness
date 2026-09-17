@@ -32,10 +32,13 @@ const t: TriggerContentProps['t'] = key => (en as Record<string, string>)[key] ?
 
 // Global standard kit stubs: none of these components consume the hooks.
 const unusedHook = (() => { throw new Error('unused by settings-general components') }) as never
-type AttentionSnapshot = Parameters<Parameters<TriggerContentProps['useSessionPendingInteraction']>[0]>[0]
+type AttentionSnapshot = Parameters<Parameters<TriggerContentProps['useSessionStatus']>[0]>[0]
 const noAttention: AttentionSnapshot = new Map()
-const useSessionPendingInteraction: TriggerContentProps['useSessionPendingInteraction'] = selector => selector(noAttention)
-const kit = { useSessions: unusedHook, useSessionPendingInteraction, usePanelInfo, useResource, useWorkspaces: unusedHook }
+const useSessionStatus: TriggerContentProps['useSessionStatus'] = selector => selector(noAttention)
+const kit = {
+  useSessions: unusedHook, useSessionStatus,
+  usePanelInfo, useSessionRetainInfo: () => undefined, useResource, useWorkspaces: unusedHook,
+}
 
 describe('Desktop collapsed update badge', () => {
   it('shows update status, marks failures, and yields to connection feedback', () => {

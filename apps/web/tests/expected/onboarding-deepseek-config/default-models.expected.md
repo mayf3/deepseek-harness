@@ -7,9 +7,9 @@
     - button "模型":
       - img
       - text: 模型
-    - button "插件":
+    - button "内置插件":
       - img
-      - text: 插件
+      - text: 内置插件
     - button "Agent 预设":
       - img
       - text: Agent 预设
@@ -54,40 +54,21 @@
           - text: 最大输出 token 数
           - textbox "最大输出 token 数 1":
             - /placeholder: 256K
-          - text: 图片输入
-          - combobox "图片输入 1":
-            - option "默认（仅文本）"
-            - option "支持" [selected]
-            - option "不支持"
+          - group "输入类型 1":
+            - text: 输入类型
+            - checkbox "文本" [checked]
+            - text: 文本
+            - checkbox "图片" [checked]
+            - text: 图片
           - textbox "模型 ID 2":
             - /placeholder: 模型 ID
-            - text: deepseek-v4-flash
+            - text: deepseek-v4-pro
           - textbox "显示名称 2":
             - /placeholder: 显示名称
-            - text: DeepSeek-V4-Flash
+            - text: DeepSeek-V4-Pro
           - button "模型选项 2":
             - img
           - button "删除模型 2":
-            - img
-          - textbox "模型 ID 3":
-            - /placeholder: 模型 ID
-            - text: deepseek-v4-pro
-          - textbox "显示名称 3":
-            - /placeholder: 显示名称
-            - text: DeepSeek-V4-Pro
-          - button "模型选项 3":
-            - img
-          - button "删除模型 3":
-            - img
-          - textbox "模型 ID 4":
-            - /placeholder: 模型 ID
-            - text: deepseek-v4-flash-vision-exp
-          - textbox "显示名称 4":
-            - /placeholder: 显示名称
-            - text: DeepSeek-V4-Flash-Vision-Exp
-          - button "模型选项 4":
-            - img
-          - button "删除模型 4":
             - img
           - button "添加模型":
             - img

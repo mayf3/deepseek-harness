@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { IpcMainInvokeEvent } from 'electron'
 import { join } from 'node:path'
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -100,6 +101,7 @@ const harness = await vi.hoisted(async () => {
       readonly node: string, readonly runtime: string, readonly profile: string,
       readonly inspectPort?: number, readonly environment?: NodeJS.ProcessEnv, readonly onFailure?: (error: Error) => void,
       readonly primaryRuntime?: string, readonly profileResolution?: string,
+      readonly packageManager?: { pnpm: string; nodeBin: string },
     ) { hosts.push(this) }
   }
   const app = Object.assign(new EventEmitter(), {
@@ -129,11 +131,14 @@ const harness = await vi.hoisted(async () => {
     set prepareUpdate(value: () => Promise<boolean>) { prepareUpdate = value },
     get publishUpdate() { return publishUpdate! },
     set publishUpdate(value: (state: DesktopUpdateState) => DesktopUpdateState) { publishUpdate = value },
-    dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn() },
+    dialog: { showOpenDialog: vi.fn(), showErrorBox: vi.fn(), showMessageBox: vi.fn() },
     openExternal: vi.fn(),
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
     mutateFailure: vi.fn<() => void>(),
-    disableAllPlugins: vi.fn(async () => { pluginsEnabled = false }),
+    disableAllPlugins: vi.fn(async () => {
+      pluginsEnabled = false
+      return 'desktop-test-profile/cordis.patch.yml.bak-1789555200000'
+    }),
     get preparing() { return preparing }, get prepared() { return prepared },
     get hostStarted() { return hostStarted }, get navigated() { return navigated },
     get dialogShown() { return dialogShown }, get quitCompleted() { return quitCompleted },
@@ -181,7 +186,10 @@ vi.mock('electron', () => ({
   nativeTheme: { themeSource: 'system' },
   ipcMain: {
     on: vi.fn(),
-    handle: (channel: string, handler: InvokeHandler) => { harness.handlers.set(channel, handler) },
+    handle: (channel: string, handler: InvokeHandler) => {
+      if (harness.handlers.has(channel)) throw new Error(`duplicate IPC handler ${channel}`)
+      harness.handlers.set(channel, handler)
+    },
     removeHandler: (channel: string) => { harness.handlers.delete(channel) },
   },
   Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: harness.menu },
@@ -269,6 +277,7 @@ beforeEach(() => {
     return new Promise(() => {})
   })
   vi.spyOn(console, 'error').mockImplementation(() => {})
+  vi.spyOn(console, 'info').mockImplementation(() => {})
   vi.stubEnv('DSH_DESKTOP_PNPM_ENTRY', 'test-pnpm')
   vi.stubEnv('DSH_DESKTOP_DSH_DIR', 'test-runtime')
   vi.stubGlobal('process', { ...process, resourcesPath: 'desktop-test-resources' })
@@ -505,6 +514,20 @@ describe('desktop main startup', () => {
     expect(callback).toHaveBeenLastCalledWith({})
     handler({ ...details, url: 'ws://127.0.0.1:9999/api/remote.mux' }, callback)
     expect(callback).toHaveBeenLastCalledWith({})
+  })
+
+  it('registers the window-owned directory picker during startup and rejects foreign callers', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    const handler = harness.handlers.get(DESKTOP_IPC.directoryPick) as (event: IpcMainInvokeEvent) => Promise<string | null>
+    expect(handler).toBeTypeOf('function')
+    const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame } as unknown as IpcMainInvokeEvent
+    harness.dialog.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['/workspace'] })
+    await expect(handler(event)).resolves.toBe('/workspace')
+    expect(harness.dialog.showOpenDialog).toHaveBeenCalledExactlyOnceWith(window, { properties: ['openDirectory', 'createDirectory'] })
+    window.webContents.mainFrame.url = 'https://other.example/'
+    await expect(handler(event)).rejects.toThrow('unowned renderer')
   })
 
   it('holds boot injections until the Host is ready and rejects foreign boot callers', async () => {
@@ -1068,7 +1091,7 @@ describe('desktop main startup', () => {
     harness.prepared.reject(new Error('runtime resources missing'))
     await harness.dialogShown.promise
     expect((harness.dialog.showMessageBox.mock.calls[0]![0] as MessageBoxOptions).detail).toContain('runtime resources missing')
-    expect((harness.dialog.showMessageBox.mock.calls[0]![0] as MessageBoxOptions).buttons).toEqual(['Exit', 'Restart', 'Disable all third-party plugins and restart'])
+    expect((harness.dialog.showMessageBox.mock.calls[0]![0] as MessageBoxOptions).buttons).toEqual(['Exit', 'Restart', 'Disable third-party plugins, back up profile patch, and restart'])
     expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
   })
 
@@ -1124,6 +1147,13 @@ describe('desktop main startup', () => {
     await harness.quitCompleted.promise
     expect(harness.app.relaunch).toHaveBeenCalledTimes(response === 0 ? 0 : 1)
     expect(harness.disableAllPlugins).toHaveBeenCalledTimes(response === 2 ? 1 : 0)
+    if (response === 2) {
+      expect(console.info).toHaveBeenCalledWith('Desktop profile recovery completed:', {
+        profilePatchBackup: 'desktop-test-profile/cordis.patch.yml.bak-1789555200000', homePatch: 'unchanged',
+      })
+    } else {
+      expect(console.info).not.toHaveBeenCalled()
+    }
     expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
     expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
   })
@@ -1152,6 +1182,7 @@ describe('desktop main startup', () => {
       profileResolution: 'runtime',
       profile: 'desktop-test-profile',
     })
+    expect(harness.hosts[0]!.environment).toBe(process.env)
     expect(harness.hosts[0]!.start).toHaveBeenCalledTimes(1)
     expect(harness.windows).toHaveLength(1)
     expect(window.urls).toEqual(['dsh-app://app/'])
