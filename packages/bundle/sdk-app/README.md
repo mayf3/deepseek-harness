@@ -33,6 +33,8 @@ The startup provider binds stdin EOF to the launcher's bounded successful shutdo
 
 The SDK uses the base `read`, `write`, and `edit` defaults. To add `str_replace_editor`, use the explicit insertion patch in the [base configuration guide](../base/README.md#use-this-package). The standalone `sdk-minimal` profile owns its separate tool selection.
 
+A deployment that sets `DSH_PRIMARY_RUNTIME` enables the [bundled Office runtime query and skills](../../skill/tool-workspace-dependencies/README.md#use-this-package). Unset or empty configuration leaves both disabled. The carrier supplies a native payload and sibling `office-skills/`; the tool reads them in place, including from a read-only image layer. Missing skill resources produce a startup warning and leave Office skills unavailable. Invalid runtime metadata or missing interpreter entries fail the tool call.
+
 -----
 
 <a id="model-experience"></a>

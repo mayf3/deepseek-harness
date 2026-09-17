@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-17-shared-office-runtime.md
+2026-09-17-shared-office-runtime.md: 28daa6d3809705098722c41847fab9e3ee255bfe
+2026-09-17-shared-office-runtime.zh.md: 09cc54e254546aa2787c37ab695c922ee86f0d66

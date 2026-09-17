@@ -37,14 +37,20 @@ Mount the plugin beside the tool registry with the payload directory. The bundle
 
 | Field | Default | Meaning |
 |---|---|---|
-| `source` | required | Payload directory carrying `runtime.json` and `dependencies/`. |
-| `root` | unset | Installation directory under the Harness home. Set: the payload is copied there on the first call and reused while `runtime.json` is unchanged. Unset: the payload is validated and used in place; nothing is copied. |
+| `source` | required | Absolute payload directory carrying `runtime.json` and `dependencies/`. |
+| `root` | unset | Absolute installation directory under the Harness home. Set: the payload is copied there on the first call and reused while `runtime.json` is unchanged. Unset: the payload is validated and used in place; nothing is copied. |
 
 ### Payload layout
 
 `runtime.json` records `desktopVersion`, `platform` (`win32`, `darwin`, or `linux`), `arch`, the `components` versions (`python`, `numpy`, `pandas`; `node` and `pnpm` are optional), and optionally `payloadDigest` and `pythonPackages`. Entries live under `dependencies/`: `python/bin/python3` (`python/python.exe` on Windows) with `site-packages` beneath it, and, when declared, `node/bin/node` with `node/node_modules` and `pnpm/bin/pnpm.mjs`. A manifest whose platform or architecture differs from the running process is rejected.
 
-The `sdk` profile mounts this tool and the Office skills when `DSH_PRIMARY_RUNTIME` names a payload directory whose sibling `office-skills/` carries the skill resources; both rows stay disabled otherwise.
+The `sdk` profile enables this tool and the Office skills when `DSH_PRIMARY_RUNTIME` is nonempty. The profile resolves that path from the launch directory and loads sibling `office-skills/` resources. Missing skill resources produce a startup warning and leave Office skills unavailable; invalid or incomplete runtime payloads fail the first tool call. Unset or empty configuration disables both rows. Profile patches can override either row, and changes require restarting the SDK process.
+
+### Build a carrier payload
+
+From a repository checkout with dependencies installed, `CI=true pnpm run prepare:primary-runtime --target linux-x64 --output /tmp/dsh-office` writes `primary-runtime/` and `office-skills/`. The shared [download lock](../../../scripts/primary-runtime/lock.json) also covers `mac-arm64`, `mac-x64`, and `win-x64`. `--python-only` omits Node.js and pnpm; `--cache` selects the hash-verified archive cache. The entry executes interpreter and Office read/write checks only for a native target. Cross-target builds require those checks on the target host before deployment.
+
+A container can copy both directories into an immutable image layer and set `DSH_PRIMARY_RUNTIME` to the absolute `primary-runtime/` path. The SDK queries that payload in place. Desktop uses the same builder and retains its Harness-home installation and signing checks.
 
 -----
 
@@ -108,7 +114,7 @@ Append-only tool result in the turn history; no prompt section is added.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- The payload build (`apps/desktop/scripts/prepare-primary-runtime.ts`) still targets Desktop; other carriers assemble the same layout themselves.
+- The Linux build target is GNU/Linux x64; Linux ARM64 and musl payloads are not locked.
 - Windows payloads used in place must already be executable from their carrier; the in-place mode performs no permission repair.
 
 <a id="dev-note"></a>
@@ -117,6 +123,6 @@ Append-only tool result in the turn history; no prompt section is added.
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-Extracted from `apps/desktop-host` so the SDK profile can mount the same tool from a container image layer. The in-place mode and the optional Node.js/pnpm components exist for that carrier.
+Placement and carrier choices are recorded in the [shared-runtime Agent Note](../../../.agents/notes/implemented/architecture/2026-09-17-shared-office-runtime.md).
 
 </details>

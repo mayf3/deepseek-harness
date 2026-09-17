@@ -27,18 +27,17 @@
 # Bundled script runtime and Office skills, the composition Desktop mounts as
 # `desktop-office`. A carrier that ships the primary-runtime payload (for
 # example a container image layer) names it with DSH_PRIMARY_RUNTIME; its
-# sibling `office-skills/` directory carries the skill resources. Unset, both
-# rows stay disabled and the profile is unchanged.
+# sibling `office-skills/` directory carries the skill resources. Missing resources
+# produce a startup warning and leave the Office skill provider inactive. Unset, both rows stay disabled.
 - insert:
     - id: workspace-dependencies
       name: '@deepseek-ai/dsh-tool-workspace-dependencies'
       disabled: !!js "!process.env.DSH_PRIMARY_RUNTIME"
       config:
-        source: !!js process.env.DSH_PRIMARY_RUNTIME ?? ''
+        source: !!js "process.getBuiltinModule('node:path').resolve(process.env.DSH_PRIMARY_RUNTIME ?? '')"
 
     - id: skill-office
       name: '@deepseek-ai/dsh-skill-office'
       disabled: !!js "!process.env.DSH_PRIMARY_RUNTIME"
       config:
-        # The payload's parent directory plus office-skills, without a path module in the expression scope.
-        assetRoot: !!js "process.env.DSH_PRIMARY_RUNTIME ? process.env.DSH_PRIMARY_RUNTIME.replace(/[\\\\/]+[^\\\\/]+[\\\\/]*$/, '') + '/office-skills' : ''"
+        assetRoot: !!js "process.getBuiltinModule('node:path').resolve(process.env.DSH_PRIMARY_RUNTIME ?? '', '..', 'office-skills')"

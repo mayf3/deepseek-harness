@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
-import desktopRuntimeLock from '../apps/desktop/scripts/primary-runtime-lock.json' with { type: 'json' }
+import desktopRuntimeLock from './primary-runtime/lock.json' with { type: 'json' }
 import {
   CLAUDE_AGENT_SDK_PACKAGE,
   assertRuntimeLicenses,

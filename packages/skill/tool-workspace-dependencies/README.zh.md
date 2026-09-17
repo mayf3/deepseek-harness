@@ -37,14 +37,20 @@ kind: "package-reference"
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
-| `source` | 必填 | 含 `runtime.json` 与 `dependencies/` 的 payload 目录。 |
-| `root` | 未设置 | Harness home 下的安装目录。设置时首次调用把 payload 复制过去，`runtime.json` 不变则复用；未设置时校验后原地使用，不复制。 |
+| `source` | 必填 | 含 `runtime.json` 与 `dependencies/` 的 payload 绝对目录。 |
+| `root` | 未设置 | Harness home 下的绝对安装目录。设置时首次调用把 payload 复制过去，`runtime.json` 不变则复用；未设置时校验后原地使用，不复制。 |
 
 ### payload 布局
 
 `runtime.json` 记录 `desktopVersion`、`platform`（`win32`、`darwin` 或 `linux`）、`arch`、`components` 各版本（`python`、`numpy`、`pandas`；`node` 与 `pnpm` 可选），以及可选的 `payloadDigest` 与 `pythonPackages`。条目位于 `dependencies/`：`python/bin/python3`（Windows 为 `python/python.exe`）及其下的 `site-packages`；声明了才有的 `node/bin/node`、`node/node_modules` 与 `pnpm/bin/pnpm.mjs`。平台或架构与当前进程不符的清单被拒绝。
 
-`sdk` profile 在 `DSH_PRIMARY_RUNTIME` 指向一个 payload 目录、且其同级 `office-skills/` 带有 skill 资源时挂载本工具与 Office skills；否则两行都保持禁用。
+`DSH_PRIMARY_RUNTIME` 非空时，`sdk` profile 启用本工具和 Office skills。profile 从启动目录解析该路径，并加载同级 `office-skills/` 资源。缺少 skill 资源会产生启动警告并使 Office skills 不可用；无效或不完整的运行时 payload 会在首次工具调用时失败。未设置或为空时，两行都禁用。profile patch 可以覆盖任意一行，配置变更需要重启 SDK 进程。
+
+### 构建载体 payload
+
+在已安装依赖的仓库 checkout 中运行 `CI=true pnpm run prepare:primary-runtime --target linux-x64 --output /tmp/dsh-office`，会生成 `primary-runtime/` 和 `office-skills/`。[共享下载锁](../../../scripts/primary-runtime/lock.json)还覆盖 `mac-arm64`、`mac-x64` 和 `win-x64`。`--python-only` 省略 Node.js 和 pnpm；`--cache` 选择经过哈希校验的归档缓存。入口仅对本机目标执行解释器与 Office 读写检查。跨目标构建必须在部署前到目标主机执行这些检查。
+
+容器可将这两个目录复制到不可变镜像层，并将 `DSH_PRIMARY_RUNTIME` 设为 `primary-runtime/` 的绝对路径。SDK 原位查询该 payload。Desktop 使用同一构建器，并保留 Harness-home 安装与签名检查。
 
 -----
 
@@ -108,7 +114,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- payload 的构建脚本（`apps/desktop/scripts/prepare-primary-runtime.ts`）仍只面向 Desktop；其它载体按同一布局自行组装。
+- Linux 构建目标为 GNU/Linux x64；尚未锁定 Linux ARM64 与 musl payload。
 - Windows 上原地使用的 payload 须在载体里已可执行；原地模式不修复权限。
 
 <a id="dev-note"></a>
@@ -117,6 +123,6 @@ kind: "package-reference"
 <details>
 <summary>维护者的工作上下文——点击展开</summary>
 
-从 `apps/desktop-host` 抽出，让 SDK profile 能从容器镜像层挂载同一个工具。原地模式与可选的 Node.js/pnpm 组件都是为这种载体加的。
+包归属与载体选择记录在[共享运行时 Agent Note](../../../.agents/notes/implemented/architecture/2026-09-17-shared-office-runtime.zh.md) 中。
 
 </details>

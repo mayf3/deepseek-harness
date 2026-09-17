@@ -1,7 +1,7 @@
 /** Model-facing query for a bundled Python, Node.js, and pnpm payload, in place or installed under the Harness home. */
 
 import { cp, lstat, mkdir, mkdtemp, readFile, rename, rm, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
@@ -193,6 +193,9 @@ export async function installPrimaryRuntime(source: string, root: string): Promi
  * @param config - Payload location and optional installation directory.
  */
 export function apply(ctx: Context, config: Config): void {
+  if (!isAbsolute(config.source) || (config.root !== undefined && !isAbsolute(config.root))) {
+    throw new Error('workspace dependencies: source and root must be absolute paths')
+  }
   let preparation: Promise<WorkspaceDependencies> | undefined
   ctx.effect(() => async () => {
     // Tool execution reports preparation failures; disposal only waits for filesystem work to settle.

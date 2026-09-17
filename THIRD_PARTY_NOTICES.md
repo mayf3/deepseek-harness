@@ -246,7 +246,7 @@ Direct dependencies of the `pyproject.toml` manifests, plus `uv` as the developm
 
 ## Desktop bundled Python distributions
 
-The [Desktop runtime lock](apps/desktop/scripts/primary-runtime-lock.json) records each distribution version and the wheel download hashes. The table includes every entry in `pythonPackages`, including transitive dependencies. Wheel extraction preserves distribution metadata and the license and notice files supplied by each archive. Project licenses below do not enumerate the separate licenses of native libraries bundled inside wheels.
+The [Desktop runtime lock](scripts/primary-runtime/lock.json) records each distribution version and the wheel download hashes. The table includes every entry in `pythonPackages`, including transitive dependencies. Wheel extraction preserves distribution metadata and the license and notice files supplied by each archive. Project licenses below do not enumerate the separate licenses of native libraries bundled inside wheels.
 
 | Distribution | Locked version | Project license |
 | --- | --- | --- |

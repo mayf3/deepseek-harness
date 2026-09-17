@@ -33,6 +33,8 @@ kind: "package-bundle"
 
 SDK 使用 base 默认提供的 `read`、`write` 和 `edit`。要添加 `str_replace_editor`，请使用 [base 配置指南](../base/README.zh.md#use-this-package)中的显式插入 patch。独立的 `sdk-minimal` profile 自行决定其工具选择。
 
+部署设置 `DSH_PRIMARY_RUNTIME` 后会启用[内置 Office 运行时查询与 skills](../../skill/tool-workspace-dependencies/README.zh.md#use-this-package)。未设置或为空时两者都禁用。载体提供本机 payload 与同级 `office-skills/`；工具原位读取，也支持只读镜像层。缺少 skill 资源会产生启动警告并使 Office skills 不可用。无效运行时元数据或缺失解释器条目会导致工具调用失败。
+
 -----
 
 <a id="model-experience"></a>

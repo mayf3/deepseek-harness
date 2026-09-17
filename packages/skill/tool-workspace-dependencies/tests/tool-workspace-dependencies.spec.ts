@@ -1,8 +1,9 @@
+import * as fs from 'node:fs/promises'
 import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
@@ -13,8 +14,16 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import * as workspaceDependencies from '../src/index.ts'
 import { installPrimaryRuntime, readPrimaryRuntime, resolvePrimaryRuntime, workspaceDependencyPaths, type PrimaryRuntimeManifest } from '../src/index.ts'
 
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof fs>()
+  return { ...actual, rename: vi.fn(actual.rename), lstat: vi.fn(actual.lstat), cp: vi.fn(actual.cp) }
+})
+
 const roots: string[] = []
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
+afterEach(async () => {
+  vi.resetAllMocks()
+  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+})
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-primary-runtime-'))
@@ -46,7 +55,7 @@ it.each(['win32', 'darwin', 'linux'])('returns %s interpreter and package paths'
   expect(paths.pythonPackages).toBe(join('/runtime', 'dependencies', 'python', ...(platform === 'win32' ? ['Lib'] : ['lib', 'python3.12']), 'site-packages'))
 })
 
-it.skipIf(process.platform === 'linux')('installs offline, reuses the same release, and leaves environment and user packages unchanged', async () => {
+it('installs offline, reuses the same release, and leaves environment and user packages unchanged', async () => {
   const { source, root, manifest } = await fixture()
   const environment = { ...process.env }
   const installed = await installPrimaryRuntime(source, root)
@@ -57,7 +66,7 @@ it.skipIf(process.platform === 'linux')('installs offline, reuses the same relea
   expect(process.env).toEqual(environment)
 })
 
-it.skipIf(process.platform === 'linux')('replaces release components and recovers an interrupted directory swap', async () => {
+it('replaces release components and recovers an interrupted directory swap', async () => {
   const { source, root, manifest } = await fixture()
   await installPrimaryRuntime(source, root)
   await rename(root, `${root}.previous`)
@@ -66,7 +75,7 @@ it.skipIf(process.platform === 'linux')('replaces release components and recover
   expect((await readPrimaryRuntime(root)).desktopVersion).toBe('2.0.0')
 })
 
-it.skipIf(process.platform === 'linux')('replaces dependencies when the locked payload changes without a Desktop version change', async () => {
+it('replaces dependencies when the locked payload changes without a Desktop version change', async () => {
   const { source, root, manifest } = await fixture()
   const first = { ...manifest, payloadDigest: 'a'.repeat(64), pythonPackages: { 'python-docx': '1.1.2' } }
   await writeFile(join(source, 'runtime.json'), JSON.stringify(first))
@@ -81,7 +90,7 @@ it.skipIf(process.platform === 'linux')('replaces dependencies when the locked p
   await expect(readFile(join(installed.pythonPackages, 'old-package.py'))).rejects.toMatchObject({ code: 'ENOENT' })
 })
 
-it.skipIf(process.platform === 'linux')('upgrades a release manifest without a payload digest', async () => {
+it('upgrades a release manifest without a payload digest', async () => {
   const { source, root, manifest } = await fixture()
   await installPrimaryRuntime(source, root)
   await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, payloadDigest: 'a'.repeat(64), pythonPackages: { 'python-docx': '1.2.0' } }))
@@ -89,7 +98,7 @@ it.skipIf(process.platform === 'linux')('upgrades a release manifest without a p
   expect((await readPrimaryRuntime(root)).payloadDigest).toBe('a'.repeat(64))
 })
 
-it.skipIf(process.platform === 'linux')('replaces changed payload bytes when only the digest changes', async () => {
+it('replaces changed payload bytes when only the digest changes', async () => {
   const { source, root, manifest } = await fixture()
   const first = { ...manifest, payloadDigest: 'a'.repeat(64), pythonPackages: { 'python-docx': '1.2.0' } }
   const sourceFile = join(workspaceDependencyPaths(source, first).pythonPackages, 'library.py')
@@ -103,7 +112,7 @@ it.skipIf(process.platform === 'linux')('replaces changed payload bytes when onl
   expect((await readPrimaryRuntime(root)).pythonPackages).toEqual(first.pythonPackages)
 })
 
-it.skipIf(process.platform === 'linux')('keeps the installed release when the replacement payload is incomplete', async () => {
+it('keeps the installed release when the replacement payload is incomplete', async () => {
   const { source, root, manifest } = await fixture()
   await installPrimaryRuntime(source, root)
   await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, desktopVersion: '2.0.0' }))
@@ -112,7 +121,7 @@ it.skipIf(process.platform === 'linux')('keeps the installed release when the re
   expect((await readPrimaryRuntime(root)).desktopVersion).toBe('1.0.0')
 })
 
-it.skipIf(process.platform === 'linux')('refuses linked installation directories without modifying their targets', async () => {
+it('refuses linked installation directories without modifying their targets', async () => {
   const { source, root, directory } = await fixture()
   const outside = join(directory, 'outside')
   await mkdir(outside)
@@ -216,4 +225,123 @@ it('rejects a payload whose Node.js or pnpm version is malformed', async () => {
   const { source, manifest } = await fixture()
   await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, components: { ...manifest.components, node: 'latest' } }))
   await expect(readPrimaryRuntime(source)).rejects.toThrow('invalid metadata')
+})
+
+/** Create the real scoped tool registry for lifecycle and failure-path assertions. */
+async function tool(config: workspaceDependencies.Config) {
+  const ctx = new Context()
+  try {
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    const fiber = ctx.plugin(workspaceDependencies, config)
+    await fiber
+    const execute = () => ctx.tools.execute({
+      signal: new AbortController().signal, name: 'load_workspace_dependencies',
+      arguments: {}, callId: ToolCallId('dependencies'),
+    })
+    return { ctx, fiber, execute }
+  } catch (error) {
+    await ctx.fiber.dispose()
+    throw error
+  }
+}
+
+it.each([null, [], { desktopVersion: '' }, { platform: 'unsupported' }, { arch: 'ia32' },
+  { components: null }, { components: { python: 3 } }, { payloadDigest: 1 },
+  { pythonPackages: null }, { pythonPackages: { numpy: 3 } },
+])('rejects malformed manifest fields: %j', async (invalid) => {
+  const { source, manifest } = await fixture()
+  const value = invalid === null || Array.isArray(invalid) ? invalid : { ...manifest, ...invalid }
+  await writeFile(join(source, 'runtime.json'), JSON.stringify(value))
+  await expect(readPrimaryRuntime(source)).rejects.toThrow('invalid metadata')
+})
+
+it('reads legacy metadata without a distribution map and rejects incompatible platforms', async () => {
+  const { source, manifest } = await fixture()
+  const { pythonPackages: _packages, ...legacy } = manifest
+  await writeFile(join(source, 'runtime.json'), JSON.stringify(legacy))
+  expect((await resolvePrimaryRuntime(source)).pythonDistributions).toEqual({})
+  await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, platform: process.platform === 'linux' ? 'darwin' : 'linux' }))
+  await expect(resolvePrimaryRuntime(source)).rejects.toThrow('incompatible')
+})
+
+it('propagates filesystem access failures without touching the installation', async () => {
+  const { source, root } = await fixture()
+  vi.mocked(fs.lstat).mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'EACCES' }))
+  await expect(installPrimaryRuntime(source, root)).rejects.toThrow('denied')
+  await expect(readFile(join(root, 'runtime.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it.each([false, true])('preserves the previous installation if publication fails (previous: %s)', async (previous) => {
+  const { source, root, manifest } = await fixture()
+  if (previous) {
+    await installPrimaryRuntime(source, root)
+    await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, desktopVersion: '2.0.0' }))
+  }
+  const actual = await vi.importActual<typeof fs>('node:fs/promises')
+  vi.mocked(fs.rename).mockImplementationOnce(previous ? actual.rename : async () => { throw new Error('publication failed') })
+  if (previous) vi.mocked(fs.rename).mockRejectedValueOnce(new Error('publication failed'))
+  await expect(installPrimaryRuntime(source, root)).rejects.toThrow('publication failed')
+  if (previous) expect((await readPrimaryRuntime(root)).desktopVersion).toBe('1.0.0')
+  else await expect(readFile(join(root, 'runtime.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+  expect((await fs.readdir(dirname(root))).filter(name => name.startsWith('.primary-runtime-'))).toEqual([])
+})
+
+it('retries a failed tool preparation and renders its call presentation', async () => {
+  const { source, root } = await fixture()
+  const metadata = await readFile(join(source, 'runtime.json'))
+  await rm(join(source, 'runtime.json'))
+  const { ctx, execute } = await tool({ source, root })
+  try {
+    expect((await execute()).isError).toBe(true)
+    await writeFile(join(source, 'runtime.json'), metadata)
+    expect((await execute()).isError).toBe(false)
+    expect(await readFile(join(root, 'runtime.json'))).toEqual(metadata)
+    const descriptor = ctx.tools.get('load_workspace_dependencies')!
+    expect(descriptor.presentCall?.({})).toEqual({ card: 'generic', title: 'Load workspace dependencies', kind: 'read' })
+  } finally { await ctx.fiber.dispose() }
+})
+
+it.each([false, true])('disposal waits for pending filesystem preparation (failure: %s)', async (failure) => {
+  const { source, root } = await fixture()
+  const actual = await vi.importActual<typeof fs>('node:fs/promises')
+  let release!: () => void
+  let copying!: () => void
+  const entered = new Promise<void>((resolve) => { copying = resolve })
+  const proceed = new Promise<void>((resolve) => { release = resolve })
+  vi.mocked(fs.cp).mockImplementationOnce(async (...args) => {
+    copying()
+    await proceed
+    if (failure) throw new Error('copy failed')
+    await actual.cp(...args)
+  })
+  const { ctx, fiber, execute } = await tool({ source, root })
+  const pending = execute()
+  try {
+    await entered
+    let disposed = false
+    const disposal = fiber.dispose().then(() => { disposed = true })
+    await Promise.resolve()
+    expect(disposed).toBe(false)
+    release()
+    await disposal
+    expect((await pending).isError).toBe(failure)
+    expect(ctx.tools.schemas().some(value => value.name === 'load_workspace_dependencies')).toBe(false)
+  } finally {
+    release()
+    await pending
+    await ctx.fiber.dispose()
+  }
+})
+
+it('disposes an unused tool without preparing the payload', async () => {
+  const { source, root } = await fixture()
+  const { ctx } = await tool({ source, root })
+  await ctx.fiber.dispose()
+  await expect(readFile(join(root, 'runtime.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it.each([{ source: 'relative' }, { source: process.cwd(), root: 'relative' }])('rejects relative runtime configuration at plugin load: %j', async (config) => {
+  await expect(tool(config)).rejects.toThrow('must be absolute paths')
 })

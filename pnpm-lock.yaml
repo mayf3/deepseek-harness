@@ -99,9 +99,15 @@ importers:
       execa:
         specifier: ^10.0.0
         version: 10.0.0
+      extract-zip:
+        specifier: ^2.0.1
+        version: 2.0.1(supports-color@9.4.0)
       fast-check:
         specifier: ^4.8.0
         version: 4.8.0
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
       istanbul-lib-report:
         specifier: ^3.0.1
         version: 3.0.1
@@ -138,6 +144,9 @@ importers:
       oxlint-tsgolint:
         specifier: 7.0.2001
         version: 7.0.2001
+      pnpm:
+        specifier: 11.7.0
+        version: 11.7.0
       publint:
         specifier: ^0.3.21
         version: 0.3.21
@@ -147,6 +156,9 @@ importers:
       spdx-expression-parse:
         specifier: ^5.0.0
         version: 5.0.0
+      tar:
+        specifier: ^7.5.0
+        version: 7.5.22
       tsdown:
         specifier: ^0.22.2
         version: 0.22.2(oxc-resolver@11.20.0)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)
