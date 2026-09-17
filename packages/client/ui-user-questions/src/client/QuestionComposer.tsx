@@ -1,4 +1,3 @@
-import { createMarkdownLabels } from './markdown-labels.ts'
 import { useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import clsx from 'clsx'
 import {
@@ -132,7 +131,10 @@ type QuestionFlowProps =
 
 function QuestionFlow({ pending, t, useStore, actions }: QuestionFlowProps) {
   const questions = pending.questions
-  const markdownLabels = useMemo(() => createMarkdownLabels(t), [t])
+  const markdownLabels = useMemo(() => ({
+    code: { copyLabel: t('copy'), copiedLabel: t('copied') },
+    footnotes: t('markdown.footnotes'),
+  }), [t])
   const initialProgress = useMemo<QuestionDraftProgress>(() => ({
     index: 0,
     drafts: questions.map(() => ({ selected: [], custom: '', skipped: false })),

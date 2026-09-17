@@ -6,7 +6,6 @@
 // incremental fence-highlight decision, so `*.streaming.txt` fixtures with
 // fenced code pin shiki span trees where react-markdown had the plain arm.
 import { cleanup, render } from '@testing-library/react'
-import { StrictMode } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { MarkdownText } from './markdown-test-components.tsx'
 
@@ -54,7 +53,7 @@ function serializeChildren(element: Element, indent: string, inPre: boolean): st
 }
 
 function renderCase(text: string, streaming: boolean): string {
-  const { container, unmount } = render(<StrictMode><MarkdownText text={text} streaming={streaming} /></StrictMode>)
+  const { container, unmount } = render(<MarkdownText text={text} streaming={streaming} />)
   const out = [...container.childNodes].map(child => serialize(child, '', false)).join('')
   unmount()
   return out

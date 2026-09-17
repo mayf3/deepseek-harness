@@ -1,4 +1,0 @@
-- dialog "Mermaid diagram":
-  - img "Mermaid diagram"
-  - text: Drag or arrow keys to pan · Scroll or +/− to zoom · Double-click or Home to fit
-  - button "Close preview"

@@ -18,7 +18,7 @@ type T = TranslateNS<'conversation'>
  */
 export function markdownLabels(t: T): MarkdownLabels {
   return {
-    code: { copyLabel: t('copy'), copiedLabel: t('copied'), sourceLabel: t('markdown.code.source'), lineNumbersLabel: t('markdown.code.lineNumbers') },
+    code: { copyLabel: t('copy'), copiedLabel: t('copied') },
     footnotes: t('markdown.footnotes'),
   }
 }
