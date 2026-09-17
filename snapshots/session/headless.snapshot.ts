@@ -1093,6 +1093,7 @@ describe('headless recorded-session snapshots', () => {
           tempDirPrefix: 'dsh-log-snap-',
           ...(scenario.manifest.workspace?.parent === 'outside-temp' ? { tempDirParent: outsideTempWorkspaceParent() } : {}),
           binScript: dshBin,
+          sourceImport: 'tsx/esm',
           configPath: join(baseComposition.dir, 'cordis.yml'),
           binArgs: [
             '--profile', 'headless',

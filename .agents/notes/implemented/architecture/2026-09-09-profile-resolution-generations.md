@@ -14,6 +14,8 @@ The runtime design preserves the existing selection rules rather than introducin
 
 Profile startup computes one immutable `ResolutionGeneration` from the same dependency traversal that supplies the disk module fallback. The launcher defaults to runtime mode, which installs the generation into Node's ESM and CommonJS resolvers without materializing fallback links. Plain Node callers and tests can explicitly select link mode to materialize the generation or dual mode to materialize and verify it. `PluginPackages.replace()` publishes a complete additive successor with one reference replacement.
 
+The TypeScript CLI entry explicitly selects link mode. Its tsx workspace imports and profile plugins must share module URLs; combining `src/index.ts` and `lib/index.js` creates distinct private Symbols and service identities. The built CLI keeps runtime mode, and explicit `runProfile` resolution overrides remain available.
+
 ### One selection algorithm
 
 The package traversal remains in `@deepseek-ai/dsh-app-boot` beside profile loading. The disk materializer and the runtime resolver consume one pure plan; neither owns a copy of the precedence algorithm. Ordinary Node callers can select link, dual, or runtime mode, while an omitted mode selects runtime. Packaged executables and the Electron Host select runtime mode because their dependency trees may live in a virtual filesystem; dual remains an internal comparison path.

@@ -14,6 +14,8 @@ profile 从自己的包项目加载插件配置项，而 Harness 包和所选 bu
 
 profile 启动从磁盘 module fallback 使用的同一套依赖遍历生成一个不可变 `ResolutionGeneration`。launcher 默认使用 runtime 模式，把 generation 安装到 Node 的 ESM 与 CommonJS 解析器，不物化 fallback 链接。普通 Node 调用方和测试可以显式选择 link 模式以物化 generation，或选择 dual 模式以物化并校验它。`PluginPackages.replace()` 通过一次引用替换发布完整的新增型后继 generation。
 
+TypeScript CLI 入口显式选择 link 模式。其 tsx workspace 导入与 profile 插件必须共享模块 URL；同时加载 `src/index.ts` 与 `lib/index.js` 会产生不同的私有 Symbol 和服务身份。构建后的 CLI 保持 runtime 模式，`runProfile` 的显式解析模式覆盖仍然可用。
+
 ### 唯一选包算法
 
 包遍历继续放在 `@deepseek-ai/dsh-app-boot` 的 profile 加载代码旁。磁盘 materializer 和运行时解析器消费同一个纯计划；两者都不持有另一份优先级算法。普通 Node 调用方可以选择 link、dual 或 runtime 模式，省略模式时使用 runtime。打包可执行文件与 Electron Host 会选择 runtime，因为其依赖树可能位于虚拟文件系统；dual 保留为内部对比路径。
