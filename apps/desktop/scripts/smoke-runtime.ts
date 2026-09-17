@@ -13,13 +13,16 @@ import type { DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
  * @param node - Prepared target Electron executable.
  * @param runtime - Verified resource descriptor.
  * @param environment - Credential-scrubbed build environment and private native cache.
+ * @param resourcesRuntime - Bundled interpreters outside the application archive.
  */
 export async function smokeDesktopRuntime(
-  root: string, node: string, runtime: DesktopRuntimeDescriptor, environment: NodeJS.ProcessEnv = process.env,
+  root: string, node: string, runtime: DesktopRuntimeDescriptor, environment: NodeJS.ProcessEnv, resourcesRuntime: string,
 ): Promise<void> {
   const home = mkdtempSync(join(tmpdir(), 'dsh-desktop-smoke-'))
   const profile = join(home, 'profiles', 'desktop')
-  const host = new DesktopHostProcess(node, root, profile, undefined, { ...environment, DSH_HOME: home })
+  const host = new DesktopHostProcess(node, root, profile, undefined, { ...environment, DSH_HOME: home },
+    undefined, join(resourcesRuntime, 'primary-runtime'), 'runtime',
+    { pnpm: join(resourcesRuntime, 'pnpm', 'bin', 'pnpm.cjs'), nodeBin: join(resourcesRuntime, 'bin') })
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     createPluginProfile(profile)

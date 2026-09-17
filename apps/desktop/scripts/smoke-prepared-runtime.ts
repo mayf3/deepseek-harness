@@ -30,7 +30,7 @@ export async function smokePreparedRuntime(
     ], { timeout: 120_000, windowsHide: true,
       env: desktopNodeEnvironment(node, join(resourcesRuntime, 'bin'), environment) })
     process.stdout.write(stdout)
-    await smokeDesktopRuntime(root, node, runtime, environment)
+    await smokeDesktopRuntime(root, node, runtime, environment, resourcesRuntime)
   } finally {
     await rm(cache, { recursive: true, force: true })
   }
