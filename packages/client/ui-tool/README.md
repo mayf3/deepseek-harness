@@ -109,7 +109,7 @@ These limits define the dispatch depth and the view ownership; they are current 
 
 - **The Host excludes `run_code` from PTC mode program bindings** — production events produce one dispatch level; the recursive Runtime/UI contract supports nesting.
 - **First-party Tool views are colocated here** — they can move to their owning business packages independently through the keyed slot.
-- **Tool copy reuses the `ui-conversation` locale namespace** — tool titles, row chrome, and Cordis-free primitive labels use that dictionary; presenter models retain locale keys or data rather than rendered wording.
+- **Tool copy reuses the `ui-conversation` locale namespace** — tool titles, row chrome, and Cordis-free primitive labels use that dictionary; presenter models retain locale keys or data rather than rendered wording. Titles follow the interface language; model-authored summaries retain their generated language.
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -11,7 +11,7 @@ import {
 } from '../src/client/tool/models/tool-call-model.ts'
 import { ToolRow } from '../src/client/tool/components/ToolRow.tsx'
 import { GenericToolCard, type GenericToolCardProps } from '../src/client/tool/toolviews/GenericToolCard.tsx'
-import { zh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
+import { en, zh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 
 afterEach(() => {
   cleanup()
@@ -33,6 +33,17 @@ const result = (over?: Partial<ToolResultNode>): ToolResultNode => ({
 })
 
 describe('tool-call-model', () => {
+  it.each([
+    ['tool.title.bash', '运行命令', 'Bash'],
+    ['tool.title.pwsh', '运行命令', 'Pwsh'],
+    ['tool.title.grep', '搜索文件内容', 'Grep'],
+    ['tool.title.glob', '查找文件', 'Glob'],
+  ] as const)('localizes %s without translating generated summaries', (key, chinese, english) => {
+    expect(t(key)).toBe(chinese)
+    expect(makeTranslate(en)(key)).toBe(english)
+    expect(toolRowModel('bash', running()).summary).toBe('List files')
+  })
+
   it('classifies known tools and falls back to others', () => {
     expect(classifyTool('bash')).toBe('bash')
     expect(classifyTool('pwsh')).toBe('bash')
@@ -84,7 +95,8 @@ describe('tool-call-model', () => {
   it('gives the pwsh shell row the bash family treatment with its own title', () => {
     const m = toolRowModel('pwsh', running())
     expect(m.variant).toBe('bash')
-    expect(t(m.titleKey)).toBe('Pwsh')
+    expect(m.titleKey).toBe('tool.title.pwsh')
+    expect(t(m.titleKey)).toBe('运行命令')
   })
 
   it('derives state across running/ok/error/interrupted', () => {
@@ -96,7 +108,7 @@ describe('tool-call-model', () => {
 
   it('derives the bash summary from description over command', () => {
     const m = toolRowModel('bash', running())
-    expect(t(m.titleKey)).toBe('Bash')
+    expect(t(m.titleKey)).toBe('运行命令')
     expect(m.summary).toBe('List files')
     expect(toolRowModel('bash', running({ argsRaw: '{"command":"pwd"}' })).summary).toBe('pwd')
   })
@@ -499,7 +511,7 @@ describe('GenericToolCard', () => {
 
   it('renders the classified variant row from the frozen slice', () => {
     const view = render(<GenericToolCard {...props('bash', result())} />)
-    expect(view.getByText('Bash')).toBeTruthy()
+    expect(view.getByText('运行命令')).toBeTruthy()
     expect(view.getByText('List files')).toBeTruthy()
     expect(view.container.querySelector('[data-variant="bash"]')).not.toBeNull()
   })
@@ -556,7 +568,7 @@ describe('GenericToolCard', () => {
   it('passes the owner inspect callback through to the expanded row pill', () => {
     const inspect = vi.fn()
     const view = render(<GenericToolCard {...props('bash', result())} inspect={inspect} />)
-    fireEvent.click(view.getByRole('button', { name: /Bash/ }))
+    fireEvent.click(view.getByRole('button', { name: /运行命令/ }))
     fireEvent.click(view.getByText('查看'))
     expect(inspect).toHaveBeenCalledTimes(1)
   })
