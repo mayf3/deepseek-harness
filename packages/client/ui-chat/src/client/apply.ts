@@ -49,7 +49,7 @@ const CHAT_NODE_INJECT: ChatNodeTurnDataInjected = {
 /** Services required by the Chat target and its presentation registrations. */
 export const inject = [
   'slots', 'sessions', 'uiWorkspace', 'uiSession', 'uiConversation', 'locale',
-  'settingsScope', 'remote', 'remote.session', 'resources', 'sidebarRight', 'sidebarRightTabs',
+  'settingsScope', 'remote', 'remote.session', 'sidebarRight',
 ]
 
 /**
@@ -79,7 +79,9 @@ export function apply(ctx: Context): void {
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-chat: dictionaries')
   const t = ctx.locale.bind(NS)
-  registerSidebarChat(ctx, t)
+  ctx.inject(['resources', 'sidebarRightTabs'], (scope) => {
+    registerSidebarChat(scope, t)
+  })
   const chatStore = createChatStore()
   const chatScrollPositions = new Map<SessionId, ChatScrollPosition>()
   const transcriptView = new TranscriptViewPolicy(
