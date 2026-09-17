@@ -17,7 +17,7 @@ Trajectory presents every attachment occurrence while keeping visual inspection 
 | Ledger | Separate nonzero image and ordinary-file counts accompany the text excerpt, including messages without text. Each record stays on one compact line. |
 | Summary and Preview | Message text precedes one ordered attachment list. Both tabs use the same renderer; Summary retains its compact spacing and scroll container. |
 | Attachment list | Equal-width compact rows share spacing and corners. A file-type icon or contained image thumbnail accompanies the recorded name and available metadata. Repeated references retain their occurrence order. |
-| Image interaction | The complete image fits inside a 48px square thumbnail without cropping. Activation opens the existing image viewer, with keyboard access, loading feedback, and retry after a failed read. |
+| Image interaction | The complete image fits inside a 48px square thumbnail without cropping. Activation opens the existing image viewer, with keyboard access. Loading and retry icons fit the thumbnail and expose localized tooltips and accessible names. |
 | Raw | Image and file blocks use initially collapsed metadata disclosures with complete recorded fields. Original content-block order and unrendered text remain intact; generated display labels do not enter raw fields. |
 
 Recorded filenames take precedence over localized numbered image labels. Metadata comes from recorded fields or the filename extension; zero-byte sizes remain visible. Visually truncated names retain their complete accessible text and tooltip. Messages without text still expose all attachments inside the inspector's scroll area.
