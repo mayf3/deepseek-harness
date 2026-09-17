@@ -36,6 +36,7 @@ const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history
 const UI_EXPANDED_EXPECTED = fileURLToPath(
   new URL('../../../snapshots/web/seeded-history/ui-expanded.expected.md', import.meta.url),
 )
+const THINKING_EXPECTED = join(SNAPSHOT_DIR, 'thinking-expanded.expected.md')
 // Command-row goldens over the same conversation after direct host commands.
 const COMMAND_ROW_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/command-row.expected.md', import.meta.url))
 const FEEDBACK_ROW_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/feedback-row.expected.md', import.meta.url))
@@ -365,6 +366,40 @@ describe('web e2e: seeded history renders through cold resume', () => {
       scaffold.workspaceCwd,
     )).split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(UI_EXPANDED_EXPECTED, expanded, MODE)
+  })
+
+  it.skipIf(MODE === 'record')('renders recorded reasoning as secondary Markdown when expanded', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-thinking'))
+    const turnProcess = page.locator('[data-turn-process]').first()
+    const wasExpanded = await turnProcess.getAttribute('aria-expanded') === 'true'
+    if (!wasExpanded) await turnProcess.click()
+    const thinking = page.locator('[data-variant="think"]').first()
+    const toggle = thinking.getByRole('button').first()
+    const secondarySize = await thinking.locator('[class*="summaryText"]').evaluate(element => getComputedStyle(element).fontSize)
+    await toggle.click()
+    try {
+      await thinking.locator('p').waitFor({ timeout: 10_000 })
+      const snapshot = await captureStableAria(page, '[data-variant="think"][data-expanded]', scaffold.workspaceCwd)
+      const typography = await thinking.locator('p').evaluate((paragraph, expectedSize) => {
+        const style = getComputedStyle(paragraph)
+        return {
+          secondarySize: style.fontSize === expectedSize,
+          wraps: style.whiteSpace === 'normal',
+          contained: paragraph.scrollWidth <= paragraph.clientWidth + 1,
+        }
+      }, secondarySize)
+      expect(typography).toEqual({ secondarySize: true, wraps: true, contained: true })
+      await compareOrRefreshGolden(THINKING_EXPECTED, [
+        snapshot,
+        '',
+        `- Secondary font size: ${String(typography.secondarySize)}`,
+        `- Markdown paragraph wrapping: ${String(typography.wraps)}`,
+        `- Content stays within the reasoning column: ${String(typography.contained)}`,
+      ].join('\n'), MODE)
+    } finally {
+      await toggle.click()
+      if (!wasExpanded) await turnProcess.click()
+    }
   })
 
   it.skipIf(MODE === 'record')('matches the Figma context disclosure geometry', async () => {
@@ -780,7 +815,8 @@ describe('web e2e: seeded history renders through cold resume', () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'command-row.expected.md', 'feedback-row.expected.md', 'file-preview.expected.md',
-      'session.v3.jsonl', 'sticky-geometry.expected.md', 'ui.expected.md', 'ui-expanded.expected.md',
+      'session.v3.jsonl', 'sticky-geometry.expected.md', 'thinking-expanded.expected.md',
+      'ui.expected.md', 'ui-expanded.expected.md',
     ])
   })
 })
