@@ -27,7 +27,6 @@ function codeProps(h: ReturnType<typeof harness>): TextPreviewProps {
   return {
     ...props,
     useDocumentPreviews: selector => selector([definition]),
-    // The fixture has no notice contribution.
     renderSlot: documentSlots((_key, owner) => <CodeBody {...props} {...owner as unknown as OwnerOf<'sidebar.right.tab.document'>} t={key => key} />),
   }
 }
@@ -167,27 +166,17 @@ describe('document toolbar', () => {
     expect(view.queryByRole('status')).toBeNull()
   })
 
-  it('withholds previous pages while the selected renderer prepares its own complete bytes', async () => {
+  it('mounts a renderer-owned body before content is available and withholds the previous pages', async () => {
     const h = harness({ 1: page(1, ['previous reader content'], true) })
     const view = render(<TextPreview {...h.props()} />)
     await settle()
-    expect(view.container.textContent).toContain('previous reader content')
-    const pending = Promise.withResolvers<Awaited<ReturnType<typeof h.bytes>>>()
-    const result = { ok: true as const, value: { absolutePath: ABSOLUTE_PATH, version: 'v1', offset: 0, data: new Uint8Array([1]), bytes: 1, eof: true } }
-    onTestFinished(async () => {
-      h.controller.abort()
-      pending.resolve(result)
-      await pending.promise
-    })
-    const read = vi.fn(() => pending.promise)
-    view.rerender(<TextPreview {...h.props()} useDocumentPreviews={selector => selector([{ ...binary, read }])} renderSlot={() => null} />)
+    const renderSlot = vi.fn(() => null)
+    view.rerender(<TextPreview {...h.props()} useDocumentPreviews={selector => selector([{ ...binary, loading: 'renderer' }])} renderSlot={renderSlot} />)
     expect(view.container.textContent).not.toContain('previous reader content')
-    expect(view.getByRole('status').hasAttribute('data-document-loading')).toBe(true)
-    await act(async () => { pending.resolve(result); await pending.promise })
-    expect(view.queryByRole('status')).toBeNull()
-    expect(h.instance.getSnapshot().byTab[TAB_ID]?.complete?.bytes).toBe(1)
-    expect(h.instance.getSnapshot().byTab[TAB_ID]?.readerId).toBe(binary.id)
-    expect(read).toHaveBeenCalledWith(FILE, expect.any(AbortSignal))
+    expect(renderSlot).toHaveBeenCalledWith('sidebar.right.tab.document', expect.objectContaining({
+      content: expect.objectContaining({ kind: 'source' }) as unknown,
+    }), expect.any(Object))
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.complete).toBeUndefined()
     expect(h.bytes).not.toHaveBeenCalled()
   })
 

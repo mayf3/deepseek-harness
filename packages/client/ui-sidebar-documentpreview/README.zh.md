@@ -31,9 +31,9 @@ kind: "package-reference"
 - **正文** —— keyed slot `sidebar.right.pane.tab`，键为类型的 id。固定头部在可用时显示 Host 的绝对路径，否则显示请求路径；目录使用三级标签色，文件名使用一级标签色，路径过长时保留末段并向开头淡出，提示中仍提供完整值。有多个受支持的渲染器时才显示下拉菜单。仅文本兼容的源文件提供纯文本选项；只有一个渲染器时不显示查看器控件。已知的二进制容器后缀没有注册渲染器时，在路径头部下方显示文件类型图标和不支持预览的说明，并且不会发起读取。仅当所选渲染器声明 `wrap: true` 时显示换行开关；图标表示点击后切换到的模式，该偏好按 tab 保存，初始开启。重新载入仍在此头部，不放入 Sidebar 的 tab 条。正文贴合格的每条边，各渲染器自行提供内容留白，并可拥有内部滚动区。这与 Files tab 右侧预留 2px 滚动条间距的布局有意不同：Preview 使用格的完整宽度，使贴边 HTML 与代码滚动区终止于格的边缘。
 - **共享加载与视图状态**，会话作用域、按 tab id 分桶。store 持有累计页或完整字节、读取与观察版本、加载/失败状态、渲染器选择、滚动位置、换行和已响应的导航 revision。普通 inject face 调用 Remote 读取，并经声明的 store action 写入。重新载入和加载模式变化会淘汰旧请求；tab 的中止信号清理其状态。
 
-文档实现在 `ctx.documentPreviews.register({ id, extensions, binaryExtensions?, priority, title, loading, wrap?, read? })` 注册元数据，并以相同 `id` 向 keyed、Session 作用域的子 slot `sidebar.right.tab.document` 注册正文。`binaryExtensions` 列出 `extensions` 中不可按文本阅读的后缀，这些后缀不提供纯文本选项。两处注册都由 effect 持有，通过 `ctx.slots.inject` 等待子 slot。正文接收 `resourceAddress`、准备好的 `content`、`wrap`、`scrollportRef` 和标准 `useTabInfo`/`useResource` 钩子，不接收自定义资源加载器。拥有内部滚动元素的渲染器把 `scrollportRef` 挂到该元素上；该元素卸载后，owner 恢复使用共享正文。元数据声明 `loading: 'text-pages'` 或 `'bytes-complete'`。文本兼容性由 `binaryExtensions` 决定，与加载方式无关。HTML、SVG 和未匹配的扩展名保留纯文本回退。注册表保留所有匹配备选：`extension`（默认）优先于 `builtin`，随后按更长的后缀、再按注册顺序排列。所选实现仍可用时，下拉选择保持不变；移除后选择下一个候选。内置正文也使用相同注册方式。完整字节渲染器可提供 `read` 来准备内容，并以自己的 `id` 注册正文。读取器保留源文件路径和版本；切换读取器会使缓存字节失效，重新载入或关闭 tab 会取消当前读取。[Office 预览](#office-preview) 通过此路径提供本地转换的 PDF。
+文档实现在 `ctx.documentPreviews.register({ id, extensions, binaryExtensions?, priority, title, loading, wrap? })` 注册元数据，并以相同 `id` 向 keyed、Session 作用域的子 slot `sidebar.right.tab.document` 注册正文。`binaryExtensions` 列出 `extensions` 中不可按文本阅读的后缀，这些后缀不提供纯文本选项。两处注册都由 effect 持有，通过 `ctx.slots.inject` 等待子 slot。正文接收 `resourceAddress`、`content`、`wrap`、`scrollportRef` 和标准 `useTabInfo`/`useResource` 钩子。内部滚动元素挂载 `scrollportRef`；卸载时恢复共享正文的滚动职责。注册表保留所有匹配备选：`extension`（默认）优先于 `builtin`，随后按更长的后缀、再按注册顺序排列。所选实现仍可用时，下拉选择保持不变。HTML、SVG 和未匹配的扩展名保留纯文本回退，与加载方式无关。
 
-转换读取器可在字节内容中附带缺失字体族。滚动区域上方的 keyed `sidebar.right.tab.document.notice` Slot 使用所选读取器 id；读取器负责自己的提示，PDF 正文仍然共享。
+`loading: 'text-pages'` 和 `'bytes-complete'` 使用共享文件读取器。选择 `'renderer'` 时，正文在读取任何字节前挂载，并接收 `content: { kind: 'source', revision, loaded, reload }`。其注入回调负责内容加载、错误和取消。`loaded(version)` 为共享变更提示报告已展示的源版本；已被替换的 revision 所发出的报告会被忽略。`reload()` 增加 revision，正文据此取消并替换当前请求。正文也在卸载和 tab 关闭时取消请求，将已完成内容保留在自己声明的 tab store 中，并在 tab 结束时释放。[Office 预览](#office-preview) 使用此模式，转换后的字节和字体元数据不会进入共享文件 store。
 
 <a id="addresses"></a>
 ## 地址
@@ -80,7 +80,7 @@ PNG、JPEG、GIF、WebP、BMP、ICO 和 SVG 通过 Blob URL 在 `<img>` 静态�
 <details>
 <summary>Office 实现——点击展开</summary>
 
-Office 注册、缓存和字体提示位于 `src/client/office/`，复用共享 PDF 正文。Host 渲染器缺失时，注册仍然可用。注入的 `remote.officeToPdf` 和 `remote.workspaceFiles` 命名空间提供转换与版本检查回调；移除后恢复不可用读取器。注册表、本地化和提示注册均为可撤销的 effect。Office UI 与本包共享 Loader 生命周期；[转换服务](../../document/office-to-pdf/README.zh.md)拥有 Host Remote 方法，其描述符由 `api/remotes` 挂载。Office 与 PDF 分别以自己的 id 注册相同的惰性 PDF 正文，并各自持有 tab 状态。
+Office 注册、加载、缓存和字体提示位于 `src/client/office/`。Office 正文持有转换后的 PDF 字节和字体元数据，并声明嵌套 PDF slot，复用惰性 PDF 正文及其 tab 阅读状态。字体提示位于 Office 滚动区上方。Host 渲染器缺失时，注册仍然可用；可选的 `remote.officeToPdf` 和 `remote.workspaceFiles` 注入提供转换与版本检查回调，移除后恢复不可用提示。注册和 tab 状态保留都遵循 effect 生命周期。[转换服务](../../document/office-to-pdf/README.zh.md)拥有 Host Remote 方法，由 `api/remotes` 挂载。
 
 共享 `documentFileBytes()` 辅助函数将普通文件与转换后 PDF 的响应解码到一个独立持有的字节缓冲区，不会将字节展开为 JavaScript 数组元素。渲染器以只读方式借用保留的字节，并在传给 Worker 前复制。
 

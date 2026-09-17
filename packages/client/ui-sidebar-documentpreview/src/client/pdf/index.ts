@@ -1,10 +1,13 @@
 /** Builtin PDF registration through document metadata and the keyed body slot. */
 import type { Context } from '@deepseek-ai/cordis'
+import { retainDocumentTabs } from '../document/tab-lifetime.ts'
 import type {} from '../index.ts'
 import type { DocumentPreviewDefinition } from '../document/registry.ts'
 import type { PdfBodyInjected } from './pdf.tsx'
 import { LazyPdfBody } from './LazyPdfBody.tsx'
-import { createPdfStore } from './store.ts'
+import type { BoundActions } from '@deepseek-ai/dsh-client-store'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { createPdfStore, type PdfStore } from './store.ts'
 import { en, zh } from './locales.ts'
 
 /** PDF metadata and keyed body share this package-local implementation identity. */
@@ -24,34 +27,27 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register('sidebarPdf', { zh, en }))
   const t = ctx.locale.bind('sidebarPdf')
   ctx.effect(() => ctx.documentPreviews.register(pdfBodyDefinition(() => t('title'))))
-  registerPdfBody(ctx, PDF_BODY_ID)
+  const presentation = pdfBodyRegistration(ctx)
+  ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register({
+    name: 'sidebar.right.tab.document', key: PDF_BODY_ID, locale: 'sidebarPdf', ...presentation,
+  }, LazyPdfBody)))
 }
 
 /**
- * Register a lazy PDF body with its own tab state under a document implementation id.
- * @param ctx - context carrying the slot registry and PDF locale.
- * @param id - document implementation id used as the keyed body entry.
+ * Retain PDF viewing state for a document entry's tab lifetime.
+ * @param ctx - owning registration context.
+ * @returns the store and injection shared by ordinary and Office PDF registrations.
  */
-export function registerPdfBody(ctx: Context, id: string): void {
+export function pdfBodyRegistration(ctx: Context): {
+  store: PdfStore
+  inject: (sessionId: SessionId, actions: BoundActions<PdfStore>) => PdfBodyInjected
+} {
   const store = createPdfStore()
-  const retained = new Map<AbortSignal, () => void>()
-  ctx.effect(() => () => {
-    for (const forget of retained.values()) forget()
-  })
-  ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register({
-    name: 'sidebar.right.tab.document', key: id, locale: 'sidebarPdf', store,
+  const retainTab = retainDocumentTabs(ctx)
+  return {
+    store,
     inject: (_sessionId, actions): PdfBodyInjected => ({
-      retainTab: (tabId, signal) => {
-        if (signal.aborted) { actions.forget(tabId); return }
-        if (retained.has(signal)) return
-        const forget = (): void => {
-          signal.removeEventListener('abort', forget)
-          retained.delete(signal)
-          actions.forget(tabId)
-        }
-        retained.set(signal, forget)
-        signal.addEventListener('abort', forget, { once: true })
-      },
+      retainTab: (tabId, signal) => { retainTab(tabId, signal, actions.forget) },
     }),
-  }, LazyPdfBody)))
+  }
 }

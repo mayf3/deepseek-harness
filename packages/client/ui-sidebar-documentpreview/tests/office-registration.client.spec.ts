@@ -9,8 +9,11 @@ import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime
 import { DocumentPreviewRegistry } from '../src/client/document/registry.ts'
 import { apply } from '../src/client/office/index.ts'
 import { Config } from '../src/config.ts'
-import { FontNotice } from '../src/client/office/FontNotice.tsx'
+import { OfficeBody, type OfficeBodyInjected } from '../src/client/office/OfficeBody.tsx'
+import type { OfficeStore } from '../src/client/office/store.ts'
+import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { en, zh } from '../src/client/office/locales.ts'
+import { en as documentEn } from '../src/client/locales.ts'
 
 const file = { sessionId: 's1' as SessionId, path: 'report.DOCX' }
 const generation = ('renderer' as OfficeToPdfGeneration)
@@ -18,17 +21,44 @@ const source = { absolutePath: '/report.docx', version: 'v1', offset: 0, eof: tr
 const pdf = new Uint8Array([37, 80, 68, 70])
 const converted = { ok: true as const, value: { ...source, generation, missingFonts: ['Missing Serif'] } }
 
+it('retains Office view state across remounts and releases it on tab close or plugin disposal', async () => {
+  const h = await harness()
+  const first = 'first' as TabId
+  const second = 'second' as TabId
+  const closed = new AbortController()
+  const retained = new AbortController()
+  try {
+    h.instance.actions.loading(first, 1)
+    h.injected.retainTab(first, closed.signal)
+    h.injected.retainTab(first, closed.signal)
+    expect(h.instance.getSnapshot().byTab[first]).toBeDefined()
+    closed.abort()
+    expect(h.instance.getSnapshot().byTab[first]).toBeUndefined()
+    h.instance.actions.loading(first, 2)
+    h.injected.retainTab(first, closed.signal)
+    expect(h.instance.getSnapshot().byTab[first]).toBeUndefined()
+    h.instance.actions.loading(second, 1)
+    h.injected.retainTab(second, retained.signal)
+    const message = documentEn['error.unavailable'].replace('{message}', 'conversion stopped')
+    expect(h.injected.describeFailure(new RemoteError('gateway/internal', 'conversion stopped', {}))).toBe(message)
+    expect(h.injected.describeFailure({ message: 'conversion stopped' })).toBe(message)
+    await h.close()
+    expect(h.instance.getSnapshot().byTab[second]).toBeUndefined()
+  } finally { closed.abort(); retained.abort(); await h.close() }
+})
+
 async function harness(config: Partial<Config['office']> = {}, missing?: 'remote' | 'render' | 'files') {
   const ctx = new Context()
   const registry = new DocumentPreviewRegistry()
   const removeLocale = vi.fn()
-  const locale = { register: vi.fn(() => removeLocale), bind: () => makeTranslate(en) }
+  const locale = { register: vi.fn(() => removeLocale), bind: (name: string) => name === 'sidebarDocumentPreview' ? makeTranslate(documentEn) : makeTranslate(en) }
   const render = vi.fn<ClientRemote['officeToPdf']['render']>().mockResolvedValue(converted)
   const rendererGeneration = vi.fn<ClientRemote['officeToPdf']['generation']>().mockResolvedValue({ ok: true, value: generation })
   const stat = vi.fn<ClientRemote['workspaceFiles']['stat']>().mockResolvedValue({ ok: true, value: source })
   const readBytes = vi.fn<ClientRemote['workspaceFiles']['readBytes']>().mockResolvedValue({ ok: true, value: source })
   const removeNotice = vi.fn()
-  const register = vi.fn(() => removeNotice)
+  const recorded: { options: { name: string; store: OfficeStore; inject: (id: SessionId, actions: ReturnType<OfficeStore['create']>['actions']) => OfficeBodyInjected }; component: unknown }[] = []
+  const register = vi.fn((options: typeof recorded[number]['options'], component: unknown) => { recorded.push({ options, component }); return removeNotice })
   ctx.provide('documentPreviews', registry)
   ctx.provide('slots', { inject: (_name: string, effect: () => () => void) => effect(), register } as never)
   ctx.provide('locale', locale as never)
@@ -41,8 +71,12 @@ async function harness(config: Partial<Config['office']> = {}, missing?: 'remote
     apply(scope, Config({ office: config }).office)
   } })
   await fiber.await()
-  return { ctx, registry, locale, removeLocale, render, rendererGeneration, stat, readBytes, register, removeNotice,
-    read: (signal = new AbortController().signal, path = file.path) => registry.candidates(path)[0]!.read!({ ...file, path }, signal),
+  const entry = recorded.find(entry => entry.component === OfficeBody)!.options
+  const instance = entry.store.create()
+  const injected = entry.inject(file.sessionId, instance.actions)
+  return { ctx, registry, instance, injected, recorded, locale, removeLocale, render, rendererGeneration,
+    stat, readBytes, register, removeNotice,
+    read: (signal = new AbortController().signal, path = file.path) => injected.read({ ...file, path }, signal),
     close: () => fiber.dispose(),
   }
 }
@@ -54,15 +88,17 @@ it.each(['remote', 'render', 'files'] as const)('keeps Office registration and g
     for (const path of ['a.DOC', 'b.DOCX', 'c.XLS', 'd.xlsx', 'e.PPT', 'f.pptx']) {
       expect(h.registry.candidates(path)[0]!.binaryExtensions).toEqual(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'])
       expect(h.registry.candidates(path)[0]!.title()).toBe(en.title)
+      expect(h.registry.candidates(path)[0]!.loading).toBe('renderer')
+      expect(h.registry.candidates(path)[0]).not.toHaveProperty('read')
       await expect(h.read(undefined, path)).rejects.toThrow(en.unavailable)
     }
     expect(h.render).not.toHaveBeenCalled()
   } finally { await h.close() }
   expect(h.registry.getSnapshot()).toEqual([])
   expect(h.removeLocale).toHaveBeenCalledOnce()
-  expect(h.register).toHaveBeenCalledWith({
-    name: 'sidebar.right.tab.document.notice', key: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', locale: 'sidebarOffice',
-  }, FontNotice)
+  expect(h.register).toHaveBeenCalledWith(expect.objectContaining({
+    name: 'sidebar.right.tab.document', key: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', locale: 'sidebarOffice',
+  }), OfficeBody)
   expect(h.removeNotice).toHaveBeenCalledTimes(2)
 })
 

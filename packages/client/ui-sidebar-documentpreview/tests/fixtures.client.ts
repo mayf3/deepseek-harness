@@ -8,7 +8,7 @@
  * not the slot runtime.
  */
 import { onTestFinished, vi } from 'vitest'
-import type { PropsRenderSlots, OwnerOf } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { Mock } from 'vitest'
 import { act } from '@testing-library/react'
 import { createElement, useSyncExternalStore } from 'react'
@@ -29,11 +29,8 @@ import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 
 type BodySlot = PropsRenderSlots<'sidebar.right.tab.document'>['renderSlot']
 
-/** Adapt body-only fixtures to a preview with an empty notice slot. */
-export function documentSlots(body: BodySlot): TextPreviewProps['renderSlot'] {
-  return (key: string, owner: object, opts?: object) => key === 'sidebar.right.tab.document.notice' ? null
-    : body('sidebar.right.tab.document', owner as OwnerOf<'sidebar.right.tab.document'>, opts as Parameters<BodySlot>[2])
-}
+/** Preserve the body-slot callback used by component fixtures. */
+export function documentSlots(body: BodySlot): TextPreviewProps['renderSlot'] { return body }
 
 export const TAB_ID = 'tab-1' as TabId
 export const SESSION = 's-1' as SessionId
@@ -151,7 +148,7 @@ export function harness(script: Record<number, RemoteResult<WorkspaceFileText>> 
     actions: instance.actions,
     loadPage: face.loadPage,
     reloadPages: face.reloadPages,
-    loadAll: face.loadAll,
+    prepareRenderer: face.prepareRenderer, loadAll: face.loadAll,
     reloadAll: face.reloadAll,
     useDocumentPreviews: () => definitions,
     renderSlot,

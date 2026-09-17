@@ -2557,10 +2557,10 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/**\n * Contents prepared by the preview owner using ordinary file reads.\n * Byte arrays are transient UI input, never persisted layout or Session data.\n */\nexport type DocumentContent =\n  | { readonly kind: \'text\'; readonly text: string; readonly pages: readonly DocumentTextPage[]; readonly eof: boolean }\n  | { readonly kind: \'bytes\'; readonly data: Uint8Array<ArrayBuffer>; readonly missingFonts?: readonly string[] | undefined }',
+      '/** Content and viewing inputs shared by document bodies and nested PDF presentation. */\nexport interface DocumentBodyOwner {\n  /** Original file address, also readable through the standard useResource hook. */\n  readonly resourceAddress: string\n  /** Ordinary file content or a renderer-owned source request; text accumulates until eof. */\n  readonly content: DocumentContent\n  /** The document toolbar\'s current wrapping preference. */\n  readonly wrap: boolean\n  /** Report a renderer-owned scrollport; passing `null` restores the shared body as the owner. */\n  readonly scrollportRef: RefCallback<HTMLElement>\n}',
     ],
     ownerPropsReferences: [
-      'DocumentTextPage',
+      'DocumentContent',
     ],
     standardProps: [
       'useResource: UseResource',
@@ -2588,19 +2588,20 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-sidebar-documentpreview HtmlBody',
       'client-ui-sidebar-documentpreview ImageBody',
       'client-ui-sidebar-documentpreview MarkdownBody',
+      'client-ui-sidebar-documentpreview OfficeBody',
       'client-ui-sidebar-documentpreview LazyPdfBody',
       'client-ui-sidebar-documentpreview TextBody',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:34',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:45',
   },
   {
-    key: 'sidebar.right.tab.document.notice',
+    key: 'sidebar.right.tab.document.office.pdf',
     kind: 'keyed',
     scope: 'session',
-    summary: 'Renderer-owned notice above the document scrollport, selected by the reader id.',
-    doc: 'Renderer-owned notice above the document scrollport, selected by the reader id.',
+    summary: 'PDF presentation supplied with Office-owned converted bytes.',
+    doc: 'PDF presentation supplied with Office-owned converted bytes.',
     registerOptions: [
       {
         name: 'key',
@@ -2610,10 +2611,10 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/**\n * Contents prepared by the preview owner using ordinary file reads.\n * Byte arrays are transient UI input, never persisted layout or Session data.\n */\nexport type DocumentContent =\n  | { readonly kind: \'text\'; readonly text: string; readonly pages: readonly DocumentTextPage[]; readonly eof: boolean }\n  | { readonly kind: \'bytes\'; readonly data: Uint8Array<ArrayBuffer>; readonly missingFonts?: readonly string[] | undefined }',
+      '/** Content and viewing inputs shared by document bodies and nested PDF presentation. */\nexport interface DocumentBodyOwner {\n  /** Original file address, also readable through the standard useResource hook. */\n  readonly resourceAddress: string\n  /** Ordinary file content or a renderer-owned source request; text accumulates until eof. */\n  readonly content: DocumentContent\n  /** The document toolbar\'s current wrapping preference. */\n  readonly wrap: boolean\n  /** Report a renderer-owned scrollport; passing `null` restores the shared body as the owner. */\n  readonly scrollportRef: RefCallback<HTMLElement>\n}',
     ],
     ownerPropsReferences: [
-      'DocumentTextPage',
+      'DocumentContent',
     ],
     standardProps: [
       'useResource: UseResource',
@@ -2632,16 +2633,16 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'useProjection: UseProjection',
       'useTrajectory: UseTrajectory',
     ],
-    keyDomain: 'open: any string the owner dispatches (no compile-time key set), already taken: @deepseek-ai/dsh-client-ui-sidebar-documentpreview/office',
-    hookContext: '',
-    slotInject: '',
-    declaredBy: 'an entry in \'sidebar.right.pane.tab\' (client-ui-sidebar-documentpreview), so it exists while that entry is mounted',
+    keyDomain: 'open: any string the owner dispatches (no compile-time key set), none are taken yet',
+    hookContext: 'UseSidebarRightTabInfo',
+    slotInject: '{ hooks: { tabInfo: SlotHookFactory<\'sidebar.right.tab.document\', UseSidebarRightTabInfo> } }',
+    declaredBy: 'an entry in \'sidebar.right.tab.document\' (client-ui-sidebar-documentpreview), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-sidebar-documentpreview FontNotice key \'@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office\'',
+      'client-ui-sidebar-documentpreview LazyPdfBody',
     ],
-    replaceRisk: 'shadows-shipped-ui',
-    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document.notice\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document.notice\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:24',
+    replaceRisk: 'none',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document.office.pdf\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document.office.pdf\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/office/OfficeBody.tsx:21',
   },
   {
     key: 'sidebar.right.tab.guide',

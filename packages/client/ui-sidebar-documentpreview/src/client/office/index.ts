@@ -1,15 +1,20 @@
 /** Office preview registration backed by authorized Host rendering and the existing PDF body. */
 import type { Context } from '@deepseek-ai/cordis'
+import { retainDocumentTabs } from '../document/tab-lifetime.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-office-to-pdf/remote'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-files/remote'
 import type {} from '@deepseek-ai/dsh-client-connection/client'
-import { documentFileBytes, type ReadDocumentBytes } from '../rpc.ts'
+import { documentFileBytes } from '../rpc.ts'
+import { failureLine } from '../failure-line.ts'
+import { documentTabInfoFactory } from '../document/contract.ts'
 import { en, zh, type OfficePreviewKey } from './locales.ts'
-import { OfficePreviewCache, type ReadOfficeBytes } from './cache.ts'
-import { registerPdfBody } from '../pdf/index.ts'
-import { FontNotice } from './FontNotice.tsx'
+import { OfficePreviewCache, type ReadOfficeBytes, type ReadOfficeDocument } from './cache.ts'
+import { pdfBodyRegistration } from '../pdf/index.ts'
+import { LazyPdfBody } from '../pdf/LazyPdfBody.tsx'
+import { OfficeBody, type OfficeBodyInjected } from './OfficeBody.tsx'
+import { createOfficeStore } from './store.ts'
 import type { Config } from '../../config.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -26,14 +31,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export function apply(ctx: Context, config: Config['office']): void {
   const id = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office'
   const extensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
-  registerPdfBody(ctx, id)
   ctx.effect(() => ctx.locale.register('sidebarOffice', { zh, en }))
-  ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document.notice', () => ctx.slots.register({
-    name: 'sidebar.right.tab.document.notice', key: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office',
-    locale: 'sidebarOffice',
-  }, FontNotice)))
   const t = ctx.locale.bind('sidebarOffice')
-  const unavailable: ReadDocumentBytes = (_file, signal) => {
+  const unavailable: ReadOfficeDocument = (_file, signal) => {
     signal.throwIfAborted()
     return Promise.reject(new Error(t('unavailable')))
   }
@@ -41,9 +41,26 @@ export function apply(ctx: Context, config: Config['office']): void {
   ctx.effect(() => ctx.documentPreviews.register({
     id,
     extensions, binaryExtensions: extensions, priority: 'builtin',
-    title: () => t('title'), loading: 'bytes-complete', wrap: false,
-    read: (file, signal) => read(file, signal),
+    title: () => t('title'), loading: 'renderer', wrap: false,
   }))
+  const store = createOfficeStore()
+  const retainTab = retainDocumentTabs(ctx)
+  const documentT = ctx.locale.bind('sidebarDocumentPreview')
+  ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register({
+    name: 'sidebar.right.tab.document', key: id, locale: 'sidebarOffice', store,
+    children: { 'sidebar.right.tab.document.office.pdf': {
+      kind: 'keyed', scope: 'session', inject: { hooks: { tabInfo: documentTabInfoFactory } },
+    } },
+    inject: (_sessionId, actions): OfficeBodyInjected => ({
+      read: (file, signal) => read(file, signal),
+      describeFailure: failure => 'code' in failure ? failureLine(documentT, failure) : documentT('error.unavailable', { message: failure.message }),
+      retainTab: (tabId, signal) => { retainTab(tabId, signal, actions.forget) },
+    }),
+  }, OfficeBody)))
+  const pdfPresentation = pdfBodyRegistration(ctx)
+  ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document.office.pdf', () => ctx.slots.register({
+    name: 'sidebar.right.tab.document.office.pdf', key: id, locale: 'sidebarPdf', ...pdfPresentation,
+  }, LazyPdfBody)))
   ctx.inject(['remote', 'remote.officeToPdf', 'remote.workspaceFiles'], (scope) => {
     const convert: ReadOfficeBytes = async (file, signal, priority) => {
       signal.throwIfAborted()
@@ -55,7 +72,8 @@ export function apply(ctx: Context, config: Config['office']): void {
         }
         return result
       }
-      return { ok: true, value: documentFileBytes(result.value) }
+      return { ok: true, value: { ...documentFileBytes(result.value),
+        missingFonts: result.value.missingFonts, generation: result.value.generation } }
     }
     const createCache = () => new OfficePreviewCache(
       async (file, signal) => {

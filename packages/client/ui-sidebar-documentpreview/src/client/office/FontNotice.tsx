@@ -1,24 +1,26 @@
 /** Missing-font notice and a non-modal details panel for one source version. */
 import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type {} from '../document/contract.ts'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { Button, IconCloseOutline16, IconWarningOutline16, useAnchoredPosition, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './FontNotice.module.css'
 
 /** Notice inputs supplied by the document owner and Office locale registration. */
-export type FontNoticeProps = PropsRuntime<'sidebar.right.tab.document.notice'> & PropsLocale<'sidebarOffice'>
+export type FontNoticeProps = PropsLocale<'sidebarOffice'> & {
+  readonly resourceAddress: string
+  readonly sourceVersion: string
+  readonly fonts: readonly string[]
+}
 
 /**
  * Show missing fonts; dismissal applies to the same source version while this component stays mounted.
  * @param props - source identity, converted content, and localized copy.
  * @returns a collapsible notice and its anchored details, or nothing when fonts are available.
  */
-export function FontNotice({ resourceAddress, sourceVersion, content, t }: FontNoticeProps): ReactNode {
+export function FontNotice({ resourceAddress, sourceVersion, fonts, t }: FontNoticeProps): ReactNode {
   const identity = JSON.stringify([resourceAddress, sourceVersion])
   const [dismissed, setDismissed] = useState<string>()
   const [expanded, setExpanded] = useState<string>()
-  const fonts = content.kind === 'bytes' ? content.missingFonts ?? [] : []
   const visible = fonts.length > 0 && dismissed !== identity
   const open = visible && expanded === identity
   const root = useRef<HTMLDivElement>(null)
@@ -46,7 +48,7 @@ export function FontNotice({ resourceAddress, sourceVersion, content, t }: FontN
     const observer = new ResizeObserver(measure)
     observer.observe(element)
     return () => { observer.disconnect() }
-  }, [content, t])
+  }, [fonts, t])
   if (fonts.length === 0) return null
   return <>
     <div className={css.space} data-office-font-notice data-dismissed={!visible} aria-hidden={!visible} {...(!visible ? { inert: '' } : {})}>

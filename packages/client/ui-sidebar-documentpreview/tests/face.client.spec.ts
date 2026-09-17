@@ -397,3 +397,28 @@ describe('textFace', () => {
     expect(second.tab()?.version).toBe('v2')
   })
 })
+
+it.each([new Error('invalid bytes'), 'invalid bytes'])('reports an active complete-read decoding failure: %s', async (failure) => {
+  const instance = createTextStore().create()
+  const controller = new AbortController()
+  const read = vi.fn<ReadDocumentBytes>().mockRejectedValue(failure)
+  try {
+    textFace(vi.fn(), read)(SESSION, instance.actions).loadAll(TAB_1, FILE, controller.signal)
+    await Promise.resolve()
+    expect(instance.getSnapshot().byTab[TAB_1]?.failure).toMatchObject({ code: 'gateway/internal', message: 'invalid bytes' })
+  } finally { controller.abort() }
+})
+
+it('ignores a complete-read rejection after renderer-owned loading takes over', async () => {
+  const instance = createTextStore().create()
+  const controller = new AbortController()
+  const pending = Promise.withResolvers<Awaited<ReturnType<ReadDocumentBytes>>>()
+  const face = textFace(vi.fn(), () => pending.promise)(SESSION, instance.actions)
+  try {
+    face.loadAll(TAB_1, FILE, controller.signal)
+    face.prepareRenderer(TAB_1, controller.signal, 'office')
+    pending.reject(new Error('retired'))
+    await pending.promise.catch(() => {})
+    expect(instance.getSnapshot().byTab[TAB_1]?.failure).toBeUndefined()
+  } finally { controller.abort() }
+})

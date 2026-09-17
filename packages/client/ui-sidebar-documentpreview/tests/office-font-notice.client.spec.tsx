@@ -16,9 +16,9 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 function props(overrides: Partial<FontNoticeProps> = {}): FontNoticeProps {
   return {
     resourceAddress: 'dsh-resource://file/session/s-1/report.docx', sourceVersion: 'v1',
-    content: { kind: 'bytes', data: new Uint8Array(), missingFonts: ['Consolas', 'Missing Serif'] },
+    fonts: ['Consolas', 'Missing Serif'],
     t: makeTranslate(en), ...overrides,
-  } as FontNoticeProps
+  }
 }
 
 it('opens details, restores focus on Escape or close, and dismisses outside without stealing focus', () => {
@@ -78,15 +78,7 @@ it('has localized copy and does not reserve a notice for fonts that are availabl
   const view = render(<FontNotice {...props({ t: makeTranslate(zh) })} />)
   fireEvent.click(screen.getByRole('button', { name: zh.showMore }))
   expect(screen.getByRole('dialog', { name: zh.missingFontsTitle })).toBeDefined()
-  view.rerender(<FontNotice {...props({ content: { kind: 'bytes', data: new Uint8Array(), missingFonts: [] } })} />)
+  view.rerender(<FontNotice {...props({ fonts: [] })} />)
   expect(view.container.childElementCount).toBe(0)
   expect(screen.queryByRole('dialog')).toBeNull()
-})
-
-it.each([
-  { kind: 'bytes', data: new Uint8Array() },
-  { kind: 'text', text: 'source', pages: [], eof: true },
-] as const)('omits the notice for ordinary $kind readers without conversion font metadata', (content) => {
-  const view = render(<FontNotice {...props({ content })} />)
-  expect(view.container.childElementCount).toBe(0)
 })

@@ -2,12 +2,26 @@
 import type { OfficeToPdfPriority, OfficeToPdfGeneration } from '@deepseek-ai/dsh-office-to-pdf/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { WorkspaceFileStat } from '@deepseek-ai/dsh-api-workspace-files/types'
-import type { ReadDocumentBytes, SessionFile } from '../rpc.ts'
+import type { DocumentFileBytes, SessionFile } from '../rpc.ts'
+
+/** PDF bytes and conversion metadata owned by Office preview. */
+export type OfficeFileBytes = DocumentFileBytes & {
+  readonly missingFonts: readonly string[]
+  readonly generation: OfficeToPdfGeneration
+}
+
+/**
+ * Load authorized PDF contents for one Office source.
+ * @param file - Session and source path.
+ * @param signal - this reader's lifetime.
+ * @returns converted PDF bytes or a declared source-access failure.
+ */
+export type ReadOfficeDocument = (file: SessionFile, signal: AbortSignal) => Promise<RemoteResult<OfficeFileBytes>>
 
 /** Authorized cached reads carry explicit scheduling intent to the Host. */
-export type ReadOfficeBytes = (file: SessionFile, signal: AbortSignal, priority: OfficeToPdfPriority) => ReturnType<ReadDocumentBytes>
+export type ReadOfficeBytes = (file: SessionFile, signal: AbortSignal, priority: OfficeToPdfPriority) => ReturnType<ReadOfficeDocument>
 
-type Result = Awaited<ReturnType<ReadDocumentBytes>>
+type Result = Awaited<ReturnType<ReadOfficeDocument>>
 type Success = Extract<Result, { ok: true }>
 type Stat = (file: SessionFile, signal: AbortSignal) => Promise<RemoteResult<WorkspaceFileStat>>
 interface Pending {

@@ -105,7 +105,6 @@ export function apply(ctx: ClientContext): void {
     {
       name: 'sidebar.right.pane.tab', key: TEXTPREVIEW_ID, locale: NS, store,
       children: {
-        'sidebar.right.tab.document.notice': { kind: 'keyed', scope: 'session' },
         'sidebar.right.tab.document': { kind: 'keyed', scope: 'session', inject: { hooks: { tabInfo: documentTabInfoFactory } } },
       },
       inject: (sessionId, actions): TextPreviewInjected => ({
