@@ -16,7 +16,7 @@ UI 还必须保留[持久化目录](../architecture/2026-09-01-parent-owned-suba
 
 Web 产品通过页头的当前 title 谱系区域公开选中会话中由会话支撑的直接 subagent。用户可以懒加载展开后代目录，并在现有对话区域中打开任一 mode。one-shot child 永久只读。可继续 child 只有在其确切直接 parent agent 存活时才接受用户后续消息；否则，其持久化 transcript 仍然可读，并附带恢复说明。
 
-同一个页头行还可以把 child 作为 `dsh-resource://chat/session/<childSessionId>?parent=<parentSessionId>&mode=<mode>` 在右侧 Sidebar 打开。打开时优先使用独立分栏；无法分栏时回退到当前分栏。Sidebar tab 使用共享 Conversation Component Factory 渲染并省略宽度控制，因此主对话与嵌入式对话共用一套组装，而不共享布局界面。
+同一个页头行还可以把 child 作为 `dsh-resource://subagentchat/session/<childSessionId>?parent=<parentSessionId>&mode=<mode>` 在右侧 Sidebar 打开。打开时优先使用独立分栏；无法分栏时回退到当前分栏。Sidebar tab 使用共享 Conversation Component Factory 渲染并省略宽度控制，因此主对话与嵌入式对话共用一套组装，而不共享布局界面。
 
 每个打开的 child 都携带目录派生地址 `{ parentSessionId, childSessionId, mode }`。选择专用历史与提示词传输的是包含 mode 的地址，而不是谱系或粗粒度 origin 标记。历史操作会从持久化存储读取会话，而不触发激活。可继续提示词通过 `subagent.prompt` 携带 Queue 或 Steer 投递，并在 inbox 接受消息时以 `{ messageId }` 成功返回；它不会公开 Activation、等待完成或返回结果。相邻 Agent 的模型消息使用单独拥有的固定 Steer 操作。
 
