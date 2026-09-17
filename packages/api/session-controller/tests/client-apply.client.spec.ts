@@ -3,12 +3,12 @@
  * arriving as emit frames on the `$events` stream, the control stream over
  * the real Connection, and Agent Context identity through the Typert registry.
  */
-import type { Context } from '@deepseek-ai/cordis'
 import { RemoteStreamCarrierError } from '@deepseek-ai/dsh-api-gateway/client'
 import { ok, type RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import { isTypertOwnedValue } from '@deepseek-ai/dsh-typert-protocol'
 import { afterEach, describe, expect, vi, type MockInstance } from 'vitest'
 import { ClientSessions } from '../src/client/sessions/service.ts'
 import type { SessionListValue } from '../src/types.ts'
@@ -138,12 +138,17 @@ describe('Session Controller Client apply', () => {
     const { client, sessions } = await bench(start)
     const adapter = client.ctx.typert.contexts.getClient('agent')
     const first = adapter?.resolve(sid('agent-early'))
-
-    expect(first).toBeDefined()
-    expect(sessions.scopeOf(first as Context)).toBe(sid('agent-early'))
-    expect(adapter?.resolve(sid('agent-early'))).toBe(first)
+    const second = adapter?.resolve(sid('agent-early'))
+    if (!isTypertOwnedValue(first) || !isTypertOwnedValue(second)) throw new Error('expected owned Contexts')
+    using firstOwner = first
+    using secondOwner = second
+    expect(sessions.scopeOf(firstOwner.value)).toBe(sid('agent-early'))
+    expect(secondOwner.value).toBe(firstOwner.value)
+    expect(sessions.retainInfo(sid('agent-early')).getSnapshot()).toEqual({ referenceCount: 2, retainedBy: { gateway: 2 } })
+    expect(mock.log.requests('session/follow')).toHaveLength(0)
     list.resolve(ok({ items: [] }))
     await vi.waitFor(() => { expect(sessions.list.getSnapshot().phase).toBe('ready') })
+    expect(sessions.scope(sid('agent-early'))).toBe(firstOwner.value)
   })
 
   it('projects Agent Context identity in both directions and withdraws the adapter when the row unloads', async ({ mock, start }) => {
@@ -151,12 +156,16 @@ describe('Session Controller Client apply', () => {
     await vi.waitFor(() => { expect(sessions.list.getSnapshot().phase).toBe('ready') })
 
     await emit(mock, 'api-session/added', { sessionId: sid('agent-1'), updatedAt: 1, running: false, blank: true })
-    await vi.waitFor(() => { expect(sessions.scope(sid('agent-1'))).toBeDefined() })
-    const scoped = sessions.scope(sid('agent-1')) as Context
+    expect(sessions.scope(sid('agent-1'))).toBeUndefined()
+    using reference = sessions.retainAgentScope(sid('agent-1'))
+    const scoped = reference.binding.ctx
     const adapter = client.ctx.typert.contexts.getClient('agent')
     expect(adapter?.identity(client.ctx)).toBeUndefined()
     expect(adapter?.identity(scoped)).toBe(sid('agent-1'))
-    expect(adapter?.resolve(sid('agent-1'))).toBe(scoped)
+    const resolved = adapter?.resolve(sid('agent-1'))
+    if (!isTypertOwnedValue(resolved)) throw new Error('expected invocation ownership')
+    using invocation = resolved
+    expect(invocation.value).toBe(scoped)
 
     await client.unload(SELF)
     expect(client.ctx.typert.contexts.getClient('agent')).toBeUndefined()

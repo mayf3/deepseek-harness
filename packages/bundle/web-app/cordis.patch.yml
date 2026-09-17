@@ -225,6 +225,9 @@
       name: '@deepseek-ai/dsh-client-ui-sidebar-right'
 
 
+    - id: office-to-pdf
+      name: '@deepseek-ai/dsh-office-to-pdf'
+
     # The right Sidebar's document tab: bounded file reads with selectable
     # Markdown, code, HTML, PDF, and plain-text renderers.
     - id: ui-sidebar-documentpreview
@@ -282,11 +285,6 @@
     - id: ui-cordis
       name: '@deepseek-ai/dsh-client-ui-cordis'
 
-    # Durable workflow lifecycle as an independent Chat node after the
-    # existing generic workflow tool row.
-    - id: ui-workflow-run
-      name: '@deepseek-ai/dsh-client-ui-workflow-run'
-
     # Turn tail: the changed-files card and delivery cards under each closing
     # assistant message. Remove this entry to turn the surface off; the tail
     # hole renders empty.
@@ -301,6 +299,11 @@
 
     - id: ui-workspace
       name: '@deepseek-ai/dsh-client-ui-workspace'
+
+    # Durable workflow lifecycle as an independent Chat node after the
+    # existing generic workflow tool row.
+    - id: ui-workflow-run
+      name: '@deepseek-ai/dsh-client-ui-workflow-run'
 
     # Input triggers: the '/' | '@' pipeline (ui-input-trigger), the command surface over
     # it (ui-commands), and the reference sources (ui-skill / ui-reference).

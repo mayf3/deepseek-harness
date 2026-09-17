@@ -15,9 +15,9 @@ const useResource = (() => ({ status: 'none' as const, value: undefined, failure
 let selectedSession: SessionId | undefined
 let selectedSessionTitle: string | undefined
 let workspacesReady = true
-type AttentionSnapshot = Parameters<Parameters<AppFrameProps['useSessionPendingInteraction']>[0]>[0]
+type AttentionSnapshot = Parameters<Parameters<AppFrameProps['useSessionStatus']>[0]>[0]
 const noAttention: AttentionSnapshot = new Map()
-const useSessionPendingInteraction: AppFrameProps['useSessionPendingInteraction'] = selector => selector(noAttention)
+const useSessionStatus: AppFrameProps['useSessionStatus'] = selector => selector(noAttention)
 
 let observers: ResizeObserverStub[]
 class ResizeObserverStub {
@@ -72,15 +72,13 @@ function mountFrame(windowWidth = frameWidth) {
     ids: selectedSession === undefined ? [] : [selectedSession],
     byId: selectedSession === undefined ? {} : {
       [selectedSession]: {
-        id: selectedSession, displayTitle: 'Test', running: false, blank: false, updatedAt: 1,
+        id: selectedSession, displayTitle: 'Test', running: false, retainedBy: { mainView: 1 }, blank: false, updatedAt: 1,
         ...(selectedSessionTitle === undefined ? {} : { title: selectedSessionTitle }),
       },
     },
-    current: selectedSession,
     phase: 'ready',
     subagentsByParent: {},
     jobsBySession: {},
-    currentAddress: undefined,
   })
   const workspaceState: WorkspaceSnapshot = {
     items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
@@ -98,7 +96,8 @@ function mountFrame(windowWidth = frameWidth) {
       renderSlot={renderSlot}
       useSessions={useSessions}
       usePanelInfo={usePanelInfo}
-      useSessionPendingInteraction={useSessionPendingInteraction}
+      useSessionStatus={useSessionStatus}
+      useSessionRetainInfo={() => undefined}
       useResource={useResource}
       useWorkspaces={sel => sel(workspaceState)}
       t={key => key === 'brand.localBuild' ? 'DSH Local Build' : key}

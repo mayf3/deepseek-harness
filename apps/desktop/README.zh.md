@@ -52,6 +52,8 @@ Electron 根据应用语言选择类型化的英文或中文 shell 文案，并�
 
 Windows 使用 40 DIP 顶栏，保留原生窗口按钮，颜色随应用调色板同步。侧栏开关旁的本地化“应用”和“编辑”入口打开原生弹出菜单。“应用”提供桌面插件、检查更新和退出；“编辑”向当前编辑器发送对应按键，提供撤销、重做、剪切、复制、粘贴、删除和全选。Ctrl+, 打开独立的桌面插件窗口，管理 Desktop 包，与侧栏的运行时插件面板不同。按 Alt 不会出现额外的原生菜单行。其他平台保留原生菜单。可编辑区域保留快捷键和不带快捷键标注的右键菜单；命令可用状态由 Chromium 提供，选中的只读文本提供“复制”命令。
 
+macOS 上自定义应用菜单还会声明标准的 File、Window 和应用菜单，因为替换 Electron 的默认菜单会丢掉 Close Window（⌘W）、Minimize（⌘M）和 Hide（⌘H）。Windows 和 Linux 保留应用菜单和 Edit 菜单。
+
 ### 运行时与插件激活
 
 签名资源中的 `resources/app.asar/dsh/desktop-runtime.json` 绑定 shell 版本、Electron 的 Node 版本、平台、架构、共享包版本和最终文件清单。启动读取元数据，并检查共享包记录。发布 schema、shell 版本、目标兼容性和文件完整性在打包时验证。首次启动不会把核心包复制到 profile 存储或通过 pnpm 安装核心包。
@@ -64,11 +66,11 @@ Windows 使用 40 DIP 顶栏，保留原生窗口按钮，颜色随应用调色�
 
 CLI 与 Desktop 共用已安装依赖清单及 bundle 列表协调逻辑。bundle 声明遵循与启动一致的安装目录优先解析顺序。CLI 操作自动启用已安装 bundle；Desktop 更新后保留通过 UI 禁用的 bundle 状态。两条路径都不要求已安装元数据可读才能列出或移除依赖。
 
-主窗口创建、主文档加载、preload、渲染器、Web 初始化或后端的致命失败，会在每个应用进程中打开一次原生恢复对话框。对话框显示首次错误末尾的限长摘要，标明截断情况，并提供退出、重启、禁用全部第三方插件并重启。启动失败保留 Web 加载页和动画；运行中失败保留当前页面。预期关闭、取消导航和普通请求错误不会触发恢复。Host 成功重启时，包操作错误只在插件窗口报告；任何插件变更后的 Host 启动失败都会进入原生恢复。不通过启动超时推断故障。
+主窗口创建、主文档加载、preload、渲染器、Web 初始化或后端的致命失败，会在每个应用进程中打开一次原生恢复对话框。对话框显示首次错误末尾的限长摘要，标明截断情况，并提供退出、重启、禁用第三方插件、备份 profile patch 并重启。启动失败保留 Web 加载页和动画；运行中失败保留当前页面。预期关闭、取消导航和普通请求错误不会触发恢复。Host 成功重启时，包操作错误只在插件窗口报告；任何插件变更后的 Host 启动失败都会进入原生恢复。不通过启动超时推断故障。
 
 原生弹窗详情最多包含 1,200 个 UTF-16 代码单元和八行诊断；完整的已报告错误写入 Electron 控制台。Host 错误诊断仅保留 stderr 输出的最后 64 Ki 个字符。更早的输出会被丢弃，避免长期运行的 Host 使壳的诊断缓冲区无限增长。
 
-恢复操作等待 Host 关闭后才修改插件启用状态。原生恢复操作禁用第三方 bundle 时持有事务锁写入 profile，不加载运行时元数据，也不删除文件。profile 数据无效或写入失败会作为恢复操作错误报告；Desktop 不会假装禁用成功后重启。Desktop 不提供 profile 重置操作或应急 HTML 文档。
+恢复操作等待 Host 关闭后才修改插件启用状态。原生恢复操作在 profile 事务锁内调用共享 app-boot 恢复函数。它禁用第三方 bundle，并将 profile 的 `cordis.patch.yml` 重命名为 `cordis.patch.yml.bak-<timestamp>`（重名时追加序号），无需解析；下次启动创建空 patch。已安装包和已有备份保留。home 级 patch 不变。Electron 控制台记录备份路径（或原文件不存在）以及 home 级 patch 未修改。profile 数据无效、重命名失败或写入失败会作为恢复操作错误报告；已完成的修改保留，Desktop 不会假装恢复成功后重启。Desktop 不提供 profile 重置操作或应急 HTML 文档。
 
 包事务独占 `$DSH_HOME/profiles/desktop/lock`，直到 pnpm 进程退出。pnpm 运行前，共享模块回退辅助函数只删除其拥有的链接，保留 pnpm 管理的目录；开发 Host 在启动时重建所需链接。链接清理保留目标目录。原生构建遵循 pnpm 配置的构建策略；发布准备使用独立的构建期允许列表。
 
@@ -120,7 +122,9 @@ macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS �
 
 ### 运行时文件筛选
 
-生产包首先经过 npm 发布规则和依赖安装。[桌面文件规则](scripts/runtime-file-policy.ts)随后在签名和完整性封存之前过滤不可变的 `resources/app.asar/dsh/node_modules` 副本。它排除 TypeScript 声明、明确属于 JavaScript/CSS/TypeScript 的 source map、TypeScript 构建缓存、Domino 测试目录、指定的原生编译产物，以及其他平台的 node-pty 预构建文件。它保留运行时 JavaScript、原生模块及其 DLL/EXE 辅助程序、WASM、未知资源、许可证和声明。规则不会修改 npm tarball、内置包管理器或用户安装的插件文件。
+Desktop 在本地打包工作区包，并通过目标捆绑的 Node 和 pnpm 安装外部依赖。[Desktop 文件策略](scripts/runtime-file-policy.ts)随后在签名和完整性封装前过滤不可变的 `resources/app.asar/dsh/node_modules` 副本。它排除 TypeScript 声明、已识别的 JavaScript/CSS/TypeScript source map、TypeScript 构建缓存、Domino 测试目录、选定的原生编译器输出和其他平台的 node-pty 预构建文件。它保留运行时 JavaScript、原生模块及其 DLL/EXE 辅助文件、WASM、未知资源、许可证和 notices。该策略不修改 npm tarball、捆绑的包管理器或用户安装的插件文件。
+
+[Office 转换提供方](../../packages/document/office-to-pdf/README.zh.md)携带目标已声明的原生引擎；kit 未声明匹配原生目标时携带 WASM 引擎。准备阶段在打包前拒绝缺少目标引擎的情况。引擎资源、许可证和 notices 保留在运行时依赖树中。
 
 打包应用运行编译后的 JavaScript 和预生成的 Typert 元数据，不编译 TypeScript 插件。源码级调试导航和编辑器声明仍可从开发包中获取。[复制规则测试](tests/runtime-file-policy.spec.ts)覆盖排除项和保留资源；`prepare:dsh` 在 Host smoke 和最终清单验证之前，使用 Electron RunAsNode 执行[产物 smoke](tests/fixtures/runtime-payload-smoke.mjs)。
 

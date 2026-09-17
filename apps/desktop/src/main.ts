@@ -38,7 +38,8 @@ const recovery = new DesktopFatalRecovery({
   stop: () => { shuttingDown = true; return stopForRecovery() },
   disablePlugins: async () => {
     const manager = new DesktopProjectManager(resolveDesktopPaths(), runtimeResources())
-    await manager.disableAllPlugins()
+    const backupPath = await manager.disableAllPlugins()
+    console.info('Desktop profile recovery completed:', { profilePatchBackup: backupPath ?? null, homePatch: 'unchanged' })
   },
   exit: () => { app.quit() },
   restart: () => { app.relaunch(); app.quit() },
@@ -440,6 +441,15 @@ async function main(): Promise<void> {
     void pluginWindow.loadURL(`${SCHEME}://shell/plugin-manager.html`)
   }
 
+  // A custom application menu replaces Electron's default menu, so macOS needs
+  // its standard menus and application hide commands declared explicitly.
+  const darwin = process.platform === 'darwin'
+  const platformMenus: MenuItemConstructorOptions[] = darwin
+    ? [{ role: 'fileMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]
+    : [{ role: 'editMenu' }]
+  const hideCommands: MenuItemConstructorOptions[] = darwin
+    ? [{ role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }]
+    : []
   const applicationItems = (): MenuItemConstructorOptions[] => [
     {
       label: messages.pluginsMenu,
@@ -448,12 +458,13 @@ async function main(): Promise<void> {
     },
     { label: messages.checkUpdatesMenu, click: () => { void checkAndPrompt(true) } },
     { type: 'separator' },
+    ...hideCommands,
     { role: 'quit', ...(process.platform === 'win32' ? { label: messages.exitApplication } : {}) },
   ]
   Menu.setApplicationMenu(process.platform === 'win32' ? null : Menu.buildFromTemplate([{
     label: process.platform === 'darwin' ? app.name : messages.application,
     submenu: applicationItems(),
-  }, { role: 'editMenu' }]))
+  }, ...platformMenus]))
 
   if (process.platform === 'win32') {
     ipcMain.handle(DESKTOP_IPC.windowsMenu, (event, name: unknown, x: unknown, y: unknown) => {

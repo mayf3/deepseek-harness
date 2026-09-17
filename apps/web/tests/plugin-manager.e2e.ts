@@ -71,10 +71,13 @@ describe('web e2e: plugin manager', () => {
     await panel.getByText('bundle', { exact: true }).waitFor({ timeout: 20_000 })
     const toggle = panel.getByRole('switch', { name: '启用 bundle' })
     expect(await toggle.getAttribute('aria-checked')).toBe('false')
-    // The profile's own group holds its one bundle; the installation's optional bundles form the built-in
-    // group, and its other bundles stay off the page.
+    // The profile's own group holds its one bundle; the installation's optional bundles open the Official
+    // group, followed by the official plugins that registered their configuration, and its other bundles
+    // stay off the page.
     expect(await panel.locator('[data-plugin-group="bundles"] [data-plugin-package]').count()).toBe(1)
-    expect(await panel.locator('[data-plugin-group="builtin"] [data-plugin-package]').count()).toBe(3)
+    expect(await panel.locator('[data-plugin-group="official"] [data-plugin-package]').count()).toBe(2)
+    expect(await panel.locator('[data-plugin-group="official"] [data-plugin-item]').count()).toBe(4)
+    expect(await panel.getByText('Beta', { exact: true }).count()).toBe(2)
     // A bundle that is off still shows the rows its patch declares, without switches.
     await panel.getByRole('button', { name: '查看 bundle' }).click()
     await panel.locator('[data-plugin-row]', { hasText: 'fixture-row' }).waitFor({ timeout: 10_000 })
@@ -91,7 +94,7 @@ describe('web e2e: plugin manager', () => {
   it('updates built-in names and descriptions when the UI language changes', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-locale'))
     const panel = await openPluginsPanel()
-    await panel.getByRole('button', { name: '查看 智能体团队（实验性）' }).click()
+    await panel.getByRole('button', { name: '查看 智能体团队', exact: true }).click()
     const packageName = panel.locator('[data-plugin-name]')
     expect(await packageName.textContent()).toBe('@deepseek-ai/dsh-experimental-agent-team-profile')
     expect(await panel.getByText('启用智能体团队协作与团队工具。').count()).toBe(1)
@@ -101,16 +104,19 @@ describe('web e2e: plugin manager', () => {
       await page.getByRole('menuitem', { name: 'English' }).click()
       await page.getByRole('dialog', { name: 'Settings' }).waitFor()
       await page.keyboard.press('Escape')
-      await panel.getByRole('heading', { name: 'Experimental Agent Teams', exact: true }).waitFor()
+      await panel.getByRole('heading', { name: 'Agent Teams', exact: true }).waitFor()
       expect(await packageName.textContent()).toBe('@deepseek-ai/dsh-experimental-agent-team-profile')
       expect(await panel.getByText('Enable agent team collaboration and team tools.').count()).toBe(1)
       await panel.getByRole('button', { name: 'Back to plugins' }).click()
-      for (const title of ['Experimental Agent Teams', 'Experimental Agent Teams Web UI', 'Experimental Auto Authorization Review']) {
+      for (const title of ['Agent Teams', 'Agent Teams Web UI']) {
         await panel.getByRole('button', { name: `View ${title}`, exact: true }).waitFor()
         expect(await panel.getByRole('switch', { name: `Enable ${title}`, exact: true }).count()).toBe(1)
       }
       expect(await panel.getByText('View team members, the task board, and teammate sessions in the browser.').count()).toBe(1)
-      expect(await panel.getByText('Add an Auto review permission mode that uses the model to assess authorization before each tool call.').count()).toBe(1)
+      // The official configuration pages follow the language too, from their own dictionary.
+      for (const title of ['Shell', 'Agent loop', 'Subagent', 'Web search']) {
+        await panel.getByRole('button', { name: `View ${title}`, exact: true }).waitFor()
+      }
     } finally {
       if (await page.locator('html').getAttribute('lang') === 'en') {
         if (await page.getByRole('dialog', { name: 'Settings' }).count() === 0) {
@@ -122,7 +128,7 @@ describe('web e2e: plugin manager', () => {
       }
       await closeSettings()
     }
-    await panel.getByRole('button', { name: '查看 智能体团队（实验性）', exact: true }).waitFor()
+    await panel.getByRole('button', { name: '查看 智能体团队', exact: true }).waitFor()
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
