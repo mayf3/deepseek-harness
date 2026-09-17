@@ -7,9 +7,9 @@
     - button "模型":
       - img
       - text: 模型
-    - button "插件":
+    - button "内置插件":
       - img
-      - text: 插件
+      - text: 内置插件
     - button "Agent 预设":
       - img
       - text: Agent 预设
@@ -56,11 +56,12 @@
           - textbox "最大输出 token 数 1":
             - /placeholder: 256K
             - text: 64K
-          - text: 图片输入
-          - combobox "图片输入 1":
-            - option "默认（仅文本）"
-            - option "支持" [selected]
-            - option "不支持"
+          - group "输入类型 1":
+            - text: 输入类型
+            - checkbox "文本" [checked]
+            - text: 文本
+            - checkbox "图片" [checked]
+            - text: 图片
           - button "添加模型":
             - img
             - text: 添加模型

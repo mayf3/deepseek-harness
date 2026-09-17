@@ -536,7 +536,7 @@ function renderSafeLink(href: string, children: ReactNode[], key: Key, glyph = t
       href={safeHref}
       {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
     >
-      {glyph && <LinkIcon kind="url" className={css.linkIcon} />}
+      {glyph && <LinkIcon kind="url" href={safeHref} className={css.linkIcon} />}
       {children}
     </a>
   )

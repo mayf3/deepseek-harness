@@ -98,7 +98,7 @@ export interface Config {
    * start; the tool remains model-visible so runtime policy owns rejection.
    * `'provider-managed'` is for an out-of-process provider whose recursion
    * budget belongs to the child runtime or its own deployment. Omission reads
-   * the current Host subagent depth setting (default `3`) at each delegation.
+   * the current Host subagent depth setting (default `1`) at each delegation.
    */
   maxDepth?: number | 'provider-managed'
 }

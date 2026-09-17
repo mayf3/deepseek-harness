@@ -188,16 +188,16 @@ interface BrowserPromptSource {
 
 /** Host configuration for continuable subagent capacity. */
 export interface Config {
-  /** Maximum live continuable children across one root's tree, excluding the root; defaults to 8. */
+  /** Maximum live children sharing uninterrupted continuable parent links; defaults to 8. */
   maxActiveSubagents?: number
-  /** Default delegation depth for tools without an explicit limit; defaults to 3. */
+  /** Default delegation depth for tools without an explicit limit; defaults to 1. */
   maxDepth?: number
 }
 
 /** Named provider registry with one-shot runs, durable discovery, and continuable-child operations. */
 export class SubagentRuntime extends TypertRemoteService {
   static Config: z<Config> = z.object({
-    maxDepth: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER).default(3),
+    maxDepth: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER).default(1),
     maxActiveSubagents: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(8),
   })
   private settingsSource: () => Config
@@ -435,6 +435,7 @@ export class SubagentRuntime extends TypertRemoteService {
    * nearest step and retains the Agent loop's best-effort fallback semantics.
    * Image parts are admitted and persisted through the attachment store
    * before delivery, and the child's model must accept image input.
+   * Cold resume at capacity rejects with `subagent/delivery-unavailable`.
    * @param request - durable address, delivery, minted identity, content, and optional browser zone.
    * @param signal - carrier cancellation, owning the call until inbox acceptance.
    * @returns the accepted message's inbox identity.

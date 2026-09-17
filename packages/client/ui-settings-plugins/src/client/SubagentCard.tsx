@@ -2,31 +2,31 @@
 
 import { useId } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type {} from './slot-contract.ts'
-import { PluginCard } from './PluginCard.tsx'
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
+import { PluginConfigForm } from './PluginConfigForm.tsx'
 import { SubagentLimitsFields } from './SubagentLimitsFields.tsx'
 import { SubagentModelSelectionFields } from './SubagentModelSelectionFields.tsx'
 import { subagentCardShell, type SubagentCardFace } from './subagent-card-controller.ts'
 import css from './SubagentCard.module.css'
 
 /** Framework-derived props for the shared Subagent settings card. */
-export type SubagentCardProps = PropsRuntime<'settings.plugin.item'>
+export type SubagentCardProps = PropsRuntime<'plugins.item'>
   & PropsLocale<'settings.plugins'> & InjectFace<SubagentCardFace>
 
 /**
- * Render the available Subagent settings with one disclosure and save footer.
+ * Render the available Subagent settings with one configuration page and save footer.
  * @param props - Locale, both form snapshots, and their shared actions.
- * @returns One card; the fallback stays hidden when the primary namespace is available.
+ * @returns The summary or the available settings form.
  */
 export function SubagentCard(props: SubagentCardProps) {
   const { t } = props
   const limits = props.useSubagentLimitsCard(snapshot => snapshot)
   const models = props.useSubagentModelSelectionCard(snapshot => snapshot)
   const headingId = useId()
-  if (props.fallback && limits.available) return null
+  if (props.view === 'summary') return t('subagentDescription')
   const state = subagentCardShell(limits, models)
   return (
-    <PluginCard t={t} titleKey="subagentTitle" descriptionKey="subagentDescription"
+    <PluginConfigForm t={t}
       state={state} onSave={props.save} onDiscard={props.discard}>
       {limits.available
         ? (
@@ -46,6 +46,6 @@ export function SubagentCard(props: SubagentCardProps) {
           </section>
         )
         : null}
-    </PluginCard>
+    </PluginConfigForm>
   )
 }

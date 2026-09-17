@@ -507,7 +507,7 @@ it('reads the saved default depth at each delegation without remounting the tool
     await callSubagent(ctx, { description: 'second', prompt: 'work' })
     await ctx.settings.update('subagent', { maxDepth: 0 })
     await callSubagent(ctx, { description: 'disabled', prompt: 'work' })
-    expect(depths).toEqual([3, 5, 0])
+    expect(depths).toEqual([1, 5, 0])
   } finally {
     await ctx.fiber.dispose()
   }

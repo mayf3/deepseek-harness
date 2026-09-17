@@ -1,10 +1,10 @@
-/** Locale bundles for the plugin configuration section and its plugin cards. */
+/** Locale bundles for the built-in plugins settings section and the plugin configuration pages. */
 
 /** Locale keys these surfaces render. */
 export type PluginsSettingsLocaleKey =
-  | 'nav' | 'title' | 'intro' | 'tabs' | 'configurableTab' | 'empty'
-  | 'overridden' | 'reset' | 'readOnly' | 'expand' | 'collapse'
-  | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed' | 'invalidNumber'
+  | 'nav' | 'title' | 'intro' | 'tabs' | 'empty'
+  | 'overridden' | 'reset' | 'readOnly' | 'unavailable'
+  | 'save' | 'saving' | 'saveFailed' | 'invalidNumber'
   | 'bashTitle' | 'bashDescription' | 'bashTimeoutMs' | 'bashTimeoutMsHint'
   | 'bashMaxOutputBytes' | 'bashMaxOutputBytesHint'
   | 'agentLoopTitle' | 'agentLoopDescription' | 'agentLoopMaxParallel' | 'agentLoopMaxParallelHint'
@@ -28,21 +28,17 @@ export type PluginsSettingsLocaleKey =
 
 /** English copy. */
 export const en: Record<PluginsSettingsLocaleKey, string> = {
-  nav: 'Plugins',
-  title: 'Plugins',
-  intro: 'Configure and inspect the plugins installed in this deployment.',
+  nav: 'Built-in plugins',
+  title: 'Built-in plugins',
+  intro: 'Inspect the plugins this deployment ships.',
   tabs: 'Plugin views',
-  configurableTab: 'Plugin configuration',
-  empty: 'This deployment exposes no plugin settings.',
+  empty: 'This deployment exposes no plugin views.',
   overridden: 'Overridden',
   reset: 'Reset to default',
   readOnly: 'This deployment stores settings read-only.',
-  expand: 'Show settings',
-  collapse: 'Hide settings',
+  unavailable: 'This plugin is not loaded, so it cannot be configured right now.',
   save: 'Save',
   saving: 'Saving…',
-  discard: 'Discard',
-  unsaved: 'Unsaved',
   saveFailed: 'The deployment did not accept these values; they were left for you to correct.',
   invalidNumber: 'Enter a number, or leave blank to use the default.',
   bashTitle: 'Shell',
@@ -97,21 +93,17 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
 
 /** Simplified Chinese copy. */
 export const zh: Record<PluginsSettingsLocaleKey, string> = {
-  nav: '插件',
-  title: '插件',
-  intro: '配置和查看本部署已安装的插件。',
+  nav: '内置插件',
+  title: '内置插件',
+  intro: '查看内置部署的插件列表',
   tabs: '插件视图',
-  configurableTab: '插件配置',
-  empty: '本部署没有开放任何插件设置。',
+  empty: '本部署没有开放任何插件视图。',
   overridden: '已覆盖',
   reset: '恢复默认',
   readOnly: '本部署的设置为只读。',
-  expand: '展开设置',
-  collapse: '收起设置',
+  unavailable: '该插件当前未加载，暂时无法配置。',
   save: '保存',
   saving: '保存中…',
-  discard: '放弃修改',
-  unsaved: '未保存',
   saveFailed: '本部署没有接受这些值，已保留供你修改。',
   invalidNumber: '请填数字；留空表示使用默认值。',
   bashTitle: '终端',

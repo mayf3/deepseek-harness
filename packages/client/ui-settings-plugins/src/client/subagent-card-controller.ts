@@ -9,8 +9,6 @@ import type {
 /** Both existing form sources and the actions exposed by one Subagent card. */
 export interface SubagentCardFace {
   hooks: SubagentLimitsCardFace['hooks'] & SubagentModelSelectionCardFace['hooks']
-  /** The model namespace supplies the card only when limits are not served. */
-  fallback: boolean
   editLimit: SubagentLimitsCardFace['edit']
   resetLimit: SubagentLimitsCardFace['resetField']
   toggleEnabled: SubagentModelSelectionCardFace['toggleEnabled']
@@ -48,17 +46,14 @@ export function subagentCardShell(
  * Compose one card from the existing forms; each write retains its namespace revision fence.
  * @param limits - Limit form source and actions.
  * @param models - Model form source and actions.
- * @param fallback - Whether this registration is the model-only fallback.
  * @returns Framework-bound sources and shared save/discard actions.
  */
 export function subagentCardFace(
   limits: SubagentLimitsCardFace,
   models: SubagentModelSelectionCardFace,
-  fallback = false,
 ): SubagentCardFace {
   return {
     hooks: { ...limits.hooks, ...models.hooks },
-    fallback,
     editLimit: limits.edit,
     resetLimit: limits.resetField,
     toggleEnabled: models.toggleEnabled,

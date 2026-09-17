@@ -19,16 +19,15 @@ import {
 import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
-import { desktopNodeEnvironment } from './node-environment.ts'
+import { installDesktopDirectoryPicker } from './directory-picker.ts'
 import { DesktopBackendController } from './backend-controller.ts'
-import { DESKTOP_IPC, type DesktopUpdateState } from './ipc.ts'
+import { DESKTOP_IPC, SCHEME, assertDesktopSender, type DesktopUpdateState } from './ipc.ts'
 import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { serveWebDocument, authenticateWebHost, forwardWebRequest } from './web-document.ts'
 import { DesktopFatalRecovery } from './fatal-recovery.ts'
 
-const SCHEME = 'dsh-app'
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
 let shuttingDown = false
@@ -38,7 +37,8 @@ const recovery = new DesktopFatalRecovery({
   stop: () => { shuttingDown = true; return stopForRecovery() },
   disablePlugins: async () => {
     const manager = new DesktopProjectManager(resolveDesktopPaths(), runtimeResources())
-    await manager.disableAllPlugins()
+    const backupPath = await manager.disableAllPlugins()
+    console.info('Desktop profile recovery completed:', { profilePatchBackup: backupPath ?? null, homePatch: 'unchanged' })
   },
   exit: () => { app.quit() },
   restart: () => { app.relaunch(); app.quit() },
@@ -159,15 +159,6 @@ function createWindow(preload: string, show = false): BrowserWindow {
   return window
 }
 
-function assertDesktopSender(event: IpcMainInvokeEvent, hostnames: readonly string[]): void {
-  const senderFrame = event.senderFrame
-  if (senderFrame === null) throw new Error('dsh desktop: rejected IPC without a sender frame')
-  const url = new URL(senderFrame.url)
-  if (url.protocol !== `${SCHEME}:` || !hostnames.includes(url.hostname)) {
-    throw new Error('dsh desktop: rejected IPC from an unowned renderer')
-  }
-}
-
 async function serveShellAsset(request: Request): Promise<Response> {
   if (request.method !== 'GET' && request.method !== 'HEAD') return new Response(null, { status: 405 })
   const root = resolve(app.getAppPath(), 'renderer')
@@ -226,10 +217,10 @@ async function main(): Promise<void> {
   const backend = new DesktopBackendController((onFailure) => {
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
-      hostInspectPort, desktopNodeEnvironment(resources.node, resources.nodeBin, process.env), onFailure,
+      hostInspectPort, process.env, onFailure,
       development ? join(app.getAppPath(), '.desktop-build', 'targets', `${process.platform === 'darwin' ? 'mac' : 'win'}-${process.arch}`, 'runtime', 'primary-runtime')
         : join(process.resourcesPath, 'runtime', 'primary-runtime'),
-      development ? 'link' : 'runtime')
+      development ? 'link' : 'runtime', resources)
     return {
       start: async () => {
         const ready = await host.start()
@@ -296,6 +287,8 @@ async function main(): Promise<void> {
     if (url.hostname === 'shell') return serveShellAsset(request)
     return Promise.resolve(new Response(null, { status: 404 }))
   })
+
+  installDesktopDirectoryPicker(() => mainWindow)
 
   ipcMain.handle(DESKTOP_IPC.boot, async (event) => {
     assertDesktopSender(event, ['app'])
@@ -435,8 +428,17 @@ async function main(): Promise<void> {
     void pluginWindow.loadURL(`${SCHEME}://shell/plugin-manager.html`)
   }
 
+  // A custom application menu replaces Electron's default menu, so macOS needs
+  // its standard menus and application hide commands declared explicitly.
+  const darwin = process.platform === 'darwin'
+  const platformMenus: MenuItemConstructorOptions[] = darwin
+    ? [{ role: 'fileMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]
+    : [{ role: 'editMenu' }]
+  const hideCommands: MenuItemConstructorOptions[] = darwin
+    ? [{ role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }]
+    : []
   Menu.setApplicationMenu(Menu.buildFromTemplate([{
-    label: process.platform === 'darwin' ? app.name : messages.application,
+    label: darwin ? app.name : messages.application,
     submenu: [
       {
         label: messages.pluginsMenu,
@@ -445,9 +447,10 @@ async function main(): Promise<void> {
       },
       { label: messages.checkUpdatesMenu, click: () => { void checkAndPrompt(true) } },
       { type: 'separator' },
+      ...hideCommands,
       { role: 'quit' },
     ],
-  }, { role: 'editMenu' }]))
+  }, ...platformMenus]))
 
   const createMainWindow = (): BrowserWindow => {
     const window = createWindow(appPreload, true)

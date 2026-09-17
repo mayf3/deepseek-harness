@@ -1,70 +1,29 @@
-- dialog "设置":
-  - navigation:
-    - text: 设置
-    - button "通用设置":
-      - img
-      - text: 通用设置
-    - button "模型":
-      - img
-      - text: 模型
-    - button "插件":
-      - img
-      - text: 插件
-    - button "Agent 预设":
-      - img
-      - text: Agent 预设
-    - button "已归档会话":
-      - img
-      - text: 已归档会话
-  - button "打开配置文件"
-  - button "关闭":
+- button "返回插件列表":
+  - img
+  - text: 插件列表
+- heading "Subagent" [level=3]
+- paragraph: 设置 Subagent 的递归层级、数量和模型。
+- region "运行限制":
+  - heading "运行限制" [level=3]
+  - text: 最大递归深度
+  - button "最大递归深度说明":
     - img
-    - text: 关闭
-  - heading "插件" [level=2]
-  - paragraph: 配置和查看本部署已安装的插件。
-  - tablist "插件视图":
-    - tab "插件配置" [selected]
-    - tab "插件列表"
-  - tabpanel "插件配置":
-    - list:
-      - listitem:
-        - 'button "展开设置: 终端"':
-          - text: 终端 限制 agent 运行的每一条命令。
-          - img
-      - listitem:
-        - 'button "展开设置: Agent 循环"':
-          - text: Agent 循环 Agent 如何派发工具调用。
-          - img
-      - listitem:
-        - 'button "收起设置: Subagent" [expanded]':
-          - text: Subagent 设置 Subagent 的递归层级、数量和模型。
-          - img
-        - region "运行限制":
-          - heading "运行限制" [level=3]
-          - text: 最大递归深度
-          - button "最大递归深度说明":
-            - img
-          - text: 已覆盖
-          - button "恢复默认"
-          - textbox "最大递归深度":
-            - /placeholder: ""
-            - text: "2"
-          - text: Subagent 并行数量上限
-          - button "Subagent 并行数量上限说明":
-            - img
-          - text: 已覆盖
-          - button "恢复默认"
-          - textbox "Subagent 并行数量上限":
-            - /placeholder: ""
-            - text: "12"
-        - region "模型选择":
-          - heading "模型选择" [level=3]
-          - text: 允许 Agent 为 Subagent 选择模型
-          - switch "允许 Agent 为 Subagent 选择模型"
-          - paragraph: 关闭后，Subagent 使用配置的默认模型或继承父 Agent 的模型；已选模型会保留。
-        - button "放弃修改" [disabled]
-        - button "保存" [disabled]
-      - listitem:
-        - 'button "展开设置: 网页搜索"':
-          - text: 网页搜索 DeepSeek 搜索提供方。
-          - img
+  - text: 已覆盖
+  - button "恢复默认"
+  - textbox "最大递归深度":
+    - /placeholder: ""
+    - text: "2"
+  - text: Subagent 并行数量上限
+  - button "Subagent 并行数量上限说明":
+    - img
+  - text: 已覆盖
+  - button "恢复默认"
+  - textbox "Subagent 并行数量上限":
+    - /placeholder: ""
+    - text: "12"
+- region "模型选择":
+  - heading "模型选择" [level=3]
+  - text: 允许 Agent 为 Subagent 选择模型
+  - switch "允许 Agent 为 Subagent 选择模型"
+  - paragraph: 关闭后，Subagent 使用配置的默认模型或继承父 Agent 的模型；已选模型会保留。
+- button "保存" [disabled]
