@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { SessionLogDownloadController } from '../src/client/controller.ts'
 import { SessionLogDownloadHeaderAction } from '../src/client/HeaderAction.tsx'
-import type { SessionLogDownloadDialogProps } from '../src/client/Dialog.tsx'
+import type { SessionLogDownloadHeaderProps } from '../src/client/HeaderAction.tsx'
 import { en } from '../src/client/locales.ts'
 
 const SID = 'session-export-header' as SessionId
@@ -19,25 +19,44 @@ function bindSessionExport(controller: SessionLogDownloadController) {
   }
 }
 
-function bench() {
+function bench(feedbackAvailable = false) {
   const controller = new SessionLogDownloadController(async () => new Response('zip'), vi.fn())
   const request = vi.fn((sessionId: SessionId) => controller.download(sessionId))
   const dismiss = vi.fn((sessionId: SessionId) => { controller.dismiss(sessionId) })
+  const openFeedback = vi.fn()
   const useSessionLogDownload = bindSessionExport(controller)
   const props = {
     sessionId: SID,
     useSessionLogDownload,
+    useFeedbackAvailable: (select: (available: boolean) => unknown) => select(feedbackAvailable),
+    openFeedback,
     request,
     dismiss,
     t: (key: keyof typeof en): string => en[key],
-  } as unknown as SessionLogDownloadDialogProps
+  } as unknown as SessionLogDownloadHeaderProps
   const view = render(<SessionLogDownloadHeaderAction {...props} />)
-  return { controller, request, view }
+  return { controller, request, openFeedback, view }
 }
 
 afterEach(cleanup)
 
 describe('Session export Header action', () => {
+  it('opens Session feedback and closes the menu without starting a download', () => {
+    const b = bench(true)
+    fireEvent.click(b.view.getByRole('button', { name: 'More actions' }))
+    fireEvent.click(b.view.getByRole('menuitem', { name: 'Feedback' }))
+    expect(b.openFeedback).toHaveBeenCalledWith(SID)
+    expect(b.request).not.toHaveBeenCalled()
+    expect(b.view.queryByRole('menu')).toBeNull()
+  })
+
+  it('keeps export available without the feedback plugin', () => {
+    const b = bench()
+    fireEvent.click(b.view.getByRole('button', { name: 'More actions' }))
+    expect(b.view.queryByRole('menuitem', { name: 'Feedback' })).toBeNull()
+    expect(b.view.getByRole('menuitem', { name: 'Download session log' })).toBeTruthy()
+  })
+
   it('opens the more-actions menu and downloads through the shared controller', async () => {
     const b = bench()
     const button = b.view.getByRole('button', { name: 'More actions' })
@@ -69,10 +88,12 @@ describe('Session export Header action', () => {
     b.view.rerender(<SessionLogDownloadHeaderAction {...({
       sessionId: SID,
       useSessionLogDownload,
+      useFeedbackAvailable: (select: (available: boolean) => unknown) => select(true),
+      openFeedback: b.openFeedback,
       request: (sessionId: SessionId) => controller.download(sessionId),
       dismiss: (sessionId: SessionId) => { controller.dismiss(sessionId) },
       t: (key: keyof typeof en): string => en[key],
-    } as unknown as SessionLogDownloadDialogProps)} />)
+    } as unknown as SessionLogDownloadHeaderProps)} />)
 
     const download = controller.download(SID)
     const button = b.view.getByRole('button', { name: 'More actions' })
@@ -80,6 +101,7 @@ describe('Session export Header action', () => {
     fireEvent.click(button)
     const item = b.view.getByRole('menuitem', { name: 'Download session log' })
     expect((item as HTMLButtonElement).disabled).toBe(true)
+    expect((b.view.getByRole('menuitem', { name: 'Feedback' }) as HTMLButtonElement).disabled).toBe(false)
     release(new Response('zip'))
     await download
     await waitFor(() => { expect(button.getAttribute('aria-busy')).toBe('false') })

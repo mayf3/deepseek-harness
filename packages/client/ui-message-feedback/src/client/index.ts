@@ -37,6 +37,21 @@ export type {
 } from './slots.ts'
 export type { MessageFeedbackKey } from './locales.ts'
 
+/** Opens the existing Session feedback form without submitting feedback. */
+export interface FeedbackUi {
+  /**
+   * Open the Session feedback draft without recording feedback.
+   * @param sessionId - Session whose feedback draft to open.
+   */
+  openSession(sessionId: SessionId): void
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    feedbackUi: FeedbackUi
+  }
+}
+
 /** Dictionary namespace owned by this plugin. */
 const NS = 'feedback'
 
@@ -64,6 +79,11 @@ export function apply(ctx: ClientContext): void {
     for (const surface of surfaces.values()) surface.dispose()
     surfaces.clear()
   }, 'ui-message-feedback: per-session surfaces')
+
+  const feedbackUi: FeedbackUi = {
+    openSession: (sessionId) => { surfaceFor(sessionId).dialog.open({ kind: 'session' }) },
+  }
+  ctx.provide('feedbackUi', feedbackUi)
 
   // A reconnect can only invalidate what was already read; a cold Session
   // stays cold until something asks for it.
@@ -114,7 +134,7 @@ export function apply(ctx: ClientContext): void {
     scope.effect(() => scope.commandUi.decorate({
       name: 'feedback',
       available: () => true,
-      ui: { kind: 'action', run: (session) => { surfaceFor(session.sessionId).dialog.open({ kind: 'session' }) } },
+      ui: { kind: 'action', run: (session) => { feedbackUi.openSession(session.sessionId) } },
     }), 'ui-message-feedback: /feedback decoration')
   })
 }
