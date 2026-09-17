@@ -34,8 +34,8 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {
   ChildrenDecl, ComposedProps, HostObservable, OwnerOf, RenderOpts, SlotComponent, SlotMap, SlotRenderer,
-  ScopedStandardSourceBinding, SessionProviderComponent, SlotEntryDef, SlotRendererHost, SlotSpec,
-  SnapshotSelectorHook, StoreInstanceLike,
+  ScopedStandardSourceBinding, SessionProviderComponent, SlotEntryDef, SlotFactoryMap, SlotRendererHost, SlotSpec,
+  SnapshotSelectorHook, StoredFactory, StoreInstanceLike,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import { registerDomSnapshotSerializer } from './snapshot.ts'
 import { TestRemote } from './remote.ts'
@@ -437,6 +437,18 @@ export class SlotTestRuntime {
     const instance = this.host.storeOf(entry, scopeBinding)
     if (instance === undefined) throw new Error(`storeOf('${key}'): the entry declares no store`)
     return instance
+  }
+
+  /**
+   * Read one registered Factory definition for direct contract assertions.
+   * @param name - registered Factory name.
+   * @returns the live Factory definition.
+   */
+  factoryOf(name: keyof SlotFactoryMap & string): StoredFactory {
+    if (this.host === undefined) throw new Error('factoryOf before renderRoot()')
+    const definition = this.host.factoryOf(name)
+    if (definition === undefined) throw new Error(`factoryOf('${name}'): no definition`)
+    return definition
   }
 
   /**
