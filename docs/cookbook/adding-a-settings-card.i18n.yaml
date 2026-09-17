@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/cookbook/adding-a-settings-card.md
-adding-a-settings-card.md: cc8daa90bcc3a757cd41dbcaecb0eab662d1dba8
-adding-a-settings-card.zh.md: a0fce4075b9e29630c772bc52e07cd00d89d5bab
+adding-a-settings-card.md: 72d7eaeb85d0d4f6981e814a8c335428c561b6bd
+adding-a-settings-card.zh.md: d1254078085ba1de541ea70db566bcfb1bd50d1d

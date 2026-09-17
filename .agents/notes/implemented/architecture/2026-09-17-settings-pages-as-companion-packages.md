@@ -33,6 +33,7 @@ The four official settings pages — shell, agent loop, Subagent, web search —
 - The Plugins page's Official group lists the same four pages in the same order, from four packages instead of one; their labels and forms are unchanged, so the page goldens hold.
 - The cookbook [adding a settings page](../../../../docs/cookbook/adding-a-settings-card.md) shows the community path and names the companion template.
 - The client module system's rule stands: a browser half rides the Loader row whose specifier is the bare package name, so a bundle split into subpath rows keeps every page it registers on its root row.
+- The shell page's `plugins.item` id is `shell`, where the old package registered `bash`: `subject.id` on an official page is now a discriminator `plugins.detail.*` contributions key on, so the id names the capability the page edits rather than one executor family.
 
 ## Testing
 

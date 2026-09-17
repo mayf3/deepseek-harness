@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-17-settings-pages-as-companion-packages.md
-2026-09-17-settings-pages-as-companion-packages.md: dc604c010787ee35522b351b643fb2691540b4f9
-2026-09-17-settings-pages-as-companion-packages.zh.md: 066b17c9760f381089a6a48b1ec6606e600531d3
+2026-09-17-settings-pages-as-companion-packages.md: de2f2897938fcc158c49bed772f399b4d9328d19
+2026-09-17-settings-pages-as-companion-packages.zh.md: 27d00faa156f0f48c6dc3995930be9ca629a732d

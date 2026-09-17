@@ -303,7 +303,9 @@ export class SettingsScopeBinder extends Service {
    * disposer runs when none is or when the returned disposer runs. A plugin
    * whose page edits a namespace another plugin owns registers the page
    * through this, so a deployment that never composed the owner shows no
-   * trace of the page.
+   * trace of the page. The caller owns the returned disposer and wraps it in
+   * `ctx.effect`; unlike {@link bind}, nothing is registered on the caller's
+   * context here.
    * @param namespaces - the settings namespaces the registration follows.
    * @param register - registers the contribution; returns its disposer.
    * @returns the disposer ending the watch and any live registration.

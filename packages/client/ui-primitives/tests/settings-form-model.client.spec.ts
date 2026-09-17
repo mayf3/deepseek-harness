@@ -270,7 +270,7 @@ describe('SettingsFormModel', () => {
     expect(store.getSnapshot()).toBe('2000')
   })
 
-  it('refuses to address a field the card never declared', () => {
+  it('refuses to address a field the form never declared', () => {
     const { subject } = form()
 
     expect(() => subject.field('nope')).toThrow('settings form has no field nope')
