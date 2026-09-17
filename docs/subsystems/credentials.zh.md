@@ -301,7 +301,7 @@ abstract startSignIn(locale: string, callbackOrigin: string, loginSource: 'web' 
 abstract cancelSignIn(id: SignInAttemptId): Promise<AccountView>
 
 /**
- * Remove the local grant while retaining API keys and tasks; the provider revokes it in the background.
+ * Remove the local grant while retaining API keys; the provider revokes it in the background.
  * @returns the signed-out state after local removal; remote failures never restore the grant.
  */
 abstract signOut(): Promise<AccountView>
@@ -402,6 +402,25 @@ Committed change to a provider-managed credential source: a `set`, an `unset`, o
 ```
 
 Source: [`packages/credentials/credentials/src/types.ts`](../../packages/credentials/credentials/src/types.ts)
+
+<a id="deepseek-account-events"></a>
+
+### `deepseek-account/*` events
+
+<a id="deepseek-accountsigned-out--emit"></a>
+
+#### `deepseek-account/signed-out` — emit
+
+Local grant removal has completed.
+
+```ts cordis-catalog
+/** Local grant removal has completed.
+ * @mode emit
+ */
+'deepseek-account/signed-out'(): void
+```
+
+Source: [`packages/credentials/deepseek-account/src/index.ts`](../../packages/credentials/deepseek-account/src/index.ts)
 <!-- END GENERATED cordis-surface -->
 
 账号服务定义提供 getState、getDetails、startSignIn、cancelSignIn、signOut、watch 及仅限 Host 的 resolveToken。平台提供者使用 AuthorizationFlow 和私有 GrantRecord 实现这些操作。AccountView 区分本地存在与服务器验证；尝试 ID 将取消绑定到单次本地流程。参见[账号包](../../packages/credentials/deepseek-account/README.zh.md)。

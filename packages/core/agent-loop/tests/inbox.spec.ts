@@ -26,6 +26,7 @@ function stubAgent(rawId: string, overrides: Partial<Agent> = {}): Agent {
     options: {},
     session,
     inbox: unsupportedInbox(),
+    activeProvider: undefined,
     status: 'idle',
     ctx,
     send: () => {},

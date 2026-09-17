@@ -94,14 +94,14 @@ export interface DeepSeekAdapterOptions {
   /** Current validated connection facts; called once per operation. */
   options: () => DeepSeekConnectionOptions
   /**
-   * Resolve the bearer token for the connection facts of one request. The
+   * Resolve this adapter’s credential for the connection facts of one request. The
    * snapshot is passed in — never re-read — so the key can only ever come
    * from the same resolution as the endpoint it is sent to. Throws `LlmError`
-   * `MISSING_CREDENTIAL` when no key is available anywhere.
+   * `MISSING_CREDENTIAL` for a missing API key; account routes reject unavailable grants.
    */
   resolveApiKey: (connection: DeepSeekConnectionOptions) => Promise<string>
-  /** Resolve a DSH account token only for an eligible official endpoint. */
-  resolveAccountToken?: (connection: DeepSeekConnectionOptions) => Promise<string | undefined>
+  /** Send the resolved credential as a bare DSH account token; never fall back to an API key. */
+  accountCredential?: boolean
   /** Resolve the harness-home anonymous id shared with telemetry and feedback. */
   resolveUserId: () => AnonymousUserId
   /** Resolve the current durable attachment service; absence rejects image input. */

@@ -329,6 +329,18 @@ it('retains profile data when balance fails instead of reporting a zero balance'
   expect(await readDetails(f.account)).toMatchObject({ profile: { status: 'ready' }, balance: { status: 'failed' } })
 })
 
+it('publishes sign-out only after local grant removal and refuses token resolution while removing', async () => {
+  const f = await fixture()
+  await storeAccount(f)
+  const observed: string[] = []
+  f.ctx.on('deepseek-account/signed-out', () => { observed.push('signed-out') })
+  const pending = f.account.signOut()
+  expect(await f.account.resolveToken('https://api.deepseek.com')).toBeUndefined()
+  await pending
+  expect(observed).toEqual(['signed-out'])
+  expect((await f.account.getState()).status).toBe('signed-out')
+})
+
 it('discards account details when sign-out races the Platform response', async () => {
   const f = await fixture()
   await storeAccount(f)

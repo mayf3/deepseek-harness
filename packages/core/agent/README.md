@@ -25,6 +25,8 @@ Use `dsh-agent` to create or resume live agents, send follow-up or steering inpu
 <a id="use-this-package"></a>
 ## Use this package
 
+The read-only `Agent.activeProvider` identifies the current turn’s latest prepared request. It is absent before the first request is prepared and between turns; tools and retries retain the last provider until another request finishes preparation. Configuration changes alone do not reclassify in-flight work.
+
 Mount `dsh-agent` wherever live agents exist: it provides `ctx.agents` and the `Agent` handle that plugins, UI, hooks, and orchestrators work against. The service is inert until a driver registers a factory — the shipped driver is `dsh-agent-loop`, so the smallest useful composition loads both.
 
 ### Create or resume an agent

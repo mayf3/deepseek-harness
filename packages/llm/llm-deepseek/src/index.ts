@@ -1,5 +1,6 @@
 /** Register DeepSeek with protocol selection and request-local settings and credentials. */
 import type {} from '@deepseek-ai/dsh-deepseek-account'
+import type {} from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import { assertUsableApiKey, LlmError, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-fs'
@@ -107,13 +108,17 @@ export function apply(ctx: Context, config: Config): void {
 
   let userId: AnonymousUserId | undefined
   const resolveUserId = (): AnonymousUserId => userId ??= getOrCreateAnonymousUserId()
-  const adapter = new DeepSeekAdapter({
+  const adapter = (accountCredential: boolean): DeepSeekAdapter => new DeepSeekAdapter({
+    accountCredential,
     options,
     onReplayDegrade: ({ provider, model, reason }) => {
       ctx.logger.warn(`llm-deepseek: unusable Messages replay state on assistant history for route "${provider}/${model}"; sending provider-neutral content (${reason})`)
     },
-    resolveApiKey,
-    resolveAccountToken: connection => ctx.get('deepseekAccount')?.resolveToken(connection.baseURL) ?? Promise.resolve(undefined),
+    resolveApiKey: accountCredential ? async (connection) => {
+      const token = await ctx.get('deepseekAccount')?.resolveToken(connection.baseURL)
+      if (token === undefined) throw new LlmError('Sign in to DeepSeek to use the account provider. The request destination must allow account authentication.', 'ACCOUNT_SIGN_IN_REQUIRED')
+      return token
+    } : resolveApiKey,
     resolveUserId,
     resolveAttachments: () => ctx.get('attachments'),
     resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(
@@ -128,11 +133,21 @@ export function apply(ctx: Context, config: Config): void {
     },
   })
   ctx.llm.registerConfigurableProviders([
-    { provider: PROVIDER, displayName: 'DeepSeek', settingsNs: NS, settingsPath: [] },
+    { provider: PROVIDER, displayName: 'DeepSeek (API Key)', settingsNs: NS, settingsPath: [] },
   ])
   // Route effects bind to this apply fiber via the stable `ctx` reference,
   // even when a swap runs inside the scoped settings callback below.
-  const registration = ctx.llm.registerAdapter([PROVIDER], adapter)
+  const registration = ctx.llm.registerAdapter([PROVIDER], adapter(false))
+  const accountRegistration = ctx.llm.registerAdapter(['deepseek-account'], adapter(true))
+  ctx.inject(['agents'], (agentCtx) => {
+    agentCtx.on('deepseek-account/signed-out', () => {
+      for (const agent of agentCtx.agents.list()) {
+        if (agent.activeProvider === 'deepseek-account') {
+          agent.cancel({ kind: 'hook', reason: 'deepseek-account/signed-out' }, { keepInbox: true })
+        }
+      }
+    })
+  })
   let registeredPolicy = options().retryPolicy
   const ensureRegistrationFacts = (): void => {
     const policy = options().retryPolicy
@@ -143,6 +158,7 @@ export function apply(ctx: Context, config: Config): void {
     // publish an empty route set between the two, and an observer that reacted
     // to it would see this provider disappear and come back.
     registration.replace([PROVIDER])
+    accountRegistration.replace(['deepseek-account'])
     registeredPolicy = policy
   }
 

@@ -30,6 +30,7 @@ function stubAgent(ctx: Context, id: string): { agent: Agent; session: Session }
     session,
     inbox,
     ctx: new Context(),
+    activeProvider: undefined,
     get status() { return status },
     send: () => {},
     followup: () => {},

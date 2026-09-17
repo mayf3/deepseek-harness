@@ -34,6 +34,8 @@ Desktop 的用量和充值操作在 48px 返回栏下方打开隔离的原生 Pl
 
 账号卡片的“更多账号信息”链接在 Desktop 中通过系统浏览器打开 `https://platform.deepseek.com`，在 Web 中打开新标签页。
 
+退出登录先查询正在使用账号 token 的任务，再打开确认弹窗。有此类任务时提示执行将被打断，否则提示数据保留且可重新登录。取消、关闭和 Escape 均不退登。查询失败保留菜单；退登失败保留弹窗以便重试。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 

@@ -44,6 +44,7 @@ async function liveAgent(ctx: Context, session: Session): Promise<Agent> {
     session,
     inbox: unsupportedInbox(),
     ctx,
+    activeProvider: undefined,
     get status() { return status },
     send: () => {},
     followup: () => {},

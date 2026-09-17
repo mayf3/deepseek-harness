@@ -23,7 +23,7 @@ export class DeepSeekAdapter extends LlmAdapter {
         return new DeepSeekMessagesAdapter({
           connection: () => connection,
           apiKey: this.dependencies.resolveApiKey,
-          ...this.dependencies.resolveAccountToken === undefined ? {} : { accountToken: this.dependencies.resolveAccountToken },
+          accountCredential: this.dependencies.accountCredential === true,
           userId: this.dependencies.resolveUserId,
           attachments: () => this.dependencies.resolveAttachments?.(),
           imageAccess: (ref) => {
@@ -41,7 +41,7 @@ export class DeepSeekAdapter extends LlmAdapter {
     }
   }
 
-  override providerInfo(provider: string) { return this.implementation().providerInfo(provider) }
+  override providerInfo(provider: string) { return { id: provider, name: provider === 'deepseek-account' ? 'DeepSeek (Account)' : 'DeepSeek (API Key)' } }
   override providerRetryPolicy(provider: string) { return this.implementation().providerRetryPolicy(provider) }
   override listModels(provider: string) { return this.implementation().listModels(provider) }
   override resolveModel(provider: string, model: string, signal?: AbortSignal) {

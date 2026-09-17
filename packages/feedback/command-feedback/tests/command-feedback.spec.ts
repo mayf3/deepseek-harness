@@ -38,6 +38,7 @@ function stubAgent(ctx: Context, id: string): { agent: Agent; session: Session }
     session,
     inbox: unsupportedInbox(),
     ctx: new Context(),
+    activeProvider: undefined,
     get status() { return status },
     send: () => {},
     followup: () => {},

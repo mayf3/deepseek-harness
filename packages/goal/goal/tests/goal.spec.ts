@@ -59,6 +59,7 @@ function stubAgentForSession(session: Session, suppliedCtx?: Context): StubAgent
     session,
     inbox,
     ctx: agentCtx,
+    activeProvider: undefined,
     status: 'idle',
     send: () => {},
     followup: () => {},

@@ -120,6 +120,11 @@ export function apply(ctx: Context): void {
       }
     },
     async cancel(id) { const result = await ctx.remote.account.cancelSignIn(id); if (!result.ok) throw new Error('account cancel failed') },
+    async hasRunningAccountTasks() {
+      const result = await ctx.remote.account.hasRunningAccountTasks()
+      if (!result.ok) throw new Error('account task query failed')
+      return result.value
+    },
     async signOut() { const result = await ctx.remote.account.signOut(); if (!result.ok) throw new Error('account sign-out failed') },
   }
   ctx.slots.inject('settings.models.sign-in', () => ctx.slots.register({

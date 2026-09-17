@@ -58,6 +58,7 @@ function stubAgent(rawId: string, supplied?: Session, suppliedCtx?: Context): St
     options: {},
     session,
     inbox,
+    activeProvider: undefined,
     get status() { return status },
     ctx: agentCtx,
     send: () => {},

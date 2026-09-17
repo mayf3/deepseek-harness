@@ -34,6 +34,8 @@ The sidebar account menu uses the shared Menu surface, backdrop blur, spacing, a
 
 The account card’s More account information link opens `https://platform.deepseek.com` in the system browser on Desktop or a new tab on Web.
 
+Sign out first queries running account-token tasks and opens a confirmation dialog. The warning describes interruption when such tasks exist; otherwise it explains that data is retained and the account can be signed in again. Cancel, close, and Escape dismiss without signing out. Failed queries keep the menu available; failed sign-out keeps the dialog available for retry.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

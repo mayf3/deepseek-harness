@@ -193,8 +193,7 @@ export class ChatCompletionsAdapter extends LlmAdapter {
         )
       }
     }
-    const accountToken = await this.config.resolveAccountToken?.(connection)
-    const apiKey = accountToken ?? await this.config.resolveApiKey(connection)
+    const apiKey = await this.config.resolveApiKey(connection)
     const userId = this.config.resolveUserId()
     const consumer = new AbortController()
     const upstream = options.signal === undefined
@@ -206,7 +205,7 @@ export class ChatCompletionsAdapter extends LlmAdapter {
       watchdog.signal,
       connection,
       apiKey,
-      accountToken !== undefined,
+      this.config.accountCredential === true,
       userId,
       attachments,
       () => { watchdog.pulse() },

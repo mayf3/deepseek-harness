@@ -73,6 +73,8 @@ interface Agent {
   readonly inbox: Inbox
   /** The current lifecycle state, mirrored on every `agent/status` transition. */
   readonly status: AgentStatus
+  /** Latest prepared provider in this turn; retained through tools and retries, absent before preparation and between turns. */
+  readonly activeProvider: string | undefined
   /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
   readonly ctx: Context
 
@@ -1263,3 +1265,5 @@ One session committed a different agent preset to its durable log. Consumers inv
 
 Source: [`packages/preset/agent-presets/src/types.ts`](../../packages/preset/agent-presets/src/types.ts)
 <!-- END GENERATED cordis-surface -->
+
+`Agent.activeProvider` 是当前轮次最近已准备请求的提供方。首请求准备前及轮次之间为 undefined，工具执行和后续请求准备期间保持不变，仅在绑定下一最终请求配置时改变。

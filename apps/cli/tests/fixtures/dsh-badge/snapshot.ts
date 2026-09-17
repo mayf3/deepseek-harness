@@ -25,6 +25,7 @@ try {
     options: {},
     session,
     inbox: unsupportedInbox(),
+    activeProvider: undefined,
     status: 'idle',
     send: () => {},
     followup: () => {},

@@ -37,6 +37,7 @@ async function agent(ctx: Context): Promise<Agent> {
     session,
     inbox: unsupportedInbox(),
     ctx: scope.ctx,
+    activeProvider: undefined,
     get status() { return status },
     send: () => {},
     followup: () => {},

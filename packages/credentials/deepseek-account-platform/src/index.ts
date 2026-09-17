@@ -222,6 +222,7 @@ export class PlatformAccount extends DeepSeekAccount {
   }
 
   override async resolveToken(url: string): Promise<string | undefined> {
+    if (this.closed || this.removing !== undefined) return undefined
     const destination = new URL(url)
     if (destination.origin !== this.inferenceOrigin || destination.username || destination.password) return undefined
     const record = await this.ctx.credentials.readRecord(KEY)
@@ -311,6 +312,7 @@ export class PlatformAccount extends DeepSeekAccount {
         this.revoke(parsed.data.token)
       }
       this.attempt = undefined
+      this.ctx.emit('deepseek-account/signed-out')
       this.changed()
       return this.getState()
     })().finally(() => { this.removing = undefined })

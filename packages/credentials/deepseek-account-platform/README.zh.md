@@ -26,6 +26,8 @@ getPlatformSession 仅在已存授权的 issuer 与 platformOrigin 一致时导�
 <a id="use-this-package"></a>
 ## 使用此包
 
+本地退出登录期间拒绝解析 token。本地授权成功删除后，先发布 `deepseek-account/signed-out`，再返回已退出的状态快照；远程撤销独立执行。
+
 账号资料投影将 `id_profile.picture` 映射为 `avatarUrl`，没有配置头像时返回 null。
 
 getProfile / getBalance 将保存的授权 token 通过 x-dsh-auth-token 请求头，向 platformOrigin 上的 GET /auth-api/v0/users/current 和 GET /api/v0/users/get_user_summary 发起请求。授权签发来源必须与该来源一致。Host 只投影账号 UID、资料名称、头像 URL、由 Platform 脱敏的手机号或邮箱（原样保留），以及 normal_wallets / bonus_wallets 的币种和余额字符串，丢弃响应 token 与其他字段。赠送钱包不计入充值余额。凭证变化和销毁会使进行中的查询失效。

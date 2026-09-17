@@ -24,6 +24,7 @@ function stubAgent(rawId: string, overrides: Partial<Agent> = {}): Agent {
     inbox: {
       nextTurn: [], nextStep: [],
     } as never,
+    activeProvider: undefined,
     status: 'idle',
     ctx,
     send: () => {},

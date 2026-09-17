@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Menu, IconPaperPlaneOutlineMedium, IconSettingsOutlineMedium, IconUserOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountSectionInjected } from './AccountSection.tsx'
+import { SignOutDialog } from './SignOutDialog.tsx'
 import { SignInDialog } from './SignInDialog.tsx'
 import { LogoutIcon } from './LogoutIcon.tsx'
 import { AccountAvatar } from './AccountAvatar.tsx'
@@ -16,7 +17,7 @@ export type AccountMenuProps = PropsRuntime<'settings.launcher'> & PropsLocale<'
  * @returns account menu launcher.
  */
 export function AccountMenu({
-  wide, openSettings, openOnboarding, useAccount, signOut, contactUs, showLogin, start, cancel, t,
+  wide, openSettings, openOnboarding, useAccount, signOut, hasRunningAccountTasks, contactUs, showLogin, start, cancel, t,
 }: AccountMenuProps) {
   const account = useAccount(state => state)
   const signedIn = account.view?.status === 'credential-stored'
@@ -26,10 +27,11 @@ export function AccountMenu({
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
-  const logout = async () => {
+  const [signOutImpact, setSignOutImpact] = useState<boolean>()
+  const requestSignOut = async () => {
     setBusy(true)
     setFailed(false)
-    try { await signOut(); setOpen(false) }
+    try { setSignOutImpact(await hasRunningAccountTasks()); setOpen(false) }
     catch { setFailed(true) }
     finally { setBusy(false) }
   }
@@ -51,10 +53,12 @@ export function AccountMenu({
         if (id === 'settings') { setOpen(false); openSettings() }
         else if (id === 'contact') { setOpen(false); contactUs() }
         else if (id === 'signin') { setOpen(false); void start().catch(() => { setFailed(true) }) }
-        else if (id === 'signout') void logout()
+        else if (id === 'signout') void requestSignOut()
       }} />
     {account.loginVisible && !account.onboarding && <SignInDialog account={account} start={start} cancel={cancel} t={t}
       close={() => { showLogin(false) }} useApiKey={() => { showLogin(false); openOnboarding('deepseek-official') }} />}
+    {signedIn && signOutImpact !== undefined && <SignOutDialog running={signOutImpact} signOut={signOut}
+      close={() => { setSignOutImpact(undefined) }} t={t} />}
     {failed && <span className={css.error} role="alert">{t('failed')}</span>}
   </div>
 }

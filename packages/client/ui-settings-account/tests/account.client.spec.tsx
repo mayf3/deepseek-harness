@@ -17,6 +17,7 @@ function mount(state: Omit<AccountView, 'links'>, copy: typeof en | typeof zh = 
       getSnapshot: () => ({ view: { ...state, links: { usageUrl: 'http://localhost:8081/usage', topUpUrl: 'http://localhost:8081/top_up' } }, details, failed: false }),
       subscribe: () => () => {},
     } },
+    hasRunningAccountTasks: vi.fn(async () => false),
     contactUs: vi.fn(), showLogin: vi.fn(), setOnboarding: vi.fn(),
     refresh: vi.fn(() => Promise.resolve()),
     start: vi.fn(() => Promise.resolve()), cancel: vi.fn(() => Promise.resolve()), signOut: vi.fn(() => Promise.resolve()),
@@ -50,13 +51,14 @@ it('starts sign-in and disables cancellation during persistence', async () => {
   expect(screen.queryByRole('button', { name: en.signIn })).toBeNull()
 })
 
-it.each([en, zh])('opens settings and signs out from the sidebar account menu', async (copy) => {
+it.each([en, zh].flatMap(copy => [false, true].map(running => ({ copy, running }))))('confirms sidebar sign-out with task impact $running', async ({ copy, running }) => {
   const signOut = vi.fn(() => Promise.resolve())
   const openSettings = vi.fn()
   const operations = mount({ status: 'credential-stored', attempt: null }, copy)
   cleanup()
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
   render(<AccountMenu {...({} as GlobalStandardProps)} {...operations} signOut={signOut}
+    hasRunningAccountTasks={async () => running}
     useAccount={selector => selector(operations.hooks.account.getSnapshot())} wide openOnboarding={() => {}} openSettings={openSettings}
     t={key => key in copy ? copy[key as AccountKey] : key} />)
   fireEvent.click(screen.getByRole('button', { name: copy.menu }))
@@ -70,6 +72,9 @@ it.each([en, zh])('opens settings and signs out from the sidebar account menu', 
   expect(screen.queryByRole('menu')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: copy.menu }))
   await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: copy.signOut })) })
+  expect(signOut).not.toHaveBeenCalled()
+  expect(screen.getByText(running ? copy.signOutRunningDescription : copy.signOutDescription)).toBeTruthy()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.signOut })) })
   expect(signOut).toHaveBeenCalledOnce()
   expect(screen.queryByRole('menu')).toBeNull()
 })

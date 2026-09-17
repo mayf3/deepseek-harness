@@ -24,7 +24,7 @@ export interface AdapterDependencies {
   /** Resolve the key named by that same generation. */
   apiKey(connection: Connection): Promise<string>
   /** DSH account token for an eligible official endpoint. */
-  accountToken?(connection: Connection): Promise<string | undefined>
+  accountCredential?: boolean
   /** Stable anonymous Harness identity. */
   userId(): string
   /** Current attachment service; absence is valid for text requests. */
@@ -94,10 +94,9 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
     const { messages, versions } = await prepareImages(
       options.messages, connection, options.model, this.dependencies.attachments(), this.dependencies.imageAccess, signal,
     )
-    const accountToken = await this.dependencies.accountToken?.(connection)
-    const key = accountToken ?? await this.dependencies.apiKey(connection)
+    const key = await this.dependencies.apiKey(connection)
     const files = new RequestFiles(this.dependencies.files(), {
-      baseURL: connection.baseURL, apiKey: key, accountCredential: accountToken !== undefined, protocol: 'messages',
+      baseURL: connection.baseURL, apiKey: key, accountCredential: this.dependencies.accountCredential === true, protocol: 'messages',
     },
     connection.filePolicy, connection.filesApiTimeoutMs, signal, activity)
     let inline = false
@@ -129,7 +128,7 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
         headers: {
           ...attributionHeaders(),
           'content-type': 'application/json', 'accept': 'text/event-stream',
-          ...accountToken === undefined ? { 'x-api-key': key } : { 'x-dsh-auth-token': accountToken },
+          ...this.dependencies.accountCredential === true ? { 'x-dsh-auth-token': key } : { 'x-api-key': key },
           'anthropic-version': '2023-06-01',
           ...fileIds === undefined || fileIds.size === 0 ? {} : { 'anthropic-beta': MESSAGES_FILES_BETA },
           'x-deepseek-harness-user-id': this.dependencies.userId(),

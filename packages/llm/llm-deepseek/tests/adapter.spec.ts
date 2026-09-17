@@ -1697,10 +1697,10 @@ describe('plugin registration and config', () => {
       protocol: 'chat-completions',
       baseURL: server.url,
     })
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek (API Key)' }, { id: 'deepseek-account', name: 'DeepSeek (Account)' }])
     expect(ctx.llm.listConfigurableProviders()).toEqual([{
       provider: 'deepseek-official',
-      displayName: 'DeepSeek',
+      displayName: 'DeepSeek (API Key)',
       settingsNs: 'llm-deepseek',
       settingsPath: [],
     }])
@@ -1733,7 +1733,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL: 'http://127.0.0.1:1' })
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek (API Key)' }, { id: 'deepseek-account', name: 'DeepSeek (Account)' }])
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
       { provider: 'deepseek-official', id: 'deepseek-flash', name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'] },
       {
@@ -2186,7 +2186,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions' })
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek (API Key)' }, { id: 'deepseek-account', name: 'DeepSeek (Account)' }])
   })
 
   it('loads keyless, keeps the catalog browsable, and fails the request actionably', async () => {
@@ -2196,7 +2196,7 @@ describe('plugin registration and config', () => {
     await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL: 'http://127.0.0.1:1' })
     // First-boot onboarding: the route registers so models stay discoverable;
     // only the request itself needs a key.
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek (API Key)' }, { id: 'deepseek-account', name: 'DeepSeek (Account)' }])
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toHaveLength(2)
     const first = await assemble(ctx, { model: 'deepseek-flash', messages: [] })
     expect(first.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
@@ -2277,7 +2277,7 @@ describe('plugin registration and config', () => {
     await ctx.plugin(LlmRuntime)
     // Registration succeeds; no call is made (would hit api.deepseek.com).
     await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions' })
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek (API Key)' }, { id: 'deepseek-account', name: 'DeepSeek (Account)' }])
   })
 
   it('adapter is constructible directly for embedding over the shared resolver', async () => {
@@ -2360,11 +2360,11 @@ describe('plugin registration and config', () => {
 
 
 it.each([
-  ['chat-completions', 'https://api.deepseek.com', 'account-token'],
-  ['messages', 'https://api.deepseek.com', 'account-token'],
-  ['chat-completions', 'https://custom.example.test', 'ambient-key'],
-  ['messages', 'https://custom.example.test', 'ambient-key'],
-] as const)('selects account or API-key credentials from the actual endpoint %s', async (protocol, baseURL, expected) => {
+  ['chat-completions', 'deepseek-account', 'account-token'],
+  ['messages', 'deepseek-account', 'account-token'],
+  ['chat-completions', 'deepseek-official', 'ambient-key'],
+  ['messages', 'deepseek-official', 'ambient-key'],
+] as const)('keeps provider credentials independent for %s %s', async (protocol, provider, expected) => {
   vi.stubEnv('DEEPSEEK_API_KEY', 'ambient-key')
   const ctx = new Context()
   // This consumer uses only resolveToken; the real provider owns origin validation in its own suite.
@@ -2372,7 +2372,7 @@ it.each([
     resolveToken: (url: string) => Promise.resolve(url === 'https://api.deepseek.com' ? 'account-token' : undefined),
   } as DeepSeekAccount)
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(LlmDeepSeek, { baseURL, protocol })
+  await ctx.plugin(LlmDeepSeek, { baseURL: 'https://api.deepseek.com', protocol })
   const request = vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
     const headers = new Headers(init?.headers)
     expect(headers.get('authorization')).toBe(expected === 'account-token' || protocol === 'messages' ? null : `Bearer ${expected}`)
@@ -2382,7 +2382,7 @@ it.each([
     return Promise.resolve(new Response('fixture rejection', { status: 400 }))
   })
   try {
-    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    await assemble(ctx, { provider, model: 'deepseek-v4-flash', messages: [] })
     expect(request).toHaveBeenCalledOnce()
-  } finally { request.mockRestore() }
+  } finally { request.mockRestore(); await ctx.fiber.dispose() }
 })

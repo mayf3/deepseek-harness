@@ -49,6 +49,7 @@ async function harness(withJobs: boolean): Promise<{
     options: {},
     session,
     inbox: unsupportedInbox(),
+    activeProvider: undefined,
     status: 'idle',
     ctx,
     send: () => {},

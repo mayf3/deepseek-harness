@@ -56,6 +56,7 @@ function agent(ctx: Context, cwd?: string): Agent {
   })
   return {
     id, options: {}, session, inbox: unsupportedInbox(),
+    activeProvider: undefined,
     status: 'idle',
     ctx,
     send: () => {},
@@ -658,6 +659,7 @@ describe('terminal-bash plugin shape', () => {
     const ownerFiber = await ctx.plugin(() => {})
     const owner: Agent = {
       id: session.id, options: {}, session, inbox: unsupportedInbox(),
+      activeProvider: undefined,
       status: 'idle',
       ctx: ownerFiber.ctx,
       send: () => {},
@@ -708,6 +710,7 @@ describe('terminal-bash plugin shape', () => {
     const ownerFiber = await ctx.plugin(() => {})
     const owner: Agent = {
       id: session.id, options: {}, session, inbox: unsupportedInbox(),
+      activeProvider: undefined,
       status: 'idle',
       ctx: ownerFiber.ctx,
       send: () => {},

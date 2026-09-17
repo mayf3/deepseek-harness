@@ -63,3 +63,5 @@ Exchange user data supplies the first profile read after credential commit, avoi
 The embedded Platform document stays hidden during loading because native child views cover renderer overlays. Only the current document may become visible after loading; returning or signing out invalidates pending visibility changes. Native ownership also ends when the application document reloads or is replaced, its renderer terminates, or its window closes. React effect cleanup alone is insufficient because document teardown may never execute it. Same-document and subframe navigation preserve the view.
 
 Separate accountRequestHeaders route account data and embedded Platform traffic independently of authorization and logout. Cookie overrides merge by name, retaining deployment authentication. Host passes the resolved headers over private process IPC; Electron injects them only at the configured origin and omits them from bootstrap.
+
+Account inference route selection and active-task cancellation are defined by the [provider sign-out decision](2026-09-17-account-provider-signout.md).

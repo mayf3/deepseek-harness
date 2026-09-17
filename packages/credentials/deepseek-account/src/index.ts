@@ -4,6 +4,12 @@ import type { AccountDetails, AccountView, SignInAttemptId } from './types.ts'
 export type { AccountDetails, AccountProfile, AccountWallet, AccountLinks, AccountView, SignInAttemptId, SignInAttemptView, SignInErrorCode } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** Local grant removal has completed.
+     * @mode emit
+     */
+    'deepseek-account/signed-out'(): void
+  }
   interface Context {
     deepseekAccount: DeepSeekAccount
   }
@@ -53,7 +59,7 @@ export abstract class DeepSeekAccount extends Service {
    */
   abstract cancelSignIn(id: SignInAttemptId): Promise<AccountView>
   /**
-   * Remove the local grant while retaining API keys and tasks; the provider revokes it in the background.
+   * Remove the local grant while retaining API keys; the provider revokes it in the background.
    * @returns the signed-out state after local removal; remote failures never restore the grant.
    */
   abstract signOut(): Promise<AccountView>

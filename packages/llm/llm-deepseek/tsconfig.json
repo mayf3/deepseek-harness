@@ -58,6 +58,9 @@
     },
     {
       "path": "../../credentials/deepseek-account"
+    },
+    {
+      "path": "../../core/agent"
     }
   ]
 }

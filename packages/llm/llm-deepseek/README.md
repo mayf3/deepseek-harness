@@ -234,6 +234,6 @@ This Dev Note is non-authoritative working context: undecided directions and not
 
 **Runtime invariant:** No companion is published. This package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam.
 
-When the account provider is mounted, its stored token takes priority only for https://api.deepseek.com. Other origins and signed-out accounts retain the configured API-key reference. Chat and Files requests reject redirects. Signing out removes only the account grant and preserves API keys.
+`deepseek-official` uses only its configured API-key reference; `deepseek-account` uses only the stored DSH grant for the account provider’s allowed inference origin. Both routes share protocol, model, and file settings. Missing or ineligible account credentials reject the request with a sign-in prompt; neither route falls back to the other. Chat and Files requests reject redirects. Successful sign-out cancels live agents whose current prepared provider is `deepseek-account`, including tool execution, while preserving pending inbox messages and independent API-key tasks.
 
 DSH account tokens use x-dsh-auth-token without a Bearer prefix for both inference protocols and all Files operations. API keys retain each protocol’s existing authentication header.
