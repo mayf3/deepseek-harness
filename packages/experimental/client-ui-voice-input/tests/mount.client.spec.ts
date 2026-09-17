@@ -3,12 +3,17 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SpeechProviderId } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
-import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, type TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import { expect, it, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { apply, inject } from '../src/client/index.ts'
+import { mountVoiceInput, inject } from '../src/client/mount.ts'
 import { apply as hostApply } from '../src/index.ts'
 import { VoiceInput, type VoiceInputInjected } from '../src/client/VoiceInput.tsx'
+
+const REMOTE: TypertRemoteContribution = {
+  package: '@deepseek-ai/dsh-experimental-api-speech-to-text',
+  descriptors: [],
+}
 
 vi.mock('../src/client/readiness.ts', () => ({ observeReadiness: () => ({
   state: createSnapshotStore({ catalog: null, connected: true, error: null }), dispose: async () => {},
@@ -18,7 +23,10 @@ async function fixture(fail = false) {
   const ctx = new Context(), unmount = vi.fn(async () => {})
   class Remote extends Service {
     constructor() { super(ctx, 'remote') }
-    async $mount() { return unmount }
+    async $mount(contribution: TypertRemoteContribution) {
+      expect(contribution).toBe(REMOTE)
+      return unmount
+    }
   }
   new Remote()
   const configure = vi.fn(async () => ({ ok: true, value: {} }))
@@ -42,7 +50,7 @@ it('withdraws its Remote, localized slot and microphone captures on disposal', a
   hostApply()
   const b = await fixture()
   try {
-    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    const fiber = b.ctx.plugin({ inject: [...inject], apply: ctx => mountVoiceInput(ctx, REMOTE) })
     await fiber
     const entry = b.ctx.slots.entries('conversation.input.activity').find(item => item.component === VoiceInput)
     expect(entry).toMatchObject({ locale: 'voice-input' })
@@ -82,7 +90,7 @@ it('withdraws its Remote, localized slot and microphone captures on disposal', a
 it('rolls back the Remote contribution when the slot registration fails', async () => {
   const b = await fixture(true)
   try {
-    await expect(apply(b.ctx)).rejects.toThrow('slot failed')
+    await expect(mountVoiceInput(b.ctx, REMOTE)).rejects.toThrow('slot failed')
     expect(b.unmount).toHaveBeenCalledOnce()
   } finally { await b.ctx.fiber.dispose() }
 })
