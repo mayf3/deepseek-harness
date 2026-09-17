@@ -387,16 +387,6 @@ Host Remote file reads and workspace directory observations over the composed fi
 @Remote async readAll(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
 
 /**
- * Read a complete authorized file within a Host consumer's reserved byte capacity.
- * @param workspaceFileScope - Session authorization and execution scope.
- * @param path - absolute or workspace-relative file path.
- * @param maxBytes - positive reserved capacity; the configured full-file cap still applies.
- * @param signal - caller cancellation.
- * @returns complete raw bytes and metadata from before the read; the filesystem enforces the effective limit.
- */
-async readAllBounded( workspaceFileScope: WorkspaceFileScope, path: string, maxBytes: number, signal: AbortSignal, ): Promise<WorkspaceFileStat & { readonly data: Uint8Array }>
-
-/**
  * Read a complete file relative to another file's directory, including outside the workspace.
  * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
  * @param path - base file, absolute or workspace-relative.

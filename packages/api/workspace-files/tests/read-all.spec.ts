@@ -47,43 +47,22 @@ describe('workspaceFiles.readAll', () => {
     const outside = await files.readAll(harness.scope, join(harness.outside, 'outside'), signal())
     expect(Buffer.from(outside.data, 'base64').toString()).toBe('outside')
   })
-})
 
-it.each([[8, 3], [3, 8]])('applies the smaller cap from deployment %s and Host reservation %s', async (maxFileBytes, reservation) => {
-  await writeFile(join(harness.workspace, 'reserved'), '1234')
-  const read = vi.spyOn(harness.ctx.fs, 'readBytes')
-  const files = harness.endpoint({ maxFileBytes })
-  const caller = signal()
-  expect(await failureOf(files.readAllBounded(harness.scope, 'reserved', reservation, caller)))
-    .toEqual({ code: 'workspace-file/too-large', details: { path: 'reserved', limit: 3 } })
-  expect(read).toHaveBeenCalledExactlyOnceWith(expect.anything(), caller, 3)
-})
+  it.each([new Error('Read denied'), new DOMException('Cancelled', 'AbortError'), null, 'backend failure', { code: 'FS_NOT_FOUND' }])(
+    'preserves non-size filesystem failures: %s', async (failure) => {
+      await writeFile(join(harness.workspace, 'file'), '1234')
+      vi.spyOn(harness.ctx.fs, 'readBytes').mockRejectedValueOnce(failure)
+      await expect(harness.endpoint().readAll(harness.scope, 'file', signal())).rejects.toBe(failure)
+    },
+  )
 
-it('returns the filesystem byte array directly to Host consumers at the exact cap', async () => {
-  await writeFile(join(harness.workspace, 'reserved'), '1234')
-  const read = vi.spyOn(harness.ctx.fs, 'readBytes')
-  const result = await harness.endpoint({ maxFileBytes: 8 }).readAllBounded(harness.scope, 'reserved', 4, signal())
-  expect(result.data).toBe(await read.mock.results[0]!.value)
-  expect(result.data).toEqual(Buffer.from('1234'))
-  expect(result.bytes).toBe(4)
-  expect(result).not.toHaveProperty('offset')
-  expect(result).not.toHaveProperty('eof')
-})
-
-it.each([new Error('Read denied'), new DOMException('Cancelled', 'AbortError'), null, 'backend failure', { code: 'FS_NOT_FOUND' }])(
-  'preserves non-size filesystem failures: %s', async (failure) => {
+  it('maps a size refusal by code without requiring a shared error class', async () => {
     await writeFile(join(harness.workspace, 'file'), '1234')
+    const failure = { code: 'FS_TOO_LARGE' }
     vi.spyOn(harness.ctx.fs, 'readBytes').mockRejectedValueOnce(failure)
-    await expect(harness.endpoint().readAllBounded(harness.scope, 'file', 4, signal())).rejects.toBe(failure)
-  },
-)
-
-it('maps a size refusal by code without requiring a shared error class', async () => {
-  await writeFile(join(harness.workspace, 'file'), '1234')
-  const failure = { code: 'FS_TOO_LARGE' }
-  vi.spyOn(harness.ctx.fs, 'readBytes').mockRejectedValueOnce(failure)
-  await expect(harness.endpoint().readAllBounded(harness.scope, 'file', 4, signal()))
-    .rejects.toMatchObject({ code: 'workspace-file/too-large', details: { path: 'file', limit: 4 }, cause: failure })
+    await expect(harness.endpoint({ maxFileBytes: 4 }).readAll(harness.scope, 'file', signal()))
+      .rejects.toMatchObject({ code: 'workspace-file/too-large', details: { path: 'file', limit: 4 }, cause: failure })
+  })
 })
 
 describe('workspaceFiles.readRelated', () => {

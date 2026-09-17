@@ -82,8 +82,6 @@ The provider waits for the Host's `ready` frame before its first `stat`, queues 
 
 One supervised `changes` stream serves every followed file in a Session. Followers match absolute paths with backslashes normalized to slashes. Carrier loss reconnects through the Gateway supervisor; a Host-ended or terminally failed feed ends its followers and leaves their last metadata readable until reopened. The last follower leaving disposes the stream, a successor waits for that disposal, and plugin teardown awaits all pending closes. The provider declares `ResourceProtocolMap.file`; the text preview declares its Sidebar line-navigation parameters.
 
-Host consumers can call `readAllBounded(scope, path, maxBytes, signal)` after reserving input capacity. It returns raw `Uint8Array` data with file metadata. The filesystem enforces the smaller of that reservation and `maxFileBytes`; `readAll()` encodes the result as base64 for Remote callers.
-
 -----
 
 <a id="understand-the-implementation"></a>
@@ -95,6 +93,8 @@ Host consumers can call `readAllBounded(scope, path, maxBytes, signal)` after re
 ### Design concept
 
 Reads through `ctx.fs` use the backend's read authority; the sandboxing backend fences writes and edits, not reads. A Typert lookup derives `WorkspaceFileScope` from a live Session header or the persistence service's header-only `stat`, so cold subagent Sessions need neither Agent activation nor event-body reads. The service adds regular-file checks and bounded transfer, while workspace containment belongs only to directory listing and change observation. A page is cut from `streamText`, which decodes and rejects non-UTF-8 chunk by chunk: the cutter counts lines before the window without keeping them, admits each in-window segment against the byte cap before buffering it, and returns at the first character past the window. One `stat` before the stream names the version and size the page reports.
+
+Complete-file reads delegate size enforcement to `fs.readBytes` and encode the returned bytes as base64 for Remote responses.
 
 ### Source map
 
