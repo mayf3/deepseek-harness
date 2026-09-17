@@ -49,9 +49,9 @@ export interface SessionReferenceInput {
 export interface SessionReferenceCandidate {
   /** Opaque source session identity. */
   sessionId: SessionId
-  /** Latest log-backed title, falling back to the opaque session id; used in the canonical mention. */
+  /** Latest log-backed title, falling back to the opaque session id. */
   label: string
-  /** Display text, preferring a subagent's durable creation label over {@link label}. */
+  /** Display and canonical-mention text, preferring a subagent's durable creation label over {@link label}. */
   displayTitle?: string
   /** Source session working directory, when recorded. */
   cwd?: string

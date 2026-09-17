@@ -1,9 +1,5 @@
 /** Browser Chat target plugin. */
 export { apply, inject } from './apply.ts'
-export {
-  ConversationSlotPanel, FixedChatConversationView, parseSidebarChatAddress,
-  sidebarChatAddress, SIDEBAR_CHAT_ADDRESS, SIDEBAR_CHAT_ID,
-} from './sidebar-chat/index.tsx'
 export type {
   ConversationSlotPanelProps, SidebarChatResource, SidebarChatTabProps,
 } from './sidebar-chat/index.tsx'

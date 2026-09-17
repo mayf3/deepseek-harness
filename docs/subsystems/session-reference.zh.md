@@ -34,16 +34,16 @@ interface SessionReferenceInput {
 }
 ```
 
-`SessionReferenceCandidate` 是面向宿主的发现输出。存在最新 Session 标题时，它的 mention label 使用该标题；可选显示文本则优先使用 subagent 的持久创建 label。筛选会同时搜索两者、Session id 与 cwd，绝不搜索 transcript（文本记录）。
+`SessionReferenceCandidate` 是面向宿主的发现输出。存在最新 Session 标题时，它的 `label` 使用该标题；可选显示文本则优先使用 subagent 的持久创建 label。筛选会同时搜索两者、Session id 与 cwd，绝不搜索 transcript（文本记录）。Remote 候选在 `displayTitle` 存在时用它标记规范 mention。
 
 ```ts type-equiv
 /** One host-facing candidate from exact session metadata. */
 interface SessionReferenceCandidate {
   /** Opaque source session identity. */
   sessionId: SessionId
-  /** Latest log-backed title, falling back to the opaque session id; used in the canonical mention. */
+  /** Latest log-backed title, falling back to the opaque session id. */
   label: string
-  /** Display text, preferring a subagent's durable creation label over {@link label}. */
+  /** Display and canonical-mention text, preferring a subagent's durable creation label over {@link label}. */
   displayTitle?: string
   /** Source session working directory, when recorded. */
   cwd?: string

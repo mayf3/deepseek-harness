@@ -7,7 +7,6 @@ import SessionStore, { Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-s
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import SessionTitleService from '@deepseek-ai/dsh-session-title'
-import type { SubagentIdentityProjection } from '@deepseek-ai/dsh-subagent/client'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SessionReferenceResolver, {
   decodeSessionReferenceUri,
@@ -59,7 +58,11 @@ function withProjectionCache(
   ctx: Context,
   rows: Record<string, string | null | {
     title?: string | null
-    subagent?: SubagentIdentityProjection | null
+    subagent?: {
+      readonly mode: 'one-shot' | 'continuable'
+      readonly label?: string
+      readonly seq: SessionSeq
+    } | null
   }>,
 ): void {
   ctx.provide('sessionProjectionCache', {
@@ -737,6 +740,11 @@ describe('session reference discovery and preparation', () => {
       }])
     await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'investigate'))
       .resolves.toHaveLength(1)
+    await expect(ctx.sessionReferenceResolver.remoteExportCandidates(
+      fakeAgent(target), 'researcher', new AbortController().signal,
+    )).resolves.toEqual([expect.objectContaining({
+      mention: formatSessionReferenceMention({ sessionId: child.id, label: 'researcher' }),
+    })])
   })
 
   it('labels a session no projection answers for by its id, still without a log read', async () => {

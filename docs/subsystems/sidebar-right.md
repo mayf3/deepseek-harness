@@ -79,6 +79,7 @@ Two opens are the navigation controller, and every way into the column calls one
 | `paneId` | Land a new tab in this pane; default is the active docked pane (the first docked pane while a floating pane is active). |
 | `replaceTab` | Take this tab's pane and strip slot, closing it in the same step; a floating tab lends no place, so the new tab lands as if unplaced. |
 | `revealIfOpened` | Default `true`: a tab already showing the same `(kind, address)` is focused and handed `params`. `false` opens another tab regardless. |
+| `preferNewPane` | Prefer a new docked pane under the normal pane budget and room rule; fall back to the target pane when it cannot split. Ignored with `replaceTab`. |
 | `kind` (`openResource` only) | Name the opening type instead of ranking claims; its implementation in force opens the address, and its `canOpen` still applies. |
 | `params` | Navigation parameters for the body, delivered as `navigation.params`. `openResource` types them by resource type through the merge-extensible `SidebarRightResourceParamsMap` (the text preview declares `{ line?: number }`); `openTab<K>` types them by kind through `SidebarRightTabParamsMap`, `undefined` for a kind that declares none; a body reads `SidebarRightNavigationParams`, the union of both. Values are JSON-shaped by convention and not validated at run time. |
 
@@ -136,6 +137,7 @@ The Host `ctx.workspaceFiles` service and generated `workspaceFiles` Remote name
 - **`text`** — `fallback`, `dsh-resource://file/**`, claiming Session addresses only. Document Preview observes metadata through `useResource<'file'>`, loads content through Remote callbacks, and owns renderer selection, the toolbar, per-tab refresh, scroll, and source navigation; unknown extensions render as plain text ([README](../../packages/client/ui-sidebar-documentpreview/README.md)).
 - **`files`** — `builtin`, opened as `openTab('files')`. The workspace directory tree, listed lazily through `list`, opening a file with `tab.actions.openResource(fileAddressFor(sessionId, root, path))` into its own pane ([README](../../packages/client/ui-sidebar-files/README.md)).
 - **`browser`** — multi-instance `builtin`, opened as `openTab('browser', { params: { url? } })`. Assistant Markdown delegates HTTP(S) links to this page type. It accepts public and loopback HTTP(S) targets under the default sandbox, rejects local files in favor of Document Preview, and uses application-known iframe history ([README](../../packages/client/ui-sidebar-browser/README.md)).
+- **`chat`** — `builtin`, `dsh-resource://chat/session/<child>?parent=<parent>&mode=<mode>`. An explicitly addressed subagent Conversation retained by the resource provider and rendered through the shared Conversation Factory ([README](../../packages/client/ui-chat/README.md)).
 
 <a id="not-built"></a>
 ## Not built

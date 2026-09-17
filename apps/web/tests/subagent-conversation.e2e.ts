@@ -28,6 +28,7 @@ const TREE_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-con
 const BRANCHLESS_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-conversation/branchless.expected.md', import.meta.url))
 const STALE_CATALOG_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-conversation/stale-catalog.expected.md', import.meta.url))
 const SIDEBAR_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-conversation/sidebar.expected.md', import.meta.url))
+const SIDEBAR_CHAT_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-conversation/sidebar-chat.expected.md', import.meta.url))
 const UNAVAILABLE_GRANDCHILD_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-conversation/nested.expected.md', import.meta.url))
 const FORK_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-conversation/fork.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
@@ -401,6 +402,29 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     )
     await compareOrRefreshGolden(TREE_EXPECTED, snapshot, MODE)
     await page.getByRole('tree', { name: 'Subagent sessions' }).press('Escape')
+  })
+
+  it('opens child history in the right Sidebar and releases it when closed', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-sidebar-chat'))
+    await page.getByRole('button', { name: '3 subagents' }).hover()
+    await page.getByRole('button', { name: `Open ${LABEL} in sidebar` }).click()
+    const sidebarChat = page.locator('[data-sidebar-chat]')
+    await sidebarChat.getByText(/^Explain event sourcing in one sentence\.Your parent agent id is /).waitFor({ timeout: 15_000 })
+    await compareOrRefreshGolden(
+      SIDEBAR_CHAT_EXPECTED,
+      await captureStableAria(page, '[data-sidebar-chat]', scaffold.workspaceCwd),
+      MODE,
+    )
+    await page.locator('[data-sidebar-right-panel] [data-dockkit-tab-close]').click()
+    await sidebarChat.waitFor({ state: 'detached' })
+
+    await page.getByRole('button', { name: '3 subagents' }).hover()
+    await page.getByRole('button', { name: `Open ${ONE_SHOT_LABEL} in sidebar` }).click()
+    await page.locator('[data-sidebar-chat]').getByText(
+      'One-shot tasks do not accept follow-ups; review the full execution record here.',
+    ).waitFor({ timeout: 15_000 })
+    await page.locator('[data-sidebar-right-panel] [data-dockkit-tab-close]').click()
+    await page.locator('[data-sidebar-chat]').waitFor({ state: 'detached' })
   })
 
   it('opens the completed child from persistence without activating it', async () => {

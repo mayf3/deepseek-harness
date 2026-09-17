@@ -69,9 +69,6 @@
     "@deepseek-ai/dsh-spill": {
       "optional": true
     },
-    "@deepseek-ai/dsh-subagent": {
-      "optional": true
-    },
     "@deepseek-ai/dsh-session-projection-cache": {
       "optional": true
     }

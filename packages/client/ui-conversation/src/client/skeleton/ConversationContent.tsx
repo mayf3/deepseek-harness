@@ -184,7 +184,7 @@ export function ConversationContent(props: ConversationContentProps) {
       ref={setBody}
       className={clsx(css.body, props.variant === 'embedded' && css.embeddedBody)}
       data-conversation-content=""
-      data-phase={phase}
+      data-content-phase={phase}
     >
       <div className={css.scrollBody} data-conversation-scroll="">
         {sessionId === undefined ? null : <Views />}

@@ -33,6 +33,8 @@ Chat supplies file and HTTP(S) navigation through one `MarkdownDelegateProvider`
 
 HTTP(S) links in Assistant Markdown open a new right-Sidebar Browser tab on ordinary clicks when that type is registered, or the system browser otherwise; modified clicks retain the native external-link behavior. Sent file references and skills confirmed by the message’s logged invocation also open in the right Sidebar. File paths use the viewed Session; skill names resolve through its current input-trigger source. Both use the prose file-link dotted underline on hover or focus. Sessions, directories, and command labels remain non-navigating references.
 
+Chat also registers the `dsh-resource://chat/session/<child>?parent=<parent>&mode=<mode>` resource and builtin Sidebar tab type for an explicitly addressed subagent Conversation. The resource retains one `SessionReference`, refreshes the direct-parent catalog before opening, and releases the reference when the tab record closes. The tab renders the shared `conversation.content` Factory through `sidebar.chat.conversation`, fixes the local View to Chat, and omits the main Conversation header and width controls.
+
 <a id="system-prompt-row"></a>
 ## System prompt row
 

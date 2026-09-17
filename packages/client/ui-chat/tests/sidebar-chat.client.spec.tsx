@@ -64,10 +64,16 @@ describe('Sidebar chat registration', () => {
       [Symbol.dispose]: release,
     } as unknown as SessionReference
     const retain = vi.fn(() => reference)
+    const refreshSubagents = vi.fn(() => Promise.resolve())
     const list = {
       getSnapshot: () => ({
         ids: [],
-        byId: { [CHILD]: { displayTitle: 'Worker' } },
+        byId: {
+          [CHILD]: {
+            displayTitle: 'Projected title',
+            projectionValues: { subagent: { mode: 'continuable', label: 'Worker', seq: 1 } },
+          },
+        },
         phase: 'ready',
         subagentsByParent: {},
         jobsBySession: {},
@@ -78,7 +84,7 @@ describe('Sidebar chat registration', () => {
     let definition: SidebarRightTabDefinition | undefined
     const registrations: { options: Record<string, unknown>; component: unknown }[] = []
     const ctx = {
-      sessions: { retain, list } as unknown as ISessions,
+      sessions: { retain, refreshSubagents, list } as unknown as ISessions,
       resources: { register: (value: ResourceProvider<'chat'>) => { provider = value; return () => {} } },
       sidebarRightTabs: { register: (value: SidebarRightTabDefinition) => { definition = value; return () => {} } },
       slots: {
@@ -107,6 +113,7 @@ describe('Sidebar chat registration', () => {
     const controller = new AbortController()
     const stream = provider!.open(sidebarChatAddress(ADDRESS), { signal: controller.signal })[Symbol.asyncIterator]()
     expect(await stream.next()).toEqual({ done: false, value: { ok: true, value: { address: ADDRESS, reference } } })
+    expect(refreshSubagents).toHaveBeenCalledWith(PARENT)
     expect(retain).toHaveBeenCalledWith(ADDRESS, { source: 'sidebarChat', signal: controller.signal })
     const completion = stream.next()
     await Promise.resolve()
@@ -117,9 +124,9 @@ describe('Sidebar chat registration', () => {
     const alreadyAborted = new AbortController()
     alreadyAborted.abort()
     const stopped = provider!.open(sidebarChatAddress(ADDRESS), { signal: alreadyAborted.signal })[Symbol.asyncIterator]()
-    expect((await stopped.next()).done).toBe(false)
     expect(await stopped.next()).toEqual({ done: true, value: undefined })
-    expect(release).toHaveBeenCalledTimes(2)
+    expect(retain).toHaveBeenCalledOnce()
+    expect(release).toHaveBeenCalledOnce()
 
     const invalid = provider!.open('invalid', { signal: new AbortController().signal })[Symbol.asyncIterator]()
     await expect(invalid.next()).rejects.toThrow('invalid chat resource address')

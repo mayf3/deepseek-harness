@@ -356,7 +356,7 @@ describe('candidates', () => {
           cwd: `${HOME}/project`,
           sameWorkspace: true,
           createdAt: CREATED_AT,
-          mention: '@[Investigate startup](dsh-session:IndvcmtlciI)',
+          mention: '@[researcher](dsh-session:IndvcmtlciI)',
         },
       ],
     }))
@@ -384,10 +384,10 @@ describe('candidates', () => {
     })).toEqual({
       insert: {
         source: 'reference',
-        ref: '@[Investigate startup](dsh-session:IndvcmtlciI)',
+        ref: '@[researcher](dsh-session:IndvcmtlciI)',
         label: 'researcher',
         appearance: 'session',
-        clipboardText: '@[Investigate startup](dsh-session:IndvcmtlciI)',
+        clipboardText: '@[researcher](dsh-session:IndvcmtlciI)',
       },
     })
   })

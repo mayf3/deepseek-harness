@@ -101,6 +101,9 @@ function chatResourceProvider(sessions: ISessions): ResourceProvider<'chat'> {
     async *open(resourceAddress, { signal }) {
       const address = parseSidebarChatAddress(resourceAddress)
       if (address === undefined) throw new Error(`ui-chat: invalid chat resource address "${resourceAddress}"`)
+      if (signal.aborted) return
+      await sessions.refreshSubagents(address.parentSessionId)
+      if (signal.aborted) return
       const reference = sessions.retain(address, { source: 'sidebarChat', signal })
       try {
         yield { ok: true, value: { address, reference } }
@@ -183,7 +186,7 @@ export function registerSidebarChat(ctx: Context, t: TranslateNS<typeof NS>): vo
       const child = parseSidebarChatAddress(address)?.childSessionId
       return child === undefined
         ? t('view.chat')
-        : ctx.sessions.list.getSnapshot().byId[child]?.displayTitle ?? child
+        : ctx.sessions.list.getSnapshot().byId[child]?.projectionValues?.subagent?.label ?? child
     },
   } satisfies SidebarRightTabDefinition), 'ui-chat: Sidebar chat type')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({

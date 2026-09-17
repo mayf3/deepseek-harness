@@ -18,7 +18,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
 import type {} from '@deepseek-ai/dsh-session-title'
-import type { SubagentIdentityProjection } from '@deepseek-ai/dsh-subagent/client'
+import type {} from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type { SessionRecord, SessionSurfaceSnapshot } from '@deepseek-ai/dsh-session-query'
 import { prepareReferenceOmission, REFERENCE_WARNING } from './spill.ts'
@@ -253,13 +253,18 @@ export class SessionReferenceResolver extends TypertRemoteService {
       : record.header.isSeeded
         ? undefined
         : this.ctx.get('sessionProjectionCache')?.cachedSnapshot(
-            record.header,
-            SessionLogOffset(0),
-            ['title', 'subagent'],
-          )
+          record.header,
+          SessionLogOffset(0),
+          ['title', 'subagent'],
+        )
     const label = titleOf(snapshot) ?? record.header.id
-    const subagent = snapshot?.values.subagent as SubagentIdentityProjection | null | undefined
-    return { label, displayTitle: subagent?.label ?? label }
+    const subagent = snapshot?.values.subagent
+    return {
+      label,
+      displayTitle: subagent === undefined || subagent === null
+        ? label
+        : subagent.label ?? record.header.id,
+    }
   }
 
   /**
@@ -280,7 +285,10 @@ export class SessionReferenceResolver extends TypertRemoteService {
     const candidates = await this.listCandidates(agent, query, this.config.candidateLimit, signal)
     return candidates.map(candidate => ({
       ...candidate,
-      mention: formatSessionReferenceMention({ sessionId: candidate.sessionId, label: candidate.label }),
+      mention: formatSessionReferenceMention({
+        sessionId: candidate.sessionId,
+        label: candidate.displayTitle ?? candidate.label,
+      }),
     }))
   }
 

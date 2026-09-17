@@ -130,11 +130,12 @@ function WidthHandle(props: {
  */
 export function ConversationWidthControls({ container, phase }: ConversationWidthControlsProps) {
   const publishWidths = useCallback((container: HTMLDivElement): void => {
+    const target = container.parentElement ?? container
     const column = container.offsetWidth
-    container.style.setProperty('--dsh-conversation-column-width', `${column}px`)
+    target.style.setProperty('--dsh-conversation-column-width', `${column}px`)
     const preference = readWidthPreference()
-    if (preference === null) container.style.removeProperty('--dsh-chat-user-width')
-    else container.style.setProperty('--dsh-chat-user-width', `${resolveContentWidth(column, preference)}px`)
+    if (preference === null) target.style.removeProperty('--dsh-chat-user-width')
+    else target.style.setProperty('--dsh-chat-user-width', `${resolveContentWidth(column, preference)}px`)
   }, [])
 
   useLayoutEffect(() => {
@@ -151,7 +152,8 @@ export function ConversationWidthControls({ container, phase }: ConversationWidt
   }, [container])
   const onDrag = useCallback((width: number): void => {
     if (container === null) return
-    container.style.setProperty('--dsh-chat-user-width', `${resolveContentWidth(container.offsetWidth, width)}px`)
+    const target = container.parentElement ?? container
+    target.style.setProperty('--dsh-chat-user-width', `${resolveContentWidth(container.offsetWidth, width)}px`)
   }, [container])
   const onCommit = useCallback((width: number): void => {
     if (container === null) return
