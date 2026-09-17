@@ -439,8 +439,6 @@ export interface LaunchOptions {
    * composition grants no trust. The listen socket is unaffected.
    */
   publicMount?: {
-    /** Canonical hostname Chromium maps to loopback (default `public.localhost`). */
-    host?: string
     /** Canonical mount prefix (default `tools/dsh/`, normalized to lead and end in `/`). */
     prefix?: string
   }
@@ -477,7 +475,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     : await Promise.all(options.replayChildFixtures.map(path => selectedSessionFixture(path)))
   const compareReplaySession = options.compareReplaySession ?? await ownsReplayFixture(replayFixture)
   const publicMount = options.publicMount
-  const publicHost = publicMount === undefined ? undefined : publicMount.host ?? 'public.localhost'
+  // Chromium maps *.localhost to loopback without a resolver.
+  const publicHost = publicMount === undefined ? undefined : 'public.localhost'
   const publicPrefix = publicMount === undefined
     ? undefined
     : `/${(publicMount.prefix ?? 'tools/dsh/').replace(/^\/+|\/+$/gu, '')}/`
@@ -936,11 +935,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     hostFetch(path: string, init: RequestInit = {}): Promise<Response> {
       const headers = new Headers(init.headers)
       headers.set('cookie', cookieHeader)
-      // Same loopback routing as the token exchange above.
-      const routed = publicPrefix === undefined ? path : `${publicPrefix}${path.replace(/^\//u, '')}`
-      const url = new URL(routed, baseUrl)
-      if (publicPrefix !== undefined) url.hostname = '127.0.0.1'
-      return fetch(url, { ...init, headers })
+      return fetch(new URL(path, baseUrl), { ...init, headers })
     },
     // Barrier stack: the in-process turn/end identifies the session, its
     // explicit flush makes the transcript durable, and the caller's browser

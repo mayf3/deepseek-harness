@@ -1,8 +1,7 @@
 /**
  * Test-only HTTP plumbing for the Web browser scaffold beside it
  * (`./scaffold.ts`). The proxy owns one browser-facing mount: it preserves the
- * external Host, strips the prefix, redirects the bare mount to its slash form,
- * removes hop-by-hop headers, forwards WebSocket upgrades, and rewrites the
+ * external Host, strips the prefix, removes hop-by-hop headers, forwards WebSocket upgrades, and rewrites the
  * backend's `Path=/` cookies to the mount. TLS terminates at the real
  * deployment's proxy; this fixture stays plain HTTP.
  */
@@ -47,11 +46,10 @@ export async function startPrefixProxy(options: PrefixProxyOptions): Promise<Pre
     socket.once('close', () => { sockets.delete(socket) })
     if (closing !== undefined) socket.destroy()
   }
-  const mountPath = (raw: string): { path: string } | { redirect: string } | undefined => {
+  const mountPath = (raw: string): string | undefined => {
     const url = new URL(raw, 'http://dsh.invalid')
-    if (url.pathname === prefix.slice(0, -1)) return { redirect: `${prefix}${url.search}` }
     if (!url.pathname.startsWith(prefix)) return undefined
-    return { path: `/${url.pathname.slice(prefix.length)}${url.search}` }
+    return `/${url.pathname.slice(prefix.length)}${url.search}`
   }
   const forward = (headers: IncomingMessage['headers']): OutgoingHttpHeaders => {
     const copy = { ...headers }
@@ -74,18 +72,13 @@ export async function startPrefixProxy(options: PrefixProxyOptions): Promise<Pre
       response.end()
       return
     }
-    if ('redirect' in routed) {
-      response.writeHead(308, { location: routed.redirect, 'cache-control': 'no-store' })
-      response.end()
-      return
-    }
     if (targetPort === undefined) {
       response.writeHead(502)
       response.end()
       return
     }
     const upstream = httpRequest({
-      host: '127.0.0.1', port: targetPort, method: requestMessage.method, path: routed.path,
+      host: '127.0.0.1', port: targetPort, method: requestMessage.method, path: routed,
       headers: forward(requestMessage.headers), agent: false,
     }, (result) => {
       response.writeHead(result.statusCode as number, rewriteCookies(result.headers))
@@ -101,14 +94,14 @@ export async function startPrefixProxy(options: PrefixProxyOptions): Promise<Pre
   // then pipe both directions raw until either side closes.
   server.on('upgrade', (requestMessage, socket, head) => {
     const routed = mountPath(requestMessage.url ?? '/')
-    if (closing !== undefined || targetPort === undefined || routed === undefined || 'redirect' in routed) {
+    if (closing !== undefined || targetPort === undefined || routed === undefined) {
       socket.destroy()
       return
     }
     const upstream = netConnect(targetPort, '127.0.0.1')
     track(upstream)
     upstream.once('connect', () => {
-      upstream.write(`${requestMessage.method} ${routed.path} HTTP/1.1\r\n`)
+      upstream.write(`${requestMessage.method} ${routed} HTTP/1.1\r\n`)
       for (let index = 0; index < requestMessage.rawHeaders.length; index += 2) {
         upstream.write(`${requestMessage.rawHeaders[index]}: ${requestMessage.rawHeaders[index + 1]}\r\n`)
       }
