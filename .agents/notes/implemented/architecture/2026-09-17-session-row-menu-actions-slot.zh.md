@@ -12,11 +12,11 @@ Session 行菜单原本是由 `ui-workspace` 持有的封闭 action 列表。第
 
 `ui-workspace` 在其 `sidebar.workspaces` 注册项下声明 root-scoped 有序列表 slot `sidebar.workspaces.session.menu.action`。每个贡献项接收目标 `sessionId`、行 `displayTitle`（依次回退到持久化标题、项目目录名、Session id）与 `dismiss()` 回调；贡献插件将自身服务与 mutation 保留在自己的注册闭包中。
 
-共享 `MenuAction` primitive 在 `Menu` 内渲染贡献行。它让贡献行拥有与 owner 定义行相同的菜单项语义、键盘走位、子菜单重置、关闭行为、焦点恢复、禁用状态、图标位置与 danger 样式。动态客户端包无法导入该 primitive，因此其自有 `role="menuitem"` 控件需在执行操作后调用 owner 的 `dismiss()`。
+共享 `MenuAction` primitive 在 `Menu` 内渲染贡献行。它让贡献行拥有与 owner 定义行相同的菜单项语义、键盘走位、子菜单重置、关闭行为、焦点恢复、禁用状态、图标位置与 danger 样式。无法导入该 primitive 的动态客户端包改为渲染原生 `button[role="menuitem"]`，并在执行操作后调用 owner 的 `dismiss()`。
 
 ### 排序与渐进披露
 
-Rename、Fork 与 Archive 作为固定的 owner-defined 分组保持在顶部。贡献项在下方形成带语义分隔的分组，依次按 slot priority、`order` 与注册顺序排列。空分组在视觉与无障碍 API 中均隐藏。现有省略号菜单仍是唯一的渐进披露层；嵌套「More…」分组不属于此约定。
+Rename、Fork 与 Archive 作为固定的 owner-defined 分组保持在顶部。贡献项在下方形成带语义分隔的分组，依次按较低的 slot priority、较低的 `order` 与注册顺序排列。动态 browser-half facade 为每次注册分配不同且递减的 priority，因此较新的动态注册无视 `order` 排在较旧注册之前；相同 priority 的打包注册才使用 `order`。空分组在视觉与无障碍 API 中均隐藏。现有省略号菜单仍是唯一的渐进披露层；嵌套「More…」分组不属于此约定。
 
 ## 验证
 

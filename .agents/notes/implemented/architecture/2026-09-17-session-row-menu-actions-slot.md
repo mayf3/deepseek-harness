@@ -12,11 +12,11 @@ The Session row menu was a closed list of actions owned by `ui-workspace`. A thi
 
 `ui-workspace` declares the root-scoped ordered-list slot `sidebar.workspaces.session.menu.action` under its `sidebar.workspaces` registration. Each contribution receives the target `sessionId`, the row `displayTitle` (persisted title, project basename, then Session id), and a `dismiss()` callback; the contributing plugin keeps its services and mutations in its own registration closure.
 
-The shared `MenuAction` primitive renders contributed rows inside `Menu`. It owns the same menu-item semantics, keyboard walk, submenu reset, dismissal, focus restoration, disabled state, icon position, and danger styling as owner-defined rows. Dynamic client packages cannot import the primitive, so their own `role="menuitem"` control calls the owner `dismiss()` after acting.
+The shared `MenuAction` primitive renders contributed rows inside `Menu`. It owns the same menu-item semantics, keyboard walk, submenu reset, dismissal, focus restoration, disabled state, icon position, and danger styling as owner-defined rows. Import-free dynamic client packages instead render a native `button[role="menuitem"]` and call the owner `dismiss()` after acting.
 
 ### Ordering and disclosure
 
-Rename, Fork, and Archive remain a fixed owner-defined group at the top. Contributions form a semantically separated group below them and sort by slot priority, then `order`, then registration order. The group is visually and accessibly hidden when empty. The existing ellipsis menu remains the only disclosure layer; nested “More…” grouping is not part of the contract.
+Rename, Fork, and Archive remain a fixed owner-defined group at the top. Contributions form a semantically separated group below them and sort by lower slot priority, lower `order`, then registration sequence. The dynamic browser-half facade gives each registration a distinct decreasing priority, so newer dynamic registrations precede older ones regardless of `order`; packaged registrations at equal priority use `order`. The group is visually and accessibly hidden when empty. The existing ellipsis menu remains the only disclosure layer; nested “More…” grouping is not part of the contract.
 
 ## Verification
 

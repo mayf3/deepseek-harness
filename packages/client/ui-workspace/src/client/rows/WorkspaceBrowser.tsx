@@ -24,7 +24,8 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { SessionMenuActionOwnerProps, WorkspaceBrowserProps } from '../contract/slots.ts'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+import type { WorkspaceBrowserProps } from '../contract/slots.ts'
 import type { ArchivedFilter, GroupNode, SessionNode, SessionOrderBy, SessionRowState } from '../tree.ts'
 import {
   deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey, owningParentFolder,
@@ -268,7 +269,7 @@ type SessionTreeProps = Pick<
   /** Pin or unpin a session (row menu action; `pin` false unpins). */
   onSessionPin: (sessionId: SessionNode['id'], pin: boolean) => void
   /** Render ordered plugin actions in each Session row menu. */
-  renderSessionMenuActions: (owner: SessionMenuActionOwnerProps) => ReactNode
+  renderSlot: PropsRenderSlots<'sidebar.workspaces.session.menu.action'>['renderSlot']
   /** One Session chosen from search that must be exposed and scrolled into view. */
   revealSessionId?: SessionId | undefined
   /** Acknowledge that the chosen Session row has been revealed. */
@@ -281,7 +282,7 @@ function SessionTree({
   rowState,
   workspaceReady, animationResetKey, usePanelInfo,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionUnarchive, onSessionPin,
-  renderSessionMenuActions,
+  renderSlot,
   insertWorkspaceBefore,
   nestWorkspaces, groupExpansion, setGroupExpanded,
   setSessionOrder, home, t,
@@ -566,7 +567,7 @@ function SessionTree({
               onArchive={onSessionArchive}
               onUnarchive={onSessionUnarchive}
               onPin={onSessionPin}
-              renderSessionMenuActions={renderSessionMenuActions}
+              renderSlot={renderSlot}
               onReveal={node.id === revealSessionId && group.key === revealGroup
                 ? () => { onSessionRevealed(node.id) }
                 : undefined}
@@ -617,7 +618,7 @@ function SessionTree({
 function FlatList({
   list, sessionIds, rowState, useSessionStatus, open, forkSession, onSessionRename, onSessionArchive,
   onSessionUnarchive, onSessionPin,
-  renderSessionMenuActions,
+  renderSlot,
   usePanelInfo, setSessionOrder, workspaceReady, animationResetKey,
   revealSessionId, onSessionRevealed, t,
 }: Pick<
@@ -629,7 +630,7 @@ function FlatList({
   | 'onSessionArchive'
   | 'onSessionUnarchive'
   | 'onSessionPin'
-  | 'renderSessionMenuActions'
+  | 'renderSlot'
   | 'usePanelInfo'
   | 'setSessionOrder'
   | 'workspaceReady'
@@ -690,7 +691,7 @@ function FlatList({
               onArchive={onSessionArchive}
               onUnarchive={onSessionUnarchive}
               onPin={onSessionPin}
-              renderSessionMenuActions={renderSessionMenuActions}
+              renderSlot={renderSlot}
               onReveal={node.id === revealSessionId
                 ? () => { onSessionRevealed(node.id) }
                 : undefined}
@@ -1425,7 +1426,7 @@ export function WorkspaceBrowser({
                 open={guardedOpen} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
                 onSessionUnarchive={onSessionUnarchive} onSessionPin={onSessionPin}
-                renderSessionMenuActions={owner => renderSlot('sidebar.workspaces.session.menu.action', owner)}
+                renderSlot={renderSlot}
                 setSessionOrder={saveSessionOrder}
                 revealSessionId={revealSessionId}
                 onSessionRevealed={acknowledgeSessionReveal}
@@ -1441,7 +1442,7 @@ export function WorkspaceBrowser({
                 onSessionArchive={onSessionArchive}
                 onSessionUnarchive={onSessionUnarchive}
                 onSessionPin={onSessionPin}
-                renderSessionMenuActions={owner => renderSlot('sidebar.workspaces.session.menu.action', owner)}
+                renderSlot={renderSlot}
                 forkSession={forkSession}
                 workspaces={orderedWorkspaces}
                 ungroupedSessionIds={orderedUngroupedSessionIds}

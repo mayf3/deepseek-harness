@@ -3243,7 +3243,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     kind: 'list',
     scope: 'root',
     summary: 'Ordered third-party actions below the built-in Session row-menu actions.',
-    doc: 'Ordered third-party actions below the built-in Session row-menu actions.\nRegistrations use a fresh id; priority precedes order, with registration\norder breaking ties. Packaged plugins render `MenuAction`; dynamic markup\ncalls the owner `dismiss()` after acting. An empty list has no visible or\naccessible secondary group.',
+    doc: 'Ordered third-party actions below the built-in Session row-menu actions.\nRegistrations use a fresh id and sort by lower priority, lower order, then\nregistration sequence. Dynamic browser halves receive distinct decreasing\npriorities, so newer dynamic registrations precede older ones regardless\nof order. Packaged plugins render `MenuAction`; import-free dynamic markup\nrenders a `button[role="menuitem"]` and calls the owner `dismiss()` after\nacting. An empty list has no visible or accessible secondary group.',
     registerOptions: [
       {
         name: 'id',
@@ -3285,8 +3285,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'sidebar.workspaces\' (client-ui-workspace), so it exists while that entry is mounted',
     occupants: [],
     replaceRisk: 'none',
-    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces.session.menu.action\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces.session.menu.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-workspace/src/client/contract/slots.ts:83',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    const copyLabel = \'Copy Session ID\' // Localize in the contributing package.\n    ctx.slots.inject(\'sidebar.workspaces.session.menu.action\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces.session.menu.action\', id: \'copy-session-id\', order: 100 },\n      ({ sessionId, dismiss }) => React.createElement(\n        \'button\',\n        {\n          type: \'button\',\n          role: \'menuitem\',\n          onClick: () => { navigator.clipboard.writeText(sessionId).then(dismiss, dismiss) },\n        },\n        copyLabel,\n      ),\n    ))\n  },\n}',
+    source: 'packages/client/ui-workspace/src/client/contract/slots.ts:104',
   },
   {
     key: 'tool.call.images',

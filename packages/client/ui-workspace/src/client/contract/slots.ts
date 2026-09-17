@@ -75,10 +75,31 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'sidebar.workspaces.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
     /**
      * Ordered third-party actions below the built-in Session row-menu actions.
-     * Registrations use a fresh id; priority precedes order, with registration
-     * order breaking ties. Packaged plugins render `MenuAction`; dynamic markup
-     * calls the owner `dismiss()` after acting. An empty list has no visible or
-     * accessible secondary group.
+     * Registrations use a fresh id and sort by lower priority, lower order, then
+     * registration sequence. Dynamic browser halves receive distinct decreasing
+     * priorities, so newer dynamic registrations precede older ones regardless
+     * of order. Packaged plugins render `MenuAction`; import-free dynamic markup
+     * renders a `button[role="menuitem"]` and calls the owner `dismiss()` after
+     * acting. An empty list has no visible or accessible secondary group.
+     * @example
+     * return {
+     *   inject: ['slots'],
+     *   apply(ctx) {
+     *     const copyLabel = 'Copy Session ID' // Localize in the contributing package.
+     *     ctx.slots.inject('sidebar.workspaces.session.menu.action', () => ctx.slots.register(
+     *       { name: 'sidebar.workspaces.session.menu.action', id: 'copy-session-id', order: 100 },
+     *       ({ sessionId, dismiss }) => React.createElement(
+     *         'button',
+     *         {
+     *           type: 'button',
+     *           role: 'menuitem',
+     *           onClick: () => { navigator.clipboard.writeText(sessionId).then(dismiss, dismiss) },
+     *         },
+     *         copyLabel,
+     *       ),
+     *     ))
+     *   },
+     * }
      */
     'sidebar.workspaces.session.menu.action': { kind: 'list'; scope: 'root'; owner: SessionMenuActionOwnerProps }
   }

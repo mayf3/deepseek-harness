@@ -83,7 +83,7 @@ Each registration declares a **directory-flow child hole** (`single` kind: `conv
 
 ### Session menu actions
 
-An external client plugin injects `sidebar.workspaces.session.menu.action`, registers a fresh `id` and `order`, and renders the shared `MenuAction` primitive. Each action receives the target's `sessionId`, its row `displayTitle` (persisted title, project basename, then Session id), and `dismiss()`. Plugin services remain in the registration's inject closure, and action text comes from the plugin's locale dictionary. Built-in actions stay first in their fixed order. Slot priority sorts before `order`; equal priority and order retain registration order. The secondary group has a semantic separator and is hidden from both presentation and accessibility APIs when empty.
+An external client plugin injects `sidebar.workspaces.session.menu.action`, registers a fresh `id` and `order`, and renders the shared `MenuAction` primitive. Each action receives the target's `sessionId`, its row `displayTitle` (persisted title, project basename, then Session id), and `dismiss()`. Plugin services remain in the registration's inject closure, and action text comes from the plugin's locale dictionary. Built-in actions stay first in their fixed order. Plugin actions sort by lower priority, lower `order`, then registration sequence. The dynamic browser-half facade assigns every registration a distinct decreasing priority, so newer dynamic registrations precede older ones regardless of `order`; packaged registrations at the same priority use `order`. The secondary group has a semantic separator and is hidden from both presentation and accessibility APIs when empty.
 
 ```tsx
 import { MenuAction } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -98,7 +98,7 @@ ctx.slots.inject('sidebar.workspaces.session.menu.action', () => ctx.slots.regis
 ))
 ```
 
-Dynamic client packages cannot import `MenuAction`; they render a `role="menuitem"` control with `React.createElement` and call the supplied `dismiss()` after acting. `dismiss()` closes the menu and restores trigger focus unless the action moved focus elsewhere.
+Import-free dynamic client packages render a native `<button type="button" role="menuitem">` with `React.createElement` and call the supplied `dismiss()` after acting. That exact button contract joins the menu's keyboard walk; `dismiss()` closes the menu and restores trigger focus unless the action moved focus elsewhere.
 
 ### View state
 

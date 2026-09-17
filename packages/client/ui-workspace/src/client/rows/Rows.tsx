@@ -8,8 +8,8 @@
  * while a menu is open.
  */
 import { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
 import clsx from 'clsx'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   HoverCard, IconAlarmClockOutlineRegular, IconArchiveOutlineRegular, IconBranchOutlineRegular,
   IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderCloseRegular, IconFolderOpenRegular,
@@ -18,7 +18,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
-import type { SessionMenuActionOwnerProps, WorkspaceBrowserProps } from '../contract/slots.ts'
+import type { WorkspaceBrowserProps } from '../contract/slots.ts'
 import type { GroupNode, SearchResultNode, SessionNode } from '../tree.ts'
 import css from './Rows.module.css'
 
@@ -464,7 +464,7 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }: 
  * @param props.onRename - open the session rename dialog (id + current title).
  * @param props.onFork - fork a session at its last completed turn.
  * @param props.onArchive - archive a session by id.
- * @param props.renderSessionMenuActions - render ordered plugin actions after the built-in actions.
+ * @param props.renderSlot - render ordered plugin actions after the built-in actions.
  * @param props.onReveal - scroll this row into view after search navigation, then acknowledge it.
  * @param props.drag - optional row-drag target wiring; blank rows cannot start a drag.
  * @param props.flat - omit the empty status slot in the hierarchy-free flat list.
@@ -472,7 +472,7 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }: 
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, onUnarchive, onPin, renderSessionMenuActions, onReveal, drag, flat = false, t,
+  node, currentId, now, onOpen, onRename, onFork, onArchive, onUnarchive, onPin, renderSlot, onReveal, drag, flat = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -489,7 +489,7 @@ export function SessionNodeItem({
   /** Pin or unpin this session (row menu action; `pin` false unpins). */
   onPin: (id: SessionNode['id'], pin: boolean) => void
   /** Render ordered plugin actions after the built-in row-menu actions. */
-  renderSessionMenuActions?: ((owner: SessionMenuActionOwnerProps) => ReactNode) | undefined
+  renderSlot?: PropsRenderSlots<'sidebar.workspaces.session.menu.action'>['renderSlot'] | undefined
   /** Scroll this row into view after search navigation, then acknowledge it. */
   onReveal?: (() => void) | undefined
   /** Present on reorderable-list rows so every row can remain a drop target. */
@@ -649,7 +649,7 @@ export function SessionNodeItem({
               </button>
             )}
           >
-            {renderSessionMenuActions?.({
+            {renderSlot?.('sidebar.workspaces.session.menu.action', {
               sessionId: node.id,
               displayTitle: row.title,
               dismiss: dismissSessionMenu,

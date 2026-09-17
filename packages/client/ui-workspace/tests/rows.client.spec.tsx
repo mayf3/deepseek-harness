@@ -6,6 +6,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { MenuAction } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionMenuActionOwnerProps } from '../src/client/contract/slots.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { RowDragProps } from '../src/client/rows/Rows.tsx'
@@ -555,17 +556,22 @@ describe('workspace browser rows', () => {
   it('appends plugin actions after built-ins with the Session owner props', async () => {
     const onOpen = vi.fn()
     const onPluginAction = vi.fn()
-    const renderSessionMenuActions = vi.fn(({
-      sessionId, displayTitle, dismiss,
-    }: SessionMenuActionOwnerProps) => (
-      <button role="menuitem" onClick={() => {
-        screen.getByRole('button', { name: 'Destination' }).focus()
-        onPluginAction(sessionId, displayTitle)
-        dismiss()
-      }}>
-        Export
-      </button>
-    ))
+    const rendered = vi.fn()
+    const renderSlot: PropsRenderSlots<'sidebar.workspaces.session.menu.action'>['renderSlot'] = (name, value) => {
+      // The generic framework signature cannot narrow its owner from a runtime key in a test stub.
+      const owner = value as unknown as SessionMenuActionOwnerProps
+      const { sessionId, displayTitle, dismiss } = owner
+      rendered(name, value)
+      return (
+        <button role="menuitem" onClick={() => {
+          screen.getByRole('button', { name: 'Destination' }).focus()
+          onPluginAction(sessionId, displayTitle)
+          dismiss()
+        }}>
+          Export
+        </button>
+      )
+    }
     const node: SessionNode = {
       id: sid('s1'), title: 'One', blank: false, running: false,
       runningSubagentCount: 0, completed: false, hasActiveSchedule: false, updatedAt: 0,
@@ -574,7 +580,7 @@ describe('workspace browser rows', () => {
       <button>Destination</button>
       <SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen}
         onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()}
-        renderSessionMenuActions={renderSessionMenuActions} t={t} />
+        renderSlot={renderSlot} t={t} />
     </>)
 
     fireEvent.click(screen.getByRole('button', { name: '会话“One”的操作' }))
@@ -582,8 +588,8 @@ describe('workspace browser rows', () => {
     expect(actions.map(action => action.textContent)).toEqual(['重命名', '分叉会话', '归档会话', 'Export'])
     fireEvent.click(screen.getByRole('menuitem', { name: 'Export' }))
     await act(async () => { await Promise.resolve() })
-    expect(renderSessionMenuActions).toHaveBeenCalled()
-    const owner = renderSessionMenuActions.mock.calls.at(-1)?.[0]
+    expect(rendered).toHaveBeenCalledWith('sidebar.workspaces.session.menu.action', expect.any(Object))
+    const owner = rendered.mock.calls.at(-1)?.[1] as SessionMenuActionOwnerProps | undefined
     expect(owner?.sessionId).toBe(node.id)
     expect(owner?.displayTitle).toBe('One')
     expect(typeof owner?.dismiss).toBe('function')

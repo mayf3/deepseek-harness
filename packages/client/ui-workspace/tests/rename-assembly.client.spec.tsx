@@ -95,15 +95,23 @@ describe('session rename through the assembled browser', () => {
     const view = runtime.renderRoot()
 
     const row = (await view.findByText('Session title')).closest('[role="treeitem"]')!
-    fireEvent.click(within(row as HTMLElement).getByLabelText('会话“Session title”的操作'))
+    const trigger = within(row as HTMLElement).getByLabelText('会话“Session title”的操作')
+    fireEvent.click(trigger)
     expect(view.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
       '重命名', '分叉会话', '归档会话', 'Earlier action', 'Later action',
     ])
-    fireEvent.click(view.getByRole('menuitem', { name: 'Earlier action' }))
+    const later = view.getByRole('menuitem', { name: 'Later action' })
+    const earlier = view.getByRole('menuitem', { name: 'Earlier action' })
+    trigger.focus()
+    fireEvent.keyDown(trigger, { key: 'End' })
+    expect(document.activeElement).toBe(later)
+    fireEvent.keyDown(later, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(earlier)
+    fireEvent.click(earlier)
     expect(selected).toHaveBeenCalledWith('earlier', SID, 'Session title')
     expect(view.queryByRole('menu')).toBeNull()
     await act(async () => { await Promise.resolve() })
-    expect(document.activeElement).toBe(within(row as HTMLElement).getByLabelText('会话“Session title”的操作'))
+    expect(document.activeElement).toBe(trigger)
     await runtime.dispose()
   })
 

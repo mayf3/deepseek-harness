@@ -83,7 +83,7 @@ Session 行渲染运行时的实时 `pendingInteraction` 分类：审批显示**
 
 ### Session 菜单 action
 
-外部客户端插件注入 `sidebar.workspaces.session.menu.action`，注册新的 `id` 与 `order`，并渲染共享 `MenuAction` primitive。每个 action 接收目标的 `sessionId`、行 `displayTitle`（依次回退到持久化标题、项目目录名、Session id）与 `dismiss()`；插件服务仍留在注册项的 inject 闭包中，action 文案来自插件自己的 locale 字典。内置 action 按固定顺序保持在前。Slot priority 先于 `order` 排序；priority 与 order 都相同时保留注册顺序。次级分组带有语义分隔线；没有 action 时，它在视觉与无障碍 API 中都隐藏。
+外部客户端插件注入 `sidebar.workspaces.session.menu.action`，注册新的 `id` 与 `order`，并渲染共享 `MenuAction` primitive。每个 action 接收目标的 `sessionId`、行 `displayTitle`（依次回退到持久化标题、项目目录名、Session id）与 `dismiss()`；插件服务仍留在注册项的 inject 闭包中，action 文案来自插件自己的 locale 字典。内置 action 按固定顺序保持在前。插件 action 依次按较低的 priority、较低的 `order`、注册顺序排列。动态 browser-half facade 为每次注册分配不同且递减的 priority，因此较新的动态注册无视 `order` 排在较旧注册之前；相同 priority 的打包注册才使用 `order`。次级分组带有语义分隔线；没有 action 时，它在视觉与无障碍 API 中都隐藏。
 
 ```tsx
 import { MenuAction } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -98,7 +98,7 @@ ctx.slots.inject('sidebar.workspaces.session.menu.action', () => ctx.slots.regis
 ))
 ```
 
-动态客户端包无法导入 `MenuAction`；它们通过 `React.createElement` 渲染 `role="menuitem"` 控件，并在执行操作后调用传入的 `dismiss()`。`dismiss()` 会关闭菜单，并在 action 未自行移动焦点时把焦点还给触发按钮。
+无法导入 `MenuAction` 的动态客户端包通过 `React.createElement` 渲染原生 `<button type="button" role="menuitem">`，并在执行操作后调用传入的 `dismiss()`。只有这一精确的 button contract 会进入菜单的键盘遍历；`dismiss()` 会关闭菜单，并在 action 未自行移动焦点时把焦点还给触发按钮。
 
 ### 视图状态
 
