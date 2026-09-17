@@ -30,6 +30,16 @@ async function fixture(overrides: Partial<Config> = {}) {
   return { root, worker, spawn, ctx }
 }
 
+async function prepare(worker: SenseVoiceWorker): Promise<void> {
+  const ready = Promise.withResolvers<undefined>()
+  const unsubscribe = worker.subscribe(() => {
+    const state = worker.snapshot()
+    if (state.phase === 'ready') ready.resolve(undefined)
+    if (state.phase === 'failed') ready.reject(new Error(state.message))
+  })
+  try { worker.prepare(); await ready.promise } finally { unsubscribe() }
+}
+
 const audio = new Uint8Array([1, 2])
 const signal = (): AbortSignal => new AbortController().signal
 async function requests(root: string): Promise<string> {
@@ -42,6 +52,7 @@ async function requests(root: string): Promise<string> {
 it('keeps one worker warm across recordings and joins its exit on disposal', async () => {
   const { worker, spawn } = await fixture()
   expect(spawn).not.toHaveBeenCalled()
+  await prepare(worker)
   expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
   expect((await worker.transcribe({ audio, language: 'en' }, signal())).text).toBe('en')
   expect(spawn).toHaveBeenCalledOnce()
@@ -110,6 +121,7 @@ it('cancels cache inspection and joins it without late notifications when the pr
 
 it('cancels active inference before the next recording can acquire a fresh worker', async () => {
   const { worker, root, spawn } = await fixture()
+  await prepare(worker)
   const cancel = new AbortController()
   const first = worker.transcribe({ audio, language: 'hold' }, cancel.signal)
   const rejected = expect(first).rejects.toThrow()
@@ -124,6 +136,7 @@ it('cancels active inference before the next recording can acquire a fresh worke
 
 it('bounds the queue and never executes a cancelled waiting recording', async () => {
   const { worker, root } = await fixture({ maxPending: 2 })
+  await prepare(worker)
   const active = new AbortController(), waiting = new AbortController()
   const first = worker.transcribe({ audio, language: 'hold' }, active.signal)
   const firstFailure = expect(first).rejects.toThrow()
@@ -138,6 +151,7 @@ it('bounds the queue and never executes a cancelled waiting recording', async ()
 
 it('joins running and waiting requests when its provider is disposed', async () => {
   const { worker, root } = await fixture()
+  await prepare(worker)
   const first = worker.transcribe({ audio, language: 'hold' }, signal())
   const firstFailure = expect(first).rejects.toThrow()
   await vi.waitFor(async () => { expect(await requests(root)).toContain('hold') }, { timeout: 10000 })
@@ -149,6 +163,7 @@ it('joins running and waiting requests when its provider is disposed', async () 
 
 it('stops an idle worker and reloads it on demand', async () => {
   const { worker, spawn } = await fixture({ idleTimeoutMs: 25 })
+  await prepare(worker)
   await worker.transcribe({ audio, language: 'en' }, signal())
   const first = spawn.mock.results[0]!.value as SubprocessHandle
   await first.done
@@ -196,6 +211,7 @@ it('cancels Host preparation, retains retry admission, and exposes preparation f
 
 it('recovers after a provider error or unexpected worker exit', async () => {
   const { worker } = await fixture()
+  await prepare(worker)
   await expect(worker.transcribe({ audio, language: 'error' }, signal())).rejects.toThrow('provider failed')
   await expect(worker.transcribe({ audio, language: 'crash' }, signal())).rejects.toThrow()
   expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
@@ -203,10 +219,15 @@ it('recovers after a provider error or unexpected worker exit', async () => {
 
 it('applies inference deadlines and reports runtime preparation failure', async () => {
   const { worker } = await fixture({ inferenceTimeoutMs: 100 })
+  await prepare(worker)
   await expect(worker.transcribe({ audio, language: 'hold' }, signal())).rejects.toThrow()
   const fresh = await fixture()
   vi.mocked(prepareRuntime).mockRejectedValueOnce(new Error('runtime missing'))
-  await expect(fresh.worker.transcribe({ audio, language: 'zh' }, signal())).rejects.toThrow('runtime missing')
+  fresh.worker.prepare()
+  await vi.waitFor(() => { expect(fresh.worker.snapshot()).toMatchObject({ phase: 'failed', message: 'runtime missing' }) })
+  await fresh.worker.cancel()
+  expect(fresh.worker.snapshot().phase).toBe('failed')
+  await expect(fresh.worker.transcribe({ audio, language: 'zh' }, signal())).rejects.toThrow('Prepare')
 })
 
 it('retains complete download snapshots while throttling only intermediate notifications', async () => {
@@ -248,6 +269,7 @@ it('joins a worker that exits before readiness and exposes retryable preparation
 
 it('reclaims the process range after an unexpected idle exit before replacing the worker', async () => {
   const { worker, spawn } = await fixture()
+  await prepare(worker)
   await worker.transcribe({ audio, language: 'en' }, signal())
   const handle = spawn.mock.results[0]!.value as SubprocessHandle
   handle.terminate()
@@ -259,6 +281,7 @@ it('reclaims the process range after an unexpected idle exit before replacing th
 
 it('retains a worker whose idle cleanup cannot observe exit until that range is joined', async () => {
   const { worker, spawn, ctx } = await fixture({ idleTimeoutMs: 100 })
+  await prepare(worker)
   const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
   await worker.transcribe({ audio, language: 'en' }, signal())
   const handle = spawn.mock.results[0]!.value as SubprocessHandle
@@ -305,6 +328,7 @@ it('omits preparation steps supplied by explicit deployment paths', async () => 
 
 it('returns prepared resources to standby when the user cancels an idle wake-up', async () => {
   const { worker } = await fixture({ idleTimeoutMs: 100 })
+  await prepare(worker)
   await worker.transcribe({ audio, language: 'en' }, signal())
   await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('standby') }, { timeout: 10000 })
   const cancel = new AbortController()
@@ -321,6 +345,29 @@ it('returns prepared resources to standby when the user cancels an idle wake-up'
 it('launches source workers through the repository ESM loader', async () => {
   const { worker, spawn, root } = await fixture()
   vi.mocked(prepareRuntime).mockResolvedValueOnce({ tokens: root, worker: fileURLToPath(new URL('./worker-source.fixture.ts', import.meta.url)), model: root, vad: root })
+  await prepare(worker)
   expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
   expect(spawn.mock.calls[0]?.[0].argv).toContain('--import')
+})
+
+it('requires explicit preparation before direct transcription without starting downloads', async () => {
+  const { worker, spawn } = await fixture()
+  await expect(worker.transcribe({ audio, language: 'zh' }, signal())).rejects.toThrow('Prepare')
+  expect(worker.snapshot().phase).toBe('unprepared')
+  expect(prepareRuntime).not.toHaveBeenCalled()
+  expect(spawn).not.toHaveBeenCalled()
+})
+
+it('rechecks readiness after a queued cache inspection without implicitly downloading missing resources', async () => {
+  const { worker, root, spawn } = await fixture()
+  vi.mocked(inspectRuntime).mockResolvedValueOnce({ tokens: root, model: root, vad: root,
+    worker: fileURLToPath(new URL('./worker.fixture.mjs', import.meta.url)) })
+  worker.inspect()
+  await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('standby') })
+  vi.mocked(inspectRuntime).mockResolvedValueOnce(undefined)
+  worker.inspect()
+  await expect(worker.transcribe({ audio, language: 'zh' }, signal())).rejects.toThrow('Prepare')
+  expect(worker.snapshot().phase).toBe('unprepared')
+  expect(prepareRuntime).not.toHaveBeenCalled()
+  expect(spawn).not.toHaveBeenCalled()
 })

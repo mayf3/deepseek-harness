@@ -194,6 +194,7 @@ export class SenseVoiceWorker {
 
   /**
    * Queue one bounded recording; cancellation never leaves inference running after settlement.
+   * Verified resources accept recordings while the worker wakes; other preparation states reject without downloading.
    * @param input - complete WAV and language hint.
    * @param signal - caller cancellation.
    * @returns recognized text; cancelled waiting jobs never acquire the worker.
@@ -260,6 +261,8 @@ export class SenseVoiceWorker {
   }
 
   private async execute(input: SpeechInput, signal: AbortSignal): Promise<Transcript> {
+    const phase = this.state.phase
+    if (phase !== 'ready' && phase !== 'standby') throw new Error('Prepare the local speech provider before recording')
     try {
       const worker = await this.start(signal)
       using call = deadline(signal, this.config.inferenceTimeoutMs, 'SPEECH_INFERENCE_TIMEOUT')
@@ -272,7 +275,7 @@ export class SenseVoiceWorker {
       return result
     } catch (error) {
       await this.stop()
-      if (this.runtime) this.publish({ phase: 'standby' })
+      this.publish({ phase: 'standby' })
       throw error
     }
   }

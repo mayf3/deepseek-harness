@@ -9,6 +9,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { mountVoiceInput, inject } from '../src/client/mount.ts'
 import { apply as hostApply } from '../src/index.ts'
 import { VoiceInput, type VoiceInputInjected } from '../src/client/VoiceInput.tsx'
+import { captureFixture } from './audio-fixture.client.ts'
 
 const REMOTE: TypertRemoteContribution = {
   package: '@deepseek-ai/dsh-experimental-api-speech-to-text',
@@ -93,4 +94,38 @@ it('rolls back the Remote contribution when the slot registration fails', async 
     await expect(mountVoiceInput(b.ctx, REMOTE)).rejects.toThrow('slot failed')
     expect(b.unmount).toHaveBeenCalledOnce()
   } finally { await b.ctx.fiber.dispose() }
+})
+
+it('joins the same audio closure when cancellation overlaps Client plugin withdrawal', async () => {
+  const b = await fixture(), audio = captureFixture(), closing = Promise.withResolvers<undefined>()
+  audio.close.mockReturnValueOnce(closing.promise)
+  let cancelled: Promise<void> | undefined, removed: Promise<void> | undefined
+  try {
+    const fiber = b.ctx.plugin({ inject: [...inject], apply: ctx => mountVoiceInput(ctx, REMOTE) })
+    await fiber
+    const entry = b.ctx.slots.entries('conversation.input.activity').find(item => item.component === VoiceInput)!
+    const actions = (entry.inject as unknown as () => VoiceInputInjected)()
+    const recording = actions.createRecording()
+    await recording.start()
+    cancelled = recording.dispose()
+    const originalDispose = recording.dispose.bind(recording), joined = Promise.withResolvers<{ pending: Promise<void> }>()
+    vi.spyOn(recording, 'dispose').mockImplementationOnce(() => {
+      const pending = originalDispose()
+      joined.resolve({ pending })
+      return pending
+    })
+    removed = fiber.dispose()
+    const { pending } = await joined.promise
+    expect(pending).toBe(cancelled)
+    expect(b.unmount).not.toHaveBeenCalled()
+    closing.resolve(undefined)
+    await cancelled; await removed
+    expect(audio.close).toHaveBeenCalledOnce()
+    expect(b.unmount).toHaveBeenCalledOnce()
+  } finally {
+    closing.resolve(undefined)
+    try { await cancelled; await removed } finally {
+      try { await b.ctx.fiber.dispose() } finally { vi.unstubAllGlobals() }
+    }
+  }
 })

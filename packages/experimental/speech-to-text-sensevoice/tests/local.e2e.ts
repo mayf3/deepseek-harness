@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises'
 import { Context } from '@deepseek-ai/cordis'
 import LocalSubprocess from '@deepseek-ai/dsh-subprocess-local'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { Config } from '../src/config.ts'
 import { SenseVoiceWorker } from '../src/recognizer.ts'
 
@@ -17,6 +17,8 @@ it.skipIf(!dataRoot || !audioPath)('prepares a real local recognizer, transcribe
     precision: process.env.DSH_SPEECH_E2E_PRECISION === 'fp32' ? 'fp32' : 'int8',
   }))
   try {
+    worker.prepare()
+    await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('ready') }, { timeout: 3_600_000 })
     const input = { audio: await readFile(audioPath!), language: 'zh' }
     const cold = await worker.transcribe(input, new AbortController().signal)
     const warm = await worker.transcribe(input, new AbortController().signal)

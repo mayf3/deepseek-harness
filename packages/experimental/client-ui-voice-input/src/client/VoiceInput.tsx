@@ -54,7 +54,8 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
   createRecording, transcribe, useSpeechReadiness, t }: VoiceInputProps) {
   const readiness = useSpeechReadiness(value => value), catalog = readiness.catalog
   const provider = catalog?.providers.find(item => item.id === catalog.selection.providerId)
-  const usable = readiness.connected && (provider?.preparation.phase === 'ready' || provider?.preparation.phase === 'standby')
+  const usable = readiness.connected && (provider?.preparation.phase === 'ready' || provider?.preparation.phase === 'standby'
+    || provider?.preparation.phase === 'waking')
   const [phase, setPhase] = useState<Phase>('idle'), [message, setMessage] = useState(''), [pending, setPending] = useState('')
   const current = useRef<ActiveRecording>(), generation = useRef(0)
   const expanded = phase !== 'idle'
@@ -119,8 +120,13 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
     current.current = active
     setMessage(''); setPending(''); setPhase('requesting')
     try {
-      await active.capture.start()
-      if (run !== generation.current) return
+      await active.capture.start((failure) => {
+        if (run !== generation.current || current.current !== active || active.finishing) return
+        current.current = undefined
+        clearTimeout(active.timer); active.abort.abort()
+        feedback(failureText(failure))
+      })
+      if (run !== generation.current || current.current !== active) return
       setPhase('recording')
       active.timer = setTimeout(() => { void finish() }, active.maxDurationSeconds * 1000)
     } catch (failure) {

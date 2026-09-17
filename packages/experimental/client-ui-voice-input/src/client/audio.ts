@@ -2,7 +2,7 @@
 
 /** Capture failure whose message is localized by the caller. */
 export class RecordingError extends Error {
-  constructor(readonly kind: 'unavailable' | 'permission' | 'empty' | 'cancelled') { super(kind); this.name = 'RecordingError' }
+  constructor(readonly kind: 'unavailable' | 'permission' | 'empty' | 'cancelled' | 'interrupted') { super(kind); this.name = 'RecordingError' }
 }
 
 /**
@@ -46,14 +46,16 @@ export class Recording {
   private samples = new Float32Array(256)
   private chunks: Blob[] = []
   private readonly lifetime = new AbortController()
+  private disposal: Promise<void> | undefined
 
   constructor(private readonly onDispose: () => void) {}
 
   /**
    * Acquire the microphone for this recording.
+   * @param onError - receives failures during capture, before asynchronous resource release finishes.
    * @returns after capture starts; a cancelled permission grant immediately releases its tracks.
    */
-  async start(): Promise<void> {
+  async start(onError?: (error: RecordingError) => void): Promise<void> {
     const devices = (navigator as Partial<Navigator>).mediaDevices
     if (!devices || typeof MediaRecorder === 'undefined') throw new RecordingError('unavailable')
     let stream: MediaStream
@@ -71,8 +73,14 @@ export class Recording {
       this.analyser.fftSize = this.samples.length
       this.context.createMediaStreamSource(stream).connect(this.analyser)
       this.recorder = new MediaRecorder(stream)
-      this.recorder.ondataavailable = (event) => { if (event.data.size > 0) this.chunks.push(event.data) }
-      this.recorder.onerror = () => { void this.dispose().catch(() => undefined) }
+      this.recorder.ondataavailable = (event) => { if (!this.lifetime.signal.aborted && event.data.size > 0) this.chunks.push(event.data) }
+      this.recorder.onerror = () => {
+        if (this.lifetime.signal.aborted) return
+        void this.dispose().catch(() => undefined)
+        try { onError?.(new RecordingError('interrupted')) } catch (error) {
+          console.error('Speech recording error handler failed', error)
+        }
+      }
       this.recorder.start()
     } catch (error) { await this.dispose(); throw error }
   }
@@ -121,8 +129,20 @@ export class Recording {
     } finally { await this.dispose() }
   }
 
-  /** Release this recording. @returns after capture stops and the AudioContext closes; a pending permission prompt is invalidated. */
-  async dispose(): Promise<void> {
+  /**
+   * Release this recording and invalidate pending permission grants.
+   * @returns the shared release promise, including any AudioContext close failure.
+   */
+  dispose(): Promise<void> {
+    if (!this.disposal) {
+      const closing = Promise.withResolvers<void>()
+      this.disposal = closing.promise
+      void this.release().then(closing.resolve, closing.reject)
+    }
+    return this.disposal
+  }
+
+  private async release(): Promise<void> {
     this.lifetime.abort(new RecordingError('cancelled'))
     if (this.recorder?.state === 'recording') this.recorder.stop()
     this.stream?.getTracks().forEach((track) => { track.stop() })

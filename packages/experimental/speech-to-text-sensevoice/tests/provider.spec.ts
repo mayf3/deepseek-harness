@@ -14,14 +14,13 @@ it.each(['int8', 'fp32'] as const)('registers %s lazily and joins inference befo
     await ctx.plugin(LocalSubprocess)
     await ctx.plugin(SpeechToText)
     const transcribe = vi.spyOn(SenseVoiceWorker.prototype, 'transcribe')
-      .mockResolvedValue({ text: 'hello', audioSeconds: 1, inferenceSeconds: 0.1 })
     const fiber = ctx.plugin(Provider, { dataRoot: process.cwd(), precision })
     await fiber
     expect(transcribe).not.toHaveBeenCalled()
     const speech = ctx.get('speechToText')!
     expect(speech.listProviders()).toMatchObject([{ id: 'sensevoice-local', location: 'host-local' }])
     await expect(speech.transcribe(speech.resolve({ audio: new Uint8Array() }), new AbortController().signal)).rejects.toThrow('Prepare')
-    vi.spyOn(SenseVoiceWorker.prototype, 'snapshot').mockReturnValue({ phase: 'ready' })
+    transcribe.mockResolvedValue({ text: 'hello', audioSeconds: 1, inferenceSeconds: 0.1 })
     expect((await speech.transcribe(speech.resolve({ audio: new Uint8Array() }), new AbortController().signal)).text).toBe('hello')
     await fiber.dispose()
     expect(speech.listProviders()).toEqual([])

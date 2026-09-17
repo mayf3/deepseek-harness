@@ -28,11 +28,7 @@ export function apply(ctx: Context, config: Config): void {
         setupEstimate: { recommendedDiskBytes: config.precision === 'int8' ? 1_000_000_000 : 2_000_000_000, expectedMemoryBytes: config.precision === 'int8' ? 1_000_000_000 : 2_000_000_000,
           minimumMinutes: 1, maximumMinutes: 10 } },
       preparation: worker,
-      transcribe: async (input, signal) => {
-        const phase = worker.snapshot().phase
-        if (phase !== 'ready' && phase !== 'standby') throw new Error('Prepare the local speech provider before recording')
-        return await worker.transcribe(input, signal)
-      },
+      transcribe: async (input, signal) => await worker.transcribe(input, signal),
     })
     worker.inspect()
     return async () => {

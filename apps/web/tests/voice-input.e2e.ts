@@ -15,6 +15,7 @@ import { connectFreshWorkspace, newEnglishPage } from './support.ts'
 
 const fixture = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/session.v3.jsonl', import.meta.url))
 const expected = fileURLToPath(new URL('../../../snapshots/web/voice-input/ui.expected.md', import.meta.url))
+const interruptedExpected = fileURLToPath(new URL('../../../snapshots/web/voice-input/interrupted.expected.md', import.meta.url))
 const recordingExpected = fileURLToPath(new URL('../../../snapshots/web/voice-input/recording.expected.md', import.meta.url))
 const bundle = fileURLToPath(new URL('../../../packages/experimental/voice-input-bundle', import.meta.url))
 
@@ -57,6 +58,13 @@ it.skipIf(webSnapshotMode() === 'record')('records from cached standby and submi
   const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] })
   resources.browser = browser
   const page = await newEnglishPage(browser), tripwire = watchConsole(page)
+  await page.addInitScript(() => {
+    const holder = window as Window & { voiceTestRecorder?: MediaRecorder }
+    const NativeRecorder = window.MediaRecorder
+    window.MediaRecorder = class extends NativeRecorder {
+      constructor(stream: MediaStream, options?: MediaRecorderOptions) { super(stream, options); holder.voiceTestRecorder = this }
+    }
+  })
   await page.goto(scaffold.authenticatedUrl)
   await connectFreshWorkspace(page, scaffold.workspaceCwd)
   const input = page.locator('[data-composer-input]'), mic = page.getByRole('button', { name: 'Start recording', exact: true })
@@ -116,6 +124,21 @@ it.skipIf(webSnapshotMode() === 'record')('records from cached standby and submi
   await meter.waitFor()
   await meter.click()
   await page.getByRole('dialog', { name: 'of context used', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  await mic.click()
+  await stop.waitFor()
+  await page.evaluate(() => {
+    const recorder = (window as Window & { voiceTestRecorder?: MediaRecorder }).voiceTestRecorder
+    if (!recorder) throw new Error('No active test microphone')
+    recorder.dispatchEvent(new Event('error'))
+  })
+  await page.getByRole('button', { name: 'Record again', exact: true }).waitFor()
+  expect(await stop.count()).toBe(0)
+  await compareOrRefreshGolden(interruptedExpected,
+    await captureStableAria(page, '[data-composer-card]', scaffold.workspaceCwd), webSnapshotMode())
+  expect(recognize).toHaveBeenCalledOnce()
+  await page.getByRole('button', { name: 'Record again', exact: true }).click()
+  await stop.waitFor()
   await page.keyboard.press('Escape')
   expect(messages).toBe(1)
   expect(tripwire.pageErrors).toEqual([])

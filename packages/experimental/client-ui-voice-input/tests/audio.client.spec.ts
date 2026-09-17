@@ -1,6 +1,7 @@
 /** Browser recording bytes conform to the Host's fixed PCM format. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { audioBase64, encodeWave, Recording, RecordingError } from '../src/client/audio.ts'
+import { captureFixture } from './audio-fixture.client.ts'
 
 afterEach(() => { vi.unstubAllGlobals() })
 
@@ -41,45 +42,6 @@ it('releases a microphone granted after cancellation', async () => {
   expect(dispose).toHaveBeenCalledOnce()
 })
 
-function captureFixture(options: { empty?: boolean; recorderError?: boolean; constructError?: boolean } = {}) {
-  const trackStop = vi.fn(), close = vi.fn(async () => {}), disposed = vi.fn()
-  const decoding = vi.fn(async (_data: ArrayBuffer) => ({ duration: 2 }))
-  const rendering = vi.fn(async () => ({ getChannelData: () => new Float32Array([0.5, -0.5]) }))
-  let failRecorder: () => void
-  class Recorder {
-    state = 'inactive'
-    mimeType = 'audio/webm'
-    ondataavailable?: (event: { data: Blob }) => void
-    onstop?: () => void
-    onerror?: () => void
-    constructor() {
-      if (options.constructError) throw new Error('recorder unavailable')
-      failRecorder = () => { this.onerror!() }
-    }
-    start() { this.state = 'recording' }
-    stop() {
-      this.state = 'inactive'
-      queueMicrotask(() => {
-        this.ondataavailable?.({ data: new Blob() })
-        if (!options.empty) this.ondataavailable?.({ data: new Blob(['final audio']) })
-        if (options.recorderError) this.onerror?.()
-        else this.onstop?.()
-      })
-    }
-  }
-  const offline = vi.fn(function Offline(_channels: number, _frames: number, _rate: number) {
-    return { destination: {}, createBufferSource: () => ({ buffer: null, connect() {}, start() {} }), startRendering: rendering }
-  })
-  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop: trackStop }] }) } })
-  vi.stubGlobal('MediaRecorder', Recorder)
-  vi.stubGlobal('AudioContext', function Audio() { return { state: 'running', close, decodeAudioData: decoding,
-    createMediaStreamSource: () => ({ connect: vi.fn() }),
-    createAnalyser: () => ({ fftSize: 256, getFloatTimeDomainData: (buffer: Float32Array) => { buffer.fill(0.25) } }),
-  } })
-  vi.stubGlobal('OfflineAudioContext', offline)
-  return { recording: new Recording(disposed), trackStop, close, disposed, decoding, rendering, offline,
-    failRecorder: () => { failRecorder() } }
-}
 
 it('flushes final recording bytes, bounds timer overshoot and closes audio resources', async () => {
   const b = captureFixture()
@@ -124,5 +86,51 @@ it('releases active capture on a spontaneous recorder error even when AudioConte
   b.failRecorder()
   await vi.waitFor(() => { expect(b.disposed).toHaveBeenCalledOnce() })
   expect(b.trackStop).toHaveBeenCalled()
-  await expect(b.recording.stop(120)).rejects.toMatchObject({ kind: 'empty' })
+  await expect(b.recording.dispose()).rejects.toThrow('audio device disconnected')
+})
+
+it.each([false, true])('shares pending AudioContext closure across repeated release (failure=%s)', async (failed) => {
+  const b = captureFixture(), closing = Promise.withResolvers<undefined>()
+  b.close.mockReturnValueOnce(closing.promise)
+  await b.recording.start()
+  const first = b.recording.dispose(), second = b.recording.dispose()
+  const results = Promise.allSettled([first, second])
+  try {
+    expect(first).toBe(second)
+    expect(b.trackStop).toHaveBeenCalledOnce()
+    expect(b.close).toHaveBeenCalledOnce()
+    expect(b.disposed).not.toHaveBeenCalled()
+  } finally {
+    if (failed) closing.reject(new Error('audio close failed'))
+    else closing.resolve(undefined)
+    await results
+  }
+  expect(b.disposed).toHaveBeenCalledOnce()
+  expect(b.recording.dispose()).toBe(first)
+  expect((await results).map(result => result.status)).toEqual(failed ? ['rejected', 'rejected'] : ['fulfilled', 'fulfilled'])
+})
+
+it('reports a device interruption once while resource closure is still pending', async () => {
+  const b = captureFixture(), closing = Promise.withResolvers<undefined>(), failure = vi.fn()
+  b.close.mockReturnValueOnce(closing.promise)
+  await b.recording.start(failure)
+  try {
+    b.failRecorder(); b.failRecorder()
+    expect(failure).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind: 'interrupted' }))
+    expect(b.trackStop).toHaveBeenCalledOnce()
+    expect(b.disposed).not.toHaveBeenCalled()
+  } finally { closing.resolve(undefined); await b.recording.dispose() }
+  expect(b.disposed).toHaveBeenCalledOnce()
+})
+
+it('contains a failing interruption callback and still releases the microphone', async () => {
+  const b = captureFixture(), error = new Error('callback failed'), report = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await b.recording.start(() => { throw error })
+    b.failRecorder()
+    await b.recording.dispose()
+    expect(b.trackStop).toHaveBeenCalledOnce()
+    expect(b.disposed).toHaveBeenCalledOnce()
+    expect(report).toHaveBeenCalledWith('Speech recording error handler failed', error)
+  } finally { report.mockRestore(); await b.recording.dispose() }
 })

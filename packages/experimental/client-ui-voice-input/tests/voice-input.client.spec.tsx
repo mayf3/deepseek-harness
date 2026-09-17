@@ -12,13 +12,14 @@ import { VoiceInput, type VoiceInputProps } from '../src/client/VoiceInput.tsx'
 import { RecordingError, type Recording } from '../src/client/audio.ts'
 import type { SpeechReadiness } from '../src/client/readiness.ts'
 import { zh } from '../src/client/locales.ts'
+import { captureFixture } from './audio-fixture.client.ts'
 
 beforeEach(() => { vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1)); vi.stubGlobal('cancelAnimationFrame', vi.fn()) })
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
 const id = 'sensevoice-local' as SpeechProviderId
 const transcript: Transcript = { text: '检查 TypeScript 类型', audioSeconds: 2, inferenceSeconds: 0.4 }
-function fixture() {
-  const capture = { start: vi.fn(async () => {}), stop: vi.fn(async () => new Uint8Array(48)),
+function fixture(recording?: Recording) {
+  const capture = { start: vi.fn<Recording['start']>(async () => {}), stop: vi.fn(async () => new Uint8Array(48)),
     amplitude: () => 0, dispose: vi.fn(async () => {}) }
   const inputActions = { notify: vi.fn(), captureInsertion: vi.fn(() => ({ start: 3, end: 3, draftRev: 1 })), insertText: vi.fn(() => true),
     setDraft: vi.fn(), addAttachments: vi.fn(() => true), removeAttachment: vi.fn(), pruneAttachments: vi.fn(), submit: vi.fn() }
@@ -30,7 +31,7 @@ function fixture() {
     async () => ({ ok: true, value: transcript }))
   const props: VoiceInputProps = { sessionId: 'one' as SessionId, inputActions, transcribe, locked: false, onActiveChange: vi.fn(),
     prepare: vi.fn(async () => {}), cancelPreparation: vi.fn(async () => {}), configure: vi.fn(async () => {}),
-    useSpeechReadiness: bindSnapshotSelector(readiness), createRecording: () => capture as unknown as Recording,
+    useSpeechReadiness: bindSnapshotSelector(readiness), createRecording: () => recording ?? capture as unknown as Recording,
     t: makeTranslate(zh, commonZh) }
   const view = render(<VoiceInput {...props} />)
   return { props, capture, inputActions, readiness, transcribe, view }
@@ -200,4 +201,58 @@ it('coalesces repeated capture and stop clicks before the toolbar rerenders', as
   await waitFor(() => { expect(b.inputActions.insertText).toHaveBeenCalledOnce() })
   expect(b.capture.start).toHaveBeenCalledOnce()
   expect(b.capture.stop).toHaveBeenCalledOnce()
+})
+
+it('ends the recording UI immediately on a device failure and clears automatic transcription', async () => {
+  const devices = captureFixture(), b = fixture(devices.recording), closing = Promise.withResolvers<undefined>()
+  devices.close.mockReturnValueOnce(closing.promise)
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    fireEvent.click(screen.getByRole('button', { name: zh.start }))
+    await act(async () => {})
+    expect(screen.getByRole('button', { name: zh.stop })).toBeTruthy()
+    act(() => { devices.failRecorder() })
+    expect(screen.queryByRole('button', { name: zh.stop })).toBeNull()
+    expect(screen.queryByRole('img', { name: zh.recording })).toBeNull()
+    expect(screen.getByRole('status').textContent).toBe(zh.interrupted)
+    expect(devices.disposed).not.toHaveBeenCalled()
+    await act(async () => { await vi.advanceTimersByTimeAsync(120000) })
+    expect(b.transcribe).not.toHaveBeenCalled()
+    expect(b.inputActions.notify).not.toHaveBeenCalled()
+  } finally { closing.resolve(undefined); await devices.recording.dispose() }
+})
+
+it.each(['cancel', 'session', 'unmount', 'finishing', 'finished'])('ignores interruption notifications after %s', async (action) => {
+  const b = fixture()
+  await start()
+  const failed = b.capture.start.mock.calls[0]![0]!
+  if (action === 'cancel') fireEvent.click(screen.getByRole('button', { name: zh.cancel }))
+  if (action === 'session') b.view.rerender(<VoiceInput {...b.props} sessionId={'two' as SessionId} />)
+  if (action === 'unmount') b.view.unmount()
+  const pending = Promise.withResolvers<RemoteResult<Transcript>>()
+  if (action === 'finishing') b.transcribe.mockReturnValueOnce(pending.promise)
+  if (action === 'finishing' || action === 'finished') { stop(); await act(async () => {}) }
+  try {
+    act(() => { failed(new RecordingError('interrupted')) })
+    expect(screen.queryByText(zh.interrupted)).toBeNull()
+    expect(b.inputActions.notify).not.toHaveBeenCalled()
+  } finally { pending.resolve({ ok: true, value: transcript }); await act(async () => {}) }
+})
+
+it('does not restore recording when capture reports failure before start settles', async () => {
+  const b = fixture()
+  b.capture.start.mockImplementationOnce(async (failed) => { failed!(new RecordingError('interrupted')) })
+  fireEvent.click(screen.getByRole('button', { name: zh.start }))
+  await act(async () => {})
+  expect(screen.getByRole('status').textContent).toBe(zh.interrupted)
+  expect(screen.queryByRole('button', { name: zh.stop })).toBeNull()
+  expect(b.transcribe).not.toHaveBeenCalled()
+})
+
+it('allows recording while verified local resources are waking', async () => {
+  const b = fixture(), state = b.readiness.getSnapshot()
+  act(() => { b.readiness.set({ ...state, catalog: { ...state.catalog!, providers: [{ ...state.catalog!.providers[0]!, preparation: { phase: 'waking' } }] } }) })
+  await start()
+  stop()
+  await waitFor(() => { expect(b.inputActions.insertText).toHaveBeenCalledWith(transcript.text, expect.anything()) })
 })
