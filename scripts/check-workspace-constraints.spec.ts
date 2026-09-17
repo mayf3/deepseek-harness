@@ -206,3 +206,16 @@ it('requires Office skill bodies and helpers in the published payload', () => {
     ...manifest, files: ['lib/index.js', 'lib/types/**/*.d.ts'],
   } })).toEqual([expect.stringContaining('package.json files must be')])
 })
+
+it.each(['lib/*-*.js', 'THIRD_PARTY_PREVIEW_NOTICES.txt'])('requires %s in the published UI primitives payload', (required) => {
+  const name = '@deepseek-ai/dsh-client-ui-primitives'
+  const files = expectedDshPackageFiles({ name })
+  expect(files).toContain(required)
+  const check = (entries: readonly string[]) => checkWorkspaceManifest({
+    dir: 'packages/client/ui-primitives', manifest: { name, files: [...entries] },
+  }).filter(message => message.includes('package.json files'))
+  expect(check(files)).toEqual([])
+  expect(check(files.filter(file => file !== required))).toEqual([
+    expect.stringContaining('package.json files must be'),
+  ])
+})

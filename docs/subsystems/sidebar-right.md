@@ -19,7 +19,7 @@ A tab type is two registrations that share the definition's `id`: a static defin
 | [`client/resources`](../../packages/client/resources/README.md) | `ctx.resources`, `useResource`, the protocol → value roster `ResourceProtocolMap` |
 | [`api/workspace-files`](../../packages/api/workspace-files/README.md) | Host `ctx.workspaceFiles`, the `workspaceFiles` Remote namespace, and the Client `file` resource provider |
 | [`util/workspace-path`](../../packages/util/workspace-path/README.md) | The file address grammar: `fileAddressFor`, `parseFileAddress` |
-| [`client/ui-sidebar-documentpreview`](../../packages/client/ui-sidebar-documentpreview/README.md), [`client/ui-sidebar-files`](../../packages/client/ui-sidebar-files/README.md) | The shipped `text` and `files` types |
+| [`client/ui-sidebar-documentpreview`](../../packages/client/ui-sidebar-documentpreview/README.md), [`client/ui-sidebar-files`](../../packages/client/ui-sidebar-files/README.md), [`client/ui-sidebar-browser`](../../packages/client/ui-sidebar-browser/README.md) | The shipped `text`, `files`, and `browser` types |
 
 ## Addresses
 
@@ -72,7 +72,7 @@ export function apply(ctx: Context): void {
 
 ## Navigation: `ctx.sidebarRight`
 
-Two opens are the navigation controller, and every way into the column calls one of them: `openResource(address, options?)` for a `dsh-resource://` address — the conversation's file links, a tool row's line reference, a file tree's rows — and `openTab(kind, options?)` for a page — the strip's add control, a guide entry box. Both run four steps as one history entry — claim (the registry ranks the resource's types, or the named `kind`'s implementation in force answers); focus a tab already showing the same `(kind, address)`; otherwise seat a new tab; expand the column — and then record the navigation in the Tab domain ([service](../../packages/client/ui-sidebar-right/README.md#ctxsidebarright)). Content the user cannot see is not opened, so a collapsed column expands in the same step. `openResource` throws for an address outside `dsh-resource://` or one no type claims; `openTab` throws for a kind nothing registered: both are wiring mistakes, not user errors.
+Two opens are the navigation controller, and every way into the column calls one of them: `openResource(address, options?)` for a `dsh-resource://` address — the conversation's file links, a tool row's line reference, a file tree's rows — and `openTab(kind, options?)` for a page — the strip's add control, a guide entry box, or an HTTP(S) link in Assistant Markdown. Both run four steps as one history entry — claim (the registry ranks the resource's types, or the named `kind`'s implementation in force answers); focus a tab already showing the same `(kind, address)`; otherwise seat a new tab; expand the column — and then record the navigation in the Tab domain ([service](../../packages/client/ui-sidebar-right/README.md#ctxsidebarright)). Content the user cannot see is not opened, so a collapsed column expands in the same step. `openResource` throws for an address outside `dsh-resource://` or one no type claims; `openTab` throws for a kind nothing registered: both are wiring mistakes, not user errors.
 
 | Option | Meaning |
 |---|---|
@@ -135,6 +135,7 @@ The Host `ctx.workspaceFiles` service and generated `workspaceFiles` Remote name
 - **`guide`** — `builtin`, opened as `openTab('guide')`. A muted compass sits above one capsule per contributed `guide` entry, in `order`; short lists show registered descriptions, and every missing icon uses the shipped placeholder. Picking a capsule opens the contributing type as a page in the guide tab's place. A pane holds at most one guide tab, and the strip's add control appears only while its pane has none. A new pane receives the registered default page: the sole guide entry directly, or the guide when the entry count is not one ([guide](../../packages/client/ui-sidebar-right/README.md#the-guide)).
 - **`text`** — `fallback`, `dsh-resource://file/**`, claiming Session addresses only. Document Preview observes metadata through `useResource<'file'>`, loads content through Remote callbacks, and owns renderer selection, the toolbar, per-tab refresh, scroll, and source navigation; unknown extensions render as plain text ([README](../../packages/client/ui-sidebar-documentpreview/README.md)).
 - **`files`** — `builtin`, opened as `openTab('files')`. The workspace directory tree, listed lazily through `list`, opening a file with `tab.actions.openResource(fileAddressFor(sessionId, root, path))` into its own pane ([README](../../packages/client/ui-sidebar-files/README.md)).
+- **`browser`** — multi-instance `builtin`, opened as `openTab('browser', { params: { url? } })`. Assistant Markdown delegates HTTP(S) links to this page type. It accepts public and loopback HTTP(S) targets under the default sandbox, rejects local files in favor of Document Preview, and uses application-known iframe history ([README](../../packages/client/ui-sidebar-browser/README.md)).
 
 <a id="not-built"></a>
 ## Not built
@@ -147,4 +148,4 @@ The Host `ctx.workspaceFiles` service and generated `workspaceFiles` Remote name
 - Naming a tab implementation when opening: `openResource` names a kind at most; document-renderer selection belongs to the file tab's toolbar.
 - An address lookup on the service (`find`): a caller opens with `revealIfOpened` and lets the surface de-duplicate.
 - Navigation addresses beyond the Sidebar's own `sidebar://<kind>` bookkeeping; their grammar waits for the navigation controller as a whole.
-- A user-facing undo, a content navigation stack, and tab icons ([deferred](../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.md#deferred)).
+- A user-facing undo and general cross-type content navigation stack ([deferred](../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.md#deferred)); Browser owns only its own page history.

@@ -1,8 +1,8 @@
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
-import { readFile, writeFile } from 'node:fs/promises'
-import { extname, join, normalize, resolve, sep } from 'node:path'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app,
@@ -14,15 +14,14 @@ import {
   protocol,
   session,
   shell,
-  type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
 } from 'electron'
 import { resolveDesktopPaths } from './paths.ts'
-import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
+import { DesktopProjectManager } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
 import { installDesktopDirectoryPicker } from './directory-picker.ts'
 import { DesktopBackendController } from './backend-controller.ts'
-import { DESKTOP_IPC, SCHEME, assertDesktopSender, type DesktopUpdateState } from './ipc.ts'
+import { DESKTOP_IPC, SCHEME, assertDesktopSender } from './ipc.ts'
 import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
@@ -38,7 +37,7 @@ function currentDesktopLocale(): ReturnType<typeof resolveDesktopLocale> {
   return resolveDesktopLocale(windowsLanguage ?? app.getLocale())
 }
 const recovery = new DesktopFatalRecovery({
-  messages: () => currentDesktopLocale().messages,
+  messages: () => currentDesktopLocale(),
   show: options => dialog.showMessageBox(options),
   stop: () => { shuttingDown = true; return stopForRecovery() },
   disablePlugins: async () => {
@@ -67,13 +66,6 @@ protocol.registerSchemesAsPrivileged([{
     codeCache: true,
   },
 }])
-
-const MIME: Readonly<Record<string, string>> = {
-  '.css': 'text/css; charset=utf-8',
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.svg': 'image/svg+xml',
-}
 
 interface RuntimeResources {
   readonly nodeBin: string
@@ -104,14 +96,14 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
   return port
 }
 
-function createWindow(preload: string, show = false, primary = false): BrowserWindow {
+function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
     height: 840,
     minWidth: 880,
     minHeight: 600,
-    show,
-    ...(process.platform === 'win32' && primary ? {
+    show: true,
+    ...(process.platform === 'win32' ? {
       titleBarStyle: 'hidden' as const,
       titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb',
         symbolColor: nativeTheme.shouldUseDarkColors ? '#f9fafb' : '#0f1115' },
@@ -128,7 +120,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
       backgroundColor: '#00000000',
     } : {}),
     webPreferences: {
-      preload,
+      preload: fileURLToPath(new URL('./preload-app.cjs', import.meta.url)),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -157,7 +149,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     }
     // Empty accelerators suppress Electron's default shortcut labels for native roles.
     if (items.length > 0) {
-      const messages = currentDesktopLocale().messages
+      const messages = currentDesktopLocale()
       Menu.buildFromTemplate(items.map(item => ({
         ...item,
         ...(process.platform === 'win32' && item.role !== undefined && item.role in messages
@@ -178,26 +170,6 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
   return window
 }
 
-async function serveShellAsset(request: Request): Promise<Response> {
-  if (request.method !== 'GET' && request.method !== 'HEAD') return new Response(null, { status: 405 })
-  const root = resolve(app.getAppPath(), 'renderer')
-  const url = new URL(request.url)
-  let pathname: string
-  try {
-    pathname = decodeURIComponent(url.pathname)
-  } catch {
-    return new Response(null, { status: 400 })
-  }
-  const target = resolve(normalize(join(root, pathname)))
-  if (target !== root && !target.startsWith(root + sep)) return new Response(null, { status: 403 })
-  try {
-    const body = request.method === 'HEAD' ? null : await readFile(target)
-    return new Response(body, { headers: { 'content-type': MIME[extname(target)] ?? 'application/octet-stream' } })
-  } catch {
-    return new Response(null, { status: 404 })
-  }
-}
-
 async function main(): Promise<void> {
   const resources = runtimeResources()
   const paths = resolveDesktopPaths()
@@ -207,11 +179,7 @@ async function main(): Promise<void> {
   let quitting = false
   let startup: Promise<void> | undefined
   let mainWindow: BrowserWindow | undefined
-  let pluginWindow: BrowserWindow | undefined
   let shellInstallerOwnsQuit = false
-  let updateState: DesktopUpdateState = { phase: 'idle' }
-  const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
-  const managementPreload = fileURLToPath(new URL('./preload.cjs', import.meta.url))
   const applicationUrl = `${SCHEME}://app/`
   let hostUrl: string | undefined
   let hostCookie: string | undefined
@@ -252,19 +220,6 @@ async function main(): Promise<void> {
     if (state.phase === 'error') reportFatal(new Error(state.message))
   })
 
-  const publishUpdate = (state: DesktopUpdateState): DesktopUpdateState => {
-    updateState = state
-    for (const window of BrowserWindow.getAllWindows()) {
-      window.webContents.send(DESKTOP_IPC.updatesState, state)
-    }
-    return state
-  }
-
-  const hooks: DesktopProjectHooks = {
-    beforeChange: () => backend.stop(),
-    afterChange: () => backend.start(async () => {}),
-  }
-
   stopForRecovery = () => backend.close()
 
   const reconcileBackend = (): Promise<void> => {
@@ -282,7 +237,6 @@ async function main(): Promise<void> {
   }
 
   const updates = new DesktopUpdateCoordinator(
-    publishUpdate,
     async () => {
       shellInstallerOwnsQuit = true
       await backend.stop()
@@ -301,7 +255,6 @@ async function main(): Promise<void> {
       }
       return forwardWebRequest(request, hostUrl, hostCookie)
     }
-    if (url.hostname === 'shell') return serveShellAsset(request)
     return Promise.resolve(new Response(null, { status: 404 }))
   })
 
@@ -336,68 +289,19 @@ async function main(): Promise<void> {
     callback({ requestHeaders: { ...headers, origin: target.origin, cookie: hostCookie, 'sec-fetch-site': 'same-origin' } })
   })
 
-  const mutate = async (event: IpcMainInvokeEvent, mutation: Parameters<DesktopProjectManager['mutate']>[0]): Promise<void> => {
-    assertDesktopSender(event, ['shell'])
-    await startup?.catch(() => undefined)
-    if (recovery.active) throw new Error(currentDesktopLocale().messages.fatalSummary)
-    try {
-      await manager.mutate(mutation, hooks)
-    } finally {
-      if (backend.state.phase === 'ready') {
-        navigation = undefined
-        await navigateMain(applicationUrl).catch(reportFatal)
-      }
-    }
-  }
-
-  ipcMain.handle(DESKTOP_IPC.localeGet, (event) => {
-    assertDesktopSender(event, ['shell'])
-    return currentDesktopLocale()
-  })
   // Only the main window may synchronize its palette with the native material.
   ipcMain.on(DESKTOP_IPC.nativeThemeSet, (event, source: unknown) => {
     if (mainWindow === undefined || event.sender !== mainWindow.webContents) return
     if (source === 'light' || source === 'dark' || source === 'system') nativeTheme.themeSource = source
   })
-  ipcMain.handle(DESKTOP_IPC.pluginsList, (event) => {
-    assertDesktopSender(event, ['shell'])
-    return manager.listPlugins()
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginsAdd, (event, spec: unknown) => {
-    if (typeof spec !== 'string') throw new Error('dsh desktop: plugin spec must be a string')
-    return mutate(event, { type: 'plugin-add', spec })
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginsRemove, (event, name: unknown) => {
-    if (typeof name !== 'string') throw new Error('dsh desktop: plugin name must be a string')
-    return mutate(event, { type: 'plugin-remove', name })
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginsUpdate, (event, name: unknown, version: unknown) => {
-    if (typeof name !== 'string' || typeof version !== 'string') {
-      throw new Error('dsh desktop: plugin name and version must be strings')
-    }
-    return mutate(event, { type: 'plugin-update', name, version })
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginsToggle, (event, name: unknown, enabled: unknown) => {
-    if (typeof name !== 'string' || typeof enabled !== 'boolean') throw new Error('dsh desktop: invalid plugin activation request')
-    return mutate(event, { type: 'plugin-toggle', name, enabled })
-  })
-  ipcMain.handle(DESKTOP_IPC.updatesCheck, async (event) => {
-    assertDesktopSender(event, ['shell'])
-    return updates.check()
-  })
-  ipcMain.handle(DESKTOP_IPC.updatesInstall, async (event) => {
-    assertDesktopSender(event, ['shell'])
-    await updates.install()
-  })
-
   const checkAndPrompt = async (manual: boolean): Promise<void> => {
     const state = await updates.check()
     if (state.phase === 'error') {
       if (manual) {
         await dialog.showMessageBox({
           type: 'error',
-          title: currentDesktopLocale().messages.updateCheckFailedTitle,
-          message: state.message ?? currentDesktopLocale().messages.unknownError,
+          title: currentDesktopLocale().updateCheckFailedTitle,
+          message: state.message ?? currentDesktopLocale().unknownError,
         })
       }
       return
@@ -406,18 +310,18 @@ async function main(): Promise<void> {
       if (manual) {
         await dialog.showMessageBox({
           type: 'info',
-          title: currentDesktopLocale().messages.updateCheckTitle,
-          message: state.message ?? currentDesktopLocale().messages.updateCurrent,
+          title: currentDesktopLocale().updateCheckTitle,
+          message: state.message ?? currentDesktopLocale().updateCurrent,
         })
       }
       return
     }
     const result = await dialog.showMessageBox({
       type: 'info',
-      title: currentDesktopLocale().messages.updateTitle,
-      message: currentDesktopLocale().messages.updateAvailable,
-      detail: formatDesktopMessage(currentDesktopLocale().messages.updateDetail, { version: state.version ?? '' }),
-      buttons: [currentDesktopLocale().messages.installAndRestart, currentDesktopLocale().messages.later],
+      title: currentDesktopLocale().updateTitle,
+      message: currentDesktopLocale().updateAvailable,
+      detail: formatDesktopMessage(currentDesktopLocale().updateDetail, { version: state.version ?? '' }),
+      buttons: [currentDesktopLocale().installAndRestart, currentDesktopLocale().later],
       defaultId: 0,
       cancelId: 1,
     })
@@ -426,23 +330,10 @@ async function main(): Promise<void> {
     if (installed.phase === 'error') {
       await dialog.showMessageBox({
         type: 'error',
-        title: currentDesktopLocale().messages.updateFailedTitle,
-        message: installed.message ?? currentDesktopLocale().messages.unknownError,
+        title: currentDesktopLocale().updateFailedTitle,
+        message: installed.message ?? currentDesktopLocale().unknownError,
       })
     }
-  }
-
-  const openPluginWindow = (): void => {
-    if (pluginWindow !== undefined && !pluginWindow.isDestroyed()) {
-      pluginWindow.focus()
-      return
-    }
-    pluginWindow = createWindow(managementPreload)
-    pluginWindow.setSize(900, 620)
-    pluginWindow.setTitle(currentDesktopLocale().messages.pluginWindowTitle)
-    pluginWindow.once('ready-to-show', () => { pluginWindow?.show() })
-    pluginWindow.once('closed', () => { pluginWindow = undefined })
-    void pluginWindow.loadURL(`${SCHEME}://shell/plugin-manager.html`)
   }
 
   // A custom application menu replaces Electron's default menu, so macOS needs
@@ -455,18 +346,13 @@ async function main(): Promise<void> {
     ? [{ role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }]
     : []
   const applicationItems = (): MenuItemConstructorOptions[] => [
-    {
-      label: currentDesktopLocale().messages.pluginsMenu,
-      accelerator: 'CmdOrCtrl+,',
-      click: openPluginWindow,
-    },
-    { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void checkAndPrompt(true) } },
+    { label: currentDesktopLocale().checkUpdatesMenu, click: () => { void checkAndPrompt(true) } },
     { type: 'separator' },
     ...hideCommands,
-    { role: 'quit', ...(process.platform === 'win32' ? { label: currentDesktopLocale().messages.exitApplication } : {}) },
+    { role: 'quit', ...(process.platform === 'win32' ? { label: currentDesktopLocale().exitApplication } : {}) },
   ]
   Menu.setApplicationMenu(process.platform === 'win32' ? null : Menu.buildFromTemplate([{
-    label: process.platform === 'darwin' ? app.name : currentDesktopLocale().messages.application,
+    label: process.platform === 'darwin' ? app.name : currentDesktopLocale().application,
     submenu: applicationItems(),
   }, ...platformMenus]))
 
@@ -490,15 +376,15 @@ async function main(): Promise<void> {
         },
       })
       const items: MenuItemConstructorOptions[] = name === 'application' ? applicationItems() : [
-        editItem(currentDesktopLocale().messages.undo, 'Z', ['control'], 'Ctrl+Z'),
-        editItem(currentDesktopLocale().messages.redo, 'Y', ['control'], 'Ctrl+Y'),
+        editItem(currentDesktopLocale().undo, 'Z', ['control'], 'Ctrl+Z'),
+        editItem(currentDesktopLocale().redo, 'Y', ['control'], 'Ctrl+Y'),
         { type: 'separator' },
-        editItem(currentDesktopLocale().messages.cut, 'X', ['control'], 'Ctrl+X'),
-        editItem(currentDesktopLocale().messages.copy, 'C', ['control'], 'Ctrl+C'),
-        editItem(currentDesktopLocale().messages.paste, 'V', ['control'], 'Ctrl+V'),
-        editItem(currentDesktopLocale().messages.delete, 'Delete', []),
+        editItem(currentDesktopLocale().cut, 'X', ['control'], 'Ctrl+X'),
+        editItem(currentDesktopLocale().copy, 'C', ['control'], 'Ctrl+C'),
+        editItem(currentDesktopLocale().paste, 'V', ['control'], 'Ctrl+V'),
+        editItem(currentDesktopLocale().delete, 'Delete', []),
         { type: 'separator' },
-        editItem(currentDesktopLocale().messages.selectAll, 'A', ['control'], 'Ctrl+A'),
+        editItem(currentDesktopLocale().selectAll, 'A', ['control'], 'Ctrl+A'),
       ]
       const zoom = mainWindow.webContents.getZoomFactor()
       return new Promise<void>((resolve) => {
@@ -520,16 +406,8 @@ async function main(): Promise<void> {
   }
 
   const createMainWindow = (): BrowserWindow => {
-    const window = createWindow(appPreload, true, true)
+    const window = createWindow()
     mainWindow = window
-    if (process.platform === 'win32') {
-      window.webContents.on('before-input-event', (event, input) => {
-        if (input.type === 'keyDown' && input.control && !input.alt && !input.shift && input.key === ',') {
-          event.preventDefault()
-          openPluginWindow()
-        }
-      })
-    }
     window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
     window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
       if (isMainFrame && code !== -3 && !quitting && !window.isDestroyed()) {
@@ -582,7 +460,6 @@ async function main(): Promise<void> {
   if (mainWindow !== undefined && development && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
-  publishUpdate(updateState)
   setTimeout(() => { void checkAndPrompt(false) }, 10_000)
 }
 

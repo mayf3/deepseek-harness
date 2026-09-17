@@ -23,10 +23,22 @@ import type * as Md from 'mdast'
 import type {} from 'mdast-util-math'
 import { normalizeUri } from 'micromark-util-sanitize-uri'
 import { CodeBlock } from './CodeBlock.tsx'
+import type { CodeBlockPreview } from './CodeBlock.tsx'
+import { renderGraphviz } from './graphviz.ts'
+import { renderSvg } from './svg.ts'
+import { renderMermaid } from './mermaid.ts'
+import type { PreviewLabels } from './SourcePreview.tsx'
 import { renderTexToReact } from './katex.tsx'
 import { LinkIcon, classifyLinkPath } from '../LinkIcon.tsx'
+import { useMarkdownExternalLinkDelegate } from './MarkdownDelegate.tsx'
 import type { PositionedBlock } from './incremental.ts'
 import css from './MarkdownText.module.css'
+
+const FENCE_PREVIEW_RENDERERS = {
+  mermaid: renderMermaid,
+  graphviz: renderGraphviz,
+  svg: renderSvg,
+} as const
 
 /** Copy-button labels forwarded to fence CodeBlocks (this package is cordis-free, so copy arrives via props). */
 export interface MarkdownCodeLabels {
@@ -34,12 +46,58 @@ export interface MarkdownCodeLabels {
   copyLabel: string
   /** Copy-button label during the post-copy confirmation window. */
   copiedLabel: string
+  /** Selected source-view label. */
+  sourceLabel: string
+  /** Localized source line-number toggle label. */
+  lineNumbersLabel: string
 }
 
 /** Localized chrome for a Markdown document. */
 export interface MarkdownLabels {
   code: MarkdownCodeLabels
   footnotes: string
+  /** Opt into settled Mermaid, Graphviz, and SVG previews with complete localized labels. */
+  preview?: {
+    mermaid: PreviewLabels
+    graphviz: PreviewLabels
+    svg: PreviewLabels
+    preview: string
+    source: string
+    zoom: string
+    pending: string
+    close: string
+    interaction: string
+  }
+}
+
+type FencePreviewKind = keyof typeof FENCE_PREVIEW_RENDERERS
+
+/** Stable preview descriptors shared by every settled fence in one label revision. */
+export type FencePreviewCatalog = Readonly<Record<FencePreviewKind, CodeBlockPreview>>
+
+/**
+ * Build the preview descriptors owned by one localized label revision.
+ * @param labels - Localized preview labels, or undefined when previews are disabled.
+ * @returns Stable language descriptors for the lifetime of `labels`.
+ */
+export function createFencePreviewCatalog(
+  labels: MarkdownLabels['preview'],
+): FencePreviewCatalog | undefined {
+  if (labels === undefined) return undefined
+  const previewLabels = <K extends FencePreviewKind>(kind: K) => ({
+    ...labels[kind],
+    preview: labels.preview,
+    source: labels.source,
+    zoom: labels.zoom,
+    pending: labels.pending,
+    close: labels.close,
+    interaction: labels.interaction,
+  })
+  return {
+    mermaid: { render: FENCE_PREVIEW_RENDERERS.mermaid, labels: previewLabels('mermaid') },
+    graphviz: { render: FENCE_PREVIEW_RENDERERS.graphviz, labels: previewLabels('graphviz') },
+    svg: { render: FENCE_PREVIEW_RENDERERS.svg, labels: previewLabels('svg') },
+  }
 }
 
 function sanitizeUrl(url: string): string {
@@ -178,6 +236,8 @@ export interface MarkdownRenderContext {
   readonly streaming: boolean
   /** Localized fence copy-button labels. */
   readonly labels: MarkdownLabels
+  /** Settled fence previews resolved once for the current localized labels. */
+  readonly previews: FencePreviewCatalog | undefined
   /** Inside a blockquote's children: tables there always fill the quote's width. */
   readonly inBlockquote?: boolean
   /** Inline-code file mentions; absent wherever no opener vocabulary exists. */
@@ -362,8 +422,10 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
 
 function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): ReactNode {
   const language = node.lang ?? undefined
-  if (node.value === '') {
-    // Parity: the replaced pipeline kept the stock <pre> for an empty fence.
+  const lang = language === undefined ? undefined : /^[\w-]+/.exec(language)?.[0]
+  const preview = fencePreview(lang, context.previews)
+  if (node.value === '' && !(context.streaming && preview !== undefined)) {
+    // Empty source-only fences keep the stock Markdown <pre>.
     return (
       <pre key={key}>
         <code className={language === undefined ? undefined : `language-${language}`} />
@@ -372,7 +434,6 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
   }
   // The replaced pipeline recovered the grammar id from the hast class with
   // /language-([\w-]+)/, which truncates at the first non-word character.
-  const lang = language === undefined ? undefined : /^[\w-]+/.exec(language)?.[0]
   if (!context.streaming && lang === 'math') {
     // ```math fences render as display TeX once settled (rehype-katex parity);
     // its text extraction saw the code block's trailing newline.
@@ -388,14 +449,24 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
       lang={lang}
       // Streaming keys are source offsets, stable while the fence grows, so
       // the CodeBlock instance (and its incremental highlight session)
-      // survives every chunk. A fence whose info string is still mid-chunk
-      // has no content yet and took the empty-fence arm above, so `lang`
-      // here is final: it can never re-resolve to a different grammar.
+      // survives every chunk. The language hint is final once content starts.
       streaming={context.streaming}
+      sourceLabel={context.labels.code.sourceLabel}
+      lineNumbersLabel={context.labels.code.lineNumbersLabel}
       copyLabel={context.labels.code.copyLabel}
       copiedLabel={context.labels.code.copiedLabel}
+      preview={preview}
     />
   )
+}
+
+/** Resolve the supported fence language without treating arbitrary HTML in Markdown as a preview. */
+function fencePreview(lang: string | undefined, previews: FencePreviewCatalog | undefined): CodeBlockPreview | undefined {
+  if (previews === undefined) return undefined
+  const normalized = lang?.toLowerCase()
+  const kind = normalized === 'dot' ? 'graphviz' : normalized
+  if (kind !== 'mermaid' && kind !== 'graphviz' && kind !== 'svg') return undefined
+  return previews[kind]
 }
 
 /** A list is loose when it or any of its items is spread; every item then keeps its paragraphs. */
@@ -525,18 +596,32 @@ function anchorWrapsOnlyImages(children: Md.PhrasingContent[]): boolean {
   return children.length > 0 && children.every(child => child.type === 'image' || child.type === 'imageReference')
 }
 
-/** Anchor over an already-authored href: allowlisted or unwrapped, external links get the safe attributes. */
+/** Anchor over an already-authored href: allowlisted or unwrapped, with optional owner navigation for HTTP(S). */
 function renderSafeLink(href: string, children: ReactNode[], key: Key, glyph = true): ReactNode {
   const safeHref = sanitizeUrl(href)
   if (safeHref === '') return <Fragment key={key}>{children}</Fragment>
-  const external = ['http:', 'https:'].includes(new URL(safeHref).protocol)
+  return <MarkdownAnchor key={key} href={safeHref} glyph={glyph}>{children}</MarkdownAnchor>
+}
+
+function MarkdownAnchor({ href, glyph, children }: {
+  readonly href: string
+  readonly glyph: boolean
+  readonly children: ReactNode[]
+}): ReactNode {
+  const openExternalLink = useMarkdownExternalLinkDelegate()
+  const external = ['http:', 'https:'].includes(new URL(href).protocol)
+  const open = external ? openExternalLink : undefined
   return (
     <a
-      key={key}
-      href={safeHref}
+      href={href}
       {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      onClick={open === undefined ? undefined : (event) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        open(href)
+      }}
     >
-      {glyph && <LinkIcon kind="url" href={safeHref} className={css.linkIcon} />}
+      {glyph && <LinkIcon kind="url" href={href} className={css.linkIcon} />}
       {children}
     </a>
   )

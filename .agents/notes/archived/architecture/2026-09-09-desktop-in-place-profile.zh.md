@@ -1,6 +1,7 @@
 # Agent Note: 直接修改 Desktop profile
 
 Status: implemented
+Archived: 2026-09-17
 
 [English](2026-09-09-desktop-in-place-profile.md) | 中文
 

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { JsonBlock, MarkdownText } from './markdown-test-components.tsx'
-import { LinkIcon } from '../src/index.ts'
+import { LinkIcon, MarkdownDelegateProvider } from '../src/index.ts'
 import { cjkFriendlyStrong } from '../src/markdown/cjkFriendlyStrong.ts'
 import { mathCompatibility } from '../src/markdown/mathCompatibility.ts'
 
@@ -141,6 +141,57 @@ describe('MarkdownText', () => {
     expect(container.querySelector('pre code a')).toBeNull()
   })
 
+  it('delegates ordinary HTTP(S) clicks while preserving modified-click behavior', () => {
+    const openExternalLink = vi.fn<(href: string) => void>()
+    render(
+      <MarkdownDelegateProvider openExternalLink={openExternalLink}>
+        <MarkdownText text={'[secure](https://example.com/a) [plain](http://example.com/b) `https://example.com/code` [mail](mailto:dev@example.com)'} />
+      </MarkdownDelegateProvider>,
+    )
+
+    const secure = screen.getByRole('link', { name: 'secure' })
+    const plain = screen.getByRole('link', { name: 'plain' })
+    const code = screen.getByRole('link', { name: 'https://example.com/code' })
+    expect(fireEvent.click(secure)).toBe(false)
+    expect(fireEvent.click(plain)).toBe(false)
+    expect(fireEvent.click(code)).toBe(false)
+    expect(openExternalLink.mock.calls).toEqual([
+      ['https://example.com/a'],
+      ['http://example.com/b'],
+      ['https://example.com/code'],
+    ])
+
+    for (const modified of [
+      { button: 1 },
+      { metaKey: true },
+      { ctrlKey: true },
+      { shiftKey: true },
+      { altKey: true },
+    ]) expect(fireEvent.click(secure, modified)).toBe(true)
+    expect(openExternalLink).toHaveBeenCalledTimes(3)
+    expect(screen.getByRole('link', { name: 'mail' }).getAttribute('target')).toBeNull()
+  })
+
+  it('updates the delegated link handler while Markdown is streaming', () => {
+    const first = vi.fn<(href: string) => void>()
+    const second = vi.fn<(href: string) => void>()
+    const source = '[web](https://example.com/)'
+    const view = render(
+      <MarkdownDelegateProvider openExternalLink={first}>
+        <MarkdownText text={source} streaming />
+      </MarkdownDelegateProvider>,
+    )
+    fireEvent.click(screen.getByRole('link', { name: 'web' }))
+    view.rerender(
+      <MarkdownDelegateProvider openExternalLink={second}>
+        <MarkdownText text={source} streaming />
+      </MarkdownDelegateProvider>,
+    )
+    fireEvent.click(screen.getByRole('link', { name: 'web' }))
+    expect(first).toHaveBeenCalledOnce()
+    expect(second).toHaveBeenCalledOnce()
+  })
+
   it('links inline code through the file-mention resolver: URL first, settled only, never inside links', () => {
     const opened: string[] = []
     const fileMentions = {
@@ -259,7 +310,7 @@ describe('MarkdownText', () => {
   })
 
   it('forwards localized labels to fenced code blocks', () => {
-    render(<MarkdownText text={'```ts\nconst answer = 42\n```'} codeLabels={{ copyLabel: 'Copy code', copiedLabel: 'Copied' }} />)
+    render(<MarkdownText text={'```ts\nconst answer = 42\n```'} codeLabels={{ copyLabel: 'Copy code', copiedLabel: 'Copied', sourceLabel: 'Source', lineNumbersLabel: 'Line numbers' }} />)
     expect(screen.getByRole('button', { name: 'Copy code' })).toBeTruthy()
   })
 

@@ -1,0 +1,42 @@
+- heading "Mermaid previews" [level=1]
+- text: mermaid
+- button "Enlarge preview"
+- button "Copy"
+- button "Source"
+- button "Preview" [pressed]
+- img "Mermaid diagram"
+- text: mermaid
+- button "Enlarge preview"
+- button "Copy"
+- button "Source"
+- button "Preview" [pressed]
+- img "Mermaid diagram"
+- text: mermaid
+- button "Enlarge preview" [disabled]
+- button "Copy"
+- button "Source"
+- button "Preview" [pressed]
+- status: Unable to render this diagram. Select Source to inspect the code.
+- text: mermaid
+- button "Enlarge preview"
+- button "Copy"
+- button "Source"
+- button "Preview" [pressed]
+- img "Mermaid diagram"
+- text: dot
+- button "Enlarge preview"
+- button "Copy"
+- button "Source"
+- button "Preview" [pressed]
+- img "Graphviz diagram"
+- text: svg
+- button "Enlarge preview"
+- button "Copy"
+- button "Source"
+- button "Preview" [pressed]
+- img "SVG preview"
+- text: html
+- button "Line numbers"
+- button "Copy"
+- text: Source
+- code: <h2>Static HTML</h2>
