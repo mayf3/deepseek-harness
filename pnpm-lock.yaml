@@ -2763,6 +2763,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings':
         specifier: workspace:^
         version: link:../ui-settings
+      '@deepseek-ai/dsh-client-ui-sidebar-browser':
+        specifier: workspace:^
+        version: link:../ui-sidebar-browser
       '@deepseek-ai/dsh-client-ui-sidebar-documentpreview':
         specifier: workspace:^
         version: link:../ui-sidebar-documentpreview

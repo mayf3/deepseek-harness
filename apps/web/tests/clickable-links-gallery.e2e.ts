@@ -50,6 +50,7 @@ const DONE = 'LINK_GALLERY_DONE'
 const GALLERY_TIME = Date.UTC(2026, 0, 15, 12)
 
 const GUIDE_URL = 'https://docs.example.test/guide'
+const HTTP_URL = 'http://docs.example.test/plain'
 const API_URL = 'https://docs.example.test/api'
 const RELEASES_URL = 'https://docs.example.test/releases'
 const MAILTO_URL = 'mailto:owner@example.test'
@@ -260,6 +261,8 @@ function galleryFixture(imageUrl: string): string {
         `Docs: [style guide](${GUIDE_URL}) and \`${API_URL}\`; see [the release notes][rel], `
         + `contact [the maintainer](${MAILTO_URL}), and check the fine print[^1].`,
         '',
+        `Preview: [plain HTTP](${HTTP_URL}).`,
+        '',
         `Upstream: [the repository](${REPO_URL}).`,
         '',
         `Inert contrasts: \`curl ${API_URL}\`, \`javascript:alert(1)\`, and \`pnpm run build\`.`,
@@ -315,6 +318,10 @@ describe('web e2e: clickable links gallery', () => {
     await seedSession(scaffold, galleryFixture(imageUrl), SEED_ID, undefined, { createdAt: GALLERY_TIME })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
+    await page.route(/https?:\/\/docs\.example\.test\/.*/u, async route => route.fulfill({
+      contentType: 'text/html',
+      body: `<h1>${new URL(route.request().url()).pathname}</h1>`,
+    }))
     await page.clock.setFixedTime(GALLERY_TIME + 60_000)
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
@@ -342,6 +349,7 @@ describe('web e2e: clickable links gallery', () => {
     const markdown = page.locator('[class*="markdown"]')
     await expect.poll(() => markdown.locator(`a[href="${GUIDE_URL}"]`).count(), { timeout: 10_000 }).toBe(1)
     expect(await markdown.locator(`a[href="${RELEASES_URL}"]`).count()).toBe(1)
+    expect(await markdown.locator(`a[href="${HTTP_URL}"]`).count()).toBe(1)
     expect(await markdown.locator(`a[href="${MAILTO_URL}"]`).count()).toBe(1)
     const inlineCodeLink = markdown.locator(`code a[href="${API_URL}"]`)
     expect(await inlineCodeLink.count()).toBe(1)
@@ -439,5 +447,12 @@ describe('web e2e: clickable links gallery', () => {
     expect(await styleOf(mentions.first(), 'text-decoration-style')).toBe('dotted')
     // The excluded grey affordance: tool-row file links keep their own color.
     expect(await styleOf(page.locator('button[class*="fileLink"]').first(), 'color')).not.toBe(LINK_BLUE)
+
+    // Ordinary message HTTP(S) links delegate to the right Sidebar Browser.
+    await guideLink.click()
+    const browserAddress = page.locator('[data-rightbar-col]').getByRole('textbox', { name: 'Enter an HTTP(S) address' })
+    await expect.poll(() => browserAddress.inputValue()).toBe(GUIDE_URL)
+    await markdown.locator(`a[href="${HTTP_URL}"]`).click()
+    await expect.poll(() => browserAddress.inputValue()).toBe(HTTP_URL)
   }, 90_000)
 })

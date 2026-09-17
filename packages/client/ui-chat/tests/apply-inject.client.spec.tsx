@@ -51,7 +51,10 @@ async function bench() {
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const layout = { closeRightbar: vi.fn(), openRightbar: vi.fn() }
   runtime.ctx.provide('layout', layout as never)
-  const sidebarRight = { openResource: vi.fn<(address: string) => void>() }
+  const sidebarRight = {
+    openResource: vi.fn<(address: string) => void>(),
+    openTab: vi.fn<(kind: string, options?: unknown) => void>(),
+  }
   runtime.ctx.provide('sidebarRight', sidebarRight as never)
   const openWorkspacePath = vi.fn<ClientRemote['session']['openWorkspacePath']>(
     () => Promise.resolve({ ok: true, value: { opened: true } }),
@@ -145,6 +148,18 @@ describe('Chat inject API', () => {
     await b.runtime.dispose()
   })
 
+  it('opens message HTTP(S) links in Sidebar Browser tabs', async () => {
+    const b = await bench()
+    const { injected } = b.chatViewApi(b.rootReference)
+    injected.openExternalLink('http://example.test/path')
+    injected.openExternalLink('https://example.test/path')
+    expect(b.sidebarRight.openTab.mock.calls).toEqual([
+      ['browser', { params: { url: 'http://example.test/path' } }],
+      ['browser', { params: { url: 'https://example.test/path' } }],
+    ])
+    await b.runtime.dispose()
+  })
+
   it('routes sent skill previews through the viewed Session source and tolerates an absent provider', async () => {
     const b = await bench()
     const { injected } = b.chatViewApi(b.rootReference)
@@ -197,6 +212,9 @@ describe('Chat inject API', () => {
     const b = await bench()
     const { injected } = b.chatViewApi(b.rootReference)
     const owner = {} as never
+
+    expect(injected.keyedHooks.chatNode('missing')).toBeDefined()
+    expect(injected.keyedHooks.chatNodeProcess('missing')).toBeDefined()
 
     expect(injected.fileMentions(owner)).toBeUndefined()
     const mentions = { resolve: vi.fn() } as never

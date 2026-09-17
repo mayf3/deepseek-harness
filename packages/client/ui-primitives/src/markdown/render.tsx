@@ -25,6 +25,7 @@ import { normalizeUri } from 'micromark-util-sanitize-uri'
 import { CodeBlock } from './CodeBlock.tsx'
 import { renderTexToReact } from './katex.tsx'
 import { LinkIcon, classifyLinkPath } from '../LinkIcon.tsx'
+import { useMarkdownExternalLinkDelegate } from './MarkdownDelegate.tsx'
 import type { PositionedBlock } from './incremental.ts'
 import css from './MarkdownText.module.css'
 
@@ -525,18 +526,32 @@ function anchorWrapsOnlyImages(children: Md.PhrasingContent[]): boolean {
   return children.length > 0 && children.every(child => child.type === 'image' || child.type === 'imageReference')
 }
 
-/** Anchor over an already-authored href: allowlisted or unwrapped, external links get the safe attributes. */
+/** Anchor over an already-authored href: allowlisted or unwrapped, with optional owner navigation for HTTP(S). */
 function renderSafeLink(href: string, children: ReactNode[], key: Key, glyph = true): ReactNode {
   const safeHref = sanitizeUrl(href)
   if (safeHref === '') return <Fragment key={key}>{children}</Fragment>
-  const external = ['http:', 'https:'].includes(new URL(safeHref).protocol)
+  return <MarkdownAnchor key={key} href={safeHref} glyph={glyph}>{children}</MarkdownAnchor>
+}
+
+function MarkdownAnchor({ href, glyph, children }: {
+  readonly href: string
+  readonly glyph: boolean
+  readonly children: ReactNode[]
+}): ReactNode {
+  const openExternalLink = useMarkdownExternalLinkDelegate()
+  const external = ['http:', 'https:'].includes(new URL(href).protocol)
+  const open = external ? openExternalLink : undefined
   return (
     <a
-      key={key}
-      href={safeHref}
+      href={href}
       {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      onClick={open === undefined ? undefined : (event) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        open(href)
+      }}
     >
-      {glyph && <LinkIcon kind="url" href={safeHref} className={css.linkIcon} />}
+      {glyph && <LinkIcon kind="url" href={href} className={css.linkIcon} />}
       {children}
     </a>
   )
