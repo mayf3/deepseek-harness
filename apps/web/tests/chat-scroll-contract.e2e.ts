@@ -587,7 +587,7 @@ describe('web e2e: long Chat scroll contract', () => {
     })
   }, 180_000)
 
-  it.skipIf(MODE === 'record')('offers every outline turn on the rail and jumps to an unloaded one', async () => {
+  it.skipIf(MODE === 'record')('virtualizes the outline rail and jumps to an unloaded turn', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-turn-rail-jump',
       seeds: [{ fixture: HISTORY_FIXTURE, id: RAIL_SESSION_ID }],
@@ -595,25 +595,21 @@ describe('web e2e: long Chat scroll contract', () => {
       await openSeed(world.page, HISTORY_FIXTURE, HISTORY_FIXTURE.markers.assistant(HISTORY_FIXTURE.turns))
       await expectBottom(world.page)
 
-      // The whole-log outline reaches the rail before any paging: one mark
-      // per fixture turn, the oldest still in its load-and-jump form.
       const rail = world.page.getByRole('navigation', { name: 'Turn navigation' })
-      await expect.poll(() => rail.getByRole('button').count(), { timeout: 15_000 })
-        .toBe(HISTORY_FIXTURE.turns)
+      const latest = rail.getByRole('button', { name: `Jump to turn ${String(HISTORY_FIXTURE.turns)}`, exact: true })
+      await expect.poll(() => latest.getAttribute('aria-current'), { timeout: 15_000 }).toBe('true')
+      expect(await rail.getByRole('button').count()).toBeLessThan(HISTORY_FIXTURE.turns)
       const firstUnloaded = rail.getByRole('button', { name: 'Load and jump to turn 1', exact: true })
-      expect(await firstUnloaded.count()).toBe(1)
-      // Fixed pitch: the ladder keeps its natural height, scrolls inside the
-      // frame, and (following the active tail mark) fades its upper end.
-      expect(await rail.evaluate(nav => nav.style.getPropertyValue('--turn-natural-height')))
-        .toBe(`${String((HISTORY_FIXTURE.turns - 1) * 10 + 12)}px`)
+      expect(await firstUnloaded.count()).toBe(0)
       const railScroller = rail.locator('[class*="scroller"]')
       await expect.poll(() => railScroller.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true)
       await expect.poll(() => rail.locator('[class*="fadeTop"]').count(), { timeout: 15_000 }).toBe(1)
+      const bodyBeforeRailScroll = await scrollGeometry(world.page)
+      await railScroller.hover()
+      await world.page.mouse.wheel(0, -HISTORY_FIXTURE.turns * 10)
+      await firstUnloaded.waitFor({ state: 'visible' })
+      expect((await scrollGeometry(world.page)).scrollTop).toBe(bodyBeforeRailScroll.scrollTop)
 
-      // Activate the unloaded mark by keyboard: pointer input belongs to the
-      // rail frame, while each mark is the keyboard/AT destination. Focus
-      // first shows the outline-backed preview: prompt and settled response
-      // both travel ahead of the events.
       const beforeRows = await loadedFlowRows(world.page)
       await firstUnloaded.focus()
       const tooltip = world.page.getByRole('tooltip')

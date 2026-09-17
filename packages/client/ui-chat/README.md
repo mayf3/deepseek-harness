@@ -74,6 +74,15 @@ Settings → General exposes a persisted, localized `Normal` / `Compact` convers
 
 Chat restores semantic anchors across history prepend and renderer remounts. Pinned scroll deliveries without reader movement update follow ownership immediately, before subsequent layout changes can invalidate their floor. Reader movement remains pending until the sampling interval or `scrollend`, even inside the follow threshold, so layout growth cannot erase small scroll gestures. While the reader is pinned to the floor, `ResizeObserver` follows the new floor and selects the latest loaded Turn without reading row geometry. Once the reader moves away, flow-height changes preserve the top position and the reading-line geometry selects the active Turn. Turn-rail previews paint above sticky Markdown code-block banners, while the rail frame remains inside the transcript band above the composer.
 
+The turn rail mounts only visible marks, overscan, and the focused mark's neighbors. Its fixed pitch and observed viewport size determine scroll offsets without reading the DOM scroll extent. Initial placement waits for the body's restored active Turn and the rail's first usable viewport size. The ref controls activate a Turn or scroll the rail independently; the transcript itself remains fully mounted.
+
+<details>
+<summary>Scroll implementation — click to expand</summary>
+
+`useChatViewport` owns turn-aware DOM reads, clamped writes, and native events. `useChatReading` owns follow policy, sampled reader input, and semantic memory; `useChatNavigation` owns turn jumps and history-prepend preservation. `useChatScroll` coordinates their committed inputs. Explicit navigation carries its measured landing into reading policy, so it does not rediscover the known target with a hit test.
+
+</details>
+
 -----
 
 <a id="model-experience"></a>

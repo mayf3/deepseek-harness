@@ -198,35 +198,35 @@ describe('web e2e: long Chat interaction contract', () => {
 
     const turnNavigation = page.getByRole('navigation', { name: 'Turn navigation' })
     await turnNavigation.waitFor({ state: 'visible', timeout: 15_000 })
-    // The whole-log outline offers every fixture turn before any paging, with
-    // the live tail mark current.
     const marks = turnNavigation.getByRole('button')
-    await expect.poll(() => marks.count(), { timeout: 15_000 }).toBe(FIXTURE_TURNS)
-    expect(await marks.last().getAttribute('aria-current')).toBe('true')
+    await expect.poll(() => marks.last().getAttribute('aria-current'), { timeout: 15_000 }).toBe('true')
+    expect(await marks.count()).toBeLessThan(FIXTURE_TURNS)
     // The oldest turn is an unloaded mark whose outline preview already
     // carries both the prompt and the settled response.
     const firstTurnButton = turnNavigation
       .getByRole('button', { name: 'Load and jump to turn 1', exact: true })
+    const railScroller = turnNavigation.locator('[class*="scroller"]')
+    await railScroller.hover()
+    await page.mouse.wheel(0, -FIXTURE_TURNS * 10)
     await firstTurnButton.focus()
     const preview = page.getByRole('tooltip')
     await preview.waitFor({ state: 'visible', timeout: 5_000 })
     expect(await preview.textContent()).toContain(FIXTURE.markers.user(1))
     expect(await preview.textContent()).toContain(FIXTURE.markers.assistant(1))
-    const firstTurnPosition = await firstTurnButton.evaluate(button => (
-      button.parentElement?.style.getPropertyValue('--turn-natural-position') ?? ''
+    const markPitch = () => turnNavigation.getByRole('button').evaluateAll(buttons => (
+      buttons[1]!.getBoundingClientRect().top - buttons[0]!.getBoundingClientRect().top
     ))
-    expect(firstTurnPosition).toBe('0px')
+    expect(await markPitch()).toBe(10)
 
     const loadEarlier = page.getByRole('button', { name: 'Load earlier', exact: true })
-    const loadedMarks = turnNavigation.getByRole('button', { name: /^Jump to turn / })
-    const loadedBefore = await loadedMarks.count()
+    const loadedRows = page.locator('[data-chat-flow-key]')
+    const loadedBefore = await loadedRows.count()
     await loadEarlier.click()
-    // Paging converts marks to their loaded form without moving the
-    // fixed-pitch ladder.
-    await expect.poll(() => loadedMarks.count(), { timeout: 15_000 }).toBeGreaterThan(loadedBefore)
-    expect(await firstTurnButton.evaluate(button => (
-      button.parentElement?.style.getPropertyValue('--turn-natural-position') ?? ''
-    ))).toBe(firstTurnPosition)
+    await expect.poll(() => loadedRows.count(), { timeout: 15_000 }).toBeGreaterThan(loadedBefore)
+    await railScroller.hover()
+    await page.mouse.wheel(0, -FIXTURE_TURNS * 10)
+    await firstTurnButton.waitFor({ state: 'visible' })
+    expect(await markPitch()).toBe(10)
     // Activating the still-unloaded oldest mark pages the rest in and lands
     // on the turn's own row.
     await firstTurnButton.focus()
