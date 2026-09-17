@@ -1,6 +1,6 @@
 import { X509Certificate } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { join, relative, sep } from 'node:path'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -21,7 +21,8 @@ import { resolveDesktopAutoUpdateConfig } from './desktop-auto-update-environmen
 import { resolveDesktopPolicyEnvironment } from './desktop-policy-environment.mjs'
 import { desktopTargetBuildPaths, resolveDesktopBuildTarget } from './desktop-build-paths.mjs'
 import { installWindowsDirectoryInstaller } from './windows-directory-installer.mjs'
-import { preserveWindowsRuntimeSignature, signWindowsCode, windowsRuntimeCode } from './windows-runtime-signature.mjs'
+import { preserveWindowsRuntimeSignature, signWindowsCode } from './windows-runtime-signature.mjs'
+import { prepareWindowsAsarUnpack, verifyWindowsAsarUnpack } from './windows-asar-unpack.mjs'
 import { recordPackagingEvent } from './packaging-run.mjs'
 import {
   resolveMacOSAppUpdateFeed,
@@ -61,6 +62,7 @@ export function createElectronBuilderConfig(
   const buildPaths = desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch))
   let primaryRuntimeDestination
   let dshDestination
+  let windowsCode = []
   const unpack = ['**/*.{node,dylib,dll,so,exe}', '**/*.so.*', '**/spawn-helper', '**/@vscode/ripgrep/bin/rg']
   const windowsSigner = packagesWindows && !unsigned
     ? createWindowsTokenSigner({
@@ -137,12 +139,10 @@ export function createElectronBuilderConfig(
       writeUpdateInfo: false,
     },
     beforePack: async context => {
+      if (packagesWindows) windowsCode = await prepareWindowsAsarUnpack(context, buildPaths.dsh)
       if (windowsSigner !== undefined) {
         primaryRuntimeDestination = join(context.appOutDir, 'resources', 'runtime', 'primary-runtime')
         dshDestination = join(context.appOutDir, 'resources', 'app.asar.unpacked', 'dsh')
-        for (const path of await windowsRuntimeCode(buildPaths.dsh)) {
-          unpack.push(`dsh/${relative(buildPaths.dsh, path).split(sep).join('/')}`)
-        }
       }
       if (policy === undefined) return
       const { resolveDesktopPolicyConfig } = await import('../lib/types/mandatory-update-policy.js')
@@ -157,6 +157,8 @@ export function createElectronBuilderConfig(
       }
       await verifyDesktopRuntime(buildPaths.dsh,
         context.packager.appInfo.version, { platform: resolvedPlatform, arch: resolvedArch })
+      // Unsigned Windows builds skip electron-builder's afterSign hook.
+      if (packagesWindows && unsigned) await verifyWindowsAsarUnpack(buildPaths.dsh, resourcesDir, windowsCode)
     },
     afterSign: async context => {
       if (windowsSigner !== undefined) {
@@ -165,6 +167,7 @@ export function createElectronBuilderConfig(
           sign: windowsSigner,
           record: event => recordPackagingEvent(env.DSH_DESKTOP_PACKAGING_RUN_DIR, event),
         })
+        await verifyWindowsAsarUnpack(buildPaths.dsh, context.packager.getResourcesDir(context.appOutDir), windowsCode)
       }
       if (context.electronPlatformName !== 'darwin') return
       const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)

@@ -151,9 +151,9 @@ async function main(): Promise<void> {
     await prepareRuntimeManifests(DSH_OUTPUT_ROOT)
     smokePrimaryRuntime(join(RUNTIME_ROOT, 'primary-runtime'))
     writeDesktopRuntime(DSH_OUTPUT_ROOT, release, packageSet.packages.map(entry => entry.name), target)
-    await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
+    const descriptor = await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
     if (!process.argv.includes('--defer-runtime-smoke')) {
-      await smokePreparedRuntime(DSH_OUTPUT_ROOT, NODE, RUNTIME_ROOT)
+      await smokePreparedRuntime(DSH_OUTPUT_ROOT, NODE, RUNTIME_ROOT, descriptor)
       await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
     }
   } catch (error) {
