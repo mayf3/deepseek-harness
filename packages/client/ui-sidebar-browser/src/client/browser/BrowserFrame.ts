@@ -1,0 +1,90 @@
+/** BrowserFrame interface and the current iframe implementation. */
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+import type { BrowserTarget } from './url.ts'
+
+/** One prepared document rendered by a BrowserFrame implementation. */
+export interface BrowserDocument {
+  readonly target: BrowserTarget
+  readonly src: string
+  readonly revision: number
+}
+
+/** Current renderer-facing state for one Browser tab. */
+export interface BrowserFrameState {
+  readonly document: BrowserDocument | undefined
+  readonly sandboxed: boolean
+}
+
+/** Browser rendering operations shared by Web and future Electron implementations. */
+export interface BrowserFrame extends HostObservable<BrowserFrameState> {
+  /** Toggle sandbox enforcement for this tab occurrence. */
+  toggleSandbox(): void
+  /** @param document - current prepared document. */
+  setDocument(document: BrowserDocument): void
+  /** @returns the detached document, if one existed. */
+  clearDocument(): BrowserDocument | undefined
+  /** @param revision - rendered document revision reported by the carrier. */
+  reportLoaded(revision: number): void
+}
+
+/** Owns transient iframe and sandbox-toggle state independently from URL navigation. */
+export class IframeImpl implements BrowserFrame {
+  private readonly store: SnapshotStore<BrowserFrameState> = createSnapshotStore({
+    document: undefined,
+    sandboxed: true,
+  })
+
+  /**
+   * @param sandboxChanged - applies the new policy to the current controlled target.
+   * @param documentLoaded - reports an iframe load to the navigation state machine.
+   */
+  constructor(
+    private readonly sandboxChanged: (sandboxed: boolean) => void,
+    private readonly documentLoaded: (revision: number) => void,
+  ) {}
+
+  /** @returns the immutable renderer snapshot. */
+  getSnapshot = (): BrowserFrameState => this.store.getSnapshot()
+
+  /**
+   * Subscribe to iframe or sandbox-mode changes.
+   * @param listener - invalidation callback.
+   * @returns the unsubscribe function.
+   */
+  subscribe = (listener: () => void): (() => void) => this.store.subscribe(listener)
+
+  /** Toggle sandbox enforcement for this tab occurrence. */
+  toggleSandbox(): void {
+    const current = this.store.getSnapshot()
+    const sandboxed = !current.sandboxed
+    this.store.set({ ...current, sandboxed })
+    this.sandboxChanged(sandboxed)
+  }
+
+  /**
+   * Publish a prepared frame from the owning controller.
+   * @param document - current prepared document.
+   * @internal
+   */
+  setDocument(document: BrowserDocument): void {
+    this.store.set({ ...this.store.getSnapshot(), document })
+  }
+
+  /**
+   * Remove and return the previous frame for resource cleanup.
+   * @returns the detached frame, if one existed.
+   * @internal
+   */
+  clearDocument(): BrowserDocument | undefined {
+    const document = this.store.getSnapshot().document
+    if (document !== undefined) this.store.set({ ...this.store.getSnapshot(), document: undefined })
+    return document
+  }
+
+  /** @param revision - rendered document revision reported by the iframe. */
+  reportLoaded(revision: number): void {
+    this.documentLoaded(revision)
+  }
+}
