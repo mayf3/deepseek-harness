@@ -30,8 +30,10 @@ Foreground preview and explicit QA requests precede background work. Disabling b
 
 **Separate service-definition and provider packages for the sole LibreOffice implementation.** They evolve together and have no independent alternative implementation. One `office-to-pdf` package supplies the mountable service without duplicated package, dependency, and release configuration. Native and WASM engine selection remains inside the kit; a second independent implementation can justify extracting an interface from actual consumer needs.
 
+Host workspace-file reads return raw bytes within the reserved capacity and delegate complete bounded reading to `fs.readBytes`. Base64 encoding belongs to Remote responses, so Host conversion does not allocate an encoded source string or a decoded copy.
+
 ## Consequences
 
-The cache is transient and cannot bypass source authorization. Oversized PDFs can be returned without retention, and failed or canceled conversions are retried on a later explicit request. Source reservations measure binary bytes; base64 expansion, engine RSS, caller-retained output, and PDF.js page memory remain outside those limits. With one configured conversion slot, foreground work waits for an already-running background conversion to finish.
+The cache is transient and cannot bypass source authorization. Oversized PDFs can be returned without retention, and failed or canceled conversions are retried on a later explicit request. Source reservations measure binary bytes; Remote base64 expansion, engine RSS, caller-retained output, and PDF.js page memory remain outside those limits. With one configured conversion slot, foreground work waits for an already-running background conversion to finish.
 
 Controlled source and engine completions verify pre-read admission, content joining, priority, cancellation isolation, delayed resource release, LRU/alias limits, stale versions, and converter replacement. Loader composition and native conversion checks exercise the shared provider independently of presentation consumers.
