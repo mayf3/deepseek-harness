@@ -37,6 +37,8 @@ Summary and Preview share one ordered attachment list after the message text, pr
 
 Selecting another record resets its Raw attachment disclosures to collapsed. Updates to the selected record, including loading older history, preserve its disclosure state.
 
+Thinking in the inspector uses compact Markdown at the inspector's fixed 13px size and 20px line height, independent of the content-size setting. Headings add bold weight without increasing size or line height. Assistant output keeps its regular Markdown typography.
+
 ### The timing overview
 
 Historical replies retain TTFT, generation duration, and throughput when their recorded streams contain token timestamps. TTFT measures from the Step start to its first token, including output from an earlier retry attempt; an unloaded Step start or a stream without tokens leaves the corresponding metric unavailable.
