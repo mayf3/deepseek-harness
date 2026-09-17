@@ -20,10 +20,7 @@
 - button "1 tool call · 1 message":
   - text: 1 tool call · 1 message
   - img
-- 'button "Open plan: Add `--greeting` flag to CLI"':
-  - img
-  - text: "Add `--greeting` flag to CLI"
-  - img
+- 'button "Open plan: Add `--greeting` flag to CLI"': "Add `--greeting` flag to CLI Plan · Markdown Open"
 - button "System prompt":
   - img
   - img

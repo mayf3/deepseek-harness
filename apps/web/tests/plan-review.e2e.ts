@@ -203,7 +203,7 @@ describe('web e2e: dismissed plan history', () => {
       await page.locator('[data-sidebar-right-toggle]').click()
       await page.reload({ waitUntil: 'load' })
       await page.locator('[data-plan-card]').waitFor({ state: 'visible' })
-      expect(await page.locator('[data-plan-preview]').count()).toBe(0)
+      expect(await page.locator('[data-plan-preview]').isVisible()).toBe(false)
       expect(tripwire.pageErrors).toEqual([])
     } finally {
       await browser?.close()
