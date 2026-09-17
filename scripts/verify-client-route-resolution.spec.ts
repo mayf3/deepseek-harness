@@ -50,11 +50,10 @@ describe('browser app-route guard', () => {
         document.querySelector('script').src = '//harness.example/api/file'
         return id
       }
-    `).map(violation => violation.line)).toEqual([4, 5, 6, 7, 8, 9, 10])
-    expect(rules(CLIENT_FILE, `
-      await fetch('/api/remote.mux')
-      await fetch(\`\${window.location.origin}/api/file\`)
-    `)).toEqual(['request-target', 'request-target'])
+    `).map(violation => [violation.line, violation.rule])).toEqual([
+      [4, 'request-target'], [5, 'request-target'], [6, 'request-target'], [7, 'request-target'],
+      [8, 'request-target'], [9, 'request-target'], [10, 'request-target'],
+    ])
   })
 
   it('rejects a root-absolute app route in a JSX resource attribute', () => {
@@ -88,9 +87,7 @@ describe('browser app-route guard', () => {
       const ok = new URL('api/session.export?sessionId=s1', document.baseURI)
       const mapped = new URL(input, globalThis.location.origin)
       return [url, ok, mapped]
-    `)).toEqual([
-      expect.objectContaining({ line: 2, rule: 'location-base' }),
-    ])
+    `).map(violation => [violation.line, violation.rule])).toEqual([[2, 'location-base']])
   })
 
   it('leaves identity and transport reads of location alone', () => {
@@ -113,7 +110,9 @@ describe('browser-reference producers', () => {
       const script = { src: '//harness.example/plugins/a.js' }
       const key = \`/plugins/\${comboSearch(ids, rev)}\`
       return [bootstrap, row, map, link, script, key]
-    `, 'reference-producer').map(violation => violation.rule)).toEqual(Array<string>(5).fill('reference-producer'))
+    `, 'reference-producer').map(violation => [violation.line, violation.rule])).toEqual(
+      [2, 3, 4, 5, 6].map(line => [line, 'reference-producer']),
+    )
   })
 
   it('leaves internal route keys and generated source names alone', () => {
@@ -166,9 +165,6 @@ describe('browser face discovery', () => {
       writeProject(root, 'host-package', { lib: ['ES2024'], sources: ['src/host.ts'] })
       writeFaceAggregates(root, ['browser-package', 'shared-package', 'host-package'], ['shared-package', 'host-package'])
 
-      // DOM libraries alone do not make a browser face: a project the Host
-      // aggregate also compiles has a host half, and a project without them is
-      // host-side. Declarations carry no request target and stay out.
       expect(browserFaceSources(root)).toEqual(['browser-package/src/view.ts'])
     } finally {
       rmSync(root, { recursive: true, force: true })

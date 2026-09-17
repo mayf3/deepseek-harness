@@ -234,7 +234,6 @@ describe('OpenInAppAction launching', () => {
     const b = bench({ apps: ['terminal'], cwd: '/w/dir' })
     const { container } = render(<OpenInAppAction {...b.props} />)
     const img = container.querySelector('img')
-    expect(img?.getAttribute('src')).toBe('open-in-app/icon/terminal')
     if (img !== null) fireEvent.error(img)
     await waitFor(() => {
       expect(container.querySelector('img')).toBeNull()

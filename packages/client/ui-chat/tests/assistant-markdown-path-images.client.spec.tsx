@@ -18,18 +18,16 @@ const BASE = 'http://127.0.0.1:3080/'
 const MOUNTED_BASE = 'http://127.0.0.1:3080/tools/dsh/'
 
 describe('localPathMediaUrl', () => {
-  it('maps an absolute POSIX path on an HTTP page to the file route of its document', () => {
-    expect(localPathMediaUrl(BASE, '/tmp/graph.png'))
-      .toBe(`${BASE}api/file?path=${encodeURIComponent('/tmp/graph.png')}`)
-    expect(localPathMediaUrl('https://127.0.0.1:3080/', '/tmp/graph.png'))
-      .toBe(`https://127.0.0.1:3080/api/file?path=${encodeURIComponent('/tmp/graph.png')}`)
-  })
-
-  it('keeps the route beneath a mount the document is served from', () => {
-    expect(localPathMediaUrl(MOUNTED_BASE, '/tmp/graph.png'))
-      .toBe(`${MOUNTED_BASE}api/file?path=${encodeURIComponent('/tmp/graph.png')}`)
-    expect(localPathMediaUrl('http://127.0.0.1:3080/tools/dsh/index.html', '/tmp/graph.png'))
-      .toBe(`${MOUNTED_BASE}api/file?path=${encodeURIComponent('/tmp/graph.png')}`)
+  it('maps an absolute POSIX path to the file route of the document, root or mount', () => {
+    const path = encodeURIComponent('/tmp/graph.png')
+    for (const [base, root] of [
+      [BASE, BASE],
+      ['https://127.0.0.1:3080/', 'https://127.0.0.1:3080/'],
+      [MOUNTED_BASE, MOUNTED_BASE],
+      ['http://127.0.0.1:3080/tools/dsh/index.html', MOUNTED_BASE],
+    ]) {
+      expect(localPathMediaUrl(base!, '/tmp/graph.png')).toBe(`${root!}api/file?path=${path}`)
+    }
   })
 
   it('keeps non-HTTP transports inert', () => {

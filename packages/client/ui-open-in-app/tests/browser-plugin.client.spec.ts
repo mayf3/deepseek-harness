@@ -58,7 +58,7 @@ describe('open-in-app browser half', () => {
     const fetcher = vi.fn(async (input: string | URL, init?: RequestInit) => {
       void init
       const url = String(input)
-      if (url.includes('open-in-app/apps')) {
+      if (url === 'open-in-app/apps') {
         return new Response(JSON.stringify({ apps: ['finder', 'cursor', 7] }), { status: 200 })
       }
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
@@ -77,7 +77,7 @@ describe('open-in-app browser half', () => {
     expect(injected.hooks.openInAppChoice.getSnapshot()).toBe('cursor')
 
     await injected.launch('cursor', '/w/dir')
-    const openCall = fetcher.mock.calls.find(call => String(call[0]).includes('open-in-app/open'))
+    const openCall = fetcher.mock.calls.find(call => call[0] === 'open-in-app/open')
     expect(openCall?.[1]).toMatchObject({
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -88,7 +88,7 @@ describe('open-in-app browser half', () => {
 
   it('publishes an empty availability list when the host read fails, and launches reject on HTTP errors', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
-      if (String(input).includes('open-in-app/apps')) throw new Error('down')
+      if (String(input) === 'open-in-app/apps') throw new Error('down')
       return new Response('', { status: 502 })
     }))
     const { ctx, fiber } = await bench()
