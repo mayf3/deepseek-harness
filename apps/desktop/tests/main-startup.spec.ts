@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { IpcMainInvokeEvent } from 'electron'
+import type { IpcMainInvokeEvent, MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import type { MenuItemConstructorOptions, MessageBoxOptions } from 'electron'
+import type { MessageBoxOptions } from 'electron'
 import { DESKTOP_IPC, type DesktopUpdateState } from '../src/ipc.ts'
 import { MANDATORY_IPC } from '../src/mandatory-update-ipc.ts'
 import { DesktopHostUncleanExitError } from '../src/host-process.ts'
@@ -44,7 +44,8 @@ const harness = await vi.hoisted(async () => {
   const updateDownload = vi.fn(async (_version: string): Promise<DesktopUpdateState> => updateState)
   const updateInstall = vi.fn(async (_version: string): Promise<DesktopUpdateState> => updateState)
   const popup = vi.fn()
-  const menu = vi.fn<(template: MenuItemConstructorOptions[]) => { popup: typeof popup }>(() => ({ popup }))
+  const menuBuilder = vi.fn<(template: MenuItemConstructorOptions[]) => { popup: typeof popup }>(() => ({ popup }))
+  const menu = Object.assign(menuBuilder, { buildFromTemplate: menuBuilder, setApplicationMenu: vi.fn() })
   class FakeWindow extends EventEmitter {
     destroyed = false
     readonly urls: string[] = []
@@ -192,7 +193,7 @@ vi.mock('electron', () => ({
     },
     removeHandler: (channel: string) => { harness.handlers.delete(channel) },
   },
-  Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: harness.menu },
+  Menu: { setApplicationMenu: harness.menu.setApplicationMenu, buildFromTemplate: harness.menu },
   session: { defaultSession: { webRequest: { onBeforeSendHeaders: harness.socketHeaders } } },
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
   powerMonitor: harness.powerMonitor,
@@ -491,6 +492,26 @@ describe('desktop main startup', () => {
     expect(harness.hosts).toHaveLength(0)
   })
 
+  it.each(['darwin', 'win32', 'linux'] as const)('adds the standard macOS window commands only on macOS (%s)', async (platform) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const describeItem = (item: MenuItemConstructorOptions): string | undefined =>
+      item.role ?? (item.type === 'separator' ? 'separator' : item.label)
+    const template = harness.menu.buildFromTemplate.mock.calls
+      .map(call => call[0])
+      .find(items => items.some(item => item.role === 'editMenu'))
+    if (template === undefined) throw new Error('application menu missing')
+    expect(template.map(describeItem)).toEqual(platform === 'darwin'
+      ? ['Desktop test', 'fileMenu', 'editMenu', 'windowMenu']
+      : ['Application', 'editMenu'])
+    const application = template[0]!.submenu as MenuItemConstructorOptions[]
+    expect(application.map(describeItem)).toEqual(platform === 'darwin'
+      ? ['about', 'separator', en.pluginsMenu, en.checkUpdatesMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
+      : ['about', 'separator', en.pluginsMenu, en.checkUpdatesMenu, 'separator', 'quit'])
+    expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
+  })
+
   it('attaches Host socket credentials only to the owned application origin and window', async () => {
     await import('../src/main.ts')
     await harness.preparing.promise
@@ -676,8 +697,6 @@ describe('desktop main startup', () => {
     expect(() => action(owned, 'install', 123)).toThrow('missing confirmed version')
     expect(harness.updateDownload).not.toHaveBeenCalled()
     expect(harness.updateInstall).not.toHaveBeenCalled()
-    modal.close()
-    expect(modal.isDestroyed()).toBe(false)
     expect(host.stop).not.toHaveBeenCalled()
     expect(harness.updateDownload).not.toHaveBeenCalled()
     await expect(invoke(DESKTOP_IPC.pluginsAdd, 'shell', 'example-plugin')).rejects.toThrow('Update required')

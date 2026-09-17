@@ -54,6 +54,8 @@ Electron chooses typed English or Chinese shell copy from its application locale
 
 Electron's native Edit menu supplies undo, redo, cut, copy, paste, and select-all commands and platform shortcuts for the focused window. Right-clicking an editable field opens these commands without shortcut labels, with availability supplied by Chromium; selected read-only text offers Copy.
 
+On macOS the custom application menu also declares the standard File, Window, and application menus, because replacing Electron's default menu drops Close Window (⌘W), Minimize (⌘M), and Hide (⌘H). Windows and Linux keep the application and Edit menus.
+
 ### Runtime and plugin activation
 
 The signed `resources/app.asar/dsh/desktop-runtime.json` binds the shell version, Electron's Node version, platform, architecture, shared package versions, and final file inventory. Startup reads the metadata and checks shared package records. Release schema, shell version, target compatibility, and file integrity are verified during packaging. Core packages are never copied into profile storage or installed by pnpm at first launch.

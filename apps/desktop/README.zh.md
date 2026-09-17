@@ -54,6 +54,8 @@ Electron 根据应用语言选择类型化的英文或中文 shell 文案，并�
 
 Electron 原生“编辑”菜单为当前聚焦窗口提供撤销、重做、剪切、复制、粘贴和全选命令及平台快捷键。右键点击可编辑输入区域会打开不带快捷键标注的这些命令，其可用状态由 Chromium 提供；选中的只读文本提供“复制”命令。
 
+macOS 上自定义应用菜单还会声明标准的 File、Window 和应用菜单，因为替换 Electron 的默认菜单会丢掉 Close Window（⌘W）、Minimize（⌘M）和 Hide（⌘H）。Windows 和 Linux 保留应用菜单和 Edit 菜单。
+
 ### 运行时与插件激活
 
 签名资源中的 `resources/app.asar/dsh/desktop-runtime.json` 绑定 shell 版本、Electron 的 Node 版本、平台、架构、共享包版本和最终文件清单。启动读取元数据，并检查共享包记录。发布 schema、shell 版本、目标兼容性和文件完整性在打包时验证。首次启动不会把核心包复制到 profile 存储或通过 pnpm 安装核心包。
