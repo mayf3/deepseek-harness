@@ -1130,18 +1130,20 @@ function MarkdownFragment({
   text,
   rendered,
   preview,
+  variant = 'body',
   t,
 }: {
   text: string
   rendered: boolean
   preview: boolean
+  variant?: 'body' | 'compact'
   t: TrajectoryTranslate
 }) {
   const labels = useMemo(() => markdownLabels(t), [t])
   if (rendered) {
     return (
       <div className={preview ? css.markdownPreview : css.markdownPayload}>
-        <MarkdownText text={text} labels={labels} />
+        <MarkdownText text={text} labels={labels} variant={variant} />
       </div>
     )
   }
@@ -1521,6 +1523,7 @@ function MarkdownRecordContent({
               text={record.cell.thinkingDetail}
               rendered={rendered}
               preview={preview}
+              variant="compact"
               t={t}
             />
           )}
