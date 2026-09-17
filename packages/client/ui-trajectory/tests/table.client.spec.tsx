@@ -273,6 +273,36 @@ describe('TrajectoryTable', () => {
     expect(screen.getByRole('button', { name: 'Thinking' }).getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('renders thinking as compact Markdown while keeping answer typography separate', () => {
+    const turns: readonly TrajectoryTurnModel[] = [{
+      turn: 1,
+      groups: [{
+        title: 'Step 1',
+        cells: [{
+          index: 1,
+          kind: 'message',
+          text: 'Answer',
+          outputDetail: '# Answer heading\n\nAnswer body.',
+          thinkingDetail: '# Thinking heading\n\nReasoning **emphasis**.',
+          timeSeconds: 1,
+        }],
+      }],
+    }]
+    render(<TrajectoryTable turns={turns} {...FOLD_PROPS} />)
+    fireEvent.click(screen.getByRole('row', { name: /ASSISTANT/ }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Preview' }))
+
+    expect(screen.getByRole('heading', { name: 'Thinking heading' })
+      .closest('[data-markdown-variant="compact"]')).not.toBeNull()
+    expect(screen.getByText('emphasis').tagName).toBe('STRONG')
+    expect(screen.getByRole('heading', { name: 'Answer heading' })
+      .closest('[data-markdown-variant="compact"]')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Thinking' }))
+    expect(screen.queryByRole('heading', { name: 'Thinking heading' })).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Answer heading' })).toBeTruthy()
+  })
+
   it('opens thinking on another record after collapsing the selected record', () => {
     const turns: readonly TrajectoryTurnModel[] = [{
       turn: 1,
