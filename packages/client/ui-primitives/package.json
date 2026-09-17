@@ -47,11 +47,15 @@
     "mdast-util-math": "^3.0.0",
     "micromark-extension-gfm": "^3.0.0",
     "micromark-util-sanitize-uri": "^2.0.1",
-    "simple-icons": "16.31.0"
+    "simple-icons": "16.31.0",
+    "mermaid": "11.16.0",
+    "@viz-js/viz": "3.30.0"
   },
   "files": [
     "lib/index.js",
+    "lib/*-*.js",
     "lib/**/*.css",
+    "THIRD_PARTY_PREVIEW_NOTICES.txt",
     "lib/types/**/*.d.ts"
   ],
   "peerDependencies": {

@@ -216,6 +216,8 @@
   - text: .
 - math: a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + 1 1 + 1 x
 - text: typescript
+- button "Line numbers"
 - button "Copy"
+- text: Source
 - code: const value = "reasoning code"
 - paragraph: {{longToken}}

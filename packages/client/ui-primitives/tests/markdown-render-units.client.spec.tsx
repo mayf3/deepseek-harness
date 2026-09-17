@@ -21,6 +21,7 @@ function makeContext(): MarkdownRenderContext {
   return {
     streaming: false,
     labels: markdownLabels,
+    previews: undefined,
     fileMentions: undefined,
     pathImages: undefined,
     targets: createReferenceTargets(),
@@ -224,6 +225,25 @@ describe('renderFootnoteSection edge shapes', () => {
 })
 
 describe('MarkdownText under StrictMode', () => {
+  it('renders each completed fence line once across stream growth and settlement', () => {
+    const chunks = [
+      'const first = 1\nlet',
+      'const first = 1\nlet second = 2\n// tail',
+      'const first = 1\nlet second = 2\n// tail complete',
+    ]
+    const view = render(<StrictMode><MarkdownText text="```ts\n" streaming /></StrictMode>)
+    for (const code of chunks) {
+      view.rerender(<StrictMode><MarkdownText text={`\`\`\`ts\n${code}`} streaming /></StrictMode>)
+      const pre = view.container.querySelector('pre.shiki')
+      expect(pre?.textContent).toBe(code)
+      expect(pre?.querySelectorAll('.line')).toHaveLength(code.split('\n').length)
+    }
+    const highlighted = view.container.querySelector('pre.shiki')
+    view.rerender(<StrictMode><MarkdownText text={`\`\`\`ts\n${chunks[2]}\n\`\`\``} /></StrictMode>)
+    expect(view.container.querySelector('pre.shiki')).toBe(highlighted)
+    expect(highlighted?.textContent).toBe(chunks[2])
+  })
+
   it('streams identically when React double-invokes render work', () => {
     const doc = 'one\n\ntwo\n\nthree\n\nfour\n\nfive'
     const strict = render(<StrictMode><MarkdownText text={doc.slice(0, 8)} streaming /></StrictMode>)
