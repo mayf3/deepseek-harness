@@ -57,6 +57,20 @@ ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
 
 The bundle's patch must declare the row under that id, and the registration exists while the bundle is on, so a bundle that is off shows no configure control.
 
+### Detail page extension points
+
+A plugin with something to say about a bundle, a row, or an official plugin it does not own contributes to that object's page through three list slots the page declares: `plugins.detail.actions` for a control at the head of the page, before the page's own switch and uninstall; `plugins.detail.badge` for a tag beside the title, after the version, beta, and problem tags; and `plugins.detail.section` for a section under the page's own content — after the rows on a bundle's page, after the configuration on a row's or an official plugin's page. Every entry is rendered with the page's `subject`: `{ kind: 'bundle', pkg }`, `{ kind: 'row', pkg, row }`, or `{ kind: 'item', id }`, where `pkg` and `row` carry the name, version, installed and enabled facts, and the row list a contribution decides on. An entry renders null for a subject it has nothing for and draws its own section chrome; the page orders entries by `order`.
+
+```tsx ignore-check
+ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({
+  name: 'plugins.detail.section',
+  id: 'acme-health',
+  locale: 'acmeHealth',
+}, ({ t, subject }) => subject.kind === 'bundle' ? <HealthSection pkg={subject.pkg} t={t} /> : null))
+```
+
+A row's page exists only while a `plugins.row.config` entry names the row, so a contribution meant for a row renders on the page that configuration opens.
+
 -----
 
 <a id="understand-the-implementation"></a>

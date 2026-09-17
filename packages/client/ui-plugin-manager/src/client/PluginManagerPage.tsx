@@ -26,14 +26,17 @@ import {
   type PluginManagerFace,
 } from './manager-store.ts'
 import { managementText, noticeText, packageText, type Translate } from './presentation.ts'
-import type {} from './slot-contract.ts'
+import type { PluginPackageRef, PluginRowRef, PluginsSubject } from './slot-contract.ts'
 import css from './PluginManagerPage.module.css'
 
 /** Full component props assembled by the main slot renderer. */
 export type PluginManagerPageProps =
   PropsRuntime<'main'>
   & PropsLocale<'pluginManager'>
-  & PropsRenderSlots<'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config'>
+  & PropsRenderSlots<
+    | 'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config'
+    | 'plugins.detail.actions' | 'plugins.detail.badge' | 'plugins.detail.section'
+  >
   & InjectFace<PluginManagerFace>
 
 /** The page's slot renderer, narrowed to the configuration slots. */
@@ -343,24 +346,54 @@ function ItemCard({ item, t, onOpen, renderSlot }: {
   )
 }
 
-/** An official plugin's page: the crumb back to the cards, its icon, its title over its one-liner, and the form the entry renders. */
+/** One row as the detail slots see it. */
+function rowRef(row: PackageRow): PluginRowRef {
+  return { rowId: row.rowId, moduleName: row.moduleName, enabled: row.enabled }
+}
+
+/** One bundle as the detail slots see it. */
+function packageRef(pkg: PackageView): PluginPackageRef {
+  return {
+    name: pkg.name,
+    ...pkg.version === undefined ? {} : { version: pkg.version },
+    installed: pkg.installed,
+    enabled: pkg.enabled,
+    rows: pkg.rows.map(rowRef),
+  }
+}
+
+/**
+ * An official plugin's page: the crumb back to the cards, its icon with the
+ * contributed actions, its title with the contributed badges over its
+ * one-liner, the form the entry renders, and the contributed sections.
+ */
 function ItemDetail({ item, t, onBack, renderSlot }: {
   readonly item: OfficialItem
   readonly t: Translate
   readonly onBack: () => void
   readonly renderSlot: RenderConfig
 }): ReactNode {
+  const subject: PluginsSubject = { kind: 'item', id: item.id }
   return (
     <div className={css.detail} data-plugin-item-detail={item.id}>
-      <DetailTop crumbLabel={t('backToList')} crumbText={t('crumbRoot')} onBack={onBack} />
+      <DetailTop
+        crumbLabel={t('backToList')}
+        crumbText={t('crumbRoot')}
+        onBack={onBack}
+        actions={<div className={css.detailActions}>{renderSlot('plugins.detail.actions', { subject })}</div>}
+      />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{item.label}</h3>
+          {renderSlot('plugins.detail.badge', { subject })}
         </div>
         <p className={css.detailDesc}>{renderSlot('plugins.item', { view: 'summary' }, { only: item.id })}</p>
       </div>
-      <div className={css.detailSections} data-plugin-config>
-        {renderSlot('plugins.item', { view: 'page' }, { only: item.id })}
+      <div className={css.detailSections}>
+        <section className={css.detailSection} data-plugin-config>
+          {renderSlot('plugins.item', { view: 'page' }, { only: item.id })}
+        </section>
+        {renderSlot('plugins.detail.section', { subject })}
       </div>
     </div>
   )
@@ -379,18 +412,29 @@ function RowDetail({ pkg, row, t, onBack, renderSlot }: {
 }): ReactNode {
   const { title } = packageText(pkg, t)
   const key = rowConfigKey(pkg.name, row.rowId)
+  const subject: PluginsSubject = { kind: 'row', pkg: packageRef(pkg), row: rowRef(row) }
   return (
     <div className={css.detail} data-plugin-row-detail={key}>
-      <DetailTop crumbLabel={t('backToPackage', { name: title })} crumbText={title} onBack={onBack} icon={<IconCordisPluginOutline14 size={20} />} />
+      <DetailTop
+        crumbLabel={t('backToPackage', { name: title })}
+        crumbText={title}
+        onBack={onBack}
+        icon={<IconCordisPluginOutline14 size={20} />}
+        actions={<div className={css.detailActions}>{renderSlot('plugins.detail.actions', { subject })}</div>}
+      />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{row.rowId}</h3>
+          {renderSlot('plugins.detail.badge', { subject })}
         </div>
         <p className={css.detailName}><code>{row.moduleName}</code></p>
         <p className={css.detailDesc}>{renderSlot('plugins.row.config', { view: 'summary' }, { entryKey: key })}</p>
       </div>
-      <div className={css.detailSections} data-plugin-config>
-        {renderSlot('plugins.row.config', { view: 'page' }, { entryKey: key })}
+      <div className={css.detailSections}>
+        <section className={css.detailSection} data-plugin-config>
+          {renderSlot('plugins.row.config', { view: 'page' }, { entryKey: key })}
+        </section>
+        {renderSlot('plugins.detail.section', { subject })}
       </div>
     </div>
   )
@@ -424,6 +468,7 @@ function PackageDetail({
 }): ReactNode {
   const { title, description, beta } = packageText(pkg, t)
   const status = packageStatus(pkg)
+  const subject: PluginsSubject = { kind: 'bundle', pkg: packageRef(pkg) }
   return (
     <div className={css.detail} data-plugin-detail={pkg.name}>
       <DetailTop
@@ -432,6 +477,7 @@ function PackageDetail({
         onBack={onBack}
         actions={(
           <div className={css.detailActions}>
+            {renderSlot('plugins.detail.actions', { subject })}
             {pkg.installed
               ? (
                 <Button
@@ -457,6 +503,7 @@ function PackageDetail({
           {pkg.version === undefined ? null : <Tag className={css.versionTag} tone="neutral">{t('versionTag', { version: pkg.version })}</Tag>}
           {beta ? <Tag className={css.statusTag} tone="info">{t('statusBeta')}</Tag> : null}
           {status === 'problem' ? <Tag className={css.statusTag} tone="danger">{t('statusProblem')}</Tag> : null}
+          {renderSlot('plugins.detail.badge', { subject })}
         </div>
         <p className={css.detailName}><code data-plugin-name>{pkg.name}</code></p>
         <p className={css.detailDesc}>{description ?? t('noDescription')}</p>
@@ -477,6 +524,7 @@ function PackageDetail({
           toggle={pkg.enabled ? { busy: row => busy || rowBusy(row), onSetEnabled: onSetRowEnabled } : undefined}
           configure={configure}
         />
+        {renderSlot('plugins.detail.section', { subject })}
       </div>
     </div>
   )

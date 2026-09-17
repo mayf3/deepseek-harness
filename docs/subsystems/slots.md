@@ -132,6 +132,9 @@ root
 │  ├─ plugins.item
 │  ├─ plugins.bundle.config
 │  ├─ plugins.row.config
+│  ├─ plugins.detail.actions
+│  ├─ plugins.detail.badge
+│  ├─ plugins.detail.section
 │  └─ main.conversation
 │     ├─ conversation.session
 │     │  └─ conversation.view

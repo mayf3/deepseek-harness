@@ -57,6 +57,20 @@ ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
 
 组合包的 patch 必须以该 id 声明这一行；注册只在组合包开启期间存在，因此关闭的组合包不显示配置控件。
 
+### 详情页扩展点
+
+对某个不属于自己的组合包、行或官方插件有话要说的插件，通过本页声明的三个 list slot 向该对象的页面贡献内容：`plugins.detail.actions` 在页头放一个控件，位于页面自己的开关和卸载之前；`plugins.detail.badge` 在标题旁放一个标签，位于版本、Beta 和异常标签之后；`plugins.detail.section` 在页面自身内容之下放一个区块——组合包页在组件列表之后，行页和官方插件页在配置之后。每个条目都以页面的 `subject` 渲染：`{ kind: 'bundle', pkg }`、`{ kind: 'row', pkg, row }` 或 `{ kind: 'item', id }`，其中 `pkg` 与 `row` 携带包名、版本、是否已安装、是否启用以及行列表这些供贡献者判断的事实。条目对无话可说的 subject 返回 null，自绘区块外观；页面按 `order` 排列条目。
+
+```tsx ignore-check
+ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({
+  name: 'plugins.detail.section',
+  id: 'acme-health',
+  locale: 'acmeHealth',
+}, ({ t, subject }) => subject.kind === 'bundle' ? <HealthSection pkg={subject.pkg} t={t} /> : null))
+```
+
+行页只在某个 `plugins.row.config` 条目点名这一行时存在，因此给行的贡献渲染在该配置打开的页面上。
+
 -----
 
 <a id="understand-the-implementation"></a>
