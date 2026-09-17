@@ -107,9 +107,12 @@ async function bench(opts: BenchOptions = {}) {
   })
   // Real scope tags behind a fake sessions face.
   const scopes = new Map<SessionId, { ctx: Context; fiber: { dispose(): Promise<void> } }>()
+  const bindings = new Map<SessionId, { sessionId: SessionId; session: { sessionId: SessionId }; ctx: Context }>()
   const removeSessions = ctx.provide('sessions', {
     scope: (id: SessionId) => scopes.get(id)?.ctx,
     scopeOf: (c: Context) => scopeOf(c),
+    sessionOf: (scopeCtx: Context) => [...bindings.values()].find(binding => binding.ctx === scopeCtx)?.session,
+    binding: (id: SessionId) => bindings.get(id),
     subagentAddress: (id: SessionId) => id === opts.addressed
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
       : undefined,
@@ -140,8 +143,14 @@ async function bench(opts: BenchOptions = {}) {
   const source = registered.get('/ command')
   if (source === undefined) throw new Error('command source not registered')
   const mint = (key: string) => {
-    const handle = createScope(ctx, sid(key))
-    scopes.set(sid(key), handle)
+    const id = sid(key)
+    const handle = createScope(ctx, id)
+    const binding = { sessionId: id, session: { sessionId: id }, ctx: handle.ctx }
+    scopes.set(id, handle)
+    bindings.set(id, binding)
+    handle.ctx.effect(() => () => {
+      if (bindings.get(id) === binding) bindings.delete(id)
+    })
     return handle
   }
   /** Warm one session's catalog through the source's own candidate pull. */
@@ -1001,7 +1010,7 @@ describe('popupFor', () => {
     const first = command.popupFor(a.ctx)
     expect(command.popupFor(a.ctx)).toBe(first)
     expect(command.popupFor(mint('s2').ctx)).not.toBe(first)
-    expect(() => command.popupFor(ctx)).toThrow('requires a session scope')
+    expect(() => command.popupFor(ctx)).toThrow('requires a retained Session scope')
   })
 
   it('a successful select dispatches the scoped consume-token and focuses the composer', async () => {

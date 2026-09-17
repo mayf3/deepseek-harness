@@ -48,12 +48,11 @@ describe('TestClient (node environment)', () => {
     expect(client.connection.state.getSnapshot()).toBe('connected')
   })
 
-  it.each(['@deepseek-ai/dsh-api-remotes'])(
-    'refuses a provide entry for the generated Remote installer %s', async (name) => {
-      const roster = webApp.closure([name])
-      await expect(TestClient.start({ roster, provide: { [name]: { apply() {} } } }, RemoteMock.create()))
-        .rejects.toThrow(`${name} cannot be provided; its remote.<ns> services are the tier's proxies`)
-    })
+  it('refuses a provide entry for the api-remotes row, whose services are the proxies', async () => {
+    const roster = webApp.closure(['@deepseek-ai/dsh-api-remotes'])
+    await expect(TestClient.start({ roster, provide: { '@deepseek-ai/dsh-api-remotes': { apply() {} } } }, RemoteMock.create()))
+      .rejects.toThrow('@deepseek-ai/dsh-api-remotes cannot be provided; its remote.<ns> services are the tier\'s proxies')
+  })
 
   it('reports unmatched requests alongside a failed teardown instead of hiding them', async () => {
     const mock = RemoteMock.create().load(remoteDefaultResponses)

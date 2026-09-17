@@ -41,7 +41,7 @@ function hostOver(core: SlotCore): SlotRendererHost {
   }
   const sessionAdapter: SlotScopeAdapter = {
     current: bindingSource,
-    resolve: () => undefined,
+    bindingSource: () => bindingSource,
   }
   return {
     subscribe: (key, fn) => core.subscribe(key, fn),

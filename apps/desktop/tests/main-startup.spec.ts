@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { IpcMainInvokeEvent } from 'electron'
+import type { IpcMainInvokeEvent, MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron'
 import { DESKTOP_IPC } from '../src/ipc.ts'
+import { en } from '../src/locale.ts'
 
 vi.mock('../src/web-document.ts', () => ({ authenticateWebHost: async () => 'test-cookie', serveWebDocument: vi.fn(), forwardWebRequest: vi.fn() }))
 
@@ -89,7 +90,10 @@ const harness = await vi.hoisted(async () => {
     failWindow(error: Error) { windowFailure = error },
     popup,
     socketHeaders: vi.fn(),
-    menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn(() => ({ popup })) },
+    menu: {
+      setApplicationMenu: vi.fn(),
+      buildFromTemplate: vi.fn((_items: MenuItemConstructorOptions[]) => ({ popup })),
+    },
     dialog: {
       showOpenDialog: vi.fn(),
       showErrorBox: vi.fn(),
@@ -98,7 +102,10 @@ const harness = await vi.hoisted(async () => {
     openExternal: vi.fn(),
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
     mutateFailure: vi.fn<() => void>(),
-    disableAllPlugins: vi.fn(async () => { pluginsEnabled = false }),
+    disableAllPlugins: vi.fn(async () => {
+      pluginsEnabled = false
+      return 'desktop-test-profile/cordis.patch.yml.bak-1789555200000'
+    }),
     get preparing() { return preparing }, get prepared() { return prepared },
     get hostStarted() { return hostStarted }, get navigated() { return navigated },
     get dialogShown() { return dialogShown }, get quitCompleted() { return quitCompleted },
@@ -168,6 +175,7 @@ beforeEach(() => {
   harness.reset()
   harness.dialog.showMessageBox.mockImplementation(() => { harness.dialogShown.resolve(); return new Promise(() => {}) })
   vi.spyOn(console, 'error').mockImplementation(() => {})
+  vi.spyOn(console, 'info').mockImplementation(() => {})
   vi.stubEnv('DSH_DESKTOP_PNPM_ENTRY', 'test-pnpm')
   vi.stubEnv('DSH_DESKTOP_DSH_DIR', 'test-runtime')
   vi.stubGlobal('process', { ...process, resourcesPath: 'desktop-test-resources' })
@@ -200,6 +208,26 @@ describe('desktop main startup', () => {
       expect(window.options).not.toHaveProperty('vibrancy')
     }
     expect(harness.hosts).toHaveLength(0)
+  })
+
+  it.each(['darwin', 'win32', 'linux'] as const)('adds the standard macOS window commands only on macOS (%s)', async (platform) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const describeItem = (item: MenuItemConstructorOptions): string | undefined =>
+      item.role ?? (item.type === 'separator' ? 'separator' : item.label)
+    const template = harness.menu.buildFromTemplate.mock.calls
+      .map(call => call[0])
+      .find(items => items.some(item => item.role === 'editMenu'))
+    if (template === undefined) throw new Error('application menu missing')
+    expect(template.map(describeItem)).toEqual(platform === 'darwin'
+      ? ['Desktop test', 'fileMenu', 'editMenu', 'windowMenu']
+      : ['Application', 'editMenu'])
+    const application = template[0]!.submenu as MenuItemConstructorOptions[]
+    expect(application.map(describeItem)).toEqual(platform === 'darwin'
+      ? [en.pluginsMenu, en.checkUpdatesMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
+      : [en.pluginsMenu, en.checkUpdatesMenu, 'separator', 'quit'])
+    expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
   })
 
   it('attaches Host socket credentials only to the owned application origin and window', async () => {
@@ -393,7 +421,7 @@ describe('desktop main startup', () => {
     harness.prepared.reject(new Error('runtime resources missing'))
     await harness.dialogShown.promise
     expect(harness.dialog.showMessageBox.mock.calls[0]![0].detail).toContain('runtime resources missing')
-    expect(harness.dialog.showMessageBox.mock.calls[0]![0].buttons).toEqual(['Exit', 'Restart', 'Disable all third-party plugins and restart'])
+    expect(harness.dialog.showMessageBox.mock.calls[0]![0].buttons).toEqual(['Exit', 'Restart', 'Disable third-party plugins, back up profile patch, and restart'])
     expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
   })
 
@@ -449,6 +477,13 @@ describe('desktop main startup', () => {
     await harness.quitCompleted.promise
     expect(harness.app.relaunch).toHaveBeenCalledTimes(response === 0 ? 0 : 1)
     expect(harness.disableAllPlugins).toHaveBeenCalledTimes(response === 2 ? 1 : 0)
+    if (response === 2) {
+      expect(console.info).toHaveBeenCalledWith('Desktop profile recovery completed:', {
+        profilePatchBackup: 'desktop-test-profile/cordis.patch.yml.bak-1789555200000', homePatch: 'unchanged',
+      })
+    } else {
+      expect(console.info).not.toHaveBeenCalled()
+    }
     expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
     expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
   })

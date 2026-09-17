@@ -82,8 +82,6 @@ kind: "package-reference"
 
 每个 Session 的所有被跟随文件共用一条受监督的 `changes` 流。跟随者按反斜杠归一为斜杠的绝对路径匹配。载体掉线由 Gateway 监督器重连；Host 结束或终态失败的流会结束其跟随者，最后的元数据仍可读取，直到重新打开。最后一个跟随者离开时释放流，后继流等待该释放完成，插件拆除等待所有在途关闭。提供者声明 `ResourceProtocolMap.file`；文本预览声明其 Sidebar 行号导航参数。
 
-Host 消费者可在预留输入容量后调用 `readAllBounded(scope, path, maxBytes, signal)`。它返回原始 `Uint8Array` 数据及文件元数据。文件系统执行预留值与 `maxFileBytes` 中较小的上限；`readAll()` 为 Remote 调用方将结果编码为 base64。
-
 -----
 
 <a id="understand-the-implementation"></a>
@@ -95,6 +93,8 @@ Host 消费者可在预留输入容量后调用 `readAllBounded(scope, path, max
 ### 设计概念
 
 经 `ctx.fs` 的读取使用后端的读取权限；沙箱后端限制写与编辑，而不限制读取。Typert lookup 从 live Session header 或持久层的 header-only `stat` 导出 `WorkspaceFileScope`，所以 cold subagent Session 不需要激活 Agent 或读取事件正文。本服务增加普通文件检查与有界传输，工作区包含要求只属于目录列举与变更观察。页从 `streamText` 切出，后者逐块解码并拒绝非 UTF-8：切页器对窗口之前的行只计数不保留，对窗口内的每个片段先按字节上限验收再缓冲，并在窗口之后的第一个字符处返回。流之前的一次 `stat` 给出页所报告的版本与大小。
+
+完整文件读取将大小上限检查交给 `fs.readBytes`，并将返回的字节编码为 base64，供 Remote 响应使用。
 
 ### 源码地图
 

@@ -22,6 +22,9 @@
     },
     {
       "path": "../../api/workspace-files/tsconfig.host.json"
+    },
+    {
+      "path": "../../fs/fs"
     }
   ]
 }

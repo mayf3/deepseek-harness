@@ -52,6 +52,15 @@ dsh --profile web --patch ./extra.yml --dump-config
 
 `--dump-default-config` 只打印组合包各层；`--dump-config` 额外加上 profile 的 `cordis.patch.yml`、home 级的 `$DSH_HOME/cordis.patch.yml` 和 `--patch` overlay。两者都会打印注释，标明每行由哪个文件提供，以及哪些 overlay 修改过它；`!!js` 表达式保持未求值，插入行中的相对插件名以各自 patch 文件所在目录解析，找不到目标的 patch 会报告到 stderr。dump 操作会初始化缺失的 profile 文件，但不会准备 `$DSH_HOME/profiles/node_modules` 下的运行时模块 fallback。它不会运行应用的命令行参数提供方，因此展示的是解析任何应用参数之前的组合配置树；如果调用中包含应用参数，dump 会拒绝该调用。
 
+<a id="startup-diagnostics"></a>
+## 启动诊断
+
+必需插件激活失败时，CLI 先输出失败插件及其原始堆栈，再列出等待中的插件和缺失服务。等待列表中的必需插件排在前面。末尾的 `Full diagnostics:` 行指向直接位于 `$DSH_HOME/logs/`（默认 `~/.dsh/logs/`）下的唯一 `startup-<timestamp>-<uuid>.log` 文件。CLI 完成报告和 stderr 写入后会明确以退出码 1 结束，即使插件仍有打开的句柄；不会覆盖以前的报告，也不会自动删除它们。
+
+报告包含 DSH 和 Node 版本、平台、profile、根配置路径、每个未激活插件的模块与状态、原始错误，以及启动期间的警告和错误参数，包括尚无 Fiber 的导入错误。Node 检查输出保留嵌套原因、聚合成员、循环引用、不可枚举属性和 Symbol 属性，并关闭深度、字符串及数组长度限制。自定义检查函数被禁用，访问器只描述而不求值。收集器包含失败后的异步清理日志，并在启动结算后停止。它不会独立于已记录错误额外收集环境变量或配置内容。插件原始错误可能包含配置或凭据值；报告开头会提醒读者在分享前检查内容。报告不脱敏。
+
+在 POSIX 上，新目录和文件分别请求 `0700` 和 `0600` 权限。CLI 仅在写入成功后输出文件路径。如果日志目录或文件无法写入，stderr 会包含写入错误及完整报告，退出码仍为 1。只有可选插件激活异常时，维持正常警告输出，不创建报告。
+
 ## 插件管理
 
 `dsh plugin --profile <name> <args...>` 在 profile 缺失时先初始化它（有随附模板的用模板，其他名称只装 `@deepseek-ai/dsh-base`），然后以 profile 目录为工作目录，把 `<args...>` 转发给 `pnpm`：`add`、`remove`、`why`、`update` 及其他所有 pnpm 子命令都照常可用；pnpm 必须在 PATH 上。相对路径 spec（`.`、`../plugin` 及其 `file:`/`link:` 形式）会先锚定到调用目录，因此在插件 checkout 中执行 `add .` 安装的是该 checkout，而不是 profile。每次成功运行后，系统都会根据当前安装状态更新 `dsh.profile.bundles`：如果某项依赖解析到的包在 manifest 中声明了 `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`，该依赖就会加入配置层栈；如果某项依赖在 `update` 后获得该声明，也会随即激活。没有组合包声明的依赖仍作为普通依赖保留，并显示一次性警告；已移除的依赖则从配置层栈中删除。

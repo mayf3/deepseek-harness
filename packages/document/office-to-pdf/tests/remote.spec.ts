@@ -2,6 +2,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceFiles } from '@deepseek-ai/dsh-api-workspace-files'
+import type { FileSystem, FsInfo, FsTarget } from '@deepseek-ai/dsh-fs'
 import { OfficeToPdfError, OfficeToPdfKey, type OfficeToPdfResult } from '../src/index.ts'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -15,14 +16,21 @@ let generation: OfficeToPdf['generation']
 const cacheKey = OfficeToPdfKey('test-result')
 const pdf = new Uint8Array([37, 80, 68, 70, 45])
 let ctx: Context
-let read: ReturnType<typeof vi.fn<WorkspaceFiles['readAllBounded']>>
+const target = { targetKey: 'office-source' as FsTarget['targetKey'], displayPath: source.absolutePath }
+const sourceInfo = { type: 'file' as const, version: source.version as FsInfo['version'], size: source.bytes }
+let read: ReturnType<typeof vi.fn<FileSystem['readBytes']>>
+let fileInfo: ReturnType<typeof vi.fn<FileSystem['stat']>>
+let processPath: ReturnType<typeof vi.fn<FileSystem['processPath']>>
 let authorize: ReturnType<typeof vi.fn<WorkspaceFiles['readBytes']>>
 let metadata: ReturnType<typeof vi.fn<WorkspaceFiles['stat']>>
 let render: ReturnType<typeof vi.fn<OfficeToPdf['convert']>>
 
 beforeEach(async () => {
   ctx = new Context()
-  read = vi.fn<WorkspaceFiles['readAllBounded']>().mockResolvedValue(rawSource)
+  read = vi.fn<FileSystem['readBytes']>().mockResolvedValue(rawSource.data)
+  fileInfo = vi.fn<FileSystem['stat']>().mockResolvedValue(sourceInfo)
+  processPath = vi.fn<FileSystem['processPath']>().mockReturnValue(source.absolutePath)
+  ctx.provide('fs', { resolve: vi.fn().mockResolvedValue(target), stat: fileInfo, processPath, readBytes: read } as never)
   authorize = vi.fn<WorkspaceFiles['readBytes']>().mockResolvedValue(wireSource)
   metadata = vi.fn<WorkspaceFiles['stat']>().mockResolvedValue(source)
   await ctx.plugin(OfficeToPdf)
@@ -32,14 +40,14 @@ beforeEach(async () => {
     expect(loaded.bytes).toBe(rawSource.data)
     return { pdf, missingFonts: ['Missing Serif'], generation, cacheKey }
   })
-  ctx.provide('workspaceFiles', { stat: metadata, readAllBounded: read, readBytes: authorize } as never)
+  ctx.provide('workspaceFiles', { stat: metadata, readBytes: authorize } as never)
 })
 afterEach(async () => { await ctx.fiber.dispose() })
 
 it.each(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'])('converts authorized %s bytes and returns the PDF under source identity', async (extension) => {
   const path = `report.${extension.toUpperCase()}`
   const result = await ctx.officeToPdf.render(scope, path, 'foreground', new AbortController().signal)
-  expect(read).toHaveBeenCalledExactlyOnceWith(scope, path, 4, expect.any(AbortSignal))
+  expect(read).toHaveBeenCalledExactlyOnceWith(target, expect.any(AbortSignal), 4)
   expect(authorize).toHaveBeenCalledExactlyOnceWith(scope, path, { offset: 0, length: 1 }, expect.any(AbortSignal))
   expect(render).toHaveBeenCalledOnce()
   expect(render.mock.calls[0]?.[0]).toMatchObject({ extension, priority: 'foreground', source: { version: source.version, bytes: 4 } })
@@ -59,7 +67,7 @@ it('keeps an unknown source size absent so the provider can reserve its input li
   metadata.mockResolvedValue(unknownSize)
   await ctx.officeToPdf.render(scope, 'report.docx', 'foreground', new AbortController().signal)
   expect(render.mock.calls[0]![0].source).not.toHaveProperty('bytes')
-  expect(read).toHaveBeenCalledExactlyOnceWith(scope, 'report.docx', 4, expect.any(AbortSignal))
+  expect(read).toHaveBeenCalledExactlyOnceWith(target, expect.any(AbortSignal), 4)
 })
 
 it('refuses a cached PDF when source metadata remains readable but content access is denied', async () => {
@@ -101,14 +109,14 @@ it('cancels before reading and refuses a late authorized read after cancellation
   await expect(ctx.officeToPdf.render(scope, 'report.docx', 'foreground', AbortSignal.abort())).rejects.toMatchObject({ code: 'gateway/cancelled' })
   expect(read).not.toHaveBeenCalled()
   const entered = Promise.withResolvers<undefined>()
-  const release = Promise.withResolvers<typeof rawSource>()
+  const release = Promise.withResolvers<Uint8Array>()
   read.mockImplementationOnce(() => { entered.resolve(undefined); return release.promise })
   const controller = new AbortController()
   const work = ctx.officeToPdf.render(scope, 'report.docx', 'foreground', controller.signal)
   const rejected = expect(work).rejects.toMatchObject({ code: 'gateway/cancelled' })
   await entered.promise
   controller.abort()
-  release.resolve(rawSource)
+  release.resolve(rawSource.data)
   await rejected
   expect(render).toHaveBeenCalledOnce()
 })
@@ -144,18 +152,19 @@ it.each([{ absolutePath: '/workspace/replaced.docx' }, { version: 'v2' }])('refu
 })
 
 it('classifies a grown queued source as changed without increasing its read reservation', async () => {
-  const failure = new RemoteError('workspace-file/too-large', 'File exceeds 4 bytes.', { path: 'report.docx', limit: 4 })
+  const failure = { code: 'FS_TOO_LARGE' }
   read.mockRejectedValueOnce(failure)
   metadata.mockResolvedValueOnce(source).mockResolvedValueOnce({ ...source, bytes: 8, version: 'v2' })
   await expect(ctx.officeToPdf.render(scope, 'report.docx', 'foreground', new AbortController().signal))
     .rejects.toMatchObject({ code: 'document-render/failed', details: { reason: 'source-changed' } })
-  expect(read).toHaveBeenCalledExactlyOnceWith(scope, 'report.docx', 4, expect.any(AbortSignal))
+  expect(read).toHaveBeenCalledExactlyOnceWith(target, expect.any(AbortSignal), 4)
 })
 
-it('preserves a genuine bounded-read size failure when source identity is unchanged', async () => {
-  const failure = new RemoteError('workspace-file/too-large', 'File exceeds configured size cap.', { path: 'report.docx', limit: 4 })
+it('classifies a size failure when source identity is unchanged', async () => {
+  const failure = { code: 'FS_TOO_LARGE' }
   read.mockRejectedValueOnce(failure)
-  await expect(ctx.officeToPdf.render(scope, 'report.docx', 'foreground', new AbortController().signal)).rejects.toBe(failure)
+  await expect(ctx.officeToPdf.render(scope, 'report.docx', 'foreground', new AbortController().signal))
+    .rejects.toMatchObject({ code: 'document-render/failed', details: { reason: 'input-too-large' } })
   expect(metadata).toHaveBeenCalledTimes(2)
 })
 
@@ -172,25 +181,35 @@ it.each([
   new Error('Current source metadata denied'),
   new RemoteError('workspace-file/not-found', 'Current source missing', { path: 'report.docx' }),
 ])('preserves a source metadata failure during the size recheck: %s', async (failure) => {
-  read.mockRejectedValueOnce(new RemoteError('workspace-file/too-large', 'File exceeds its reservation.', { path: 'report.docx', limit: 4 }))
+  read.mockRejectedValueOnce({ code: 'FS_TOO_LARGE' })
   metadata.mockResolvedValueOnce(source).mockRejectedValueOnce(failure)
   await expect(ctx.officeToPdf.render(scope, 'report.docx', 'foreground', new AbortController().signal)).rejects.toBe(failure)
   expect(metadata).toHaveBeenCalledTimes(2)
 })
 
 it.each([{ absolutePath: '/workspace/replaced.docx' }, { version: 'v2' }])('refuses a different bounded-read source even if the final metadata matches: %j', async (change) => {
-  read.mockResolvedValueOnce({ ...rawSource, ...change })
+  if ('absolutePath' in change) processPath.mockReturnValueOnce(change.absolutePath)
+  else fileInfo.mockResolvedValueOnce({ ...sourceInfo, version: change.version as FsInfo['version'] })
   await expect(ctx.officeToPdf.render(scope, 'report.docx', 'foreground', new AbortController().signal))
     .rejects.toMatchObject({ code: 'document-render/failed', details: { reason: 'source-changed' } })
 })
 
-it('reports unavailable file access without making the converter depend on workspaceFiles', async () => {
+it.each(['workspaceFiles', 'fs'] as const)('reports unavailable file access when %s is absent', async (missing) => {
   const independent = new Context()
   try {
     await independent.plugin(OfficeToPdf)
-    expect(independent.get('workspaceFiles')).toBeUndefined()
+    if (missing === 'workspaceFiles') independent.provide('fs', {} as never)
+    else independent.provide('workspaceFiles', {} as never)
+    expect(independent.get(missing)).toBeUndefined()
     await expect(independent.officeToPdf.render(scope, 'report.docx', 'foreground', new AbortController().signal))
       .rejects.toMatchObject({ code: 'document-render/failed', details: { reason: 'unavailable' } })
     expect(() => independent.officeToPdf.getGeneration(AbortSignal.abort())).toThrow()
   } finally { await independent.fiber.dispose() }
+})
+
+it.each([undefined, { ...sourceInfo, type: 'directory' as const }])('rejects a source that disappears or stops being a file before reading', async (info) => {
+  fileInfo.mockResolvedValueOnce(info)
+  await expect(ctx.officeToPdf.render(scope, 'report.docx', 'foreground', new AbortController().signal))
+    .rejects.toMatchObject({ code: 'document-render/failed', details: { reason: 'source-changed' } })
+  expect(read).not.toHaveBeenCalled()
 })

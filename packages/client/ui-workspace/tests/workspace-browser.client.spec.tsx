@@ -7,7 +7,7 @@ import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-sess
 import type {
   WorkspaceId, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
-import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -38,16 +38,28 @@ const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
 const summary = (id: string, updatedAt: number, overrides: Partial<SessionSummary> = {}): SessionSummary => ({
   id: sid(id), displayTitle: id, running: false, blank: false, updatedAt, ...overrides,
+  retainedBy: overrides.retainedBy ?? {},
 })
-const sessionState = (items: readonly SessionSummary[], overrides: Partial<SessionListState> = {}): SessionListState => ({
-  ids: items.map(item => item.id),
-  byId: Object.fromEntries(items.map(item => [item.id, item])),
-  current: undefined,
-  phase: 'ready',
-  subagentsByParent: {}, jobsBySession: {},
-  currentAddress: undefined,
-  ...overrides,
-})
+const sessionState = (
+  items: readonly SessionSummary[],
+  overrides: Partial<SessionListState> & { main?: SessionId } = {},
+): SessionListState => {
+  const { main, ...stateOverrides } = overrides
+  const state: SessionListState = {
+    ids: items.map(item => item.id),
+    byId: Object.fromEntries(items.map(item => [item.id, item])),
+    phase: 'ready',
+    subagentsByParent: {}, jobsBySession: {},
+    ...stateOverrides,
+  }
+  if (main === undefined) return state
+  const row = state.byId[main]
+  if (row === undefined) return state
+  return {
+    ...state,
+    byId: { ...state.byId, [main]: { ...row, retainedBy: { ...row.retainedBy, mainView: 1 } } },
+  }
+}
 const workspace = (id: string, sessionIds: string[], title = id): WorkspaceView => ({
   workspaceId: wid(id), path: `/projects/${id}`, title,
   sessionIds: sessionIds.map(sid), createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
@@ -56,7 +68,7 @@ const workspaceState = (
   items: readonly WorkspaceView[],
   archivedSessionIds: readonly SessionId[] = [],
 ): WorkspaceSnapshot => ({ items, archivedSessionIds, state: 'idle', phase: 'ready', error: null })
-const noPendingInteraction: SessionPendingInteractionSnapshot = new Map()
+const noPendingInteraction: SessionStatusSnapshot = new Map()
 function hook<T>(snapshot: T) {
   return function select<S>(selector: (state: T) => S): S { return selector(snapshot) }
 }
@@ -79,7 +91,8 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     wide: true,
     expandSidebar: vi.fn(),
     useSessions: hook(sessionState([])),
-    useSessionPendingInteraction: hook(noPendingInteraction),
+    useSessionStatus: hook(noPendingInteraction),
+    useSessionRetainInfo: () => undefined,
     usePanelInfo, useResource,
     useWorkspaces: hook(workspaceState([])),
     useStore: bindSnapshotSelector(store),
@@ -197,7 +210,7 @@ describe('WorkspaceBrowser', () => {
     const b = mount({
       useSessions: hook(sessionState([
         summary('tie-b', 100), summary('blank', 1, { blank: true }), summary('tie-a', 100),
-      ], { current: sid('blank') })),
+      ], { main: sid('blank') })),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['missing', 'tie-b', 'blank', 'tie-a'])])),
     })
     const rows = () => screen.getAllByRole('treeitem').filter(row => row.getAttribute('aria-expanded') === null)
@@ -207,7 +220,7 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({})
     rerender(b, { useSessions: hook(sessionState([
       summary('tie-b', 100), summary('blank', 1), summary('tie-a', 100),
-    ], { current: sid('blank') })) })
+    ], { main: sid('blank') })) })
     expect(rows().map(row => row.textContent)).toEqual([
       expect.stringContaining('tie-a'), expect.stringContaining('tie-b'), expect.stringContaining('blank'),
     ])
@@ -218,7 +231,7 @@ describe('WorkspaceBrowser', () => {
     const panelInfo = { activePanelId: 'panel-a' as MainPanelId }
     const b = mount({
       usePanelInfo: hook(panelInfo),
-      useSessions: hook(sessionState([summary('current', 1)], { current: sid('current') })),
+      useSessions: hook(sessionState([summary('current', 1)], { main: sid('current') })),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['current'])])),
     })
     fireEvent.click(screen.getByText('alpha'))
@@ -298,20 +311,20 @@ describe('WorkspaceBrowser', () => {
       .filter(row => row.getAttribute('aria-expanded') === null)
       .map(row => row.textContent)
     rerender(b, {
-      useSessions: hook(sessionState([old, blank], { current: blank.id })),
+      useSessions: hook(sessionState([old, blank], { main: blank.id })),
       useWorkspaces: hook({ ...groups(['old', 'blank']), state: 'loading' }),
     })
     expect(names()).toEqual([expect.stringContaining('新会话'), expect.stringContaining('old')])
     expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(['blank', 'old', 'absent'])
 
     rerender(b, {
-      useSessions: hook(sessionState([old, { ...blank, blank: false, updatedAt: 20 }], { current: blank.id })),
+      useSessions: hook(sessionState([old, { ...blank, blank: false, updatedAt: 20 }], { main: blank.id })),
     })
     expect(names()).toEqual([expect.stringContaining('blank'), expect.stringContaining('old')])
     expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(['blank', 'old', 'absent'])
 
     rerender(b, {
-      useSessions: hook(sessionState([old, absent, { ...blank, blank: false, updatedAt: 20 }], { current: blank.id })),
+      useSessions: hook(sessionState([old, absent, { ...blank, blank: false, updatedAt: 20 }], { main: blank.id })),
       useWorkspaces: hook(groups(['old', 'absent', 'blank'])),
     })
     expect(names()).toEqual([
@@ -319,7 +332,7 @@ describe('WorkspaceBrowser', () => {
     ])
     expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(['blank', 'old', 'absent'])
     rerender(b, {
-      useSessions: hook(sessionState([old, { ...blank, blank: false, updatedAt: 20 }], { current: blank.id })),
+      useSessions: hook(sessionState([old, { ...blank, blank: false, updatedAt: 20 }], { main: blank.id })),
       useWorkspaces: hook(groups(['old', 'blank'])),
     })
     expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(['blank', 'old'])
@@ -338,14 +351,14 @@ describe('WorkspaceBrowser', () => {
     })
 
     rerender(b, {
-      useSessions: hook(sessionState([old, blank], { current: blank.id })),
+      useSessions: hook(sessionState([old, blank], { main: blank.id })),
     })
     await waitFor(() => {
       expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['blank', 'old'])
     })
 
     rerender(b, {
-      useSessions: hook(sessionState([old, { ...blank, blank: false, updatedAt: 20 }], { current: blank.id })),
+      useSessions: hook(sessionState([old, { ...blank, blank: false, updatedAt: 20 }], { main: blank.id })),
     })
     await waitFor(() => {
       expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['blank', 'old'])
@@ -547,7 +560,7 @@ describe('WorkspaceBrowser', () => {
     const ordinary = Array.from({ length: 6 }, (_, index) => summary(`session-${index + 1}`, 6 - index))
     const blank = summary('blank', 7, { blank: true })
     const b = mount({
-      useSessions: hook(sessionState([blank, ...ordinary], { current: blank.id })),
+      useSessions: hook(sessionState([blank, ...ordinary], { main: blank.id })),
       useWorkspaces: hook(workspaceState([workspace('alpha', [blank.id, ...ordinary.map(item => item.id)])])),
     })
     expect(screen.getByText('新会话')).toBeTruthy()
@@ -561,7 +574,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('session-6')).toBeNull()
 
     rerender(b, {
-      useSessions: hook(sessionState([{ ...blank, blank: false }, ...ordinary], { current: blank.id })),
+      useSessions: hook(sessionState([{ ...blank, blank: false }, ...ordinary], { main: blank.id })),
     })
     expect(screen.getByText('blank')).toBeTruthy()
     expect(screen.queryByText('session-5')).toBeNull()
@@ -572,7 +585,7 @@ describe('WorkspaceBrowser', () => {
     const ordinary = Array.from({ length: 6 }, (_, index) => summary(`session-${index + 1}`, 6 - index))
     const blank = summary('blank', 7, { blank: true })
     const b = mount({
-      useSessions: hook(sessionState([blank, ...ordinary], { current: blank.id })),
+      useSessions: hook(sessionState([blank, ...ordinary], { main: blank.id })),
       useWorkspaces: hook(workspaceState([workspace('alpha', [blank.id, ...ordinary.map(item => item.id)])])),
     })
     await waitFor(() => {
@@ -734,7 +747,7 @@ describe('WorkspaceBrowser', () => {
   it('auto-expands the Ungrouped bucket for a loose current session; its header has no menu and its ＋ is inert', () => {
     const startSession = vi.fn()
     mount({
-      useSessions: hook(sessionState([summary('loose', 1)], { current: sid('loose') })),
+      useSessions: hook(sessionState([summary('loose', 1)], { main: sid('loose') })),
       useWorkspaces: hook(workspaceState([workspace('alpha', [])])),
       startSession,
     })
@@ -746,7 +759,7 @@ describe('WorkspaceBrowser', () => {
   })
 
   it('keeps an already-expanded group when the selection moves within it', () => {
-    const first = sessionState([summary('a', 2), summary('b', 1)], { current: sid('a') })
+    const first = sessionState([summary('a', 2), summary('b', 1)], { main: sid('a') })
     const b = mount({
       useSessions: hook(first),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['a', 'b'])])),
@@ -754,7 +767,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByText('a')).toBeTruthy()
     // Selection hop inside the same group: the effect re-runs and leaves the
     // expansion list unchanged (no duplicate key, group still open).
-    rerender(b, { useSessions: hook({ ...first, current: sid('b') }) })
+    rerender(b, { useSessions: hook({ ...first, main: sid('b') }) })
     expect(screen.getByText('b')).toBeTruthy()
     fireEvent.click(screen.getByText('alpha'))
     expect(screen.queryByText('b')).toBeNull()
@@ -765,7 +778,7 @@ describe('WorkspaceBrowser', () => {
     const staleBlank = summary('beta-blank', 8, { blank: true })
     const sessions = sessionState(
       [currentBlank, staleBlank],
-      { current: currentBlank.id },
+      { main: currentBlank.id },
     )
     const b = mount({
       useSessions: hook(sessions),
@@ -777,7 +790,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('alpha-blank')).toBeNull()
     expect(screen.queryByText('beta-blank')).toBeNull()
 
-    rerender(b, { useSessions: hook({ ...sessions, current: staleBlank.id }) })
+    rerender(b, { useSessions: hook({ ...sessions, main: staleBlank.id }) })
     expect(screen.getAllByText('新会话')).toHaveLength(1)
     b.store.actions.setGroupBy('flat')
     rerender(b, {})
@@ -812,7 +825,7 @@ describe('WorkspaceBrowser', () => {
     rerender(b, {
       useSessions: hook(sessionState([
         summary('old', 100), summary('mid', 200), summary('blank', 1, { blank: true }),
-      ], { current: sid('blank') })),
+      ], { main: sid('blank') })),
       useWorkspaces: groups(['old', 'mid', 'blank']),
     })
     expect(names()).toEqual(['新会话', 'mid', 'old'])
@@ -834,7 +847,7 @@ describe('WorkspaceBrowser', () => {
     expect(names()).toEqual(['新会话', 'mid', 'old'])
     rerender(restored, { useSessions: hook(sessionState([
       summary('old', 100), summary('mid', 200), summary('blank', 300),
-    ], { current: sid('blank') })) })
+    ], { main: sid('blank') })) })
     expect(names()).toEqual(['blank', 'mid', 'old'])
     const ordinaryBlank = screen.getByText('blank').closest('[role="treeitem"]') as HTMLElement
     expect(ordinaryBlank.draggable).toBe(true)
@@ -846,7 +859,7 @@ describe('WorkspaceBrowser', () => {
     rerender(restored, {
       useSessions: hook(sessionState([
         summary('old', 100), summary('mid', 200), summary('blank', 300), summary('new-blank', 1, { blank: true }),
-      ], { current: sid('new-blank') })),
+      ], { main: sid('new-blank') })),
       useWorkspaces: groups(['old', 'mid', 'blank', 'new-blank']),
     })
     expect(names()).toEqual(['新会话', 'mid', 'old', 'blank'])
@@ -1792,7 +1805,7 @@ describe('Workspace tree grouping', () => {
     const b = mount({ useWorkspaces: hook(workspaceState([root, team, child])) })
     fireEvent.click(screen.getByText('Projects'))
     rerender(b, {
-      useSessions: hook(sessionState([summary('child-session', 1)], { current: sid('child-session') })),
+      useSessions: hook(sessionState([summary('child-session', 1)], { main: sid('child-session') })),
     })
     expect(screen.queryByText('Child')).toBeNull()
     expect(b.store.getSnapshot().groupExpansion.root).toBe(false)

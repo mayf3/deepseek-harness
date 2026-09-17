@@ -51,7 +51,7 @@ it('loads the shipped Office rows with separately patched settings and authorize
     { name: '@deepseek-ai/dsh-sandbox-policy', config: { workspaceRoot: directory } },
     { name: '@deepseek-ai/dsh-fs-local', config: { cwd: directory } },
     { name: '@deepseek-ai/dsh-typert-registry' },
-    { name: '@deepseek-ai/dsh-api-workspace-files' },
+    { name: '@deepseek-ai/dsh-api-workspace-files', config: { maxFileBytes: 1 } },
     ...configured,
   ]))
   const pdf = Buffer.from('%PDF-1.7\nLoader preview\n%%EOF\n')
@@ -106,7 +106,7 @@ it('loads the shipped Office rows with separately patched settings and authorize
   const result = await ctx.officeToPdf.render(scope, 'report.docx', 'foreground', signal)
   expect(result).toEqual({ absolutePath: sourcePath, version, offset: 0, eof: true, bytes: pdf.length,
     data: pdf.toString('base64'), missingFonts: ['Missing Serif'], generation: ctx.officeToPdf.generation })
-  const readAgain = vi.spyOn(ctx.workspaceFiles, 'readAllBounded')
+  const readAgain = vi.spyOn(ctx.fs, 'readBytes')
   expect(await ctx.officeToPdf.render(scope, 'report.docx', 'foreground', signal)).toEqual(result)
   expect(readAgain).not.toHaveBeenCalled()
   expect(await readFile(sourcePath, 'utf8')).toBe('authorized OOXML')
