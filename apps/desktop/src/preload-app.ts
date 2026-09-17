@@ -4,8 +4,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { DESKTOP_IPC, SCHEME } from './ipc.ts'
 import { markDocumentPlatform } from './preload-platform.ts'
 import { syncNativeTheme } from './preload-theme.ts'
+import { syncWindowsAppearance } from './preload-windows.ts'
 
 if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
+  syncWindowsAppearance()
   contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
     pick: () => ipcRenderer.invoke(DESKTOP_IPC.directoryPick) as Promise<string | null>,
   })

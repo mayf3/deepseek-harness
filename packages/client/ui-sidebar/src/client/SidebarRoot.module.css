@@ -35,6 +35,89 @@
   padding: 18px 10px 6px;
 }
 
+/* The brand stays in the sidebar; fixed caption controls survive zero-width collapse. */
+:global([data-windows-titlebar]) .root .logoRow {
+  height: 40px;
+  margin: 0;
+  padding: 0;
+}
+
+:global([data-windows-titlebar]) .toggle {
+  position: fixed;
+  top: calc((var(--dsh-windows-titlebar-height) - 28px) / 2);
+  left: 12px;
+  z-index: 30;
+  -webkit-app-region: no-drag;
+}
+
+:global([data-windows-titlebar]) .root.collapsed .logoRow {
+  height: 0;
+}
+
+:global([data-windows-titlebar]) .root:not(.collapsed) .brand {
+  padding-left: 4px;
+}
+
+:global([data-windows-titlebar]) .brandIdentity {
+  transform: translateY(1px);
+}
+
+:global([data-windows-titlebar]) .brandMark {
+  transform: translateX(1px);
+}
+
+:global([data-windows-titlebar]) .brandName {
+  font-weight: 400;
+}
+
+:global([data-windows-titlebar]) .root.collapsed {
+  padding: 0;
+}
+
+:global([data-windows-titlebar]) .root:not(.collapsed) .newSession {
+  margin-top: 8px;
+  margin-left: 0;
+}
+
+:global([data-windows-titlebar]) .collapsed .panelList,
+:global([data-windows-titlebar]) .collapsed .regionArea,
+:global([data-windows-titlebar]) .collapsed .footArea {
+  display: none;
+}
+
+:global(html[data-windows-titlebar]:has([data-sidebar-collapsed='true'])) {
+  --dsh-windows-menu-start: 84px;
+}
+
+:global([data-windows-titlebar]) .collapsed .newSession {
+  position: fixed;
+  top: calc((var(--dsh-windows-titlebar-height) - 28px) / 2);
+  left: 48px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  z-index: 30;
+  -webkit-app-region: no-drag;
+}
+
+:global([data-windows-titlebar]) .railIn .iconButton,
+:global([data-windows-titlebar]) .railIn .newSession {
+  animation: none;
+}
+
+:global([data-windows-titlebar]) .collapsed .toggle,
+:global([data-windows-titlebar]) .collapsed .newSession {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  corner-shape: round;
+  color: var(--dsw-alias-label-secondary);
+}
+
+:global([data-windows-titlebar]) .collapsed .toggle .panelIcon {
+  display: inline;
+}
+
 /* Scrollbars in the column are a pointer affordance: the shell adds this
    class whenever the pointer is not inside (SidebarRoot.tsx owns the linger),
    and rebinding ui-theme's indirection pair to `transparent` takes the thumb
