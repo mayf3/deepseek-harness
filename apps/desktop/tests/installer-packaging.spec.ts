@@ -27,6 +27,9 @@ describe('installer preparation preserves application dependencies', () => {
     try {
       const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
       const config = createElectronBuilderConfig(env, platform, 'x64')
+      expect(config.files.filter(file => typeof file === 'string')).toEqual([
+        'lib/main.js', 'lib/preload-app.cjs', 'package.json',
+      ])
       const packager = new Packager({ projectDir: tmpdir() })
       // A foreign source-build target avoids rebuilding modules; the real dependency ownership decision still runs.
       Object.defineProperties(packager, {

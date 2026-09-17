@@ -35,7 +35,7 @@ kind: "package-group"
 | [`locale/`](locale/README.zh.md) | 提供本地化偏好与消息词典 | `ctx.locale` |
 | [`test-runtime/`](../test-support/client-runtime/README.zh.md) | 为客户端功能包提供共享的仓库测试支持 | — |
 | [`ui-renderer/`](ui-renderer/README.zh.md) | 将 slot 数据绑定到 React，并挂载组装完成的应用 | `ctx.uiRenderer` |
-| [`ui-slots/`](ui-slots/README.zh.md) | 定义 UI 功能注册与组合扩展 slot 的方式 | — |
+| [`ui-slots/`](ui-slots/README.zh.md) | 定义类型化扩展 Slots 与可复用 Component Factory | — |
 | [`ui-session/`](ui-session/README.zh.md) | 把会话控制器状态适配为标准 Slot source 与钩子 | — |
 | [`ui-theme/`](ui-theme/README.zh.md) | 应用所选颜色主题 | — |
 | [`ui-primitives/`](ui-primitives/README.zh.md) | 提供共享 React 控件、图标与内容渲染器 | — |
@@ -45,6 +45,7 @@ kind: "package-group"
 | [`ui-sidebar/`](ui-sidebar/README.zh.md) | 展示工作区与会话导航 | — |
 | [`ui-sidebar-right/`](ui-sidebar-right/README.zh.md) | 管理右侧 Sidebar 及其 tab 类型 | `ctx.sidebarRight`, `ctx.sidebarRightTabs` |
 | [`ui-sidebar-documentpreview/`](ui-sidebar-documentpreview/README.zh.md) | 在右侧 Sidebar 的 tab 中显示文档 | `ctx.documentPreviews` |
+| [`ui-sidebar-browser/`](ui-sidebar-browser/README.zh.md) | 在右侧 Sidebar tab 中浏览 sandboxed HTTP(S) 页面，包括 loopback 服务 | — |
 | [`resources/`](resources/README.zh.md) | 统一资源模型：`useResource` 会话标准钩子背后的协议提供方 | `ctx.resources` |
 | [`ui-sidebar-files/`](ui-sidebar-files/README.zh.md) | 右侧 Sidebar 的工作区文件树 tab 类型 | — |
 | [`ui-brand-official/`](ui-brand-official/README.zh.md) | 用官方名称与标记填充通用浏览器品牌 slot | — |

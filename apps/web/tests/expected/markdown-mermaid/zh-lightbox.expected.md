@@ -1,0 +1,4 @@
+- dialog "Mermaid 图表":
+  - img "Mermaid 图表"
+  - text: 拖拽或方向键移动 · 滚轮或 +/− 缩放 · 双击或 Home 适应屏幕
+  - button "关闭预览"

@@ -7,10 +7,13 @@
   /* Local 11/18 instead of the shared --dsw-font-xs-13: the banner scales
      with the markdown 0.875 ladder without shrinking every other xs-13 use. */
   --dsl-code-block-banner-font: 11px/18px var(--dsw-font-family);
+  --dsl-code-block-banner-height: 36px;
   --dsl-code-block-content-font: var(--dsw-font-markdown-code-block);
   --dsl-code-block-background: var(--dsw-alias-markdown-code-block);
 
   position: relative;
+  width: 100%;
+  max-width: 100%;
   margin: 16px 0;
   color: var(--dsw-alias-label-primary);
   background: var(--dsl-code-block-background);
@@ -28,11 +31,21 @@
   background-color: var(--dsw-alias-bg-base);
   border-top-left-radius: var(--dsl-code-block-border-radius);
   border-top-right-radius: var(--dsl-code-block-border-radius);
+  transition: opacity 160ms ease;
+}
+
+.block[data-preview] .bannerWrap {
+  opacity: 0;
+}
+
+.block[data-preview]:hover .bannerWrap,
+.block[data-preview]:has(:focus-visible) .bannerWrap {
+  opacity: 1;
 }
 
 .banner {
   background: var(--dsl-code-block-banner-background-color);
-  padding: 9px 14px;
+  padding: 4px 10px 4px 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -54,25 +67,124 @@
 }
 
 .action {
+  min-height: 28px;
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  gap: 2px;
 }
 
-.copyButton {
-  background-color: rgb(255 255 255 / 0);
+/* Match the sidebar pane controls: a 28px circle around a 15px glyph. */
+.iconButton {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  color: var(--dsw-alias-label-secondary);
+  line-height: 1;
+  background: transparent;
   border: none;
-  padding: 0;
-  margin: 0;
-  color: inherit;
+  border-radius: 28px;
   cursor: pointer;
-  font: inherit;
 }
 
-/* Consumers may turn the stable content node into a viewport without changing
-   the default CodeBlock layout. */
-.content {
-  display: contents;
+.iconButton svg {
+  width: 15px;
+  height: 15px;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.iconButton[aria-pressed='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.iconButton:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+}
+
+.previewActionSlot,
+.iconSlot {
+  display: inline-flex;
+}
+
+.segments {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding: 2px;
+  margin-left: 4px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  isolation: isolate;
+}
+
+.selection {
+  position: absolute;
+  inset: 2px;
+  width: calc((100% - 4px) / 2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  transition: transform 160ms ease;
+  z-index: -1;
+}
+
+.segments[data-preview-selected] .selection {
+  transform: translateX(100%);
+}
+
+.segments:has(.sourceOnly) .selection {
+  width: calc(100% - 4px);
+}
+
+.segments button,
+.sourceOnly {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 2px 8px;
+  font: inherit;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.segments button {
+  cursor: pointer;
+}
+
+.segments button[aria-pressed='false'] {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.body {
+  min-height: 0;
+}
+
+.previewActionSlot[hidden] {
+  display: none;
+}
+
+.sourceHidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .selection { transition: none; }
+  .bannerWrap { transition: none; }
+}
+
+@media (hover: none) {
+  .block[data-preview] .bannerWrap { opacity: 1; }
 }
 
 .block :where(pre) {
@@ -104,6 +216,32 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.previewLayer {
+  display: grid;
+  overflow: auto;
+  background: var(--dsl-code-block-background);
+  border-bottom-right-radius: var(--dsl-code-block-border-radius);
+  border-bottom-left-radius: var(--dsl-code-block-border-radius);
+}
+
+/* The retained image sizes both views without laying out hidden source. */
+.previewLayer[hidden] {
+  display: grid;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.previewable > .body {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  border-radius: inherit;
+}
+
+.previewable[data-code-block-header] > .body {
+  inset-block-start: var(--dsl-code-block-banner-height);
+}
+
 .numbered :where(pre) code {
   display: block;
   counter-reset: source-line;
@@ -127,4 +265,20 @@
   text-align: end;
   content: counter(source-line);
   user-select: none;
+}
+
+@media (max-width: 480px) {
+  .banner {
+    gap: 4px;
+    padding-inline: 8px;
+  }
+
+  .segments {
+    margin-left: 0;
+  }
+
+  .segments button,
+  .sourceOnly {
+    padding-inline: 4px;
+  }
 }

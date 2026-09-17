@@ -1,7 +1,7 @@
 /** What the browser half registers, and that it all leaves with the fiber. */
 
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
@@ -92,7 +92,7 @@ describe('ui-settings-plugins apply', () => {
   })
 
   it('injects a live tab projection and one business face per configuration page', async () => {
-    const { ctx, slots } = await bench(['shell', 'agent-loop', 'subagent-model-selection', 'web-search-deepseek'])
+    const { ctx, slots } = await bench(['shell', 'agent-loop', 'subagent', 'subagent-model-selection', 'web-search-deepseek'])
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
 
@@ -116,8 +116,7 @@ describe('ui-settings-plugins apply', () => {
     await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(4) })
     for (const entry of slots.entries('plugins.item')) {
       const face = (entry as { inject?: () => unknown }).inject?.() as { hooks: Record<string, unknown> }
-      // Each page injects exactly one snapshot store plus its own actions.
-      expect(Object.keys(face.hooks)).toHaveLength(1)
+      expect(Object.keys(face.hooks)).toHaveLength(entry.options.id === 'subagent' ? 2 : 1)
     }
   })
 
@@ -129,9 +128,38 @@ describe('ui-settings-plugins apply', () => {
 
     await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(4) })
     const entries = slots.entries('plugins.item')
-    expect(entries.map(entry => entry.options.id)).toEqual(['bash', 'agent-loop', 'subagent-model-selection', 'web-search'])
+    expect(entries.map(entry => entry.options.id)).toEqual(['bash', 'agent-loop', 'subagent', 'web-search'])
     expect(entries.map(entry => resolveSlotLabel(entry.options.label))).toEqual(['终端', 'Agent 循环', 'Subagent', '网页搜索'])
     expect(entries.every(entry => entry.locale === 'settings.plugins')).toBe(true)
+  })
+
+  it.each([
+    ['subagent'],
+    ['subagent-model-selection'],
+    ['subagent', 'subagent-model-selection'],
+  ])('keeps one Subagent page while either namespace is served: %j', async (...served) => {
+    const { ctx, slots, describeSettings, remote } = await bench(served)
+    onTestFinished(() => ctx.fiber.dispose())
+    declareRoot(slots)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await vi.waitFor(() => {
+      expect(slots.entries('plugins.item').map(entry => entry.options.id)).toEqual(['subagent'])
+    })
+    const entry = slots.entries('plugins.item')[0]
+    for (const namespaces of [['subagent-model-selection'], ['subagent'], []]) {
+      describeSettings.mockResolvedValue({
+        ok: true,
+        value: {
+          writable: true, hasDocument: true,
+          namespaces: namespaces.map(ns => ({ ns, schema: {}, value: {}, applies: 'live', secrets: [], revision: 1 })),
+        },
+      })
+      remote.emit('settings/document-updated', ['subagent', 1])
+      await vi.waitFor(() => {
+        expect(ctx.settingsScope.describe().getSnapshot().view?.namespaces.map(view => view.ns)).toEqual(namespaces)
+        expect(slots.entries('plugins.item')).toEqual(namespaces.length > 0 ? [entry] : [])
+      })
+    }
   })
 
   it('registers the pages of the served namespaces only, and withdraws one the Host stops serving', async () => {

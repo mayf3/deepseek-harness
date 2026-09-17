@@ -248,7 +248,7 @@ function jsonTreeLabels(t: TrajectoryTranslate): JsonTreeLabels {
 
 function markdownLabels(t: TrajectoryTranslate): MarkdownLabels {
   return {
-    code: { copyLabel: t('copy'), copiedLabel: t('copied') },
+    code: { copyLabel: t('copy'), copiedLabel: t('copied'), sourceLabel: t('markdown.code.source'), lineNumbersLabel: t('markdown.code.lineNumbers') },
     footnotes: t('markdown.footnotes'),
   }
 }
@@ -1130,18 +1130,20 @@ function MarkdownFragment({
   text,
   rendered,
   preview,
+  variant = 'body',
   t,
 }: {
   text: string
   rendered: boolean
   preview: boolean
+  variant?: 'body' | 'compact'
   t: TrajectoryTranslate
 }) {
   const labels = useMemo(() => markdownLabels(t), [t])
   if (rendered) {
     return (
       <div className={preview ? css.markdownPreview : css.markdownPayload}>
-        <MarkdownText text={text} labels={labels} />
+        <MarkdownText text={text} labels={labels} variant={variant} />
       </div>
     )
   }
@@ -1521,6 +1523,7 @@ function MarkdownRecordContent({
               text={record.cell.thinkingDetail}
               rendered={rendered}
               preview={preview}
+              variant="compact"
               t={t}
             />
           )}
@@ -1905,7 +1908,8 @@ function ProgramInput({ program, initialWrapped, stringWrapping, onOpen, t }: {
         ? <JsonTree data={program.arguments} label={t('record.parametersJson')}
           labels={jsonTreeLabels(t)} stringWrapping={stringWrapping} />
         : <CodeBlock code={program.source} lang={program.language} lineNumbers showHeader={false}
-          className={css.programSource} copyLabel={t('code.copySource')} copiedLabel={t('copied')} />}
+          className={css.programSource} copyLabel={t('code.copySource')} copiedLabel={t('copied')}
+          sourceLabel={t('markdown.code.source')} lineNumbersLabel={t('markdown.code.lineNumbers')} />}
     </div>
   )
   return onOpen === undefined

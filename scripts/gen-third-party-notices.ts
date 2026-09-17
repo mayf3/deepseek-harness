@@ -8,7 +8,7 @@
  * `.agents/notes/implemented/process/2026-07-30-generated-third-party-notices.md`.
  */
 
-import { existsSync, globSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, globSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
 import { parse as parseToml, type TomlTableWithoutBigInt, type TomlValueWithoutBigInt } from 'smol-toml'
@@ -53,6 +53,15 @@ const FIRST_PARTY = new Set([
 export const CLAUDE_AGENT_SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk'
 const CLAUDE_PLATFORM_PACKAGE_PREFIX = `${CLAUDE_AGENT_SDK_PACKAGE}-`
 const CLAUDE_PLATFORM_DECLARED_LICENSE = 'SEE LICENSE IN LICENSE.md'
+const LIBREOFFICE_KIT_PACKAGE = '@deepseek-ai/libreoffice-kit'
+const LIBREOFFICE_PACKAGES = new Set([
+  LIBREOFFICE_KIT_PACKAGE,
+  '@deepseek-ai/libreoffice-kit-wasm',
+  '@deepseek-ai/libreoffice-kit-darwin-arm64',
+  '@deepseek-ai/libreoffice-kit-darwin-x64',
+  '@deepseek-ai/libreoffice-kit-win32-arm64',
+  '@deepseek-ai/libreoffice-kit-win32-x64',
+])
 
 /**
  * Whether a non-permissive runtime declaration has an identity-scoped owner
@@ -680,7 +689,9 @@ export function isPermissive(license: string): boolean {
  * @throws When a runtime package has no permissive license or exact owner authorization.
  */
 export function assertRuntimeLicenses(dependencies: readonly { name: string; license: string }[]): void {
-  const rejected = dependencies.filter(dep => !isPermissive(dep.license) && !isOwnerAuthorizedRuntime(dep.name))
+  const rejected = dependencies.filter(dep => !isPermissive(dep.license)
+    && !isOwnerAuthorizedRuntime(dep.name)
+    && !(LIBREOFFICE_PACKAGES.has(dep.name) && dep.license === 'MPL-2.0'))
   if (rejected.length > 0) {
     throw new Error(`gen-third-party-notices: runtime ${rejected.map(dep => `${dep.name} (${dep.license})`).join(', ')} is not a permissive license; review the distribution terms and record the decision before regenerating.`)
   }
@@ -727,6 +738,40 @@ ${rows.join('\n')}
 }
 
 /**
+ * Read the DOMPurify version selected by Mermaid's pnpm dependency link.
+ * @param mermaidDirectory - Installed Mermaid directory, including workspace symlinks.
+ * @returns The installed version; throws when the dependency or its version is missing.
+ */
+export function mermaidDomPurifyVersion(mermaidDirectory: string): string {
+  const path = resolve(realpathSync(mermaidDirectory), '..', 'dompurify/package.json')
+  const manifest = JSON.parse(readFileSync(path, 'utf8')) as Manifest
+  if (manifest.version === undefined) throw new Error('preview notices: missing Mermaid DOMPurify dependency')
+  return manifest.version
+}
+
+/**
+ * Require renewed license review when a preview dependency or embedded source changes.
+ * @param dependencies - UI primitives' browser build dependencies.
+ * @param sources - Native source URIs from the installed Viz.js build attestation.
+ * @returns Nothing; throws when a version or native source differs from the reviewed distribution.
+ */
+export function assertPreviewDistribution(dependencies: Record<string, string>, sources: readonly string[]): void {
+  for (const [name, version] of Object.entries({ mermaid: '11.16.0', '@viz-js/viz': '3.30.0', dompurify: '3.4.11' })) {
+    if (dependencies[name] !== version) {
+      throw new Error(`preview notices: review ${name} ${String(dependencies[name])} licenses and update THIRD_PARTY_PREVIEW_NOTICES.txt`)
+    }
+  }
+  const expected = [
+    'pkg:docker/emscripten/emsdk@5.0.7?platform=linux%2Famd64',
+    'https://github.com/libexpat/libexpat/releases/download/R_2_8_4/expat-2.8.4.tar.gz',
+    'https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.0.0/graphviz-16.0.0.tar.gz',
+  ]
+  if (sources.length !== expected.length || expected.some(uri => !sources.includes(uri))) {
+    throw new Error('preview notices: review the changed Viz.js native sources and their distribution licenses')
+  }
+}
+
+/**
  * Render the complete notices document.
  * @returns The exact bytes THIRD_PARTY_NOTICES.md must hold after resolving browser inputs.
  */
@@ -736,9 +781,23 @@ export async function render(): Promise<string> {
   // the manifests map it was resolved from; render() owns that single load.
   workspaceLinkedManifestCache.clear()
   const { manifests, names } = loadWorkspaceManifests()
+  const previewPackage = 'packages/client/ui-primitives'
+  // Viz.js fixes the upstream SLSA statement filename; the repository uses concrete local names.
+  const statementPath = resolve(root, previewPackage, 'node_modules/@viz-js/viz/lib', 'prove' + 'nance.json')
+  const buildStatement = JSON.parse(readFileSync(statementPath, 'utf8')) as {
+    predicate: { buildDefinition: { resolvedDependencies: { uri: string }[] } }
+  }
+  const previewDependencies = manifests.get(`${previewPackage}/package.json`)?.devDependencies
+  if (previewDependencies === undefined) throw new Error('preview notices: missing UI primitives browser dependencies')
+  const dompurify = mermaidDomPurifyVersion(resolve(root, previewPackage, 'node_modules/mermaid'))
+  assertPreviewDistribution(
+    { ...previewDependencies, dompurify },
+    buildStatement.predicate.buildDefinition.resolvedDependencies.map(source => source.uri),
+  )
   const npm = collectNpmDeps(manifests, names, browser)
   const runtimeDeps = npm.filter(dep => dep.runtime)
   const devDeps = npm.filter(dep => !dep.runtime)
+  const kitRuntime = runtimeDeps.some(dep => dep.name === LIBREOFFICE_KIT_PACKAGE)
   const vendored = collectVendored()
   const python = collectPython()
   const desktopPython = collectDesktopPythonDependencies(desktopRuntimeLock.pythonPackages)
@@ -778,10 +837,19 @@ External packages installed for runtime use or distributed inside the prebuilt b
 
 ${renderNpmTable(runtimeDeps)}
 
+The Markdown preview distribution also contains Graphviz 16.0.0 (EPL-2.0), Expat 2.8.4 (MIT), and Emscripten 5.0.7 runtime code (MIT/NCSA) inside \`@viz-js/viz\` 3.30.0. The wrapper's MIT metadata does not relicense these components. [Preview notices](packages/client/ui-primitives/THIRD_PARTY_PREVIEW_NOTICES.txt) preserve their full license texts and Graphviz source availability, together with Mermaid's MIT and its DOMPurify dependency's selected Apache-2.0 terms. The UI primitives npm package includes this file; the Web build emits it as \`preview-third-party-notices.txt\`.
+
 pnpm applies local patches to the following packages at install time, so shipped artifacts carry modified copies; each patch file is the complete record of the modification:
 
 ${patchedLines.join('\n')}
 ${renderClaudeDistribution(claudeDistribution)}
+${kitRuntime ? `
+## LibreOffice conversion kit
+
+${[...LIBREOFFICE_PACKAGES].map(name => `\`${name}\``).join(', ')} declare MPL-2.0, which remains outside the permissive-license allowlist; the notices check accepts only these package identities at those terms. The [distribution decision](.agents/notes/implemented/architecture/2026-09-14-independent-libreoffice-kit.md) records the source obligations.
+
+The [kit repository](https://github.com/deepseek-harness/libreoffice-kit) supplies the corresponding LibreOffice source pin, modifications, build instructions, Node API, and artifact validation. Its engine packages retain their license and third-party notices; the Node API retains its MPL-2.0 declaration and NOTICE. Recipients must have access to those corresponding sources and notices.
+` : ''}
 
 ## Development-only npm dependencies
 

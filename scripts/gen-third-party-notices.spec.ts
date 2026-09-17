@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import desktopRuntimeLock from '../apps/desktop/scripts/primary-runtime-lock.json' with { type: 'json' }
 import {
   CLAUDE_AGENT_SDK_PACKAGE,
+  assertPreviewDistribution,
   assertRuntimeLicenses,
   claudeDistributionFromManifest,
   collectPythonDependencies,
@@ -13,6 +14,7 @@ import {
   isPermissive,
   type Manifest,
   manifestPatterns,
+  mermaidDomPurifyVersion,
   parsePyprojectRequirements,
   parseVendoredRows,
   render,
@@ -34,6 +36,8 @@ describe('THIRD_PARTY_NOTICES.md', () => {
     const generated = await render()
     expect(generated).toContain('It depends on the third-party software listed below.')
     expect(generated).toContain(`| [\`numpy\`](https://github.com/numpy/numpy) | ${desktopRuntimeLock.pythonPackages.numpy} | BSD-3-Clause |`)
+    expect(generated).toContain('## LibreOffice conversion kit')
+    expect(generated).toContain('Recipients must have access to those corresponding sources and notices.')
     expect(readFileSync(resolve(root, 'THIRD_PARTY_NOTICES.md'), 'utf8'), 'stale notices — run `pnpm run gen-third-party-notices`').toBe(generated)
   })
 })
@@ -49,6 +53,27 @@ function workspace(entries: Record<string, Manifest>): { manifests: Map<string, 
 }
 
 describe('tierExternalDeps', () => {
+  it('limits the LibreOffice exception to its reviewed package identity and MPL terms', () => {
+    for (const name of [
+      '@deepseek-ai/libreoffice-kit', '@deepseek-ai/libreoffice-kit-wasm',
+      '@deepseek-ai/libreoffice-kit-darwin-arm64', '@deepseek-ai/libreoffice-kit-darwin-x64',
+      '@deepseek-ai/libreoffice-kit-win32-arm64', '@deepseek-ai/libreoffice-kit-win32-x64',
+    ]) {
+      expect(() => { assertRuntimeLicenses([{ name, license: 'MPL-2.0' }]) }).not.toThrow()
+      expect(() => { assertRuntimeLicenses([{ name, license: 'GPL-3.0-only' }]) }).toThrow(name)
+    }
+    for (const dependency of [
+      { name: 'unrelated-library', license: 'MPL-2.0' },
+      { name: '@deepseek-ai/dsh-libreoffice-kit', license: 'MPL-2.0' },
+      { name: '@deepseek-ai/libreoffice-kit-unreviewed', license: 'MPL-2.0' },
+      { name: '@deepseek-ai/libreoffice-kit', license: 'GPL-3.0-only' },
+      { name: '@deepseek-ai/libreoffice-kit', license: 'UNKNOWN' },
+    ]) {
+      expect(() => { assertRuntimeLicenses([dependency]) }).toThrow(`${dependency.name} (${dependency.license})`)
+    }
+    expect(isPermissive('MPL-2.0')).toBe(false)
+  })
+
   it('keeps license rejection active when a browser library is declared for development', () => {
     const { manifests, names } = workspace({
       'packages/client/ui/package.json': { devDependencies: { 'browser-lib': '^1', 'test-tool': '^1' } },
@@ -442,5 +467,68 @@ describe('manifestPatterns', () => {
       'native/system/package.json',
       'native/system/packages/*/package.json',
     ])
+  })
+})
+
+describe('preview distribution licenses', () => {
+  const dependencies = { mermaid: '11.16.0', '@viz-js/viz': '3.30.0', dompurify: '3.4.11' }
+  const sources = [
+    'pkg:docker/emscripten/emsdk@5.0.7?platform=linux%2Famd64',
+    'https://github.com/libexpat/libexpat/releases/download/R_2_8_4/expat-2.8.4.tar.gz',
+    'https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.0.0/graphviz-16.0.0.tar.gz',
+  ]
+  it('checks Mermaid\'s selected DOMPurify when other versions remain installed', () => {
+    const fixture = mkdtempSync(join(tmpdir(), 'dsh-notices-mermaid-'))
+    try {
+      const modules = join(fixture, 'node_modules')
+      const store = join(modules, '.pnpm')
+      const mermaidModules = join(store, 'mermaid@11.16.0', 'node_modules')
+      const mermaid = join(mermaidModules, 'mermaid')
+      mkdirSync(mermaid, { recursive: true })
+      for (const version of ['3.4.11', '3.4.12']) {
+        const dir = join(store, `dompurify@${version}`, 'node_modules', 'dompurify')
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'dompurify', version }))
+      }
+      const reviewed = join(store, 'dompurify@3.4.11', 'node_modules', 'dompurify')
+      const upgraded = join(store, 'dompurify@3.4.12', 'node_modules', 'dompurify')
+      const linkedMermaid = join(modules, 'mermaid')
+      const dependency = join(mermaidModules, 'dompurify')
+      symlinkSync(mermaid, linkedMermaid, 'junction')
+      symlinkSync(reviewed, join(modules, 'dompurify'), 'junction')
+      symlinkSync(upgraded, dependency, 'junction')
+
+      const version = mermaidDomPurifyVersion(linkedMermaid)
+      expect(version).toBe('3.4.12')
+      expect(() => { assertPreviewDistribution({ ...dependencies, dompurify: version }, sources) })
+        .toThrow('review dompurify 3.4.12')
+
+      unlinkSync(dependency)
+      symlinkSync(reviewed, dependency, 'junction')
+      expect(() => {
+        assertPreviewDistribution({ ...dependencies, dompurify: mermaidDomPurifyVersion(linkedMermaid) }, sources)
+      }).not.toThrow()
+
+      writeFileSync(join(reviewed, 'package.json'), JSON.stringify({ name: 'dompurify' }))
+      expect(() => mermaidDomPurifyVersion(linkedMermaid)).toThrow('missing Mermaid DOMPurify dependency')
+      unlinkSync(dependency)
+      expect(() => mermaidDomPurifyVersion(linkedMermaid)).toThrow('ENOENT')
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+  it('accepts the reviewed wrapper and native sources', () => {
+    expect(() => { assertPreviewDistribution(dependencies, sources) }).not.toThrow()
+    const notices = readFileSync(resolve(root, 'packages/client/ui-primitives/THIRD_PARTY_PREVIEW_NOTICES.txt'), 'utf8')
+    expect(notices).toContain('Eclipse Public License - v 2.0')
+    expect(notices).toContain(sources[2])
+    expect(notices).toContain(readFileSync(resolve(root, 'packages/client/ui-primitives/node_modules/mermaid/LICENSE'), 'utf8').trim())
+    expect(notices).toContain('===== DOMPurify =====')
+  })
+  it.each(Object.keys(dependencies))('rejects an unreviewed %s upgrade', (name) => {
+    expect(() => { assertPreviewDistribution({ ...dependencies, [name]: '99.0.0' }, sources) }).toThrow('preview notices: review')
+  })
+  it.each([sources.slice(1), [...sources, 'https://example.com/new-library'], [...sources.slice(0, 2), 'graphviz-next']])('rejects changed embedded sources', (...uris) => {
+    expect(() => { assertPreviewDistribution(dependencies, uris) }).toThrow('native sources')
   })
 })
