@@ -56,6 +56,10 @@ async function bench() {
     openTab: vi.fn<(kind: string, options?: unknown) => void>(),
   }
   runtime.ctx.provide('sidebarRight', sidebarRight as never)
+  const sidebarRightTabs = {
+    get: vi.fn<(kind: string) => object | undefined>(() => ({})),
+  }
+  runtime.ctx.provide('sidebarRightTabs', sidebarRightTabs as never)
   const openWorkspacePath = vi.fn<ClientRemote['session']['openWorkspacePath']>(
     () => Promise.resolve({ ok: true, value: { opened: true } }),
   )
@@ -96,7 +100,9 @@ async function bench() {
     ) => ChatViewInjected)(id, instance.actions)
     return { instance, injected }
   }
-  return { runtime, layout, openWorkspacePath, sidebarRight, session, chatViewApi, rootReference, openSession }
+  return {
+    runtime, layout, openWorkspacePath, sidebarRight, sidebarRightTabs, session, chatViewApi, rootReference, openSession,
+  }
 }
 
 describe('Chat inject API', () => {
@@ -158,6 +164,21 @@ describe('Chat inject API', () => {
       ['browser', { params: { url: 'https://example.test/path' } }],
     ])
     await b.runtime.dispose()
+  })
+
+  it('opens message HTTP(S) links in the system browser when no Sidebar Browser is registered', async () => {
+    const b = await bench()
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    try {
+      b.sidebarRightTabs.get.mockReturnValue(undefined)
+      const { injected } = b.chatViewApi(b.rootReference)
+      injected.openExternalLink('https://example.test/path')
+      expect(b.sidebarRight.openTab).not.toHaveBeenCalled()
+      expect(open).toHaveBeenCalledWith('https://example.test/path', '_blank', 'noopener,noreferrer')
+    } finally {
+      open.mockRestore()
+      await b.runtime.dispose()
+    }
   })
 
   it('routes sent skill previews through the viewed Session source and tolerates an absent provider', async () => {

@@ -26,6 +26,12 @@ describe('Browser address policy', () => {
       ok: true, target: { kind: 'http', url: 'http://example.com/', title: 'example.com' },
     })
     expect(parseBrowserAddress('http://128.0.0.1/', APP)).toMatchObject({ ok: true, target: { kind: 'http' } })
+    expect(parseBrowserAddress('http:/example.com/path', APP)).toEqual({
+      ok: true, target: { kind: 'http', url: 'http://example.com/path', title: 'example.com' },
+    })
+    expect(parseBrowserAddress('https:/example.com/path', APP)).toEqual({
+      ok: true, target: { kind: 'https', url: 'https://example.com/path', title: 'example.com' },
+    })
   })
 
   it('rejects every undeclared or privileged form', () => {
@@ -36,6 +42,8 @@ describe('Browser address policy', () => {
     expect(parseBrowserAddress(`https://${'a'.repeat(17_000)}.example`, APP)).toEqual({ ok: false, reason: 'invalid' })
     expect(parseBrowserAddress('file:///work/index.html', APP)).toEqual({ ok: false, reason: 'protocol' })
     expect(parseBrowserAddress('file:////server/share/index.html', APP)).toEqual({ ok: false, reason: 'protocol' })
+    expect(parseBrowserAddress('file:/work/index.html', APP)).toEqual({ ok: false, reason: 'protocol' })
+    expect(parseBrowserAddress('ftp:/example.com/file', APP)).toEqual({ ok: false, reason: 'protocol' })
     expect(parseBrowserAddress(':::', APP)).toEqual({ ok: false, reason: 'invalid' })
     expect(parseBrowserAddress('https://example.test', 'not an origin')).toMatchObject({ ok: true })
     expect(parseBrowserAddress('https://example.test')).toMatchObject({ ok: true })

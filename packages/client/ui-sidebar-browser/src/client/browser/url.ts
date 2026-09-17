@@ -26,9 +26,8 @@ export function parseBrowserAddress(input: string, applicationOrigin?: string): 
   const trimmed = input.trim()
   if (trimmed === '') return { ok: false, reason: 'empty' }
   if (trimmed.length > MAX_BROWSER_URL_LENGTH) return { ok: false, reason: 'invalid' }
-  const explicitScheme = /^[A-Za-z][A-Za-z\d+.-]*:\/\//u.test(trimmed)
-  const nonHierarchicalScheme = /^(?:about|blob|data|javascript|mailto|tel|view-source):/iu.test(trimmed)
-  const candidate = explicitScheme || nonHierarchicalScheme ? trimmed : `https://${trimmed}`
+  const explicitScheme = /^[A-Za-z][A-Za-z\d+.-]*:(?!\d+(?:[/?#]|$))/u.test(trimmed)
+  const candidate = explicitScheme ? trimmed : `https://${trimmed}`
   let url: URL
   try { url = new URL(candidate) } catch { return { ok: false, reason: 'invalid' } }
   if (url.username !== '' || url.password !== '') return { ok: false, reason: 'credentials' }

@@ -205,6 +205,14 @@ describe('BrowserBody', () => {
     expect(open).toHaveBeenCalledWith('https://initial.example/path', '_blank', 'noopener,noreferrer')
   })
 
+  it('keeps a rejected initial URL in the address input for editing', async () => {
+    const mounted = mountBrowser({ url: 'file:/work/index.html' })
+    const input = mounted.view.getByRole('textbox')
+    await waitFor(() => { expect(mounted.view.getByRole('alert').textContent).toBe(zh['error.protocol']) })
+    expect(input).toHaveProperty('value', 'file:/work/index.html')
+    expect(mounted.view.container.querySelector('iframe')).toBeNull()
+  })
+
   it('reloads the latest controlled URL instead of replaying the initial URL after remount', async () => {
     const mounted = mountBrowser({ url: 'https://initial.example/path' })
     const input = mounted.view.getByRole('textbox')

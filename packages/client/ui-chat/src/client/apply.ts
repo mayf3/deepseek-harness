@@ -144,7 +144,11 @@ export function apply(ctx: Context): void {
             ctx.get('inputTriggers')?.sessionOf(scope).openReference('skill', { ref: `/${name}` })
           },
           openExternalLink: (url) => {
-            ctx.sidebarRight.openTab('browser', { params: { url } })
+            if (ctx.get('sidebarRightTabs')?.get('browser') !== undefined) {
+              ctx.sidebarRight.openTab('browser', { params: { url } })
+            } else {
+              window.open(url, '_blank', 'noopener,noreferrer')
+            }
           },
           loadOlder: () => { void session.loadOlder() },
           loadThrough: seq => session.loadThrough(seq),

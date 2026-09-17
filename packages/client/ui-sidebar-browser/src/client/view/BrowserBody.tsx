@@ -65,7 +65,7 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
   const initialState = useRef(state)
   const initialUrl = useRef(tab.navigation.params?.url)
   const current = BrowserNavigation.current(state)
-  const [draft, setDraft] = useBrowserDraft(current?.url, state.request?.revision)
+  const [draft, setDraft] = useBrowserDraft(current?.url ?? initialUrl.current, state.request?.revision)
   const [mountCount, setMountCount] = useState(0)
 
   useEffect(() => {
