@@ -744,11 +744,6 @@
     "193e777770c611bf1005e2d5ce574b13e1469926c169812107cf091c73772c0b": 1,
     "ed59d2814914c377dda69ab030e0b51de776a34205ab85e6364fda6fbe903de5": 1
   },
-  "packages/client/ui-sidebar-documentpreview/tests/renderer-loading.client.spec.tsx": {
-    "3729313792d93c55cad1437e7ca1c5f9d5d6d4e02ab0000b0a3b01246504f898": 1,
-    "98dcb2e285933d18a1bc95899f5a46d545e3dba0873640e1920e711a254082dc": 1,
-    "a3a3404b2792d2353dc869625840b3166064d6f34100f366940ac686376783f8": 1
-  },
   "packages/client/ui-sidebar-documentpreview/tests/store.client.spec.ts": {
     "9173285d1c600b0eeb00bc3f852d2e3c8c46ea83cd36488a422d5fd05194935a": 1
   },
