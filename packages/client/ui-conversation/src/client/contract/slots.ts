@@ -126,7 +126,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Conversation shell beneath its root-scoped main-panel entry. */
     'main.conversation': { kind: 'single'; scope: 'session-maybe' }
     /** Strict per-Session Conversation body. */
-    'conversation.session': { kind: 'single'; scope: 'session' }
+    'conversation.session': {
+      kind: 'single'
+      scope: 'session'
+      owner: { view?: string }
+    }
     /** Strict per-Session title, actions, and View navigation. */
     'conversation.session.header': { kind: 'single'; scope: 'session' }
     /** Optional replacement for one Session breadcrumb title. */
@@ -224,6 +228,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       locale: 'conversation'
       slots: {
         views: { scope: 'session' }
+        widthControls: { scope: 'root'; props: ConversationWidthControlsInputProps }
       }
     }
   }
@@ -417,14 +422,19 @@ export type ConversationSlotProps =
   & PropsRenderSlots<'conversation.session.header'>
   & PropsRenderFactories
 
-/** Main-host inputs for one reusable Conversation content occurrence. */
+/** Inputs shared by main and embedded Conversation content occurrences. */
 export interface ConversationContentInputProps {
+  variant: 'main' | 'embedded'
   phase: 'settling' | 'hero' | 'active'
   hero: boolean
-  onHandleStart: () => number
-  onHandleDrag: (width: number) => void
-  onHandleCommit: (width: number) => void
-  onHandleEnd: () => void
+}
+
+/** Values passed from shared content to its occurrence-selected width controls. */
+export interface ConversationWidthControlsInputProps {
+  /** Mounted Conversation body measured and styled by the selected controls. */
+  container: HTMLDivElement | null
+  /** Current body phase; handles render only for an active transcript. */
+  phase: ConversationContentInputProps['phase']
 }
 
 /** Full props of the reusable Conversation Factory definition. */
@@ -435,6 +445,10 @@ export type ConversationStore = ReturnType<typeof createConversationStore>
 
 /** Full props of the Factory's caller-selectable Conversation View position. */
 export type ConversationViewsProps = FactoryLocalComponentPropsOf<'conversation.content', 'views'>
+
+/** Full props of the Factory's caller-selected width-control position. */
+export type ConversationWidthControlsProps =
+  FactoryLocalComponentPropsOf<'conversation.content', 'widthControls'>
 
 /** Full props of the strict Session body. */
 export type ConversationSessionSlotProps =

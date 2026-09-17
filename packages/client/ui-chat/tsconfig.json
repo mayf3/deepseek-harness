@@ -60,6 +60,9 @@
       "path": "../../session/session-turn-outline"
     },
     {
+      "path": "../../subagent/subagent"
+    },
+    {
       "path": "../../settings/settings"
     },
     {

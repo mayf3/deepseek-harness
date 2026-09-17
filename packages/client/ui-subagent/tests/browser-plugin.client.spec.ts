@@ -72,6 +72,11 @@ async function fullBench(sessions: SessionSummary[]) {
       face.actionCalls.push({ method: 'openSession', args: [address] })
     },
   } as never)
+  ctx.provide('sidebarRight', {
+    openResource: (address: string, options: unknown) => {
+      face.actionCalls.push({ method: 'openResource', args: [address, options] })
+    },
+  } as never)
   ctx.provide('remote', { $on: () => () => {} } as never)
   ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   await provideSlotFaces(ctx)
@@ -92,7 +97,7 @@ const FAMILY: SessionSummary[] = [
 
 describe('apply', () => {
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['sessions', 'uiWorkspace', 'slots', 'locale'])
+    expect(inject).toEqual(['sessions', 'uiWorkspace', 'slots', 'locale', 'sidebarRight'])
   })
 
   it('registers catalog actions and selects read-only subagent composers from session facts', async () => {
@@ -106,10 +111,18 @@ describe('apply', () => {
       mode: 'continuable',
     }
     actions.openChild(address)
+    actions.openChildAside(address)
     actions.refresh(sid('parent'))
     actions.setCatalogOpen(sid('parent'), true)
     expect(face.actionCalls).toEqual([
       { method: 'openSession', args: [address] },
+      {
+        method: 'openResource',
+        args: [
+          'dsh-resource://subagentchat/session/c1?parent=parent&mode=continuable',
+          { kind: 'subagentchat', preferNewPane: true },
+        ],
+      },
       { method: 'refreshSubagents', args: [sid('parent')] },
       { method: 'setSubagentCatalogOpen', args: [sid('parent'), true] },
     ])
