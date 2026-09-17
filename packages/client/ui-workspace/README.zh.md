@@ -1,5 +1,5 @@
 ---
-description: "dsh Web 客户端的共享 Workspace 浏览器与选择器插件：分组或扁平的会话行、添加、重命名、重排序、搜索、fork、归档，以及目录流选取子 slot。"
+description: "dsh Web 客户端的共享 Workspace 浏览器与选择器插件：分组或扁平的会话行、管理操作、可扩展 Session 菜单与目录选择。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包让用户浏览分组或扁平的 Session 列表、为新 Session 选择 Workspace，并通过添加、重命名、重排序、搜索、fork、归档和删除 Workspace 来管理 Workspace 与 Session。待处理交互显示为警告点，活动定时任务显示为闹钟标识，subagent 来源的 Session 则保持隐藏。规范化后仍有差异的文件夹路径会保留为独立 Workspace。添加 Workspace 需要组合目录选择器；没有目录选择器时，添加操作不可用。
+本包让用户浏览分组或扁平的 Session 列表、为新 Session 选择 Workspace，并通过添加、重命名、重排序、搜索、fork、归档、可扩展行菜单操作和删除 Workspace 来管理 Workspace 与 Session。待处理交互显示为警告点，活动定时任务显示为闹钟标识，subagent 来源的 Session 则保持隐藏。规范化后仍有差异的文件夹路径会保留为独立 Workspace。添加 Workspace 需要组合目录选择器；没有目录选择器时，添加操作不可用。
 
 ## 目录
 
@@ -47,7 +47,7 @@ kind: "package-reference"
 
 ### 管理会话
 
-Session 行内的 Rename 操作打开一个以该行显示标题预填的对话框；确认未修改的标题是有意允许的——这正是把当前自动标题钉住、不再被重新生成覆盖的手势。双击标题也会打开 Rename；对于未归档 Session，先发生的点击会打开其对话。Rename 使用临时 `workspaceOperation` reference，并等待首次历史打开。行内 Fork 在源会话最后一个已完成轮次处 fork，通过 Session Controller 递增继承的持久化标题，不 retain 子会话、不打开其历史，也不改变选择。Workspace 行内的 Delete 操作会打开确认框，说明保留边界；成功后该分组被移除，其 Session 则留在 Ungrouped 下。
+Session 行内的 Rename 操作打开一个以该行显示标题预填的对话框；确认未修改的标题是有意允许的——这正是把当前自动标题钉住、不再被重新生成覆盖的手势。双击标题也会打开 Rename；对于未归档 Session，先发生的点击会打开其对话。Rename 使用临时 `workspaceOperation` reference，并等待首次历史打开。行内 Fork 在源会话最后一个已完成轮次处 fork，通过 Session Controller 递增继承的持久化标题，不 retain 子会话、不打开其历史，也不改变选择。Workspace 行内的 Delete 操作会打开确认框，说明保留边界；成功后该分组被移除，其 Session 则留在 Ungrouped 下。客户端插件可通过有序 `sidebar.workspaces.session.menu.action` slot 向此菜单追加 Session 专属 action。
 
 Archive 不经确认对话框直接提交，并保留 Session 的记账位置。视图选项控制显隐：默认隐藏已归档 Session，显示已归档会将其纳入列表，仅显示已归档则隐藏普通 Session。可见的归档行置灰，并提供无障碍说明，告知取消归档后才能打开；Rename、Fork 与取消归档仍然可用。归档成功后，toast 提供撤销与打开筛选菜单的操作。取消归档移除归档标记，但不恢复置顶，也不改变保存的位置。
 
@@ -80,6 +80,25 @@ Session 行渲染运行时的实时 `pendingInteraction` 分类：审批显示**
 ### 目录流子 slot
 
 每个注册各自声明一个**目录流子 slot**（`single` kind：`conversation.hero.workspace.directoryFlow`／`sidebar.workspaces.directoryFlow`），由组合的选择器包 client half 填入其选取交互——`-native` 后端的无渲染 OS 选择器驱动，`-browse` 组合下则是应用内浏览对话框。平铺显示的**添加工作区…** 操作仅在当前界面的 slot 被占用时渲染；slot 为空意味着该组合没有目录选择能力。本包持有触发与接纳：占用方通过 slot 的属主交互约定（`open`/`busy`/`onPicked`/`onCancel`/`onError`）每次打开上报一个所选路径，owner 通过对象层接纳它，并等待 Workspace 列表投影刷新后才选中已提交的 Workspace。
+
+### Session 菜单 action
+
+外部客户端插件注入 `sidebar.workspaces.session.menu.action`，注册新的 `id` 与 `order`，并渲染共享 `MenuAction` primitive。每个 action 接收目标的 `sessionId`、行 `displayTitle`（依次回退到持久化标题、项目目录名、Session id）与 `dismiss()`；插件服务仍留在注册项的 inject 闭包中，action 文案来自插件自己的 locale 字典。内置 action 按固定顺序保持在前。Slot priority 先于 `order` 排序；priority 与 order 都相同时保留注册顺序。次级分组带有语义分隔线；没有 action 时，它在视觉与无障碍 API 中都隐藏。
+
+```tsx
+import { MenuAction } from '@deepseek-ai/dsh-client-ui-primitives'
+
+ctx.slots.inject('sidebar.workspaces.session.menu.action', () => ctx.slots.register(
+  { name: 'sidebar.workspaces.session.menu.action', id: 'export-session', order: 100 },
+  ({ sessionId, displayTitle }) => (
+    <MenuAction onSelect={() => { exportSession(sessionId) }}>
+      {t('session.export', { title: displayTitle })}
+    </MenuAction>
+  ),
+))
+```
+
+动态客户端包无法导入 `MenuAction`；它们通过 `React.createElement` 渲染 `role="menuitem"` 控件，并在执行操作后调用传入的 `dismiss()`。`dismiss()` 会关闭菜单，并在 action 未自行移动焦点时把焦点还给触发按钮。
 
 ### 视图状态
 

@@ -2,10 +2,13 @@
  * Workspace browser tree row components (figma Cell set 14:3080): pure presentational —
  * all data and callbacks arrive via props. Hover swaps (folder->chevron,
  * time->ellipsis, action buttons) are CSS-only, and a session row's clipped
- * title is scrolled programmatically while the row is hovered. Session and
- * Workspace hover cards are suppressed while a menu is open.
+ * title is scrolled programmatically while the row is hovered. Row ... menus are
+ * visual-only except workspace Rename/Delete and the Session built-ins plus
+ * ordered plugin actions; the session and workspace hover cards are suppressed
+ * while a menu is open.
  */
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import {
   HoverCard, IconAlarmClockOutlineRegular, IconArchiveOutlineRegular, IconBranchOutlineRegular,
@@ -15,7 +18,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
-import type { WorkspaceBrowserProps } from '../contract/slots.ts'
+import type { SessionMenuActionOwnerProps, WorkspaceBrowserProps } from '../contract/slots.ts'
 import type { GroupNode, SearchResultNode, SessionNode } from '../tree.ts'
 import css from './Rows.module.css'
 
@@ -461,6 +464,7 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }: 
  * @param props.onRename - open the session rename dialog (id + current title).
  * @param props.onFork - fork a session at its last completed turn.
  * @param props.onArchive - archive a session by id.
+ * @param props.renderSessionMenuActions - render ordered plugin actions after the built-in actions.
  * @param props.onReveal - scroll this row into view after search navigation, then acknowledge it.
  * @param props.drag - optional row-drag target wiring; blank rows cannot start a drag.
  * @param props.flat - omit the empty status slot in the hierarchy-free flat list.
@@ -468,7 +472,7 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }: 
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, onUnarchive, onPin, onReveal, drag, flat = false, t,
+  node, currentId, now, onOpen, onRename, onFork, onArchive, onUnarchive, onPin, renderSessionMenuActions, onReveal, drag, flat = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -484,6 +488,8 @@ export function SessionNodeItem({
   onUnarchive: (id: SessionNode['id']) => void
   /** Pin or unpin this session (row menu action; `pin` false unpins). */
   onPin: (id: SessionNode['id'], pin: boolean) => void
+  /** Render ordered plugin actions after the built-in row-menu actions. */
+  renderSessionMenuActions?: ((owner: SessionMenuActionOwnerProps) => ReactNode) | undefined
   /** Scroll this row into view after search navigation, then acknowledge it. */
   onReveal?: (() => void) | undefined
   /** Present on reorderable-list rows so every row can remain a drop target. */
@@ -505,6 +511,7 @@ export function SessionNodeItem({
   const [menuOpen, setMenuOpen] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLSpanElement>(null)
+  const menuTriggerRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (onReveal === undefined) return
     rowRef.current?.scrollIntoView({ block: 'nearest' })
@@ -529,6 +536,13 @@ export function SessionNodeItem({
       { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutlineRegular /> },
       { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutlineRegular size={14} /> },
     ]
+  const dismissSessionMenu = (): void => {
+    setMenuOpen(false)
+    queueMicrotask(() => {
+      const active = document.activeElement
+      if (active === null || active === document.body) menuTriggerRef.current?.focus()
+    })
+  }
   // Figma session cell: pad 8, status slot 16, then a 4px title gap.
   const ownRow = (
     <div
@@ -625,6 +639,7 @@ export function SessionNodeItem({
             closeOnPointerLeave
             anchor={(
               <button
+                ref={menuTriggerRef}
                 type="button"
                 className={css.iconButton}
                 aria-label={t('actions.session.aria', { name: title })}
@@ -633,7 +648,13 @@ export function SessionNodeItem({
                 <IconEllipsisOutlineRegular />
               </button>
             )}
-          />
+          >
+            {renderSessionMenuActions?.({
+              sessionId: node.id,
+              displayTitle: row.title,
+              dismiss: dismissSessionMenu,
+            })}
+          </Menu>
           <Tooltip label={row.archived ? t('actions.unarchive') : t('actions.archive')} side="bottom" align="end" delayMs={500}>
             <button
               type="button"

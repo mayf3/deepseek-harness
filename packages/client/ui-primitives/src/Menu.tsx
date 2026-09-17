@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
@@ -35,6 +35,60 @@ export interface MenuLabel {
 
 /** One primary-menu entry: a row, a separator, or a heading label. */
 export type MenuEntry = MenuItem | MenuSeparator | MenuLabel
+
+interface MenuActionContextValue {
+  clearSubmenu: () => void
+  select: (action: () => void) => void
+}
+
+const MenuActionContext = createContext<MenuActionContextValue | null>(null)
+
+/** Props for an action contributed as a child of {@link Menu}. */
+export interface MenuActionProps {
+  /** Visible action label. */
+  children: ReactNode
+  /** Leading icon. */
+  icon?: ReactNode
+  /** Whether the action cannot be selected. */
+  disabled?: boolean
+  /** Use the destructive action colors. */
+  danger?: boolean
+  /** Run the action, then close the containing menu and restore focus. */
+  onSelect: () => void
+}
+
+/**
+ * Render one action supplied through a menu extension point.
+ *
+ * The action must be a descendant of {@link Menu}. It shares the menu's
+ * keyboard navigation, selection dismissal, focus restoration, and styling.
+ * @param props - action presentation and behavior.
+ * @param props.children - visible action label.
+ * @param props.icon - optional leading icon.
+ * @param props.disabled - whether the action cannot be selected.
+ * @param props.danger - whether to use destructive action colors.
+ * @param props.onSelect - action to run before the menu closes.
+ * @returns one menu-item row.
+ */
+export function MenuAction({ children, icon, disabled = false, danger = false, onSelect }: MenuActionProps) {
+  const menu = useContext(MenuActionContext)
+  if (menu === null) throw new Error('MenuAction must be rendered inside Menu')
+  return (
+    <div className={css.itemWrap} onMouseEnter={menu.clearSubmenu}>
+      <button
+        type="button"
+        role="menuitem"
+        className={clsx(css.item, danger && css.danger)}
+        disabled={disabled}
+        onFocus={menu.clearSubmenu}
+        onClick={() => { menu.select(onSelect) }}
+      >
+        {icon !== undefined && <span className={css.itemIcon}>{icon}</span>}
+        <span className={css.itemLabel}>{children}</span>
+      </button>
+    </div>
+  )
+}
 
 function isSeparator(entry: MenuEntry): entry is MenuSeparator {
   return 'type' in entry && entry.type === 'separator'
@@ -84,6 +138,8 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * scroll/resize; return null to skip placement for that frame.
  * @param props.footer - rows pinned below the scrolling items area, separated
  * by a hairline; they stay visible while the items above scroll.
+ * @param props.children - extension actions appended after `items` in a
+ * separated group. Render each action with {@link MenuAction}.
  * @param props.selection - how a selected row is marked: a trailing check
  * (`'check'`, default — figma .Menu_cell) or the hover fill held on the row
  * with no check (`'fill'`, for icon-labelled rows where a trailing glyph
@@ -94,11 +150,12 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * document.body outside the owner's DOM subtree.
  * @returns anchor wrapper with the conditional list.
  */
-export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, autoFocus = false, selection = 'check', getAnchorRect, footer, className, listClassName }: {
+export function Menu({ open, anchor, items, children, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, autoFocus = false, selection = 'check', getAnchorRect, footer, className, listClassName }: {
   open: boolean
   autoFocus?: boolean
   anchor: ReactNode
   items: readonly MenuEntry[]
+  children?: ReactNode
   footer?: readonly MenuEntry[]
   selectedId?: string | undefined
   selectedIds?: readonly string[] | undefined
@@ -343,6 +400,15 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
   // scroll clip would crop it, so only submenu-free menus get the height cap.
   const scrollable = !items.some(entry => !isSeparator(entry) && !isLabel(entry) && entry.submenu !== undefined && entry.submenu.length > 0)
 
+  const selectExtensionAction = (action: () => void): void => {
+    try {
+      action()
+    } finally {
+      onClose()
+      refocusAfterSelection()
+    }
+  }
+
   const renderEntry = (entry: MenuEntry) => {
     if (isSeparator(entry)) {
       return <div key={entry.id} className={css.separator} role="separator" />
@@ -420,6 +486,17 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
     >
       <div className={css.viewport} role="presentation">
         {items.map(renderEntry)}
+        {children !== undefined && (
+          <MenuActionContext.Provider value={{
+            clearSubmenu: () => { setOpenSubmenuId(null) },
+            select: selectExtensionAction,
+          }}>
+            <div className={css.extensionActions} role="presentation">
+              <div className={css.extensionSeparator} role="separator" />
+              {children}
+            </div>
+          </MenuActionContext.Provider>
+        )}
       </div>
       {footer !== undefined && footer.length > 0 && (
         <div className={css.footer} role="presentation">

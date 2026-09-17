@@ -75,6 +75,17 @@
   min-height: 0;
 }
 
+/* Extension actions are the secondary group after owner-defined rows. */
+.extensionActions:not(:has([role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio'])) {
+  display: none;
+}
+
+.extensionSeparator {
+  margin-top: 4px;
+  margin-bottom: 4px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
 .scrollable .viewport {
   overflow-y: auto;
 }

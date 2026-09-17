@@ -5,6 +5,8 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/clie
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
+import { MenuAction } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SessionMenuActionOwnerProps } from '../src/client/contract/slots.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { RowDragProps } from '../src/client/rows/Rows.tsx'
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from '../src/client/rows/Rows.tsx'
@@ -550,6 +552,33 @@ describe('workspace browser rows', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
+  it('appends plugin actions after built-ins with the Session owner props', () => {
+    const onOpen = vi.fn()
+    const onPluginAction = vi.fn()
+    const renderSessionMenuActions = vi.fn(({ sessionId, displayTitle }: SessionMenuActionOwnerProps) => (
+      <MenuAction onSelect={() => { onPluginAction(sessionId, displayTitle) }}>Export</MenuAction>
+    ))
+    const node: SessionNode = {
+      id: sid('s1'), title: 'One', blank: false, running: false,
+      runningSubagentCount: 0, completed: false, hasActiveSchedule: false, updatedAt: 0,
+    }
+    render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()}
+      renderSessionMenuActions={renderSessionMenuActions} t={t} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '会话“One”的操作' }))
+    const actions = screen.getAllByRole('menuitem')
+    expect(actions.map(action => action.textContent)).toEqual(['重命名', '分叉会话', '归档会话', 'Export'])
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Export' }))
+    expect(renderSessionMenuActions).toHaveBeenCalled()
+    const owner = renderSessionMenuActions.mock.calls.at(-1)?.[0]
+    expect(owner?.sessionId).toBe(node.id)
+    expect(owner?.displayTitle).toBe('One')
+    expect(typeof owner?.dismiss).toBe('function')
+    expect(onPluginAction).toHaveBeenCalledWith(node.id, 'One')
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(onOpen).not.toHaveBeenCalled()
+  })
 
   it('shows the hover card after the dwell and suppresses it while the row menu is open', () => {
     vi.useFakeTimers()

@@ -1,5 +1,5 @@
 ---
-description: "Shared Workspace browser and picker plugin for the dsh web client: grouped or flat session rows, add/rename/reorder, search, fork, archive, and the directory-flow picking hole."
+description: "Shared Workspace browser and picker plugin for the dsh web client: grouped or flat session rows, management actions, extensible Session menus, and directory picking."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package lets users browse grouped or flat Session lists, choose a Workspace for a new Session, and manage Workspaces and Sessions through add, rename, reorder, search, fork, archive, and Workspace deletion. Pending interactions appear as warning dots, active scheduled tasks as alarm markers, and subagent-origin Sessions remain hidden. Canonically distinct folder paths remain separate Workspaces. Adding a Workspace requires a composed directory picker; without one, the add action is unavailable.
+This package lets users browse grouped or flat Session lists, choose a Workspace for a new Session, and manage Workspaces and Sessions through add, rename, reorder, search, fork, archive, extensible row-menu actions, and Workspace deletion. Pending interactions appear as warning dots, active scheduled tasks as alarm markers, and subagent-origin Sessions remain hidden. Canonically distinct folder paths remain separate Workspaces. Adding a Workspace requires a composed directory picker; without one, the add action is unavailable.
 
 ## Table of Contents
 
@@ -47,7 +47,7 @@ Collapsed search is one header action beside the view and add actions: activatin
 
 ### Managing sessions
 
-The Session row's Rename action opens a dialog prefilled with the row's display title; confirming an unchanged title is deliberately allowed — it pins the current automatic title against regeneration. Double-clicking a title also opens Rename; for an unarchived Session, the preceding clicks open its conversation. Rename uses a temporary `workspaceOperation` reference and awaits its initial history opening. The row's Fork action forks at the source's last completed turn and increments the inherited persisted title through Session Controller without retaining the child, opening its history, or changing selection. Workspace Delete opens a confirmation that states the retention boundary; success removes the group while its Sessions remain under Ungrouped.
+The Session row's Rename action opens a dialog prefilled with the row's display title; confirming an unchanged title is deliberately allowed — it pins the current automatic title against regeneration. Double-clicking a title also opens Rename; for an unarchived Session, the preceding clicks open its conversation. Rename uses a temporary `workspaceOperation` reference and awaits its initial history opening. The row's Fork action forks at the source's last completed turn and increments the inherited persisted title through Session Controller without retaining the child, opening its history, or changing selection. Workspace Delete opens a confirmation that states the retention boundary; success removes the group while its Sessions remain under Ungrouped. Client plugins can append Session-specific actions to this menu through the ordered `sidebar.workspaces.session.menu.action` slot.
 
 Archive commits without a confirmation dialog and retains the Session's account position. View options control visibility: the default hides archived Sessions, Show archived includes them, and Archived only hides ordinary Sessions. Visible archived rows are grayed and carry an accessible explanation that they cannot be opened until restored; Rename, Fork, and Unarchive remain available. A successful archive shows a toast with undo and filter-menu actions. Unarchive removes the archive mark without restoring a pin or changing the saved position.
 
@@ -80,6 +80,25 @@ The package is one composition: both target slots are declared by other plugins,
 ### The directory-flow hole
 
 Each registration declares a **directory-flow child hole** (`single` kind: `conversation.hero.workspace.directoryFlow` / `sidebar.workspaces.directoryFlow`) that the composed picker package's client half fills with its picking interaction — the `-native` backend's renderless OS-chooser driver, an in-app browsing dialog under a `-browse` composition. The flat **Add workspace...** action renders only while the surface's hole is occupied; an empty hole means the composition has no picking affordance. This package owns the trigger and the adoption: the occupant reports one picked path per open through the hole's owner conversation (`open`/`busy`/`onPicked`/`onCancel`/`onError`), and the owner adopts it through the object layer, selecting the committed Workspace only after its list projection has refreshed.
+
+### Session menu actions
+
+An external client plugin injects `sidebar.workspaces.session.menu.action`, registers a fresh `id` and `order`, and renders the shared `MenuAction` primitive. Each action receives the target's `sessionId`, its row `displayTitle` (persisted title, project basename, then Session id), and `dismiss()`. Plugin services remain in the registration's inject closure, and action text comes from the plugin's locale dictionary. Built-in actions stay first in their fixed order. Slot priority sorts before `order`; equal priority and order retain registration order. The secondary group has a semantic separator and is hidden from both presentation and accessibility APIs when empty.
+
+```tsx
+import { MenuAction } from '@deepseek-ai/dsh-client-ui-primitives'
+
+ctx.slots.inject('sidebar.workspaces.session.menu.action', () => ctx.slots.register(
+  { name: 'sidebar.workspaces.session.menu.action', id: 'export-session', order: 100 },
+  ({ sessionId, displayTitle }) => (
+    <MenuAction onSelect={() => { exportSession(sessionId) }}>
+      {t('session.export', { title: displayTitle })}
+    </MenuAction>
+  ),
+))
+```
+
+Dynamic client packages cannot import `MenuAction`; they render a `role="menuitem"` control with `React.createElement` and call the supplied `dismiss()` after acting. `dismiss()` closes the menu and restores trigger focus unless the action moved focus elsewhere.
 
 ### View state
 

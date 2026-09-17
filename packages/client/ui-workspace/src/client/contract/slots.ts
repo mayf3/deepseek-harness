@@ -8,8 +8,8 @@
  * - WorkspacePicker fills the conversation empty-state hole (menu + error
  *   dialog shared with the browser).
  *
- * Each registration also declares one **directory-flow hole** (`single`
- * kind): the slot a composed picker package's client half fills with its
+ * Both registrations declare a **directory-flow hole** (`single` kind): the
+ * slot a composed picker package's client half fills with its
  * picking interaction — a renderless native-chooser driver or an in-app
  * browsing dialog. ui-workspace owns the trigger (the "Add workspace…"
  * entry, present only while the hole is occupied) and the adoption
@@ -20,7 +20,8 @@
  * leaves the surface with no add affordance at all.
  * Two holes exist because the two menu surfaces are independent slot entries
  * and a hole has exactly one declaring entry — they carry the same owner
- * contract and the same occupant.
+ * contract and the same occupant. WorkspaceBrowser also declares the ordered
+ * Session-menu action list that client plugins can extend.
  */
 import type { HostObservable, PropsHooks, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pull the owner SlotMap merges into programs that resolve the
@@ -51,12 +52,35 @@ export interface DirectoryFlowOwnerProps {
   onError: (message: string) => void
 }
 
+/** Point-in-time Session row information supplied to each menu action. */
+export interface SessionMenuActionOwnerProps {
+  /** Session targeted by the open row menu. */
+  sessionId: SessionId
+  /** Row display title: persisted title, project basename, or Session id. */
+  displayTitle: string
+  /**
+   * Close the menu and restore trigger focus when the action leaves focus behind.
+   *
+   * An acting item not rendered with `MenuAction` MUST call this after its
+   * operation. `MenuAction` performs the same close-and-refocus behavior.
+   */
+  dismiss: () => void
+}
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** Directory-flow hole under the conversation empty-state picker (declared by the WorkspacePicker entry). */
     'conversation.hero.workspace.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
     /** Directory-flow hole under the sidebar browsing region (declared by the WorkspaceBrowser entry). */
     'sidebar.workspaces.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
+    /**
+     * Ordered third-party actions below the built-in Session row-menu actions.
+     * Registrations use a fresh id; priority precedes order, with registration
+     * order breaking ties. Packaged plugins render `MenuAction`; dynamic markup
+     * calls the owner `dismiss()` after acting. An empty list has no visible or
+     * accessible secondary group.
+     */
+    'sidebar.workspaces.session.menu.action': { kind: 'list'; scope: 'root'; owner: SessionMenuActionOwnerProps }
   }
 }
 
@@ -147,7 +171,9 @@ export type WorkspaceBrowserInjected = {
 /** Full browser props: shell owner share + viewing store + injected actions + the locale seat. */
 export type WorkspaceBrowserProps =
   PropsRuntime<'sidebar.workspaces'>
-  & PropsRenderSlots<'sidebar.workspaces.directoryFlow'>
+  & PropsRenderSlots<
+    'sidebar.workspaces.directoryFlow' | 'sidebar.workspaces.session.menu.action'
+  >
   & PropsStore<ReturnType<typeof createWorkspaceViewStore>>
   & Omit<WorkspaceBrowserInjected, 'hooks'>
   & PropsHooks<WorkspaceBrowserInjected['hooks']>
