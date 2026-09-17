@@ -7,6 +7,9 @@
     "noEmit": true,
     "rewriteRelativeImportExtensions": false
   },
+  "files": [
+    "packages/client/ui-settings-general/src/client/desktop-update-bridge.ts"
+  ],
   "include": [
     "apps/web/product-isolation.ts",
     "apps/web/tests/default-product-isolation.e2e.ts",
@@ -64,6 +67,7 @@
     "apps/web/tests/cold-blank-session.e2e.ts",
     "apps/web/tests/stats-paged-history.e2e.ts",
     "apps/web/tests/sidebar-scrollbar.e2e.ts",
+    "apps/web/tests/sidebar-title-hover-scroll.e2e.ts",
     "apps/web/tests/rail-search-expand.e2e.ts",
     "apps/web/tests/conversation-column-overflow.e2e.ts",
     "apps/web/tests/ptc-round.e2e.ts",
@@ -80,13 +84,13 @@
     "apps/web/tests/open-in-app-ssh.e2e.ts",
     "apps/web/tests/message-feedback.e2e.ts",
     "apps/web/tests/markdown-images.e2e.ts",
+    "apps/web/tests/markdown-file-links.e2e.ts",
     "apps/web/tests/reference-composer.e2e.ts",
     "apps/web/tests/markdown-wide-table.e2e.ts",
     "apps/web/tests/thinking-markdown.e2e.ts",
     "apps/web/tests/math-rendering.e2e.ts",
     "apps/web/tests/markdown-cjk-strong.e2e.ts",
     "apps/web/tests/markdown-inline-code-links.e2e.ts",
-    "apps/web/tests/markdown-mermaid.e2e.ts",
     "apps/web/tests/clickable-links-gallery.e2e.ts",
     "apps/web/tests/queue-actions.e2e.ts",
     "apps/web/tests/queue-image.e2e.ts",
@@ -123,7 +127,6 @@
     "apps/web/tests/chat-continuous-conversation.e2e.ts",
     "apps/web/tests/composer-tab-geometry.e2e.ts",
     "apps/web/tests/complex-history.perf.ts",
-    "apps/web/tests/diagram-preview.perf.ts",
     "apps/web/tests/pwsh-terminal.e2e.ts",
     "apps/web/tests/workflow-run.e2e.ts",
     "apps/web/stress-tests/reasoning-chunks.stress.ts",
@@ -156,6 +159,7 @@
     "scripts/client-bundle-purity.spec.ts"
   ],
   "references": [
+    { "path": "./packages/client/connection/tsconfig.host.json" },
     { "path": "./packages/skill/skill-office" },
     { "path": "./packages/browser-use/browser-use" },
     { "path": "./packages/experimental/browser-use-runtime" },

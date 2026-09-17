@@ -16,7 +16,6 @@ kind: "package-reference"
 
 - [引用预览](#reference-previews)
 - [系统提示词行](#system-prompt-row)
-- [Mermaid 预览](#mermaid-previews)
 - [轮次 token 用量](#turn-token-usage)
 - [已完成轮次的页脚](#completed-turn-footer)
 - [轮次过程折叠](#turn-process-folding)
@@ -30,19 +29,14 @@ kind: "package-reference"
 <a id="reference-previews"></a>
 ## 引用预览
 
+Chat 在节点列表外通过一个 `MarkdownDelegateProvider` 提供文件及 HTTP(S) 导航。Assistant Markdown 文件链接在消息落定后可于右侧栏打开，包括未修改文件的引用。相对路径基于当前查看的 Session 工作区解析；绝对路径仍使用同一 Session 的文件系统访问。`#L24` 和 `#L24-L30` 定位到指定起始行，并复用现有文件标签。文件缺失时显示预览错误状态。
+
 Assistant Markdown 中的 HTTP(S) 链接在普通点击时会在该类型已注册时打开新的右侧 Sidebar Browser tab，否则改用系统浏览器；带修饰键的点击保留原生外部链接行为。已发送的文件引用及消息日志确认调用的 skill 也可在右侧栏打开预览。文件路径使用当前查看的 Session；skill 名称由该 Session 当前的输入触发源解析。两者悬停或聚焦时均使用正文文件链接的虚线下划线。会话、目录和命令标签仍只作为引用展示。
 
 <a id="system-prompt-row"></a>
 ## 系统提示词行
 
 每个非空追加的 `system/message` 都拥有一行折叠提示词，包括无 header 窗口起点的完整提示词；同一步骤的 header 不会重复它。Chat 也会为非空的初始请求、显式消息序列起点、文本发生变化的 `system/message` surface 节点替换（文本读取自 `request/header` 处 surface 顺序中最后一个非空存活系统节点），或前序 header 尚未进入已加载历史窗口的非初始请求显示一行默认折叠的 `系统提示词`。即使系统文本未变，恢复也会重复该行，包括分页补齐前序 header 和系统节点后；同一序列内仅配置或仅工具变化、工具步骤与重试不会重复，且 `system/message` 事件绝不会渲染为对话消息。该行位于请求的用户消息之前，与提供方 envelope 顺序一致；展开后显示模型所见的确切文本，并保留其原始换行。系统节点为空或位于已加载窗口之外的请求不创建该行，直到包含该节点的分页到达。
-
------
-
-<a id="mermaid-previews"></a>
-## Mermaid 预览
-
-已定稿的 Assistant Markdown 默认把 `mermaid`、`graphviz`/`dot` 和 `svg` fence 显示为图表预览。预览高度按图片计算并受视口限制；源码在首次选中时挂载，使用同一区域。两种视图复制的都是原始源码。放大镜打开适应视口、支持平移与缩放的图片。受支持的流式 fence 显示占位；HTML fence 保持代码显示。非法图表显示错误并保留源码入口。Chat 通过本地化 label 启用共享的[预览原语](../ui-primitives/README.zh.md)。这种展示不增加模型提示词、工具或 Session 事件。
 
 -----
 

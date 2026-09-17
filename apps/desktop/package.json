@@ -11,8 +11,10 @@
     "build": "tsc -b && tsdown",
     "dev": "tsx scripts/dev.ts",
     "start": "tsx scripts/dev.ts --skip-build",
+    "test:updates:local": "pnpm run build && node scripts/test-local-updater.mjs",
     "prepare:runtime": "tsx scripts/prepare-runtime.ts",
     "prepare:primary-runtime": "tsx scripts/prepare-primary-runtime.ts",
+    "sign:primary-runtime": "tsx scripts/sign-primary-runtime.ts",
     "prepare:packages": "tsx scripts/prepare-package-set.ts",
     "prepare:dsh": "tsx scripts/prepare-dsh.ts",
     "prepare:package": "tsx scripts/package-target.ts --prepare-only",
@@ -36,7 +38,6 @@
     "semver": "^7.8.5"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "3.1067.0",
     "@deepseek-ai/dsh-app-boot": "workspace:^",
     "@deepseek-ai/dsh-home-paths": "workspace:^",
     "@electron/get": "^5.1.0",
@@ -45,6 +46,7 @@
     "@types/node": "^22.20.0",
     "@types/semver": "^7.8.0",
     "app-builder-lib": "26.15.3",
+    "cos-nodejs-sdk-v5": "3.0.0",
     "electron": "^44.0.0",
     "electron-builder": "^26.15.3",
     "extract-zip": "^2.0.1",

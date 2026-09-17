@@ -29,20 +29,6 @@ function clientDocumentTitle(): Plugin {
   }
 }
 
-/** Preserve preview licenses and Graphviz source availability in every browser distribution. */
-function previewNotices(): Plugin {
-  return {
-    name: 'dsh-preview-notices',
-    async generateBundle() {
-      this.emitFile({
-        type: 'asset',
-        fileName: 'preview-third-party-notices.txt',
-        source: await readFile(src('../../packages/client/ui-primitives/THIRD_PARTY_PREVIEW_NOTICES.txt'), 'utf8'),
-      })
-    },
-  }
-}
-
 /** Fail before a Vite dev or preview server can expose the boot-manifest-free shell. */
 function rejectStandaloneServe(): Plugin {
   return {
@@ -170,7 +156,7 @@ export default defineConfig({
   // directory, and the served index resolves identically from the site root.
   base: './',
   plugins: [
-    previewNotices(), rejectStandaloneServe(), clientDocumentTitle(), react(), emitPreviewPage(),
+    rejectStandaloneServe(), clientDocumentTitle(), react(), emitPreviewPage(),
     productWebBundleIsolation(src('../..'), src('.')),
   ],
   build: {

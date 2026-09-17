@@ -55,7 +55,8 @@
   margin-bottom: 8px;
 }
 
-.markdown a {
+.markdown a,
+.markdown .fileLink {
   /* deepsuite markdown.css uses brand-text (blue in newDesign); this sheet
      keeps design-platform brand-text as near-black, so links use the
      dedicated link alias instead. */
@@ -80,7 +81,8 @@
   text-underline-offset: 3px;
 }
 
-.markdown a:focus-visible {
+.markdown a:focus-visible,
+.fileMention:focus-visible {
   box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
 }
 
@@ -312,6 +314,11 @@
   color: var(--dsw-alias-link);
   text-decoration: none;
   cursor: pointer;
+}
+
+.fileLink {
+  max-width: 100%;
+  text-align: inherit;
 }
 
 .fileMention:hover,
