@@ -34,7 +34,7 @@ const attachment = {
   name: 'history.png',
 }
 
-type AttentionSnapshot = Parameters<Parameters<MessageImagesProps['useSessionPendingInteraction']>[0]>[0]
+type AttentionSnapshot = Parameters<Parameters<MessageImagesProps['useSessionStatus']>[0]>[0]
 type TrajectorySnapshot = Parameters<Parameters<MessageImagesProps['useTrajectory']>[0]>[0]
 
 const noAttention: AttentionSnapshot = new Map()
@@ -46,7 +46,7 @@ const emptyTrajectory: TrajectorySnapshot = {
   partial: null,
   runningCalls: [],
 }
-const useSessionPendingInteraction: MessageImagesProps['useSessionPendingInteraction'] = selector => selector(noAttention)
+const useSessionStatus: MessageImagesProps['useSessionStatus'] = selector => selector(noAttention)
 const useConversation: MessageImagesProps['useConversation'] = selector => selector(EMPTY_CONVERSATION_SNAPSHOT)
 const useChat: MessageImagesProps['useChat'] = selector => selector(EMPTY_CHAT_SNAPSHOT)
 const useTrajectory: MessageImagesProps['useTrajectory'] = selector => selector(emptyTrajectory)
@@ -291,8 +291,8 @@ describe('ImageGallery', () => {
       sessionId: 'message-images-test' as MessageImagesProps['sessionId'],
       useSession,
       useSessions,
-      usePanelInfo, useResource,
-      useSessionPendingInteraction,
+      usePanelInfo, useSessionRetainInfo: () => undefined, useResource,
+      useSessionStatus,
       useWorkspaces,
       useProjection: () => undefined,
       useConversation,

@@ -46,7 +46,7 @@ const CHAT_NODE_INJECT: ChatNodeTurnDataInjected = {
 
 /** Services required by the Chat target and its presentation registrations. */
 export const inject = [
-  'slots', 'sessions', 'uiSession', 'uiConversation', 'locale',
+  'slots', 'sessions', 'uiWorkspace', 'uiSession', 'uiConversation', 'locale',
   'settingsScope', 'remote', 'remote.session', 'sidebarRight',
 ]
 
@@ -157,7 +157,7 @@ export function apply(ctx: Context): void {
           },
           forkAt: (seq) => {
             ctx.sessions.fork({ sessionId, atSeq: seq, increaseTitle: true })
-              .then((childId) => { ctx.sessions.open(childId) })
+              .then((childId) => { ctx.uiWorkspace.openSession(childId) })
               .catch(() => {
                 // Fork or child-title failure leaves the source view unchanged.
               })

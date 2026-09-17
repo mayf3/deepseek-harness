@@ -8,6 +8,10 @@ export interface PrimaryRuntimeManifest {
   readonly desktopVersion: string
   readonly platform: string
   readonly arch: string
+  /** Locked payload identity; absent only in installations made before payload hashing. */
+  readonly payloadDigest?: string
+  /** Installed wheel distribution versions; absent in older release manifests. */
+  readonly pythonPackages?: Readonly<Record<string, string>>
   readonly components: {
     readonly python: string
     readonly node: string
@@ -17,17 +21,19 @@ export interface PrimaryRuntimeManifest {
   }
 }
 
-/** Absolute entry points; pnpm is a script executed with the returned Node executable. */
+/** Absolute entry points and bundled versions; pnpm runs through the returned Node executable. */
 export interface WorkspaceDependencies {
   readonly python: string
   readonly node: string
   readonly pnpm: string
   readonly pythonPackages: string
   readonly nodePackages: string
+  /** Locked distribution versions; excludes packages users add to the installed environment. */
+  readonly pythonDistributions: Readonly<Record<string, string>>
 }
 
 /**
- * Read and validate build metadata before selecting interpreter paths.
+ * Read build metadata, rejecting duplicate normalized names and conflicting component/distribution versions.
  * @param root - Installed or bundled primary runtime directory.
  * @returns Validated component versions and target identifiers.
  */
@@ -36,20 +42,35 @@ export async function readPrimaryRuntime(root: string): Promise<PrimaryRuntimeMa
   if (typeof value !== 'object' || value === null) throw new Error('primary runtime: invalid metadata')
   const record = value as Record<string, unknown>
   const components = record.components
+  const packages = record.pythonPackages
   if (typeof record.desktopVersion !== 'string' || record.desktopVersion.length === 0
     || !['win32', 'darwin'].includes(String(record.platform)) || !['x64', 'arm64'].includes(String(record.arch))
     || typeof components !== 'object' || components === null
-    || !['python', 'node', 'pnpm', 'numpy', 'pandas'].every(key => /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/u.test(String((components as Record<string, unknown>)[key])))) {
+    || !['python', 'node', 'pnpm', 'numpy', 'pandas'].every(key => /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/u.test(String((components as Record<string, unknown>)[key])))
+    || (record.payloadDigest !== undefined && (typeof record.payloadDigest !== 'string' || !/^[a-f0-9]{64}$/u.test(record.payloadDigest)))
+    || (packages !== undefined && (typeof packages !== 'object' || packages === null || Array.isArray(packages)
+      || !Object.entries(packages).every(([name, version]) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(name)
+        && typeof version === 'string' && /^\d[\w.!+-]*$/u.test(version))))) {
     throw new Error('primary runtime: invalid metadata')
   }
-  return value as PrimaryRuntimeManifest
+  const manifest = value as PrimaryRuntimeManifest
+  const entries = Object.entries(manifest.pythonPackages ?? {})
+  const distributions = new Map(entries.map(([name, version]) => [name.toLowerCase().replace(/[-_.]+/gu, '-'), version]))
+  if (distributions.size !== entries.length) throw new Error('primary runtime: invalid metadata')
+  for (const name of ['numpy', 'pandas'] as const) {
+    const version = distributions.get(name)
+    if (version !== undefined && version !== manifest.components[name]) {
+      throw new Error(`primary runtime: conflicting ${name} distribution version`)
+    }
+  }
+  return manifest
 }
 
 /**
  * Resolve platform-specific interpreter and library locations without changing the environment.
  * @param root - Absolute installation directory.
  * @param manifest - Validated runtime metadata.
- * @returns Absolute paths for explicit script execution.
+ * @returns Absolute paths for explicit script execution and recorded bundled Python versions.
  */
 export function workspaceDependencyPaths(root: string, manifest: PrimaryRuntimeManifest): WorkspaceDependencies {
   const dependencies = join(root, 'dependencies')
@@ -60,6 +81,7 @@ export function workspaceDependencyPaths(root: string, manifest: PrimaryRuntimeM
     pnpm: join(dependencies, 'pnpm', 'bin', 'pnpm.mjs'),
     pythonPackages: join(dependencies, 'python', ...(windows ? ['Lib'] : ['lib', `python${manifest.components.python.split('.').slice(0, 2).join('.')}`]), 'site-packages'),
     nodePackages: join(dependencies, 'node', 'node_modules'),
+    pythonDistributions: manifest.pythonPackages ?? {},
   }
 }
 

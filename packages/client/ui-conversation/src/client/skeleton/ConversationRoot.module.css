@@ -46,10 +46,14 @@
   border-bottom: 0.5px solid var(--dsw-alias-border-l3);
 }
 
-/* Blank hero/settling: keep the strict Session header mounted without taking
-   column space; the root-owned scrollport and composer remain below it. */
-.headerHidden {
-  display: none;
+/* Blank Sessions retain navigation controls without conversation title or tabs. */
+.headerBlank {
+  min-height: 0;
+  border-bottom: none;
+}
+
+.headerBlank .headerCorner {
+  margin-left: auto;
 }
 
 /* macOS hiddenInset titlebar: the title row doubles as the window drag
@@ -65,15 +69,6 @@
 :global([data-platform='darwin']) .headerUtilities,
 :global([data-platform='darwin']) .headerCorner {
   -webkit-app-region: no-drag;
-}
-
-/* Blank state on macOS desktop: the chrome rows are gone but the leading seat
-   (the hidden sidebar's reopen control) stays on screen, so the header keeps
-   its layout without the rule. */
-:global([data-platform='darwin']) .headerHidden {
-  display: block;
-  min-height: 0;
-  border-bottom: none;
 }
 
 .titleRow {

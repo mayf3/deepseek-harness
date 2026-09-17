@@ -99,11 +99,15 @@ export const InputBar = memo(function InputBar({
   // an unresolved promptError deliberately re-announces it once — the failure
   // is still pending, and a transient banner is its only surface. Attachment
   // rejections show product copy keyed by the wire reason — whichever domain
-  // refused them; other codes are developer-facing and keep the raw message
-  // plus code.
+  // refused them. Writer contention has localized recovery guidance; other
+  // failures retain the diagnostic message and code.
   useEffect(() => {
     if (promptError === null) return
     const { error } = promptError
+    if (error.code === 'session/writer-held') {
+      showToast(t('error.sessionInUse'))
+      return
+    }
     showToast(error.code === 'session/attachment-invalid' || error.code === 'subagent/attachment-invalid'
       ? attachmentErrorText(t, error.details.reason, imageLimits)
       : `${error.message} (${error.code})`)
@@ -258,7 +262,13 @@ export const InputBar = memo(function InputBar({
   }
 
   const onToggleCommandMenu = (): void => {
-    if (keyboard !== undefined) toggleCommandMenu?.(keyboard.caretSpan())
+    if (keyboard === undefined) return
+    // The menu is a combobox over the editor, so the keyboard has to be there
+    // before the launcher opens it: activating the button from the keyboard
+    // leaves focus on the button, and restoring it afterwards would re-track an
+    // empty draft and close the menu again.
+    if (editor !== null) focusDraftEditor(editor, revealSelection)
+    toggleCommandMenu?.(keyboard.caretSpan())
   }
 
   // The no-session Workspace trigger: the resident editable div acts as the

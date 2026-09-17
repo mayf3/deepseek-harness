@@ -63,6 +63,7 @@ type EventReceiverKind = 'context' | 'agent-dispatch' | 'events-service'
 const GROUP_ORDER = [
   'util',
   'attachment',
+  'document',
   'llm',
   'core',
   'typert',
@@ -148,6 +149,11 @@ const SERVICE_ROLES: ServiceRole[] = [
     implementations: ['experimental-computer-use-cua-driver-mcp', 'experimental-computer-use-cua-driver-native'],
     consumers: ['experimental-computer-use-cua-driver-mcp', 'experimental-computer-use-cua-driver-native'],
     note: 'One provider-owned name per service instance. Each provider also owns its model tools; the service has no common action API, runtime selection, or Session workflow lock.',
+  },
+  {
+    key: 'officeToPdf', pkg: 'office-to-pdf', title: 'Office to PDF conversion',
+    mode: 'core', consumers: [],
+    note: 'Authorized Office bytes are converted on the Host using the declared native target engine, or Node WASM when no native target is declared.',
   },
   {
     key: 'attachments',
@@ -249,6 +255,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Host workspace file Remote service',
     mode: 'core',
     note: 'Serves stat, paged text, byte windows, directory listings, and the change feed for files inside a Session\'s workspace root, confined by lstat, containment, and a stat re-check.',
+  },
+  {
+    key: 'workspaceChanges',
+    pkg: 'workspace-changes',
+    title: 'Host per-turn changed-file summaries',
+    mode: 'core',
+    note: 'Serves the summary each workspace/changes event announced and each listed file\'s turn-start and turn-end comparison, by Session and event sequence, until that Session is disposed; the log carries only the turn.',
   },
   {
     key: 'terminalController',
@@ -485,7 +498,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'skill',
     title: 'Skill provider registry',
     mode: 'seam',
-    implementations: ['skill-badge', 'skill-filesystem'],
+    implementations: ['skill-badge', 'skill-filesystem', 'skill-office'],
     consumers: ['tool-skill'],
     note: 'Merges provider skill catalogs; tool-skill renders the session-prefix catalog and loads complete skill bodies.',
   },

@@ -23,6 +23,8 @@ import type {
   ReadOnlyReason,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ConfigLedger } from './config-ledger.ts'
 import { shortName } from './presentation.ts'
 
 /** The action a failed notice names. */
@@ -183,6 +185,8 @@ export interface PluginManagerFace {
   hooks: {
     /** Tab snapshot bound by the renderer as usePluginManager. */
     pluginManager: SnapshotStore<PluginManagerState>
+    /** The plugins carrying configuration, bound by the renderer as useConfigLedger. */
+    configLedger: HostObservable<ConfigLedger>
   }
   /** Read the Host once the tab first renders. */
   ensure: () => void
@@ -198,6 +202,11 @@ export interface PluginManagerFace {
   approveBuildsAndRetry: () => void
   /** Leave the check or the failed screen for the spec, or ask the Host to stop the run and wait for its cleanup. */
   cancelInstall: () => void
+  /**
+   * While the Host runs the install, ask it to stop and close the dialog once
+   * it confirms; the dialog stays when it cannot. Otherwise nothing.
+   */
+  cancelInstallAndClose: () => void
   toggleInstallDetails: () => void
   /** Enable the bundle the finished install added, then close the dialog and mark it in the list. */
   enableInstalled: () => void
@@ -345,11 +354,12 @@ export class PluginManagerController {
 
   /**
    * Build the face the tab's slot registration injects.
-   * @returns the tab's snapshot source and its actions.
+   * @param configLedger - the projection of the plugins carrying configuration, bound beside the tab's own state.
+   * @returns the tab's snapshot sources and its actions.
    */
-  inject(): PluginManagerFace {
+  inject(configLedger: HostObservable<ConfigLedger>): PluginManagerFace {
     return {
-      hooks: { pluginManager: this.store },
+      hooks: { pluginManager: this.store, configLedger },
       ensure: () => { if (this.getSnapshot().status === 'idle') void this.load() },
       refresh: () => { void this.load() },
       openInstall: () => {
@@ -369,6 +379,7 @@ export class PluginManagerController {
       runInstall: () => { void this.runInstall() },
       approveBuildsAndRetry: () => { void this.approveBuildsAndRetry() },
       cancelInstall: () => { void this.cancelInstall() },
+      cancelInstallAndClose: () => { void this.cancelInstall(true) },
       toggleInstallDetails: () => { this.patchInstall({ detailsOpen: !this.getSnapshot().install.detailsOpen }) },
       enableInstalled: () => { void this.enableInstalled() },
       clearHighlight: () => { if (this.getSnapshot().highlight !== null) this.patch({ highlight: null }) },
@@ -590,10 +601,11 @@ export class PluginManagerController {
    * Leave the check or the failed screen for the spec at once; a Host-owned
    * run is asked to stop and the dialog waits for the Host's word, since
    * neither a dropped RPC nor a closed connection means pnpm has stopped.
+   * @param closeAfter - stop only a running install, and close the dialog once the Host confirms the stop.
    */
-  private async cancelInstall(): Promise<void> {
+  private async cancelInstall(closeAfter = false): Promise<void> {
     const install = this.getSnapshot().install
-    if (install.phase === 'checking' || install.phase === 'failed') {
+    if (!closeAfter && (install.phase === 'checking' || install.phase === 'failed')) {
       this.abortInspect()
       this.offerSpecAgain()
       return
@@ -609,7 +621,9 @@ export class PluginManagerController {
       return
     }
     if (result.value.status === 'cancelled') {
-      this.offerSpecAgain({ kind: 'cancelled', seq: ++this.noticeSeq })
+      const notice: ManagerNotice = { kind: 'cancelled', seq: ++this.noticeSeq }
+      if (closeAfter) this.patch({ install: IDLE_INSTALL, notice })
+      else this.offerSpecAgain(notice)
       void this.load()
     } else if (result.value.status === 'too-late') {
       this.patchInstall({ phase: 'applying' })

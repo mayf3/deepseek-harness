@@ -63,6 +63,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   agentPresets: 'core.md',
   agents: 'core.md',
   approval: 'approval.md',
+  officeToPdf: 'office-to-pdf.md',
   attachments: 'attachment.md',
   shell: 'shell.md',
   shellEnv: 'shell.md',
@@ -131,6 +132,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   workspaceRegistry: 'workspace.md',
   workspaceController: 'workspace.md',
   workspaceFiles: 'workspace.md',
+  workspaceChanges: 'deliverables.md',
   terminalController: 'workspace.md',
   directoryPickerController: 'workspace.md',
 }
@@ -258,6 +260,8 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  * appear on more than one page.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
+  WorkspaceChangesSummary: 'deliverables.md',
+  WorkspaceFileDiff: 'deliverables.md',
   Reload: 'boot.md',
   PluginInfo: 'boot.md',
   BundleInfo: 'boot.md',
@@ -273,6 +277,10 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   PluginInstallProgress: 'boot.md',
   BrowserUseProviderName: 'browser-use.md',
   ComputerUseProviderName: 'computer-use.md',
+  OfficeToPdfRequest: 'office-to-pdf.md',
+  OfficeToPdfResult: 'office-to-pdf.md',
+  OfficeToPdfPriority: 'office-to-pdf.md',
+  OfficeToPdfGeneration: 'office-to-pdf.md',
   Agent: 'core.md',
   AgentCancelCause: 'core.md',
   AgentFactory: 'core.md',
