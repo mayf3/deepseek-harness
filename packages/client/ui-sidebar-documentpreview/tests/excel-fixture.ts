@@ -47,3 +47,18 @@ export async function excelFixture(): Promise<Uint8Array<ArrayBuffer>> {
   workbook.addWorksheet('隐藏页', { state: 'hidden' }).getCell('A1').value = 'Hidden data'
   return new Uint8Array(await workbook.xlsx.writeBuffer())
 }
+
+/** Cell text whose markup and ampersand must remain literal in the preview and clipboard. */
+export const excelHtmlText = '<span><img src=data:, onerror=document.documentElement.dataset.spreadsheetHtml=1></span>& literal'
+
+/**
+ * Build a workbook carrying HTML-looking formulas, text, and saved formula results.
+ * @returns Complete XLSX file bytes.
+ */
+export async function excelHtmlFixture(): Promise<Uint8Array<ArrayBuffer>> {
+  const workbook = new ExcelJS.Workbook()
+  workbook.addWorksheet('Formula').getCell('A1').value = { formula: `"${excelHtmlText}"`, result: 'saved result' }
+  workbook.addWorksheet('Text').getCell('A1').value = excelHtmlText
+  workbook.addWorksheet('Cached text').getCell('A1').value = { formula: '"cached"', result: excelHtmlText }
+  return new Uint8Array(await workbook.xlsx.writeBuffer())
+}
