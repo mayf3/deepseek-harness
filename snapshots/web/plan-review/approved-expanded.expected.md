@@ -32,7 +32,6 @@
   - text: Since the user has explicitly asked me not to read or write any files and to go straight to planning, I'll proceed with
   - code: exit_plan_mode
   - text: .
-- 'button "Open plan: Add `--greeting` flag to CLI"': "Add `--greeting` flag to CLI Plan · Markdown Open"
 - 'button "Tool call exit_plan_mode · # Add `--greeting` flag to CLI"':
   - img
   - img
@@ -46,6 +45,7 @@
   - img
   - text: "Think The plan was approved. The user's last instruction says: \"Once the plan is approved, reply with the single word DONE and stop.\" So I should just reply with DONE and stop."
 - paragraph: DONE
+- 'button "Open plan: Add `--greeting` flag to CLI"': "Add `--greeting` flag to CLI Plan · Markdown Open"
 - button "Copy":
   - img
 - button "Good response":
