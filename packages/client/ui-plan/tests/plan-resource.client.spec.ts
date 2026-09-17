@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { planResourceProvider } from '../src/client/plan-resource.ts'
 
 const address = 'dsh-resource://plan/session/call'
@@ -54,5 +55,42 @@ describe('plan history resource', () => {
     expect(await read(b.provider)).toMatchObject([{ ok: false, error: { code: 'plan/read-failed', message: 'connection lost' } }])
     b.follow.mockImplementationOnce(async function* () {})
     expect(await read(b.provider)).toMatchObject([{ ok: false, error: { code: 'plan/unavailable' } }])
+  })
+  it('preserves Remote failures from paging and stream reads', async () => {
+    const b = setup([{ type: 'event', event: { type: 'user/message', seq: 80, data: {} } }], true)
+    const error = new RemoteError('plan/unavailable', 'history unavailable', {})
+    b.page.mockResolvedValueOnce({ ok: false, error } as never)
+    expect(await read(b.provider)).toEqual([{ ok: false, error }])
+    b.follow.mockImplementationOnce(async function* () { throw error })
+    expect(await read(b.provider)).toEqual([{ ok: false, error }])
+    b.follow.mockImplementationOnce(async function* () { throw 'disconnected' })
+    expect(await read(b.provider)).toMatchObject([{ ok: false, error: { code: 'plan/read-failed', message: 'disconnected' } }])
+  })
+  it('waits for a snapshot and discards it when cancellation occurs during stream closure', async () => {
+    const b = setup([entry])
+    const controller = new AbortController()
+    b.follow.mockImplementationOnce(async function* () {
+      try {
+        yield entry as never
+        yield { type: 'snapshot', cursor: 100, records: [entry], hasMore: false }
+      } finally { b.closed(); controller.abort() }
+    })
+    expect(await read(b.provider, address, controller.signal)).toEqual([])
+    expect(b.closed).toHaveBeenCalledOnce()
+    expect(b.page).not.toHaveBeenCalled()
+  })
+  it.each(['resolve', 'reject'] as const)('discards a page that settles after cancellation: %s', async (settlement) => {
+    const b = setup([{ type: 'event', event: { type: 'user/message', seq: 80, data: {} } }], true)
+    const controller = new AbortController()
+    const started = Promise.withResolvers<undefined>()
+    const pending = Promise.withResolvers<Awaited<ReturnType<typeof b.page>>>()
+    b.page.mockImplementationOnce(() => { started.resolve(undefined); return pending.promise })
+    const result = read(b.provider, address, controller.signal)
+    await started.promise
+    controller.abort()
+    if (settlement === 'resolve') pending.resolve({ ok: true, value: { records: [entry], hasMore: false } })
+    else pending.reject(new Error('cancelled'))
+    expect(await result).toEqual([])
+    expect(b.closed).toHaveBeenCalledOnce()
   })
 })

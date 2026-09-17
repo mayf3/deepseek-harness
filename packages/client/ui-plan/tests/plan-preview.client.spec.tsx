@@ -52,6 +52,14 @@ describe('submitted plan identity', () => {
     expect(planDefinition.buildViewNode!(context as never)).toMatchObject({ process: 'independent', anchorSeq: 12, data: plan })
     expect(planDefinition.buildViewNode!({ ...context, state: undefined, start: undefined, matches: [] } as never)).toBeNull()
   })
+  it('retains the submitted version and recovers a cropped PTC start from settlement', () => {
+    expect(planDefinition.match({ type: 'user/message', data: {} } as never)).toBeNull()
+    const state = planDefinition.start({} as never, { event: call } as never, {} as never)
+    expect(state).toEqual(plan)
+    expect(planDefinition.update({ state } as never, {} as never)).toBe(state)
+    const settled = { event: { type: 'tool/ptc-dispatch', seq: 21, data: { name: 'exit_plan_mode', subCallId: plan.callId, arguments: { plan: markdown } } }, location: { kind: 'unresolved' } }
+    expect(planDefinition.buildViewNode!({ key: 'plan', id: plan.callId, matches: [settled] } as never)).toMatchObject({ anchorSeq: 21, data: plan })
+  })
 })
 
 describe('plan entry points and document', () => {
@@ -86,6 +94,23 @@ describe('plan entry points and document', () => {
     cleanup()
     render(<PlanTitle {...props as unknown as Parameters<typeof PlanTitle>[0]} />)
     expect(screen.getByText(plan.title)).toBeTruthy()
+  })
+  it('copies the complete Markdown and keeps a tab label while history loads', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    try {
+      const props = { t, useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address: planAddress(target) } } }), useResource: () => ({ status: 'live', value: plan }) }
+      const view = render(<PlanPreview {...props as unknown as Parameters<typeof PlanPreview>[0]} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+      await Promise.resolve()
+      expect(writeText).toHaveBeenCalledWith(markdown)
+      view.rerender(<PlanTitle {...{ ...props, useResource: () => ({ status: 'loading' }) } as unknown as Parameters<typeof PlanTitle>[0]} />)
+      expect(screen.getByText('Plan')).toBeTruthy()
+    } finally {
+      if (clipboard === undefined) Reflect.deleteProperty(navigator, 'clipboard')
+      else Object.defineProperty(navigator, 'clipboard', clipboard)
+    }
   })
   it('shows loading and failed reads without an empty sidebar', () => {
     const props = { t, useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address: planAddress(target) } } }) }

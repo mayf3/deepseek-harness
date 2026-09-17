@@ -13,6 +13,9 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { PlanChip } from '../src/client/PlanModeControl.tsx'
+import { PlanCard, PlanReviewOpen, type PlanOpenInjected } from '../src/client/PlanCard.tsx'
+import { PlanPreview, PlanTitle } from '../src/client/PlanPreview.tsx'
+import { submittedPlan } from '../src/client/plan.ts'
 import type { PlanChipInjected } from '../src/client/index.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
@@ -22,11 +25,13 @@ function providePreview(ctx: Context) {
   ctx.provide('uiConversation', { events })
   const removeResources = vi.fn()
   const removeType = vi.fn()
+  const registerType = vi.fn((_definition: Parameters<Context['sidebarRightTabs']['register']>[0]) => removeType)
+  const openResourceIn = vi.fn()
   ctx.provide('resources', { register: vi.fn(() => removeResources) })
-  ctx.provide('sidebarRightTabs', { register: vi.fn(() => removeType) })
-  ctx.provide('sidebarRight', { openResourceIn: vi.fn() })
+  ctx.provide('sidebarRightTabs', { register: registerType })
+  ctx.provide('sidebarRight', { openResourceIn })
   ctx.provide('remote.session', {})
-  return { events, removeResources, removeType }
+  return { events, removeResources, removeType, registerType, openResourceIn }
 }
 
 const SID = 's-plan' as SessionId
@@ -38,7 +43,13 @@ async function bench() {
   const slots = ctx.get('slots') as SlotRegistry
   slots.register({
     name: 'root',
-    children: { 'conversation.input.plan': { kind: 'single', scope: 'session' } },
+    children: {
+      'conversation.input.plan': { kind: 'single', scope: 'session' },
+      'conversation.chat.node': { kind: 'keyed', scope: 'session' },
+      'conversation.plan-review.actions': { kind: 'list', scope: 'session' },
+      'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
+      'sidebar.right.pane.tab.title': { kind: 'keyed', scope: 'session' },
+    },
   } as never, () => null)
   const execute = vi.fn((_sessionId: SessionId, _line: string) =>
     Promise.resolve({ ok: true, value: { commandId: 'c1', result: { kind: 'success' as const } } }))
@@ -104,5 +115,32 @@ describe('ui-plan browser apply', () => {
     expect(b.removeResources).toHaveBeenCalledOnce()
     expect(b.removeType).toHaveBeenCalledOnce()
     expect(b.slots.entries('conversation.input.plan')).toHaveLength(0)
+  })
+  it('binds both entry points to the same Session resource and removes the sidebar seats', async () => {
+    const b = await bench()
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    try {
+      await fiber.await()
+      const address = 'dsh-resource://plan/s-plan/call'
+      const type = b.registerType.mock.calls[0]![0]
+      expect(type.canOpen!(address)).toBe(true)
+      expect(type.canOpen!('file:///plan.md')).toBe(false)
+      expect(type.title(address)).toBeTruthy()
+      const plan = submittedPlan({ type: 'tool/call', data: { callId: 'call', name: 'exit_plan_mode', arguments: '{"plan":"# Saved plan"}' } })!
+      for (const [slot, component] of [['conversation.chat.node', PlanCard], ['conversation.plan-review.actions', PlanReviewOpen]] as const) {
+        const entry = b.slots.entries(slot)[0]!
+        expect(entry.component).toBe(component)
+        const injected = (entry.inject as unknown as (sessionId: SessionId) => PlanOpenInjected)(SID)
+        injected.openPlan(plan.callId)
+        expect(b.openResourceIn).toHaveBeenLastCalledWith(SID, address)
+      }
+      expect(b.slots.entries('sidebar.right.pane.tab')[0]!.component).toBe(PlanPreview)
+      expect(b.slots.entries('sidebar.right.pane.tab.title')[0]!.component).toBe(PlanTitle)
+      await fiber.dispose()
+      expect(b.slots.entries('conversation.chat.node')).toEqual([])
+      expect(b.slots.entries('conversation.plan-review.actions')).toEqual([])
+      expect(b.slots.entries('sidebar.right.pane.tab')).toEqual([])
+      expect(b.slots.entries('sidebar.right.pane.tab.title')).toEqual([])
+    } finally { await fiber.dispose() }
   })
 })

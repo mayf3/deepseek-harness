@@ -52,7 +52,7 @@ export function planResourceProvider(remote: Pick<Context['remote']['session'], 
         if (aborted()) return
         if (snapshot === undefined) throw new RemoteError('plan/unavailable', 'Session history ended before the plan could be read.', {})
         let page = { records: snapshot.records, hasMore: snapshot.hasMore }
-        while (!aborted()) {
+        while (true) {
           for (const entry of page.records) {
             const plan = submittedPlan(entry.event)
             if (plan?.callId === target.callId) {
@@ -67,7 +67,7 @@ export function planResourceProvider(remote: Pick<Context['remote']['session'], 
           if (!next.ok) { yield next; return }
           page = next.value
         }
-        if (!aborted()) yield { ok: false, error: new RemoteError('plan/not-found', 'The submitted plan was not found in this Session.', {}) }
+        yield { ok: false, error: new RemoteError('plan/not-found', 'The submitted plan was not found in this Session.', {}) }
       } catch (error) {
         if (!aborted()) yield {
           ok: false,
