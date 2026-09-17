@@ -1,3 +1,4 @@
+import { WINDOWS_TITLEBAR_HEIGHT } from '../src/windows-layout.ts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IpcMainInvokeEvent } from 'electron'
 import { join } from 'node:path'
@@ -208,7 +209,7 @@ describe('desktop main startup', () => {
     if (platform === 'darwin') {
       expect(window.options).toMatchObject({ titleBarStyle: 'hiddenInset', vibrancy: 'sidebar', backgroundColor: '#00000000' })
     } else if (platform === 'win32') {
-      expect(window.options).toMatchObject({ titleBarStyle: 'hidden', titleBarOverlay: { height: 40 } })
+      expect(window.options).toMatchObject({ titleBarStyle: 'hidden', titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT } })
       expect(window.options).not.toHaveProperty('vibrancy')
       expect(harness.menu.setApplicationMenu).toHaveBeenCalledWith(null)
     } else {
@@ -236,7 +237,12 @@ describe('desktop main startup', () => {
     expect(harness.menu.buildFromTemplate).toHaveBeenLastCalledWith([{ role: 'copy', enabled: true, label: 'Copy', accelerator: '' }])
     window.setTitleBarOverlay.mockClear()
     listener(event, 'en', 'url(file:///bad)', '#fff')
+    expect(window.setTitleBarOverlay).not.toHaveBeenCalled()
     listener(event, {}, '#fff', '#000')
+    expect(window.setTitleBarOverlay).toHaveBeenLastCalledWith({ color: '#fff', symbolColor: '#000' })
+    window.setTitleBarOverlay.mockClear()
+    window.webContents.mainFrame.url = 'dsh-app://shell/plugin-manager.html'
+    listener(event, 'zh-CN', '#fff', '#000')
     expect(window.setTitleBarOverlay).not.toHaveBeenCalled()
     expect(harness.menu.setApplicationMenu).toHaveBeenCalledExactlyOnceWith(null)
   })

@@ -13,7 +13,7 @@ export function installWindowsMenu(): { update(): void; dispose(): void } {
   const shadow = host.attachShadow({ mode: 'open' })
   const style = document.createElement('style')
   style.textContent = `
-    :host { position: fixed; top: 0; left: var(--dsh-windows-menu-start, 48px); z-index: 100;
+    :host { position: fixed; top: 0; left: var(--dsh-windows-menu-start, 48px); z-index: 1100;
       height: var(--dsh-windows-titlebar-height); display: flex; align-items: center;
       font-family: var(--dsw-font-family); -webkit-app-region: no-drag; }
     [role=menubar] { display: flex; gap: 2px; }
@@ -26,6 +26,29 @@ export function installWindowsMenu(): { update(): void; dispose(): void } {
   `
   const bar = document.createElement('div')
   bar.setAttribute('role', 'menubar')
+  let restoreEditor = (): void => {}
+  const rememberEditor = (event: FocusEvent): void => {
+    const target = event.composedPath()[0]
+    if (!(target instanceof HTMLElement) || target === host || shadow.contains(target)) return
+    if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)
+      && !target.matches('[contenteditable="true"]')) return
+    const selection = document.getSelection()
+    const ranges = selection === null ? [] : Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i).cloneRange())
+    const input = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement ? target : undefined
+    const start = input?.selectionStart
+    const end = input?.selectionEnd
+    const direction = input?.selectionDirection
+    restoreEditor = () => {
+      if (!target.isConnected) return
+      target.focus({ preventScroll: true })
+      if (input !== undefined && start != null && end != null) input.setSelectionRange(start, end, direction ?? undefined)
+      else if (selection !== null && ranges.length > 0) {
+        selection.removeAllRanges()
+        for (const range of ranges) selection.addRange(range)
+      }
+    }
+  }
+  document.addEventListener('focusout', rememberEditor, true)
   const createButton = (name: 'application' | 'edit', index: 0 | 1): HTMLButtonElement => {
     const button = document.createElement('button')
     button.type = 'button'
@@ -39,7 +62,9 @@ export function installWindowsMenu(): { update(): void; dispose(): void } {
       if (button.getAttribute('aria-expanded') === 'true') return
       const rect = button.getBoundingClientRect()
       button.setAttribute('aria-expanded', 'true')
+      if (document.activeElement === host) restoreEditor()
       try { await ipcRenderer.invoke(DESKTOP_IPC.windowsMenu, name, rect.left, rect.bottom) }
+      catch (error) { console.error('Desktop caption menu failed', error) }
       finally { button.setAttribute('aria-expanded', 'false') }
     }
     button.addEventListener('click', () => { void open() })
@@ -71,6 +96,7 @@ export function installWindowsMenu(): { update(): void; dispose(): void } {
   return {
     update,
     dispose: () => {
+      document.removeEventListener('focusout', rememberEditor, true)
       host.remove()
     },
   }

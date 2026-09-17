@@ -62,3 +62,54 @@ it('moves between menu entries with arrow keys and opens the focused entry with 
   buttons[1]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
   expect(invoke).toHaveBeenCalledWith(DESKTOP_IPC.windowsMenu, 'edit', 0, 0)
 })
+
+it('restores a text input and its selection before opening a keyboard menu', async () => {
+  const input = document.createElement('input')
+  input.value = 'editor text'
+  document.body.append(input)
+  menu = installWindowsMenu()
+  const button = document.querySelector('[data-windows-menu]')!.shadowRoot!.querySelector('button')!
+  input.focus()
+  input.setSelectionRange(2, 6, 'backward')
+  button.focus()
+  input.setSelectionRange(0, 0)
+  button.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
+  expect(document.activeElement).toBe(input)
+  expect([input.selectionStart, input.selectionEnd, input.selectionDirection]).toEqual([2, 6, 'backward'])
+  await vi.waitFor(() => { expect(button.getAttribute('aria-expanded')).toBe('false') })
+})
+
+it('reports a failed popup request and clears the active menu', async () => {
+  const error = new Error('popup rejected')
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+  invoke.mockRejectedValue(error)
+  menu = installWindowsMenu()
+  const button = document.querySelector('[data-windows-menu]')!.shadowRoot!.querySelector('button')!
+  button.click()
+  await vi.waitFor(() => { expect(log).toHaveBeenCalledWith('Desktop caption menu failed', error) })
+  expect(button.getAttribute('aria-expanded')).toBe('false')
+})
+
+it('restores a contenteditable selection before opening Edit with the keyboard', async () => {
+  const editor = document.createElement('div')
+  editor.contentEditable = 'true'
+  editor.setAttribute('contenteditable', 'true')
+  editor.tabIndex = 0
+  editor.textContent = 'editable text'
+  document.body.append(editor)
+  menu = installWindowsMenu()
+  const buttons = document.querySelector('[data-windows-menu]')!.shadowRoot!.querySelectorAll('button')
+  editor.focus()
+  const range = document.createRange()
+  range.setStart(editor.firstChild!, 2)
+  range.setEnd(editor.firstChild!, 8)
+  document.getSelection()!.removeAllRanges()
+  document.getSelection()!.addRange(range)
+  buttons[0]!.focus()
+  document.getSelection()!.removeAllRanges()
+  buttons[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }))
+  buttons[1]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
+  expect(document.activeElement).toBe(editor)
+  expect(document.getSelection()!.toString()).toBe('itable')
+  await vi.waitFor(() => { expect(buttons[1]!.getAttribute('aria-expanded')).toBe('false') })
+})

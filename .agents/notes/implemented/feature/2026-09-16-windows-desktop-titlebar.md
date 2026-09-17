@@ -22,7 +22,7 @@ Custom HTML window controls would make the application responsible for native ca
 
 ## Consequences
 
-The caption remains available above fullscreen file panels, and collapsed navigation consumes no vertical rail. Caption menus preserve application and editing commands while ordinary Web documents receive no desktop controls. Editing actions send the corresponding keys to the focused editor so its own undo history applies. Pointer activation preserves editor focus; menu completion clears the active entry. Main-process validation rejects foreign frames, unknown menu names, and invalid anchor coordinates. Native popup appearance follows the operating system.
+The caption remains available above fullscreen file panels, and collapsed navigation consumes no vertical rail. Caption menus preserve application and editing commands while ordinary Web documents receive no desktop controls. Editing actions send the corresponding keys to the focused editor so its own undo history applies. Caption entries stay above content modal overlays. Keyboard activation restores the last editor and selection before dispatch; pointer activation preserves editor focus; menu completion clears the active entry. Main-process validation rejects foreign frames, unknown menu names, and invalid anchor coordinates. Native popup appearance follows the operating system.
 
 ## Testing
 

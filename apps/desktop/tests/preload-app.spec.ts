@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import { syncWindowsAppearance } from '../src/preload-windows.ts'
 import { DESKTOP_IPC } from '../src/ipc.ts'
 
 const electron = vi.hoisted(() => ({
@@ -48,3 +49,11 @@ it('exposes a directory picker only to the local application document', async ()
     expect(electron.contextBridge.exposeInMainWorld.mock.calls.some(([name]) => name === '__DSH_DIRECTORY_PICKER__')).toBe(false)
   }
 })
+
+it.each(['dsh-app://app/', 'dsh-app://shell/plugin-manager.html', 'https://example.com/'])(
+  'installs Windows appearance only for the application document (%s)', async (url) => {
+    vi.stubGlobal('location', new URL(url))
+    await import('../src/preload-app.ts')
+    expect(syncWindowsAppearance).toHaveBeenCalledTimes(url === 'dsh-app://app/' ? 1 : 0)
+  },
+)

@@ -48,11 +48,11 @@ The application preload exposes boot readiness and fatal startup reporting. The 
 
 The product UI retains Web actions, including "Open In..." through the shared authenticated HTTP routes. Desktop uses Web's automatic directory-picker selection and initializes new profiles with the shared Web template's bundles.
 
-Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. On Windows, the main document's language updates context menus and update prompts. The repository Client UI i18n gate checks desktop sources.
+Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. On Windows, the main document's language updates desktop menus, recovery and update prompts, plugin-window titles, plugin-manager locale responses, and plugin-operation error text. The repository Client UI i18n gate checks desktop sources.
 
 Windows uses a 40-DIP caption with native window controls and colors synchronized from the application palette. Localized Application and Edit entries beside the sidebar toggle open native popup menus. Application provides Desktop Plugins, Check for Updates, and Exit; Edit provides undo, redo, cut, copy, paste, delete, and select all by sending the corresponding keys to the focused editor. Ctrl+, opens the separate Desktop Plugins window, which manages Desktop packages rather than the sidebar's runtime plugin panel. No separate native menu row appears on Alt. Other platforms retain their native menus. Editable fields retain keyboard commands and a context menu without shortcut labels; Chromium supplies command availability, and selected read-only text offers Copy.
 
-On macOS the custom application menu also declares the standard File, Window, and application menus, because replacing Electron's default menu drops Close Window (⌘W), Minimize (⌘M), and Hide (⌘H). Windows and Linux keep the application and Edit menus.
+On macOS the custom application menu also declares the standard File, Window, and application menus, because replacing Electron's default menu drops Close Window (⌘W), Minimize (⌘M), and Hide (⌘H). Linux keeps the application and Edit menus.
 
 ### Runtime and plugin activation
 

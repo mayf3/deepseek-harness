@@ -60,11 +60,10 @@
 }
 
 /* Windows keeps caption controls above fullscreen file and terminal panels. */
-:global([data-windows-titlebar]) .panel {
-  overflow: hidden;
-}
-
 :global([data-windows-titlebar]) .panel[data-sidebar-right-panel='fullscreen'] {
+  overflow: hidden;
+  left: var(--dsh-windows-sidebar-width);
+  max-width: calc(100% - var(--dsh-windows-sidebar-width));
   top: var(--dsh-windows-titlebar-height);
   border-radius: var(--dsh-windows-content-radius) 0 0 0;
   corner-shape: round;

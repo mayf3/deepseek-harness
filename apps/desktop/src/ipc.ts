@@ -23,9 +23,6 @@ export const DESKTOP_IPC = {
   windowsMenu: 'dsh-desktop:windows-menu',
 } as const
 
-/** Windows application titlebar height in device-independent pixels. */
-export const WINDOWS_TITLEBAR_HEIGHT = 40
-
 /** Desktop release update state rendered by desktop-owned UI. */
 export interface DesktopUpdateState {
   readonly phase: 'idle' | 'checking' | 'available' | 'installing' | 'ready' | 'error'

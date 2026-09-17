@@ -26,18 +26,27 @@ it.each(['darwin', 'linux'] as const)('does not install Windows controls on %s',
 
 it('synchronizes live language and palette changes and stops observing a closed document', async () => {
   vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-  vi.spyOn(document, 'readyState', 'get').mockReturnValue('complete')
+  vi.spyOn(document, 'readyState', 'get').mockReturnValue('loading')
   vi.spyOn(globalThis, 'getComputedStyle').mockImplementation(() => ({
-    getPropertyValue: (name: string) => name === '--dsw-specific-sidebar-fill'
-      ? document.body.hasAttribute('data-ds-dark-theme') ? '#1b1b1c' : '#f9fafb' : '#0f1115',
+    backgroundColor: document.body.hasAttribute('data-ds-dark-theme') ? 'oklch(0.2 0 0)' : 'hsl(0 0% 100%)',
+    color: 'black',
   }) as CSSStyleDeclaration)
+  const context = {
+    fillStyle: '', clearRect: vi.fn(), fillRect: vi.fn(),
+    getImageData: () => ({ data: new Uint8ClampedArray(context.fillStyle === 'black'
+      ? [0, 0, 0, 255] : context.fillStyle.startsWith('oklch') ? [27, 27, 28, 255] : [255, 255, 255, 255]) }),
+  }
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D)
   document.documentElement.lang = 'en'
   syncWindowsAppearance()
+  expect(send).not.toHaveBeenCalled()
+  expect(document.documentElement.hasAttribute('data-windows-titlebar')).toBe(true)
+  window.dispatchEvent(new Event('DOMContentLoaded'))
   expect(document.documentElement.style.getPropertyValue('--dsh-windows-titlebar-height')).toBe('40px')
-  expect(send).toHaveBeenLastCalledWith(DESKTOP_IPC.windowsAppearance, 'en', '#f9fafb', '#0f1115')
+  expect(send).toHaveBeenLastCalledWith(DESKTOP_IPC.windowsAppearance, 'en', 'rgba(255, 255, 255, 1)', 'rgba(0, 0, 0, 1)')
   document.documentElement.lang = 'zh-CN'
   document.body.setAttribute('data-ds-dark-theme', '')
-  await vi.waitFor(() => { expect(send).toHaveBeenLastCalledWith(DESKTOP_IPC.windowsAppearance, 'zh-CN', '#1b1b1c', '#0f1115') })
+  await vi.waitFor(() => { expect(send).toHaveBeenLastCalledWith(DESKTOP_IPC.windowsAppearance, 'zh-CN', 'rgba(27, 27, 28, 1)', 'rgba(0, 0, 0, 1)') })
   window.dispatchEvent(new Event('pagehide'))
   send.mockClear()
   document.documentElement.lang = 'en'
