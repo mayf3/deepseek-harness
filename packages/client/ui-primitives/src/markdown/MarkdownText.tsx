@@ -17,13 +17,10 @@ import clsx from 'clsx'
 import { IncrementalMarkdownParser } from './incremental.ts'
 import { parseGfm, parseGfmWithMath } from './parse.ts'
 import {
-  collectReferenceTargets, createFencePreviewCatalog, createReferenceTargets, renderBlocks, renderFootnoteSection,
+  collectReferenceTargets, createReferenceTargets, renderBlocks, renderFootnoteSection,
   wrapBlockChildren,
 } from './render.tsx'
-import type {
-  FencePreviewCatalog, MarkdownFileMentions, MarkdownLabels, MarkdownPathImages, MarkdownRenderContext,
-  ReferenceTargets,
-} from './render.tsx'
+import type { MarkdownFileMentions, MarkdownLabels, MarkdownPathImages, MarkdownRenderContext, ReferenceTargets } from './render.tsx'
 import 'katex/dist/katex.min.css'
 import css from './MarkdownText.module.css'
 
@@ -33,7 +30,6 @@ export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, Markdown
 function renderSettled(
   text: string,
   labels: MarkdownLabels,
-  previews: FencePreviewCatalog | undefined,
   fileMentions: MarkdownFileMentions | undefined,
   pathImages: MarkdownPathImages | undefined,
 ): ReactNode[] {
@@ -43,7 +39,6 @@ function renderSettled(
   const context: MarkdownRenderContext = {
     streaming: false,
     labels,
-    previews,
     fileMentions,
     pathImages,
     targets,
@@ -79,11 +74,8 @@ class StreamingRenderer {
   private lastText: string | null = null
   private lastRendered: ReactNode[] = []
 
-  /**
-   * @param labels - Localized chrome baked into cached elements.
-   * @param previews - Stable preview capabilities shared with the settled render.
-   */
-  constructor(private readonly labels: MarkdownLabels, private readonly previews: FencePreviewCatalog | undefined) {}
+  /** @param labels - Localized Markdown chrome baked into cached elements; the owner replaces the renderer when it changes. */
+  constructor(private readonly labels: MarkdownLabels) {}
 
   /**
    * Render the current accumulated text. Idempotent per text value, so React
@@ -116,7 +108,6 @@ class StreamingRenderer {
       const frozenContext: MarkdownRenderContext = {
         streaming: true,
         labels: this.labels,
-        previews: this.previews,
         fileMentions: undefined,
         pathImages: undefined,
         targets: frameTargets,
@@ -136,7 +127,6 @@ class StreamingRenderer {
     const tailContext: MarkdownRenderContext = {
       streaming: true,
       labels: this.labels,
-      previews: this.previews,
       fileMentions: undefined,
       pathImages: undefined,
       targets: frameTargets,
@@ -160,8 +150,7 @@ class StreamingRenderer {
  * Render untrusted assistant-authored Markdown as semantic React elements.
  * @param props - Markdown source text preserved by the session projection;
  * `streaming` parses incrementally across chunks and highlights fences as
- * they grow unless preview labels select a loading placeholder (source-only
- * fences re-tokenize only appended text; TeX stays literal
+ * they grow (each fence re-tokenizes only appended text; TeX stays literal
  * until the finalize swap so incomplete formulae never flash errors);
  * `labels` forwards localized fence and footnote chrome — pass a
  * reference-stable object (memoized per locale revision), because a new
@@ -194,18 +183,17 @@ export const MarkdownText = memo(function MarkdownText({
 }) {
   const streamRef = useRef<StreamingRenderer | null>(null)
   const streamLabelsRef = useRef<MarkdownLabels>(labels)
-  const previews = useMemo(() => createFencePreviewCatalog(labels.preview), [labels.preview])
   const children = useMemo(() => {
     if (!streaming) {
       streamRef.current = null
-      return renderSettled(text, labels, previews, fileMentions, pathImages)
+      return renderSettled(text, labels, fileMentions, pathImages)
     }
     if (streamRef.current === null || streamLabelsRef.current !== labels) {
-      streamRef.current = new StreamingRenderer(labels, previews)
+      streamRef.current = new StreamingRenderer(labels)
       streamLabelsRef.current = labels
     }
     return streamRef.current.render(text)
-  }, [text, streaming, labels, previews, fileMentions, pathImages])
+  }, [text, streaming, labels, fileMentions, pathImages])
   return <div className={clsx(css.markdown, variant === 'compact' && css.compact)}
     data-markdown-variant={variant === 'compact' ? variant : undefined}>{children}</div>
 })

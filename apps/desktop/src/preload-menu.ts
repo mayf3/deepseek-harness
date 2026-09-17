@@ -95,7 +95,7 @@ export function installWindowsMenu(): { update(): void; dispose(): void } {
   observer.observe(document.body, { childList: true, subtree: true })
   mount()
   const update = (): void => {
-    const messages = resolveDesktopLocale(document.documentElement.lang)
+    const { messages } = resolveDesktopLocale(document.documentElement.lang)
     bar.setAttribute('aria-label', messages.menuBar)
     buttons[0].textContent = messages.application
     buttons[1].textContent = messages.edit

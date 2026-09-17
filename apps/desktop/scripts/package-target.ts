@@ -11,6 +11,8 @@ import {
 import { desktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import { packageMacOSArtifacts, type DesktopPrepackagedArtifact } from './package-macos.ts'
 import { loadDesktopPackageEnvironment, validateDesktopPackageEnvironment } from './desktop-package-environment.mjs'
+import { createPackagingRun } from './packaging-run.mjs'
+import { withMacOSSigningKeychain } from './macos-signing-keychain.mjs'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const REPOSITORY_ROOT = resolve(APP_ROOT, '..', '..')
@@ -253,11 +255,13 @@ function runPnpm(
   args: readonly string[],
   env: NodeJS.ProcessEnv = process.env,
   cwd: string = APP_ROOT,
+  run?: ReturnType<typeof createPackagingRun>,
 ): Promise<void> {
   const pnpmEntry = process.env.npm_execpath
   if (pnpmEntry === undefined || pnpmEntry === '') {
     throw new Error('desktop package: invoke this script through a pnpm package command')
   }
+  if (run !== undefined) return run.run(args.join(' '), process.execPath, [pnpmEntry, ...args], { cwd, env })
   return new Promise((resolvePromise, reject) => {
     const child = spawn(process.execPath, [pnpmEntry, ...args], {
       cwd,
@@ -281,6 +285,36 @@ async function main(): Promise<void> {
     process.stdout.write(`desktop package: ${target.name} local configuration valid; signing and notarization were not attempted\n`)
     return
   }
+  const run = target.platform === 'win32'
+    ? createPackagingRun(join(APP_ROOT, '.desktop-build', 'packaging-runs'), {
+      target: target.name, unsigned: invocation.unsigned, version: packageVersion(join(APP_ROOT, 'package.json'), 'desktop package'),
+    }) : undefined
+  if (run !== undefined) console.log(`DESKTOP_PACKAGING_RECORD ${run.directory}`)
+  let success = false
+  try {
+    if (target.platform === 'darwin') {
+      await withMacOSSigningKeychain(environment, signingEnvironment => packageTarget(invocation, signingEnvironment, run))
+    } else {
+      await packageTarget(invocation, environment, run)
+    }
+    success = true
+  } finally { run?.finish(success) }
+}
+
+/**
+ * Prepare one release only after its signing preflight, without publishing from the builder.
+ * @param invocation Validated host, target and packaging mode.
+ * @param environment File-owned release configuration.
+ * @param run Windows stage supervisor; required for signed Windows packaging.
+ * @returns Resolves after preparation or complete packaging; any failed stage prevents a release record.
+ */
+export async function packageTarget(
+  invocation: DesktopPackageInvocation,
+  environment: NodeJS.ProcessEnv,
+  run: ReturnType<typeof createPackagingRun> | undefined,
+): Promise<void> {
+  const { target } = invocation
+  const execute = (args: readonly string[], env: NodeJS.ProcessEnv, cwd: string = APP_ROOT) => runPnpm(args, env, cwd, run)
   const buildPaths = desktopTargetBuildPaths(target.name)
   const releaseRecordPath = join(buildPaths.artifacts, desktopBuildRecordFilename(target.name))
   if (!invocation.prepareOnly && !invocation.unsigned) {
@@ -297,32 +331,40 @@ async function main(): Promise<void> {
   for (const name of WINDOWS_SIGNING_ENV_NAMES) {
     if (!invocation.unsigned && environment[name] !== undefined) electronBuilderEnv[name] = environment[name]
   }
-  await runPnpm(['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
-  await runPnpm(['run', 'release:pack', '--family', 'dsh', '--out', buildPaths.packedDsh], buildEnv, REPOSITORY_ROOT)
-  await runPnpm([
+  const signPrimaryRuntime = target.platform === 'win32' && !invocation.unsigned && !invocation.prepareOnly
+  if (signPrimaryRuntime) {
+    if (run === undefined) throw new Error('desktop package: signed Windows packaging requires a supervised run')
+    await run.run('preflight:windows-signing', process.execPath,
+      ['--import', 'tsx/esm', join(APP_ROOT, 'scripts/windows-signing-preflight.ts')],
+      { cwd: APP_ROOT, env: electronBuilderEnv, timeoutMs: 60_000 })
+  }
+  await execute(['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
+  await execute(['run', 'release:pack', '--family', 'dsh', '--out', buildPaths.packedDsh], buildEnv, REPOSITORY_ROOT)
+  await execute([
     '--dir',
     'apps/desktop-host',
     'pack',
     '--pack-destination',
     buildPaths.packedDsh,
   ], buildEnv, REPOSITORY_ROOT)
-  await runPnpm(['run', 'release:pack', '--family', 'vendor', '--out', buildPaths.packedVendor], buildEnv, REPOSITORY_ROOT)
+  await execute(['run', 'release:pack', '--family', 'vendor', '--out', buildPaths.packedVendor], buildEnv, REPOSITORY_ROOT)
   rmSync(buildPaths.packedLandlock, { recursive: true, force: true })
   mkdirSync(buildPaths.packedLandlock, { recursive: true })
-  await runPnpm(['--dir', 'native/system', 'run', 'build:ts'], buildEnv, REPOSITORY_ROOT)
-  await runPnpm([
+  await execute(['--dir', 'native/system', 'run', 'build:ts'], buildEnv, REPOSITORY_ROOT)
+  await execute([
     '--dir',
     'native/system/packages/entry',
     'pack',
     '--pack-destination',
     buildPaths.packedLandlock,
   ], buildEnv, REPOSITORY_ROOT)
-  await runPnpm(['run', 'prepare:runtime'], targetEnv)
-  await runPnpm(['run', 'prepare:packages'], targetEnv)
-  await runPnpm(['run', 'prepare:dsh'], targetEnv)
+  await execute(['run', 'prepare:runtime', ...(signPrimaryRuntime ? ['--defer-primary-runtime-smoke'] : [])], targetEnv)
+  if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime'], electronBuilderEnv)
+  await execute(['run', 'prepare:packages'], targetEnv)
+  await execute(['run', 'prepare:dsh'], targetEnv)
   if (invocation.prepareOnly) return
   if (target.platform === 'darwin' && !invocation.directory) {
-    await runPnpm([
+    await execute([
       ...desktopElectronBuilderArguments(target, true),
       '--config.mac.notarize=false',
     ], electronBuilderEnv)
@@ -331,9 +373,9 @@ async function main(): Promise<void> {
       version: packageVersion(join(APP_ROOT, 'package.json'), 'desktop package'),
       artifactsRoot: buildPaths.artifacts,
       environment: electronBuilderEnv,
-    }, artifact => runPnpm(desktopElectronBuilderArguments(target, false, artifact), electronBuilderEnv))
+    }, artifact => execute(desktopElectronBuilderArguments(target, false, artifact), electronBuilderEnv))
   } else {
-    await runPnpm(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv)
+    await execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv)
   }
   if (!invocation.directory && !invocation.unsigned) writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
 }
