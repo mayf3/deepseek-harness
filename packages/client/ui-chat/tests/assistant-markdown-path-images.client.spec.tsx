@@ -14,31 +14,39 @@ function textBlock(text: string): AssistantBlock {
   return { kind: 'text', text }
 }
 
-const ORIGIN = 'http://127.0.0.1:3080'
+const BASE = 'http://127.0.0.1:3080/'
+const MOUNTED_BASE = 'http://127.0.0.1:3080/tools/dsh/'
 
 describe('localPathMediaUrl', () => {
-  it('maps an absolute POSIX path on an HTTP page to the file API', () => {
-    expect(localPathMediaUrl('http:', ORIGIN, '/tmp/graph.png'))
-      .toBe(`${ORIGIN}/api/file?path=${encodeURIComponent('/tmp/graph.png')}`)
-    expect(localPathMediaUrl('https:', 'https://127.0.0.1:3080', '/tmp/graph.png'))
+  it('maps an absolute POSIX path on an HTTP page to the file route of its document', () => {
+    expect(localPathMediaUrl(BASE, '/tmp/graph.png'))
+      .toBe(`${BASE}api/file?path=${encodeURIComponent('/tmp/graph.png')}`)
+    expect(localPathMediaUrl('https://127.0.0.1:3080/', '/tmp/graph.png'))
       .toBe(`https://127.0.0.1:3080/api/file?path=${encodeURIComponent('/tmp/graph.png')}`)
   })
 
+  it('keeps the route beneath a mount the document is served from', () => {
+    expect(localPathMediaUrl(MOUNTED_BASE, '/tmp/graph.png'))
+      .toBe(`${MOUNTED_BASE}api/file?path=${encodeURIComponent('/tmp/graph.png')}`)
+    expect(localPathMediaUrl('http://127.0.0.1:3080/tools/dsh/index.html', '/tmp/graph.png'))
+      .toBe(`${MOUNTED_BASE}api/file?path=${encodeURIComponent('/tmp/graph.png')}`)
+  })
+
   it('keeps non-HTTP transports inert', () => {
-    expect(localPathMediaUrl('file:', 'file:///app', '/tmp/graph.png')).toBeUndefined()
-    expect(localPathMediaUrl('ws:', ORIGIN, '/tmp/graph.png')).toBeUndefined()
+    expect(localPathMediaUrl('about:blank', '/tmp/graph.png')).toBeUndefined()
+    expect(localPathMediaUrl('dsh-app://app/', '/tmp/graph.png')).toBeUndefined()
   })
 
   it('keeps destinations that cannot be Host-served local files inert', () => {
-    expect(localPathMediaUrl('http:', ORIGIN, '')).toBeUndefined()
-    expect(localPathMediaUrl('http:', ORIGIN, '//cdn.example.com/x.png')).toBeUndefined()
-    expect(localPathMediaUrl('http:', ORIGIN, 'relative.png')).toBeUndefined()
-    expect(localPathMediaUrl('http:', ORIGIN, 'C:\\tmp\\x.png')).toBeUndefined()
+    expect(localPathMediaUrl(BASE, '')).toBeUndefined()
+    expect(localPathMediaUrl(BASE, '//cdn.example.com/x.png')).toBeUndefined()
+    expect(localPathMediaUrl(BASE, 'relative.png')).toBeUndefined()
+    expect(localPathMediaUrl(BASE, 'C:\\tmp\\x.png')).toBeUndefined()
   })
 
   it('encodes the full path including spaces', () => {
-    expect(localPathMediaUrl('http:', ORIGIN, '/tmp/my graph.png'))
-      .toBe(`${ORIGIN}/api/file?path=${encodeURIComponent('/tmp/my graph.png')}`)
+    expect(localPathMediaUrl(BASE, '/tmp/my graph.png'))
+      .toBe(`${BASE}api/file?path=${encodeURIComponent('/tmp/my graph.png')}`)
   })
 })
 

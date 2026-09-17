@@ -11,6 +11,7 @@
     "src/client/controller.ts",
     "src/client/index.ts",
     "src/client/locales.ts",
+    "src/routes.ts",
     "src/css-modules.d.ts"
   ],
   "references": [
