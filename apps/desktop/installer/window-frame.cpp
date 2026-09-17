@@ -242,3 +242,16 @@ extern "C" __declspec(dllexport) HRESULT __cdecl InstallerApplyFrame(HWND window
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     return result;
 }
+
+// Present the first interactive page after resource preparation without keeping the installer topmost.
+extern "C" __declspec(dllexport) BOOL __cdecl InstallerPresentWelcome(HWND window) {
+    if (!IsWindowVisible(window)) return FALSE;
+    if (!SetWindowPos(window, HWND_TOP, 0, 0, 0, 0,
+                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) return FALSE;
+    if (GetForegroundWindow() != window) {
+        FLASHWINFO flash = {sizeof(flash), window, FLASHW_TRAY | FLASHW_TIMERNOFG, 0, 0};
+        FlashWindowEx(&flash);
+    }
+    SetPropW(window, L"HarnessInstaller.Presented", reinterpret_cast<HANDLE>(1));
+    return TRUE;
+}

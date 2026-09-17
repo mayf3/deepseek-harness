@@ -11,6 +11,7 @@ import extractZip from 'extract-zip'
 import { x as extractTar } from 'tar'
 import { workspaceDependencyPaths, type PrimaryRuntimeManifest } from '../../desktop-host/src/primary-runtime.ts'
 import { resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
+import { scrubWindowsSigningEnvironment } from './windows-sign.mjs'
 import lock from './primary-runtime-lock.json' with { type: 'json' }
 
 /**
@@ -88,9 +89,10 @@ export async function prepareOfficeSkillAssets(source: string, destination: stri
 
 /**
  * Materialize the selected Desktop target's primary runtime in its build resources.
- * @returns Resolves after dependency installation and native-target execution checks.
+ * @param options - Signed Windows packaging defers execution until its supervised signing stage.
+ * @returns Resolves after materialization and, unless deferred, native-target execution checks.
  */
-export async function preparePrimaryRuntime(): Promise<void> {
+export async function preparePrimaryRuntime(options: { deferSmoke?: boolean } = {}): Promise<void> {
   const target = resolveDesktopBuildTarget()
   const paths = resolveDesktopTargetBuildPaths()
   const artifact = lock.targets[target]
@@ -145,7 +147,7 @@ export async function preparePrimaryRuntime(): Promise<void> {
   const hostRequire = createRequire(resolve(import.meta.dirname, '..', '..', 'desktop-host', 'package.json'))
   await prepareOfficeSkillAssets(join(dirname(hostRequire.resolve('@deepseek-ai/dsh-skill-office/package.json')), 'assets'),
     join(paths.runtime, 'office-skills'))
-  smokePrimaryRuntime(join(paths.runtime, 'primary-runtime'))
+  if (!options.deferSmoke) smokePrimaryRuntime(join(paths.runtime, 'primary-runtime'))
 }
 
 /**
@@ -157,7 +159,8 @@ export function smokePrimaryRuntime(root: string): void {
   if (manifest.platform !== process.platform || manifest.arch !== process.arch) return
   if (manifest.pythonPackages === undefined) throw new Error('primary runtime: missing Python distribution versions; prepare the payload before running its smoke checks.')
   const entries = workspaceDependencyPaths(root, manifest)
-  const options = { stdio: 'inherit', timeout: 120_000 } as const
+  const options = { stdio: 'inherit', timeout: 120_000, env: scrubWindowsSigningEnvironment(process.env) } as const
+  execFileSync(entries.python, ['-I', '-c', 'import decimal, xml.parsers.expat, lzma, uuid, numpy, pandas; assert numpy.arange(4).sum() == 6; assert pandas.DataFrame({"n": [1, 2]}).n.sum() == 3'], options)
   execFileSync(entries.python, ['-I', '-B', join(import.meta.dirname, 'smoke-primary-runtime.py'), JSON.stringify(manifest.pythonPackages),
     manifest.components.python, join(dirname(root), 'office-skills', 'scripts', 'check_office.py')], options)
   execFileSync(entries.python, ['-I', '-B', '-m', 'pip', 'check'], options)

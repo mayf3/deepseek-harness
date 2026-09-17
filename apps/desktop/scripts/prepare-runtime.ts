@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
+import { parseArgs } from 'node:util'
 import { downloadArtifact } from '@electron/get'
 import extractZip from 'extract-zip'
 import { resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
@@ -25,6 +26,7 @@ function preparePnpm(): string {
 }
 
 async function main(): Promise<void> {
+  const { values } = parseArgs({ options: { 'defer-primary-runtime-smoke': { type: 'boolean', default: false } } })
   const target = resolveDesktopBuildTarget()
   const platform = target.startsWith('mac-') ? 'darwin' : 'win32'
   const arch = target.endsWith('arm64') ? 'arm64' : 'x64'
@@ -47,7 +49,7 @@ async function main(): Promise<void> {
     node: nodeVersion,
     pnpm: pnpmVersion,
   }, undefined, 2)}\n`)
-  await preparePrimaryRuntime()
+  await preparePrimaryRuntime({ deferSmoke: values['defer-primary-runtime-smoke'] })
 }
 
 await main()

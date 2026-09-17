@@ -7,6 +7,9 @@
     "noEmit": true,
     "rewriteRelativeImportExtensions": false
   },
+  "files": [
+    "packages/client/ui-settings-general/src/client/desktop-update-bridge.ts"
+  ],
   "include": [
     "apps/web/product-isolation.ts",
     "apps/web/tests/default-product-isolation.e2e.ts",
@@ -156,6 +159,7 @@
     "scripts/client-bundle-purity.spec.ts"
   ],
   "references": [
+    { "path": "./packages/client/connection/tsconfig.host.json" },
     { "path": "./packages/skill/skill-office" },
     { "path": "./packages/browser-use/browser-use" },
     { "path": "./packages/experimental/browser-use-runtime" },

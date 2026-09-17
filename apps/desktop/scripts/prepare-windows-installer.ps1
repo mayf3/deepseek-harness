@@ -29,6 +29,16 @@ if ($TestProgress -or $CompileProgressOnly) {
         & $testExecutable
         if ($LASTEXITCODE -ne 0) { throw 'Progress timeline regression failed.' }
     }
+    $presentationSource = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../tests/windows-installer-presentation.cpp'))
+    $presentationExecutable = Join-Path $output 'presentation-test.exe'
+    $presentationScript = Join-Path $output 'compile-presentation-test.cmd'
+    [IO.File]::WriteAllLines($presentationScript, @('@echo off', ('call "{0}" >nul' -f $vcvars), 'if errorlevel 1 exit /b %errorlevel%', ('cl /nologo /MT /W4 /WX /EHsc "{0}" /Fo"{1}" /Fe"{2}" /link "{3}" user32.lib' -f $presentationSource, (Join-Path $output 'presentation-test.obj'), $presentationExecutable, (Join-Path $output 'window-frame.lib'))), [Text.Encoding]::Default)
+    & $env:ComSpec /d /c $presentationScript
+    if ($LASTEXITCODE -ne 0) { throw 'Installer presentation test compilation failed.' }
+    if ($TestProgress) {
+        & $presentationExecutable
+        if ($LASTEXITCODE -ne 0) { throw 'Installer presentation regression failed.' }
+    }
 }
 Add-Type -AssemblyName System.Drawing
 foreach ($asset in @('brand', 'brand-2x', 'brand-dark', 'brand-dark-2x', 'uninstaller-sidebar')) {

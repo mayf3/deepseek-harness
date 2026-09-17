@@ -12,9 +12,9 @@ export default defineConfig([
     clean: false,
     deps: { neverBundle: ['electron'] },
   },
-  {
+  ...(['preload-app', 'preload-mandatory', 'preload-update-dialog'] as const).map(name => ({
     // Sandboxed Electron preloads run as CommonJS even though the application package is ESM.
-    entry: { 'preload-app': 'lib/types/preload-app.js' },
+    entry: { [name]: `lib/types/${name}.js` },
     outDir: 'lib',
     format: ['cjs'] as const,
     platform: 'node' as const,
@@ -23,5 +23,5 @@ export default defineConfig([
     dts: false,
     clean: false,
     deps: { neverBundle: ['electron'] },
-  },
+  })),
 ])
