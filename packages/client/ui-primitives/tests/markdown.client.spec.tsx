@@ -310,7 +310,7 @@ describe('MarkdownText', () => {
   })
 
   it('forwards localized labels to fenced code blocks', () => {
-    render(<MarkdownText text={'```ts\nconst answer = 42\n```'} codeLabels={{ copyLabel: 'Copy code', copiedLabel: 'Copied' }} />)
+    render(<MarkdownText text={'```ts\nconst answer = 42\n```'} codeLabels={{ copyLabel: 'Copy code', copiedLabel: 'Copied', sourceLabel: 'Source', lineNumbersLabel: 'Line numbers' }} />)
     expect(screen.getByRole('button', { name: 'Copy code' })).toBeTruthy()
   })
 
