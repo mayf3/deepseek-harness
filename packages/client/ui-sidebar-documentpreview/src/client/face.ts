@@ -68,14 +68,14 @@ export interface TextInjected {
     tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string,
   ) => void
   /**
-   * Begin a renderer-owned load without reading source bytes.
+   * Begin an Office-owned load without reading source bytes.
    * @param tabId - owning tab.
    * @param signal - tab lifetime.
    * @param rendererId - selected implementation.
    * @param observedVersion - metadata version observed at request start.
    * @param reload - discard the previous content revision.
    */
-  readonly prepareRenderer: (tabId: TabId, signal: AbortSignal, rendererId: string, observedVersion?: string, reload?: boolean) => void
+  readonly prepareOffice: (tabId: TabId, signal: AbortSignal, rendererId: string, observedVersion?: string, reload?: boolean) => void
 }
 
 /**
@@ -192,11 +192,11 @@ export function textFace(
     }
     return {
       loadPage, reloadPages: restart, loadAll,
-      prepareRenderer: (tabId, signal, rendererId, observedVersion, reload = false) => {
+      prepareOffice: (tabId, signal, rendererId, observedVersion, reload = false) => {
         if (signal.aborted) return
-        modeOf(tabId, signal, 'renderer', rendererId)
+        modeOf(tabId, signal, 'office', rendererId)
         if (reload) actions.reset(tabId)
-        actions.loading(tabId, 'renderer', observedVersion, rendererId)
+        actions.loading(tabId, 'office', observedVersion, rendererId)
       },
       reloadAll: (tabId, file, signal, observedVersion) => { restart(tabId, file, signal, observedVersion, 'bytes-complete') },
     }

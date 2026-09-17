@@ -88,7 +88,7 @@ it.each(['remote', 'render', 'files'] as const)('keeps Office registration and g
     for (const path of ['a.DOC', 'b.DOCX', 'c.XLS', 'd.xlsx', 'e.PPT', 'f.pptx']) {
       expect(h.registry.candidates(path)[0]!.binaryExtensions).toEqual(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'])
       expect(h.registry.candidates(path)[0]!.title()).toBe(en.title)
-      expect(h.registry.candidates(path)[0]!.loading).toBe('renderer')
+      expect(h.registry.candidates(path)[0]!.loading).toBe('office')
       expect(h.registry.candidates(path)[0]).not.toHaveProperty('read')
       await expect(h.read(undefined, path)).rejects.toThrow(en.unavailable)
     }

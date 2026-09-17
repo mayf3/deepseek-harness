@@ -24,7 +24,7 @@ PDF.js's official TextLayerBuilder owns selection boundaries and copy normalizat
 
 ## Alternatives considered
 
-**Load converted content through callbacks in preview metadata.** A callback makes the shared file store hold both original file bytes and format-specific conversion results. Renderer-owned loading keeps conversion caches, failures, and font metadata with Office while preserving shared file identity and toolbar controls. Definitions declare `loading: 'renderer'`; the body receives a revision and reports only its displayed source version. Reload or implementation replacement advances the revision, stale reports are ignored, and the body cancels pending work on replacement or unmount. Office retains settled contents for the tab lifetime and composes its own PDF child slot.
+**Load converted content through callbacks in preview metadata.** A callback makes the shared file store hold both original file bytes and format-specific conversion results. Office-owned loading keeps conversion caches, failures, and font metadata with Office while preserving shared file identity and toolbar controls. The Office definition declares `loading: 'office'`; the body receives a revision and reports only its displayed source version. Reload or implementation replacement advances the revision, stale reports are ignored, and the body cancels pending work on replacement or unmount. Office retains settled contents for the tab lifetime and composes its own PDF child slot.
 
 **Methods attached to an Iterator or its values.** This conflates observation with commands and repeats capability identity in data frames. Frames carry data and failures; explicit Preview RPC callbacks perform reads.
 

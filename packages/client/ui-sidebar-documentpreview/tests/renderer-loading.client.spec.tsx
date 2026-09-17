@@ -21,7 +21,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 const definition: DocumentPreviewDefinition = {
-  id: 'office', extensions: ['md'], binaryExtensions: ['md'], title: () => 'Office', loading: 'renderer',
+  id: 'office', extensions: ['md'], binaryExtensions: ['md'], title: () => 'Office', loading: 'office',
 }
 type Result = Awaited<ReturnType<ReadOfficeDocument>>
 const result = (version = 'v1'): Result => ({ ok: true, value: {

@@ -144,7 +144,7 @@ export function createTextStore(): EngineStoreHandle<TextState, TextActions> {
        */
       rendered: (d, tabId: TabId, revision: number, version: string) => {
         const state = d.byTab[tabId]
-        if (state?.mode !== 'renderer' || state.loadRevision !== revision) return
+        if (state?.mode !== 'office' || state.loadRevision !== revision) return
         state.version = version
         state.loading = false
       },
