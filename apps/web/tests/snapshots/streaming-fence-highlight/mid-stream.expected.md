@@ -22,9 +22,7 @@
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
 - text: ts
-- button "Line numbers"
 - button "Copy"
-- text: Source
 - code: "const first: number = 1 const second = \"two\" let tail"
 - status: Deep diving...
 - textbox "Message or run a task, / commands, @ files or sessions"

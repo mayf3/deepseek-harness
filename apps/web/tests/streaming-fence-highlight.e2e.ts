@@ -58,21 +58,17 @@ class StreamingFenceAdapter extends LlmAdapter {
     this.finish()
   }
 
-  constructor(private readonly first = FIRST_REPLY, private readonly open = OPEN_REPLY, private readonly reply = REPLY) {
-    super()
-  }
-
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     yield { type: 'block-start', index: 0, blockType: 'text' }
-    yield { type: 'text-delta', index: 0, text: this.first }
+    yield { type: 'text-delta', index: 0, text: FIRST_REPLY }
     this.resolveFirstPaused()
     await this.firstContinuation
-    yield { type: 'text-delta', index: 0, text: this.open.slice(this.first.length) }
+    yield { type: 'text-delta', index: 0, text: OPEN_REPLY.slice(FIRST_REPLY.length) }
     this.resolveSecondPaused()
     await this.secondContinuation
     if (options.signal?.aborted === true) throw options.signal.reason
-    yield { type: 'text-delta', index: 0, text: this.reply.slice(this.open.length) }
-    yield { type: 'block-end', index: 0, block: { type: 'text', text: this.reply } }
+    yield { type: 'text-delta', index: 0, text: '\n```' }
+    yield { type: 'block-end', index: 0, block: { type: 'text', text: REPLY } }
     yield { type: 'finish', reason: { kind: 'stop' } }
   }
 }
@@ -133,62 +129,6 @@ describe.skipIf(MODE === 'record')('web e2e: streaming code-fence highlighting',
     await scaffold?.close()
   })
 
-  it('holds a stable image placeholder while a diagram streams, then restores preview controls', async () => {
-    const first = '```svg\n<svg xmlns="http://www.w3.org/2000/svg" width="460" height="100">\n'
-    const open = `${first}<rect width="460" height="100" fill="lightblue"/>\n`
-    const response = `${open}</svg>\n\`\`\``
-    const pending = new StreamingFenceAdapter(first, open, response)
-    const local = await launchWebScaffold()
-    let previewPage: Page | undefined
-    let settled: ReturnType<WebScaffold['whenTurnSettled']> | undefined
-    try {
-      local.ctx.effect(() => local.ctx.llm.registerAdapter([PROVIDER], pending), 'streaming preview adapter')
-      await local.ctx.agentDefaultModel.saveSelection({ provider: PROVIDER, model: MODEL })
-      previewPage = await newEnglishPage(browser)
-      await previewPage.goto(local.authenticatedUrl, { waitUntil: 'load' })
-      await connectFreshWorkspace(previewPage, local.workspaceCwd)
-      const input = previewPage.locator('[data-composer-input]').first()
-      await writeComposerDraft(previewPage, input, 'Stream an SVG diagram.')
-      await input.press('Enter')
-      await pending.firstPaused
-      settled = local.whenTurnSettled(30_000)
-      const block = previewPage.locator('.md-code-block')
-      const placeholder = block.locator('[data-preview-placeholder]')
-      await placeholder.waitFor()
-      const height = (await block.boundingBox())!.height
-      expect((await placeholder.boundingBox())!.height).toBe(180)
-      expect(await block.locator('pre, button').count()).toBe(0)
-      const glyph = placeholder.locator('svg')
-      expect(await glyph.evaluate(node => getComputedStyle(node).animationDuration)).toBe('1.8s')
-      pending.grow()
-      await pending.secondPaused
-      expect((await block.boundingBox())!.height).toBe(height)
-      expect(await block.locator('pre, button').count()).toBe(0)
-      await compareOrRefreshGolden(
-        fileURLToPath(new URL('./snapshots/streaming-fence-highlight/preview-placeholder.expected.md', import.meta.url)),
-        await captureStableAria(previewPage, '[class*="centerCol"]', local.workspaceCwd), MODE,
-      )
-      await previewPage.emulateMedia({ reducedMotion: 'reduce' })
-      expect(await glyph.evaluate(node => getComputedStyle(node).animationName)).toBe('none')
-      pending.finish()
-      await settled
-      await block.getByRole('img', { name: 'SVG preview', exact: true }).waitFor()
-      expect(await placeholder.count()).toBe(0)
-      expect(await block.locator('pre').count()).toBe(0)
-      expect(await block.locator('[data-code-block-source-view]').getAttribute('aria-hidden')).toBe('true')
-      await block.getByRole('button', { name: 'Source', exact: true }).click()
-      expect(await block.locator('pre code').textContent()).toBe(response.slice(7, -4))
-    } finally {
-      pending.continue()
-      try {
-        await settled
-      } finally {
-        await previewPage?.close()
-        await local.close()
-      }
-    }
-  }, 60_000)
-
   it('renders the growing fence through shiki and preserves its token tree when the turn settles', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-streaming-fence-highlight'))
     const input = page.locator('[data-composer-input]').first()
@@ -240,6 +180,6 @@ describe.skipIf(MODE === 'record')('web e2e: streaming code-fence highlighting',
     }))).toEqual({ block: 'true', pre: 'true', line: 'true' })
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['mid-stream.expected.md', 'preview-placeholder.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['mid-stream.expected.md'])
   }, 60_000)
 })

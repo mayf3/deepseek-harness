@@ -4,9 +4,9 @@ import { en, formatDesktopMessage, resolveDesktopLocale, zh } from '../src/local
 describe('desktop locale dictionaries', () => {
   it('ships the same key set in English and Chinese', () => {
     expect(Object.keys(zh)).toEqual(Object.keys(en))
-    expect(resolveDesktopLocale('zh-Hans-CN')).toEqual(zh)
-    expect(resolveDesktopLocale('en-US')).toEqual(en)
-    expect(resolveDesktopLocale('fr-FR')).toEqual(en)
+    expect(resolveDesktopLocale('zh-Hans-CN').messages).toEqual(zh)
+    expect(resolveDesktopLocale('en-US').messages).toEqual(en)
+    expect(resolveDesktopLocale('fr-FR').messages).toEqual(en)
   })
 
   it('formats named values without consuming unknown placeholders', () => {

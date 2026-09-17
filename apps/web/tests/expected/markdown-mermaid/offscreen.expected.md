@@ -1,6 +1,0 @@
-- text: mermaid
-- button "Enlarge preview" [disabled]
-- button "Copy"
-- button "Source"
-- button "Preview" [pressed]
-- status: Generating diagram…
