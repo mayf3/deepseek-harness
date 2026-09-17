@@ -19,7 +19,12 @@ export const DESKTOP_IPC = {
   updatesInstall: 'dsh-desktop:updates-install',
   updatesState: 'dsh-desktop:updates-state',
   nativeThemeSet: 'dsh-desktop:native-theme-set',
+  windowsAppearance: 'dsh-desktop:windows-appearance',
+  windowsMenu: 'dsh-desktop:windows-menu',
 } as const
+
+/** Windows application titlebar height in device-independent pixels. */
+export const WINDOWS_TITLEBAR_HEIGHT = 40
 
 /** Desktop release update state rendered by desktop-owned UI. */
 export interface DesktopUpdateState {

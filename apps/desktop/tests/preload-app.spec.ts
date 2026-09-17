@@ -8,6 +8,7 @@ const electron = vi.hoisted(() => ({
 vi.mock('electron', () => electron)
 vi.mock('../src/preload-platform.ts', () => ({ markDocumentPlatform: vi.fn() }))
 vi.mock('../src/preload-theme.ts', () => ({ syncNativeTheme: vi.fn() }))
+vi.mock('../src/preload-windows.ts', () => ({ syncWindowsAppearance: vi.fn() }))
 
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); vi.resetModules() })
 

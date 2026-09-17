@@ -221,6 +221,19 @@ describe('AppFrame', () => {
     expect(getByTestId('rightbar-content')).toBeTruthy()
   })
 
+  it('keeps Windows caption controls mounted with a zero-width collapsed column', () => {
+    document.documentElement.setAttribute('data-windows-titlebar', '')
+    try {
+      const { frame, instance, sidebarOwner, getByTestId } = mountFrame()
+      act(() => { instance.actions.toggleSidebar() })
+      expect(tracks(frame)[0]).toBe(0)
+      expect(sidebarOwner()).toMatchObject({ collapsed: true, width: 0 })
+      expect(getByTestId('sidebar-content')).toBeTruthy()
+    } finally {
+      document.documentElement.removeAttribute('data-windows-titlebar')
+    }
+  })
+
   it('keeps the closed sidebar mounted at its 56px rail without a handle', () => {
     const { frame, instance, sidebarOwner, getByTestId } = mountFrame()
     act(() => { instance.actions.toggleSidebar() })

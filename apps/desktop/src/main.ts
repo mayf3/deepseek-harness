@@ -21,7 +21,7 @@ import { DesktopProjectManager, type DesktopProjectHooks } from './project-manag
 import { DesktopHostProcess } from './host-process.ts'
 import { installDesktopDirectoryPicker } from './directory-picker.ts'
 import { DesktopBackendController } from './backend-controller.ts'
-import { DESKTOP_IPC, SCHEME, assertDesktopSender, type DesktopUpdateState } from './ipc.ts'
+import { DESKTOP_IPC, SCHEME, WINDOWS_TITLEBAR_HEIGHT, assertDesktopSender, type DesktopUpdateState } from './ipc.ts'
 import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
@@ -31,6 +31,7 @@ import { DesktopFatalRecovery } from './fatal-recovery.ts'
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
 let shuttingDown = false
+let windowsLanguage: string | undefined
 const recovery = new DesktopFatalRecovery({
   messages: () => resolveDesktopLocale(app.getLocale()).messages,
   show: options => dialog.showMessageBox(options),
@@ -97,13 +98,17 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
   return port
 }
 
-function createWindow(preload: string, show = false): BrowserWindow {
+function createWindow(preload: string, show = false, primary = false): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
     height: 840,
     minWidth: 880,
     minHeight: 600,
     show,
+    ...(process.platform === 'win32' && primary ? {
+      titleBarStyle: 'hidden' as const,
+      titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: '#f9fafb', symbolColor: '#0f1115' },
+    } : {}),
     // hiddenInset places traffic lights inside the sidebar; sidebar vibrancy
     // needs a transparent window background to show through the page.
     ...(process.platform === 'darwin' ? {
@@ -144,7 +149,15 @@ function createWindow(preload: string, show = false): BrowserWindow {
       items.push({ role: 'copy', enabled: editFlags.canCopy })
     }
     // Empty accelerators suppress Electron's default shortcut labels for native roles.
-    if (items.length > 0) Menu.buildFromTemplate(items.map(item => ({ ...item, accelerator: '' }))).popup({ window })
+    if (items.length > 0) {
+      const messages = resolveDesktopLocale(windowsLanguage ?? app.getLocale()).messages
+      Menu.buildFromTemplate(items.map(item => ({
+        ...item,
+        ...(process.platform === 'win32' && item.role !== undefined && item.role in messages
+          ? { label: messages[item.role as keyof typeof messages] } : {}),
+        accelerator: '',
+      }))).popup({ window })
+    }
   })
   window.webContents.on('will-navigate', (event, url) => {
     const destination = new URL(url)
@@ -190,8 +203,8 @@ async function main(): Promise<void> {
   let pluginWindow: BrowserWindow | undefined
   let shellInstallerOwnsQuit = false
   let updateState: DesktopUpdateState = { phase: 'idle' }
-  const locale = resolveDesktopLocale(app.getLocale())
-  const messages = locale.messages
+  let locale = resolveDesktopLocale(app.getLocale())
+  let messages = locale.messages
   const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
   const managementPreload = fileURLToPath(new URL('./preload.cjs', import.meta.url))
   const applicationUrl = `${SCHEME}://app/`
@@ -427,23 +440,84 @@ async function main(): Promise<void> {
     void pluginWindow.loadURL(`${SCHEME}://shell/plugin-manager.html`)
   }
 
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{
+  const applicationItems = (): MenuItemConstructorOptions[] => [
+    {
+      label: messages.pluginsMenu,
+      accelerator: 'CmdOrCtrl+,',
+      click: openPluginWindow,
+    },
+    { label: messages.checkUpdatesMenu, click: () => { void checkAndPrompt(true) } },
+    { type: 'separator' },
+    { role: 'quit', ...(process.platform === 'win32' ? { label: messages.exitApplication } : {}) },
+  ]
+  Menu.setApplicationMenu(process.platform === 'win32' ? null : Menu.buildFromTemplate([{
     label: process.platform === 'darwin' ? app.name : messages.application,
-    submenu: [
-      {
-        label: messages.pluginsMenu,
-        accelerator: 'CmdOrCtrl+,',
-        click: openPluginWindow,
-      },
-      { label: messages.checkUpdatesMenu, click: () => { void checkAndPrompt(true) } },
-      { type: 'separator' },
-      { role: 'quit' },
-    ],
+    submenu: applicationItems(),
   }, { role: 'editMenu' }]))
 
+  if (process.platform === 'win32') {
+    ipcMain.handle(DESKTOP_IPC.windowsMenu, (event, name: unknown, x: unknown, y: unknown) => {
+      assertDesktopSender(event, ['app'])
+      if (mainWindow === undefined || event.sender !== mainWindow.webContents
+        || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error('desktop menu: rejected sender')
+      if ((name !== 'application' && name !== 'edit')
+        || typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)
+        || x < 0 || y < 0 || x > 100_000 || y > 100_000) throw new Error('desktop menu: invalid popup request')
+      const window = mainWindow
+      // Editor-owned history listens to key events rather than Chromium's native undo stack.
+      const editItem = (label: string, keyCode: string, accelerator?: string): MenuItemConstructorOptions => ({
+        label,
+        ...(accelerator === undefined ? {} : { accelerator }),
+        click: () => {
+          window.webContents.focus()
+          window.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers: accelerator === undefined ? [] : ['control'] })
+          window.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers: accelerator === undefined ? [] : ['control'] })
+        },
+      })
+      const items: MenuItemConstructorOptions[] = name === 'application' ? applicationItems() : [
+        editItem(messages.undo, 'Z', 'Ctrl+Z'),
+        editItem(messages.redo, 'Y', 'Ctrl+Y'),
+        { type: 'separator' },
+        editItem(messages.cut, 'X', 'Ctrl+X'),
+        editItem(messages.copy, 'C', 'Ctrl+C'),
+        editItem(messages.paste, 'V', 'Ctrl+V'),
+        editItem(messages.delete, 'Delete'),
+        { type: 'separator' },
+        editItem(messages.selectAll, 'A', 'Ctrl+A'),
+      ]
+      const zoom = mainWindow.webContents.getZoomFactor()
+      return new Promise<void>((resolve) => {
+        Menu.buildFromTemplate(items).popup({ window, x: Math.round(x * zoom), y: Math.round(y * zoom), callback: resolve })
+      })
+    })
+    ipcMain.on(DESKTOP_IPC.windowsAppearance, (event, language: unknown, color: unknown, symbolColor: unknown) => {
+      if (mainWindow === undefined || event.sender !== mainWindow.webContents
+        || event.senderFrame !== mainWindow.webContents.mainFrame) return
+      if (typeof language !== 'string' || !/^[a-zA-Z]+(?:-[a-zA-Z0-9]+)*$/u.test(language)) return
+      const next = resolveDesktopLocale(language)
+      windowsLanguage = language
+      if (next.id !== locale.id) {
+        locale = next
+        messages = next.messages
+      }
+      // Empty colors precede client stylesheet installation; only CSS color values cross IPC.
+      const validColor = (value: unknown): value is string => typeof value === 'string'
+        && /^(?:#[\da-f]{3,8}|rgba?\([\d.,%\s]+\))$/iu.test(value)
+      if (validColor(color) && validColor(symbolColor)) mainWindow.setTitleBarOverlay({ color, symbolColor })
+    })
+  }
+
   const createMainWindow = (): BrowserWindow => {
-    const window = createWindow(appPreload, true)
+    const window = createWindow(appPreload, true, true)
     mainWindow = window
+    if (process.platform === 'win32') {
+      window.webContents.on('before-input-event', (event, input) => {
+        if (input.type === 'keyDown' && input.control && !input.alt && !input.shift && input.key === ',') {
+          event.preventDefault()
+          openPluginWindow()
+        }
+      })
+    }
     window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
     window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
       if (isMainFrame && code !== -3 && !quitting && !window.isDestroyed()) {
