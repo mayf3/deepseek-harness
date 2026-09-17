@@ -178,8 +178,6 @@ describe('inspection detail adapters', () => {
 describe('detailsCardModel fallback contract', () => {
   it('keeps malformed successful domain results generic', () => {
     expect(detailsCardModel(output('create_goal', 'not-json'), t, 'en')).toBeNull()
-    expect(detailsCardModel(output('todo_write', 'x', { todos: [{ content: 'x', status: 'pending' }] }), t, 'en')).not.toBeNull()
-    expect(detailsCardModel(output('todo_write', 'x', { todos: [{ content: 'x', status: 'unknown' }] }), t, 'en')).toBeNull()
     expect(detailsCardModel(output('schedule_create', '{"id":"s","prompt":"x","kind":"at","scheduledAt":"invalid","state":"scheduled","deliveryMode":"session-local"}'), t, 'en')).toBeNull()
   })
 

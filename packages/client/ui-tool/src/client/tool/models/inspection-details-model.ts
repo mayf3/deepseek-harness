@@ -154,18 +154,19 @@ function traceDetails(name: string, text: string, t: DetailTranslate, locale: st
  * @param name - Wire tool name.
  * @param args - Recorded argument object.
  * @param text - Recorded result text.
+ * @param json - Parsed whole-result JSON, or undefined for non-JSON text.
  * @param t - Conversation translator.
  * @param locale - Date display locale.
  * @returns Structured details, or null when an output format is unknown.
  */
 export function inspectionDetails(
-  name: string, args: Record<string, unknown>, text: string, t: DetailTranslate, locale: string,
+  name: string, args: Record<string, unknown>, text: string, json: unknown, t: DetailTranslate, locale: string,
 ): ToolDetailsModel | null {
   if (hasSpillNotice(text)) return null
   switch (name) {
     case 'cordis_inspect_list':
     case 'cordis_inspect_query':
-    case 'cordis_inspect_self': return cordisDetails(name, args, detailJson(text), t)
+    case 'cordis_inspect_self': return cordisDetails(name, args, json, t)
     case 'workflow':
     case 'ralph': return workflowDetails(name, args, text, t)
     case 'session_search':

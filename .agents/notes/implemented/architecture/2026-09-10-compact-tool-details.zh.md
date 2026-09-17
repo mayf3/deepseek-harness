@@ -14,6 +14,8 @@ Status: implemented
 
 工具行保留展开和 Inspect 交互。任务清单标记是静态的，并带有可访问的状态标签。定时任务使用查看者时区的绝对日期，状态取自记录的结果。目标详情区分等待继续的活动目标和已启动的目标。这些显示值不订阅当前目标、任务清单或定时任务投影。
 
+任务清单的变化将每个根调用或嵌套调用与之前的持久化 `todo/write` 比较，因此后续写入不会改变较早的卡片。对话组装器在加载更早的历史时修复前序记录。前序记录尚不明确时，卡片展示提交的列表，不推断新增或删除。
+
 这项有限的视觉调整是[客户端派生工具呈现](2026-08-23-client-derived-tool-presentation.zh.md)中视觉等价要求的例外。该决策中的原始事件所有权、通用回退和唯一按键注册表仍然有效。
 
 ## 考虑过的替代方案
@@ -24,4 +26,4 @@ Status: implemented
 
 ## 影响
 
-已注册的 36 个工具名称获得可读详情，无需修改 Host 工具、Session 事件或公共 Client 导出。`detailsCardModel` 识别目标和定时任务 JSON，`controlDetails` 识别 Agent、teammate、作业、终端和 LSP 回执，`inspectionDetails` 识别 Cordis、workflow、Ralph 和 Session 查询报告；其他结果仍可作为原始文本查看。手工编写的 tool-details Session 回放覆盖它们在完整页面中的呈现。
+已注册的工具获得可读详情，无需改变 Host 工具、Session 事件或公开的 Client 导出。工具专用适配器解读记录中的 JSON 和文本；未识别的格式保留通用输出。手写的 tool-details Session 回放覆盖这些工具组装后的渲染。

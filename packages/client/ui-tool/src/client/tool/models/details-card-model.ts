@@ -114,12 +114,11 @@ export function detailsCardModel(block: ToolCallBlock, t: Translate, locale: str
   if (!('kind' in block) || block.isError) return null
   const call = parsedToolCall(block)
   if (call === null) return null
-  if (call.name === 'todo_write') return todosDetail(call.args, t)
   const text = singleResultText(block)
   if (text === undefined) return null
-  const details = controlDetails(call.name, call.args, text, t) ?? inspectionDetails(call.name, call.args, text, t, locale)
-  if (details !== null) return details
   const value = detailJson(text)
+  const details = controlDetails(call.name, call.args, text, value, t) ?? inspectionDetails(call.name, call.args, text, value, t, locale)
+  if (details !== null) return details
   if (value === undefined) return null
   switch (call.name) {
     case 'create_goal':
@@ -137,7 +136,7 @@ export function detailsCardModel(block: ToolCallBlock, t: Translate, locale: str
         if (item === null) return null
         items.push(item)
       }
-      return { items, empty: t('detail.schedule.empty') }
+      return { items, summary: t('detail.schedule.count', { count: items.length }), empty: t('detail.schedule.empty') }
     }
     case 'schedule_delete':
       if (!detailRecord(value) || !nonempty(value.id) || value.deleted !== true) return null

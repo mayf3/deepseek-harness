@@ -59,26 +59,20 @@ interface TodoHistoryNode extends ConversationViewNode {
   readonly data: TodoBaseline
 }
 
-/** Incremental target whose publication invalidates keyed reads without copying older calls. */
+/** Incremental lookup snapshots preserve earlier call baselines across later writes. */
 export const todoHistoryView: ConversationViewDefinition<TodoHistoryNode, TodoHistory> = {
   target: 'tool-todo-history',
   create: () => {
     let calls = new Map<string, TodoBaseline>()
-    const snapshot = (source: ReadonlyMap<string, TodoBaseline>): TodoHistory => ({ get: callId => source.get(callId) })
-    let current: TodoHistory = snapshot(calls)
-    const publish = (next: Map<string, TodoBaseline>): TodoHistory => {
-      calls = next
-      current = snapshot(next)
-      return current
-    }
     return {
-      empty: current,
-      replace: ({ nodes }) => publish(new Map(nodes.map(node => [node.id, node.data]))),
+      empty: calls,
+      replace: ({ nodes }) => calls = new Map(nodes.map(node => [node.id, node.data])),
       apply: ({ upserts }) => {
-        if (upserts.length === 0) return current
-        const next = new Map(calls)
-        for (const node of upserts) next.set(node.id, node.data)
-        return publish(next)
+        if (upserts.length > 0) {
+          calls = new Map(calls)
+          for (const node of upserts) calls.set(node.id, node.data)
+        }
+        return calls
       },
     }
   },

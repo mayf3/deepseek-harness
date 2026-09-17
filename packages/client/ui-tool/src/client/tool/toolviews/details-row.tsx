@@ -90,9 +90,7 @@ export function DetailsRow({ toolName, block, cwd, home, openFile, inspect, t }:
       toolName={toolName}
       icon={detailIcon(toolName)}
       title={t(titleKey)}
-      summary={details?.summary ?? (toolName === 'schedule_list' && details !== null
-        ? t('detail.schedule.count', { count: details.items.length })
-        : details?.items[0]?.title ?? details?.empty ?? model.summary)}
+      summary={details?.summary ?? details?.items[0]?.title ?? details?.empty ?? model.summary}
       details={details}
       bodyRaw={model.bodyRaw}
       output={model.output}

@@ -14,6 +14,8 @@ The `ui-tool` package registers goal and schedule toolviews through the existing
 
 Tool rows keep their disclosure and Inspect interaction. Checklist marks are static and have accessible status labels. Schedule times use absolute dates with the viewer's time zone; states come from the recorded result. Goal details distinguish an active goal awaiting continuation from an armed goal. These display values do not subscribe to the current goal, todo, or schedule projection.
 
+Todo changes compare each root or nested call with its preceding durable `todo/write`, so later writes cannot alter an earlier card. The conversation assembler repairs predecessors when older history loads. Until the predecessor is known, the card shows the submitted list without inferred additions or removals.
+
 This scoped visual change is an exception to the visual-equivalence requirement in [Client-derived tool presentation](2026-08-23-client-derived-tool-presentation.md). Its raw-event ownership, generic fallback, and single keyed registry remain authoritative.
 
 ## Alternatives considered
@@ -24,4 +26,4 @@ This scoped visual change is an exception to the visual-equivalence requirement 
 
 ## Consequences
 
-The 36 registered tool names gain readable details without changing Host tools, Session events, or public Client exports. `detailsCardModel` recognizes goal and schedule JSON, `controlDetails` recognizes agent, teammate, job, terminal, and LSP receipts, and `inspectionDetails` recognizes Cordis, workflow, Ralph, and Session query reports; any other result remains inspectable as raw text. The authored tool-details Session replay covers their assembled rendering.
+Registered tools gain readable details without changing Host tools, Session events, or public Client exports. Tool-specific adapters interpret recorded JSON and text; unrecognized formats retain generic output. The authored tool-details Session replay covers their assembled rendering.

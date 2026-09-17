@@ -6,7 +6,7 @@ import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
-import { detailsCardModel } from '../src/client/tool/models/details-card-model.ts'
+import { detailsCardModel, todosDetail } from '../src/client/tool/models/details-card-model.ts'
 import { DetailsRow, detailsToolview } from '../src/client/tool/toolviews/details-row.tsx'
 
 const t = makeTranslate(en, commonEn)
@@ -30,10 +30,11 @@ describe('detailsCardModel', () => {
   it('keeps all reminders and their recorded state, including one-shot and empty lists', () => {
     const model = detailsCardModel(result('schedule_list', [schedule, { ...schedule, id: 'schedule-2', kind: 'at', state: 'overdue' }, { ...schedule, id: 'schedule-3', kind: 'after', afterSeconds: 30 }]), t, 'en')
     expect(model?.items).toHaveLength(3)
+    expect(model?.summary).toBe('3 reminders')
     expect(model?.items[0]?.fields).toContainEqual({ label: 'Repeat', value: 'Every 1 h' })
     expect(model?.items[1]?.fields).toContainEqual({ label: 'Status', value: 'Overdue, awaiting session resume' })
     expect(model?.items[2]?.fields).toContainEqual({ label: 'Repeat', value: 'Once' })
-    expect(detailsCardModel(result('schedule_list', []), t, 'en')?.empty).toBe('No reminders')
+    expect(detailsCardModel(result('schedule_list', []), t, 'en')).toMatchObject({ summary: '0 reminders', empty: 'No reminders' })
     expect(detailsCardModel(result('schedule_delete', { id: 'schedule-1', deleted: true }), t, 'en')?.items[0]?.fields).toContainEqual({ label: 'Status', value: 'Deleted' })
   })
 
@@ -63,15 +64,15 @@ describe('detailsCardModel', () => {
     expect(detailsCardModel({ callId: 'c1', name: 'create_goal', argsRaw: '{}', turn: 1, step: 1, time: 1000, subCalls: [] }, t, 'en')).toBeNull()
     expect(detailsCardModel({ ...block, parentCallId: 'parent' }, t, 'en')?.items[0]?.title).toBe(goal.objective)
   })
+})
 
-  it('shows only successful valid to-do lists and uses the tool’s trimmed text', () => {
-    const block = result('todo_write', 'Updated todo list', JSON.stringify({ todos: [{ content: '  Build the page  ', status: 'in_progress' }] }))
-    expect(detailsCardModel(block, t, 'en')?.items[0]).toEqual({ title: 'Build the page', status: { value: 'in_progress', label: 'In progress' }, fields: [] })
-    expect(detailsCardModel({ ...block, isError: true }, t, 'en')).toBeNull()
+describe('todosDetail', () => {
+  it('accepts valid to-do lists and uses the tool’s trimmed text', () => {
+    expect(todosDetail({ todos: [{ content: '  Build the page  ', status: 'in_progress' }] }, t)?.items[0]).toEqual({ title: 'Build the page', status: { value: 'in_progress', label: 'In progress' }, fields: [] })
     for (const todos of [[{ content: 'x', status: 'unknown' }], [{ content: '', status: 'pending' }], [null], [{ content: 'x', status: 'pending' }, { content: ' x ', status: 'completed' }]]) {
-      expect(detailsCardModel(result('todo_write', '', JSON.stringify({ todos })), t, 'en')).toBeNull()
+      expect(todosDetail({ todos }, t)).toBeNull()
     }
-    expect(detailsCardModel(result('todo_write', '', '{"todos":[]}'), t, 'en')?.empty).toBe('The to-do list is empty')
+    expect(todosDetail({ todos: [] }, t)?.empty).toBe('The to-do list is empty')
   })
 })
 

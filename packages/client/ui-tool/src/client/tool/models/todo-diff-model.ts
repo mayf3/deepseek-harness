@@ -1,10 +1,10 @@
-/** Todo changes relative to the preceding successful recorded write. */
+/** Todo changes relative to the preceding recorded write. */
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolDetailsModel } from '../components/ToolDetails.tsx'
 import type { TodoBaseline } from './todo-history.ts'
-import { detailsCardModel, todosDetail } from './details-card-model.ts'
-import { detailRecord } from './detail-model-shared.ts'
+import { todosDetail } from './details-card-model.ts'
+import { parsedToolCall } from './raw-tool-call.ts'
 
 /**
  * Compare this write with its predecessor in the loaded call history.
@@ -21,15 +21,8 @@ export function todoDiffModel(
   t: TranslateNS<'conversation'>,
 ): { details: ToolDetailsModel; summary: string | null } | null {
   if (!('kind' in block) || block.isError) return null
-  let current: ToolDetailsModel | null
-  if ('kind' in block && block.call?.name === 'todo_write') {
-    let args: unknown
-    try { args = JSON.parse(block.call.argsRaw) }
-    catch { return null }
-    current = detailRecord(args) ? todosDetail(args, t) : null
-  } else {
-    current = detailsCardModel(block, t, 'en')
-  }
+  const call = parsedToolCall(block)
+  const current = call?.name === 'todo_write' ? todosDetail(call.args, t) : null
   if (current === null) return null
   const previous: ToolDetailsModel | null = baseline?.todos === undefined ? null : { items: baseline.todos.map(todo => ({
     title: todo.content, status: { value: todo.status, label: t(`detail.todo.${todo.status}`) }, fields: [],

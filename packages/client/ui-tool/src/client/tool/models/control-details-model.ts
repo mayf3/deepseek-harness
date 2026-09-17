@@ -1,7 +1,7 @@
 /** Entity lists and receipts for agent, job, terminal, and language-server tools. */
 import type { ToolDetailsModel } from '../components/ToolDetails.tsx'
 import {
-  detailBadge, detailJson, detailList, detailRecord, inspectionItems,
+  detailBadge, detailList, detailRecord, inspectionItems,
   type DetailItem, type DetailTranslate,
 } from './detail-model-shared.ts'
 
@@ -19,8 +19,7 @@ function receipt(title: string, badge: NonNullable<DetailItem['badge']>, t: Deta
   }
 }
 
-function agentList(text: string, t: DetailTranslate): ToolDetailsModel | null {
-  const json = detailJson(text)
+function agentList(text: string, json: unknown, t: DetailTranslate): ToolDetailsModel | null {
   if (Array.isArray(json)) return detailList(inspectionItems(json, t), t('detail.agents.count', { count: json.length }), t)
   if (text === '(no subagents)') return detailList([], t('detail.agents.count', { count: 0 }), t)
   const items: DetailItem[] = []
@@ -102,14 +101,16 @@ function lspDetails(args: Record<string, unknown>, text: string, t: DetailTransl
  * @param name - Wire tool name, including Team-scoped aliases.
  * @param args - Parsed recorded arguments.
  * @param text - Successful recorded result text.
+ * @param json - Parsed whole-result JSON, or undefined for non-JSON text.
  * @param t - Conversation translator.
  * @returns Compact details, or null when the output format is not recognized.
  */
-export function controlDetails(name: string, args: Record<string, unknown>, text: string, t: DetailTranslate): ToolDetailsModel | null {
-  const json = detailJson(text)
+export function controlDetails(
+  name: string, args: Record<string, unknown>, text: string, json: unknown, t: DetailTranslate,
+): ToolDetailsModel | null {
   const target = arg(args, 'target') || arg(args, 'agent_id') || arg(args, 'sessionId') || arg(args, 'job_id')
   switch (name) {
-    case 'list_agents': return agentList(text, t)
+    case 'list_agents': return agentList(text, json, t)
     case 'job_list': return jobList(text, t)
     case 'terminal_list': return terminalList(text, t)
     case 'lsp': return lspDetails(args, text, t)
