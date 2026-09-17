@@ -12,6 +12,7 @@
     "apps/web/tests/default-product-isolation.e2e.ts",
     "apps/web/tests/diff-context.e2e.ts",
     "apps/web/tests/scaffold.ts",
+    "apps/web/tests/voice-input.e2e.ts",
     "apps/web/tests/auto-review-fixture.ts",
     "apps/web/tests/auto-review-denial.e2e.ts",
     "apps/web/tests/scaffold-generation.spec.ts",
@@ -150,6 +151,11 @@
     "scripts/client-bundle-purity.spec.ts"
   ],
   "references": [
+    { "path": "./packages/experimental/speech-to-text" },
+    { "path": "./packages/experimental/speech-to-text-sensevoice" },
+    { "path": "./packages/experimental/api-speech-to-text" },
+    { "path": "./packages/experimental/voice-input-bundle" },
+
     { "path": "./packages/skill/skill-office" },
     { "path": "./packages/browser-use/browser-use" },
     { "path": "./packages/experimental/browser-use-runtime" },

@@ -305,8 +305,8 @@ export interface LaunchOptions {
   profileResolutionMode?: Extract<ProfileResolutionMode, 'dual' | 'runtime'>
   /** Enable the real Open In rows with deterministic launch-environment facts. */
   openInAppEnvironment?: LaunchEnvironmentSnapshot
-  /** Compare the replayed root session with `replayFixture`; defaults on for a manifest-owned canonical recording. */
-  compareReplaySession?: boolean
+  /** Compare the replayed root Session; `read-only` also forbids refresh writes to a borrowed fixture. */
+  compareReplaySession?: boolean | 'read-only'
   /**
    * Optional product overlay applied after the shipped Web surface and before
    * the scaffold's hermetic test patches, matching the launcher's `--patch`
@@ -920,7 +920,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
           await assertReplaySession(
             [...observedSessions.values()],
             replayFixture,
-            mode,
+            compareReplaySession === 'read-only' ? 'replay' : mode,
             `http://${browserHost}:${port}`,
             harnessHome,
           )

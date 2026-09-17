@@ -1,0 +1,80 @@
+---
+description: "Named experimental transcription providers and cancellation ownership."
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-experimental-speech-to-text
+
+English | [中文](README.zh.md)
+
+## Summary
+
+This Service Definition selects named speech recognizers through `ctx.speechToText`. Consumers resolve their request before execution; providers register independently.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+Load through the [voice input bundle](../voice-input-bundle/README.md), or compose the service with a provider and consumer. `defaultProvider` selects an exact registered id; `language` supplies the omitted language hint. A missing or duplicate provider fails explicitly.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Maintainer details — click to expand</summary>
+
+`resolve()` captures the provider instance, recording and language. `transcribe()` rejects a withdrawn or replaced registration. A registration disposer closes admission, aborts accepted requests and joins provider settlement; providers must honor cancellation. No fallback selects a different recognizer or uploads audio. No runtime invariant companion is published because the registry is the sole source of provider and preparation observations.
+
+When `settings` is present, the `voice-input` namespace persists provider and language choices; composition defaults apply before an override is saved. `configure()` updates only supplied fields. Provider-owned preparation is observed through complete `SpeechSnapshot` values; closing an observer never cancels preparation.
+
+The `./wave` helper validates canonical 16 kHz mono PCM16 WAV for the Remote consumer and the native recognition process. Both reject inconsistent headers and lengths before decoding samples.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+[Voice input subsystem](../../../docs/subsystems/voice-input.md)
+
+-----
+
+<a id="model-experience"></a>
+## Model Experience
+
+None, as recordings and preparation remain outside model requests; ordinary user submission owns any later text.
+
+#### KV Cache effect
+
+No direct effect; ordinary submission owns the message content.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- Only complete-recording transcription is supported. Streaming recognition and speech synthesis have no service methods.
+
+-----
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Maintainer details — click to expand</summary>
+
+None.
+
+</details>

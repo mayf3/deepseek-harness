@@ -43,7 +43,7 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | `Menu` | Dropdown of items, separators, and group labels, with nested submenus. While open, ↑/↓ (with Home and End) walk the list, Tab settles the focused row, and Escape or Shift+Tab close back to the anchor; selecting a row also returns the keyboard to the anchor unless the owner moved it itself. Only a keyboard on the anchor or inside the list is intercepted, and `autoFocus` decides solely whether opening focuses the first row. |
 | `Pill` | Selectable capsule button for view switchers and filters; takes `active` and `onClick`. |
 | `Tag` | Read-only capsule badge; `tone` selects one of eight palettes. |
-| `StateDot` | Status mark: `done`, `warning`, `ongoing`, `error`, or `idle`. `aria-hidden`, so the render site owns the name. |
+| `StateDot` | Status mark: `done`, `warning`, `ongoing`, `error`, or `idle`. `appearance="step"` shows a filled check for completion and a hollow pending circle. `aria-hidden`, so the render site owns the name. |
 | `ConnectionIndicator` | Inline connection-recovery control across outage, retry, and recovered states. |
 | `DisclosureRow` | 24px compact disclosure that lays title and content side by side. |
 | `Modal` | Centered dialog over a page mask. |

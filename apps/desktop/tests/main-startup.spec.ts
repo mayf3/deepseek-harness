@@ -135,7 +135,8 @@ vi.mock('electron', () => ({
     handle: (channel: string, handler: (event: { senderFrame: { url: string } }) => unknown) => { if (harness.handlers.has(channel)) throw new Error(`duplicate IPC handler ${channel}`); harness.handlers.set(channel, handler) },
   },
   Menu: harness.menu,
-  session: { defaultSession: { webRequest: { onBeforeSendHeaders: harness.socketHeaders } } },
+  session: { defaultSession: { setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(),
+    webRequest: { onBeforeSendHeaders: harness.socketHeaders } } },
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
 }))
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: 'desktop-test-profile' }) }))

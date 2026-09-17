@@ -1,0 +1,269 @@
+/** Local provider queueing, cancellation and process cleanup with real managed subprocesses. */
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { Context } from '@deepseek-ai/cordis'
+import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
+import LocalSubprocess from '@deepseek-ai/dsh-subprocess-local'
+import { afterEach, expect, it, vi } from 'vitest'
+import { Config } from '../src/config.ts'
+import { SenseVoiceWorker } from '../src/recognizer.ts'
+import { prepareRuntime } from '../src/runtime.ts'
+
+vi.mock('../src/runtime.ts', () => ({ prepareRuntime: vi.fn() }))
+const cleanup: Array<() => Promise<void>> = []
+afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); vi.clearAllMocks() })
+
+async function fixture(overrides: Partial<Config> = {}) {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-speech-test-'))
+  cleanup.push(async () => { await rm(root, { recursive: true, force: true }) })
+  const ctx = new Context()
+  cleanup.push(async () => { await ctx.fiber.dispose() })
+  await ctx.plugin(LocalSubprocess)
+  const spawn = vi.spyOn(ctx.get('subprocess')!, 'spawn')
+  const config = Config({ dataRoot: root, idleTimeoutMs: 0, ...overrides })
+  vi.mocked(prepareRuntime).mockImplementation(async () => ({ tokens: root,
+    worker: fileURLToPath(new URL('./worker.fixture.mjs', import.meta.url)), model: root, vad: root }))
+  const worker = new SenseVoiceWorker(ctx, config)
+  cleanup.push(async () => { await worker.dispose() })
+  return { root, worker, spawn, ctx }
+}
+
+const audio = new Uint8Array([1, 2])
+const signal = (): AbortSignal => new AbortController().signal
+async function requests(root: string): Promise<string> {
+  try { return await readFile(join(root, 'requests'), 'utf8') } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    return ''
+  }
+}
+
+it('keeps one worker warm across recordings and joins its exit on disposal', async () => {
+  const { worker, spawn } = await fixture()
+  expect(spawn).not.toHaveBeenCalled()
+  expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
+  expect((await worker.transcribe({ audio, language: 'en' }, signal())).text).toBe('en')
+  expect(spawn).toHaveBeenCalledOnce()
+  const handle = spawn.mock.results[0]!.value as SubprocessHandle
+  await worker.dispose()
+  expect(await handle.waitForExit()).toBe(true)
+  await expect(worker.transcribe({ audio, language: 'en' }, signal())).rejects.toThrow('disposed')
+})
+
+it('cancels active inference before the next recording can acquire a fresh worker', async () => {
+  const { worker, root, spawn } = await fixture()
+  const cancel = new AbortController()
+  const first = worker.transcribe({ audio, language: 'hold' }, cancel.signal)
+  const rejected = expect(first).rejects.toThrow()
+  await vi.waitFor(async () => { expect(await requests(root)).toContain('hold') }, { timeout: 10000 })
+  const next = worker.transcribe({ audio, language: 'en' }, signal())
+  cancel.abort(new Error('cancel'))
+  await rejected
+  expect((await next).text).toBe('en')
+  expect(spawn).toHaveBeenCalledTimes(2)
+  expect(await (spawn.mock.results[0]!.value as SubprocessHandle).waitForExit()).toBe(true)
+})
+
+it('bounds the queue and never executes a cancelled waiting recording', async () => {
+  const { worker, root } = await fixture({ maxPending: 2 })
+  const active = new AbortController(), waiting = new AbortController()
+  const first = worker.transcribe({ audio, language: 'hold' }, active.signal)
+  const firstFailure = expect(first).rejects.toThrow()
+  await vi.waitFor(async () => { expect(await requests(root)).toContain('hold') }, { timeout: 10000 })
+  const second = worker.transcribe({ audio, language: 'discard' }, waiting.signal)
+  const secondFailure = expect(second).rejects.toThrow('waiting cancelled')
+  await expect(worker.transcribe({ audio, language: 'full' }, signal())).rejects.toThrow('queue is full')
+  waiting.abort(new Error('waiting cancelled')); active.abort()
+  await firstFailure; await secondFailure
+  expect(await requests(root)).toBe('hold\n')
+})
+
+it('joins running and waiting requests when its provider is disposed', async () => {
+  const { worker, root } = await fixture()
+  const first = worker.transcribe({ audio, language: 'hold' }, signal())
+  const firstFailure = expect(first).rejects.toThrow()
+  await vi.waitFor(async () => { expect(await requests(root)).toContain('hold') }, { timeout: 10000 })
+  const second = worker.transcribe({ audio, language: 'discard' }, signal())
+  const secondFailure = expect(second).rejects.toThrow('disposed')
+  await worker.dispose(); await firstFailure; await secondFailure
+  expect(await requests(root)).toBe('hold\n')
+})
+
+it('stops an idle worker and reloads it on demand', async () => {
+  const { worker, spawn } = await fixture({ idleTimeoutMs: 25 })
+  await worker.transcribe({ audio, language: 'en' }, signal())
+  const first = spawn.mock.results[0]!.value as SubprocessHandle
+  await first.done
+  expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
+  expect(spawn).toHaveBeenCalledTimes(2)
+  expect(prepareRuntime).toHaveBeenCalledOnce()
+})
+
+it('owns one preparation task across repeated requests and reports warm standby', async () => {
+  const { worker, spawn } = await fixture({ idleTimeoutMs: 100 })
+  const phases: string[] = []
+  const stopObserving = worker.subscribe(() => { phases.push(worker.snapshot().phase) })
+  expect(worker.snapshot()).toMatchObject({ phase: 'unprepared' })
+  worker.prepare(); worker.prepare()
+  await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('ready') }, { timeout: 10000 })
+  worker.prepare()
+  expect(spawn).toHaveBeenCalledOnce()
+  await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('standby') }, { timeout: 10000 })
+  worker.prepare()
+  await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('ready') }, { timeout: 10000 })
+  expect(phases).toContain('waking')
+  expect(prepareRuntime).toHaveBeenCalledOnce()
+  stopObserving()
+})
+
+it('cancels Host preparation, retains retry admission, and exposes preparation failure', async () => {
+  const { worker } = await fixture()
+  vi.mocked(prepareRuntime).mockImplementationOnce(async (_ctx, _config, signal) => {
+    await new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => { reject(new Error('cancelled')) }, { once: true })
+    })
+    throw new Error('unreachable')
+  })
+  worker.prepare()
+  await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('checking') })
+  await worker.cancel()
+  expect(worker.snapshot().phase).toBe('cancelled')
+  await worker.cancel()
+  vi.mocked(prepareRuntime).mockRejectedValueOnce(new Error('download unavailable'))
+  worker.prepare()
+  await vi.waitFor(() => { expect(worker.snapshot()).toMatchObject({ phase: 'failed', message: 'download unavailable' }) })
+  worker.prepare()
+  await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('ready') }, { timeout: 10000 })
+})
+
+it('recovers after a provider error or unexpected worker exit', async () => {
+  const { worker } = await fixture()
+  await expect(worker.transcribe({ audio, language: 'error' }, signal())).rejects.toThrow('provider failed')
+  await expect(worker.transcribe({ audio, language: 'crash' }, signal())).rejects.toThrow()
+  expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
+})
+
+it('applies inference deadlines and reports runtime preparation failure', async () => {
+  const { worker } = await fixture({ inferenceTimeoutMs: 100 })
+  await expect(worker.transcribe({ audio, language: 'hold' }, signal())).rejects.toThrow()
+  const fresh = await fixture()
+  vi.mocked(prepareRuntime).mockRejectedValueOnce(new Error('runtime missing'))
+  await expect(fresh.worker.transcribe({ audio, language: 'zh' }, signal())).rejects.toThrow('runtime missing')
+})
+
+it('retains complete download snapshots while throttling only intermediate notifications', async () => {
+  const { worker } = await fixture({ progressIntervalMs: 100 })
+  const now = vi.spyOn(performance, 'now').mockReturnValue(0)
+  const runtime = vi.mocked(prepareRuntime).getMockImplementation()!
+  const updates: unknown[] = []
+  worker.subscribe(() => { updates.push(worker.snapshot()) })
+  vi.mocked(prepareRuntime).mockImplementationOnce(async (ctx, config, signal, report) => {
+    report!({ phase: 'downloading', resource: 'model', completedBytes: 0, totalBytes: 10 })
+    report!({ phase: 'downloading', resource: 'model', completedBytes: 2, totalBytes: 10 })
+    expect(worker.snapshot()).toMatchObject({ phase: 'downloading', resource: 'model', completedBytes: 2, totalBytes: 10 })
+    expect(updates).not.toContainEqual(worker.snapshot())
+    now.mockReturnValue(101)
+    report!({ phase: 'downloading', resource: 'model', completedBytes: 5, totalBytes: 10 })
+    report!({ phase: 'downloading', resource: 'model', completedBytes: 10, totalBytes: 10 })
+    report!({ phase: 'downloading', resource: 'vad', completedBytes: 0, totalBytes: 10 })
+    return await runtime(ctx, config, signal, report)
+  })
+  try {
+    worker.prepare()
+    await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('ready') }, { timeout: 10000 })
+    expect(updates).toContainEqual(expect.objectContaining({ phase: 'downloading', resource: 'model', completedBytes: 10, totalBytes: 10 }))
+    expect(updates).toContainEqual(expect.objectContaining({ phase: 'downloading', resource: 'vad', completedBytes: 0, totalBytes: 10 }))
+  } finally { now.mockRestore() }
+})
+
+it('joins a worker that exits before readiness and exposes retryable preparation errors', async () => {
+  const { worker, spawn, root } = await fixture()
+  vi.mocked(prepareRuntime).mockResolvedValueOnce({ tokens: root, worker: join(root, 'missing.mjs'), model: root, vad: root })
+  worker.prepare()
+  await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('failed') }, { timeout: 10000 })
+  expect(await (spawn.mock.results[0]!.value as SubprocessHandle).waitForExit()).toBe(true)
+  const next = await fixture()
+  vi.mocked(prepareRuntime).mockRejectedValueOnce('download interrupted')
+  next.worker.prepare()
+  await vi.waitFor(() => { expect(next.worker.snapshot()).toMatchObject({ phase: 'failed', message: 'download interrupted' }) })
+})
+
+it('reclaims the process range after an unexpected idle exit before replacing the worker', async () => {
+  const { worker, spawn } = await fixture()
+  await worker.transcribe({ audio, language: 'en' }, signal())
+  const handle = spawn.mock.results[0]!.value as SubprocessHandle
+  handle.terminate()
+  await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('standby') }, { timeout: 10000 })
+  expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
+  expect(await handle.waitForExit()).toBe(true)
+  expect(spawn).toHaveBeenCalledTimes(2)
+})
+
+it('retains a worker whose idle cleanup cannot observe exit until that range is joined', async () => {
+  const { worker, spawn, ctx } = await fixture({ idleTimeoutMs: 100 })
+  const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+  await worker.transcribe({ audio, language: 'en' }, signal())
+  const handle = spawn.mock.results[0]!.value as SubprocessHandle
+  const joined = vi.spyOn(handle, 'waitForExit').mockRejectedValueOnce(new Error('range observation failed'))
+  await vi.waitFor(() => { expect(joined).toHaveBeenCalledOnce() }, { timeout: 10000 })
+  expect(warn).toHaveBeenCalledWith('Speech worker idle cleanup failed', expect.any(Error))
+  await expect(worker.transcribe({ audio, language: 'zh' }, signal())).rejects.toThrow('range observation failed')
+  expect(spawn).toHaveBeenCalledOnce()
+  expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
+  expect(await joined.mock.results.at(-1)!.value).toBe(true)
+  expect(spawn).toHaveBeenCalledTimes(2)
+  warn.mockRestore()
+})
+
+it('retains completed preparation steps when cancellation settles the active step', async () => {
+  const { worker } = await fixture(), entered = Promise.withResolvers<undefined>()
+  vi.mocked(prepareRuntime).mockImplementationOnce(async (_ctx, _config, signal, report) => {
+    for (const step of ['model', 'vad', 'verify'] as const) report!({ phase: 'installing', step, startedAt: Date.now() })
+    const before = worker.snapshot().steps?.find(step => step.kind === 'verify')?.startedAt
+    report!({ phase: 'installing', step: 'verify', startedAt: Date.now() })
+    expect(worker.snapshot().steps?.find(step => step.kind === 'verify')?.startedAt).toBe(before)
+    entered.resolve(undefined)
+    return await new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => { reject(new Error('setup cancelled')) }, { once: true })
+    })
+  })
+  worker.prepare(); await entered.promise
+  expect(worker.snapshot().steps?.map(step => [step.kind, step.status])).toEqual([
+    ['check', 'complete'], ['model', 'complete'], ['vad', 'complete'], ['verify', 'running'], ['load', 'pending'],
+  ])
+  await worker.cancel()
+  expect(worker.snapshot().steps?.find(step => step.kind === 'verify')?.status).toBe('cancelled')
+  worker.prepare()
+  await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('ready') }, { timeout: 10000 })
+  expect(worker.snapshot().steps?.every(step => step.status === 'complete')).toBe(true)
+})
+
+it('omits preparation steps supplied by explicit deployment paths', async () => {
+  const { worker } = await fixture({ modelDirectory: process.cwd(), vadModelPath: process.cwd() })
+  expect(worker.snapshot().steps?.map(step => step.kind)).toEqual(['check', 'verify', 'load'])
+  worker.prepare()
+  await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('ready') }, { timeout: 10000 })
+})
+
+it('returns prepared resources to standby when the user cancels an idle wake-up', async () => {
+  const { worker } = await fixture({ idleTimeoutMs: 100 })
+  await worker.transcribe({ audio, language: 'en' }, signal())
+  await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('standby') }, { timeout: 10000 })
+  const cancel = new AbortController()
+  const unsubscribe = worker.subscribe(() => {
+    if (worker.snapshot().phase === 'waking') cancel.abort(new Error('recording cancelled'))
+  })
+  await expect(worker.transcribe({ audio, language: 'zh' }, cancel.signal)).rejects.toThrow('recording cancelled')
+  expect(worker.snapshot().phase).toBe('standby')
+  expect(worker.snapshot().steps?.find(step => step.kind === 'load')?.status).toBe('cancelled')
+  unsubscribe()
+  expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
+})
+
+it('launches source workers through the repository ESM loader', async () => {
+  const { worker, spawn, root } = await fixture()
+  vi.mocked(prepareRuntime).mockResolvedValueOnce({ tokens: root, worker: fileURLToPath(new URL('./worker-source.fixture.ts', import.meta.url)), model: root, vad: root })
+  expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
+  expect(spawn.mock.calls[0]?.[0].argv).toContain('--import')
+})

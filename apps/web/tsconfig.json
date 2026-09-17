@@ -25,6 +25,7 @@
     "tests/default-product-isolation.e2e.ts",
     "tests/diff-context.e2e.ts",
     "tests/scaffold.ts",
+    "tests/voice-input.e2e.ts",
     "tests/auto-review-fixture.ts",
     "tests/scaffold-generation.spec.ts",
     "tests/scaffold-hermetic.e2e.ts",

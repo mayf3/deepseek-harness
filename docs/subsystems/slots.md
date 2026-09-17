@@ -6,6 +6,8 @@ Slots are the Web Client's typed React composition system. [`dsh-client-ui-slots
 
 This page documents slot ownership, component inputs, extension APIs, and the shipped hierarchy. The surrounding boot, Remote, Client model, and Conversation paths are in [Web Client architecture](web-client.md).
 
+`plugins.bundle.status` is keyed by npm package name and renders short status before the bundle switch; `plugins.bundle.config` supplies bundle detail configuration. `conversation.input.activity` supplies one action between the model selector and Send, with toolbar expansion released on unmount.
+
 ## Declaration and lifecycle
 
 `SlotMap` is the compile-time registry. A package declaration-merges the key, cardinality, scope, owner props, keyed props, and optional slot-level inject face. The runtime declaration is the matching `children` entry on the component that owns the render location.

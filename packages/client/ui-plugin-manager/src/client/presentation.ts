@@ -10,6 +10,7 @@ export type Translate = PropsLocale<'pluginManager'>['t']
 
 /** The official packages with copy of their own, and whether each is a beta feature the page tags as such. */
 const BUILTIN_COPY = new Map<string, { title: PluginManagerLocaleKey; description: PluginManagerLocaleKey; beta: boolean }>([
+  ['@deepseek-ai/dsh-experimental-voice-input-bundle', { title: 'builtinVoiceTitle', description: 'builtinVoiceDescription', beta: true }],
   ['@deepseek-ai/dsh-experimental-agent-team-profile', {
     title: 'builtinAgentTeamTitle', description: 'builtinAgentTeamDescription', beta: true,
   }],

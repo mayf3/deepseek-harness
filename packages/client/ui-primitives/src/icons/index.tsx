@@ -529,6 +529,13 @@ export const IconPaperPlaneOutline14 = ({ size = 14, className }: IconProps) => 
 )
 
 /** ic_ds_stop_fill_16 */
+/** Microphone for user-initiated speech capture. */
+export const IconMicrophoneOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+    <rect x="9" y="2" width="6" height="13" rx="3" /><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8" />
+  </svg>
+)
+
 export const IconStopFill16 = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path

@@ -1,0 +1,31 @@
+/** Explicit opt-in real SenseVoice inference, including the managed runtime when no overrides are supplied. */
+import { readFile } from 'node:fs/promises'
+import { Context } from '@deepseek-ai/cordis'
+import LocalSubprocess from '@deepseek-ai/dsh-subprocess-local'
+import { expect, it } from 'vitest'
+import { Config } from '../src/config.ts'
+import { SenseVoiceWorker } from '../src/recognizer.ts'
+
+const { DSH_SPEECH_E2E_ROOT: dataRoot, DSH_SPEECH_E2E_AUDIO: audioPath } = process.env
+
+it.skipIf(!dataRoot || !audioPath)('prepares a real local recognizer, transcribes speech, and releases it', { timeout: 3_660_000, retry: 0 }, async () => {
+  const ctx = new Context()
+  await ctx.plugin(LocalSubprocess)
+  const worker = new SenseVoiceWorker(ctx, Config({ dataRoot: dataRoot!,
+    modelDirectory: process.env.DSH_SPEECH_E2E_MODEL,
+    vadModelPath: process.env.DSH_SPEECH_E2E_VAD,
+    precision: process.env.DSH_SPEECH_E2E_PRECISION === 'fp32' ? 'fp32' : 'int8',
+  }))
+  try {
+    const input = { audio: await readFile(audioPath!), language: 'zh' }
+    const cold = await worker.transcribe(input, new AbortController().signal)
+    const warm = await worker.transcribe(input, new AbortController().signal)
+    expect(cold.text.length).toBeGreaterThan(0)
+    expect(warm.text).toBe(cold.text)
+    expect(warm.audioSeconds).toBeGreaterThan(0)
+    console.info('SenseVoice inference', { cold, warm })
+  } finally {
+    await worker.dispose()
+    await ctx.fiber.dispose()
+  }
+})

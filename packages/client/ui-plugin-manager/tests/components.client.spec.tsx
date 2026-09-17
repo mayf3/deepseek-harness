@@ -171,6 +171,7 @@ describe('PluginManagerPage', () => {
     ['agent-team-profile', 'builtinAgentTeamTitle', 'builtinAgentTeamDescription'],
     ['agent-team-web-profile', 'builtinAgentTeamWebTitle', 'builtinAgentTeamWebDescription'],
     ['auto-review', 'builtinAutoReviewTitle', 'builtinAutoReviewDescription'],
+    ['voice-input-bundle', 'builtinVoiceTitle', 'builtinVoiceDescription'],
   ] as const)('localizes %s across cards, details, switches, and uninstall confirmation', (suffix, titleKey, descriptionKey) => {
     const name = `@deepseek-ai/dsh-experimental-${suffix}`
     const { actions, set, setLanguage } = renderTab({ packages: [pkg({ name, description: 'Original metadata.' })] })
@@ -699,4 +700,14 @@ describe('PluginManagerPage', () => {
       vi.useRealTimers()
     }
   })
+})
+
+it('places bundle readiness immediately before its enable switch', () => {
+  const name = '@deepseek-ai/dsh-experimental-voice-input-bundle'
+  renderTab({ packages: [pkg({ name })] }, {}, {
+    [`plugins.bundle.status:${name}`]: () => <span role="status">Ready for dictation</span>,
+  })
+  const status = screen.getByText('Ready for dictation'), toggle = screen.getByRole('switch')
+  expect(status.parentElement).toBe(toggle.parentElement)
+  expect(status.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })

@@ -26,7 +26,7 @@ import type { SubmitOutcome } from '../src/client/contract/input.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import { $replaceDetectSpanWithText, $selectDetectSpan } from '../src/client/input/editor/span-map.ts'
 import type {
-  ComposerAttachment, ComposerAttachmentsOwnerProps, DraftFileUploads,
+  ComposerAttachment, ComposerAttachmentsOwnerProps, DraftFileUploads, InputActivityOwnerProps,
 } from '../src/client/contract/slots.ts'
 import type { DraftAttachmentId } from '../src/client/contract/input.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
@@ -92,6 +92,7 @@ interface BenchOptions {
   overlay?: React.ReactNode
   leftItems?: React.ReactNode
   rightItems?: React.ReactNode
+  activityEntry?: (owner: InputActivityOwnerProps) => React.ReactNode
   footer?: React.ReactNode
   attachments?: readonly ComposerAttachment[]
   /** Upload states served for file-kind drafts (absent = every file is ready). */
@@ -162,6 +163,7 @@ function bench(over?: BenchOptions) {
     if (key === 'conversation.input.plan') return over?.planEntry ?? null
     if (key === 'conversation.input.permission') return over?.permissionEntry ?? null
     if (key === 'conversation.input.model') return over?.modelEntry ?? null
+    if (key === 'conversation.input.activity') return over?.activityEntry?.(owner as InputActivityOwnerProps) ?? null
     return null
   }) as never
   const props: InputBarProps = {
@@ -1610,7 +1612,7 @@ describe('command launcher chrome and control seats', () => {
     expect([...new Set(slotCalls.map(c => c.key))]).toEqual([
       'conversation.input.overlay', 'conversation.input.attachments',
       'conversation.input.permission', 'conversation.input.plan', 'conversation.input.left',
-      'conversation.input.right', 'conversation.input.model',
+      'conversation.input.right', 'conversation.input.model', 'conversation.input.activity',
       'conversation.composer.dock',
     ])
     expect(view.queryByLabelText('Plan mode')).toBeNull()
@@ -1672,4 +1674,21 @@ describe('command launcher chrome and control seats', () => {
     const live = bench({ running: true })
     expect((live.view.getByLabelText('添加文件或调用指令') as HTMLButtonElement).disabled).toBe(false)
   })
+})
+
+it('lets a toolbar activity replace accessories without replacing the draft editor or send action', () => {
+  const { view } = bench({ draft: 'keep this draft', modelEntry: <button>model choice</button>,
+    activityEntry: owner => <>
+      <button onClick={() => { owner.onActiveChange(true) }}>expand activity</button>
+      <button onClick={() => { owner.onActiveChange(false) }}>close activity</button>
+    </>,
+  })
+  const editor = view.getByRole('textbox')
+  fireEvent.click(view.getByRole('button', { name: 'expand activity' }))
+  expect(view.queryByRole('button', { name: 'model choice' })).toBeNull()
+  expect(view.getByRole('textbox')).toBe(editor)
+  expect(editor.textContent).toBe('keep this draft')
+  expect(view.getByRole('button', { name: '发送消息' })).toBeTruthy()
+  fireEvent.click(view.getByRole('button', { name: 'close activity' }))
+  expect(view.getByRole('button', { name: 'model choice' })).toBeTruthy()
 })

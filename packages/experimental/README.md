@@ -24,6 +24,11 @@ The experimental group contains prototype capabilities whose contracts can chang
 
 | Package | Role | ctx key |
 |---|---|---|
+| [`speech-to-text`](speech-to-text/README.md) | Named speech recognition providers | `ctx.speechToText` |
+| [`speech-to-text-sensevoice`](speech-to-text-sensevoice/README.md) | Managed local SenseVoice inference | — |
+| [`api-speech-to-text`](api-speech-to-text/README.md) | Authenticated transient transcription Remote | `ctx.speechController` |
+| [`client-ui-voice-input`](client-ui-voice-input/README.md) | Microphone capture and guarded draft insertion | — |
+| [`voice-input-bundle`](voice-input-bundle/README.md) | Default-disabled optional voice input composition | — |
 | [`agent-team-profile`](agent-team-profile/README.md) | Published opt-in profile layer for Agent Teams | — |
 | [`agent-team`](agent-team/README.md) | Named teammates with durable messages and a shared task board | `ctx.agentTeams` |
 | [`agent-team-web-profile`](agent-team-web-profile/README.md) | Published opt-in Web layer for Agent Teams | — |

@@ -44,3 +44,11 @@ describe('StateDot', () => {
     expect(bad('paused')).toBe('paused')
   })
 })
+
+it('renders completed steps with a check and pending steps without one', () => {
+  const { container, rerender } = render(<StateDot state="done" appearance="step" size={16} />)
+  expect(container.querySelector('[data-state="done"] svg')).toBeTruthy()
+  rerender(<StateDot state="idle" appearance="step" size={16} />)
+  expect(container.querySelector('[data-state="idle"] svg')).toBeNull()
+  expect(container.firstElementChild?.className).toContain('step')
+})

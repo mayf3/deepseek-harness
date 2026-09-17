@@ -2357,6 +2357,108 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'speechController',
+    summary: 'Speech calls never activate or submit to an Agent.',
+    description: 'Speech calls never activate or submit to an Agent.',
+    methods: [
+      {
+        signature: '@Remote catalog(): SpeechCatalog',
+        description: 'Read provider choices without preparing a recognizer.',
+        parameters: [],
+        returns: 'available providers, resolved default, and recording limits.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *follow(signal: AbortSignal): AsyncIterable<SpeechCatalog>',
+        description: 'Follow provider readiness independently of Session and preparation lifetimes.',
+        parameters: [{ name: 'signal', description: 'Client observation lifetime.' }],
+        returns: 'initial and subsequent complete readiness snapshots.',
+      },
+      {
+        signature: '@Remote configure(patch: SpeechSelectionPatch): Promise<void>',
+        description: 'Persist the user\'s recognition preferences.',
+        parameters: [{ name: 'patch', description: 'changed preference fields.' }],
+        returns: 'after preferences are saved.',
+      },
+      {
+        signature: '@Remote prepare(providerId: SpeechProviderId): void',
+        description: 'Start or join one Host-owned preparation task.',
+        parameters: [{ name: 'providerId', description: 'selected recognizer.' }],
+      },
+      {
+        signature: '@Remote cancelPreparation(providerId: SpeechProviderId): Promise<void>',
+        description: 'Explicitly cancel resource preparation.',
+        parameters: [{ name: 'providerId', description: 'selected recognizer.' }],
+        returns: 'after the preparation task settles.',
+      },
+      {
+        signature: '@Remote async transcribe(request: TranscriptionRequest, signal: AbortSignal): Promise<Transcript>',
+        description: 'Validate and transcribe one recording through the explicit provider selection.',
+        parameters: [{ name: 'request', description: 'canonical WAV encoded as base64, provider id and language hint.' }, { name: 'signal', description: 'Client cancellation or Remote contribution disposal.' }],
+        returns: 'final transcript without adding a Session event.',
+      },
+    ],
+  },
+  {
+    key: 'speechToText',
+    summary: 'Registry shared by all transcription consumers in one Host composition.',
+    description: 'Registry shared by all transcription consumers in one Host composition.',
+    methods: [
+      {
+        signature: 'register(provider: SpeechProvider): () => Promise<void>',
+        description: 'Register one recognizer; duplicate ids fail without replacing the original.',
+        parameters: [{ name: 'provider', description: 'recognizer owned by the contributing fiber.' }],
+        returns: 'idempotent disposer which rejects admission, cancels, and joins accepted work.',
+      },
+      {
+        signature: 'listProviders(): readonly SpeechProviderInfo[]',
+        description: 'Read the current recognizer roster.',
+        parameters: [],
+        returns: 'available provider facts in registration order.',
+      },
+      {
+        signature: 'async *follow(caller: AbortSignal): AsyncIterable<SpeechSnapshot>',
+        description: 'Observe complete readiness snapshots; a slow reader coalesces intermediate progress.',
+        parameters: [{ name: 'caller', description: 'observer lifetime, independent of any preparation task.' }],
+        returns: 'an initial snapshot followed by the latest provider states.',
+      },
+      {
+        signature: 'snapshot(): SpeechSnapshot',
+        description: 'Read provider readiness and current user preferences together.',
+        parameters: [],
+        returns: 'one detached complete observation.',
+      },
+      {
+        signature: 'async configure(patch: SpeechSelectionPatch): Promise<void>',
+        description: 'Persist changed preference fields in the ordinary user-settings document.',
+        parameters: [{ name: 'patch', description: 'explicit provider or language changes.' }],
+        returns: 'after persistence and the resolved preference update.',
+      },
+      {
+        signature: 'prepare(id: SpeechProviderId): void',
+        description: 'Start or join provider-owned preparation.',
+        parameters: [{ name: 'id', description: 'exact registered provider identity.' }],
+      },
+      {
+        signature: 'async cancelPreparation(id: SpeechProviderId): Promise<void>',
+        description: 'Explicitly cancel provider preparation without tying it to a browser connection.',
+        parameters: [{ name: 'id', description: 'exact registered provider identity.' }],
+        returns: 'after the preparation task settles.',
+      },
+      {
+        signature: 'resolve(request: SpeechRequest): SpeechSpec',
+        description: 'Apply composition defaults and capture the selected provider. Missing providers fail explicitly.',
+        parameters: [{ name: 'request', description: 'complete recording and optional selection.' }],
+        returns: 'provider-pinned input for transcribe().',
+      },
+      {
+        signature: 'async transcribe(spec: SpeechSpec, signal: AbortSignal): Promise<Transcript>',
+        description: 'Execute exactly the resolved provider; no fallback sends audio elsewhere.',
+        parameters: [{ name: 'spec', description: 'resolved input; a withdrawn or replaced registration is rejected.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'final transcript after provider settlement.',
+      },
+    ],
+  },
+  {
     key: 'spillStore',
     summary: 'Abstract spill storage service.',
     description: 'Abstract spill storage service. Subclass, implement saveText, and load the subclass as a plugin — it registers as `ctx.spillStore` (one implementation per context; loading a second throws, cordis\' standard duplicate-service behavior).\n\nSemantics every implementation must honor:\n\n- saveText persists the FULL `content` verbatim and returns an opaque locator, exact byte length, and model-facing retrieval guidance.\n- Storage is scoped by the request\'s SaveTextSpill.owner session; the backend chooses a private (not world-readable) location and a collision-free name derived from — never equal to — the caller\'s `suggestedName`.\n- `saveText` REJECTS on a real storage failure (permissions, ENOSPC, backend unavailable); the caller decides how to degrade (the spill policy treats a rejection as best-effort and keeps the inline result).',
@@ -6137,6 +6239,70 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SpawnTeammateResult {\n    readonly member: TeamMemberView;\n}',
   },
   {
+    name: 'SpeechCatalog',
+    declaration: 'export interface SpeechCatalog extends SpeechSnapshot {\n    readonly maxAudioBytes: number;\n    readonly maxDurationSeconds: number;\n}',
+  },
+  {
+    name: 'SpeechInput',
+    declaration: 'export interface SpeechInput {\n    readonly audio: Uint8Array;\n    readonly language: string;\n}',
+  },
+  {
+    name: 'SpeechPreparation',
+    declaration: 'export interface SpeechPreparation {\n    snapshot(): SpeechPreparationState;\n    subscribe(listener: () => void): () => void;\n    prepare(): void;\n    cancel(): Promise<void>;\n}',
+  },
+  {
+    name: 'SpeechPreparationState',
+    declaration: 'export type SpeechPreparationState = ({\n    readonly phase: \'unprepared\' | \'ready\' | \'standby\' | \'cancelled\';\n} | {\n    readonly phase: \'downloading\';\n    readonly resource: string;\n    readonly completedBytes: number;\n    readonly totalBytes?: number;\n} | {\n    readonly phase: \'checking\' | \'installing\' | \'loading\' | \'waking\' | \'cancelling\';\n    readonly startedAt: number;\n} | {\n    readonly phase: \'failed\';\n    readonly message: string;\n}) & {\n    readonly step?: SpeechPreparationStepKind;\n    readonly steps?: readonly SpeechPreparationStep[];\n};',
+  },
+  {
+    name: 'SpeechPreparationStep',
+    declaration: 'export interface SpeechPreparationStep {\n    readonly kind: SpeechPreparationStepKind;\n    readonly status: \'pending\' | \'running\' | \'complete\' | \'failed\' | \'cancelled\';\n    readonly startedAt?: number;\n}',
+  },
+  {
+    name: 'SpeechPreparationStepKind',
+    declaration: 'export type SpeechPreparationStepKind = \'check\' | \'model\' | \'vad\' | \'verify\' | \'load\';',
+  },
+  {
+    name: 'SpeechProvider',
+    declaration: 'export interface SpeechProvider {\n    readonly info: SpeechProviderInfo;\n    readonly preparation?: SpeechPreparation;\n    transcribe(input: SpeechInput, signal: AbortSignal): Promise<Transcript>;\n}',
+  },
+  {
+    name: 'SpeechProviderId',
+    declaration: 'export type SpeechProviderId = Branded<\'SpeechProviderId\'>;',
+  },
+  {
+    name: 'SpeechProviderInfo',
+    declaration: 'export interface SpeechProviderInfo {\n    readonly id: SpeechProviderId;\n    readonly name: string;\n    readonly location: \'host-local\' | \'cloud\';\n    readonly setupEstimate?: SpeechSetupEstimate;\n}',
+  },
+  {
+    name: 'SpeechProviderView',
+    declaration: 'export interface SpeechProviderView extends SpeechProviderInfo {\n    readonly preparation: SpeechPreparationState;\n}',
+  },
+  {
+    name: 'SpeechRequest',
+    declaration: 'export interface SpeechRequest {\n    readonly audio: Uint8Array;\n    readonly providerId?: SpeechProviderId;\n    readonly language?: string;\n}',
+  },
+  {
+    name: 'SpeechSelection',
+    declaration: 'export interface SpeechSelection {\n    readonly providerId: SpeechProviderId;\n    readonly language: string;\n}',
+  },
+  {
+    name: 'SpeechSelectionPatch',
+    declaration: 'export interface SpeechSelectionPatch {\n    readonly providerId?: SpeechProviderId;\n    readonly language?: string;\n}',
+  },
+  {
+    name: 'SpeechSetupEstimate',
+    declaration: 'export interface SpeechSetupEstimate {\n    readonly recommendedDiskBytes: number;\n    readonly expectedMemoryBytes: number;\n    readonly minimumMinutes: number;\n    readonly maximumMinutes: number;\n}',
+  },
+  {
+    name: 'SpeechSnapshot',
+    declaration: 'export interface SpeechSnapshot {\n    readonly providers: readonly SpeechProviderView[];\n    readonly selection: SpeechSelection;\n}',
+  },
+  {
+    name: 'SpeechSpec',
+    declaration: 'export interface SpeechSpec extends SpeechInput {\n    readonly provider: SpeechProvider;\n}',
+  },
+  {
     name: 'SpillLocator',
     declaration: 'export type SpillLocator = Branded<\'SpillLocator\'>;',
   },
@@ -6627,6 +6793,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ToolSchema',
     declaration: 'export interface ToolSchema {\n    name: string;\n    description: string;\n    parameters: Record<string, unknown>;\n}',
+  },
+  {
+    name: 'Transcript',
+    declaration: 'export interface Transcript {\n    readonly text: string;\n    readonly audioSeconds: number;\n    readonly inferenceSeconds: number;\n}',
+  },
+  {
+    name: 'TranscriptionRequest',
+    declaration: 'export interface TranscriptionRequest {\n    readonly audioBase64: string;\n    readonly providerId?: SpeechProviderId;\n    readonly language?: string;\n}',
   },
   {
     name: 'TurnEndCancelCause',
