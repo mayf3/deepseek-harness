@@ -154,8 +154,11 @@ describe('runProfile with an application-owned profile', () => {
       } else {
         expect(healIsolatedProfileModuleFallback).not.toHaveBeenCalled()
       }
+      const generation = vi.mocked(createProfileResolutionGeneration).mock.settledResults
+        .find(result => result.type === 'fulfilled')?.value
+      expect(generation?.profileDir).toBe(home)
       expect(plugin).toHaveBeenCalledWith(PluginPackages, mode === 'link' ? {} : {
-        generation: expect.objectContaining({ profileDir: home }),
+        generation,
         behavior: mode === 'dual' ? 'verify' : 'enforce',
       })
       expect(existsSync(join(home, 'profiles/node_modules'))).toBe(false)
