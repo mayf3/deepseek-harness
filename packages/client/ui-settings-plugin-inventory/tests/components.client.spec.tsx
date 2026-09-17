@@ -116,9 +116,10 @@ describe('PluginInventorySettingsTab', () => {
     expect(screen.getByText(en.conditionalTag)).toBeTruthy()
     expect(screen.getByText(en.disabledTag)).toBeTruthy()
     expect(screen.getByText(en.failedTag)).toBeTruthy()
-    expect(screen.getByRole('img', { name: 'Running' })).toBeTruthy()
-    // No live fiber, no dot: file-state rows carry only their enablement tag.
-    expect(screen.queryByRole('img', { name: 'Not running' })).toBeNull()
+    // The enablement tag is the row's one settled status signal: an active fiber
+    // and a row with no live fiber both render without a phase dot.
+    expect(screen.queryByRole('img', { name: en.active })).toBeNull()
+    expect(screen.queryByRole('img', { name: en.unobserved })).toBeNull()
 
     expect(globalToggle().getAttribute('aria-expanded')).toBe('false')
     expect(view.container.querySelector('[data-plugin-count]')?.getAttribute('data-plugin-count')).toBe('7')
@@ -142,6 +143,35 @@ describe('PluginInventorySettingsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'anonymous, Enabled' }))
     expect(view.container.querySelector('[data-loader-entry]')).toBeNull()
     expect(screen.getByText(en.moduleLabel).nextElementSibling?.textContent).toBe('@fixture/anonymous')
+  })
+
+  it('keeps the phase dot for a live phase the enablement tag does not state', async () => {
+    await renderReady({
+      entries: [
+        { entryId: 'booting', moduleName: '@fixture/booting', enabled: true, fiberPhase: 'loading' },
+        { entryId: 'waiting', moduleName: '@fixture/waiting', enabled: true, fiberPhase: 'pending' },
+        { entryId: 'running', moduleName: '@fixture/running', enabled: true, fiberPhase: 'active' },
+        { entryId: 'unobserved', moduleName: '@fixture/unobserved', enabled: true, fiberPhase: null },
+      ],
+      agentPresets: [{
+        id: 'standard',
+        trust: 'system',
+        isDefault: true,
+        rows: [
+          { entryId: 'stopping', moduleName: '@fixture/stopping', enabled: true, fiberPhase: 'unloading' },
+          { entryId: 'preset-running', moduleName: '@fixture/preset-running', enabled: true, fiberPhase: 'active' },
+        ],
+      }],
+    } as unknown as Snapshot)
+
+    fireEvent.click(globalToggle())
+    fireEvent.click(presetToggle())
+    expect(screen.getAllByText(en.enabledTag)).toHaveLength(6)
+    expect(screen.getByRole('img', { name: en.loadingPhase })).toBeTruthy()
+    expect(screen.getByRole('img', { name: en.pending })).toBeTruthy()
+    expect(screen.getByRole('img', { name: en.unloading })).toBeTruthy()
+    expect(screen.queryByRole('img', { name: en.active })).toBeNull()
+    expect(screen.queryByRole('img', { name: en.unobserved })).toBeNull()
   })
 
   it('distinguishes collapsed same-module rows by stable entry id', async () => {
