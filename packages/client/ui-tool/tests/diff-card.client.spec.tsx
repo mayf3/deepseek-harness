@@ -301,8 +301,8 @@ describe('FileMutationRow diff card', () => {
     }))} />)
     expect(view.container.querySelector('[data-state="stopped"]')).not.toBeNull()
     expect(view.container.querySelector('[data-state="stopped"] svg')).not.toBeNull()
-    const summary = view.getByText('已停止')
-    expect(summary.className).toContain('stoppedSummary')
+    expect(view.getByText('已停止').className).toContain('visuallyHidden')
+    expect(view.container.querySelector('[class*="_stoppedSummary_"]')?.textContent).toBe('notes/demo.txt')
   })
 
   it('renders a plain summary span when the call carries no file path', () => {
