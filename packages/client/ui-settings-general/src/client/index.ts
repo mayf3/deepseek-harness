@@ -61,7 +61,7 @@ const NS = 'settings'
  * ui-settings' apply, whose activation order relative to this one is NOT
  * constrained; registrations depend on their slots through `slots.inject()`.
  */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope', 'developerTools']
 
 /**
  * Register the `settings` dictionaries, the chrome content, and the General
@@ -72,8 +72,8 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item', id: 'developer-tools', order: 15, locale: NS,
     inject: (): DeveloperToolsRowInjected => ({
-      hooks: { developerTools: ctx.settingsScope.developerTools.enabled },
-      setEnabled: enabled => ctx.settingsScope.developerTools.setEnabled(enabled),
+      hooks: { developerTools: ctx.developerTools.enabled },
+      setEnabled: enabled => ctx.developerTools.setEnabled(enabled),
     }),
   }, DeveloperToolsRow))
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-general: dictionaries')

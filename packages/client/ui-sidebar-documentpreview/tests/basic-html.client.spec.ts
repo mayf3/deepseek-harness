@@ -3,6 +3,19 @@
 import { expect, it } from 'vitest'
 import { createBasicHtmlDocument } from '../src/client/html/basic-document.ts'
 
+it('removes MathML navigation and links exposed by parser mutation', () => {
+  const cases = [
+    '<math href="https://example.invalid/"><mi xlink:href="https://example.invalid/">x</mi></math>',
+    '<form><math><mtext></form><form><mglyph><style></math><a href="https://example.invalid/">go</a>',
+  ]
+  for (const source of cases) {
+    const clean = createBasicHtmlDocument(new TextEncoder().encode(source))
+    const reparsed = new DOMParser().parseFromString(clean, 'text/html')
+    expect(reparsed.querySelector('[href], [xlink\\:href]')).toBeNull()
+    expect(reparsed.querySelectorAll('meta[http-equiv]')).toHaveLength(1)
+  }
+})
+
 it('preserves static content and removes navigation, policy overrides and active documents', () => {
   const html = createBasicHtmlDocument(new TextEncoder().encode(`<!doctype html><html><head>
     <meta http-equiv="refresh" content="0;url=https://example.invalid">

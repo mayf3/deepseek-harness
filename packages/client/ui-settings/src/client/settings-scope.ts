@@ -7,8 +7,6 @@
  */
 
 import { Service } from '@deepseek-ai/cordis'
-import { DEVELOPER_TOOLS_NAMESPACE } from '../developer-tools-settings.ts'
-import { DeveloperToolsPreference } from './developer-tools.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   SettingsNamespaceView, SettingsPathOpView,
@@ -103,9 +101,9 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
    * revision, and recovery contract.
    * @param field - scalar field inside the namespace section.
    * @param value - JSON-shaped value selected by the user.
-   * @returns settlement after the write and any latest-write recovery read.
+   * @returns whether the Host accepted the write, after any recovery read.
    */
-  set(field: string, value: unknown): Promise<void> {
+  set(field: string, value: unknown): Promise<boolean> {
     return this.mutate([{ op: 'set', path: [field], value: value as JsonValue }])
   }
 
@@ -113,9 +111,9 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
    * Queue one field clear; see {@link SettingsScope.unset} for the ordering,
    * revision, and recovery contract.
    * @param field - scalar field inside the namespace section.
-   * @returns settlement after the clear and any latest-write recovery read.
+   * @returns whether the Host accepted the clear, after any recovery read.
    */
-  unset(field: string): Promise<void> {
+  unset(field: string): Promise<boolean> {
     return this.mutate([{ op: 'unset', path: [field] }])
   }
 
@@ -123,9 +121,9 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
    * Queue one atomic namespace mutation; see {@link SettingsScope.mutate}.
    * @param ops - ordered field operations copied when queued.
    * @param expectedRevision - optional fixed revision read by the domain editor.
-   * @returns settlement after the mutation and any latest-write recovery read.
+   * @returns whether the Host accepted the mutation, after any recovery read.
    */
-  mutate(ops: readonly SettingsPathOpView[], expectedRevision?: number): Promise<void> {
+  mutate(ops: readonly SettingsPathOpView[], expectedRevision?: number): Promise<boolean> {
     const ownedOps = structuredClone(ops) as SettingsPathOpView[]
     const generation = ++this.writeGeneration
     return this.enqueue(async () => {
@@ -133,15 +131,16 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
       const response = await this.ctx.remote.settings.mutate(this.spec.namespace, ownedOps, revision)
       if (!response.ok) {
         await this.recover(generation)
-        return
+        return false
       }
-      if (this.disposed) return
+      if (this.disposed) return true
       if (generation === this.writeGeneration) {
         this.pendingRevision = undefined
         this.mirror.acceptView(response.value)
       } else {
         this.pendingRevision = response.value.revision
       }
+      return true
     })
   }
 
@@ -164,15 +163,15 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
     await this.tail
   }
 
-  private enqueue(operation: () => Promise<void>): Promise<void> {
-    if (this.persistence === 'memory' || this.disposed) return Promise.resolve()
+  private enqueue(operation: () => Promise<boolean>): Promise<boolean> {
+    if (this.persistence === 'memory' || this.disposed) return Promise.resolve(false)
     const task = this.tail.then(async () => {
-      if (this.disposed) return
-      await operation()
+      if (this.disposed) return false
+      return await operation()
     })
     // The returned task carries its own settlement to the caller; the queue
     // tail is kept fulfilled so one failed subscriber cannot strand later operations.
-    this.tail = task.catch(() => {})
+    this.tail = task.then(() => {}, () => {})
     return task
   }
 
@@ -232,8 +231,6 @@ declare module '@deepseek-ai/cordis' {
  * (`packages/client/tsdown.client.ts`).
  */
 export class SettingsScopeBinder extends Service {
-  /** Shared developer-tool preference for Web and desktop consumers. */
-  readonly developerTools: DeveloperToolsPreference
   private readonly mirror: SettingsDescribeMirror
   private readonly schema: SettingsSchemaService
   private readonly persistence: 'host' | 'memory'
@@ -260,7 +257,6 @@ export class SettingsScopeBinder extends Service {
     this.schema = config.schema
     this.persistence = config.persistence
     this.owner = ctx
-    this.developerTools = new DeveloperToolsPreference(this.bind({ namespace: DEVELOPER_TOOLS_NAMESPACE }))
   }
 
   /**

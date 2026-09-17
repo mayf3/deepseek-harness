@@ -7,7 +7,7 @@ import type {
   ChatSnapshot, RunningToolCall, ToolCallBlock, ToolResultNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubDeveloperTools, SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import {
@@ -80,7 +80,7 @@ function snapshotWith(
 /** Test-owned AppFrame role: declares and renders the Chat view list. */
 type AppRootProps = PropsRenderSlots<'conversation.view'>
 const VIEW_OWNER: ConvViewOwnerProps = {
-  availableViews: [{ id: 'chat', label: 'Chat' }, { id: 'trajectory', label: 'Trajectory' }],
+  inspectCall: undefined,
   viewRequest: null,
   openView: () => {},
   completeViewRequest: () => {},
@@ -104,7 +104,8 @@ async function bench(snapshot: ChatSnapshot) {
   const chat = createSnapshotStore(snapshot)
   const events = new ConversationEventRegistry(ctx)
   const views = new ConversationViewRegistry(ctx)
-  ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope, developerTools: { enabled: { getSnapshot: () => true, subscribe: () => () => {} } } } as never)
+  ctx.provide('developerTools', stubDeveloperTools() as never)
+  ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   ctx.provide('uiConversation', {
     events,
     views,

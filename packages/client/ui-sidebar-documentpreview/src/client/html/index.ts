@@ -32,7 +32,7 @@ export function apply(ctx: Context): void {
     {
       name: 'sidebar.right.tab.document', key: HTML_BODY_ID, locale: 'documentHtml',
       inject: (): HtmlBodyInjected => ({
-        hooks: { developerTools: ctx.settingsScope.developerTools.enabled },
+        hooks: { interactivePreview: ctx.developerTools.enabled },
         readRelated: (address, relativePath, signal) => {
           const file = hostFileOf(address)
           return ctx.remote.workspaceFiles.readRelated(file.sessionId, file.path, relativePath, signal)

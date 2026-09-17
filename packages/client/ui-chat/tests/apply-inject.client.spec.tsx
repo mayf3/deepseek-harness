@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ISession, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import {
+import { stubDeveloperTools,
   SlotTestRuntime, stubSettingsScope, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionBehaviorOverrides } from '@deepseek-ai/dsh-client-test-runtime'
@@ -48,7 +48,8 @@ function sessionFakeFor() {
 
 async function bench() {
   const runtime = await SlotTestRuntime.create()
-  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope, developerTools: { enabled: { getSnapshot: () => true, subscribe: () => () => {} } } } as never)
+  runtime.ctx.provide('developerTools', stubDeveloperTools() as never)
+  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const layout = { closeRightbar: vi.fn(), openRightbar: vi.fn() }
   runtime.ctx.provide('layout', layout as never)
   const sidebarRight = {

@@ -27,7 +27,7 @@ import { LazyPdfBody } from '../src/client/pdf/LazyPdfBody.tsx'
 import { PDF_BODY_ID } from '../src/client/pdf/index.ts'
 import { CodeBody } from '../src/client/code/CodeBody.tsx'
 import { en, zh } from '../src/client/locales.ts'
-import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubDeveloperTools, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { textFace } from '../src/client/face.ts'
 import type { TextStore } from '../src/client/store.ts'
 import { FILE, SESSION, TAB_ID, page } from './fixtures.client.ts'
@@ -43,7 +43,7 @@ interface Recorded {
 
 async function boot() {
   const ctx = new Context()
-  ctx.provide('settingsScope', { developerTools: { enabled: { getSnapshot: () => true, subscribe: () => () => {} } } } as never)
+  ctx.provide('developerTools', stubDeveloperTools() as never)
   const tabs = new SidebarRightTabRegistry(ctx)
   const registered: Recorded[] = []
   const slots = {

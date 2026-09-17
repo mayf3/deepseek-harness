@@ -337,8 +337,8 @@ describe('SettingsScopeController', () => {
       throw new Error('write subscriber failed')
     })
 
-    await expect(scope.set('preference', 'dark')).resolves.toBeUndefined()
-    await expect(scope.set('preference', 'light')).resolves.toBeUndefined()
+    await expect(scope.set('preference', 'dark')).resolves.toBe(true)
+    await expect(scope.set('preference', 'light')).resolves.toBe(true)
 
     expect(mutate).toHaveBeenCalledTimes(2)
     expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'light' }, revision: 3 })
@@ -360,7 +360,7 @@ describe('SettingsScopeController', () => {
     })
 
     await expect(scope.set('preference', 'dark')).rejects.toThrow('mirror fold failed')
-    await expect(scope.set('preference', 'light')).resolves.toBeUndefined()
+    await expect(scope.set('preference', 'light')).resolves.toBe(true)
 
     expect(mutate).toHaveBeenCalledTimes(2)
     expect(mutate).toHaveBeenNthCalledWith(2,
@@ -555,12 +555,6 @@ describe('SettingsScopeBinder.bind', () => {
     })
     await fiber.await()
     expect(scope.getSnapshot()).toMatchObject({ status: 'unavailable', mode: 'memory', writable: false })
-    const preference = ctx.settingsScope.developerTools
-    expect(fiber.ctx.settingsScope.developerTools).toBe(preference)
-    await preference.setEnabled(true)
-    expect(fiber.ctx.settingsScope.developerTools.enabled.getSnapshot()).toBe(true)
-    await fiber.ctx.settingsScope.developerTools.setEnabled(false)
-    expect(preference.enabled.getSnapshot()).toBe(false)
     await fiber.dispose()
     expect(describeCall).not.toHaveBeenCalled()
   })

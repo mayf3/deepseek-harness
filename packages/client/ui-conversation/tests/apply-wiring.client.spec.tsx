@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import {
+import { stubDeveloperTools,
   SlotTestRuntime, stubSettingsScope, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -21,7 +21,8 @@ async function bench(options: { declareConversation?: boolean } = {}) {
     }),
     openSession: vi.fn(),
   } as never)
-  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope, developerTools: { enabled: developerTools } } as never)
+  runtime.ctx.provide('developerTools', { ...stubDeveloperTools(), enabled: developerTools } as never)
+  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)

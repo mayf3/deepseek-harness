@@ -34,7 +34,7 @@ afterEach(() => {
 function props(text = '<p>hello</p>'): HtmlBodyProps {
   const signal = new AbortController().signal
   return {
-    useDeveloperTools: select => select(true),
+    useInteractivePreview: select => select(true),
     resourceAddress: 'dsh-resource://file/session/html/index.html',
     content: { kind: 'bytes', data: utf8(text) },
     wrap: false,
@@ -51,7 +51,7 @@ const utf8 = (text: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode
 describe('HtmlBody', () => {
   it('renders static HTML without reading related files, running scripts or retaining an advanced frame', async () => {
     const initial = props('<h1>Preview</h1><script src="./script.js"></script><p>Static content</p>')
-    const basic = { ...initial, useDeveloperTools: ((select: (enabled: boolean) => unknown) => select(false)) as HtmlBodyProps['useDeveloperTools'] }
+    const basic = { ...initial, useInteractivePreview: ((select: (enabled: boolean) => unknown) => select(false)) as HtmlBodyProps['useInteractivePreview'] }
     const view = render(<HtmlBody {...basic} />)
     const frame = screen.getByTitle(en.frame)
     expect(frame.getAttribute('sandbox')).toBe('')

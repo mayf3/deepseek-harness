@@ -61,7 +61,7 @@ function renderSeat(
   render(<AgentPresetSeat {...({
     ...actions,
     sessionId: session === undefined ? undefined : SessionId(session.id),
-    useDeveloperTools: bindSnapshotSelector(developerTools),
+    useShowPresetPicker: bindSnapshotSelector(developerTools),
     useAgentPresetSeat: bindSnapshotSelector(store),
     useSessionRetainInfo: session === undefined
       ? useSessionRetainInfo

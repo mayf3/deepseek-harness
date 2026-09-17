@@ -1,4 +1,4 @@
-/** Complete HTML rendered in a script-enabled opaque iframe, without parent application access. */
+/** Static or interactive HTML in an opaque iframe, without parent application access. */
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
@@ -20,7 +20,7 @@ export type HtmlBodyProps = DocumentPreviewProps & PropsLocale<'documentHtml'> &
 
 /** Related-file reader and accepted preview mode supplied by the plugin. */
 export interface HtmlBodyInjected {
-  hooks: { developerTools: ObservableSnapshot<boolean> }
+  hooks: { interactivePreview: ObservableSnapshot<boolean> }
   /** Ordinary Remote callback bound by this renderer's Slot inject. */
   readonly readRelated: ReadHtmlRelated
 }
@@ -67,15 +67,15 @@ function HtmlFrame({ data, readRelative, t }: FrameInput & { t: HtmlBodyProps['t
  * @param props - document bytes, hooks, related-file reader and locale.
  * @returns an isolated HTML document, or nothing for text delivery.
  */
-export function HtmlBody({ content, resourceAddress, readRelated, useTabInfo, useDeveloperTools, t }: HtmlBodyProps): ReactNode {
-  const developerTools = useDeveloperTools(value => value)
+export function HtmlBody({ content, resourceAddress, readRelated, useTabInfo, useInteractivePreview, t }: HtmlBodyProps): ReactNode {
+  const interactivePreview = useInteractivePreview(value => value)
   const { tab } = useTabInfo()
   const readRelative = useMemo(
     () => createReadHtmlRelative(readRelated, resourceAddress, tab.signal),
     [readRelated, resourceAddress, tab.signal],
   )
   if (content.kind !== 'bytes') return null
-  if (!developerTools) return <BasicHtmlFrame data={content.data} t={t} />
+  if (!interactivePreview) return <BasicHtmlFrame data={content.data} t={t} />
   return <HtmlFrame key={resourceAddress} data={content.data} readRelative={readRelative} t={t} />
 }
 

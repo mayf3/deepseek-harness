@@ -2,10 +2,11 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubSettingsScope, TestRemote, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply } from '../src/index.ts'
-import { DEVELOPER_TOOLS_NAMESPACE, type DeveloperToolsSettings } from '../src/developer-tools-settings.ts'
+import { DEVELOPER_TOOLS_NAMESPACE, DeveloperToolsSettingsSchema, type DeveloperToolsSettings } from '../src/developer-tools-settings.ts'
 import { DeveloperToolsPreference } from '../src/client/developer-tools.ts'
+import { apply as clientApply, inject } from '../src/client/index.ts'
 
 class MemorySettings extends SettingsProvider {
   readonly writable = true
@@ -16,6 +17,44 @@ class MemorySettings extends SettingsProvider {
 }
 
 describe('developer tools settings', () => {
+  it('reports a refused Host write after recovering accepted state', async () => {
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    const describeCall = vi.fn().mockResolvedValue({ ok: true, value: {
+      writable: true, hasDocument: true, namespaces: [{
+        ns: DEVELOPER_TOOLS_NAMESPACE,
+        schema: DeveloperToolsSettingsSchema.toJSON(),
+        value: { enabled: false }, revision: 1, applies: 'live', secrets: [],
+      }],
+    } })
+    const mutate = vi.fn().mockResolvedValue({
+      ok: false, error: new RemoteError('settings/rejected', 'conflict', { ns: DEVELOPER_TOOLS_NAMESPACE }),
+    })
+    new TestRemote(ctx, { settings: { describe: describeCall, mutate } })
+    await ctx.plugin({ inject, apply: clientApply }).await()
+    await ctx.settingsScope.describe().ensure()
+    await expect(ctx.developerTools.setEnabled(true)).rejects.toThrow('not saved')
+    expect(mutate).toHaveBeenCalledWith(DEVELOPER_TOOLS_NAMESPACE, [{ op: 'set', path: ['enabled'], value: true }], 1)
+    expect(describeCall).toHaveBeenCalledTimes(2)
+    expect(ctx.developerTools.enabled.getSnapshot()).toBe(false)
+  })
+
+  it('shares one remote-browser preference across consumers and disposes it with the plugin', async () => {
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    const describeCall = vi.fn()
+    const remote = new TestRemote(ctx, { settings: { describe: describeCall } })
+    remote.$host = { home: undefined, isLoopback: false }
+    const fiber = ctx.plugin({ inject, apply: clientApply })
+    await fiber.await()
+    const preference = ctx.developerTools
+    expect(fiber.ctx.developerTools.enabled).toBe(preference.enabled)
+    await preference.setEnabled(true)
+    expect(fiber.ctx.developerTools.enabled.getSnapshot()).toBe(true)
+    expect(describeCall).not.toHaveBeenCalled()
+    await fiber.dispose()
+    expect(ctx.get('developerTools')).toBeUndefined()
+  })
   it('defaults off, persists valid choices and removes its schema on disposal', async () => {
     const ctx = new Context()
     const provider = ctx.plugin(MemorySettings)
@@ -34,7 +73,7 @@ describe('developer tools settings', () => {
 
   it('stays off until accepted settings arrive and follows external changes', async () => {
     const host = stubSettingsScope<DeveloperToolsSettings>()
-    const preference = new DeveloperToolsPreference(host.scope)
+    const preference = new DeveloperToolsPreference(new Context(), host.scope)
     const notify = vi.fn()
     const dispose = preference.enabled.subscribe(notify)
     expect(preference.enabled.getSnapshot()).toBe(false)
@@ -52,7 +91,7 @@ describe('developer tools settings', () => {
 it('keeps remote browser choices local and publishes only changed values', async () => {
   const host = stubSettingsScope<DeveloperToolsSettings>()
   host.publish({ mode: 'memory' })
-  const preference = new DeveloperToolsPreference(host.scope)
+  const preference = new DeveloperToolsPreference(new Context(), host.scope)
   const notify = vi.fn()
   const dispose = preference.enabled.subscribe(notify)
   expect(preference.enabled.getSnapshot()).toBe(false)
@@ -68,7 +107,7 @@ it('keeps remote browser choices local and publishes only changed values', async
 
 it('ignores host revisions that do not change enablement', () => {
   const host = stubSettingsScope<DeveloperToolsSettings>()
-  const preference = new DeveloperToolsPreference(host.scope)
+  const preference = new DeveloperToolsPreference(new Context(), host.scope)
   const notify = vi.fn()
   const dispose = preference.enabled.subscribe(notify)
   host.publish({ revision: 1 })

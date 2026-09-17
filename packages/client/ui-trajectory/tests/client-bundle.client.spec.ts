@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubDeveloperTools, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { afterEach, describe, expect, it } from 'vitest'
 import { UiConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -89,7 +89,8 @@ describe('tsdown client artifact', () => {
     const { events, views } = uiConversation
     ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
     ctx.provide('remote', { $on: () => () => {} } as never)
-    ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope, developerTools: { enabled: { getSnapshot: () => true, subscribe: () => () => {} } } } as never)
+    ctx.provide('developerTools', stubDeveloperTools() as never)
+    ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
     const locale = await import('@deepseek-ai/dsh-client-locale/client')
     ctx.plugin({ inject: [...locale.inject], apply: locale.apply })
     const fiber = ctx.plugin(exports as { apply: (ctx: Context) => void })

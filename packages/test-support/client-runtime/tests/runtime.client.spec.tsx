@@ -8,7 +8,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { stubSettingsScope } from '../src/settings-scope.ts'
+import { stubSettingsScope, stubDeveloperTools } from '../src/settings-scope.ts'
 import { act, cleanup } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { createSnapshotStore, defineStore } from '@deepseek-ai/dsh-client-store'
@@ -833,6 +833,18 @@ describe('single-slot mounting edge arms', () => {
 })
 
 describe('stubbed settings scope', () => {
+  it('publishes developer preference choices through one observable', async () => {
+    const preference = stubDeveloperTools()
+    expect(preference.enabled.getSnapshot()).toBe(true)
+    const notify = vi.fn()
+    const dispose = preference.enabled.subscribe(notify)
+    await preference.setEnabled(false)
+    expect(preference.enabled.getSnapshot()).toBe(false)
+    expect(notify).toHaveBeenCalledOnce()
+    dispose()
+    expect(stubDeveloperTools(false).enabled.getSnapshot()).toBe(false)
+  })
+
   it('records both write kinds and publishes a Host acceptance to its listeners', async () => {
     const host = stubSettingsScope<{ preference: string }>()
     let notified = 0
@@ -843,7 +855,8 @@ describe('stubbed settings scope', () => {
     })
 
     await host.scope.set('preference', 'dark')
-    await host.scope.unset('preference')
+    await expect(host.scope.unset('preference')).resolves.toBe(true)
+    await expect(host.scope.mutate([{ op: 'set', path: ['preference'], value: 'dark' }])).resolves.toBe(true)
     host.publish({
       status: 'ready',
       value: { preference: 'system' },

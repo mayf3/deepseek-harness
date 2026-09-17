@@ -21,7 +21,7 @@ import type {
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import type { ChatFileMentions, TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { makeTranslate, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubDeveloperTools, makeTranslate, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { Deliverables, DeliverablesTail, selectDeliverables, type DeliverablesInjected } from '../src/client/Deliverables.tsx'
 import type { ReviewInjected } from '../src/client/ReviewTab.tsx'
 import { ChangesSummaryStore } from '../src/client/changes-summary.ts'
@@ -40,7 +40,7 @@ function openProps(controller = new PresentedOpenController(), summaries = new C
   controller.host.set({ name: 'desktop', available: true, fileManager: 'finder' })
   const sessions: SessionListState = { ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {} }
   return {
-    useDeveloperTools: <T,>(select: (value: boolean) => T): T => select(true),
+    useShowCodeDiff: <T,>(select: (value: boolean) => T): T => select(true),
     useSessions: <T,>(select: (state: SessionListState) => T): T => select(sessions),
     reloadPresentedHost: vi.fn(() => controller.loadHost()),
     useChangesSummary: <T,>(select: (state: ReturnType<typeof summaries.state.getSnapshot>) => T): T =>
@@ -498,7 +498,7 @@ describe('ChangedFiles card', () => {
   it('hides changed files and avoids summary reads when developer tools are off', () => {
     const props = openProps(new PresentedOpenController(), servedStore())
     const base = { ...props, matched: { changes, presented: [] }, openFile: vi.fn(), sessionId: SessionId('child-session'), t: makeTranslate(en) }
-    const off = { useDeveloperTools: <T,>(select: (enabled: boolean) => T): T => select(false) }
+    const off = { useShowCodeDiff: <T,>(select: (enabled: boolean) => T): T => select(false) }
     const view = render(<Deliverables {...base} {...off} />)
     expect(view.container.querySelector('[data-changed-files]')).toBeNull()
     expect(props.loadChangesSummary).not.toHaveBeenCalled()
@@ -715,7 +715,8 @@ describe('plugin registration', () => {
       session,
     } as never)
     ctx.provide('remote.session', session as never)
-    ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope, developerTools: { enabled: { getSnapshot: () => true, subscribe: () => () => {} } } } as never)
+    ctx.provide('developerTools', stubDeveloperTools() as never)
+    ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
     await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
 
     const fiber = ctx.plugin({ inject: [...inject], apply })

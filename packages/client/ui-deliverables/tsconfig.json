@@ -6,9 +6,6 @@
     },
     {
       "path": "./tsconfig.client.json"
-    },
-    {
-      "path": "../ui-settings"
     }
   ]
 }

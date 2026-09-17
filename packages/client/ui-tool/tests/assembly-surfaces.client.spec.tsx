@@ -12,7 +12,7 @@ import {
   apply as applyChat, inject as injectChat, type ToolResultNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
-import { SlotTestRuntime, usePinnedBrowserLanguages, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubDeveloperTools, SlotTestRuntime, usePinnedBrowserLanguages, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyConversation, inject as injectConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { apply as applyTool, inject as injectTool } from '../src/client/apply.ts'
 
@@ -76,7 +76,8 @@ async function bench(nodes: ToolResultNode[]) {
       openWorkspacePath: vi.fn(async () => ({ ok: true, value: { opened: true } })),
     },
   })
-  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope, developerTools: { enabled: { getSnapshot: () => true, subscribe: () => () => {} } } } as never)
+  runtime.ctx.provide('developerTools', stubDeveloperTools() as never)
+  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   runtime.ctx.provide('layout', { openDetails: vi.fn(), closeDetails: vi.fn() })
   runtime.ctx.provide('sidebarRight', { openResource: vi.fn() } as never)
   runtime.ctx.provide('uiWorkspace', {

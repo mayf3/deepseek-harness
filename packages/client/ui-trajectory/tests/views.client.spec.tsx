@@ -11,7 +11,7 @@ import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement, type ComponentProps, type FC, type ReactNode } from 'react'
-import { bindSnapshotSelector, SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubDeveloperTools, bindSnapshotSelector, SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   EMPTY_CONVERSATION_SNAPSHOT, UiConversation,
@@ -234,7 +234,7 @@ function standaloneProps(
     useInput: bindSnapshotSelector(input),
     inputActions,
     useProjection,
-    availableViews: [{ id: 'chat', label: 'Chat' }, { id: 'trajectory', label: 'Trajectory' }],
+    inspectCall: undefined,
     viewRequest: null,
     openView: () => {},
     completeViewRequest: () => {},
@@ -291,7 +291,8 @@ async function bench(snapshot = historySnapshot(NODES)) {
   // The locale plugin backs the locale-aware view tab label ('locale' in
   // inject); its settings scope needs a connection handle.
   ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
-  ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope, developerTools: { enabled: { getSnapshot: () => true, subscribe: () => () => {} } } } as never)
+  ctx.provide('developerTools', stubDeveloperTools() as never)
+  ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   await runtime.mount({ inject: [...localeInject], apply: localeApply })
   const provide = vi.spyOn(ctx.uiSession, 'provide')
   const feature = await runtime.mount({ inject: [...inject], apply })
@@ -309,10 +310,10 @@ function tabsOf(slots: SlotRegistry): ViewTab[] {
     .map(e => ({ id: e.options.id!, label: resolveSlotLabel(e.options.label) ?? e.options.id! }))
 }
 
-type ConvViewOwner = Pick<ConvViewProps, 'availableViews' | 'viewRequest' | 'openView' | 'completeViewRequest'>
+type ConvViewOwner = Pick<ConvViewProps, 'inspectCall' | 'viewRequest' | 'openView' | 'completeViewRequest'>
 
 function isConvViewOwner(owner: object): owner is ConvViewOwner {
-  return 'availableViews' in owner && 'viewRequest' in owner
+  return 'inspectCall' in owner && 'viewRequest' in owner
     && 'openView' in owner && typeof owner.openView === 'function'
     && 'completeViewRequest' in owner && typeof owner.completeViewRequest === 'function'
 }
@@ -412,6 +413,7 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
         renderSlot={renderSlot}
         bindDraftMirror={() => () => {}}
         openView={conversation.actions.openView}
+        useInspectCall={selector => selector(undefined)}
       />
     </>,
   )

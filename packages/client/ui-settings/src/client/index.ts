@@ -23,12 +23,15 @@ import type {} from '@deepseek-ai/dsh-settings/types'
 import { SettingsSchemaService } from './schema.ts'
 import { SettingsScopeBinder } from './settings-scope.ts'
 import { SettingsDescribeMirror } from './settings-mirror.ts'
+import { DeveloperToolsPreference } from './developer-tools.ts'
+import { DEVELOPER_TOOLS_NAMESPACE } from '../developer-tools-settings.ts'
 
 export type {
   SettingsGeneralItemOwnerProps, SettingsHeaderOwnerProps, SettingsOnboardingOwnerProps,
   SettingsPluginsTabOwnerProps, SettingsSectionOwnerProps, SettingsTriggerOwnerProps,
 } from './contract/slots.ts'
 export type { SettingsScopeController, SettingsScopeBinder } from './settings-scope.ts'
+export type { DeveloperToolsPreference } from './developer-tools.ts'
 export type { SettingsScope, SettingsScopeSnapshot, SettingsScopeSpec } from './settings-contract.ts'
 export type { SettingsSchemaService } from './schema.ts'
 export type { SchemaNode } from './schema.ts'
@@ -70,4 +73,5 @@ export function apply(ctx: Context): void {
     return () => { for (const dispose of disposers) dispose() }
   }, 'ui-settings: describe mirror invalidations')
   new SettingsScopeBinder(ctx, { mirror, schema, persistence })
+  new DeveloperToolsPreference(ctx, ctx.settingsScope.bind({ namespace: DEVELOPER_TOOLS_NAMESPACE }))
 }

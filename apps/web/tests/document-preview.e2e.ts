@@ -155,6 +155,8 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
         <div><template shadowrootmode="open"><a id="shadow-link" href="https://blocked-preview.invalid/shadow">Shadow link</a><template><iframe src="https://blocked-preview.invalid/frame"></iframe></template></template></div>
         <svg><a id="svg-link" href="https://blocked-preview.invalid/svg"><text y="20">SVG link</text><set attributeName="href" to="https://blocked-preview.invalid/set"/><animate attributeName="href" values="https://blocked-preview.invalid/animate"/></a></svg>
         <img src="https://blocked-preview.invalid/image"><iframe src="https://blocked-preview.invalid/direct-frame"></iframe>
+        <math id="math-link" href="https://blocked-preview.invalid/math"><mi>x</mi></math>
+        <form><math><mtext></form><form><mglyph><style></math><a id="mutation-link" href="https://blocked-preview.invalid/mutation">Mutation link</a>
         </body></html>`),
       writeFile(join(cwd, 'smoke.md'), markdownText),
       writeFile(join(cwd, 'pages.ts'), codeLines.join('\n')),
@@ -293,11 +295,16 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
     await hostileFrame.getByRole('heading', { name: 'Static adversarial preview' }).waitFor()
     expect(await hostileFrame.locator('html').getAttribute('class')).toBe('dark')
     expect(await hostileFrame.locator('body').evaluate(node => getComputedStyle(node).margin)).toBe('0px')
-    for (const id of ['plain-link', 'shadow-link', 'svg-link']) {
+    for (const id of ['plain-link', 'svg-link', 'math-link']) {
       const link = hostileFrame.locator(`#${id}`)
       expect(await link.getAttribute('href')).toBeNull()
       await link.click()
     }
+    // DOMPurify leaves ordinary templates inert and removes declarative shadow roots.
+    expect(await hostileFrame.locator('#shadow-link').count()).toBe(0)
+    expect(await hostileFrame.locator('[href], [xlink\\:href]').count()).toBe(0)
+    const mutationLink = hostileFrame.locator('#mutation-link')
+    if (await mutationLink.count() > 0) await mutationLink.click()
     expect(await hostileFrame.locator('noscript, link, set, animate, iframe').count()).toBe(0)
     expect(blockedRequests).toEqual([])
     await hostileFrame.getByRole('heading', { name: 'Static adversarial preview' }).waitFor()

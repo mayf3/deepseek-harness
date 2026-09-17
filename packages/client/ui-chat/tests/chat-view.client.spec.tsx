@@ -400,7 +400,7 @@ function makeHarness(
     useTranscriptView: bindSnapshotSelector(transcriptView),
     renderSlot,
     SessionProvider: SessionProviderStub,
-    availableViews: [{ id: 'chat', label: 'Chat' }, { id: 'trajectory', label: 'Trajectory' }],
+    inspectCall: (callId: string) => { openView('trajectory', callId) },
     viewRequest: null,
     openView,
     completeViewRequest: () => {},
@@ -1323,7 +1323,7 @@ describe('ChatView', () => {
 
   it('removes Inspect when trajectory is unavailable and restores it with the view', () => {
     const h = makeHarness({ nodes: [toolResult(3, 'a')] })
-    const view = render(<h.ChatView {...h.props} availableViews={[{ id: 'chat', label: 'Chat' }]} />)
+    const view = render(<h.ChatView {...h.props} inspectCall={undefined} />)
     expect(h.toolOwners.at(-1)?.inspectCall).toBeUndefined()
     view.rerender(<h.ChatView {...h.props} />)
     expect(h.toolOwners.at(-1)?.inspectCall).toBeTypeOf('function')

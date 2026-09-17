@@ -301,7 +301,7 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
-  /** Diagnostic scenarios enable developer tools by default; false leaves the shipped default untouched. */
+  /** The scaffold enables developer tools unless false preserves the shipped default. */
   developerTools?: boolean
   /** Profile resolver backend used by this test Host; defaults to runtime coverage. */
   profileResolutionMode?: Extract<ProfileResolutionMode, 'dual' | 'runtime'>

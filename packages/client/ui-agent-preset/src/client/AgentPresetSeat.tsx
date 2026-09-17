@@ -27,8 +27,8 @@ import css from './AgentPresetSeat.module.css'
 /** Registration-side business face for the hero chip. */
 export interface AgentPresetSeatInjected {
   hooks: {
-    /** Shared developer-tool visibility. */
-    developerTools: ObservableSnapshot<boolean>
+    /** Whether this entry offers preset selection. */
+    showPresetPicker: ObservableSnapshot<boolean>
     /** Seat snapshot bound by the renderer as useAgentPresetSeat. */
     agentPresetSeat: SnapshotStore<AgentPresetSeatState>
   }
@@ -85,9 +85,9 @@ export type AgentPresetSeatProps =
  * @returns the chip, or null when the deployment composes no presets.
  */
 export function AgentPresetSeat({
-  sessionId, useSessionRetainInfo, load, select, introduced, useAgentPresetSeat, useDeveloperTools, t,
+  sessionId, useSessionRetainInfo, load, select, introduced, useAgentPresetSeat, useShowPresetPicker, t,
 }: AgentPresetSeatProps) {
-  const developerTools = useDeveloperTools(value => value)
+  const showPresetPicker = useShowPresetPicker(value => value)
   const state = useAgentPresetSeat(snapshot => snapshot)
   const main = useSessionRetainInfo(info => sessionId === undefined
     || (info?.retainedBy.mainView ?? 0) > 0)
@@ -96,7 +96,7 @@ export function AgentPresetSeat({
   // it rather than leaving the first one silently in place.
   const toastSeq = useRef(0)
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
-  const visible = developerTools && state.showPicker
+  const visible = showPresetPicker && state.showPicker
   const pickerVisible = useRef(visible)
   pickerVisible.current = visible
 

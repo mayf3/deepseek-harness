@@ -43,7 +43,7 @@ A tab uses the Session address built by `fileAddressFor`, carrying a relative or
 <a id="how-it-reads"></a>
 ## How it reads
 
-Developer tools selects the HTML preview policy in both Web and desktop. Off uses an inertly parsed static document in an iframe with no sandbox permissions: CSP blocks scripts, external resources, connections, forms, and nested frames; navigation links and refresh directives are removed. Inline styles and data images remain visible, and related files are not read. On uses the scripted Blob preview described below. A mode change unmounts the previous frame and aborts its pending related-file reads. Other document formats retain their own policies.
+Developer tools selects the HTML preview policy in both Web and desktop. The renderer receives `interactivePreview` from plugin assembly. Off uses a DOMPurify-sanitized complete static document in an iframe with no sandbox permissions: CSP blocks scripts, external resources, connections, forms, and nested frames; all `href` and `xlink:href` attributes, refresh directives, and declarative shadow roots are removed before reparsing. Inline styles and data images remain visible, and related files are not read. On uses the scripted Blob preview described below. A mode change unmounts the previous frame and aborts its pending related-file reads. Other document formats retain their own policies.
 
 The body reads its record, navigation and lifetime through `useTabInfo().tab`. `useResource<'file'>(tab.contentId)` supplies metadata; ordinary inject callbacks supply content reads:
 
