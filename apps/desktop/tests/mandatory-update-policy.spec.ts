@@ -107,11 +107,10 @@ describe('mandatory update policy', () => {
     expect((await policy.check('manual', true)).blocking).toBe(false)
   })
 
-  it('keeps a recognized block with fallback copy and no unsafe navigation for malformed 40005', async () => {
+  it('keeps a recognized block when optional copy and navigation are absent', async () => {
     const { policy, request } = fixture()
     request.mockResolvedValueOnce(Response.json({ code: 40005, data: { alt_app: force.data } }))
-    expect(await policy.check('launch')).toEqual({ blocking: true, checking: false,
-      title: undefined, detail: undefined, page: undefined, error: 'invalid-policy' })
+    expect(await policy.check('launch')).toEqual({ blocking: true, checking: false })
   })
 
   it('does not clear a block on HTTP 500 carrying a nominal success body', async () => {

@@ -25,6 +25,8 @@ export const DESKTOP_IPC = {
 } as const
 
 /** Desktop release update state rendered by desktop-owned UI. */
+export type DesktopUpdatePreparationFailureKind = 'stop-failed' | 'tasks-changed' | 'tasks-unavailable'
+
 export interface DesktopUpdateState {
   readonly phase: 'idle' | 'checking' | 'available' | 'downloading' | 'verifying' | 'installing' | 'ready' | 'error'
   readonly version?: string
@@ -33,6 +35,8 @@ export interface DesktopUpdateState {
   readonly technicalDetails?: string
   readonly percent?: number
   readonly failedOperation?: 'check' | 'download' | 'install'
+  /** Main-owned preparation cause; UI wording is selected by the active locale. */
+  readonly preparationFailure?: DesktopUpdatePreparationFailureKind
 }
 
 /** Classified failure copy selected by the Web locale without exposing raw updater diagnostics. */

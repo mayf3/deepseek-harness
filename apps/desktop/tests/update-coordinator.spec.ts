@@ -76,9 +76,10 @@ describe('desktop update coordinator', () => {
     const f = fixture()
     await f.coordinator.check()
     await f.coordinator.download('1.1.0-rc.2')
-    f.beforeRestart.mockRejectedValueOnce(new DesktopUpdatePreparationError(zh.updateStopFailed, 'exit 0; shutdown acknowledged false'))
+    f.beforeRestart.mockRejectedValueOnce(new DesktopUpdatePreparationError('stop-failed', zh.updateStopFailed, 'exit 0; shutdown acknowledged false'))
     expect(await f.coordinator.install('1.1.0-rc.2')).toEqual({ phase: 'error', version: '1.1.0-rc.2',
-      failedOperation: 'install', message: zh.updateStopFailed, technicalDetails: 'exit 0; shutdown acknowledged false' })
+      failedOperation: 'install', preparationFailure: 'stop-failed', message: zh.updateStopFailed,
+      technicalDetails: 'exit 0; shutdown acknowledged false' })
     expect(f.quitAndInstall).not.toHaveBeenCalled()
     f.beforeRestart.mockResolvedValueOnce(false)
     expect(await f.coordinator.install('1.1.0-rc.2')).toEqual({ phase: 'ready', version: '1.1.0-rc.2' })

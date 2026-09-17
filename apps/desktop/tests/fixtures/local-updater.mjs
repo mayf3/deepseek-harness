@@ -144,7 +144,7 @@ async function main() {
       f.restart(async () => true)
       assert.equal((await f.coordinator.install(available.version)).phase, 'installing')
       assert.deepEqual(f.installations, [[true, true]])
-      presentations.push(...f.states.map(state => ({ phase: state.phase, ...presentDesktopUpdate(state, messages) })))
+      presentations.push(...f.states.map(state => ({ phase: state.phase, ...presentDesktopUpdate(state) })))
     })
     for (const mode of ['download-404', 'corrupt', 'disconnect', 'download-stall']) {
       await scenario(`${mode}-explicit-retry`, async () => {
@@ -156,7 +156,7 @@ async function main() {
         if (mode === 'corrupt') assert.match(failure.message, /checksum mismatch/i)
         if (mode === 'download-stall') assert.match(failure.message, /timed out/)
         assert.equal(f.updater.installerPath, null)
-        const presentation = presentDesktopUpdate(failure, messages)
+        const presentation = presentDesktopUpdate(failure)
         assert.equal(presentation.phase, 'error')
         assert.equal(presentation.failure, 'download')
         assert.equal(f.installations.length, 0)
@@ -204,7 +204,7 @@ async function main() {
       assert.equal(fs.createWriteStream, original)
       const cache = await readdir(join(f.directory, 'cache'), { recursive: true })
       assert.ok(!cache.some(file => file.endsWith('.exe') || file.endsWith('update-info.json')), 'Partial bytes must not remain installable')
-      const presentation = presentDesktopUpdate(f.coordinator.state, messages)
+      const presentation = presentDesktopUpdate(f.coordinator.state)
       assert.equal(presentation.phase, 'error')
       assert.equal(presentation.failure, 'download')
       assert.equal((await f.coordinator.download(available.version)).phase, 'ready')
@@ -338,7 +338,7 @@ async function main() {
         await until("!document.getElementById('update').disabled")
         assert.equal(f.installations.length, 0)
         assert.equal(policy.state.blocking, true)
-        f.restart(async () => { throw new DesktopUpdatePreparationError(resolveDesktopLocale('zh-CN').messages.updateStopFailed,
+        f.restart(async () => { throw new DesktopUpdatePreparationError('stop-failed', resolveDesktopLocale('zh-CN').messages.updateStopFailed,
           'exit 0; shutdown acknowledged false') })
         await window.webContents.executeJavaScript("document.getElementById('update').click()")
         await until("!document.getElementById('technical-details').hidden && !document.getElementById('update').disabled")

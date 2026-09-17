@@ -200,6 +200,7 @@ async function main(): Promise<void> {
   const manager = new DesktopProjectManager(paths, resources)
   let quitting = false
   let startup: Promise<void> | undefined
+  let workspaceRecovery: Promise<void> | undefined
   let mainWindow: BrowserWindow | undefined
   let pluginWindow: BrowserWindow | undefined
   let shellInstallerOwnsQuit = false
@@ -302,7 +303,7 @@ async function main(): Promise<void> {
     mandatoryUI?.sync()
     for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(DESKTOP_IPC.updatesState, state)
-      window.webContents.send(DESKTOP_IPC.updatesPresentation, presentDesktopUpdate(state, messages))
+      window.webContents.send(DESKTOP_IPC.updatesPresentation, presentDesktopUpdate(state))
     }
     if (state.phase === 'error' && state.failedOperation !== 'check') {
       const restoreHost = state.failedOperation === 'install' && updateStoppedHost && !quitting
@@ -310,8 +311,20 @@ async function main(): Promise<void> {
       updateStoppedHost = false
       if (restoreHost) {
         // Only confirmed process exit permits replacement before another installation confirmation.
-        startup ??= backend.start(async () => {}).then(() => navigateMain(applicationUrl))
-          .catch(reportFatal).finally(() => { startup = undefined })
+        const hostReady = backend.start(async () => {})
+        startup = hostReady
+        const recovery = hostReady.then(async () => {
+          if (quitting) return
+          // A replacement Host can have a new port, cookie, or boot injections even at the same URL.
+          navigation = undefined
+          await navigateMain(applicationUrl)
+          if (backend.host !== undefined) updateJournal?.action('workspace-ready')
+        })
+        workspaceRecovery = recovery
+        void recovery.catch(reportFatal).finally(() => {
+          if (startup === hostReady) startup = undefined
+          if (workspaceRecovery === recovery) workspaceRecovery = undefined
+        })
       }
       void showUpdateFailure(state).catch((error: unknown) => { console.error(error) })
     }
@@ -344,9 +357,10 @@ async function main(): Promise<void> {
   const updates = new DesktopUpdateCoordinator(
     publishUpdate,
     async () => {
+      await workspaceRecovery
       await startup?.catch(() => undefined)
       const host = backend.host
-      if (host === undefined) throw new Error(messages.updateTasksUnavailable)
+      if (host === undefined) throw new DesktopUpdatePreparationError('tasks-unavailable', messages.updateTasksUnavailable)
       const active = await host.updateTasks('inspect')
       const confirmation: Electron.MessageBoxOptions = {
         type: active ? 'warning' : 'info', title: messages.updateTitle,
@@ -363,10 +377,10 @@ async function main(): Promise<void> {
         const result = await updateDialog.show(mainWindow, confirmation)
         if (result.response !== 0 || isMandatory()) return false
       }
-      if (backend.host !== host) throw new Error(messages.updateTasksUnavailable)
+      if (backend.host !== host) throw new DesktopUpdatePreparationError('tasks-unavailable', messages.updateTasksUnavailable)
       try {
         const stillActive = await host.updateTasks('lock')
-        if (stillActive && !active) throw new Error(messages.updateTasksChanged)
+        if (stillActive && !active) throw new DesktopUpdatePreparationError('tasks-changed', messages.updateTasksChanged)
         mandatoryUI?.preparingRestart(stillActive)
         requireCleanStop = true
         updateStopFailure = undefined
@@ -374,7 +388,7 @@ async function main(): Promise<void> {
         updateStoppedHost = true
         // The backend's async cleanup callback can assign this after the reset above.
         const stopFailure = updateStopFailure as DesktopHostUncleanExitError | undefined
-        if (stopFailure !== undefined) throw new DesktopUpdatePreparationError(messages.updateStopFailed, stopFailure.message)
+        if (stopFailure !== undefined) throw new DesktopUpdatePreparationError('stop-failed', messages.updateStopFailed, stopFailure.message)
         updateJournal?.action('install-confirmed')
         shellInstallerOwnsQuit = true
       } catch (error) {
@@ -503,7 +517,7 @@ async function main(): Promise<void> {
   })
   ipcMain.handle(DESKTOP_IPC.updatesStatus, (event) => {
     assertProductSender(event)
-    return presentDesktopUpdate(updates.state, messages)
+    return presentDesktopUpdate(updates.state)
   })
   ipcMain.handle(DESKTOP_IPC.updatesOpen, async (event) => {
     assertProductSender(event)
@@ -516,6 +530,7 @@ async function main(): Promise<void> {
     if (authenticationOperation !== undefined) {
       policyAuth?.focus(); updateDialog.focus()
     }
+    let failedOperation: 'check' | 'download' | 'install' = 'check'
     promptOperation ??= Promise.resolve().then(async () => {
       if (manual) updateJournal?.action('check-requested')
       const joinedPolicyAuthentication = authenticationOperation !== undefined
@@ -546,7 +561,10 @@ async function main(): Promise<void> {
         return
       }
       if (state.phase === 'ready' || (state.phase === 'error' && state.failedOperation === 'install')) {
-        if (state.version !== undefined) await showUpdateFailure(await updates.install(state.version))
+        if (state.version !== undefined) {
+          failedOperation = 'install'
+          await showUpdateFailure(await updates.install(state.version))
+        }
         return
       }
       if (state.phase !== 'available' && !(state.phase === 'error' && state.failedOperation === 'download')) return
@@ -557,9 +575,11 @@ async function main(): Promise<void> {
         if (result.response !== 0) return
       }
       if (!isMandatory() && state.version !== undefined) {
+        failedOperation = 'download'
         await showUpdateFailure(await downloadUpdate(state.version))
       }
-    }).catch((error: unknown) => showUpdateFailure({ phase: 'error', message: desktopErrorState(error).message }))
+    }).catch((error: unknown) => showUpdateFailure({ phase: 'error', failedOperation,
+      message: desktopErrorState(error).message }))
       .finally(() => { promptOperation = undefined; flushQueuedPolicyAuthentication() })
     return promptOperation
   }

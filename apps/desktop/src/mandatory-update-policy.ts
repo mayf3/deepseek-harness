@@ -30,7 +30,7 @@ export interface DesktopPolicyState {
   readonly title?: string
   readonly detail?: string
   readonly page?: string
-  readonly error?: 'unavailable' | 'invalid-policy' | 'authentication-required'
+  readonly error?: 'unavailable' | 'authentication-required'
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -111,8 +111,7 @@ function parsePolicy(body: unknown, ok: boolean, config: DesktopPolicyConfig): D
     const detail = text(content?.detail, 16_384)
     const page = desktopPolicyPage(data?.desktop_app_link, config.allowedPageOrigins)
     return { blocking: true, checking: false,
-      ...(title === undefined ? {} : { title }), ...(detail === undefined ? {} : { detail }), ...(page === undefined ? {} : { page }),
-      ...(title === undefined || detail === undefined || page === undefined ? { error: 'invalid-policy' as const } : {}) }
+      ...(title === undefined ? {} : { title }), ...(detail === undefined ? {} : { detail }), ...(page === undefined ? {} : { page }) }
   }
   if (ok && root?.code === 0 && data?.biz_code === 0 && data.biz_data === null) return { blocking: false, checking: false }
   throw new Error('desktop policy: response does not contain a valid mandatory or no-force decision')

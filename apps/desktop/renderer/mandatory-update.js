@@ -15,6 +15,11 @@ function render(view) {
   const ready = update.phase === 'ready' || (failed && update.failedOperation === 'install')
   const downloadable = update.phase === 'available' || (failed && update.failedOperation === 'download')
   const authenticationRequired = policy.error === 'authentication-required'
+  const preparationMessages = {
+    'stop-failed': messages.updateStopFailed,
+    'tasks-changed': messages.updateTasksChanged,
+    'tasks-unavailable': messages.updateTasksUnavailable,
+  }
   const fallback = failed || update.phase === 'idle' || view.error !== undefined
   let title = policy.title ?? messages.mandatoryTitle
   let detail = policy.detail ?? messages.mandatoryDetail
@@ -40,8 +45,7 @@ function render(view) {
   const error = localError ?? view.error ?? (authenticationRequired ? messages.policyLoginRequired : failed
     ? update.failedOperation === 'download' ? messages.mandatoryDownloadFailed
       : update.failedOperation === 'install'
-        ? [messages.updateStopFailed, messages.updateTasksUnavailable, messages.updateTasksChanged].includes(update.message)
-          ? update.message : messages.mandatoryInstallFailed
+        ? preparationMessages[update.preparationFailure] ?? messages.mandatoryInstallFailed
         : messages.mandatoryUnavailable
     : update.phase === 'idle' && !policy.checking ? messages.mandatoryNoRelease : undefined)
   const technicalDetails = failed ? update.technicalDetails ?? update.message ?? '' : ''

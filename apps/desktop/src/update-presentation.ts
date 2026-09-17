@@ -7,15 +7,10 @@ const NETWORK_FAILURE = /\b(?:ERR_CONNECTION_CLOSED|ERR_CONNECTION_RESET|ERR_INT
 /**
  * Classify one updater failure for both native and Web-localized summaries.
  * @param state Update failure and its operation.
- * @param messages Selected shell locale, used to recognize shell-owned preparation failures.
  * @returns Stable presentation kind without raw diagnostics.
  */
-function desktopUpdateFailureKind(state: DesktopUpdateState, messages: DesktopMessages): DesktopUpdateFailureKind {
-  if (state.failedOperation === 'install') {
-    if (state.message === messages.updateStopFailed) return 'stop-failed'
-    if (state.message === messages.updateTasksChanged) return 'tasks-changed'
-    if (state.message === messages.updateTasksUnavailable) return 'tasks-unavailable'
-  }
+function desktopUpdateFailureKind(state: DesktopUpdateState): DesktopUpdateFailureKind {
+  if (state.failedOperation === 'install' && state.preparationFailure !== undefined) return state.preparationFailure
   const operation = state.failedOperation ?? 'install'
   return NETWORK_FAILURE.test(state.message ?? '') ? `${operation}-network` : operation
 }
@@ -27,7 +22,7 @@ function desktopUpdateFailureKind(state: DesktopUpdateState, messages: DesktopMe
  * @returns Localized summary suitable for both a dialog and a tooltip.
  */
 export function desktopUpdateErrorSummary(state: DesktopUpdateState, messages: DesktopMessages): string {
-  const kind = desktopUpdateFailureKind(state, messages)
+  const kind = desktopUpdateFailureKind(state)
   const summaries: Readonly<Record<DesktopUpdateFailureKind, string>> = {
     check: messages.updateCheckFailed,
     'check-network': `${messages.updateCheckFailed} ${messages.updateNetworkFailed}`,
@@ -44,14 +39,13 @@ export function desktopUpdateErrorSummary(state: DesktopUpdateState, messages: D
 
 /**
  * @param state - Main-process updater state.
- * @param messages - Electron's selected locale, used only to classify shell-owned failures.
  * @returns Semantic status without localized copy, diagnostics, or installation controls.
  */
-export function presentDesktopUpdate(state: DesktopUpdateState, messages: DesktopMessages): DesktopUpdatePresentation {
+export function presentDesktopUpdate(state: DesktopUpdateState): DesktopUpdatePresentation {
   return {
     phase: state.phase,
     ...(state.version === undefined ? {} : { version: state.version }),
     ...(state.percent === undefined ? {} : { percent: Math.floor(state.percent) }),
-    ...(state.phase === 'error' ? { failure: desktopUpdateFailureKind(state, messages) } : {}),
+    ...(state.phase === 'error' ? { failure: desktopUpdateFailureKind(state) } : {}),
   }
 }

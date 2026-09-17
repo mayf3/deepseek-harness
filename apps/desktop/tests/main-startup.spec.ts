@@ -761,6 +761,15 @@ describe('desktop main startup', () => {
     expect(harness.updateDownload).not.toHaveBeenCalled()
   })
 
+  it('reports a stale download confirmation as a download failure', async () => {
+    await readyForUpdate()
+    harness.updateCheck.mockResolvedValueOnce({ phase: 'available', version: '1.0.1-nightly.1' })
+    harness.updateDownload.mockRejectedValueOnce(new Error('desktop update: download confirmation is stale'))
+    await invoke(DESKTOP_IPC.updatesOpen, 'app')
+    expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'error',
+      message: en.updateDownloadFailed, technicalDetails: 'desktop update: download confirmation is stale' }))
+  })
+
   it('keeps policy failures silent while an ordinary update proceeds', async () => {
     harness.embeddedPolicy = { origin: 'https://policy.example.com',
       allowedPageOrigins: ['https://downloads.example.com'] }
@@ -970,10 +979,13 @@ describe('desktop main startup', () => {
     harness.publishUpdate({ phase: 'error', version: '1.0.1-nightly.1', failedOperation: 'install', message: 'Installer failed' })
     await restarted
     const replacement = harness.hosts[1]!
+    replacement.url = 'http://127.0.0.1:3099/?token=replacement'
     if (mandatory) replacement.updateTasks.mockResolvedValue(true)
     const retry = harness.prepareUpdate()
     expect(replacement.updateTasks).not.toHaveBeenCalled()
     replacement.ready.resolve()
+    await vi.waitFor(() => { expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/', 'dsh-app://app/']) })
+    await expect(Promise.resolve(invoke(DESKTOP_IPC.boot))).resolves.toEqual({ injections: [], streamBaseUrl: 'http://127.0.0.1:3099' })
     if (mandatory) await answerMandatory('later')
     await expect(retry).resolves.toBe(false)
     expect(replacement.updateTasks.mock.calls).toEqual([['inspect']])
@@ -992,7 +1004,7 @@ describe('desktop main startup', () => {
     if (mandatory) await harness.policyBlocked.promise
     harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
     const preparing = harness.prepareUpdate()
-    const rejected = expect(preparing).rejects.toMatchObject(new DesktopUpdatePreparationError(en.updateStopFailed, 'Task teardown failed after child exit'))
+    const rejected = expect(preparing).rejects.toMatchObject(new DesktopUpdatePreparationError('stop-failed', en.updateStopFailed, 'Task teardown failed after child exit'))
     if (mandatory) await answerMandatory('install')
     await host.stopping.promise
     host.exited.reject(new DesktopHostUncleanExitError('Task teardown failed after child exit'))
@@ -1007,6 +1019,7 @@ describe('desktop main startup', () => {
     const retry = harness.prepareUpdate()
     expect(replacement.updateTasks).not.toHaveBeenCalled()
     replacement.ready.resolve()
+    await vi.waitFor(() => { expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/', 'dsh-app://app/']) })
     if (mandatory) await answerMandatory('later')
     await expect(retry).resolves.toBe(false)
     expect(replacement.updateTasks.mock.calls).toEqual([['inspect']])
@@ -1033,7 +1046,7 @@ describe('desktop main startup', () => {
     const host = await readyForUpdate()
     harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
     const preparing = harness.prepareUpdate()
-    const rejected = expect(preparing).rejects.toMatchObject(new DesktopUpdatePreparationError(en.updateStopFailed, 'Task teardown failed after child exit'))
+    const rejected = expect(preparing).rejects.toMatchObject(new DesktopUpdatePreparationError('stop-failed', en.updateStopFailed, 'Task teardown failed after child exit'))
     await host.stopping.promise
     host.exited.reject(new DesktopHostUncleanExitError('Task teardown failed after child exit'))
     await rejected
@@ -1050,6 +1063,31 @@ describe('desktop main startup', () => {
       (call.at(-1) as MessageBoxOptions).detail?.includes('replacement startup failed'))).toBe(true)
     await expect(harness.prepareUpdate()).rejects.toThrow('Task status is unavailable')
     expect(harness.hosts).toHaveLength(2)
+  })
+
+  it('opens fatal recovery when the replacement page cannot reload', async () => {
+    const host = await readyForUpdate()
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
+    const preparing = harness.prepareUpdate()
+    await host.stopping.promise
+    host.exited.resolve()
+    await expect(preparing).resolves.toBe(true)
+    const window = harness.windows[0]!
+    vi.spyOn(window, 'loadURL').mockRejectedValueOnce(new Error('replacement page failed to load'))
+    harness.dialog.showMessageBox.mockImplementation((options: MessageBoxOptions) => {
+      if (options.detail?.includes('replacement page failed to load')) {
+        harness.dialogShown.resolve()
+        return new Promise(() => {})
+      }
+      return Promise.resolve({ response: 1 })
+    })
+    const restarted = harness.nextHostStart()
+    harness.publishUpdate({ phase: 'error', version: '1.0.1-nightly.1', failedOperation: 'install', message: 'Installer failed' })
+    await restarted
+    harness.hosts[1]!.ready.resolve()
+    await harness.dialogShown.promise
+    expect(harness.dialog.showMessageBox.mock.calls.some(call =>
+      (call.at(-1) as MessageBoxOptions).detail?.includes('replacement page failed to load'))).toBe(true)
   })
 
   it('reports a window construction failure without requiring a window', async () => {

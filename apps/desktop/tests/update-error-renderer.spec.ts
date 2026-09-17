@@ -61,8 +61,8 @@ it('keeps mandatory diagnostics expandable without clearing the block or authori
   const p = page('mandatory-update')
   const locale = resolveDesktopLocale('zh-CN')
   const initial: MandatoryUpdateView = { locale, deferred: false, policy: { blocking: true, checking: false },
-    update: { phase: 'error', failedOperation: 'install', version: '0.1.6-nightly.1',
-      message: locale.messages.updateStopFailed, technicalDetails: 'exit 0; shutdown acknowledged false' } }
+    update: { phase: 'error', failedOperation: 'install', preparationFailure: 'stop-failed', version: '0.1.6-nightly.1',
+      message: 'different shell locale', technicalDetails: 'exit 0; shutdown acknowledged false' } }
   const action = vi.fn(async () => {})
   let publish!: (view: MandatoryUpdateView) => void
   const unsubscribe = vi.fn()
@@ -116,6 +116,17 @@ function mandatoryPage(update: MandatoryUpdateView['update']) {
   p.run()
   return { ...p, initial, action, publish: (view: MandatoryUpdateView) => { publish(view) } }
 }
+
+it('uses client copy and retry when optional policy fields are absent', async () => {
+  const p = mandatoryPage({ phase: 'idle' })
+  p.publish({ ...p.initial, policy: { blocking: true, checking: false } })
+  const messages = p.initial.locale.messages
+  expect(p.element('title').textContent).toBe(messages.mandatoryTitle)
+  expect(p.element('detail').textContent).toBe(messages.mandatoryDetail)
+  expect(p.element('error').textContent).toBe(messages.mandatoryNoRelease)
+  expect(p.element('refresh').hidden).toBe(false)
+  expect(p.element('page').hidden).toBe(true)
+})
 
 it('uses the same modal for download, verification, inspected confirmation and task-aware restart', async () => {
   const p = mandatoryPage({ phase: 'available', version: '1.0.1-nightly.1' })
