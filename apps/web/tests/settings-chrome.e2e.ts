@@ -126,6 +126,12 @@ describe('web e2e: settings modal and General preferences', () => {
     // presets took over included, preset compositions excluded.
     expect(await dialog.locator('[data-plugin-scope="global"] [data-plugin-entry]').count())
       .toBe(expectedPluginCount)
+    // The enablement tag is the row's collapsed status: an active fiber draws no
+    // dot, so no global row names the active phase. Guard the assertion against
+    // matching nothing because no row is enabled.
+    expect(await dialog.locator('[data-plugin-scope="global"] [data-plugin-entry] button[aria-label$="已启用"]').count())
+      .toBeGreaterThan(0)
+    expect(await dialog.locator('[data-plugin-scope="global"] [role="img"][aria-label="运行中"]').count()).toBe(0)
     expect(await dialog.locator('[data-plugin-count]').getAttribute('data-plugin-count'))
       .toBe(String(expectedPluginCount))
     expect(await dialog.getByRole('button', { name: '内置插件', exact: true }).getAttribute('aria-current')).toBe('true')

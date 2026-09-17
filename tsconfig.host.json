@@ -7,6 +7,9 @@
     "noEmit": true,
     "rewriteRelativeImportExtensions": false
   },
+  "files": [
+    "packages/client/ui-settings-general/src/client/desktop-update-bridge.ts"
+  ],
   "include": [
     "apps/web/product-isolation.ts",
     "apps/web/tests/default-product-isolation.e2e.ts",
@@ -40,6 +43,7 @@
     "apps/web/tests/details-session-lifecycle.e2e.ts",
     "apps/web/tests/document-preview.e2e.ts",
     "apps/web/tests/office-fixture.ts",
+    "apps/web/tests/sidebar-browser.e2e.ts",
     "apps/web/tests/plugin-config.e2e.ts",
     "apps/web/tests/plugin-manager.e2e.ts",
     "apps/web/tests/plugin-install-cancel.e2e.ts",
@@ -65,6 +69,7 @@
     "apps/web/tests/cold-blank-session.e2e.ts",
     "apps/web/tests/stats-paged-history.e2e.ts",
     "apps/web/tests/sidebar-scrollbar.e2e.ts",
+    "apps/web/tests/sidebar-title-hover-scroll.e2e.ts",
     "apps/web/tests/rail-search-expand.e2e.ts",
     "apps/web/tests/conversation-column-overflow.e2e.ts",
     "apps/web/tests/ptc-round.e2e.ts",
@@ -81,6 +86,7 @@
     "apps/web/tests/open-in-app-ssh.e2e.ts",
     "apps/web/tests/message-feedback.e2e.ts",
     "apps/web/tests/markdown-images.e2e.ts",
+    "apps/web/tests/markdown-file-links.e2e.ts",
     "apps/web/tests/reference-composer.e2e.ts",
     "apps/web/tests/markdown-wide-table.e2e.ts",
     "apps/web/tests/thinking-markdown.e2e.ts",
@@ -155,6 +161,7 @@
     "scripts/client-bundle-purity.spec.ts"
   ],
   "references": [
+    { "path": "./packages/client/connection/tsconfig.host.json" },
     { "path": "./packages/skill/skill-office" },
     { "path": "./packages/browser-use/browser-use" },
     { "path": "./packages/experimental/browser-use-runtime" },

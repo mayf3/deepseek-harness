@@ -164,19 +164,27 @@ function CardFacts({ moduleName, moduleLabel, entryId, facts }: {
   )
 }
 
-/* `pending` is the only phase with no work under way. `loading` and
+/* `pending` is the only dotted phase with no work under way. `loading` and
  * `unloading` are both live transitions the Host is running — an async
- * disposer can hold `unloading` for a while — so both animate. */
+ * disposer can hold `unloading` for a while — so both animate. `active` and
+ * `failed` carry no dot: a settled enabled row shows its enablement tag alone,
+ * and a failed row has the failure tag. */
 const PHASE_DOT_STATES = {
   pending: 'idle',
   loading: 'ongoing',
-  active: 'done',
-  failed: 'error',
   unloading: 'ongoing',
-} as const satisfies Record<NonNullable<PluginFiberPhase>, StateDotState>
+} as const satisfies Partial<Record<NonNullable<PluginFiberPhase>, StateDotState>>
 
-/** Status dot naming a live root-fiber phase; rows with no live fiber show none. */
-function PhaseDot({ phase, t }: { readonly phase: NonNullable<PluginFiberPhase>; readonly t: Translate }): ReactNode {
+/** A live root-fiber phase whose dot still adds to the row's enablement tag. */
+type DotPhase = keyof typeof PHASE_DOT_STATES
+
+/** Whether a live root-fiber phase carries a dot of its own. */
+function showsPhaseDot(phase: PluginFiberPhase): phase is DotPhase {
+  return phase === 'pending' || phase === 'loading' || phase === 'unloading'
+}
+
+/** Status dot naming a live root-fiber phase; rows without a dotted phase show none. */
+function PhaseDot({ phase, t }: { readonly phase: DotPhase; readonly t: Translate }): ReactNode {
   const status = phaseLabel(phase, t)
   /* StateDot is aria-hidden, so the phase name lives on this wrapper. */
   return (
@@ -301,7 +309,7 @@ export function PluginInventorySettingsTab(
         ariaLabel={`${title}${row.entryId === null ? '' : `, ${row.entryId}`}, ${stateText}`}
         trailing={(
           <>
-            {row.enabled === true && !failed && row.fiberPhase !== null
+            {row.enabled === true && showsPhaseDot(row.fiberPhase)
               ? <PhaseDot phase={row.fiberPhase} t={t} />
               : null}
             <StateTag kind={kind} label={stateText} />
@@ -347,7 +355,7 @@ export function PluginInventorySettingsTab(
         ariaLabel={`${title}, ${entry.entryId}, ${stateText}`}
         trailing={(
           <>
-            {entry.enabled && !failed && entry.fiberPhase !== null
+            {entry.enabled && showsPhaseDot(entry.fiberPhase)
               ? <PhaseDot phase={entry.fiberPhase} t={t} />
               : null}
             <StateTag kind={kind} label={stateText} />

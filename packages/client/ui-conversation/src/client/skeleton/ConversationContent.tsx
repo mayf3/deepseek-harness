@@ -5,134 +5,29 @@ import type { ConversationContentProps, ConversationViewsProps, InputZone } from
 import { HeroShell, WorkspaceChip, workspaceLabel } from './EmptyHero.tsx'
 import css from './ConversationRoot.module.css'
 
-const WHEEL_DELTA_LINE = 1
-const WHEEL_DELTA_PAGE = 2
-const FALLBACK_WHEEL_LINE_PX = 16
-
 function ConversationSessionView({ renderSlot }: ConversationViewsProps) {
   return renderSlot('conversation.session', {})
 }
 
-/** Convert a wheel event's vertical delta to scrollport pixels. */
-function wheelDeltaY(event: React.WheelEvent, scrollport: HTMLElement): number {
-  if (event.deltaMode === WHEEL_DELTA_LINE) {
-    const lineHeight = Number.parseFloat(getComputedStyle(scrollport).lineHeight)
-    return event.deltaY * (Number.isFinite(lineHeight) ? lineHeight : FALLBACK_WHEEL_LINE_PX)
-  }
-  if (event.deltaMode === WHEEL_DELTA_PAGE) return event.deltaY * scrollport.clientHeight
-  return event.deltaY
-}
-
-/** One transcript width handle: pointer capture + rAF-throttled symmetric
- * resize (both sides write the one centered width, so outward travel widens
- * by 2× the pointer distance). pointermove publishes the pointer's Y as a CSS
- * variable so the glow indicator rides it. Mirrors ui-layout AppFrame's
- * DragHandle capture model. */
-function WidthHandle(props: {
-  side: 'left' | 'right'
-  onStart: () => number
-  onDrag: (width: number) => void
-  onCommit: (width: number) => void
-  onEnd: () => void
-}) {
-  const [dragging, setDragging] = useState(false)
-  const base = useRef(0)
-  const origin = useRef(0)
-  const latest = useRef(0)
-  const frame = useRef<number | null>(null)
-  const callbacks = useRef(props)
-  callbacks.current = props
-
-  const outwardWidth = () => {
-    const dx = latest.current - origin.current
-    const outward = callbacks.current.side === 'right' ? dx : -dx
-    return base.current + outward * 2
-  }
-  const cancelFrame = () => {
-    if (frame.current !== null) { cancelAnimationFrame(frame.current); frame.current = null }
-  }
-  const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return
-    e.preventDefault()
-    e.currentTarget.setPointerCapture(e.pointerId)
-    origin.current = e.clientX
-    latest.current = e.clientX
-    base.current = callbacks.current.onStart()
-    setDragging(true)
-  }, [])
-  const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const box = e.currentTarget.getBoundingClientRect()
-    e.currentTarget.style.setProperty('--dsh-width-handle-pointer-y', `${e.clientY - box.top}px`)
-    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
-    latest.current = e.clientX
-    frame.current ??= requestAnimationFrame(() => {
-      frame.current = null
-      callbacks.current.onDrag(outwardWidth())
-    })
-  }, [])
-  const onPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
-    e.currentTarget.releasePointerCapture(e.pointerId)
-    cancelFrame()
-    latest.current = e.clientX
-    // Only a gesture with actual travel commits: a press-and-release on a
-    // window-clamped width must not overwrite the wider stored preference
-    // with the clamped display value.
-    if (latest.current !== origin.current) callbacks.current.onCommit(outwardWidth())
-    setDragging(false)
-    callbacks.current.onEnd()
-  }, [])
-  // Releasing the button outside the window delivers pointercancel (or drops
-  // the capture silently) instead of pointerup; without this the glow's
-  // data-dragging state sticks on. The gesture is abandoned uncommitted —
-  // onEnd republishes the stored preference. releasePointerCapture inside
-  // onPointerUp also fires lostpointercapture, so this runs (idempotently)
-  // after every normal drag end too; keep both paths.
-  const onPointerCancel = useCallback(() => {
-    cancelFrame()
-    setDragging(false)
-    callbacks.current.onEnd()
-  }, [])
-  const onWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-    const body = e.currentTarget.parentElement
-    /* v8 ignore next -- a width handle renders only inside the Conversation body. */
-    if (body === null) return
-    const scrollport = body.querySelector<HTMLElement>(':scope > [data-conversation-scroll]')
-    /* v8 ignore next -- the Conversation body always contains its direct scroll element. */
-    if (scrollport === null) return
-    if (e.ctrlKey || e.deltaY === 0) return
-    scrollport.scrollBy({ top: wheelDeltaY(e, scrollport) })
-  }, [])
-
-  return (
-    <div
-      className={css.widthHandle}
-      data-side={props.side}
-      data-width-handle={props.side}
-      data-dragging={dragging || undefined}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
-      onLostPointerCapture={onPointerCancel}
-      onWheel={onWheel}
-    />
-  )
+function NoConversationWidthControls() {
+  return null
 }
 
 /**
- * Render the existing Conversation body, Composer, and width handles.
- * @param props - original Conversation seats plus MainPanel-derived phase and width callbacks.
- * @returns the unchanged Conversation body subtree.
+ * Render the shared Conversation body and its occurrence-selected local Components.
+ * @param props - Factory input, standard Session sources, and Conversation seats.
+ * @returns the Conversation view, Composer, and optional width controls.
  */
-export function ConversationContent({
-  sessionId, phase, hero, useSession, useSessions, useSessionStatus,
-  useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain,
-  selectWorkspace, t, useFactorySlot,
-  onHandleStart, onHandleDrag, onHandleCommit, onHandleEnd,
-}: ConversationContentProps) {
+export function ConversationContent(props: ConversationContentProps) {
+  const {
+    sessionId, phase, hero, useSession, useSessions, useSessionStatus,
+    useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain,
+    selectWorkspace, t, useFactorySlot,
+  } = props
   const session = useSession(snapshot => snapshot)
   const Views = useFactorySlot('views', ConversationSessionView)
+  const WidthControls = useFactorySlot('widthControls', NoConversationWidthControls)
+  const [body, setBody] = useState<HTMLDivElement | null>(null)
   const pendingInteraction = useSessionStatus(snapshot =>
     sessionId === undefined ? undefined : snapshot.get(sessionId)?.pendingInteraction)
   const inputState = useInput(s => s)
@@ -285,23 +180,17 @@ export function ConversationContent({
   )
 
   return (
-    <div className={css.body}>
+    <div
+      ref={setBody}
+      className={clsx(css.body, props.variant === 'embedded' && css.embeddedBody)}
+      data-conversation-content=""
+      data-content-phase={phase}
+    >
       <div className={css.scrollBody} data-conversation-scroll="">
         {sessionId === undefined ? null : <Views />}
         {composerSeat}
       </div>
-      {/* Width handles only while a transcript is on screen; the hero has no
-          content column to size. */}
-      {phase === 'active' && (['left', 'right'] as const).map(side => (
-        <WidthHandle
-          key={side}
-          side={side}
-          onStart={onHandleStart}
-          onDrag={onHandleDrag}
-          onCommit={onHandleCommit}
-          onEnd={onHandleEnd}
-        />
-      ))}
+      <WidthControls container={body} phase={phase} />
     </div>
   )
 }

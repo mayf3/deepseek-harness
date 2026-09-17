@@ -1,12 +1,12 @@
 /**
  * Deliverables plugin, browser half: registers the changed-files card and
- * delivery cards into the chat view's turn-tail chain, the `changes-review`
+ * delivery cards into the chat view's turn-tail list, the `changes-review`
  * right-Sidebar tab type that reviews one turn's changed files one comparison
  * at a time, and provides the `chatFileMentions` service that links
  * inline-code mentions of produced or delivered files in the closing prose.
  * All policy lives here — the supported mutation calls, mention matching, row
  * cap, and copy — so composing this plugin out of cordis.yml removes every
- * surface; the owning view renders an empty chain and inert prose at zero cost.
+ * surface; the owning view renders an empty list and inert prose at zero cost.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -21,7 +21,7 @@ import { ChangesDiffStore } from './changes-diff.ts'
 import { ChangesSummaryStore } from './changes-summary.ts'
 import { PresentedOpenController } from './present-open.ts'
 import { PresentRow } from './PresentRow.tsx'
-import { Deliverables, selectDeliverables, type DeliverablesInjected } from './Deliverables.tsx'
+import { DeliverablesTail, type DeliverablesInjected } from './Deliverables.tsx'
 import { ReviewTab, type ReviewInjected } from './ReviewTab.tsx'
 import { CHANGES_REVIEW_ID, changesReviewDefinition } from './review-definition.ts'
 import { createReviewStore } from './review-store.ts'
@@ -60,7 +60,7 @@ export function apply(ctx: ClientContext): void {
     'conversation.chat.turnTail',
     () => ctx.slots.register({
       name: 'conversation.chat.turnTail',
-      select: selectDeliverables,
+      id: '@deepseek-ai/dsh-client-ui-deliverables',
       locale: NS,
       inject: (): DeliverablesInjected => ({
         hooks: { presentedOpen: opener.state, presentedHost: opener.host, changesSummary: summaries.state },
@@ -72,7 +72,7 @@ export function apply(ctx: ClientContext): void {
           ctx.sidebarRight.openResource(changesReviewAddress(coordinates), { params: { index } })
         },
       }),
-    }, Deliverables),
+    }, DeliverablesTail),
   )
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
     { name: 'tool.call.toolview', key: 'present', locale: NS }, PresentRow,
