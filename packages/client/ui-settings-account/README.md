@@ -31,14 +31,14 @@ Contact us opens the Feishu questionnaire in the system browser on Desktop or a 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The Account section appears first in Settings. The plugin owns one Host snapshot stream shared through framework hooks by settings.section and settings.launcher. The launcher opens Settings and offers Sign out only while an account credential is stored. Platform failures leave the menu available for retry. It maintains no independent credential state, so no invariant companion is published.
+The Account section appears first in Settings only while signed in; it is hidden before account state loads and after sign-out. The plugin owns one Host snapshot stream shared through framework hooks by settings.section and settings.launcher. The launcher opens Settings and offers Sign out only while an account credential is stored. Platform failures leave the menu available for retry. It maintains no independent credential state, so no invariant companion is published.
 
 <a id="further-exploration"></a>
 ## Further Exploration
 
 The [credentials subsystem](../../../docs/subsystems/credentials.md) owns storage APIs; the [architecture](../../../docs/architecture.md) explains application composition.
 
-Signed-out Settings shows a centered sign-in prompt without account cards, balances, or Platform links. Account login uses a dismissible dialog before the model onboarding credential editor. The dialog uses a compact, right-aligned action row with the primary action last. Waiting shows a copyable authorization link and a loading indicator; timeout and failure require an explicit retry. Closing a waiting dialog cancels its Host attempt. The sidebar can reopen the same API-key editor through the settings coordinator. Browser login preopens a tab on the click and navigates it only when that attempt receives its authorization URL; blocked popups retain the copy-link route. The original tab retains the authorization window handle and closes it on failure, timeout, or cancellation. Login feedback stays in the original tab; callbacks never navigate to a second Web UI.
+Account login uses a dismissible dialog before the model onboarding credential editor. The dialog uses a compact, right-aligned action row with the primary action last. Waiting shows a copyable authorization link and a loading indicator; timeout and failure require an explicit retry. Closing a waiting dialog cancels its Host attempt. The sidebar can reopen the same API-key editor through the settings coordinator. Browser login preopens a tab on the click and navigates it only when that attempt receives its authorization URL; blocked popups retain the copy-link route. The original tab retains the authorization window handle and closes it on failure, timeout, or cancellation. Login feedback stays in the original tab; callbacks never navigate to a second Web UI.
 
 <a id="model-experience"></a>
 ## Model Experience
