@@ -276,7 +276,8 @@ export class WorkspaceFiles extends TypertRemoteService {
    */
   @Remote
   async readAll(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes> {
-    return this.readAllBounded(workspaceFileScope, path, this.config.maxFileBytes, signal)
+    const { data, ...stat } = await this.readAllBounded(workspaceFileScope, path, this.config.maxFileBytes, signal)
+    return { ...stat, offset: 0, data: Buffer.from(data).toString('base64'), eof: true }
   }
 
   /**
@@ -285,21 +286,20 @@ export class WorkspaceFiles extends TypertRemoteService {
    * @param path - absolute or workspace-relative file path.
    * @param maxBytes - positive reserved capacity; the configured full-file cap still applies.
    * @param signal - caller cancellation.
-   * @returns complete base64 bytes; reads at most the effective limit plus one overflow sentinel.
+   * @returns complete raw bytes and metadata from before the read; the filesystem enforces the effective limit.
    */
   async readAllBounded(
     workspaceFileScope: WorkspaceFileScope, path: string, maxBytes: number, signal: AbortSignal,
-  ): Promise<WorkspaceFileBytes> {
+  ): Promise<WorkspaceFileStat & { readonly data: Uint8Array }> {
     const { target, info } = await this.locateFile(workspaceFileScope, path, signal)
     const limit = Math.min(this.config.maxFileBytes, maxBytes)
-    if (info.size !== undefined && info.size > limit) {
-      throw new RemoteError('workspace-file/too-large', `"${path}" exceeds the ${limit} byte full-file cap`, { path, limit })
-    }
-    const data = await this.ctx.fs.readByteRange(target, { offset: 0, length: limit + 1 }, signal)
-    if (data.length > limit) {
-      throw new RemoteError('workspace-file/too-large', `"${path}" exceeds the ${limit} byte full-file cap`, { path, limit })
-    }
-    return { ...this.statOf(target, info), offset: 0, data: Buffer.from(data).toString('base64'), eof: true }
+    const data = await this.ctx.fs.readBytes(target, signal, limit).catch((cause: unknown) => {
+      if (typeof cause === 'object' && cause !== null && 'code' in cause && cause.code === 'FS_TOO_LARGE') {
+        throw new RemoteError('workspace-file/too-large', `"${path}" exceeds the ${limit} byte full-file cap`, { path, limit }, { cause })
+      }
+      throw cause
+    })
+    return { ...this.statOf(target, info), data }
   }
 
   /**
