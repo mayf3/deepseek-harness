@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-[文档渲染能力](../../../../packages/document/README.zh.md)将转换委托给独立发布的 `@deepseek-ai/libreoffice-kit` Node API。[kit 归属决策](2026-09-14-independent-libreoffice-kit.zh.md)负责源码维护、兼容版本和 npm 分发。DSH 负责 Session 文件授权、转换并发、私有临时文件、输出限制和 Remote 传输。[Web bundle](../../../../packages/bundle/web-app/README.zh.md)使用稳定 ID 声明独立的 provider、controller 入口和共享文档预览入口。转换与授权传输仍可独立配置；Office UI 共享文档预览的 Loader 生命周期。
+[文档渲染能力](../../../../packages/document/README.zh.md)将转换委托给独立发布的 `@deepseek-ai/libreoffice-kit` Node API。[kit 归属决策](2026-09-14-independent-libreoffice-kit.zh.md)负责源码维护、兼容版本和 npm 分发。DSH 负责 Session 文件授权、转换并发、私有临时文件、输出限制和 Remote 传输。[Web bundle](../../../../packages/bundle/web-app/README.zh.md)使用稳定 ID 声明转换服务与共享文档预览入口。服务负责带授权的转换 Remote 方法，其描述符由 `api/remotes` 挂载；Office UI 共享文档预览的 Loader 生命周期。
 
 [平台引擎决策](2026-09-15-platform-office-engines.zh.md)要求使用 kit 已声明的原生目标引擎，未声明原生目标时使用 WASM。缺失或无效的必需引擎会拒绝转换。共享的[有界提供方](2026-09-15-bounded-office-conversion.zh.md)负责准入、转换复用以及持续到临时文件清理完成的取消。预览消费该提供方，不注册另一个转换器，也不依赖 Office 创作 skills。
 
