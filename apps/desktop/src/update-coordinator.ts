@@ -4,8 +4,14 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import electronUpdater, { type AppUpdater } from 'electron-updater'
-import type { DesktopUpdateState } from './ipc.ts'
 const { autoUpdater } = electronUpdater
+
+/** Result of checking or installing a Desktop release. */
+export interface DesktopUpdateState {
+  readonly phase: 'idle' | 'available' | 'ready' | 'error'
+  readonly version?: string
+  readonly message?: string
+}
 
 /** Checks, downloads, and installs one complete Desktop release. */
 export class DesktopUpdateCoordinator {
@@ -14,13 +20,11 @@ export class DesktopUpdateCoordinator {
   private installOperation: Promise<DesktopUpdateState> | undefined
 
   /**
-   * @param publish - state sink for every desktop window.
    * @param beforeRestart - stop application-owned processes before replacement.
    * @param updater - Electron artifact updater; replaceable for tests.
    * @param enabled - whether this packaged process carries updater configuration.
    */
   constructor(
-    private readonly publish: (state: DesktopUpdateState) => DesktopUpdateState,
     private readonly beforeRestart: () => Promise<void> = async () => {},
     private readonly updater: AppUpdater = autoUpdater,
     private readonly enabled: () => boolean = () => (
@@ -50,24 +54,23 @@ export class DesktopUpdateCoordinator {
   }
 
   private async doCheck(): Promise<DesktopUpdateState> {
-    this.publish({ phase: 'checking' })
     try {
       if (!this.enabled()) {
         this.availableVersion = undefined
-        return this.publish({ phase: 'idle' })
+        return { phase: 'idle' }
       }
       const result = await this.updater.checkForUpdates()
       const version = result?.isUpdateAvailable === true ? result.updateInfo.version : undefined
       this.availableVersion = version
       return version === undefined
-        ? this.publish({ phase: 'idle' })
-        : this.publish({ phase: 'available', version })
+        ? { phase: 'idle' }
+        : { phase: 'available', version }
     } catch (error) {
       this.availableVersion = undefined
-      return this.publish({
+      return {
         phase: 'error',
         message: error instanceof Error ? error.message : String(error),
-      })
+      }
     }
   }
 
@@ -76,20 +79,18 @@ export class DesktopUpdateCoordinator {
     if (version === undefined) {
       throw new Error('desktop update: no verified update is available')
     }
-    this.publish({ phase: 'installing', version })
     try {
       await this.updater.downloadUpdate()
       this.availableVersion = undefined
-      const ready = this.publish({ phase: 'ready', version })
       await this.beforeRestart()
       this.updater.quitAndInstall(false, true)
-      return ready
+      return { phase: 'ready', version }
     } catch (error) {
-      return this.publish({
+      return {
         phase: 'error',
         version,
         message: error instanceof Error ? error.message : String(error),
-      })
+      }
     }
   }
 }

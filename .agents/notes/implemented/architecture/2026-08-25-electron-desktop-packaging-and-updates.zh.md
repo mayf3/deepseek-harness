@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-08-25-electron-desktop-packaging-and-updates.md) | 中文
 
-profile 修改与恢复遵循[直接修改 profile 决策](2026-09-09-desktop-in-place-profile.zh.md)。
+插件管理和原生恢复遵循[共享 Web 薄壳决策](2026-09-10-desktop-web-wrapper.zh.md)。
 
 [Electron 运行时决策](2026-09-11-desktop-electron-node-runtime.zh.md)替代独立上游 Node 可执行文件的选择；本文其他决策仍然适用。
 
@@ -59,9 +59,9 @@ Electron 拥有 `.dsh/profiles/desktop` 保留 profile。[内置运行时决策]
 
 ## 安装与解析
 
-Desktop 在直接修改 profile 前停止 Host。包操作失败后保留部分修改，供显式修复；profile 修改和包重试的职责遵循[直接修改决策](2026-09-09-desktop-in-place-profile.zh.md)。
+共享 Web 插件管理器负责 profile 包操作。Electron 保留启动准备和原生恢复；[Web 薄壳决策](2026-09-10-desktop-web-wrapper.zh.md)负责这一职责划分。
 
-进程生命周期 Electron 锁是 Desktop 的权威 owner。包事务锁用于纵深防御，并记录仍能修改包状态的进程：包操作之间记录 Electron，pnpm 运行期间记录已生成的 pnpm PID。Owner 变更通过已经打开的排他锁文件完成截断、写入与同步。如果 Electron 在 pnpm 执行期间终止，后续进程会发现仍存活的 worker，并拒绝启动并发的 包事务；该 worker 退出后，陈旧 PID 才可以恢复。
+Electron 进程生命周期锁是 Desktop 的权威所有者。profile 准备和原生恢复使用记录 Electron PID 的排他锁；存活的所有者阻止竞争操作，失效 PID 可被回收。Web 包操作使用共享插件管理器的锁。
 
 核心物化、首次启动、插件安装和共享模块解析遵循[内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)。实际 Host 启动时会组合已启用且提供 `dsh.client` 代码的桌面插件。
 

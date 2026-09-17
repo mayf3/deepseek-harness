@@ -79,9 +79,8 @@ export function createElectronBuilderConfig(
       return true
     },
     files: [
-      'lib/*.js',
-      'lib/*.cjs',
-      'renderer/**/*',
+      'lib/main.js',
+      'lib/preload-app.cjs',
       'package.json',
       { from: buildPaths.dsh, to: 'dsh', filter: ['**/*'] },
       // electron-builder excludes a source directory's root node_modules.

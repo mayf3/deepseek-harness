@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AppUpdater } from 'electron-updater'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
 import { parseDesktopRelease } from '../src/release.ts'
-import type { DesktopUpdateState } from '../src/ipc.ts'
 
 vi.mock('electron', () => ({ app: { isPackaged: false } }))
 vi.mock('electron-updater', () => ({
@@ -43,7 +42,6 @@ describe('desktop release metadata', () => {
 
 describe('desktop update coordinator', () => {
   it('installs one Electron release and restarts after download', async () => {
-    const states: DesktopUpdateState[] = []
     const downloadUpdate = vi.fn(async () => [])
     const quitAndInstall = vi.fn()
     const beforeRestart = vi.fn(async () => {})
@@ -58,10 +56,6 @@ describe('desktop update coordinator', () => {
       quitAndInstall,
     } as unknown as AppUpdater
     const coordinator = new DesktopUpdateCoordinator(
-      (state) => {
-        states.push(state)
-        return state
-      },
       beforeRestart,
       updater,
       () => true,
@@ -72,7 +66,6 @@ describe('desktop update coordinator', () => {
     expect(downloadUpdate).toHaveBeenCalledOnce()
     expect(beforeRestart).toHaveBeenCalledOnce()
     expect(quitAndInstall).toHaveBeenCalledWith(false, true)
-    expect(states.map(state => state.phase)).toEqual(['checking', 'available', 'installing', 'ready'])
   })
 
   it('queues install behind an in-flight check instead of returning the check result', async () => {
@@ -88,7 +81,7 @@ describe('desktop update coordinator', () => {
       downloadUpdate,
       quitAndInstall: vi.fn(),
     } as unknown as AppUpdater
-    const coordinator = new DesktopUpdateCoordinator(state => state, async () => {}, updater, () => true)
+    const coordinator = new DesktopUpdateCoordinator( async () => {}, updater, () => true)
 
     const checking = coordinator.check()
     const installing = coordinator.install()

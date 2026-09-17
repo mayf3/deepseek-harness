@@ -11,7 +11,7 @@ vi.mock('../src/preload-theme.ts', () => ({ syncNativeTheme: vi.fn() }))
 
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); vi.resetModules() })
 
-it.each(['dsh-app://app/index.html', 'dsh-app://shell/plugin-manager.html'])('exposes the carrier marker to %s', async (url) => {
+it.each(['dsh-app://app/index.html', 'dsh-app://unowned/index.html'])('exposes the carrier marker to %s', async (url) => {
   vi.stubGlobal('location', new URL(url))
   await import('../src/preload-app.ts')
   expect(electron.contextBridge.exposeInMainWorld).toHaveBeenCalledWith('dshDesktop', { protocolVersion: 1 })
@@ -39,7 +39,7 @@ it('exposes a directory picker only to the local application document', async ()
   electron.ipcRenderer.invoke.mockResolvedValue('/workspace')
   await expect(api.pick()).resolves.toBe('/workspace')
   expect(electron.ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(DESKTOP_IPC.directoryPick)
-  for (const url of ['dsh-app://shell/startup.html', 'https://example.com/']) {
+  for (const url of ['dsh-app://unowned/index.html', 'https://example.com/']) {
     vi.resetModules()
     electron.contextBridge.exposeInMainWorld.mockClear()
     vi.stubGlobal('location', new URL(url))
