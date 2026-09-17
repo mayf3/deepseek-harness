@@ -495,6 +495,22 @@ describe('SidebarRightController — a tab\'s own actions', () => {
   const A_TXT = 'dsh-resource://file/session/s-test/a.txt'
   const B_TXT = 'dsh-resource://file/session/s-test/b.txt'
 
+  it('opens into an adopted store before that store has created its session surface', () => {
+    const { controller, adopt, instance, titles } = harness()
+    const releaseOwn = adopt(SESSION, instance)
+    const other = createSidebarRightStore(() => ({ kind: 'guide', title: 'seed' })).create(OTHER)
+    const releaseBinding = controller.bind({
+      sessionId: OTHER,
+      actions: other.actions,
+      surfaces: other.getSnapshot().bySession,
+      canSplitPane: () => true,
+    })
+    controller.openResourceIn(SESSION, A_TXT)
+    expect(titles()).toContain('a.txt')
+    releaseBinding()
+    releaseOwn()
+  })
+
   it('land in the session the tab is in through its own adopted store, after another session\'s seat took over', () => {
     const { controller, adopt, instance, publish, layout, expand } = harness()
     const releaseOwn = adopt(SESSION, instance)

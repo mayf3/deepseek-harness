@@ -747,6 +747,28 @@ describe('session reference discovery and preparation', () => {
     })])
   })
 
+  it('falls back to the Session id when a subagent projection has no label', async () => {
+    const ctx = await harness()
+    const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
+    const child = { id: SessionId('child'), createdAt: 10, cwd: '/same' }
+    withProjectionCache(ctx, {
+      child: {
+        title: 'Projected title',
+        subagent: { mode: 'continuable', seq: SessionSeq(2) },
+      },
+    })
+    vi.spyOn(ctx.sessionQuery, 'listSessions').mockResolvedValue([
+      { header: child, live: false, persisted: true },
+    ] as never)
+
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'child'))
+      .resolves.toEqual([expect.objectContaining({
+        sessionId: child.id,
+        label: 'Projected title',
+        displayTitle: child.id,
+      })])
+  })
+
   it('labels a session no projection answers for by its id, still without a log read', async () => {
     const ctx = await harness()
     const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
@@ -805,6 +827,18 @@ describe('session reference discovery and preparation', () => {
       createdAt: 20,
       mention: formatSessionReferenceMention({ sessionId: SessionId('source]'), label: 'source]' }),
     }])
+
+    vi.spyOn(ctx.sessionReferenceResolver, 'listCandidates').mockResolvedValueOnce([{
+      sessionId: SessionId('fallback'),
+      label: 'Fallback title',
+      sameWorkspace: false,
+      createdAt: 30,
+    }])
+    await expect(ctx.sessionReferenceResolver.remoteExportCandidates(
+      fakeAgent(target), '', new AbortController().signal,
+    )).resolves.toEqual([expect.objectContaining({
+      mention: formatSessionReferenceMention({ sessionId: SessionId('fallback'), label: 'Fallback title' }),
+    })])
   })
 
   it('prepares direct mentions at pre-step and keeps ordinary and plugin messages unchanged', async () => {

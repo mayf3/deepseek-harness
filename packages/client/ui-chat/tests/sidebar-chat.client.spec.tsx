@@ -121,12 +121,30 @@ describe('Sidebar chat registration', () => {
     expect(await completion).toEqual({ done: true, value: undefined })
     expect(release).toHaveBeenCalledOnce()
 
+    const abortedAfterYield = new AbortController()
+    const yielded = provider!.open(sidebarChatAddress(ADDRESS), { signal: abortedAfterYield.signal })[Symbol.asyncIterator]()
+    expect((await yielded.next()).done).toBe(false)
+    abortedAfterYield.abort()
+    expect(await yielded.next()).toEqual({ done: true, value: undefined })
+    expect(release).toHaveBeenCalledTimes(2)
+
+    let finishRefresh: (() => void) | undefined
+    refreshSubagents.mockImplementationOnce(() => new Promise<void>((resolve) => { finishRefresh = resolve }))
+    const abortedDuringRefresh = new AbortController()
+    const pending = provider!.open(
+      sidebarChatAddress(ADDRESS), { signal: abortedDuringRefresh.signal },
+    )[Symbol.asyncIterator]().next()
+    await vi.waitFor(() => { expect(finishRefresh).toBeTypeOf('function') })
+    abortedDuringRefresh.abort()
+    finishRefresh?.()
+    expect(await pending).toEqual({ done: true, value: undefined })
+
     const alreadyAborted = new AbortController()
     alreadyAborted.abort()
     const stopped = provider!.open(sidebarChatAddress(ADDRESS), { signal: alreadyAborted.signal })[Symbol.asyncIterator]()
     expect(await stopped.next()).toEqual({ done: true, value: undefined })
-    expect(retain).toHaveBeenCalledOnce()
-    expect(release).toHaveBeenCalledOnce()
+    expect(retain).toHaveBeenCalledTimes(2)
+    expect(release).toHaveBeenCalledTimes(2)
 
     const invalid = provider!.open('invalid', { signal: new AbortController().signal })[Symbol.asyncIterator]()
     await expect(invalid.next()).rejects.toThrow('invalid chat resource address')
@@ -167,6 +185,12 @@ describe('Sidebar chat components', () => {
       session: { blank: true, awaitingFirstTurn: true, running: false, openState: 'open' },
       summaryBlank: true,
       expected: { phase: 'hero', hero: true },
+    },
+    {
+      name: 'prompt attempted',
+      session: { blank: true, awaitingFirstTurn: true, running: false, openState: 'open', promptAttempted: true },
+      summaryBlank: false,
+      expected: { phase: 'active', hero: false },
     },
     {
       name: 'loading',
