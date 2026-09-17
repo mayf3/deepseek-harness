@@ -37,7 +37,7 @@ During installation, **Cancel install** asks the Host to stop the run and shows 
 
 ### Switching a bundle
 
-A bundle's page shows its full package name under the title, the spec that installs it elsewhere. A bundle's switch changes its layer selection. A profile with HMR recomposes before the operation completes; one without HMR, and a bundle a higher layer overrides, say so in a toast. A bundle the Host cannot read carries a problem tag and its reason on its page and cannot be switched on; one that provides the management components stays locked. The Host answers with error codes, which the page's dictionary words; pnpm's and the Loader's own diagnostics are shown as they are. The installation's own bundles are not on the page; the Settings Plugins section's Plugin list tab inspects them.
+A bundle's page shows its full package name under the title, the spec that installs it elsewhere. A bundle's switch changes its layer selection. A profile with HMR recomposes before the operation completes; one without HMR, and a bundle a higher layer overrides, say so in a toast. A bundle the Host cannot read carries a problem tag and its reason on its page and cannot be switched on; one that provides the management components stays locked. The Host answers with error codes, which the page's dictionary words; pnpm's and the Loader's own diagnostics are shown as they are. The page excludes built-in profile bundles from cards and counts even when the profile holds them as dependencies or the Host reports an error. The Host inventory remains complete; the Settings Plugins section's Plugin list tab inspects their plugins.
 
 ### Switching one row of a bundle
 

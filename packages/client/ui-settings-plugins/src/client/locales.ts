@@ -11,7 +11,15 @@ export type PluginsSettingsLocaleKey =
   | 'webSearchTitle' | 'webSearchDescription'
   | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
   | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
-  | 'subagentModelSelectionTitle' | 'subagentModelSelectionDescription'
+  | 'subagentTitle' | 'subagentDescription' | 'subagentLimitsTitle'
+  | 'subagentMaxDepth'
+  | 'subagentDepthHelpLabel' | 'subagentDepthHelp'
+  | 'subagentDepthZero' | 'subagentDepthOne' | 'subagentDepthOverride'
+  | 'subagentMaxActive'
+  | 'subagentCapacityHelpLabel' | 'subagentCapacityHelp'
+  | 'subagentDepthInvalid'
+  | 'subagentCapacityInvalid'
+  | 'subagentModelSelectionTitle'
   | 'subagentModelSelectionToggle' | 'subagentModelSelectionChoose' | 'subagentModelSelectionAllowed'
   | 'subagentModelSelectionLoading' | 'subagentModelSelectionLoadFailed' | 'subagentModelSelectionRetry'
   | 'subagentModelSelectionPartial' | 'subagentModelSelectionUnavailable'
@@ -53,10 +61,23 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: 'Leave blank to use the provider default.',
   webSearchMaxUses: 'Max searches per request',
   webSearchMaxUsesHint: 'How many times one request may search before it must answer.',
-  subagentModelSelectionTitle: 'Subagent',
-  subagentModelSelectionDescription: 'Control which models agents may choose for subagents.',
-  subagentModelSelectionToggle: 'Allow agents to choose models for subagents',
-  subagentModelSelectionChoose: 'When enabled, agents can choose a provider, model, and reasoning effort for each subagent from the authorized models below. Applies only to new sessions.',
+  subagentTitle: 'Subagent',
+  subagentDescription: 'Set Subagent recursion depth, count, and models.',
+  subagentLimitsTitle: 'Limits',
+  subagentMaxDepth: 'Maximum recursion depth',
+  subagentDepthHelpLabel: 'About maximum recursion depth',
+  subagentDepthHelp: 'Limits how many levels of Subagents an Agent can create.',
+  subagentDepthZero: 'Disable Subagents',
+  subagentDepthOne: 'Only the main Agent can create Subagents',
+  subagentDepthOverride: 'If a tool defines its own maximum recursion depth, that setting takes precedence.',
+  subagentMaxActive: 'Subagent parallelism limit',
+  subagentCapacityHelpLabel: 'About the Subagent parallelism limit',
+  subagentCapacityHelp: 'Total live Subagents under the same main Agent, across all recursion levels. The main Agent is excluded. New start requests are rejected when the limit is reached.',
+  subagentDepthInvalid: 'Enter a whole number of 0 or more.',
+  subagentCapacityInvalid: 'Enter a whole number of 1 or more.',
+  subagentModelSelectionTitle: 'Model selection',
+  subagentModelSelectionToggle: 'Allow agents to choose models for Subagents',
+  subagentModelSelectionChoose: 'When enabled, agents can choose a provider, model, and reasoning effort for each Subagent from the authorized models below. Applies only to new sessions.',
   subagentModelSelectionAllowed: 'Models agents may choose',
   subagentModelSelectionLoading: 'Loading models…',
   subagentModelSelectionLoadFailed: 'Models could not be loaded.',
@@ -105,8 +126,21 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: '留空则使用提供方默认地址。',
   webSearchMaxUses: '单次请求最多搜索次数',
   webSearchMaxUsesHint: '一次请求在必须作答前最多可以搜索多少次。',
-  subagentModelSelectionTitle: 'Subagent',
-  subagentModelSelectionDescription: '控制 Agent 为 Subagent 选择模型的权限。',
+  subagentTitle: 'Subagent',
+  subagentDescription: '设置 Subagent 的递归层级、数量和模型。',
+  subagentLimitsTitle: '运行限制',
+  subagentMaxDepth: '最大递归深度',
+  subagentDepthHelpLabel: '最大递归深度说明',
+  subagentDepthHelp: '限制 Agent 创建 Subagent 的递归层级。',
+  subagentDepthZero: '禁用 Subagent',
+  subagentDepthOne: '仅允许主 Agent 创建 Subagent',
+  subagentDepthOverride: '如果某个工具单独设置了最大递归深度，以该工具的设置为准。',
+  subagentMaxActive: 'Subagent 并行数量上限',
+  subagentCapacityHelpLabel: 'Subagent 并行数量上限说明',
+  subagentCapacityHelp: '同一主 Agent 下，所有递归层级同时存活的 Subagent 总数，主 Agent 不计入。达到上限时，新的启动请求会被拒绝。',
+  subagentDepthInvalid: '请输入不小于 0 的整数。',
+  subagentCapacityInvalid: '请输入不小于 1 的整数。',
+  subagentModelSelectionTitle: '模型选择',
   subagentModelSelectionToggle: '允许 Agent 为 Subagent 选择模型',
   subagentModelSelectionChoose: '开启后，Agent 可以从下方授权模型中，为每个 Subagent 选择提供方、模型和推理强度。仅影响新会话。',
   subagentModelSelectionAllowed: 'Agent 可选择的模型',

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ComponentProps, ReactNode } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionListState, SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -13,7 +13,6 @@ import {
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
-import type { ConversationRootProps } from '../src/client/skeleton/ConversationRoot.tsx'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { EMPTY_CONVERSATION_SNAPSHOT } from '../src/client/contract/snapshot.ts'
@@ -21,7 +20,8 @@ import type { ConversationSnapshot } from '../src/client/contract/snapshot.ts'
 import { createConversationStore } from '../src/client/stores.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import { en, zh } from '../src/client/locales.ts'
-import { ConversationRoot } from '../src/client/skeleton/ConversationRoot.tsx'
+import { ConversationContent } from '../src/client/skeleton/ConversationContent.tsx'
+import { ConversationMainPanel } from '../src/client/skeleton/ConversationMainPanel.tsx'
 import { ConversationSession, ConversationSessionHeader } from '../src/client/skeleton/ConversationSession.tsx'
 import { conversationPhase } from '../src/client/contract/snapshot.ts'
 import { HeroShell } from '../src/client/skeleton/EmptyHero.tsx'
@@ -29,12 +29,22 @@ import type { HeroShellProps } from '../src/client/skeleton/EmptyHero.tsx'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import type {
-  ComposerBarOwnerProps, ConversationHeaderLineageOwnerProps,
+  ComposerBarOwnerProps, ConversationContentInputProps, ConversationContentProps,
+  ConversationHeaderLineageOwnerProps, ConversationSessionSlotProps, ConversationSlotProps,
+  ConversationViewsProps,
 } from '../src/client/contract/slots.ts'
 import type { ViewTab } from '../src/client/contract/views.ts'
 
 // Every session-scope fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as GlobalStandardProps['useResource']
+
+const FactoryViewsTestContext = createContext<ConversationViewsProps | undefined>(undefined)
+
+function StableConversationViews() {
+  const props = useContext(FactoryViewsTestContext)
+  if (props === undefined) throw new Error('Factory views test context is missing')
+  return <>{props.renderSlot('conversation.session', {})}</>
+}
 
 // jsdom implements no Range geometry (Lexical's scroll-into-view measures the
 // caret with one once the surface is genuinely contenteditable).
@@ -81,13 +91,13 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
 })
 
-const t: ConversationRootProps['t'] = makeTranslate(zh, commonZh)
+const t: ConversationContentProps['t'] = makeTranslate(zh, commonZh)
 
 const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
 const SID = sid('s1')
 
-type SessionSlotProps = ComponentProps<typeof ConversationSession>
+type SessionSlotProps = ConversationSessionSlotProps
 
 const useChat: SessionSlotProps['useChat'] = () => { throw new Error('unused') }
 const useTrajectory: SessionSlotProps['useTrajectory'] = () => { throw new Error('unused') }
@@ -285,7 +295,7 @@ function mount(
       )
     }
     return <div data-testid={`view-${opts?.only ?? key}`} />
-  }) as ConversationRootProps['renderSlot']
+  }) as ConversationContentProps['renderSlot']
   const renderSlotChain = ((_key, _owner, opts) => (
     options.overlayTakeover === true
       ? (
@@ -297,11 +307,43 @@ function mount(
         </>
       )
       : (opts?.fallback ?? null)
-  )) as ConversationRootProps['renderSlotChain']
-  const props: ConversationRootProps = {
+  )) as ConversationContentProps['renderSlotChain']
+  const SessionProvider: ConversationContentProps['SessionProvider'] = ({ children }) => children
+  const renderFactorySlot = ((_name: string, input: ConversationContentInputProps) => {
+    const common: ConversationViewsProps = {
+      sessionId: SID,
+      SessionProvider,
+      useSession,
+      useConversation,
+      useChat,
+      useTrajectory,
+      useSessions: bindSnapshotSelector(sessions),
+      usePanelInfo: selector => selector({ activePanelId: null }),
+      useResource,
+      useSessionStatus,
+      useSessionRetainInfo: () => undefined,
+      useWorkspaces: bindSnapshotSelector(workspaces),
+      useProjection: (() => undefined),
+      useComposerBlock: select => select(options.composerBlock),
+      useInput,
+      inputActions,
+      renderSlot,
+      renderSlotChain,
+      renderFactorySlot,
+      selectWorkspace: retargetWorkspace,
+      t,
+    }
+    const useFactorySlot = (() => StableConversationViews) as ConversationContentProps['useFactorySlot']
+    return (
+      <FactoryViewsTestContext.Provider value={common}>
+        <ConversationContent {...({ ...common, ...input, useFactorySlot })} />
+      </FactoryViewsTestContext.Provider>
+    )
+  }) as ConversationSlotProps['renderFactorySlot']
+  const props: ConversationSlotProps = {
     usePanelInfo: selector => selector({ activePanelId: null }),
     sessionId: SID,
-    SessionProvider: ({ children }) => children,
+    SessionProvider,
     useSession,
     useConversation,
     useSessions: bindSnapshotSelector(sessions),
@@ -310,19 +352,16 @@ function mount(
     useResource,
     useWorkspaces: bindSnapshotSelector(workspaces),
     useProjection: (() => undefined),
-    useComposerBlock: select => select(options.composerBlock),
     useInput,
     inputActions,
     renderSlot,
-    renderSlotChain,
-    selectWorkspace: retargetWorkspace,
-    t,
+    renderFactorySlot,
   }
-  const view = render(<ConversationRoot {...props} />)
+  const view = render(<ConversationMainPanel {...props} />)
   return {
     view, store, wiring, sink, retargetWorkspace, session, conversation, slotCalls, lineageOwners, seatOwners, open,
     pickerOwner: () => pickerOwner,
-    rerender: () => { view.rerender(<ConversationRoot {...props} />) },
+    rerender: () => { view.rerender(<ConversationMainPanel {...props} />) },
   }
 }
 

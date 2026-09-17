@@ -8,7 +8,8 @@ import type {
   MaybeSnapshotSelectorHook, ObservableSnapshot, SnapshotSelectorHook,
 } from '@deepseek-ai/dsh-client-store'
 import type {
-  InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
+  FactoryComponentPropsOf, FactoryLocalComponentPropsOf,
+  InjectFace, PropsLocale, PropsRenderFactories, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionPendingInteraction } from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -199,6 +200,28 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.input.model': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps }
   }
 
+  interface SlotFactoryMap {
+    /** Reusable Conversation content instantiated by presentation hosts. */
+    'conversation.content': {
+      scope: 'session-maybe'
+      props: ConversationContentInputProps
+      children: {
+        'conversation.session': { kind: 'single'; scope: 'session' }
+        'conversation.composer': { kind: 'chain'; scope: 'session' }
+        'conversation.composer.bar': { kind: 'single'; scope: 'session-maybe' }
+        'conversation.input.dock': { kind: 'list'; scope: 'session' }
+        'conversation.hero.brand.mark': { kind: 'single'; scope: 'root' }
+        'conversation.hero.workspace': { kind: 'single'; scope: 'root' }
+        'conversation.hero.agentPreset': { kind: 'single'; scope: 'session-maybe' }
+      }
+      inject: ConversationInjected
+      locale: 'conversation'
+      slots: {
+        views: { scope: 'session' }
+      }
+    }
+  }
+
   interface GlobalStandardProps {
     /** Workspace selector supplied by the independently loaded Workspace UI. */
     useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>
@@ -385,19 +408,27 @@ export interface HeroBrandMarkOwnerProps {
 /** Full props of the resident optional-Session Conversation shell. */
 export type ConversationSlotProps =
   PropsRuntime<'main.conversation'>
-  & PropsRenderSlots<
-    | 'conversation.session' | 'conversation.session.header'
-    | 'conversation.composer' | 'conversation.composer.bar'
-    | 'conversation.input.dock'
-    | 'conversation.hero.brand.mark'
-    | 'conversation.hero.workspace'
-    | 'conversation.hero.agentPreset'
-  >
-  & InjectFace<ConversationInjected>
-  & PropsLocale<'conversation'>
+  & PropsRenderSlots<'conversation.session.header'>
+  & PropsRenderFactories
+
+/** Main-host inputs for one reusable Conversation content occurrence. */
+export interface ConversationContentInputProps {
+  phase: 'settling' | 'hero' | 'active'
+  hero: boolean
+  onHandleStart: () => number
+  onHandleDrag: (width: number) => void
+  onHandleCommit: (width: number) => void
+  onHandleEnd: () => void
+}
+
+/** Full props of the reusable Conversation Factory definition. */
+export type ConversationContentProps = FactoryComponentPropsOf<'conversation.content'>
 
 /** Shared target-neutral Conversation store handle. */
 export type ConversationStore = ReturnType<typeof createConversationStore>
+
+/** Full props of the Factory's caller-selectable Conversation View position. */
+export type ConversationViewsProps = FactoryLocalComponentPropsOf<'conversation.content', 'views'>
 
 /** Full props of the strict Session body. */
 export type ConversationSessionSlotProps =

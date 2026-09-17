@@ -1,0 +1,34 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Stream an SVG diagram." [disabled]
+  - img
+  - text: Standard mode
+  - button "More actions":
+    - img
+  - button "Open right sidebar":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- button "System prompt":
+  - img
+  - img
+  - text: System prompt
+- text: Stream an SVG diagram. {{clock}}
+- button "Copy":
+  - img
+- button "Context injection @deepseek-ai/dsh-system-prompt":
+  - img
+  - img
+  - text: Context injection @deepseek-ai/dsh-system-prompt
+- text: svg
+- status: Generating diagram…
+- status: Deep diving...
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Add files or run commands":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current streaming-fence-highlight-test/streaming-fence":
+  - text: streaming-fence-highlight-test/streaming-fence
+  - img
+- button "Stop generating"

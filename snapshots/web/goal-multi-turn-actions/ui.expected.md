@@ -30,9 +30,13 @@
   - text: — 随机选中的包：
   - code: packages/context/session-reference
   - text: 📦
+- button "Line numbers"
 - button "Copy"
+- text: Source
 - code: session-reference ├── README.md ├── package.json ├── src │ ├── index.ts │ └── uri.ts └── tests └── session-reference.spec.ts
+- button "Line numbers"
 - button "Copy"
+- text: Source
 - code: "session-reference/ ├── README.md # 包说明文档 ├── package.json # 包元数据与依赖声明 ├── src/ │ ├── index.ts # 入口，导出公共 API │ └── uri.ts # 会话引用 URI 相关实现 └── tests/ └── session-reference.spec.ts # 单元测试"
 - paragraph: 这是一个很典型的轻量 TypeScript 包结构：入口 + 实现 + 测试。这一轮到此结束，等系统开启下一个 turn。
 - button "Copy":
@@ -63,14 +67,18 @@
     - text: — 随机选中
     - code: packages/context/session-reference
     - text: ，输出了文件结构：
+    - button "Line numbers"
     - button "Copy"
+    - text: Source
     - code: session-reference/ ├── README.md ├── package.json ├── src/ │ ├── index.ts │ └── uri.ts └── tests/ └── session-reference.spec.ts
   - listitem:
     - strong: Turn 2
     - text: — 随机选中
     - code: packages/llm/token-meter
     - text: ，输出了文件结构：
+    - button "Line numbers"
     - button "Copy"
+    - text: Source
     - code: token-meter/ ├── README.md ├── package.json ├── src/ │ └── index.ts └── tests/ └── token-meter.spec.ts
 - paragraph:
   - strong: 验证方式：
@@ -122,7 +130,6 @@
 - button "Select model, current DeepSeek-V4-Flash":
   - text: DeepSeek-V4-Flash
   - img
-- button "9% of context used"
 - button "Send message" [disabled]
 - button "2 turns 12 steps · {{throughput}} tok/s":
   - img
@@ -130,3 +137,4 @@
 - button "115K tok · Cache hit 91%":
   - img
   - text: 115K tokCache hit 91%
+- button "9% of context used": 9%

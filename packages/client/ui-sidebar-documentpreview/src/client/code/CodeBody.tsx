@@ -28,6 +28,8 @@ export function CodeBody({ resourceAddress, content, wrap, scrollportRef, t }: C
         lineNumbers
         copyLabel={t('copy')}
         copiedLabel={t('copied')}
+        sourceLabel={t('markdown.code.source')}
+        lineNumbersLabel={t('markdown.code.lineNumbers')}
       />
     </div>
   )
