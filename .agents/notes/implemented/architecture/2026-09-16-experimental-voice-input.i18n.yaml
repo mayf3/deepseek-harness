@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-16-experimental-voice-input.md
-2026-09-16-experimental-voice-input.md: 8b646e917965175f099c37224261ca05c7c1adfb
-2026-09-16-experimental-voice-input.zh.md: 15ffc46d8e964c0448e8bd1c7395a5ad464b2b2c
+2026-09-16-experimental-voice-input.md: 60a871cc6ba7e604896ce4e339bcfbe45d174f9b
+2026-09-16-experimental-voice-input.zh.md: 76d14511d1b014bb6d40cc4bf3e9e6ed19efc3f6

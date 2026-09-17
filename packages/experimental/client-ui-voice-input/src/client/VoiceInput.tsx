@@ -132,20 +132,20 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
     aria-label={t('start')} title={t(usable ? 'dictate' : 'prepareRequired')}
     onMouseDown={(event) =>{  event.preventDefault() }} onClick={() => { void start() }}><IconMicrophoneOutline16 size={18} /></Button>
   return <div className={css.captureRow} data-voice-activity={phase}>
-    <Button type="button" className={css.roundButton} variant="toolbar" size="sm" aria-label={t(pending ? 'discard' : 'cancel')}
+    <Button type="button" className={css.roundButton} size="sm" aria-label={t(pending ? 'discard' : 'cancel')}
       onClick={cancel}><IconCloseOutline16 size={18} /></Button>
     {phase === 'recording' ? <Waveform recording={current.current?.capture} label={t('recording')} />
       : <span className={css.activityMessage} role="status" title={pending || message}>
         {(phase === 'requesting' || phase === 'transcribing') && <StateDot state="ongoing" />}
         {phase === 'feedback' ? message : t(phase === 'requesting' ? 'requesting'
           : provider?.preparation.phase === 'waking' ? 'wakingShort' : 'transcribingShort')}</span>}
-    {phase === 'recording' && <Button type="button" className={css.roundButton} variant="toolbar" size="sm" aria-label={t('stop')}
+    {phase === 'recording' && <Button type="button" className={css.roundButton} size="sm" aria-label={t('stop')}
       onClick={() => { void finish() }}><IconStopFill16 size={18} /></Button>}
     {phase === 'feedback' && (pending
       ? <Button className={css.inlineAction} size="sm" type="button" onClick={() => {
         if (inputActions.insertText(pending, inputActions.captureInsertion())) { setPending(''); setPhase('idle') }
       }}>{t('insert')}</Button>
-      : <Button className={css.roundButton} variant="toolbar" size="sm" type="button" aria-label={t('retryRecording')} disabled={!usable || locked}
+      : <Button className={css.roundButton} size="sm" type="button" aria-label={t('retryRecording')} disabled={!usable || locked}
         onClick={() => { void start() }}><IconMicrophoneOutline16 size={18} /></Button>)}
   </div>
 }

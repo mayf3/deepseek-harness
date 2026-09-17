@@ -446,10 +446,10 @@ export const InputBar = memo(function InputBar({
                 : renderSlot('conversation.input.right', {})}
               {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
             </div>
+            <div className={css.contextControl} hidden={activity}><ContextMeter useProjection={useProjection} t={t} /></div>
             {input === undefined || sessionId === undefined ? null : <div className={activity ? css.activityExpanded : css.activity}>
               {renderSlot('conversation.input.activity', { locked, onActiveChange: setActivity })}
             </div>}
-            <div className={css.contextControl}><ContextMeter useProjection={useProjection} t={t} /></div>
             {interruptible && (
               <Tooltip label={t('input.stop')} side="top" delayMs={500} disabled={stop === undefined}>
                 <button

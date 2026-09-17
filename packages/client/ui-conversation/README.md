@@ -116,7 +116,7 @@ The selector must be a pure function of the owner currency. Its non-null return 
 
 `InputActions.captureInsertion()` captures the draft selection and revision; `insertText(text, span)` inserts one undoable plain-text edit only while that revision is current and the editor permits editing. Asynchronous consumers retain rejected results for user action.
 
-`conversation.input.activity` hosts one control between the model selector and Send. Its `onActiveChange` callback expands that control across the toolbar and hides ordinary accessory controls while preserving the editor, context-usage control and submit action. The context meter keeps its own space between the activity and Send. The occupant releases expansion on unmount and owns any activity-specific feedback.
+`conversation.input.activity` hosts one control between the context meter and Send, following the model selector. Its `onActiveChange` callback expands that control across the toolbar and hides ordinary accessory controls and the context meter while preserving the editor and submit action. Closing the activity restores those controls. The occupant releases expansion on unmount and owns any activity-specific feedback.
 
 <a id="model-experience"></a>
 ## Model Experience
