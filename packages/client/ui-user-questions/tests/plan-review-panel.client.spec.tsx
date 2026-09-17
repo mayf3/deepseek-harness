@@ -3,6 +3,7 @@ import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import {
   PendingQuestion, planReviewOf, type QuestionComposerProps, type QuestionWait,
 } from '../src/client/contract/slots.ts'
@@ -171,6 +172,16 @@ describe('planReviewOf', () => {
       approve: { label: 'Approve', description: 'Leave plan mode; the plan is carried out from the next step.' },
       decline: { label: 'Keep planning', description: 'Stay in plan mode; feedback goes back to the model.' },
     })
+  })
+
+  it('retains the logged invocation so the review can reopen its exact plan', () => {
+    const question = questions()[0]!
+    const callId = 'plan-call' as ToolCallId
+    const review = planReviewOf([{
+      ...question,
+      intent: { kind: 'plan-review', approve: 'Approve', callId },
+    }])
+    expect(review).toEqual({ ...planReviewOf([question]), callId })
   })
 
   it('leaves the decline absent when the asker offered approve alone', () => {
