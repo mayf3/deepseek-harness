@@ -208,10 +208,13 @@ describe('web e2e: long Chat interaction contract', () => {
     const railScroller = turnNavigation.locator('[class*="scroller"]')
     await railScroller.hover()
     await page.mouse.wheel(0, -FIXTURE_TURNS * 10)
+    await expect.poll(() => railScroller.evaluate(element => element.scrollTop)).toBe(0)
+    // Keyboard preview owns this assertion, not the mark under the wheel gesture's stationary pointer.
+    await page.mouse.move(0, 0)
     await firstTurnButton.focus()
     const preview = page.getByRole('tooltip')
     await preview.waitFor({ state: 'visible', timeout: 5_000 })
-    expect(await preview.textContent()).toContain(FIXTURE.markers.user(1))
+    await expect.poll(() => preview.textContent(), { timeout: 5_000 }).toContain(FIXTURE.markers.user(1))
     expect(await preview.textContent()).toContain(FIXTURE.markers.assistant(1))
     const markPitch = () => turnNavigation.getByRole('button').evaluateAll(buttons => (
       buttons[1]!.getBoundingClientRect().top - buttons[0]!.getBoundingClientRect().top
@@ -225,6 +228,8 @@ describe('web e2e: long Chat interaction contract', () => {
     await expect.poll(() => loadedRows.count(), { timeout: 15_000 }).toBeGreaterThan(loadedBefore)
     await railScroller.hover()
     await page.mouse.wheel(0, -FIXTURE_TURNS * 10)
+    await expect.poll(() => railScroller.evaluate(element => element.scrollTop)).toBe(0)
+    await page.mouse.move(0, 0)
     await firstTurnButton.waitFor({ state: 'visible' })
     expect(await markPitch()).toBe(10)
     // Activating the still-unloaded oldest mark pages the rest in and lands
