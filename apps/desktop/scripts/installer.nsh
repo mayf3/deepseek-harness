@@ -8,7 +8,8 @@
 !endif
 
 !macro customHeader
-  !include "${INSTALLER_SOURCE_DIR}\strings.nsh"
+  !define /ifndef INSTALLER_STRINGS_FILE "${INSTALLER_SOURCE_DIR}\strings.nsh"
+  !include "${INSTALLER_STRINGS_FILE}"
   !ifndef BUILD_UNINSTALLER
     !include "${INSTALLER_SOURCE_DIR}\theme.nsh"
     !include "${INSTALLER_SOURCE_DIR}\pages.nsh"
