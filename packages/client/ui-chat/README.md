@@ -58,7 +58,7 @@ On non-loopback browsers, the preference remains process-local because the setti
 <a id="completed-turn-footer"></a>
 ## Completed-turn footer
 
-The completed-turn action footer starts 20px below the preceding prose or extension content.
+The completed-turn action footer sits at the bottom of its Turn, 20px below the preceding prose or extension content. Only the latest Turn ending in response content keeps its actions visible; trailing reasoning, tools, notices, or other content makes them appear on hover or keyboard focus, like historical Turns. Devices without hover keep actions visible. Feedback and copy still address the last text response.
 
 -----
 

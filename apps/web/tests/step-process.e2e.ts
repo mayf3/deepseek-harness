@@ -125,3 +125,39 @@ it('keeps a waking notice above and independent of the turn disclosure', async (
     } finally { await browser.close() }
   } finally { await scaffold.close() }
 })
+
+
+it('places hover-only actions below trailing reasoning in a stopped turn', async () => {
+  const fixture = createChatScrollFixture({ markerPrefix: 'STOPPED_FOOTER', title: 'Stopped turn footer', turns: 1,
+    stopAfterReasoning: true })
+  const scaffold = await launchWebScaffold({})
+  try {
+    await seedSession(scaffold, fixture.log, 'stopped-footer-e2e')
+    const browser = await chromium.launch()
+    try {
+      const page = await newEnglishPage(browser, 900)
+      await page.goto(scaffold.authenticatedUrl)
+      await page.getByText('Ungrouped', { exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Search sessions' }).click()
+      await page.getByRole('textbox', { name: 'Search sessions...', exact: true }).fill(fixture.markers.user(1))
+      const results = page.getByRole('tree', { name: 'Search results' }).getByRole('treeitem')
+      await expect.poll(() => results.count(), { timeout: 60_000 }).toBe(1)
+      await results.click()
+      const tail = page.locator('[data-turn-tail="1"]')
+      await tail.waitFor()
+      expect(await tail.getAttribute('data-actions-reveal')).toBe('hover')
+      const lastGroup = page.locator('[data-step-process]').last()
+      const groupBox = await lastGroup.boundingBox()
+      const tailBox = await tail.boundingBox()
+      expect(tailBox!.y).toBeGreaterThanOrEqual(groupBox!.y + groupBox!.height)
+      const copy = tail.getByRole('button', { name: 'Copy', exact: true })
+      const actions = copy.locator('..')
+      await page.mouse.move(0, 0)
+      await expect.poll(() => actions.evaluate(element => getComputedStyle(element).opacity)).toBe('0')
+      await tail.hover()
+      await expect.poll(() => actions.evaluate(element => getComputedStyle(element).opacity)).toBe('1')
+      await compareOrRefreshGolden(fileURLToPath(new URL('./expected/step-process/stopped-footer.md', import.meta.url)),
+        (await tail.ariaSnapshot()).replace(/\d\d:\d\d/g, 'HH:mm'), webSnapshotMode())
+    } finally { await browser.close() }
+  } finally { await scaffold.close() }
+})

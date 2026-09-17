@@ -1455,7 +1455,7 @@ describe('built-in conversation node Definitions', () => {
     expect(node(snapshot(value), 'user')).toBeUndefined()
   })
 
-  it('orders claimed steering after the finalized Turn tail', () => {
+  it('keeps the Turn tail below steering received after a response', () => {
     const steering = textMessage('steer-after-answer', 'change direction')
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
@@ -1484,7 +1484,7 @@ describe('built-in conversation node Definitions', () => {
     const current = snapshot(value)
     const steeringNode = node(current, 'steering')
     expect(steeringNode).toBeDefined()
-    expect(current.locations.getTurn(1).at(-1)).toBe(steeringNode?.key)
+    expect(current.locations.getTurn(1).at(-1)).toBe(node(current, 'turn-tail')?.key)
   })
 
   it('classifies appended producer context from durable source metadata', () => {

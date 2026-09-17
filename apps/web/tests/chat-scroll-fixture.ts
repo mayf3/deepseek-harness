@@ -26,6 +26,8 @@ export interface ChatScrollFixtureOptions {
   readonly title: string
   /** Number of closed turns to generate. */
   readonly turns?: number
+  /** Finish the last Turn after reasoning that follows its text response. */
+  readonly stopAfterReasoning?: boolean
   /** Optional non-human input claimed to start each Turn. */
   readonly wakingInput?: { readonly source: MessageSource; readonly content: string }
 }
@@ -252,7 +254,19 @@ export function createChatScrollFixture(options: ChatScrollFixtureOptions): Chat
       )
       session.append('step/end', { turn, step: 1 })
     }
-    session.append('turn/end', { turn, reason: { kind: 'completed' } })
+    if (options.stopAfterReasoning === true && turn === turns) {
+      const step = turn % TOOL_INTERVAL === 0 ? 3 : 2
+      session.append('step/start', { turn, step })
+      appendRequestHeader(session, turn, step)
+      session.append('assistant/message', { turn, step, stream: [], message: createAssistantMessage({
+        content: [{ type: 'reasoning', text: 'Inspect the remaining work before continuing.' }],
+        source: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      }) }, { surfaceOp: 'append' })
+      session.append('step/end', { turn, step })
+      session.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'user' } } })
+    } else {
+      session.append('turn/end', { turn, reason: { kind: 'completed' } })
+    }
   }
 
   return { log: fixtureLog(session), markers, title: options.title, turns }

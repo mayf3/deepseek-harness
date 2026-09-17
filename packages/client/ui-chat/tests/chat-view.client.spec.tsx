@@ -2235,26 +2235,14 @@ describe('ChatView', () => {
     expect(h.forkAt.mock.calls).toEqual([[2]])
   })
 
-  it('disables fork when the indexed Turn has a later steering Node', () => {
-    const base = chatSnapshotFixture({
-      nodes: [user(1, 'question'), assistant(2, 'answer')],
+  it('keeps actions at the bottom and hover-only after later steering', () => {
+    const h = makeHarness({
+      nodes: [user(1, 'question'), assistant(2, 'answer'), steering(3, 'change direction', 1)],
       turnEnds: new Map([[1, 4]]),
     })
-    const chat = {
-      ...base,
-      locations: {
-        getTurn: (turn: number) => turn === 1
-          ? [...base.locations.getTurn(turn), 'fixture:steering:later']
-          : base.locations.getTurn(turn),
-        getStep: (turn: number, step: number) => base.locations.getStep(turn, step),
-      },
-    }
-    const h = makeHarness({}, {}, chat)
     const view = render(<h.ChatView {...h.props} />)
-    const branch = view.getByRole('button', { name: '在新对话中分支' })
-    expect(branch.getAttribute('aria-disabled')).toBe('true')
-    fireEvent.click(branch)
-    expect(h.forkAt).not.toHaveBeenCalled()
+    expect(view.container.querySelector('[data-turn-tail="1"]')?.getAttribute('data-actions-reveal')).toBe('hover')
+    expect(view.getByRole('button', { name: '在新对话中分支' }).getAttribute('aria-disabled')).toBe('true')
   })
 
   it('keeps final content actions but disables branch when Tool and interrupted Think follow it', () => {
@@ -2271,6 +2259,11 @@ describe('ChatView', () => {
     const buttons = view.getAllByRole('button', { name: '在新对话中分支' })
     expect(buttons).toHaveLength(1)
     expect(buttons[0]!.getAttribute('aria-disabled')).toBe('true')
+    const tail = view.container.querySelector('[data-turn-tail="1"]')!
+    expect(tail.getAttribute('data-actions-reveal')).toBe('hover')
+    expect(view.container.querySelectorAll('[data-chat-flow-kind]').item(
+      view.container.querySelectorAll('[data-chat-flow-kind]').length - 1,
+    ).getAttribute('data-chat-flow-kind')).toBe('turn-tail')
     fireEvent.click(buttons[0]!)
     expect(h.forkAt).not.toHaveBeenCalled()
   })

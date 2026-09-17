@@ -1,9 +1,11 @@
 import { memo } from 'react'
 import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ChatNode } from '../contract/chat-nodes.ts'
 import type { ChatNodeViewProps, PerformanceUsageInjected, TurnTailOwnerProps } from '../contract/slots.ts'
 import { MessageIconActions } from './MessageIconActions.tsx'
 import { TurnUsagePanel } from './TurnUsagePanel.tsx'
 import { assistantText } from './turn-assistant.ts'
+import { hasAssistantReplyContent } from '../contract/assistant-content.ts'
 import css from './TurnTailNodeView.module.css'
 
 type TurnTailNodeViewProps = ChatNodeViewProps<'turn-tail'>
@@ -17,8 +19,22 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
   const detailed = usePerformanceUsage(mode => mode) === 'detailed'
   const data = node.data
   const hasLaterChatNode = useChat(snapshot =>
-    snapshot.locations.getTurn(data.turn).at(-1) !== node.key)
-  const isLatestTurn = useChat(snapshot => snapshot.timeline.turnOrder.at(-1) === data.turn)
+    snapshot.locations.getTurn(data.turn).some((key) => {
+      const candidate = snapshot.nodes.get(key) as ChatNode | undefined
+      return candidate !== undefined && candidate.kind !== 'turn-tail'
+        && candidate.kind !== 'turn-max-tokens'
+        && candidate.anchorSeq > (data.closing?.finalNode.seq ?? data.seq)
+    }))
+  const endsWithResponse = useChat((snapshot) => {
+    if (snapshot.timeline.turnOrder.at(-1) !== data.turn) return false
+    const last = snapshot.locations.getTurn(data.turn)
+      .map(key => snapshot.nodes.get(key) as ChatNode | undefined)
+      .findLast(candidate => candidate?.kind !== 'turn-tail' && candidate?.kind !== 'turn-process')
+    if (last?.kind !== 'assistant-step') return false
+    const block = last.data.blocks.findLast(candidate =>
+      (candidate.kind !== 'text' && candidate.kind !== 'reasoning') || candidate.text.trim() !== '')
+    return block !== undefined && hasAssistantReplyContent([block])
+  })
   const turn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
     : undefined
@@ -37,7 +53,7 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
     <div
       className={css.root}
       data-turn-tail={data.turn}
-      data-actions-reveal={isLatestTurn ? 'always' : 'hover'}
+      data-actions-reveal={endsWithResponse ? 'always' : 'hover'}
     >
       {tail}
       <MessageIconActions
