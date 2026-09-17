@@ -26,7 +26,7 @@ export function PlatformOverlay({ bridge, page, backLabel, loadingLabel, failure
   const layer = useRef<HTMLDivElement>(null)
   const back = useRef<HTMLButtonElement>(null)
   const viewport = useRef<HTMLDivElement>(null)
-  const [failed, setFailed] = useState(false)
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'failed'>('loading')
   useEffect(() => {
     const element = viewport.current
     if (element === null) return
@@ -40,8 +40,9 @@ export function PlatformOverlay({ bridge, page, backLabel, loadingLabel, failure
       const rect = element.getBoundingClientRect()
       return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
     }
-    const fail = () => { if (!closed) setFailed(true) }
-    void bridge.open(page, bounds()).catch(fail)
+    const fail = () => { if (!closed) setStatus('failed') }
+    setStatus('loading')
+    void bridge.open(page, bounds()).then(() => { if (!closed) setStatus('loaded') }, fail)
     const observer = new ResizeObserver(() => { void bridge.setBounds(bounds()).catch(fail) })
     observer.observe(element)
     return () => {
@@ -64,7 +65,9 @@ export function PlatformOverlay({ bridge, page, backLabel, loadingLabel, failure
       </div>
     </header>
     <div ref={viewport} className={css.viewport}>
-      <span role="status">{failed ? failureLabel : loadingLabel}</span>
+      {status !== 'loaded' && <div className={css.status} role="status" aria-label={status === 'loading' ? loadingLabel : undefined}>
+        {status === 'failed' ? failureLabel : <span className={css.spinner} aria-hidden="true" />}
+      </div>}
     </div>
   </div>, document.body)
 }

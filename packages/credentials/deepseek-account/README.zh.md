@@ -53,3 +53,5 @@ getPlatformSession 为原生 Platform 内嵌提供仅限 Host 的 origin/token �
 ### 开发备注
 
 [桌面登录决策](../../../.agents/notes/implemented/architecture/2026-09-14-deepseek-account-login.zh.md)记录取消和存储的职责。
+
+PlatformSession 可将私有部署 requestHeaders 从 Host 传至 Electron 主进程。消费者必须从渲染层 bootstrap 排除这些请求头，并将其限定于配置来源。mergePlatformCookies 替换同名 Cookie，同时保留其他 Cookie。

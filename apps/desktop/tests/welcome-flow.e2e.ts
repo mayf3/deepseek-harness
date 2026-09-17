@@ -2,7 +2,7 @@
 
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -29,7 +29,7 @@ async function mockPlatform() {
   const server = createServer((req, res) => {
     if (req.headers.cookie !== 'test_gate=synthetic') { res.writeHead(403).end(); return }
     if (req.url === '/auth-api/v0/users/logout' && req.method === 'POST') {
-      if (req.headers.authorization !== 'Bearer dsh_mock_composition_test') { res.writeHead(401).end(); return }
+      if (req.headers['x-dsh-auth-token'] !== 'dsh_mock_composition_test') { res.writeHead(401).end(); return }
       res.writeHead(503).end()
       return
     }
@@ -42,7 +42,11 @@ async function mockPlatform() {
       if (req.url?.endsWith('auth_init')) {
         init = input
         if (input.locale !== 'en_US') { res.writeHead(400).end(); return }
-        value = { authorize_url: `${origin}/dsh/authorize?request_id=test`, expires_in: 600 }
+        value = { authorize_url: `${origin}/dsh/authorize?authorize_id=test`, expires_in: 600, authorize_id: 'test' }
+      } else if (req.url?.endsWith('auth_cancel')) {
+        const challenge = createHash('sha256').update(input.code_verifier ?? '').digest('base64url')
+        if (input.authorize_id !== 'test' || challenge !== init.code_challenge) { res.writeHead(400).end(); return }
+        value = null
       } else {
         if (failExchange) { res.writeHead(503).end(); return }
         const challenge = createHash('sha256').update(input.code_verifier ?? '').digest('base64url')
@@ -50,7 +54,7 @@ async function mockPlatform() {
           res.writeHead(400).end()
           return
         }
-        value = { token: 'dsh_mock_composition_test', authorized_url: `${origin}/dsh/authorized?result=test&locale=zh_CN` }
+        value = { user: null, token: 'dsh_mock_composition_test', authorized_url: `${origin}/dsh/authorized?result=test&locale=zh_CN` }
       }
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ code: 0, data: { biz_code: 0, biz_data: value } }))
@@ -94,6 +98,7 @@ describe.skipIf(!existsSync(builtHost))('built Desktop welcome flow', () => {
           hostProtocolVersion: DESKTOP_HOST_PROTOCOL_VERSION,
         },
       })
+      cpSync(join(repository, 'packages/skill/skill-office/assets'), join(root, 'runtime/office-skills'), { recursive: true })
       const paths = resolveDesktopPaths(home)
       const manager = new DesktopProjectManager(paths, {
         node: process.execPath, pnpm: join(repository, 'apps/desktop/node_modules/pnpm/bin/pnpm.mjs'), dsh: project,

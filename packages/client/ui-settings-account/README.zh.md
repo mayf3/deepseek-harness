@@ -31,7 +31,7 @@ Desktop 的用量和充值操作在 48px 返回栏下方打开隔离的原生 Pl
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-插件持有一条 Host 快照流，通过框架 hook 供 settings.section 和 settings.launcher 共享。入口菜单可打开设置，并仅在已存储账号凭证时提供退出登录。Platform 请求失败时保留菜单，以供重试。插件不维护独立凭证状态，因此不发布 invariant。
+账号页位于设置导航的首位。 插件持有一条 Host 快照流，通过框架 hook 供 settings.section 和 settings.launcher 共享。入口菜单可打开设置，并仅在已存储账号凭证时提供退出登录。Platform 请求失败时保留菜单，以供重试。插件不维护独立凭证状态，因此不发布 invariant。
 
 <a id="further-exploration"></a>
 ## 深入探索
@@ -59,3 +59,5 @@ Desktop 的用量和充值操作在 48px 返回栏下方打开隔离的原生 Pl
 ### 开发备注
 
 [桌面登录决策](../../../.agents/notes/implemented/architecture/2026-09-14-deepseek-account-login.zh.md)记录取消和存储的职责。
+
+用量和充值在原生页面加载完成前显示居中的 24px 加载图标，不显示加载文字；返回操作始终可用。加载 SVG 从 Figma 节点 2957:72553 内嵌到本地样式。

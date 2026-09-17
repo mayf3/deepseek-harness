@@ -14,7 +14,7 @@ Status: implemented
 
 账号服务定义将 UI 和模型使用方与平台协议实现分开。平台提供者注册 AuthorizationFlow，并保存按所有者寻址的 GrantRecord。账号是否存在从存储派生。登录尝试保留在内存中，通过账号 Remote 控制器提供安全快照。
 
-本地取消具有决定权。提供者停止回调并忽略迟到的兑换结果；auth_cancel 使用 request_id 和原始 PKCE verifier 作废远程申请及未兑换的 code。后台请求不延迟本地取消，失败也不会恢复登录。session.commit 在第一次 await 前同步准入持久化，并拒绝已取消的流程。准入后的取消等待提交结果。回调只有在授权结束确认存储后才跳转 auth_exchange.biz_data.authorized_url。
+本地取消具有决定权。提供者停止回调并忽略迟到的兑换结果；auth_cancel 使用 authorize_id 和原始 PKCE verifier 作废远程申请及未兑换的 code。后台请求不延迟本地取消，失败也不会恢复登录。session.commit 在第一次 await 前同步准入持久化，并拒绝已取消的流程。准入后的取消等待提交结果。回调只有在授权结束确认存储后才跳转 auth_exchange.biz_data.authorized_url。
 
 授权在 Host webServer 上注册临时 /oauth/callback 路由。已鉴权的发起客户端提供浏览器可访问的本机 HTTP 来源，包含 SSH 本地转发端口。不支持非本机域名反向代理。清理仅移除路由，保留共享连接。兑换失败返回 Web 登录界面，或通过账号状态聚焦 Desktop；重试由用户明确发起。PKCE 私密数据不经过 UI 传输。模型和文件请求的 token 仅为 https://api.deepseek.com 解析；请求拒绝重定向。本机开发授权记录不能认证生产请求。API Key 引用独立保存。
 
@@ -53,3 +53,11 @@ DSH 授权通过 x-dsh-auth-token 请求头鉴权 Platform、推理和 Files 请
 开发环境认证通过配置的平台来源上的显式 Host 请求头 requestHeaders 完成。提供者拒绝重定向和保留请求头覆盖，防止开发环境 Cookie 替换账号授权或跟随浏览器跳转地址。特定环境的认证协议不属于账号提供者。
 
 Host 在 auth_init 中发送 client_type（desktop 或 web），供 Platform 选择完成页交互。Web 失败时关闭授权标签页，原标签页接收 Host 状态，不使用 Web UI 返回地址。后端接受 localhost 回调。DSH 保留浏览器提供的 localhost 主机名和端口，不做 DNS 解析或 IP 字面量转换。
+
+macOS 开发启动器为 `dsh://open` 注册独立、经临时签名的应用包。该应用包保留工作区入口和开发路径，使 Launch Services 能够冷启动；凭证不会被复制，也不修改包管理器安装的 Electron 应用。协议注册指向最近启动的开发版或打包版应用。
+
+exchange 的 user 数据在凭证提交后供首次资料读取使用，展示用户名无需再等待一次请求。Host 仅在当前尝试中保留筛选后的 UI 字段，与 token 匹配并读取一次后移除；后续读取使用 current。缺失或格式无效的 user 不会使已成功的授权失效。
+
+内嵌 Platform 文档在加载期间保持隐藏，因为原生子视图会覆盖渲染层浮层。加载完成后仅当前文档可显示；返回或退登会使待执行的显示操作失效。
+
+独立的 accountRequestHeaders 将账号资料及内嵌 Platform 流量与授权、退登分开路由。Cookie 覆盖按名称合并，保留部署认证。Host 通过私有进程 IPC 传递合并后的请求头；Electron 仅在配置来源注入，并从 bootstrap 排除。

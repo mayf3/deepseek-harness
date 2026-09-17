@@ -13,6 +13,8 @@ declare module '@deepseek-ai/cordis' {
 export interface PlatformSession {
   readonly origin: string
   readonly token: string
+  /** Private deployment headers for native requests; excluded from renderer bootstrap. */
+  readonly requestHeaders?: Readonly<Record<string, string>>
 }
 
 /** Account operations; only Host consumers can obtain a request credential. */
@@ -72,3 +74,21 @@ export abstract class DeepSeekAccount extends Service {
   abstract getPlatformSession(): Promise<PlatformSession | null>
 }
 export default DeepSeekAccount
+
+
+/** Merge Cookie header pairs by case-sensitive name, retaining unrelated cookies.
+ * @param base - existing request cookies.
+ * @param override - deployment cookies whose values take precedence.
+ * @returns one Cookie header with at most one pair per name.
+ */
+export function mergePlatformCookies(base: string, override: string): string {
+  const cookies = new Map<string, string>()
+  for (const header of [base, override]) {
+    for (const pair of header.split(';')) {
+      const separator = pair.indexOf('=')
+      if (separator < 1) continue
+      cookies.set(pair.slice(0, separator).trim(), pair.slice(separator + 1).trim())
+    }
+  }
+  return [...cookies].map(([name, value]) => `${name}=${value}`).join('; ')
+}

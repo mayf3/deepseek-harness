@@ -1,7 +1,7 @@
 /** Isolated Platform documents owned by the desktop account lifetime. */
 import { randomUUID } from 'node:crypto'
 import { WebContentsView, session, shell, type BrowserWindow, type IpcMainEvent } from 'electron'
-import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
+import { mergePlatformCookies, type PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
 
 export { PLATFORM_IPC } from './platform-ipc.ts'
 
@@ -37,7 +37,8 @@ export class DesktopPlatformView {
 
   /** @param next - private Host credential snapshot; replacement invalidates the current document. */
   setSession(next: PlatformSession | null): void {
-    if (next?.token === this.account?.token && next?.origin === this.account?.origin) return
+    if (next?.token === this.account?.token && next?.origin === this.account?.origin
+      && JSON.stringify(next?.requestHeaders) === JSON.stringify(this.account?.requestHeaders)) return
     this.close()
     this.account = next
   }
@@ -57,6 +58,19 @@ export class DesktopPlatformView {
     const browserSession = session.fromPartition(`dsh-platform-${randomUUID()}`)
     browserSession.setPermissionRequestHandler((_contents, _permission, callback) => { callback(false) })
     browserSession.setPermissionCheckHandler(() => false)
+    const deploymentHeaders = account.requestHeaders ?? {}
+    browserSession.webRequest.onBeforeSendHeaders((details, callback) => {
+      let headers = Object.fromEntries(Object.entries(details.requestHeaders).map(([name, value]) => [name.toLowerCase(), value]))
+      if (new URL(details.url).origin === account.origin) {
+        const cookie = headers.cookie ?? ''
+        Object.assign(headers, deploymentHeaders)
+        if (deploymentHeaders.cookie !== undefined) headers.cookie = mergePlatformCookies(cookie, deploymentHeaders.cookie)
+      } else {
+        // Redirected subresources must not carry deployment headers to another origin.
+        headers = Object.fromEntries(Object.entries(headers).filter(([name]) => !(name in deploymentHeaders)))
+      }
+      callback({ requestHeaders: headers })
+    })
     const view = new WebContentsView({ webPreferences: {
       session: browserSession, preload: this.preload, sandbox: true, contextIsolation: true,
       additionalArguments: [`--dsh-platform-origin=${account.origin}`],
@@ -85,10 +99,12 @@ export class DesktopPlatformView {
     view.webContents.on('will-attach-webview', (event) => { event.preventDefault() })
     view.webContents.on('preload-error', () => { if (this.view === view) this.close() })
     view.webContents.on('render-process-gone', () => { if (this.view === view) this.close() })
+    view.setVisible(false)
     owner.contentView.addChildView(view)
     view.setBounds(bounds)
     try {
       await view.webContents.loadURL(new URL(page === 'usage' ? '/usage' : '/top_up', account.origin).href)
+      if (generation === this.generation && this.view === view) view.setVisible(true)
     } catch (error) {
       if (generation === this.generation) this.close()
       throw error
@@ -103,14 +119,14 @@ export class DesktopPlatformView {
    * @param event - Electron-provided sender identity.
    * @returns credentials copied once into the isolated preload.
    */
-  bootstrap(event: IpcMainEvent): PlatformSession {
+  bootstrap(event: IpcMainEvent): Pick<PlatformSession, 'origin' | 'token'> {
     const view = this.view
     const account = this.account
     if (view === undefined || account === null || event.sender !== view.webContents
       || event.senderFrame !== view.webContents.mainFrame || new URL(event.senderFrame.url).origin !== account.origin) {
       throw new Error('Rejected Platform bootstrap')
     }
-    return { ...account }
+    return { origin: account.origin, token: account.token }
   }
 
   /** Destroy the document before releasing its temporary browser storage. */

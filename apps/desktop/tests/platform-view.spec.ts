@@ -8,7 +8,7 @@ vi.mock('electron', () => ({
   shell: { openExternal: state.openExternal },
   session: { fromPartition: vi.fn((partition: string) => {
     const value = {
-      partition, setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(),
+      partition, webRequest: { onBeforeSendHeaders: vi.fn() }, setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(),
       clearStorageData: vi.fn(async () => {}),
     }
     state.sessions.push(value)
@@ -21,6 +21,7 @@ vi.mock('electron', () => ({
       setWindowOpenHandler: vi.fn(), loadURL: vi.fn(async (_url: string) => {}),
       isDestroyed: () => false, close: vi.fn(),
     })
+    setVisible = vi.fn()
     setBounds = vi.fn()
     constructor() { state.views.push(this) }
   },
@@ -34,12 +35,14 @@ function setup() {
   return { manager, owner }
 }
 function view() {
-  return state.views.at(-1) as { webContents: EventEmitter & {
-    mainFrame: { url: string }
-    loadURL: ReturnType<typeof vi.fn>
-    setWindowOpenHandler: ReturnType<typeof vi.fn>
-    close: ReturnType<typeof vi.fn>
-  } }
+  return state.views.at(-1) as {
+    setVisible: ReturnType<typeof vi.fn>
+    webContents: EventEmitter & {
+      mainFrame: { url: string }
+      loadURL: ReturnType<typeof vi.fn>
+      setWindowOpenHandler: ReturnType<typeof vi.fn>
+      close: ReturnType<typeof vi.fn>
+    } }
 }
 const bounds = { x: 10, y: 20, width: 800, height: 600 }
 
@@ -102,5 +105,53 @@ it('opens HTTPS payment links in the system browser without an embedded child wi
     expect(handler({ url })).toEqual({ action: 'deny' })
   }
   expect(state.openExternal).not.toHaveBeenCalled()
+  manager.close()
+})
+
+
+it('reveals a loaded document only after loading finishes', async () => {
+  const { manager, owner } = setup()
+  const loading = manager.open(owner, 'usage', bounds)
+  const active = view()
+  expect(active.setVisible.mock.calls).toEqual([[false]])
+  await loading
+  expect(active.setVisible.mock.calls).toEqual([[false], [true]])
+  manager.close()
+})
+
+it('does not reveal a document closed before its load settles', async () => {
+  const { manager, owner } = setup()
+  const loading = manager.open(owner, 'usage', bounds)
+  const active = view()
+  manager.close()
+  await loading
+  expect(active.setVisible.mock.calls).toEqual([[false]])
+})
+
+
+it('injects deployment headers only at the Platform origin and excludes them from bootstrap', async () => {
+  const { manager, owner } = setup()
+  manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret',
+    requestHeaders: { cookie: 'route=new; gate=private', 'x-private-gate': 'private' } })
+  await manager.open(owner, 'usage', bounds)
+  const browserSession = state.sessions.at(-1) as { webRequest: { onBeforeSendHeaders: ReturnType<typeof vi.fn> } }
+  const intercept = browserSession.webRequest.onBeforeSendHeaders.mock.calls[0]![0] as (
+    details: { url: string; requestHeaders: Record<string, string> },
+    callback: (value: { requestHeaders: Record<string, string> }) => void,
+  ) => void
+  const callback = vi.fn()
+  for (const path of ['/usage', '/top_up', '/api/v0/users/get_user_summary']) {
+    intercept({ url: `https://platform.deepseek.com${path}`, requestHeaders: { Cookie: 'route=old; browser=keep', Accept: 'application/json' } }, callback)
+    expect(callback).toHaveBeenLastCalledWith({ requestHeaders: {
+      cookie: 'route=new; browser=keep; gate=private', accept: 'application/json', 'x-private-gate': 'private',
+    } })
+  }
+  intercept({ url: 'https://other.example/api', requestHeaders: {
+    cookie: 'route=new; gate=private', 'x-private-gate': 'private', accept: 'application/json',
+  } }, callback)
+  expect(callback).toHaveBeenLastCalledWith({ requestHeaders: { accept: 'application/json' } })
+  const sender = view().webContents
+  expect(manager.bootstrap({ sender, senderFrame: sender.mainFrame } as unknown as IpcMainEvent))
+    .toEqual({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
   manager.close()
 })

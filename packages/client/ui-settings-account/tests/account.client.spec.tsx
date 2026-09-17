@@ -135,3 +135,23 @@ it('shows the profile while the balance is still loading', async () => {
   expect(screen.queryByText(en.balanceUnavailable)).toBeNull()
   await expect(`${screen.getByRole('region').textContent}\n`).toMatchFileSnapshot('./expected/profile-before-balance.txt')
 })
+
+
+it.each(['usage', 'top-up'] as const)('shows an accessible spinner until %s finishes loading', async (page) => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  const loaded = Promise.withResolvers<undefined>()
+  const platform: PlatformBridge = { open: () => loaded.promise, setBounds: async () => {}, close: async () => {} }
+  mount({ status: 'credential-stored', attempt: null }, en, undefined, platform)
+  await act(async () => { fireEvent.click(screen.getByRole('link', { name: page === 'usage' ? en.usage : en.topUp })) })
+  const status = screen.getByRole('status', { name: en.loading })
+  expect({ accessibleName: status.getAttribute('aria-label'), visibleText: status.textContent }).toMatchInlineSnapshot(`
+    {
+      "accessibleName": "Loading…",
+      "visibleText": "",
+    }
+  `)
+  expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
+  expect(screen.getByRole('button', { name: en.backToHarness })).toBeTruthy()
+  await act(async () => { loaded.resolve(undefined) })
+  expect(screen.queryByRole('status', { name: en.loading })).toBeNull()
+})

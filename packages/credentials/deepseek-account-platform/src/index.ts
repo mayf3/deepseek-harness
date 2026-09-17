@@ -7,10 +7,10 @@ import { finished } from 'node:stream/promises'
 import { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
-import { DeepSeekAccount, type AccountDetails, type AccountView, type SignInAttemptId, type SignInAttemptView } from '@deepseek-ai/dsh-deepseek-account'
+import { DeepSeekAccount, mergePlatformCookies, type PlatformSession, type AccountDetails, type AccountView, type SignInAttemptId, type SignInAttemptView } from '@deepseek-ai/dsh-deepseek-account'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import type { AuthorizationSession } from '@deepseek-ai/dsh-authorization'
-import { readAccountDetail } from './details.ts'
+import { profile, readAccountDetail } from './details.ts'
 import { revokeAccount, type LogoutRetryPolicy } from './logout.ts'
 import { PlatformAuthError, platformHeaders, platformOrigin, browserUrl, requestPlatform, initialization, exchange, loginOrigin } from './protocol.ts'
 
@@ -29,6 +29,8 @@ export interface Config {
   rewriteBrowserOrigin?: boolean
   /** Host-only headers sent exclusively to platformOrigin; account authorization cannot be overridden. */
   requestHeaders?: Record<string, string>
+  /** Overrides for profile, balance and embedded Platform requests; Cookie pairs merge by name. Logout retains requestHeaders. */
+  accountRequestHeaders?: Record<string, string>
   /** Deadline for each platform HTTP request. */
   requestTimeoutMs?: number
   /** Additional logout attempts after the first request fails, at most five. */
@@ -44,6 +46,7 @@ export const Config = Schema.object({
   allowLoopbackHttp: Schema.boolean().default(false),
   rewriteBrowserOrigin: Schema.boolean().default(false),
   requestHeaders: Schema.dict(Schema.string().role('secret')).default({}),
+  accountRequestHeaders: Schema.dict(Schema.string().role('secret')).default({}),
   requestTimeoutMs: Schema.number().min(1).max(120_000).default(30_000),
   logoutMaxRetries: Schema.number().min(0).max(5).step(1).default(5),
   logoutRetryDelayMs: Schema.number().min(1).max(60_000).default(1_000),
@@ -60,6 +63,7 @@ interface Attempt {
   client: 'web' | 'desktop'
   disposeCallback?: () => Promise<void>
   callback?: ServerResponse
+  initialProfile?: { token: string; value: AccountDetails['profile'] }
   completionUrl?: string
 }
 
@@ -70,6 +74,7 @@ export class PlatformAccount extends DeepSeekAccount {
   private readonly origin: string
   private readonly rewriteBrowserOrigin: boolean
   private readonly requestHeaders: Record<string, string>
+  private readonly accountRequestHeaders: Record<string, string>
   private readonly requestTimeout: number
   private readonly attemptTimeout: number
   private readonly logoutPolicy: LogoutRetryPolicy
@@ -88,6 +93,11 @@ export class PlatformAccount extends DeepSeekAccount {
     this.origin = platformOrigin(resolved.platformOrigin, resolved.allowLoopbackHttp)
     this.rewriteBrowserOrigin = resolved.rewriteBrowserOrigin
     this.requestHeaders = platformHeaders(resolved.requestHeaders)
+    const accountHeaders = platformHeaders(resolved.accountRequestHeaders)
+    this.accountRequestHeaders = { ...this.requestHeaders, ...accountHeaders }
+    if (accountHeaders.cookie !== undefined) {
+      this.accountRequestHeaders.cookie = mergePlatformCookies(this.requestHeaders.cookie ?? '', accountHeaders.cookie)
+    }
     this.requestTimeout = resolved.requestTimeoutMs
     this.attemptTimeout = resolved.attemptTimeoutMs
     this.logoutPolicy = {
@@ -147,12 +157,17 @@ export class PlatformAccount extends DeepSeekAccount {
     if (!parsed.success) throw new PlatformAuthError('storage')
     // A private origin override must never forward a grant issued by another environment.
     if (parsed.data.issuer !== this.origin) throw new PlatformAuthError('protocol')
+    if (field === 'profile' && this.attempt?.initialProfile?.token === parsed.data.token) {
+      const initial = this.attempt.initialProfile.value
+      delete this.attempt.initialProfile
+      return initial as AccountDetails[K]
+    }
     const details = await readAccountDetail(field, this.origin, parsed.data.token,
-      AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]), this.requestHeaders)
+      AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]), this.accountRequestHeaders)
     return this.detailsLifetime !== lifetime ? null : details
   }
 
-  override async getPlatformSession(): Promise<{ origin: string; token: string } | null> {
+  override async getPlatformSession(): Promise<PlatformSession | null> {
     const lifetime = this.detailsLifetime
     if (this.closed) return null
     const record = await this.ctx.credentials.readRecord(KEY)
@@ -161,7 +176,8 @@ export class PlatformAccount extends DeepSeekAccount {
     const parsed = grant.safeParse(record.payload)
     if (!parsed.success) throw new PlatformAuthError('storage')
     if (parsed.data.issuer !== this.origin) throw new PlatformAuthError('protocol')
-    return { origin: this.origin, token: parsed.data.token }
+    return { origin: this.origin, token: parsed.data.token,
+      ...(Object.keys(this.accountRequestHeaders).length ? { requestHeaders: { ...this.accountRequestHeaders } } : {}) }
   }
 
   override async resolveToken(url: string): Promise<string | undefined> {
@@ -303,7 +319,7 @@ export class PlatformAccount extends DeepSeekAccount {
     const verifier = randomBytes(32).toString('base64url')
     const state = randomBytes(32).toString('base64url')
     const challenge = createHash('sha256').update(verifier).digest('base64url')
-    let requestId: string | undefined
+    let authorizeId: string | undefined
     const code = Promise.withResolvers<string>()
     // Callback requests may precede initialization settlement; the rejection is observed immediately.
     void code.promise.catch(() => undefined)
@@ -338,12 +354,18 @@ export class PlatformAccount extends DeepSeekAccount {
       const init = initialization.safeParse(await this.request('auth_init', {
         code_challenge: challenge, code_challenge_method: 'S256', state, redirect_uri: redirectUri, locale: attempt.locale,
         client_type: attempt.client,
-      }, signal))
-      if (!init.success) throw new PlatformAuthError('protocol')
+      }, signal), { reportInput: true })
+      if (!init.success) {
+        console.info('[deepseek-account] payload rejected', {
+          stage: 'auth_init', issues: init.error.issues.map(issue => ({
+            path: issue.path, code: issue.code,
+            receivedType: issue.input === null ? 'null' : Array.isArray(issue.input) ? 'array' : typeof issue.input,
+          })),
+        })
+        throw new PlatformAuthError('protocol')
+      }
       const authorizeUrl = browserUrl(init.data.authorize_url, this.origin, '/dsh/authorize', this.rewriteBrowserOrigin)
-      const requestIds = new URL(authorizeUrl).searchParams.getAll('request_id')
-      if (requestIds.length !== 1 || !requestIds[0]) throw new PlatformAuthError('protocol')
-      requestId = requestIds[0]
+      authorizeId = init.data.authorize_id
       signal.throwIfAborted()
       const expires = Math.min(this.attemptTimeout, init.data.expires_in * 1000)
       clearTimeout(timer)
@@ -359,10 +381,24 @@ export class PlatformAccount extends DeepSeekAccount {
       const result = exchange.safeParse(await this.request('auth_exchange', {
         code: receivedCode, code_verifier: verifier, redirect_uri: redirectUri,
         device_id: identity.id, device_model: `${platform()}-${arch()}`, os_version: `${platform()} ${release()}`,
-      }, signal))
-      if (!result.success) throw new PlatformAuthError('protocol')
+      }, signal), { reportInput: true })
+      if (!result.success) {
+        console.info('[deepseek-account] payload rejected', {
+          stage: 'auth_exchange', issues: result.error.issues.map(issue => ({
+            path: issue.path, code: issue.code,
+            receivedType: issue.input === null ? 'null' : Array.isArray(issue.input) ? 'array' : typeof issue.input,
+          })),
+        })
+        throw new PlatformAuthError('protocol')
+      }
       attempt.completionUrl = browserUrl(result.data.authorized_url, this.origin, '/dsh/authorized', this.rewriteBrowserOrigin)
       signal.throwIfAborted()
+      if (result.data.user != null) {
+        try { attempt.initialProfile = { token: result.data.token, value: { status: 'ready', value: profile(result.data.user) } } }
+        catch {
+          // Invalid optional user data falls back to current without discarding a valid authorization.
+        }
+      }
       this.update(attempt, { phase: 'committing' })
       clearTimeout(timer)
       try { await session.commit({ kind: 'grant', payload: { version: 1, token: result.data.token, issuer: this.origin } }) }
@@ -371,16 +407,16 @@ export class PlatformAccount extends DeepSeekAccount {
       if (deadline.signal.aborted) throw new PlatformAuthError('expired')
       throw error
     } finally {
-      if (signal.aborted && requestId !== undefined) this.cancelRequest(requestId, verifier)
+      if (signal.aborted && authorizeId !== undefined) this.cancelRequest(authorizeId, verifier)
       clearTimeout(timer)
       signal.removeEventListener('abort', abort)
       // begin() settles the browser response and removes only this attempt’s route.
     }
   }
 
-  private cancelRequest(requestId: string, verifier: string): void {
+  private cancelRequest(authorizeId: string, verifier: string): void {
     if (this.closed) return
-    const cancellation = this.request('auth_cancel', { request_id: requestId, code_verifier: verifier },
+    const cancellation = this.request('auth_cancel', { authorize_id: authorizeId, code_verifier: verifier },
       this.logoutLifetime.signal).then(() => undefined, () => {
       // Remote cancellation failures never reverse local cancellation or expose verifier diagnostics.
     }).finally(() => { this.revocations.delete(cancellation) })

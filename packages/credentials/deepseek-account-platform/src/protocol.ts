@@ -32,9 +32,17 @@ export function platformOrigin(value: string, allowLoopbackHttp: boolean): strin
  * @returns normalized URL on the configured origin.
  */
 export function browserUrl(value: string, origin: string, path: string, rewriteOrigin = false): string {
-  const url = new URL(value)
+  let url: URL
+  try { url = new URL(value) } catch {
+    console.info('[deepseek-account] browser URL rejected', { path, reason: 'invalid-url' })
+    throw new PlatformAuthError('protocol')
+  }
   const allowedOrigin = url.origin === origin || (rewriteOrigin && url.protocol === 'https:')
   if (!allowedOrigin || url.pathname !== path || url.username || url.password || url.hash) {
+    console.info('[deepseek-account] browser URL rejected', {
+      path, originMismatch: !allowedOrigin, pathMismatch: url.pathname !== path,
+      hasCredentials: Boolean(url.username || url.password), hasFragment: Boolean(url.hash),
+    })
     throw new PlatformAuthError('protocol')
   }
   return rewriteOrigin ? `${origin}${url.pathname}${url.search}` : url.href
@@ -62,10 +70,10 @@ export function platformHeaders(values: Record<string, string>): Record<string, 
 const envelope = z.object({ code: z.literal(0), data: z.object({ biz_code: z.number().int(), biz_data: z.unknown() }) })
 /** Successful initialization response. */
 export const initialization = z.object({
-  authorize_url: z.url(), expires_in: z.number().positive(),
+  authorize_url: z.url(), authorize_id: z.string().min(1), expires_in: z.number().positive(),
 })
 /** Successful code exchange response. */
-export const exchange = z.object({ token: z.string().regex(/^[\x21-\x7e]+$/), authorized_url: z.url() })
+export const exchange = z.object({ token: z.string().regex(/^[\x21-\x7e]+$/), authorized_url: z.url(), user: z.unknown().optional() })
 
 /**
  * Read one bounded platform response with stable, non-secret diagnostics.
@@ -131,21 +139,33 @@ async function platformRequest(url: string, init: RequestInit, signal: AbortSign
   const reader = response.body.getReader()
   const chunks: Uint8Array[] = []
   let size = 0
+  let stage = 'read-body'
   try {
     while (true) {
       const next = await reader.read()
       if (next.done) break
       size += next.value.byteLength
-      if (size > 65_536) throw new PlatformAuthError('protocol')
+      if (size > 65_536) {
+        stage = 'body-limit'
+        throw new PlatformAuthError('protocol')
+      }
       chunks.push(next.value)
     }
+    stage = 'parse-json'
     const payload: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
     const codes = z.object({ code: z.number().int(), data: z.object({ biz_code: z.number().int() }).optional() }).safeParse(payload)
     if (codes.success) console.info('[deepseek-account] response codes', {
       path, code: codes.data.code, bizCode: codes.data.data?.biz_code,
     })
+    stage = 'envelope'
     const parsed = envelope.safeParse(payload)
-    if (!parsed.success) throw new PlatformAuthError('protocol')
+    if (!parsed.success) {
+      console.info('[deepseek-account] envelope rejected', {
+        path, issues: parsed.error.issues.map(issue => ({ path: issue.path, code: issue.code })),
+      })
+      throw new PlatformAuthError('protocol')
+    }
+    stage = 'business-code'
     if (parsed.data.data.biz_code !== 0) {
       // TODO(product-error-ui): Apply product-defined copy and UI behavior for the supplied biz_code values.
       // Business failures use the existing generic failure UI until then; backend messages stay Host-only.
@@ -153,7 +173,7 @@ async function platformRequest(url: string, init: RequestInit, signal: AbortSign
     }
     return parsed.data.data.biz_data
   } catch (error) {
-    console.info('[deepseek-account] response rejected', { path, errorCode: 'protocol' })
+    console.info('[deepseek-account] response rejected', { path, stage, errorCode: 'protocol' })
     if (error instanceof PlatformAuthError) throw error
     throw new PlatformAuthError('protocol')
   } finally {
@@ -164,15 +184,17 @@ async function platformRequest(url: string, init: RequestInit, signal: AbortSign
 
 /**
  * Accept a browser-accessible loopback HTTP origin for local or SSH-forwarded login.
- * @param value - origin supplied by the authenticated initiating client.
+ * @param value - loopback HTTP origin with an explicit port supplied by the authenticated initiating client.
  * @returns normalized origin; remote domains and path-based proxies are unsupported.
  */
 export function loginOrigin(value: string): string {
   let url: URL
   try { url = new URL(value) } catch { throw new PlatformAuthError('protocol') }
-  if (url.protocol !== 'http:' || !['localhost', '127.0.0.1'].includes(url.hostname)
+  const explicitPort = /^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):([0-9]+)\/?$/i.exec(value)?.[1]
+  if (explicitPort === undefined || Number(explicitPort) === 0
+    || url.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
     || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
     throw new PlatformAuthError('protocol')
   }
-  return url.origin
+  return `${url.protocol}//${url.hostname}:${Number(explicitPort)}`
 }

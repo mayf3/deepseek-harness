@@ -31,7 +31,7 @@ Contact us opens the Feishu questionnaire in the system browser on Desktop or a 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The plugin owns one Host snapshot stream shared through framework hooks by settings.section and settings.launcher. The launcher opens Settings and offers Sign out only while an account credential is stored. Platform failures leave the menu available for retry. It maintains no independent credential state, so no invariant companion is published.
+The Account section appears first in Settings. The plugin owns one Host snapshot stream shared through framework hooks by settings.section and settings.launcher. The launcher opens Settings and offers Sign out only while an account credential is stored. Platform failures leave the menu available for retry. It maintains no independent credential state, so no invariant companion is published.
 
 <a id="further-exploration"></a>
 ## Further Exploration
@@ -59,3 +59,5 @@ No model request prefix changes.
 ### Dev Note
 
 The [desktop login decision](../../../.agents/notes/implemented/architecture/2026-09-14-deepseek-account-login.md) records cancellation and storage ownership.
+
+Usage and top-up show a centered 24px loading indicator without visible loading text until the native document loads; the return action remains available. The loading SVG is embedded locally from Figma node 2957:72553.

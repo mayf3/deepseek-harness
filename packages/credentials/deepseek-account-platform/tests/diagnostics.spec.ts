@@ -3,7 +3,7 @@ import { browserUrl, requestPlatform } from '../src/protocol.ts'
 
 it.each(['/dsh/authorize', '/dsh/authorized'])('maps %s to the configured development origin and preserves query bytes', (path) => {
   const origin = 'http://localhost:8081'
-  const query = '?request_id=fixture&value=a%2Fb&value=two+words&empty='
+  const query = '?authorize_id=fixture&value=a%2Fb&value=two+words&empty='
   const url = `https://platform.deepseek.com${path}${query}`
   expect(() => browserUrl(url, origin, path)).toThrow()
   expect(browserUrl(url, origin, path, true)).toBe(`${origin}${path}${query}`)
@@ -50,6 +50,44 @@ it('reports transport failure without exposing the thrown error', async () => {
     expect(logged).not.toContain('private-network-detail')
   } finally {
     fetcher.mockRestore()
+    output.mockRestore()
+  }
+})
+
+
+it('identifies invalid envelope fields without logging response values', async () => {
+  const output = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    code: 0, data: { biz_code: 'private-code', biz_data: { token: 'private-token' } },
+  })))
+  try {
+    await expect(requestPlatform('https://platform.deepseek.com', 'auth_init', {},
+      new AbortController().signal, {})).rejects.toThrow('account: protocol')
+    const logged = JSON.stringify(output.mock.calls)
+    expect(logged).toContain('envelope')
+    expect(logged).toContain('biz_code')
+    expect(logged).toContain('invalid_type')
+    expect(logged).not.toContain('private-code')
+    expect(logged).not.toContain('private-token')
+  } finally {
+    fetcher.mockRestore()
+    output.mockRestore()
+  }
+})
+
+it('reports browser URL rejection rules without exposing the destination', () => {
+  const output = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+  try {
+    expect(() => browserUrl('https://private.example/wrong?code=private-code',
+      'https://platform.deepseek.com', '/dsh/authorize')).toThrow('account: protocol')
+    expect(output).toHaveBeenCalledWith('[deepseek-account] browser URL rejected', {
+      path: '/dsh/authorize', originMismatch: true, pathMismatch: true,
+      hasCredentials: false, hasFragment: false,
+    })
+    expect(() => browserUrl('private-invalid-url', 'https://platform.deepseek.com',
+      '/dsh/authorize')).toThrow('account: protocol')
+    expect(JSON.stringify(output.mock.calls)).not.toContain('private-')
+  } finally {
     output.mockRestore()
   }
 })

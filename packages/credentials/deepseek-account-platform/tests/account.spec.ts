@@ -18,7 +18,7 @@ afterEach(async () => { while (cleanups.length) await cleanups.pop()!() })
 
 async function fixture(contact: { email: string; mobile?: string; mobile_number?: string } = {
   email: 't***@example.invalid', mobile: '138****5678',
-}, requestHeaders: Record<string, string> = {}, rewriteBrowserOrigin = false) {
+}, requestHeaders: Record<string, string> = {}, rewriteBrowserOrigin = false, accountRequestHeaders: Record<string, string> = {}) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-account-'))
   cleanups.push(() => rm(home, { recursive: true, force: true }))
   let init: Record<string, string> = {}
@@ -32,6 +32,7 @@ async function fixture(contact: { email: string; mobile?: string; mobile_number?
   let count = 0
   let businessCode = 0
   let exchangeOverride: Record<string, unknown> = {}
+  let initOverride: Record<string, unknown> = {}
   let origin = ''
   let detailsHold = false
   let balanceHold = false
@@ -87,12 +88,12 @@ async function fixture(contact: { email: string; mobile?: string; mobile_number?
       value = null
     } else if (req.url?.endsWith('auth_init')) {
       init = body
-      value = { authorize_url: `${rewriteBrowserOrigin ? 'https://platform.deepseek.com' : origin}/dsh/authorize?request_id=test`, expires_in: 600 }
+      value = { authorize_url: `${rewriteBrowserOrigin ? 'https://platform.deepseek.com' : origin}/dsh/authorize?authorize_id=test`, expires_in: 600, authorize_id: 'test', ...initOverride }
     } else {
       count++
       exchanged.resolve(undefined)
       if (hold) await release.promise
-      value = { token: 'dsh_mock_test', authorized_url: `${origin}/dsh/authorized?result=test&locale=zh_CN`, ...exchangeOverride }
+      value = { user: null, token: 'dsh_mock_test', authorized_url: `${origin}/dsh/authorized?result=test&locale=zh_CN`, ...exchangeOverride }
     }
     res.setHeader('content-type', 'application/json')
     res.end(JSON.stringify({ code: 0, data: { biz_code: businessCode, biz_msg: 'sensitive diagnostic', biz_data: value } }))
@@ -115,7 +116,7 @@ async function fixture(contact: { email: string; mobile?: string; mobile_number?
   const authorization = ctx.plugin(AuthorizationService)
   await authorization
   const provider = ctx.plugin(PlatformAccount, {
-    platformOrigin: origin, allowLoopbackHttp: true, requestHeaders, rewriteBrowserOrigin, logoutRetryDelayMs: 1,
+    platformOrigin: origin, allowLoopbackHttp: true, requestHeaders, accountRequestHeaders, rewriteBrowserOrigin, logoutRetryDelayMs: 1,
   })
   await provider
   cleanups.push(async () => { await provider.dispose(); await authorization.dispose(); await credentials.dispose(); await web.dispose() })
@@ -135,6 +136,7 @@ async function fixture(contact: { email: string; mobile?: string; mobile_number?
     invalidateSummary: () => { invalidSummary = true }, dispose: () => provider.dispose(), exchanged, release,
     redirect: () => { redirect = true },
     hold: () => { hold = true },
+    initResponse: (value: Record<string, unknown>) => { initOverride = value },
     exchangeResponse: (value: Record<string, unknown>) => { exchangeOverride = value },
     fail: (value: number) => { businessCode = value },
     init: () => init, count: () => count, callback: (state = init.state) => `${init.redirect_uri}?code=test&state=${state}` }
@@ -161,6 +163,7 @@ it('stores a grant before redirecting, restores account presence, and signs out 
 
 it('does not persist a delayed exchange after cancellation or replace the next attempt', async () => {
   const f = await fixture()
+  f.exchangeResponse({ user: { email: 'c***@example.invalid', id_profile: { name: 'Cancelled User' } } })
   f.hold()
   await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
   const waiting = await f.wait('waiting-browser')
@@ -175,6 +178,7 @@ it('does not persist a delayed exchange after cancellation or replace the next a
   expect((await f.account.getState()).attempt?.id).toBe(next.attempt?.id)
   expect((await f.account.getState()).status).toBe('signed-out')
   expect(f.count()).toBe(1)
+  expect(await f.account.getProfile()).toBeNull()
   await f.account.cancelSignIn(next.attempt!.id)
 })
 
@@ -201,7 +205,7 @@ it('maps both returned browser pages to the development origin across the login 
   const f = await fixture(undefined, {}, true)
   f.exchangeResponse({ authorized_url: 'https://platform.deepseek.com/dsh/authorized?result=a%2Fb&locale=zh_CN' })
   await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
-  expect((await f.wait('waiting-browser')).attempt?.authorizeUrl).toBe(`${f.origin}/dsh/authorize?request_id=test`)
+  expect((await f.wait('waiting-browser')).attempt?.authorizeUrl).toBe(`${f.origin}/dsh/authorize?authorize_id=test`)
   const response = await fetch(f.callback(), { redirect: 'manual' })
   expect(response.status).toBe(302)
   expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=a%2Fb&locale=zh_CN`)
@@ -245,7 +249,7 @@ it('derives every portal link from the private platform origin', async () => {
   const f = await fixture()
   expect((await f.account.getState()).links).toEqual({ usageUrl: `${f.origin}/usage`, topUpUrl: `${f.origin}/top_up` })
   await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
-  expect((await f.wait('waiting-browser')).attempt?.authorizeUrl).toBe(`${f.origin}/dsh/authorize?request_id=test`)
+  expect((await f.wait('waiting-browser')).attempt?.authorizeUrl).toBe(`${f.origin}/dsh/authorize?authorize_id=test`)
 })
 
 async function storeAccount(f: Awaited<ReturnType<typeof fixture>>) {
@@ -468,6 +472,7 @@ it('keeps cancellation authoritative without reopening WebUI after a delayed exc
 })
 
 it.each(['https://example.com', 'http://example.com', 'http://127.0.0.1.evil.test',
+  'http://localhost', 'http://127.0.0.1', 'http://[::1]', 'http://localhost:0', 'http://localhost:65536',
   'http://user@localhost', 'http://localhost/path', 'http://localhost/?x=1', 'http://localhost/#x', 'invalid'])
 ('rejects unsupported callback origin %s before starting authorization', async (origin) => {
   const f = await fixture()
@@ -478,6 +483,8 @@ it.each(['https://example.com', 'http://example.com', 'http://127.0.0.1.evil.tes
 it('normalizes supported loopback callback origins', () => {
   expect(loginOrigin('http://localhost:8080/')).toBe('http://localhost:8080')
   expect(loginOrigin('http://127.0.0.1:8080')).toBe('http://127.0.0.1:8080')
+  expect(loginOrigin('http://[::1]:8080/')).toBe('http://[::1]:8080')
+  expect(loginOrigin('http://localhost:80')).toBe('http://localhost:80')
 })
 
 it('cancels remotely with the original PKCE verifier without waiting for acknowledgment', async () => {
@@ -489,8 +496,8 @@ it('cancels remotely with the original PKCE verifier without waiting for acknowl
   await f.cancellationReceived.promise
   expect(f.cancellations).toHaveLength(1)
   const body = f.cancellations[0]!
-  expect(Object.keys(body).sort()).toEqual(['code_verifier', 'request_id'])
-  expect(body.request_id).toBe('test')
+  expect(Object.keys(body).sort()).toEqual(['authorize_id', 'code_verifier'])
+  expect(body.authorize_id).toBe('test')
   expect(createHash('sha256').update(body.code_verifier!).digest('base64url')).toBe(f.init().code_challenge)
   expect(f.receivedHeaders.find(row => row.path?.endsWith('auth_cancel'))?.authorization).toBeUndefined()
   await f.account.cancelSignIn(state.attempt!.id)
@@ -534,4 +541,73 @@ it('returns the profile while the balance request is still pending', async () =>
     expect(balanceSettled).toBe(false)
   } finally { f.release.resolve(undefined) }
   expect(await balance).toMatchObject({ status: 'ready' })
+})
+
+
+it('uses exchange user for the first profile read and fetches current on refresh', async () => {
+  const f = await fixture()
+  f.exchangeResponse({ user: { id: 'exchange-user', email: 'e***@example.invalid', id_profile: { name: 'Exchange User' }, token: 'discard-me' } })
+  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.wait('waiting-browser')
+  await fetch(f.callback(), { redirect: 'manual' })
+  expect(await f.account.getProfile()).toMatchInlineSnapshot(`
+    {
+      "status": "ready",
+      "value": {
+        "contact": "e***@example.invalid",
+        "id": "exchange-user",
+        "name": "Exchange User",
+      },
+    }
+  `)
+  expect(f.detailRequests).toEqual([])
+  expect((await f.account.getProfile())).toMatchObject({ status: 'ready', value: { name: 'Test Account' } })
+  expect(f.detailRequests).toHaveLength(1)
+  expect(await readFile(join(f.home, 'credentials.yaml'), 'utf8')).not.toContain('discard-me')
+})
+
+it.each([undefined, null, { email: 123 }])('fetches current when exchange user is unavailable: %j', async (user) => {
+  const f = await fixture()
+  f.exchangeResponse({ user })
+  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.wait('waiting-browser')
+  await fetch(f.callback(), { redirect: 'manual' })
+  expect(await f.account.getProfile()).toMatchObject({ status: 'ready', value: { name: 'Test Account' } })
+  expect(f.detailRequests).toHaveLength(1)
+})
+
+
+it('uses the initialization payload ID for cancellation without extracting it from the browser URL', async () => {
+  const f = await fixture()
+  f.initResponse({ authorize_id: 'payload-id', authorize_url: `${f.origin}/dsh/authorize?opaque=value` })
+  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  const state = await f.wait('waiting-browser')
+  await f.account.cancelSignIn(state.attempt!.id)
+  await f.cancellationReceived.promise
+  expect(f.cancellations[0]?.authorize_id).toBe('payload-id')
+})
+
+it.each([undefined, '', 123])('rejects an invalid initialization authorize_id: %j', async (authorizeId) => {
+  const f = await fixture()
+  f.initResponse({ authorize_id: authorizeId })
+  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  expect(await f.wait('failed')).toMatchObject({ status: 'signed-out', attempt: { errorCode: 'protocol' } })
+  expect(f.count()).toBe(0)
+})
+
+
+it('overlays account cookies without changing authorization or logout routing', async () => {
+  const f = await fixture(undefined, { Cookie: 'gate=private; route=auth', 'x-private': 'keep' }, false, { Cookie: 'route=account' })
+  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.wait('waiting-browser')
+  await fetch(f.callback(), { redirect: 'manual' })
+  await readDetails(f.account)
+  expect(await f.account.getPlatformSession()).toMatchObject({ requestHeaders: { cookie: 'gate=private; route=account', 'x-private': 'keep' } })
+  await f.account.signOut()
+  await expect.poll(f.logoutCount).toBe(1)
+  for (const row of f.receivedHeaders) {
+    const detail = ['/auth-api/v0/users/current', '/api/v0/users/get_user_summary'].includes(row.path ?? '')
+    expect(row.cookie).toBe(detail ? 'gate=private; route=account' : 'gate=private; route=auth')
+  }
+  expect(JSON.stringify(await f.account.getState())).not.toContain('private')
 })

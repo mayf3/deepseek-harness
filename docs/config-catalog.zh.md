@@ -620,6 +620,8 @@ export interface Config {
   rewriteBrowserOrigin?: boolean
   /** Host-only headers sent exclusively to platformOrigin; account authorization cannot be overridden. */
   requestHeaders?: Record<string, string>
+  /** Overrides for profile, balance and embedded Platform requests; Cookie pairs merge by name. Logout retains requestHeaders. */
+  accountRequestHeaders?: Record<string, string>
   /** Deadline for each platform HTTP request. */
   requestTimeoutMs?: number
   /** Additional logout attempts after the first request fails, at most five. */

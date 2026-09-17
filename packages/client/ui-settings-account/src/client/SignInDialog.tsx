@@ -45,7 +45,7 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
           <IconCloseOutline16 size={14} />
         </button>
       </div>
-      {active ? <p className={`${css.description} ${css.browserDescription}`}>
+      {active ? <p className={css.description}>
         {t('browserPrompt')}<button type="button" className={css.link} disabled={!attempt?.authorizeUrl}
           onClick={() => {
             if (attempt?.authorizeUrl) void navigator.clipboard.writeText(attempt.authorizeUrl)

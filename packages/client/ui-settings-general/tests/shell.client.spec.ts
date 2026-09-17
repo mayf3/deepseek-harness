@@ -36,12 +36,8 @@ const CHILD_SPECS = {
 } as const
 const CHILD_NAMES = Object.keys(CHILD_SPECS) as Array<keyof typeof CHILD_SPECS>
 
-/**
- * Section ids the web-app roster registers, in nav order: this package, then
- * ui-settings-models, ui-settings-plugins, ui-agent-preset, and
- * ui-settings-unarchive-sessions. A plugin adding a section changes this list.
- */
-const PRODUCT_SECTIONS: readonly string[] = ['general', 'models', 'plugins', 'agent-presets', 'archived-sessions', 'account']
+/** Section ids the web-app roster registers, in navigation order. */
+const PRODUCT_SECTIONS: readonly string[] = ['account', 'general', 'models', 'plugins', 'agent-presets', 'archived-sessions']
 /** Onboarding steps the web-app roster registers, in coordinator order; both come from ui-settings-models. */
 const PRODUCT_ONBOARDING: readonly { id: string; order: number }[] = [
   { id: 'welcome-notice', order: -100 },
@@ -91,7 +87,7 @@ describe('ui-settings-general shell', () => {
     const { sections } = injectedOf(c).hooks
     const product = sections.getSnapshot()
     expect(product.map(row => row.id)).toEqual(PRODUCT_SECTIONS)
-    expect(product[0]).toEqual({ id: 'general', order: 0, label: expect.any(String) as string })
+    expect(product[0]).toEqual({ id: 'account', order: -10, label: expect.any(String) as string })
     c.ctx.slots.register({ name: 'settings.section', id: 'z', order: 1_000, label: 'Z' } as never, () => null)
     // No order and no label: both projection defaults apply, and order 0 sorts among the product rows.
     c.ctx.slots.register({ name: 'settings.section', id: 'a' } as never, () => null)

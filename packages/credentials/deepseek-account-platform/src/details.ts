@@ -12,7 +12,11 @@ const summary = z.object({ normal_wallets: z.array(z.object({
   currency: z.enum(['CNY', 'USD']), balance: z.string().regex(/^-?\d+(?:\.\d+)?$/),
 })) })
 
-function profile(value: unknown): AccountProfile {
+/** Project Platform user data without retaining credentials or unneeded fields.
+ * @param value - current or exchange user response.
+ * @returns UI account profile.
+ */
+export function profile(value: unknown): AccountProfile {
   const parsed = user.safeParse(value)
   if (!parsed.success) throw new PlatformAuthError('protocol')
   const { email, mobile, mobile_number: mobileNumber, id_profile: identity } = parsed.data

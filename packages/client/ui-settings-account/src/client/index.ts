@@ -129,7 +129,7 @@ export function apply(ctx: Context): void {
     name: 'settings.launcher', locale: 'settings.account', inject: () => operations,
   }, AccountMenu))
   ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section', id: 'account', order: 30, label: () => t('nav'),
+    name: 'settings.section', id: 'account', order: -10, label: () => t('nav'),
     locale: 'settings.account', inject: () => operations,
   }, AccountSection))
 }
