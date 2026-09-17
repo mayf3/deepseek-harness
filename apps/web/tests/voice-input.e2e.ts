@@ -100,6 +100,12 @@ it.skipIf(webSnapshotMode() === 'record')('records from cached standby and submi
   await mic.click()
   const stop = page.getByRole('button', { name: 'Stop and transcribe', exact: true })
   await stop.waitFor()
+  for (const width of [1280, 420]) {
+    await page.setViewportSize({ width, height: 900 })
+    const waveformBox = await page.getByRole('img', { name: 'Recording…', exact: true }).boundingBox()
+    const stopBox = await stop.boundingBox(), cancelBox = await page.getByRole('button', { name: 'Cancel', exact: true }).boundingBox()
+    expect(waveformBox!.height).toBeLessThanOrEqual(Math.min(stopBox!.height, cancelBox!.height))
+  }
   await input.hover()
   expect(await meter.isVisible()).toBe(false)
   expect(await stop.evaluate(element => getComputedStyle(element).backgroundColor)).toBe(controlBackground)

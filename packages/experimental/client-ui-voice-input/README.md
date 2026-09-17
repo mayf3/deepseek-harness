@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This optional browser plugin adds a microphone between the model selector and Send. Clicking it opens a recording toolbar with measured audio levels, Cancel and Stop. Stopping transcribes into the draft. Recognition preferences and model preparation live in plugin settings.
+This optional browser plugin adds a microphone between the model selector and Send. Clicking it opens a recording toolbar with measured audio levels, Cancel and Stop. The waveform stays shorter than the recording buttons. Stopping transcribes into the draft. Recognition preferences and model preparation live in plugin settings.
 
 ## Table of Contents
 
