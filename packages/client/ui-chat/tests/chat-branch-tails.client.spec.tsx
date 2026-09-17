@@ -1042,7 +1042,7 @@ describe('useCalendarDay boundary refresh', () => {
 })
 
 describe('small branch tails', () => {
-  it('AssistantMarkdown single-line reasoning summary skips the newline cut', () => {
+  it('AssistantMarkdown hides settled single-line reasoning until expanded', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
@@ -1051,6 +1051,8 @@ describe('small branch tails', () => {
         renderMessageImages={renderMessageImages}
       />,
     )
+    expect(view.queryByText('one-liner')).toBeNull()
+    fireEvent.click(view.getByText('思考'))
     expect(view.getByText('one-liner')).toBeTruthy()
   })
 

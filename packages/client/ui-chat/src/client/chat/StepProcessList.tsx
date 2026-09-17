@@ -1,6 +1,6 @@
 /** Nested process disclosures retain the existing whole-turn visibility owner. */
 import { memo, useCallback, useEffect, useId, useState, type ComponentProps } from 'react'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
 import { turnProcessAlwaysOpen } from '../contract/turn-process.ts'
@@ -58,7 +58,7 @@ function StepProcess({ range, nodes, expandedSteps, ...seatProps }: SeatProps & 
       <button type="button" className={css.title} aria-expanded={open} aria-controls={bodyId}
         onClick={(event) => { event.currentTarget.focus(); setOpen(!open) }}>
         <span>{label}</span>
-        <IconChevronDownOutline14 className={css.chevron} />
+        <IconChevronDownOutlineRegular className={css.chevron} />
       </button>
       <div ref={bodyRef} id={bodyId} className={`${css.body} ${flowCss.processBody}`} data-step-process-body>
         {range.seats.map(seat => <ChatNodeSeat key={`${seat.nodeKey}:${seat.assistantPart ?? ''}`} {...seatProps} {...seat} />)}

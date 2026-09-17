@@ -1,0 +1,4 @@
+- button "Think":
+  - img
+  - img
+  - text: Think

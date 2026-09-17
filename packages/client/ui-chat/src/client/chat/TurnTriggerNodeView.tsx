@@ -1,6 +1,6 @@
 /** An independent, expandable notice explaining a non-human Turn trigger. */
 import { useId, useState } from 'react'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeViewProps } from '../contract/slots.ts'
 import { contextBody } from './ContextBody.tsx'
 import { turnTriggerDetails } from './turn-trigger.ts'
@@ -24,7 +24,7 @@ export function TurnTriggerNodeView({ node, t }: ChatNodeViewProps<'turn-trigger
         <span className={css.title}>{t(details.title)}</span>
         {details.subject !== '' && <span className={css.subject}>· {details.subject}</span>}
         <time className={css.time} dateTime={date.toISOString()}>{time}</time>
-        <IconChevronDownOutline14 className={open ? css.openChevron : css.chevron} />
+        <IconChevronDownOutlineRegular className={open ? css.openChevron : css.chevron} />
       </button>
       {open && <div id={bodyId} className={css.body}>
         <div className={css.metadata}>{details.producer}</div>
