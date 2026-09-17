@@ -1,0 +1,61 @@
+- button "Think" [expanded]:
+  - img
+  - text: Think
+- heading "Compact reasoning with a deliberately long summary with a deliberately long summary with a deliberately long summary with a deliberately long summary with a deliberately long summary with a deliberately long summary with a deliberately long summary with a deliberately long summary" [level=2]
+- paragraph:
+  - text: A paragraph with
+  - strong: strong text
+  - text: ","
+  - emphasis: emphasis
+  - text: ","
+  - link "reference":
+    - /url: https://example.com/
+  - text: ", and"
+  - code: inline_code
+  - text: .
+- heading "Level 1" [level=1]
+- heading "Level 2" [level=2]
+- heading "Level 3" [level=3]
+- heading "Level 4" [level=4]
+- heading "Level 5" [level=5]
+- heading "Level 6" [level=6]
+- list:
+  - listitem: Unordered item
+  - listitem: Second item
+- list:
+  - listitem: Ordered item
+  - listitem: Another item
+- list:
+  - listitem:
+    - paragraph: Loose first paragraph.
+    - paragraph: Loose middle paragraph.
+    - paragraph: Loose last paragraph.
+- blockquote:
+  - paragraph: Quoted reasoning.
+- separator
+- table:
+  - rowgroup:
+    - row "First Second Third Fourth Fifth Sixth":
+      - columnheader "First"
+      - columnheader "Second"
+      - columnheader "Third"
+      - columnheader "Fourth"
+      - columnheader "Fifth"
+      - columnheader "Sixth"
+  - rowgroup:
+    - row "long_table_cell_0_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx long_table_cell_1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx long_table_cell_2_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx long_table_cell_3_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx long_table_cell_4_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx long_table_cell_5_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx":
+      - cell "long_table_cell_0_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      - cell "long_table_cell_1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      - cell "long_table_cell_2_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      - cell "long_table_cell_3_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      - cell "long_table_cell_4_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      - cell "long_table_cell_5_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+- paragraph:
+  - text: "Inline math:"
+  - math: a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + z
+  - text: .
+- math: a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + 1 1 + 1 x
+- text: typescript
+- button "Copy"
+- code: const value = "reasoning code"
+- paragraph: {{longToken}}

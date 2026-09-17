@@ -15,6 +15,7 @@ Status: implemented
 - 颜色经由 `design-platform.css` 中专用的 `--dsw-alias-link` 别名（亮色 `deepseek-500`，暗色 `deepseek-400`），与 `state-business-primary` 解耦；链接以 `font-weight: 500` 呈现，默认无下划线，hover/focus 时为 3px offset 的 `underline dotted`。
 - 前置分类图标——ui-primitives 新增的 `LinkIcon`，kind 为 `url`、`folder`、`code`、`image`、`document`、`other`（纸张）——只渲染 `currentColor`；`url` 图形为地球，目的地主机属于已知站点时则为该站点自己的标记（[已知站点链接标记](2026-09-16-known-site-link-marks.zh.md)）；`classifyLinkPath` 把[共享精细文件类型分类](2026-09-08-shared-file-type-icons.zh.md)折叠进这六种链接类别，代码、网页、数据扩展名按设计共用 code 图形。两类锚点不带图标：workflow 成员链接（应用内成员视图不属于任何文件或 URL 类别）和只包图片的锚点（徽章或缩略图——图片旁悬着的地球没有可引导的文字）。行内图标为 1.1em、基线偏移 −0.25em；flex 居中的产物图标则下移 1.2px，因为 22px 文字盒的字形低于盒中心。
 - 产物 chips 去掉灰色药丸和 96px 上限：纯链接蓝文字按自然宽度展示，仅当整行溢出时才收缩出省略号；容器查询档位在决定展示几个 chip 时仍按每个 96px 预算。
+- [紧凑 Thinking Markdown](../bug-fix/2026-09-17-thinking-markdown.zh.md) 保留 tertiary 文字色和默认点状下划线，以保持次级强调。
 - 刻意不动：ToolRow 的灰色点线文件链接，以及灰色的「在文件夹中显示」操作（它获得文件夹图标但保持灰色样式）。
 - 同一批次中，inline code 底色从 `neutral-bluish-100` 换到 `neutral-50`（暗色：`neutral-800`），并新增 0.5px l1 描边。
 
