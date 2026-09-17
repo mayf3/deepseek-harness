@@ -24,8 +24,8 @@ export interface BrowserFrame extends HostObservable<BrowserFrameState> {
   toggleSandbox(): void
   /** @param document - current prepared document. */
   setDocument(document: BrowserDocument): void
-  /** @returns the detached document, if one existed. */
-  clearDocument(): BrowserDocument | undefined
+  /** Remove the current prepared document. */
+  clearDocument(): void
   /** @param revision - rendered document revision reported by the carrier. */
   reportLoaded(revision: number): void
   /** @param revision - rendered document revision whose carrier reported an error. */
@@ -70,24 +70,18 @@ export class IframeImpl implements BrowserFrame {
   /**
    * Publish a prepared frame from the owning controller.
    * @param document - current prepared document.
-   * @internal
    */
   setDocument(document: BrowserDocument): void {
     this.store.set({ ...this.store.getSnapshot(), document, loadFailed: false })
   }
 
-  /**
-   * Remove and return the previous frame for resource cleanup.
-   * @returns the detached frame, if one existed.
-   * @internal
-   */
-  clearDocument(): BrowserDocument | undefined {
+  /** Remove the current prepared frame and transient load failure. */
+  clearDocument(): void {
     const current = this.store.getSnapshot()
     const { document } = current
     if (document !== undefined) {
       this.store.set({ ...current, document: undefined, loadFailed: false })
     }
-    return document
   }
 
   /** @param revision - rendered document revision reported by the iframe. */

@@ -73,7 +73,7 @@ describe.skipIf(MODE === 'record')('web e2e: Sidebar Browser', () => {
     expect(await frame.getAttribute('allow')).toBeNull()
     await column.getByRole('button', { name: 'Disable sandbox restrictions' }).click()
     await expect.poll(() => frame.getAttribute('sandbox')).toBeNull()
-    await column.getByText('Sandbox restrictions are disabled; a page that reaches the DSH origin can access its Web data.', { exact: true }).waitFor()
+    await column.getByText('Sandbox restrictions are disabled; the page can navigate the top-level app and use downloads, modal dialogs, and input locks.', { exact: true }).waitFor()
     await column.getByRole('button', { name: 'Restore sandbox restrictions' }).click()
     await expect.poll(() => frame.getAttribute('sandbox')).toBe('allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox')
     await page.frameLocator('[data-sidebar-browser-frame]').getByRole('link', { name: 'Inside navigation' }).click()

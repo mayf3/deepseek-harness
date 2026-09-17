@@ -113,7 +113,7 @@ export interface BrowserInjected {
    * @param initial - persisted tab state.
    */
   mount(tabId: TabId, signal: AbortSignal, applicationOrigin: string, initial?: BrowserTabState): void
-  /** @param tabId - tab occurrence. @param value - address-bar or local-document link value. */
+  /** @param tabId - tab occurrence. @param value - address-bar or typed-open value. */
   loadUrl(tabId: TabId, value: string): void
   /** @param tabId - tab occurrence. */
   goBack(tabId: TabId): void
