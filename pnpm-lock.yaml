@@ -913,6 +913,10 @@ importers:
         version: link:../../interaction/user-approval
 
   packages/api/account-controller:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
