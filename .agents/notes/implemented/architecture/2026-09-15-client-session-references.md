@@ -101,7 +101,7 @@ Source counts remain authoritative in `SessionListState.byId[id].retainedBy`; UI
 
 Pending domains retain `SessionPendingInteractionMap`, request identities, precedence, publication disposers, and teardown delegation. The unified status includes the same effective request object; it does not copy requests or create a second pending registry. Workspace status indicators and Conversation composer selection read `useSessionStatus` instead of separate `useSessionPendingInteraction` and `useCompletedSessionIds` hooks.
 
-Completion tracking subscribes to the existing `api-session/status` events so a running-to-idle transition is not lost in batched catalog snapshots. Catalog snapshots establish initial and reconnect baselines. A pending empty catalog is not evidence that Sessions disappeared. The update rules are:
+Completion tracking subscribes to the existing `api-session/status` events so a running-to-idle transition is not lost in batched catalog snapshots. Host-list rows (`ids`) establish initial and reconnect running baselines; synthetic catalog and retained rows preserve independently observed status. A pending empty catalog is not evidence that Sessions disappeared. The update rules are:
 
 - An initial idle baseline does not create a completion reminder.
 - Observing running clears an earlier reminder and records the running baseline.

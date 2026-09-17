@@ -875,6 +875,102 @@ describe('ui-agent-preset apply', () => {
 })
 
 describe('AgentPresetSeatController reconciliation', () => {
+  it.each([
+    { refuseFirst: false, refuseLatest: false },
+    { refuseFirst: false, refuseLatest: true },
+    { refuseFirst: true, refuseLatest: false },
+    { refuseFirst: true, refuseLatest: true },
+  ])('waits for a newer Settings selection (first refused: $refuseFirst, latest refused: $refuseLatest)', async ({ refuseFirst, refuseLatest }) => {
+    const refusal = { ok: false as const, error: new RemoteError('gateway/internal', 'selection refused', {}) }
+    type Outcome = { ok: true; value: string } | typeof refusal
+    const requests: { preset: string; outcome: ReturnType<typeof Promise.withResolvers<Outcome>> }[] = []
+    const session = { id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
+    const controller = new AgentPresetSeatController({
+      remote: { agentPresets: { select: (_id: SessionId, preset: string) => {
+        const outcome = Promise.withResolvers<Outcome>()
+        requests.push({ preset, outcome })
+        return outcome.promise
+      } } },
+    } as never, () => session)
+    const first = controller.select('minimal')
+    let settingsSettled = false
+    const settings = controller.syncBlankSession(session.id, 'cordis').finally(() => { settingsSettled = true })
+    await controller.apply()
+    expect(requests.map(request => request.preset)).toEqual(['minimal'])
+    requests[0]!.outcome.resolve(refuseFirst ? refusal : { ok: true, value: 'minimal' })
+    await first
+    expect(requests.map(request => request.preset)).toEqual(['minimal', 'cordis'])
+    expect(settingsSettled).toBe(false)
+    await controller.apply()
+    expect(requests).toHaveLength(2)
+    requests[1]!.outcome.resolve(refuseLatest ? refusal : { ok: true, value: 'cordis' })
+    await expect(settings).resolves.toBe(refuseLatest ? 'selection refused' : undefined)
+    expect(controller.store.getSnapshot()).toMatchObject({
+      current: refuseLatest ? 'standard' : 'cordis', busy: false,
+      error: refuseLatest ? 'selection refused' : null,
+    })
+  })
+
+  it.each([false, true])('preserves a stage created while an earlier selection is pending (refused: %s)', async (refused) => {
+    const refusal = { ok: false as const, error: new RemoteError('gateway/internal', 'selection refused', {}) }
+    const firstReply = Promise.withResolvers<{ ok: true; value: string } | typeof refusal>()
+    const select = vi.fn((_id: SessionId, preset: string) => preset === 'minimal'
+      ? firstReply.promise
+      : Promise.resolve({ ok: true as const, value: preset }))
+    const controller = new AgentPresetSeatController({ remote: { agentPresets: { select } } } as never,
+      () => ({ id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }))
+    const first = controller.select('minimal')
+    controller.stage('cordis', true)
+    await controller.apply()
+    expect(select).toHaveBeenCalledOnce()
+    firstReply.resolve(refused ? refusal : { ok: true, value: 'minimal' })
+    await first
+    expect(controller.store.getSnapshot().current).toBe('cordis')
+    await controller.apply()
+    expect(select.mock.calls.map(call => call[1])).toEqual(['minimal', 'cordis'])
+  })
+
+  it.each([false, true])('serializes Settings choices and preserves each refusal (middle refused: %s)', async (refused) => {
+    const refusal = { ok: false as const, error: new RemoteError('gateway/internal', 'selection refused', {}) }
+    type Outcome = { ok: true; value: string } | typeof refusal
+    const requests: { preset: string; outcome: ReturnType<typeof Promise.withResolvers<Outcome>> }[] = []
+    const session = { id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
+    const controller = new AgentPresetSeatController({
+      remote: { agentPresets: { select: (_id: SessionId, preset: string) => {
+        const outcome = Promise.withResolvers<Outcome>()
+        requests.push({ preset, outcome })
+        return outcome.promise
+      } } },
+    } as never, () => session)
+    const first = controller.select('minimal')
+    const second = controller.syncBlankSession(session.id, 'cordis')
+    const third = controller.syncBlankSession(session.id, 'coding')
+    expect(requests.map(request => request.preset)).toEqual(['minimal'])
+    requests[0]!.outcome.resolve({ ok: true, value: 'minimal' })
+    await first
+    expect(requests.map(request => request.preset)).toEqual(['minimal', 'cordis'])
+    requests[1]!.outcome.resolve(refused ? refusal : { ok: true, value: 'cordis' })
+    await expect(second).resolves.toBe(refused ? 'selection refused' : undefined)
+    expect(requests.map(request => request.preset)).toEqual(['minimal', 'cordis', 'coding'])
+    requests[2]!.outcome.resolve({ ok: true, value: 'coding' })
+    await third
+    expect(controller.store.getSnapshot()).toMatchObject({ current: 'coding', busy: false })
+  })
+
+  it('does not apply a waiting Settings choice to a replacement binding', async () => {
+    const reply = Promise.withResolvers<{ ok: true; value: string }>()
+    const select = vi.fn(() => reply.promise)
+    let current = { id: SessionId('first'), blank: true, projectionValues: { agentPreset: 'standard' } }
+    const controller = new AgentPresetSeatController({ remote: { agentPresets: { select } } } as never, () => current)
+    const first = controller.select('minimal')
+    const settings = controller.syncBlankSession(current.id, 'cordis')
+    current = { ...current, id: SessionId('replacement') }
+    reply.resolve({ ok: true, value: 'minimal' })
+    await Promise.all([first, settings])
+    await controller.apply()
+    expect(select).toHaveBeenCalledExactlyOnceWith(SessionId('first'), 'minimal')
+  })
+
   it('does not capture a non-blank Session', () => {
     const controller = new AgentPresetSeatController({} as never, () => ({
       id: SessionId('started'), blank: false,

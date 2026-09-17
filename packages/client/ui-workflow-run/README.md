@@ -29,7 +29,7 @@ A top-level workflow run through `dsh-tool-workflow` appears in the conversation
 
 ### Navigating the node
 
-The run uses a 32-pixel row with persistent chevrons, an inline state dot, and status text; phases use disclosure rows with title and member count in the main area and a fixed aggregate-status tail; members use a 16-pixel dot slot, a truncating name area, and a fixed status column. Opening a member's child Session requires the member to be running and the current Session's direct-child catalog to report that child as running. Session summaries do not establish membership; absent, wrong-parent, or terminal catalog entries remain non-interactive.
+The run uses a 32-pixel row with persistent chevrons, an inline state dot, and status text; phases use disclosure rows with title and member count in the main area and a fixed aggregate-status tail; members use a 16-pixel dot slot, a truncating name area, and a fixed status column. Opening a member's child Session requires both member and child to be running, and the child must belong to the current Session's direct-child catalog. Child activity uses the unified UI status, falling back to the Session summary when unknown. Session summaries do not establish membership; absent, wrong-parent, or terminal catalog entries remain non-interactive.
 
 ### State and completion
 

@@ -52,7 +52,7 @@ export interface SessionSummary {
 
 /** Catalog metadata and local source counts; catalog membership owns no Client generation. */
 export interface SessionListState {
-  /** Host-list order; addressed breadcrumb-only rows are excluded. */
+  /** Host list order; every id has a matching byId row in the same snapshot. */
   ids: SessionId[]
   /** Host/catalog rows plus local fallback rows for live Client generations; only `ids` expresses Host-list membership. */
   byId: Record<SessionId, SessionSummary>

@@ -845,6 +845,25 @@ describe('WorkflowRunPanel', () => {
     })
   })
 
+  it('uses observed running state for a catalog-only member', () => {
+    const data: WorkflowRunChatData = { name: 'audit', status: 'running', phases: [phase()] }
+    const sessions = listState({
+      ids: [PARENT_ID],
+      byId: { ...listState().byId, [CHILD_ID]: { ...listState().byId[CHILD_ID]!, running: false } },
+    })
+    const openSession = vi.fn()
+    let statuses = new Map([[CHILD_ID, { running: true, pendingInteraction: undefined, completionUnread: false }]])
+    const props: WorkflowRunPanelProps = { ...panelProps(data, sessions, openSession),
+      useSessionStatus: select => select(statuses),
+    }
+    const view = render(<WorkflowRunPanel {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: '打开 worker' }))
+    expect(openSession).toHaveBeenCalledWith({ parentSessionId: PARENT_ID, childSessionId: CHILD_ID, mode: 'one-shot' })
+    statuses = new Map([[CHILD_ID, { running: false, pendingInteraction: undefined, completionUnread: false }]])
+    view.rerender(<WorkflowRunPanel {...props} />)
+    expect(screen.queryByRole('button', { name: '打开 worker' })).toBeNull()
+  })
+
   it('promotes a running member when its parent catalog arrives', () => {
     const data: WorkflowRunChatData = {
       name: 'audit', status: 'running', phases: [phase()],

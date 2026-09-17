@@ -7,6 +7,7 @@ import type {
   SessionReference,
   SessionRetainInfo,
   SessionSnapshot,
+  SessionSummary,
   UseProjection,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -494,8 +495,7 @@ export class UiSession extends Service {
     const present = new Set(Object.keys(list.byId) as SessionId[])
     // Rows from catalogs and retained Client bindings do not establish Host running state.
     for (const id of list.ids) {
-      const row = list.byId[id]
-      if (row === undefined) continue
+      const row = list.byId[id] as SessionSummary
       const previous = this.running.get(id)
       if (previous === undefined) this.running.set(id, row.running)
       else if (previous !== row.running) this.observeRunning(id, row.running)

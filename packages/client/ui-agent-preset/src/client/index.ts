@@ -68,6 +68,7 @@ export function apply(ctx: ClientContext): void {
   const controller = new AgentPresetSettingsController(ctx)
   const staged: AgentPresetStage = { id: undefined, introduce: false }
   const seats = new WeakMapWithValues<SessionBinding, AgentPresetSeatController>()
+  const boundSeatDisposers = new Set<() => Promise<void>>()
   const unboundSeat = new AgentPresetSeatController(ctx, () => undefined, staged)
   const seatFor = (scope: ClientContext, binding: SessionBinding): AgentPresetSeatController => {
     const existing = seats.get(binding)
@@ -81,13 +82,15 @@ export function apply(ctx: ClientContext): void {
         : undefined
     }, staged)
     seats.set(binding, seat)
-    scope.effect(() => binding.ctx.effect(() => {
+    const dispose = binding.ctx.effect(() => {
       const stop = scope.sessions.list.subscribe(() => { void seat.apply() })
       return () => {
         stop()
         seats.delete(binding)
+        boundSeatDisposers.delete(dispose)
       }
-    }, 'ui-agent-preset: Provider binding'), 'ui-agent-preset: bound selection')
+    }, 'ui-agent-preset: Provider binding')
+    boundSeatDisposers.add(dispose)
     return seat
   }
   const section = new AgentPresetSectionController(ctx, () => {
@@ -174,10 +177,11 @@ export function apply(ctx: ClientContext): void {
         locale: 'settings.agentPreset',
         inject: labelInjected,
       }, AgentPresetLabel)
-      return () => {
+      return async () => {
         creatorDraft = undefined
         chip()
         label()
+        await Promise.all([...boundSeatDisposers].map(dispose => dispose()))
       }
     }, 'ui-agent-preset: new-session chip and header label')
   })
