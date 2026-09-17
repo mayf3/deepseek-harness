@@ -331,7 +331,7 @@ export const StatsPills = memo(function StatsPills({ useChat, useProjection, t }
     && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)
   if (stats.steps === 0 && !hasTokens) return null
   return (
-    <div className={css.root} data-composer-stats>
+    <div className={css.root}>
       {stats.steps > 0 && (
         <TimePill
           stats={stats}

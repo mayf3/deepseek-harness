@@ -7,12 +7,7 @@
      the sides narrow with the shared width axis); the bottom gradient mask
      is owned by the chat scroller. No top pad: the composer stack's gap owns
      the space above; the status strip still carries its own margin. */
-  padding: 0 var(--dsh-composer-side-clearance) 8px;
-}
-
-/* The populated dock supplies the other 4px of the bottom clearance. */
-.root:has(.dock:not(:empty)) {
-  padding-bottom: 4px;
+  padding: 0 var(--dsh-composer-side-clearance) 4px;
 }
 
 .dock {
@@ -24,7 +19,7 @@
   padding-top: 4px;
 }
 
-.dock:empty {
+.hero .dock:empty {
   display: none;
 }
 

@@ -2,7 +2,6 @@
    panel (menu surface: r12, elevation-prominent). */
 
 .root {
-  position: relative;
   display: inline-flex;
   flex: none;
 }
@@ -45,12 +44,10 @@
 }
 
 .panel {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
-  z-index: 100;
+  position: fixed;
+  z-index: 1100;
   box-sizing: border-box;
-  width: 264px;
+  width: min(264px, calc(100vw - 24px));
   padding: 12px;
   border: 0;
   border-radius: 12px;
