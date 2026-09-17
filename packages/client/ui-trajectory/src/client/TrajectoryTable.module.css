@@ -1496,6 +1496,8 @@
 }
 
 .thinkingQuote {
+  --dsh-content-font-size-secondary: 13px;
+  --dsh-content-font-delta-secondary: 0px;
   margin: 6px 14px 0 12px;
   padding-left: 6px;
   border-left: 2px solid var(--dsw-alias-markdown-citation);

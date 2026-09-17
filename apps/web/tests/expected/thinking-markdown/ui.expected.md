@@ -22,6 +22,14 @@
 - list:
   - listitem: Unordered item
   - listitem: Second item
+  - listitem:
+    - text: "Inline list formula:"
+    - math: x j
+    - text: .
+  - listitem:
+    - text: "Long list atom:"
+    - math: a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a ⏟ l o n g
+    - text: .
 - list:
   - listitem: Ordered item
   - listitem: Another item
@@ -190,6 +198,18 @@
       - cell "Row 20 column 4"
       - cell "Row 20 column 5"
       - cell "Row 20 column 6"
+- paragraph:
+  - text: "Short subscript:"
+  - math: x j
+  - text: .
+- paragraph:
+  - text: "Short scripts:"
+  - math: x i 2
+  - text: .
+- paragraph:
+  - text: "Long atom:"
+  - math: a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a ⏟ l o n g
+  - text: .
 - paragraph:
   - text: "Inline math:"
   - math: a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + z

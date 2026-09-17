@@ -52,6 +52,8 @@ function thinkingFixture(): string {
           ...[1, 2, 3, 4, 5, 6].flatMap(level => [`${'#'.repeat(level)} Level ${String(level)}`, '']),
           '- Unordered item',
           '- Second item',
+          '- Inline list formula: $x_j$.',
+          `- Long list atom: $\\underbrace{${'a'.repeat(240)}}_{long}$.`,
           '',
           '1. Ordered item',
           '2. Another item',
@@ -70,6 +72,12 @@ function thinkingFixture(): string {
           '| --- | --- | --- | --- | --- | --- |',
           `| ${Array.from({ length: 6 }, (_, index) => `long_table_cell_${String(index)}_${'x'.repeat(40)}`).join(' | ')} |`,
           ...Array.from({ length: 20 }, (_, row) => `| ${Array.from({ length: 6 }, (_, column) => `Row ${String(row + 1)} column ${String(column + 1)}`).join(' | ')} |`),
+          '',
+          'Short subscript: $x_j$.',
+          '',
+          'Short scripts: $x_i^2$.',
+          '',
+          `Long atom: $\\underbrace{${'a'.repeat(240)}}_{long}$.`,
           '',
           `Inline math: $${'a+'.repeat(80)}z$.`,
           '',
@@ -105,7 +113,7 @@ describe('web e2e: secondary Thinking Markdown', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
     await seedSession(scaffold, thinkingFixture(), SEED_ID)
-    browser = await chromium.launch()
+    browser = await chromium.launch({ ignoreDefaultArgs: ['--hide-scrollbars'] })
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
@@ -150,7 +158,7 @@ describe('web e2e: secondary Thinking Markdown', () => {
     expect(await markdown.locator('pre code').textContent()).toContain('const value = "reasoning code"')
     expect(await markdown.locator('hr').count()).toBe(1)
     expect(await markdown.locator('table').count()).toBe(1)
-    expect(await markdown.locator('.katex').count()).toBe(2)
+    expect(await markdown.locator('.katex').count()).toBe(7)
     await markdown.locator('pre').scrollIntoViewIfNeeded()
     await expect.poll(() => markdown.locator('pre.shiki').count(), { timeout: 15_000 }).toBe(1)
     const snapshot = (await captureStableAria(page, '[data-variant="think"][data-expanded]', scaffold.workspaceCwd))
@@ -162,20 +170,48 @@ describe('web e2e: secondary Thinking Markdown', () => {
       await page.evaluate(async () => { await document.fonts.ready })
       const styles = await markdown.evaluate((root, secondary) => {
         const elements = [...root.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6,p,li,a,strong,em,pre,pre code,pre span,th,td,.katex')]
-        const scrollers = [...root.querySelectorAll<HTMLElement>('[class*="tableScroll"],.katex')]
+        const scrollers = [...root.querySelectorAll<HTMLElement>('[class*="tableScroll"],.katex-display,p:has(.katex),ul:has(.katex)')]
+        const shortFormulas = [...root.querySelectorAll('p')].filter(element => element.textContent?.startsWith('Short '))
+        // Native KaTeX baselines vary with host fonts; compact adds one pixel for descender ink.
+        const shortMathNaturalHeight = shortFormulas.map((paragraph) => {
+          const native = paragraph.cloneNode(true) as HTMLParagraphElement
+          native.style.font = getComputedStyle(paragraph).font
+          native.style.position = 'absolute'
+          native.style.width = `${String(paragraph.clientWidth)}px`
+          for (const formula of native.querySelectorAll<HTMLElement>('.katex')) formula.style.fontSize = secondary.fontSize
+          document.body.appendChild(native)
+          const height = native.getBoundingClientRect().height
+          native.remove()
+          return paragraph.getBoundingClientRect().height <= height + 1
+        })
+        const longAtom = [...root.querySelectorAll('p')].find(element => element.textContent?.startsWith('Long atom:'))
+        const mathList = root.querySelector('ul:has(.katex)')
+        const mathListItem = mathList?.querySelector('li')
         const banner = root.querySelector('[data-code-block-banner]')?.parentElement
         const loose = [...root.querySelectorAll('li p')].find(element => element.textContent === 'Loose middle paragraph.')
         return {
           secondarySize: elements.every(element => getComputedStyle(element).fontSize === secondary.fontSize),
-          secondaryLine: elements.every(element => getComputedStyle(element).lineHeight === secondary.lineHeight),
+          secondaryLine: elements.filter(element => !element.classList.contains('katex'))
+            .every(element => getComputedStyle(element).lineHeight === secondary.lineHeight),
           tertiaryColor: elements.every(element => getComputedStyle(element).color === secondary.color),
           tertiaryMarkers: [...root.querySelectorAll('li')]
             .every(element => getComputedStyle(element, '::marker').color === secondary.color),
           contained: root.scrollWidth <= root.clientWidth + 1,
           bannerStatic: banner !== undefined && banner !== null && getComputedStyle(banner).position === 'static',
           looseSpacing: loose !== undefined && getComputedStyle(loose).marginTop === '4px' && getComputedStyle(loose).marginBottom === '4px',
-          wideContentBounded: scrollers.length === 3 && scrollers.every(element => element.clientWidth <= root.clientWidth + 1),
-          displayMathScrolls: [...root.querySelectorAll<HTMLElement>('.katex-display .katex')]
+          wideContentBounded: scrollers.length === 7 && scrollers.every(element => element.clientWidth <= root.clientWidth + 1),
+          mathListMarkerSpace: mathList !== null && mathListItem !== null && mathListItem !== undefined
+            && mathListItem.getBoundingClientRect().left - mathList.getBoundingClientRect().left >= Number.parseFloat(secondary.fontSize),
+          shortMathNaturalHeight: shortMathNaturalHeight.length === 2 && shortMathNaturalHeight.every(Boolean),
+          shortMathNoScrollbar: shortFormulas.every(paragraph => [paragraph, ...paragraph.querySelectorAll<HTMLElement>('span')].every((element) => {
+            const style = getComputedStyle(element)
+            const scrollsX = style.overflowX === 'auto' || style.overflowX === 'scroll'
+            const scrollsY = style.overflowY === 'auto' || style.overflowY === 'scroll'
+            return (!scrollsX || element.scrollWidth <= element.clientWidth)
+              && (!scrollsY || element.scrollHeight <= element.clientHeight)
+          })),
+          longAtomScrolls: longAtom !== undefined && longAtom.scrollWidth > longAtom.clientWidth,
+          displayMathScrolls: [...root.querySelectorAll<HTMLElement>('.katex-display')]
             .every(element => element.scrollWidth > element.clientWidth),
         }
       }, summaryStyle)
@@ -183,6 +219,7 @@ describe('web e2e: secondary Thinking Markdown', () => {
         secondarySize: true, secondaryLine: true, tertiaryColor: true, tertiaryMarkers: true,
         contained: true, bannerStatic: true, looseSpacing: true,
         wideContentBounded: true, displayMathScrolls: true,
+        shortMathNaturalHeight: true, shortMathNoScrollbar: true, longAtomScrolls: true, mathListMarkerSpace: true,
       })
     }
     const answerSize = await page.getByRole('heading', { name: 'Main answer', exact: true })
@@ -223,6 +260,35 @@ describe('web e2e: secondary Thinking Markdown', () => {
     const trajectoryHeading = details.locator('[data-markdown-variant="compact"] h1')
     await trajectoryHeading.waitFor({ timeout: 10_000 })
     expect(await trajectoryHeading.evaluate(element => getComputedStyle(element).fontSize)).toBe(summaryStyle.fontSize)
+    const originalFontSize = await page.evaluate(() => document.body.style.getPropertyValue('--dsh-content-font-size'))
+    try {
+      for (const fontSize of [16, 17]) {
+        await scaffold.ctx.settings.update('ui-theme', { fontSize })
+        await expect.poll(() => page.evaluate(() => document.body.style.getPropertyValue('--dsh-content-font-size')))
+          .toBe(`${String(fontSize)}px`)
+        const typography = await details.evaluate((panel) => {
+          const heading = panel.querySelector('[data-markdown-variant="compact"] h1')
+          const paragraph = panel.querySelector('[data-markdown-variant="compact"] p')
+          const answer = panel.querySelector('[class*="assistantOutput"] p')
+          if (heading === null || paragraph === null || answer === null) throw new Error('Trajectory prose missing')
+          const headingStyle = getComputedStyle(heading)
+          const paragraphStyle = getComputedStyle(paragraph)
+          return {
+            headingSize: headingStyle.fontSize,
+            paragraphSize: paragraphStyle.fontSize,
+            lineHeight: paragraphStyle.lineHeight,
+            noLargerThanAnswer: Number.parseFloat(paragraphStyle.fontSize) <= Number.parseFloat(getComputedStyle(answer).fontSize),
+          }
+        })
+        expect(typography, `Trajectory with ${String(fontSize)}px content setting`).toEqual({
+          headingSize: '13px', paragraphSize: '13px', lineHeight: '20px', noLargerThanAnswer: true,
+        })
+      }
+    } finally {
+      await scaffold.ctx.settings.update('ui-theme', { fontSize: Number.parseFloat(originalFontSize) })
+      await expect.poll(() => page.evaluate(() => document.body.style.getPropertyValue('--dsh-content-font-size')))
+        .toBe(originalFontSize)
+    }
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(EXPECTED_DIR, ['ui.expected.md'])
