@@ -1,4 +1,6 @@
-import { join } from 'node:path'
+import { X509Certificate } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -19,7 +21,8 @@ import { resolveDesktopAutoUpdateConfig } from './desktop-auto-update-environmen
 import { resolveDesktopPolicyEnvironment } from './desktop-policy-environment.mjs'
 import { desktopTargetBuildPaths, resolveDesktopBuildTarget } from './desktop-build-paths.mjs'
 import { installWindowsDirectoryInstaller } from './windows-directory-installer.mjs'
-import { preserveWindowsRuntimeSignature } from './windows-runtime-signature.mjs'
+import { preserveWindowsRuntimeSignature, signWindowsCode, windowsRuntimeCode } from './windows-runtime-signature.mjs'
+import { recordPackagingEvent } from './packaging-run.mjs'
 import {
   resolveMacOSAppUpdateFeed,
   verifyMacOSAppUpdateConfig,
@@ -57,17 +60,22 @@ export function createElectronBuilderConfig(
   if (packagesMacOS) resolveMacOSNotarizationEnvironment(env)
   const buildPaths = desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch))
   let primaryRuntimeDestination
+  let dshDestination
+  const unpack = ['**/*.{node,dylib,dll,so,exe}', '**/*.so.*', '**/spawn-helper', '**/@vscode/ripgrep/bin/rg']
   const windowsSigner = packagesWindows && !unsigned
     ? createWindowsTokenSigner({
         certificateFile: env.DSH_DESKTOP_WINDOWS_CER_FILE,
         signTool: env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
         tokenPin: env.DSH_DESKTOP_WINDOWS_TOKEN_PIN,
         keyContainer: env.DSH_DESKTOP_WINDOWS_KEY_CONTAINER,
-        preserveSignature: async path => primaryRuntimeDestination === undefined ? false : preserveWindowsRuntimeSignature(path, {
-          sourceRoot: join(buildPaths.runtime, 'primary-runtime'),
-          destinationRoot: primaryRuntimeDestination,
-          runDirectory: env.DSH_DESKTOP_PACKAGING_RUN_DIR,
-        }),
+        preserveSignature: async path => {
+          for (const [sourceRoot, destinationRoot] of [[join(buildPaths.runtime, 'primary-runtime'), primaryRuntimeDestination], [buildPaths.dsh, dshDestination]]) {
+            if (destinationRoot !== undefined && await preserveWindowsRuntimeSignature(path, {
+              sourceRoot, destinationRoot, runDirectory: env.DSH_DESKTOP_PACKAGING_RUN_DIR,
+            })) return true
+          }
+          return false
+        },
       })
     : undefined
   if (windowsSigner !== undefined) {
@@ -108,12 +116,7 @@ export function createElectronBuilderConfig(
       // electron-builder excludes a source directory's root node_modules.
       { from: join(buildPaths.dsh, 'node_modules'), to: 'dsh/node_modules', filter: ['**/*'] },
     ],
-    asarUnpack: [
-      '**/*.{node,dylib,dll,so,exe}',
-      '**/*.so.*',
-      '**/spawn-helper',
-      '**/@vscode/ripgrep/bin/rg',
-    ],
+    asarUnpack: unpack,
     extraResources: [
       { from: buildPaths.runtime, to: 'runtime' },
       { from: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
@@ -134,29 +137,35 @@ export function createElectronBuilderConfig(
       writeUpdateInfo: false,
     },
     beforePack: async context => {
-      if (windowsSigner !== undefined) primaryRuntimeDestination = join(context.appOutDir, 'resources', 'runtime', 'primary-runtime')
+      if (windowsSigner !== undefined) {
+        primaryRuntimeDestination = join(context.appOutDir, 'resources', 'runtime', 'primary-runtime')
+        dshDestination = join(context.appOutDir, 'resources', 'app.asar.unpacked', 'dsh')
+        for (const path of await windowsRuntimeCode(buildPaths.dsh)) {
+          unpack.push(`dsh/${relative(buildPaths.dsh, path).split(sep).join('/')}`)
+        }
+      }
       if (policy === undefined) return
       const { resolveDesktopPolicyConfig } = await import('../lib/types/mandatory-update-policy.js')
       resolveDesktopPolicyConfig(policy)
     },
     afterPack: async context => {
-      const { verifyDesktopRuntime, writeDesktopRuntime } = await import('../lib/types/runtime-tree.js')
+      const { verifyDesktopRuntime } = await import('../lib/types/runtime-tree.js')
       const resourcesDir = context.packager.getResourcesDir(context.appOutDir)
       if (resolvedPlatform === 'darwin' && update !== undefined) {
         await writeMacOSAppUpdateConfig(resourcesDir, resolveMacOSAppUpdateFeed(context.packager.config.publish),
           context.packager.appInfo.updaterCacheDirName)
       }
-      if (resolvedPlatform === 'win32' && !unsigned) {
-        // Windows signs copied executable resources before afterPack runs.
-        const prepared = await verifyDesktopRuntime(buildPaths.dsh,
-          context.packager.appInfo.version, { platform: resolvedPlatform, arch: resolvedArch })
-        writeDesktopRuntime(buildPaths.dsh, prepared.release, prepared.sharedPackages.map(entry => entry.name),
-          { platform: resolvedPlatform, arch: resolvedArch })
-      }
       await verifyDesktopRuntime(buildPaths.dsh,
         context.packager.appInfo.version, { platform: resolvedPlatform, arch: resolvedArch })
     },
     afterSign: async context => {
+      if (windowsSigner !== undefined) {
+        await signWindowsCode(context.appOutDir, {
+          thumbprint: new X509Certificate(await readFile(env.DSH_DESKTOP_WINDOWS_CER_FILE)).fingerprint.replaceAll(':', ''),
+          sign: windowsSigner,
+          record: event => recordPackagingEvent(env.DSH_DESKTOP_PACKAGING_RUN_DIR, event),
+        })
+      }
       if (context.electronPlatformName !== 'darwin') return
       const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
       if (update !== undefined) {

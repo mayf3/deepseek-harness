@@ -361,7 +361,8 @@ export async function packageTarget(
   await execute(['run', 'prepare:runtime', ...(signPrimaryRuntime ? ['--defer-primary-runtime-smoke'] : [])], targetEnv)
   if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime'], electronBuilderEnv)
   await execute(['run', 'prepare:packages'], targetEnv)
-  await execute(['run', 'prepare:dsh'], targetEnv)
+  await execute(['run', 'prepare:dsh', ...(signPrimaryRuntime ? ['--defer-runtime-smoke'] : [])], targetEnv)
+  if (signPrimaryRuntime) await execute(['run', 'sign:primary-runtime', '--dsh'], electronBuilderEnv)
   if (invocation.prepareOnly) return
   if (target.platform === 'darwin' && !invocation.directory) {
     await execute([
@@ -377,6 +378,7 @@ export async function packageTarget(
   } else {
     await execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv)
   }
+  if (signPrimaryRuntime) await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
   if (!invocation.directory && !invocation.unsigned) writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
 }
 

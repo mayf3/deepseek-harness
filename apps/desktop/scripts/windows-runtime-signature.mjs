@@ -1,7 +1,7 @@
 /** Inspect runtime signatures and preserve byte-identical copies made by electron-builder. */
 import { execFile } from 'node:child_process'
-import { readFile, realpath } from 'node:fs/promises'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { lstat, open, readdir, readFile, realpath } from 'node:fs/promises'
+import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { scrubWindowsSigningEnvironment } from './windows-sign.mjs'
 import { recordPackagingEvent } from './packaging-run.mjs'
@@ -46,4 +46,96 @@ export async function preserveWindowsRuntimeSignature(path, options) {
   if (signature.status !== 'Valid') throw new Error(`primary runtime: copied signature is ${signature.status}: ${path}`)
   recordPackagingEvent(options.runDirectory, { type: 'primary-runtime-copy-verified', path, ...signature })
   return true
+}
+
+/**
+ * Enumerate Windows code without following links or treating foreign .node files as PE binaries.
+ * @param {string} root - Owned, materialized runtime directory.
+ * @returns {Promise<string[]>} Sorted real PE files; rejects links and malformed Windows executable files.
+ */
+export async function windowsRuntimeCode(root) {
+  const rootStat = await lstat(root)
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('Windows code: expected a real directory')
+  const files = []
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const path = join(root, entry.name)
+    if (entry.isSymbolicLink()) throw new Error(`Windows code: directory links are not signable: ${path}`)
+    if (entry.isDirectory()) { files.push(...await windowsRuntimeCode(path)); continue }
+    if (!entry.isFile()) continue
+    const file = await open(path, 'r')
+    let portableExecutable = false
+    let windowsCandidate = false
+    try {
+      const header = Buffer.alloc(64)
+      const { bytesRead } = await file.read(header, 0, header.length, 0)
+      windowsCandidate = bytesRead >= 2 && header.readUInt16LE(0) === 0x5a4d
+      if (bytesRead === 64 && windowsCandidate) {
+        const signature = Buffer.alloc(4)
+        const offset = header.readUInt32LE(0x3c)
+        const read = await file.read(signature, 0, 4, offset)
+        portableExecutable = offset >= 64 && read.bytesRead === 4 && signature.readUInt32LE(0) === 0x4550
+      }
+    } finally { await file.close() }
+    if (portableExecutable) files.push(path)
+    else if (windowsCandidate || ['.exe', '.dll', '.pyd'].includes(extname(path).toLowerCase())) throw new Error(`Windows code: invalid PE file: ${path}`)
+  }
+  return files.sort()
+}
+
+/** Drain each public-key verification batch before signing or reporting a failure. */
+async function inspectWindowsCode(files, inspect) {
+  const signatures = []
+  for (let offset = 0; offset < files.length; offset += 4) {
+    const results = await Promise.allSettled(files.slice(offset, offset + 4).map(path => inspect(path)))
+    for (const result of results) {
+      if (result.status === 'rejected') throw result.reason
+      signatures.push(result.value)
+    }
+  }
+  return signatures
+}
+
+/**
+ * Preserve valid signatures and sign unsigned PE files with a supervised signer.
+ * @param {string} root - Owned final runtime directory.
+ * @param {import('./windows-runtime-signature.mjs').WindowsCodeSigningOptions} options - Supervised signer, certificate identity, audit sink.
+ * @returns {Promise<void>} Resolves only after sequential signatures and verification; no retries.
+ */
+export async function signWindowsCode(root, options) {
+  const inspect = options.inspect ?? inspectWindowsRuntimeSignature
+  const files = await windowsRuntimeCode(root)
+  if (files.length === 0) throw new Error('Windows code: no Windows code found')
+  const unsigned = []
+  const signatures = await inspectWindowsCode(files, inspect)
+  for (const [index, path] of files.entries()) {
+    const signature = signatures[index]
+    options.record({ type: 'windows-code-signature', path, ...signature })
+    if (signature.status === 'NotSigned') unsigned.push(path)
+    else if (signature.status !== 'Valid') throw new Error(`Windows code: refusing ${signature.status} signature: ${path}`)
+  }
+  options.record({ type: 'windows-code-signing-plan', files: files.length, unsigned: unsigned.length })
+  for (const path of unsigned) {
+    await options.sign({ path, hash: 'sha256', isNest: false })
+    const signature = await inspect(path)
+    if (signature.status !== 'Valid' || !signature.timestamped || signature.thumbprint?.toUpperCase() !== options.thumbprint.toUpperCase()) {
+      throw new Error(`Windows code: signing verification failed: ${path}`)
+    }
+    options.record({ type: 'windows-code-signature-verified', path, ...signature })
+  }
+}
+
+/**
+ * Reject any unsigned or invalid PE remaining in a completed directory.
+ * @param {string} root Materialized artifact directory.
+ * @param {typeof inspectWindowsRuntimeSignature} inspect Public-key verifier.
+ * @returns {Promise<void>} Resolves after every discovered PE has a valid signature.
+ */
+export async function verifyWindowsCode(root, inspect = inspectWindowsRuntimeSignature) {
+  const files = await windowsRuntimeCode(root)
+  if (files.length === 0) throw new Error('Windows code: no Windows code found')
+  const signatures = await inspectWindowsCode(files, inspect)
+  for (const [index, path] of files.entries()) {
+    const signature = signatures[index]
+    if (signature.status !== 'Valid') throw new Error(`Windows code: refusing ${signature.status} signature: ${path}`)
+  }
 }

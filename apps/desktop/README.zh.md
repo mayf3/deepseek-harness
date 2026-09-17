@@ -18,7 +18,7 @@ macOS PNG 使用带留白的圆角底板，供传统 ICNS 打包使用，包含�
 
 ### 内置工作区依赖
 
-Windows 签名打包保留有效的上游签名，并在执行冒烟检查前，为第一方运行时中未签名的 PE 可执行文件、DLL、Python 扩展和 Node 插件补签。每个新签名必须匹配配置的证书且带时间戳；已有签名无效、签名错误或验签错误都会停止本轮执行，不自动重试。electron-builder 只有在校验复制后运行时可执行文件的签名、且文件与已准备的源文件逐字节一致后，才保留其签名，避免复制资源时重复签名。检查覆盖 decimal、XML、LZMA、UUID、numpy 和 pandas。开发、仅准备和未签名构建不使用硬件令牌，可能被 Windows 代码完整性策略阻止；任何构建模式都不会关闭该策略。冒烟检查通过不代表所有扩展或企业策略都兼容。
+Windows 签名打包按 PE 文件内容扫描第一方运行时和应用生产依赖，包括没有常规扩展名的文件。它保留有效的上游签名，并在记录运行时哈希或执行冒烟检查前为未签名代码补签。公钥验签每批最多并行处理四个文件；硬件令牌签名仍串行执行，每个新签名必须匹配配置的证书且带时间戳。签名无效、签名错误或验签错误都会停止本轮执行，不自动重试。electron-builder 只有在验签和逐字节比对通过后，才保留复制后运行时可执行文件的签名。写入发布完成记录前，必须通过最终 PE 签名检查，以及使用全新缓存的 ASAR 载荷和 Host 冒烟检查。开发、仅准备和未签名构建不使用硬件令牌，可能被 Windows 代码完整性策略阻止；任何构建模式都不会关闭该策略。冒烟检查通过不代表兼容所有企业策略。
 
 Desktop 携带独立的 Python、Node.js 和 pnpm 分发包。Python 包含 numpy、pandas、python-docx、python-pptx、openpyxl、Pillow、lxml、XlsxWriter 及其完整依赖。`load_workspace_dependencies` 工具首次使用时，将该产物离线安装到 `$DSH_HOME/dsh-runtimes/dsh-primary-runtime`（通常为 `~/.dsh/dsh-runtimes/dsh-primary-runtime`），并返回解释器、pnpm 脚本和库目录的绝对路径，以及记录内置分发包名称与版本的 `pythonDistributions`。版本报告不包含用户自行安装的包。Office 任务默认使用这些库，用户或工作区指令指定其他环境时遵循其要求。pnpm 脚本通过返回的 Node 可执行文件运行。返回的 Node 库目录为随包交付的库预留，不是 pnpm 的全局安装目录。
 

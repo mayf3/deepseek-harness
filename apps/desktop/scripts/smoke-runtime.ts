@@ -12,11 +12,15 @@ import type { DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
  * @param root - Materialized dsh resources.
  * @param node - Prepared target Electron executable.
  * @param runtime - Verified resource descriptor.
+ * @param environment - Credential-scrubbed build environment and private native cache.
  */
-export async function smokeDesktopRuntime(root: string, node: string, runtime: DesktopRuntimeDescriptor): Promise<void> {
+export async function smokeDesktopRuntime(
+  root: string, node: string, runtime: DesktopRuntimeDescriptor, environment: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
   const home = mkdtempSync(join(tmpdir(), 'dsh-desktop-smoke-'))
   const profile = join(home, 'profiles', 'desktop')
-  const host = new DesktopHostProcess(node, root, profile, undefined, { ...process.env, DSH_HOME: home })
+  const host = new DesktopHostProcess(node, root, profile, undefined, { ...environment, DSH_HOME: home })
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
     createPluginProfile(profile)
     const pluginName = 'desktop-runtime-smoke-plugin'
@@ -45,7 +49,10 @@ export function apply(ctx) {
     manifest.dsh.profile.bundles.push(pluginName)
     writeFileSync(join(profile, 'package.json'), JSON.stringify(manifest))
     writeFileSync(join(profile, 'cordis.patch.yml'), '- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n')
-    const ready = await host.start()
+    const ready = await Promise.race([host.start(), new Promise<never>((_, reject) => {
+      timer = setTimeout(() => { reject(new Error('desktop runtime: Host readiness exceeded 120 seconds')) }, 120_000)
+    })])
+    clearTimeout(timer)
     const login = await fetch(ready.url, { redirect: 'manual' })
     const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
     const response = await fetch(new URL('/', ready.url), { headers: { cookie } })
@@ -55,6 +62,7 @@ export function apply(ctx) {
     const pluginResponse = await fetch(new URL('/desktop-smoke', ready.url), { headers: { cookie } })
     if (await pluginResponse.text() !== 'plugin route ready') throw new Error('desktop runtime: plugin HTTP route failed')
   } finally {
+    clearTimeout(timer)
     await host.stop()
     rmSync(home, { recursive: true, force: true })
   }
