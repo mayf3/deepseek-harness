@@ -223,7 +223,7 @@ export async function runLoaderSmoke(options: LoaderSmokeOptions): Promise<Loade
       libBin: options.libBinScript,
       configArgs: options.binArgs ?? [options.configPath],
       ...options.mode !== undefined ? { mode: options.mode } : {},
-      ...options.sourceImport === undefined ? {} : { sourceImport: options.sourceImport },
+      ...options.sourceImport !== undefined ? { sourceImport: options.sourceImport } : {},
       tsconfigPath: options.tsconfigPath,
       env: {
         DSH_HOME: join(cwd, '.dsh'),

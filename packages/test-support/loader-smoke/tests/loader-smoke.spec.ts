@@ -27,6 +27,7 @@ describe('runLoaderSmoke', () => {
     const output = JSON.parse(result.stdout) as {
       configPath: string
       args: string[]
+      execArgv: string[]
       cwd: string
       dshHome: string
       agentsHome: string
@@ -36,6 +37,7 @@ describe('runLoaderSmoke', () => {
     expect(output).toMatchObject({
       configPath,
       args: [configPath],
+      execArgv: ['--import', import.meta.resolve('tsx/esm')],
       marker: 'present',
       input: '',
     })
