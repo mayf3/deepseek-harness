@@ -36,6 +36,7 @@ import { createChatStore } from './stores.ts'
 import { TranscriptViewPolicy } from './transcript-view.ts'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../chat-settings.ts'
 import { useTurnDataValue } from './chat/use-turn-data.ts'
+import { registerSidebarChat } from './sidebar-chat/index.tsx'
 
 const CHAT_NODE_INJECT: ChatNodeTurnDataInjected = {
   hooks: {
@@ -48,7 +49,7 @@ const CHAT_NODE_INJECT: ChatNodeTurnDataInjected = {
 /** Services required by the Chat target and its presentation registrations. */
 export const inject = [
   'slots', 'sessions', 'uiWorkspace', 'uiSession', 'uiConversation', 'locale',
-  'settingsScope', 'remote', 'remote.session', 'sidebarRight',
+  'settingsScope', 'remote', 'remote.session', 'resources', 'sidebarRight', 'sidebarRightTabs',
 ]
 
 /**
@@ -78,6 +79,7 @@ export function apply(ctx: Context): void {
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-chat: dictionaries')
   const t = ctx.locale.bind(NS)
+  registerSidebarChat(ctx, t)
   const chatStore = createChatStore()
   const chatScrollPositions = new Map<SessionId, ChatScrollPosition>()
   const transcriptView = new TranscriptViewPolicy(

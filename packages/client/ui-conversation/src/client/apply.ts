@@ -255,7 +255,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'session-maybe' },
     },
-    slots: { views: { scope: 'session' } },
+    slots: {
+      views: { scope: 'session' },
+      widthControls: { scope: 'root' },
+    },
     inject: (sessionId: SessionId | undefined): ConversationInjected => ({
       hooks: {
         composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId),

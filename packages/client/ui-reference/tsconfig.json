@@ -24,6 +24,9 @@
       "path": "../../context/session-reference"
     },
     {
+      "path": "../../session/session-title"
+    },
+    {
       "path": "../../typert/protocol"
     },
     {

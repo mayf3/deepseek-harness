@@ -10,6 +10,7 @@ import {
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { en, NS, zh, type SubagentKey } from './locales.ts'
 
@@ -27,8 +28,13 @@ export type {
   SubagentReadOnlyComposerProps, SubagentReadOnlyMatch,
 } from './SubagentReadOnlyComposer.tsx'
 
-/** Required services for conversation slots and session navigation. */
-export const inject = ['sessions', 'uiWorkspace', 'slots', 'locale']
+/** Required services for conversation slots, session navigation, and Sidebar resources. */
+export const inject = ['sessions', 'uiWorkspace', 'slots', 'locale', 'sidebarRight']
+
+function sidebarChatAddress(address: SubagentAddress): string {
+  const query = new URLSearchParams({ parent: address.parentSessionId, mode: address.mode })
+  return `dsh-resource://chat/session/${encodeURIComponent(address.childSessionId)}?${query}`
+}
 
 /** Claim the composer for one-shot history or an unavailable continuation owner. */
 function selectReadOnlySubagent(owner: ComposerChainProps): SubagentReadOnlyMatch | null {
@@ -55,6 +61,12 @@ export function apply(ctx: ClientContext): void {
   const catalogActions = (_parentSessionId: SessionId): SubagentCatalogInjected => ({
     openChild(address: SubagentAddress) {
       ctx.uiWorkspace.openSession(address)
+    },
+    openChildAside(address: SubagentAddress) {
+      ctx.sidebarRight.openResource(sidebarChatAddress(address), {
+        kind: 'chat',
+        preferNewPane: true,
+      })
     },
     refresh(parentSessionId: SessionId) {
       void sessions.refreshSubagents(parentSessionId)

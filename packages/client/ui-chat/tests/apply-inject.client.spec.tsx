@@ -58,8 +58,10 @@ async function bench() {
   runtime.ctx.provide('sidebarRight', sidebarRight as never)
   const sidebarRightTabs = {
     get: vi.fn<(kind: string) => object | undefined>(() => ({})),
+    register: vi.fn(() => () => {}),
   }
   runtime.ctx.provide('sidebarRightTabs', sidebarRightTabs as never)
+  runtime.ctx.provide('resources', { register: vi.fn(() => () => {}) } as never)
   const openWorkspacePath = vi.fn<ClientRemote['session']['openWorkspacePath']>(
     () => Promise.resolve({ ok: true, value: { opened: true } }),
   )

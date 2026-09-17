@@ -169,6 +169,39 @@ describe('SidebarRightController — opening', () => {
     expect(findTabPane(layout(), tabOf('a.txt')).id).toBe(left)
   })
 
+  it('opens new content alone in a preferred pane and falls back to the current pane at the limit', () => {
+    const { controller, publish, layout, tabOf, entries, expand } = harness()
+    expand()
+    publish()
+    const before = entries()
+    controller.openResource('dsh-resource://file/session/s-test/a.txt', { preferNewPane: true })
+    const a = tabOf('a.txt')
+    const pane = findTabPane(layout(), a)
+    expect(dockPaneIds(layout())).toHaveLength(2)
+    expect(pane.tabs).toEqual([a])
+    expect(entries()).toBe(before + 1)
+
+    publish()
+    controller.openResource('dsh-resource://file/session/s-test/b.txt', { preferNewPane: true })
+    expect(dockPaneIds(layout())).toHaveLength(2)
+    expect(findTabPane(layout(), tabOf('b.txt')).id).toBe(pane.id)
+  })
+
+  it('falls back when the pane is too narrow and reveals existing content without splitting', () => {
+    const { controller, publish, layout, tabOf, room, expand } = harness()
+    expand()
+    publish()
+    room.allowed = false
+    controller.openResource('dsh-resource://file/session/s-test/a.txt', { preferNewPane: true })
+    expect(dockPaneIds(layout())).toHaveLength(1)
+    publish()
+
+    room.allowed = true
+    controller.openResource('dsh-resource://file/session/s-test/a.txt', { preferNewPane: true })
+    expect(dockPaneIds(layout())).toHaveLength(1)
+    expect(getPane(layout(), layout().activePaneId).activeTabId).toBe(tabOf('a.txt'))
+  })
+
   it('takes the replaced tab\'s pane and slot, closes it, and records one entry', () => {
     const { controller, publish, layout, tabOf, entries } = harness()
     publish()
