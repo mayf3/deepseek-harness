@@ -114,7 +114,7 @@ Sidebar 声明四个扩展 slot；其文档 tab 另行声明下表中的 keyed �
 
 Preview 记录已载入版本和读取开始时的观察版本。刷新只重读当前 tab，不改变共享元数据或其他 tab 的内容。读取不具备事务性；版本是不透明的相等性令牌，不是可排序的时间戳（[资源观察与 Preview RPC](../../.agents/notes/implemented/architecture/2026-09-08-document-preview-operations.zh.md)）。
 
-Office 正文接收 `{ kind: 'source', revision, loaded, reload }`，而不是文件字节。正文通过自己的注入回调加载，在 revision 变化和卸载时取消请求，并通过 `loaded(version)` 报告已展示的源版本。父组件忽略过期报告，保留共享的重新加载与源文件变更控件。Office 使用此模式请求 [Host 渲染的 PDF](office-to-pdf.zh.md)；自己的 store 和有界缓存保留转换字节，正文在嵌套 PDF 视图上方管理字体提示。[包 README](../../packages/client/ui-sidebar-documentpreview/README.zh.md#what-it-registers)定义加载生命周期。
+Office 正文接收 `{ kind: 'office', revision, loaded, reload }`，而不是文件字节。正文通过自己的注入回调加载，在 revision 变化和卸载时取消请求，并通过 `loaded(version)` 报告已展示的源版本。父组件忽略过期报告，保留共享的重新加载与源文件变更控件。Office 使用此模式请求 [Host 渲染的 PDF](office-to-pdf.zh.md)；自己的 store 和有界缓存保留转换字节，正文在嵌套 PDF 视图上方管理字体提示。[包 README](../../packages/client/ui-sidebar-documentpreview/README.zh.md#what-it-registers)定义加载生命周期。
 
 ## 资源模型
 

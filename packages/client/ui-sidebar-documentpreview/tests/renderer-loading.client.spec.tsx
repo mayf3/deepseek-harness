@@ -50,10 +50,10 @@ function setup() {
     return selector(useSyncExternalStore(subscribe, snapshot))
   }
   const describeFailure: OfficeBodyProps['describeFailure'] = error => error.message
-  let request: Extract<DocumentContent, { kind: 'source' }> | undefined
+  let request: Extract<DocumentContent, { kind: 'office' }> | undefined
   const slots: TextPreviewProps['renderSlot'] = (_key, input, options) => {
     const owner = input as unknown as OwnerOf<'sidebar.right.tab.document'>
-    if (owner.content.kind !== 'source') return <p>Raw bytes</p>
+    if (owner.content.kind !== 'office') return <p>Raw bytes</p>
     request = owner.content
     // The component fixture supplies the standard seats used by Office; the real slot binding is exercised by the browser scenario.
     const props = { ...h.props(), ...owner, useTabInfo: options.hookContext, useStore: useOffice,

@@ -33,7 +33,7 @@ kind: "package-reference"
 
 文档实现在 `ctx.documentPreviews.register({ id, extensions, binaryExtensions?, priority, title, loading, wrap? })` 注册元数据，并以相同 `id` 向 keyed、Session 作用域的子 slot `sidebar.right.tab.document` 注册正文。`binaryExtensions` 列出 `extensions` 中不可按文本阅读的后缀，这些后缀不提供纯文本选项。两处注册都由 effect 持有，通过 `ctx.slots.inject` 等待子 slot。正文接收 `resourceAddress`、`content`、`wrap`、`scrollportRef` 和标准 `useTabInfo`/`useResource` 钩子。内部滚动元素挂载 `scrollportRef`；卸载时恢复共享正文的滚动职责。注册表保留所有匹配备选：`extension`（默认）优先于 `builtin`，随后按更长的后缀、再按注册顺序排列。所选实现仍可用时，下拉选择保持不变。HTML、SVG 和未匹配的扩展名保留纯文本回退，与加载方式无关。
 
-`loading: 'text-pages'` 和 `'bytes-complete'` 使用共享文件读取器。选择 `'office'` 时，Office 正文在读取任何字节前挂载，并接收 `content: { kind: 'source', revision, loaded, reload }`。其注入回调负责内容加载、错误和取消。`loaded(version)` 为共享变更提示报告已展示的源版本；已被替换的 revision 所发出的报告会被忽略。`reload()` 增加 revision，正文据此取消并替换当前请求。正文也在卸载和 tab 关闭时取消请求，将已完成内容保留在自己声明的 tab store 中，并在 tab 结束时释放。[Office 预览](#office-preview) 使用此模式，转换后的字节和字体元数据不会进入共享文件 store。
+`loading: 'text-pages'` 和 `'bytes-complete'` 使用共享文件读取器。选择 `'office'` 时，Office 正文在读取任何字节前挂载，并接收 `content: { kind: 'office', revision, loaded, reload }`。其注入回调负责内容加载、错误和取消。`loaded(version)` 为共享变更提示报告已展示的源版本；已被替换的 revision 所发出的报告会被忽略。`reload()` 增加 revision，正文据此取消并替换当前请求。正文也在卸载和 tab 关闭时取消请求，将已完成内容保留在自己声明的 tab store 中，并在 tab 结束时释放。[Office 预览](#office-preview) 使用此模式，转换后的字节和字体元数据不会进入共享文件 store。
 
 <a id="addresses"></a>
 ## 地址

@@ -43,13 +43,13 @@ export type OfficeBodyProps = DocumentPreviewProps & PropsStore<OfficeStore> & O
 
 /**
  * Load one Office revision and preserve its result while its tab remains open.
- * @param props - source request, tab state, conversion callbacks, and PDF slot.
+ * @param props - Office loading request, tab state, conversion callbacks, and PDF slot.
  * @returns conversion status or the font notice and PDF scrollport.
  */
 export function OfficeBody(props: OfficeBodyProps): ReactNode {
   const { tab } = props.useTabInfo()
   const { actions, read, retainTab, describeFailure, resourceAddress, t } = props
-  const request = props.content.kind === 'source' ? props.content : undefined
+  const request = props.content.kind === 'office' ? props.content : undefined
   const revision = request?.revision
   const held = props.useStore(state => state.byTab[tab.id])
   const view = held?.revision === revision ? held : undefined

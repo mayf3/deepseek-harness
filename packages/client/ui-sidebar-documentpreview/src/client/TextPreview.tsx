@@ -195,7 +195,7 @@ export function TextPreview({
     if (mode === 'office') {
       if (current === undefined) return undefined
       const revision = current.loadRevision
-      return { kind: 'source', revision, reload: officeReload,
+      return { kind: 'office', revision, reload: officeReload,
         loaded: (version) => { actions.rendered(tab.id, revision, version) } }
     }
     if (mode === 'bytes-complete') {

@@ -174,7 +174,7 @@ describe('document toolbar', () => {
     view.rerender(<TextPreview {...h.props()} useDocumentPreviews={selector => selector([{ ...binary, loading: 'office' }])} renderSlot={renderSlot} />)
     expect(view.container.textContent).not.toContain('previous reader content')
     expect(renderSlot).toHaveBeenCalledWith('sidebar.right.tab.document', expect.objectContaining({
-      content: expect.objectContaining({ kind: 'source' }) as unknown,
+      content: expect.objectContaining({ kind: 'office' }) as unknown,
     }), expect.any(Object))
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.complete).toBeUndefined()
     expect(h.bytes).not.toHaveBeenCalled()

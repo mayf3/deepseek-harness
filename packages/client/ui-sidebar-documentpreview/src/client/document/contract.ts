@@ -11,14 +11,14 @@ export interface DocumentTextPage {
 }
 
 /**
- * Ordinary file contents, or a request for a renderer to load its own source.
+ * Ordinary file contents, or a request for the Office body to load its document.
  * Byte arrays are transient UI input, never persisted layout or Session data.
  */
 export type DocumentContent =
   | { readonly kind: 'text'; readonly text: string; readonly pages: readonly DocumentTextPage[]; readonly eof: boolean }
   | { readonly kind: 'bytes'; readonly data: Uint8Array<ArrayBuffer> }
   | {
-    readonly kind: 'source'
+    readonly kind: 'office'
     /** Changes on reload or implementation replacement; retained contents belong to one revision. */
     readonly revision: number
     /** Report the displayed source version; stale revisions cannot update the owner. @param version - loaded source version. */
@@ -31,7 +31,7 @@ export type DocumentContent =
 export interface DocumentBodyOwner {
   /** Original file address, also readable through the standard useResource hook. */
   readonly resourceAddress: string
-  /** Ordinary file content or a renderer-owned source request; text accumulates until eof. */
+  /** Ordinary file content or an Office loading request; text accumulates until eof. */
   readonly content: DocumentContent
   /** The document toolbar's current wrapping preference. */
   readonly wrap: boolean
