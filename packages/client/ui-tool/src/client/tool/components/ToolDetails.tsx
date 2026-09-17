@@ -26,6 +26,8 @@ export interface ToolDetailItem {
 export interface ToolDetailsModel {
   items: readonly ToolDetailItem[]
   summary?: string
+  /** Header text while expanded, omitting a receipt status shown in the body. */
+  expandedSummary?: string
   empty?: string
   caption?: string
   unchanged?: { label: string; items: ToolDetailsModel['items'] }

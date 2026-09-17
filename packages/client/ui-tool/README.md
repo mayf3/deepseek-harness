@@ -66,7 +66,7 @@ Every card is read in place in the call tree; there is no second, full-height pr
 
 The Details view covers the 36 registered tools: goal and schedule tools, Cordis inspection, workflow and Ralph reports, Session event/search/trace queries, agent and teammate controls, background jobs, persistent terminals, and LSP navigation. These expanded bodies read successful logged results, preserve generic input/output for failures or unsupported data, and keep Inspect available. Dates include the viewer's time zone, and statuses reflect the call result rather than current session state. The browser adapter consumes recorded producer text and JSON; Host service objects and presenter callbacks do not cross into the Client. [Compact tool details](../../../.agents/notes/implemented/architecture/2026-09-10-compact-tool-details.md) records the presentation trade-offs.
 
-Expanded status dots and labels use static semantic colors. An interruption receipt confirms only that interruption was requested.
+Expanded status dots and labels use static semantic colors. Receipt and job-output headers keep neutral text and omit the status while expanded. An interruption receipt confirms only that interruption was requested.
 
 The terminal model uses `hasSpillNotice` from the browser-safe `@deepseek-ai/dsh-spill-policy/notice` entry, not an independent UI pattern. The [spill-policy README](../../spill/spill-policy/README.md#shared-notice-ownership) owns notice formatting and recognition. This check conservatively selects generic output; matching text cannot authenticate its source, and replay leaves recorded result bytes untouched.
 </details>

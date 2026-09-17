@@ -13,7 +13,10 @@ function arg(args: Record<string, unknown>, key: string): string {
 }
 
 function receipt(title: string, badge: NonNullable<DetailItem['badge']>, t: DetailTranslate, fields: DetailItem['fields'] = [], description?: string): ToolDetailsModel {
-  return detailList([{ title, badge, fields, ...(description === undefined ? {} : { description }) }], `${title} · ${badge.label}`, t)
+  return {
+    ...detailList([{ title, badge, fields, ...(description === undefined ? {} : { description }) }], `${title} · ${badge.label}`, t),
+    expandedSummary: title,
+  }
 }
 
 function agentList(text: string, t: DetailTranslate): ToolDetailsModel | null {
@@ -161,7 +164,10 @@ export function controlDetails(name: string, args: Record<string, unknown>, text
       const code = truncated ? output.slice(0, -OUTPUT_TRUNCATED.length) : output
       const description = [match[2], truncated ? t('detail.output.truncated') : undefined]
         .filter((value): value is string => value !== undefined).join(' · ')
-      return detailList([{ title: target, badge: detailBadge(match[1], t), fields: [], ...(description === '' ? {} : { description }), code: { text: code } }], `${target} · ${detailBadge(match[1], t).label}`, t)
+      return {
+        ...detailList([{ title: target, badge: detailBadge(match[1], t), fields: [], ...(description === '' ? {} : { description }), code: { text: code } }], `${target} · ${detailBadge(match[1], t).label}`, t),
+        expandedSummary: target,
+      }
     }
     case 'job_kill':
       if (text === `requested cancellation of job ${target}`) return receipt(target, { label: t('detail.receipt.cancel'), tone: 'warning' }, t, [], arg(args, 'reason'))

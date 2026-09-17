@@ -408,9 +408,9 @@
     - text: deepseek/deepseek-reasoner
     - paragraph: DeepSeek Reasoner
 - button "Inspect"
-- button "Delegate task 检查工具卡片布局，并列出三个最值得改进的地方。 · Started" [expanded]:
+- button "Delegate task 检查工具卡片布局，并列出三个最值得改进的地方。" [expanded]:
   - img
-  - text: Delegate task 检查工具卡片布局，并列出三个最值得改进的地方。 · Started
+  - text: Delegate task 检查工具卡片布局，并列出三个最值得改进的地方。
 - text: Recorded result
 - list:
   - listitem:
@@ -442,18 +442,18 @@
     - term: Depth
     - definition: "2"
 - button "Inspect"
-- button "Send message agent-demo-review · Message delivered" [expanded]:
+- button "Send message agent-demo-review" [expanded]:
   - img
-  - text: Send message agent-demo-review · Message delivered
+  - text: Send message agent-demo-review
 - text: Recorded result
 - list:
   - listitem:
     - text: agent-demo-review Message delivered
     - paragraph: 请优先检查窄屏下的任务差异列表。
 - button "Inspect"
-- button "Interrupt agent agent-demo-review · Interrupt requested" [expanded]:
+- button "Interrupt agent agent-demo-review" [expanded]:
   - img
-  - text: Interrupt agent agent-demo-review · Interrupt requested
+  - text: Interrupt agent agent-demo-review
 - text: Recorded result
 - list:
   - listitem: agent-demo-review Interrupt requested
@@ -476,9 +476,9 @@
     - term: Type
     - definition: terminal
 - button "Inspect"
-- button "Read job output job-demo-build · Running" [expanded]:
+- button "Read job output job-demo-build" [expanded]:
   - img
-  - text: Read job output job-demo-build · Running
+  - text: Read job output job-demo-build
 - text: Recorded result
 - list:
   - listitem:
@@ -486,9 +486,9 @@
     - button "Copy"
     - code: Building client assets… ✓ 184 modules transformed. dist/index.js 92.4 kB
 - button "Inspect"
-- button "Cancel background job job-demo-preview · Cancellation requested" [expanded]:
+- button "Cancel background job job-demo-preview" [expanded]:
   - img
-  - text: Cancel background job job-demo-preview · Cancellation requested
+  - text: Cancel background job job-demo-preview
 - text: Recorded result
 - list:
   - listitem:
@@ -543,9 +543,9 @@
     - term: Exit code
     - definition: "0"
 - button "Inspect"
-- button "Signal terminal terminal-demo-1 · Signal delivered" [expanded]:
+- button "Signal terminal terminal-demo-1" [expanded]:
   - img
-  - text: Signal terminal terminal-demo-1 · Signal delivered
+  - text: Signal terminal terminal-demo-1
 - text: Recorded result
 - list:
   - listitem:
@@ -555,9 +555,9 @@
     - term: Process group
     - definition: "43120"
 - button "Inspect"
-- button "Close terminal terminal-demo-1 · Closed" [expanded]:
+- button "Close terminal terminal-demo-1" [expanded]:
   - img
-  - text: Close terminal terminal-demo-1 · Closed
+  - text: Close terminal terminal-demo-1
 - text: Recorded result
 - list:
   - listitem: terminal-demo-1 Closed
@@ -661,9 +661,9 @@
     - term: Context
     - definition: fresh
 - button "Inspect"
-- button "Send message ui-review · Message delivered" [expanded]:
+- button "Send message ui-review" [expanded]:
   - img
-  - text: Send message ui-review · Message delivered
+  - text: Send message ui-review
 - text: Recorded result
 - list:
   - listitem:
@@ -773,16 +773,16 @@
         - listitem:
           - paragraph: task-demo-1
 - button "Inspect"
-- button "Wait for teammates Teammate activity · Change detected" [expanded]:
+- button "Wait for teammates Teammate activity" [expanded]:
   - img
-  - text: Wait for teammates Teammate activity · Change detected
+  - text: Wait for teammates Teammate activity
 - text: Recorded result
 - list:
   - listitem: Teammate activity Change detected
 - button "Inspect"
-- button "Interrupt agent ui-review · Interrupt requested" [expanded]:
+- button "Interrupt agent ui-review" [expanded]:
   - img
-  - text: Interrupt agent ui-review · Interrupt requested
+  - text: Interrupt agent ui-review
 - text: Recorded result
 - list:
   - listitem:

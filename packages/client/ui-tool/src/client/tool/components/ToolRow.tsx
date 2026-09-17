@@ -167,7 +167,7 @@ export function ToolRow({
   const status = stateStatus(state, t)
   // A failure must replace, not supplement, the normal summary.
   const failureLine = state === 'error' ? errorSummary ?? null : null
-  const summaryText = failureLine ?? terminalBody?.description ?? summary
+  const summaryText = failureLine ?? terminalBody?.description ?? (open ? detailsBody?.expandedSummary ?? summary : summary)
   // A diff row's collapsed line carries the card's +/- totals (the same
   // numbers the expanded footer prints) so the change size reads without
   // expanding; an explicit summarySuffix (none today on diff rows) wins.
