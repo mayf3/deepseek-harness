@@ -49,12 +49,12 @@
           - textbox "最大递归深度":
             - /placeholder: ""
             - text: "2"
-          - text: Subagent 总数上限
-          - button "Subagent 总数上限说明":
+          - text: Subagent 并行数量上限
+          - button "Subagent 并行数量上限说明":
             - img
           - text: 已覆盖
           - button "恢复默认"
-          - textbox "Subagent 总数上限":
+          - textbox "Subagent 并行数量上限":
             - /placeholder: ""
             - text: "12"
         - region "模型选择":

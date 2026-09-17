@@ -1242,7 +1242,7 @@ describe('shared Subagent card actions', () => {
   it('retains the pending draft when discard is requested before both writes finish', async () => {
     const { limits, face, state } = card()
     const pending = deferred<undefined>()
-    limits.set.mockImplementationOnce(async () => {
+    const set = vi.spyOn(limits.scope, 'set').mockImplementationOnce(async () => {
       await pending.promise
       limits.publish({ value: { maxDepth: 2, maxActiveSubagents: 8 }, user: { maxDepth: 2 } })
     })
@@ -1254,7 +1254,7 @@ describe('shared Subagent card actions', () => {
         expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({ saving: false, dirty: false })
       })
       expect(state().saving).toBe(true)
-      expect(limits.set).toHaveBeenCalledWith('maxDepth', 2)
+      expect(set).toHaveBeenCalledWith('maxDepth', 2)
       face.discard()
       expect(face.hooks.subagentLimitsCard.getSnapshot()).toMatchObject({ dirty: true, maxDepth: { text: '2' } })
     } finally {
