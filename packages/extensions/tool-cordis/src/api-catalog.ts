@@ -769,8 +769,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'authenticatedUrl(baseUrl: string): string',
         description: 'Add the fresh process token to an ordinary Web application URL.',
-        parameters: [{ name: 'baseUrl', description: 'clean canonical browser origin.' }],
-        returns: 'root URL accepted by {@link authorizeIndex} for initial login.',
+        parameters: [{ name: 'baseUrl', description: 'clean application URL whose authority and mount are preserved.' }],
+        returns: 'tokenized URL for initial login; a mount proxy strips its prefix before {@link authorizeIndex}.',
       },
     ],
   },
