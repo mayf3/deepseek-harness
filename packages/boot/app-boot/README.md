@@ -120,7 +120,7 @@ This section explains how the outcomes above are realized and points at the code
 - **One rejection checkpoint.** `inactiveEntries` keeps the exact reasons it folds into the boot diagnostic visible through the next process rejection checkpoint, so `installFailLoud` coalesces Loader's duplicate notification while unrelated unhandled rejections remain fatal.
 - **Two-stage failure labels.** Outside startup audit failures, `boot()` distinguishes `host preparation failed` — `prepare` threw before any config-tree entry mounted — from `plugin tree failed to load`, and appends the deepest plugin error's stack. Plugin diagnostics retain nested causes and aggregate member failures; cyclic causes stop traversal without replacing the original error.
 
-The startup error also retains inactive-entry metadata and raw startup warning/error records without retaining the Loader tree. Import errors are collected through the logger before the Loader mounts because no failed Fiber exists for those imports. The temporary exporter is removed when boot settles.
+The startup error also retains inactive-entry metadata and raw startup warning/error records without retaining the Loader tree. Its `entries` and `startup` fields are non-enumerable: direct access and full diagnostic reports retain them, while ordinary error inspection omits them. Pending-only failures have no `cause`; failures with recorded errors retain their original values in an `AggregateError`. Import errors are collected through the logger before the Loader mounts because no failed Fiber exists for those imports. The temporary exporter is removed when boot settles.
 
 ### Helper behavior
 

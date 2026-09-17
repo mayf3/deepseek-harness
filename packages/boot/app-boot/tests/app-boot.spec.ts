@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { inspect } from 'node:util'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
@@ -684,6 +685,39 @@ describe('auditStartupEntries', () => {
     expect((error as Error).message).toContain('  tool-todo\n    Package: @deepseek-ai/dsh-tool-todo')
     expect(((error as Error).cause as AggregateError).errors).toEqual([requiredError, optionalError])
     expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('omits an error cause when required plugins are only waiting for services', async () => {
+    const error = await auditStartupEntries(ctxWith([
+      { fiber: fiber(0, undefined, { webRuntime: {} }), options: { id: 'connection', name: './connection.mjs' } },
+    ]), NAME, vi.fn()).catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(StartupError)
+    expect(Object.hasOwn(error as StartupError, 'cause')).toBe(false)
+    expect(inspect(error)).not.toContain('AggregateError')
+    expect((error as StartupError).message).toContain('Plugins waiting for services (1):')
+  })
+
+  it('keeps diagnostic metadata available without expanding it in ordinary error inspection', () => {
+    const entries = [{
+      id: 'connection', module: './connection.mjs', required: true, fiberState: 0,
+      outcome: { kind: 'pending' as const, missing: ['webRuntime'] },
+    }]
+    const error = new StartupError('waiting for webRuntime', entries)
+    const startup = { configurationPath: '/private/cordis.yml', messages: [
+      { ts: 1, name: 'loader', type: 'warn', args: ['raw diagnostic argument'] },
+    ] }
+    error.startup = startup
+    expect(error.entries).toBe(entries)
+    expect(error.startup).toBe(startup)
+    const output = inspect(error)
+    expect(output).toContain('waiting for webRuntime')
+    expect(output).not.toContain('connection.mjs')
+    expect(output).not.toContain('/private/cordis.yml')
+    expect(output).not.toContain('raw diagnostic argument')
+    const full = inspect(error, { showHidden: true, depth: null })
+    expect(full).toContain('connection.mjs')
+    expect(full).toContain('/private/cordis.yml')
+    expect(full).toContain('raw diagnostic argument')
   })
 
   it('retains nested and shared errors in a fatal diagnostic without duplicating them', async () => {

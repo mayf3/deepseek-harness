@@ -742,7 +742,7 @@ interface StartupLogRecord {
   args: readonly unknown[]
 }
 
-/** Startup audit failure with a concise message and original diagnostic data. */
+/** Startup audit failure with non-enumerable metadata and original failures as its cause. */
 export class StartupError extends Error {
   /** Root configuration and startup logs, attached by boot after disposal. */
   startup?: { configurationPath: string; messages: readonly StartupLogRecord[] }
@@ -752,8 +752,11 @@ export class StartupError extends Error {
    * @param entries - inactive plugin metadata and original failure values.
    */
   constructor(message: string, readonly entries: readonly StartupEntryDiagnostic[]) {
-    super(message, {
-      cause: new AggregateError(entries.flatMap(({ outcome }) => outcome.kind === 'failed' ? [outcome.error] : []), 'Plugin activation failures'),
+    const failures = entries.flatMap(({ outcome }) => outcome.kind === 'failed' ? [outcome.error] : [])
+    super(message, failures.length > 0 ? { cause: new AggregateError(failures, 'Plugin activation failures') } : undefined)
+    Object.defineProperties(this, {
+      entries: { enumerable: false },
+      startup: { enumerable: false },
     })
   }
 }
