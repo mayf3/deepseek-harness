@@ -7,7 +7,7 @@ import type { SpeechInput, SpeechPreparationState, SpeechPreparationStep, Speech
 import { deadline } from '@deepseek-ai/dsh-timeout'
 import { z } from 'zod'
 import type { Config } from './config.ts'
-import { prepareRuntime, type RuntimePaths } from './runtime.ts'
+import { inspectRuntime, prepareRuntime, type RuntimePaths } from './runtime.ts'
 
 const transcriptSchema = z.object({
   text: z.string(), audioSeconds: z.number().nonnegative(), inferenceSeconds: z.number().nonnegative(),
@@ -101,7 +101,6 @@ export class SenseVoiceWorker {
   private readonly lifetime = new AbortController()
   private idle: ReturnType<typeof setTimeout> | undefined
   private runtime: RuntimePaths | undefined
-  private loaded = false
   private state: SpeechPreparationState & { readonly steps: readonly SpeechPreparationStep[] }
   private readonly listeners = new Set<() => void>()
   private lastProgressAt = 0
@@ -133,7 +132,7 @@ export class SenseVoiceWorker {
 
   private publish(state: SpeechPreparationState): void {
     const previous = this.state
-    const steps = previous.steps.map((item): SpeechPreparationStep => {
+    const steps = state.steps ?? previous.steps.map((item): SpeechPreparationStep => {
       if (state.phase === 'ready') return { ...item, status: 'complete' }
       if (state.step === 'check' && item.kind !== 'check') return { kind: item.kind, status: 'pending' }
       if (state.step === item.kind) return item.status === 'running' ? item
@@ -151,15 +150,34 @@ export class SenseVoiceWorker {
     for (const listener of this.listeners) listener()
   }
 
+  /** Inspect disk caches on activation; valid resources enter standby without starting a worker. */
+  inspect(): void {
+    this.runPreparation(async (signal) => {
+      using inspection = deadline(signal, this.config.prepareTimeoutMs, 'SPEECH_PREPARE_TIMEOUT')
+      this.publish({ phase: 'checking', step: 'check', startedAt: Date.now() })
+      const runtime = await inspectRuntime(this.config, inspection.signal)
+      inspection.signal.throwIfAborted()
+      this.runtime = runtime
+      this.publish({ phase: runtime ? 'standby' : 'unprepared', steps: this.state.steps.map(({ kind }) => ({ kind,
+        status: kind === 'check' || runtime && kind !== 'load' ? 'complete' : 'pending',
+      })) })
+    })
+  }
+
   /** Start one Host-owned preparation task; repeated callers join it. */
   prepare(): void {
+    this.runPreparation(async (signal) => { await this.start(signal) })
+  }
+
+  private runPreparation(run: (signal: AbortSignal) => Promise<void>): void {
     if (this.preparing || this.worker) return
     this.lifetime.signal.throwIfAborted()
     const abort = new AbortController()
     const task = { abort, settled: Promise.resolve() }
     this.preparing = task
-    task.settled = this.enqueue(async (signal) => { await this.start(signal) }, abort.signal)
+    task.settled = this.enqueue(run, abort.signal)
       .catch((error: unknown) => {
+        if (this.lifetime.signal.aborted) return
         this.publish(abort.signal.aborted ? { phase: 'cancelled' }
           : { phase: 'failed', message: error instanceof Error ? error.message : String(error) })
       }).finally(() => { this.preparing = undefined })
@@ -215,7 +233,7 @@ export class SenseVoiceWorker {
     const runtime = this.runtime ?? await prepareRuntime(this.ctx, this.config, setup.signal, (state) => { this.publish(state) })
     this.runtime = runtime
     setup.signal.throwIfAborted()
-    this.publish({ phase: this.loaded ? 'waking' : 'loading', step: 'load', startedAt: Date.now() })
+    this.publish({ phase: cached ? 'waking' : 'loading', step: 'load', startedAt: Date.now() })
     await mkdir(this.config.dataRoot, { recursive: true })
     const token = randomBytes(32).toString('hex')
     const handle = this.ctx.subprocess.spawn({
@@ -228,7 +246,6 @@ export class SenseVoiceWorker {
       const port = await readReady(handle, this.config.maxLogBytes, setup.signal)
       const worker = { handle, url: `http://127.0.0.1:${port}`, token, closed: false }
       this.worker = worker
-      this.loaded = true
       this.publish({ phase: 'ready' })
       const exited = (): void => {
         if (!worker.closed) { worker.closed = true; this.publish({ phase: 'standby' }) }
@@ -272,6 +289,7 @@ export class SenseVoiceWorker {
 
   /** Stop the local recognizer. @returns after admission closes, queued jobs settle, and the managed worker exits. */
   async dispose(): Promise<void> {
+    this.listeners.clear()
     this.lifetime.abort(new Error('SenseVoice provider disposed'))
     clearTimeout(this.idle)
     try { await this.tail } finally { await this.stop() }

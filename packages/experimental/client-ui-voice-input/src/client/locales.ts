@@ -5,6 +5,11 @@ export const NS = 'voice-input'
 
 /** Chinese dictionary and key source. */
 export const zh = {
+  dictate: '听写',
+  'setupPrompt.title': '使用语音输入前需要安装',
+  'setupPrompt.body': '语音输入插件已开启。首次使用需要在本机下载并准备识别模型，请前往插件详情页查看空间、内存和时间说明，再开始安装。',
+  'setupPrompt.later': '稍后',
+  'setupPrompt.open': '前往安装',
   'setup.local': '将在运行 DSH 的机器上下载本地模型，无需安装 Python 或编译工具。',
   'setup.disk': '硬盘空间',
   'setup.diskValue': '建议预留约 {gb} GB，包含模型、运行时和下载缓存',
@@ -81,6 +86,11 @@ export type VoiceKey = keyof typeof zh
 
 /** English dictionary with the same complete key set. */
 export const en: Record<VoiceKey, string> = {
+  dictate: 'Dictate',
+  'setupPrompt.title': 'Set up voice input before recording',
+  'setupPrompt.body': 'Voice input is enabled. First use requires downloading and preparing local recognition models. Open the plugin details to review disk space, memory and time estimates before starting setup.',
+  'setupPrompt.later': 'Later',
+  'setupPrompt.open': 'Go to setup',
   'setup.local': 'Local models will be downloaded to the machine running DSH. No Python or compiler is required.',
   'setup.disk': 'Disk space',
   'setup.diskValue': 'Allow about {gb} GB for models, runtime, and download caches',

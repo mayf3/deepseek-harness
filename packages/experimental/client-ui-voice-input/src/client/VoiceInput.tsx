@@ -129,7 +129,7 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
     }
   }
   if (!expanded) return <Button className={css.trigger} size="sm" disabled={!usable || locked}
-    aria-label={t('start')} title={t(usable ? 'start' : 'prepareRequired')}
+    aria-label={t('start')} title={t(usable ? 'dictate' : 'prepareRequired')}
     onMouseDown={(event) =>{  event.preventDefault() }} onClick={() => { void start() }}><IconMicrophoneOutline16 size={18} /></Button>
   return <div className={css.captureRow} data-voice-activity={phase}>
     <Button type="button" className={css.roundButton} variant="toolbar" size="sm" aria-label={t(pending ? 'discard' : 'cancel')}

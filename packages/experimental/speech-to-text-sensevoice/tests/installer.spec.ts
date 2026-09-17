@@ -1,19 +1,26 @@
 /** ONNX preparation reuses verified files and honors explicit offline deployments. */
 import { writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import LocalSubprocess from '@deepseek-ai/dsh-subprocess-local'
+import SpeechToText from '@deepseek-ai/dsh-experimental-speech-to-text'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { SpeechPreparationState } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
-import { prepareRuntime, type Asset } from '../src/runtime.ts'
+import { inspectRuntime, prepareRuntime, type Asset } from '../src/runtime.ts'
 import { Config } from '../src/config.ts'
+import * as Provider from '../src/index.ts'
 
 const bytes = Buffer.from('pinned ONNX fixture')
 const asset = (name: string): Asset => ({ name, url: `https://huggingface.co/owner/model/resolve/revision/${name}`,
   bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') })
 const fake = vi.hoisted(() => ({ lock: {} }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...actual, access: vi.fn(actual.access) }
+})
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return { ...actual, readFileSync: (...args: Parameters<typeof actual.readFileSync>) => {
@@ -23,8 +30,64 @@ vi.mock('node:fs', async (importOriginal) => {
 })
 const roots: string[] = []
 afterEach(async () => {
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+})
+
+it('restores verified cached models on every provider activation without downloads or a worker', async () => {
+  const { root, fetcher } = await fixture(), config = Config({ dataRoot: root })
+  await prepareRuntime(new Context(), config, new AbortController().signal)
+  fetcher.mockClear()
+  const ctx = new Context()
+  try {
+    await ctx.plugin(LocalSubprocess)
+    await ctx.plugin(SpeechToText)
+    const spawn = vi.spyOn(ctx.get('subprocess')!, 'spawn'), speech = ctx.get('speechToText')!
+    for (let activation = 0; activation < 2; activation++) {
+      const fiber = ctx.plugin(Provider, config)
+      await fiber
+      await vi.waitFor(() => { expect(speech.snapshot().providers[0]?.preparation.phase).toBe('standby') })
+      expect(speech.snapshot().providers[0]?.preparation.steps?.map(({ kind, status }) => [kind, status])).toEqual([
+        ['check', 'complete'], ['model', 'complete'], ['vad', 'complete'], ['verify', 'complete'], ['load', 'pending'],
+      ])
+      expect(fetcher).not.toHaveBeenCalled()
+      expect(spawn).not.toHaveBeenCalled()
+      await fiber.dispose()
+      expect(speech.snapshot().providers).toEqual([])
+    }
+  } finally { await ctx.fiber.dispose() }
+})
+
+it.each(['model', 'tokens', 'vad'] as const)('requires preparation for a missing or corrupted cached %s', async (file) => {
+  const { root, fetcher } = await fixture(), config = Config({ dataRoot: root }), signal = new AbortController().signal
+  const paths = await prepareRuntime(new Context(), config, signal)
+  fetcher.mockClear()
+  expect(await inspectRuntime(config, signal)).toEqual(paths)
+  await writeFile(paths[file], Buffer.alloc(bytes.length))
+  expect(await inspectRuntime(config, signal)).toBeUndefined()
+  await rm(paths[file])
+  expect(await inspectRuntime(config, signal)).toBeUndefined()
+  expect(fetcher).not.toHaveBeenCalled()
+})
+
+it('inspects an empty cache without creating it and respects precision and offline paths', async () => {
+  const { root, fetcher } = await fixture(), signal = new AbortController().signal
+  const missingRoot = join(root, 'absent')
+  expect(await inspectRuntime(Config({ dataRoot: missingRoot }), signal)).toBeUndefined()
+  await expect(readFile(missingRoot)).rejects.toThrow()
+  expect(fetcher).not.toHaveBeenCalled()
+  const config = Config({ dataRoot: root }), paths = await prepareRuntime(new Context(), config, signal)
+  expect(await inspectRuntime(Config(Object.assign({}, config, { precision: 'fp32' })), signal)).toBeUndefined()
+  expect(await inspectRuntime(Config(Object.assign({}, config, { modelDirectory: join(root, 'models', 'sensevoice-onnx'), vadModelPath: paths.vad })), signal)).toEqual(paths)
+})
+
+it('reports filesystem access errors instead of treating unreadable caches as absent', async () => {
+  const { root, fetcher } = await fixture()
+  const failure = Object.assign(new Error('cache is not readable'), { code: 'EACCES' })
+  vi.mocked(access).mockRejectedValueOnce(failure)
+  await expect(inspectRuntime(Config({ dataRoot: root }), new AbortController().signal)).rejects.toBe(failure)
+  expect(fetcher).not.toHaveBeenCalled()
 })
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'dsh-speech-onnx-')); roots.push(root)

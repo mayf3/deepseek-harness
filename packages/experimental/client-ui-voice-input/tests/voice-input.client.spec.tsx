@@ -43,6 +43,7 @@ function stop(): void { fireEvent.click(screen.getByRole('button', { name: zh.st
 
 it('clicks to record, shows measured audio, and stops to insert without sending or a popup', async () => {
   const b = fixture()
+  expect(screen.getByRole('button', { name: zh.start }).getAttribute('title')).toBe('听写')
   fireEvent.mouseDown(screen.getByRole('button', { name: zh.start }))
   await start()
   expect(b.props.onActiveChange).toHaveBeenLastCalledWith(true)

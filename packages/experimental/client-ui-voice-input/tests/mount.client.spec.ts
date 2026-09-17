@@ -31,6 +31,7 @@ async function fixture(fail = false) {
   ctx.slots.register({ name: 'root', children: {
     'conversation.input.activity': { kind: 'single', scope: 'session' },
     'plugins.bundle.status': { kind: 'keyed', scope: 'root' },
+    'plugins.bundle.activation': { kind: 'keyed', scope: 'root' },
     'plugins.bundle.config': { kind: 'keyed', scope: 'root' },
   } } as never,
   () => null)
@@ -54,7 +55,7 @@ it('withdraws its Remote, localized slot and microphone captures on disposal', a
     await actions.configure({ language: 'zh' })
     await actions.prepare('local' as SpeechProviderId)
     await actions.cancelPreparation('local' as SpeechProviderId)
-    for (const slot of ['plugins.bundle.status', 'plugins.bundle.config'] as const) {
+    for (const slot of ['plugins.bundle.status', 'plugins.bundle.config', 'plugins.bundle.activation'] as const) {
       const item = b.ctx.slots.entries(slot)[0]!
       expect(item.locale).toBe('voice-input')
       const injected = (item.inject as unknown as () => VoiceInputInjected & { compact?: boolean })()
@@ -74,6 +75,7 @@ it('withdraws its Remote, localized slot and microphone captures on disposal', a
     await fiber.dispose()
     expect(dispose).toHaveBeenCalledOnce()
     expect(b.ctx.slots.entries('conversation.input.activity')).toHaveLength(0)
+    expect(b.ctx.slots.entries('plugins.bundle.activation')).toHaveLength(0)
     expect(b.unmount).toHaveBeenCalledOnce()
   } finally { await b.ctx.fiber.dispose() }
 })

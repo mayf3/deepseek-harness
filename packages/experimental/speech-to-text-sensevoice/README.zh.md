@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此 Provider 在 Host CPU 上使用 SenseVoiceSmall ONNX 与 Silero VAD 识别语音。各平台的 sherpa-onnx Node 包包含 ONNX Runtime；用户无需 Python、编译器或模型转换。启用只注册 Provider，不加载模型或下载资源。
+此 Provider 在 Host CPU 上使用 SenseVoiceSmall ONNX 与 Silero VAD 识别语音。各平台的 sherpa-onnx Node 包包含 ONNX Runtime；用户无需 Python、编译器或模型转换。启用时检查缓存资源，不加载模型或下载资源。
 
 ## 目录
 
@@ -26,6 +26,8 @@ kind: "package-reference"
 ## 使用此包
 
 [Bundle](../voice-input-bundle/README.zh.md) 在 DSH 主目录下提供绝对 `dataRoot`。准备会下载固定修订的模型文件，校验大小与 SHA-256，再加载模型。`precision` 默认为 `int8`，`fp32` 选择较大的参考权重。`modelDirectory` 提供包含所选 ONNX 文件和 `tokens.txt` 的已有绝对目录，`vadModelPath` 选择已有 Silero ONNX 文件。`modelOrigin` 选择兼容 Hugging Face 的下载源，固定路径和校验值保持不变。取消或失败后复用已完成并通过校验的文件。
+
+每次启用都会检查磁盘上的所选模型、词表与 VAD。缓存完整且校验通过后立即恢复就绪，首次录音再唤醒工作进程。文件缺失或托管文件校验不符时需要显式准备；路径不可读时报告错误。显式部署路径只检查可访问性，文件内容由部署者负责。禁用插件或重启 Host 后，无需重新下载完好的缓存。
 
 -----
 

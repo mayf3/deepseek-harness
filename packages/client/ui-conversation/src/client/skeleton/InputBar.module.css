@@ -396,6 +396,6 @@
 .standardControls { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .tools[hidden], .standardControls[hidden] { display: none; }
 .trailingActive { flex: 1; margin-left: 0; }
-.activity { display: flex; align-items: center; }
-.activity:empty { display: none; }
+.activity, .contextControl { display: flex; align-items: center; flex: none; }
+.activity:empty, .contextControl:empty { display: none; }
 .activityExpanded { flex: 1; min-width: 0; }

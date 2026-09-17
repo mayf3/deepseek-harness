@@ -33,7 +33,7 @@ import css from './PluginManagerPage.module.css'
 export type PluginManagerPageProps =
   PropsRuntime<'main'>
   & PropsLocale<'pluginManager'>
-  & PropsRenderSlots<'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config' | 'plugins.bundle.status'>
+  & PropsRenderSlots<'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config' | 'plugins.bundle.status' | 'plugins.bundle.activation'>
   & InjectFace<PluginManagerFace>
 
 /** The page's slot renderer, narrowed to the configuration slots. */
@@ -834,6 +834,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const ledger = props.useConfigLedger(snapshot => snapshot)
   // What is open; a package that leaves the list (uninstalled) drops back to the cards.
   const [view, setView] = useState<View>({ kind: 'list' })
+  const [activation, setActivation] = useState<string | null>(null)
   useEffect(() => { ensure() }, [ensure])
   // A package an install just enabled: scroll it into view and mark it for a moment.
   const { highlight, clearHighlight } = { highlight: state.highlight, clearHighlight: props.clearHighlight }
@@ -857,6 +858,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const openItem = view.kind === 'item' ? ledger.items.find(item => item.id === view.id) : undefined
   const openRow = view.kind === 'row' && openPkg !== undefined ? openPkg.rows.find(row => row.rowId === view.rowId) : undefined
   const showsCards = openPkg === undefined && openItem === undefined
+  const activated = listed.find(pkg => pkg.name === activation && pkg.enabled && !state.busy.includes(pkg.name))
   const setRowEnabled = (row: PackageRow, enabled: boolean): void => {
     /* v8 ignore next -- a row without a live entry has its switch disabled */
     if (row.entryId !== undefined) props.setRowEnabled(row.entryId, enabled)
@@ -873,8 +875,8 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
       busy={state.busy.includes(pkg.name)}
       highlighted={state.highlight === pkg.name}
       statusContent={renderSlot('plugins.bundle.status', { packageName: pkg.name, enabled: pkg.enabled }, { entryKey: pkg.name })}
-      onOpen={() => { setView({ kind: 'package', name: pkg.name }) }}
-      onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
+      onOpen={() => { setActivation(null); setView({ kind: 'package', name: pkg.name }) }}
+      onSetEnabled={(enabled) => { setActivation(enabled ? pkg.name : null); props.setEnabled(pkg.name, enabled) }}
     />
   )
   // The Official group: the bundles the installation ships, then the plugins that registered their configuration.
@@ -977,6 +979,12 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
             </>
           )
         : null}
+      {showsCards && activated !== undefined && !state.install.open
+        ? renderSlot('plugins.bundle.activation', {
+          packageName: activated.name,
+          onDismiss: () => { setActivation(null) },
+          onOpenDetails: () => { setActivation(null); setView({ kind: 'package', name: activated.name }) },
+        }, { entryKey: activated.name }) : null}
       <InstallDialog
         install={state.install}
         t={t}
@@ -986,7 +994,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         onCancel={props.cancelInstall}
         onCancelAndClose={props.cancelInstallAndClose}
         onToggleDetails={props.toggleInstallDetails}
-        onEnableNow={props.enableInstalled}
+        onEnableNow={() => { setActivation(state.install.installed); props.enableInstalled() }}
         onApproveBuilds={props.approveBuildsAndRetry}
       />
       {state.confirm === null

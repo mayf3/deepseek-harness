@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This provider recognizes speech with SenseVoiceSmall ONNX and Silero VAD on the Host CPU. The platform-specific sherpa-onnx Node package includes ONNX Runtime; users need no Python, compiler or model conversion. Activation registers the provider without loading models or downloading assets.
+This provider recognizes speech with SenseVoiceSmall ONNX and Silero VAD on the Host CPU. The platform-specific sherpa-onnx Node package includes ONNX Runtime; users need no Python, compiler or model conversion. Activation checks cached resources without loading models or downloading assets.
 
 ## Table of Contents
 
@@ -26,6 +26,8 @@ This provider recognizes speech with SenseVoiceSmall ONNX and Silero VAD on the 
 ## Use this package
 
 The [bundle](../voice-input-bundle/README.md) supplies an absolute `dataRoot` under the DSH home. Preparation downloads revision-pinned model files, verifies their sizes and SHA-256 hashes, then loads them. `precision` defaults to `int8`; `fp32` selects the larger reference weights. `modelDirectory` supplies an existing absolute directory containing the selected ONNX file and `tokens.txt`; `vadModelPath` selects an existing Silero ONNX file. `modelOrigin` selects a Hugging Face-compatible download origin while preserving pinned paths and checksums. Verified completed files remain reusable after cancellation or failure.
+
+Every activation checks the selected model, tokens and VAD on disk. Complete verified caches restore readiness immediately after inspection; the first recording wakes the worker. Missing files or mismatched managed checksums require explicit preparation, while unreadable paths report an error. Explicit deployment paths are checked for accessibility; their contents remain the deployer's responsibility. Disabling the plugin or restarting the Host does not require downloading intact caches again.
 
 -----
 

@@ -10,6 +10,7 @@ import type { PluginManagerPageProps } from '../src/client/PluginManagerPage.tsx
 import type { ConfigLedger } from '../src/client/config-ledger.ts'
 import { rowKey, type InstallState, type PackageRow, type PackageView, type PluginManagerState } from '../src/client/manager-store.ts'
 import { en, zh, type PluginManagerLocaleKey } from '../src/client/locales.ts'
+import type { PluginActivationOwnerProps } from '../src/client/slot-contract.ts'
 
 afterEach(cleanup)
 
@@ -53,7 +54,7 @@ const READY: PluginManagerState = {
 }
 
 /** Configuration entries a test supplies: what each slot cell renders, by `<slot>:<cell>` and the view asked for. */
-type SlotBodies = Record<string, (view: 'summary' | 'page') => ReactNode>
+type SlotBodies = Record<string, (view: 'summary' | 'page', owner: unknown) => ReactNode>
 
 const NO_CONFIG: ConfigLedger = { items: [], bundles: new Set(), rows: new Set() }
 
@@ -86,7 +87,7 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     usePluginManager: bindSnapshotSelector(store),
     useConfigLedger: bindSnapshotSelector(ledger),
     renderSlot: (name: string, owner: { view: 'summary' | 'page' }, opts: { only?: string; entryKey?: string }) =>
-      bodies[`${name}:${opts.only ?? opts.entryKey ?? ''}`]?.(owner.view) ?? null,
+      bodies[`${name}:${opts.only ?? opts.entryKey ?? ''}`]?.(owner.view, owner) ?? null,
   } as unknown as PluginManagerPageProps
   const { rerender } = render(<PluginManagerPage {...props} />)
   return {
@@ -710,4 +711,42 @@ it('places bundle readiness immediately before its enable switch', () => {
   const status = screen.getByText('Ready for dictation'), toggle = screen.getByRole('switch')
   expect(status.parentElement).toBe(toggle.parentElement)
   expect(status.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+it('offers bundle-owned guidance only after explicit enablement and navigates to its detail page', () => {
+  const name = 'dsh-better-sidebar'
+  const { set, actions } = renderTab({ packages: [pkg({ enabled: false })] }, { bundles: new Set([name]) }, {
+    [`plugins.bundle.activation:${name}`]: (_view, owner) => <button onClick={(owner as PluginActivationOwnerProps).onOpenDetails}>Go to setup</button>,
+    [`plugins.bundle.config:${name}`]: () => <div>Bundle setup</div>,
+  })
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ packages: [pkg()] })
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ packages: [pkg({ enabled: false })] })
+  fireEvent.click(screen.getByRole('switch'))
+  expect(actions.setEnabled).toHaveBeenCalledWith(name, true)
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ packages: [pkg()], busy: [name] })
+  expect(screen.queryByText('Go to setup')).toBeNull()
+  set({ busy: [] })
+  fireEvent.click(screen.getByText('Go to setup'))
+  expect(screen.getByText('Bundle setup')).toBeTruthy()
+  expect(screen.queryByText('Go to setup')).toBeNull()
+})
+
+it('dismisses activation guidance until the user enables the bundle again', () => {
+  const name = 'dsh-better-sidebar'
+  const { set } = renderTab({ packages: [pkg({ enabled: false })] }, {}, {
+    [`plugins.bundle.activation:${name}`]: (_view, owner) => <button onClick={(owner as PluginActivationOwnerProps).onDismiss}>Later</button>,
+  })
+  fireEvent.click(screen.getByRole('switch'))
+  set({ packages: [pkg()] })
+  fireEvent.click(screen.getByText('Later'))
+  set({ packages: [pkg()] })
+  expect(screen.queryByText('Later')).toBeNull()
+  fireEvent.click(screen.getByRole('switch'))
+  set({ packages: [pkg({ enabled: false })] })
+  fireEvent.click(screen.getByRole('switch'))
+  set({ packages: [pkg()] })
+  expect(screen.getByText('Later')).toBeTruthy()
 })

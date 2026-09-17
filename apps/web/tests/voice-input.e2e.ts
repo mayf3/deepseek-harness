@@ -18,7 +18,7 @@ const expected = fileURLToPath(new URL('../../../snapshots/web/voice-input/ui.ex
 const recordingExpected = fileURLToPath(new URL('../../../snapshots/web/voice-input/recording.expected.md', import.meta.url))
 const bundle = fileURLToPath(new URL('../../../packages/experimental/voice-input-bundle', import.meta.url))
 
-it.skipIf(webSnapshotMode() === 'record')('records from the trailing microphone and submits only the reviewed transcript through Session replay', async () => {
+it.skipIf(webSnapshotMode() === 'record')('records from cached standby and submits only the reviewed transcript through Session replay', async () => {
   const scratch = await mkdtemp(join(tmpdir(), 'dsh-voice-browser-'))
   const resources: { scaffold?: WebScaffold; browser?: Browser } = {}
   onTestFinished(async () => {
@@ -42,6 +42,11 @@ it.skipIf(webSnapshotMode() === 'record')('records from the trailing microphone 
   await scaffold.ctx.plugin({ inject: ['speechToText'], apply(ctx) {
     ctx.effect(() => ctx.speechToText.register({
       info: { id: 'sensevoice-local' as SpeechProviderId, name: 'Recorded recognizer', location: 'host-local' },
+      preparation: {
+        snapshot: () => ({ phase: 'standby' }), subscribe: () => () => {},
+        prepare: () => { throw new Error('Cached resources must allow recording without preparation') },
+        cancel: async () => {},
+      },
       transcribe: recognize,
     }))
   } })
@@ -77,6 +82,26 @@ it.skipIf(webSnapshotMode() === 'record')('records from the trailing microphone 
   await input.press('Enter')
   await settled
   await page.getByText('DONE', { exact: true }).waitFor()
+  const meter = page.getByRole('button', { name: /% of context used/ })
+  await meter.waitFor()
+  for (const width of [1280, 420]) {
+    await page.setViewportSize({ width, height: 900 })
+    await expect.poll(async () => {
+      const micRect = await mic.boundingBox(), meterRect = await meter.boundingBox()
+      return micRect !== null && meterRect !== null && micRect.x + micRect.width <= meterRect.x
+    }).toBe(true)
+    await meter.click()
+    await page.getByRole('dialog', { name: 'of context used', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
+  }
+  expect(await mic.getAttribute('title')).toBe('Dictate')
+  await mic.click()
+  await page.getByRole('button', { name: 'Stop and transcribe', exact: true }).waitFor()
+  expect(await meter.isVisible()).toBe(true)
+  await meter.click()
+  await page.getByRole('dialog', { name: 'of context used', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  await mic.waitFor()
   expect(messages).toBe(1)
   expect(tripwire.pageErrors).toEqual([])
 }, 120_000)

@@ -12,7 +12,7 @@ export const name = 'experimental-speech-to-text-sensevoice'
 export const inject = ['speechToText', 'subprocess']
 
 /**
- * Register the local recognizer under its configured provider id.
+ * Register the local recognizer and inspect disk caches without downloading or loading models.
  * @param ctx - Host registry and subprocess owner.
  * @param config - validated runtime configuration.
  */
@@ -34,6 +34,7 @@ export function apply(ctx: Context, config: Config): void {
         return await worker.transcribe(input, signal)
       },
     })
+    worker.inspect()
     return async () => {
       const removing = unregister()
       await worker.dispose()

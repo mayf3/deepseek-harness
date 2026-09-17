@@ -1,7 +1,7 @@
 /** Verified runtime assets and managed command execution for local transcription. */
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream, readFileSync } from 'node:fs'
-import { access, mkdir, rename, rm } from 'node:fs/promises'
+import { access, mkdir, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -34,6 +34,62 @@ export interface RuntimePaths {
   readonly worker: string
 }
 
+async function matchesAsset(path: string, asset: Asset, signal: AbortSignal): Promise<boolean> {
+  signal.throwIfAborted()
+  try {
+    const info = await stat(path)
+    if (!info.isFile()) throw new Error(`Speech asset is not a regular file: ${path}`)
+    if (info.size !== asset.bytes) return false
+    const digest = createHash('sha256')
+    for await (const chunk of createReadStream(path, { signal })) digest.update(chunk as Buffer)
+    return digest.digest('hex') === asset.sha256
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    return false
+  }
+}
+
+function resolveRuntime(config: Config) {
+  const supported = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win32-x64']
+  if (!supported.includes(`${process.platform}-${process.arch}`)) throw new Error(`Local speech is unavailable for ${process.platform}-${process.arch}`)
+  const lock = JSON.parse(readFileSync(new URL('../runtime/assets.json', import.meta.url), 'utf8')) as RuntimeLock
+  const modelRoot = config.modelDirectory ?? join(config.dataRoot, 'models', 'sensevoice-onnx')
+  const paths: RuntimePaths = {
+    model: join(modelRoot, lock.models[config.precision].name), tokens: join(modelRoot, lock.tokens.name),
+    vad: config.vadModelPath ?? join(config.dataRoot, 'models', 'silero', lock.vad.name),
+    /* v8 ignore next -- built worker resolution is exercised by real Node and Electron process smokes */
+    worker: fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url)),
+  }
+  return { lock, modelRoot, paths }
+}
+
+async function verifyRuntime(config: Config, paths: RuntimePaths, lock: RuntimeLock, signal: AbortSignal): Promise<boolean> {
+  signal.throwIfAborted()
+  try { await Promise.all([paths.model, paths.tokens, paths.vad].map(path => access(path))) }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    return false
+  }
+  const verified = [
+    ...config.modelDirectory === undefined ? [[paths.model, lock.models[config.precision]], [paths.tokens, lock.tokens]] as const : [],
+    ...config.vadModelPath === undefined ? [[paths.vad, lock.vad]] as const : [],
+  ]
+  for (const [path, asset] of verified) if (!await matchesAsset(path, asset, signal)) return false
+  signal.throwIfAborted()
+  return true
+}
+
+/**
+ * Inspect existing models without downloading, writing files or starting the worker.
+ * @param config - model paths and selected precision.
+ * @param signal - provider cancellation or inspection deadline.
+ * @returns cached paths when all files exist and managed assets match their pinned size and hash; otherwise undefined.
+ */
+export async function inspectRuntime(config: Config, signal: AbortSignal): Promise<RuntimePaths | undefined> {
+  const { lock, paths } = resolveRuntime(config)
+  return await verifyRuntime(config, paths, lock, signal) ? paths : undefined
+}
+
 /**
  * Download into a unique partial file, verify, then publish it atomically.
  * @param asset - pinned release identity.
@@ -47,13 +103,7 @@ export async function downloadAsset(asset: Asset, root: string, signal: AbortSig
   signal.throwIfAborted()
   await mkdir(root, { recursive: true })
   const destination = join(root, asset.name)
-  try {
-    const digest = createHash('sha256')
-    for await (const chunk of createReadStream(destination, { signal })) digest.update(chunk as Buffer)
-    if (digest.digest('hex') === asset.sha256) return destination
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
+  if (await matchesAsset(destination, asset, signal)) return destination
   const partial = `${destination}.${randomUUID()}.part`
   try {
     const response = await fetch(asset.url, { signal })
@@ -89,12 +139,7 @@ export async function downloadAsset(asset: Asset, root: string, signal: AbortSig
  */
 export async function prepareRuntime(_ctx: Context, config: Config, signal: AbortSignal,
   report: (state: SpeechPreparationState) => void = () => {}): Promise<RuntimePaths> {
-  const supported = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win32-x64']
-  if (!supported.includes(`${process.platform}-${process.arch}`)) throw new Error(`Local speech is unavailable for ${process.platform}-${process.arch}`)
-  const lock = JSON.parse(readFileSync(new URL('../runtime/assets.json', import.meta.url), 'utf8')) as RuntimeLock
-  const modelRoot = config.modelDirectory ?? join(config.dataRoot, 'models', 'sensevoice-onnx')
-  const model = join(modelRoot, lock.models[config.precision].name), tokens = join(modelRoot, lock.tokens.name)
-  const vad = config.vadModelPath ?? join(config.dataRoot, 'models', 'silero', lock.vad.name)
+  const { lock, modelRoot, paths } = resolveRuntime(config)
   const download = async (asset: Asset, root: string, step: 'model' | 'vad'): Promise<void> => {
     const url = new URL(asset.url)
     const pinned = { ...asset, url: `${config.modelOrigin.replace(/\/$/, '')}${url.pathname}` }
@@ -110,17 +155,6 @@ export async function prepareRuntime(_ctx: Context, config: Config, signal: Abor
     await download(lock.vad, join(config.dataRoot, 'models', 'silero'), 'vad')
   }
   report({ phase: 'checking', step: 'verify', startedAt: Date.now() })
-  await Promise.all([model, tokens, vad].map(path => access(path)))
-  const verified = [
-    ...config.modelDirectory === undefined ? [[model, lock.models[config.precision]], [tokens, lock.tokens]] as const : [],
-    ...config.vadModelPath === undefined ? [[vad, lock.vad]] as const : [],
-  ]
-  for (const [path, asset] of verified) {
-    const digest = createHash('sha256')
-    for await (const chunk of createReadStream(path, { signal })) digest.update(chunk as Buffer)
-    if (digest.digest('hex') !== asset.sha256) throw new Error(`Speech model verification failed: ${asset.name}`)
-  }
-  signal.throwIfAborted()
-  /* v8 ignore next -- built worker resolution is exercised by real Node and Electron process smokes */
-  return { model, tokens, vad, worker: fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url)) }
+  if (!await verifyRuntime(config, paths, lock, signal)) throw new Error('Speech model verification failed: missing or corrupted model files')
+  return paths
 }

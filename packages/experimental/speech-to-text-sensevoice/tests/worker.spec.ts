@@ -9,9 +9,9 @@ import LocalSubprocess from '@deepseek-ai/dsh-subprocess-local'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Config } from '../src/config.ts'
 import { SenseVoiceWorker } from '../src/recognizer.ts'
-import { prepareRuntime } from '../src/runtime.ts'
+import { inspectRuntime, prepareRuntime } from '../src/runtime.ts'
 
-vi.mock('../src/runtime.ts', () => ({ prepareRuntime: vi.fn() }))
+vi.mock('../src/runtime.ts', () => ({ inspectRuntime: vi.fn(), prepareRuntime: vi.fn() }))
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); vi.clearAllMocks() })
 
@@ -49,6 +49,63 @@ it('keeps one worker warm across recordings and joins its exit on disposal', asy
   await worker.dispose()
   expect(await handle.waitForExit()).toBe(true)
   await expect(worker.transcribe({ audio, language: 'en' }, signal())).rejects.toThrow('disposed')
+})
+
+it('wakes verified caches on the first recording without preparing them again', async () => {
+  const { worker, spawn, root } = await fixture()
+  const paths = { tokens: root, model: root, vad: root, worker: fileURLToPath(new URL('./worker.fixture.mjs', import.meta.url)) }
+  vi.mocked(inspectRuntime).mockResolvedValueOnce(paths)
+  const phases: string[] = []
+  worker.subscribe(() => { phases.push(worker.snapshot().phase) })
+  worker.inspect(); worker.inspect()
+  await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('standby') })
+  expect(inspectRuntime).toHaveBeenCalledOnce()
+  expect(spawn).not.toHaveBeenCalled()
+  expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
+  expect(phases).toContain('waking')
+  expect(phases).not.toContain('loading')
+  expect(prepareRuntime).not.toHaveBeenCalled()
+  expect(spawn).toHaveBeenCalledOnce()
+})
+
+it('keeps absent caches unprepared and reports unreadable caches as retryable failures', async () => {
+  const { worker, spawn } = await fixture()
+  vi.mocked(inspectRuntime).mockResolvedValueOnce(undefined)
+  worker.inspect()
+  await vi.waitFor(() => { expect(worker.snapshot().steps?.[0]?.status).toBe('complete') })
+  expect(worker.snapshot().phase).toBe('unprepared')
+  expect(spawn).not.toHaveBeenCalled()
+  expect(prepareRuntime).not.toHaveBeenCalled()
+  vi.mocked(inspectRuntime).mockRejectedValueOnce(new Error('cache unreadable'))
+  worker.inspect()
+  await vi.waitFor(() => { expect(worker.snapshot()).toMatchObject({ phase: 'failed', message: 'cache unreadable' }) })
+  worker.prepare()
+  await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('ready') }, { timeout: 10000 })
+  expect(prepareRuntime).toHaveBeenCalledOnce()
+})
+
+it('cancels cache inspection and joins it without late notifications when the provider unloads', async () => {
+  const { worker } = await fixture(), entered = Promise.withResolvers<undefined>(), released = Promise.withResolvers<undefined>()
+  vi.mocked(inspectRuntime).mockImplementationOnce(async (_config, signal) => {
+    entered.resolve(undefined)
+    await released.promise
+    signal.throwIfAborted()
+    return undefined
+  })
+  const changed = vi.fn()
+  worker.subscribe(changed)
+  worker.inspect(); await entered.promise
+  const cancelled = worker.cancel()
+  expect(worker.snapshot().phase).toBe('cancelling')
+  let settled = false
+  const disposed = worker.dispose().then(() => { settled = true })
+  const notifications = changed.mock.calls.length
+  await Promise.resolve()
+  expect(settled).toBe(false)
+  released.resolve(undefined)
+  await cancelled; await disposed
+  expect(changed).toHaveBeenCalledTimes(notifications)
+  expect(prepareRuntime).not.toHaveBeenCalled()
 })
 
 it('cancels active inference before the next recording can acquire a fresh worker', async () => {
