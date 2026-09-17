@@ -14,12 +14,12 @@ import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import type { ShellExecSpec, ShellExecution, ShellRunResult } from '@deepseek-ai/dsh-shell'
 
 /** Historical foreground shorthand over the unified execute() seam. */
-async function run(x: { execute(spec: ShellExecSpec): ShellExecution }, spec: ShellExecSpec): Promise<ShellRunResult> {
-  return x.execute(spec).result()
+async function run(x: { execute(spec: ShellExecSpec): Promise<ShellExecution> }, spec: ShellExecSpec): Promise<ShellRunResult> {
+  return (await x.execute(spec)).result()
 }
 
 /** Historical background shorthand: execute with no deadline armed. */
-function start(x: { execute(spec: ShellExecSpec): ShellExecution }, spec: ShellExecSpec): ShellExecution {
+function start(x: { execute(spec: ShellExecSpec): Promise<ShellExecution> }, spec: ShellExecSpec): Promise<ShellExecution> {
   return x.execute({ ...spec, onExpiry: 'none' })
 }
 
@@ -91,7 +91,7 @@ describe.skipIf(!bwrapUsable)('bash-sandbox: real bwrap confinement through ctx.
   it('classifies a background denial once the task settles', async () => {
     const workdir = await tempDir(homedir())
     const bash = await sandboxedBash(workdir, 'read-only')
-    const task = start(bash, bash.resolve({ command: `echo hi > ${workdir}/bg-denied.txt` }))
+    const task = (await start(bash, bash.resolve({ command: `echo hi > ${workdir}/bg-denied.txt` })))
     await task.done
     expect(task.sandbox).toEqual({ mode: 'read-only', denied: true, enforcement: 'full' })
     expect(existsSync(join(workdir, 'bg-denied.txt'))).toBe(false)

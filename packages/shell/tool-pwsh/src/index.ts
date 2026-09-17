@@ -34,7 +34,7 @@ import { ESCALATION_TARGETS, approveEscalation, validateEscalationArgs } from '@
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import { parseExitStatus } from '@deepseek-ai/dsh-shell'
-import { observedOffsets, processOutcome, processSources } from './background.ts'
+import { observedOffsets, processJob, processOutcome, processSources } from './background.ts'
 import { renderPwshProcessRead, renderPwshPromoted, renderPwshResult } from './render.ts'
 import type { RenderablePwshResult } from './render.ts'
 
@@ -421,14 +421,13 @@ export function apply(ctx: Context, config: Config = {}): void {
           label: args.command,
           ...exec.agent ? { owner: exec.agent.id } : {},
           output: processSources(() => proc),
-          run: () => {
-            const started = ctx.shell.execute(ctx.shell.resolve({ ...request, onExpiry: 'none' }))
-            proc = started
-            return {
-              cancel: () => void started.kill(),
-              done: started.done.then(() => processOutcome(started, escalationModes)),
-            }
-          },
+          run: () => processJob(
+            async (signal) => {
+              proc = await ctx.shell.execute(ctx.shell.resolve({ ...request, signal, onExpiry: 'none' }))
+              return proc
+            },
+            started => processOutcome(started, escalationModes),
+          ),
         })
         return { kind: 'background' as const, jobId: id }
       }
@@ -440,7 +439,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         signal: exec.signal,
         ...promotable ? { onExpiry: 'offer' as const } : {},
       })
-      const foreground = ctx.shell.execute(spec)
+      const foreground = (await ctx.shell.execute(spec))
       if (promotable) {
         const offer = await foreground.promotion
         if (offer !== undefined) {

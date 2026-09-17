@@ -14,13 +14,10 @@ export default defineConfig([
   },
   {
     // Sandboxed Electron preloads run as CommonJS even though the application package is ESM.
-    entry: {
-      preload: 'lib/types/preload.js',
-      'preload-app': 'lib/types/preload-app.js',
-    },
+    entry: { 'preload-app': 'lib/types/preload-app.js' },
     outDir: 'lib',
-    format: ['cjs'],
-    platform: 'node',
+    format: ['cjs'] as const,
+    platform: 'node' as const,
     target: 'es2024',
     fixedExtension: false,
     dts: false,

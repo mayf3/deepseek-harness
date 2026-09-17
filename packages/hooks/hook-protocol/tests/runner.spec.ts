@@ -31,7 +31,7 @@ function recordingBash(run: (spec: ShellExecSpec) => Promise<ShellRunResult>): {
         sandboxPolicy: request.sandboxPolicy,
       }
     },
-    execute(spec: ShellExecSpec): { result(): Promise<ShellRunResult> } {
+    async execute(spec: ShellExecSpec): Promise<{ result(): Promise<ShellRunResult> }> {
       specs.push(spec)
       return { result: () => run(spec) }
     },

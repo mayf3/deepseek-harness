@@ -211,7 +211,7 @@ export class LocalBashExecutor extends ShellExecutor {
     return { stdout, stderr }
   }
 
-  execute(spec: ShellExecSpec): ShellExecution {
+  async execute(spec: ShellExecSpec): Promise<ShellExecution> {
     return this.executeArgv(spec, ['bash', '-c', spec.command])
   }
 
@@ -220,11 +220,17 @@ export class LocalBashExecutor extends ShellExecutor {
    * deadline, and cancellation semantics of this executor. Subclasses use this
    * after replacing the public command's shell argv at an execution boundary.
    * @param spec - resolved execution settings and caller-owned command metadata.
-   * @param argv - exact executable and arguments to hand to `ctx.subprocess`.
+   * @param argvOrPrepare - exact argv, or preparation using the execution cancellation signal.
+   * @param onStarted - installs provider facts synchronously before the handle can settle.
    * @returns the live execution handle; spawn rejection settles the handle as
    *   killed while `result()` carries the same failure as its rejection.
    */
-  protected executeArgv(spec: ShellExecSpec, argv: readonly string[]): ShellExecution {
+  protected async executeArgv(
+    spec: ShellExecSpec,
+    argvOrPrepare: readonly string[] | ((signal: AbortSignal) => Promise<readonly string[]>),
+    onStarted?: (process: ShellExecution) => void,
+  ): Promise<ShellExecution> {
+    let published = false
     let settlePromotion!: (offer: ShellPromotionOffer | undefined) => void
     const promotion = new Promise<ShellPromotionOffer | undefined>((resolve) => {
       let done = false
@@ -263,7 +269,7 @@ export class LocalBashExecutor extends ShellExecutor {
       let cause: 'timedOut' | 'aborted' | undefined
       const onCallerAbort = (): void => {
         cause ??= 'aborted'
-        relay.abort()
+        relay.abort(spec.signal?.reason)
       }
       // An already-aborted signal never fires again: relay it now, so the
       // spawn sees the abort exactly as the kill arm's fused deadline would.
@@ -275,6 +281,12 @@ export class LocalBashExecutor extends ShellExecutor {
         // A caller abort before the deadline may leave the process in its
         // termination grace: cancelled work is never offered.
         if (cause !== undefined) {
+          settlePromotion(undefined)
+          return
+        }
+        if (!published) {
+          cause = 'timedOut'
+          relay.abort(timer.signal.reason)
           settlePromotion(undefined)
           return
         }
@@ -309,6 +321,29 @@ export class LocalBashExecutor extends ShellExecutor {
       }
     }
 
+    let argv: readonly string[] = []
+    let preparationTimedOut = false
+    if (typeof argvOrPrepare === 'function') {
+      const signal = spawnSignal ?? new AbortController().signal
+      const cancelled = Promise.withResolvers<never>()
+      const abort = (): void => { cancelled.reject(signal.reason) }
+      signal.addEventListener('abort', abort, { once: true })
+      try {
+        argv = await Promise.race([
+          Promise.resolve().then(() => { signal.throwIfAborted(); return argvOrPrepare(signal) }),
+          cancelled.promise,
+        ])
+        signal.throwIfAborted()
+      } catch (error) {
+        if (!classify().timedOut) {
+          disarm()
+          settlePromotion(undefined)
+          throw error
+        }
+        preparationTimedOut = true
+      } finally { signal.removeEventListener('abort', abort) }
+    } else { argv = argvOrPrepare }
+
     // A synchronous spawn throw (pre-aborted signal, alternative subprocess
     // implementations) is contained into the same settled-killed shape as an
     // asynchronous spawn rejection, so execute() itself never throws for a
@@ -316,7 +351,9 @@ export class LocalBashExecutor extends ShellExecutor {
     let running: SubprocessHandle | undefined
     let syncSpawnError: { error: unknown } | undefined
     try {
-      running = this.ctx.subprocess.spawn(this.spawnSpec(spec, argv, spec.stdoutMaxBytes, spawnSignal))
+      if (!preparationTimedOut) {
+        running = this.ctx.subprocess.spawn(this.spawnSpec(spec, argv, spec.stdoutMaxBytes, spawnSignal))
+      }
     } catch (error) {
       syncSpawnError = { error }
     }
@@ -327,11 +364,12 @@ export class LocalBashExecutor extends ShellExecutor {
       ? LocalBashExecutor.collected(running)
       : { stdout: emptyReader, stderr: emptyReader }
     const spawnThrow = (): unknown => (syncSpawnError as { error: unknown }).error
-    const spawned = running !== undefined
-      ? running.done
+    const spawned = preparationTimedOut
+      ? Promise.resolve({ exitCode: null, signal: null })
+      : running !== undefined ? running.done
       // The original throw is preserved for callers even when it was not an Error.
       // eslint-disable-next-line prefer-promise-reject-errors
-      : Promise.reject(spawnThrow())
+        : Promise.reject(spawnThrow())
 
     // A provider rejection produces no process output, so the subprocess
     // service has nothing to buffer: once the provider rejected, its
@@ -446,6 +484,8 @@ export class LocalBashExecutor extends ShellExecutor {
         return resultPromise
       },
     }
+    published = true
+    if (!preparationTimedOut) onStarted?.(proc)
     return proc
   }
 

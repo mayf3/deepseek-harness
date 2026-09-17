@@ -199,8 +199,8 @@ describe('foreground timeout promotion', () => {
     const ctx = await setup()
     const execute = ctx.shell.execute.bind(ctx.shell)
     let execution: ShellExecution | undefined
-    const capture = vi.spyOn(ctx.shell, 'execute').mockImplementation((spec) => {
-      execution = execute(spec)
+    const capture = vi.spyOn(ctx.shell, 'execute').mockImplementation(async (spec) => {
+      execution = await execute(spec)
       return execution
     })
     try {

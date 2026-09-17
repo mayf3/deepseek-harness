@@ -1,10 +1,9 @@
-/** Live Session queue and projection state with reconnect baselines. */
+/** Live Session projection state with reconnect baselines. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, InboxState } from '@deepseek-ai/dsh-agent'
 import { Deque } from '@deepseek-ai/dsh-deque'
 import type {
-  Session, SessionId, UserMessage,
+  Session, SessionId,
 } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
@@ -12,7 +11,6 @@ import type {
   SessionControlFrame,
   SessionProjectionBaseline,
   SessionProjectionValues,
-  SessionQueuedItem,
 } from './types.ts'
 
 /** Owns the Host-wide Session control stream. */
@@ -28,14 +26,6 @@ export class SessionControlController {
         key,
         value: value as JsonValue,
         seq,
-      })
-      if (key !== 'inbox') return
-      const agent = this.ctx.agents.get(session.id)
-      if (agent?.session !== session) return
-      this.broadcast({
-        type: 'queue',
-        sessionId: session.id,
-        items: queueItemsFromInbox(value as InboxState),
       })
     })
     ctx.effect(() => () => {
@@ -64,13 +54,7 @@ export class SessionControlController {
 
   private baseline(): SessionControlBaseline {
     const sessions = this.ctx.sessions.list()
-    const queues = Object.create(null) as Record<SessionId, readonly SessionQueuedItem[]>
-    for (const session of sessions) {
-      const agent = this.ctx.agents.get(session.id)
-      queues[session.id] = agent?.session === session ? queueItems(agent) : []
-    }
     return {
-      queues,
       projections: this.projectionBaseline(sessions),
     }
   }
@@ -134,34 +118,4 @@ class ControlQueue {
       this.end()
     }
   }
-}
-
-function queueItems(agent: Agent): SessionQueuedItem[] {
-  return queueItemsFromInbox({
-    'next-turn': agent.inbox.nextTurn,
-    'next-step': agent.inbox.nextStep,
-  })
-}
-
-function queueItemsFromInbox(inbox: InboxState): SessionQueuedItem[] {
-  return [
-    ...inbox['next-turn'].map(message => ({
-      id: message.id,
-      placement: 'queued' as const,
-      ...promptRpcId(message),
-      message: { id: message.id, content: message.content as unknown as JsonValue[] },
-    })),
-    ...inbox['next-step'].map(message => ({
-      id: message.id,
-      placement: message.source.kind === 'user' ? 'steering' as const : 'context' as const,
-      ...promptRpcId(message),
-      message: { id: message.id, content: message.content as unknown as JsonValue[] },
-    })),
-  ]
-}
-
-/** Prompt-RPC identity carried by a browser-submitted message's user source. */
-function promptRpcId(message: UserMessage): Pick<SessionQueuedItem, 'rpcId'> {
-  const source = message.source
-  return source.kind === 'user' && 'rpcId' in source ? { rpcId: source.rpcId } : {}
 }

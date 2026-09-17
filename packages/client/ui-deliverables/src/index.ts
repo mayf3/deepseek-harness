@@ -8,10 +8,11 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-workspace-changes/types'
 import { registerPresentOpen } from './present-open.ts'
 
-/** Services required for file-reference guidance and authenticated native opens of declared files. */
-export const inject = ['systemPrompt', 'connection', 'sessionQuery', 'sessionController', 'workspaceFiles', 'fs', 'sandboxPolicy']
+/** Services required for file-reference guidance, change summaries, and authenticated native opens. */
+export const inject = ['systemPrompt', 'connection', 'sessionQuery', 'sessionController', 'workspaceFiles', 'fs', 'sandboxPolicy', 'workspaceChanges']
 
 /** Stable final-response guidance owned by the matching renderer. */
 const FILE_REFERENCE_PROMPT = 'When you successfully create or modify files, mention the primary outputs in your final response. '

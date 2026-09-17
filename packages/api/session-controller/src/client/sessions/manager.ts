@@ -1,6 +1,4 @@
-// SessionManager: the instance cluster Map<SessionId, Session> (lazy-built, resident) + the frame
-// dispatch entry + list state, constructed and held by ClientSessions (one per browser client).
-// List data never enters zustand; React connects via subscribe/getListSnapshot.
+/** Host catalog, durable projection caches, and explicitly retained Client instances. */
 
 import type { SubagentAddress, SubagentCatalog } from '@deepseek-ai/dsh-subagent/client'
 import { SessionSeq, type SessionId, type SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
@@ -8,7 +6,6 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type {
   SessionControlBaseline,
   SessionControlFrame,
-  SessionQueuedItem,
   SessionSummary,
 } from '../../types.ts'
 import { mergeOrderedBaseline } from '../ordered-baseline.ts'
@@ -24,6 +21,7 @@ import { Notifier } from './notifier.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import { Session } from './session.ts'
 import type { SessionRemotes } from './remotes.ts'
+import type { SessionTarget } from '../contract/sessions.ts'
 
 function sessionSeqCursor(value: number): SessionSeqCursor {
   return value === -1 ? -1 : SessionSeq(value)
@@ -48,14 +46,11 @@ export interface SessionSearchResultItem {
 /** Immutable session-list snapshot for useSessionList. */
 export interface SessionListSnapshot {
   items: readonly SessionListEntry[]
-  /** Selected Session id (validated against items; masked to undefined while its session is off the list). */
-  current: SessionId | undefined
   state: 'idle' | 'loading' | 'error'
   /** Arrival lifecycle (see {@link SessionListPhase}); `state` stays the pull-activity axis. */
   phase: SessionListPhase
   error: RemoteFailure | null
   subagentsByParent: Readonly<Record<SessionId, SubagentCatalogSnapshot>>
-  currentAddress: SubagentAddress | undefined
 }
 
 /** One parent-addressed durable catalog projected through the sessions snapshot. */
@@ -93,16 +88,6 @@ export class SessionManager {
   private readonly sessions = new Map<SessionId, Session>()
   /** In-flight Session disposals remain here after instances leave `sessions`, so manager disposal can await quiescence. */
   private readonly sessionDisposals = new Set<Promise<void>>()
-  /** Latest transient queues, retained independently of Session object materialization. */
-  private readonly queues = new Map<SessionId, readonly SessionQueuedItem[]>()
-  /**
-   * Sessions that finished running while not selected — the sidebar's green
-   * "done" reminder (manager-owned, survives connection generations; cleared
-   * on select and session-removed, re-armed by the next completion).
-   */
-  private readonly completedNotifications = new Set<SessionId>()
-  /** Last-observed running bits per session; the true→false edge here arms {@link completedNotifications}. */
-  private readonly prevRunning = new Map<SessionId, boolean>()
   /** Per-session projection value stores, retained independently of instance arrival (the
    *  title-snapshot precedent, generalized): push frames land here whether or not the Session
    *  is instantiated (list rows read the 'title' key), and an instantiated Session adopts the
@@ -114,7 +99,7 @@ export class SessionManager {
   private listPhase: SessionListPhase = 'pending'
   private listError: RemoteFailure | null = null
   private listInflight: Promise<void> | null = null
-  /** Mutations arriving after a list request starts are replayed over its response. */
+  /** Active list request's mutation log; its identity also fences completion after reconnect. */
   private listMutations: SessionListMutation[] | null = null
   private readonly addresses = new Map<SessionId, SubagentAddress>()
   private readonly catalogs = new Map<SessionId, SubagentCatalogSnapshot>()
@@ -123,8 +108,6 @@ export class SessionManager {
   private readonly catalogStale = new Set<SessionId>()
   private readonly openCatalogs = new Set<SessionId>()
   private readonly catalogDebounce = new Map<SessionId, ReturnType<typeof setTimeout>>()
-
-  private selected: SessionId | undefined
 
   private listSnapshotCache: SessionListSnapshot
   /** Entry-identity cache (reference stability): list rebuilds reuse the previous entry
@@ -136,67 +119,31 @@ export class SessionManager {
     this.listSnapshotCache = this.buildListSnapshot()
   })
 
-  /**
-   * @param remote - generated Remote namespaces the Session cluster calls.
-   * @param restoredSelection - persisted real-Session selection candidate.
-   */
-  constructor(
-    private readonly remote: SessionRemotes,
-    restoredSelection?: SessionId,
-    restoredAddress?: SubagentAddress,
-  ) {
-    this.selected = restoredSelection
-    if (restoredAddress !== undefined) this.addresses.set(restoredAddress.childSessionId, restoredAddress)
+  /** @param remote - generated Remote namespaces used by catalog and history readers. */
+  constructor(private readonly remote: SessionRemotes) {
     this.listSnapshotCache = this.buildListSnapshot()
   }
 
-  // ---- Selection ----
-
   /**
-   * Select a listed Session or a retained catalog-addressed child.
-   * @param sessionId - listed or catalog-addressed Session id.
+   * Resolve an acquisition target without materializing a Session.
+   * @param target - known identity or durable direct-parent address.
+   * @returns the resolved identity with its explicit or catalog-derived history route installed.
    */
-  select(sessionId: SessionId): void {
-    const address = this.navigationAddress(sessionId)
-    if (!this.summaries.some(summary => summary.sessionId === sessionId) && address === undefined) {
-      throw new Error(`sessions.select: unknown session ${sessionId}`)
+  resolveTarget(target: SessionTarget): SessionId {
+    const id = typeof target === 'string' ? target : target.childSessionId
+    const address = typeof target === 'string' ? this.navigationAddress(id) : target
+    if (typeof target === 'string'
+      && !this.sessions.has(id)
+      && !this.summaries.some(summary => summary.sessionId === id)
+      && address === undefined) {
+      throw new Error(`sessions.retain: unknown session ${id}`)
     }
-    if (address !== undefined) this.addresses.set(sessionId, address)
-    this.sessions.get(sessionId)?.configureSubagent(
+    if (address !== undefined) this.addresses.set(id, address)
+    this.sessions.get(id)?.configureSubagent(
       address,
-      address === undefined
-        ? undefined
-        : this.catalogs.get(address.parentSessionId)?.parentAvailable,
+      address === undefined ? undefined : this.catalogs.get(address.parentSessionId)?.parentAvailable,
     )
-    this.selected = sessionId
-    // Looking at the session consumes its completion reminder (dot clears).
-    this.completedNotifications.delete(sessionId)
-    void this.refreshSubagents(sessionId)
-    this.notifier.notifyNow()
-  }
-
-  /**
-   * Select a healthy child through its durable direct-parent address.
-   * @param address - catalog-derived parent and child ids.
-   */
-  selectSubagent(address: SubagentAddress): void {
-    const catalog = this.catalogs.get(address.parentSessionId)
-    const entry = catalog?.entries.find(candidate => candidate.id === address.childSessionId)
-    if (entry === undefined || entry.kind !== 'child' || entry.mode !== address.mode) {
-      throw new Error(`sessions.selectSubagent: ${address.childSessionId} is not a healthy catalog child`)
-    }
-    this.addresses.set(address.childSessionId, address)
-    this.sessions.get(address.childSessionId)?.configureSubagent(address, catalog?.parentAvailable)
-    this.selected = address.childSessionId
-    this.completedNotifications.delete(address.childSessionId)
-    void this.refreshSubagents(address.childSessionId)
-    this.notifier.notifyNow()
-  }
-
-  /** Clear the selection (the layout falls to the no-session view state). */
-  clearSelection(): void {
-    this.selected = undefined
-    this.notifier.notifyNow()
+    return id
   }
 
   /**
@@ -205,7 +152,7 @@ export class SessionManager {
    * @returns The direct-parent address, when navigation discovered one.
    */
   subagentAddress(sessionId: SessionId): SubagentAddress | undefined {
-    return this.addresses.get(sessionId)
+    return this.navigationAddress(sessionId)
   }
 
   /**
@@ -228,20 +175,22 @@ export class SessionManager {
   // ---- Instance management ----
 
   /**
-   * Drop a session instance (scope-prune companion: instance
-   * and scope share one lifecycle). The host session log is the durable
-   * truth — a later get() lazily rebuilds and open() backfills history.
-   * @param sessionId - the session to drop.
+   * Withdraw an exact Client instance before running its teardown callbacks.
+   * @param sessionId - identity to withdraw.
+   * @param expected - instance being released; a replacement is left untouched.
+   * @returns completion of the detached instance's stream teardown.
    */
-  async drop(sessionId: SessionId): Promise<void> {
+  drop(sessionId: SessionId, expected: Session): Promise<void> {
     const session = this.sessions.get(sessionId)
+    if (session !== expected) return Promise.resolve()
     this.sessions.delete(sessionId)
-    if (session !== undefined) await this.startSessionDisposal(session)
+    this.addresses.delete(sessionId)
+    return this.startSessionDisposal(session)
   }
 
   /**
-   * Stop owned timers and every remaining Session instance.
-   * @returns when every Session Remote iterator has completed teardown.
+   * Stop catalog requests and dispose every resident Session.
+   * @returns once catalog requests and every Session stream have stopped.
    */
   async dispose(): Promise<void> {
     for (const timer of this.catalogDebounce.values()) clearTimeout(timer)
@@ -250,6 +199,7 @@ export class SessionManager {
     this.openCatalogs.clear()
     const sessions = [...this.sessions.values()]
     this.sessions.clear()
+    this.addresses.clear()
     for (const session of sessions) void this.startSessionDisposal(session)
     await this.drainSessionDisposals()
   }
@@ -272,7 +222,7 @@ export class SessionManager {
 
   /**
    * Lazy build: return the existing instance or construct one (no auto-open —
-   * open is triggered by the container's select callback).
+   * the reference allocator opens history after binding the scope).
    * @param sessionId - the session to get.
    * @returns the resident instance.
    */
@@ -281,11 +231,6 @@ export class SessionManager {
     if (session === undefined) {
       session = this.createSession(sessionId)
       this.sessions.set(sessionId, session)
-      // Install the latest control baseline before the running-bit sync: a
-      // not-running summary must sweep replayed queue
-      // rows the same way a live status flip would (their retirement events dropped
-      // while the session was uninstantiated).
-      session.replaceControl(this.queues.get(sessionId) ?? [])
       // Sync the running and blank bits from the list snapshot into the new
       // instance (consistency when the list precedes open).
       const summary = this.summaries.find(s => s.sessionId === sessionId)
@@ -440,7 +385,7 @@ export class SessionManager {
 
   // ---- List API ----
 
-  /** Full refresh via session.list (single-flight: an in-flight call is reused). */
+  /** Full refresh via session.list (single-flight within one Host generation). */
   refreshList(): Promise<void> {
     if (this.listInflight !== null) return this.listInflight
     this.listState = 'loading'
@@ -452,29 +397,14 @@ export class SessionManager {
     this.listInflight = (async () => {
       try {
         const result = await this.remote.session.list({})
+        if (this.listMutations !== mutations) return
         if (result.ok) {
           const baseline: SessionSummary[] = this.listPhase === 'pending'
             ? [...result.value.items]
             : mergeOrderedBaseline(established, result.value.items, summary => summary.sessionId)
-          // Seed first observations from the pull-time baseline BEFORE replaying
-          // in-flight mutations, then reconcile the reminders after EVERY
-          // replayed mutation: an edge that happens entirely between mutations
-          // (baseline idle → running → idle) must still arm, which a single
-          // sync on the folded result would collapse away.
-          for (const s of baseline) {
-            if (!this.prevRunning.has(s.sessionId)) this.prevRunning.set(s.sessionId, s.running)
-          }
-          let summaries = baseline
-          for (const mutation of mutations) {
-            summaries = applyMutation(summaries, mutation)
-            this.summaries = summaries
-            this.syncCompletedNotifications()
-          }
-          this.summaries = summaries
+          this.summaries = mutations.reduce(applyMutation, baseline)
           this.listState = 'idle'
           this.listPhase = 'ready'
-          // Covers the empty-mutations pull (a plain baseline carries no edge).
-          this.syncCompletedNotifications()
           // Push running/blank bits down to instantiated Sessions (the list is the authoritative summary source).
           for (const s of this.summaries) {
             const session = this.sessions.get(s.sessionId)
@@ -501,12 +431,15 @@ export class SessionManager {
         }
       } catch (error) {
         if (!isRemoteFailure(error)) throw error
+        if (this.listMutations !== mutations) return
         this.listState = 'error'
         this.listError = error
       } finally {
-        this.listMutations = null
-        this.listInflight = null
-        this.notifier.markDirty()
+        if (this.listMutations === mutations) {
+          this.listMutations = null
+          this.listInflight = null
+          this.notifier.markDirty()
+        }
       }
     })()
     return this.listInflight
@@ -619,8 +552,6 @@ export class SessionManager {
   private recordMutation(mutation: SessionListMutation): void {
     this.listMutations?.push(mutation)
     this.summaries = applyMutation(this.summaries, mutation)
-    // Eager edge reconciliation — a snapshot-build-time pass would miss consecutive status frames.
-    this.syncCompletedNotifications()
     this.notifier.markDirty()
   }
 
@@ -655,29 +586,16 @@ export class SessionManager {
       this.replaceControlBaseline(frame.value)
       return
     }
-    if (frame.type === 'projection') {
-      this.projectionStore(frame.sessionId).apply(frame.key, frame.value, SessionSeq(frame.seq))
-      this.notifier.markDirty()
-      return
-    }
-    this.queues.set(frame.sessionId, frame.items)
-    this.sessions.get(frame.sessionId)?.handleControlFrame(frame)
+    this.projectionStore(frame.sessionId).apply(frame.key, frame.value, SessionSeq(frame.seq))
+    this.notifier.markDirty()
   }
 
   private replaceControlBaseline(baseline: SessionControlBaseline): void {
-    this.queues.clear()
-    for (const [sessionId, items] of Object.entries(baseline.queues)) {
-      this.queues.set(sessionId as SessionId, items)
-    }
 
     for (const [sessionId, block] of Object.entries(baseline.projections)) {
       const store = this.projectionStore(sessionId as SessionId)
       const asOfSeq = sessionSeqCursor(block.asOfSeq)
-      store.truncate(asOfSeq)
       store.seed({ ...block, asOfSeq })
-    }
-    for (const [sessionId, session] of this.sessions) {
-      session.replaceControl(this.queues.get(sessionId) ?? [])
     }
     this.notifier.markDirty()
   }
@@ -700,7 +618,7 @@ export class SessionManager {
       this.markCatalogParentExpandable(summary.parentSessionId)
     }
     if (summary.parentSessionId !== undefined
-      && (this.selected === summary.parentSessionId || this.openCatalogs.has(summary.parentSessionId))) {
+      && this.openCatalogs.has(summary.parentSessionId)) {
       this.scheduleCatalogRefresh(summary.parentSessionId)
     }
   }
@@ -718,7 +636,6 @@ export class SessionManager {
     this.updateCatalogActivity(sessionId, false)
     if (durableSubagent) this.sessions.get(sessionId)?.handleRunning(false)
     else this.sessions.get(sessionId)?.handleRemoved()
-    this.queues.delete(sessionId)
     if (!durableSubagent) this.projectionStores.delete(sessionId)
     const inflightCatalog = this.catalogInflight.get(sessionId)
     if (inflightCatalog !== undefined) {
@@ -767,17 +684,24 @@ export class SessionManager {
 
   /**
    * Repair one re-established Host-event generation with queryable baselines.
+   * Discard old projection cuts before new queries, including cold Sessions
+   * absent from the process-local control baseline.
    * Opened Session follow streams resume independently through API Gateway.
    */
   handleConnected(): void {
+    for (const store of this.projectionStores.values()) store.clear()
+    this.listMutations = null
+    this.listInflight = null
     void this.refreshList()
-    const selectedAddress = this.selected === undefined ? undefined : this.addresses.get(this.selected)
-    if (selectedAddress !== undefined) void this.refreshSubagents(selectedAddress.parentSessionId)
-    if (this.selected !== undefined) void this.refreshSubagents(this.selected)
-    for (const parentSessionId of this.openCatalogs) void this.refreshSubagents(parentSessionId)
+    const parents = new Set(this.openCatalogs)
+    for (const id of this.sessions.keys()) {
+      const address = this.addresses.get(id)
+      if (address !== undefined) parents.add(address.parentSessionId)
+    }
+    for (const parentSessionId of parents) void this.refreshSubagents(parentSessionId)
   }
 
-  /** Debounce membership refetches while one parent catalog is selected or open. */
+  /** Debounce membership refetches for an explicitly consumed catalog. */
   private scheduleCatalogRefresh(parentSessionId: SessionId): void {
     if (this.catalogDebounce.has(parentSessionId)) return
     const timer = setTimeout(() => {
@@ -854,38 +778,6 @@ export class SessionManager {
     })
   }
 
-  /**
-   * Reconcile completion reminders against the latest summaries, eagerly after
-   * every mutation and pull (a snapshot-build-time pass would collapse
-   * consecutive status frames into one observation). A running→idle edge of a
-   * non-selected session arms its reminder; running disarms it; removal drops
-   * it. First observation only records the running bit — sessions already
-   * idle at load get no reminder.
-   */
-  private syncCompletedNotifications(): void {
-    const seen = new Set<SessionId>()
-    for (const s of this.summaries) {
-      seen.add(s.sessionId)
-      const prev = this.prevRunning.get(s.sessionId)
-      if (prev === undefined) {
-        this.prevRunning.set(s.sessionId, s.running)
-        continue
-      }
-      if (prev && !s.running) {
-        if (s.sessionId !== this.selected) this.completedNotifications.add(s.sessionId)
-      } else if (s.running) {
-        this.completedNotifications.delete(s.sessionId)
-      }
-      this.prevRunning.set(s.sessionId, s.running)
-    }
-    for (const id of this.prevRunning.keys()) {
-      if (!seen.has(id)) this.prevRunning.delete(id)
-    }
-    for (const id of this.completedNotifications) {
-      if (!seen.has(id)) this.completedNotifications.delete(id)
-    }
-  }
-
   private buildListSnapshot(): SessionListSnapshot {
     const merged: TitledSessionSummary[] = this.summaries.map((summary) => {
       // List rows read the generic 'title' projection key (host-computed unit
@@ -899,7 +791,7 @@ export class SessionManager {
         ...(projectionValues === undefined ? {} : { projectionValues }),
       }
     })
-    const fresh = flattenLineage(merged, this.completedNotifications)
+    const fresh = flattenLineage(merged)
     const items = fresh.map((entry) => {
       const prev = this.entryCache.get(entry.sessionId)
       if (
@@ -908,29 +800,22 @@ export class SessionManager {
         && prev.parentSessionId === entry.parentSessionId && prev.cwd === entry.cwd
         && prev.origin === entry.origin && prev.title === entry.title && prev.depth === entry.depth
         && prev.projectionValues === entry.projectionValues
-        && prev.completed === entry.completed
       ) return prev
       this.entryCache.set(entry.sessionId, entry)
       return entry
     })
+    const itemIds = new Set(items.map(entry => entry.sessionId))
     for (const id of this.entryCache.keys()) {
-      if (!items.some(e => e.sessionId === id)) this.entryCache.delete(id)
+      if (!itemIds.has(id)) this.entryCache.delete(id)
     }
     const sameOrder = items.length === this.itemsCache.length && items.every((e, i) => e === this.itemsCache[i])
     if (!sameOrder) this.itemsCache = items
-    const selected = this.selected
-    const current = selected !== undefined
-      && (items.some(item => item.sessionId === selected) || this.addresses.has(selected))
-      ? selected
-      : undefined
     return {
       items: this.itemsCache,
-      current,
       state: this.listState,
       phase: this.listPhase,
       error: this.listError,
       subagentsByParent: Object.fromEntries(this.catalogs),
-      currentAddress: current === undefined ? undefined : this.addresses.get(current),
     }
   }
 }

@@ -81,18 +81,18 @@ The executor is the pwsh twin of `dsh-bash-sandbox`: it inherits `dsh-pwsh-local
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: `SandboxPwshExecutor`, per-process fact retention, run/start wrapping |
+| [`src/index.ts`](src/index.ts) | Plugin entry: `SandboxPwshExecutor`, per-process fact retention, execution preparation |
 | [`src/helpers.ts`](src/helpers.ts) | Denial, runner-failure, and runner-spawn-failure classification |
 | — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seams. Classification is observable in results. |
 | `tests/` | Exercised behavior across the ACL and platform runners |
 
 ### Main flow
 
-For a confined mode, `resolve()` stamps the per-call policy; `execute` wraps the pwsh argv through the provider and hands the confined argv to the inherited subprocess path. At settlement the executor classifies the outcome: a runner failure outranks a denial because the command never ran, a failed run whose stderr carries the runner's denial dialect is reported `denied: true`, and every confined run carries its mode and enforcement facts. `danger-full-access` bypasses the provider entirely and stamps `denied: false`.
+For a confined mode, `resolve()` stamps the per-call policy; `execute` awaits preparation of the pwsh argv through the provider and hands the confined argv to the inherited subprocess path. At settlement the executor classifies the outcome: a runner failure outranks a denial because the command never ran, a failed run whose stderr carries the runner's denial dialect is reported `denied: true`, and every confined run carries its mode and enforcement facts. `danger-full-access` bypasses the provider entirely and stamps `denied: false`.
 
 ### Invariants
 
-- **Fail closed** — a confined mode with no usable runner throws `SANDBOX_UNAVAILABLE`; unconfined passthrough never happens for a confined policy.
+- **Fail closed** — a confined mode with no usable runner rejects with `SANDBOX_UNAVAILABLE`; unconfined passthrough never happens for a confined policy.
 - **Deny-only at the seam** — this executor never grants permission; the approval flow lives in the tool layer.
 - **Per-process facts** — confinement facts are retained per handle until settlement, because a provider may vary enforcement between overlapping calls.
 

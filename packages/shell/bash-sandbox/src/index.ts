@@ -86,31 +86,35 @@ export class SandboxBashExecutor extends LocalBashExecutor {
     return { ...super.resolve(request), sandboxPolicy: request.sandboxPolicy ?? this.ctx.sandboxPolicy.resolve() }
   }
 
-  override execute(spec: ShellExecSpec): ShellExecution {
+  override async execute(spec: ShellExecSpec): Promise<ShellExecution> {
     const policy = spec.sandboxPolicy as SandboxExecutionPolicy
     const { mode } = policy
     if (mode === 'danger-full-access') {
       return SandboxBashExecutor.decorateResult(
-        super.execute(spec),
+        await super.execute(spec),
         result => ({ ...result, sandbox: { mode, denied: false } }),
       )
     }
-    // Once executeArgv returns, install facts synchronously; promise
-    // settlement cannot run before execute() returns.
-    const confined = this.confine(spec.command, { ...policy, mode })
-    // executeArgv contains spawn problems (sync or async) into the settled
-    // handle, so nothing here can throw before the facts are installed.
-    const ex = this.executeArgv(spec, confined.argv)
-    const { enforcement, denialSignatures, runnerFailureRules } = confined
-    this.processFacts.set(ex, {
-      mode,
-      enforcement,
-      denialSignatures,
-      runnerFailureRules,
-      runnerProgram: confined.argv[0],
-      workdir: spec.workdir,
+    let confined: ConfinedArgv | undefined
+    const ex = await this.executeArgv(spec, async (signal) => {
+      const prepared = await this.confine(spec.command, { ...policy, mode }, signal)
+      signal.throwIfAborted()
+      confined = prepared
+      return prepared.argv
+    }, (process) => {
+      const facts = confined as ConfinedArgv
+      this.processFacts.set(process, {
+        mode,
+        enforcement: facts.enforcement,
+        denialSignatures: facts.denialSignatures,
+        runnerFailureRules: facts.runnerFailureRules,
+        runnerProgram: facts.argv[0],
+        workdir: spec.workdir,
+      })
     })
     return SandboxBashExecutor.decorateResult(ex, (result) => {
+      if (confined === undefined) return { ...result, sandbox: { mode, denied: false } }
+      const { enforcement, denialSignatures, runnerFailureRules } = confined
       // Runner failure outranks denial because the command did not run. Carry
       // the matched fatal line, not an informational line that preceded it.
       const runnerFailure = classifyRunnerFailure(result.exitCode, result.stderr.text, runnerFailureRules)
@@ -121,7 +125,7 @@ export class SandboxBashExecutor extends LocalBashExecutor {
     }, (error) => {
       // An upstream abort remains cancellation even when it prevents spawn.
       if (spec.signal?.aborted === true) spec.signal.throwIfAborted()
-      if (isRunnerSpawnFailure(error, confined.argv[0], spec.workdir)) {
+      if (confined !== undefined && isRunnerSpawnFailure(error, confined.argv[0], spec.workdir)) {
         throw new SandboxUnavailableError(mode, String(error))
       }
       throw error
@@ -177,10 +181,11 @@ export class SandboxBashExecutor extends LocalBashExecutor {
    * executor's subprocess path.
    * @param command - shell source for the confined inner `bash -c`.
    * @param policy - resolved confined execution policy.
+   * @param signal - cancellation of confinement preparation.
    * @returns the provider's exact argv and settlement-classification facts.
    */
-  private confine(command: string, policy: SandboxPolicy): ConfinedArgv {
-    return this.ctx.sandbox.confine(['bash', '-c', command], policy)
+  private confine(command: string, policy: SandboxPolicy, signal?: AbortSignal): Promise<ConfinedArgv> {
+    return this.ctx.sandbox.confine(['bash', '-c', command], policy, signal)
   }
 }
 

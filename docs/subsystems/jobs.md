@@ -1,4 +1,4 @@
-# Background Task Runtime
+# Background Job Runtime
 
 English | [中文](jobs.zh.md)
 
@@ -176,10 +176,10 @@ interface JobSourceRead {
 
 ## The output ring
 
-Every job owns one bounded ring. Pull sources are pumped into it and `JobHandle.append` pushes land whole; the model consumes the ring through a registry-kept cursor (`JobRegistry.read`), any number of observers read it at absolute byte offsets (`JobRegistry.readAt`), and neither disturbs the other. `JobChannel` labels `stdout`, `stderr`, and `log`; `log` is producer narration that reaches observers only, never the model's consuming read. Settlement ends the stream and trims retention to the settled cap — the ring has no separate lifecycle. The spill file a pull source keeps is job metadata (`JobView.output.spillPaths`, refreshed by every pump read), not chunk provenance, so the model's dropped-output notice names it after the ring evicted the bytes and even after the gap chunk itself is gone. Browsers reach the roster and the ring through `job.list` and `job.follow`, the Remote streams of [`dsh-api-job-controller`](../../packages/api/job-controller/README.md), whose frames are listed under its Cordis API section below.
+Every job owns one bounded ring. Pull sources are pumped into it and `JobHandle.append` pushes land whole; the model consumes the ring through a registry-kept cursor (`JobRegistry.read`), any number of observers read it at absolute byte offsets (`JobRegistry.readAt`), and neither disturbs the other. `JobChannel` labels `stdout`, `stderr`, and `log`; `log` is producer narration that reaches observers only, never the model's consuming read. Settlement ends the stream and trims retention to the settled cap — the ring has no separate lifecycle. The spill file a pull source keeps is job metadata (`JobView.output.spillPaths`, refreshed by every pump read), not per-chunk metadata, so the model's dropped-output notice names it after the ring evicted the bytes and even after the gap chunk itself is gone. Browsers reach the roster and the ring through `job.list` and `job.follow`, the Remote streams of [`dsh-api-job-controller`](../../packages/api/job-controller/README.md), whose frames are listed under its Cordis API section below.
 
 ```ts type-equiv
-/** One chunk of a job's output ring: absolute offset, text, and its provenance. */
+/** One chunk of a job's output ring: absolute offset, text, channel, and loss marker. */
 interface JobChunk {
   /** Absolute offset of the chunk's first byte; offsets never move once assigned. */
   readonly at: number

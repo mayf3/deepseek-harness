@@ -25,7 +25,7 @@ function producer(label = 'sleep 60') {
   return { spec, cancels, settle: (outcome: JobOutcome) => { settle(outcome) } }
 }
 
-function registerAgent(ctx: Context, session: Session): Agent {
+async function registerAgent(ctx: Context, session: Session): Promise<Agent> {
   const agent = {
     id: session.id,
     session,
@@ -33,7 +33,7 @@ function registerAgent(ctx: Context, session: Session): Agent {
     status: 'idle',
     ctx,
   } as Agent
-  ctx.agents.register(agent)
+  await ctx.agents.register(agent)
   return agent
 }
 
@@ -51,7 +51,7 @@ async function harness(): Promise<{
   await ctx.plugin(TypertRegistry)
   await ctx.plugin(JobController, {})
   const session = ctx.sessions.create()
-  const agent = registerAgent(ctx, session)
+  const agent = await registerAgent(ctx, session)
   return { ctx, session, agent, controller: ctx.jobController }
 }
 
@@ -138,7 +138,7 @@ describe('JobController.kill', () => {
   it('rejects a subagent-owned live session with the ownership fence', async () => {
     const { ctx, controller } = await harness()
     const child = ctx.sessions.create(undefined, { meta: { origin: 'subagent' } })
-    const childAgent = registerAgent(ctx, child)
+    const childAgent = await registerAgent(ctx, child)
     const task = producer('child work')
     const id = ctx.jobs.start({ ...task.spec, owner: childAgent.id })
 

@@ -70,7 +70,7 @@ class FakeBash extends ShellExecutor {
       sandboxPolicy: request.sandboxPolicy,
     }
   }
-  override execute(spec: ShellExecSpec): ShellExecution {
+  override async execute(spec: ShellExecSpec): Promise<ShellExecution> {
     if (spec.onExpiry === 'none') throw new Error('tmux-context must never start a background job')
     this.commands.push(spec.command)
     return {

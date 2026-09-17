@@ -38,8 +38,9 @@ kind: "package-library"
 |---|---|
 | `Button` | 可点击操作；`variant` 选择 `primary`、`ghost`、`outline` 或 `toolbar`。 |
 | `Switch` | 36×20 的双态开关。`label` 必填，控件不可能在没有名称的情况下发布。 |
+| `Checkbox` | 带标签的原生复选框，支持受控状态、键盘交互和禁用样式；调用方提供本地化的 `label` 文本。 |
 | `Input` | 单行文本输入，用于搜索框与行内表单。 |
-| `Menu` | 由条目、分隔线与分组标题构成的下拉菜单，支持嵌套子菜单。 |
+| `Menu` | 由条目、分隔线与分组标题构成的下拉菜单，支持嵌套子菜单。打开期间 `↑`／`↓`（以及 Home、End）在列表中走位，Tab 选定聚焦行，Escape 或 Shift+Tab 关闭并把焦点还给锚点；选定一行同样把键盘还给锚点——除非拥有者自己移动了焦点。只拦截位于锚点或列表内的键盘，`autoFocus` 仅决定打开时是否聚焦首行。 |
 | `Pill` | 可选中的胶囊按钮，用于视图切换与筛选器；接受 `active` 与 `onClick`。 |
 | `Tag` | 只读胶囊徽章；`tone` 选择八种配色之一。 |
 | `StateDot` | 状态标记：`done`、`warning`、`ongoing`、`error` 或 `idle`。它是 `aria-hidden` 的，名称由渲染点提供。 |
@@ -52,9 +53,9 @@ kind: "package-library"
 | `HoverCard` | 指针可停留、可选中的悬停预览；可选带复制按钮。 |
 | `Toast` | 顶部居中的瞬时横幅，保持时长由所有者的 `holdMs` 决定。 |
 | `JsonTree`、`JsonBlock` | 只读 JSON 查看。 |
-| `MarkdownText`、`CodeBlock` | 不可信 GFM 与 TeX 数学，以及高亮代码。`CodeBlock` 可通过 `lineNumbers` 开启行号；复制的源码不含行号栏，`contentRef` 则向需要把稳定源码包装节点用作滚动区的 owner 提供该节点。 |
+| `MarkdownText`、`MarkdownDelegateProvider`、`CodeBlock` | 不可信 GFM 与 TeX 数学、owner 委托的 HTTP(S) 导航，以及高亮代码。`CodeBlock` 可通过 `lineNumbers` 开启行号；复制的源码不含行号栏，`contentRef` 则向需要把稳定源码包装节点用作滚动区的 owner 提供该节点。调用方提供自己的语言与复制工具栏时，设置 `showHeader={false}`。 |
 | `TerminalBlock`、`ReadBlock`、`DiffBlock`、`SearchBlock`、`WebBlock` | 与各类工具结果意图对应的 agent 输出卡片。 |
-| `icons/*`、`FishLogo`、`BrandWordmark`、`ReferenceIcon`、`LinkIcon` | 字形与品牌标识。`LinkIcon` 用于 14px 的可点击链接分类。 |
+| `icons/*`、`FishLogo`、`BrandWordmark`、`ReferenceIcon`、`LinkIcon` | 字形与品牌标识。`LinkIcon` 用于 14px 的可点击链接分类及已知站点标记。 |
 | `FileTypeIcon`、`classifyFileType`、`fileExtension` | 按类别着色的 28px 文件或文件夹图形，以及它背后共享的不区分大小写文件名映射。代码与配置文件使用细分的全彩技术图形；链接前置图形使用 `LinkIcon`，图片内容使用图片预览。 |
 
 有三组容易混淆：
@@ -67,12 +68,27 @@ kind: "package-library"
 
 ### 控件与图标
 
-上面的目录说明每个导出的用途；本节讲 props 本身看不出来的行为。`ic_ds_*` 图标集与 `FishLogo`/`BrandWordmark` 标记填充品牌与行内图标 slot。`FileTypeIcon` 渲染传统的 28px Excel、folder、HTML、image、Markdown、generic、PDF、PPT、video 与 Word 图形，并为已识别的代码和配置文件使用全彩方形技术图形。`classifyFileType` 按完整文件名、前缀、后缀、可选项目上下文、扩展名的顺序匹配；React 文件名优先于 TypeScript/JavaScript，Angular 后缀优先于基础扩展名，只有传入的项目文件包含带 `flutter:` 的 `pubspec.yaml` 时 Dart 文件才使用 Flutter。Markdown 与 SVG 仍分别使用传统 Markdown 与图片图形。办公文件映射包含 XLSM/Numbers 的表格图标、KEY 的幻灯片图标，以及 RTF/ODT/Pages 的文档图标。`fileExtension` 为相邻元数据 label 暴露同一套 basename 与最终点号解析。传统图形使用实色分类底板、白色标记和半透明白色折角；通用文件使用灰色底板与较深灰色折角。调用方可通过 `--dsh-file-type-icon-color` 覆盖底板颜色。全彩技术图形是明确例外，会保留其内嵌调色板。所有图形都是装饰性的，不自带 label。`LinkIcon` 仍是可点击产物链接较小的前置分类图形——地球、文件夹、代码、图片、文档或纸张——`classifyLinkPath` 把共享文件类型折叠进原有六类词汇。`ConnectionIndicator` 可渲染警告色的断联操作、以独立于 retry 时序的 500ms 节奏推进一至三个点的连接中状态，或成功色的恢复状态。悬停或键盘聚焦时只显示重连操作文案，连接中的圆点动画也保持隐藏。所有状态都为最长的输入 label 预留空间，并使用固定的图标列和文字列，因此文案变化不会移动控件或改变其宽度。它的持有方提供可见性、恢复驻留时间、本地化 label 与立即重连回调；该原语不使用原生 title tooltip。`useAnchoredPosition` 与 `useAnchoredMaxHeight` 让浮动面板与底部锚定浮层始终钳制在视口内并跟随锚点。`HoverCard` 通过指针离开宽限期让采用 portal 的预览在跨过锚点间隙时仍可触及，并可通过 `copyText` prop 提供复制按钮。`Toast` 的停留时长由使用方通过 `holdMs` 指定，因为横幅该留多久取决于有多少内容要读；同一个值同时驱动它的卸载定时器与样式表的淡出延迟，两者不可能再错位。`rankByName` 是 `/` 菜单命令源与 skill（技能）源共享的候选排序器：查询必须是名字的不区分大小写的有序子序列；前缀命中排最前，其次按对齐分数，再按来源顺序。 `Menu.autoFocus` 聚焦首个启用项，支持上下方向键与 Home/End 导航，并在 Escape 时聚焦 anchor 内的第一个按钮；操作菜单可显式启用。
+上面的目录说明每个导出的用途；本节讲 props 本身看不出来的行为。`ic_ds_*` 图标集与 `FishLogo`/`BrandWordmark` 标记填充品牌与行内图标 slot。`FileTypeIcon` 渲染传统的 28px Excel、folder、HTML、image、Markdown、generic、PDF、PPT、video 与 Word 图形，并为现有 48 个代码和配置类别使用导入的方形技术图形。该导入只替换图形：资源包中额外的类别不会扩展 `CodeFileType`。`classifyFileType` 按完整文件名、前缀、后缀、可选项目上下文、扩展名的顺序匹配；React 文件名优先于 TypeScript/JavaScript，Angular 后缀优先于基础扩展名，只有传入的项目文件包含带 `flutter:` 的 `pubspec.yaml` 时 Dart 文件才使用 Flutter。Markdown 与 SVG 仍分别使用传统 Markdown 与图片图形。办公文件映射包含 XLSM/Numbers 的表格图标、KEY 的幻灯片图标，以及 RTF/ODT/Pages 的文档图标。`fileExtension` 为相邻元数据 label 暴露同一套 basename 与最终点号解析。传统图形使用实色分类底板、白色标记和半透明白色折角；通用文件使用灰色底板与较深灰色折角。调用方可通过 `--dsh-file-type-icon-color` 覆盖底板颜色。全彩技术图形是明确例外，会保留其内嵌调色板。所有图形都是装饰性的，不自带 label。`LinkIcon` 仍是可点击产物链接较小的前置图形——地球、文件夹、代码、图片、文档或纸张，`url` 链接的 `href` 指向已知站点时则改用该站点自己的标记——转写内容常引用的开发者站点（GitHub、GitLab、npm、PyPI、Stack Overflow、MDN、Wikipedia、Hacker News、YouTube、X、Bilibili、知乎、掘金、CSDN），以及主流搜索、视频、社交、购物与参考资料站点（Google、百度、DuckDuckGo、TikTok、Netflix、Spotify、Facebook、Instagram、Reddit、Telegram、WhatsApp、微信、QQ、微博、淘宝、速卖通、eBay、Quora、V2EX、Apple）——`classifyLinkPath` 把共享文件类型折叠进原有六类词汇。`ConnectionIndicator` 可渲染警告色的断联操作（常驻重试图形指明重试动作，断联文案由持有方提供）、spinner 加一至三个点以独立于 retry 时序的 500ms 节奏推进的连接中状态，或成功色的恢复状态。点击任一警告状态都会请求立即重连；没有任何悬停交互会改变文案。药丸出现时淡入、卸载前淡出 150ms，宽度随当前 label 自适应。它的持有方提供可见性、恢复驻留时间、本地化 label 与立即重连回调；该原语不使用原生 title tooltip。`useAnchoredPosition` 与 `useAnchoredMaxHeight` 让浮动面板与底部锚定浮层始终钳制在视口内并跟随锚点。`HoverCard` 通过指针离开宽限期让采用 portal 的预览在跨过锚点间隙时仍可触及，并可通过 `copyText` prop 提供复制按钮。`Toast` 的停留时长由使用方通过 `holdMs` 指定，因为横幅该留多久取决于有多少内容要读；同一个值同时驱动它的卸载定时器与样式表的淡出延迟，两者不可能再错位。`rankByName` 是 `/` 菜单命令源与 skill（技能）源共享的候选排序器：查询必须是名字的不区分大小写的有序子序列；前缀命中排最前，其次按对齐分数，再按来源顺序。 `Menu.autoFocus` 聚焦首个启用项，支持上下方向键与 Home/End 导航，并在 Escape 时聚焦 anchor 内的第一个按钮；操作菜单可显式启用。
 
 ### 渲染 agent 输出
 
-`MarkdownText` 渲染不可信的 GFM 与 TeX 公式、阻止不安全的链接与图片，并可把已解析的文件提及转换为显式控件。当 owner 传入 `pathImages` 词表时，本地媒体路径的图片目标只在落定渲染阶段重写为可展示 URL（与 file mentions 相同的流式门）；不传词表时本地目标保持惰性 alt 文本。加载或解码失败后，图片替换为作者的 alt 文本；alt 为空时显示原始目标路径。图片源变化后可重新加载。回复流式输出时，它冻结已完成的块、按已完成行推进顶层未闭合 fence，并从保存的 Shiki grammar state 为该 fence 增量高亮。已完成的 token 行进入固定大小的 React 分组，后续分片只 reconcile 正在增长的分组；最终全量解析解决跨文档语法时，未变化的 fence 会保留该 DOM。`TerminalBlock`、`ReadBlock`、`DiffBlock`、`SearchBlock` 与 `WebBlock` 把对应的工具结果意图渲染为带复制控件、溢出处理及适用时 ANSI 处理的卡片。`JsonTree` 与 `JsonBlock` 以只读方式检查 JSON 值；`projectUserText` 把已发送的用户文本投影为行内普通文本段与引用 chip，供消息气泡和排队行使用。
+`MarkdownText` 渲染不可信的 GFM 与 TeX 公式、阻止不安全的链接与图片，并可把已解析的文件提及转换为显式控件。外层 `MarkdownDelegateProvider` 会接收普通点击产生的已净化 HTTP(S) URL；带修饰键的点击和 Provider 外的链接保留原生外部 anchor 行为。当 owner 传入 `pathImages` 词表时，本地媒体路径的图片目标只在落定渲染阶段重写为可展示 URL（与 file mentions 相同的流式门）；不传词表时本地目标保持惰性 alt 文本。加载或解码失败后，图片替换为作者的 alt 文本；alt 为空时显示原始目标路径。图片源变化后可重新加载。回复流式输出时，仅源码渲染会冻结已完成的块、按已完成行推进顶层未闭合 fence，并从保存的 Shiki grammar state 为该 fence 增量高亮。已完成的 token 行进入固定大小的 React 分组，后续分片只 reconcile 正在增长的分组；最终全量解析解决跨文档语法时，未变化的 fence 会保留该 DOM。`TerminalBlock`、`ReadBlock`、`DiffBlock`、`SearchBlock` 与 `WebBlock` 把对应的工具结果意图渲染为带复制控件、溢出处理及适用时 ANSI 处理的卡片。`JsonTree` 与 `JsonBlock` 以只读方式检查 JSON 值；`projectUserText` 把已发送的用户文本投影为行内普通文本段与引用 chip，供消息气泡和排队行使用。 传入 `UserTextReferences` 时，文件和 skill 引用成为支持键盘操作的预览按钮，复用正文文件链接的悬停和聚焦样式；第一次指针点击可以打开预览，后续点击和已有选区保留原生选择行为。键盘激活在存在选区时仍可打开预览。
 
+`CodeBlock` 显示源码时对 `dot`/`graphviz`、`svg` 与 `mermaid` 高亮，语言提示不区分大小写。这些语法按需加载；加载完成后，已挂载的源码会自动采用主题 token 颜色。SVG 复用 XML 语法。Mermaid 使用 `@shikijs/langs/mermaid` 的图表正文规则。固定的 DOT 语法及其机械转换记录在[第三方声明](THIRD_PARTY_PREVIEW_NOTICES.txt)中。
+
+传入 `MarkdownLabels.preview`，让定稿后的 `mermaid`、`graphviz`/`dot` 和 `svg` fence 默认显示预览。受支持的流式 fence 显示高 180px 的图片占位、呼吸图标与本地化状态；流式结束后提供控件。未提供这些文案的调用方显示源码。Mermaid 与 Graphviz 在代码块背景上使用当前文档配色，并在解析后的颜色变化时更新与视口相交的预览或已打开的大图。视口外的预览推迟到进入视口后才渲染和加载运行时。DOT 与 SVG 中明确指定的颜色保留为作者内容。渲染按需加载 Mermaid，采用严格安全模式，并将生成的 SVG 作为不带图表链接处理器的图片显示。渲染或图片加载失败时显示传入的错误文案，工具栏仍可切换源码；替换源码会丢弃上一次渲染迟到的结果。
+
+`CodeBlock.preview` 提供标准化的源码预览描述，包含 renderer 以及完整的本地化输出与控件文案。调用方不传入 React 节点。语言名位于左侧；右侧依次放置放大镜、复制图标和源码／预览分段控件。只有选中背景滑动 160ms，正文立即切换。不支持预览的代码块显示静态选中的源码文案。复制始终读取源码，并通过图标和 tooltip 确认成功，不改变工具栏宽度。预览中的放大镜打开 body portal lightbox，图片等比适应屏幕宽度的 88% 和高度的 84%。拖拽可平移，滚轮围绕鼠标位置缩放，双击恢复适应屏幕。方向键平移，+/− 缩放，Home 复位。大图复用已生成的图片；没有可用图片时禁用，并提供本地化的可访问说明。源码视图用行号开关替换放大镜，源码文本和复制结果保持不变。预览工具栏仅通过透明度在 160ms 内淡出，鼠标移入代码块或键盘聚焦时显示；触摸设备保持可见。源码工具栏始终可见。
+
+Graphviz 按需加载 `@viz-js/viz`，使用 `dot` 引擎渲染 DOT。SVG 与 Graphviz 输出都作为不可执行图片显示在与 Mermaid 相同的画布中；无效 SVG 与 DOT 显示错误并保留源码入口。浏览器按图片宽高比与可用宽度计算预览高度，图片高度不超过 60vh 与 640px 中的较小值。画布保留 16px 内边距与 120px 最小高度。源码在首次选中时挂载，在同一区域内滚动；后续切换保留源码 DOM 与已生成图片。HTML fence 使用普通高亮代码视图。
+
+[预览许可证声明](THIRD_PARTY_PREVIEW_NOTICES.txt)随本包与 Web 前端分发。Mermaid 使用 MIT；Viz.js 使用 MIT，但内嵌 Graphviz 使用 EPL-2.0。声明保留完整许可证文本及准确的 Graphviz 源码下载地址。升级依赖时必须同时检查内嵌产物和 npm 元数据；[预览决策](../../../.agents/notes/implemented/feature/2026-09-09-markdown-static-previews.zh.md)记录分发选择。
+
+`MarkdownText` 默认为 `variant="body"`。次级内容使用 `variant="compact"`：其 13px 字号与 20px 行高跟随内容字号设置，各级标题保持同一字号并使用 600 字重，段落与列表采用更紧凑的间距。正文、链接和代码均保持 tertiary 颜色，以点状下划线区分链接。代码标题栏随代码块滚动。表格和公式仍然启用，使用周围文字的字号，并在可用宽度内横向滚动。两个变体共享解析器与流式缓存。
+
+`DiffBlock` 按行比较新旧内容。它显示实际增删行及两侧最多三行中性上下文，用 `⋯` 分隔远距离改动，摘要和底部统计都不计入共享上下文。若一个片段需要超过 256 次行新增或删除，则停止精确比较；该片段按完整新旧内容显示和统计为粗粒度替换，包含共享行。复制包含完整显示 diff 及其前缀。末尾换行视为行终止符；仅末尾换行不同不会显示为改动。
+
+`JsonTree` 把折叠字符串限制为 `collapsedStringLines` 行（默认三行）。展开后显示原始文本、保留同级逗号，并限制在窗口与外层滚动容器内；尺寸变化和祖先滚动事件会更新此限制。行复制反馈独立于 JSON 值渲染更新；尚未完成的剪贴板写入不会更新另一行或已卸载的树。
 
 ### 本地化文案
 
@@ -102,7 +118,11 @@ kind: "package-library"
 
 ### 流式 Markdown
 
-回复流式输出期间，`MarkdownText` 增量解析：除末尾两个块外全部冻结为缓存的 React 元素，每个分片只重新解析其后的源文本尾部，因此每分片的工作量跟随尾部而非整个回复。末尾的顶层未闭合 fence 会保留已解析的 code node，只把最后一个已完成行与当前未完成行交给同一套 GFM grammar；闭合 fence 或有歧义的解析会回到普通尾部路径。高亮同样从保存的 Shiki grammar state 续接，并只发布新完成行与可变尾部。`CodeBlock` 把已完成行封入固定大小的 React 分组、复用更早的分组，并在代码与语言未变化时跨定稿保留整棵高亮树。定稿时的全量解析仍会解析跨过冻结边界的引用。
+回复流式输出期间，`MarkdownText` 增量解析：除末尾两个块外全部冻结为缓存的 React 元素，每个分片只重新解析其后的源文本尾部，因此每分片的工作量跟随尾部而非整个回复。末尾的顶层未闭合 fence 会保留已解析的 code node，只把最后一个已完成行与当前未完成行交给同一套 GFM grammar；闭合 fence 或有歧义的解析会回到普通尾部路径。高亮同样从保存的 Shiki grammar state 续接，并只发布新完成行与可变尾部。再次渲染同一高亮帧会复用其已渲染正文，因此 React 重试渲染不会重复追加已完成行。`CodeBlock` 把已完成行封入固定大小的 React 分组、复用更早的分组，并在代码与语言未变化时跨定稿保留整棵高亮树。定稿时的全量解析仍会解析跨过冻结边界的引用。
+
+### 预览所有权
+
+流式占位既不挂载源码高亮组件，也不调用图表渲染器。流式结束后，等待画布保留至图片加载完成；停止输出也会退出流式等待。减少动态效果设置禁用其 1.8 秒透明度动画。共享视口观察器激活与视口相交的预览；离开视口会取消未完成的渲染，已打开 lightbox 时除外。每个已挂载的代码块在视图切换和离开视口时保留图片。重新进入时复用源码、renderer 与配色相同的结果，包括失败结果。主题刷新保留已加载图片和 lightbox，直到替换图片加载完成；刷新失败则保留可用图片并报告错误。支持预览的代码块在首次选中源码时挂载并高亮，之后保留其 DOM；纯源码代码块仍在进入视口后激活高亮。独立 memo 化的源码与复制控件让工具栏反馈和属性未变的父组件更新不必重做源码工作，语法就绪状态也只针对该源码语言。[交互决策](../../../.agents/notes/implemented/feature/2026-09-10-codeblock-preview-interaction.zh.md)负责保留机制，[预览尺寸决策](../../../.agents/notes/implemented/simplification/2026-09-14-source-sized-code-block-previews.zh.md)负责几何行为。
 
 ### 几何与溢出
 
@@ -138,9 +158,14 @@ kind: "package-library"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-
 这些限制说明原子组件在边缘情况下的行为；它们是当前包约束，不是组件路线图。
 
+- **图表预览限制**：Mermaid 原生图片节点在布局前被拒绝，避免加载源码指定的资源。不支持 IntersectionObserver 的浏览器会立即渲染。
+
+- **图表渲染在浏览器线程上执行**：Mermaid 串行执行布局；Graphviz 同步执行 WebAssembly 布局。取消会跳过排队工作，但无法中断已开始的布局。已加载图片和访问过的源码 DOM 保留至卸载；视口延迟渲染不等同于虚拟化或 worker 渲染。
+
+- **Diff 搜索有上限，输入处理仍为线性**：编辑距离上限使大量改动的片段采用粗粒度替换，不再精确对齐。规范化、回退行及复制内容仍随输入大小增长；高度限制只约束可见行数，不限制这些分配。
+- **已知站点标记是固定列表**：只有列名的主机解析为自己的标记，其余外部主机仍使用地球；要识别任意站点需要通过网络抓取它的图标。
 - **流式期间跨边界引用解析被推迟**：定义落在增量冻结边界另一侧的引用式链接或脚注，在回复流式输出期间渲染为字面文本；定稿时的全量解析会将其解析。
 - **长高亮 fence 会保留完整 token DOM**：流式路径避免重新解析、重新 tokenize 和 reconcile 已完成前缀，但不会丢弃旧颜色或虚拟化 token span。因此最终 DOM 数量仍随 fence 的 token 数增长；嵌套／容器内 fence 与病态的单个超长行仍走通用尾部路径。
 - **字形级图标是重新绘制的近似版本**：鱼形标志与闪光标记来自字体字形，而本地设计数据无法导出其矢量几何；在获得精确导出路径前，使用手工重建版本代替。

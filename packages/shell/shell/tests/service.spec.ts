@@ -25,7 +25,7 @@ class StubExecutor extends ShellExecutor {
     }
   }
 
-  execute(spec: ShellExecSpec): ShellExecution {
+  async execute(spec: ShellExecSpec): Promise<ShellExecution> {
     const proc: ShellExecution = {
       status: 'running',
       exitCode: null,
@@ -61,14 +61,14 @@ describe('ShellExecutor service seam', () => {
     expect(spec).toEqual({ command: 'echo hi', workdir: '/stub', timeoutMs: 1000, onExpiry: 'kill', stdoutMaxBytes: 64_000, sandboxPolicy: undefined })
 
     // One execution, two views: the foreground result projection…
-    const ex = ctx.shell.execute(spec)
+    const ex = (await ctx.shell.execute(spec))
     const result = await ex.result()
     expect(result.exitCode).toBe(0)
     expect(result.stdout.text).toBe('ok')
     await expect(ex.promotion).resolves.toBeUndefined()
 
     // …and the live handle itself.
-    const proc = ctx.shell.execute({ ...spec, onExpiry: 'none' })
+    const proc = (await ctx.shell.execute({ ...spec, onExpiry: 'none' }))
     expect(proc.status).toBe('running')
     expect(proc.readOutput()).toEqual({ delta: '', lossy: false })
     expect(proc.kill()).toBe(true)

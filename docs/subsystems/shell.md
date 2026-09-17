@@ -1,8 +1,8 @@
-# Bash Executor
+# Shell Executor
 
 English | [中文](shell.zh.md)
 
-The bash execution seam is split across a Service Definition ([dsh-shell](../../packages/shell/shell), `ctx.shell`), Service Providers ([dsh-bash-local](../../packages/shell/bash-local) and [dsh-bash-sandbox](../../packages/shell/bash-sandbox)), and Consumer ([dsh-tool-bash](../../packages/shell/tool-bash), the `bash` schema). Generic background-job ids, ownership, and controls live in [jobs.md](jobs.md); this seam returns a task-free process handle. Managed-range mechanics live behind the [subprocess seam](subprocess.md).
+The shell execution seam uses [dsh-shell](../../packages/shell/shell) as its Service Definition on `ctx.shell`. The [shell package group](../../packages/shell/README.md) lists its Bash and PowerShell providers and model-facing Consumers. Generic background-job ids, ownership, and controls live in [jobs.md](jobs.md); this seam returns a process handle without job registration. Managed-range mechanics live behind the [subprocess seam](subprocess.md).
 
 Source: [`packages/shell/shell/src/types.ts`](../../packages/shell/shell/src/types.ts)
 
@@ -111,11 +111,11 @@ interface ShellExecSpec {
 The outcome of one completed (or killed) foreground run. Orthogonal outcomes are reported **independently** — a process can both time out AND exit 0 because it trapped the signal — so `timedOut`, `aborted`, `signal`, and `exitCode` are each their own field; a caller never reads a cut-short run as a clean success.
 
 ```ts type-equiv
-/** The outcome of one completed (or killed) foreground run. */
+/** The outcome of a foreground run, including timeout during preparation. */
 interface ShellRunResult {
-  /** Exit code; null when the process died from a signal. */
+  /** Exit code; null when preparation expired or the process died from a signal. */
   exitCode: number | null
-  /** Terminating signal (e.g. 'SIGTERM'); null on normal exit. */
+  /** Terminating signal, or null when none was reported, including preparation expiry. */
   signal: NodeJS.Signals | null
   /**
    * True when the executor's own timeout was the FIRST cause to cut the command
@@ -170,7 +170,7 @@ The `SANDBOX_UNAVAILABLE` error code (owned by the [sandbox seam](sandbox.md)) i
 
 ## Background processes: `ShellProcess`
 
-`start()` returns a handle with no id or owner. `dsh-tool-bash` adapts it into `ctx.jobs.start()` hooks; the generic runtime then owns job identity and lifecycle. `done` resolves when the underlying process settles and never rejects; a subprocess provider rejection becomes a `killed` process with a stage-neutral error on stderr. Reads remain valid after settlement, and sandbox facts are stamped before `done` resolves.
+`start()` resolves with a handle after asynchronous launch preparation; cancellation or preparation failure rejects before publication. The handle has no id or owner. `dsh-tool-bash` adapts it into `ctx.jobs.start()` hooks; the generic runtime then owns job identity and lifecycle. `done` resolves when the underlying process settles and never rejects; a subprocess provider rejection becomes a `killed` process with a stage-neutral error on stderr. Reads remain valid after settlement, and sandbox facts are stamped before `done` resolves.
 
 ```ts type-equiv
 /**
@@ -248,13 +248,13 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 Abstract bash execution service. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.shell` (one implementation per context; loading a second throws, which is cordis' standard duplicate-service behavior).
 
-There is one way to execute: execute spawns the process and returns its live handle. "Foreground" is a property of what the caller awaits, not of the spawn — a caller that awaits ShellExecution.result ran the command in the foreground; one that keeps the handle ran it in the background; one that awaits ShellExecution.promotion under `onExpiry: 'offer'` decides at the deadline.
+execute resolves with the process handle after preparation. "Foreground" is a property of what the caller awaits, not of the spawn — a caller that awaits ShellExecution.result ran the command in the foreground; one that keeps the handle ran it in the background; one that awaits ShellExecution.promotion under `onExpiry: 'offer'` decides at the deadline.
 
 Implementations must honor these semantics:
 
 - ShellExecution.result rejects only for infrastructure failures. Nonzero exits, timeout kills, and abort kills resolve with a descriptive result: first-cause `timedOut`/`aborted`, the spec's `timeoutMs` echoed.
-- The handle is live immediately. `done` settles at process close and never rejects; spawn failures settle as `killed` with the error on the read path, while `result()` carries the same failure as its rejection.
-- `onExpiry: 'none'` arms no deadline; `'kill'` kills at expiry; `'offer'` resolves ShellExecution.promotion instead of killing, and an unanswered offer is treated as declined.
+- The handle is published after preparation. `done` settles at process close and never rejects; spawn failures settle as `killed` with the error on the read path, while `result()` carries the same failure as its rejection.
+- `onExpiry: 'none'` arms no deadline; `'kill'` kills at expiry; `'offer'` resolves ShellExecution.promotion instead of killing, and an unanswered offer is treated as declined. Expiry during preparation returns a settled timed-out handle without output or a promotion offer.
 - ShellProcess.readOutput is incremental: consecutive reads never repeat output. Lossy reads report truncation and available spill files.
 - A still-running process is stopped and awaited when its owning composition tears down. With the subprocess seam that boundary is `ctx.subprocess` disposal, so a process survives an executor-only reload.
 
@@ -268,12 +268,13 @@ Implementations must honor these semantics:
 abstract resolve(request: ShellExecRequest): ShellExecSpec
 
 /**
- * Spawn the command and return its live execution handle immediately.
+ * Prepare and spawn the command under its resolved deadline.
  * @param spec - a resolved spec from {@link resolve}, never a raw request.
- * @returns the handle: the live process plus its foreground `result()`
- *   projection and the deadline's `promotion` signal.
+ * @returns the prepared handle, including its result and promotion signal;
+ *   preparation timeout yields an already-settled handle with no output.
+ * @throws on preparation failure or caller cancellation before process publication.
  */
-abstract execute(spec: ShellExecSpec): ShellExecution
+abstract execute(spec: ShellExecSpec): Promise<ShellExecution>
 ```
 
 Source: [`packages/shell/shell/src/index.ts`](../../packages/shell/shell/src/index.ts)

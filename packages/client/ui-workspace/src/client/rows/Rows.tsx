@@ -102,6 +102,7 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
  * Workspace shows its hover card (the ungrouped bucket has none).
  * `containsCurrent` arrives on the node (derivation fact, no renderer scan).
  * @param props.group - derived group node.
+ * @param props.containsCurrentDescendant - highlight an ancestor even when its subtree is collapsed.
  * @param props.onToggle - expand/collapse the group.
  * @param props.onCreate - start a frontend Session inside this Workspace.
  * @param props.drag - optional workspace-row drag wiring.
@@ -109,8 +110,9 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
  * @param props.t - the browser root's locale seat.
  * @returns the row element.
  */
-export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home, t }: {
+export function ProjectRowItem({ group, containsCurrentDescendant = false, onToggle, onCreate, actions, drag, home, t }: {
   group: GroupNode
+  containsCurrentDescendant?: boolean
   onToggle: () => void
   onCreate: () => void
   /** Real-Workspace actions; absent for the ungrouped bucket (no menu shown). */
@@ -124,7 +126,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
   const row = group
   // The ungrouped bucket has no workspace title: its label is dictionary copy.
   const label = row.workspaceId === undefined ? t('group.ungrouped') : row.label
-  const active = group.expanded && group.containsCurrent
+  const active = containsCurrentDescendant || (group.expanded && group.containsCurrent)
   const [menuOpen, setMenuOpen] = useState(false)
   const workspaceMenuItems = [
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
@@ -371,7 +373,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @param props.onFork - fork a session at its last completed turn.
  * @param props.onArchive - archive a session by id.
  * @param props.onReveal - scroll this row into view after search navigation, then acknowledge it.
- * @param props.drag - optional draggable-row wiring.
+ * @param props.drag - optional row-drag target wiring; blank rows cannot start a drag.
  * @param props.flat - omit the empty status slot in the hierarchy-free flat list.
  * @param props.t - the browser root's locale seat.
  * @returns the session row.
@@ -391,7 +393,7 @@ export function SessionNodeItem({
   onArchive: (id: SessionNode['id']) => void
   /** Scroll this row into view after search navigation, then acknowledge it. */
   onReveal?: (() => void) | undefined
-  /** Present only on draggable rows (workspace-group sessions outside search). */
+  /** Present on reorderable-list rows so every row can remain a drop target. */
   drag?: RowDragProps | undefined
   /** The row is rendered without a parent Workspace header. */
   flat?: boolean | undefined
@@ -403,6 +405,7 @@ export function SessionNodeItem({
   const statuses = sessionStatuses(node, t)
   const primaryStatus = statuses[0]
   const showStatus = primaryStatus.state !== 'done' || row.completed
+  const draggable = drag !== undefined && !row.blank
   const [menuOpen, setMenuOpen] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -431,15 +434,15 @@ export function SessionNodeItem({
       role="treeitem"
       aria-selected={selected}
       onClick={() => { onOpen(node.id) }}
-      draggable={drag !== undefined}
-      onDragStart={drag === undefined
+      draggable={draggable}
+      onDragStart={drag === undefined || row.blank
         ? undefined
         : (e) => {
           e.dataTransfer.effectAllowed = 'move'
           e.dataTransfer.setData('text/plain', node.id)
           drag.start()
         }}
-      onDragEnd={drag?.end}
+      onDragEnd={drag === undefined || row.blank ? undefined : drag.end}
       onDragOver={drag === undefined
         ? undefined
         : (e) => {

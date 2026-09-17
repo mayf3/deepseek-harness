@@ -30,7 +30,7 @@ import { OutputRing } from './ring.ts'
 export const TASK_WAIT_TIMEOUT = 'TASK_WAIT_TIMEOUT'
 
 /** Default maximum number of active jobs in one exact-owner bucket. */
-const DEFAULT_MAX_CONCURRENT_TASKS_PER_OWNER = 10
+const DEFAULT_MAX_CONCURRENT_JOBS_PER_OWNER = 10
 
 /** Default live ring retention per job, in UTF-8 bytes. */
 const DEFAULT_RETAIN_BYTES = 256 * 1024
@@ -109,7 +109,7 @@ interface TrackedJob {
   /**
    * The spill file each pull source reported on its latest read, by source
    * index; an entry is undefined while that source keeps none. Source
-   * metadata rather than chunk provenance, so it survives ring eviction and
+   * metadata rather than per-chunk metadata, so it survives ring eviction and
    * follows a source that withdraws its file.
    */
   spillPaths: (string | undefined)[]
@@ -131,7 +131,7 @@ export class LocalJobRegistry extends JobRegistry {
       .step(1)
       .min(1)
       .max(Number.MAX_SAFE_INTEGER)
-      .default(DEFAULT_MAX_CONCURRENT_TASKS_PER_OWNER),
+      .default(DEFAULT_MAX_CONCURRENT_JOBS_PER_OWNER),
     retainBytes: z.number()
       .step(1)
       .min(1)
@@ -216,7 +216,7 @@ export class LocalJobRegistry extends JobRegistry {
     }
     if (owner !== undefined) this.ensureOwnerCleanup(owner)
 
-    const active = this.activeTaskCount(owner)
+    const active = this.activeJobCount(owner)
     if (active >= this.maxConcurrentJobsPerOwner) {
       throw new Error(
         `background job limit reached for this owner (limit: ${this.maxConcurrentJobsPerOwner}); use job_kill to stop an unneeded job, wait for it to finish, then retry`,
@@ -376,7 +376,7 @@ export class LocalJobRegistry extends JobRegistry {
   }
 
   /** Count authoritative active records for one exact owner or the shared unowned bucket. */
-  private activeTaskCount(owner: Agent | undefined): number {
+  private activeJobCount(owner: Agent | undefined): number {
     let count = 0
     for (const job of this.store.values()) {
       if (job.owner === owner && (job.status === 'running' || job.status === 'stopping')) count += 1

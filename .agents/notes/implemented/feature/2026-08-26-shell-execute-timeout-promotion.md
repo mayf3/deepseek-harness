@@ -14,7 +14,9 @@ Peer evidence pointed one way. Kimi promotes on timeout by default (`bashAutoBac
 
 ## Decision
 
-**The seam converges to `resolve()` + `execute()`.** `execute(spec)` returns `ShellExecution` — the live `ShellProcess` itself plus two projections: `result()` (the foreground view: split collected streams, first-cause `timedOut`/`aborted`, rejecting only for infrastructure failures) and `promotion` (the deadline's first-to-settle signal). `run()` and `start()` are deleted (pre-release, no shims); the historical differences they encoded became explicit inputs: `ShellExecSpec.onExpiry` is `'kill'` (the default), `'offer'`, or `'none'`, and one stdout budget (`spec.stdoutMaxBytes`) applies everywhere.
+**The seam converges to `resolve()` + `execute()`.** `execute(spec)` returns `Promise<ShellExecution>` — the live `ShellProcess` itself plus two projections: `result()` (the foreground view: split collected streams, first-cause `timedOut`/`aborted`, rejecting only for infrastructure failures) and `promotion` (the deadline's first-to-settle signal). `run()` and `start()` are deleted (pre-release, no shims); the historical differences they encoded became explicit inputs: `ShellExecSpec.onExpiry` is `'kill'` (the default), `'offer'`, or `'none'`, and one stdout budget (`spec.stdoutMaxBytes`) applies everywhere.
+
+**Preparation shares the execution deadline.** The handle is published after asynchronous confinement finishes. Preparation cancellation or failure rejects `execute`; expiry returns a settled timed-out handle with empty output and no promotion offer. A late preparation result cannot spawn work. Provider facts are installed synchronously before subprocess settlement so an immediately failed launch still receives its sandbox classification.
 
 **`promotion` settles exactly once and never rejects**: with a `ShellPromotionOffer` when an `'offer'` deadline expires on a still-running process, with `undefined` when the process settles first (and under every other policy). That completeness is what lets a consumer write `const offer = await ex.promotion` with no race against `result()`. The offer must be answered synchronously upon resolution; the executor auto-declines an unanswered offer, so the fail-safe direction is the old kill-on-timeout behavior, never a silently detached process. `accept()` ends the deadline obligation and detaches the caller's abort signal (Kimi's `detachEntry`, Claude Code's `#cleanupListeners`, same move); `decline()` kills now and classifies `timedOut`.
 
@@ -35,7 +37,7 @@ Executor level (real processes): offer at deadline; accept detaches timer and ca
 
 ## Consequences
 
-- Every `ShellExecutor` consumer moved: the tools, the hook runner, tmux-context, the e2b fixture, and the webworker sandbox stack now speak `execute()`; executor test suites keep scenario intent through local `run`/`start` shims over the new seam.
+- Every `ShellExecutor` consumer moved: the tools, the hook runner, tmux-context, and the webworker sandbox stack now speak `execute()`; executor test suites keep scenario intent through local `run`/`start` shims over the new seam.
 - The `bash`/`pwsh` tool descriptions and `timeoutMs` schema text changed (model-visible), and the output union gained the `promoted` arm — recorded-session snapshots re-recorded with them.
 - A promoted command has no deadline at all afterwards, like any background job; stopping it is `job_kill` or the web stop control.
 - `start()`-era behavior where a synchronous spawn throw escaped to the caller is gone: callers read failures from `result()`/the read path. The sandbox "sync EACCES names the runner" classification now arrives as the `result()` rejection or the handle's `runnerFailed` fact.

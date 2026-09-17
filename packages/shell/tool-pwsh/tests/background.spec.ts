@@ -66,7 +66,7 @@ class FakePwsh extends ShellExecutor {
     }
   }
 
-  override execute(spec: ShellExecSpec): ShellExecution {
+  override async execute(spec: ShellExecSpec): Promise<ShellExecution> {
     if (spec.onExpiry !== 'none') return this.foregroundHandler(spec)
     // Augment the scripted handle in place: the scenarios mutate the original
     // object (finish()), so a spread copy would freeze its lifecycle.

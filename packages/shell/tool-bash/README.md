@@ -54,9 +54,10 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 The tool executes `bash -c <command>` and returns the combined output. Commands run in a fresh shell every call, so state never persists — pass `workdir` instead of `cd`. A non-zero exit is reported as `[exit code: N]` for the agent to interpret, not surfaced as a tool error. A `description` in active voice (5–10 words) labels the call in the UI; `timeoutMs` overrides the executor's default and cap. Output beyond the executor's stream caps is truncated to its tail, with the full output saved to a spill file whose path is reported.
 
+<a id="running-long-commands-in-the-background"></a>
 ### Running long commands in the background
 
-Passing `run_in_background: true` returns a job id immediately and no timeout applies; the command keeps running while the agent works on something else. The agent reads its output with `job_output` (non-blocking unless `wait: true`), lists jobs with `job_list`, and stops it with `job_kill`; a finished job notifies the owning agent in-session. Background support needs the generic job runtime (`dsh-jobs-local`) and its control tools (`dsh-tool-jobs`) mounted. The background job hands the run's non-consuming `observed` readers to the job registry as pull sources; the registry pumps them into the job's output ring at its own cadence (`pumpPollMs` on `dsh-jobs-local`), so the Web client streams live output and the model's `job_output` reads consume the same bytes through a separate cursor. A reader that throws is logged once and its stream stops; the job runs on to its own settlement. The ring is a best-effort live preview: stdout and stderr are copied per poll round, so writes the two streams made inside one poll window appear stdout first rather than in write order.
+Passing `run_in_background: true` admits a job and returns its id immediately; confinement preparation may still be pending, and no background execution timeout applies. Output is empty until the process is available. Job cancellation aborts preparation and stops any process that arrives afterward; startup failure settles the admitted job as failed. The agent reads its output with `job_output` (non-blocking unless `wait: true`), lists jobs with `job_list`, and stops it with `job_kill`; a finished job notifies the owning agent in-session. Background support needs the generic job runtime (`dsh-jobs-local`) and its control tools (`dsh-tool-jobs`) mounted. The background job hands the run's non-consuming `observed` readers to the job registry as pull sources; the registry pumps them into the job's output ring at its own cadence (`pumpPollMs` on `dsh-jobs-local`), so the Web client streams live output and the model's `job_output` reads consume the same bytes through a separate cursor. A reader that throws is logged once and its stream stops; the job runs on to its own settlement. The ring is a best-effort live preview: stdout and stderr are copied per poll round, so writes the two streams made inside one poll window appear stdout first rather than in write order.
 
 ### Timeout promotion
 
@@ -64,7 +65,7 @@ A foreground command that reaches its timeout is not killed by default: the exec
 
 ### Sandboxed execution and escalation
 
-When the mounted executor confines commands (for example `dsh-bash-sandbox`), a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a command failure. The model may then retry the exact same command once in the same turn with `sandbox_permissions` (the narrowest wider mode that suffices) and a one-sentence `justification`; the approval prompt raised by that retry is how the user consents. Escalation is never speculative: a request with no real prior denial, or one that is not strictly wider than the current mode, fails closed without running anything, and a rejected escalation is final for that command.
+When the mounted executor confines commands (for example `dsh-bash-sandbox`), a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a command failure. The model may then retry the exact same command once in the same turn with `sandbox_permissions` (the narrowest wider mode that suffices) and a one-sentence `justification`; the approval prompt raised by that retry is how the user consents. Request wider access only after a real denial; a rejected escalation is final for that command. Repeating the current mode runs without approval, while a narrower target fails before execution.
 
 ### What can go wrong
 
@@ -92,7 +93,7 @@ This section explains the design decisions behind the tool and points at the cod
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: tool registration, prompt section, arg validation, escalation, request assembly |
-| [`src/background.ts`](src/background.ts) | Map a settled background process onto generic job outcome vocabulary |
+| [`src/background.ts`](src/background.ts) | Own asynchronous shell preparation and map process settlement onto job outcomes |
 | [`src/render.ts`](src/render.ts) | Model-facing result text: streams, markers, truncation notices |
 | — | No runtime invariant companion is published; the environment registry validates ownership and collected values at each mutation/read; it publishes no independent snapshot that a companion could cross-check. |
 

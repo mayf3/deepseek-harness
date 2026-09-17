@@ -8,7 +8,7 @@
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { escalationHintMarker, sandboxDenialMarker } from '@deepseek-ai/dsh-sandbox'
 import type { ShellProcess, ShellSandboxInfo } from '@deepseek-ai/dsh-shell'
-import type { JobOutcome, JobOutputSource } from '@deepseek-ai/dsh-jobs'
+import type { JobHooks, JobOutcome, JobOutputSource } from '@deepseek-ai/dsh-jobs'
 
 /**
  * Sandbox facts worth the terminal detail: a runner that never ran the
@@ -95,4 +95,42 @@ export function processSources(
     },
   })
   return [source('stdout'), source('stderr')]
+}
+
+/**
+ * Adapt asynchronous shell preparation after job admission without exposing a partial process.
+ * @param start - starts the process with job-owned cancellation.
+ * @param outcome - projects the settled process into the job outcome.
+ * @returns synchronous job hooks whose completion includes preparation and process settlement.
+ */
+export function processJob(
+  start: (signal: AbortSignal) => Promise<ShellProcess>,
+  outcome: (process: ShellProcess) => JobOutcome,
+): JobHooks {
+  const controller = new AbortController()
+  let process: ShellProcess | undefined
+  const done: Promise<JobOutcome> = (async () => {
+    try {
+      process = await start(controller.signal)
+      try {
+        if (controller.signal.aborted) process.kill()
+      } finally {
+        await process.done
+      }
+      return outcome(process)
+    } catch (error: unknown) {
+      return {
+        status: controller.signal.aborted && process === undefined ? 'killed' : 'failed',
+        detail: error instanceof Error ? error.message : String(error),
+      }
+    }
+  })()
+  return {
+    cancel: (reason) => {
+      if (controller.signal.aborted) return
+      controller.abort(reason)
+      process?.kill()
+    },
+    done,
+  }
 }

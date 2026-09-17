@@ -14,7 +14,9 @@ Update：[jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidation.z
 
 ## 决策
 
-**seam 收敛为 `resolve()` + `execute()`。** `execute(spec)` 返回 `ShellExecution`——活的 `ShellProcess` 本体加两个投影：`result()`（前台视图：分流收集、首因 `timedOut`/`aborted` 归类、只为基础设施失败 reject）与 `promotion`（deadline 的先到者信号）。`run()` 与 `start()` 删除（pre-release，无垫片）；它们编码的历史差异变成显式输入：`ShellExecSpec.onExpiry` 取 `'kill'`（默认）、`'offer'` 或 `'none'`，stdout 预算统一为 `spec.stdoutMaxBytes`。
+**seam 收敛为 `resolve()` + `execute()`。** `execute(spec)` 返回 `Promise<ShellExecution>`——活的 `ShellProcess` 本体加两个投影：`result()`（前台视图：分流收集、首因 `timedOut`/`aborted` 归类、只为基础设施失败 reject）与 `promotion`（deadline 的先到者信号）。`run()` 与 `start()` 删除（pre-release，无垫片）；它们编码的历史差异变成显式输入：`ShellExecSpec.onExpiry` 取 `'kill'`（默认）、`'offer'` 或 `'none'`，stdout 预算统一为 `spec.stdoutMaxBytes`。
+
+**准备与执行共用 deadline。** 异步沙箱准备完成后才发布句柄。准备期间的取消或失败会拒绝 `execute`；到期则返回已结算的超时句柄，输出为空且不提供后台转移 offer。迟到的准备结果不会启动任务。提供方事实在 subprocess 结算前同步安装，立即失败的启动也能获得对应的沙箱归类。
 
 **`promotion` 恰好结算一次且绝不 reject**：`'offer'` deadline 在进程仍在跑时到期则给出 `ShellPromotionOffer`，进程先结束（以及其余每种策略下）则给出 `undefined`。这份完备性让消费方能写 `const offer = await ex.promotion` 而无需与 `result()` 竞速。offer 必须在 resolve 的同步段内应答；未应答由执行器自动 decline，失效方向是旧的超时杀，绝不是悄悄脱管的进程。`accept()` 终止 deadline 义务并解绑调用方的中止信号（Kimi 的 `detachEntry`、Claude Code 的 `#cleanupListeners`，同一手法）；`decline()` 立即杀并归类 `timedOut`。
 

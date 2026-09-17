@@ -12,6 +12,7 @@ export { Pill } from './Pill.tsx'
 export { Tag } from './Tag.tsx'
 export type { TagTone } from './Tag.tsx'
 export { Switch } from './Switch.tsx'
+export { Checkbox } from './Checkbox.tsx'
 export { Input } from './Input.tsx'
 export { Menu } from './Menu.tsx'
 export type { MenuEntry, MenuItem, MenuSeparator, MenuLabel } from './Menu.tsx'
@@ -37,7 +38,7 @@ export { FileTypeIcon, classifyFileType, fileExtension } from './FileTypeIcon.ts
 export type {
   CodeFileType, FileType, FileTypeIconProps, FileTypeKind, FileTypeProjectContext,
 } from './FileTypeIcon.tsx'
-export { projectUserText } from './user-text.tsx'
+export { projectUserText, type UserTextReferences } from './user-text.tsx'
 export { Tooltip } from './Tooltip.tsx'
 export type { TooltipSide } from './Tooltip.tsx'
 export { Toast } from './Toast.tsx'
@@ -45,6 +46,7 @@ export { fileSizeText } from './file-size.ts'
 export { writeClipboard } from './clipboard.ts'
 export { relativeTime } from './relative-time.ts'
 export { rankByName } from './rank-by-name.ts'
+export { isDarwinDesktop } from './darwin-desktop.ts'
 export type { RelativeTime, RelativeTimeUnit } from './relative-time.ts'
 export { JsonTree } from './JsonTree.tsx'
 export type { JsonTreeProps, JsonTreeLabels } from './JsonTree.tsx'
@@ -64,8 +66,12 @@ export type {
   WebBlockProps, WebSearchBlockProps, WebFetchBlockProps, WebSourceView, WebBlockLabels,
 } from './WebBlock.tsx'
 export { CodeBlock } from './markdown/CodeBlock.tsx'
-export type { CodeBlockProps } from './markdown/CodeBlock.tsx'
+export type {
+  CodeBlockPreview, CodeBlockPreviewLabels, CodeBlockPreviewRenderer, CodeBlockProps,
+} from './markdown/CodeBlock.tsx'
 export { JsonBlock } from './markdown/JsonBlock.tsx'
+export { MarkdownDelegateProvider } from './markdown/MarkdownDelegate.tsx'
+export type { MarkdownDelegateProviderProps, MarkdownExternalLinkHandler } from './markdown/MarkdownDelegate.tsx'
 export { MarkdownText } from './markdown/MarkdownText.tsx'
 export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, MarkdownPathImages } from './markdown/MarkdownText.tsx'
 export { extractMarkdownPlainText } from './markdown/plain-text.ts'

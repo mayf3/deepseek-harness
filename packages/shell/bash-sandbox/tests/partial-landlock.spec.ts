@@ -19,12 +19,12 @@ import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import type { ShellExecSpec, ShellExecution, ShellRunResult } from '@deepseek-ai/dsh-shell'
 
 /** Historical foreground shorthand over the unified execute() seam. */
-async function run(x: { execute(spec: ShellExecSpec): ShellExecution }, spec: ShellExecSpec): Promise<ShellRunResult> {
-  return x.execute(spec).result()
+async function run(x: { execute(spec: ShellExecSpec): Promise<ShellExecution> }, spec: ShellExecSpec): Promise<ShellRunResult> {
+  return (await x.execute(spec)).result()
 }
 
 /** Historical background shorthand: execute with no deadline armed. */
-function start(x: { execute(spec: ShellExecSpec): ShellExecution }, spec: ShellExecSpec): ShellExecution {
+function start(x: { execute(spec: ShellExecSpec): Promise<ShellExecution> }, spec: ShellExecSpec): Promise<ShellExecution> {
   return x.execute({ ...spec, onExpiry: 'none' })
 }
 
@@ -109,7 +109,7 @@ describe('partial Landlock runner-failure classification', () => {
     expect(error).toBeInstanceOf(Error)
     expect((error as Error).message).toContain(runner)
 
-    const task = start(bash, bash.resolve({ command: 'true' }))
+    const task = (await start(bash, bash.resolve({ command: 'true' })))
     await task.done
     expect(task.status).toBe('killed')
     expect(task.readOutput().delta).toContain(`subprocess failed before reporting an outcome: Error: spawn ${runner}`)
@@ -143,7 +143,7 @@ describe('partial Landlock runner-failure classification', () => {
       // argv[0] in this spawn error rather than resolving it to an absolute path.
       expect((error as Error).message).toContain(`spawn ${runner} ENOENT`)
 
-      const task = start(bash, bash.resolve(request))
+      const task = (await start(bash, bash.resolve(request)))
       await task.done
       expect(task.status).toBe('killed')
       expect(task.readOutput().delta).toContain(`subprocess failed before reporting an outcome: Error: spawn ${runner} ENOENT`)
@@ -175,7 +175,7 @@ describe('partial Landlock runner-failure classification', () => {
       expect((foreground as { path?: unknown }).path).toBeUndefined()
 
       // Containment: the handle settles killed instead of the spawn throwing.
-      const background = start(bash, bash.resolve(request))
+      const background = (await start(bash, bash.resolve(request)))
       await background.done
       expect(background.status).toBe('killed')
       const backgroundError = await background.result().catch((value: unknown) => value)
@@ -190,7 +190,7 @@ describe('partial Landlock runner-failure classification', () => {
       })
       expect((foreground as { stderr: { text: string } }).stderr.text.length).toBeGreaterThan(0)
 
-      const background = start(bash, bash.resolve(request))
+      const background = (await start(bash, bash.resolve(request)))
       await background.done
       expect(background.status).toBe('completed')
       expect(background.exitCode).toBe(127)
@@ -252,7 +252,7 @@ describe('partial Landlock runner-failure classification', () => {
   it('applies the same evidence rule to notice-only background exits', async () => {
     const bash = await setup()
     for (const command of ['exit 1', 'exit 2', `exit ${LAUNCHER_FAILURE_EXIT}`]) {
-      const task = start(bash, bash.resolve({ command }))
+      const task = (await start(bash, bash.resolve({ command })))
       await task.done
       expect(task.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'partial' })
       expect(task.readOutput().delta).toContain(NOTICE)
@@ -261,7 +261,7 @@ describe('partial Landlock runner-failure classification', () => {
 
   it('classifies a background notice plus child Permission denied as denial', async () => {
     const bash = await setup()
-    const task = start(bash, bash.resolve({ command: 'printf "%s\\n" "child: Permission denied" >&2; exit 1' }))
+    const task = (await start(bash, bash.resolve({ command: 'printf "%s\\n" "child: Permission denied" >&2; exit 1' })))
     await task.done
     expect(task.sandbox).toEqual({ mode: 'read-only', denied: true, enforcement: 'partial' })
     expect(task.readOutput().delta).toContain(NOTICE)
@@ -269,7 +269,7 @@ describe('partial Landlock runner-failure classification', () => {
 
   it('makes a background fatal line outrank denial text after the notice', async () => {
     const bash = await setup(LAUNCHER_FAILURE_EXIT)
-    const task = start(bash, bash.resolve({ command: 'true' }))
+    const task = (await start(bash, bash.resolve({ command: 'true' })))
     await task.done
     expect(task.sandbox).toEqual({
       mode: 'read-only',

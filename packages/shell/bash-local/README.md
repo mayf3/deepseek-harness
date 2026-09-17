@@ -55,13 +55,14 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 Run a command by awaiting the execution's `result()` projection. A nonzero exit, a timeout, or a cancellation resolves with a descriptive result — only infrastructure failures reject. Per-call `timeoutMs` overrides are capped by the configuration, while `workdir` falls back to the configured default when unset; a trusted caller can also raise the per-call stdout capture budget, while stderr keeps `maxOutputBytes`. The environment is model-friendly by default: `NO_COLOR=1 TERM=dumb PAGER=cat GIT_PAGER=cat` keep pagers and ANSI colors from garbling output, and an explicit caller-provided entry still wins.
 
 ```text
-const result = await ctx.shell.execute(ctx.shell.resolve({ command: 'ls -la' })).result()
+const execution = await ctx.shell.execute(ctx.shell.resolve({ command: 'ls -la' }))
+const result = await execution.result()
 if (result.timedOut) console.log('timed out after', result.timeoutMs)
 ```
 
 ### Background processes
 
-Resolve with `onExpiry: 'none'` and keep the handle to run a command in the background; no deadline is armed. `readOutput()` merges the stream deltas into one consuming read, marking stderr under a `[stderr]` section; `kill()` terminates the provider-managed range; `done` settles when the direct command closes and never rejects. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, which the tool layer registers the handle with.
+Resolve with `onExpiry: 'none'` and await `execute` to run a command in the background; no deadline is armed. Cancellation or preparation failure rejects before a handle is published. `readOutput()` merges the stream deltas into one consuming read, marking stderr under a `[stderr]` section; `kill()` terminates the provider-managed range; `done` settles when the direct command closes and never rejects. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, which the tool layer registers the handle with.
 
 <a id="adjusting-budgets-at-runtime"></a>
 ### Adjusting budgets at runtime
@@ -94,6 +95,8 @@ The executor is a Service Provider for the `ctx.shell` seam built on the subproc
 ### Main flow
 
 A call runs through three steps: `resolve()` fills `workdir`/`timeoutMs`/`onExpiry`/`stdoutMaxBytes` from config and the request (capping per-call overrides); `execute` wires the deadline per expiry policy — `'kill'` fuses the clamped timeout with the caller's abort signal, `'offer'` keeps the signal on a detachable relay and hands out the promotion offer at expiry instead of killing, `'none'` arms nothing — and spawns `['bash', '-c', command]` through `ctx.subprocess` with explicit byte caps and the `graceMs`; the settled outcome is classified first-cause — only the executor's own timeout (or a declined offer) reports `timedOut`, an upstream cancel reports `aborted`, a self-signaled command reports neither — and `result()` projects it into a `ShellRunResult` with collected output.
+
+The foreground deadline starts before argv preparation and retains the same signal and remaining budget through execution. Preparation timeout returns empty output, `timedOut: true`, and null `exitCode` and `signal`; caller cancellation before process publication still rejects. Late preparation success or failure cannot trigger a spawn.
 
 ### Invariants and ownership
 

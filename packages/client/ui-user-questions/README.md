@@ -29,7 +29,7 @@ When the agent asks a question, the composer becomes the question surface: answe
 
 ### Answering
 
-A multi-select draft keeps its selected labels while the user opens or edits the custom answer, so its submitted item may carry both `selected` and `custom`; a single-select custom answer remains exclusive. Question detail reuses the assistant-output `MarkdownText` primitive, including its GFM rendering and untrusted-content policy. The capped card keeps its title, navigation, and submission actions fixed while long detail and choices share an internal scroll region. "Skip this question" retains other drafts and emits the existing blank `{ selected: [] }` result for that item, while close rejects the whole wait as `ASK_CANCELLED`.
+A multi-select draft keeps its selected labels while the user opens or edits the custom answer, so its submitted item may carry both `selected` and `custom`; a single-select custom answer remains exclusive. Question detail reuses the assistant-output `MarkdownText` primitive, including its GFM rendering and untrusted-content policy. The capped card keeps its title, navigation, and submission actions fixed while long detail and choices share an internal scroll region. "Skip" retains other drafts and emits the existing blank `{ selected: [] }` result for that item, while close rejects the whole wait as `ASK_CANCELLED`.
 
 ### The plan-review card
 
@@ -37,7 +37,7 @@ A `plan-review` intent — set by `dsh-plan-mode` on the `exit_plan_mode` review
 
 ### Failure and recovery
 
-The generic question flow keeps its current page, selected labels, custom text, and explicit skips in a non-persisted Slot store scoped to the owning Session and keyed by the pending request's local render identity. Switching from Session A to B remounts the strict composer entry, but returning to A reuses A's store and restores the unfinished draft. A different request identity reads an empty draft and replaces the previous value on its first edit; a successful answer or cancellation clears the matching value. The host remains authoritative for whether the request is pending.
+The generic question flow keeps its current page, selected labels, custom text, and explicit skips in a non-persisted Slot store scoped to the owning Session generation and keyed by the pending request's local render identity. Switching from Session A to B retires A when no other reference owns it, so returning to A starts an empty question draft; another reference that keeps A's generation alive also keeps that draft. A different request identity reads an empty draft and replaces the previous value on its first edit; a successful answer or cancellation clears the matching value. The host remains authoritative for whether the request is pending.
 
 -----
 

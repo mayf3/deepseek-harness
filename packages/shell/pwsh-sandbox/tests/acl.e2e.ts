@@ -22,8 +22,8 @@ import { SandboxPwshExecutor } from '../src/index.ts'
 import type { ShellExecSpec, ShellExecution, ShellRunResult } from '@deepseek-ai/dsh-shell'
 
 /** Historical foreground shorthand over the unified execute() seam. */
-async function run(x: { execute(spec: ShellExecSpec): ShellExecution }, spec: ShellExecSpec): Promise<ShellRunResult> {
-  return x.execute(spec).result()
+async function run(x: { execute(spec: ShellExecSpec): Promise<ShellExecution> }, spec: ShellExecSpec): Promise<ShellRunResult> {
+  return (await x.execute(spec)).result()
 }
 
 

@@ -81,7 +81,7 @@ kind: "package-reference"
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 插件入口：`SandboxPwshExecutor`、按进程保留事实、run/start 包装 |
+| [`src/index.ts`](src/index.ts) | 插件入口：`SandboxPwshExecutor`、按进程保留事实、执行准备 |
 | [`src/helpers.ts`](src/helpers.ts) | 拒绝、runner 失败与 runner spawn 失败分类 |
 | — | 不发布运行时不变式伴生入口；除所属 seam 所执行的约定外，本包不暴露独立事件序列或可变数据关系；分类可在结果中观察。 |
 | `tests/` | 跨 ACL 与平台 runner 演练的行为 |
@@ -92,7 +92,7 @@ kind: "package-reference"
 
 ### 不变式
 
-- **失败关闭**——受限模式没有可用 runner 时抛 `SANDBOX_UNAVAILABLE`；受限策略绝不会出现无隔离直通。
+- **失败关闭**——受限模式没有可用 runner 时以 `SANDBOX_UNAVAILABLE` 拒绝；受限策略绝不会出现无隔离直通。
 - **seam 只报告拒绝**——本执行器从不授予权限；批准流程位于工具层。
 - **按进程保留事实**——隔离事实在结算前按句柄保留，因为提供方在不同的重叠调用中可能采用不同的强制执行方式。
 

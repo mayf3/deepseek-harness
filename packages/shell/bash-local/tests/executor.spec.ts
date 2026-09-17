@@ -11,12 +11,12 @@ import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { ShellExecSpec, ShellExecution, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
 
 /** Historical foreground shorthand over the unified execute() seam. */
-async function run(x: { execute(spec: ShellExecSpec): ShellExecution }, spec: ShellExecSpec): Promise<ShellRunResult> {
-  return x.execute(spec).result()
+async function run(x: { execute(spec: ShellExecSpec): Promise<ShellExecution> }, spec: ShellExecSpec): Promise<ShellRunResult> {
+  return (await x.execute(spec)).result()
 }
 
 /** Historical background shorthand: execute with no deadline armed. */
-function start(x: { execute(spec: ShellExecSpec): ShellExecution }, spec: ShellExecSpec): ShellExecution {
+function start(x: { execute(spec: ShellExecSpec): Promise<ShellExecution> }, spec: ShellExecSpec): Promise<ShellExecution> {
   return x.execute({ ...spec, onExpiry: 'none' })
 }
 
@@ -179,7 +179,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
   it('start returns immediately with a running handle that settles as completed', async () => {
     const { bash } = await setup()
     const before = Date.now()
-    const proc = start(bash, bash.resolve({ command: 'sleep 0.2; echo done' }))
+    const proc = (await start(bash, bash.resolve({ command: 'sleep 0.2; echo done' })))
     expect(Date.now() - before).toBeLessThan(150)
     expect(proc.status).toBe('running')
     await proc.done
@@ -189,12 +189,12 @@ describe('LocalBashExecutor.start (background process handles)', () => {
 
   it('threads stdin and extra env into a background process', async () => {
     const { bash } = await setup()
-    const proc = start(bash, bash.resolve({
+    const proc = (await start(bash, bash.resolve({
       command: 'cat; echo "[$BG_VAR][$DSH_BG_VAR]"',
       stdin: 'bg-stdin\n',
       env: { BG_VAR: 'bg-env' },
       dshEnv: { DSH_BG_VAR: 'bg-dsh-env' },
-    }))
+    })))
     const output = await readUntil(proc, '[bg-env][bg-dsh-env]')
     expect(output).toContain('bg-stdin')
     await proc.done
@@ -203,7 +203,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
 
   it('readOutput is consuming: increments are never re-delivered, and reads stay valid after exit', async () => {
     const { bash } = await setup()
-    const proc = start(bash, bash.resolve({ command: 'echo first; sleep 1; echo second' }))
+    const proc = (await start(bash, bash.resolve({ command: 'echo first; sleep 1; echo second' })))
     const first = await readUntil(proc, 'first\n')
     expect(first).toBe('first\n')
     await proc.done
@@ -216,28 +216,28 @@ describe('LocalBashExecutor.start (background process handles)', () => {
 
   it('readOutput marks stderr sections', async () => {
     const { bash } = await setup()
-    const proc = start(bash, bash.resolve({ command: 'echo out; echo err >&2' }))
+    const proc = (await start(bash, bash.resolve({ command: 'echo out; echo err >&2' })))
     await proc.done
     expect(proc.readOutput().delta).toBe('out\n[stderr]\nerr\n')
   })
 
   it('readOutput reports stderr-only deltas without a leading newline', async () => {
     const { bash } = await setup()
-    const proc = start(bash, bash.resolve({ command: 'echo err >&2' }))
+    const proc = (await start(bash, bash.resolve({ command: 'echo err >&2' })))
     await proc.done
     expect(proc.readOutput().delta).toBe('[stderr]\nerr\n')
   })
 
   it('readOutput adds a separator only when stdout lacks a trailing newline', async () => {
     const { bash } = await setup()
-    const proc = start(bash, bash.resolve({ command: 'printf out; echo err >&2' }))
+    const proc = (await start(bash, bash.resolve({ command: 'printf out; echo err >&2' })))
     await proc.done
     expect(proc.readOutput().delta).toBe('out\n[stderr]\nerr\n')
   })
 
   it('readOutput flags lossy reads and reports stdout spill paths', async () => {
     const { bash } = await setup({ maxOutputBytes: 100 })
-    const proc = start(bash, bash.resolve({ command: 'for i in $(seq 1 100); do printf "line-%04d\\n" $i; done' }))
+    const proc = (await start(bash, bash.resolve({ command: 'for i in $(seq 1 100); do printf "line-%04d\\n" $i; done' })))
     await proc.done
     const read = proc.readOutput()
     // Window slid past offset 0 → lossy, spill path points at the full stream.
@@ -247,7 +247,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
 
   it('readOutput reports stderr spill paths', async () => {
     const { bash } = await setup({ maxOutputBytes: 100 })
-    const proc = start(bash, bash.resolve({ command: 'for i in $(seq 1 100); do printf "line-%04d\\n" $i >&2; done' }))
+    const proc = (await start(bash, bash.resolve({ command: 'for i in $(seq 1 100); do printf "line-%04d\\n" $i >&2; done' })))
     await proc.done
     const read = proc.readOutput()
     expect(read.lossy).toBe(true)
@@ -257,7 +257,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
 
   it('kill() requests managed-range termination: true once, false after settlement', async () => {
     const { bash } = await setup()
-    const proc = start(bash, bash.resolve({ command: 'sleep 60' }))
+    const proc = (await start(bash, bash.resolve({ command: 'sleep 60' })))
     expect(proc.kill()).toBe(true)
     await proc.done
     expect(proc.status).toBe('killed')
@@ -267,7 +267,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
 
   it('kill() returns false for a naturally completed process', async () => {
     const { bash } = await setup()
-    const proc = start(bash, bash.resolve({ command: 'true' }))
+    const proc = (await start(bash, bash.resolve({ command: 'true' })))
     await proc.done
     expect(proc.status).toBe('completed')
     expect(proc.kill()).toBe(false)
@@ -278,7 +278,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
     // The child echoes AFTER arming the trap, so waiting for the marker
     // guarantees SIGTERM is already ignored when the kill lands (a fixed sleep
     // is load-flaky: a slow spawn would take the SIGTERM before the trap).
-    const proc = start(bash, bash.resolve({ command: 'trap \'\' TERM; echo armed; sleep 60' }))
+    const proc = (await start(bash, bash.resolve({ command: 'trap \'\' TERM; echo armed; sleep 60' })))
     await readUntil(proc, 'armed')
     proc.kill()
     await proc.done
@@ -289,7 +289,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
   it('a spec.signal abort settles the handle as killed, not completed', async () => {
     const { bash } = await setup()
     const controller = new AbortController()
-    const proc = start(bash, bash.resolve({ command: 'sleep 60', signal: controller.signal }))
+    const proc = (await start(bash, bash.resolve({ command: 'sleep 60', signal: controller.signal })))
     controller.abort()
     await proc.done
     expect(proc.status).toBe('killed')
@@ -298,7 +298,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
 
   it('a self-signal exit settles the handle as killed, not completed', async () => {
     const { bash } = await setup()
-    const proc = start(bash, bash.resolve({ command: 'kill -TERM $$' }))
+    const proc = (await start(bash, bash.resolve({ command: 'kill -TERM $$' })))
     await proc.done
     expect(proc.status).toBe('killed')
     expect(proc.exitCode).toBeNull()
@@ -307,7 +307,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
 
   it('observed readers delegate to the collectors once a process spawned', async () => {
     const { bash } = await setup()
-    const proc = start(bash, bash.resolve({ command: 'echo err 1>&2' }))
+    const proc = (await start(bash, bash.resolve({ command: 'echo err 1>&2' })))
     await proc.done
     expect(proc.observed.stderr.readFrom(0).text).toBe('err\n')
     expect(proc.observed.stdout.readFrom(0).text).toBe('')
@@ -327,6 +327,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
       }),
     }
     vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue({
+      control: undefined,
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,
@@ -336,7 +337,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
       waitForExit: async () => true,
     } satisfies SubprocessHandle)
 
-    const proc = start(bash, bash.resolve({ command: 'true' }))
+    const proc = (await start(bash, bash.resolve({ command: 'true' })))
     await expect(proc.done).resolves.toBeUndefined()
     expect(proc.status).toBe('killed')
     const output = proc.readOutput().delta
@@ -356,13 +357,14 @@ describe('LocalBashExecutor.start (background process handles)', () => {
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,
+      control: undefined,
       collected: { stdout: emptyReader, stderr: emptyReader },
       done: rejected.promise,
       terminate: vi.fn(),
       waitForExit: async () => true,
     } satisfies SubprocessHandle)
     const controller = new AbortController()
-    const ex = start(bash, bash.resolve({ command: 'true', signal: controller.signal }))
+    const ex = (await start(bash, bash.resolve({ command: 'true', signal: controller.signal })))
     controller.abort()
     // A provider that terminated the range before the target started has no
     // exit to report and rejects with the cancellation reason instead.
@@ -383,12 +385,13 @@ describe('LocalBashExecutor.start (background process handles)', () => {
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,
+      control: undefined,
       collected: { stdout: emptyReader, stderr: emptyReader },
       done: rejected.promise,
       terminate: vi.fn(),
       waitForExit: async () => true,
     } satisfies SubprocessHandle)
-    const ex = start(bash, bash.resolve({ command: 'true' }))
+    const ex = (await start(bash, bash.resolve({ command: 'true' })))
     expect(ex.kill()).toBe(true)
     rejected.reject(new Error('subprocess terminated before target start'))
     await expect(ex.done).resolves.toBeUndefined()
@@ -407,6 +410,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
       value: () => { throw new Error('provider formatting must not escape') },
     })
     vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue({
+      control: undefined,
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,
@@ -416,7 +420,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
       waitForExit: async () => true,
     } satisfies SubprocessHandle)
 
-    const proc = start(bash, bash.resolve({ command: 'true' }))
+    const proc = (await start(bash, bash.resolve({ command: 'true' })))
     await expect(proc.done).resolves.toBeUndefined()
     expect(proc.status).toBe('killed')
     expect(proc.readOutput().delta).toContain('unprintable provider failure')
@@ -425,7 +429,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
 
   it('an asynchronous creation failure settles as killed with a stage-neutral note', async () => {
     const { bash } = await setup()
-    const proc = start(bash, bash.resolve({ command: 'true', workdir: '/nonexistent-dsh' }))
+    const proc = (await start(bash, bash.resolve({ command: 'true', workdir: '/nonexistent-dsh' })))
     // done resolves (never rejects) even though the process never ran.
     await expect(proc.done).resolves.toBeUndefined()
     expect(proc.status).toBe('killed')
@@ -451,7 +455,7 @@ describe('process lifecycle ownership (the subprocess service, not the executor)
 
     // The child prints its own pid ($$ = the detached bash group leader) so
     // the test can probe liveness through the public read API alone.
-    const proc = start(bash, bash.resolve({ command: 'echo $$; sleep 60' }))
+    const proc = (await start(bash, bash.resolve({ command: 'echo $$; sleep 60' })))
     const pid = Number((await readUntil(proc, '\n')).trim())
     expect(Number.isInteger(pid) && pid > 0).toBe(true)
 
@@ -476,10 +480,10 @@ describe('process lifecycle ownership (the subprocess service, not the executor)
     await ctx.plugin(LocalBashExecutor, { graceMs: 200 })
     const bash = ctx.shell as LocalBashExecutor
 
-    const finished = start(bash, bash.resolve({ command: 'echo done' }))
+    const finished = (await start(bash, bash.resolve({ command: 'echo done' })))
     await finished.done
     expect(finished.status).toBe('completed')
-    const trapping = start(bash, bash.resolve({ command: 'trap \'\' TERM; echo armed; sleep 60' }))
+    const trapping = (await start(bash, bash.resolve({ command: 'trap \'\' TERM; echo armed; sleep 60' })))
     await readUntil(trapping, 'armed')
 
     await managerFiber.dispose()
@@ -495,6 +499,7 @@ describe('offer arm cancellation against a hanging backend', () => {
   /** A subprocess service whose process runs until the test settles it and ignores the spawn signal. */
   class HangingSubprocessRuntime extends SubprocessRuntime {
     settle: (outcome: { exitCode: number | null; signal: NodeJS.Signals | null }) => void = () => {}
+    override async terminalEnvironment(): Promise<never> { throw new Error('fixture does not open terminals') }
     override async resolveExecutable(command: string): Promise<string> { return command }
     override spawnTerminal(): Promise<never> { throw new Error('bash spawns pipes, never terminals') }
     private readonly reader: SubprocessOutputReader = {
@@ -505,6 +510,7 @@ describe('offer arm cancellation against a hanging backend', () => {
         stdin: undefined,
         stdout: undefined,
         stderr: undefined,
+        control: undefined,
         collected: { stdout: this.reader, stderr: this.reader },
         done: new Promise((resolve) => { this.settle = resolve }),
         terminate: () => {},
@@ -518,7 +524,7 @@ describe('offer arm cancellation against a hanging backend', () => {
     const subprocess = new HangingSubprocessRuntime(ctx)
     await ctx.plugin(LocalBashExecutor)
     const controller = new AbortController()
-    const ex = ctx.shell.execute(ctx.shell.resolve({ command: 'sleep 30', timeoutMs: 20, signal: controller.signal, onExpiry: 'offer' }))
+    const ex = (await ctx.shell.execute(ctx.shell.resolve({ command: 'sleep 30', timeoutMs: 20, signal: controller.signal, onExpiry: 'offer' })))
     controller.abort()
     // The fake ignores the relayed abort, so the process outlives the deadline
     // the way a real one does inside its termination grace: no offer.
@@ -534,12 +540,12 @@ describe('execute() offer expiry', () => {
   it('offers at the deadline; accept detaches the timer and the caller signal, and kill() still stops it', async () => {
     const { bash } = await setup()
     const controller = new AbortController()
-    const ex = bash.execute(bash.resolve({
+    const ex = (await bash.execute(bash.resolve({
       command: 'echo early; sleep 30',
       timeoutMs: 150,
       signal: controller.signal,
       onExpiry: 'offer',
-    }))
+    })))
     const offer = await ex.promotion
     if (offer === undefined) throw new Error('expected a promotion offer, got settlement')
     expect(ex.status).toBe('running')
@@ -559,7 +565,7 @@ describe('execute() offer expiry', () => {
 
   it('decline kills now and classifies the result timedOut', async () => {
     const { bash } = await setup()
-    const ex = bash.execute(bash.resolve({ command: 'sleep 30', timeoutMs: 100, onExpiry: 'offer' }))
+    const ex = (await bash.execute(bash.resolve({ command: 'sleep 30', timeoutMs: 100, onExpiry: 'offer' })))
     const offer = await ex.promotion
     if (offer === undefined) throw new Error('expected a promotion offer, got settlement')
     offer.decline()
@@ -574,7 +580,7 @@ describe('execute() offer expiry', () => {
 
   it('resolves undefined when the process settles before the deadline', async () => {
     const { bash } = await setup()
-    const ex = bash.execute(bash.resolve({ command: 'echo done', timeoutMs: 10_000, onExpiry: 'offer' }))
+    const ex = (await bash.execute(bash.resolve({ command: 'echo done', timeoutMs: 10_000, onExpiry: 'offer' })))
     await expect(ex.promotion).resolves.toBeUndefined()
     const result = await ex.result()
     expect(result).toMatchObject({ exitCode: 0, timedOut: false, aborted: false })
@@ -582,7 +588,7 @@ describe('execute() offer expiry', () => {
 
   it('treats an unanswered offer as declined', async () => {
     const { bash } = await setup()
-    const ex = bash.execute(bash.resolve({ command: 'sleep 30', timeoutMs: 100, onExpiry: 'offer' }))
+    const ex = (await bash.execute(bash.resolve({ command: 'sleep 30', timeoutMs: 100, onExpiry: 'offer' })))
     // Nobody awaits the promotion: the executor still falls back to the
     // kill-on-timeout behavior instead of detaching the process.
     const result = await ex.result()
@@ -593,12 +599,12 @@ describe('execute() offer expiry', () => {
   it('classifies a pre-offer caller abort as aborted and settles the promotion undefined', async () => {
     const { bash } = await setup()
     const controller = new AbortController()
-    const ex = bash.execute(bash.resolve({
+    const ex = (await bash.execute(bash.resolve({
       command: 'sleep 30',
       timeoutMs: 5_000,
       signal: controller.signal,
       onExpiry: 'offer',
-    }))
+    })))
     controller.abort()
     await expect(ex.promotion).resolves.toBeUndefined()
     const result = await ex.result()
@@ -610,12 +616,12 @@ describe('execute() offer expiry', () => {
     const { bash } = await setup()
     const controller = new AbortController()
     controller.abort()
-    const ex = bash.execute(bash.resolve({
+    const ex = (await bash.execute(bash.resolve({
       command: 'sleep 30',
       timeoutMs: 50,
       signal: controller.signal,
       onExpiry: 'offer',
-    }))
+    })))
     await expect(ex.promotion).resolves.toBeUndefined()
     await ex.done
     expect(ex.status).toBe('killed')
@@ -626,7 +632,7 @@ describe('execute() offer expiry', () => {
 
   it('kill-policy executions settle the promotion undefined too', async () => {
     const { bash } = await setup()
-    const ex = bash.execute(bash.resolve({ command: 'echo hi', timeoutMs: 5_000 }))
+    const ex = (await bash.execute(bash.resolve({ command: 'echo hi', timeoutMs: 5_000 })))
     await expect(ex.promotion).resolves.toBeUndefined()
     await ex.result()
   })
@@ -635,12 +641,12 @@ describe('execute() offer expiry', () => {
 describe('execute() projections under none policy and late answers', () => {
   it('classifies a no-deadline execution: clean settle, then an aborted one', async () => {
     const { bash } = await setup()
-    const clean = start(bash, bash.resolve({ command: 'echo bg' }))
+    const clean = (await start(bash, bash.resolve({ command: 'echo bg' })))
     await clean.done
     await expect(clean.result()).resolves.toMatchObject({ exitCode: 0, timedOut: false, aborted: false })
 
     const controller = new AbortController()
-    const killed = start(bash, bash.resolve({ command: 'sleep 30', signal: controller.signal }))
+    const killed = (await start(bash, bash.resolve({ command: 'sleep 30', signal: controller.signal })))
     controller.abort()
     await killed.done
     await expect(killed.result()).resolves.toMatchObject({ timedOut: false, aborted: true })
@@ -648,7 +654,7 @@ describe('execute() projections under none policy and late answers', () => {
 
   it('ignores a decline after an accept', async () => {
     const { bash } = await setup()
-    const ex = bash.execute(bash.resolve({ command: 'sleep 30', timeoutMs: 100, onExpiry: 'offer' }))
+    const ex = (await bash.execute(bash.resolve({ command: 'sleep 30', timeoutMs: 100, onExpiry: 'offer' })))
     const offer = await ex.promotion
     if (offer === undefined) throw new Error('expected a promotion offer')
     offer.accept()
@@ -660,7 +666,7 @@ describe('execute() projections under none policy and late answers', () => {
 
   it('auto-declines an offer not answered synchronously, and ignores the late answers', async () => {
     const { bash } = await setup()
-    const ex = bash.execute(bash.resolve({ command: 'sleep 30', timeoutMs: 100, onExpiry: 'offer' }))
+    const ex = (await bash.execute(bash.resolve({ command: 'sleep 30', timeoutMs: 100, onExpiry: 'offer' })))
     const offer = await ex.promotion
     if (offer === undefined) throw new Error('expected a promotion offer')
     // Break the synchronous-answer contract on purpose: the executor's

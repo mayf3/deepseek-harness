@@ -9,7 +9,7 @@ import type {
 } from '../src/index.ts'
 
 export const markdownLabels: MarkdownLabels = {
-  code: { copyLabel: '复制', copiedLabel: '复制成功' },
+  code: { copyLabel: '复制', copiedLabel: '复制成功', sourceLabel: '源码', lineNumbersLabel: '行号' },
   footnotes: 'Footnotes',
 }
 
@@ -43,6 +43,7 @@ export const searchBlockLabels: SearchBlockLabels = {
 export const terminalBlockLabels: TerminalBlockLabels = {
   signal: signal => `信号 ${signal}`,
   exitCode: code => `退出码 ${code}`,
+  noExitCode: '未正常退出',
   running: '运行中', failed: '失败', done: '已完成',
   copy: '复制', copied: '复制成功', noOutput: '无输出',
   collapseAria: '收起输出', collapse: '收起',

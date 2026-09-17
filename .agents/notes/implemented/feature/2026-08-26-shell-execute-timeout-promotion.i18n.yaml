@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-26-shell-execute-timeout-promotion.md
-2026-08-26-shell-execute-timeout-promotion.md: 72cbbb0abd12653d1a4be8f4e60eaf9c1ee602d1
-2026-08-26-shell-execute-timeout-promotion.zh.md: d48cc450ffa70ca1a69f92a47a36c328b499804e
+2026-08-26-shell-execute-timeout-promotion.md: c5235ef3b7b6cdb67e83e478af73cc76d4151e19
+2026-08-26-shell-execute-timeout-promotion.zh.md: 3d1db304e8c1ff2d638fea176da86e3873f2d499

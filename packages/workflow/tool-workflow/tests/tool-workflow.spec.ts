@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -16,7 +16,8 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import WorkerThreadWorkflowEngine from '@deepseek-ai/dsh-workflow-worker-thread'
+import PtcWorkflowEngine from '@deepseek-ai/dsh-workflow-ptc'
+import { mountWorkflowRuntime } from '../../workflow-ptc/tests/setup.ts'
 import * as toolWorkflow from '../src/index.ts'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -442,6 +443,7 @@ describe('dsh-tool-workflow', () => {
     /** The stub-engine bench plus a live job registry and a registered owner. */
     async function setupBackground(config?: { enableRunInBackground?: boolean }) {
       const ctx = new Context()
+      onTestFinished(async () => { await ctx.fiber.dispose() })
       await ctx.plugin(SystemPrompt)
       await ctx.plugin(ToolRuntime)
       await ctx.plugin(AgentRegistry)
@@ -452,7 +454,7 @@ describe('dsh-tool-workflow', () => {
       const engine = ctx.workflowEngine as StubEngine
       const session = Session.create(SessionId('caller'))
       const parent = { id: session.id, options: {}, session, status: 'idle', ctx } as unknown as Agent
-      ctx.agents.register(parent)
+      await ctx.agents.register(parent)
       return { ctx, engine, parent, session }
     }
 
@@ -607,11 +609,10 @@ describe('dsh-tool-workflow', () => {
     })
   })
 
-  describe('composition with the REAL worker-thread engine (the mock above must stay honest)', () => {
+  describe('composition with the sandboxed PTC workflow engine', () => {
     it('an abort releases the tool even when the script parks on a promise no hook owns', async () => {
-      // The tool and loop await run.result before cleanup, so cancellation must settle a script
-      // parked on an unowned promise. Exercise that guarantee through the real registry and worker.
       const ctx = new Context()
+      onTestFinished(async () => { await ctx.fiber.dispose() })
       await ctx.plugin(SystemPrompt)
       await ctx.plugin(ToolRuntime)
       await ctx.plugin(SessionProjectionRegistry)
@@ -622,25 +623,28 @@ describe('dsh-tool-workflow', () => {
         inheritsParentContext: false,
         start: () => Promise.reject(new Error('the parked-script fixture must not start a child')),
       })
-      await ctx.plugin(WorkerThreadWorkflowEngine, { disposeGraceMs: 30 })
+      await mountWorkflowRuntime(ctx)
+      await ctx.plugin(PtcWorkflowEngine, {})
       await ctx.plugin(toolWorkflow, {})
       const session = Session.create(SessionId('caller'))
       const parent = { id: session.id, options: {}, session } as unknown as Agent
       const controller = new AbortController()
+      const ready = Promise.withResolvers<undefined>()
+      ctx.on('workflow/log', () => { ready.resolve(undefined) })
       const pending = execute(ctx, {
-        script: 'await new Promise(() => {})\nreturn 1',
+        script: 'log("ready"); await new Promise(() => {})\nreturn 1',
         meta: { name: 'stuck', description: 'parks forever' },
       }, { agent: parent, signal: controller.signal })
-      // Give the run a beat to start (past its synchronous slice), then abort.
-      await new Promise(resolve => setTimeout(resolve, 20))
+      await ready.promise
       controller.abort('user abort')
       const result = await pending
       expect(result.isError).toBe(true)
       expect((result.content[0] as { text: string }).text).toContain('cancelled')
     })
 
-    it('a background run over the real worker settles its job with the rendered return value', async () => {
+    it('a background run over the sandboxed PTC engine settles its job with the rendered return value', async () => {
       const ctx = new Context()
+      onTestFinished(async () => { await ctx.fiber.dispose() })
       await ctx.plugin(SystemPrompt)
       await ctx.plugin(ToolRuntime)
       await ctx.plugin(AgentRegistry)
@@ -654,11 +658,12 @@ describe('dsh-tool-workflow', () => {
         inheritsParentContext: false,
         start: () => Promise.reject(new Error('the scriptonly fixture must not start a child')),
       })
-      await ctx.plugin(WorkerThreadWorkflowEngine, { disposeGraceMs: 30 })
+      await mountWorkflowRuntime(ctx)
+      await ctx.plugin(PtcWorkflowEngine, {})
       await ctx.plugin(toolWorkflow, {})
       const session = Session.create(SessionId('caller'))
       const parent = { id: session.id, options: {}, session, status: 'idle', ctx } as unknown as Agent
-      ctx.agents.register(parent)
+      await ctx.agents.register(parent)
 
       const result = await execute(ctx, {
         script: 'log("halfway")\nreturn { ok: true }',
