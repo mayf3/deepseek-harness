@@ -5,7 +5,7 @@ import { installMicrophonePermissions } from '../src/microphone-permissions.ts'
 
 const access = vi.hoisted(() => ({ getMediaAccessStatus: vi.fn(() => 'granted'), askForMediaAccess: vi.fn(async () => true) }))
 vi.mock('electron', () => ({ systemPreferences: access }))
-afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks() })
+afterEach(() => { vi.unstubAllGlobals(); vi.resetAllMocks() })
 function fixture(platform: NodeJS.Platform = 'darwin') {
   vi.stubGlobal('process', { ...process, platform })
   const setPermissionCheckHandler = vi.fn<Session['setPermissionCheckHandler']>()
@@ -23,9 +23,27 @@ it('allows only audio checks from the owned primary application frame', () => {
   expect(f.check(f.primary, 'media', 'invalid', details)).toBe(false)
   expect(f.check(f.primary, 'media', 'dsh-app://app', { ...details, isMainFrame: false })).toBe(false)
   expect(f.check(f.primary, 'media', 'dsh-app://app', { ...details, mediaType: 'video' })).toBe(false)
-  access.getMediaAccessStatus.mockReturnValueOnce('denied')
-  expect(f.check(f.primary, 'media', 'dsh-app://app', details)).toBe(false)
   expect(f.check(f.primary, 'clipboard-sanitized-write', 'dsh-app://app', details)).toBe(true)
+})
+it.each(['not-determined', 'granted', 'denied', 'restricted', 'unknown'] as const)(
+  'reports existing macOS microphone authorization for %s', (status) => {
+    const f = fixture()
+    access.getMediaAccessStatus.mockReturnValueOnce(status)
+    expect(f.check(f.primary, 'media', 'dsh-app://app', { isMainFrame: true, mediaType: 'audio' })).toBe(status === 'granted')
+    expect(access.getMediaAccessStatus).toHaveBeenCalledExactlyOnceWith('microphone')
+    expect(access.askForMediaAccess).not.toHaveBeenCalled()
+  },
+)
+it.each([true, false])('waits for the first macOS authorization decision: %s', async (allowed) => {
+  const f = fixture(), decision = Promise.withResolvers<boolean>(), done = vi.fn()
+  access.getMediaAccessStatus.mockReturnValue('not-determined')
+  access.askForMediaAccess.mockReturnValueOnce(decision.promise)
+  try {
+    f.request(f.primary, 'media', done, { isMainFrame: true, requestingUrl: 'dsh-app://app/', mediaTypes: ['audio'] })
+    expect(access.askForMediaAccess).toHaveBeenCalledExactlyOnceWith('microphone')
+    expect(done).not.toHaveBeenCalled()
+  } finally { decision.resolve(allowed); await decision.promise }
+  expect(done).toHaveBeenCalledExactlyOnceWith(allowed)
 })
 it('requests macOS microphone access and reports operating-system rejection', async () => {
   const f = fixture(), done = vi.fn(), details = { isMainFrame: true, requestingUrl: 'dsh-app://app/', mediaTypes: ['audio'] }
