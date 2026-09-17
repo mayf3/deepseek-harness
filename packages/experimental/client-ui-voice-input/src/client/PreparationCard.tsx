@@ -99,17 +99,6 @@ export function PreparationCard({ provider, connected, prepare, cancelPreparatio
   </section>
 }
 
-/** Short selected-provider readiness for the plugin card's switch-adjacent status Slot. */
-export function VoiceStatus({ useSpeechReadiness, t }: InjectFace<VoiceInputInjected> & PropsLocale<typeof NS>) {
-  const readiness = useSpeechReadiness(value => value)
-  const provider = readiness.catalog?.providers.find(item => item.id === readiness.catalog?.selection.providerId)
-  const state = provider?.preparation
-  const text = !readiness.connected || !state ? t('short.connecting') : t(`short.${state.phase}`)
-  return <span className={css.packageStatus} role="status" title={provider?.name}>
-    <StateDot state={state ? preparationTone(state) : 'idle'} /><span>{text}</span>
-  </span>
-}
-
 /** Recognition preferences and preparation cards shared by plugin details and Settings. */
 export function VoicePreparation({ useSpeechReadiness, ...props }: InjectFace<VoiceInputInjected> & PropsLocale<typeof NS>) {
   const readiness = useSpeechReadiness(value => value), catalog = readiness.catalog

@@ -11,7 +11,7 @@ import { Recording } from './audio.ts'
 import { en, NS, zh } from './locales.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import { observeReadiness } from './readiness.ts'
-import { VoicePreparation, VoiceStatus } from './PreparationCard.tsx'
+import { VoicePreparation } from './PreparationCard.tsx'
 import { VoiceSetupPrompt } from './VoiceSetupPrompt.tsx'
 
 export const inject = ['remote', 'slots', 'locale']
@@ -39,9 +39,6 @@ function registerUi(ctx: Context): void {
   ctx.slots.inject('conversation.input.activity', () => ctx.slots.register({
     name: 'conversation.input.activity', locale: NS, inject: () => actions,
   }, VoiceInput))
-  ctx.slots.inject('plugins.bundle.status', () => ctx.slots.register({ name: 'plugins.bundle.status',
-    key: '@deepseek-ai/dsh-experimental-voice-input-bundle', locale: NS, inject: () => actions,
-  }, VoiceStatus))
   ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({ name: 'plugins.bundle.config',
     key: '@deepseek-ai/dsh-experimental-voice-input-bundle', locale: NS, inject: () => actions,
   }, VoicePreparation))

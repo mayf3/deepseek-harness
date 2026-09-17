@@ -18,12 +18,6 @@ export interface PluginConfigViewProps {
   readonly view: 'summary' | 'page'
 }
 
-/** Package identity and activation state supplied to its compact status view. */
-export interface PluginPackageOwnerProps {
-  readonly packageName: string
-  readonly enabled: boolean
-}
-
 /** One user-requested bundle activation and navigation to its configuration page. */
 export interface PluginActivationOwnerProps {
   readonly packageName: string
@@ -35,8 +29,6 @@ export interface PluginActivationOwnerProps {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
-    /** Short readiness beside the bundle switch, keyed by npm package name. */
-    'plugins.bundle.status': { kind: 'keyed'; scope: 'root'; owner: PluginPackageOwnerProps }
     /** Optional guidance after the user enables a bundle from the list, keyed by npm package name. */
     'plugins.bundle.activation': { kind: 'keyed'; scope: 'root'; owner: PluginActivationOwnerProps }
     /**

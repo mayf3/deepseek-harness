@@ -1618,7 +1618,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'plugins.bundle.activation\', () => ctx.slots.register(\n      { name: \'plugins.bundle.activation\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:41',
+    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:33',
   },
   {
     key: 'plugins.bundle.config',
@@ -1656,45 +1656,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'plugins.bundle.config\', () => ctx.slots.register(\n      { name: \'plugins.bundle.config\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:57',
-  },
-  {
-    key: 'plugins.bundle.status',
-    kind: 'keyed',
-    scope: 'root',
-    summary: 'Short readiness beside the bundle switch, keyed by npm package name.',
-    doc: 'Short readiness beside the bundle switch, keyed by npm package name.',
-    registerOptions: [
-      {
-        name: 'key',
-        requirement: 'required',
-        type: 'string',
-        doc: 'Your cell key: the entry renders where the owner dispatches this exact key. Registering an already-occupied key replaces that occupant.',
-      },
-    ],
-    ownerProps: [
-      '/** Package identity and activation state supplied to its compact status view. */\nexport interface PluginPackageOwnerProps {\n  readonly packageName: string\n  readonly enabled: boolean\n}',
-    ],
-    ownerPropsReferences: [],
-    standardProps: [
-      'useResource: UseResource',
-      'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
-      'usePanelInfo: UsePanelInfo',
-      'useSessions: UseSessions',
-      'useSessionStatus: UseSessionStatus',
-      'useSessionRetainInfo: UseSessionRetainInfo',
-      'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
-    ],
-    keyDomain: 'open: any string the owner dispatches (no compile-time key set), already taken: @deepseek-ai/dsh-experimental-voice-input-bundle',
-    hookContext: '',
-    slotInject: '',
-    declaredBy: 'an entry in \'main\' (client-ui-plugin-manager), so it exists while that entry is mounted',
-    occupants: [
-      'experimental-client-ui-voice-input VoiceStatus key \'@deepseek-ai/dsh-experimental-voice-input-bundle\'',
-    ],
-    replaceRisk: 'shadows-shipped-ui',
-    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'plugins.bundle.status\', () => ctx.slots.register(\n      { name: \'plugins.bundle.status\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:39',
+    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:49',
   },
   {
     key: 'plugins.item',
@@ -1747,7 +1709,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'plugins.item\', () => ctx.slots.register(\n      { name: \'plugins.item\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:51',
+    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:43',
   },
   {
     key: 'plugins.row.config',
@@ -1783,7 +1745,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'plugins.row.config\', () => ctx.slots.register(\n      { name: \'plugins.row.config\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:64',
+    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:56',
   },
   {
     key: 'rightbar',

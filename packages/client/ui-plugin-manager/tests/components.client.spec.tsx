@@ -703,16 +703,6 @@ describe('PluginManagerPage', () => {
   })
 })
 
-it('places bundle readiness immediately before its enable switch', () => {
-  const name = '@deepseek-ai/dsh-experimental-voice-input-bundle'
-  renderTab({ packages: [pkg({ name })] }, {}, {
-    [`plugins.bundle.status:${name}`]: () => <span role="status">Ready for dictation</span>,
-  })
-  const status = screen.getByText('Ready for dictation'), toggle = screen.getByRole('switch')
-  expect(status.parentElement).toBe(toggle.parentElement)
-  expect(status.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-})
-
 it('offers bundle-owned guidance only after explicit enablement and navigates to its detail page', () => {
   const name = 'dsh-better-sidebar'
   const { set, actions } = renderTab({ packages: [pkg({ enabled: false })] }, { bundles: new Set([name]) }, {

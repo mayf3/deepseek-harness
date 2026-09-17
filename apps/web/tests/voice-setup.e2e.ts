@@ -31,6 +31,8 @@ it('guides a newly enabled voice plugin to installation and lets the user postpo
   await dialog.getByRole('button', { name: 'Later', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
   expect(await toggle.getAttribute('aria-checked')).toBe('true')
+  const card = page.locator('[data-plugin-package="@deepseek-ai/dsh-experimental-voice-input-bundle"]')
+  expect(await card.getByRole('status').count()).toBe(0)
   await toggle.click()
   await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')
   await toggle.click()

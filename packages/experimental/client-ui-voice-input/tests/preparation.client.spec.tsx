@@ -6,7 +6,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { SpeechPreparationState, SpeechPreparationStep, SpeechProviderId } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
 import { afterEach, expect, it, vi } from 'vitest'
-import { PreparationCard, VoiceStatus, VoicePreparation } from '../src/client/PreparationCard.tsx'
+import { PreparationCard, VoicePreparation } from '../src/client/PreparationCard.tsx'
 import type { VoiceInputProps } from '../src/client/VoiceInput.tsx'
 import type { SpeechReadiness } from '../src/client/readiness.ts'
 import { zh } from '../src/client/locales.ts'
@@ -84,7 +84,7 @@ it('shows waking without an explicit preparation cancellation control', () => {
   expect(screen.getByText('已等待 5 秒')).toBeTruthy()
   expect(screen.queryByRole('button', { name: zh.cancelPrepare })).toBeNull()
 })
-it('persists settings and renders a short selected-provider status independently of the detail card', async () => {
+it('persists settings and reports disconnection in the detail card', async () => {
   const store = createSnapshotStore<SpeechReadiness>({ connected: true, error: null, catalog: {
     selection: { providerId: id, language: 'auto' }, maxAudioBytes: 100, maxDurationSeconds: 120,
     providers: [{ id, name: 'SenseVoiceSmall', location: 'host-local', preparation: { phase: 'ready' } },
@@ -105,11 +105,7 @@ it('persists settings and renders a short selected-provider status independently
   configure.mockRejectedValueOnce('settings are locked')
   fireEvent.change(screen.getByLabelText(zh.language), { target: { value: 'ja' } })
   await screen.findByText('语音识别失败：settings are locked')
-  view.rerender(<VoiceStatus {...props} />)
-  expect(screen.getByRole('status').textContent).toBe(zh['short.ready'])
-  expect(screen.queryByRole('combobox')).toBeNull()
   act(() => { store.set({ catalog: null, connected: false, error: 'disconnected' }) })
-  expect(screen.getByRole('status').textContent).toBe(zh['short.connecting'])
   view.rerender(<VoicePreparation {...props} />)
   expect(screen.getByText(zh.loading)).toBeTruthy()
   expect(screen.getByRole('alert').textContent).toContain('disconnected')

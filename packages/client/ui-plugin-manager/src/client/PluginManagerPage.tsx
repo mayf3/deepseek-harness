@@ -33,7 +33,7 @@ import css from './PluginManagerPage.module.css'
 export type PluginManagerPageProps =
   PropsRuntime<'main'>
   & PropsLocale<'pluginManager'>
-  & PropsRenderSlots<'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config' | 'plugins.bundle.status' | 'plugins.bundle.activation'>
+  & PropsRenderSlots<'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config' | 'plugins.bundle.activation'>
   & InjectFace<PluginManagerFace>
 
 /** The page's slot renderer, narrowed to the configuration slots. */
@@ -282,8 +282,7 @@ function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
 }
 
 /** One package as a card that opens its page: its name, its one-liner, its tags, and its bundle switch. */
-function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled, statusContent }: {
-  readonly statusContent: ReactNode
+function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
   readonly pkg: PackageView
   readonly t: Translate
   readonly busy: boolean
@@ -311,7 +310,7 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled, statusCo
           </>
         )}
         description={description}
-        end={<>{statusContent}<EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} /></>}
+        end={<EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />}
       />
     </li>
   )
@@ -874,7 +873,6 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
       t={t}
       busy={state.busy.includes(pkg.name)}
       highlighted={state.highlight === pkg.name}
-      statusContent={renderSlot('plugins.bundle.status', { packageName: pkg.name, enabled: pkg.enabled }, { entryKey: pkg.name })}
       onOpen={() => { setActivation(null); setView({ kind: 'package', name: pkg.name }) }}
       onSetEnabled={(enabled) => { setActivation(enabled ? pkg.name : null); props.setEnabled(pkg.name, enabled) }}
     />
