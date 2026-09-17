@@ -6,8 +6,8 @@
  * declaration injection through the caller's ctx.effect (fiber unload
  * collects both), the renderer installation contract (install()/renderSlot('root') +
  * the SlotRendererHost face), and the store INSTANCE axis — handle x scope
- * key -> create/cache, dropped with the last holding entry, session instances
- * cleared (with persisted state) on scope death.
+ * key -> create/cache, dropped with the last holding entry, and in-memory
+ * session instances released without clearing persisted state on scope death.
  */
 /* oxlint-disable typescript/no-redundant-type-constituents --
  * `keyof SlotMap & string` is the declare-merge key pattern: SlotMap only
@@ -315,11 +315,10 @@ export class SlotRegistry extends Service {
   }
 
   /**
-   * Bind all scoped Store handles to one owner Context lifetime. The cleanup
-   * materializes an otherwise-unused handle before clearing it, because a
-   * previous application run may have persisted state for a Slot that this
-   * scope never rendered. Rebinding the same key transfers cleanup ownership
-   * to the newest Context generation.
+   * Bind scoped Store instances to one owner Context lifetime. Cleanup drops
+   * only materialized in-memory instances; persisted state belongs to the
+   * durable scope key. Rebinding the same key transfers cleanup ownership to
+   * the newest Context generation.
    *
    * @param binding - materialized scope identity and its owning Context.
    */
@@ -330,7 +329,7 @@ export class SlotRegistry extends Service {
     binding.ctx.effect(() => () => {
       if (this._storeScopeOwners.get(binding.key) !== binding.ctx) return
       this._storeScopeOwners.delete(binding.key)
-      this.clearStoreScope(binding.key)
+      this.releaseStoreScope(binding.key)
     }, `slots: store scope ${binding.key}`)
   }
 
@@ -371,7 +370,7 @@ export class SlotRegistry extends Service {
    * Shadowing winners per cell for a key: the first live (non-abdicated)
    * entry of each cell in priority order — what outlets render; chain keys
    * pass through unchanged (election consumes every entry). The raw
-   * {@link SlotsService.entries} view stays the inspection surface. Fresh
+   * {@link SlotRegistry.entries} view stays the inspection surface. Fresh
    * array per call, not a uSES getSnapshot source.
    * @param key - SlotMap key.
    * @returns the winning entry per occupied cell.
@@ -395,7 +394,7 @@ export class SlotRegistry extends Service {
    * plugins mirroring contribution health. Fires synchronously per report,
    * after the registry mutated for abdicating crashes. Callers own the
    * disposer (wire it through ctx.effect for fiber-lifetime cleanup, as with
-   * {@link SlotsService.subscribe}).
+   * {@link SlotRegistry.subscribe}).
    * @param fn - called with the slot key, the crashed entry, the crash
    * cause, and `abdicated`: whether the crash retired the entry from its cell.
    * @returns unsubscribe.
@@ -548,12 +547,10 @@ export class SlotRegistry extends Service {
     return instance
   }
 
-  /** Clear every live non-root Store handle for one dead scope key. */
-  private clearStoreScope(key: string): void {
-    for (const [handle, record] of this._stores) {
+  /** Drop every materialized non-root Store instance for one ended Context generation. */
+  private releaseStoreScope(key: string): void {
+    for (const record of this._stores.values()) {
       if (record.scope === 'root') continue
-      const instance = record.instances.get(key) ?? handle.create(key)
-      instance.clearPersisted()
       record.instances.delete(key)
     }
   }

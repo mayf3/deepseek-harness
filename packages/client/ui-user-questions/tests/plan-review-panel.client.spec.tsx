@@ -29,11 +29,10 @@ type ConversationState = Parameters<Parameters<QuestionComposerProps['useConvers
 type ChatState = Parameters<Parameters<QuestionComposerProps['useChat']>[0]>[0]
 type TrajectoryState = Parameters<Parameters<QuestionComposerProps['useTrajectory']>[0]>[0]
 type InputState = Parameters<Parameters<QuestionComposerProps['useInput']>[0]>[0]
-type AttentionState = Parameters<Parameters<QuestionComposerProps['useSessionPendingInteraction']>[0]>[0]
+type AttentionState = Parameters<Parameters<QuestionComposerProps['useSessionStatus']>[0]>[0]
 
 const sessionState: SessionState = {
   sessionId: SID,
-  queue: [],
   pendingSubmissions: [],
   running: false,
   subagent: null,
@@ -50,12 +49,10 @@ const sessionState: SessionState = {
 }
 const sessionList = {
   ids: [SID],
-  byId: { [SID]: { id: SID, displayTitle: 'Session', running: false, blank: false, updatedAt: 0 } },
-  current: SID,
+  byId: { [SID]: { id: SID, displayTitle: 'Session', running: false, retainedBy: {}, blank: false, updatedAt: 0 } },
   phase: 'ready' as const,
   subagentsByParent: {},
   jobsBySession: {},
-  currentAddress: undefined,
 }
 const attentionState: AttentionState = new Map()
 const workspaceState = {
@@ -117,7 +114,8 @@ const kit: Omit<QuestionComposerProps, 'matched'> = {
   useSession: selector => selector(sessionState),
   useSessions: selector => selector(sessionList),
   usePanelInfo, useResource,
-  useSessionPendingInteraction: selector => selector(attentionState),
+  useSessionStatus: selector => selector(attentionState),
+  useSessionRetainInfo: () => undefined,
   useWorkspaces: selector => selector(workspaceState),
   useConversation: selector => selector(conversationState),
   useChat: selector => selector(chatState),

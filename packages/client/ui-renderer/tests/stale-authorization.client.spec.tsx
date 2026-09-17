@@ -35,7 +35,7 @@ function makeHost() {
   }
   const sessionAdapter: SlotScopeAdapter = {
     current: bindingSource,
-    resolve: () => undefined,
+    bindingSource: () => bindingSource,
   }
   const bump = (key: string) => {
     versions.set(key, (versions.get(key) ?? 0) + 1)

@@ -10,6 +10,7 @@ import {
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { en, NS, zh, type SubagentKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -27,7 +28,7 @@ export type {
 } from './SubagentReadOnlyComposer.tsx'
 
 /** Required services for conversation slots and session navigation. */
-export const inject = ['sessions', 'slots', 'locale']
+export const inject = ['sessions', 'uiWorkspace', 'slots', 'locale']
 
 /** Claim the composer for one-shot history or an unavailable continuation owner. */
 function selectReadOnlySubagent(owner: ComposerChainProps): SubagentReadOnlyMatch | null {
@@ -53,7 +54,7 @@ export function apply(ctx: ClientContext): void {
   const sessions = ctx.sessions
   const catalogActions = (_parentSessionId: SessionId): SubagentCatalogInjected => ({
     openChild(address: SubagentAddress) {
-      sessions.openSubagent(address)
+      ctx.uiWorkspace.openSession(address)
     },
     refresh(parentSessionId: SessionId) {
       void sessions.refreshSubagents(parentSessionId)

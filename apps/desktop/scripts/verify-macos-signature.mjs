@@ -3,6 +3,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { resolveMacOSSigningEnvironment } from './desktop-release-environment.mjs'
+import { loadDesktopPackageEnvironment } from './desktop-package-environment.mjs'
 
 /**
  * Reject signature metadata that does not name the company release authority and team.
@@ -110,15 +111,17 @@ function runCodeSign(args) {
  * @param {string} path - Writable standalone Mach-O file.
  * @param {string} identifier - Stable code-signing identifier derived from the release app ID and CAS digest.
  * @param {{ signingIdentity: string, teamId: string }} expected - Public release identity.
+ * @param {string | undefined} entitlements - Optional entitlement plist for this executable.
  * @returns {Promise<void>} Resolves after codesign exits successfully.
  */
-export async function signMacOSRuntimeCode(path, identifier, expected) {
+export async function signMacOSRuntimeCode(path, identifier, expected, entitlements) {
   await runAppleCommandAsync('/usr/bin/codesign', [
     '--force',
     '--sign', expected.signingIdentity,
     '--identifier', identifier,
     '--timestamp',
     '--options', 'runtime',
+    ...(entitlements === undefined ? [] : ['--entitlements', entitlements]),
     path,
   ], 'codesign')
 }
@@ -145,6 +148,18 @@ export function verifyMacOSSignature(appPath, expected) {
   runCodeSign(['--verify', '--deep', '--strict', '--verbose=2', appPath])
   const details = runCodeSign(['--display', '--verbose=4', appPath])
   assertMacOSSignatureDetails(details, expected)
+}
+
+/**
+ * Verify an independently distributed application's signature, ticket, and Gatekeeper acceptance.
+ * @param {string} appPath - Path to the stapled `.app` directory.
+ * @param {{ signingIdentity: string, teamId: string }} expected - Public release identity.
+ * @returns {void}
+ */
+export function verifyMacOSNotarizedApplication(appPath, expected) {
+  verifyMacOSSignature(appPath, expected)
+  runAppleCommand('/usr/bin/xcrun', ['stapler', 'validate', appPath], 'stapler validate')
+  runAppleCommand('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=4', appPath], 'spctl')
 }
 
 /**
@@ -180,7 +195,7 @@ if (process.argv[1] !== undefined && import.meta.filename === resolve(process.ar
   if (appPath === undefined || cliArgs.length !== 1) {
     throw new Error('usage: node scripts/verify-macos-signature.mjs <path-to-app>')
   }
-  const expected = resolveMacOSSigningEnvironment(process.env)
+  const expected = resolveMacOSSigningEnvironment(loadDesktopPackageEnvironment('darwin'))
   verifyMacOSSignature(resolve(appPath), expected)
   process.stdout.write(`desktop macOS signing: verified Developer ID Application: ${expected.signingIdentity} (${expected.teamId})\n`)
 }

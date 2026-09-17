@@ -19,12 +19,14 @@ export function assertMacOSRuntimeSignatureDetails(details: string, expected: Ma
  * @param path - Writable standalone Mach-O file.
  * @param identifier - Stable code-signing identifier derived from the release app ID and CAS digest.
  * @param expected - Public release identity.
+ * @param entitlements - Optional entitlement plist for this executable.
  * @returns Resolves after codesign exits successfully.
  */
 export function signMacOSRuntimeCode(
   path: string,
   identifier: string,
   expected: MacOSSigningEnvironment,
+  entitlements?: string,
 ): Promise<void>
 
 /**
@@ -40,6 +42,13 @@ export function verifyMacOSRuntimeCode(path: string, expected: MacOSSigningEnvir
  * @param expected - Public release identity.
  */
 export function verifyMacOSSignature(appPath: string, expected: MacOSSigningEnvironment): void
+
+/**
+ * Verify an independently distributed application's signature, ticket, and Gatekeeper acceptance.
+ * @param appPath - Path to the stapled `.app` directory.
+ * @param expected - Public release identity.
+ */
+export function verifyMacOSNotarizedApplication(appPath: string, expected: MacOSSigningEnvironment): void
 
 /**
  * Verify the release identity, stapled ticket, and Gatekeeper acceptance of one disk image.

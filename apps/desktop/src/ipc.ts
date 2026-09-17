@@ -1,26 +1,24 @@
 /** Typed preload operations exposed only by the Electron shell. */
 
+import type { IpcMainInvokeEvent } from 'electron'
 import type { DesktopPluginRecord } from './project-manager.ts'
 import type { DesktopLocale } from './locale.ts'
-import type { DesktopBackendState } from './backend-controller.ts'
 
 /** IPC channel names kept private to the desktop application bundle. */
 export const DESKTOP_IPC = {
   localeGet: 'dsh-desktop:locale-get',
+  boot: 'dsh-desktop:boot',
+  bootFailed: 'dsh-desktop:boot-failed',
+  directoryPick: 'dsh-desktop:directory-pick',
   pluginsList: 'dsh-desktop:plugins-list',
   pluginsAdd: 'dsh-desktop:plugins-add',
   pluginsRemove: 'dsh-desktop:plugins-remove',
   pluginsUpdate: 'dsh-desktop:plugins-update',
   pluginsToggle: 'dsh-desktop:plugins-toggle',
-  pluginsDisableAll: 'dsh-desktop:plugins-disable-all',
-  backendStatus: 'dsh-desktop:backend-status',
-  backendRetry: 'dsh-desktop:backend-retry',
-  applicationRestart: 'dsh-desktop:application-restart',
-  configurationReset: 'dsh-desktop:configuration-reset',
-  backendState: 'dsh-desktop:backend-state',
   updatesCheck: 'dsh-desktop:updates-check',
   updatesInstall: 'dsh-desktop:updates-install',
   updatesState: 'dsh-desktop:updates-state',
+  nativeThemeSet: 'dsh-desktop:native-theme-set',
 } as const
 
 /** Desktop release update state rendered by desktop-owned UI. */
@@ -40,12 +38,6 @@ export interface DshDesktopApi {
     remove(name: string): Promise<void>
     update(name: string, version: string): Promise<void>
     toggle(name: string, enabled: boolean): Promise<void>
-    disableAll(): Promise<void>
-  }
-  readonly backend: {
-    status(): Promise<DesktopBackendState>
-    retry(): Promise<void>
-    subscribe(listener: (state: DesktopBackendState) => void): () => void
   }
   readonly updates: {
     check(): Promise<DesktopUpdateState>
@@ -54,10 +46,19 @@ export interface DshDesktopApi {
   }
 }
 
-/** Startup-page controls, unavailable to backend-provided application documents. */
-export interface DshDesktopStartupApi extends Pick<DshDesktopApi, 'protocolVersion' | 'locale'> {
-  readonly backend: Omit<DshDesktopApi['backend'], 'retry'>
-  disablePlugins(): Promise<void>
-  restart(): Promise<void>
-  resetConfiguration(): Promise<void>
+/** Scheme of Desktop-owned application and shell documents. */
+export const SCHEME = 'dsh-app'
+
+/**
+ * Reject IPC outside the allowed Desktop document origins.
+ * @param event - IPC caller whose frame URL supplies the origin.
+ * @param hostnames - Desktop document hosts allowed for this operation.
+ */
+export function assertDesktopSender(event: IpcMainInvokeEvent, hostnames: readonly string[]): void {
+  const senderFrame = event.senderFrame
+  if (senderFrame === null) throw new Error('dsh desktop: rejected IPC without a sender frame')
+  const url = new URL(senderFrame.url)
+  if (url.protocol !== `${SCHEME}:` || !hostnames.includes(url.hostname)) {
+    throw new Error('dsh desktop: rejected IPC from an unowned renderer')
+  }
 }
