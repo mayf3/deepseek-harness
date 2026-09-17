@@ -42,13 +42,13 @@ Trajectory 展示每次附件出现的记录，并分别提供视觉预览与已
 
 ## 影响
 
-共享附件渲染器使概述与预览中的名称、顺序、元数据和图片操作保持一致。将附件集中在消息正文之后便于浏览完整集合；需要原始块顺序时，原始内容保留交错关系。即使图片加载共享缓存项，重复引用仍各占一行。选择另一条记录时，原始内容中的附件折叠区恢复收起状态；当前记录更新时，包括加载更早历史时，折叠状态保持不变。
+共享附件渲染器使概述与预览中的名称、顺序、元数据和图片操作保持一致。将附件集中在消息正文之后便于浏览完整集合；需要原始块顺序时，原始内容保留交错关系。即使图片加载共享缓存项，重复引用仍各占一行。
 
 紧凑缩略图需要打开查看器才能阅读详细图表。缺失的元数据保持缺失，图片读取失败保留重试控件，并且不隐藏普通文件。共享图片 slot 的修改也会影响 Chat 和工具结果，因此其图库行为和缓存复用仍需回归验证。
 
 ## 验证
 
-[投影测试](../../../../packages/client/ui-trajectory/tests/layout.client.spec.tsx)覆盖混合附件、纯附件、空文本和重复引用。[详情面板测试](../../../../packages/client/ui-trajectory/tests/table.client.spec.tsx)覆盖两种语言、无名称图片、长文件名、零字节文件、有序列表、完整的原始字段，以及记录切换和历史更新时的折叠状态。[图片测试](../../../../packages/client/ui-attachment/tests/message-image.client.spec.tsx)覆盖缩略图标签、加载、重试和现有查看器。
+[投影测试](../../../../packages/client/ui-trajectory/tests/layout.client.spec.tsx)覆盖混合附件、纯附件、空文本和重复引用。[详情面板测试](../../../../packages/client/ui-trajectory/tests/table.client.spec.tsx)覆盖两种语言、无名称图片、长文件名、零字节文件、有序列表和完整的原始字段。[图片测试](../../../../packages/client/ui-attachment/tests/message-image.client.spec.tsx)覆盖缩略图标签、加载、重试和现有查看器。
 
 已录制的[混合上传浏览器场景](../../../../apps/web/tests/file-upload-round.e2e.ts)比较概述与预览，验证键盘激活和焦点恢复，检查原始内容收起与展开状态，并在刷新后重复检查。其 [Trajectory 预期输出](../../../../snapshots/web/file-upload-round/trajectory.expected.md)配合未改动的会话 fixture（测试前置数据）使用。[组装应用图片缓存测试](../../../../apps/web/tests/trajectory-image-display.expected.e2e.ts)也检查 Chat 与 Trajectory 之间的复用。
 

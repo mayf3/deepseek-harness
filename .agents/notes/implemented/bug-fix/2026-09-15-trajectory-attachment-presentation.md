@@ -42,13 +42,13 @@ The [generic file upload decision](../feature/2026-08-26-generic-file-upload.md)
 
 ## Consequences
 
-The shared attachment renderer keeps names, order, metadata, and image actions consistent between Summary and Preview. Grouping attachments after message text makes the complete set easy to scan; Raw preserves interleaving when readers need the original block sequence. Repeated references remain separate rows even when image loading shares a cache entry. Selecting another record resets Raw attachment disclosures; updates to the selected record, including loading older history, preserve their state.
+The shared attachment renderer keeps names, order, metadata, and image actions consistent between Summary and Preview. Grouping attachments after message text makes the complete set easy to scan; Raw preserves interleaving when readers need the original block sequence. Repeated references remain separate rows even when image loading shares a cache entry.
 
 Compact thumbnails require opening the viewer to read detailed diagrams. Missing metadata stays absent, and image-read failures retain a retry control without hiding ordinary files. Changes to the shared image slot also affect Chat and tool results, so their gallery behavior and cache reuse remain regression requirements.
 
 ## Verification
 
-[Projection tests](../../../../packages/client/ui-trajectory/tests/layout.client.spec.tsx) cover mixed, attachment-only, empty-text, and repeated occurrences. [Inspector tests](../../../../packages/client/ui-trajectory/tests/table.client.spec.tsx) cover both locales, unnamed images, long filenames, zero-byte files, ordered lists, complete Raw fields, and disclosure state across record selection and history updates. [Image tests](../../../../packages/client/ui-attachment/tests/message-image.client.spec.tsx) cover thumbnail labels, loading, retry, and the existing viewer.
+[Projection tests](../../../../packages/client/ui-trajectory/tests/layout.client.spec.tsx) cover mixed, attachment-only, empty-text, and repeated occurrences. [Inspector tests](../../../../packages/client/ui-trajectory/tests/table.client.spec.tsx) cover both locales, unnamed images, long filenames, zero-byte files, ordered lists, and complete Raw fields. [Image tests](../../../../packages/client/ui-attachment/tests/message-image.client.spec.tsx) cover thumbnail labels, loading, retry, and the existing viewer.
 
 The recorded [mixed-upload browser scenario](../../../../apps/web/tests/file-upload-round.e2e.ts) compares Summary and Preview, verifies keyboard activation and focus restoration, checks collapsed and expanded Raw content, and repeats inspection after reload. Its [Trajectory expectation](../../../../snapshots/web/file-upload-round/trajectory.expected.md) accompanies the unchanged Session fixture. The [assembled image-cache test](../../../../apps/web/tests/trajectory-image-display.expected.e2e.ts) also checks reuse between Chat and Trajectory.
 
