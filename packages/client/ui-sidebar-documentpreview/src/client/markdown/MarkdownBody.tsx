@@ -18,12 +18,10 @@ export type MarkdownBodyProps = DocumentPreviewProps & PropsLocale<'documentMark
 export function MarkdownBody({ content, t }: MarkdownBodyProps): ReactNode {
   const copyLabel = t('code.copy')
   const copiedLabel = t('code.copied')
-  const sourceLabel = t('markdown.code.source')
-  const lineNumbersLabel = t('markdown.code.lineNumbers')
   const footnotes = t('footnotes')
   const labels = useMemo<MarkdownLabels>(() => ({
-    code: { copyLabel, copiedLabel, sourceLabel, lineNumbersLabel }, footnotes,
-  }), [copyLabel, copiedLabel, sourceLabel, lineNumbersLabel, footnotes])
+    code: { copyLabel, copiedLabel }, footnotes,
+  }), [copyLabel, copiedLabel, footnotes])
   if (content.kind !== 'text') return null
   return (
     <div className={css.document} data-document-markdown>

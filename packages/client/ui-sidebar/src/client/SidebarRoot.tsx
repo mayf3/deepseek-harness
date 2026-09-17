@@ -183,6 +183,7 @@ export function SidebarRoot({
         )}
         {/* Rail icons render at 18 (figma rail spec); expanded keeps the glyph-native sizes. */}
         <IconPanelLeftOutline16 className={css.panelIcon} size={wide || windowsTitlebar ? 16 : 18} />
+        {!wide && renderSlot('sidebar.toggle.badge', {})}
       </button>
     </Tooltip>
   )

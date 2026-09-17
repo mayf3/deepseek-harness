@@ -450,7 +450,7 @@ export interface ConnectionRecoveryConfig {
 }
 ```
 
-来源：[`packages/client/connection/src/index.ts:72`](../packages/client/connection/src/index.ts)
+来源： [`packages/client/connection/src/index.ts:87`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
