@@ -85,7 +85,15 @@ export function installWindowsMenu(): { update(): void; dispose(): void } {
   }
   const buttons = [createButton('application', 0), createButton('edit', 1)] as const
   shadow.append(style, bar)
-  document.body.append(host)
+  const mount = (): void => {
+    // AppFrame owns this seat; boot readiness alone precedes the rendered application.
+    if (document.querySelector('[data-shell-overlay]') === null) return
+    document.body.append(host)
+    observer.disconnect()
+  }
+  const observer = new MutationObserver(mount)
+  observer.observe(document.body, { childList: true, subtree: true })
+  mount()
   const update = (): void => {
     const { messages } = resolveDesktopLocale(document.documentElement.lang)
     bar.setAttribute('aria-label', messages.menuBar)
@@ -96,6 +104,7 @@ export function installWindowsMenu(): { update(): void; dispose(): void } {
   return {
     update,
     dispose: () => {
+      observer.disconnect()
       document.removeEventListener('focusout', rememberEditor, true)
       host.remove()
     },

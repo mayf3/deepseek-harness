@@ -8,8 +8,36 @@ vi.mock('electron', () => ({ ipcRenderer: { invoke } }))
 let menu: ReturnType<typeof installWindowsMenu> | undefined
 
 beforeEach(() => {
+  const appSeat = document.createElement('div')
+  appSeat.dataset.shellOverlay = ''
+  document.body.append(appSeat)
   document.documentElement.lang = 'en'
   invoke.mockResolvedValue(undefined)
+})
+
+it('keeps caption menus absent until the application frame replaces loading', async () => {
+  document.body.replaceChildren()
+  menu = installWindowsMenu()
+  const loading = document.createElement('div')
+  loading.dataset.dshBoot = ''
+  document.body.append(loading)
+  await new Promise<void>((resolve) => { queueMicrotask(resolve) })
+  expect(document.querySelector('[data-windows-menu]')).toBeNull()
+  const appSeat = document.createElement('div')
+  appSeat.dataset.shellOverlay = ''
+  loading.replaceWith(appSeat)
+  await vi.waitFor(() => { expect(document.querySelector('[data-windows-menu]')).not.toBeNull() })
+})
+
+it('does not mount menus after a loading document is disposed', async () => {
+  document.body.replaceChildren()
+  menu = installWindowsMenu()
+  menu.dispose()
+  const appSeat = document.createElement('div')
+  appSeat.dataset.shellOverlay = ''
+  document.body.append(appSeat)
+  await new Promise<void>((resolve) => { queueMicrotask(resolve) })
+  expect(document.querySelector('[data-windows-menu]')).toBeNull()
 })
 afterEach(() => {
   menu?.dispose()
