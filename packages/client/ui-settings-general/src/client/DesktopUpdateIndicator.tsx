@@ -26,11 +26,11 @@ function updateCopy(state: DesktopUpdatePresentation, t: SettingsTranslate): { l
   if (state.phase === 'error') {
     const failures: Readonly<Record<DesktopUpdateFailureKind, string>> = {
       check: t('desktop.update.checkFailed'),
-      'check-network': `${t('desktop.update.checkFailed')} ${t('desktop.update.networkFailed')}`,
+      'check-network': t('desktop.update.checkNetworkFailed'),
       download: t('desktop.update.downloadFailed'),
-      'download-network': `${t('desktop.update.downloadFailed')} ${t('desktop.update.networkFailed')}`,
+      'download-network': t('desktop.update.downloadNetworkFailed'),
       install: t('desktop.update.installFailed'),
-      'install-network': `${t('desktop.update.installFailed')} ${t('desktop.update.networkFailed')}`,
+      'install-network': t('desktop.update.installNetworkFailed'),
       'stop-failed': t('desktop.update.stopFailed'),
       'tasks-changed': t('desktop.update.tasksChanged'),
       'tasks-unavailable': t('desktop.update.tasksUnavailable'),

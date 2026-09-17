@@ -25,11 +25,11 @@ export function desktopUpdateErrorSummary(state: DesktopUpdateState, messages: D
   const kind = desktopUpdateFailureKind(state)
   const summaries: Readonly<Record<DesktopUpdateFailureKind, string>> = {
     check: messages.updateCheckFailed,
-    'check-network': `${messages.updateCheckFailed} ${messages.updateNetworkFailed}`,
+    'check-network': messages.updateCheckNetworkFailed,
     download: messages.updateDownloadFailed,
-    'download-network': `${messages.updateDownloadFailed} ${messages.updateNetworkFailed}`,
+    'download-network': messages.updateDownloadNetworkFailed,
     install: messages.updateInstallFailed,
-    'install-network': `${messages.updateInstallFailed} ${messages.updateNetworkFailed}`,
+    'install-network': messages.updateInstallNetworkFailed,
     'stop-failed': messages.updateStopFailed,
     'tasks-changed': messages.updateTasksChanged,
     'tasks-unavailable': messages.updateTasksUnavailable,

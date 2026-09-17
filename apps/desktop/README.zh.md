@@ -324,13 +324,4 @@ node apps/desktop/node_modules/pnpm/bin/pnpm.mjs --dir apps/desktop run test:upd
 
 ## 开发备注
 
-### 上线前 CDN 与容量待办
-
-以下为待确认建议，不代表已生效配置或已完成发布验收。运维与 Desktop 维护者须在生产上线前确认参数并记录验证结果；本清单不改变上传或运行时配置。
-
-- [ ] 运维：分别配置 `/dsh-desk/feeds/*` 与 `/dsh-desk/bin/*`，生产大文件下载不应长期沿用全路径绕过缓存。清单建议评估客户端通过 `max-age=0` 重新验证、CDN 节点缓存 30～60 秒、发布时刷新。约定最长传播延迟，并跨区域测量固定 URL 覆盖后的可见时间；刷新不保证全球立即可见。
-- [ ] 运维与发布负责人：对带版本号或哈希的安装包和 blockmap，评估 30 天至一年的节点缓存，不覆盖其 URL。先上传并验证安装包、完成预热，再发布清单；确认保留周期覆盖旧客户端差分更新所需的输入。
-- [ ] 运维与 Desktop 维护者：将节点 TTL 与客户端 Cache-Control 分开验证，检查重复请求的缓存状态、命中率和 COS 回源指标。确认 updater 附加的查询参数是否分散缓存键或绕过缓存；只忽略已证明不影响内容的参数。通过实际 updater 验证 Range/206、Content-Range、完整文件哈希和清单及时更新。参阅腾讯云[节点 TTL](https://cloud.tencent.com/document/product/1552/70777)、[浏览器 TTL](https://cloud.tencent.com/document/product/1552/70758) 与[缓存配置](https://cloud.tencent.com/document/product/1552/95263)文档。
-- [ ] Desktop 维护者与产品负责人：确认启动及到期恢复的突发请求处理。周期抖动和有上限的失败退避已实现并测试；启动和到期唤醒仍立即检查。为这些触发增加短暂随机延迟需要产品确认。强更策略轮询仍使用独立 API 与调度策略。
-- [ ] 运维与发布负责人：依据在线客户端数、启动／手动／重试峰值、安装包大小和预计下载比例制定请求量与带宽预算。按均匀分布的十分钟轮询，10 万在线客户端平均约 167 次检查／秒，100 万约 1667 次，尚未计入额外触发。CDN 缓存减少回源压力，不消除客户端下载流量费用；功能探测不是负载测试。
-- [ ] 运维：配置缓存命中率、回源 QPS、错误率、带宽及费用告警，约定阈值与值班负责人。验证异常请求防护不会破坏 updater 请求或误伤共享 NAT 客户端；updater 端点不能要求交互式浏览器验证。上线前记录故障处置流程。
+上线前 CDN 与容量决策见[桌面更新提案](../../.agents/notes/proposed/feature/2026-09-08-desktop-update-policy-and-installation.zh.md#cdn-and-capacity-qualification)。
