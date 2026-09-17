@@ -171,10 +171,10 @@ describe('document toolbar', () => {
     const view = render(<TextPreview {...h.props()} />)
     await settle()
     const renderSlot = vi.fn(() => null)
-    view.rerender(<TextPreview {...h.props()} useDocumentPreviews={selector => selector([{ ...binary, loading: 'office' }])} renderSlot={renderSlot} />)
+    view.rerender(<TextPreview {...h.props()} useDocumentPreviews={selector => selector([{ ...binary, loading: 'renderer' }])} renderSlot={renderSlot} />)
     expect(view.container.textContent).not.toContain('previous reader content')
     expect(renderSlot).toHaveBeenCalledWith('sidebar.right.tab.document', expect.objectContaining({
-      content: expect.objectContaining({ kind: 'office' }) as unknown,
+      content: expect.objectContaining({ kind: 'renderer' }) as unknown,
     }), expect.any(Object))
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.complete).toBeUndefined()
     expect(h.bytes).not.toHaveBeenCalled()

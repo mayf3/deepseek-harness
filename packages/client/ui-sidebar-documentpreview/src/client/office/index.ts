@@ -41,7 +41,7 @@ export function apply(ctx: Context, config: Config['office']): void {
   ctx.effect(() => ctx.documentPreviews.register({
     id,
     extensions, binaryExtensions: extensions, priority: 'builtin',
-    title: () => t('title'), loading: 'office', wrap: false,
+    title: () => t('title'), loading: 'renderer', wrap: false,
   }))
   const store = createOfficeStore()
   const retainTab = retainDocumentTabs(ctx)

@@ -416,7 +416,7 @@ it('ignores a complete-read rejection after renderer-owned loading takes over', 
   const face = textFace(vi.fn(), () => pending.promise)(SESSION, instance.actions)
   try {
     face.loadAll(TAB_1, FILE, controller.signal)
-    face.prepareOffice(TAB_1, controller.signal, 'office')
+    face.prepareRenderer(TAB_1, controller.signal, 'office')
     pending.reject(new Error('retired'))
     await pending.promise.catch(() => {})
     expect(instance.getSnapshot().byTab[TAB_1]?.failure).toBeUndefined()

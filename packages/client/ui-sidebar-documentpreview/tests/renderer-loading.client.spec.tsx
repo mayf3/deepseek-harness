@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Renderer-owned loads retain displayed versions and retire work on reload, replacement, and close. */
-import { useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
@@ -20,8 +20,56 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
+it('lets a non-Office renderer load content, report its version, and reload through the shared toolbar', async () => {
+  const h = harness()
+  const custom: DocumentPreviewDefinition = {
+    id: 'custom-viewer', extensions: ['md'], binaryExtensions: ['md'], title: () => 'Custom', loading: 'renderer',
+  }
+  const read = vi.fn<(signal: AbortSignal) => Promise<{ text: string; version: string }>>()
+    .mockResolvedValueOnce({ text: 'Custom content v1', version: 'v1' })
+    .mockResolvedValueOnce({ text: 'Custom content v2', version: 'v2' })
+  function CustomBody({ content }: { content: DocumentContent }) {
+    const [file, setFile] = useState<{ text: string; version: string; revision: number }>()
+    const request = content.kind === 'renderer' ? content : undefined
+    const revision = request?.revision
+    const displayed = file?.revision === revision ? file : undefined
+    useEffect(() => {
+      if (revision === undefined) return
+      const controller = new AbortController()
+      void read(controller.signal).then((file) => {
+        if (controller.signal.aborted) return
+        setFile({ ...file, revision })
+      })
+      return () => { controller.abort() }
+    }, [revision])
+    useEffect(() => { if (displayed !== undefined) request?.loaded(displayed.version) }, [displayed, request?.loaded])
+    return <p>{displayed?.text ?? 'Loading custom content'}</p>
+  }
+  const renderSlot: TextPreviewProps['renderSlot'] = (_name, input) => {
+    const owner = input as unknown as OwnerOf<'sidebar.right.tab.document'>
+    return <CustomBody content={owner.content} />
+  }
+  const useDocumentPreviews: TextPreviewProps['useDocumentPreviews'] = selector => selector([custom])
+  const view = render(<TextPreview {...h.props()} renderSlot={renderSlot} useDocumentPreviews={useDocumentPreviews} />)
+  expect(read).toHaveBeenCalledTimes(1)
+  expect(await screen.findByText('Custom content v1')).toBeTruthy()
+  expect(h.instance.getSnapshot().byTab[TAB_ID]?.version).toBe('v1')
+  h.setVersion('v2')
+  view.rerender(<TextPreview {...h.props()} renderSlot={renderSlot} useDocumentPreviews={useDocumentPreviews} />)
+  expect(screen.getByText('changed')).toBeTruthy()
+  expect(read).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getByRole('button', { name: 'reloadNow' }))
+  expect(await screen.findByText('Custom content v2')).toBeTruthy()
+  expect(read).toHaveBeenCalledTimes(2)
+  expect(h.instance.getSnapshot().byTab[TAB_ID]?.version).toBe('v2')
+  expect(screen.queryByText('changed')).toBeNull()
+  expect(h.read).not.toHaveBeenCalled()
+  expect(h.bytes).not.toHaveBeenCalled()
+  expect(h.instance.getSnapshot().byTab[TAB_ID]?.complete).toBeUndefined()
+})
+
 const definition: DocumentPreviewDefinition = {
-  id: 'office', extensions: ['md'], binaryExtensions: ['md'], title: () => 'Office', loading: 'office',
+  id: 'office', extensions: ['md'], binaryExtensions: ['md'], title: () => 'Office', loading: 'renderer',
 }
 type Result = Awaited<ReturnType<ReadOfficeDocument>>
 const result = (version = 'v1'): Result => ({ ok: true, value: {
@@ -50,10 +98,10 @@ function setup() {
     return selector(useSyncExternalStore(subscribe, snapshot))
   }
   const describeFailure: OfficeBodyProps['describeFailure'] = error => error.message
-  let request: Extract<DocumentContent, { kind: 'office' }> | undefined
+  let request: Extract<DocumentContent, { kind: 'renderer' }> | undefined
   const slots: TextPreviewProps['renderSlot'] = (_key, input, options) => {
     const owner = input as unknown as OwnerOf<'sidebar.right.tab.document'>
-    if (owner.content.kind !== 'office') return <p>Raw bytes</p>
+    if (owner.content.kind !== 'renderer') return <p>Raw bytes</p>
     request = owner.content
     // The component fixture supplies the standard seats used by Office; the real slot binding is exercised by the browser scenario.
     const props = { ...h.props(), ...owner, useTabInfo: options.hookContext, useStore: useOffice,

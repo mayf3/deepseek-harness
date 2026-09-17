@@ -94,7 +94,7 @@ export type TextPreviewProps =
  */
 export function TextPreview({
   useTabInfo, useResource, useStore, actions, loadPage, reloadPages,
-  loadAll, reloadAll, prepareOffice, useDocumentPreviews, renderSlot, t,
+  loadAll, reloadAll, prepareRenderer, useDocumentPreviews, renderSlot, t,
 }: TextPreviewProps): ReactNode {
   const { tab } = useTabInfo()
   const { navigation, signal } = tab
@@ -113,7 +113,7 @@ export function TextPreview({
   }, [definitions, file.path, unviewable])
   const selected = candidates.find(candidate => candidate.id === state?.rendererId) ?? candidates[0]
   const mode = selected?.loading
-  const contentRendererId = mode === 'office' ? selected?.id : undefined
+  const contentRendererId = mode === 'renderer' ? selected?.id : undefined
   const current = (state?.mode ?? 'text-pages') === mode && state?.contentRendererId === contentRendererId ? state : undefined
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const scrollportRef = useRef<HTMLElement | null>(null)
@@ -129,7 +129,7 @@ export function TextPreview({
   const pages = current?.pages
   const loaded = useMemo(() => loadedPages(pages ?? {}), [pages])
   const loadedThrough = lastLineLoaded(loaded)
-  const hasContent = mode === 'office' ? current?.version !== undefined : loaded.length > 0 || current?.complete !== undefined
+  const hasContent = mode === 'renderer' ? current?.version !== undefined : loaded.length > 0 || current?.complete !== undefined
   storedScrollTopRef.current = state?.scrollTop ?? 0
   const bindBody = useCallback((body: HTMLDivElement | null): void => {
     const previous = bodyRef.current
@@ -149,8 +149,8 @@ export function TextPreview({
     if (started || !canRead || mode === undefined || selected === undefined) return
     if (mode === 'text-pages') loadPage(tab.id, file, 1, signal, meta.value?.version)
     else if (mode === 'bytes-complete') loadAll(tab.id, file, signal, meta.value?.version)
-    else prepareOffice(tab.id, signal, selected.id, meta.value?.version)
-  }, [started, tab.id, file, signal, loadPage, loadAll, prepareOffice, canRead, mode, selected, meta.value?.version])
+    else prepareRenderer(tab.id, signal, selected.id, meta.value?.version)
+  }, [started, tab.id, file, signal, loadPage, loadAll, prepareRenderer, canRead, mode, selected, meta.value?.version])
 
   // Come back where the reader was once there is content to scroll: on a remount,
   // after a reload rebuilt the content, or after the selected renderer changed.
@@ -188,14 +188,14 @@ export function TextPreview({
     selected?.id, mode, file, canRead, meta.value?.version,
   ])
 
-  const officeReload = useCallback((): void => {
-    if (canRead && selected !== undefined) prepareOffice(tab.id, signal, selected.id, meta.value?.version, true)
-  }, [canRead, prepareOffice, tab.id, signal, selected?.id, meta.value?.version])
+  const rendererReload = useCallback((): void => {
+    if (canRead && selected !== undefined) prepareRenderer(tab.id, signal, selected.id, meta.value?.version, true)
+  }, [canRead, prepareRenderer, tab.id, signal, selected?.id, meta.value?.version])
   const content = useMemo((): DocumentContent | undefined => {
-    if (mode === 'office') {
+    if (mode === 'renderer') {
       if (current === undefined) return undefined
       const revision = current.loadRevision
-      return { kind: 'office', revision, reload: officeReload,
+      return { kind: 'renderer', revision, reload: rendererReload,
         loaded: (version) => { actions.rendered(tab.id, revision, version) } }
     }
     if (mode === 'bytes-complete') {
@@ -205,7 +205,7 @@ export function TextPreview({
     }
     if (current === undefined || loaded.length === 0) return undefined
     return { kind: 'text', pages: loaded, text: loaded.filter(page => page.lines > 0).map(page => page.text).join('\n'), eof: current.eof }
-  }, [mode, loaded, current?.complete, current?.eof, current?.loadRevision, officeReload, actions, tab.id])
+  }, [mode, loaded, current?.complete, current?.eof, current?.loadRevision, rendererReload, actions, tab.id])
 
   // A known binary suffix with no matching renderer never reads: no plain-text
   // fallback, no viewer control, only the path and the unsupported line.
@@ -247,7 +247,7 @@ export function TextPreview({
     if (!canRead) return
     if (mode === 'text-pages') reloadPages(tab.id, file, signal, meta.value?.version)
     else if (mode === 'bytes-complete') reloadAll(tab.id, file, signal, meta.value?.version)
-    else officeReload()
+    else rendererReload()
   }
   return (
     <div className={css.preview} data-textpreview-state="text" data-textpreview-url={tab.contentId} data-document-preview={selected.id}>
@@ -345,7 +345,7 @@ export function TextPreview({
             && body.scrollTop + body.clientHeight >= body.scrollHeight - 1) loadNext()
         }}
       >
-        {mode !== 'office' && !hasContent && current?.failure === undefined && (
+        {mode !== 'renderer' && !hasContent && current?.failure === undefined && (
           <LoadingIndicator className={clsx(css.statusLine, css.bodyLoading)} label={t('loading')} />
         )}
         {content !== undefined && renderSlot('sidebar.right.tab.document', {

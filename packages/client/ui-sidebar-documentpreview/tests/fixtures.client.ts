@@ -148,7 +148,7 @@ export function harness(script: Record<number, RemoteResult<WorkspaceFileText>> 
     actions: instance.actions,
     loadPage: face.loadPage,
     reloadPages: face.reloadPages,
-    prepareOffice: face.prepareOffice, loadAll: face.loadAll,
+    prepareRenderer: face.prepareRenderer, loadAll: face.loadAll,
     reloadAll: face.reloadAll,
     useDocumentPreviews: () => definitions,
     renderSlot,
