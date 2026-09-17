@@ -42,6 +42,78 @@ afterEach(() => {
 beforeEach(() => { vi.resetAllMocks() })
 
 describe('SourcePreview', () => {
+  it('keeps a loaded preview and its lightbox while a theme replacement renders and loads', async () => {
+    const replacement = Promise.withResolvers<string>()
+    vi.mocked(renderMermaid).mockResolvedValueOnce(imageUrl).mockReturnValueOnce(replacement.promise)
+    const actions = document.createElement('div')
+    actions.dataset['testPreviewActions'] = ''
+    document.body.append(actions)
+    const previous = document.documentElement.style.colorScheme
+    const view = render(<SourcePreview code={source} render={renderMermaid} labels={labels} actions={actions} />)
+    try {
+      const image = await loadPreviewImage()
+      fireEvent.click(screen.getByRole('button', { name: labels.zoom }))
+      const dialog = screen.getByRole('dialog')
+      await act(async () => { document.documentElement.style.colorScheme = 'dark' })
+      expect(view.container.querySelector('img')).toBe(image)
+      expect(screen.getByRole('dialog')).toBe(dialog)
+      await act(async () => { replacement.resolve('data:image/svg+xml,new') })
+      expect(screen.queryByRole('status')).toBeNull()
+      expect(within(dialog).getByRole('img').getAttribute('src')).toBe(imageUrl)
+      expect(view.container.querySelector('[data-preview-placeholder]')).toBeNull()
+      fireEvent.load(view.container.querySelector('img[src="data:image/svg+xml,new"]')!)
+      expect(screen.getByRole('dialog')).toBe(dialog)
+      expect(within(dialog).getByRole('img').getAttribute('src')).toBe('data:image/svg+xml,new')
+    } finally {
+      view.unmount()
+      document.documentElement.style.colorScheme = previous
+    }
+  })
+
+  it.each(['render', 'load'] as const)('retains the usable image and announces a failed theme %s', async (failure) => {
+    vi.mocked(renderMermaid).mockResolvedValueOnce(imageUrl)
+    const previous = document.documentElement.style.colorScheme
+    const view = render(<SourcePreview code={source} render={renderMermaid} labels={labels} />)
+    try {
+      const image = await loadPreviewImage()
+      if (failure === 'render') vi.mocked(renderMermaid).mockRejectedValueOnce(new Error('layout failed'))
+      else vi.mocked(renderMermaid).mockResolvedValueOnce('data:image/svg+xml,broken')
+      await act(async () => { document.documentElement.style.colorScheme = 'dark' })
+      if (failure === 'load') fireEvent.error(view.container.querySelector('img[src="data:image/svg+xml,broken"]')!)
+      expect(screen.getByRole('status').textContent).toBe(labels.error)
+      expect(screen.getByRole('img')).toBe(image)
+      expect(view.container.querySelector('[data-preview-placeholder]')).toBeNull()
+    } finally {
+      view.unmount()
+      document.documentElement.style.colorScheme = previous
+    }
+  })
+
+  it('reports failure from a replacement renderer without restoring the old renderer image', async () => {
+    vi.mocked(renderMermaid).mockResolvedValue(imageUrl)
+    const view = render(<SourcePreview code={source} render={renderMermaid} labels={labels} />)
+    await loadPreviewImage()
+    const replacement = vi.fn(async () => { throw new Error('unavailable') })
+    view.rerender(<SourcePreview code={source} render={replacement} labels={labels} />)
+    expect((await screen.findByText(labels.error)).getAttribute('role')).toBe('status')
+    expect(screen.queryByRole('img')).toBeNull()
+  })
+
+  it.each(['load', 'error'] as const)('ignores a queued image %s event after another event settled the candidate', async (event) => {
+    vi.mocked(renderMermaid).mockResolvedValue(imageUrl)
+    const view = render(<SourcePreview code={source} render={renderMermaid} labels={labels} />)
+    const image = await waitFor(() => {
+      expect(view.container.querySelector('img')).not.toBeNull()
+      return view.container.querySelector('img')!
+    })
+    act(() => {
+      fireEvent.load(image)
+      fireEvent[event](image)
+    })
+    expect(screen.getByRole('img')).toBe(image)
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
   it('retains a loaded image when a theme render returns the same URL', async () => {
     vi.mocked(renderMermaid).mockResolvedValue(imageUrl)
     const view = render(<SourcePreview render={renderMermaid} code={source} labels={labels} />)

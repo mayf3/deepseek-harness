@@ -58,7 +58,7 @@ const CPU = `flowchart LR
     MEM -->|"数据"| OUT
     CU -->|"控制信号"| OUT`
 
-function fixture(diagramSources?: string[]): string {
+function fixture(diagramSources?: string[], trailingText = ''): string {
   const session = Session.create(SessionId('markdown-mermaid-source'))
   session.append('turn/start', { turn: 1 })
   const user = session.append('user/message', createUserMessage({
@@ -74,7 +74,7 @@ function fixture(diagramSources?: string[]): string {
         '# Mermaid previews',
         ...[FLOW, SEQUENCE, INVALID, UNTRUSTED].map(code => `\`\`\`mermaid\n${code}\n\`\`\``),
         ...[['dot', DOT], ['svg', SVG], ['html', HTML]].map(([lang, code]) => `\`\`\`${lang}\n${code}\n\`\`\``),
-      ].join('\n\n') : ['# Mermaid previews', ...diagramSources.map(code => `\`\`\`mermaid\n${code}\n\`\`\``)].join('\n\n') }],
+      ].join('\n\n') : ['# Mermaid previews', ...diagramSources.map(code => `\`\`\`mermaid\n${code}\n\`\`\``), trailingText].join('\n\n') }],
       source: { kind: 'model', provider: 'fixture', model: 'fixture' },
     }),
   }, { surfaceOp: 'append' })
@@ -120,7 +120,9 @@ async function showAllPreviews(page: Page, label = 'Preview'): Promise<void> {
   const blocks = page.locator('.md-code-block')
   for (let index = 0; index < await blocks.count(); index += 1) {
     const button = blocks.nth(index).getByRole('button', { name: label, exact: true })
-    if (await button.count() === 1) await button.click()
+    if (await button.count() !== 1) continue
+    await button.click()
+    await expect.poll(() => blocks.nth(index).locator('[data-preview-placeholder]').count()).toBe(0)
   }
 }
 
@@ -258,6 +260,7 @@ describe('web e2e: Mermaid chat previews', () => {
     try {
       await openConversation(page, scaffold)
       const block = page.locator('.md-code-block').first()
+      await block.scrollIntoViewIfNeeded()
       await block.getByRole('img', { name: 'Mermaid diagram', exact: true }).evaluate(async (node: HTMLImageElement) => { await node.decode() })
       const toolbar = block.locator('[data-code-block-banner]').locator('..')
       await block.hover()
@@ -406,6 +409,7 @@ describe('web e2e: Mermaid chat previews', () => {
     await openConversation(page, scaffold)
     const first = page.locator('.md-code-block').first()
     const invalid = page.locator('.md-code-block').nth(2)
+    await invalid.scrollIntoViewIfNeeded()
     await invalid.getByRole('status').filter({ hasText: 'Unable to render this diagram' }).waitFor()
     await invalid.getByRole('button', { name: 'Source', exact: true }).click()
     expect((await invalid.locator('[data-code-block-content]').boundingBox())!.height).toBeCloseTo(120, 0)
@@ -417,6 +421,7 @@ describe('web e2e: Mermaid chat previews', () => {
     const html = page.locator('.md-code-block').nth(6)
     expect(await html.locator('pre code').textContent()).toBe(HTML)
     expect(await html.getByRole('button', { name: 'Preview', exact: true }).count()).toBe(0)
+    await first.scrollIntoViewIfNeeded()
     const image = first.getByRole('img', { name: 'Mermaid diagram', exact: true })
     await image.evaluate(async (node: HTMLImageElement) => { await node.decode() })
     const diagram = await image.elementHandle()
@@ -521,8 +526,46 @@ describe('web e2e: Mermaid chat previews', () => {
     await page.getByRole('status').filter({ hasText: '无法渲染此图表，可切换到源码查看。' }).waitFor()
     const snapshot = await captureStableAria(page, DIAGRAM_MESSAGE, scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'zh.expected.md'), snapshot, MODE)
-    await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md', 'zh.expected.md', 'source-highlight.expected.md', 'lightbox.expected.md', 'zh-lightbox.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md', 'zh.expected.md', 'source-highlight.expected.md', 'lightbox.expected.md', 'zh-lightbox.expected.md', 'offscreen.expected.md'])
     await page.close()
+  }, 60_000)
+
+  it.skipIf(MODE === 'record')('defers offscreen Mermaid and Graphviz runtimes until a preview enters the viewport', async () => {
+    const page = await newEnglishPage(browser)
+    let history: WebScaffold | undefined
+    const runtimes: string[] = []
+    page.on('request', (request) => {
+      const path = new URL(request.url()).pathname
+      if (/\/(mermaid\.core|viz)-[^/]+\.js$/.test(path)) runtimes.push(path)
+    })
+    try {
+      history = await launchWebScaffold({})
+      const tail = ['```dot', DOT, '```', ...Array.from({ length: 40 }, (_, index) => `Closing note ${index + 1}.`), 'History complete.'].join('\n\n')
+      await seedSession(history, fixture(Array.from({ length: 20 }, (_, index) => index === 0 ? FLOW : SEQUENCE), tail), SEED_ID)
+      await openConversation(page, history)
+      await page.getByText('History complete.', { exact: true }).waitFor()
+      await page.evaluate(async () => {
+        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => { resolve() })))
+      })
+      const blocks = page.locator('.md-code-block')
+      expect(await blocks.count()).toBe(21)
+      expect(await blocks.locator('img').count()).toBe(0)
+      expect(runtimes).toEqual([])
+      await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'offscreen.expected.md'),
+        await captureStableAria(page, '.md-code-block', history.workspaceCwd), MODE)
+      await blocks.first().scrollIntoViewIfNeeded()
+      await blocks.first().getByRole('img', { name: 'Mermaid diagram', exact: true })
+        .evaluate(async (node: HTMLImageElement) => { await node.decode() })
+      expect(runtimes.some(path => path.includes('/mermaid.core-'))).toBe(true)
+      expect(runtimes.some(path => path.includes('/viz-'))).toBe(false)
+      await blocks.last().scrollIntoViewIfNeeded()
+      await blocks.last().getByRole('img', { name: 'Graphviz diagram', exact: true })
+        .evaluate(async (node: HTMLImageElement) => { await node.decode() })
+      expect(runtimes.some(path => path.includes('/viz-'))).toBe(true)
+    } finally {
+      await page.close()
+      await history?.close()
+    }
   }, 60_000)
 
   it.skipIf(MODE === 'record')('rejects native Mermaid image nodes before requests and renders the next diagram', async () => {
@@ -539,8 +582,10 @@ describe('web e2e: Mermaid chat previews', () => {
         'flowchart LR\n  A@{ img: "https://preview.invalid/mermaid-image", h: 80 }', FLOW,
       ]), SEED_ID)
       await openConversation(page, imageScaffold)
+      await page.locator('.md-code-block').first().scrollIntoViewIfNeeded()
       await page.locator('.md-code-block').first().getByRole('status')
         .filter({ hasText: 'Unable to render this diagram' }).waitFor()
+      await page.locator('.md-code-block').nth(1).scrollIntoViewIfNeeded()
       const image = page.getByRole('img', { name: 'Mermaid diagram', exact: true })
       await image.evaluate(async (node: HTMLImageElement) => { await node.decode() })
       expect(requests).toEqual([])

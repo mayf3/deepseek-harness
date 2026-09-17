@@ -69,6 +69,7 @@ export async function renderMermaid(code: string, signal: AbortSignal): Promise<
 }
 
 async function renderOne(code: string, signal: AbortSignal): Promise<string> {
+  signal.throwIfAborted()
   const mermaid = await loadMermaid()
   signal.throwIfAborted()
   initialize(mermaid)
@@ -76,6 +77,7 @@ async function renderOne(code: string, signal: AbortSignal): Promise<string> {
   // The replacement parse API exposes validity, not parsed nodes.
   // oxlint-disable-next-line typescript/no-deprecated
   const diagram = await mermaid.mermaidAPI.getDiagramFromText(code)
+  signal.throwIfAborted()
   if (diagram.type.startsWith('flowchart')) {
     for (const node of (diagram.db as FlowDB).getVertices().values()) {
       if (node.img !== undefined) throw new Error('Mermaid image nodes are not supported')

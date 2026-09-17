@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-10-codeblock-preview-interaction.md
-2026-09-10-codeblock-preview-interaction.md: 8e961b5ed2b8b991fb6a7d177467737c597a0e1b
-2026-09-10-codeblock-preview-interaction.zh.md: 99e12f741e9777287b0ada1d30cbcba551202b24
+2026-09-10-codeblock-preview-interaction.md: 678daa6544f92ab5216251658f9e9471eae4cf10
+2026-09-10-codeblock-preview-interaction.zh.md: afd3a3e2416765b3f71832ddd867c83bf90d8e81

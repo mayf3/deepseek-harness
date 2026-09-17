@@ -1,7 +1,6 @@
 /** Read-only diagram preview with image loading status and per-source async ownership. */
 
-import { memo, useCallback, useEffect, useId, useState } from 'react'
-import type { ReactNode } from 'react'
+import { memo, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Tooltip } from '../Tooltip.tsx'
 import { IconSearchOutline16 } from '../icons/index.tsx'
@@ -10,6 +9,7 @@ import { PreviewPlaceholder } from './PreviewPlaceholder.tsx'
 import css from './SourcePreview.module.css'
 import blockCss from './CodeBlock.module.css'
 import { readPreviewTheme } from './preview-theme.ts'
+import { observeViewport } from './viewport.ts'
 
 /** Localized preview output; the diagram source remains verbatim. */
 export interface PreviewLabels {
@@ -42,26 +42,54 @@ export interface SourcePreviewProps {
   actions?: HTMLElement | undefined
 }
 
-type Result =
-  | { kind: 'ok'; code: string; render: PreviewRenderer; src: string; loaded: boolean }
-  | { kind: 'error'; code: string; render: PreviewRenderer }
+type Result = {
+  code: string
+  render: PreviewRenderer
+  palette: string
+  /** Last loaded image of the same source, retained while its replacement loads or fails. */
+  previous: string | undefined
+} & (
+  | { kind: 'ok'; src: string; loaded: boolean }
+  | { kind: 'error' }
+)
 
-/* v8 ignore next 3 -- closed-union backstop; only reached if a result is forged */
+function loadedImage(result: Result | null): string | undefined {
+  if (result === null) return undefined
+  switch (result.kind) {
+    case 'ok': return result.loaded ? result.src : result.previous
+    case 'error': return result.previous
+    /* v8 ignore next -- closed-union backstop; every declared result kind is handled above. */
+    default: return assertNever(result)
+  }
+}
+
+/* v8 ignore next 3 -- closed-union backstop; only reached if a result is forged. */
 function assertNever(value: never): never {
   throw new Error(`unreachable preview result: ${String(value)}`)
 }
 
 /**
- * Display a complete diagram after its image loads, or a localized failure status.
- * @param props - Source and complete localized labels. Source and document theme changes cancel obsolete renders.
+ * Render visible diagrams and retain their loaded images during theme refreshes.
+ * @param props - Source and complete localized labels. Source, visibility and document theme changes cancel obsolete renders.
  * @returns A pending status, inert image or error, with a persistent zoom action.
  */
 export const SourcePreview = memo(function SourcePreview({ code, labels, render, actions }: SourcePreviewProps) {
   const pendingId = useId()
+  const target = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
   const [expanded, setExpanded] = useState<{ code: string; render: PreviewRenderer } | null>(null)
   const close = useCallback(() => { setExpanded(null) }, [])
+  const current = result?.code === code && result.render === render ? result : null
+  const renderedPalette = current?.palette
+  const expandedCurrent = expanded?.code === code && expanded.render === render
+  const active = visible || expandedCurrent
   useEffect(() => {
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- React attaches this surface before effects run.
+    return observeViewport(target.current!, setVisible)
+  }, [])
+  useEffect(() => {
+    if (!active) return
     let controller: AbortController | undefined
     let palette: string | undefined
     const update = () => {
@@ -69,11 +97,24 @@ export const SourcePreview = memo(function SourcePreview({ code, labels, render,
       if (next === palette) return
       palette = next
       controller?.abort()
+      if (next === renderedPalette) return
       const current = new AbortController()
       controller = current
       void (async () => await render(code, current.signal))().then(
-        (src) => { if (!current.signal.aborted) setResult({ kind: 'ok', code, render, src, loaded: false }) },
-        () => { if (!current.signal.aborted) setResult({ kind: 'error', code, render }) },
+        (src) => {
+          if (current.signal.aborted) return
+          controller = undefined
+          setResult((prior) => {
+            const previous = prior?.code === code && prior.render === render ? loadedImage(prior) : undefined
+            return { kind: 'ok', code, render, palette: next, src, loaded: src === previous, previous: src === previous ? undefined : previous }
+          })
+        },
+        () => {
+          if (current.signal.aborted) return
+          controller = undefined
+          setResult(prior => ({ kind: 'error', code, render, palette: next,
+            previous: prior?.code === code && prior.render === render ? loadedImage(prior) : undefined }))
+        },
       )
     }
     // Isolated images cannot inherit the host's CSS variables.
@@ -82,41 +123,16 @@ export const SourcePreview = memo(function SourcePreview({ code, labels, render,
     observer.observe(document.body, { attributes: true, attributeFilter: ['style', 'data-ds-dark-theme'] })
     update()
     return () => { observer.disconnect(); controller?.abort() }
-  }, [code, render])
+  }, [active, code, render, renderedPalette])
 
-  const current = result?.code === code && result.render === render ? result : null
-  const ready = current?.kind === 'ok' && current.loaded
-  const pending = current === null || (current.kind === 'ok' && !current.loaded)
-  let body: ReactNode
-  if (current === null) {
-    body = <PreviewPlaceholder label={labels.pending} />
-  } else {
-    switch (current.kind) {
-      case 'ok':
-        body = <>
-          {!current.loaded && <PreviewPlaceholder label={labels.pending} />}
-          <div className={css.canvas} hidden={!current.loaded}>
-            <img key={current.src} className={css.diagram} src={current.src} alt={labels.diagram}
-              ref={(image) => {
-                if (!current.loaded && image !== null && image.complete && image.naturalWidth > 0) {
-                  setResult({ ...current, loaded: true })
-                }
-              }}
-              onLoad={() => { setResult({ ...current, loaded: true }) }}
-              onError={() => { setResult({ kind: 'error', code, render }) }} />
-          </div>
-        </>
-        break
-      case 'error':
-        body = <div className={css.failure}>
-          <div className={css.status} role="status">{labels.error}</div>
-        </div>
-        break
-      /* v8 ignore next -- closed-union backstop; only reached if a result is forged */
-      default: return assertNever(current)
-    }
+  const displayed = loadedImage(current)
+  const ready = displayed !== undefined
+  const pending = !ready && current?.kind !== 'error'
+  const markLoaded = () => {
+    if (current?.kind !== 'ok' || current.loaded) return
+    setResult(prior => prior === current ? { ...current, loaded: true, previous: undefined } : prior)
   }
-  return <>
+  return <div ref={target} className={css.root}>
     {actions !== undefined && createPortal(
       <Tooltip label={ready ? labels.zoom : pending ? labels.pending : labels.error} side="top" delayMs={500}>
         <span className={blockCss.iconSlot}>
@@ -128,9 +144,25 @@ export const SourcePreview = memo(function SourcePreview({ code, labels, render,
         </span>
       </Tooltip>, actions,
     )}
-    {body}
-    {ready && expanded?.code === code && expanded.render === render && <PreviewLightbox
-      src={current.src} alt={labels.diagram} closeLabel={labels.close} interactionLabel={labels.interaction} onClose={close}
+    {pending && <PreviewPlaceholder label={labels.pending} />}
+    {current?.kind === 'error' && <div className={css.failure}>
+      <div className={css.status} role="status">{labels.error}</div>
+    </div>}
+    <div className={css.canvas} hidden={!ready}>
+      {current?.previous !== undefined &&
+        <img key={current.previous} className={css.diagram} src={current.previous} alt={labels.diagram} />}
+      {current?.kind === 'ok' && <img key={current.src} className={css.diagram} src={current.src} alt={labels.diagram}
+        hidden={!current.loaded}
+        ref={(image) => {
+          if (image !== null && image.complete && image.naturalWidth > 0) markLoaded()
+        }}
+        onLoad={markLoaded} onError={() => {
+          setResult(prior => prior === current ? { kind: 'error', code, render, palette: current.palette,
+            previous: current.previous } : prior)
+        }} />}
+    </div>
+    {ready && expandedCurrent && <PreviewLightbox
+      src={displayed} alt={labels.diagram} closeLabel={labels.close} interactionLabel={labels.interaction} onClose={close}
     />}
-  </>
+  </div>
 })

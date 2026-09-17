@@ -55,3 +55,12 @@ it('uses theme defaults without rewriting authored DOT attributes', async () => 
     else document.body.setAttribute('style', previous)
   }
 })
+
+
+it('does not initialize the runtime for already cancelled work', async () => {
+  const { renderGraphviz } = await import('../src/markdown/graphviz.ts')
+  const controller = new AbortController()
+  controller.abort()
+  await expect(renderGraphviz('digraph {}', controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+  expect(instance).not.toHaveBeenCalled()
+})

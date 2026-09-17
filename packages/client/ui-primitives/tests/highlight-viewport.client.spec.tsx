@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SourcePreview } from '../src/markdown/SourcePreview.tsx'
 import { ReadBlock } from '../src/ReadBlock.tsx'
 import { CodeBlock } from '../src/markdown/CodeBlock.tsx'
 import { markdownLabels, readBlockLabels } from './labels.client.ts'
@@ -149,7 +150,7 @@ describe('viewport-activated syntax highlighting', () => {
 
     view.rerender(<CodeBlock {...props} />)
     expect(block.querySelector('pre.shiki')).toBe(highlighted)
-    expect(IntersectionObserverStub.instances).toHaveLength(1)
+    expect(IntersectionObserverStub.instances.every(instance => instance.disconnected)).toBe(true)
   })
 
   it('releases the shared observer when the last pending block unmounts', () => {
@@ -200,5 +201,115 @@ describe('viewport-activated syntax highlighting', () => {
     await waitFor(() => {
       expect(block.querySelectorAll('[class^="_content_"] span[style]').length).toBeGreaterThan(1)
     })
+  })
+})
+
+
+describe('viewport-activated diagram previews', () => {
+  const labels = { diagram: 'Diagram', error: 'Error', zoom: 'Zoom', pending: 'Pending', close: 'Close', interaction: 'Pan and zoom' }
+  const imageUrl = 'data:image/svg+xml,%3Csvg%2F%3E'
+
+  it('leaves an offscreen history unrendered and activates only visible previews', async () => {
+    const renderer = vi.fn(async () => imageUrl)
+    const view = render(<>{Array.from({ length: 20 }, (_, index) =>
+      <SourcePreview key={index} code={String(index)} render={renderer} labels={labels} />)}</>)
+    expect(renderer).not.toHaveBeenCalled()
+    expect(view.container.querySelectorAll('img')).toHaveLength(0)
+    expect(IntersectionObserverStub.instances).toHaveLength(1)
+    const observer = IntersectionObserverStub.instances[0]!
+    expect(observer.observed.size).toBe(20)
+    const target = [...observer.observed][19]!
+    await act(async () => { observer.intersect(target, true) })
+    expect(renderer).toHaveBeenCalledExactlyOnceWith('19', expect.any(AbortSignal))
+    fireEvent.load(view.container.querySelector('img')!)
+    const image = screen.getByRole('img')
+    await act(async () => { observer.intersect(target, false) })
+    await act(async () => { observer.intersect(target, true) })
+    expect(renderer).toHaveBeenCalledOnce()
+    expect(screen.getByRole('img')).toBe(image)
+    view.unmount()
+    expect(observer.observed.size).toBe(0)
+    expect(observer.disconnected).toBe(true)
+  })
+
+  it('cancels work leaving the viewport and ignores its completion after reentry', async () => {
+    const first = Promise.withResolvers<string>()
+    const renderer = vi.fn((_code: string, _signal: AbortSignal) => first.promise).mockResolvedValueOnce(imageUrl)
+    const view = render(<SourcePreview code="first" render={renderer} labels={labels} />)
+    const observer = IntersectionObserverStub.instances[0]!
+    const target = [...observer.observed][0]!
+    await act(async () => { observer.intersect(target, true) })
+    fireEvent.load(view.container.querySelector('img')!)
+    await act(async () => { observer.intersect(target, false) })
+    view.rerender(<SourcePreview code="second" render={renderer} labels={labels} />)
+    expect(renderer).toHaveBeenCalledOnce()
+    await act(async () => { observer.intersect(target, true) })
+    const signal = renderer.mock.calls[1]![1]
+    await act(async () => { observer.intersect(target, false) })
+    expect(signal.aborted).toBe(true)
+    renderer.mockResolvedValueOnce(imageUrl)
+    await act(async () => { observer.intersect(target, true) })
+    fireEvent.load(view.container.querySelector('img')!)
+    await act(async () => { first.resolve('obsolete') })
+    expect(screen.getByRole('img').getAttribute('src')).toBe(imageUrl)
+    expect(renderer).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps an offscreen lightbox active and cancels its unfinished refresh on close', async () => {
+    const replacement = Promise.withResolvers<string>()
+    const renderer = vi.fn((_code: string, _signal: AbortSignal) => replacement.promise).mockResolvedValueOnce(imageUrl)
+    const actions = document.createElement('div')
+    document.body.append(actions)
+    const previous = document.documentElement.style.colorScheme
+    const view = render(<SourcePreview code="diagram" render={renderer} labels={labels} actions={actions} />)
+    try {
+      const observer = IntersectionObserverStub.instances[0]!
+      const target = [...observer.observed][0]!
+      await act(async () => { observer.intersect(target, true) })
+      fireEvent.load(view.container.querySelector('img')!)
+      fireEvent.click(screen.getByRole('button', { name: labels.zoom }))
+      await act(async () => { observer.intersect(target, false) })
+      await act(async () => { document.documentElement.style.colorScheme = 'dark' })
+      expect(renderer).toHaveBeenCalledTimes(2)
+      const signal = renderer.mock.calls[1]![1]
+      expect(signal.aborted).toBe(false)
+      expect(screen.getByRole('dialog')).toBeDefined()
+      fireEvent.click(screen.getByRole('button', { name: labels.close }))
+      expect(signal.aborted).toBe(true)
+      await act(async () => { replacement.reject(new Error('cancelled')) })
+      expect(screen.queryByRole('status')).toBeNull()
+      expect(screen.getByRole('img').getAttribute('src')).toBe(imageUrl)
+    } finally {
+      view.unmount()
+      actions.remove()
+      document.documentElement.style.colorScheme = previous
+    }
+  })
+
+  it('defers offscreen theme updates and retains the loaded image until reentry refresh loads', async () => {
+    const renderer = vi.fn(async () => imageUrl)
+    const previous = document.documentElement.style.colorScheme
+    const view = render(<SourcePreview code="diagram" render={renderer} labels={labels} />)
+    try {
+      const observer = IntersectionObserverStub.instances[0]!
+      const target = [...observer.observed][0]!
+      await act(async () => { observer.intersect(target, true) })
+      fireEvent.load(view.container.querySelector('img')!)
+      const image = screen.getByRole('img')
+      await act(async () => { observer.intersect(target, false) })
+      await act(async () => { document.documentElement.style.colorScheme = 'dark' })
+      expect(renderer).toHaveBeenCalledOnce()
+      expect(screen.getByRole('img')).toBe(image)
+      renderer.mockResolvedValueOnce('data:image/svg+xml,new')
+      await act(async () => { observer.intersect(target, true) })
+      expect(renderer).toHaveBeenCalledTimes(2)
+      expect(screen.getByRole('img')).toBe(image)
+      expect(screen.queryByRole('status')).toBeNull()
+      fireEvent.load(view.container.querySelector('img[src="data:image/svg+xml,new"]')!)
+      expect(screen.getByRole('img').getAttribute('src')).toBe('data:image/svg+xml,new')
+    } finally {
+      view.unmount()
+      document.documentElement.style.colorScheme = previous
+    }
   })
 })

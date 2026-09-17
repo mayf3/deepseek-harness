@@ -116,12 +116,29 @@ describe('Mermaid runtime', () => {
     expect(svg.getAttribute('height')).toBe('180')
   })
 
-  it('does not start cancelled work after loading the runtime', async () => {
+  it('does not import the runtime for cancelled queued work', async () => {
     const { renderMermaid } = await import('../src/markdown/mermaid.ts')
     const controller = new AbortController()
     controller.abort()
     await expect(renderMermaid('unused', controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
     expect(renderDiagram).not.toHaveBeenCalled()
+    expect(importRuntime).not.toHaveBeenCalled()
+  })
+
+  it('skips layout after cancellation while loading the diagram parser', async () => {
+    const parsed = Promise.withResolvers<{ type: string; db: object }>()
+    getDiagramFromText.mockReturnValueOnce(parsed.promise)
+    const { renderMermaid } = await import('../src/markdown/mermaid.ts')
+    const controller = new AbortController()
+    const result = renderMermaid('sequenceDiagram', controller.signal)
+    const rejection = expect(result).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => { expect(getDiagramFromText).toHaveBeenCalledOnce() })
+    controller.abort()
+    parsed.resolve({ type: 'sequence', db: {} })
+    await rejection
+    expect(renderDiagram).not.toHaveBeenCalled()
+    renderDiagram.mockResolvedValue({ svg: '<svg/>' })
+    await expect(renderMermaid('next', new AbortController().signal)).resolves.toContain('data:image/svg+xml')
   })
 
   it('allows another attempt after runtime initialization fails', async () => {

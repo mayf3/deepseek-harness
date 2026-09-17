@@ -1,3 +1,8 @@
+.root {
+  min-width: 0;
+  border-radius: inherit;
+}
+
 .canvas {
   display: grid;
   place-items: center;
@@ -41,7 +46,7 @@
   50% { opacity: 0.8; }
 }
 
-.canvas[hidden] { display: none; }
+.canvas[hidden], .diagram[hidden] { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .placeholderIcon { animation: none; }
