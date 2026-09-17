@@ -95,15 +95,19 @@ function waitForAbort(signal: AbortSignal): Promise<void> {
   })
 }
 
+function isAbortRequested(signal: AbortSignal): boolean {
+  return signal.aborted
+}
+
 function chatResourceProvider(sessions: ISessions): ResourceProvider<'chat'> {
   return {
     protocol: 'chat',
     async *open(resourceAddress, { signal }) {
       const address = parseSidebarChatAddress(resourceAddress)
       if (address === undefined) throw new Error(`ui-chat: invalid chat resource address "${resourceAddress}"`)
-      if (signal.aborted) return
+      if (isAbortRequested(signal)) return
       await sessions.refreshSubagents(address.parentSessionId)
-      if (signal.aborted) return
+      if (isAbortRequested(signal)) return
       const reference = sessions.retain(address, { source: 'sidebarChat', signal })
       try {
         yield { ok: true, value: { address, reference } }
