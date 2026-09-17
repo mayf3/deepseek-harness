@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
-  SessionListState, SessionSummary,
+  SessionListState, SessionSummary, SessionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SubagentAddress, SubagentCatalogRow } from '@deepseek-ai/dsh-subagent/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -49,31 +49,31 @@ function props(
   value: CatalogFixture | undefined,
   nested: Readonly<Record<SessionId, CatalogFixture>> = {},
   summaries?: Readonly<Record<SessionId, SessionSummary>>,
-  currentAddress?: SubagentAddress,
+  boundAddress?: SubagentAddress,
 ) {
   const catalogs = value === undefined ? nested : { [PARENT]: value, ...nested }
   const state = {
     ids: [CHILD],
     byId: summaries ?? {
       ...Object.fromEntries(Object.values(catalogs).flatMap(catalog => catalog.entries.map(entry => [entry.id, {
-        id: entry.id, displayTitle: entry.label ?? entry.id, running: entry.activity === 'running', blank: false, updatedAt: 1,
+        id: entry.id, displayTitle: entry.label ?? entry.id, running: entry.activity === 'running', blank: false, updatedAt: 1, retainedBy: {},
       }]))),
       [CHILD]: {
         id: CHILD,
         title: '正在扫描项目文件',
         displayTitle: 'worker',
         running: Object.values(catalogs).some(catalog => catalog.entries.some(entry => entry.id === CHILD && entry.activity === 'running')),
+        retainedBy: {},
         blank: false,
         updatedAt: Date.now(),
       },
     },
-    current: PARENT, phase: 'ready',
+    phase: 'ready',
     projectionsBySession: Object.fromEntries(Object.entries(catalogs).map(([id, catalog]) => [id, {
       state: catalog.state, error: catalog.error,
       values: { subagentCatalog: catalog.entries.map(({ activity: _activity, ...entry }) => ({ ...entry, createdAt: 1 })) },
     }])) ,
     jobsBySession: {},
-    currentAddress,
   } satisfies SessionListState
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
@@ -81,6 +81,9 @@ function props(
   return {
     sessionId: PARENT,
     useSessions,
+    useSession: <T,>(select: (snapshot: SessionSnapshot) => T): T => select({
+      subagent: boundAddress === undefined ? undefined : { address: boundAddress },
+    } as SessionSnapshot),
     openChild: vi.fn(),
     refresh: vi.fn(),
     lineageSessionId: PARENT,
@@ -94,6 +97,7 @@ function summary(id: SessionId, updatedAt: number): SessionSummary {
     id,
     displayTitle: id,
     running: false,
+    retainedBy: {},
     blank: false,
     updatedAt,
   }
@@ -846,6 +850,7 @@ describe('SubagentHeaderLineage', () => {
     }
     render(<SubagentHeaderLineage {...input} />)
 
+    expect(screen.getByRole('button', { name: '切换子代理：正在扫描项目文件' })).toBeTruthy()
     expect(input.refresh).not.toHaveBeenCalled()
   })
 

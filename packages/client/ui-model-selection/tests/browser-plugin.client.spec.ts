@@ -134,20 +134,15 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
   localeRuntime.setLocale(locale)
   ctx.provide('locale', localeRuntime)
   const scopes = new Map<SessionId, Context>()
+  const bindings = new Map<SessionId, {
+    sessionId: SessionId
+    session: { sessionId: SessionId; projections: { faceOf: () => SnapshotStore<ModelSelectionProjection | undefined> } }
+    ctx: Context
+  }>()
   const addressed = new Set<SessionId>()
   ctx.provide('sessions', {
     scope: (id: SessionId) => scopes.get(id),
-    binding: (id: SessionId) => {
-      const scope = scopes.get(id)
-      const projection = projections.get(id)
-      return scope === undefined || projection === undefined
-        ? undefined
-        : {
-          sessionId: id,
-          session: { projections: { faceOf: () => projection } },
-          ctx: scope,
-        }
-    },
+    binding: (id: SessionId) => bindings.get(id),
     subagentAddress: (id: SessionId) => addressed.has(id)
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
       : undefined,
@@ -159,10 +154,20 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
     const id = sid(key)
     const handle = createScope(ctx, id)
     scopes.set(id, handle.ctx)
-    projections.set(id, createSnapshotStore<ModelSelectionProjection | undefined>({
+    const projection = createSnapshotStore<ModelSelectionProjection | undefined>({
       lastUsed: null,
       next: null,
-    }))
+    })
+    projections.set(id, projection)
+    const binding = {
+      sessionId: id,
+      session: { sessionId: id, projections: { faceOf: () => projection } },
+      ctx: handle.ctx,
+    }
+    bindings.set(id, binding)
+    handle.ctx.effect(() => () => {
+      if (bindings.get(id) === binding) bindings.delete(id)
+    })
     return handle
   }
   return {

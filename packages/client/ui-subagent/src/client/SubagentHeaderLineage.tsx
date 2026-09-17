@@ -696,10 +696,11 @@ function CatalogDropdown({
  */
 export function SubagentHeaderLineage({
   lineageSessionId, displayTitle, openTitle,
-  useSessions, openChild, refresh, t,
+  useSessions, useSession, openChild, refresh, t,
 }: SubagentHeaderLineageProps) {
+  const address = useSession(session => session.subagent?.address)
   const parentId = useSessions((state) => {
-    if (state.currentAddress?.childSessionId === lineageSessionId) return state.currentAddress.parentSessionId
+    if (address?.childSessionId === lineageSessionId) return address.parentSessionId
     for (const [parentId, snapshot] of Object.entries(state.projectionsBySession)) {
       if (snapshot.values.subagentCatalog?.some(entry => entry.id === lineageSessionId)) return parentId as SessionId
     }

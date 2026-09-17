@@ -397,7 +397,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await compareOrRefreshGolden(SIDEBAR_EXPECTED, sidebar, MODE)
   })
 
-  it('keeps a restored child neutral until its parent availability arrives', async () => {
+  it('waits for the initial catalog before restoring a saved child', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-restore'))
     const pattern = '**/api/session/list'
     let requested = false
@@ -416,16 +416,17 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await expect.poll(() => requested, { timeout: 15_000 }).toBe(true)
       expect(await page.getByText('This subagent is read-only for now', { exact: true }).count()).toBe(0)
-      expect(await page.locator('[data-composer-seat]').evaluate(element =>
-        getComputedStyle(element).visibility)).toBe('hidden')
+      expect(await page.getByRole('navigation', { name: 'Session hierarchy' }).count()).toBe(0)
+      expect(await page.getByText(/^Explain event sourcing in one sentence\.Your parent agent id is /).count()).toBe(0)
       releaseCatalog()
+      await page.getByRole('button', { name: `Switch subagent: ${LABEL}` }).waitFor({ timeout: 15_000 })
       const input = page.getByRole('textbox', { name: 'Message or run a task, / commands, @ files or sessions' })
       await input.waitFor({ timeout: 15_000 })
       await expect.poll(() => input.isEnabled(), { timeout: 15_000 }).toBe(true)
       acknowledgeReloadConnectionLoss(tripwire, warningStart)
     } finally {
       releaseCatalog()
-      await page.unroute(pattern)
+      await page.unrouteAll({ behavior: 'wait' })
     }
   })
 

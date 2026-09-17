@@ -53,7 +53,7 @@ kind: "package-reference"
 
 页头谱系 renderer 通过标准 `useSessions` 钩子读取 `projectionsBySession`。renderer 从每个 Session 的共享值中选择 `subagentCatalog`，用于成员关系、展开控件与数量；Session 摘要提供活动状态、标题与用量。展开行会按需加载初始目录。实时 projection 帧更新所有已加载层级，无需菜单订阅或重复成员查询。行在目录缺席、加载中或失败时保持可展开，并在目录就绪且为空后成为已知叶子。
 
-面包屑地址从 Session 列表快照中的当前选中地址和已加载目录推导，也包括从未选中过的祖先。
+面包屑地址从 Provider 所绑定的 Session 地址和已加载的 parent 目录推导，也包括从未选中过的祖先。
 
 ### 耗时与 token
 

@@ -12,6 +12,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import {
   TeamAction, type TeamActionInjected, type TeamActionResult, type TeamTaskActionResult,
@@ -26,7 +27,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Required browser services for RPC, navigation, slots, and localized copy. */
-export const inject = ['sessions', 'remote', 'slots', 'locale']
+export const inject = ['sessions', 'uiWorkspace', 'remote', 'slots', 'locale']
 
 function registerUi(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'client-ui-agent-team: dictionaries')
@@ -54,11 +55,11 @@ function registerUi(ctx: ClientContext): void {
       if (member.role !== 'teammate') return
       const parentSessionId = leadSessionId(sessionId)
       await sessions.refreshProjections(parentSessionId)
-      if (sessions.list.getSnapshot().current !== sessionId) return
+      if ((sessions.retainInfo(sessionId).getSnapshot().retainedBy.mainView ?? 0) === 0) return
       const catalog = sessions.list.getSnapshot().projectionsBySession[parentSessionId]
       const child = catalog?.values.subagentCatalog?.find(entry => entry.id === member.id)
       if (child === undefined) return
-      sessions.openSubagent({
+      ctx.uiWorkspace.openSession({
         parentSessionId,
         childSessionId: member.id,
         mode: 'continuable',
@@ -89,7 +90,7 @@ export async function mountAgentTeamUi(
   contribution: TypertRemoteContribution,
 ): Promise<() => Promise<void>> {
   const disposeRemote = await ctx.remote.$mount(contribution)
-  const ui = ctx.inject(['sessions', 'remote.agentTeams', 'slots', 'locale'], registerUi)
+  const ui = ctx.inject(['sessions', 'uiWorkspace', 'remote.agentTeams', 'slots', 'locale'], registerUi)
   try {
     await ui
   } catch (error) {
