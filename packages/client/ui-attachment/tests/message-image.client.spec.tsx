@@ -144,11 +144,29 @@ describe('MessageImage', () => {
     expect(frame.getAttribute('style')).toBeNull()
   })
 
-  it('keeps the tile variant on the failed-load retry control', async () => {
+  it.each(['tile', 'thumbnail'] as const)('keeps the %s variant on the failed-load retry control', async (variant) => {
     const load = vi.fn().mockRejectedValue(new Error('offline'))
-    const view = render(<MessageImage image={{ attachment }} load={load} variant="tile" labels={labels} />)
+    const view = render(<MessageImage image={{ attachment }} load={load} variant={variant} labels={labels} />)
     const retry = await view.findByRole('button', { name: '图片加载失败，点击重试' })
-    expect(retry.getAttribute('data-variant')).toBe('tile')
+    expect(retry.getAttribute('data-variant')).toBe(variant)
+  })
+
+  it('uses the owner display name for an unnamed thumbnail and its original-image viewer', async () => {
+    const { name: _name, ...unnamed } = attachment
+    const load = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue('blob:thumbnail')
+    const view = render(<ImageGallery images={[{ attachment: unnamed, label: 'Image 2' }]} load={load} align="start" thumbnail labels={labels} />)
+    fireEvent.click(await view.findByRole('button', { name: labels.loadFailed }))
+    const image = await view.findByAltText('Image 2')
+    expect(image.closest('button')?.getAttribute('data-variant')).toBe('thumbnail')
+    const opener = view.getByRole('button', { name: 'Image 2，点击查看原图' })
+    opener.focus()
+    fireEvent.click(opener)
+    expect(view.getByRole('dialog')).toBeTruthy()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(view.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+    expect(load).toHaveBeenLastCalledWith(unnamed)
+    expect(unnamed).not.toHaveProperty('name')
   })
 
   it('ignores a load settling after unmount', async () => {

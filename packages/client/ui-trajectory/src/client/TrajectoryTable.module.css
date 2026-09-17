@@ -1708,9 +1708,86 @@
   gap: 8px;
 }
 
-.messageImagesPreview {
-  margin: 6px 14px 8px;
+.attachments {
+  display: flex;
+  flex-direction: column;
+  margin: 8px 14px 14px;
+  padding: 0;
+  gap: 8px;
+  list-style: none;
+}
+
+.attachmentsPreview {
+  margin-block: 6px 8px;
   gap: 6px;
+}
+
+.attachmentRow {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 8px;
+  gap: 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-radius: 12px;
+}
+
+.attachmentIcon {
+  display: grid;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+}
+
+.attachmentInfo {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 3px;
+}
+
+.attachmentName {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentMetadata {
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentDisclosure {
+  margin-block: 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-radius: 8px;
+}
+
+.attachmentDisclosure > summary {
+  padding: 8px;
+  cursor: pointer;
+}
+
+.attachmentDisclosure > summary .attachmentName {
+  display: block;
+}
+
+.attachmentDisclosure > summary:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.attachmentDisclosure > pre {
+  padding: 0 8px 8px;
 }
 
 .assistantToolCalls {

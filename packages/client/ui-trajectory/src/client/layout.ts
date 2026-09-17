@@ -12,7 +12,7 @@ import type {
   ToolCallBlock,
   ToolResultNode,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {
   TrajectoryCellProps,
   TrajectorySourceBlock,
@@ -129,7 +129,7 @@ function inputCellDetail(node: InputNode, t: TrajectoryTranslate): Pick<
   const images = imageBlockCount(node.content)
   const files = fileBlockCount(node.content)
   const attachmentSummary = [
-    previewMarkdown === undefined && images > 0
+    images > 0
       ? t('layout.imageOnly', { count: images })
       : undefined,
     files > 0 ? t('layout.fileAttachments', { count: files }) : undefined,
@@ -829,7 +829,7 @@ function assistantSourceBlock(block: AssistantBlock): TrajectorySourceBlock {
       callId: block.callId,
       toolName: block.name,
     }
-    case 'image': return { type: 'image', content: '', attachment: block.attachment }
+    case 'image': return sourceBlock({ type: 'image', attachment: block.attachment })
     case 'other': return sourceBlock(block.block)
   }
 }
@@ -844,14 +844,20 @@ function sourceBlock(value: unknown): TrajectorySourceBlock {
     return { type: type === 'reasoning' ? 'thinking' : type, content: block.text }
   }
   if (
-    type === 'image'
+    (type === 'image' || type === 'file')
     && typeof block.attachment === 'object' && block.attachment !== null
     && typeof (block.attachment as Record<string, unknown>).attachmentId === 'string'
   ) {
     // Session-log content is validated into core ContentBlocks by the
     // Conversation node assembly; the `attachmentId` guard only keeps
     // wire-shaped 'other' blocks with an unrelated `attachment` member out.
-    return { type, content: '', attachment: block.attachment as ImageAttachmentRef }
+    return {
+      type,
+      content: stringifySourceValue(value),
+      ...(type === 'image'
+        ? { attachment: block.attachment as ImageAttachmentRef }
+        : { file: block.attachment as FileAttachmentRef }),
+    }
   }
   return { type, content: stringifySourceValue(value) }
 }
