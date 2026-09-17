@@ -77,7 +77,11 @@ export interface ComposerAttachmentsOwnerProps {
  * local preview of a submission echo whose admission is still in flight.
  */
 export type MessageImageSource =
-  | { readonly attachment: ImageAttachmentRef }
+  | {
+    readonly attachment: ImageAttachmentRef
+    /** Presentation-only name for the thumbnail and lightbox; loading uses the original reference. */
+    readonly label?: string
+  }
   | {
     readonly preview: {
       /** Browser-owned preview URL (lifecycle stays with the submitter). */
@@ -105,6 +109,8 @@ export interface MessageImagesOwnerProps {
   align: 'start' | 'end'
   /** Force every image into the compact message-attachment tile size. */
   compact?: boolean
+  /** Fixed, uncropped thumbnail for an attachment list row. */
+  thumbnail?: boolean
 }
 
 /** Slot-backed renderer used by Conversation targets without importing an attachment implementation. */
