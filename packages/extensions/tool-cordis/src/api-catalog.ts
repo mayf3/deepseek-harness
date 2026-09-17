@@ -907,7 +907,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract resolveToken(url: string): Promise<string | undefined>',
-        description: 'Resolve a credential only for the official HTTPS API origin.',
+        description: 'Resolve a credential only for the inference origin allowed by the provider.',
         parameters: [{ name: 'url', description: 'actual request destination or API base URL.' }],
         returns: 'stored token, or undefined for other origins or a signed-out account.',
       },
@@ -5359,7 +5359,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PlatformSession',
-    declaration: 'export interface PlatformSession {\n    readonly origin: string;\n    readonly token: string;\n    readonly requestHeaders?: Readonly<Record<string, string>>;\n}',
+    declaration: 'export interface PlatformSession {\n    readonly origin: string;\n    readonly token: string;\n    readonly embeddedPageDist?: string;\n    readonly requestHeaders?: Readonly<Record<string, string>>;\n}',
   },
   {
     name: 'PluginChange',

@@ -64,7 +64,7 @@ export abstract class DeepSeekAccount extends Service {
    */
   abstract watch(signal: AbortSignal): AsyncIterable<AccountView>
   /**
-   * Resolve a credential only for the official HTTPS API origin.
+   * Resolve a credential only for the inference origin allowed by the provider.
    * @param url - actual request destination or API base URL.
    * @returns stored token, or undefined for other origins or a signed-out account.
    */

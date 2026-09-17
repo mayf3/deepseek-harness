@@ -9,16 +9,24 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import AuthorizationService from '@deepseek-ai/dsh-authorization'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
-import { credentialKey } from '@deepseek-ai/dsh-credentials'
+import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
 import { PlatformAccount } from '../src/index.ts'
 import { browserUrl, platformHeaders, platformOrigin, loginOrigin } from '../src/protocol.ts'
 
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => { while (cleanups.length) await cleanups.pop()!() })
 
-async function fixture(contact: { email: string; mobile?: string; mobile_number?: string } = {
-  email: 't***@example.invalid', mobile: '138****5678',
-}, requestHeaders: Record<string, string> = {}, rewriteBrowserOrigin = false, accountRequestHeaders: Record<string, string> = {}, embeddedPageDist = '') {
+async function fixture(
+  contact: { email: string; mobile?: string; mobile_number?: string } = {
+    email: 't***@example.invalid', mobile: '138****5678',
+  },
+  requestHeaders: Record<string, string> = {},
+  rewriteBrowserOrigin = false,
+  accountRequestHeaders: Record<string, string> = {},
+  inferenceOrigin = 'https://api.deepseek.com',
+  beforeAccount?: (ctx: Context, origin: string) => Promise<void>,
+  embeddedPageDist = '',
+) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-account-'))
   cleanups.push(() => rm(home, { recursive: true, force: true }))
   let init: Record<string, string> = {}
@@ -115,8 +123,9 @@ async function fixture(contact: { email: string; mobile?: string; mobile_number?
   await credentials
   const authorization = ctx.plugin(AuthorizationService)
   await authorization
+  await beforeAccount?.(ctx, origin)
   const provider = ctx.plugin(PlatformAccount, {
-    platformOrigin: origin, embeddedPageDist, allowLoopbackHttp: true, requestHeaders, accountRequestHeaders,
+    platformOrigin: origin, inferenceOrigin, embeddedPageDist, allowLoopbackHttp: true, requestHeaders, accountRequestHeaders,
     rewriteBrowserOrigin, logoutRetryDelayMs: 1,
   })
   await provider
@@ -613,8 +622,59 @@ it('overlays account cookies without changing authorization or logout routing', 
   expect(JSON.stringify(await f.account.getState())).not.toContain('private')
 })
 
+
+it('sends a development grant only to its configured inference origin', async () => {
+  const f = await fixture(undefined, {}, false, {}, 'http://inference.example.test:8094')
+  f.exchangeResponse({ token: 'test-account-token' })
+  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.wait('waiting-browser')
+  await fetch(f.callback(), { redirect: 'manual' })
+  await f.wait('succeeded')
+  expect(await f.account.resolveToken('http://inference.example.test:8094/api')).toBe('test-account-token')
+  for (const url of ['https://api.deepseek.com', 'http://inference.example.test:8095/api',
+    'https://inference.example.test:8094/api', 'http://user@inference.example.test:8094/api']) {
+    expect(await f.account.resolveToken(url)).toBeUndefined()
+  }
+})
+
+
+it('starts signed out after discarding another Platform issuer without remote logout or unrelated credential loss', async () => {
+  const accountKey = credentialKey('deepseek-account-platform', 'default')
+  const deviceKey = credentialKey('deepseek-account-platform', 'device')
+  const apiKey = credentialRef('TEST_PLATFORM_SWITCH_API_KEY')
+  const f = await fixture(undefined, {}, false, {}, undefined, async (ctx) => {
+    await ctx.credentials.modifyRecord(accountKey, () => Promise.resolve({
+      kind: 'grant', payload: { version: 1, issuer: 'https://old-platform.example.test', token: 'old-token' },
+    }))
+    await ctx.credentials.modifyRecord(deviceKey, () => Promise.resolve({ kind: 'grant', payload: { id: 'stable-device' } }))
+    await ctx.credentials.set(apiKey, 'retained-api-key')
+  })
+  expect((await f.account.getState()).status).toBe('signed-out')
+  expect(await f.account.getPlatformSession()).toBeNull()
+  expect(await f.account.getProfile()).toBeNull()
+  expect(await f.account.getBalance()).toBeNull()
+  expect(await f.ctx.credentials.readRecord(accountKey)).toBeUndefined()
+  expect(await f.ctx.credentials.readRecord(deviceKey)).toEqual({ kind: 'grant', payload: { id: 'stable-device' } })
+  expect((await f.ctx.credentials.resolve(apiKey))?.value).toBe('retained-api-key')
+  expect(f.receivedHeaders).toEqual([])
+})
+
+it('preserves a matching issuer and its grant when a balance request fails', async () => {
+  const accountKey = credentialKey('deepseek-account-platform', 'default')
+  const f = await fixture(undefined, {}, false, {}, undefined, async (ctx, issuer) => {
+    await ctx.credentials.modifyRecord(accountKey, () => Promise.resolve({
+      kind: 'grant', payload: { version: 1, issuer, token: 'retained-token' },
+    }))
+  })
+  f.failSummary()
+  expect(await f.account.getBalance()).toEqual({ status: 'failed' })
+  expect((await f.account.getState()).status).toBe('credential-stored')
+  expect(await f.ctx.credentials.readRecord(accountKey)).toMatchObject({ kind: 'grant', payload: { token: 'retained-token' } })
+  expect(f.logoutCount()).toBe(0)
+})
+
 it('carries the configured embedded frontend selector in the private Platform session', async () => {
-  const f = await fixture(undefined, {}, false, {}, 'feat/test')
+  const f = await fixture(undefined, {}, false, {}, undefined, undefined, 'feat/test')
   await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })

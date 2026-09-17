@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 New attempts map the caller’s UI language to Platform en_US or zh_CN; active attempts retain their initial language.
 
-getPlatformSession exports the stored grant only when its issuer matches platformOrigin. This Host-only operation supports native Platform embedding without widening the official model/file origin accepted by resolveToken.
+getPlatformSession exports the stored grant only when its issuer matches platformOrigin. This Host-only operation supports native Platform embedding without widening the model/file origin configured for resolveToken.
 
 ## Summary
 
@@ -28,7 +28,7 @@ getProfile / getBalance sends the stored grant in the x-dsh-auth-token header to
 
 Configure platformOrigin, allowLoopbackHttp, requestTimeoutMs, and attemptTimeoutMs in the plugin row. HTTP is accepted only for explicitly enabled loopback development. The provider registers /oauth/callback on the existing Host webServer before auth_init, validates state, exchanges an S256 PKCE code once, and commits a grant before redirecting to auth_exchange.biz_data.authorized_url. Browser destinations default to the configured platform origin and always require the fixed /dsh/authorize or /dsh/authorized path. The completion URL preserves Platform-supplied query parameters. Device identity is a separate random UUID record shared by processes using the same credential store; device_model reports OS and architecture.
 
-Platform URLs have one configuration owner: `platformOrigin`. Authorization requests, browser validation, completion redirects, usage, and top-up destinations all use that origin. Set it in a private `$DSH_HOME/cordis.patch.yml`; deployment addresses do not belong in source control. HTTPS is required except for loopback HTTP with `allowLoopbackHttp: true`. The model/file token destination remains `https://api.deepseek.com` and is not changed by this setting.
+Platform URLs have one configuration owner: `platformOrigin`. Authorization requests, browser validation, completion redirects, usage, and top-up destinations all use that origin. Set it in a private `$DSH_HOME/cordis.patch.yml`; deployment addresses do not belong in source control. HTTPS is required except for loopback HTTP with `allowLoopbackHttp: true`. Model and file token destinations use the separate `inferenceOrigin` configuration.
 
 `requestHeaders` adds Host-only headers to authorization, profile, balance, and logout requests on `platformOrigin`. Header values are secret configuration; they are excluded from account UI state. Authorization, X-DSH-Auth-Token, Host, Content-Type and connection/framing headers are reserved. Redirects fail without forwarding headers. Store deployment cookies in private configuration or environment variables; browser cookies are not collected automatically.
 
@@ -48,6 +48,10 @@ The authenticated client supplies its browser-accessible callback origin, includ
 Host diagnostics use the `[deepseek-account]` prefix on standard output and in the Host inspector Console. They include endpoint paths, HTTP status, numeric response codes, failure stages, invalid field paths, received types and validation codes, and browser URL rejection rules; headers, request and response bodies, authorization URLs, and raw exceptions are excluded.
 
 `rewriteBrowserOrigin` defaults to `false`, requiring same-origin browser URLs. A private development patch may set it to `true` to map authorization and completion URLs to `platformOrigin`, preserving their fixed paths and query strings. Source URLs must use HTTPS or already match the configured origin; user information, fragments and unexpected paths remain rejected. Shipped profiles retain strict same-origin validation.
+
+inferenceOrigin defaults to `https://api.deepseek.com`. A private deployment patch may replace it with one exact HTTP(S) origin, including its port, for inference and file authentication through x-dsh-auth-token. Paths, URL credentials, queries and fragments are invalid configuration. Alternate origins require a grant issued by the configured platformOrigin; mock tokens remain excluded. Loopback grants cannot authenticate the official production API. Deployment addresses belong in private patches, not shipped configuration.
+
+At provider initialization, a valid stored grant whose issuer differs from platformOrigin is deleted locally before consumers read account state. Startup continues signed out without a remote logout request; API keys and device identity remain stored. Storage failures remain explicit, and account HTTP or response-validation failures do not delete a matching grant.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

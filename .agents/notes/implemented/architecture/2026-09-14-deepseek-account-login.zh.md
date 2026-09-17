@@ -16,7 +16,7 @@ Status: implemented
 
 本地取消具有决定权。提供者停止回调并忽略迟到的兑换结果；auth_cancel 使用 authorize_id 和原始 PKCE verifier 作废远程申请及未兑换的 code。后台请求不延迟本地取消，失败也不会恢复登录。session.commit 在第一次 await 前同步准入持久化，并拒绝已取消的流程。准入后的取消等待提交结果。回调只有在授权结束确认存储后才跳转 auth_exchange.biz_data.authorized_url。
 
-授权在 Host webServer 上注册临时 /oauth/callback 路由。已鉴权的发起客户端提供浏览器可访问的本机 HTTP 来源，包含 SSH 本地转发端口。不支持非本机域名反向代理。清理仅移除路由，保留共享连接。兑换失败返回 Web 登录界面，或通过账号状态聚焦 Desktop；重试由用户明确发起。PKCE 私密数据不经过 UI 传输。模型和文件请求的 token 仅为 https://api.deepseek.com 解析；请求拒绝重定向。本机开发授权记录不能认证生产请求。API Key 引用独立保存。
+授权在 Host webServer 上注册临时 /oauth/callback 路由。已鉴权的发起客户端提供浏览器可访问的本机 HTTP 来源，包含 SSH 本地转发端口。不支持非本机域名反向代理。清理仅移除路由，保留共享连接。兑换失败返回 Web 登录界面，或通过账号状态聚焦 Desktop；重试由用户明确发起。PKCE 私密数据不经过 UI 传输。模型和文件请求的 token 仅为配置的 inferenceOrigin 解析，默认为 `https://api.deepseek.com`；请求拒绝重定向。显式配置其他来源时，要求授权由配置的 Platform 来源签发，因此仅修改请求地址不会转发账号凭证。本机开发授权记录不能认证生产请求。API Key 引用独立保存。
 
 平台导航与授权共享 Cordis 配置中同一个经过校验的 platformOrigin。私有 profile patch 或环境表达式提供部署来源，开发地址不进入仓库。
 
@@ -28,7 +28,7 @@ Status: implemented
 
 退出登录先删除本地授权，再使用捕获的 token 调用 Platform POST /auth-api/v0/users/logout。远程失败不会恢复登录态。首次请求失败后，提供者最多重试五次，使用可配置的指数退避，默认从一秒开始。重试任务只保留旧 token，不改变后续登录态，并在提供者关闭时结束，不持久化。本地凭证删除成功后才发布已退出状态。退出登录位于侧边栏账号菜单；账号设置负责资料、余额和登录。两者通过框架 hook 读取插件持有的同一条 Host 状态流。
 
-API Key 与账号记录独立保存。账号 token 没有过期或刷新流程；退登重试耗尽后，已从本地删除的 token 在远端仍可能有效。资料和余额查询失败保留登录态；授权尝试的有效期仅适用于 token 签发前。同一授权 token 可认证已配置签发来源上的 Platform current 和 get_user_summary 查询。Host 原样保留 Platform 脱敏后的联系方式并丢弃响应 token；账号变化使未完成结果失效。UI 显示 normal_wallets 充值余额，不合并赠送钱包。
+API Key 与账号记录独立保存。账号 token 没有过期或刷新流程；退登重试耗尽后，已从本地删除的 token 在远端仍可能有效。提供者初始化时在本地丢弃与配置的 Platform 来源不同的授权，不调用远端撤销，使环境切换以未登录态启动，而不导致 Desktop 启动失败。API Key 和设备标识保留。资料与余额查询失败保留登录态；授权尝试的有效期仅适用于 token 签发前。同一授权 token 可认证已配置签发来源上的 Platform current 和 get_user_summary 查询。Host 原样保留 Platform 脱敏后的联系方式并丢弃响应 token；账号变化使未完成结果失效。UI 显示 normal_wallets 充值余额，不合并赠送钱包。
 
 账号插件通过 settings.models.sign-in 提供选择、等待、失败和超时对话框。模型包保留凭证就绪检查和现有 API Key 编辑器；设置外壳协调显式重开，避免登录与 API Key 引导同时挂载冲突的对话框。
 

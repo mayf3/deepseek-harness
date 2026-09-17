@@ -4,7 +4,7 @@ import type { ServerResponse } from 'node:http'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { arch, platform, release } from 'node:os'
 import { finished } from 'node:stream/promises'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { DeepSeekAccount, mergePlatformCookies, type PlatformSession, type AccountDetails, type AccountView, type SignInAttemptId, type SignInAttemptView } from '@deepseek-ai/dsh-deepseek-account'
@@ -25,6 +25,8 @@ export interface Config {
   platformOrigin?: string
   /** Optional frontend deployment selector for embedded Usage and Top-up pages. */
   embeddedPageDist?: string
+  /** Exact HTTP(S) origin allowed to receive account tokens for inference and files. */
+  inferenceOrigin?: string
   /** Allow HTTP only on loopback for the development Mock. */
   allowLoopbackHttp?: boolean
   /** Map authorization and completion pages to platformOrigin for private development proxies. */
@@ -46,6 +48,7 @@ export interface Config {
 export const Config = Schema.object({
   platformOrigin: Schema.string().default('https://platform.deepseek.com'),
   embeddedPageDist: Schema.string().default(''),
+  inferenceOrigin: Schema.string().default('https://api.deepseek.com'),
   allowLoopbackHttp: Schema.boolean().default(false),
   rewriteBrowserOrigin: Schema.boolean().default(false),
   requestHeaders: Schema.dict(Schema.string().role('secret')).default({}),
@@ -76,6 +79,7 @@ export class PlatformAccount extends DeepSeekAccount {
   static Config = Config
   private readonly origin: string
   private readonly embeddedPageDist: string
+  private readonly inferenceOrigin: string
   private readonly rewriteBrowserOrigin: boolean
   private readonly requestHeaders: Record<string, string>
   private readonly accountRequestHeaders: Record<string, string>
@@ -96,6 +100,12 @@ export class PlatformAccount extends DeepSeekAccount {
     const resolved = Config(config)
     this.embeddedPageDist = resolved.embeddedPageDist
     this.origin = platformOrigin(resolved.platformOrigin, resolved.allowLoopbackHttp)
+    const inference = new URL(resolved.inferenceOrigin)
+    if (!['http:', 'https:'].includes(inference.protocol) || inference.username || inference.password
+      || inference.pathname !== '/' || inference.search || inference.hash) {
+      throw new Error('account: inferenceOrigin must be an HTTP(S) origin without credentials, path, query or fragment')
+    }
+    this.inferenceOrigin = inference.origin
     this.rewriteBrowserOrigin = resolved.rewriteBrowserOrigin
     this.requestHeaders = platformHeaders(resolved.requestHeaders)
     const accountHeaders = platformHeaders(resolved.accountRequestHeaders)
@@ -135,6 +145,17 @@ export class PlatformAccount extends DeepSeekAccount {
       await Promise.all(this.revocations)
       this.changed()
     }, 'account: active attempt lifetime')
+  }
+
+  async [Service.init](): Promise<void> {
+    const record = await this.ctx.credentials.readRecord(KEY)
+    if (record === undefined) return
+    if (record.kind !== 'grant') throw new PlatformAuthError('storage')
+    const parsed = grant.safeParse(record.payload)
+    if (!parsed.success) throw new PlatformAuthError('storage')
+    if (parsed.data.issuer === this.origin) return
+    await this.ctx.credentials.deleteRecord(KEY)
+    console.info('[deepseek-account] stored grant discarded', { reason: 'issuer-mismatch' })
   }
 
   override async getState(): Promise<AccountView> {
@@ -188,7 +209,7 @@ export class PlatformAccount extends DeepSeekAccount {
 
   override async resolveToken(url: string): Promise<string | undefined> {
     const destination = new URL(url)
-    if (destination.origin !== 'https://api.deepseek.com' || destination.username || destination.password) return undefined
+    if (destination.origin !== this.inferenceOrigin || destination.username || destination.password) return undefined
     const record = await this.ctx.credentials.readRecord(KEY)
     if (record === undefined) return undefined
     if (record.kind !== 'grant') throw new PlatformAuthError('storage')
@@ -196,7 +217,10 @@ export class PlatformAccount extends DeepSeekAccount {
     if (!result.success) throw new PlatformAuthError('storage')
     // Development grants cannot authenticate production model or file requests.
     const issuer = new URL(result.data.issuer)
-    if (['localhost', '127.0.0.1', '[::1]'].includes(issuer.hostname) || result.data.token.startsWith('dsh_mock_')) return undefined
+    if (result.data.token.startsWith('dsh_mock_')) return undefined
+    if (this.inferenceOrigin === 'https://api.deepseek.com') {
+      if (['localhost', '127.0.0.1', '[::1]'].includes(issuer.hostname)) return undefined
+    } else if (issuer.origin !== this.origin) return undefined
     return result.data.token
   }
 

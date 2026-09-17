@@ -614,6 +614,10 @@ export interface Config {
 export interface Config {
   /** Platform origin serving auth-api and browser pages. */
   platformOrigin?: string
+  /** Optional frontend deployment selector for embedded Usage and Top-up pages. */
+  embeddedPageDist?: string
+  /** Exact HTTP(S) origin allowed to receive account tokens for inference and files. */
+  inferenceOrigin?: string
   /** Allow HTTP only on loopback for the development Mock. */
   allowLoopbackHttp?: boolean
   /** Map authorization and completion pages to platformOrigin for private development proxies. */

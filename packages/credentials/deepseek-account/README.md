@@ -1,5 +1,5 @@
 ---
-description: "Account consumers read stored login state, start or cancel a browser login, and sign out without editing API keys. Host model consumers resolve account credentials only for the official API origin."
+description: "Account consumers read stored login state, start or cancel a browser login, and sign out without editing API keys. Host model consumers resolve account credentials only for the provider-configured inference origin."
 kind: "package-reference"
 ---
 
@@ -11,7 +11,7 @@ getPlatformSession returns a Host-only origin/token snapshot for native Platform
 
 ## Summary
 
-Account consumers read stored login state, start or cancel a browser login, and sign out without editing API keys. Host model consumers resolve account credentials only for the official API origin.
+Account consumers read stored login state, start or cancel a browser login, and sign out without editing API keys. Host model consumers resolve account credentials only for the provider-configured inference origin.
 
 ## Table of Contents
 

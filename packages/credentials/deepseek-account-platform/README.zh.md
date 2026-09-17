@@ -9,7 +9,7 @@ kind: "package-reference"
 
 新申请将调用方的界面语言映射为平台的 en_US 或 zh_CN；进行中的申请保留发起时的语言。
 
-getPlatformSession 仅在已存授权的 issuer 与 platformOrigin 一致时导出该授权。这个仅限 Host 的操作支持原生 Platform 内嵌，不扩大 resolveToken 允许的官方模型及文件请求来源。
+getPlatformSession 仅在已存授权的 issuer 与 platformOrigin 一致时导出该授权。这个仅限 Host 的操作支持原生 Platform 内嵌，不扩大 resolveToken 配置的模型及文件请求来源。
 
 ## 概述
 
@@ -28,7 +28,7 @@ getProfile / getBalance 将保存的授权 token 通过 x-dsh-auth-token 请求�
 
 在插件行配置 platformOrigin、allowLoopbackHttp、requestTimeoutMs 和 attemptTimeoutMs。HTTP 仅用于显式启用的本机开发。提供者先在现有 Host webServer 注册 /oauth/callback，再调用 auth_init；校验 state、使用 S256 PKCE 授权码兑换一次，并在跳转 auth_exchange.biz_data.authorized_url 前提交授权记录。浏览器地址默认要求匹配配置的平台来源，并始终要求固定的 /dsh/authorize 或 /dsh/authorized 路径。完成页地址保留平台返回的查询参数。设备标识是独立的随机 UUID 记录，由使用同一凭证存储的进程共享；device_model 报告操作系统和架构。
 
-开放平台 URL 统一由 `platformOrigin` 配置管理。授权请求、浏览器地址校验、完成跳转、用量和充值入口都使用该来源。将配置放在私有的 `$DSH_HOME/cordis.patch.yml`，部署地址不进入源码仓库。默认要求 HTTPS；只有本机 HTTP 可通过 `allowLoopbackHttp: true` 显式启用。模型及文件 token 的目标仍固定为 `https://api.deepseek.com`，不随该配置改变。
+开放平台 URL 统一由 `platformOrigin` 配置管理。授权请求、浏览器地址校验、完成跳转、用量和充值入口都使用该来源。将配置放在私有的 `$DSH_HOME/cordis.patch.yml`，部署地址不进入源码仓库。默认要求 HTTPS；只有本机 HTTP 可通过 `allowLoopbackHttp: true` 显式启用。模型及文件 token 的目标由独立的 `inferenceOrigin` 配置管理。
 
 `requestHeaders` 为 `platformOrigin` 上的授权、资料、余额和退登请求添加仅 Host 使用的请求头。请求头值属于敏感配置，不包含在账号 UI 状态中。Authorization、X-DSH-Auth-Token、Host、Content-Type 及连接和消息分帧请求头由提供者保留。重定向会失败，不会转发请求头。开发环境 Cookie 应保存在私有配置或环境变量中；不会自动收集浏览器 Cookie。
 
@@ -48,6 +48,10 @@ getProfile / getBalance 将保存的授权 token 通过 x-dsh-auth-token 请求�
 Host 诊断通过标准输出及 Host 调试器 Console 输出，前缀为 `[deepseek-account]`。日志包含接口路径、HTTP 状态、数值响应码、失败阶段、校验失败的字段路径、实际类型和校验码，以及浏览器 URL 拒绝规则，不包含请求头、请求和响应正文、授权 URL 或原始异常。
 
 `rewriteBrowserOrigin` 默认为 `false`，要求浏览器地址同源。私有开发 patch 可设为 `true`，将授权页和完成页地址映射到 `platformOrigin`，保留固定路径和查询字符串。原地址必须使用 HTTPS 或已匹配配置来源；仍拒绝用户名密码、片段和非预期路径。发布的 profile 保持严格同源校验。
+
+inferenceOrigin 默认为 `https://api.deepseek.com`。私有部署 patch 可将其替换为一个精确的 HTTP(S) 来源（含端口），让推理及文件请求通过 x-dsh-auth-token 认证。配置不得包含路径、URL 凭证、查询或片段。其他来源要求授权由配置的 platformOrigin 签发；仍拒绝 Mock token。本机授权不能认证官方生产 API。部署地址保存在私有 patch 中，不随默认配置发布。
+
+提供者初始化时，若有效的已存授权 issuer 与 platformOrigin 不同，会在使用方读取账号状态前删除该本地授权，以未登录态继续启动，不发送远端退登请求；API Key 和设备标识保留。存储错误仍明确报错，账号 HTTP 或响应校验失败不会删除来源匹配的授权。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
