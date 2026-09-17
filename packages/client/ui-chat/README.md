@@ -91,8 +91,6 @@ None; Chat presentation does not assemble or mutate provider requests.
 
 None.
 
-A feature’s Chat Node may declare `process: 'independent'` to keep a user-facing artifact visible when the surrounding Turn process collapses; submitted plans use this declaration.
-
 </details>
 
 **Runtime invariant:** No companion is published. Conversation and Slot registration enforce Chat target consistency.

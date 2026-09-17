@@ -100,7 +100,7 @@ describe('web e2e: plan review takeover round trip', () => {
     }
 
     const planCard = page.locator('[data-plan-card]')
-    await planCard.waitFor({ state: 'visible' })
+    expect(await planCard.count()).toBe(0)
     const preview = page.locator('[data-plan-preview]')
     await preview.waitFor({ state: 'visible' })
     expect(await card.getByRole('button', { name: 'Approve' }).isVisible()).toBe(true)
@@ -112,7 +112,7 @@ describe('web e2e: plan review takeover round trip', () => {
     }
     await page.locator('[data-sidebar-right-toggle]').click()
     await preview.waitFor({ state: 'hidden' })
-    await planCard.click()
+    await card.getByRole('button', { name: 'Open plan in sidebar' }).click()
     await preview.waitFor({ state: 'visible' })
 
     await card.getByRole('button', { name: 'Approve' }).click()
@@ -134,9 +134,9 @@ describe('web e2e: plan review takeover round trip', () => {
     expect(await page.locator('[data-plan-review-key]').count()).toBe(0)
     expect(await selectedRow.locator('[data-state="warning"]').count()).toBe(0)
     await expect.poll(() => page.locator('[data-composer-input]').first().isEnabled(), { timeout: 10_000 }).toBe(true)
-    // The completed Turn collapses its process; the artifact remains on the main line.
+    // Completed plans join the final artifacts after the Turn's closing reply.
     await planCard.waitFor({ state: 'visible' })
-    expect(await planCard.locator('xpath=ancestor::*[@data-turn-process-member]').count()).toBe(0)
+    expect(await planCard.locator('xpath=ancestor::*[@data-turn-tail]').count()).toBe(1)
     await page.locator('[data-sidebar-right-toggle]').click()
     await planCard.click()
     await preview.waitFor({ state: 'visible' })

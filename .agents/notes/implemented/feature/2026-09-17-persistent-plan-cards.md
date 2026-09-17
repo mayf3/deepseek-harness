@@ -10,7 +10,7 @@ A plan review occupies the composer only until the user answers or dismisses it.
 
 ## Decision
 
-`ui-plan` derives one permanent Chat card from each `exit_plan_mode` invocation, including native calls and PTC dispatches. The card declares `process: 'independent'`, so Chat keeps it outside the Turn process disclosure. Review dismissal, refusal, and approval do not delete it.
+`ui-plan` accumulates each Turn’s `exit_plan_mode` submissions, including native calls and PTC dispatches. Each invocation contributes a card to the completed Turn’s final artifact area. The `conversation.chat.turnTail` list admits file deliveries and plan cards together. Review dismissal, refusal, and approval do not delete the recorded plans.
 
 The review intent carries the tool-call identity. The question plugin declares an action slot, and the plan plugin contributes an opener there and on the historical card. Both open the resource identified by Session and invocation. Sidebar layout retains that address; the resource provider reads the existing Session history, paging backwards when the invocation is older than the opening window. Its temporary follow closes after the opening snapshot.
 
@@ -22,8 +22,8 @@ The document is read-only. The pending review shows its status, sidebar opener, 
 
 **Write a Markdown file or persist the document in sidebar layout.** The tool arguments already own the exact submitted text. Another durable copy would need synchronization and could disagree with the reviewed plan. The [plan-state decision](../simplification/2026-07-22-plan-specific-collaboration-state.md) remains the authority for that ownership.
 
-**Teach Chat the plan tool's name.** A node-owned disclosure declaration lets the feature identify its independently readable artifact without adding plan-specific rendering or imports to Chat.
+**Select a single owner for the Turn tail.** Plans and file deliveries can occur in the same Turn. An additive list lets both plugins contribute without either knowing the other’s data or rendering.
 
 ## Consequences
 
-Plans survive review closure and browser reload without a new Session event or file. Reads of old plans may require several history pages. The provider validates saved addresses and logged arguments, and reports unavailable history explicitly. The recorded Web plan-review scenario covers both entry points, repeated opening, process collapse, approval, and reload; focused tests cover native/PTC decoding and resource failures.
+Plans survive review closure and browser reload without a new Session event or file. Reads of old plans may require several history pages. The provider validates saved addresses and logged arguments, and reports unavailable history explicitly. The recorded Web plan-review scenario covers both entry points, repeated opening, process collapse, approval, and reload; focused tests cover multiple submissions, PTC deduplication, cropped history, and resource failures.

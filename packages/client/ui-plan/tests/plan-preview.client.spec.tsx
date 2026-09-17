@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { SessionLiveEventEntry } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
+import { chatViewDefinition } from '../../ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { en, zh } from '../src/client/locales.ts'
-import { PlanCard, PlanReviewOpen } from '../src/client/PlanCard.tsx'
+import { PlanCards, PlanReviewOpen } from '../src/client/PlanCard.tsx'
 import { PlanPreview, PlanTitle } from '../src/client/PlanPreview.tsx'
 import { planAddress, parsePlanAddress, submittedPlan } from '../src/client/plan.ts'
 import { planDefinition } from '../src/client/plan-definition.ts'
@@ -13,10 +17,17 @@ import { createPlanReviewStore } from '../src/client/review-store.ts'
 
 afterEach(cleanup)
 const markdown = '# Keep this plan\n\n## Goal\n\n- Review\n- Implement'
-const call = { type: 'tool/call', data: { name: 'exit_plan_mode', callId: 'call:1', arguments: JSON.stringify({ plan: markdown }) } }
+const call = { type: 'tool/call', seq: 12, data: { turn: 1, name: 'exit_plan_mode', callId: 'call:1', arguments: JSON.stringify({ plan: markdown }) } }
 const plan = submittedPlan(call)!
 const target = { sessionId: 'session / 中文' as SessionId, callId: plan.callId }
 const t = makeTranslate(en, commonEn)
+
+function planNode(data: typeof plan) {
+  return { kind: 'submitted-plan', anchorSeq: 12, location: { kind: 'turn', turn: { turn: 1 } }, data }
+}
+function planHook(nodes: readonly unknown[]): Parameters<typeof PlanCards>[0]['useChat'] {
+  return ((select: (snapshot: unknown) => unknown) => select({ nodes: { values: () => nodes } })) as Parameters<typeof PlanCards>[0]['useChat']
+}
 
 describe('submitted plan identity', () => {
   it('reads native, running PTC, and settled PTC calls', () => {
@@ -50,7 +61,7 @@ describe('submitted plan identity', () => {
     const event = { type: 'tool/ptc-dispatch', data: { name: 'exit_plan_mode', subCallId: plan.callId, arguments: { plan: markdown } } }
     expect(planDefinition.match(event as never)).toEqual({ id: plan.callId, role: 'update' })
     const context = { key: 'plan', id: plan.callId, state: plan, start: { event: { seq: 12 }, location: { kind: 'unresolved' } } }
-    expect(planDefinition.buildViewNode!(context as never)).toMatchObject({ process: 'independent', anchorSeq: 12, data: plan })
+    expect(planDefinition.buildViewNode!(context as never)).toMatchObject({ visibility: 'hidden', anchorSeq: 12, data: plan })
     expect(planDefinition.buildViewNode!({ ...context, state: undefined, start: undefined, matches: [] } as never)).toBeNull()
   })
   it('retains the submitted version and recovers a cropped PTC start from settlement', () => {
@@ -63,12 +74,55 @@ describe('submitted plan identity', () => {
   })
 })
 
+it('projects native and PTC submissions into their resolved turns without duplicate cards', () => {
+  const assembler = new ConversationNodeAssembler(
+    { entries: () => [planDefinition], fallbackEntry: () => undefined },
+    { entries: () => [chatViewDefinition] },
+  )
+  const events = [
+    { type: 'turn/start', data: { turn: 1 } },
+    { type: 'step/start', data: { turn: 1, step: 1 } },
+    call,
+    { type: 'tool/call', data: { turn: 1, step: 1, callId: 'root', name: 'run_code', arguments: '{}' } },
+    { type: 'tool/ptc-dispatch-start', data: {
+      rootCallId: 'root', parentCallId: 'root', subCallId: 'ptc', name: 'exit_plan_mode', arguments: { plan: markdown },
+    } },
+    { type: 'tool/ptc-dispatch', data: {
+      rootCallId: 'root', parentCallId: 'root', subCallId: 'ptc', name: 'exit_plan_mode', arguments: { plan: markdown },
+      isError: false, content: [],
+    } },
+    { type: 'turn/end', data: { turn: 1 } },
+    { type: 'turn/start', data: { turn: 2 } },
+    { ...call, data: { ...call.data, turn: 2, callId: 'next-turn' } },
+    { type: 'turn/end', data: { turn: 2 } },
+  ]
+  const entries = events.map((event, index) => ({
+    type: 'event', event: { ...event, seq: index + 1, time: index },
+  })) as SessionLiveEventEntry[]
+  assembler.replaceWindow(entries, false)
+  assembler.activateTarget('chat')
+  const snapshot = assembler.snapshot('chat') as ChatSnapshot
+  expect(snapshot.order).toEqual([])
+  expect(snapshot.nodes.values()).toHaveLength(3)
+  const props = { turn: { turn: 1 }, useChat: (select: (snapshot: ChatSnapshot) => unknown) => select(snapshot),
+    t, openPlan: vi.fn(),
+  } as unknown as Parameters<typeof PlanCards>[0]
+  const view = render(<PlanCards {...props} />)
+  expect(view.container.querySelectorAll('[data-plan-card]')).toHaveLength(2)
+  view.rerender(<PlanCards {...{ ...props, turn: { turn: 2 } } as unknown as Parameters<typeof PlanCards>[0]} />)
+  expect(view.container.querySelector('[data-plan-card]')?.getAttribute('data-plan-card')).toBe('next-turn')
+  assembler.replaceWindow(entries.filter((_, index) => index !== 4), true)
+  expect((assembler.snapshot('chat') as ChatSnapshot).nodes.values()).toHaveLength(3)
+})
+
 describe('plan entry points and document', () => {
   it('opens the exact persistent card in either locale', () => {
     for (const dictionary of [en, zh]) {
       const openPlan = vi.fn()
-      const props = { node: { data: plan }, t: makeTranslate(dictionary, commonEn), openPlan } as unknown as Parameters<typeof PlanCard>[0]
-      const view = render(<PlanCard {...props} />)
+      const props = { turn: { turn: 1 }, useChat: planHook([planNode(plan)]), seq: 30,
+        t: makeTranslate(dictionary, commonEn), openPlan,
+      } as unknown as Parameters<typeof PlanCards>[0]
+      const view = render(<PlanCards {...props} />)
       expect(openPlan).not.toHaveBeenCalled()
       expect(screen.getByText(dictionary['preview.action'])).toBeTruthy()
       expect(screen.queryByText('Implement')).toBeNull()
@@ -77,6 +131,28 @@ describe('plan entry points and document', () => {
       expect(screen.getByText(plan.title)).toBeTruthy()
       view.unmount()
     }
+  })
+  it('keeps only the current turn’s plans in invocation order', () => {
+    const revised = { ...plan, callId: 'call:2' as typeof plan.callId, title: 'Second plan' }
+    const nodes = [
+      { ...planNode(revised), anchorSeq: 20 }, planNode(plan),
+      { ...planNode(plan), location: { kind: 'turn', turn: { turn: 2 } } },
+      { ...planNode(plan), location: { kind: 'unresolved' } },
+      { ...planNode(plan), kind: 'tool-call' },
+      { ...planNode({ ...revised, callId: 'call:3' as typeof plan.callId }),
+        anchorSeq: 30, location: { kind: 'step', turn: { turn: 1 } },
+      },
+    ]
+    const openPlan = vi.fn()
+    const props = { turn: { turn: 1 }, useChat: planHook(nodes), t, openPlan } as unknown as Parameters<typeof PlanCards>[0]
+    const view = render(<PlanCards {...props} />)
+    expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual([
+      expect.stringContaining(plan.title), expect.stringContaining(revised.title), expect.stringContaining(revised.title),
+    ])
+    fireEvent.click(screen.getAllByRole('button')[1]!)
+    expect(openPlan).toHaveBeenCalledWith('call:2')
+    view.rerender(<PlanCards {...{ ...props, useChat: planHook([]) }} />)
+    expect(view.container.innerHTML).toBe('')
   })
   it('opens the review without approving or cancelling it', () => {
     const openPlan = vi.fn()

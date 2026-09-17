@@ -1,4 +1,4 @@
-/** Durable plan cards remain readable independently of a Turn's process disclosure. */
+/** Per-invocation plans use resolved Conversation locations for final Turn artifacts. */
 import type {} from '@deepseek-ai/dsh-tools/types'
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -28,7 +28,7 @@ export const planDefinition: ConversationNodeDefinition<SubmittedPlan> = {
     return {
       key: context.key, kind: 'submitted-plan', id: context.id, target: 'chat',
       anchorSeq: start.event.seq, location: start.location,
-      visibility: 'visible', process: 'independent', data,
+      visibility: 'hidden', data,
     } satisfies ChatNode<'submitted-plan'>
   },
 }

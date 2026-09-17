@@ -1,7 +1,9 @@
 /** Persistent transcript card and pending-review action use the same plan resource opener. */
 import { useEffect } from 'react'
 import { FileTypeIcon, IconFullscreenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
+import { shallowEqual } from '@deepseek-ai/dsh-client-store'
+import type {} from './plan-definition.ts'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type {} from '@deepseek-ai/dsh-client-ui-user-questions/client'
@@ -15,22 +17,30 @@ export interface PlanOpenInjected {
 }
 
 /**
- * Render the plan's permanent transcript entry.
+ * Render the completed Turn's submitted plans in invocation order.
  * @param props - Logged plan, localized copy, and Session-bound navigation.
- * @returns a keyboard-accessible plan card.
+ * @returns keyboard-accessible plan cards, or null for a Turn without plans.
  */
-export function PlanCard({ node, openPlan, t }: PropsRuntime<'conversation.chat.node', 'submitted-plan'> & InjectFace<PlanOpenInjected> & PropsLocale<'plan'>) {
+export function PlanCards({ turn, useChat, openPlan, t }: PropsRuntime<'conversation.chat.turnTail'> & InjectFace<PlanOpenInjected> & PropsLocale<'plan'>) {
+  const plans = useChat(snapshot => snapshot.nodes.values()
+    .filter((node): node is ChatNode<'submitted-plan'> => node.kind === 'submitted-plan'
+      && (node.location.kind === 'turn' || node.location.kind === 'step')
+      && node.location.turn.turn === turn.turn)
+    .sort((a, b) => a.anchorSeq - b.anchorSeq), shallowEqual)
+  if (plans.length === 0) return null
   return (
-    <button type="button" className={css.card} data-plan-card={node.data.callId}
-      aria-label={t('preview.openNamed', { title: node.data.title })}
-      onClick={() => { openPlan(node.data.callId) }}>
-      <span className={css.cardIcon}><FileTypeIcon kind="markdown" size={20} /></span>
-      <span className={css.cardDetails}>
-        <span className={css.cardTitle}>{node.data.title}</span>
-        <span className={css.cardDescription}>{t('preview.document')}</span>
-      </span>
-      <span className={css.cardOpen}>{t('preview.action')}</span>
-    </button>
+    <div className={css.cards} data-plan-artifacts>
+      {plans.map(({ data: plan }) => <button key={plan.callId} type="button" className={css.card} data-plan-card={plan.callId}
+        aria-label={t('preview.openNamed', { title: plan.title })}
+        onClick={() => { openPlan(plan.callId) }}>
+        <span className={css.cardIcon}><FileTypeIcon kind="markdown" size={20} /></span>
+        <span className={css.cardDetails}>
+          <span className={css.cardTitle}>{plan.title}</span>
+          <span className={css.cardDescription}>{t('preview.document')}</span>
+        </span>
+        <span className={css.cardOpen}>{t('preview.action')}</span>
+      </button>)}
+    </div>
   )
 }
 

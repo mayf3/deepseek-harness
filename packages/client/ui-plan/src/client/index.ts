@@ -15,7 +15,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-user-questions/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-resources/client'
-import { PlanCard, PlanReviewOpen, type PlanOpenInjected } from './PlanCard.tsx'
+import { PlanCards, PlanReviewOpen, type PlanOpenInjected } from './PlanCard.tsx'
 import { PlanPreview, PlanTitle } from './PlanPreview.tsx'
 import { planDefinition } from './plan-definition.ts'
 import { planResourceProvider } from './plan-resource.ts'
@@ -68,9 +68,9 @@ export function apply(ctx: ClientContext): void {
     openPlan: (callId) => { ctx.sidebarRight.openResourceIn(sessionId, planAddress({ sessionId, callId })) },
   })
   const reviewStore = createPlanReviewStore()
-  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
-    name: 'conversation.chat.node', key: 'submitted-plan', locale: NS, inject: open,
-  }, PlanCard))
+  ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+    name: 'conversation.chat.turnTail', id: previewId, locale: NS, inject: open,
+  }, PlanCards))
   ctx.slots.inject('conversation.plan-review.actions', () => ctx.slots.register({
     name: 'conversation.plan-review.actions', id: previewId, locale: NS, inject: open, store: reviewStore,
   }, PlanReviewOpen))

@@ -1,3 +1,4 @@
+.cards { display: flex; flex-direction: column; gap: 10px; }
 .card {
   --plan-card-fill: var(--dsw-static-neutral-50);
   --plan-card-hover: var(--dsw-static-neutral-100);
@@ -9,7 +10,7 @@
   width: 100%;
   height: 60px;
   padding: 8px 10px;
-  margin: 12px 0;
+  margin: 0;
   border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 18px;
   background: var(--plan-card-fill);

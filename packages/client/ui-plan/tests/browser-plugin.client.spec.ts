@@ -13,7 +13,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { PlanChip } from '../src/client/PlanModeControl.tsx'
-import { PlanCard, PlanReviewOpen, type PlanOpenInjected } from '../src/client/PlanCard.tsx'
+import { PlanCards, PlanReviewOpen, type PlanOpenInjected } from '../src/client/PlanCard.tsx'
 import { PlanPreview, PlanTitle } from '../src/client/PlanPreview.tsx'
 import { submittedPlan } from '../src/client/plan.ts'
 import type { PlanChipInjected } from '../src/client/index.ts'
@@ -45,7 +45,7 @@ async function bench() {
     name: 'root',
     children: {
       'conversation.input.plan': { kind: 'single', scope: 'session' },
-      'conversation.chat.node': { kind: 'keyed', scope: 'session' },
+      'conversation.chat.turnTail': { kind: 'list', scope: 'session' },
       'conversation.plan-review.actions': { kind: 'list', scope: 'session' },
       'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
       'sidebar.right.pane.tab.title': { kind: 'keyed', scope: 'session' },
@@ -121,13 +121,16 @@ describe('ui-plan browser apply', () => {
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     try {
       await fiber.await()
+      const removeFileEntry = b.slots.register({ name: 'conversation.chat.turnTail', id: 'test-file-deliveries' }, () => null)
+      expect(b.slots.entries('conversation.chat.turnTail')).toHaveLength(2)
+      removeFileEntry()
       const address = 'dsh-resource://plan/s-plan/call'
       const type = b.registerType.mock.calls[0]![0]
       expect(type.canOpen!(address)).toBe(true)
       expect(type.canOpen!('file:///plan.md')).toBe(false)
       expect(type.title(address)).toBeTruthy()
       const plan = submittedPlan({ type: 'tool/call', data: { callId: 'call', name: 'exit_plan_mode', arguments: '{"plan":"# Saved plan"}' } })!
-      for (const [slot, component] of [['conversation.chat.node', PlanCard], ['conversation.plan-review.actions', PlanReviewOpen]] as const) {
+      for (const [slot, component] of [['conversation.chat.turnTail', PlanCards], ['conversation.plan-review.actions', PlanReviewOpen]] as const) {
         const entry = b.slots.entries(slot)[0]!
         expect(entry.component).toBe(component)
         const injected = (entry.inject as unknown as (sessionId: SessionId) => PlanOpenInjected)(SID)
@@ -137,7 +140,7 @@ describe('ui-plan browser apply', () => {
       expect(b.slots.entries('sidebar.right.pane.tab')[0]!.component).toBe(PlanPreview)
       expect(b.slots.entries('sidebar.right.pane.tab.title')[0]!.component).toBe(PlanTitle)
       await fiber.dispose()
-      expect(b.slots.entries('conversation.chat.node')).toEqual([])
+      expect(b.slots.entries('conversation.chat.turnTail')).toEqual([])
       expect(b.slots.entries('conversation.plan-review.actions')).toEqual([])
       expect(b.slots.entries('sidebar.right.pane.tab')).toEqual([])
       expect(b.slots.entries('sidebar.right.pane.tab.title')).toEqual([])
