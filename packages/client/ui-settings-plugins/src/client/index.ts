@@ -5,8 +5,9 @@
  * The section declares `settings.plugins.tab`; its own `configurable` tab then
  * declares `settings.plugin.item` and renders whatever cards were registered
  * into it. The cards this package ships are the host-plane sections the
- * deployment already exposes; each binds its namespace through the client
- * settings scope, which keeps them unaware of one another and of other tabs.
+ * deployment already exposes. Each form binds its namespace through the client
+ * settings scope; the Subagent card composes its limit and model forms without
+ * adding domain-specific dispatch to the tab.
  */
 
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
@@ -25,9 +26,9 @@ import { BashCard } from './BashCard.tsx'
 import { ConfigurablePluginsTab } from './ConfigurablePluginsTab.tsx'
 import { PluginsSettingsSection } from './PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionInjected, PluginsSettingsTabEntry } from './PluginsSettingsSection.tsx'
-import { SubagentLimitsCard } from './SubagentLimitsCard.tsx'
+import { SubagentCard } from './SubagentCard.tsx'
+import { subagentCardFace } from './subagent-card-controller.ts'
 import { SubagentLimitsCardController } from './subagent-limits-card-controller.ts'
-import { SubagentModelSelectionCard } from './SubagentModelSelectionCard.tsx'
 import { WebSearchCard } from './WebSearchCard.tsx'
 import { AGENT_LOOP_NS, AgentLoopCardController } from './agent-loop-card-controller.ts'
 import { SHELL_NS, BashCardController } from './bash-card-controller.ts'
@@ -76,6 +77,8 @@ export function apply(ctx: ClientContext): void {
     ctx.settingsScope.bind({ namespace: SUBAGENT_MODEL_SELECTION_NS }),
     ctx,
   )
+  const subagentLimitsFace = subagentLimits.inject()
+  const subagentModelsFace = subagentModelSelection.inject()
 
   // The credential a card reports is not part of any settings section, so its
   // scope publishes nothing when one is written. This is the only signal that
@@ -184,14 +187,14 @@ export function apply(ctx: ClientContext): void {
       name: 'settings.plugin.item',
       key: 'subagent',
       locale: NS,
-      inject: () => subagentLimits.inject(),
-    }, SubagentLimitsCard)
+      inject: () => subagentCardFace(subagentLimitsFace, subagentModelsFace),
+    }, SubagentCard)
     yield ctx.slots.register({
       name: 'settings.plugin.item',
       key: SUBAGENT_MODEL_SELECTION_NS,
       locale: NS,
-      inject: () => subagentModelSelection.inject(),
-    }, SubagentModelSelectionCard)
+      inject: () => subagentCardFace(subagentLimitsFace, subagentModelsFace, true),
+    }, SubagentCard)
     yield ctx.slots.register({
       name: 'settings.plugin.item',
       key: WEB_SEARCH_NS,

@@ -93,7 +93,7 @@ describe('ui-settings-plugins apply', () => {
   })
 
 
-  it('injects a live tab projection, the card directory, and one business face per card', async () => {
+  it('injects a live tab projection, the card directory, and the form sources owned by each card', async () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
@@ -120,8 +120,11 @@ describe('ui-settings-plugins apply', () => {
     expect(Object.keys(tabFace.hooks)).toEqual(['configurablePlugins'])
     for (const entry of slots.entries('settings.plugin.item')) {
       const face = (entry as { inject?: () => unknown }).inject?.() as { hooks: Record<string, unknown> }
-      // Each card injects exactly one snapshot store plus its own actions.
-      expect(Object.keys(face.hooks)).toHaveLength(1)
+      if (entry.options.key === 'subagent' || entry.options.key === 'subagent-model-selection') {
+        expect(Object.keys(face.hooks)).toEqual(['subagentLimitsCard', 'subagentModelSelectionCard'])
+      } else {
+        expect(Object.keys(face.hooks)).toHaveLength(1)
+      }
     }
   })
 

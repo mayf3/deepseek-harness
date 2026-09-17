@@ -36,12 +36,8 @@
           - text: Agent 循环 Agent 如何派发工具调用。
           - img
       - listitem:
-        - 'button "展开设置: Subagent 限制"':
-          - text: Subagent 限制 设置委派的最大深度，以及可同时在线的子代理数量。
-          - img
-      - listitem:
-        - 'button "展开设置: Subagent 模型"':
-          - text: Subagent 模型 控制 Agent 为 Subagent 选择模型的权限。
+        - 'button "展开设置: Subagent"':
+          - text: Subagent 设置 Subagent 的递归层级、数量和模型。
           - img
       - listitem:
         - 'button "展开设置: 网页搜索"':
