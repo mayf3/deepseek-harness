@@ -278,6 +278,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   PluginInstallProgress: 'boot.md',
   BrowserUseProviderName: 'browser-use.md',
   ComputerUseProviderName: 'computer-use.md',
+  RenderedDocumentBytes: 'office-to-pdf.md',
   OfficeToPdfRequest: 'office-to-pdf.md',
   OfficeToPdfResult: 'office-to-pdf.md',
   OfficeToPdfPriority: 'office-to-pdf.md',

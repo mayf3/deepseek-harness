@@ -9,9 +9,7 @@ import type {
   StandardSourceBinding,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import { bindSnapshotSelector } from './bind.ts'
-
-/** Missing renderer assembly dependency. */
-export class SlotAssemblyError extends Error {}
+import { SlotAssemblyError } from './errors.ts'
 
 /** In-package renderer host context. */
 export const HostContext = createContext<SlotRendererHost | null>(null)

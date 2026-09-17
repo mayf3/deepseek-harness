@@ -1,4 +1,6 @@
 /** Authorized Office input and complete PDF output, for the shared Host converter. */
+import type { WorkspaceFileBytes } from '@deepseek-ai/dsh-api-workspace-files/types'
+import type {} from '@deepseek-ai/dsh-typert-protocol'
 import type { OfficeSourceKey, OfficeToPdfGeneration, OfficeToPdfKey } from './identity.ts'
 export type { OfficeSourceKey, OfficeToPdfGeneration, OfficeToPdfKey } from './identity.ts'
 
@@ -41,3 +43,16 @@ export interface OfficeToPdfResult {
 export type OfficeToPdfErrorCode =
   | 'input-too-large' | 'output-too-large' | 'invalid-document' | 'unsupported-format'
   | 'invalid-output' | 'timeout' | 'unavailable' | 'failed' | 'busy' | 'source-changed'
+
+/** PDF content carries the original Office file's absolute path and version. */
+export interface RenderedDocumentBytes extends WorkspaceFileBytes {
+  readonly missingFonts: string[]
+  readonly generation: OfficeToPdfGeneration
+}
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    /** The source was authorized, but its conversion failed. */
+    'document-render/failed': { readonly reason: OfficeToPdfErrorCode }
+  }
+}

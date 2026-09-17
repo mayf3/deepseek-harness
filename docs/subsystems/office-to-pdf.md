@@ -10,6 +10,7 @@ The [document package family](../../packages/document/README.md) converts Office
 |---|---|
 | [office-to-pdf](../../packages/document/office-to-pdf/README.md) | `ctx.officeToPdf`: shared LibreOffice conversion, bounded admission, and PDF caching |
 | [Web bundle](../../packages/bundle/web-app/README.md) | One configurable conversion provider shared by Host consumers |
+| [Office preview Client](../../packages/client/ui-sidebar-documentpreview/README.md#office-preview) | Office extension selection, PDF reuse, and missing-font notices |
 
 ## Requests and results
 
@@ -25,6 +26,14 @@ The [document package family](../../packages/document/README.md) converts Office
 | `generation` | Provider lifetime; replacement invalidates cached PDF reuse |
 
 The provider admits the deferred read before allocating source bytes, shares conversions by content identity, and removes its private scratch directory before returning. Returned PDF bytes remain valid after provider disposal. Source and PDF bytes do not enter Session storage. Consumers can use [Workspace Files](../../packages/api/workspace-files/README.md) for authorized bounded reads.
+
+## Preview reads
+
+`RenderedDocumentBytes` extends the workspace byte response with `missingFonts` and `generation`; the original source identity accompanies the converted PDF.
+
+The `officeToPdf.render` Remote method checks source authorization and versions through the Session's [Workspace Files](../../packages/api/workspace-files/README.md) service. After conversion admission, `fs.readBytes` supplies raw input within the reserved byte capacity; Office input limits govern this read. The response carries base64 PDF bytes with the source absolute path and freshness version. Source access failures pass through; size and engine failures expose a classified reason without diagnostics. Conversion does not activate an Agent or append events.
+
+The `api/remotes` assembly mounts the conversion service's generated Remote descriptor. The shared Document Preview package registers Office formats with complete-byte loading and its existing PDF.js Worker. Each preview read rechecks renderer generation, source authorization, and version before sharing an in-flight conversion or cached PDF. Connection resets and plugin disposal cancel requests and clear cached bytes. Missing services show localized configuration guidance.
 
 ## Engine selection and limits
 
@@ -55,6 +64,23 @@ A provider lifetime owns all converters, queued calls, and temporary files.
  * @throws {OfficeToPdfError} Invalid input, unusable output, or engine failure; cancellation rejects with its reason.
  */
 convert(request: OfficeToPdfRequest, signal?: AbortSignal): Promise<OfficeToPdfResult>
+
+/**
+ * Read and convert one Office file using the Session's ordinary filesystem authorization.
+ * @param workspaceFileScope - Session header lookup shared with workspaceFiles.
+ * @param path - absolute or workspace-relative Office path.
+ * @param priority - foreground preview or speculative background work.
+ * @param signal - Remote cancellation; disposal also cancels outstanding reads and conversions.
+ * @returns complete base64 PDF with original source identity and missing font families.
+ */
+@Remote async render( workspaceFileScope: WorkspaceFileScope, path: string, priority: OfficeToPdfPriority, signal: AbortSignal, ): Promise<RenderedDocumentBytes>
+
+/**
+ * Read the current rendering generation before reusing a Client PDF.
+ * @param signal - Remote caller cancellation.
+ * @returns provider lifetime, replaced with rendering, font, or engine configuration.
+ */
+@Remote('generation') getGeneration(signal: AbortSignal): OfficeToPdfGeneration
 ```
 
 Source: [`packages/document/office-to-pdf/src/index.ts`](../../packages/document/office-to-pdf/src/index.ts)

@@ -1,30 +1,26 @@
-/** User control for model-selectable subagent delegation in new sessions, as its configuration page. */
+/** User control for model-selectable subagent delegation in new sessions. */
 
-import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   SubagentModelCandidate,
   SubagentModelSelectionCardFace,
+  SubagentModelSelectionCardState,
 } from './subagent-model-selection-card-controller.ts'
-import { PluginConfigForm } from './PluginConfigForm.tsx'
-import css from './SubagentModelSelectionCard.module.css'
+import css from './SubagentModelSelectionFields.module.css'
 
-/** Props the renderer binds for the subagent model-selection page. */
-export type SubagentModelSelectionCardProps =
-  PropsRuntime<'plugins.item'>
-  & PropsLocale<'settings.plugins'>
-  & InjectFace<SubagentModelSelectionCardFace>
+/** Plain model state and callbacks supplied by the owning Subagent card. */
+export type SubagentModelSelectionFieldsProps = PropsLocale<'settings.plugins'>
+  & Pick<SubagentModelSelectionCardFace, 'toggleEnabled' | 'toggleModel' | 'retryCatalog'>
+  & { state: SubagentModelSelectionCardState }
 
 /**
- * Render the preference's one-liner, or the default-off preference and its exact adapter-route choices, as the Plugins page asks.
- * @param props - the view asked for, locale copy, the form snapshot, and its toggle action.
- * @returns the one-liner, or the preference form.
+ * Render the default-off preference and its exact adapter-route choices.
+ * @param props - locale copy, the card snapshot, and its toggle action.
+ * @returns the model permission and route choices inside the shared card.
  */
-export function SubagentModelSelectionCard(props: SubagentModelSelectionCardProps) {
-  const { t } = props
-  const state = props.useSubagentModelSelectionCard(snapshot => snapshot)
-  if (props.view === 'summary') return t('subagentModelSelectionDescription')
+export function SubagentModelSelectionFields(props: SubagentModelSelectionFieldsProps) {
+  const { t, state } = props
   const availableGroups = new Map<string, {
     providerName: string
     candidates: SubagentModelCandidate[]
@@ -63,12 +59,7 @@ export function SubagentModelSelectionCard(props: SubagentModelSelectionCardProp
     </label>
   )
   return (
-    <PluginConfigForm
-      t={t}
-      state={state}
-      onSave={props.save}
-      onDiscard={props.discard}
-    >
+    <>
       <div className={css.permission}>
         <div className={css.toggleRow}>
           <span className={css.toggleLabel}>{t('subagentModelSelectionToggle')}</span>
@@ -132,6 +123,6 @@ export function SubagentModelSelectionCard(props: SubagentModelSelectionCardProp
       {state.conflicted
         ? <p className={css.conflict} role="status">{t('subagentModelSelectionConflict')}</p>
         : null}
-    </PluginConfigForm>
+    </>
   )
 }
