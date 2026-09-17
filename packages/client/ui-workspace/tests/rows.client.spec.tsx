@@ -552,24 +552,36 @@ describe('workspace browser rows', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  it('appends plugin actions after built-ins with the Session owner props', () => {
+  it('appends plugin actions after built-ins with the Session owner props', async () => {
     const onOpen = vi.fn()
     const onPluginAction = vi.fn()
-    const renderSessionMenuActions = vi.fn(({ sessionId, displayTitle }: SessionMenuActionOwnerProps) => (
-      <MenuAction onSelect={() => { onPluginAction(sessionId, displayTitle) }}>Export</MenuAction>
+    const renderSessionMenuActions = vi.fn(({
+      sessionId, displayTitle, dismiss,
+    }: SessionMenuActionOwnerProps) => (
+      <button role="menuitem" onClick={() => {
+        screen.getByRole('button', { name: 'Destination' }).focus()
+        onPluginAction(sessionId, displayTitle)
+        dismiss()
+      }}>
+        Export
+      </button>
     ))
     const node: SessionNode = {
       id: sid('s1'), title: 'One', blank: false, running: false,
       runningSubagentCount: 0, completed: false, hasActiveSchedule: false, updatedAt: 0,
     }
-    render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen}
-      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()}
-      renderSessionMenuActions={renderSessionMenuActions} t={t} />)
+    render(<>
+      <button>Destination</button>
+      <SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen}
+        onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()}
+        renderSessionMenuActions={renderSessionMenuActions} t={t} />
+    </>)
 
     fireEvent.click(screen.getByRole('button', { name: '会话“One”的操作' }))
     const actions = screen.getAllByRole('menuitem')
     expect(actions.map(action => action.textContent)).toEqual(['重命名', '分叉会话', '归档会话', 'Export'])
     fireEvent.click(screen.getByRole('menuitem', { name: 'Export' }))
+    await act(async () => { await Promise.resolve() })
     expect(renderSessionMenuActions).toHaveBeenCalled()
     const owner = renderSessionMenuActions.mock.calls.at(-1)?.[0]
     expect(owner?.sessionId).toBe(node.id)
@@ -577,6 +589,7 @@ describe('workspace browser rows', () => {
     expect(typeof owner?.dismiss).toBe('function')
     expect(onPluginAction).toHaveBeenCalledWith(node.id, 'One')
     expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Destination' }))
     expect(onOpen).not.toHaveBeenCalled()
   })
 
