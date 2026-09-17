@@ -309,7 +309,9 @@ function mount(
       : (opts?.fallback ?? null)
   )) as ConversationContentProps['renderSlotChain']
   const SessionProvider: ConversationContentProps['SessionProvider'] = ({ children }) => children
-  const renderFactorySlot = ((_name: string, input: ConversationContentInputProps) => {
+  const renderFactorySlot = ((_name: string, input: ConversationContentInputProps, factoryOptions?: {
+    slots?: Record<string, (props: never) => ReactNode>
+  }) => {
     const common: ConversationViewsProps = {
       sessionId: SID,
       SessionProvider,
@@ -333,7 +335,9 @@ function mount(
       selectWorkspace: retargetWorkspace,
       t,
     }
-    const useFactorySlot = (() => StableConversationViews) as ConversationContentProps['useFactorySlot']
+    const useFactorySlot = ((name: string, fallback: (props: never) => ReactNode) => (
+      name === 'views' ? StableConversationViews : factoryOptions?.slots?.[name] ?? fallback
+    )) as ConversationContentProps['useFactorySlot']
     return (
       <FactoryViewsTestContext.Provider value={common}>
         <ConversationContent {...({ ...common, ...input, useFactorySlot })} />
@@ -667,11 +671,12 @@ describe('ConversationRoot resident composer', () => {
 
   it('publishes the column width as a px variable for the shared width axis', () => {
     const b = mount(sessionSnapshotOf())
-    const root = b.view.container.querySelector('[data-phase]') as HTMLElement
+    const content = b.view.container.querySelector('[data-conversation-content]') as HTMLElement
+    const root = content.parentElement as HTMLElement
     // jsdom offsetWidth is 0 until faked: the observer publishes whatever the
     // layout reports, and the CSS clamp() floors the axis at 680px either way.
-    Object.defineProperty(root, 'offsetWidth', { value: 1200, configurable: true })
-    act(() => { fireResize(root) })
+    Object.defineProperty(content, 'offsetWidth', { value: 1200, configurable: true })
+    act(() => { fireResize(content) })
     expect(root.style.getPropertyValue('--dsh-conversation-column-width')).toBe('1200px')
     // No dragged preference: the user-width override stays absent so the
     // adaptive clamp term applies.
@@ -680,9 +685,10 @@ describe('ConversationRoot resident composer', () => {
 
   it('drag → persist → window clamp round-trip on a width handle', () => {
     const b = mount(sessionSnapshotOf())
-    const root = b.view.container.querySelector('[data-phase]') as HTMLElement
-    Object.defineProperty(root, 'offsetWidth', { value: 1600, configurable: true })
-    act(() => { fireResize(root) })
+    const content = b.view.container.querySelector('[data-conversation-content]') as HTMLElement
+    const root = content.parentElement as HTMLElement
+    Object.defineProperty(content, 'offsetWidth', { value: 1600, configurable: true })
+    act(() => { fireResize(content) })
     const handle = b.view.container.querySelector('[data-width-handle="right"]') as HTMLElement
     expect(handle).not.toBeNull()
     // jsdom lacks pointer capture: emulate per-element so hasPointerCapture
@@ -705,8 +711,8 @@ describe('ConversationRoot resident composer', () => {
       expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
       // Window shrinks: the displayed width re-clamps (900 − 176 = 724) but the
       // preference stays.
-      Object.defineProperty(root, 'offsetWidth', { value: 900, configurable: true })
-      act(() => { fireResize(root) })
+      Object.defineProperty(content, 'offsetWidth', { value: 900, configurable: true })
+      act(() => { fireResize(content) })
       expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('724px')
       expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
       // A press without travel (a real double-click delivers two such

@@ -151,7 +151,8 @@ root
 │     │  ├─ conversation.session.header.utilities
 │     │  └─ conversation.session.header.corner
 │     ├─ conversation.composer
-│     │  └─ conversation.approval.detail
+│     │  ├─ conversation.approval.detail
+│     │  └─ conversation.plan-review.actions
 │     ├─ conversation.composer.bar
 │     │  ├─ conversation.input.attachments
 │     │  ├─ conversation.input.permission

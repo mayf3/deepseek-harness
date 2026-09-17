@@ -44,6 +44,8 @@ async function bench() {
   } as never)
   runtime.ctx.provide('layout', { openRightbar: vi.fn(), closeRightbar: vi.fn() } as never)
   runtime.ctx.provide('sidebarRight', { openResource: vi.fn(), openTab: vi.fn() } as never)
+  runtime.ctx.provide('sidebarRightTabs', { register: vi.fn(() => () => {}) } as never)
+  runtime.ctx.provide('resources', { register: vi.fn(() => () => {}) } as never)
   const openSession = vi.fn<(id: SessionId) => void>()
   runtime.ctx.provide('uiWorkspace', {
     openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
