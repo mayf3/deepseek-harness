@@ -172,7 +172,10 @@ describe('dsh web authentication through the real CLI', () => {
 
       const exchange = await fetch(first.launchUrl, { redirect: 'manual' })
       expect(exchange.status).toBe(303)
-      expect(exchange.headers.get('location')).toBe('/')
+      const location = exchange.headers.get('location')
+      if (location === null) throw new Error('real CLI token exchange omitted Location')
+      const redirectedUrl = new URL(location, firstUrl)
+      expect(redirectedUrl.href).toBe(`${firstUrl.origin}/`)
       const setCookie = exchange.headers.get('set-cookie')
       if (setCookie === null) throw new Error('real CLI token exchange omitted Set-Cookie')
       expect(setCookie).toContain('HttpOnly')
