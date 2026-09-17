@@ -30,6 +30,15 @@ it('keeps completed step work collapsed inside an expanded turn and bounds its s
       await outer.waitFor()
       expect(await page.getByRole('button', { name: 'Load earlier', exact: true }).count()).toBe(1)
       expect(await outer.textContent()).toMatch(/^Took /)
+      await page.mouse.move(0, 0)
+      const outerColor = await outer.evaluate(element => getComputedStyle(element).color)
+      expect(await outer.evaluate(element => getComputedStyle(element).opacity)).toBe('1')
+      await outer.hover()
+      await expect.poll(() => outer.evaluate(
+        (element, initialColor) => getComputedStyle(element).color === initialColor,
+        outerColor,
+      )).toBe(false)
+      expect(await outer.evaluate(element => getComputedStyle(element).opacity)).toBe('1')
       await compareOrRefreshGolden(fileURLToPath(new URL('./expected/step-process/turn-collapsed.md', import.meta.url)),
         await outer.ariaSnapshot(), webSnapshotMode())
       await outer.click()
@@ -37,12 +46,35 @@ it('keeps completed step work collapsed inside an expanded turn and bounds its s
       const toggle = group.getByRole('button', { name: 'Ran commands', exact: true })
       await toggle.waitFor()
       expect(await toggle.getAttribute('aria-expanded')).toBe('false')
+      const activityIcon = toggle.locator('[data-step-process-icon]')
+      const chevron = toggle.locator('[data-step-process-chevron]')
+      await page.mouse.move(0, 0)
+      const toggleColor = await toggle.evaluate(element => getComputedStyle(element).color)
+      expect(await toggle.evaluate(element => getComputedStyle(element).opacity)).toBe('1')
+      expect(await activityIcon.evaluate(element => getComputedStyle(element).opacity)).toBe('1')
+      expect(await chevron.evaluate(element => getComputedStyle(element).opacity)).toBe('0')
+      await toggle.hover()
+      await expect.poll(() => toggle.evaluate(
+        (element, initialColor) => getComputedStyle(element).color === initialColor,
+        toggleColor,
+      )).toBe(false)
+      expect(await toggle.evaluate(element => getComputedStyle(element).opacity)).toBe('1')
+      await expect.poll(() => activityIcon.evaluate(element => getComputedStyle(element).opacity)).toBe('0')
+      await expect.poll(() => chevron.evaluate(element => getComputedStyle(element).opacity)).toBe('1')
+      expect(await toggle.evaluate(element => getComputedStyle(element).paddingBottom)).toBe('0px')
       expect(await group.locator('[data-step-process-body]').getAttribute('hidden')).toBe('until-found')
+      const nextMessage = group.locator('xpath=following-sibling::*[1]')
+      expect(await nextMessage.getAttribute('data-chat-flow-kind')).toBe('assistant-step')
+      expect(await group.evaluate((element) => {
+        const next = element.nextElementSibling
+        return next === null ? null : next.getBoundingClientRect().top - element.getBoundingClientRect().bottom
+      })).toBe(12)
       await compareOrRefreshGolden(fileURLToPath(new URL('./expected/step-process/collapsed.md', import.meta.url)),
         await group.ariaSnapshot(), webSnapshotMode())
       await toggle.click()
       const body = group.locator('[data-step-process-body]')
       expect(await body.getAttribute('hidden')).toBeNull()
+      expect(await toggle.evaluate(element => getComputedStyle(element).paddingBottom)).toBe('12px')
       const leafSpacing = await body.evaluate((element) => {
         const rows = [...element.children].filter(row => !row.hasAttribute('hidden'))
         return rows.slice(1).map((row, index) => ({
@@ -50,13 +82,16 @@ it('keeps completed step work collapsed inside an expanded turn and bounds its s
           shrink: getComputedStyle(row).flexShrink,
         }))
       })
-      expect(leafSpacing).toEqual([{ gap: 16, shrink: '0' }, { gap: 16, shrink: '0' }])
+      expect(leafSpacing).toEqual([{ gap: 8, shrink: '0' }, { gap: 8, shrink: '0' }])
       // Expand the individual tool cards so their output exceeds the process viewport.
       for (const row of await body.locator('[data-sample="bash"]').all()) await row.click()
+      await expect.poll(() => body.getAttribute('data-scroll-up')).toBeNull()
+      await expect.poll(() => body.getAttribute('data-scroll-down')).toBe('true')
       await page.screenshot({ path: '/tmp/dsh-step-process-expanded.png' })
       const geometry = await body.evaluate((element) => {
         const style = getComputedStyle(element)
-        element.scrollTop = 100
+        element.scrollTop = (element.scrollHeight - element.clientHeight) / 2
+        element.dispatchEvent(new Event('scroll'))
         return { height: element.clientHeight, max: style.maxHeight, overflow: style.overflowY,
           scrollable: element.scrollHeight > element.clientHeight, top: element.scrollTop }
       })
@@ -64,6 +99,13 @@ it('keeps completed step work collapsed inside an expanded turn and bounds its s
       expect(geometry.overflow).toBe('auto')
       expect(geometry.scrollable).toBe(true)
       expect(geometry.top).toBeGreaterThan(0)
+      await expect.poll(() => body.getAttribute('data-scroll-up')).toBe('true')
+      await expect.poll(() => body.getAttribute('data-scroll-down')).toBe('true')
+      await body.evaluate((element) => {
+        element.scrollTop = element.scrollHeight
+        element.dispatchEvent(new Event('scroll'))
+      })
+      await expect.poll(() => body.getAttribute('data-scroll-down')).toBeNull()
       await page.screenshot({ path: '/tmp/dsh-step-process-expanded.png' })
       await outer.click()
       await outer.click()

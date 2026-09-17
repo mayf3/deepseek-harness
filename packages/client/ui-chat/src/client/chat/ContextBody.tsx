@@ -136,7 +136,7 @@ function UnknownBlocks({ blocks, t }: { blocks: readonly unknown[]; t: Translate
  * @param props - Durable content and the locale seat.
  * @returns The content blocks as the model received them.
  */
-function ModelFacingContent({ content, t }: {
+export function ContextContentBody({ content, t }: {
   content: ContextMessageNode['content']
   t: Translate
 }): ReactNode {
@@ -172,7 +172,7 @@ export function OpaqueBody({ content, source, t }: {
 }): ReactNode {
   return (
     <>
-      <ModelFacingContent content={content} t={t} />
+      <ContextContentBody content={content} t={t} />
       <SourceFields source={source} formRendered={false} t={t} />
     </>
   )
@@ -264,7 +264,7 @@ export function InstructionsBody({ content, source, t }: {
           </li>
         ))}
       </ul>
-      <ModelFacingContent content={content} t={t} />
+      <ContextContentBody content={content} t={t} />
     </>
   )
 }
@@ -423,7 +423,7 @@ export function NoticeBody({ content, t }: {
   source: unknown
   t: Translate
 }): ReactNode {
-  return <ModelFacingContent content={content} t={t} />
+  return <ContextContentBody content={content} t={t} />
 }
 
 /**
@@ -447,7 +447,7 @@ export function RelayBody({ content, source, t }: {
       <p className={css.relaySender} data-context-relay-sender>
         {t('message.context.relay.from', { session: sender })}
       </p>
-      <ModelFacingContent content={content} t={t} />
+      <ContextContentBody content={content} t={t} />
     </>
   )
 }
@@ -525,7 +525,7 @@ export function RecallBody({ content, source, t }: {
           </li>
         ))}
       </ul>
-      <ModelFacingContent content={content} t={t} />
+      <ContextContentBody content={content} t={t} />
     </>
   )
 }

@@ -1,13 +1,6 @@
-- button "Background task completed · PR merge check HH:mm" [expanded]:
-  - text: Background task completed · PR merge check
+- button "Background task completed HH:mm" [expanded]:
+  - text: Background task completed
   - time: HH:mm
   - img
-- text: tool-jobs
 - paragraph: This notification triggered this response.
 - text: "background job bash-39 (bash: PR merge check) finished [status: completed, exit code 0]. Read its output with job_output."
-- term: plugin
-- definition: tool-jobs
-- term: form
-- definition: notice
-- term: summary
-- definition: PR merge check completed

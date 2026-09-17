@@ -41,7 +41,7 @@ import {
 import { TurnTailNodeView } from '../src/client/chat/TurnTailNodeView.tsx'
 import { TurnProcessNodeView } from '../src/client/chat/TurnProcessNodeView.tsx'
 import { SystemPromptNodeView } from '../src/client/chat/SystemPromptRow.tsx'
-import { formatRunDuration } from '../src/client/chat/message-chrome.ts'
+import { formatLiveRunDuration, formatRunDuration } from '../src/client/chat/message-chrome.ts'
 import { ChatSnapshotBuilder } from '../src/client/conversation-nodes/chat-snapshot-builder.ts'
 import type { TurnProcessSpec } from '../src/client/contract/turn-process.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
@@ -576,6 +576,16 @@ describe('Chat node rendering', () => {
     expect(formatRunDuration(3_903_000, t)).toBe('1h 05m 03s')
   })
 
+  it('formatLiveRunDuration leaves seconds unpadded and rolls sixty minutes into hours', () => {
+    const t = makeTranslate(zh, commonZh)
+    expect(formatLiveRunDuration(0, t)).toBe('0秒')
+    expect(formatLiveRunDuration(15_999, t)).toBe('15秒')
+    expect(formatLiveRunDuration(125_399, t)).toBe('2分5秒')
+    expect(formatLiveRunDuration(3_599_999, t)).toBe('59分59秒')
+    expect(formatLiveRunDuration(3_600_000, t)).toBe('1小时00分0秒')
+    expect(formatLiveRunDuration(3_903_199, t)).toBe('1小时05分3秒')
+  })
+
 })
 
 describe('ChatView', () => {
@@ -662,58 +672,122 @@ describe('ChatView', () => {
     ['web_fetch', { url: 'https://example.com/docs' }, '正在访问网页 https://example.com/docs'],
     ['read', { file_path: '/src/main.ts' }, '正在读取文件 /src/main.ts'],
   ])('shows live %s details only in Detailed secondary titles', (name, args, expected) => {
-    const h = makeHarness({
-      nodes: [userInTurn(1, 'inspect', 2), reasoningAssistant(2, 'private reasoning', 2)],
-      runningCalls: [{ ...runningCall('work', name), argsRaw: JSON.stringify(args) }],
-      running: true,
-    })
-    const view = render(<h.ChatView {...h.props} />)
-    const title = () => view.container.querySelector('[data-step-process] > button')?.textContent
-    const abstract = title()
-    act(() => { h.setTranscriptView('detailed') })
-    expect(title()).toBe(expected)
-    expect(title()).not.toContain('private reasoning')
-    act(() => { h.setTranscriptView('expanded') })
-    expect(title()).toBeUndefined()
-    act(() => { h.setTranscriptView('compact') })
-    expect(title()).toBe(abstract)
-    act(() => {
-      h.setTranscriptView('detailed')
-      h.setChat({ runningCalls: [], partial: { turn: 2, step: 2, blocks: [
-        { kind: 'reasoning', text: 'private reasoning' },
-      ] } })
-    })
-    expect(title()).toBe('正在分析请求')
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    try {
+      const h = makeHarness({
+        nodes: [userInTurn(1, 'inspect', 2), reasoningAssistant(2, 'private reasoning', 2)],
+        runningCalls: [{ ...runningCall('work', name), argsRaw: JSON.stringify(args) }],
+        running: true,
+      })
+      const view = render(<h.ChatView {...h.props} />)
+      const title = () => view.container.querySelector('[data-step-process] > button')?.textContent
+      const abstract = title()
+      act(() => { h.setTranscriptView('detailed') })
+      expect(title()).toBe(expected)
+      expect(title()).not.toContain('private reasoning')
+      act(() => { h.setTranscriptView('expanded') })
+      expect(title()).toBeUndefined()
+      act(() => { h.setTranscriptView('compact') })
+      expect(title()).toBe(abstract)
+      act(() => {
+        h.setTranscriptView('detailed')
+        h.setChat({ runningCalls: [], partial: { turn: 2, step: 2, blocks: [
+          { kind: 'reasoning', text: 'private reasoning' },
+        ] } })
+      })
+      expect(title()).toBe(expected)
+      act(() => { vi.advanceTimersByTime(150) })
+      expect(title()).toBe('正在分析请求')
+    } finally {
+      cleanup()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps each live tool title for 150ms and skips intermediate tools', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    try {
+      const reasoning = reasoningAssistant(2, 'private reasoning', 2)
+      const h = makeHarness({
+        nodes: [userInTurn(1, 'inspect', 2), reasoning],
+        runningCalls: [runningCall('first', 'bash')],
+        running: true,
+      })
+      const view = render(<h.ChatView {...h.props} />)
+      expect(view.getByRole('button', { name: '正在运行命令' })).toBeTruthy()
+
+      act(() => { vi.advanceTimersByTime(50) })
+      act(() => { h.setChat({
+        nodes: [userInTurn(1, 'inspect', 2), reasoning, toolResult(3, 'first', 'bash')],
+        runningCalls: [runningCall('second', 'read')],
+      }) })
+      act(() => { vi.advanceTimersByTime(50) })
+      act(() => { h.setChat({
+        nodes: [
+          userInTurn(1, 'inspect', 2), reasoning,
+          toolResult(3, 'first', 'bash'), toolResult(4, 'second', 'read'),
+        ],
+        runningCalls: [runningCall('third', 'web_search')],
+      }) })
+
+      act(() => { vi.advanceTimersByTime(49) })
+      expect(view.getByRole('button', { name: '正在运行命令' })).toBeTruthy()
+      expect(view.queryByRole('button', { name: '正在读取文件' })).toBeNull()
+      act(() => { vi.advanceTimersByTime(1) })
+      expect(view.getByRole('button', { name: '正在搜索网页' })).toBeTruthy()
+      expect(view.queryByRole('button', { name: '正在读取文件' })).toBeNull()
+    } finally {
+      cleanup()
+      vi.useRealTimers()
+    }
   })
 
   it('closes a work range on streamed response text and keeps its expansion while more work runs', () => {
-    const h = makeHarness({
-      nodes: [userInTurn(1, 'inspect', 2), context(2, 'private runtime context', 2), reasoningAssistant(2.5, 'initial reasoning', 2)],
-      runningCalls: [runningCall('work')],
-      running: true,
-    })
-    const view = render(<h.ChatView {...h.props} />)
-    const toggle = view.getByRole('button', { name: '正在运行命令' })
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    const body = view.container.querySelector('[data-step-process-body]')!
-    expect(body.getAttribute('hidden')).toBe('until-found')
-    expect(toggle.textContent).not.toMatch(/context|上下文|permission|系统提示/)
-    fireEvent.click(toggle)
-    expect(body.hasAttribute('hidden')).toBe(false)
-    act(() => { h.setChat({
-      nodes: [userInTurn(1, 'inspect', 2), context(2, 'private runtime context', 2), reasoningAssistant(2.5, 'initial reasoning', 2), toolResult(3, 'work')],
-      runningCalls: [],
-      partial: { turn: 2, step: 2, blocks: [{ kind: 'reasoning', text: 'private analysis' }] },
-    }) })
-    expect(view.getByRole('button', { name: '正在分析请求' }).getAttribute('aria-expanded')).toBe('true')
-    act(() => { h.setChat({
-      partial: { turn: 2, step: 2, blocks: [
-        { kind: 'reasoning', text: 'private analysis' }, { kind: 'text', text: 'Here is the progress.' },
-      ] },
-    }) })
-    expect(view.getByRole('button', { name: '执行了命令' }).getAttribute('aria-expanded')).toBe('true')
-    expect(view.getByText('Here is the progress.').closest('[data-step-process-body]')).toBeNull()
-    expect(view.getByText('private analysis').closest('[data-step-process-body]')).toBe(body)
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    try {
+      const h = makeHarness({
+        nodes: [userInTurn(1, 'inspect', 2), context(2, 'private runtime context', 2), reasoningAssistant(2.5, 'initial reasoning', 2)],
+        runningCalls: [runningCall('work')],
+        running: true,
+      })
+      const view = render(<h.ChatView {...h.props} />)
+      const toggle = view.getByRole('button', { name: '正在运行命令' })
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect(toggle.getAttribute('data-process-activity')).toBe('commands')
+      expect(toggle.querySelector('[data-step-process-icon]')).not.toBeNull()
+      expect(toggle.querySelector('[data-step-process-chevron]')).not.toBeNull()
+      expect(toggle.querySelector('[data-text-shimmer]')).not.toBeNull()
+      const body = view.container.querySelector('[data-step-process-body]')!
+      expect(body.getAttribute('hidden')).toBe('until-found')
+      expect(toggle.textContent).not.toMatch(/context|上下文|permission|系统提示/)
+      fireEvent.click(toggle)
+      expect(body.hasAttribute('hidden')).toBe(false)
+      act(() => { h.setChat({
+        nodes: [userInTurn(1, 'inspect', 2), context(2, 'private runtime context', 2), reasoningAssistant(2.5, 'initial reasoning', 2), toolResult(3, 'work')],
+        runningCalls: [],
+        partial: { turn: 2, step: 2, blocks: [{ kind: 'reasoning', text: 'private analysis' }] },
+      }) })
+      expect(view.getByRole('button', { name: '正在运行命令' }).getAttribute('aria-expanded')).toBe('true')
+      act(() => { vi.advanceTimersByTime(150) })
+      expect(view.getByRole('button', { name: '正在分析请求' }).getAttribute('aria-expanded')).toBe('true')
+      act(() => { h.setChat({
+        partial: { turn: 2, step: 2, blocks: [
+          { kind: 'reasoning', text: 'private analysis' }, { kind: 'text', text: 'Here is the progress.' },
+        ] },
+      }) })
+      const completed = view.getByRole('button', { name: '执行了命令' })
+      expect(completed.getAttribute('aria-expanded')).toBe('true')
+      expect(completed.getAttribute('data-process-activity')).toBe('commands')
+      expect(completed.querySelector('[data-text-shimmer]')).toBeNull()
+      expect(view.getByText('Here is the progress.').closest('[data-step-process-body]')).toBeNull()
+      expect(view.queryByText('private analysis')).toBeNull()
+    } finally {
+      cleanup()
+      vi.useRealTimers()
+    }
   })
 
   it('leaves the turn rail unrendered when an unrelated Chat update commits', () => {
@@ -1188,7 +1262,9 @@ describe('ChatView', () => {
     fireEvent.click(within(pendingBubble as HTMLElement).getByRole('button', { name: '复制' }))
     expect(writeText).toHaveBeenCalledWith('interrupt now')
     expect(within(pendingBubble as HTMLElement).queryByRole('button', { name: '在新对话中分支' })).toBeNull()
-    expect(view.getByRole('status').compareDocumentPosition(view.getByText('interrupt now'))
+    const liveTurn = view.container.querySelector('[data-turn-process]')
+    expect(liveTurn).not.toBeNull()
+    expect((liveTurn as HTMLElement).compareDocumentPosition(view.getByText('interrupt now'))
       & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
 
     act(() => {
@@ -1680,10 +1756,11 @@ describe('ChatView', () => {
         turnTimings: new Map([[1, { startTime: 10_000 }]]) })
       h.props.t = makeTranslate(en, commonEn)
       const view = render(<h.ChatView {...h.props} />)
-      const toggle = view.getByRole('button', { name: 'Worked for 1s' })
+      const toggle = view.getByRole('button', { name: 'Deep diving for 1s' })
+      expect(view.queryByRole('status')).toBeNull()
       expect(toggle.getAttribute('aria-expanded')).toBeNull()
       act(() => { vi.advanceTimersByTime(2_000) })
-      expect(toggle.textContent).toBe('Worked for 2s')
+      expect(toggle.textContent).toBe('Deep diving for 2s')
       fireEvent.click(toggle)
       expect((toggle as HTMLButtonElement).disabled).toBe(true)
       expect(toggle.getAttribute('aria-expanded')).toBeNull()
@@ -2351,10 +2428,11 @@ describe('ChatView', () => {
 
   it('hands running calls to a live Tool group', () => {
     const h = makeHarness({ runningCalls: [runningCall('r1')] }, { running: true })
+    h.setTranscriptView('detailed')
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
     expect(h.toolOwners[0]?.block).toMatchObject({ callId: 'r1', argsRaw: '{"command":"cmd-r1"}' })
-    expect(view.getByRole('status').textContent).toBe('深度求索中...')
+    expect(view.queryByRole('status')).toBeNull()
   })
 
   it('keeps the Tool renderer mounted when a running call settles into log order', () => {
@@ -2404,18 +2482,18 @@ describe('ChatView', () => {
     expect(unmounted).not.toHaveBeenCalled()
   })
 
-  it('the running clock uses turn/start, ignores steering, and stays out of the live region', () => {
+  it('Detailed uses the whole-turn clock and omits a standalone running status', () => {
     const startTime = Date.now() - 125_000
     const trigger: UserMessageNode = { ...user(1, 'go'), time: startTime + 1 }
     const h = makeHarness(
       { nodes: [trigger], turnTimings: new Map([[1, { startTime }]]) },
       { running: true },
     )
+    h.setTranscriptView('detailed')
     const view = render(<h.ChatView {...h.props} />)
-    // Freshly mounted (as after a reload) yet already past the 15s gate.
-    const status = view.getByRole('status')
-    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒$/)
-    expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
+    const control = turnProcessControl(view.container)!
+    expect(control.textContent).toMatch(/^深度求索中，用时2分\d{1,2}秒$/)
+    expect(view.queryByRole('status')).toBeNull()
     act(() => {
       h.setSession({ testInbox: { 'next-turn': [], 'next-step': [{
         id: 'steering-occurrence' as never,
@@ -2424,18 +2502,20 @@ describe('ChatView', () => {
         role: 'user', source: { kind: 'user' },
       }] } })
     })
-    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒$/)
+    expect(control.textContent).toMatch(/^深度求索中，用时2分\d{1,2}秒$/)
   })
 
-  it('the running clock reads hours once the turn passes an hour', () => {
+  it('the whole-turn running clock reads hours once the turn passes an hour', () => {
     const startTime = Date.now() - 3_903_000
     const trigger: UserMessageNode = { ...user(1, 'go'), time: startTime + 1 }
     const h = makeHarness(
       { nodes: [trigger], turnTimings: new Map([[1, { startTime }]]) },
       { running: true },
     )
+    h.setTranscriptView('detailed')
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.getByRole('status').textContent).toMatch(/^深度求索中\.\.\.1小时05分0\d秒$/)
+    expect(turnProcessControl(view.container)?.textContent)
+      .toMatch(/^深度求索中，用时1小时05分\d{1,2}秒$/)
   })
 
   it('hands each ordered root call to the keyed business-node slot', () => {
@@ -3089,7 +3169,7 @@ describe('ChatView', () => {
     expect(lv.getByText('载入历史…')).toBeTruthy()
   })
 
-  it('renders command nodes as durable rows: settled text, error state, executing spinner, run-less soft-fall', () => {
+  it('renders command nodes as durable rows: settled text, error state, executing shimmer, run-less soft-fall', () => {
     // Settled success: the bare command name is the title, the outcome text
     // the summary — neither the dispatched `/` nor its arguments reach the row
     // (the settlement text already says what the command did).
@@ -3116,6 +3196,7 @@ describe('ChatView', () => {
     })
     const xv = render(<executing.ChatView {...executing.props} />)
     expect(xv.container.querySelector('[data-state="running"]')).not.toBeNull()
+    expect(xv.container.querySelectorAll('[data-text-shimmer]')).toHaveLength(2)
     expect(xv.getByText('执行中…')).toBeTruthy()
     expect(xv.getByText('运行中')).toBeTruthy()
 

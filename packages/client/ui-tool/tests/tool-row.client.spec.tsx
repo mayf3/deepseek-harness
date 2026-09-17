@@ -352,12 +352,15 @@ describe('ToolRow', () => {
     expect(view.queryByText(/"a": 1/)).toBeNull()
   })
 
-  it('keeps the business icon across running and error states', () => {
+  it('keeps the business icon while only running text shimmers', () => {
     const runningView = render(<ToolRow {...rowProps} state="running" />)
     expect(runningView.queryByTestId('tool-icon')).not.toBeNull()
     expect(runningView.container.querySelector('[data-state="running"]')).not.toBeNull()
+    expect(runningView.container.querySelectorAll('[data-text-shimmer]')).toHaveLength(2)
     const errorView = render(<ToolRow {...rowProps} state="error" />)
     expect(errorView.container.querySelector('[data-testid="tool-icon"]')).not.toBeNull()
+    expect(errorView.container.querySelector('span[data-state="error"]')).toBeNull()
+    expect(errorView.container.querySelector('[data-text-shimmer]')).toBeNull()
     expect(errorView.container.querySelector('[class*="chevronHover"]')).not.toBeNull()
   })
 

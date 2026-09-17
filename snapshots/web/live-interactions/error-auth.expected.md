@@ -7,11 +7,9 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
-- button "Failed" [disabled] [expanded]
-- button "Analysis completed"
+- button "Failed" [disabled]
 - status:
   - text: This turn failedAPI key is invalid
   - code: AUTH

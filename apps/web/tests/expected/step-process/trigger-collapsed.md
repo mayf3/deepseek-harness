@@ -1,4 +1,4 @@
-- button "Background task completed · PR merge check HH:mm":
-  - text: Background task completed · PR merge check
+- button "Background task completed HH:mm":
+  - text: Background task completed
   - time: HH:mm
   - img

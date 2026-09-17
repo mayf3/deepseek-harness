@@ -52,50 +52,6 @@ function observedRpcIds(
   return observed
 }
 
-function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | null {
-  let latest: number | null = null
-  for (const turn of timeline.turns.values()) {
-    if (turn.status === 'open') latest = turn.start?.time ?? null
-  }
-  return latest
-}
-
-/** Turn-level model activity label retained across first-token, tool, and streaming phases. */
-function TurnStatus({ startTime, t }: {
-  /** The running turn's logged `turn/start` time; null falls back to mount
-   *  time when that boundary is outside the window. */
-  startTime: number | null
-  /** The owning view's locale seat. */
-  t: ChatViewSlotProps['t']
-}) {
-  const [mountedAt] = useState(() => Date.now())
-  // Anchored to turn/start so a mid-turn reload keeps the real
-  // elapsed time and the final footer's Ran-for label matches this clock.
-  const anchor = startTime ?? mountedAt
-  const [elapsedMs, setElapsedMs] = useState(() => Math.max(0, Date.now() - anchor))
-  useEffect(() => {
-    const tick = (): void => {
-      setElapsedMs(Math.max(0, Date.now() - anchor))
-    }
-    tick()
-    const id = setInterval(tick, 1000)
-    return () => { clearInterval(id) }
-  }, [anchor])
-  // Short turns keep the plain label; the clock only appears once the turn
-  // has clearly been running for a while.
-  const showClock = elapsedMs >= 15_000
-  return (
-    <div className={css.turnStatus} role="status" aria-live="polite">
-      {t('chat.deepDiving')}
-      {showClock && (
-        <span className={css.turnStatusClock} aria-hidden>
-          {formatRunDuration(elapsedMs, t)}
-        </span>
-      )}
-    </div>
-  )
-}
-
 /**
  * The chat view slot entry: pure component over the composed props; each
  * ordered business Node crosses the keyed renderer seat.
@@ -118,7 +74,6 @@ export function ChatView({
     () => mergeTurnRailItems(turnNavigationItems, turnOutline),
     [turnNavigationItems, turnOutline],
   )
-  const timeline = useChat(s => s.timeline)
   const inbox = useProjection('inbox') as unknown as InboxState | undefined
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
@@ -183,7 +138,6 @@ export function ChatView({
     owner => renderSlot('conversation.message.images', { ...owner, loadImage }),
     [loadImage, renderSlot],
   )
-  const runningTurnStart = useMemo(() => runningTurnStartTime(timeline), [timeline])
 
   const firstKey = order[0]
   const firstSeq = firstKey === undefined ? null : nodeStore.get(firstKey)?.anchorSeq ?? null
@@ -248,9 +202,6 @@ export function ChatView({
           {/* No pending placeholders: questions (ui-user-questions) and approvals
               (ApprovalPanel) both take over the composer, so a flow card would
               double-render the same wait. */}
-          {/* Turn-level loading signal: rides the whole running turn (first-token
-              wait, tool execution, streaming) so it never flickers per step. */}
-          {running && <TurnStatus startTime={runningTurnStart} t={t} />}
           {pendingSteering.map(item => (
             <PendingSteeringBubble
               key={item.id}

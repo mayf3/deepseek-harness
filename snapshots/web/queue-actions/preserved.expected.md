@@ -7,10 +7,9 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
-- button "Thought for a while"
+- button "Stopped" [disabled]
 - paragraph: partial
 - text: Stopped
 - button "Copy"

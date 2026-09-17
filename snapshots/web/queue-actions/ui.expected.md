@@ -7,12 +7,10 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
-- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Deep diving for {{duration}}" [disabled] [expanded]
 - paragraph: partial
-- status: Deep diving...
 - list:
   - listitem:
     - text: Edited queue item

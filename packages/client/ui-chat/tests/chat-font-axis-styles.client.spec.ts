@@ -32,6 +32,18 @@ describe('chat flow font-size axis', () => {
     ]))
   })
 
+  it('starts streaming think summaries at the left edge and fades their right edge', () => {
+    const css = read('ReasoningRow.module.css')
+    expect(declarationsFrom(css, '.summary[data-streaming]')).toContain(
+      'mask-image: linear-gradient(to right, black calc(100% - 48px), transparent)',
+    )
+    expect(declarationsFrom(css, '.summary[data-streaming] .summaryText')).toEqual(expect.arrayContaining([
+      'overflow: visible',
+      'text-overflow: clip',
+    ]))
+    expect(css).not.toContain('justify-content: flex-end')
+  })
+
   it('command and context summaries read the secondary tier on the shared row line', () => {
     expect(declarationsFrom(read('GenericCommandCard.module.css'), '.summary')).toEqual(expect.arrayContaining([
       'font-size: var(--dsh-content-font-size-secondary, 13px)',

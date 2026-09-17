@@ -2,7 +2,7 @@ import { memo, useEffect, useState } from 'react'
 import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeViewProps } from '../contract/slots.ts'
 import { turnProcessAlwaysOpen } from '../contract/turn-process.ts'
-import { formatRunDuration } from './message-chrome.ts'
+import { formatLiveRunDuration, formatRunDuration, LIVE_RUN_CLOCK_INTERVAL_MS } from './message-chrome.ts'
 import css from './TurnProcessNodeView.module.css'
 
 /** Turn-level process disclosure controller. */
@@ -19,20 +19,24 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
   useEffect(() => {
     if (!ticking) return
     setNow(Date.now())
-    const timer = setInterval(() => { setNow(Date.now()) }, 1000)
+    const timer = setInterval(() => { setNow(Date.now()) }, LIVE_RUN_CLOCK_INTERVAL_MS)
     return () => { clearInterval(timer) }
   }, [ticking])
   if (!turnProcess.foldable) return null
   const canCollapse = turnProcess.hasContent && !turnProcessAlwaysOpen(node)
   const running = turn?.status === 'open'
   const reason = turn?.end?.data.reason.kind
-  const duration = turn?.start === undefined ? undefined
-    : formatRunDuration(Math.max(1000, (turn.end?.time ?? now) - turn.start.time), t)
+  const elapsedMs = turn?.start === undefined ? undefined
+    : Math.max(1000, (turn.end?.time ?? now) - turn.start.time)
+  const duration = elapsedMs === undefined ? undefined
+    : running ? formatLiveRunDuration(elapsedMs, t) : formatRunDuration(elapsedMs, t)
   // Other end reasons retain elapsed time; only cancellation and failure replace it.
-  const label = reason === 'aborted' ? t('message.stopped')
-    : reason === 'error' ? t('message.turnProcess.failed')
-      : duration === undefined ? t('message.turnProcess.worked')
-        : t(running ? 'message.turnProcess.workedFor' : 'message.turnProcess.took', { duration })
+  const label = running
+    ? duration === undefined ? t('chat.deepDiving') : t('message.turnProcess.deepDivingFor', { duration })
+    : reason === 'aborted' ? t('message.stopped')
+      : reason === 'error' ? t('message.turnProcess.failed')
+        : duration === undefined ? t('message.turnProcess.worked')
+          : t('message.turnProcess.took', { duration })
   return (
     <button
       type="button"

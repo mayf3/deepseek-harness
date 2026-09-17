@@ -1569,7 +1569,8 @@ export async function captureExpandedTurnProcessAria(
   const opened: number[] = []
   for (let index = 0; index < count; index++) {
     const control = controls.nth(index)
-    if (!await control.isVisible() || await control.getAttribute('aria-expanded') === 'true') continue
+    if (!await control.isVisible() || await control.isDisabled()
+      || await control.getAttribute('aria-expanded') === 'true') continue
     await control.click()
     opened.push(index)
   }

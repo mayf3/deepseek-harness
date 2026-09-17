@@ -37,7 +37,7 @@ describe('ReasoningRow', () => {
     expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('follows the latest streaming line, then hides all settled reasoning in the collapsed row', () => {
+  it('holds the first line of the current streaming paragraph, then hides settled reasoning in Compact mode', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
@@ -48,7 +48,7 @@ describe('ReasoningRow', () => {
     )
     expect(view.getByText('运行中')).toBeTruthy()
     expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('false')
-    expect(view.getByText('Newest reasoning tokens').parentElement?.getAttribute('data-follow-end'))
+    expect(view.getByText('Inspect the session').parentElement?.getAttribute('data-streaming'))
       .toBe('true')
 
     view.rerender(
@@ -59,13 +59,35 @@ describe('ReasoningRow', () => {
         renderMessageImages={renderMessageImages}
       />,
     )
-    expect(view.getByText('Newest reasoning tokens keep arriving').parentElement
-      ?.getAttribute('data-follow-end')).toBe('true')
+    expect(view.getByText('Inspect the session')).toBeTruthy()
+    expect(view.queryByText('Newest reasoning tokens keep arriving')).toBeNull()
 
     view.rerender(
       <AssistantMarkdown
         t={t}
-        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving\n' }]}
+        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving\n \nCompare the persisted events' }]}
+        streaming
+        renderMessageImages={renderMessageImages}
+      />,
+    )
+    expect(view.getByText('Inspect the session')).toBeTruthy()
+    expect(view.queryByText('Compare the persisted events')).toBeNull()
+
+    view.rerender(
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving\n \nCompare the persisted events\nwithout replacing the summary\n' }]}
+        streaming
+        renderMessageImages={renderMessageImages}
+      />,
+    )
+    expect(view.getByText('Compare the persisted events')).toBeTruthy()
+    expect(view.queryByText('without replacing the summary')).toBeNull()
+
+    view.rerender(
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving\n \nCompare the persisted events\nwithout replacing the summary\n' }]}
         streaming={false}
         renderMessageImages={renderMessageImages}
       />,
@@ -103,7 +125,7 @@ describe('ReasoningRow', () => {
     },
     {
       label: 'streaming',
-      text: 'Inspect the session\n**Comparing checkout and merge bases**',
+      text: 'Inspect the session\n\n**Comparing checkout and merge bases**\nKeep **reviewing**',
       streaming: true,
     },
   ])('strips double-asterisk markers from the $label summary and renders body emphasis', ({ text, streaming }) => {

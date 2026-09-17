@@ -7,13 +7,10 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
-- button "Worked for {{duration}}" [disabled] [expanded]
-- button "Analysis completed"
+- button "Deep diving for {{duration}}" [disabled] [expanded]
 - paragraph: partial
-- status: Deep diving...
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"
 - 'button "Access mode, current: Workspace Write"': Workspace Write

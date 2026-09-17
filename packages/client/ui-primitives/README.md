@@ -46,6 +46,7 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | `StateDot` | Solid green `done`, amber `warning`, red `error`, and neutral-grey `idle` marks in a 10px slot, plus a tertiary-grey 14px rotating `ongoing` loader. `aria-hidden`, so the render site owns the name. |
 | `ConnectionIndicator` | Inline connection-recovery control across outage, retry, and recovered states. |
 | `DisclosureRow` | 24px compact disclosure that lays title and content side by side. |
+| `TextShimmer` | Animated text highlight with configurable duration, character-relative spread, base color, and highlight color; reduced-motion mode keeps its static base. |
 | `Modal` | Centered dialog over a page mask. |
 | `RiskConfirmation` | Sensitive action gated behind an explicit checkbox. |
 | `OnboardingSurface` | First-run stage that holds the application root inert. |

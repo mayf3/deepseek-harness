@@ -1,35 +1,48 @@
 /** An independent, expandable notice explaining a non-human Turn trigger. */
-import { useId, useState } from 'react'
-import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useId, useState, type ComponentType } from 'react'
+import {
+  IconAgentPresetOutlineRegular, IconAlarmClockOutlineRegular, IconBranchOutlineRegular,
+  IconChevronDownOutlineRegular, IconContextInjectionOutlineRegular, IconCordisPluginOutlineRegular,
+  IconGoalOutlineRegular, IconGlobeOutlineRegular, IconQueueOutlineRegular, IconSendOutlineRegular,
+  type IconProps,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeViewProps } from '../contract/slots.ts'
-import { contextBody } from './ContextBody.tsx'
-import { turnTriggerDetails } from './turn-trigger.ts'
+import { ContextContentBody } from './ContextBody.tsx'
+import { turnTriggerDetails, type TurnTriggerIcon } from './turn-trigger.ts'
 import css from './TurnTriggerNodeView.module.css'
+
+const TRIGGER_ICONS: Record<TurnTriggerIcon, ComponentType<IconProps>> = {
+  request: IconContextInjectionOutlineRegular,
+  goal: IconGoalOutlineRegular,
+  agent: IconSendOutlineRegular,
+  team: IconAgentPresetOutlineRegular,
+  subagent: IconAgentPresetOutlineRegular,
+  github: IconBranchOutlineRegular,
+  webhook: IconGlobeOutlineRegular,
+  schedule: IconAlarmClockOutlineRegular,
+  job: IconQueueOutlineRegular,
+  plugin: IconCordisPluginOutlineRegular,
+}
 
 /** Render recorded trigger attribution above the whole-Turn disclosure. */
 export function TurnTriggerNodeView({ node, t }: ChatNodeViewProps<'turn-trigger'>) {
   const [open, setOpen] = useState(false)
   const bodyId = useId()
   const details = turnTriggerDetails(node.data)
-  const detailBody = contextBody(null, { content: node.data.content, source: node.data.source, t }).body
+  const TriggerIcon = TRIGGER_ICONS[details.icon]
   const date = new Date(node.data.time)
   const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
   return (
     <section className={css.root} data-turn-trigger>
       <button className={css.header} type="button" aria-expanded={open} aria-controls={bodyId} onClick={() => { setOpen(!open) }}>
-        <svg className={css.icon} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4M3 4 1 7m20-3 2 3" />
-        </svg>
+        <span className={css.icon} aria-hidden><TriggerIcon size={14} /></span>
         <span className={css.title}>{t(details.title)}</span>
-        {details.subject !== '' && <span className={css.subject}>· {details.subject}</span>}
         <time className={css.time} dateTime={date.toISOString()}>{time}</time>
-        <IconChevronDownOutlineRegular className={open ? css.openChevron : css.chevron} />
+        <IconChevronDownOutlineRegular size={12} className={open ? css.openChevron : css.chevron} />
       </button>
       {open && <div id={bodyId} className={css.body}>
-        <div className={css.metadata}>{details.producer}</div>
         <p className={css.explanation}>{t('message.trigger.explanation')}</p>
-        <div className={css.content}>{detailBody}</div>
+        <div className={css.content}><ContextContentBody content={node.data.content} t={t} /></div>
       </div>}
     </section>
   )

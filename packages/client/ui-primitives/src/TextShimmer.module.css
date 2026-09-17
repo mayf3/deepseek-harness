@@ -1,0 +1,33 @@
+.root {
+  position: relative;
+  display: inline-block;
+  background-image:
+    linear-gradient(
+      90deg,
+      transparent calc(50% - var(--dsh-text-shimmer-spread)),
+      var(--dsh-text-shimmer-color),
+      transparent calc(50% + var(--dsh-text-shimmer-spread))
+    ),
+    linear-gradient(var(--dsh-text-shimmer-base-color), var(--dsh-text-shimmer-base-color));
+  background-position: 100% center, 0 0;
+  background-repeat: no-repeat, no-repeat;
+  background-size: 250% 100%, auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: dsh-text-shimmer var(--dsh-text-shimmer-duration) linear infinite;
+}
+
+@keyframes dsh-text-shimmer {
+  to {
+    background-position: 0% center, 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root {
+    background-image: linear-gradient(var(--dsh-text-shimmer-base-color), var(--dsh-text-shimmer-base-color));
+    background-size: auto;
+    animation: none;
+  }
+}

@@ -11,16 +11,28 @@ function firstLine(text: string): string {
   return newline === -1 ? text : text.slice(0, newline)
 }
 
-function latestLine(text: string): string {
-  const visible = text.trimEnd()
-  const newline = visible.lastIndexOf('\n')
-  return newline === -1 ? visible : visible.slice(newline + 1)
+function latestCompletedParagraphFirstLine(text: string): string {
+  let summary = ''
+  let paragraphStart = 0
+  const separator = /\r?\n[\t ]*\r?\n/g
+  while (true) {
+    const nextParagraph = separator.exec(text)
+    const paragraphEnd = nextParagraph?.index ?? text.length
+    const newline = text.indexOf('\n', paragraphStart)
+    if (newline !== -1 && newline <= paragraphEnd) {
+      const candidate = text.slice(paragraphStart, newline).trim()
+      if (candidate !== '') summary = candidate
+    }
+    if (nextParagraph === null) return summary
+    paragraphStart = nextParagraph.index + nextParagraph[0].length
+  }
 }
 
 /**
  * Render one assistant reasoning block as the Think disclosure row. The
  * settled collapsed row shows only its title in Compact mode. Other modes
- * preview the first line. Streaming summaries omit double-asterisk markers;
+ * preview the first line. A streaming summary advances only after the first
+ * line of a paragraph completes. Summaries omit double-asterisk markers;
  * expanded content renders the complete Markdown with secondary typography.
  * @param props.compact - whether work details use Compact mode.
  * @param props.text - complete or streaming reasoning text.
@@ -31,8 +43,8 @@ function latestLine(text: string): string {
 export function ReasoningRow({ text, running, compact, t }: { compact: boolean; text: string; running: boolean; t: ChatViewSlotProps['t'] }) {
   const [expanded, setExpanded] = useState(false)
   const labels = useMemo(() => markdownLabels(t), [t])
-  const showSummary = running || !compact
-  const summary = (running ? latestLine(text) : firstLine(text)).replaceAll('**', '')
+  const summary = (running ? latestCompletedParagraphFirstLine(text) : firstLine(text)).replaceAll('**', '')
+  const showSummary = (running || !compact) && summary !== ''
 
   return (
     <div
@@ -56,7 +68,7 @@ export function ReasoningRow({ text, running, compact, t }: { compact: boolean; 
         collapsedContent={showSummary ? (
           <>
             <span className={css.separator} aria-hidden />
-            <span className={css.summary} data-follow-end={running || undefined}>
+            <span className={css.summary} data-streaming={running || undefined}>
               <span className={css.summaryText}>{summary}</span>
             </span>
           </>
