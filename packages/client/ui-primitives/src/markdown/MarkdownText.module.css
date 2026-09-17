@@ -425,6 +425,10 @@
   padding-left: 0;
 }
 
+.markdown.compact .tableScroll > table {
+  z-index: auto;
+}
+
 .compact :is(th, td) {
   padding: 4px 8px;
   font: inherit;

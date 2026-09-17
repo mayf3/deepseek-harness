@@ -69,6 +69,7 @@ function thinkingFixture(): string {
           '| First | Second | Third | Fourth | Fifth | Sixth |',
           '| --- | --- | --- | --- | --- | --- |',
           `| ${Array.from({ length: 6 }, (_, index) => `long_table_cell_${String(index)}_${'x'.repeat(40)}`).join(' | ')} |`,
+          ...Array.from({ length: 20 }, (_, row) => `| ${Array.from({ length: 6 }, (_, column) => `Row ${String(row + 1)} column ${String(column + 1)}`).join(' | ')} |`),
           '',
           `Inline math: $${'a+'.repeat(80)}z$.`,
           '',
@@ -187,7 +188,28 @@ describe('web e2e: secondary Thinking Markdown', () => {
     const answerSize = await page.getByRole('heading', { name: 'Main answer', exact: true })
       .evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize))
     expect(answerSize).toBeGreaterThan(Number.parseFloat(summaryStyle.fontSize))
+    await page.setViewportSize({ width: 1680, height: 1000 })
+    await page.locator('[data-conversation-scroll]').evaluate((host) => {
+      const row = host.querySelector('[data-variant="think"] tbody tr:nth-child(12)')
+      if (row === null) throw new Error('tall Thinking table row missing')
+      host.scrollTop += row.getBoundingClientRect().top - host.getBoundingClientRect().top
+    })
+    await expect.poll(() => toggle.evaluate((button) => {
+      const host = button.closest('[data-conversation-scroll]')
+      const table = button.closest('[data-variant="think"]')?.querySelector('table')
+      if (host === null || table === null || table === undefined) throw new Error('Thinking scroll context missing')
+      const buttonRect = button.getBoundingClientRect()
+      const tableRect = table.getBoundingClientRect()
+      const x = buttonRect.left + buttonRect.width / 2
+      const y = buttonRect.top + buttonRect.height / 2
+      return {
+        pinned: Math.abs(buttonRect.top - host.getBoundingClientRect().top) <= 1,
+        tableUnderHeader: tableRect.top < y && tableRect.bottom > y,
+        headerReceivesPointer: button.contains(document.elementFromPoint(x, y)),
+      }
+    }), { timeout: 5_000 }).toEqual({ pinned: true, tableUnderHeader: true, headerReceivesPointer: true })
     await toggle.click()
+    expect(await thinking.getAttribute('data-expanded')).toBeNull()
     expect(await summary.evaluate(element => element.getBoundingClientRect().height))
       .toBeLessThanOrEqual(Number.parseFloat(summaryStyle.lineHeight) + 1)
     expect(await summary.evaluate(element => getComputedStyle(element).textOverflow)).toBe('ellipsis')
