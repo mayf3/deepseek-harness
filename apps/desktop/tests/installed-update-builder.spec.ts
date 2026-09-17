@@ -35,7 +35,7 @@ async function fixture<T>(body: (manifest: string, source: string) => Promise<T>
     const source = join(root, 'app')
     await mkdir(join(source, 'lib'), { recursive: true })
     await mkdir(join(source, 'renderer'))
-    for (const file of ['main.js', 'preload.cjs', 'preload-app.cjs', 'preload-mandatory.cjs', 'preload-update-dialog.cjs']) {
+    for (const file of ['main.js', 'preload-app.cjs', 'preload-mandatory.cjs', 'preload-update-dialog.cjs']) {
       await writeFile(join(source, 'lib', file), '// inert fixture\n')
     }
     await writeFile(join(source, 'renderer', 'index.html'), '<p>fixture</p>')
@@ -102,7 +102,7 @@ describe('installed-update application inputs and builder configuration', () => 
 
   it('retains a failed preparation without a completion receipt and refuses an unrelated version', async () => {
     await fixture(async (manifest, source) => {
-      await rm(join(source, 'lib/preload.cjs'))
+      await rm(join(source, 'lib/preload-app.cjs'))
       await expect(prepareInstalledUpdateApplication(manifest, source)).rejects.toThrow('rebuild Desktop')
       expect((await readdir(join(manifest, '../application'))).sort()).toEqual(['failed.json', 'started.json'])
       await expect(createInstalledUpdateBuilderConfig(manifest, '9.0.0', environment)).rejects.toThrow('outside')

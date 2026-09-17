@@ -2,7 +2,7 @@ import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
 import { readFile, writeFile } from 'node:fs/promises'
-import { extname, join, normalize, resolve, sep } from 'node:path'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app,
@@ -19,7 +19,7 @@ import {
   type MenuItemConstructorOptions,
 } from 'electron'
 import { resolveDesktopPaths } from './paths.ts'
-import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
+import { DesktopProjectManager } from './project-manager.ts'
 import { DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
 import { installDesktopDirectoryPicker } from './directory-picker.ts'
 import { DesktopBackendController } from './backend-controller.ts'
@@ -78,13 +78,6 @@ protocol.registerSchemesAsPrivileged([{
     codeCache: true,
   },
 }])
-
-const MIME: Readonly<Record<string, string>> = {
-  '.css': 'text/css; charset=utf-8',
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.svg': 'image/svg+xml',
-}
 
 interface RuntimeResources {
   readonly nodeBin: string
@@ -189,26 +182,6 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
   return window
 }
 
-async function serveShellAsset(request: Request): Promise<Response> {
-  if (request.method !== 'GET' && request.method !== 'HEAD') return new Response(null, { status: 405 })
-  const root = resolve(app.getAppPath(), 'renderer')
-  const url = new URL(request.url)
-  let pathname: string
-  try {
-    pathname = decodeURIComponent(url.pathname)
-  } catch {
-    return new Response(null, { status: 400 })
-  }
-  const target = resolve(normalize(join(root, pathname)))
-  if (target !== root && !target.startsWith(root + sep)) return new Response(null, { status: 403 })
-  try {
-    const body = request.method === 'HEAD' ? null : await readFile(target)
-    return new Response(body, { headers: { 'content-type': MIME[extname(target)] ?? 'application/octet-stream' } })
-  } catch {
-    return new Response(null, { status: 404 })
-  }
-}
-
 async function main(): Promise<void> {
   const journalDirectory = process.env.DSH_DESKTOP_UPDATE_JOURNAL_DIR
   const updateJournal = journalDirectory === undefined ? undefined : new DesktopUpdateJournal(journalDirectory, app.getVersion())
@@ -221,7 +194,6 @@ async function main(): Promise<void> {
   let startup: Promise<void> | undefined
   let workspaceRecovery: Promise<void> | undefined
   let mainWindow: BrowserWindow | undefined
-  let pluginWindow: BrowserWindow | undefined
   let shellInstallerOwnsQuit = false
   let requireCleanStop = false
   let updateStoppedHost = false
@@ -236,7 +208,6 @@ async function main(): Promise<void> {
   const messages = locale.messages
   const updateDialog = new DesktopUpdateDialog(fileURLToPath(new URL('./preload-update-dialog.cjs', import.meta.url)), locale)
   const isMandatory = (): boolean => mandatoryPolicy?.state.blocking === true
-  const assertPolicyAllowsBusiness = (): void => { if (isMandatory()) throw new Error(messages.mandatoryTitle) }
   const ordinaryMessageBox = async (options: UpdateDialogOptions): Promise<Electron.MessageBoxReturnValue> => {
     const controller = new AbortController()
     ordinaryDialogs.add(controller)
@@ -247,7 +218,6 @@ async function main(): Promise<void> {
     finally { ordinaryDialogs.delete(controller) }
   }
   const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
-  const managementPreload = fileURLToPath(new URL('./preload.cjs', import.meta.url))
   const applicationUrl = `${SCHEME}://app/`
   let hostUrl: string | undefined
   let hostCookie: string | undefined
@@ -321,7 +291,6 @@ async function main(): Promise<void> {
     updateState = state
     mandatoryUI?.sync()
     for (const window of BrowserWindow.getAllWindows()) {
-      window.webContents.send(DESKTOP_IPC.updatesState, state)
       window.webContents.send(DESKTOP_IPC.updatesPresentation, presentDesktopUpdate(state))
     }
     if (state.phase === 'error' && state.failedOperation !== 'check') {
@@ -348,11 +317,6 @@ async function main(): Promise<void> {
       void showUpdateFailure(state).catch((error: unknown) => { console.error(error) })
     }
     return state
-  }
-
-  const hooks: DesktopProjectHooks = {
-    beforeChange: () => backend.stop(),
-    afterChange: () => backend.start(async () => {}),
   }
 
   stopForRecovery = () => backend.close()
@@ -442,7 +406,6 @@ async function main(): Promise<void> {
       }
       return forwardWebRequest(request, hostUrl, hostCookie)
     }
-    if (url.hostname === 'shell') return serveShellAsset(request)
     return Promise.resolve(new Response(null, { status: 404 }))
   })
 
@@ -477,62 +440,10 @@ async function main(): Promise<void> {
     callback({ requestHeaders: { ...headers, origin: target.origin, cookie: hostCookie, 'sec-fetch-site': 'same-origin' } })
   })
 
-  const mutate = async (event: IpcMainInvokeEvent, mutation: Parameters<DesktopProjectManager['mutate']>[0]): Promise<void> => {
-    assertDesktopSender(event, ['shell'])
-    assertPolicyAllowsBusiness()
-    if (updates.state.phase === 'installing') throw new Error(messages.updateInstalling)
-    await startup?.catch(() => undefined)
-    if (recovery.active) throw new Error(messages.fatalSummary)
-    assertPolicyAllowsBusiness()
-    try {
-      await manager.mutate(mutation, hooks)
-    } finally {
-      if (backend.state.phase === 'ready') {
-        navigation = undefined
-        await navigateMain(applicationUrl).catch(reportFatal)
-      }
-    }
-  }
-
-  ipcMain.handle(DESKTOP_IPC.localeGet, (event) => {
-    assertDesktopSender(event, ['shell'])
-    return currentDesktopLocale()
-  })
   // Only the main window may synchronize its palette with the native material.
   ipcMain.on(DESKTOP_IPC.nativeThemeSet, (event, source: unknown) => {
     if (mainWindow === undefined || event.sender !== mainWindow.webContents) return
     if (source === 'light' || source === 'dark' || source === 'system') nativeTheme.themeSource = source
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginsList, (event) => {
-    assertDesktopSender(event, ['shell'])
-    return manager.listPlugins()
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginsAdd, (event, spec: unknown) => {
-    if (typeof spec !== 'string') throw new Error('dsh desktop: plugin spec must be a string')
-    return mutate(event, { type: 'plugin-add', spec })
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginsRemove, (event, name: unknown) => {
-    if (typeof name !== 'string') throw new Error('dsh desktop: plugin name must be a string')
-    return mutate(event, { type: 'plugin-remove', name })
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginsUpdate, (event, name: unknown, version: unknown) => {
-    if (typeof name !== 'string' || typeof version !== 'string') {
-      throw new Error('dsh desktop: plugin name and version must be strings')
-    }
-    return mutate(event, { type: 'plugin-update', name, version })
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginsToggle, (event, name: unknown, enabled: unknown) => {
-    if (typeof name !== 'string' || typeof enabled !== 'boolean') throw new Error('dsh desktop: invalid plugin activation request')
-    return mutate(event, { type: 'plugin-toggle', name, enabled })
-  })
-  ipcMain.handle(DESKTOP_IPC.updatesCheck, async (event) => {
-    assertDesktopSender(event, ['shell'])
-    updateJournal?.action('check-requested')
-    return updateSchedule.check(true)
-  })
-  ipcMain.handle(DESKTOP_IPC.updatesInstall, async (event) => {
-    assertDesktopSender(event, ['shell'])
-    await openUpdatePrompt()
   })
   ipcMain.handle(DESKTOP_IPC.updatesStatus, (event) => {
     assertProductSender(event)
@@ -663,20 +574,6 @@ async function main(): Promise<void> {
     updates.dispose()
   })
 
-  const openPluginWindow = (): void => {
-    if (isMandatory()) { mandatoryUI?.focus(); return }
-    if (pluginWindow !== undefined && !pluginWindow.isDestroyed()) {
-      pluginWindow.focus()
-      return
-    }
-    pluginWindow = createWindow(managementPreload)
-    pluginWindow.setSize(900, 620)
-    pluginWindow.setTitle(currentDesktopLocale().messages.pluginWindowTitle)
-    pluginWindow.once('ready-to-show', () => { pluginWindow?.show() })
-    pluginWindow.once('closed', () => { pluginWindow = undefined })
-    void pluginWindow.loadURL(`${SCHEME}://shell/plugin-manager.html`)
-  }
-
   app.setAboutPanelOptions({
     applicationName: 'DeepSeek Harness',
     applicationVersion: app.getVersion(),
@@ -698,7 +595,6 @@ async function main(): Promise<void> {
   const applicationItems = (): MenuItemConstructorOptions[] => [
     { label: currentDesktopLocale().messages.aboutMenu, role: 'about' },
     { type: 'separator' },
-    { label: currentDesktopLocale().messages.pluginsMenu, accelerator: 'CmdOrCtrl+,', click: openPluginWindow },
     { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },
     { type: 'separator' },
     ...hideCommands,
@@ -762,14 +658,6 @@ async function main(): Promise<void> {
     const window = createWindow(appPreload, true, true)
     mainWindow = window
     window.on('focus', automaticCheck)
-    if (process.platform === 'win32') {
-      window.webContents.on('before-input-event', (event, input) => {
-        if (input.type === 'keyDown' && input.control && !input.alt && !input.shift && input.key === ',') {
-          event.preventDefault()
-          openPluginWindow()
-        }
-      })
-    }
     window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
     window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
       if (isMainFrame && code !== -3 && !quitting && !window.isDestroyed()) {
@@ -854,7 +742,6 @@ async function main(): Promise<void> {
       if (state.blocking) {
         for (const controller of ordinaryDialogs) controller.abort()
         if (!wasBlocking) updateDialog.cancel()
-        pluginWindow?.close()
       }
       mandatoryUI?.sync()
       if (state.blocking && !wasBlocking) void updateSchedule.check(false, true).catch((error: unknown) => { console.error(error) })

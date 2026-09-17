@@ -98,8 +98,10 @@ export function createElectronBuilderConfig(
       return true
     },
     files: [
-      'lib/*.js',
-      'lib/*.cjs',
+      'lib/main.js',
+      'lib/preload-app.cjs',
+      'lib/preload-mandatory.cjs',
+      'lib/preload-update-dialog.cjs',
       'renderer/**/*',
       'package.json',
       { from: buildPaths.dsh, to: 'dsh', filter: ['**/*'] },

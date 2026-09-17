@@ -33,7 +33,7 @@ export async function prepareInstalledUpdateApplication(manifest: string, source
       .filter(entry => /\.(?:js|cjs)$/u.test(entry.name))
     if (modules.some(entry => !entry.isFile())) throw new Error('installed update: application modules must be regular files')
     const paths = [...modules.map(entry => `lib/${entry.name}`), ...await applicationFiles(source, 'renderer')].sort()
-    for (const required of ['lib/main.js', 'lib/preload.cjs', 'lib/preload-app.cjs', 'lib/preload-mandatory.cjs', 'lib/preload-update-dialog.cjs']) {
+    for (const required of ['lib/main.js', 'lib/preload-app.cjs', 'lib/preload-mandatory.cjs', 'lib/preload-update-dialog.cjs']) {
       if (!paths.includes(required)) throw new Error('installed update: rebuild Desktop before freezing application files')
     }
     const files: ApplicationFile[] = []

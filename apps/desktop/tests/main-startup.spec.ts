@@ -146,7 +146,6 @@ const harness = await vi.hoisted(async () => {
     dialog: { showOpenDialog: vi.fn(), showErrorBox: vi.fn(), showMessageBox: vi.fn() },
     openExternal: vi.fn(),
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
-    mutateFailure: vi.fn<() => void>(),
     disableAllPlugins: vi.fn(async () => {
       pluginsEnabled = false
       return 'desktop-test-profile/cordis.patch.yml.bak-1789555200000'
@@ -226,19 +225,6 @@ vi.mock('../src/project-manager.ts', () => ({
   DesktopProjectManager: class {
     readonly applyRelease = harness.applyRelease
     disableAllPlugins = harness.disableAllPlugins
-    async mutate(_mutation: unknown, hooks: { beforeChange(): Promise<void>; afterChange(): Promise<void> }) {
-      await hooks.beforeChange()
-      try {
-        harness.mutateFailure()
-        harness.pluginsEnabled = false
-      } catch (error) {
-        try { await hooks.afterChange() } catch (restartError) {
-          throw new AggregateError([error, restartError], 'Desktop package operation and backend restart failed')
-        }
-        throw error
-      }
-      await hooks.afterChange()
-    }
 
   },
 }))
@@ -359,12 +345,12 @@ describe('desktop main startup', () => {
       expect(harness.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
         message: en.policyLoginRequired, buttons: [en.policyLogin, en.later], cancelId: 1,
       }))
-      checks.push(Promise.resolve(invoke(DESKTOP_IPC.updatesInstall)))
+      checks.push(Promise.resolve(invoke(DESKTOP_IPC.updatesOpen, 'app')))
       expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
       expect(testAuth.login).not.toHaveBeenCalled()
       explanation.resolve({ response: 0 })
       await entered.promise
-      checks.push(Promise.resolve(invoke(DESKTOP_IPC.updatesInstall)))
+      checks.push(Promise.resolve(invoke(DESKTOP_IPC.updatesOpen, 'app')))
       expect(testAuth.focus).toHaveBeenCalled()
       expect(testAuth.login).toHaveBeenCalledOnce()
       expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
@@ -463,7 +449,9 @@ describe('desktop main startup', () => {
       vi.stubEnv('DSH_DESKTOP_UPDATE_JOURNAL_DIR', directory)
       await readyForUpdate()
       harness.publishUpdate({ phase: 'error', failedOperation: 'download', version: '1.2.3', message: 'ENOSPC secret-url' })
-      await invoke(DESKTOP_IPC.updatesCheck)
+      const checkUpdates = applicationMenuItems().find(item => item.label === en.checkUpdatesMenu)!.click as () => void
+      checkUpdates()
+      await vi.advanceTimersByTimeAsync(0)
       for (const host of harness.hosts) host.exited.resolve()
       harness.app.quit()
       await harness.quitCompleted.promise
@@ -538,7 +526,7 @@ describe('desktop main startup', () => {
     listener(event, {}, '#fff', '#000')
     expect(window.setTitleBarOverlay).toHaveBeenLastCalledWith({ color: '#fff', symbolColor: '#000' })
     window.setTitleBarOverlay.mockClear()
-    window.webContents.mainFrame.url = 'dsh-app://shell/plugin-manager.html'
+    window.webContents.mainFrame.url = 'dsh-app://unowned/index.html'
     listener(event, 'zh-CN', '#fff', '#000')
     expect(window.setTitleBarOverlay).not.toHaveBeenCalled()
     expect(harness.menu.setApplicationMenu).toHaveBeenCalledExactlyOnceWith(null)
@@ -559,7 +547,7 @@ describe('desktop main startup', () => {
     expect(() => handler(event, 'application', NaN, 34)).toThrow('invalid popup request')
     const application = handler(event, 'application', 48, 34)
     expect(harness.menu.buildFromTemplate.mock.lastCall![0].map(item => item.label ?? item.type)).toEqual([
-      '关于 DeepSeek Harness', 'separator', '桌面插件…', '检查更新…', 'separator', '退出',
+      '关于 DeepSeek Harness', 'separator', '检查更新…', 'separator', '退出',
     ])
     expect(harness.popup.mock.lastCall![0]).toMatchObject({ window, x: 48, y: 34 })
     expect(harness.popup.mock.lastCall![0].callback).toBeTypeOf('function')
@@ -579,11 +567,6 @@ describe('desktop main startup', () => {
     }
     harness.popup.mock.lastCall![0].callback!()
     await edit
-    const preventDefault = vi.fn()
-    window.webContents.emit('before-input-event', { preventDefault }, { type: 'keyDown', control: true, key: ',' })
-    expect(preventDefault).toHaveBeenCalledOnce()
-    expect(harness.windows[1]!.urls).toEqual(['dsh-app://shell/plugin-manager.html'])
-    expect(harness.windows[1]!.options).not.toHaveProperty('titleBarStyle')
   })
 
   it.each(['darwin', 'linux'] as const)('adds the standard macOS window commands only on macOS (%s)', async (platform) => {
@@ -601,8 +584,8 @@ describe('desktop main startup', () => {
       : ['Application', 'editMenu'])
     const application = template[0]!.submenu as MenuItemConstructorOptions[]
     expect(application.map(describeItem)).toEqual(platform === 'darwin'
-      ? ['about', 'separator', en.pluginsMenu, en.checkUpdatesMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
-      : ['about', 'separator', en.pluginsMenu, en.checkUpdatesMenu, 'separator', 'quit'])
+      ? ['about', 'separator', en.checkUpdatesMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
+      : ['about', 'separator', en.checkUpdatesMenu, 'separator', 'quit'])
     expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
   })
 
@@ -749,7 +732,7 @@ describe('desktop main startup', () => {
     await vi.advanceTimersByTimeAsync(1)
     expect(harness.updateCheck).toHaveBeenCalledTimes(2)
     harness.updateCheck.mockResolvedValue({ phase: 'idle' })
-    await invoke(DESKTOP_IPC.updatesCheck)
+    await invoke(DESKTOP_IPC.updatesOpen, 'app')
     expect(harness.updateCheck).toHaveBeenLastCalledWith(true)
     await vi.advanceTimersByTimeAsync(1000)
     expect(harness.updateCheck).toHaveBeenCalledTimes(4)
@@ -794,8 +777,6 @@ describe('desktop main startup', () => {
     expect(harness.updateInstall).not.toHaveBeenCalled()
     expect(host.stop).not.toHaveBeenCalled()
     expect(harness.updateDownload).not.toHaveBeenCalled()
-    await expect(invoke(DESKTOP_IPC.pluginsAdd, 'shell', 'example-plugin')).rejects.toThrow('Update required')
-    await expect(invoke(DESKTOP_IPC.pluginsToggle, 'shell', 'example-plugin', true)).rejects.toThrow('Update required')
     await invoke(DESKTOP_IPC.updatesOpen, 'app')
     expect(harness.dialog.showMessageBox).not.toHaveBeenCalled()
     request.mockImplementationOnce(async () => Response.json({ code: 500 }, { status: 503 }))
@@ -1215,46 +1196,6 @@ describe('desktop main startup', () => {
     expect((harness.dialog.showMessageBox.mock.calls[0]![0] as MessageBoxOptions).detail).toContain('Desktop page failed to load')
   })
 
-  it('returns package-operation failures locally without opening fatal recovery', async () => {
-    await import('../src/main.ts')
-    await harness.preparing.promise
-    harness.prepared.resolve()
-    await harness.hostStarted.promise
-    const host = harness.hosts[0]!
-    host.ready.resolve()
-    await Promise.resolve(invoke(DESKTOP_IPC.boot))
-    harness.mutateFailure.mockImplementationOnce(() => { throw new Error('package write failed') })
-    host.exited.resolve()
-    const nextStarted = harness.nextHostStart()
-    const failure = expect(invoke(DESKTOP_IPC.pluginsAdd, 'shell', 'example-plugin')).rejects.toThrow('package write failed')
-    await nextStarted
-    harness.hosts[1]!.ready.resolve()
-    await failure
-    expect(harness.dialog.showMessageBox).not.toHaveBeenCalled()
-    expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/', 'dsh-app://app/'])
-  })
-
-  it('opens fatal recovery when the Host cannot restart after a package change', async () => {
-    await import('../src/main.ts')
-    await harness.preparing.promise
-    harness.prepared.resolve()
-    await harness.hostStarted.promise
-    const host = harness.hosts[0]!
-    host.ready.resolve()
-    await Promise.resolve(invoke(DESKTOP_IPC.boot))
-    host.exited.resolve()
-    const nextStarted = harness.nextHostStart()
-    const failure = expect(invoke(DESKTOP_IPC.pluginsAdd, 'shell', 'example-plugin')).rejects.toThrow('new Host failed')
-    await nextStarted
-    const replacement = harness.hosts[1]!
-    replacement.exited.resolve()
-    replacement.ready.reject(new Error('new Host failed'))
-    await failure
-    expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
-    expect((harness.dialog.showMessageBox.mock.calls[0]![0] as MessageBoxOptions).detail).toContain('new Host failed')
-    expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
-  })
-
   it('offers all recovery choices when resources fail before the Host starts', async () => {
     await import('../src/main.ts')
     await harness.preparing.promise
@@ -1373,7 +1314,7 @@ describe('desktop main startup', () => {
     expect(harness.dialog.showErrorBox).not.toHaveBeenCalled()
   })
 
-  it('keeps startup errors in the existing window without a shell retry handler', async () => {
+  it('keeps startup errors in the existing window without a retry handler', async () => {
     await import('../src/main.ts')
     await harness.preparing.promise
     harness.prepared.resolve()
@@ -1385,7 +1326,6 @@ describe('desktop main startup', () => {
     expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
     expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
     expect(harness.handlers.has('dsh-desktop:backend-retry')).toBe(false)
-    await expect(invoke(DESKTOP_IPC.pluginsAdd, 'shell', 'example-plugin')).rejects.toThrow('The application could not start or stopped unexpectedly.')
     expect(harness.hosts).toHaveLength(1)
   })
 
