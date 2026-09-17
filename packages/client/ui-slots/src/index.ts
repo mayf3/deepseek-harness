@@ -100,6 +100,9 @@ export type SlotKind = 'single' | 'list' | 'keyed' | 'chain'
 /** Slot data context: global, current-session-optional, or strict session-bound. */
 export type SlotScope = 'root' | 'session-maybe' | 'session'
 
+/** Declaration-merged explicit target types for non-root scope Providers. */
+export interface SlotScopeTargetMap {}
+
 /**
  * One SlotMap entry: kind/scope axes plus the optional owner-supplied props
  * share (`owner` is what the parent passes at its renderSlot call site; the
@@ -317,16 +320,21 @@ export type MatchedShare<E extends SlotEntryDef, M> =
 
 /** Props of the standard-kit SessionProvider seat. */
 export interface SessionAreaProps {
+  /**
+   * Explicit Session-scope target. Omit this property to inherit the surrounding
+   * binding; pass `undefined` to establish an explicitly absent binding.
+   */
+  readonly session?: SlotScopeTargetMap[keyof SlotScopeTargetMap & 'session'] | undefined
   /** No-session body (also covers a current id whose session cannot be resolved). */
   empty?: (() => ReactNode) | undefined
-  /** Session body; the framework remounts it per session identity. */
+  /** Session body; scoped entries apply their declared remount semantics. */
   children: ReactNode
 }
 
 /**
  * Framework-wired session area component. `ui-session` supplies the current
  * Controller binding through the renderer scope adapter; entries that declare
- * session-scoped children receive this component without importing it.
+ * `session` or `session-maybe` children receive this component without importing it.
  */
 export type SessionProviderComponent = (props: SessionAreaProps) => ReactNode
 
@@ -361,12 +369,9 @@ export type PropsRenderSlots<S extends keyof SlotMap & string> = {
    * @returns rendered node(s).
    */
   renderSlotChain: <K extends ChainKeysOf<S>>(key: K, owner: OwnerOf<K>, opts?: ChainRenderOpts) => ReactNode
-}) & ('session' extends ScopeOf<S>
-  // The SessionProvider seat rides the same source as renderSlot: declaring
-  // a session-scope child is what makes a session area exist, so the seat
-  // derives from the children key set's scopes (renderer injects the value).
-  ? { SessionProvider: SessionProviderComponent }
-  : object)
+}) & ([Extract<ScopeOf<S>, 'session' | 'session-maybe'>] extends [never]
+  ? object
+  : { SessionProvider: SessionProviderComponent })
 
 /**
  * Registration-position component shape: the bare call signature, so composed

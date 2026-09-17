@@ -25,6 +25,10 @@ export interface PackageOperationContext {
 export interface PackageOperationOptions {
   /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. Defaults to `pnpm`. */
   command?: string
+  /** Prefix arguments for an application-owned executable. */
+  args?: readonly string[]
+  /** Application runtime environment, applied only to this package operation. */
+  env?: Readonly<Record<string, string>>
   /** CLI inherits authentication and terminal descriptors; service scrubs secrets and captures output. */
   execution: 'cli' | 'service'
   signal?: AbortSignal
@@ -111,8 +115,8 @@ export async function runProfilePnpm(
   let output = Buffer.alloc(0)
   let truncated = false
   const cancellation = new AbortController()
-  const child = execa(options.command ?? 'pnpm', args.map(arg => anchorPathSpec(arg, context.cwd)), {
-    cwd: dir, env: options.execution === 'cli' ? process.env : scrubbedParentEnv(), extendEnv: false, reject: false,
+  const child = execa(options.command ?? 'pnpm', [...options.args ?? [], ...args.map(arg => anchorPathSpec(arg, context.cwd))], {
+    cwd: dir, env: { ...(options.execution === 'cli' ? process.env : scrubbedParentEnv()), ...options.env }, extendEnv: false, reject: false,
     stdout: options.execution === 'cli' ? 'inherit' : 'pipe',
     stderr: options.execution === 'cli' ? 'inherit' : 'pipe',
     buffer: false, stdin: options.execution === 'cli' ? 'inherit' : 'ignore', cancelSignal: options.signal === undefined
@@ -197,6 +201,10 @@ export interface PackageViewResult {
 export interface PackageViewOptions {
   /** The pnpm executable name or path. Defaults to `pnpm`. */
   command?: string
+  /** Prefix arguments for an application-owned executable. */
+  args?: readonly string[]
+  /** Application runtime environment, applied only to this package operation. */
+  env?: Readonly<Record<string, string>>
   /** Ends the lookup early; the caller's signal, when it has one. */
   signal?: AbortSignal
   /** Bound on the lookup, in milliseconds. */
@@ -212,8 +220,8 @@ export interface PackageViewOptions {
  * @returns pnpm's exit, output, and how the lookup ended.
  */
 export async function viewProfilePackage(dir: string, spec: string, options: PackageViewOptions): Promise<PackageViewResult> {
-  const result = await execa(options.command ?? 'pnpm', ['view', spec, 'name', 'version', 'description', 'dsh', '--json'], {
-    cwd: dir, env: scrubbedParentEnv(), extendEnv: false, reject: false, stdin: 'ignore',
+  const result = await execa(options.command ?? 'pnpm', [...options.args ?? [], 'view', spec, 'name', 'version', 'description', 'dsh', '--json'], {
+    cwd: dir, env: { ...scrubbedParentEnv(), ...options.env }, extendEnv: false, reject: false, stdin: 'ignore',
     timeout: options.timeoutMs, ...options.signal === undefined ? {} : { cancelSignal: options.signal },
   })
   const cause = result.exitCode === undefined && !result.timedOut && !result.isCanceled

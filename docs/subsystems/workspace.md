@@ -214,7 +214,7 @@ Typed Remote control of transient Session-owned terminal processes.
 @Remote list(sessionId: SessionId): WebTerminalInfo[]
 
 /**
- * Allocate an interactive shell once for a caller-generated identity.
+ * Allocate a user shell once for a caller-generated identity, without Agent sandbox or approval restrictions.
  * @param agent - Session owner supplied by the Gateway.
  * @param request - initial dimensions and idempotency identity.
  * @param signal - allocation cancellation; committed terminals survive disconnection.

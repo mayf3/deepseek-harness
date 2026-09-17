@@ -1,7 +1,6 @@
 /** Strict per-session header/body content inserted into the resident conversation layout. */
 
 import clsx from 'clsx'
-import { isDarwinDesktop } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -55,8 +54,7 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
 /**
  * Renders Session header chrome above the resident conversation scrollport.
  * @param props - Strict Session store, view ledger, navigation, render, and locale shares.
- * @returns the header: title and tabs when visible, and on macOS desktop the
- *   always-mounted leading seat even while blank-session chrome hides.
+ * @returns Session navigation controls, with title and tabs after conversation starts.
  */
 export function ConversationSessionHeader({
   sessionId, useSession, useSessions, useConversation, useConversationViews, useStore,
@@ -69,16 +67,8 @@ export function ConversationSessionHeader({
   const session = useSession(s => s)
   const conversation = useConversation(s => s)
   const hideChrome = session.blank && conversationPhase(session, conversation) === 'blank'
-  // macOS desktop keeps the leading seat mounted through the blank state (the
-  // hidden sidebar's reopen control lives there), so the header may not leave
-  // the layout or the accessibility tree while its chrome hides.
-  const darwinDesktop = isDarwinDesktop()
-
   return (
-    <header
-      className={clsx(css.header, hideChrome && css.headerHidden)}
-      aria-hidden={(hideChrome && !darwinDesktop) || undefined}
-    >
+    <header className={clsx(css.header, hideChrome && css.headerBlank)}>
       <div className={css.titleRow}>
         <div className={css.headerLeading} data-conversation-header-leading="">
           {renderSlot('conversation.session.header.leading', {})}
@@ -142,11 +132,11 @@ export function ConversationSessionHeader({
             <div className={css.headerUtilities}>
               {renderSlot('conversation.session.header.utilities', {})}
             </div>
-            <div className={css.headerCorner} data-conversation-header-corner="">
-              {renderSlot('conversation.session.header.corner', {})}
-            </div>
           </>
         )}
+        <div className={css.headerCorner} data-conversation-header-corner="">
+          {renderSlot('conversation.session.header.corner', {})}
+        </div>
       </div>
       {!hideChrome && tabs.length > 1 && (
         <div className={css.tabs} role="tablist">

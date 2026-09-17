@@ -4,6 +4,7 @@ import importlib.metadata
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 import tempfile
 
@@ -83,6 +84,14 @@ def main():
         finally:
             reopened_workbook.close()
         assert pandas.read_excel(root / "workbook.xlsx")["Value"].iloc[0] == 42
+        for file, arguments in [
+            ("document.docx", ["--contains", "Office 文档"]),
+            ("presentation.pptx", ["--contains", "Office 演示", "--count", "1"]),
+            ("workbook.xlsx", ["--contains", "Value", "--count", "1"]),
+        ]:
+            checked = subprocess.run([sys.executable, "-I", "-B", sys.argv[3], str(root / file), *arguments],
+                                     check=False, capture_output=True, text=True, timeout=30)
+            assert checked.returncode == 0 and json.loads(checked.stdout)["verdict"] == "pass", checked.stdout + checked.stderr
     print("Office runtime versions and document round trips passed.")
 
 

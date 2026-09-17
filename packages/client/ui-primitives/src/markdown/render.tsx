@@ -542,7 +542,7 @@ function renderSafeLink(href: string, children: ReactNode[], key: Key, glyph = t
       href={safeHref}
       {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
     >
-      {glyph && <LinkIcon kind="url" className={css.linkIcon} />}
+      {glyph && <LinkIcon kind="url" href={safeHref} className={css.linkIcon} />}
       {children}
     </a>
   )
@@ -557,7 +557,7 @@ function renderAnchor(url: string, children: ReactNode[], key: Key, glyph = true
         key={key}
         type="button"
         className={css.fileMention}
-        title={url}
+        title={file.path}
         onClick={() => { openFile(file.path, file.line === undefined ? undefined : { line: file.line }) }}
       >
         {glyph && <LinkIcon kind={classifyLinkPath(file.path)} className={css.linkIcon} />}

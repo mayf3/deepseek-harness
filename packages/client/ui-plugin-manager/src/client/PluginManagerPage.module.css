@@ -538,10 +538,17 @@
 }
 
 .guideExample {
-  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
   overflow-wrap: anywhere;
+}
+
+.guideExample code {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.guideExampleLabel {
+  color: var(--dsw-alias-label-tertiary);
 }
 
 /* What the check refused, under the field. */
@@ -910,12 +917,6 @@
 
 .versionTag {
   flex: none;
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1046,6 +1047,34 @@
   line-height: 16px;
   color: var(--dsw-alias-label-tertiary);
   overflow-wrap: anywhere;
+}
+
+/* A row with a configuration page: its name opens the page, the arrow says so. */
+.rowOpen {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rowOpen:hover .rowId {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.rowOpenIcon {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.rowOpen:hover .rowOpenIcon {
+  color: var(--dsw-alias-label-primary);
 }
 
 .rowState {

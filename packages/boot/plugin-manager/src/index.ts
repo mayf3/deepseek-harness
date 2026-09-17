@@ -266,7 +266,8 @@ export class PluginManager extends TypertRemoteService {
       case 'registry': {
         if (known.has(parsed.name)) return refused('already-installed', `${parsed.name} is already installed`)
         const view = await viewProfilePackage(this.profile.dir, spec.trim(), {
-          command: this.pnpmCommand, timeoutMs: this.inspectTimeoutMs, ...signal === undefined ? {} : { signal },
+          ...this.profile.packageManager ?? { command: this.pnpmCommand },
+          timeoutMs: this.inspectTimeoutMs, ...signal === undefined ? {} : { signal },
         })
         const log = `${view.stderr}${view.cause === undefined ? '' : `${messageOf(view.cause)}\n`}`.trim()
         if (view.exitCode !== 0 || view.cause !== undefined || view.timedOut) {
@@ -476,7 +477,7 @@ export class PluginManager extends TypertRemoteService {
     const cwd = this.profile.dir
     const identity = requestId === undefined ? {} : { requestId }
     const task = runProfilePnpm({ ...this.profile, profile: this.profile.name }, args, {
-      execution: 'service', command: this.pnpmCommand,
+      execution: 'service', ...this.profile.packageManager ?? { command: this.pnpmCommand },
       signal: signal === undefined ? this.abort.signal : AbortSignal.any([this.abort.signal, signal]),
       outputBytes: this.outputBytes, activateNewBundles: false,
       onOutput: (text, stream) => {
