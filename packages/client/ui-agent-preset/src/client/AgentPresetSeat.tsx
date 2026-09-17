@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   IconAgentPresetOutlineRegular, IconChevronDownOutlineRegular, IconWarningOutlineRegular, Menu, Toast,
@@ -27,6 +27,8 @@ import css from './AgentPresetSeat.module.css'
 /** Registration-side business face for the hero chip. */
 export interface AgentPresetSeatInjected {
   hooks: {
+    /** Shared developer-tool visibility. */
+    developerTools: ObservableSnapshot<boolean>
     /** Seat snapshot bound by the renderer as useAgentPresetSeat. */
     agentPresetSeat: SnapshotStore<AgentPresetSeatState>
   }
@@ -83,8 +85,9 @@ export type AgentPresetSeatProps =
  * @returns the chip, or null when the deployment composes no presets.
  */
 export function AgentPresetSeat({
-  sessionId, useSessionRetainInfo, load, select, introduced, useAgentPresetSeat, t,
+  sessionId, useSessionRetainInfo, load, select, introduced, useAgentPresetSeat, useDeveloperTools, t,
 }: AgentPresetSeatProps) {
+  const developerTools = useDeveloperTools(value => value)
   const state = useAgentPresetSeat(snapshot => snapshot)
   const main = useSessionRetainInfo(info => sessionId === undefined
     || (info?.retainedBy.mainView ?? 0) > 0)
@@ -93,8 +96,9 @@ export function AgentPresetSeat({
   // it rather than leaving the first one silently in place.
   const toastSeq = useRef(0)
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
-  const pickerVisible = useRef(state.showPicker)
-  pickerVisible.current = state.showPicker
+  const visible = developerTools && state.showPicker
+  const pickerVisible = useRef(visible)
+  pickerVisible.current = visible
 
   useEffect(() => {
     void load()
@@ -104,10 +108,10 @@ export function AgentPresetSeat({
   // state explicitly; otherwise an external off/on edit can revive an old
   // menu or refusal banner.
   useEffect(() => {
-    if (state.showPicker) return
+    if (visible) return
     setOpen(false)
     setToast(null)
-  }, [state.showPicker])
+  }, [visible])
 
   const chosen = state.options.find(option => option.id === state.current)
   const chosenText = chosen === undefined ? undefined : presetDisplayText(chosen, t)
@@ -136,7 +140,7 @@ export function AgentPresetSeat({
 
   // Nothing to choose between: the deployment composes no presets and every
   // session shares the host composition.
-  if (!main || !state.showPicker || !ready) return null
+  if (!main || !visible || !ready) return null
 
   // One wrapper span: the chip is a flex row with a gap, so loose character
   // spans would each pick up the gap between them.

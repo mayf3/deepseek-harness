@@ -21,6 +21,7 @@ const COLLAPSED_PRESENTED_COUNT = 4
 /** Summary reads, native-open callbacks, and shared gesture status supplied by the plugin. */
 export interface DeliverablesInjected {
   hooks: {
+    developerTools: ObservableSnapshot<boolean>
     presentedOpen: ObservableSnapshot<ReturnType<PresentedOpenController['state']['getSnapshot']>>
     presentedHost: ObservableSnapshot<ReturnType<PresentedOpenController['host']['getSnapshot']>>
     changesSummary: ObservableSnapshot<ReturnType<ChangesSummaryStore['state']['getSnapshot']>>
@@ -63,15 +64,16 @@ export function DeliverablesTail(props: PropsRuntime<'conversation.chat.turnTail
  */
 export function Deliverables({
   matched, openFile, t, sessionId, useSessions, openPresented, openChangesReview, usePresentedOpen, usePresentedHost,
-  useChangesSummary, reloadPresentedHost, loadChangesSummary,
+  useChangesSummary, reloadPresentedHost, loadChangesSummary, useDeveloperTools,
 }: Pick<TurnTailOwnerProps, 'openFile'> & {
   matched: DeliverablesMatch
 } & PropsLocale<typeof NS> & Pick<SessionStandardProps, 'sessionId'> & Pick<GlobalStandardProps, 'useSessions'> & InjectFace<DeliverablesInjected>) {
   const [expanded, setExpanded] = useState(false)
+  const developerTools = useDeveloperTools(value => value)
   const cwd = useSessions(state => state.byId[sessionId]?.cwd)
   const states = usePresentedOpen(value => value)
   const host = usePresentedHost(value => value)
-  const announced = matched.changes
+  const announced = developerTools ? matched.changes : null
   const summary = useChangesSummary(value => announced === null ? undefined : value[changesSummaryUrl(sessionId, announced.seq)])
   useEffect(() => {
     if (announced !== null && summary === undefined) void loadChangesSummary(sessionId, announced.seq)

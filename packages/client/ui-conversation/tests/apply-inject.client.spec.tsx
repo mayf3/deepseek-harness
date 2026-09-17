@@ -47,7 +47,7 @@ async function bench() {
     if (upload === undefined) throw new Error('test file upload has no Session fixture')
     return upload(...args)
   }
-  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope, developerTools: { enabled: { getSnapshot: () => true, subscribe: () => () => {} } } } as never)
   const connectWorkspace = vi.fn(async () => ROOT)
   const references = new Map<SessionId, SessionReference>()
   const opened = vi.fn<(id: SessionId) => void>()

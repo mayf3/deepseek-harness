@@ -158,6 +158,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     for (const entry of slots.entries('conversation.view')) {
       /* v8 ignore next -- list registration validates id at load. */
       if (entry.options.id === undefined) continue
+      if (!ctx.settingsScope.developerTools.enabled.getSnapshot() && entry.options.id !== 'chat') continue
       tabs.push({
         id: entry.options.id,
         label: resolveSlotLabel(entry.options.label) ?? entry.options.id,
@@ -195,7 +196,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   ctx.effect(() => {
     const disposeViews = slots.subscribe('conversation.view', refreshViews)
     const disposeLocale = ctx.locale.subscribe(refreshViews)
+    const disposeDeveloperTools = ctx.settingsScope.developerTools.enabled.subscribe(refreshViews)
     return () => {
+      disposeDeveloperTools()
       disposeLocale()
       disposeViews()
     }
@@ -297,6 +300,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       hooks: { conversationViews },
       bindDraftMirror: write => inputHub.shell(sessionId).bindMirror(write),
       openView: (view, focus) => {
+        if (!viewTabs().some(tab => tab.id === view)) return
         activateView(sessionId, view)
         actions.openView(view, focus)
       },

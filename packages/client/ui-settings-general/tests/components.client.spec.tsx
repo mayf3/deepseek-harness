@@ -8,6 +8,8 @@ import { GeneralSection } from '../src/client/GeneralSection.tsx'
 import { CloseLabel, HeaderContent, TriggerContent } from '../src/client/chrome.tsx'
 import type { TriggerContentProps } from '../src/client/chrome.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
+import { DeveloperToolsRow } from '../src/client/DeveloperToolsRow.tsx'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { SettingsDocumentStore } from '../src/client/settings-document-store.ts'
 
@@ -69,6 +71,23 @@ describe('Desktop collapsed update badge', () => {
       expect(screen.queryByRole('img')).toBeNull()
     }
   })
+})
+
+it('toggles developer tools using the accepted setting and disables duplicate writes', async () => {
+  const state = createSnapshotStore(false)
+  let finish!: () => void
+  const setEnabled = vi.fn((enabled: boolean) => new Promise<void>((resolve) => {
+    finish = () => { state.set(enabled); resolve() }
+  }))
+  render(<DeveloperToolsRow {...kit} t={t} useDeveloperTools={bindSnapshotSelector(state)} setEnabled={setEnabled} />)
+  const toggle = screen.getByRole('switch', { name: 'Developer tools' })
+  expect(toggle.getAttribute('aria-checked')).toBe('false')
+  fireEvent.click(toggle)
+  expect(setEnabled).toHaveBeenCalledWith(true)
+  expect(toggle.hasAttribute('disabled')).toBe(true)
+  finish()
+  await waitFor(() => { expect(toggle.getAttribute('aria-checked')).toBe('true') })
+  expect(toggle.hasAttribute('disabled')).toBe(false)
 })
 
 describe('chrome content', () => {

@@ -31,6 +31,8 @@ In Desktop, the account-row update control shows availability, progress, verific
 
 ### The General section
 
+The Developer tools switch controls the shared preference described by [ui-settings](../ui-settings/README.md#use-this-package). It is available in both Web and desktop, follows accepted changes immediately, and disables duplicate input while a write settles.
+
 The General section holds rows registered into `settings.general.item` by feature packages — it has no built-in rows. Feature plugins own the row copy and behavior; the shell only provides the section and its slot. The Appearance row, for example, lives in ui-theme.
 
 ### Opening the configuration file

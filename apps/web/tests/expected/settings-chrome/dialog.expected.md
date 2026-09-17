@@ -21,5 +21,7 @@
   - button "减小字号"
   - text: px 对话显示 控制已完成轮次的过程内容
   - button "紧凑"
+  - text: 开发者工具 显示用于调试和排查问题的工具与信息
+  - switch "开发者工具" [checked]
   - text: 繁忙时的发送行为 智能体运行时 Enter 键和发送按钮的行为；Cmd/Ctrl+Enter 使用另一行为
   - button "排队发送"

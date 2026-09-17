@@ -301,6 +301,8 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
+  /** Diagnostic scenarios enable developer tools by default; false leaves the shipped default untouched. */
+  developerTools?: boolean
   /** Profile resolver backend used by this test Host; defaults to runtime coverage. */
   profileResolutionMode?: Extract<ProfileResolutionMode, 'dual' | 'runtime'>
   /** Enable the real Open In rows with deterministic launch-environment facts. */
@@ -787,6 +789,9 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     }
     await ctx.loader.await()
     await auditStartupEntries(ctx, 'web e2e scaffold')
+    if (options.developerTools !== false) {
+      await ctx.settings.update('ui-developer-tools', { enabled: true })
+    }
     if (options.welcomeNoticePending !== true) {
       await ctx.settings.mutate(WELCOME_NOTICE_SETTINGS_NAMESPACE, [{
         op: 'set', path: [WELCOME_NOTICE_ACK_FIELD], value: WELCOME_NOTICE_VERSION,

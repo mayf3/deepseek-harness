@@ -2,10 +2,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { DocumentPreviewProps } from '../document/contract.ts'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
 import { createHtmlDocument } from './bootstrap.ts'
+import { createBasicHtmlDocument } from './basic-document.ts'
 import { packHtml } from './pack.ts'
 import type { ReadHtmlRelative } from './pack.ts'
 import { createReadHtmlRelative } from './read-relative.ts'
@@ -14,7 +16,11 @@ import type {} from './locales.ts'
 import css from './HtmlBody.module.css'
 
 /** Standard document inputs plus this renderer's dictionary. */
-export type HtmlBodyProps = DocumentPreviewProps & PropsLocale<'documentHtml'> & {
+export type HtmlBodyProps = DocumentPreviewProps & PropsLocale<'documentHtml'> & InjectFace<HtmlBodyInjected>
+
+/** Related-file reader and accepted preview mode supplied by the plugin. */
+export interface HtmlBodyInjected {
+  hooks: { developerTools: ObservableSnapshot<boolean> }
   /** Ordinary Remote callback bound by this renderer's Slot inject. */
   readonly readRelated: ReadHtmlRelated
 }
@@ -61,12 +67,28 @@ function HtmlFrame({ data, readRelative, t }: FrameInput & { t: HtmlBodyProps['t
  * @param props - document bytes, hooks, related-file reader and locale.
  * @returns an isolated HTML document, or nothing for text delivery.
  */
-export function HtmlBody({ content, resourceAddress, readRelated, useTabInfo, t }: HtmlBodyProps): ReactNode {
+export function HtmlBody({ content, resourceAddress, readRelated, useTabInfo, useDeveloperTools, t }: HtmlBodyProps): ReactNode {
+  const developerTools = useDeveloperTools(value => value)
   const { tab } = useTabInfo()
   const readRelative = useMemo(
     () => createReadHtmlRelative(readRelated, resourceAddress, tab.signal),
     [readRelated, resourceAddress, tab.signal],
   )
   if (content.kind !== 'bytes') return null
+  if (!developerTools) return <BasicHtmlFrame data={content.data} t={t} />
   return <HtmlFrame key={resourceAddress} data={content.data} readRelative={readRelative} t={t} />
+}
+
+/** Static preview mounts a separate browsing context so a mode change retires running scripts. */
+function BasicHtmlFrame({ data, t }: Pick<FrameInput, 'data'> & { t: HtmlBodyProps['t'] }): ReactNode {
+  const html = useMemo(() => {
+    try {
+      return createBasicHtmlDocument(data)
+    } catch {
+      // Malformed UTF-8 files cannot produce a document.
+      return undefined
+    }
+  }, [data])
+  if (html === undefined) return <p className={css.status} role="alert">{t('failed')}</p>
+  return <iframe className={css.frame} srcDoc={html} sandbox="" title={t('frame')} data-html-preview />
 }

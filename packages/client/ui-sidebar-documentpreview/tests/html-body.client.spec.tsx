@@ -34,6 +34,7 @@ afterEach(() => {
 function props(text = '<p>hello</p>'): HtmlBodyProps {
   const signal = new AbortController().signal
   return {
+    useDeveloperTools: select => select(true),
     resourceAddress: 'dsh-resource://file/session/html/index.html',
     content: { kind: 'bytes', data: utf8(text) },
     wrap: false,
@@ -48,6 +49,28 @@ function props(text = '<p>hello</p>'): HtmlBodyProps {
 const utf8 = (text: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(text)
 
 describe('HtmlBody', () => {
+  it('renders static HTML without reading related files, running scripts or retaining an advanced frame', async () => {
+    const initial = props('<h1>Preview</h1><script src="./script.js"></script><p>Static content</p>')
+    const basic = { ...initial, useDeveloperTools: ((select: (enabled: boolean) => unknown) => select(false)) as HtmlBodyProps['useDeveloperTools'] }
+    const view = render(<HtmlBody {...basic} />)
+    const frame = screen.getByTitle(en.frame)
+    expect(frame.getAttribute('sandbox')).toBe('')
+    expect(frame.getAttribute('srcdoc')).toContain("default-src 'none'")
+    expect(frame.getAttribute('srcdoc')).not.toContain('<script')
+    expect(initial.readRelated).not.toHaveBeenCalled()
+    expect(create).not.toHaveBeenCalled()
+    const scripted = props('<p>Advanced</p><script>window.ready=true</script>')
+    view.rerender(<HtmlBody {...scripted} />)
+    const advanced = await screen.findByTitle(en.frame)
+    expect(advanced).not.toBe(frame)
+    expect(advanced.getAttribute('sandbox')).toBe('allow-scripts')
+    view.rerender(<HtmlBody {...basic} />)
+    expect(advanced.isConnected).toBe(false)
+    expect(revoke).toHaveBeenCalledOnce()
+    view.rerender(<HtmlBody {...basic} content={{ kind: 'bytes', data: new Uint8Array([255]) }} />)
+    expect(screen.getByRole('alert').textContent).toBe(en.failed)
+  })
+
   it('renders a Blob iframe with only scripts allowed, keeping it mounted for unrelated props', async () => {
     const initial = props()
     const view = render(<HtmlBody {...initial} />)

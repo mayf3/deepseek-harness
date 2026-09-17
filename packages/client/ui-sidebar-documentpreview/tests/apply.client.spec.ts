@@ -43,6 +43,7 @@ interface Recorded {
 
 async function boot() {
   const ctx = new Context()
+  ctx.provide('settingsScope', { developerTools: { enabled: { getSnapshot: () => true, subscribe: () => () => {} } } } as never)
   const tabs = new SidebarRightTabRegistry(ctx)
   const registered: Recorded[] = []
   const slots = {

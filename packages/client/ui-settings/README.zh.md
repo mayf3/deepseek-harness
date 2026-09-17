@@ -29,6 +29,8 @@ kind: "package-reference"
 
 ### 绑定命名空间
 
+`ctx.settingsScope.developerTools` 管理 Web 和桌面端共享的偏好 `ui-developer-tools.enabled`，默认为 `false`。其 `enabled` 可观察值发布已接受的选择，`setEnabled` 使用相同的有序设置写入。桌面端和回环 Web 将设置持久化到 Host 文档；远程 Web 保持现有的内存设置策略。此设置控制界面展示和 HTML 预览权限，不控制 Host 授权或 Session 记录。
+
 功能调用 `ctx.settingsScope.bind(spec)` 并传入按命名空间的 spec，得到一个由共享文档镜像派生的 scope。scope 快照携带解析后的分区、组合 `base`、原始 `user`、revision、可写性以及 host/内存模式；字段只要出现在 `user` 中即视为覆盖，即使其值与 `base` 相等，`unset` 会清除该覆盖。写入经 scope 进行：`set` 与 `unset` 提交一个操作，`mutate` 则原子提交多个有序操作。每次写入都以命名空间 revision 作为 `expectedRevision` 围栏，因此来自另一界面的并发写入会被拒绝，而不是被静默覆盖。暂存编辑器可以把开始草拟时读取的 revision 作为固定围栏传入；否则 scope 使用最新排队或镜像 revision。
 
 ### 填充设置 slot

@@ -16,6 +16,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { changesReviewAddress } from '../changes.ts'
 import { ChangesDiffStore } from './changes-diff.ts'
 import { ChangesSummaryStore } from './changes-summary.ts'
@@ -38,7 +39,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Required services for the tail-slot and tab-type registrations and their dictionaries. */
-export const inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.session', 'sidebarRightTabs', 'sidebarRight']
+export const inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.session', 'sidebarRightTabs', 'sidebarRight', 'settingsScope']
 
 /**
  * Client plugin body: register the dictionaries, the turn-tail entry, and the comparison tab type.
@@ -63,7 +64,8 @@ export function apply(ctx: ClientContext): void {
       id: '@deepseek-ai/dsh-client-ui-deliverables',
       locale: NS,
       inject: (): DeliverablesInjected => ({
-        hooks: { presentedOpen: opener.state, presentedHost: opener.host, changesSummary: summaries.state },
+        hooks: { presentedOpen: opener.state, presentedHost: opener.host, changesSummary: summaries.state,
+          developerTools: ctx.settingsScope.developerTools.enabled },
         reloadPresentedHost: () => opener.loadHost(),
         loadChangesSummary: (sessionId, seq) => summaries.load(sessionId, seq),
         openPresented: (sessionId, seq, index, action) => opener.open(sessionId, seq, index, action),

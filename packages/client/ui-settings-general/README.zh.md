@@ -31,6 +31,8 @@ kind: "package-reference"
 
 ### 「通用」分区
 
+开发者工具开关控制 [ui-settings](../ui-settings/README.zh.md#use-this-package) 定义的共享偏好。Web 和桌面端均提供此开关，立即跟随已接受的变更，并在写入完成前禁用重复输入。
+
 「通用」分区承载由功能包注册进 `settings.general.item` 的行——它没有内置行。功能插件拥有行文案与行为；外壳只提供分区及其 slot。例如「外观」行位于 ui-theme。
 
 ### 打开配置文件

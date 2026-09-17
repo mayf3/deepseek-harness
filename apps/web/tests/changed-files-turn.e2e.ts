@@ -51,6 +51,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       await writeFile(replayOverride, JSON.stringify(script).replaceAll('{{cwd}}', JSON.stringify(cwdToken).slice(1, -1)))
     }
     scaffold = await launchWebScaffold({
+      developerTools: false,
       compareReplaySession: true,
       extraOverlayPath: fileURLToPath(new URL('./changed-files-turn.overlay.yml', import.meta.url)),
       ...(replayOverride === undefined ? {} : { replayFixture: FIXTURE, replayOverride }),
@@ -106,6 +107,12 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     expect(await readFile(join(cwd, 'notes.txt'), 'utf8')).toBe('start\ndone\n')
 
     const card = page.locator('[data-changed-files]')
+    expect(await card.count()).toBe(0)
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const settings = page.getByRole('dialog', { name: '设置' })
+    await settings.getByRole('switch', { name: '开发者工具' }).click()
+    await expect.poll(() => settings.getByRole('switch', { name: '开发者工具' }).getAttribute('aria-checked')).toBe('true')
+    await settings.getByRole('button', { name: '关闭', exact: true }).click()
     await card.waitFor({ state: 'visible' })
     expect(await card.getByText('已编辑 4 个文件', { exact: true }).count()).toBe(1)
     expect(await card.getByRole('listitem').count()).toBe(3)

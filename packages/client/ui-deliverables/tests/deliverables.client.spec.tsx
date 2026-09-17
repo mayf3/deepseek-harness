@@ -40,6 +40,7 @@ function openProps(controller = new PresentedOpenController(), summaries = new C
   controller.host.set({ name: 'desktop', available: true, fileManager: 'finder' })
   const sessions: SessionListState = { ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {} }
   return {
+    useDeveloperTools: <T,>(select: (value: boolean) => T): T => select(true),
     useSessions: <T,>(select: (state: SessionListState) => T): T => select(sessions),
     reloadPresentedHost: vi.fn(() => controller.loadHost()),
     useChangesSummary: <T,>(select: (state: ReturnType<typeof summaries.state.getSnapshot>) => T): T =>
@@ -494,6 +495,19 @@ describe('ChangedFiles card', () => {
     return { props, openFile, view }
   }
 
+  it('hides changed files and avoids summary reads when developer tools are off', () => {
+    const props = openProps(new PresentedOpenController(), servedStore())
+    const base = { ...props, matched: { changes, presented: [] }, openFile: vi.fn(), sessionId: SessionId('child-session'), t: makeTranslate(en) }
+    const off = { useDeveloperTools: <T,>(select: (enabled: boolean) => T): T => select(false) }
+    const view = render(<Deliverables {...base} {...off} />)
+    expect(view.container.querySelector('[data-changed-files]')).toBeNull()
+    expect(props.loadChangesSummary).not.toHaveBeenCalled()
+    view.rerender(<Deliverables {...base} />)
+    expect(view.container.querySelector('[data-changed-files]')).not.toBeNull()
+    view.rerender(<Deliverables {...base} {...off} />)
+    expect(view.container.querySelector('[data-changed-files]')).toBeNull()
+  })
+
   it('reads the announced summary once and renders nothing while it loads, when it is gone, or when it lists no file', async () => {
     const summaries = new ChangesSummaryStore()
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
@@ -701,7 +715,7 @@ describe('plugin registration', () => {
       session,
     } as never)
     ctx.provide('remote.session', session as never)
-    ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+    ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope, developerTools: { enabled: { getSnapshot: () => true, subscribe: () => () => {} } } } as never)
     await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
 
     const fiber = ctx.plugin({ inject: [...inject], apply })

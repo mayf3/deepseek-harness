@@ -4,7 +4,8 @@ import type {} from '../index.ts'
 import type { DocumentPreviewDefinition } from '../document/registry.ts'
 import { hostFileOf } from '../rpc.ts'
 import { HtmlBody } from './HtmlBody.tsx'
-import type { HtmlBodyProps } from './HtmlBody.tsx'
+import type { HtmlBodyInjected } from './HtmlBody.tsx'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { en, zh } from './locales.ts'
 
 /** HTML implementation identity, shared by metadata and the keyed slot. */
@@ -30,7 +31,8 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register(
     {
       name: 'sidebar.right.tab.document', key: HTML_BODY_ID, locale: 'documentHtml',
-      inject: (): Pick<HtmlBodyProps, 'readRelated'> => ({
+      inject: (): HtmlBodyInjected => ({
+        hooks: { developerTools: ctx.settingsScope.developerTools.enabled },
         readRelated: (address, relativePath, signal) => {
           const file = hostFileOf(address)
           return ctx.remote.workspaceFiles.readRelated(file.sessionId, file.path, relativePath, signal)

@@ -33,7 +33,8 @@
         "@deepseek-ai/dsh-client-ui-sidebar-right",
         "@deepseek-ai/dsh-client-ui-session",
         "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-locale"
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
       ],
       "platform": "web"
     }
@@ -72,7 +73,8 @@
     "pdfjs-dist": "6.3.289",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "@deepseek-ai/dsh-office-to-pdf": "workspace:^"
+    "@deepseek-ai/dsh-office-to-pdf": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-settings": "workspace:^"
   },
   "files": [
     "lib/index.js",

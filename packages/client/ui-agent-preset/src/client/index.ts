@@ -57,7 +57,7 @@ export { AGENT_PRESET_SETTINGS_NS, writeDefaultPreset } from './settings-store.t
 
 /** Required services (cordis fiber inject). */
 export const inject = [
-  'slots', 'sessions', 'locale', 'remote', 'remote.agentPresets', 'remote.settings',
+  'slots', 'sessions', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'settingsScope',
 ]
 
 /**
@@ -137,7 +137,7 @@ export function apply(ctx: ClientContext): void {
       const binding = sessionId === undefined ? undefined : scope.sessions.binding(sessionId)
       const seat = binding === undefined ? unboundSeat : seatFor(scope, binding)
       return {
-        hooks: { agentPresetSeat: seat.store },
+        hooks: { agentPresetSeat: seat.store, developerTools: ctx.settingsScope.developerTools.enabled },
         load: () => seat.load(),
         select: (id: string) => seat.select(id),
         introduced: () => { seat.introduced() },
