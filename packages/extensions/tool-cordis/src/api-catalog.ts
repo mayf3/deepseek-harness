@@ -3247,10 +3247,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'one complete base64 window with offset zero and eof true; oversized files fail with too-large.',
       },
       {
-        signature: 'async readAllBounded( workspaceFileScope: WorkspaceFileScope, path: string, maxBytes: number, signal: AbortSignal, ): Promise<WorkspaceFileBytes>',
+        signature: 'async readAllBounded( workspaceFileScope: WorkspaceFileScope, path: string, maxBytes: number, signal: AbortSignal, ): Promise<WorkspaceFileStat & { readonly data: Uint8Array }>',
         description: 'Read a complete authorized file within a Host consumer\'s reserved byte capacity.',
         parameters: [{ name: 'workspaceFileScope', description: 'Session authorization and execution scope.' }, { name: 'path', description: 'absolute or workspace-relative file path.' }, { name: 'maxBytes', description: 'positive reserved capacity; the configured full-file cap still applies.' }, { name: 'signal', description: 'caller cancellation.' }],
-        returns: 'complete base64 bytes; reads at most the effective limit plus one overflow sentinel.',
+        returns: 'complete raw bytes and metadata from before the read; the filesystem enforces the effective limit.',
       },
       {
         signature: '@Remote async readRelated( workspaceFileScope: WorkspaceFileScope, path: string, relativePath: string, signal: AbortSignal, ): Promise<WorkspaceFileBytes>',
