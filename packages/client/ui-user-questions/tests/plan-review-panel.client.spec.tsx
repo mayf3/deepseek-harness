@@ -216,13 +216,15 @@ describe('planReviewOf', () => {
 })
 
 describe('PlanReviewPanel', () => {
-  it('keeps the review compact with document reading left to the sidebar', () => {
+  it('shows the plan title and summary above two review actions', () => {
     const { carrier } = wait()
     render(<QuestionComposer matched={carrier} {...kit} />)
 
     expect(document.querySelector('[data-plan-review-key]')?.getAttribute('data-plan-review-key')).toBe(carrier.key)
     expect(screen.getByText(zh['plan.header'])).toBeTruthy()
-    expect(screen.queryByRole('heading', { name: 'Ship the picker' })).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Ship the picker' })).toBeTruthy()
+    expect(screen.getByText('read the store')).toBeTruthy()
+    expect(screen.getAllByRole('button')).toHaveLength(2)
     expect(screen.queryByText('render the rows')).toBeNull()
     expect(document.querySelector('[data-plan-review-scroll]')).toBeNull()
     // The question text stays as the card's accessible name rather than a title
@@ -235,6 +237,23 @@ describe('PlanReviewPanel', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 
+  it('extracts a plain summary and keeps a heading-only plan compact', () => {
+    const question = questions()[0]!
+    const detail = '# **Release** plan\n\nReview the [changes](https://example.com) before **shipping**.\n\n## Steps\n- Build'
+    const { carrier } = wait([{ ...question, detail }])
+    const view = render(<QuestionComposer matched={carrier} {...kit} />)
+    expect(screen.getByRole('heading', { name: 'Release plan' })).toBeTruthy()
+    expect(screen.getByText('Review the changes before shipping.')).toBeTruthy()
+    expect(screen.queryByRole('link')).toBeNull()
+    const onlyTitle = wait([{ ...question, detail: '# Plan without a summary' }])
+    view.rerender(<QuestionComposer matched={onlyTitle.carrier} {...kit} />)
+    expect(screen.getByRole('heading', { name: 'Plan without a summary' })).toBeTruthy()
+    expect(document.querySelector('[data-plan-review-key] p')).toBeNull()
+    const paragraph = wait([{ ...question, detail: 'A single paragraph plan.' }])
+    view.rerender(<QuestionComposer matched={paragraph.carrier} {...kit} />)
+    expect(screen.getAllByText('A single paragraph plan.')).toHaveLength(1)
+  })
+
   it('answers with the asker\'s approve label and keeps its description as the tooltip', () => {
     const { carrier, answer } = wait()
     render(<QuestionComposer matched={carrier} {...kit} />)
@@ -245,25 +264,19 @@ describe('PlanReviewPanel', () => {
     expect(answer).toHaveBeenCalledWith(decision('Approve'))
     // One-shot: every action locks until the host's resolved frame lands.
     expect(approve.hasAttribute('disabled')).toBe(true)
-    expect(screen.getByRole('button', { name: zh['plan.decline'] }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: zh['plan.discuss'] }).hasAttribute('disabled')).toBe(true)
     fireEvent.click(approve)
     expect(answer).toHaveBeenCalledTimes(1)
   })
 
-  it('answers with the asker\'s decline label', () => {
-    const { carrier, answer } = wait()
-    render(<QuestionComposer matched={carrier} {...kit} />)
-
-    fireEvent.click(screen.getByRole('button', { name: zh['plan.decline'] }))
-    expect(answer).toHaveBeenCalledWith(decision('Keep planning'))
-  })
 
   it('dismisses the request so the composer returns for a plain message', () => {
-    const { carrier, cancel } = wait()
+    const { carrier, cancel, answer } = wait()
     render(<QuestionComposer matched={carrier} {...kit} />)
 
     fireEvent.click(screen.getByRole('button', { name: zh['plan.discuss'] }))
     expect(cancel).toHaveBeenCalledWith()
+    expect(answer).not.toHaveBeenCalled()
   })
 
   it('omits the tooltip for an option carrying no description', () => {
@@ -274,7 +287,6 @@ describe('PlanReviewPanel', () => {
     render(<QuestionComposer matched={carrier} {...kit} />)
 
     expect(screen.getByRole('button', { name: zh['plan.approve'] }).hasAttribute('title')).toBe(false)
-    expect(screen.getByRole('button', { name: zh['plan.decline'] }).hasAttribute('title')).toBe(false)
   })
 
   it('hides the decline action when the asker offered approve alone', () => {
@@ -318,7 +330,7 @@ describe('PlanReviewPanel', () => {
 
     expect(screen.getByText('Plan review')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Approve' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Refuse' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Chat about it' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Refuse' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Request changes' })).toBeTruthy()
   })
 })

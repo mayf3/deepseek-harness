@@ -70,16 +70,10 @@ export interface PlanReview {
  * Narrow a request to a renderable plan review, or return undefined to leave it
  * to the generic question flow.
  *
- * The card is one decision over one plan, and it claims a request only when it
- * can send every answer that request allows — an intent changes the layout,
- * never which answers are reachable. So the batch must be a single question
- * that declares the intent, carries the plan as its detail, offers the approve
- * label the intent names, and is a binary single choice: at most one option
- * besides approve, and not multi-select. A third option or a multi-select batch
- * has answers two buttons cannot express, so the generic flow keeps it — as it
- * keeps any request whose intent the asker's own service would have rejected,
- * because the client sits downstream of a wire boundary and every request must
- * stay answerable.
+ * The card offers approval and a return to the composer for change requests.
+ * It accepts one question carrying the plan as detail and the named approve
+ * option, with at most one alternative and no multi-select. Larger choices
+ * remain in the generic question flow.
  *
  * @param questions - the request's whole question batch.
  * @returns The narrowed review, or undefined when the generic flow owns it.

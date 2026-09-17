@@ -33,7 +33,7 @@ While the effective target is plan mode, the seat renders the warn-colored "Plan
 
 ### Reading submitted plans
 
-When a Turn ends, each submitted plan appears in its final artifact area, using the file-delivery card treatment with a Markdown icon, title, and Open action. A pending plan opens automatically once per submission in the current browser session. Closing it stays effective across review remounts; a new submission opens its own plan. Historical cards open only when clicked. Use the card or review strip’s Open plan in sidebar button to read and copy the complete Markdown. Different submissions retain separate tabs; the review buttons alone decide whether implementation may begin.
+When a Turn ends, each submitted plan appears in its final artifact area, using the file-delivery card treatment with a Markdown icon, title, and Open action. A pending plan opens automatically once per submission in the current browser session. Closing it stays effective across review remounts; a new submission opens its own plan. Historical cards open only when clicked. Use the card or review strip’s View full plan link to read and copy the complete Markdown. Different submissions retain separate tabs; the review buttons alone decide whether implementation may begin.
 
 ### Failures
 

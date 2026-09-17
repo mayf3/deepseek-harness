@@ -1,6 +1,6 @@
 /** Persistent transcript card and pending-review action use the same plan resource opener. */
 import { useEffect } from 'react'
-import { FileTypeIcon, IconFullscreenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { FileTypeIcon, IconChevronRightOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { shallowEqual } from '@deepseek-ai/dsh-client-store'
 import type {} from './plan-definition.ts'
@@ -58,6 +58,6 @@ export function PlanReviewOpen({ review, openPlan, t, useStore, actions }: Props
     openPlan(callId)
   }, [callId, opened, openPlan, actions])
   if (callId === undefined) return null
-  return <button type="button" className={css.reviewOpen} title={t('preview.open')} aria-label={t('preview.open')}
-    onClick={() => { openPlan(callId) }}><IconFullscreenOutline16 size={16} /></button>
+  return <button type="button" className={css.reviewLink} title={t('preview.open')} aria-label={t('preview.open')}
+    onClick={() => { openPlan(callId) }}>{t('preview.full')}<IconChevronRightOutline14 size={14} /></button>
 }

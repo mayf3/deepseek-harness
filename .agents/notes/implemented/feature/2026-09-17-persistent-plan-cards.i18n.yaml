@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-17-persistent-plan-cards.md
-2026-09-17-persistent-plan-cards.md: dabf5c970f8cf77fb2f4ff5cedcc11e2a094751f
-2026-09-17-persistent-plan-cards.zh.md: c84a20ca464ac69206f008b99e5039cd0791a2ca
+2026-09-17-persistent-plan-cards.md: 53d0ca028a08faacec8f967c002fb525e50c33ac
+2026-09-17-persistent-plan-cards.zh.md: cfc2a67c17a5b4ed76a7cb9df49b6fdfb15e3c71

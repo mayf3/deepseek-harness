@@ -85,7 +85,9 @@ describe('web e2e: plan review takeover round trip', () => {
     // The plan-review request must NOT land on the generic question flow.
     expect(await page.locator('[data-question-key]').count()).toBe(0)
     await expect.poll(() => card.getByText('Plan review').count(), { timeout: 10_000 }).toBeGreaterThan(0)
-    expect(await card.getByRole('heading').count()).toBe(0)
+    expect(await card.getByRole('heading').count()).toBe(1)
+    expect(await card.getByRole('heading').textContent()).toContain('--greeting')
+    expect(await card.getByText('View full plan', { exact: true }).isVisible()).toBe(true)
     expect(await card.getByRole('list').count()).toBe(0)
 
     const selectedRow = page.locator('[role="treeitem"][aria-selected="true"]')
@@ -186,7 +188,7 @@ describe('web e2e: dismissed plan history', () => {
       await review.waitFor({ state: 'visible' })
       await page.locator('[data-plan-preview]').waitFor({ state: 'visible' })
       await page.locator('[data-sidebar-right-toggle]').click()
-      await review.getByRole('button', { name: 'Chat about it', exact: true }).click()
+      await review.getByRole('button', { name: 'Request changes', exact: true }).click()
       await settled
       const results = events.filter(event => event.type === 'tool/result')
       expect(results.some(event => JSON.stringify(event).includes('dismissed the plan review'))).toBe(true)

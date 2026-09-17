@@ -12,10 +12,11 @@
   flex-direction: column;
   width: 100%;
   max-width: var(--dsh-chat-content-width);
-  border: 1px solid var(--dsw-alias-state-warn-secondary);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
+  border: 0;
   border-radius: 20px;
   background: var(--dsw-specific-input-major);
-  box-shadow: var(--dsw-shadow-lv2);
+  box-shadow: var(--dsw-elevation-panel);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -30,11 +31,11 @@
   align-items: center;
   flex-shrink: 0;
   gap: 8px;
-  padding: 10px 16px;
+  padding: 12px 16px;
   background: var(--dsw-alias-state-warn-tertiary);
   color: var(--dsw-alias-state-warn-primary);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .dot {
@@ -43,6 +44,7 @@
   border-radius: 50%;
   corner-shape: round;
   background: var(--dsw-alias-state-warn-primary);
+  box-shadow: 0 0 0 3px var(--dsw-alias-state-warn-secondary);
 }
 
 .footer {
@@ -68,16 +70,34 @@
   gap: 8px;
 }
 
-/* The discuss verb stays a quiet text button beside the two decision
-   capsules: 14px glyph against the 14px label with a slightly wider gap, so
-   the icon reads as a prefix rather than a peer-sized control. */
-.discuss {
-  gap: 6px;
-  color: var(--dsw-alias-label-secondary);
+.summary {
+  min-width: 0;
+  padding: 14px 16px 12px;
 }
 
-.discuss:hover:not(:disabled) {
-  color: var(--dsw-alias-label-primary);
+.title {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 8px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.discuss {
+  gap: 6px;
 }
 
 @media (max-width: 720px) {

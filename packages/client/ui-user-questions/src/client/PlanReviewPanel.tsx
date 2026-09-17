@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Button, IconEditOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useMemo, useState } from 'react'
+import { Button, extractMarkdownPlainText, IconEditOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PendingQuestion, PlanReview, QuestionComposerProps } from './contract/slots.ts'
 import css from './PlanReviewPanel.module.css'
 
@@ -40,7 +40,11 @@ export function PlanReviewPanel({ pending, review, t, renderSlot }: PlanReviewPa
   const decide = (label: string): void => {
     settle(() => pending.answer({ answers: [{ id: review.id, selected: [label] }] }))
   }
-  const decline = review.decline
+  const summary = useMemo(() => {
+    const title = extractMarkdownPlainText(review.plan, { mode: 'first-line' })
+    const description = extractMarkdownPlainText(review.plan, { mode: 'first-paragraph' })
+    return { title, description: description === title ? '' : description }
+  }, [review.plan])
 
   return (
     <div className={css.frame} data-plan-review-key={pending.key}>
@@ -52,23 +56,19 @@ export function PlanReviewPanel({ pending, review, t, renderSlot }: PlanReviewPa
             {renderSlot('conversation.plan-review.actions', { review })}
           </div>
         </div>
+        <div className={css.summary}>
+          <h3 className={css.title}>{summary.title}</h3>
+          {summary.description !== '' && <p className={css.description}>{summary.description}</p>}
+        </div>
         <div className={css.footer}>
           <div className={css.feedback} role="status">{error}</div>
           <div className={css.actions}>
             <Button
-              variant="ghost" className={css.discuss} icon={<IconEditOutline16 size={14} />}
+              variant="outline" className={css.discuss} icon={<IconEditOutline16 size={14} />}
               disabled={busy} onClick={() => { settle(() => pending.cancel()) }}
             >
               {t('plan.discuss')}
             </Button>
-            {decline !== undefined && (
-              <Button
-                variant="outline" {...tooltip(decline.description)}
-                disabled={busy} onClick={() => { decide(decline.label) }}
-              >
-                {t('plan.decline')}
-              </Button>
-            )}
             <Button
               variant="primary" {...tooltip(review.approve.description)}
               disabled={busy} onClick={() => { decide(review.approve.label) }}
