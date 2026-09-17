@@ -8,7 +8,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import DocumentRenderController from '../src/index.ts'
 
 const scope = { sessionId: SessionId('document-test'), workspaceRoot: '/workspace' }
-const source = { absolutePath: '/workspace/report.DOCX', version: 'source-v1', offset: 0, eof: true, bytes: 4, data: 'UEsDBA==' }
+const source = { absolutePath: '/workspace/report.DOCX', version: 'source-v1', bytes: 4 }
+const rawSource = { ...source, data: new Uint8Array([80, 75, 3, 4]) }
+const wireSource = { ...source, offset: 0, eof: true, data: 'UEsDBA==' }
 const generation = OfficeToPdfGeneration('test-generation')
 const cacheKey = OfficeToPdfKey('test-result')
 const pdf = new Uint8Array([37, 80, 68, 70, 45])
@@ -20,11 +22,12 @@ let render: ReturnType<typeof vi.fn<OfficeToPdf['convert']>>
 
 beforeEach(async () => {
   ctx = new Context()
-  read = vi.fn<WorkspaceFiles['readAllBounded']>().mockResolvedValue(source)
-  authorize = vi.fn<WorkspaceFiles['readBytes']>().mockResolvedValue(source)
+  read = vi.fn<WorkspaceFiles['readAllBounded']>().mockResolvedValue(rawSource)
+  authorize = vi.fn<WorkspaceFiles['readBytes']>().mockResolvedValue(wireSource)
   metadata = vi.fn<WorkspaceFiles['stat']>().mockResolvedValue(source)
   render = vi.fn<OfficeToPdf['convert']>().mockImplementation(async (request, signal) => {
-    await request.source.read(signal!, 4)
+    const loaded = await request.source.read(signal!, 4)
+    expect(loaded.bytes).toBe(rawSource.data)
     return { pdf, missingFonts: ['Missing Serif'], generation, cacheKey }
   })
   ctx.provide('workspaceFiles', { stat: metadata, readAllBounded: read, readBytes: authorize } as never)
@@ -40,7 +43,7 @@ it.each(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'])('converts authorized %s b
   expect(authorize).toHaveBeenCalledExactlyOnceWith(scope, path, { offset: 0, length: 1 }, expect.any(AbortSignal))
   expect(render).toHaveBeenCalledOnce()
   expect(render.mock.calls[0]?.[0]).toMatchObject({ extension, priority: 'foreground', source: { version: source.version, bytes: 4 } })
-  expect(result).toEqual({ ...source, data: Buffer.from(pdf).toString('base64'), bytes: pdf.length, missingFonts: ['Missing Serif'], generation })
+  expect(result).toEqual({ ...wireSource, data: Buffer.from(pdf).toString('base64'), bytes: pdf.length, missingFonts: ['Missing Serif'], generation })
   expect(ctx.get('agents')).toBeUndefined()
 })
 
@@ -98,14 +101,14 @@ it('cancels before reading and refuses a late authorized read after cancellation
   await expect(ctx.documentRenderController.render(scope, 'report.docx', 'foreground', AbortSignal.abort())).rejects.toMatchObject({ code: 'gateway/cancelled' })
   expect(read).not.toHaveBeenCalled()
   const entered = Promise.withResolvers<undefined>()
-  const release = Promise.withResolvers<typeof source>()
+  const release = Promise.withResolvers<typeof rawSource>()
   read.mockImplementationOnce(() => { entered.resolve(undefined); return release.promise })
   const controller = new AbortController()
   const work = ctx.documentRenderController.render(scope, 'report.docx', 'foreground', controller.signal)
   const rejected = expect(work).rejects.toMatchObject({ code: 'gateway/cancelled' })
   await entered.promise
   controller.abort()
-  release.resolve(source)
+  release.resolve(rawSource)
   await rejected
   expect(render).toHaveBeenCalledOnce()
 })
@@ -134,8 +137,8 @@ it('exposes the current renderer generation and refuses busy work before loading
   expect(read).not.toHaveBeenCalled()
 })
 
-it('refuses bytes when the source changes during the bounded read', async () => {
-  metadata.mockResolvedValueOnce(source).mockResolvedValueOnce({ ...source, version: 'v2' })
+it.each([{ absolutePath: '/workspace/replaced.docx' }, { version: 'v2' }])('refuses bytes when source metadata changes during the bounded read: %j', async (change) => {
+  metadata.mockResolvedValueOnce(source).mockResolvedValueOnce({ ...source, ...change })
   await expect(ctx.documentRenderController.render(scope, 'report.docx', 'foreground', new AbortController().signal))
     .rejects.toMatchObject({ code: 'document-render/failed', details: { reason: 'source-changed' } })
 })
@@ -173,4 +176,10 @@ it.each([
   metadata.mockResolvedValueOnce(source).mockRejectedValueOnce(failure)
   await expect(ctx.documentRenderController.render(scope, 'report.docx', 'foreground', new AbortController().signal)).rejects.toBe(failure)
   expect(metadata).toHaveBeenCalledTimes(2)
+})
+
+it.each([{ absolutePath: '/workspace/replaced.docx' }, { version: 'v2' }])('refuses a different bounded-read source even if the final metadata matches: %j', async (change) => {
+  read.mockResolvedValueOnce({ ...rawSource, ...change })
+  await expect(ctx.documentRenderController.render(scope, 'report.docx', 'foreground', new AbortController().signal))
+    .rejects.toMatchObject({ code: 'document-render/failed', details: { reason: 'source-changed' } })
 })

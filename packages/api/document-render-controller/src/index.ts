@@ -1,7 +1,7 @@
 /** Session-authorized Office preview Remote; source bytes never travel to the browser. */
 import { extname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import type { WorkspaceFileScope } from '@deepseek-ai/dsh-api-workspace-files'
+import type { WorkspaceFileScope, WorkspaceFileStat } from '@deepseek-ai/dsh-api-workspace-files'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { OfficeToPdfError, type OfficeSourceKey, type OfficeToPdfPriority, type OfficeToPdfGeneration } from '@deepseek-ai/dsh-office-to-pdf'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -65,9 +65,12 @@ export class DocumentRenderController extends TypertRemoteService {
       }
       const authorized = await this.ctx.workspaceFiles.readBytes(scope, path, { offset: 0, length: 1 }, signal)
       const source = await this.ctx.workspaceFiles.stat(scope, path, signal)
-      if (authorized.absolutePath !== source.absolutePath || authorized.version !== source.version) {
-        throw new OfficeToPdfError('source-changed', 'The source changed during authorization.')
+      const assertUnchanged = (current: WorkspaceFileStat): void => {
+        if (current.absolutePath !== source.absolutePath || current.version !== source.version) {
+          throw new OfficeToPdfError('source-changed', 'The source changed.')
+        }
       }
+      assertUnchanged(authorized)
       signal.throwIfAborted()
       const result = await this.ctx.officeToPdf.convert({ extension, priority, source: {
         key: brandString<OfficeSourceKey>(JSON.stringify([scope.sessionId, scope.workspaceRoot, source.absolutePath])),
@@ -75,20 +78,15 @@ export class DocumentRenderController extends TypertRemoteService {
         read: async (upstream, maxBytes) => {
           const loaded = await this.ctx.workspaceFiles.readAllBounded(scope, path, maxBytes, upstream).catch(async (cause: unknown) => {
             if (cause instanceof RemoteError && cause.code === 'workspace-file/too-large') {
-              const current = await this.ctx.workspaceFiles.stat(scope, path, upstream)
-              if (current.absolutePath !== source.absolutePath || current.version !== source.version) {
-                throw new OfficeToPdfError('source-changed', 'The source changed during reading.')
-              }
+              assertUnchanged(await this.ctx.workspaceFiles.stat(scope, path, upstream))
             }
             throw cause
           })
           upstream.throwIfAborted()
           const after = await this.ctx.workspaceFiles.stat(scope, path, upstream)
-          if (loaded.absolutePath !== source.absolutePath || after.absolutePath !== source.absolutePath
-            || after.version !== source.version) {
-            throw new OfficeToPdfError('source-changed', 'The source changed during reading.')
-          }
-          return { bytes: Buffer.from(loaded.data, 'base64'), version: loaded.version }
+          assertUnchanged(loaded)
+          assertUnchanged(after)
+          return { bytes: loaded.data, version: loaded.version }
         },
       } }, signal)
       signal.throwIfAborted()

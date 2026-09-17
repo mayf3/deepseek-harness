@@ -35,7 +35,7 @@ kind: "package-reference"
 <details>
 <summary>实现内部细节 — 点击展开</summary>
 
-控制器先通过单字节 `workspaceFiles.readBytes` 调用检查普通读取权限，再通过 `workspaceFiles.stat` 确认源版本，然后向渲染器提供延迟的 `workspaceFiles.readAllBounded` 回调。准入先于源分配；回调在读取后检查元数据，拒绝并发源变更。有界读取因大小限制失败时也会复查源身份，若当前源身份不同则报告 `source-changed`。缓存响应同样重复读取权限和元数据检查。结果包含 base64 PDF 字节、原始绝对路径与版本以及渲染 generation。`generation()` Remote 供 Client 在替换渲染器后使 PDF 失效。其他源读取失败直接传递；转换失败仅暴露分类原因，不含引擎诊断。取消会释放当前读取方的使用权；实际工作结束前，渲染器保留活动容量。控制器卸载会等待其未完成请求。结果为临时数据，没有独立持久状态，因此不发布运行时不变量伴随入口。
+控制器先通过单字节 `workspaceFiles.readBytes` 调用检查普通读取权限，再通过 `workspaceFiles.stat` 确认源版本，然后向渲染器提供延迟的 `workspaceFiles.readAllBounded` 回调。回调将原始源字节直接交给转换。准入先于源分配；回调在读取后检查元数据，拒绝并发源变更。有界读取因大小限制失败时也会复查源身份，若当前源身份不同则报告 `source-changed`。缓存响应同样重复读取权限和元数据检查。结果包含 base64 PDF 字节、原始绝对路径与版本以及渲染 generation。`generation()` Remote 供 Client 在替换渲染器后使 PDF 失效。其他源读取失败直接传递；转换失败仅暴露分类原因，不含引擎诊断。取消会释放当前读取方的使用权；实际工作结束前，渲染器保留活动容量。控制器卸载会等待其未完成请求。结果为临时数据，没有独立持久状态，因此不发布运行时不变量伴随入口。
 
 </details>
 
