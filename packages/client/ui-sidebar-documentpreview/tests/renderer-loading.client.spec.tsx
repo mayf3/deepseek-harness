@@ -179,15 +179,24 @@ it.each(['replace', 'close', 'hide'] as const)('retires pending conversion on %s
   }
 })
 
-it.each(['declared', 'exception', 'foreign'] as const)('shows %s conversion failures and retries through the public reload action', async (kind) => {
+it.each(['declared', 'exception', 'foreign'] as const)('shows %s conversion failures and retries only while the resource is available', async (kind) => {
   const h = setup()
-  render(<h.View />)
+  const mounted = render(<h.View />)
   await act(async () => {
     if (kind === 'declared') h.pending[0]!.deferred.resolve({ ok: false, error: new RemoteError('workspace-file/not-found', 'Missing file', { path: ABSOLUTE_PATH }) })
     else h.pending[0]!.deferred.reject(kind === 'exception' ? new Error('Conversion failed') : 'Conversion failed')
   })
   expect(screen.getByText(kind === 'declared' ? 'Missing file' : 'Conversion failed')).toBeTruthy()
+  const resource = h.h.useResource()
+  h.h.useResource.mockReturnValue({ status: 'none', value: undefined, failure: undefined })
+  mounted.rerender(<h.View />)
   fireEvent.click(screen.getByRole('button', { name: en.retry }))
+  expect(h.read).toHaveBeenCalledTimes(1)
+  expect(screen.getByText(kind === 'declared' ? 'Missing file' : 'Conversion failed')).toBeTruthy()
+  h.h.useResource.mockReturnValue(resource)
+  mounted.rerender(<h.View />)
+  fireEvent.click(screen.getByRole('button', { name: en.retry }))
+  expect(h.read).toHaveBeenCalledTimes(2)
   await act(async () => { h.pending[1]!.deferred.resolve(result()) })
   expect(screen.getByText('PDF v1')).toBeTruthy()
   expect(h.h.bytes).not.toHaveBeenCalled()
