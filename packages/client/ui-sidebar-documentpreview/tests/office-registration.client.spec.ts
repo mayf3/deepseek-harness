@@ -4,7 +4,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
-import type {} from '@deepseek-ai/dsh-api-document-render-controller/remote'
+import type {} from '@deepseek-ai/dsh-office-to-pdf/remote'
 import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { DocumentPreviewRegistry } from '../src/client/document/registry.ts'
 import { apply } from '../src/client/office/index.ts'
@@ -23,8 +23,8 @@ async function harness(config: Partial<Config['office']> = {}, missing?: 'remote
   const registry = new DocumentPreviewRegistry()
   const removeLocale = vi.fn()
   const locale = { register: vi.fn(() => removeLocale), bind: () => makeTranslate(en) }
-  const render = vi.fn<ClientRemote['documentRender']['render']>().mockResolvedValue(converted)
-  const rendererGeneration = vi.fn().mockResolvedValue({ ok: true, value: generation })
+  const render = vi.fn<ClientRemote['officeToPdf']['render']>().mockResolvedValue(converted)
+  const rendererGeneration = vi.fn<ClientRemote['officeToPdf']['generation']>().mockResolvedValue({ ok: true, value: generation })
   const stat = vi.fn<ClientRemote['workspaceFiles']['stat']>().mockResolvedValue({ ok: true, value: source })
   const readBytes = vi.fn<ClientRemote['workspaceFiles']['readBytes']>().mockResolvedValue({ ok: true, value: source })
   const removeNotice = vi.fn()
@@ -33,15 +33,15 @@ async function harness(config: Partial<Config['office']> = {}, missing?: 'remote
   ctx.provide('slots', { inject: (_name: string, effect: () => () => void) => effect(), register } as never)
   ctx.provide('locale', locale as never)
   if (missing !== 'remote') {
-    ctx.provide('remote', { workspaceFiles: { stat, readBytes }, documentRender: { render, generation: rendererGeneration } } as never)
+    ctx.provide('remote', { workspaceFiles: { stat, readBytes }, officeToPdf: { render, generation: rendererGeneration } } as never)
     if (missing !== 'files') ctx.provide('remote.workspaceFiles', { stat, readBytes } as never)
-    if (missing !== 'render') ctx.provide('remote.documentRender', { render, generation: rendererGeneration } as never)
+    if (missing !== 'render') ctx.provide('remote.officeToPdf', { render, generation: rendererGeneration } as never)
   }
   const fiber = ctx.plugin({ apply: (scope: Context) => {
     apply(scope, Config({ office: config }).office)
   } })
   await fiber.await()
-  return { ctx, registry, locale, removeLocale, render, stat, readBytes, register, removeNotice,
+  return { ctx, registry, locale, removeLocale, render, rendererGeneration, stat, readBytes, register, removeNotice,
     read: (signal = new AbortController().signal, path = file.path) => registry.candidates(path)[0]!.read!({ ...file, path }, signal),
     close: () => fiber.dispose(),
   }
@@ -52,7 +52,7 @@ it.each(['remote', 'render', 'files'] as const)('keeps Office registration and g
   try {
     expect(h.locale.register).toHaveBeenCalledWith('sidebarOffice', { zh, en })
     for (const path of ['a.DOC', 'b.DOCX', 'c.XLS', 'd.xlsx', 'e.PPT', 'f.pptx']) {
-      expect(h.registry.candidates(path)[0]!.bodyId).toBe('@deepseek-ai/dsh-client-ui-sidebar-documentpreview/pdf')
+      expect(h.registry.candidates(path)[0]!.binaryExtensions).toEqual(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'])
       expect(h.registry.candidates(path)[0]!.title()).toBe(en.title)
       await expect(h.read(undefined, path)).rejects.toThrow(en.unavailable)
     }
@@ -60,10 +60,10 @@ it.each(['remote', 'render', 'files'] as const)('keeps Office registration and g
   } finally { await h.close() }
   expect(h.registry.getSnapshot()).toEqual([])
   expect(h.removeLocale).toHaveBeenCalledOnce()
-  expect(h.register).toHaveBeenCalledExactlyOnceWith({
+  expect(h.register).toHaveBeenCalledWith({
     name: 'sidebar.right.tab.document.notice', key: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', locale: 'sidebarOffice',
   }, FontNotice)
-  expect(h.removeNotice).toHaveBeenCalledOnce()
+  expect(h.removeNotice).toHaveBeenCalledTimes(2)
 })
 
 it('requests a Host PDF with source identity and borrows the same binary cache result', async () => {
@@ -77,6 +77,31 @@ it('requests a Host PDF with source identity and borrows the same binary cache r
     expect(h.readBytes).toHaveBeenCalledTimes(2)
     expect(h.readBytes).toHaveBeenCalledWith(file.sessionId, file.path, { offset: 0, length: 1 }, expect.any(AbortSignal))
     expect(h.render).toHaveBeenCalledOnce()
+  } finally { await h.close() }
+})
+
+it.each([
+  ['rendererGeneration', 'gateway/invocation-unavailable'], ['rendererGeneration', 'gateway/service-unavailable'],
+  ['render', 'gateway/invocation-unavailable'], ['render', 'gateway/service-unavailable'],
+] as const)('shows configuration guidance when %s returns %s', async (method, code) => {
+  const h = await harness()
+  try {
+    const endpoint = method === 'render' ? 'officeToPdf/render' : 'officeToPdf/generation'
+    const failure = new RemoteError(code, 'Office provider is unavailable.', { endpoint })
+    h[method].mockResolvedValueOnce({ ok: false, error: failure })
+    await expect(h.read()).rejects.toMatchObject({ message: en.unavailable, cause: failure })
+    expect((await h.read()).ok).toBe(true)
+  } finally { await h.close() }
+})
+
+it('shows configuration guidance when the Host exposes no Office HTTP endpoint', async () => {
+  const h = await harness()
+  try {
+    const failure = new RemoteError('gateway/internal', 'transport failure for /api/officeToPdf/generation: HTTP 404', {})
+    h.rendererGeneration.mockResolvedValueOnce({ ok: false, error: failure })
+    await expect(h.read()).rejects.toMatchObject({ message: en.unavailable, cause: failure })
+    expect(h.readBytes).not.toHaveBeenCalled()
+    expect(h.render).not.toHaveBeenCalled()
   } finally { await h.close() }
 })
 

@@ -14,7 +14,7 @@ Status: implemented
 
 [平台引擎决策](2026-09-15-platform-office-engines.zh.md)要求使用 kit 已声明的原生目标引擎，未声明原生目标时使用 WASM。缺失或无效的必需引擎会拒绝转换。共享的[有界提供方](2026-09-15-bounded-office-conversion.zh.md)负责准入、转换复用以及持续到临时文件清理完成的取消。预览消费该提供方，不注册另一个转换器，也不依赖 Office 创作 skills。
 
-服务、Remote 控制器和 Client 注册接受 DOC、DOCX、XLS、XLSX、PPT 和 PPTX。LibreOffice 导入前，kit 校验 OOXML 输入的有界 ZIP 成员和内容类型，以及二进制 Office 输入的 OLE 复合文件头。将文本改为 Office 后缀不能通过校验。kit 不提取二进制格式的字体表，因此这些格式不返回缺失字体诊断。kit 在调用方拥有的私有目录中独占创建新的 PDF。DSH 读取并校验完整输出后才删除临时文件。[Remote 控制器](../../../../packages/api/document-render-controller/README.zh.md)通过 [Workspace Files](2026-09-09-workspace-file-read-authority.zh.md)授权源文件访问，保留源路径和版本，并返回 PDF 字节。源文件读取上限与生成 PDF 上限相互独立。读取权限探测和延迟读取（包括超限失败后的复查）采用同一个源路径／版本快照，防止转换将字节发布到另一个源身份下。预览字节不会进入 Session 存储或持久缓存。
+服务、Remote 方法和 Client 注册接受 DOC、DOCX、XLS、XLSX、PPT 和 PPTX。LibreOffice 导入前，kit 校验 OOXML 输入的有界 ZIP 成员和内容类型，以及二进制 Office 输入的 OLE 复合文件头。将文本改为 Office 后缀不能通过校验。kit 不提取二进制格式的字体表，因此这些格式不返回缺失字体诊断。kit 在调用方拥有的私有目录中独占创建新的 PDF。DSH 读取并校验完整输出后才删除临时文件。[服务的 Remote 方法](../../../../packages/document/office-to-pdf/README.zh.md)通过 [Workspace Files](2026-09-09-workspace-file-read-authority.zh.md)授权源文件访问，保留源路径和版本，并返回 PDF 字节。源文件读取上限与生成 PDF 上限相互独立。读取权限探测和延迟读取（包括超限失败后的复查）采用同一个源路径／版本快照，防止转换将字节发布到另一个源身份下。预览字节不会进入 Session 存储或持久缓存。
 
 converter 复用首个转换 Worker 返回的字体元数据；原始字体缓冲区和解码后的字符覆盖范围仍只属于单次转换。Worker 读取字体时校验索引中的文件。已安装字体族的精确匹配优先于配置的替代字体，完整的字体族、样式、字重、斜体、宽度、字距、语言与码点请求保留各自的匹配结果。WASM 回调将包含完整字体集合的原始字体文件导入 MEMFS。原生引擎还保留各平台的字体发现能力。两条路径均不下载或安装字体；原生操作系统管理的字体内存不受显式导入预算约束。字体变化后，重新创建 converter 会刷新元数据。
 

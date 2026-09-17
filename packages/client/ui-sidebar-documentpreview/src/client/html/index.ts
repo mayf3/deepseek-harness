@@ -16,7 +16,7 @@ export const HTML_BODY_ID = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/
  * @returns metadata for complete HTML documents.
  */
 export function htmlBodyDefinition(title: () => string): DocumentPreviewDefinition {
-  return { id: HTML_BODY_ID, extensions: ['html', 'htm'], priority: 'builtin', title, loading: 'bytes-complete', supportsText: () => true, wrap: false }
+  return { id: HTML_BODY_ID, extensions: ['html', 'htm'], priority: 'builtin', title, loading: 'bytes-complete', wrap: false }
 }
 
 /**

@@ -24,13 +24,22 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register('sidebarPdf', { zh, en }))
   const t = ctx.locale.bind('sidebarPdf')
   ctx.effect(() => ctx.documentPreviews.register(pdfBodyDefinition(() => t('title'))))
+  registerPdfBody(ctx, PDF_BODY_ID)
+}
+
+/**
+ * Register a lazy PDF body with its own tab state under a document implementation id.
+ * @param ctx - context carrying the slot registry and PDF locale.
+ * @param id - document implementation id used as the keyed body entry.
+ */
+export function registerPdfBody(ctx: Context, id: string): void {
   const store = createPdfStore()
   const retained = new Map<AbortSignal, () => void>()
   ctx.effect(() => () => {
     for (const forget of retained.values()) forget()
   })
   ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register({
-    name: 'sidebar.right.tab.document', key: PDF_BODY_ID, locale: 'sidebarPdf', store,
+    name: 'sidebar.right.tab.document', key: id, locale: 'sidebarPdf', store,
     inject: (_sessionId, actions): PdfBodyInjected => ({
       retainTab: (tabId, signal) => {
         if (signal.aborted) { actions.forget(tabId); return }

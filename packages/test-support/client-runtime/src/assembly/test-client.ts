@@ -17,7 +17,7 @@ import type { RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import { act } from '@testing-library/react'
 import { createInProcessModules, loadPluginModules } from './modules.ts'
 import { assertPlan, graphFromRoster, type AssemblyPlan } from './roster.ts'
-import { REMOTE_INSTALLERS, remoteNamespacesOf, remoteProxiesPlugin } from './remote-proxies.ts'
+import { REMOTES_PACKAGE, remoteNamespacesOf, remoteProxiesPlugin } from './remote-proxies.ts'
 
 /** Carrier options. */
 export interface TestClientOptions {
@@ -185,12 +185,10 @@ export class TestClient {
     options: TestClientOptions = {},
   ): Promise<TestClient> {
     assertPlan(plan)
-    for (const name of REMOTE_INSTALLERS) {
-      if (plan.provide?.[name] !== undefined) {
-        throw new Error(`client-test-runtime: ${name} cannot be provided; its remote.<ns> services are the tier's proxies`)
-      }
+    if (plan.provide?.[REMOTES_PACKAGE] !== undefined) {
+      throw new Error(`client-test-runtime: ${REMOTES_PACKAGE} cannot be provided; its remote.<ns> services are the tier's proxies`)
     }
-    const roster = plan.roster.without(REMOTE_INSTALLERS.filter(name => plan.roster.rows.some(row => row.name === name)))
+    const roster = plan.roster.without(plan.roster.rows.some(row => row.name === REMOTES_PACKAGE) ? [REMOTES_PACKAGE] : [])
     const ctx = new Context()
     const pageLocation = typeof location === 'undefined'
       ? undefined

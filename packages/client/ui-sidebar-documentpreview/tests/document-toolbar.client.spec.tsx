@@ -44,7 +44,7 @@ describe('document toolbar', () => {
     const definitions = [
       textBodyDefinition(() => 'Plain text'), pdfBodyDefinition(() => 'PDF'),
       imageBodyDefinition(() => 'Image'), htmlBodyDefinition(() => 'HTML'),
-      { ...binary, extensions: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'] },
+      { ...binary, extensions: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'], binaryExtensions: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'] },
     ]
     h.bytes.mockResolvedValue({ ok: true, value: {
       absolutePath: path, version: 'v1', offset: 0, data: new TextEncoder().encode('all'), bytes: 3, eof: true,
@@ -235,7 +235,7 @@ describe('document toolbar', () => {
     const h = harness()
     h.bytes.mockResolvedValue({ ok: true, value: { absolutePath: '/host/project/work/photo.png', version: 'v1', offset: 0, data: new TextEncoder().encode('x'), bytes: 1, eof: true } })
     const image: DocumentPreviewDefinition = {
-      id: 'image', extensions: ['png', 'svg'], binaryExtensions: ['png'], title: () => 'Image', loading: 'bytes-complete', supportsText: path => path.endsWith('.svg'),
+      id: 'image', extensions: ['png', 'svg'], binaryExtensions: ['png'], title: () => 'Image', loading: 'bytes-complete',
     }
     const plain: DocumentPreviewDefinition = {
       id: PLAIN_BODY_ID, extensions: [], title: () => 'viewer.text', loading: 'text-pages', wrap: true,
@@ -260,7 +260,7 @@ describe('document toolbar', () => {
     const h = harness()
     h.bytes.mockResolvedValue({ ok: true, value: { absolutePath: '/host/project/work/logo.svg', version: 'v1', offset: 0, data: new TextEncoder().encode('<svg/>'), bytes: 6, eof: true } })
     const image: DocumentPreviewDefinition = {
-      id: 'image', extensions: ['png', 'svg'], binaryExtensions: ['png'], title: () => 'Image', loading: 'bytes-complete', supportsText: path => path.endsWith('.svg'),
+      id: 'image', extensions: ['png', 'svg'], binaryExtensions: ['png'], title: () => 'Image', loading: 'bytes-complete',
     }
     const plain: DocumentPreviewDefinition = {
       id: PLAIN_BODY_ID, extensions: [], title: () => 'viewer.text', loading: 'text-pages', wrap: true,

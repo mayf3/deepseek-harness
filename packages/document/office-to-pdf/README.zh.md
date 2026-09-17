@@ -31,6 +31,8 @@ kind: "package-reference"
 
 此 provider 依赖独立发布的 [`@deepseek-ai/libreoffice-kit`](https://github.com/deepseek-harness/libreoffice-kit/tree/main/packages/entry) npm API，kit 版本为 `0.0.1`。应用打包选择 kit 的 `optionalDependencies` 中声明的匹配原生包；目标没有声明原生包时选择 WASM。已声明的原生引擎缺失时拒绝打包，不会选择 WASM。[平台引擎决策](../../../.agents/notes/implemented/architecture/2026-09-15-platform-office-engines.zh.md)定义安装与打包策略；[发布归属决策](../../../.agents/notes/implemented/architecture/2026-09-14-independent-libreoffice-kit.zh.md)定义独立 kit 与 Harness 各自的职责。
 
+浏览器通过 `officeToPdf.render` Remote 方法请求 PDF，参数为 Session 标识、Office 路径和优先级。此入口使用 `workspaceFiles` 完成授权和有界读取；进程内 `convert()` 不要求该服务。响应保留源文件路径与版本，携带 base64 PDF、缺失字体和转换 generation。`officeToPdf.generation` Remote 方法返回当前提供方 generation；`api/remotes` 负责挂载生成的 Client 描述符。
+
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `maxConcurrentConversions` | `2` | 最大活跃转换器数量；排队调用仍可取消。 |
@@ -62,6 +64,8 @@ kind: "package-reference"
 
 每个并发槽按需创建并复用一个 kit 转换器。提供方将已授权输入写入私有临时目录，读取有大小上限的普通 PDF 文件，并在完成前删除目录。取消已准入的读取方不会阻塞后续排队工作。读取方取消只会释放该读取方；最后一个读取方和提供方卸载会取消共享工作。卸载向未完成读取方报告 `unavailable`，并等待转换及转换器清理结束。活跃操作和临时目录清理由同一生命周期负责，因此不发布运行时不变量伴随入口。
 
+Remote 文件读取在查询转换缓存前重新检查内容读取授权和源版本。延迟读取在取得转换容量后执行，并在读取后验证源版本。源读取失败直接传递；转换失败返回 `document-render/failed` 及分类原因，不暴露引擎诊断。卸载会取消并等待授权读取、Remote 请求和转换工作全部结束。
+
 </details>
 
 -----
@@ -89,6 +93,8 @@ kind: "package-reference"
 
 - 转换保真度和已安装的原生/WASM 资产由 `@deepseek-ai/libreoffice-kit` 负责；此提供方不查找系统 LibreOffice，也不在运行时下载引擎。
 - `timeoutMs` 仅在 kit 开始转换时计时，不限制队列等待时间。
+
+- Remote 完整源读取还受 `workspaceFiles.maxFileBytes` 限制；仅提高转换输入上限不会提高文件读取额度。
 
 <a id="dev-note"></a>
 ### 开发备注

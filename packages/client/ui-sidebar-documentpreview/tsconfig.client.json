@@ -57,9 +57,6 @@
       "path": "../../util/workspace-path"
     },
     {
-      "path": "../../api/document-render-controller/tsconfig.client.json"
-    },
-    {
       "path": "../connection/tsconfig.client.json"
     },
     {

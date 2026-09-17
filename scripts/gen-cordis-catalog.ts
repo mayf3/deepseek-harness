@@ -64,7 +64,6 @@ export const SERVICE_PAGE: Record<string, string> = {
   agents: 'core.md',
   approval: 'approval.md',
   officeToPdf: 'office-to-pdf.md',
-  documentRenderController: 'office-to-pdf.md',
   attachments: 'attachment.md',
   shell: 'shell.md',
   shellEnv: 'shell.md',

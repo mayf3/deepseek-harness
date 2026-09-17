@@ -1,13 +1,14 @@
 /** Office preview registration backed by authorized Host rendering and the existing PDF body. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import type {} from '@deepseek-ai/dsh-api-document-render-controller/remote'
+import type {} from '@deepseek-ai/dsh-office-to-pdf/remote'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-files/remote'
 import type {} from '@deepseek-ai/dsh-client-connection/client'
 import { documentFileBytes, type ReadDocumentBytes } from '../rpc.ts'
 import { en, zh, type OfficePreviewKey } from './locales.ts'
 import { OfficePreviewCache, type ReadOfficeBytes } from './cache.ts'
+import { registerPdfBody } from '../pdf/index.ts'
 import { FontNotice } from './FontNotice.tsx'
 import type { Config } from '../../config.ts'
 
@@ -24,6 +25,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
  */
 export function apply(ctx: Context, config: Config['office']): void {
   const id = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office'
+  const extensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
+  registerPdfBody(ctx, id)
   ctx.effect(() => ctx.locale.register('sidebarOffice', { zh, en }))
   ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document.notice', () => ctx.slots.register({
     name: 'sidebar.right.tab.document.notice', key: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office',
@@ -37,15 +40,14 @@ export function apply(ctx: Context, config: Config['office']): void {
   let read = unavailable
   ctx.effect(() => ctx.documentPreviews.register({
     id,
-    bodyId: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/pdf',
-    extensions: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'], priority: 'builtin',
+    extensions, binaryExtensions: extensions, priority: 'builtin',
     title: () => t('title'), loading: 'bytes-complete', wrap: false,
     read: (file, signal) => read(file, signal),
   }))
-  ctx.inject(['remote', 'remote.documentRender', 'remote.workspaceFiles'], (scope) => {
+  ctx.inject(['remote', 'remote.officeToPdf', 'remote.workspaceFiles'], (scope) => {
     const convert: ReadOfficeBytes = async (file, signal, priority) => {
       signal.throwIfAborted()
-      const result = await scope.remote.documentRender.render(file.sessionId, file.path, priority, signal)
+      const result = await scope.remote.officeToPdf.render(file.sessionId, file.path, priority, signal)
       signal.throwIfAborted()
       if (!result.ok) {
         if (result.error.code === 'document-render/failed') {
@@ -68,11 +70,22 @@ export function apply(ctx: Context, config: Config['office']): void {
         return metadata
       },
       convert, config.maxCachedEntries, config.maxCachedBytes, config.maxPending, config.maxReaders,
-      signal => scope.remote.documentRender.generation(signal), () => new Error(t('busy')),
+      async (signal) => {
+        const result = await scope.remote.officeToPdf.generation(signal)
+        signal.throwIfAborted()
+        if (!result.ok) throw new Error(t('unavailable'), { cause: result.error })
+        return result
+      }, () => new Error(t('busy')),
     )
     let cache = createCache()
     const retired = new Set<Promise<void>>()
-    read = (file, signal) => cache.read(file, signal)
+    read = async (file, signal) => {
+      const result = await cache.read(file, signal)
+      if (!result.ok && (result.error.code === 'gateway/invocation-unavailable' || result.error.code === 'gateway/service-unavailable')) {
+        throw new Error(t('unavailable'), { cause: result.error })
+      }
+      return result
+    }
     scope.on('connection/reset', () => {
       const previous = cache
       cache = createCache()

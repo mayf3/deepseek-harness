@@ -2,13 +2,16 @@
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join } from 'node:path'
-import { Context, Service } from '@deepseek-ai/cordis'
+import { extname, isAbsolute, join } from 'node:path'
+import { Context } from '@deepseek-ai/cordis'
 import { createConverter, type Converter, type ConverterOptions } from '@deepseek-ai/libreoffice-kit'
 import z from '@deepseek-ai/schemastery'
+import type { WorkspaceFileScope, WorkspaceFileStat } from '@deepseek-ai/dsh-api-workspace-files'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { OfficeToPdfError } from './errors.ts'
-import { OfficeToPdfGeneration } from './identity.ts'
-import type { OfficeExtension, OfficeToPdfRequest, OfficeToPdfResult } from './types.ts'
+import { OfficeToPdfGeneration, type OfficeSourceKey } from './identity.ts'
+import type { OfficeExtension, OfficeToPdfRequest, OfficeToPdfResult, OfficeToPdfPriority, RenderedDocumentBytes } from './types.ts'
 import { readPdf } from './output.ts'
 import { ConversionQueue } from './queue.ts'
 
@@ -18,7 +21,7 @@ export * from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** Shared Host conversion of already-authorized Office bytes to PDF. */
+    /** Shared Office conversion and authorized workspace-file rendering. */
     officeToPdf: OfficeToPdf
   }
 }
@@ -94,10 +97,12 @@ interface Slot {
 }
 
 /** A provider lifetime owns all converters, queued calls, and temporary files. */
-export class OfficeToPdf extends Service {
+export class OfficeToPdf extends TypertRemoteService {
   static Config = Config
   /** Changes whenever engine, font, or conversion configuration is replaced. */
   readonly generation: OfficeToPdfGeneration = OfficeToPdfGeneration(randomUUID())
+  private readonly remoteLifetime = new AbortController()
+  private readonly remoteRequests = new Set<Promise<RenderedDocumentBytes>>()
   private readonly slots: Slot[] = []
   private readonly queue: ConversionQueue
   private readonly options: ConverterOptions
@@ -119,7 +124,9 @@ export class OfficeToPdf extends Service {
     }
     this.queue = new ConversionQueue(config, this.generation, (bytes, extension, signal) => this.convertBytes(bytes, extension, signal))
     ctx.effect(() => async () => {
+      this.remoteLifetime.abort()
       await this.queue.dispose()
+      await Promise.allSettled(this.remoteRequests)
       const results = await Promise.allSettled(this.slots.map(async (slot) => {
         const converter = await slot.converter
         await converter?.dispose()
@@ -138,6 +145,82 @@ export class OfficeToPdf extends Service {
    */
   convert(request: OfficeToPdfRequest, signal?: AbortSignal): Promise<OfficeToPdfResult> {
     return this.queue.read(request, signal)
+  }
+
+  /**
+   * Read and convert one Office file using the Session's ordinary filesystem authorization.
+   * @param workspaceFileScope - Session header lookup shared with workspaceFiles.
+   * @param path - absolute or workspace-relative Office path.
+   * @param priority - foreground preview or speculative background work.
+   * @param signal - Remote cancellation; disposal also cancels outstanding reads and conversions.
+   * @returns complete base64 PDF with original source identity and missing font families.
+   */
+  @Remote
+  async render(
+    workspaceFileScope: WorkspaceFileScope, path: string, priority: OfficeToPdfPriority, signal: AbortSignal,
+  ): Promise<RenderedDocumentBytes> {
+    const upstream = AbortSignal.any([signal, this.remoteLifetime.signal])
+    const operation = this.renderFile(workspaceFileScope, path, priority, upstream)
+    this.remoteRequests.add(operation)
+    try { return await operation } finally { this.remoteRequests.delete(operation) }
+  }
+
+  /**
+   * Read the current rendering generation before reusing a Client PDF.
+   * @param signal - Remote caller cancellation.
+   * @returns provider lifetime, replaced with rendering, font, or engine configuration.
+   */
+  @Remote('generation')
+  getGeneration(signal: AbortSignal): OfficeToPdfGeneration { signal.throwIfAborted(); return this.generation }
+
+  private async renderFile(
+    scope: WorkspaceFileScope, path: string, priority: OfficeToPdfPriority, signal: AbortSignal,
+  ): Promise<RenderedDocumentBytes> {
+    try {
+      signal.throwIfAborted()
+      const extension = extname(path).slice(1).toLowerCase()
+      if (extension !== 'doc' && extension !== 'docx' && extension !== 'xls'
+        && extension !== 'xlsx' && extension !== 'ppt' && extension !== 'pptx') {
+        throw new OfficeToPdfError('unsupported-format', 'The path must end in doc, docx, xls, xlsx, ppt, or pptx.')
+      }
+      const files = this.ctx.get('workspaceFiles')
+      if (files === undefined) throw new OfficeToPdfError('unavailable', 'Office file rendering requires workspaceFiles.')
+      const authorized = await files.readBytes(scope, path, { offset: 0, length: 1 }, signal)
+      const source = await files.stat(scope, path, signal)
+      const assertUnchanged = (current: WorkspaceFileStat): void => {
+        if (current.absolutePath !== source.absolutePath || current.version !== source.version) {
+          throw new OfficeToPdfError('source-changed', 'The source changed.')
+        }
+      }
+      assertUnchanged(authorized)
+      signal.throwIfAborted()
+      const result = await this.convert({ extension, priority, source: {
+        key: brandString<OfficeSourceKey>(JSON.stringify([scope.sessionId, scope.workspaceRoot, source.absolutePath])),
+        version: source.version, ...(source.bytes === undefined ? {} : { bytes: source.bytes }),
+        read: async (upstream, maxBytes) => {
+          const loaded = await files.readAllBounded(scope, path, maxBytes, upstream).catch(async (cause: unknown) => {
+            if (cause instanceof RemoteError && cause.code === 'workspace-file/too-large') {
+              assertUnchanged(await files.stat(scope, path, upstream))
+            }
+            throw cause
+          })
+          upstream.throwIfAborted()
+          const after = await files.stat(scope, path, upstream)
+          assertUnchanged(loaded)
+          assertUnchanged(after)
+          return { bytes: loaded.data, version: loaded.version }
+        },
+      } }, signal)
+      signal.throwIfAborted()
+      return { absolutePath: source.absolutePath, version: source.version,
+        offset: 0, eof: true, bytes: result.pdf.byteLength, data: Buffer.from(result.pdf).toString('base64'), missingFonts: result.missingFonts, generation: result.generation }
+    } catch (cause) {
+      if (signal.aborted) throw new RemoteError('gateway/cancelled', 'The document preview was cancelled.', {}, { cause })
+      if (cause instanceof OfficeToPdfError) {
+        throw new RemoteError('document-render/failed', 'Office conversion failed.', { reason: cause.code }, { cause })
+      }
+      throw cause
+    }
   }
 
   private async convertBytes(bytes: Uint8Array, extension: OfficeExtension, signal: AbortSignal): Promise<Pick<OfficeToPdfResult, 'pdf' | 'missingFonts'>> {

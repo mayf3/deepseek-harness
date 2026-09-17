@@ -8,7 +8,6 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include, { applyEntryPatches } from '@deepseek-ai/cordis-plugin-include'
 import { loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import WorkspaceFiles, { type WorkspaceFileScope } from '@deepseek-ai/dsh-api-workspace-files'
-import DocumentRenderController from '@deepseek-ai/dsh-api-document-render-controller'
 import OfficeToPdf from '@deepseek-ai/dsh-office-to-pdf'
 import * as DocumentPreview from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview'
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
@@ -34,7 +33,6 @@ it('loads the shipped Office rows with separately patched settings and authorize
   const configPath = join(directory, 'cordis.yml')
   const expectedRows = {
     'office-to-pdf': '@deepseek-ai/dsh-office-to-pdf',
-    'document-render-controller': '@deepseek-ai/dsh-api-document-render-controller',
     'ui-sidebar-documentpreview': '@deepseek-ai/dsh-client-ui-sidebar-documentpreview',
   }
   const rows = loadOverlayPatches('web-office-test', fileURLToPath(new URL('../cordis.patch.yml', import.meta.url)))
@@ -75,7 +73,6 @@ it('loads the shipped Office rows with separately patched settings and authorize
     ['@deepseek-ai/dsh-typert-registry', TypertRegistry],
     ['@deepseek-ai/dsh-api-workspace-files', WorkspaceFiles],
     ['@deepseek-ai/dsh-office-to-pdf', OfficeToPdf],
-    ['@deepseek-ai/dsh-api-document-render-controller', DocumentRenderController],
     ['@deepseek-ai/dsh-client-ui-sidebar-documentpreview', DocumentPreview],
   ])
   ctx.loader.internal = {
@@ -106,25 +103,25 @@ it('loads the shipped Office rows with separately patched settings and authorize
   const signal = new AbortController().signal
   const version = (await ctx.workspaceFiles.stat(scope, 'report.docx', signal)).version
   const before = session.seq
-  const result = await ctx.documentRenderController.render(scope, 'report.docx', 'foreground', signal)
+  const result = await ctx.officeToPdf.render(scope, 'report.docx', 'foreground', signal)
   expect(result).toEqual({ absolutePath: sourcePath, version, offset: 0, eof: true, bytes: pdf.length,
     data: pdf.toString('base64'), missingFonts: ['Missing Serif'], generation: ctx.officeToPdf.generation })
   const readAgain = vi.spyOn(ctx.workspaceFiles, 'readAllBounded')
-  expect(await ctx.documentRenderController.render(scope, 'report.docx', 'foreground', signal)).toEqual(result)
+  expect(await ctx.officeToPdf.render(scope, 'report.docx', 'foreground', signal)).toEqual(result)
   expect(readAgain).not.toHaveBeenCalled()
   expect(await readFile(sourcePath, 'utf8')).toBe('authorized OOXML')
   expect(session.seq).toBe(before)
   expect(ctx.get('agents')).toBeUndefined()
   const { maxConcurrentConversions: _count, ...kitOptions } = providerConfig
   expect(kit.create).toHaveBeenCalledWith(expect.objectContaining(kitOptions))
-  await expect(ctx.documentRenderController.render(scope, 'missing.docx', 'foreground', signal))
+  await expect(ctx.officeToPdf.render(scope, 'missing.docx', 'foreground', signal))
     .rejects.toMatchObject({ code: 'workspace-file/not-found' })
   const refusal = new FsError('read refused', 'FS_SANDBOX_DENIED')
   vi.spyOn(ctx.fs, 'stat').mockRejectedValueOnce(refusal)
-  await expect(ctx.documentRenderController.render(scope, 'report.docx', 'foreground', signal)).rejects.toBe(refusal)
+  await expect(ctx.officeToPdf.render(scope, 'report.docx', 'foreground', signal)).rejects.toBe(refusal)
   if (process.platform !== 'win32') {
     await symlink(sourcePath, join(directory, 'link.docx'))
-    await expect(ctx.documentRenderController.render(scope, 'link.docx', 'foreground', signal))
+    await expect(ctx.officeToPdf.render(scope, 'link.docx', 'foreground', signal))
       .rejects.toMatchObject({ code: 'workspace-file/not-regular-file' })
   }
   expect(render).toHaveBeenCalledOnce()

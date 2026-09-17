@@ -10,7 +10,7 @@ Office preview and explicit document inspection can request the same conversion.
 
 ## Decision
 
-The `office-to-pdf` service returns complete PDF bytes. Page rasterization and user presentation remain separate consumers, so conversion naming does not imply image rendering or preview UI.
+The `office-to-pdf` service returns complete PDF bytes. Its Remote file entry authorizes Session files through `workspaceFiles`, while its in-process conversion accepts authorized deferred reads without requiring that service. The `api/remotes` assembly owns Client namespace mounting. Page rasterization and user presentation remain separate consumers, so conversion naming does not imply image rendering or preview UI.
 
 The [Host provider](../../../../packages/document/office-to-pdf/README.md) owns a shared conversion queue and transient content cache. Authorized source metadata enters admission before source bytes are loaded. The source callback receives reserved byte capacity and returns its read version; changed sources fail without publishing aliases. Exact source bytes and Office extension determine the digest. Each converter lifetime adds a generation so engine/font/configuration replacement invalidates reuse.
 

@@ -31,6 +31,8 @@ Callers submit authorized source identity, version, optional byte size, a deferr
 
 The provider depends on the independently published [`@deepseek-ai/libreoffice-kit`](https://github.com/deepseek-harness/libreoffice-kit/tree/main/packages/entry) npm API at kit version `0.0.1`. Application packaging selects the matching native package declared in the kit’s `optionalDependencies`, or WASM when no native package is declared for that target. A missing declared native engine rejects packaging without selecting WASM. The [platform engine decision](../../../.agents/notes/implemented/architecture/2026-09-15-platform-office-engines.md) defines installation and packaging; the [release ownership decision](../../../.agents/notes/implemented/architecture/2026-09-14-independent-libreoffice-kit.md) defines the independent kit and Harness responsibilities.
 
+Browsers request PDFs through the `officeToPdf.render` Remote method with a Session identity, Office path, and priority. This entry uses `workspaceFiles` for authorization and bounded reads; in-process `convert()` does not require that service. Responses retain the source path and version and carry base64 PDF bytes, missing fonts, and conversion generation. The `officeToPdf.generation` Remote method returns the current provider generation; `api/remotes` mounts the generated Client descriptor.
+
 | Field | Default | Meaning |
 |---|---|---|
 | `maxConcurrentConversions` | `2` | Maximum active converters; queued calls remain cancellable. |
@@ -62,6 +64,8 @@ Invalid engine metadata, missing required assets, and conversion errors reject t
 
 Each concurrent slot lazily creates and reuses one kit converter. The provider writes authorized input into a private temporary directory, reads a bounded regular PDF, and removes the directory before settling. Canceling an admitted reader does not block later queued work. Reader cancellation releases only that reader; the final reader and provider disposal cancel shared work. Disposal reports `unavailable` to outstanding readers and joins conversions and converter teardown. No runtime invariant companion is published because active operations and scratch cleanup have one lifetime owner.
 
+Remote file reads recheck content authorization and source version before consulting the conversion cache. Deferred reads run after conversion admission and verify the source version after reading. Source-read failures pass through; conversion failures return `document-render/failed` with a classified reason and no engine diagnostics. Unload cancels and joins authorization reads, Remote requests, and conversion work.
+
 </details>
 
 -----
@@ -89,6 +93,8 @@ None; conversion does not construct or modify model requests.
 
 - Conversion fidelity and installed native/WASM assets belong to `@deepseek-ai/libreoffice-kit`; this provider neither searches for system LibreOffice nor downloads an engine at runtime.
 - Queue waiting time is not bounded by `timeoutMs`, which starts only when kit conversion begins.
+
+- Remote complete-source reads also obey `workspaceFiles.maxFileBytes`; increasing the conversion input limit alone does not increase the file-read allowance.
 
 <a id="dev-note"></a>
 ### Dev Note

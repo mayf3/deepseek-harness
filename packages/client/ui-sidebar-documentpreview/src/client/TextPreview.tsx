@@ -109,9 +109,7 @@ export function TextPreview({
     if (matched.length > 0 && binaryDocumentPath(definitions, file.path)) return matched
     if (matched.length === 0 && unviewable) return matched
     const fallback = definitions.find(definition => definition.id === PLAIN_BODY_ID)
-    const supportsText = matched.length === 0
-      || matched.some(definition => definition.supportsText?.(file.path) ?? definition.loading === 'text-pages')
-    return fallback === undefined || !supportsText ? matched : [...matched, fallback]
+    return fallback === undefined ? matched : [...matched, fallback]
   }, [definitions, file.path, unviewable])
   const selected = candidates.find(candidate => candidate.id === state?.rendererId) ?? candidates[0]
   const mode = selected?.loading
@@ -345,7 +343,7 @@ export function TextPreview({
         {content !== undefined && renderSlot('sidebar.right.tab.document', {
           resourceAddress: tab.contentId, content, wrap: state.wrap, scrollportRef: bindScrollport,
         }, {
-          entryKey: selected.bodyId ?? selected.id, hookContext: useTabInfo,
+          entryKey: selected.id, hookContext: useTabInfo,
           fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,
         })}
         {current?.failure !== undefined && (hasContent

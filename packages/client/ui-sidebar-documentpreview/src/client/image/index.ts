@@ -27,7 +27,6 @@ export function imageBodyDefinition(title: () => string): DocumentPreviewDefinit
     priority: 'builtin',
     title,
     loading: 'bytes-complete',
-    supportsText: path => /\.svg$/iu.test(path),
     wrap: false,
   }
 }

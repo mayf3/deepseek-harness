@@ -48,7 +48,7 @@ describe('TestClient (node environment)', () => {
     expect(client.connection.state.getSnapshot()).toBe('connected')
   })
 
-  it.each(['@deepseek-ai/dsh-api-remotes', '@deepseek-ai/dsh-api-document-render-controller'])(
+  it.each(['@deepseek-ai/dsh-api-remotes'])(
     'refuses a provide entry for the generated Remote installer %s', async (name) => {
       const roster = webApp.closure([name])
       await expect(TestClient.start({ roster, provide: { [name]: { apply() {} } } }, RemoteMock.create()))

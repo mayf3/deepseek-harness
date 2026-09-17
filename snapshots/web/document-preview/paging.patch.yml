@@ -5,5 +5,3 @@
     maxLines: 64
 - id: office-to-pdf
   disabled: true
-- id: document-render-controller
-  disabled: true

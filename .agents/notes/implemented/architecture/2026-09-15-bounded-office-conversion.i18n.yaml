@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-15-bounded-office-conversion.md
-2026-09-15-bounded-office-conversion.md: af24cee4bc73c40135a15f70cff9201e59280da7
-2026-09-15-bounded-office-conversion.zh.md: 29411e117653755e2fd7ddce8e2fe516ffdf226f
+2026-09-15-bounded-office-conversion.md: 79ee82c7a84f6a0495ccfca59cc1e215ceef95b6
+2026-09-15-bounded-office-conversion.zh.md: 5cf38d0e4459fba0ef2b5a185de6178ede09cb3b
