@@ -29,6 +29,7 @@ param(
     [string]$Target,
     [Parameter(ParameterSetName = 'Publish', Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
+    [ValidatePattern('^[a-z0-9-]+$')]
     [string]$Bucket,
     [Parameter(ParameterSetName = 'Publish', Mandatory = $true)]
     [switch]$Upload
@@ -85,7 +86,7 @@ try {
     $startInfo.EnvironmentVariables['DSH_DESKTOP_AUTO_UPDATE_ENV'] = $Environment
     if ($Upload) {
         $startInfo.EnvironmentVariables["${prefix}_BUCKET"] = $Bucket
-        $startInfo.Arguments = "--import tsx/esm apps/desktop/scripts/upload-target.ts $Target"
+        $startInfo.Arguments = "--import tsx/esm apps/desktop/scripts/upload-target.ts $Target --credential-launcher --environment $Environment --bucket $Bucket"
         Write-Output "desktop credentials: uploading $Target to $Environment; release validation runs before network writes."
     } else {
         $probe = "const id=process.env.${prefix}_SECRET_ID;const key=process.env.${prefix}_SECRET_KEY;process.exit(id?.trim()&&key?.trim()?0:1)"

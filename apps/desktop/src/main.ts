@@ -717,7 +717,12 @@ async function main(): Promise<void> {
   app.on('before-quit', (event) => {
     shuttingDown = true
     updateJournal?.action('quit-requested')
-    if (shellInstallerOwnsQuit || quitting) return
+    if (shellInstallerOwnsQuit) {
+      updateDialog.dispose()
+      mandatoryUI?.dispose()
+      return
+    }
+    if (quitting) return
     event.preventDefault()
     quitting = true
     mainWindow?.hide()

@@ -85,7 +85,7 @@ Electron 更新只使用一个 `electron-updater` 发布流和签名 `electron-b
 
 Windows NSIS 分发包含固定版本构建器生成的独立 `.exe.blockmap`。上传拒绝缺失或空 blockmap，并在发布 feed 前上传它。构建器的外部映射元数据不要求 `blockMapSize`；要求该 web-installer 字段会拒绝有效 NSIS 产物。回归 fixture 执行真实 blockmap 生成器，并证明修复前不匹配的验证会失败。文件验证仍不能证明签名合格或已安装应用升级成功。
 
-本地 Windows COS 上传通过[凭据启动器](../../../../apps/desktop/scripts/upload-with-credentials.ps1)读取仓库外经 DPAPI 加密的 CLIXML 凭据对象。显式选择部署环境，避免根据文件名路由凭据；默认动作只检查本地子进程注入，不连接 COS。只有显式上传才调用发布上传程序。解密后的凭据仅存在于进程内存和上传子进程环境中，不进入命令参数或持久环境设置。启动器清除该子进程的无关密钥及 Node 预加载钩子，不显示原始 stderr，并遮盖 stdout 中的凭据值。DPAPI 将文件绑定到 Windows 用户和机器，但不能隔离以同一用户身份运行的其他代码。[Windows 凭据测试](../../../../apps/desktop/tests/upload-with-credentials.spec.ts)覆盖本地注入、父进程状态不变及拒绝时不输出密钥；云端授权和签名发布上传需要单独验收。
+本地 Windows COS 上传通过[凭据启动器](../../../../apps/desktop/scripts/upload-with-credentials.ps1)读取仓库外经 DPAPI 加密的 CLIXML 凭据对象。显式选择部署环境，避免根据文件名路由凭据；默认动作只检查本地子进程注入，不连接 COS。只有显式上传才调用发布上传程序。上传程序会拒绝与目标 dotenv 文件不一致的部署环境或 bucket，并使用选定的 DPAPI 凭据对而不是 dotenv 凭据。解密后的凭据仅存在于进程内存和上传子进程环境中，不进入命令参数或持久环境设置。启动器清除该子进程的无关密钥及 Node 预加载钩子，不显示原始 stderr，并遮盖 stdout 中的凭据值。DPAPI 将文件绑定到 Windows 用户和机器，但不能隔离以同一用户身份运行的其他代码。[Windows 凭据测试](../../../../apps/desktop/tests/upload-with-credentials.spec.ts)覆盖本地注入、父进程状态不变及拒绝时不输出密钥；云端授权和签名发布上传需要单独验收。
 
 核心 dsh 和私有 Desktop Host 只来自签名应用的资源树。插件安装把包规格交给 pnpm，包括本地和远程来源，但不接受原始 pnpm 命令。pnpm 负责依赖解析和 profile 的 `allowBuilds` 策略；Host 加载已启用的 bundle。
 

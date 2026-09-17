@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-16-movable-mandatory-update-window.md
-2026-09-16-movable-mandatory-update-window.md: 99815ffa6cfe440363a8f4665debb428f6c93ef9
-2026-09-16-movable-mandatory-update-window.zh.md: 5ca15d69c521d2bc10009c63cf4cedd17f76b579
+2026-09-16-movable-mandatory-update-window.md: 4695074429b76b467e6ec90201632dbb5a007e68
+2026-09-16-movable-mandatory-update-window.zh.md: 3b416c53dc02abce1276bb70a13bb45b4c1afa44

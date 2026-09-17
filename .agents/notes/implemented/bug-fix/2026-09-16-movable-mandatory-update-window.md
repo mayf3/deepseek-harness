@@ -20,4 +20,4 @@ On Windows, mandatory policy uses a separate native framed modal with move, resi
 
 ## Consequences
 
-Windows users can place or maximize the update window and exit the application from its close button. Modal blocking and the second installation approval remain intact. The native frame replaces the dimmed full-content overlay on Windows; the ordinary update dialog keeps its existing overlay.
+Windows users can place or maximize the update window and exit the application from its close button. Modal blocking and the second installation approval remain intact. Installer-owned quit disposes the modal before Electron closes windows, so its close guard cannot block installation. The native frame replaces the dimmed full-content overlay on Windows; the ordinary update dialog keeps its existing overlay.

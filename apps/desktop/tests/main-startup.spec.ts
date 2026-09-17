@@ -39,6 +39,7 @@ const harness = await vi.hoisted(async () => {
   let quitCompleted = deferred()
   let policyBlocked = deferred()
   let embeddedPolicy: unknown
+  let closeWindowsOnQuit = false
   let updateState: DesktopUpdateState = { phase: 'idle' }
   const updateCheck = vi.fn(async (_manual?: boolean): Promise<DesktopUpdateState> => updateState)
   const updateDownload = vi.fn(async (_version: string): Promise<DesktopUpdateState> => updateState)
@@ -119,7 +120,10 @@ const harness = await vi.hoisted(async () => {
     quit: vi.fn(() => {
       const event = { preventDefault: vi.fn() }
       app.emit('before-quit', event)
-      if (event.preventDefault.mock.calls.length === 0) quitCompleted.resolve()
+      if (event.preventDefault.mock.calls.length === 0) {
+        if (closeWindowsOnQuit) for (const window of [...windows]) if (!window.isDestroyed()) window.close()
+        if (!closeWindowsOnQuit || windows.every(window => window.isDestroyed())) quitCompleted.resolve()
+      }
     }),
   })
   return {
@@ -150,12 +154,14 @@ const harness = await vi.hoisted(async () => {
     nextHostStart() { hostStarted = deferred(); return hostStarted.promise },
     get pluginsEnabled() { return pluginsEnabled },
     set pluginsEnabled(value: boolean) { pluginsEnabled = value },
+    set closeWindowsOnQuit(value: boolean) { closeWindowsOnQuit = value },
     reset() {
       windows.length = 0; hosts.length = 0; handlers.clear(); app.removeAllListeners()
       powerMonitor.removeAllListeners()
       app.isPackaged = true
       windowFailure = undefined
       pluginsEnabled = false
+      closeWindowsOnQuit = false
       prepareUpdate = undefined
       publishUpdate = undefined
       updateState = { phase: 'idle' }
@@ -923,6 +929,26 @@ describe('desktop main startup', () => {
     const view = harness.handlers.get(MANDATORY_IPC.status)!(event) as { confirmation: { version: string; revision: number } }
     await harness.handlers.get(MANDATORY_IPC.action)!(event, action, view.confirmation.version, view.confirmation.revision)
   }
+
+  it('releases the mandatory modal when the confirmed installer quits Electron', async () => {
+    harness.embeddedPolicy = { origin: 'https://policy.example.com', allowedPageOrigins: ['https://downloads.example.com'] }
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ code: 40005, data: {
+      show_content: { title: 'Update required', detail: 'Please update' }, desktop_app_link: 'https://downloads.example.com/',
+    } })))
+    const host = await readyForUpdate()
+    await harness.policyBlocked.promise
+    const modal = harness.windows.find(window => window.options.modal)!
+    const preparing = harness.prepareUpdate()
+    await answerMandatory('install')
+    await host.stopping.promise
+    host.exited.resolve()
+    await expect(preparing).resolves.toBe(true)
+    harness.closeWindowsOnQuit = true
+    harness.app.quit()
+    await harness.quitCompleted.promise
+    expect(modal.isDestroyed()).toBe(true)
+    expect(harness.app.quit).toHaveBeenCalledOnce()
+  })
 
   it.each([false, true])('restores a cleanly stopped Host after installer failure and retains mandatory blocking: %s', async (mandatory) => {
     if (mandatory) {

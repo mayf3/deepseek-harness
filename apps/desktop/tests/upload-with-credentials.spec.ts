@@ -5,6 +5,7 @@ import { dirname, delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
+import { resolveCredentialUploadEnvironment } from '../scripts/upload-target.ts'
 
 const execute = promisify(execFile)
 const launcher = fileURLToPath(new URL('../scripts/upload-with-credentials.ps1', import.meta.url))
@@ -33,6 +34,7 @@ async function check(mode: 'valid' | 'plaintext' | 'blank' | 'missing' | 'upload
       assert.equal(process.env.DSH_DESKTOP_WINDOWS_TOKEN_PIN, undefined)
       assert.equal(process.env.NODE_OPTIONS, undefined)
       assert.equal(process.argv[2], 'win-x64')
+      assert.deepEqual(process.argv.slice(3), ['--credential-launcher', '--environment', 'production', '--bucket', 'fixture-bucket'])
       console.log('fixture-id fixture-secret')
       console.error('private service details fixture-secret')
       process.exit(${mode === 'upload-failure' ? 17 : 0})
@@ -80,6 +82,35 @@ async function check(mode: 'valid' | 'plaintext' | 'blank' | 'missing' | 'upload
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map(async root => rm(root, { recursive: true, force: true })))
+})
+
+describe('credential launcher destination', () => {
+  const fileEnvironment = {
+    DSH_DESKTOP_AUTO_UPDATE_ENV: 'test', DOWNLOAD_TEST_ORIGIN: 'https://download-test.example.com',
+    DOWNLOAD_TEST_COS_BUCKET: 'test-bucket', DOWNLOAD_TEST_COS_SECRET_ID: 'stale-id', DOWNLOAD_TEST_COS_SECRET_KEY: 'stale-key',
+  }
+  const injectedEnvironment = {
+    DSH_DESKTOP_AUTO_UPDATE_ENV: 'test', DOWNLOAD_TEST_COS_BUCKET: 'test-bucket',
+    DOWNLOAD_TEST_COS_SECRET_ID: 'decrypted-id', DOWNLOAD_TEST_COS_SECRET_KEY: 'decrypted-key',
+  }
+
+  it('uses decrypted credentials only for the matching packaged deployment and bucket', () => {
+    expect(resolveCredentialUploadEnvironment(fileEnvironment, injectedEnvironment, 'test', 'test-bucket', 'win-x64'))
+      .toMatchObject({ DOWNLOAD_TEST_COS_SECRET_ID: 'decrypted-id', DOWNLOAD_TEST_COS_SECRET_KEY: 'decrypted-key' })
+    expect(() => resolveCredentialUploadEnvironment(fileEnvironment, injectedEnvironment, 'production', 'test-bucket', 'win-x64'))
+      .toThrow(/differs from the packaged release destination/u)
+    expect(() => resolveCredentialUploadEnvironment(fileEnvironment, injectedEnvironment, 'test', 'other-bucket', 'win-x64'))
+      .toThrow(/differs from the packaged release destination/u)
+  })
+
+  it('rejects child credentials that do not match the explicit launcher selection', () => {
+    expect(() => resolveCredentialUploadEnvironment(fileEnvironment, { ...injectedEnvironment,
+      DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+    }, 'test', 'test-bucket', 'win-x64')).toThrow(/differs from its explicit arguments/u)
+    expect(() => resolveCredentialUploadEnvironment(fileEnvironment, { ...injectedEnvironment,
+      DOWNLOAD_TEST_COS_SECRET_KEY: '',
+    }, 'test', 'test-bucket', 'win-x64')).toThrow(/DOWNLOAD_TEST_COS_SECRET_KEY/u)
+  })
 })
 
 // DPAPI's user-and-machine encryption is Windows-only.
