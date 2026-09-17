@@ -915,7 +915,7 @@ test('delegation dismisses only the sender old decisions and stays active across
   })
   assert.deepEqual(calls.map(call => call.method), ['PUT', 'PUT'])
   assert.equal(calls[0].body.event, 'DISMISS')
-  assert.equal(calls[0].body.message, 'This is by automated Angry Turtle Cyborg, not a human. @turtle1999 delegated approval to @writer via /delegate.')
+  assert.equal(calls[0].body.message, '@turtle1999 delegated approval to @writer via /delegate.')
   assert.deepEqual(result.blockers, ['other'])
   assert.equal(result.delegations.length, 1)
   assert.deepEqual(result.delegations[0].reviewIds, [])
