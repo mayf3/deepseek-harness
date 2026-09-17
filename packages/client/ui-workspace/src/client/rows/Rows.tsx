@@ -460,7 +460,6 @@ export function SessionNodeItem({
   const sessionMenuItems = [
     { id: 'rename', label: t('rename'), icon: <IconEditOutlineRegular /> },
     { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutlineRegular /> },
-    // The 20-native glyph scales into the shared menu's compact icon slot.
     { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutlineRegular size={14} /> },
   ]
   // Figma session cell: pad 8, status slot 16, then a 4px title gap.

@@ -129,9 +129,9 @@ describe('FileTypeIcon', () => {
   it('uses the supplied unscaled 1.2px table grid for spreadsheet files', () => {
     const { container } = render(<FileTypeIcon kind="excel" />)
     const mark = container.querySelector('[data-file-type-mark]')
-    expect(mark?.getAttribute('stroke')).toBe('var(--dsw-static-neutral-00)')
-    expect(mark?.getAttribute('stroke-width')).toBe('1.2')
     expect(mark?.getAttribute('transform')).toBeNull()
+    expect(mark?.querySelector('path')?.getAttribute('stroke')).toBe('currentColor')
+    expect(mark?.querySelector('path')?.getAttribute('stroke-width')).toBe('1.2')
   })
 
   it('keeps the generic file glyph without an invented center mark', () => {

@@ -40,7 +40,7 @@ export function GenericToolCard({ toolName, block, cwd, home, openFile, inspect,
   const search = searchCardModel(block)
   const web = webCardModel(block)
   // A failing exit status is the terminal card's own error signal (the call
-  // itself settles isError:false), surfaced through the row's failed artwork.
+  // itself settles isError:false), surfaced through the row's error summary.
   const state = model.state === 'ok' && terminal !== null && terminalFailed(terminal)
     ? 'error'
     : model.state

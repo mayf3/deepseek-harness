@@ -20,12 +20,11 @@ import css from './bash-sample.module.css'
 
 type BashRowProps = ToolCallViewProps & PropsLocale<'conversation'>
 
-/** Visually hidden status for the color-only running sweep and settlement state. */
+/** Visually hidden status for the color-only running sweep and error tone. */
 function stateStatus(state: ToolRowState, t: BashRowProps['t']): string | null {
   switch (state) {
     case 'running': return t('bash.running')
     case 'error': return t('bash.failed')
-    case 'stopped': return t('bash.stopped')
     default: return null
   }
 }
@@ -39,7 +38,7 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
   const terminalModel = terminalCardModel(block, cwd)
   const terminal = terminalModel === null ? null : localizeTerminalCardModel(terminalModel, t)
   // A failing exit status is the terminal card's own error signal (the call
-  // itself settles isError:false), surfaced through the row's failed artwork.
+  // itself settles isError:false), surfaced through the row's error summary.
   const state = model.state === 'ok' && terminalModel !== null && terminalFailed(terminalModel)
     ? 'error'
     : model.state
@@ -58,7 +57,10 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
       : null,
     [genericBody, model.bodyRaw, model.variant, open],
   )
-  const failureLine = model.state === 'error' ? model.errorSummary : null
+  const normalSummary = terminal?.description ?? model.summary
+  const settlementLine = state === 'error'
+    ? model.errorSummary ?? normalSummary
+    : state === 'stopped' ? t('bash.stopped') : null
   const toggleExpand = () => {
     setExpanded(v => !v)
   }
@@ -96,8 +98,12 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
         {status !== null && <span className={css.visuallyHidden}>{status}</span>}
         <span className={css.title}>{t(model.titleKey)}</span>
         <span className={css.sep} aria-hidden />
-        <span className={clsx(css.summary, failureLine !== null && css.errorSummary)}>
-          {failureLine ?? terminal?.description ?? model.summary}
+        <span className={clsx(
+          css.summary,
+          state === 'error' && css.errorSummary,
+          state === 'stopped' && css.stoppedSummary,
+        )}>
+          {settlementLine ?? normalSummary}
         </span>
       </div>
       {open && (

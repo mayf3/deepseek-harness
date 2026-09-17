@@ -50,7 +50,7 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.leading svg:not([data-state]) {
+.leading svg {
   width: calc(14px + var(--dsh-content-font-delta, 0px));
   height: calc(14px + var(--dsh-content-font-delta, 0px));
 }
@@ -110,6 +110,10 @@
 
 .errorSummary {
   color: var(--dsw-alias-state-error-primary);
+}
+
+.stoppedSummary {
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .bodyWrap {

@@ -17,6 +17,8 @@
 }
 
 .bar {
+  position: relative;
+  isolation: isolate;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -29,9 +31,18 @@
   border: 0;
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   border-radius: 12px;
+  box-shadow: var(--dsw-elevation-panel);
+}
+
+.bar::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
   background: var(--dsw-specific-menu);
   backdrop-filter: var(--dsw-menu-backdrop-filter);
-  box-shadow: var(--dsw-elevation-panel);
+  content: '';
+  pointer-events: none;
 }
 
 .goalGlyph {

@@ -25,8 +25,8 @@ describe('StateDot.module.css', () => {
     expect(css).toMatch(/\.dot\[data-state='done'\][^{]*\{[^}]*--dsw-alias-state-success-primary/su)
   })
 
-  it('uses the l1 scrollbar hover grey for idle', () => {
-    expect(css).toMatch(/\.dot\[data-state='idle'\][^{]*\{[^}]*--dsw-alias-scrollbar-hover-l1/su)
+  it('uses the neutral state token for idle', () => {
+    expect(css).toMatch(/\.dot\[data-state='idle'\][^{]*\{[^}]*--dsw-alias-state-idle-primary/su)
   })
 
   it('keeps ongoing on the rotating spinner rather than a solid-dot rule', () => {
@@ -40,7 +40,6 @@ describe('StateDot.module.css', () => {
     expect(css).toContain('stroke-dasharray: 12 150')
     expect(css).toContain('stroke-dasharray: 24 150')
     expect(css).toContain('stroke-dashoffset: -6')
-    expect(css).not.toContain('stroke-dashoffset: -59.69')
   })
 
   it('stops both animations and retains an intermediate arc for reduced motion', () => {

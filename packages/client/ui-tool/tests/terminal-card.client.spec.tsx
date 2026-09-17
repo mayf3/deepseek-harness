@@ -448,6 +448,7 @@ describe('BashRow terminal card', () => {
       content: [{ type: 'text', text: 'boom\n[exit code: 2]' }],
     }))} />)
     expect(view.container.querySelector('[data-variant="bash"]')?.getAttribute('data-state')).toBe('error')
+    expect(view.container.querySelector('[class*="_errorSummary_"]')?.textContent).toBe('List files')
   })
 
   it('shows the call description as the terminal summary', () => {

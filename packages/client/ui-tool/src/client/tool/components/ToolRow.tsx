@@ -88,15 +88,11 @@ export interface ToolRowProps {
   inspect?: (() => void) | undefined
 }
 
-/** Visually hidden run-state label: the status artwork and CSS sweep are both
- *  aria-hidden / colour-only, so assistive technology needs this text to know a
- *  row is running, failed, or interrupted. null in the ok state (the icon and
- *  summary already describe a settled row). */
+/** Visually hidden run-state label for the color-only running sweep and error tone. */
 function stateStatus(state: ToolRowState, t: TranslateNS<'conversation'>): string | null {
   switch (state) {
     case 'running': return t('row.running')
     case 'error': return t('row.failed')
-    case 'stopped': return t('row.stopped')
     default: return null
   }
 }
@@ -154,9 +150,14 @@ export function ToolRow({
     [card, inputRaw, open, variant],
   )
   const status = stateStatus(state, t)
-  // A failure must replace, not supplement, the normal summary.
-  const failureLine = state === 'error' ? errorSummary ?? null : null
-  const summaryText = failureLine ?? terminalBody?.description ?? summary
+  const normalSummary = terminalBody?.description ?? summary
+  // A failure keeps its first result line when available and otherwise turns
+  // the ordinary summary red. An interruption replaces the normal summary
+  // with visible warning text while retaining the business icon.
+  const settlementLine = state === 'error'
+    ? errorSummary ?? normalSummary
+    : state === 'stopped' ? t('row.stopped') : null
+  const summaryText = settlementLine ?? normalSummary
   // A diff row's collapsed line carries the card's +/- totals (the same
   // numbers the expanded footer prints) so the change size reads without
   // expanding; an explicit summarySuffix (none today on diff rows) wins.
@@ -165,11 +166,11 @@ export function ToolRow({
     const { added, removed } = diffTotals(diffBody.card.diffs)
     return `+${added} -${removed}`
   }, [diffBody])
-  const suffix = failureLine === null ? summarySuffix ?? diffStat : null
+  const suffix = settlementLine === null ? summarySuffix ?? diffStat : null
   const toggleExpand = () => {
     setExpanded(v => !v)
   }
-  const openFile = filePath !== undefined && onOpenFile !== undefined && failureLine === null
+  const openFile = filePath !== undefined && onOpenFile !== undefined && settlementLine === null
     ? (event: MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation()
       if (filePathLine === undefined) onOpenFile(filePath)
@@ -217,7 +218,11 @@ export function ToolRow({
               </button>
             ) : (
               <span
-                className={clsx(css.summary, failureLine !== null && css.errorSummary)}
+                className={clsx(
+                  css.summary,
+                  state === 'error' && css.errorSummary,
+                  state === 'stopped' && css.stoppedSummary,
+                )}
               >
                 {summaryText}
               </span>

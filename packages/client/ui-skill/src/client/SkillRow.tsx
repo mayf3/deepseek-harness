@@ -85,12 +85,11 @@ function disclosureLeading(open: boolean, expandable: boolean): ReactNode {
   )
 }
 
-/** Visually hidden state copy for the colour-only lifecycle cues. */
+/** Visually hidden state copy for the color-only running sweep and error tone. */
 function stateStatus(state: SkillRowState, t: SkillRowProps['t']): string | null {
   switch (state) {
     case 'running': return t('row.running')
     case 'error': return t('row.failed')
-    case 'stopped': return t('row.stopped')
     default: return null
   }
 }
@@ -106,7 +105,7 @@ export function SkillRow({ block, inspect, t }: SkillRowProps) {
   const expandable = model.output !== null
   const open = expanded && expandable
   const status = stateStatus(model.state, t)
-  const summary = model.errorSummary ?? model.name
+  const summary = model.state === 'stopped' ? t('row.stopped') : model.errorSummary ?? model.name
   const toggleExpand = (): void => {
     setExpanded(value => !value)
   }
@@ -134,7 +133,10 @@ export function SkillRow({ block, inspect, t }: SkillRowProps) {
         {status !== null ? <span className={css.visuallyHidden}>{status}</span> : null}
         <span className={css.title}>{t('row.title')}</span>
         <span className={css.separator} aria-hidden />
-        <span className={model.errorSummary === null ? css.summary : `${css.summary} ${css.errorSummary}`}>
+        <span className={`${css.summary}${
+          model.state === 'error' ? ` ${css.errorSummary}`
+            : model.state === 'stopped' ? ` ${css.stoppedSummary}` : ''
+        }`}>
           {summary}
         </span>
       </div>

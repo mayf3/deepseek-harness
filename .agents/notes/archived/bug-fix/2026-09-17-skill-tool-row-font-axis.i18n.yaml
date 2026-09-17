@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-17-skill-tool-row-font-axis.md
-2026-09-17-skill-tool-row-font-axis.md: c36769febfb1e493e2a7acbd53943a1550289312
-2026-09-17-skill-tool-row-font-axis.zh.md: a5891ec9a7e483761247af69e89014f4a53a823c

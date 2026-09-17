@@ -152,7 +152,7 @@ const LARGE_FILE_MARK_TRANSFORM = 'translate(14 16) scale(1.22) translate(-14 -1
 const FOLDER_MARK_TRANSFORM = 'translate(14 13.0693) scale(1.12) translate(-14 -13.0693)'
 
 function FileGlyph({
-  size, className, children, markTransform = FILE_MARK_TRANSFORM, muted = false,
+  size, className, children, markTransform, muted = false,
 }: IconProps & { children?: ReactNode; markTransform?: string; muted?: boolean }): ReactNode {
   return (
     <svg width={size} height={size} className={className} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
@@ -183,23 +183,13 @@ function FolderGlyph({ size, className }: IconProps): ReactNode {
 
 function SpreadsheetGlyph({ size, className }: IconProps): ReactNode {
   return (
-    <svg width={size} height={size} className={className} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+    <FileGlyph size={size} className={className}>
       <path
-        d="M8.48949 28H19.511C21.6482 28 22.7167 28 23.5596 27.6509C24.6835 27.1853 25.5764 26.2924 26.042 25.1685C26.3911 24.3256 26.3911 23.257 26.3911 21.1199V8.79443C26.3911 8.32877 26.3911 8.09593 26.3473 7.87507C26.2889 7.58058 26.1733 7.30042 26.007 7.05048C25.8822 6.86303 25.718 6.69799 25.3895 6.36792L20.0613 1.01354C19.7307 0.681235 19.5653 0.515081 19.3771 0.38885C19.1263 0.220541 18.8446 0.103463 18.5483 0.0443412C18.3261 0 18.0917 0 17.6229 0L8.48949 0C6.35233 0 5.28376 0 4.44085 0.349145C3.31697 0.814671 2.42405 1.70759 1.95852 2.83147C1.60938 3.67438 1.60938 4.74296 1.60938 6.88011L1.60938 21.1199C1.60938 23.257 1.60938 24.3256 1.95852 25.1685C2.42405 26.2924 3.31697 27.1853 4.44085 27.6509C5.28376 28 6.35233 28 8.48949 28Z"
-        fill="currentColor"
-      />
-      <path
-        data-file-type-mark
         d="M14 11.5H11.4C10.5599 11.5 10.1399 11.5 9.81901 11.6635C9.53677 11.8073 9.3073 12.0368 9.16349 12.319C9 12.6399 9 13.0599 9 13.9V16.5M14 11.5H16.6C17.4401 11.5 17.8601 11.5 18.181 11.6635C18.4632 11.8073 18.6927 12.0368 18.8365 12.319C19 12.6399 19 13.0599 19 13.9V16.5M14 11.5V21.5M14 21.5H16.6C17.4401 21.5 17.8601 21.5 18.181 21.3365C18.4632 21.1927 18.6927 20.9632 18.8365 20.681C19 20.3601 19 19.9401 19 19.1V16.5M14 21.5H11.4C10.5599 21.5 10.1399 21.5 9.81901 21.3365C9.53677 21.1927 9.3073 20.9632 9.16349 20.681C9 20.3601 9 19.9401 9 19.1V16.5M19 16.5H9"
-        stroke="var(--dsw-static-neutral-00)"
+        stroke="currentColor"
         strokeWidth="1.2"
       />
-      <path
-        d="M26.3911 7.37445L19.0527 0V3.77445C19.0527 4.89271 19.0527 5.45184 19.2354 5.89289C19.479 6.48096 19.9462 6.94818 20.5343 7.19176C20.9753 7.37445 21.5345 7.37445 22.6527 7.37445H26.3911Z"
-        fill="var(--dsw-static-neutral-00)"
-        fillOpacity=".7"
-      />
-    </svg>
+    </FileGlyph>
   )
 }
 
@@ -207,7 +197,7 @@ function glyph(type: TraditionalFileType, size: number, className: string | unde
   switch (type) {
     case 'code':
       return (
-        <FileGlyph size={size} className={className}>
+        <FileGlyph size={size} className={className} markTransform={FILE_MARK_TRANSFORM}>
           <path d="M8.61 16.3601L11.76 18.3901V20.1401L7 17.0601V15.6601L11.76 12.5801V14.3301L8.61 16.3601Z" fill="currentColor" />
           <path d="M16.1918 14.3301V12.5801L20.9518 15.6601V17.0601L16.1918 20.1401V18.3901L19.3418 16.3601L16.1918 14.3301Z" fill="currentColor" />
         </FileGlyph>
@@ -216,7 +206,7 @@ function glyph(type: TraditionalFileType, size: number, className: string | unde
     case 'folder': return <FolderGlyph size={size} className={className} />
     case 'html':
       return (
-        <FileGlyph size={size} className={className}>
+        <FileGlyph size={size} className={className} markTransform={FILE_MARK_TRANSFORM}>
           <path
             fillRule="evenodd"
             clipRule="evenodd"
@@ -227,7 +217,7 @@ function glyph(type: TraditionalFileType, size: number, className: string | unde
       )
     case 'image':
       return (
-        <FileGlyph size={size} className={className}>
+        <FileGlyph size={size} className={className} markTransform={FILE_MARK_TRANSFORM}>
           <path d="M10.4212 15.9204C10.5756 15.6558 10.9579 15.6558 11.1123 15.9204L13.6493 20.2696C13.8048 20.5362 13.6125 20.8711 13.3037 20.8711H8.22974C7.92102 20.8711 7.72868 20.5362 7.88423 20.2696L10.4212 15.9204Z" fill="currentColor" />
           <path d="M15.4981 13.186C15.6505 12.9117 16.0451 12.9117 16.1975 13.186L20.1368 20.2769C20.2849 20.5435 20.0922 20.8711 19.7872 20.8711H11.9084C11.6034 20.8711 11.4107 20.5435 11.5588 20.2769L15.4981 13.186Z" fill="currentColor" />
           <path d="M11.8603 11.3997C11.8603 12.286 11.1418 13.0045 10.2555 13.0045C9.36924 13.0045 8.65076 12.286 8.65076 11.3997C8.65076 10.5134 9.36924 9.79492 10.2555 9.79492C11.1418 9.79492 11.8603 10.5134 11.8603 11.3997Z" fill="currentColor" />
@@ -254,7 +244,7 @@ function glyph(type: TraditionalFileType, size: number, className: string | unde
       )
     case 'video':
       return (
-        <FileGlyph size={size} className={className}>
+        <FileGlyph size={size} className={className} markTransform={FILE_MARK_TRANSFORM}>
           <path d="M17.5 14.634C18.1667 15.0189 18.1667 15.9811 17.5 16.366L11.5 19.8301C10.8333 20.215 10 19.7339 10 18.9641L10 12.0359C10 11.2661 10.8333 10.785 11.5 11.1699L17.5 14.634Z" fill="currentColor" />
         </FileGlyph>
       )

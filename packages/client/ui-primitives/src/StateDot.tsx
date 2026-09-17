@@ -2,8 +2,8 @@ import clsx from 'clsx'
 import css from './StateDot.module.css'
 
 /**
- * State semantic: green done / amber user-attention / dark-grey loading /
- * red error / grey idle for a tracked subject with nothing in progress.
+ * State semantic: green done / amber user-attention / tertiary-grey loading /
+ * red error / neutral-grey idle for a tracked subject with nothing in progress.
  */
 export type StateDotState = 'done' | 'warning' | 'ongoing' | 'error' | 'idle'
 

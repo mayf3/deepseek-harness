@@ -110,7 +110,8 @@ describe('SkillRow', () => {
     const stoppedView = render(<SkillRow {...props(settled({
       error: { name: 'InterruptedError', code: 'interrupted' },
     }))} />)
-    expect(stoppedView.container.textContent).toContain('skill 加载已中止')
+    const stoppedSummary = stoppedView.getByText('skill 加载已中止')
+    expect(stoppedSummary.className).toContain('stoppedSummary')
     expect(stoppedView.container.querySelector('[data-tool="skill"] > div > span:first-child svg')).not.toBeNull()
     expect(stoppedView.container.querySelector('[data-tool="skill"] [data-state]')).toBeNull()
     cleanup()

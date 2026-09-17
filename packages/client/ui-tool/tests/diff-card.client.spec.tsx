@@ -301,9 +301,8 @@ describe('FileMutationRow diff card', () => {
     }))} />)
     expect(view.container.querySelector('[data-state="stopped"]')).not.toBeNull()
     expect(view.container.querySelector('[data-state="stopped"] svg')).not.toBeNull()
-    // The dashed glyph is aria-hidden, so ToolRow carries the state to AT as
-    // visually-hidden text; without it a stopped row is a visual-only signal.
-    expect(view.getByText('已停止')).toBeTruthy()
+    const summary = view.getByText('已停止')
+    expect(summary.className).toContain('stoppedSummary')
   })
 
   it('renders a plain summary span when the call carries no file path', () => {

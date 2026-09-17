@@ -10,11 +10,11 @@ Status: implemented
 
 ## 决策
 
-`idle`、`done`、`warning` 与 `error` 在既有 10px 布局槽内渲染一个 6px 纯色圆点，不再带光晕。`idle` 使用滚动条 hover-l1 灰色，`done` 保持成功绿色，`warning` 保持琥珀色，`error` 保持红色。
+`idle`、`done`、`warning` 与 `error` 在既有 10px 布局槽内渲染一个 6px 纯色圆点，不再带光晕。`idle` 使用中性的 `--dsw-alias-state-idle-primary` token，`done` 保持成功绿色，`warning` 保持琥珀色，`error` 保持红色。
 
 `ongoing` 是唯一不是圆点的成员。它的默认边长为 14px，纯色状态仍保留 10px 布局槽。它在透明度为 25% 的完整圆环上方，使用 tertiary label token 渲染灰色圆弧。图形以 1.5 秒周期持续旋转，圆弧围绕中心从 12 个 dash 单位增长到 24 个、再回到 12 个；圆弧偏移在首尾都为零，因此浏览器不会在循环边界重置第二段圆周运动。减少动态效果的环境保留中间长度的静态圆弧。显式 size 覆盖、`data-state` 与 `aria-hidden` 行为均不改变。
 
-紧凑的纯状态展示使用这套共享映射，不再自绘圆点或 spinner：等待或阻塞为 `warning`，活动工作为 `ongoing`，成功完成为 `done`，失败为 `error`，未活动或尚未开始为 `idle`。前置槽为业务图标的工具行在所有生命周期状态中都保留普通图标。无框架的启动页保持独立，因为它会在 React 与共享原语可用前用圆弧表达 Loader 总体进度。
+已转换的紧凑纯状态展示使用这套共享映射，不再自绘圆点或 spinner：等待或阻塞为 `warning`，活动工作为 `ongoing`，成功完成为 `done`，失败为 `error`，未活动或尚未开始为 `idle`。前置槽为业务图标的工具行在所有生命周期状态中都保留普通图标；收起摘要在失败时变红，在 `stopped` 时改为琥珀色的本地化中断文本。无框架的启动页保持独立，因为它会在 React 与共享原语可用前用圆弧表达 Loader 总体进度。
 
 ## 考虑过的替代方案
 
@@ -24,7 +24,7 @@ Status: implemented
 
 ## 测试
 
-组件测试固定四种纯色状态元素、双圆环 loading 图稿、两条动画轨道、两条尺寸路径、无光晕样式和每个状态 token。Workspace、Job、Workflow、Subagent、Deliverables、终端、插件、Schedule、Todo、Team、审批、文档预览、Trajectory 与连接测试固定各自的状态映射和无障碍 label。
+组件测试固定四种纯色状态元素、双圆环 loading 图稿、两条动画轨道、两条尺寸路径、无光晕样式和每个状态 token。Tool、Bash 与 Skill 行测试固定保留的业务图形，以及可见的红色失败摘要与琥珀色中断摘要。Workspace、Job、Workflow、Subagent、Deliverables、终端、插件、Schedule、Todo、Team、审批、文档预览、Trajectory 与连接测试固定各自的状态映射和无障碍 label。
 
 ## 后果
 

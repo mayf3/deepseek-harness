@@ -8,6 +8,7 @@ afterEach(cleanup)
 describe('classifyLinkPath', () => {
   it.each([
     ['src/markdown/render.tsx', 'code'],
+    ['styles/site.scss', 'code'],
     ['site/index.html', 'code'],
     ['data/export.CSV', 'document'],
     ['data/export.tsv', 'document'],

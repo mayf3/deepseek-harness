@@ -199,6 +199,10 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+.stoppedSummary {
+  color: var(--dsw-alias-state-warn-label);
+}
+
 /* Hover-revealed Inspect pill under the expanded terminal's bottom-left —
    ToolRow's .bodyWrap/.inspectButton treatment, replicated per the registrant
    posture: real flow (it reserves its line), revealed by hovering anywhere on

@@ -41,12 +41,14 @@ function bashProps(block: RunningToolCall | ToolResultNode): BashRowProps {
 }
 
 describe('Tool presentation tails', () => {
-  it('ToolRow stopped state retains the supplied business icon in the leading slot', () => {
+  it('ToolRow stopped state retains the business icon and shows a warning summary', () => {
     const view = render(
       <ToolRow t={t} variant="bash" icon={<i data-testid="icon" />}
         title="Bash" summary="s" state="stopped" />,
     )
     expect(view.queryByTestId('icon')).not.toBeNull()
+    const summary = view.getByText('已停止')
+    expect(summary.className).toContain('stoppedSummary')
   })
 
   it('a settled others-variant row renders the sparkle icon in the leading slot', () => {
@@ -105,12 +107,14 @@ describe('Tool presentation tails', () => {
     expect(errorView.container.querySelector('[data-sample="bash"]')).not.toBeNull()
     expect(errorView.container.querySelector('[data-state="error"]')).not.toBeNull()
     expect(errorView.container.querySelector('[data-state="error"] svg')).not.toBeNull()
-    expect(errorView.getByText('失败')).toBeTruthy()
+    expect(errorView.getByText('Bash')).toBeTruthy()
+    expect(errorView.container.querySelector('[class*="_errorSummary_"]')).not.toBeNull()
     errorView.unmount()
 
     const stoppedView = render(<BashRow {...bashProps(stoppedResult)} />)
     expect(stoppedView.container.querySelector('[data-state="stopped"]')).not.toBeNull()
     expect(stoppedView.container.querySelector('[data-state="stopped"] svg')).not.toBeNull()
-    expect(stoppedView.getByText('已停止')).toBeTruthy()
+    const stoppedSummary = stoppedView.getByText('已停止')
+    expect(stoppedSummary.className).toContain('stoppedSummary')
   })
 })

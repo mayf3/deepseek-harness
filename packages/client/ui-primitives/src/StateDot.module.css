@@ -26,9 +26,9 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
-/* Idle is the absence of activity, so it uses the l1 scrollbar hover grey. */
+/* Idle is the absence of activity and uses the theme's neutral state step. */
 .dot[data-state='idle'] {
-  color: var(--dsw-alias-scrollbar-hover-l1);
+  color: var(--dsw-alias-state-idle-primary);
 }
 
 /* Ongoing is the sole non-dot state: a quiet full ring sits behind a centered

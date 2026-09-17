@@ -6,7 +6,9 @@ import type { ReactNode } from 'react'
 import { classifyFileType, fileExtension } from './FileTypeIcon.tsx'
 import { isCodeFileType, isLinkCodeExtension } from './code-file-types.ts'
 import { siteGlyph } from './SiteGlyph.tsx'
+import { ICON_MEDIUM_STROKE, ICON_REGULAR_STROKE } from './icons/index.tsx'
 import type { IconProps } from './icons/props.ts'
+import { CodeBracketsArtwork, FolderCloseArtwork, GlobeOutlineArtwork } from './icons/shared-artwork.tsx'
 
 /** Link categories with distinct leading glyphs. */
 export type LinkIconKind = 'url' | 'folder' | 'code' | 'image' | 'document' | 'other'
@@ -49,30 +51,6 @@ export function classifyLinkPath(path: string): LinkIconKind {
   }
 }
 
-const GlobeGlyph = ({ size, className, strokeWidth }: IconProps & { strokeWidth: number }) => (
-  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={strokeWidth}>
-    <path d="M7.99986 14.0887C11.3626 14.0887 14.0886 11.3627 14.0886 7.99998C14.0886 4.63727 11.3626 1.91125 7.99986 1.91125C4.63715 1.91125 1.91113 4.63727 1.91113 7.99998C1.91113 11.3627 4.63715 14.0887 7.99986 14.0887Z" stroke="currentColor" />
-    <path d="M2.34619 8H13.6538" stroke="currentColor" strokeLinecap="square" />
-    <path d="M7.99976 14.0889C9.23509 14.0889 10.1743 11.3629 10.1743 8.00006C10.1743 4.63739 9.23509 1.91138 7.99976 1.91138" stroke="currentColor" />
-    <path d="M7.99973 14.0889C6.76445 14.0889 5.8252 11.3629 5.8252 8.00006C5.8252 4.63739 6.76445 1.91138 7.99973 1.91138" stroke="currentColor" />
-  </svg>
-)
-
-const FolderGlyph = ({ size, className, strokeWidth }: IconProps & { strokeWidth: number }) => (
-  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={strokeWidth}>
-    <path d="M1.50439 3.11059C1.50439 2.55831 1.95211 2.1106 2.50439 2.1106H5.43389C5.67773 2.1106 5.91318 2.19969 6.09593 2.36113L7.71649 3.79265C7.89924 3.95409 8.1347 4.04319 8.3785 4.04319H13.4958C14.0481 4.04319 14.4958 4.4909 14.4958 5.04319V12.8894C14.4958 13.4417 14.0481 13.8894 13.4958 13.8894H2.50439C1.95211 13.8894 1.50439 13.4417 1.50439 12.8894V4.04319V3.11059Z" stroke="currentColor" />
-    <path d="M3.63501 7.66614H12.3647" stroke="currentColor" />
-  </svg>
-)
-
-const CodeGlyph = ({ size, className, strokeWidth }: IconProps & { strokeWidth: number }) => (
-  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={strokeWidth}>
-    <path d="M4.67398 4.25061L1.36094 7.86484C1.29085 7.9413 1.29085 8.05866 1.36094 8.13513L4.67398 11.7494" stroke="currentColor" />
-    <path d="M11.3262 4.25061L14.6392 7.86484C14.7093 7.9413 14.7093 8.05866 14.6392 8.13513L11.3262 11.7494" stroke="currentColor" />
-    <path d="M9.56222 3.62573L6.43774 12.3743" stroke="currentColor" />
-  </svg>
-)
-
 const PhotoGlyph = ({ size, className, strokeWidth }: IconProps & { strokeWidth: number }) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={strokeWidth}>
     <path d="M12.4326 2.38086H3.56763C2.46306 2.38086 1.56763 3.27629 1.56763 4.38086V11.6192C1.56763 12.7237 2.46306 13.6192 3.56763 13.6192H12.4326C13.5372 13.6192 14.4326 12.7237 14.4326 11.6192V4.38086C14.4326 3.27629 13.5372 2.38086 12.4326 2.38086Z" stroke="currentColor" />
@@ -110,9 +88,9 @@ function assertNever(value: never): never {
  */
 function LinkIconArtwork({ kind, href, size = 14, className, strokeWidth }: WeightedLinkIconProps): ReactNode {
   switch (kind) {
-    case 'url': return siteGlyph({ href, size, className }) ?? <GlobeGlyph size={size} className={className} strokeWidth={strokeWidth} />
-    case 'folder': return <FolderGlyph size={size} className={className} strokeWidth={strokeWidth} />
-    case 'code': return <CodeGlyph size={size} className={className} strokeWidth={strokeWidth} />
+    case 'url': return siteGlyph({ href, size, className }) ?? <GlobeOutlineArtwork size={size} className={className} strokeWidth={strokeWidth} />
+    case 'folder': return <FolderCloseArtwork size={size} className={className} strokeWidth={strokeWidth} />
+    case 'code': return <CodeBracketsArtwork size={size} className={className} strokeWidth={strokeWidth} />
     case 'image': return <PhotoGlyph size={size} className={className} strokeWidth={strokeWidth} />
     case 'document': return <PaperDocGlyph size={size} className={className} strokeWidth={strokeWidth} />
     case 'other': return <PaperGlyph size={size} className={className} strokeWidth={strokeWidth} />
@@ -127,7 +105,7 @@ function LinkIconArtwork({ kind, href, size = 14, className, strokeWidth }: Weig
  * @returns The regular decorative link glyph.
  */
 export function LinkIconRegular(props: LinkIconProps): ReactNode {
-  return <LinkIconArtwork {...props} strokeWidth={1} />
+  return <LinkIconArtwork {...props} strokeWidth={ICON_REGULAR_STROKE} />
 }
 
 /**
@@ -136,5 +114,5 @@ export function LinkIconRegular(props: LinkIconProps): ReactNode {
  * @returns The medium decorative link glyph.
  */
 export function LinkIconMedium(props: LinkIconProps): ReactNode {
-  return <LinkIconArtwork {...props} strokeWidth={1.3} />
+  return <LinkIconArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
 }

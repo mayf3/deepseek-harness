@@ -419,7 +419,8 @@ describe('ToolRow', () => {
 
   it('an error row without an error summary keeps the args summary', () => {
     const view = render(<ToolRow {...rowProps} state="error" errorSummary={null} />)
-    expect(view.getByText('List files')).toBeTruthy()
+    const summary = view.getByText('List files')
+    expect(summary.className).toContain('errorSummary')
   })
 
   it('renders summarySuffix outside the ellipsized summary span, and drops it on a failure line', () => {

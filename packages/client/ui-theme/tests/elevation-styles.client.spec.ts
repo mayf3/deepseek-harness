@@ -68,14 +68,15 @@ describe('elevation tokens', () => {
   })
 })
 
-/** Menu-fill rules that omit the shared backdrop filter. */
+/** Elevated or isolated-background menu-fill rules that omit the shared backdrop filter. */
 function translucentMenusWithoutBackdrop(css: string): string[] {
   return parseRules(css)
     .filter(rule => rule.declarations.some(([property, value]) =>
       (property === 'background' || property === 'background-color')
       && value === 'var(--dsw-specific-menu)'))
     .filter(rule => rule.declarations.some(([property, value]) =>
-      property === 'box-shadow' && ELEVATED_SHADOW.test(value)))
+      property === 'box-shadow' && ELEVATED_SHADOW.test(value))
+      || rule.selectors.some(selector => /::(?:before|after)$/.test(selector)))
     .filter(rule => !rule.declarations.some(([property, value]) =>
       property === 'backdrop-filter' && value === 'var(--dsw-menu-backdrop-filter)'))
     .map(rule => rule.selectors.join(', '))
@@ -89,6 +90,12 @@ describe('translucent menu surfaces pair fill and filter', () => {
     expect(translucentMenusWithoutBackdrop(
       '.a { background: var(--dsw-specific-menu); box-shadow: var(--dsw-elevation-panel); backdrop-filter: var(--dsw-menu-backdrop-filter); }',
     )).toEqual([])
+    expect(translucentMenusWithoutBackdrop(
+      '.a::before { background: var(--dsw-specific-menu); }',
+    )).toEqual(['.a::before'])
+    expect(translucentMenusWithoutBackdrop(
+      '.a::before { background: var(--dsw-specific-menu); backdrop-filter: var(--dsw-menu-backdrop-filter); }',
+    )).toEqual([])
   })
 
   it('covers every package menu-fill consumer', () => {
@@ -96,6 +103,27 @@ describe('translucent menu surfaces pair fill and filter', () => {
       translucentMenusWithoutBackdrop(readFileSync(file, 'utf8'))
         .map(selectors => `${file} ${selectors}`))
     expect(missing).toEqual([])
+  })
+
+  it('keeps backdrop filtering on background layers when descendants use fixed positioning', () => {
+    const surfaces = [
+      ['packages/client/ui-goal/src/client/GoalBar.module.css', '.bar', '.bar::before'],
+      ['packages/client/ui-conversation/src/client/queue/QueueDock.module.css', '.panel', '.panel::before'],
+      ['packages/extensions/ui-cordis/src/client/CordisPanel.module.css', '.panel', '.panel::before'],
+    ] as const
+    const files = packageStylesheets()
+    for (const [suffix, container, background] of surfaces) {
+      const file = files.find(candidate => candidate.replaceAll('\\', '/').endsWith(suffix))
+      expect(file, suffix).toBeDefined()
+      const rules = parseRules(readFileSync(file!, 'utf8'))
+      const declarations = (selector: string) => new Map(rules
+        .filter(rule => rule.selectors.length === 1 && rule.selectors[0] === selector)
+        .flatMap(rule => rule.declarations))
+      expect(declarations(container).has('backdrop-filter'), container).toBe(false)
+      expect(declarations(background).get('background'), background).toBe('var(--dsw-specific-menu)')
+      expect(declarations(background).get('backdrop-filter'), background)
+        .toBe('var(--dsw-menu-backdrop-filter)')
+    }
   })
 })
 

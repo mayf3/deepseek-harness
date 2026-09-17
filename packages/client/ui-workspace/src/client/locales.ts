@@ -58,7 +58,7 @@ export const zh = {
   'status.waitingApproval': '等待审批',
   'status.planReview': '计划待审',
   'status.waitingAnswer': '等待回答',
-  'status.compact.approval': '待批准',
+  'status.compact.approval': '待审批',
   'status.compact.planReview': '计划待审',
   'status.compact.answer': '待回答',
   'status.completed': '已完成',

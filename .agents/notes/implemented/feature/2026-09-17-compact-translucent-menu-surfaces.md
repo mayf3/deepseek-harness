@@ -10,7 +10,7 @@ Shared dropdowns and feature-owned menu panels used the same elevated color toke
 
 ## Decision
 
-`ui-theme` defines `--dsw-specific-menu` as a translucent light or dark fill and defines `--dsw-menu-backdrop-filter` as `blur(40px) saturate(150%)`. Every elevated package surface that paints the menu fill also applies that backdrop filter, uses `border: 0`, and takes an elevation shadow with its rebindable hairline stroke. Descendant sticky rows may repaint the inherited fill without another filter. Browsers without backdrop filtering still render the theme-owned translucent fill.
+`ui-theme` defines `--dsw-specific-menu` as a translucent light or dark fill and defines `--dsw-menu-backdrop-filter` as `blur(40px) saturate(150%)`. Every elevated package surface that paints the menu fill also applies that backdrop filter, uses `border: 0`, and takes an elevation shadow with its rebindable hairline stroke. A surface containing fixed-position overlays paints the fill and filter on an isolated background pseudo-element, because a filtered ancestor would otherwise change those overlays' containing block. Descendant sticky rows may repaint the inherited fill without another filter. Browsers without backdrop filtering still render the theme-owned translucent fill.
 
 The shared `Menu` and the composer input-trigger menu use the same compact baseline: a 16px outer radius, 3px frame padding, 34px ordinary rows, 13px primary text on a 20px line, 6px icon/text gaps, and 8px row radii. Dense and compact variants reduce from that baseline instead of retaining the former ordinary geometry. The composer menu keeps its feature-owned grouping and 400px height cap; its aliases and descriptions use 12px text on an 18px line.
 
@@ -26,4 +26,4 @@ The global WebKit scrollbar width is 5px. The composer menu overrides it with a 
 
 ## Consequences
 
-Elevated menu-fill consumers must pair the fill and backdrop-filter tokens in the same rule; the stylesheet gate rejects a surface that omits the filter. Shared menu geometry changes affect every `Menu` render site, while the composer menu retains its own content and interaction rules. Browser and component snapshots cover assembled structure, and theme specs pin the tokens, compact metrics, scrollbar geometry, and complete menu-filter pairing.
+Elevated menu-fill consumers must pair the fill and backdrop-filter tokens in the same rule, either on the surface or on its isolated background pseudo-element; the stylesheet gate rejects a material layer that omits the filter. Shared menu geometry changes affect every `Menu` render site, while the composer menu retains its own content and interaction rules. Browser and component snapshots cover assembled structure, and theme specs pin the tokens, compact metrics, scrollbar geometry, and complete menu-filter pairing.
