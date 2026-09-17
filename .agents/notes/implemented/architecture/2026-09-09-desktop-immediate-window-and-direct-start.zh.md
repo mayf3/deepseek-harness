@@ -18,7 +18,7 @@ Electron 在 profile 校准或 Host 启动前创建带打包 Web 加载页的主
 
 Desktop 原位准备 profile 后，通过[共享 Web runner](2026-09-10-desktop-web-wrapper.zh.md)启动实际 Host。就绪信息提供认证后的 Host URL 和启动注入。桌面壳用该 URL 换取 Host cookie，转发应用 HTTP 请求，并仅为所属应用源认证直接 WebSocket 请求。此承载适配保留 Web 路由和流语义，同时允许静态 HTML 在 Host 就绪前显示。
 
-本决策部分取代[打包决策](2026-08-25-electron-desktop-packaging-and-updates.zh.md)和[内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)中的 staging 后端探针与延迟创建主窗口。这两份记录仍保留发布、签名、传输、资源归属与依赖事务的理由。完整运行时文件验证仍属于打包操作。
+本决策部分取代[打包决策](2026-08-25-electron-desktop-packaging-and-updates.zh.md)和[内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)中的 staging 后端探针与延迟创建主窗口。这两份记录仍保留发布、签名、传输与资源归属的理由。完整运行时文件验证仍属于打包操作。
 
 ## 考虑过的替代方案
 

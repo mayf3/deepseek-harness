@@ -18,7 +18,7 @@ Fatal presentation follows [native Desktop recovery](2026-09-15-desktop-native-f
 
 Desktop starts the actual Host through the [shared Web runner](2026-09-10-desktop-web-wrapper.md) after preparing the profile in place. Readiness supplies the authenticated Host URL and boot injections. The shell exchanges the URL for a Host cookie, forwards application HTTP requests, and authenticates direct WebSocket requests only for the owned application origin. This carrier adaptation preserves Web route and stream semantics while allowing static HTML to appear before the Host.
 
-This partially supersedes staged backend probes and waiting to create the main window in the [packaging decision](2026-08-25-electron-desktop-packaging-and-updates.md) and [bundled-runtime decision](2026-09-08-desktop-bundled-runtime-and-external-plugins.md). Those notes retain release, signing, transport, resource ownership, and dependency-transaction rationale. Full runtime file verification remains a packaging operation.
+This partially supersedes staged backend probes and waiting to create the main window in the [packaging decision](2026-08-25-electron-desktop-packaging-and-updates.md) and [bundled-runtime decision](2026-09-08-desktop-bundled-runtime-and-external-plugins.md). Those notes retain release, signing, transport, and resource ownership rationale. Full runtime file verification remains a packaging operation.
 
 ## Alternatives considered
 

@@ -96,14 +96,14 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
   return port
 }
 
-function createWindow(preload: string, show = false, primary = false): BrowserWindow {
+function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
     height: 840,
     minWidth: 880,
     minHeight: 600,
-    show,
-    ...(process.platform === 'win32' && primary ? {
+    show: true,
+    ...(process.platform === 'win32' ? {
       titleBarStyle: 'hidden' as const,
       titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb',
         symbolColor: nativeTheme.shouldUseDarkColors ? '#f9fafb' : '#0f1115' },
@@ -120,7 +120,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
       backgroundColor: '#00000000',
     } : {}),
     webPreferences: {
-      preload,
+      preload: fileURLToPath(new URL('./preload-app.cjs', import.meta.url)),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -180,7 +180,6 @@ async function main(): Promise<void> {
   let startup: Promise<void> | undefined
   let mainWindow: BrowserWindow | undefined
   let shellInstallerOwnsQuit = false
-  const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
   const applicationUrl = `${SCHEME}://app/`
   let hostUrl: string | undefined
   let hostCookie: string | undefined
@@ -407,7 +406,7 @@ async function main(): Promise<void> {
   }
 
   const createMainWindow = (): BrowserWindow => {
-    const window = createWindow(appPreload, true, true)
+    const window = createWindow()
     mainWindow = window
     window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
     window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {

@@ -81,7 +81,7 @@ describe('desktop update coordinator', () => {
       downloadUpdate,
       quitAndInstall: vi.fn(),
     } as unknown as AppUpdater
-    const coordinator = new DesktopUpdateCoordinator( async () => {}, updater, () => true)
+    const coordinator = new DesktopUpdateCoordinator(async () => {}, updater, () => true)
 
     const checking = coordinator.check()
     const installing = coordinator.install()

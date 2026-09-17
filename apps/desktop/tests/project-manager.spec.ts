@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveDesktopPaths } from '../src/paths.ts'
 import { DesktopProjectManager } from '../src/project-manager.ts'
 import { readProfilePlugins } from '@deepseek-ai/dsh-app-boot'
@@ -228,6 +228,63 @@ describe('desktop external plugin profile', () => {
     await next.disableAllPlugins()
     expect(plugins(next)).toEqual([{ name: 'plugin', version: '1.0.0', enabled: false }])
   })
+})
 
+describe.each(['applyRelease', 'disableAllPlugins'] as const)('desktop profile lock during %s', (operation) => {
+  it('preserves a live owner lock and leaves the profile untouched', async () => {
+    const { manager } = setup()
+    mkdirSync(manager.paths.profile, { recursive: true })
+    const owner = `${String(process.pid)}\n`
+    writeFileSync(manager.paths.lock, owner)
+    await expect(manager[operation]()).rejects.toThrow('another profile operation is active')
+    expect(readFileSync(manager.paths.lock, 'utf8')).toBe(owner)
+    expect(readdirSync(manager.paths.profile)).toEqual(['lock'])
+  })
 
+  it('reclaims a stale owner lock and releases it after the operation', async () => {
+    const { manager } = setup()
+    mkdirSync(manager.paths.profile, { recursive: true })
+    writeFileSync(manager.paths.lock, `${String(process.pid)}\n`)
+    const probe = vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('process absent'), { code: 'ESRCH' })
+    })
+    try {
+      await expect(manager[operation]()).resolves.toBeUndefined()
+      expect(probe).toHaveBeenCalledExactlyOnceWith(process.pid, 0)
+      expect(existsSync(manager.paths.lock)).toBe(false)
+    } finally {
+      probe.mockRestore()
+    }
+  })
+
+  it.each(['invalid', '0', '-1', '9007199254740992'])('preserves a lock with invalid owner %s', async (owner) => {
+    const { manager } = setup()
+    mkdirSync(manager.paths.profile, { recursive: true })
+    writeFileSync(manager.paths.lock, owner)
+    await expect(manager[operation]()).rejects.toThrow('another profile operation is active')
+    expect(readFileSync(manager.paths.lock, 'utf8')).toBe(owner)
+  })
+
+  it('rejects a directory at the lock path', async () => {
+    const { manager } = setup()
+    mkdirSync(manager.paths.lock, { recursive: true })
+    await expect(manager[operation]()).rejects.toThrow('profile lock is not a regular file')
+    expect(lstatSync(manager.paths.lock).isDirectory()).toBe(true)
+  })
+
+  it('rejects a linked lock without touching its target', async () => {
+    const { root, manager } = setup()
+    mkdirSync(manager.paths.profile, { recursive: true })
+    const target = join(root, 'lock-target')
+    mkdirSync(target)
+    writeFileSync(join(target, 'sentinel'), 'retain')
+    symlinkSync(target, manager.paths.lock, process.platform === 'win32' ? 'junction' : 'dir')
+    try {
+      await expect(manager[operation]()).rejects.toThrow('profile lock is not a regular file')
+      expect(lstatSync(manager.paths.lock).isSymbolicLink()).toBe(true)
+      expect(readFileSync(join(target, 'sentinel'), 'utf8')).toBe('retain')
+    } finally {
+      unlinkSync(manager.paths.lock)
+    }
+  })
 })

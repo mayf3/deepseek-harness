@@ -101,7 +101,7 @@ export class DesktopProjectManager {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
         const lock = lstatSync(this.paths.lock)
         if (lock.isSymbolicLink() || !lock.isFile()) {
-          throw new Error('desktop project: package transaction lock is not a regular file')
+          throw new Error('desktop project: profile lock is not a regular file')
         }
         const owner = Number.parseInt(readFileSync(this.paths.lock, 'utf8').trim(), 10)
         let active = !Number.isSafeInteger(owner) || owner <= 0
@@ -113,7 +113,7 @@ export class DesktopProjectManager {
             active = (signalError as NodeJS.ErrnoException).code !== 'ESRCH'
           }
         }
-        if (active) throw new Error('desktop project: another package transaction is active')
+        if (active) throw new Error('desktop project: another profile operation is active')
         unlinkSync(this.paths.lock)
         descriptor = openSync(this.paths.lock, 'wx', 0o600)
       } else {
