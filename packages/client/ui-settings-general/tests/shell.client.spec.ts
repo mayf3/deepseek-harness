@@ -53,7 +53,8 @@ describe('ui-settings-general shell', () => {
     let publish: ((state: DesktopUpdatePresentation) => void) | undefined
     const off = vi.fn()
     const subscribe = vi.fn((listener: typeof publish) => { publish = listener; return off })
-    vi.stubGlobal('dshDesktop', { protocolVersion: 1, updates: { status: () => initial.promise, subscribe, open: async () => {} } })
+    const open = vi.fn(async () => {})
+    vi.stubGlobal('dshDesktop', { protocolVersion: 1, updates: { status: () => initial.promise, subscribe, open } })
     onTestFinished(() => { vi.unstubAllGlobals(); initial.resolve({ phase: 'idle' }) })
     const c = await start()
     const row = injectedOf(c)
@@ -63,6 +64,9 @@ describe('ui-settings-general shell', () => {
     const status = { phase: 'available' as const, version: '1.0.1' }
     publish!(status)
     expect(row.hooks.desktopUpdate.getSnapshot().presentation).toEqual(status)
+    row.openDesktopUpdate()
+    await c.flush()
+    expect(open).toHaveBeenCalledOnce()
     await c.unload(SELF)
     await c.flush()
     expect(off).toHaveBeenCalledOnce()

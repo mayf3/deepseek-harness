@@ -138,3 +138,19 @@ it('renders the same semantic update in the active Web locale', async () => {
     expect(screen.getByRole('button', { name: 'Update' })).toBeTruthy()
   } finally { f.view.unmount(); f.status.resolve(available) }
 })
+
+it('shows fallback progress and error details when the shell omits optional fields', async () => {
+  const f = fixture()
+  try {
+    await f.emit({ phase: 'downloading' })
+    const progress = screen.getByRole('button', { name: '0%…' })
+    fireEvent.focus(progress)
+    expect((await screen.findByRole('tooltip')).textContent).toBe('0%…')
+    await f.emit({ phase: 'downloading', version: '1.0.1' })
+    fireEvent.focus(screen.getByRole('button', { name: '0%…' }))
+    expect((await screen.findByRole('tooltip')).textContent).toContain('1.0.1')
+    await f.emit({ phase: 'error' })
+    fireEvent.focus(screen.getByRole('button', { name: '重试更新' }))
+    expect((await screen.findByRole('tooltip')).textContent).toBe('安装更新失败，请稍后重试。')
+  } finally { f.view.unmount(); f.status.resolve({ phase: 'idle' }) }
+})

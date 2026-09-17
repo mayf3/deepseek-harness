@@ -57,6 +57,12 @@ describe('Desktop collapsed update badge', () => {
     state = { ...state, failed: true }
     view.rerender(<DesktopUpdateBadge {...props} />)
     expect(screen.getByRole('img', { name: en['desktop.update.retry'] }).getAttribute('data-error')).toBe('true')
+    state = { failed: true, opening: false }
+    view.rerender(<DesktopUpdateBadge {...props} />)
+    expect(screen.getByRole('img', { name: en['desktop.update.retry'] }).getAttribute('data-error')).toBe('true')
+    state = { failed: false, opening: false, presentation: { phase: 'error', failure: 'install' } }
+    view.rerender(<DesktopUpdateBadge {...props} />)
+    expect(screen.getByRole('img', { name: en['desktop.update.retry'] }).getAttribute('data-error')).toBe('true')
     for (const value of ['connecting', 'disconnected'] as const) {
       connection = value
       view.rerender(<DesktopUpdateBadge {...props} />)
