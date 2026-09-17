@@ -68,7 +68,7 @@ Chat diff 卡片在折叠前保留九行，足以容纳文件标题、一对删�
 
 Auto 拒绝优先于按工具名选择的专门视图。其通用行保留调用身份、省略原始参数，并且只在显示时归一化存储的理由：去除首尾空白，把行分隔符折叠为空格，结果为空时使用本地化通用理由。Session 与 SDK 错误详情保留原始理由。
 
-Details 视图覆盖已注册的 36 个工具：目标和定时任务工具、Cordis 检查、workflow 与 Ralph 报告、Session 事件／搜索／轨迹查询、Agent 与 teammate 控制、后台作业、持久终端以及 LSP 导航。展开内容读取成功的记录结果，为失败或不支持的数据保留通用输入／输出，并保留 Inspect。日期包含查看者的时区，状态反映调用结果而非当前会话状态。浏览器适配器消费已记录的 producer 文本与 JSON；Host service 对象和 presenter 回调不会进入 Client。[紧凑工具详情](../../../.agents/notes/implemented/architecture/2026-09-10-compact-tool-details.zh.md)记录了呈现取舍。
+记录结果的工具详情覆盖目标和定时任务工具、Cordis 检查、workflow 与 Ralph 报告、Session 事件／搜索／轨迹查询、Agent 与 teammate 控制、后台作业、持久终端以及 LSP 导航。展开内容读取成功的记录结果，为失败或不支持的数据保留通用输入／输出，并保留 Inspect。日期包含查看者的时区，状态反映调用结果而非当前会话状态。Session 轨迹保留后代的缩进。LSP 结果通过 Host 回调打开文件系统路径，其他 URI 则显示为文本。浏览器适配器消费已记录的 producer 文本与 JSON；Host service 对象和 presenter 回调不会进入 Client。[紧凑工具详情](../../../.agents/notes/implemented/architecture/2026-09-10-compact-tool-details.zh.md)记录了呈现取舍。
 
 展开后的状态圆点和文字使用静态语义色。操作回执和任务输出的标题保持中性色，展开时省略标题中的状态。中断回执仅确认已发出中断请求。
 

@@ -87,9 +87,10 @@ function lspDetails(args: Record<string, unknown>, text: string, t: DetailTransl
     if (match === null) return null
     const [, path, row, column] = match
     if (path === undefined || row === undefined || column === undefined) return null
+    const isUri = /^[a-z][a-z\d+.-]*:/iu.test(path) && !/^[a-z]:[\\/]/iu.test(path)
     items.push({
       title: path, subtitle: t('detail.location', { line: row, column }), fields: [],
-      .../^[a-z][a-z\d+.-]*:\/\//iu.test(path) ? {} : { location: { path, line: Number(row) } },
+      ...isUri ? {} : { location: { path, line: Number(row) } },
     })
   }
   const count = items.filter(item => item.title !== undefined).length

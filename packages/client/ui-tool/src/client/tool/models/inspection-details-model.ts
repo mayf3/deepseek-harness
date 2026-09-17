@@ -144,7 +144,7 @@ function traceDetails(name: string, text: string, t: DetailTranslate, locale: st
     const label = section.startsWith('Ancestors (nearest first):') ? t('detail.trace.ancestors') : section.startsWith('Descendants:') ? t('detail.trace.descendants') : undefined
     if (label === undefined || firstBreak < 0) return null
     const body = section.slice(firstBreak + 1)
-    items.push({ title: label, fields: [], ...(body === '- none' || body === '- none (target is a root session)' ? { description: t('detail.none') } : { lines: body.split('\n').map(line => line.replace(/^\s*- /u, '')) }) })
+    items.push({ title: label, fields: [], ...(body === '- none' || body === '- none (target is a root session)' ? { description: t('detail.none') } : { lines: body.split('\n').map(line => line.replace(/^(\s*)- /u, '$1')) }) })
   }
   return detailList(items, match[2], t)
 }

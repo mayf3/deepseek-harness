@@ -59,12 +59,36 @@
     - term: Rounds
     - definition: 0 / 8
 - button "Inspect"
-- button "List reminders 1 reminders" [expanded]:
+- button "List reminders 4 reminders" [expanded]:
   - img
-  - text: List reminders 1 reminders
+  - text: List reminders 4 reminders
 - list:
   - listitem:
     - text: Review the build and open the demo
+    - term: Scheduled for
+    - definition: Sep 10, 2099, {{clock}} GMT+8
+    - term: Repeat
+    - definition: Every 1 h
+    - term: Status
+    - definition: Scheduled
+  - listitem:
+    - text: Review the narrow reminder layout before sharing the updated demo with the team
+    - term: Scheduled for
+    - definition: Sep 10, 2099, {{clock}} GMT+8
+    - term: Repeat
+    - definition: Every 1 h
+    - term: Status
+    - definition: Scheduled
+  - listitem:
+    - text: Check the recorded tool results and finish the remaining review comments
+    - term: Scheduled for
+    - definition: Sep 10, 2099, {{clock}} GMT+8
+    - term: Repeat
+    - definition: Every 1 h
+    - term: Status
+    - definition: Scheduled
+  - listitem:
+    - text: Publish the reviewed demo and verify the deployment status
     - term: Scheduled for
     - definition: Sep 10, 2099, {{clock}} GMT+8
     - term: Repeat
@@ -394,7 +418,9 @@
     - paragraph: None
   - listitem:
     - text: Descendant sessions
-    - paragraph: None
+    - list:
+      - listitem: review-child — Layout review | {{timestamp}} | persisted
+      - listitem: review-grandchild — Narrow layout | {{timestamp}} | persisted
 - button "Inspect"
 - button "List models deepseek" [expanded]:
   - img
@@ -571,9 +597,9 @@
     - button "src/tool-details.ts"
     - text: Line 24, column 1
 - button "Inspect"
-- button "Find references src/tool-details.ts · 3 locations" [expanded]:
+- button "Find references src/tool-details.ts · 4 locations" [expanded]:
   - img
-  - text: Find references src/tool-details.ts · 3 locations
+  - text: Find references src/tool-details.ts · 4 locations
 - text: Recorded result
 - list:
   - listitem:
@@ -585,6 +611,7 @@
   - listitem:
     - button "src/todo-row.tsx"
     - text: Line 67, column 12
+  - listitem: untitled:Untitled-1 Line 6, column 7
 - button "Inspect"
 - button "Find implementation src/types.ts · 2 locations" [expanded]:
   - img

@@ -26,7 +26,7 @@
   border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
-.root[data-inspect]:not([data-caption]) > .list > .item:first-child,
+.root[data-inspect]:not([data-caption]) > .list > .item,
 .root[data-inspect]:not([data-caption]) .empty,
 .root[data-inspect] .caption {
   padding-inline-end: 88px;

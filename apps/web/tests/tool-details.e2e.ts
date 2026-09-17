@@ -72,6 +72,24 @@ describe.skipIf(MODE === 'record')('web e2e: compact Tool details', () => {
     await page.setViewportSize({ width: 360, height: 800 })
     const card = page.locator('[data-tool="schedule_create"]')
     expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+    const reminders = page.locator('[data-tool="schedule_list"]')
+    await reminders.scrollIntoViewIfNeeded()
+    const list = reminders.getByRole('list').first()
+    await list.evaluate((element) => {
+      const second = element.children[1]!
+      element.scrollTop += second.getBoundingClientRect().top - element.getBoundingClientRect().top
+    })
+    expect(await list.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+    const geometry = await reminders.evaluate((element) => {
+      const title = element.querySelector('ul')!.children[1]!.querySelector('[class*="heading"] > span')!.getBoundingClientRect()
+      const inspect = element.querySelector('[class*="inspectButton"]')!.getBoundingClientRect()
+      return {
+        verticalOverlap: Math.min(title.bottom, inspect.bottom) - Math.max(title.top, inspect.top),
+        horizontalGap: inspect.left - title.right,
+      }
+    })
+    expect(geometry.verticalOverlap).toBeGreaterThan(0)
+    expect(geometry.horizontalGap).toBeGreaterThanOrEqual(0)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 60_000)
