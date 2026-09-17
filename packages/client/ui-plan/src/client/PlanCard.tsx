@@ -1,4 +1,4 @@
-/** Persistent transcript card and pending-review action use the same plan resource opener. */
+/** Persistent transcript cards and pending-review sidebar navigation. */
 import { useEffect } from 'react'
 import { FileTypeIcon, IconChevronRightOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -10,10 +10,16 @@ import type {} from '@deepseek-ai/dsh-client-ui-user-questions/client'
 import type { createPlanReviewStore } from './review-store.ts'
 import css from './PlanPreview.module.css'
 
-/** Session-bound navigation injected into both plan entry points. */
+/** Session-bound navigation for logged plans. */
 export interface PlanOpenInjected {
   /** Open or focus the exact submitted plan. */
   openPlan: (callId: ToolCallId) => void
+}
+
+/** Session-bound preview navigation for one pending review. */
+export interface PlanReviewOpenInjected {
+  /** Open the logged plan, or the request's temporary document when no invocation exists. */
+  openReview: (review: PropsRuntime<'conversation.plan-review.actions'>['review'], requestKey: string) => void
 }
 
 /**
@@ -47,17 +53,16 @@ export function PlanCards({ turn, useChat, openPlan, t }: PropsRuntime<'conversa
 /**
  * Open each pending plan automatically and retain a manual opener without answering it.
  * @param props - Review identity, Session store, localized copy, and navigation.
- * @returns an opener when the asker supplied a logged invocation identity.
+ * @returns an opener for either logged or temporary plan text.
  */
-export function PlanReviewOpen({ review, openPlan, t, useStore, actions }: PropsRuntime<'conversation.plan-review.actions'> & InjectFace<PlanOpenInjected> & PropsLocale<'plan'> & PropsStore<ReturnType<typeof createPlanReviewStore>>) {
-  const callId = review.callId
-  const opened = useStore(state => callId !== undefined && state.opened[callId] === true)
+export function PlanReviewOpen({ review, requestKey, openReview, t, useStore, actions }: PropsRuntime<'conversation.plan-review.actions'> & InjectFace<PlanReviewOpenInjected> & PropsLocale<'plan'> & PropsStore<ReturnType<typeof createPlanReviewStore>>) {
+  const identity = review.callId === undefined ? `review:${requestKey}` : `call:${review.callId}`
+  const opened = useStore(state => state.opened[identity] === true)
   useEffect(() => {
-    if (callId === undefined || opened) return
-    actions.markOpened(callId)
-    openPlan(callId)
-  }, [callId, opened, openPlan, actions])
-  if (callId === undefined) return null
+    if (opened) return
+    openReview(review, requestKey)
+    actions.markOpened(identity)
+  }, [identity, opened, openReview, review, requestKey, actions])
   return <button type="button" className={css.reviewLink} title={t('preview.open')} aria-label={t('preview.open')}
-    onClick={() => { openPlan(callId) }}>{t('preview.full')}<IconChevronRightOutline14 size={14} /></button>
+    onClick={() => { openReview(review, requestKey) }}>{t('preview.full')}<IconChevronRightOutline14 size={14} /></button>
 }

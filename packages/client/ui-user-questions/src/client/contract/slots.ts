@@ -18,7 +18,7 @@ declare module '@deepseek-ai/dsh-client-ui-session/client' {
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** Actions for the exact plan under review; approval remains with the question composer. */
-    'conversation.plan-review.actions': { kind: 'list'; scope: 'session'; owner: { review: PlanReview } }
+    'conversation.plan-review.actions': { kind: 'list'; scope: 'session'; owner: { review: PlanReview; requestKey: PendingQuestion['key'] } }
   }
 }
 

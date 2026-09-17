@@ -216,6 +216,23 @@ describe('planReviewOf', () => {
 })
 
 describe('PlanReviewPanel', () => {
+  it('passes distinct pending request identities to the preview action for unlogged reviews', () => {
+    const rendered = vi.fn<(key: string, owner: unknown) => void>()
+    const renderSlot: QuestionComposerProps['renderSlot'] = (key, owner) => { rendered(key, owner); return null }
+    const first = wait()
+    const second = wait()
+    const view = render(<QuestionComposer matched={first.carrier} {...kit} renderSlot={renderSlot} />)
+    expect(rendered).toHaveBeenLastCalledWith('conversation.plan-review.actions', {
+      review: planReviewOf(first.carrier.questions), requestKey: first.carrier.key,
+    })
+    view.rerender(<QuestionComposer matched={second.carrier} {...kit} renderSlot={renderSlot} />)
+    expect(rendered).toHaveBeenLastCalledWith('conversation.plan-review.actions', {
+      review: planReviewOf(second.carrier.questions), requestKey: second.carrier.key,
+    })
+    expect(first.carrier.key).not.toBe(second.carrier.key)
+    expect(first.answer).not.toHaveBeenCalled()
+    expect(second.answer).not.toHaveBeenCalled()
+  })
   it('shows the plan title and summary above two review actions', () => {
     const { carrier } = wait()
     render(<QuestionComposer matched={carrier} {...kit} />)

@@ -12,6 +12,7 @@ import { en, zh } from '../src/client/locales.ts'
 import { PlanCards, PlanReviewOpen } from '../src/client/PlanCard.tsx'
 import { PlanPreview, PlanTitle } from '../src/client/PlanPreview.tsx'
 import { planAddress, parsePlanAddress, submittedPlan } from '../src/client/plan.ts'
+import { reviewPreviewAddress, isReviewPreviewAddress } from '../src/client/review-preview.ts'
 import { planDefinition } from '../src/client/plan-definition.ts'
 import { createPlanReviewStore } from '../src/client/review-store.ts'
 
@@ -19,7 +20,7 @@ afterEach(cleanup)
 const markdown = '# Keep this plan\n\n## Goal\n\n- Review\n- Implement'
 const call = { type: 'tool/call', seq: 12, data: { turn: 1, name: 'exit_plan_mode', callId: 'call:1', arguments: JSON.stringify({ plan: markdown }) } }
 const plan = submittedPlan(call)!
-const target = { sessionId: 'session / 中文' as SessionId, callId: plan.callId }
+const target = { session: { kind: 'session' as const, sessionId: 'session / 中文' as SessionId }, callId: plan.callId }
 const t = makeTranslate(en, commonEn)
 
 function planNode(data: typeof plan) {
@@ -52,7 +53,12 @@ describe('submitted plan identity', () => {
   })
   it('round-trips opaque identifiers and refuses malformed addresses', () => {
     expect(parsePlanAddress(planAddress(target))).toEqual(target)
-    for (const address of ['file:///plan.md', 'dsh-resource://plan/s/c/extra', 'dsh-resource://plan/s/%XX', 'dsh-resource://plan/s/c?text=x']) {
+    for (const mode of ['one-shot', 'continuable'] as const) {
+      const child = { session: { kind: 'subagent' as const, parentSessionId: target.session.sessionId, childSessionId: 'child / 中文' as SessionId, mode }, callId: plan.callId }
+      expect(parsePlanAddress(planAddress(child))).toEqual(child)
+    }
+    for (const address of ['file:///plan.md', 'dsh-resource://plan/s/c/extra', 'dsh-resource://plan/s/%XX', 'dsh-resource://plan/s/c?text=x',
+      'dsh-resource://plan//c', 'dsh-resource://plan/subagent/p/c/invalid/call', 'dsh-resource://plan/subagent/p/c/one-shot']) {
       expect(parsePlanAddress(address)).toBeUndefined()
     }
   })
@@ -154,44 +160,56 @@ describe('plan entry points and document', () => {
     view.rerender(<PlanCards {...{ ...props, useChat: planHook([]) }} />)
     expect(view.container.innerHTML).toBe('')
   })
-  it('opens the review without approving or cancelling it', () => {
-    const openPlan = vi.fn()
+  it.each([true, false])('opens once, preserves manual closure, and reopens a review (logged: %s)', (logged) => {
+    const openReview = vi.fn()
     const store = createPlanReviewStore().create()
-    const stateProps = {
-      actions: store.actions,
-      useStore: (select: (state: ReturnType<typeof store.getSnapshot>) => unknown) => select(store.getSnapshot()),
-    }
-    const props = { review: { callId: plan.callId }, t, openPlan, ...stateProps } as unknown as Parameters<typeof PlanReviewOpen>[0]
-    const view = render(<PlanReviewOpen {...props} />)
-    expect(openPlan).toHaveBeenCalledExactlyOnceWith(plan.callId)
-    view.rerender(<PlanReviewOpen {...props} />)
-    expect(openPlan).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Open plan in sidebar' }))
-    expect(openPlan).toHaveBeenCalledTimes(2)
-    view.rerender(<PlanReviewOpen {...{ ...props, review: {} } as unknown as Parameters<typeof PlanReviewOpen>[0]} />)
-    expect(screen.queryByRole('button')).toBeNull()
-  })
-  it('preserves manual closure across remounts and opens a new submission', () => {
-    const store = createPlanReviewStore().create()
-    const openPlan = vi.fn()
-    const props = { review: { callId: plan.callId }, t, openPlan, actions: store.actions,
+    const review = { plan: markdown, ...(logged ? { callId: plan.callId } : {}) }
+    const props = { review, requestKey: 'question:1', t, openReview, actions: store.actions,
       useStore: (select: (state: ReturnType<typeof store.getSnapshot>) => unknown) => select(store.getSnapshot()),
     } as unknown as Parameters<typeof PlanReviewOpen>[0]
     const first = render(<PlanReviewOpen {...props} />)
+    expect(openReview).toHaveBeenCalledExactlyOnceWith(review, 'question:1')
+    first.rerender(<PlanReviewOpen {...props} />)
     first.unmount()
     const second = render(<PlanReviewOpen {...props} />)
-    expect(openPlan).toHaveBeenCalledTimes(1)
-    const revised = submittedPlan({ ...call, data: { ...call.data, callId: 'call:2' } })!
-    const nextProps = { ...props, review: { callId: revised.callId } } as unknown as Parameters<typeof PlanReviewOpen>[0]
-    second.rerender(<PlanReviewOpen {...nextProps} />)
-    expect(openPlan).toHaveBeenLastCalledWith(revised.callId)
-    expect(openPlan).toHaveBeenCalledTimes(2)
+    expect(openReview).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Open plan in sidebar' }))
+    expect(openReview).toHaveBeenCalledTimes(2)
+    const revised = { plan: '# Revised', ...(logged ? { callId: 'call:2' } : {}) }
+    second.rerender(<PlanReviewOpen {...{ ...props, review: revised, requestKey: 'question:2' } as unknown as Parameters<typeof PlanReviewOpen>[0]} />)
+    expect(openReview).toHaveBeenLastCalledWith(revised, 'question:2')
+    expect(openReview).toHaveBeenCalledTimes(3)
     second.unmount()
     const other = createPlanReviewStore().create()
     render(<PlanReviewOpen {...{ ...props, actions: other.actions,
       useStore: (select: (state: ReturnType<typeof other.getSnapshot>) => unknown) => select(other.getSnapshot()),
     } as unknown as Parameters<typeof PlanReviewOpen>[0]} />)
-    expect(openPlan).toHaveBeenCalledTimes(3)
+    expect(openReview).toHaveBeenCalledTimes(4)
+  })
+  it('renders temporary Markdown and reports expired navigation after reload', () => {
+    const address = reviewPreviewAddress(target.session.sessionId, 'window:question:1')
+    expect(isReviewPreviewAddress(address)).toBe(true)
+    expect(isReviewPreviewAddress(planAddress(target))).toBe(false)
+    const props = { t, useResource: () => ({ status: 'none' }),
+      useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address, params: { planReview: { title: plan.title, markdown } } } } }),
+    }
+    const view = render(<PlanPreview {...props as unknown as Parameters<typeof PlanPreview>[0]} />)
+    expect(screen.getByRole('heading', { name: plan.title })).toBeTruthy()
+    expect(screen.getByText('Implement')).toBeTruthy()
+    view.rerender(<PlanTitle {...props as unknown as Parameters<typeof PlanTitle>[0]} />)
+    expect(screen.getByText(plan.title)).toBeTruthy()
+    view.rerender(<PlanPreview {...{ ...props,
+      useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address } } }),
+    } as unknown as Parameters<typeof PlanPreview>[0]} />)
+    expect(screen.getByRole('status').textContent).toBe(en['preview.expired'])
+    view.rerender(<PlanTitle {...{ ...props,
+      useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address } } }),
+    } as unknown as Parameters<typeof PlanTitle>[0]} />)
+    expect(screen.getByText('Plan')).toBeTruthy()
+    view.rerender(<PlanPreview {...{ ...props,
+      useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address, params: { line: 2 } } } }),
+    } as unknown as Parameters<typeof PlanPreview>[0]} />)
+    expect(screen.getByRole('status').textContent).toBe(en['preview.expired'])
   })
   it('shows restored Markdown and its heading as the tab title', () => {
     const props = {
@@ -222,12 +240,23 @@ describe('plan entry points and document', () => {
       else Object.defineProperty(navigator, 'clipboard', clipboard)
     }
   })
-  it('shows loading and failed reads without an empty sidebar', () => {
-    const props = { t, useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address: planAddress(target) } } }) }
+  it.each([en, zh])('localizes plan failures and unavailable providers', (dictionary) => {
+    const props = { t: makeTranslate(dictionary, commonEn),
+      useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address: planAddress(target) } } }),
+    }
     const view = render(<PlanPreview {...{ ...props, useResource: () => ({ status: 'loading' }) } as unknown as Parameters<typeof PlanPreview>[0]} />)
-    expect(screen.getByRole('status').textContent).toBe('Loading plan…')
-    view.rerender(<PlanPreview {...{ ...props, useResource: () => ({ status: 'failed', failure: { message: 'gone' } }) } as unknown as Parameters<typeof PlanPreview>[0]} />)
-    expect(screen.getByRole('status').textContent).toContain('Could not load plan')
-    expect(screen.getByText('gone')).toBeTruthy()
+    expect(screen.getByRole('status').textContent).toBe(dictionary['preview.loading'])
+    view.rerender(<PlanPreview {...{ ...props, useResource: () => ({ status: 'none' }) } as unknown as Parameters<typeof PlanPreview>[0]} />)
+    expect(screen.getByRole('status').textContent).toBe(dictionary['preview.unavailable'])
+    for (const [code, message] of [
+      ['plan/invalid-address', dictionary['preview.invalidAddress']],
+      ['plan/unavailable', dictionary['preview.historyUnavailable']],
+      ['plan/not-found', dictionary['preview.notFound']],
+      ['plan/read-failed', 'connection lost'],
+      ['session/not-found', 'connection lost'],
+    ] as const) {
+      view.rerender(<PlanPreview {...{ ...props, useResource: () => ({ status: 'failed', failure: { code, message: 'connection lost' } }) } as unknown as Parameters<typeof PlanPreview>[0]} />)
+      expect(screen.getByRole('status').textContent).toBe(dictionary['preview.failed'] + message)
+    }
   })
 })

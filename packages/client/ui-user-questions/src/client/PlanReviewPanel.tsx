@@ -53,7 +53,7 @@ export function PlanReviewPanel({ pending, review, t, renderSlot }: PlanReviewPa
           <span className={css.dot} />
           {t('plan.header')}
           <div className={css.previewActions}>
-            {renderSlot('conversation.plan-review.actions', { review })}
+            {renderSlot('conversation.plan-review.actions', { review, requestKey: pending.key })}
           </div>
         </div>
         <div className={css.summary}>

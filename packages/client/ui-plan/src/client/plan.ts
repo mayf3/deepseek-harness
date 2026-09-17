@@ -1,17 +1,22 @@
 /** Plan text and resource identities derived from logged native or PTC calls. */
 import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionAddress } from '@deepseek-ai/dsh-api-session-controller/types'
 
-/** One submitted plan, identified by its originating tool invocation. */
-export interface SubmittedPlan {
-  readonly callId: ToolCallId
+/** Complete Markdown and the heading displayed by a plan preview. */
+export interface PlanDocument {
   readonly markdown: string
   readonly title: string
 }
 
+/** One submitted plan, identified by its originating tool invocation. */
+export interface SubmittedPlan extends PlanDocument {
+  readonly callId: ToolCallId
+}
+
 /** A saved sidebar resource names one invocation in one Session. */
 export interface PlanAddress {
-  readonly sessionId: SessionId
+  readonly session: SessionAddress
   readonly callId: ToolCallId
 }
 
@@ -48,7 +53,11 @@ export function submittedPlan(event: { readonly type: string; readonly data: unk
  * @returns the plan resource address.
  */
 export function planAddress(target: PlanAddress): string {
-  return `dsh-resource://plan/${encodeURIComponent(target.sessionId)}/${encodeURIComponent(target.callId)}`
+  const { session, callId } = target
+  const parts = session.kind === 'session'
+    ? [session.sessionId, callId]
+    : ['subagent', session.parentSessionId, session.childSessionId, session.mode, callId]
+  return `dsh-resource://plan/${parts.map(encodeURIComponent).join('/')}`
 }
 
 /**
@@ -57,10 +66,19 @@ export function planAddress(target: PlanAddress): string {
  * @returns the decoded identity, or undefined for an unsupported address.
  */
 export function parsePlanAddress(address: string): PlanAddress | undefined {
-  const match = /^dsh-resource:\/\/plan\/([^/?#]+)\/([^/?#]+)$/.exec(address)
+  const match = /^dsh-resource:\/\/plan\/([^?#]+)$/.exec(address)
   if (match === null) return undefined
   try {
-    return { sessionId: decodeURIComponent(match[1] as string) as SessionId, callId: decodeURIComponent(match[2] as string) as ToolCallId }
+    const parts = (match[1] as string).split('/').map(decodeURIComponent)
+    if (parts.some(part => part === '')) return undefined
+    if (parts.length === 2) return {
+      session: { kind: 'session', sessionId: parts[0] as SessionId }, callId: parts[1] as ToolCallId,
+    }
+    if (parts.length === 5 && parts[0] === 'subagent' && (parts[3] === 'one-shot' || parts[3] === 'continuable')) return {
+      session: { kind: 'subagent', parentSessionId: parts[1] as SessionId, childSessionId: parts[2] as SessionId, mode: parts[3] },
+      callId: parts[4] as ToolCallId,
+    }
+    return undefined
   } catch (_error) {
     // Invalid saved percent encoding cannot identify a Session or invocation.
     return undefined

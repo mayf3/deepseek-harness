@@ -13,7 +13,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { PlanChip } from '../src/client/PlanModeControl.tsx'
-import { PlanCards, PlanReviewOpen, type PlanOpenInjected } from '../src/client/PlanCard.tsx'
+import { PlanCards, PlanReviewOpen, type PlanOpenInjected, type PlanReviewOpenInjected } from '../src/client/PlanCard.tsx'
 import { PlanPreview, PlanTitle } from '../src/client/PlanPreview.tsx'
 import { submittedPlan } from '../src/client/plan.ts'
 import type { PlanChipInjected } from '../src/client/index.ts'
@@ -26,12 +26,14 @@ function providePreview(ctx: Context) {
   const removeResources = vi.fn()
   const removeType = vi.fn()
   const registerType = vi.fn((_definition: Parameters<Context['sidebarRightTabs']['register']>[0]) => removeType)
-  const openResourceIn = vi.fn()
+  const openResourceIn = vi.fn<Context['sidebarRight']['openResourceIn']>()
+  const subagentAddress = vi.fn<Context['sessions']['subagentAddress']>(() => undefined)
+  ctx.provide('sessions', { subagentAddress })
   ctx.provide('resources', { register: vi.fn(() => removeResources) })
   ctx.provide('sidebarRightTabs', { register: registerType })
   ctx.provide('sidebarRight', { openResourceIn })
   ctx.provide('remote.session', {})
-  return { events, removeResources, removeType, registerType, openResourceIn }
+  return { events, removeResources, removeType, registerType, openResourceIn, subagentAddress }
 }
 
 const SID = 's-plan' as SessionId
@@ -62,7 +64,7 @@ async function bench() {
 
 describe('ui-plan browser apply', () => {
   it('declares every service it binds', () => {
-    expect(inject).toEqual(['slots', 'remote', 'remote.commands', 'remote.session', 'locale', 'uiConversation', 'resources', 'sidebarRight', 'sidebarRightTabs'])
+    expect(inject).toEqual(['slots', 'remote', 'remote.commands', 'remote.session', 'sessions', 'locale', 'uiConversation', 'resources', 'sidebarRight', 'sidebarRightTabs'])
   })
 
   it('node-half apply is an intentional no-op', () => {
@@ -130,13 +132,33 @@ describe('ui-plan browser apply', () => {
       expect(type.canOpen!('file:///plan.md')).toBe(false)
       expect(type.title(address)).toBeTruthy()
       const plan = submittedPlan({ type: 'tool/call', data: { callId: 'call', name: 'exit_plan_mode', arguments: '{"plan":"# Saved plan"}' } })!
-      for (const [slot, component] of [['conversation.chat.turnTail', PlanCards], ['conversation.plan-review.actions', PlanReviewOpen]] as const) {
-        const entry = b.slots.entries(slot)[0]!
-        expect(entry.component).toBe(component)
-        const injected = (entry.inject as unknown as (sessionId: SessionId) => PlanOpenInjected)(SID)
-        injected.openPlan(plan.callId)
-        expect(b.openResourceIn).toHaveBeenLastCalledWith(SID, address)
-      }
+      const card = b.slots.entries('conversation.chat.turnTail')[0]!
+      expect(card.component).toBe(PlanCards)
+      const injected = (card.inject as unknown as (sessionId: SessionId) => PlanOpenInjected)(SID)
+      injected.openPlan(plan.callId)
+      expect(b.openResourceIn).toHaveBeenLastCalledWith(SID, address)
+      const review = b.slots.entries('conversation.plan-review.actions')[0]!
+      expect(review.component).toBe(PlanReviewOpen)
+      const reviewInjected = (review.inject as unknown as (sessionId: SessionId) => PlanReviewOpenInjected)(SID)
+      const pending = { id: 'review', question: 'Approve?', plan: plan.markdown, callId: plan.callId, approve: { label: 'Approve' } }
+      reviewInjected.openReview(pending, 'question:1')
+      expect(b.openResourceIn).toHaveBeenLastCalledWith(SID, address)
+      b.subagentAddress.mockReturnValue({ parentSessionId: 'parent' as SessionId, childSessionId: SID, mode: 'continuable' })
+      injected.openPlan(plan.callId)
+      expect(b.openResourceIn).toHaveBeenLastCalledWith(SID, 'dsh-resource://plan/subagent/parent/s-plan/continuable/call')
+      reviewInjected.openReview(pending, 'question:1')
+      expect(b.openResourceIn).toHaveBeenLastCalledWith(SID, 'dsh-resource://plan/subagent/parent/s-plan/continuable/call')
+      const temporary = { id: 'review', question: 'Approve?', plan: '# Temporary\n\nComplete body', approve: { label: 'Approve' } }
+      reviewInjected.openReview(temporary, 'question:2')
+      const first = b.openResourceIn.mock.calls.at(-1)!
+      expect(type.canOpen!(first[1])).toBe(true)
+      expect(first).toEqual([SID, expect.stringMatching(/^dsh-resource:\/\/plan-review\/s-plan\//), {
+        params: { planReview: { title: 'Temporary', markdown: temporary.plan } },
+      }])
+      reviewInjected.openReview(temporary, 'question:2')
+      expect(b.openResourceIn).toHaveBeenLastCalledWith(...first)
+      reviewInjected.openReview(temporary, 'question:3')
+      expect(b.openResourceIn.mock.calls.at(-1)![1]).not.toBe(first[1])
       expect(b.slots.entries('sidebar.right.pane.tab')[0]!.component).toBe(PlanPreview)
       expect(b.slots.entries('sidebar.right.pane.tab.title')[0]!.component).toBe(PlanTitle)
       await fiber.dispose()

@@ -35,6 +35,8 @@ kind: "package-reference"
 
 回合结束后，每次提交的计划都会显示在该回合末尾的产物区域，并采用文件产物卡片的样式，包含 Markdown 图标、标题和“打开”操作。在当前浏览器会话中，每份待审计划自动打开一次；关闭后，重新挂载审批组件不会再次展开，新提交会打开其对应计划。历史卡片仅在点击后打开。通过卡片或审批条带上的“查看全文”链接可阅读和复制完整 Markdown。不同提交保留独立标签页；是否开始实施仍由审批按钮决定。
 
+没有已记录调用标识的审批也会自动打开。完整正文只保存在标签页的导航内存中，待处理审批卡片可以重新打开它。刷新页面会丢失该正文；失效的预览会提示用户返回待处理审批。
+
 ### 失败
 
 准入失败（`matched: false`、业务错误、传输故障）以内联错误呈现，徽章保持显示直至投影确认退出。
@@ -49,7 +51,7 @@ kind: "package-reference"
 
 徽章占据 conversation 声明的 `conversation.input.plan` 单实例座位；node 半部是空 apply（roster 行）。读取经 standard-kit 的 `useProjection` 走通用投影对：有效目标是 `pending ? !active : active`——折叠的宿主值而非客户端乐观态，因此到达的帧无论哪个方向都会纠正徽章。座位注入面携带一个动词 `exitPlanMode`，经 `ctx.remote.commands.execute` 执行 `/plan off`，并把准入失败映射为一行内联错误。placeholder 与提示文案位于 ui-conversation 的 `conversation` locale 命名空间，与已认领 `/plan` 命令的提示逐字共用。无障碍描述是「Plan mode on, press to turn off」。
 
-计划卡片通过 Conversation Definition 从原生 `tool/call` 或 PTC dispatch 参数派生，并使用每次调用已解析的回合位置。它们与文件产物一起贡献到可追加的 `conversation.chat.turnTail` 列表。计划资源地址标识会话和调用；provider 读取已有会话历史及较早分页，不把正文存入侧边栏布局。提问插件拥有审批操作插槽，并提供调用方的调用标识。[决策记录](../../../.agents/notes/implemented/feature/2026-09-17-persistent-plan-cards.zh.md)说明审批与文档为何保持独立生命周期。
+计划卡片通过 Conversation Definition 从原生 `tool/call` 或 PTC dispatch 参数派生，并使用每次调用已解析的回合位置。它们与文件产物一起贡献到可追加的 `conversation.chat.turnTail` 列表。计划资源地址标识调用及完整的普通会话地址或子会话直接父级地址；provider 读取已有会话历史及较早分页，不把正文存入侧边栏布局。提问插件拥有审批操作插槽，并提供请求键、完整正文和可选的调用标识。[决策记录](../../../.agents/notes/implemented/feature/2026-09-17-persistent-plan-cards.zh.md)说明审批与文档为何保持独立生命周期。
 
 </details>
 

@@ -57,7 +57,7 @@ kind: "package-reference"
 
 编辑器外框文案（翻页器、按钮、占位符、校验提示）是双语的：插件在 `dsh-client-locale` 的 `question` 命名空间下注册 zh/en 词典，并通过 inject face 把绑定的翻译函数和 locale 快照源交给该条目，因此切换语言会重新渲染已挂载的编辑器。问题与选项文本来自模型并原样渲染；载体失败消息也不经翻译直接显示。
 
-计划审批提供 `conversation.plan-review.actions` 插槽；当审批意图包含已记录调用的标识时，计划插件在其中提供侧边栏入口。打开文档不会回答或关闭审批。
+计划审批通过 `conversation.plan-review.actions` 插槽提供请求键、完整正文和可选的调用标识。计划插件从历史中打开已记录计划，并把没有调用标识的审批作为临时侧边栏预览打开。打开文档不会回答或关闭审批。
 
 </details>
 

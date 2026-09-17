@@ -1,13 +1,12 @@
 /** Session-owned memory of pending plans already opened automatically. */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
-import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 
 interface PlanReviewState {
-  opened: Partial<Record<ToolCallId, true>>
+  opened: Partial<Record<string, true>>
 }
 
 type PlanReviewActions = {
-  markOpened: (draft: PlanReviewState, callId: ToolCallId) => void
+  markOpened: (draft: PlanReviewState, reviewKey: string) => void
 }
 
 /**
@@ -18,7 +17,7 @@ export function createPlanReviewStore(): EngineStoreHandle<PlanReviewState, Plan
   return defineStore({
     init: (): PlanReviewState => ({ opened: {} }),
     actions: {
-      markOpened: (draft, callId) => { draft.opened[callId] = true },
+      markOpened: (draft, reviewKey) => { draft.opened[reviewKey] = true },
     },
   })
 }

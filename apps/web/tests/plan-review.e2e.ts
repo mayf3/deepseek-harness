@@ -14,6 +14,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
   compareOrRefreshGolden, fixtureUserPrompts,
@@ -30,6 +31,7 @@ const SIDEBAR_EXPECTED = join(SNAPSHOT_DIR, 'sidebar.expected.md')
 const PREVIEW_EXPECTED = join(SNAPSHOT_DIR, 'preview.expected.md')
 const APPROVED_EXPECTED = join(SNAPSHOT_DIR, 'approved.expected.md')
 const APPROVED_EXPANDED_EXPECTED = join(SNAPSHOT_DIR, 'approved-expanded.expected.md')
+const TEMPORARY_EXPECTED = fileURLToPath(new URL('./expected/plan-review/temporary.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 
 // One command line: /plan enters plan mode and submits the rest as the turn's
@@ -47,6 +49,7 @@ describe('web e2e: plan review takeover round trip', () => {
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
   const sessionEvents: SessionEvent[] = []
+  let reviewedSession: SessionId
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15, compareReplaySession: true })
@@ -124,6 +127,7 @@ describe('web e2e: plan review takeover round trip', () => {
     await page.mouse.move(0, 0)
 
     const sessionId = await settled
+    reviewedSession = sessionId
     if (MODE === 'record') {
       await recordFixture(scaffold, sessionId, FIXTURE)
       return
@@ -157,6 +161,53 @@ describe('web e2e: plan review takeover round trip', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 200_000)
+
+  it.skipIf(MODE === 'record')('previews an unlogged review automatically and reopens it without deciding', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-plan-review-temporary'))
+    const agent = scaffold.ctx.agents.get(reviewedSession)
+    if (agent === undefined) throw new Error('The reviewed Session has no active agent')
+    const controller = new AbortController()
+    // This public question request has no tool invocation; its detail is the only complete document.
+    const asked = scaffold.ctx.userQuestions.ask({
+      agent, signal: controller.signal,
+      questions: [{ id: 'temporary', question: 'Approve this temporary plan?',
+        detail: '# Temporary review\n\nReview without a tool invocation.\n\n## Implementation\n\n- Keep the complete document readable.\n- Ask before implementation.',
+        options: [{ label: 'Approve' }, { label: 'Keep planning' }], intent: { kind: 'plan-review', approve: 'Approve' },
+      }],
+    })
+    let answered = false
+    const outcome = asked.then((value) => { answered = true; return value }, (error: unknown) => ({ error }))
+    try {
+      const card = page.locator('[data-plan-review-key]')
+      const preview = page.locator('[data-plan-preview^="dsh-resource://plan-review/"]')
+      await preview.waitFor({ state: 'visible' })
+      expect(await preview.getByText('Ask before implementation.').isVisible()).toBe(true)
+      await compareOrRefreshGolden(TEMPORARY_EXPECTED, await captureStableAria(page, '[data-plan-preview^="dsh-resource://plan-review/"]', scaffold.workspaceCwd), MODE)
+      const tab = page.locator('[data-dockkit-tab]').filter({ hasText: 'Temporary review' })
+      await card.getByRole('button', { name: 'Open plan in sidebar' }).click()
+      expect(await tab.count()).toBe(1)
+      await tab.locator('[data-dockkit-tab-close]').click()
+      await preview.waitFor({ state: 'detached' })
+      await card.getByRole('button', { name: 'Open plan in sidebar' }).click()
+      await preview.waitFor({ state: 'visible' })
+      expect(answered).toBe(false)
+      const saved = await page.evaluate(() => Object.keys(localStorage)
+        .filter(key => key.startsWith('dsh.sidebar-right.v1.')).map(key => localStorage.getItem(key)).join('\n'))
+      expect(saved).toContain('dsh-resource://plan-review/')
+      expect(saved).not.toContain('Ask before implementation.')
+      await card.getByRole('button', { name: 'Approve', exact: true }).click()
+      expect(await outcome).toEqual({ answers: [{ id: 'temporary', selected: ['Approve'] }] })
+      await card.waitFor({ state: 'detached' })
+      expect(await preview.getByText('Ask before implementation.').isVisible()).toBe(true)
+      await page.reload({ waitUntil: 'load' })
+      await page.getByText('This temporary plan preview has expired. Reopen it from the pending review card.', { exact: true }).waitFor()
+      expect(tripwire.pageErrors).toEqual([])
+      expect(tripwire.warnings).toEqual([])
+    } finally {
+      controller.abort()
+      await outcome
+    }
+  }, 60_000)
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [

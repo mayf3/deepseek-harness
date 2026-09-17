@@ -15,11 +15,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-user-questions/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-resources/client'
-import { PlanCards, PlanReviewOpen, type PlanOpenInjected } from './PlanCard.tsx'
+import { extractMarkdownPlainText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
+import { PlanCards, PlanReviewOpen, type PlanOpenInjected, type PlanReviewOpenInjected } from './PlanCard.tsx'
 import { PlanPreview, PlanTitle } from './PlanPreview.tsx'
 import { planDefinition } from './plan-definition.ts'
 import { planResourceProvider } from './plan-resource.ts'
 import { planAddress, parsePlanAddress } from './plan.ts'
+import { isReviewPreviewAddress, reviewPreviewAddress } from './review-preview.ts'
 import { createPlanReviewStore } from './review-store.ts'
 import { PlanChip } from './PlanModeControl.tsx'
 import { en, zh, type PlanKey } from './locales.ts'
@@ -46,7 +49,7 @@ export interface PlanChipInjected {
 }
 
 /** Services for plan controls, Conversation projection, and resource navigation. */
-export const inject = ['slots', 'remote', 'remote.commands', 'remote.session', 'locale', 'uiConversation', 'resources', 'sidebarRight', 'sidebarRightTabs']
+export const inject = ['slots', 'remote', 'remote.commands', 'remote.session', 'sessions', 'locale', 'uiConversation', 'resources', 'sidebarRight', 'sidebarRightTabs']
 
 /**
  * Register plan controls, permanent Chat cards, and sidebar document reading.
@@ -60,19 +63,32 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.uiConversation.events.register(planDefinition), 'ui-plan: conversation definition')
   ctx.effect(() => ctx.resources.register(planResourceProvider(ctx.remote.session)), 'ui-plan: resources')
   ctx.effect(() => ctx.sidebarRightTabs.register({
-    id: previewId, kind: 'plan', patterns: ['dsh-resource://plan/**'], priority: 'builtin',
-    canOpen: address => parsePlanAddress(address) !== undefined,
+    id: previewId, kind: 'plan', patterns: ['dsh-resource://plan/**', 'dsh-resource://plan-review/**'], priority: 'builtin',
+    canOpen: address => parsePlanAddress(address) !== undefined || isReviewPreviewAddress(address),
     title: () => t('preview.title'),
   }), 'ui-plan: sidebar type')
   const open = (sessionId: SessionId): PlanOpenInjected => ({
-    openPlan: (callId) => { ctx.sidebarRight.openResourceIn(sessionId, planAddress({ sessionId, callId })) },
+    openPlan: (callId) => {
+      const child = ctx.sessions.subagentAddress(sessionId)
+      const session = child === undefined ? { kind: 'session' as const, sessionId } : { kind: 'subagent' as const, ...child }
+      ctx.sidebarRight.openResourceIn(sessionId, planAddress({ session, callId }))
+    },
   })
+  const reviewWindow = randomUUID()
   const reviewStore = createPlanReviewStore()
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail', id: previewId, locale: NS, inject: open,
   }, PlanCards))
   ctx.slots.inject('conversation.plan-review.actions', () => ctx.slots.register({
-    name: 'conversation.plan-review.actions', id: previewId, locale: NS, inject: open, store: reviewStore,
+    name: 'conversation.plan-review.actions', id: previewId, locale: NS, store: reviewStore,
+    inject: (sessionId: SessionId): PlanReviewOpenInjected => ({
+      openReview: (review, requestKey) => {
+        if (review.callId !== undefined) { open(sessionId).openPlan(review.callId); return }
+        ctx.sidebarRight.openResourceIn(sessionId, reviewPreviewAddress(sessionId, `${reviewWindow}:${requestKey}`), {
+          params: { planReview: { markdown: review.plan, title: extractMarkdownPlainText(review.plan, { mode: 'first-line' }) } },
+        })
+      },
+    }),
   }, PlanReviewOpen))
   ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab', key: previewId, locale: NS,

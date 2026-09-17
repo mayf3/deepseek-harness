@@ -45,7 +45,7 @@ export function planResourceProvider(remote: Pick<Context['remote']['session'], 
         yield { ok: false, error: new RemoteError('plan/invalid-address', 'Invalid plan resource address.', {}) }
         return
       }
-      const sessionAddress = { kind: 'session' as const, sessionId: target.sessionId }
+      const sessionAddress = target.session
       try {
         // The snapshot supplies the page API's fixed log cut. Breaking closes the follow stream.
         let snapshot: Extract<SessionFollowFrame, { type: 'snapshot' }> | undefined
