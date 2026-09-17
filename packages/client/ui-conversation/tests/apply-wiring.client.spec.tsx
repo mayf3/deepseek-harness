@@ -31,6 +31,7 @@ async function bench(options: { declareConversation?: boolean } = {}) {
     }, (_props: { renderSlot?: unknown }) => null)
   }
   const feature = await runtime.mount({ inject: [...inject], apply })
+  if (options.declareConversation !== false) runtime.renderRoot()
   return { runtime, feature }
 }
 
@@ -51,11 +52,13 @@ describe('target-neutral Conversation apply wiring', () => {
       'main': { kind: 'keyed', scope: 'root' },
       'settings.general.item': { kind: 'list', scope: 'root' },
     }, (_props: { renderSlot?: unknown }) => null)
-
+    b.runtime.renderRoot()
     expect(b.runtime.slots.entries('main').map(row => row.options.key)).toEqual(['conversation'])
     expect(b.runtime.slots.entries('main.conversation')).toHaveLength(1)
     expect(b.runtime.slots.spec('main.conversation'))
       .toEqual({ kind: 'single', scope: 'session-maybe' })
+    expect(b.runtime.factoryOf('conversation.content').slots)
+      .toMatchObject({ views: { scope: 'session' } })
     expect(b.runtime.slots.entries('conversation.session')).toHaveLength(1)
     expect(b.runtime.slots.entries('conversation.session.header')).toHaveLength(1)
     expect(b.runtime.slots.entries('conversation.composer.bar')).toHaveLength(1)
@@ -75,6 +78,7 @@ describe('target-neutral Conversation apply wiring', () => {
     const session = entry(b.runtime, 'conversation.session')
     const header = entry(b.runtime, 'conversation.session.header')
     expect(entry(b.runtime, 'main.conversation')?.store).toBeUndefined()
+    expect(b.runtime.factoryOf('conversation.content').store).toBeUndefined()
     expect(session?.store).toBeDefined()
     expect(header?.store).toBe(session?.store)
     expect(b.runtime.slots.spec('conversation.composer'))
