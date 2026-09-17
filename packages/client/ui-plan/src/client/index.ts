@@ -1,12 +1,4 @@
-/**
- * Plan control plugin, browser half: occupies the composer's named
- * `conversation.input.plan` seat with an active-state status chip. Plan mode
- * is entered through the command source; while the projection's effective
- * target is plan mode the chip renders and executes /plan off through
- * `command.execute`, otherwise the seat stays empty. Reads ride the generic
- * projection pair through the standard-kit `useProjection`; zero client-side
- * plan state.
- */
+/** Plan-mode control, persistent Chat cards, and Session-backed sidebar previews. */
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -18,6 +10,16 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-plan-mode/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/remote'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import type {} from '@deepseek-ai/dsh-client-ui-user-questions/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import type {} from '@deepseek-ai/dsh-client-resources/client'
+import { PlanCard, PlanReviewOpen, type PlanOpenInjected } from './PlanCard.tsx'
+import { PlanPreview, PlanTitle } from './PlanPreview.tsx'
+import { planDefinition } from './plan-definition.ts'
+import { planResourceProvider } from './plan-resource.ts'
+import { planAddress, parsePlanAddress } from './plan.ts'
 import { PlanChip } from './PlanModeControl.tsx'
 import { en, zh, type PlanKey } from './locales.ts'
 
@@ -42,15 +44,40 @@ export interface PlanChipInjected {
   exitPlanMode: () => Promise<string | null>
 }
 
-/** Required services: the seat's slot registry, commands Remote, and locale registry. */
-export const inject = ['slots', 'remote', 'remote.commands', 'locale']
+/** Services for plan controls, Conversation projection, and resource navigation. */
+export const inject = ['slots', 'remote', 'remote.commands', 'remote.session', 'locale', 'uiConversation', 'resources', 'sidebarRight', 'sidebarRightTabs']
 
 /**
- * Client plugin body: register the plan chip over the command channel.
+ * Register plan controls, permanent Chat cards, and sidebar document reading.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-plan: dictionaries')
+
+  const previewId = '@deepseek-ai/dsh-client-ui-plan'
+  const t = ctx.locale.bind(NS)
+  ctx.effect(() => ctx.uiConversation.events.register(planDefinition), 'ui-plan: conversation definition')
+  ctx.effect(() => ctx.resources.register(planResourceProvider(ctx.remote.session)), 'ui-plan: resources')
+  ctx.effect(() => ctx.sidebarRightTabs.register({
+    id: previewId, kind: 'plan', patterns: ['dsh-resource://plan/**'], priority: 'builtin',
+    canOpen: address => parsePlanAddress(address) !== undefined,
+    title: () => t('preview.title'),
+  }), 'ui-plan: sidebar type')
+  const open = (sessionId: SessionId): PlanOpenInjected => ({
+    openPlan: (callId) => { ctx.sidebarRight.openResourceIn(sessionId, planAddress({ sessionId, callId })) },
+  })
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node', key: 'submitted-plan', locale: NS, inject: open,
+  }, PlanCard))
+  ctx.slots.inject('conversation.plan-review.actions', () => ctx.slots.register({
+    name: 'conversation.plan-review.actions', id: previewId, locale: NS, inject: open,
+  }, PlanReviewOpen))
+  ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+    name: 'sidebar.right.pane.tab', key: previewId, locale: NS,
+  }, PlanPreview))
+  ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({
+    name: 'sidebar.right.pane.tab.title', key: previewId,
+  }, PlanTitle))
 
   ctx.slots.inject('conversation.input.plan', () => ctx.slots.register({
     name: 'conversation.input.plan',

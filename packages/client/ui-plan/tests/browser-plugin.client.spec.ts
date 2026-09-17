@@ -5,6 +5,7 @@
  * outcomes into null (admitted) or a user-visible failure line; teardown
  * empties the seat (HMR safety).
  */
+import { ConversationEventRegistry } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -16,10 +17,23 @@ import type { PlanChipInjected } from '../src/client/index.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
 
+function providePreview(ctx: Context) {
+  const events = new ConversationEventRegistry(ctx)
+  ctx.provide('uiConversation', { events })
+  const removeResources = vi.fn()
+  const removeType = vi.fn()
+  ctx.provide('resources', { register: vi.fn(() => removeResources) })
+  ctx.provide('sidebarRightTabs', { register: vi.fn(() => removeType) })
+  ctx.provide('sidebarRight', { openResourceIn: vi.fn() })
+  ctx.provide('remote.session', {})
+  return { events, removeResources, removeType }
+}
+
 const SID = 's-plan' as SessionId
 
 async function bench() {
   const ctx = new Context()
+  const preview = providePreview(ctx)
   await ctx.plugin(SlotRegistry).await()
   const slots = ctx.get('slots') as SlotRegistry
   slots.register({
@@ -32,12 +46,12 @@ async function bench() {
   ctx.provide('remote', { commands: commandsRemote })
   ctx.provide('remote.commands', commandsRemote)
   ctx.provide('locale', new LocaleRuntime(ctx))
-  return { ctx, slots, execute }
+  return { ctx, slots, execute, ...preview }
 }
 
 describe('ui-plan browser apply', () => {
   it('declares every service it binds', () => {
-    expect(inject).toEqual(['slots', 'remote', 'remote.commands', 'locale'])
+    expect(inject).toEqual(['slots', 'remote', 'remote.commands', 'remote.session', 'locale', 'uiConversation', 'resources', 'sidebarRight', 'sidebarRightTabs'])
   })
 
   it('node-half apply is an intentional no-op', () => {
@@ -46,6 +60,7 @@ describe('ui-plan browser apply', () => {
 
   it('waits until conversation declares the plan seat', async () => {
     const ctx = new Context()
+    providePreview(ctx)
     await ctx.plugin(SlotRegistry).await()
     ctx.provide('remote', { commands: {} })
     ctx.provide('remote.commands', {})
@@ -83,7 +98,11 @@ describe('ui-plan browser apply', () => {
     b.execute.mockResolvedValueOnce({ ok: true, value: undefined } as never)
     await expect(injected.exitPlanMode()).resolves.toBe('unknown command: /plan off')
 
+    expect(b.events.entries().map(entry => entry.kind)).toEqual(['submitted-plan'])
     await fiber.dispose()
+    expect(b.events.entries()).toEqual([])
+    expect(b.removeResources).toHaveBeenCalledOnce()
+    expect(b.removeType).toHaveBeenCalledOnce()
     expect(b.slots.entries('conversation.input.plan')).toHaveLength(0)
   })
 })

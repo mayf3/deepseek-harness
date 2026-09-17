@@ -27,6 +27,7 @@ const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
 // transcript the approval leaves behind — the state the card cannot see.
 const REVIEW_EXPECTED = join(SNAPSHOT_DIR, 'review.expected.md')
 const SIDEBAR_EXPECTED = join(SNAPSHOT_DIR, 'sidebar.expected.md')
+const PREVIEW_EXPECTED = join(SNAPSHOT_DIR, 'preview.expected.md')
 const APPROVED_EXPECTED = join(SNAPSHOT_DIR, 'approved.expected.md')
 const APPROVED_EXPANDED_EXPECTED = join(SNAPSHOT_DIR, 'approved-expanded.expected.md')
 const MODE = webSnapshotMode()
@@ -84,6 +85,8 @@ describe('web e2e: plan review takeover round trip', () => {
     // The plan-review request must NOT land on the generic question flow.
     expect(await page.locator('[data-question-key]').count()).toBe(0)
     await expect.poll(() => card.getByText('Plan review').count(), { timeout: 10_000 }).toBeGreaterThan(0)
+    expect(await card.getByRole('heading').count()).toBe(0)
+    expect(await card.getByRole('list').count()).toBe(0)
 
     const selectedRow = page.locator('[role="treeitem"][aria-selected="true"]')
     await expect.poll(() => selectedRow.locator('[data-state="warning"]').count(), { timeout: 10_000 }).toBe(1)
@@ -95,6 +98,21 @@ describe('web e2e: plan review takeover round trip', () => {
       const sidebar = await captureStableAria(page, '[role="treeitem"][aria-selected="true"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(SIDEBAR_EXPECTED, sidebar, MODE)
     }
+
+    const planCard = page.locator('[data-plan-card]')
+    await planCard.waitFor({ state: 'visible' })
+    await card.getByRole('button', { name: 'Open plan in sidebar' }).click()
+    const preview = page.locator('[data-plan-preview]')
+    await preview.waitFor({ state: 'visible' })
+    expect(await preview.getByRole('heading', { level: 1 }).textContent()).toContain('--greeting')
+    await card.getByRole('button', { name: 'Open plan in sidebar' }).click()
+    expect(await page.locator('[data-plan-preview]').count()).toBe(1)
+    if (MODE !== 'record') {
+      await compareOrRefreshGolden(PREVIEW_EXPECTED, await captureStableAria(page, '[data-plan-preview]', scaffold.workspaceCwd), MODE)
+    }
+    await page.locator('[data-sidebar-right-toggle]').click()
+    await planCard.click()
+    await preview.waitFor({ state: 'visible' })
 
     await card.getByRole('button', { name: 'Approve' }).click()
     // Park the pointer: the card unmounts and the ContextMeter ring lands
@@ -115,6 +133,16 @@ describe('web e2e: plan review takeover round trip', () => {
     expect(await page.locator('[data-plan-review-key]').count()).toBe(0)
     expect(await selectedRow.locator('[data-state="warning"]').count()).toBe(0)
     await expect.poll(() => page.locator('[data-composer-input]').first().isEnabled(), { timeout: 10_000 }).toBe(true)
+    // The completed Turn collapses its process; the artifact remains on the main line.
+    await planCard.waitFor({ state: 'visible' })
+    expect(await planCard.locator('xpath=ancestor::*[@data-turn-process-member]').count()).toBe(0)
+    await page.locator('[data-sidebar-right-toggle]').click()
+    await planCard.click()
+    await preview.waitFor({ state: 'visible' })
+    await page.reload({ waitUntil: 'load' })
+    await page.locator('[data-plan-card]').waitFor({ state: 'visible' })
+    await page.locator('[data-plan-preview]').waitFor({ state: 'visible' })
+    expect(await page.locator('[data-plan-preview]').getByRole('heading', { level: 1 }).textContent()).toContain('--greeting')
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(APPROVED_EXPECTED, snapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(
@@ -129,8 +157,50 @@ describe('web e2e: plan review takeover round trip', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.v3.jsonl', 'review.expected.md', 'sidebar.expected.md',
+      'session.v3.jsonl', 'review.expected.md', 'sidebar.expected.md', 'preview.expected.md',
       'approved.expected.md', 'approved-expanded.expected.md',
     ])
+  })
+})
+
+describe('web e2e: dismissed plan history', () => {
+  it.skipIf(MODE === 'record')('reopens the permanent plan card after dismissing its review', async () => {
+    // Replay supplies a finite continuation; the real question rejection and retained document are the assertions.
+    const scaffold = await launchWebScaffold({ replayFixture: FIXTURE, compareReplaySession: false, paceMs: 15 })
+    let browser: Browser | undefined
+    const events: SessionEvent[] = []
+    scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { events.push(event) })
+    try {
+      browser = await chromium.launch()
+      const page = await newEnglishPage(browser)
+      const tripwire = watchConsole(page)
+      await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await connectFreshWorkspace(page, scaffold.workspaceCwd)
+      const input = page.locator('[data-composer-input]').first()
+      const settled = scaffold.whenTurnSettled(30_000)
+      await input.fill(LINE)
+      await input.press('Enter')
+      const review = page.locator('[data-plan-review-key]')
+      await review.waitFor({ state: 'visible' })
+      await review.getByRole('button', { name: 'Chat about it', exact: true }).click()
+      await settled
+      const results = events.filter(event => event.type === 'tool/result')
+      expect(results.some(event => JSON.stringify(event).includes('dismissed the plan review'))).toBe(true)
+      expect(await review.count()).toBe(0)
+      const card = page.locator('[data-plan-card]')
+      await card.waitFor({ state: 'visible' })
+      await card.click()
+      await page.locator('[data-plan-preview]').waitFor({ state: 'visible' })
+      await page.locator('[data-sidebar-right-toggle]').click()
+      await card.click()
+      await page.reload({ waitUntil: 'load' })
+      await page.locator('[data-plan-card]').waitFor({ state: 'visible' })
+      await page.locator('[data-plan-preview]').waitFor({ state: 'visible' })
+      expect(await page.locator('[data-plan-preview]').getByRole('heading', { level: 1 }).textContent()).toContain('--greeting')
+      expect(tripwire.pageErrors).toEqual([])
+    } finally {
+      await browser?.close()
+      await scaffold.close()
+    }
   })
 })

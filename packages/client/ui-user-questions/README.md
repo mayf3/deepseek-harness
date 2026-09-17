@@ -33,7 +33,7 @@ A multi-select draft keeps its selected labels while the user opens or edits the
 
 ### The plan-review card
 
-A `plan-review` intent — set by `dsh-plan-mode` on the `exit_plan_mode` review — renders the waiting-approval card layout: a `Plan review` strip, the plan as the scrolling markdown body, and one decision row of `Chat about it` / `Refuse` / `Approve`. Approve and Refuse answer with the asker's own option labels; `Chat about it` rejects the wait as `ASK_CANCELLED`, returning the composer so the user can say what they want instead.
+A `plan-review` intent — set by `dsh-plan-mode` on the `exit_plan_mode` review — renders a compact waiting-approval card: a `Plan review` strip with the sidebar opener and one decision row of `Chat about it` / `Refuse` / `Approve`. The complete plan is read in the sidebar through this opener or its permanent Chat card. Approve and Refuse answer with the asker's own option labels; `Chat about it` rejects the wait as `ASK_CANCELLED`, returning the composer so the user can say what they want instead.
 
 ### Failure and recovery
 
@@ -56,6 +56,8 @@ The card claims a request only when it can send every answer that request allows
 ### Copy and locale
 
 Composer chrome copy (pager, buttons, placeholders, validation feedback) is bilingual: the plugin registers zh/en dictionaries under the `question` namespace of `dsh-client-locale` and hands the entry its bound translator plus the locale snapshot source through the inject face, so a locale switch re-renders a mounted composer. Question and option text arrives from the model and renders verbatim; carrier failure messages also display untranslated.
+
+A plan review exposes `conversation.plan-review.actions`; the plan plugin contributes a sidebar opener when the review intent identifies its logged invocation. Opening a document does not answer or dismiss the review.
 
 </details>
 

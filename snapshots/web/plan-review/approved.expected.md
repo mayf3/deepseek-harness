@@ -5,8 +5,6 @@
   - text: Standard mode
   - button "More actions":
     - img
-  - button "Open right sidebar":
-    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -21,6 +19,10 @@
   - img
 - button "1 tool call · 1 message":
   - text: 1 tool call · 1 message
+  - img
+- 'button "Open plan: Add `--greeting` flag to CLI"':
+  - img
+  - text: "Add `--greeting` flag to CLI"
   - img
 - button "System prompt":
   - img

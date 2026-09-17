@@ -33,7 +33,7 @@ kind: "package-reference"
 
 ### plan-review 卡片
 
-`plan-review` 意图——由 `dsh-plan-mode` 在 `exit_plan_mode` 审阅上设置——渲染等待审批卡片的布局：一条 `Plan review` 条带、计划作为可滚动的 markdown 主体，以及一行 `Chat about it` / `Refuse` / `Approve` 的决定操作。Approve 与 Refuse 用提问方自己的选项标签回答；`Chat about it` 以 `ASK_CANCELLED` 拒绝该等待，让编辑器归位，用户可以直接说出他想说的话。
+`plan-review` 意图——由 `dsh-plan-mode` 在 `exit_plan_mode` 审阅上设置——渲染紧凑的等待审批卡片：一条带侧边栏入口的 `Plan review` 条带，以及一行 `Chat about it` / `Refuse` / `Approve` 的决定操作。通过该入口或聊天历史中的常驻卡片，在侧边栏阅读完整计划。Approve 与 Refuse 用提问方自己的选项标签回答；`Chat about it` 以 `ASK_CANCELLED` 拒绝该等待，让编辑器归位，用户可以直接说出他想说的话。
 
 ### 失败与恢复
 
@@ -56,6 +56,8 @@ kind: "package-reference"
 ### 文案与 locale
 
 编辑器外框文案（翻页器、按钮、占位符、校验提示）是双语的：插件在 `dsh-client-locale` 的 `question` 命名空间下注册 zh/en 词典，并通过 inject face 把绑定的翻译函数和 locale 快照源交给该条目，因此切换语言会重新渲染已挂载的编辑器。问题与选项文本来自模型并原样渲染；载体失败消息也不经翻译直接显示。
+
+计划审批提供 `conversation.plan-review.actions` 插槽；当审批意图包含已记录调用的标识时，计划插件在其中提供侧边栏入口。打开文档不会回答或关闭审批。
 
 </details>
 

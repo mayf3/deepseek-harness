@@ -68,6 +68,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     && !historyIncomplete
   const processMember = routedNode !== undefined
     && processWindowReady
+    && routedNode.process !== 'independent'
     && !TURN_PROCESS_INDEPENDENT_KINDS.has(routedNode.kind)
     && routedNode.anchorSeq >= processSpec.processStartSeq
     && routedNode.anchorSeq < processSpec.answerAnchorSeq

@@ -1,6 +1,7 @@
 /** Question composer props and one pending Remote waterfall response. */
-import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 // The client module declares the conversation.composer SlotMap entry required by PropsRuntime.
+import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   AskUserQuestionAnswer, AskUserQuestionItem,
@@ -11,6 +12,13 @@ declare module '@deepseek-ai/dsh-client-ui-session/client' {
   interface SessionPendingInteractionMap {
     /** Pending question or plan-review request. */
     question: PendingQuestion
+  }
+}
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    /** Actions for the exact plan under review; approval remains with the question composer. */
+    'conversation.plan-review.actions': { kind: 'list'; scope: 'session'; owner: { review: PlanReview } }
   }
 }
 
@@ -50,6 +58,8 @@ export interface PlanReview {
   question: string
   /** The plan markdown under review. */
   plan: string
+  /** Logged tool invocation used to reopen this plan. */
+  callId?: ToolCallId
   /** The option that approves the plan. */
   approve: QuestionOption
   /** The option that declines it; absent when the asker offered no other option. */
@@ -90,6 +100,7 @@ export function planReviewOf(questions: readonly QuestionItem[]): PlanReview | u
     id: question.id,
     question: question.question,
     plan: question.detail,
+    ...intent.callId === undefined ? {} : { callId: intent.callId },
     approve,
     ...(decline === undefined ? {} : { decline }),
   }
@@ -220,5 +231,6 @@ export type QuestionWait = PendingQuestion
 export type QuestionComposerProps =
   PropsRuntime<'conversation.composer'>
   & PropsStore<ReturnType<typeof createQuestionDraftStore>>
+  & PropsRenderSlots<'conversation.plan-review.actions'>
   & { matched: QuestionWait }
   & PropsLocale<'question'>

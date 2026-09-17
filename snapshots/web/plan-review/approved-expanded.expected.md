@@ -5,8 +5,6 @@
   - text: Standard mode
   - button "More actions":
     - img
-  - button "Open right sidebar":
-    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -34,6 +32,10 @@
   - text: Since the user has explicitly asked me not to read or write any files and to go straight to planning, I'll proceed with
   - code: exit_plan_mode
   - text: .
+- 'button "Open plan: Add `--greeting` flag to CLI"':
+  - img
+  - text: "Add `--greeting` flag to CLI"
+  - img
 - 'button "Tool call exit_plan_mode · # Add `--greeting` flag to CLI"':
   - img
   - img

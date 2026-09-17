@@ -93,6 +93,8 @@ Chat 会在历史前插与 renderer 重新挂载时恢复语义锚点。没有�
 
 无。
 
+功能的 Chat Node 可以声明 `process: 'independent'`，让面向用户的产物在所属回合运行过程折叠时仍保持可见；已提交的计划使用这一声明。
+
 </details>
 
 **运行时不变式：** 不发布伴生入口。Conversation 与 slot 注册已经强制 Chat target 一致。

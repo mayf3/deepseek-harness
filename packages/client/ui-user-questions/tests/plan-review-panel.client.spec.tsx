@@ -108,6 +108,8 @@ const questionDraftStore = createQuestionDraftStore().create(SID)
 
 /** Framework standard-kit stubs: the panel consumes only the locale seat. */
 const kit: Omit<QuestionComposerProps, 'matched'> = {
+  renderSlot: () => null,
+  SessionProvider: ({ children }) => children,
   sessionId: SID,
   session: undefined,
   pendingInteraction: undefined,
@@ -203,15 +205,15 @@ describe('planReviewOf', () => {
 })
 
 describe('PlanReviewPanel', () => {
-  it('renders the plan under a review strip, with none of the quiz affordances', () => {
+  it('keeps the review compact with document reading left to the sidebar', () => {
     const { carrier } = wait()
     render(<QuestionComposer matched={carrier} {...kit} />)
 
     expect(document.querySelector('[data-plan-review-key]')?.getAttribute('data-plan-review-key')).toBe(carrier.key)
     expect(screen.getByText(zh['plan.header'])).toBeTruthy()
-    // The plan renders as markdown, so its heading is a heading.
-    expect(screen.getByRole('heading', { name: 'Ship the picker' })).toBeTruthy()
-    expect(screen.getByText('render the rows')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Ship the picker' })).toBeNull()
+    expect(screen.queryByText('render the rows')).toBeNull()
+    expect(document.querySelector('[data-plan-review-scroll]')).toBeNull()
     // The question text stays as the card's accessible name rather than a title
     // that reads like a test item.
     expect(screen.getByLabelText('Approve this plan and leave plan mode?')).toBeTruthy()

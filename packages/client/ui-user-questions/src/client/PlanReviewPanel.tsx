@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react'
-import { Button, IconEditOutline16, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useState } from 'react'
+import { Button, IconEditOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PendingQuestion, PlanReview, QuestionComposerProps } from './contract/slots.ts'
 import css from './PlanReviewPanel.module.css'
 
 /** The panel's own props: the question domain face, the narrowed review, and the locale seat. */
 export type PlanReviewPanelProps =
-  { pending: PendingQuestion; review: PlanReview } & Pick<QuestionComposerProps, 't'>
+  { pending: PendingQuestion; review: PlanReview } & Pick<QuestionComposerProps, 't' | 'renderSlot'>
 
 /**
  * Optional-prop spread for a decision button's tooltip: `title` is optional on
@@ -19,16 +19,12 @@ function tooltip(description: string | undefined): { title?: string } {
 }
 
 /**
- * Render a plan review as a decision card.
+ * Render plan review controls; the submitted document opens in the sidebar.
  *
  * @param props - the question domain face, the narrowed plan review, and `t`.
  * @returns The plan-review takeover for this request.
  */
-export function PlanReviewPanel({ pending, review, t }: PlanReviewPanelProps) {
-  const markdownLabels = useMemo(() => ({
-    code: { copyLabel: t('copy'), copiedLabel: t('copied') },
-    footnotes: t('markdown.footnotes'),
-  }), [t])
+export function PlanReviewPanel({ pending, review, t, renderSlot }: PlanReviewPanelProps) {
   // The panel waits for the host's resolved frame before leaving, so repeated
   // clicks must not resubmit. A failed send re-enables it and shows the error.
   const [busy, setBusy] = useState(false)
@@ -52,9 +48,9 @@ export function PlanReviewPanel({ pending, review, t }: PlanReviewPanelProps) {
         <div className={css.strip}>
           <span className={css.dot} />
           {t('plan.header')}
-        </div>
-        <div className={css.body} data-plan-review-scroll>
-          <MarkdownText text={review.plan} labels={markdownLabels} />
+          <div className={css.previewActions}>
+            {renderSlot('conversation.plan-review.actions', { review })}
+          </div>
         </div>
         <div className={css.footer}>
           <div className={css.feedback} role="status">{error}</div>
