@@ -12,8 +12,8 @@ function arg(args: Record<string, unknown>, key: string): string {
   return typeof value === 'string' ? value : ''
 }
 
-function receipt(title: string, label: string, t: DetailTranslate, fields: DetailItem['fields'] = [], description?: string): ToolDetailsModel {
-  return detailList([{ title, badge: { label, tone: 'neutral' }, fields, ...(description === undefined ? {} : { description }) }], `${title} · ${label}`, t)
+function receipt(title: string, badge: NonNullable<DetailItem['badge']>, t: DetailTranslate, fields: DetailItem['fields'] = [], description?: string): ToolDetailsModel {
+  return detailList([{ title, badge, fields, ...(description === undefined ? {} : { description }) }], `${title} · ${badge.label}`, t)
 }
 
 function agentList(text: string, t: DetailTranslate): ToolDetailsModel | null {
@@ -127,19 +127,21 @@ export function controlDetails(name: string, args: Record<string, unknown>, text
       }
     case 'send_message': {
       const status = detailRecord(json) ? json.status : undefined
-      if (status === 'accepted' || status === 'queued') return receipt(target, t(status === 'queued' ? 'detail.status.queued' : 'detail.receipt.delivered'), t, [], arg(args, 'message'))
-      return text === `message delivered to agent ${target}` ? receipt(target, t('detail.receipt.delivered'), t, [], arg(args, 'message')) : null
+      if (status === 'accepted' || status === 'queued') return receipt(target, {
+        label: t(status === 'queued' ? 'detail.status.queued' : 'detail.receipt.delivered'), tone: status === 'queued' ? 'warning' : 'success',
+      }, t, [], arg(args, 'message'))
+      return text === `message delivered to agent ${target}` ? receipt(target, { label: t('detail.receipt.delivered'), tone: 'success' }, t, [], arg(args, 'message')) : null
     }
     case 'interrupt_agent':
-      if (detailRecord(json) && typeof json.previousStatus === 'string') return receipt(target, t('detail.receipt.interrupt'), t, [{ label: t('detail.field.previousStatus'), value: detailBadge(json.previousStatus, t).label }])
-      return text === `interrupt requested for agent ${target}` ? receipt(target, t('detail.receipt.interrupt'), t) : null
+      if (detailRecord(json) && typeof json.previousStatus === 'string') return receipt(target, { label: t('detail.receipt.interrupt'), tone: 'warning' }, t, [{ label: t('detail.field.previousStatus'), value: detailBadge(json.previousStatus, t).label }])
+      return text === `interrupt requested for agent ${target}` ? receipt(target, { label: t('detail.receipt.interrupt'), tone: 'warning' }, t) : null
     case 'wait_agent':
       if (!detailRecord(json) || typeof json.timedOut !== 'boolean') return null
       if (detailRecord(json.noProgress) && typeof json.noProgress.message === 'string') return detailList([{ title: t('detail.wait.noProgress'), description: json.noProgress.message, fields: [] }], t('detail.wait.noProgress'), t)
-      return receipt(t('detail.wait.title'), t(json.timedOut ? 'detail.wait.timeout' : 'detail.wait.changed'), t)
+      return receipt(t('detail.wait.title'), { label: t(json.timedOut ? 'detail.wait.timeout' : 'detail.wait.changed'), tone: 'neutral' }, t)
     case 'subagent': {
       const started = /^started (background subagent job|subagent) (\S+)$/u.exec(text)
-      if (started !== null) return receipt(arg(args, 'prompt'), t('detail.receipt.started'), t, [{ label: t(started[1] === 'subagent' ? 'detail.field.agent' : 'detail.field.job'), value: started[2] ?? '' }])
+      if (started !== null) return receipt(arg(args, 'prompt'), { label: t('detail.receipt.started'), tone: 'info' }, t, [{ label: t(started[1] === 'subagent' ? 'detail.field.agent' : 'detail.field.job'), value: started[2] ?? '' }])
       return detailList([{ title: t('detail.agent.reply'), markdown: text, fields: [], groups: [{ label: t('detail.field.task'), items: [{ description: arg(args, 'prompt'), fields: [] }] }] }], t('detail.agent.reply'), t)
     }
     case 'list_subagent_models': {
@@ -162,13 +164,13 @@ export function controlDetails(name: string, args: Record<string, unknown>, text
       return detailList([{ title: target, badge: detailBadge(match[1], t), fields: [], ...(description === '' ? {} : { description }), code: { text: code } }], `${target} · ${detailBadge(match[1], t).label}`, t)
     }
     case 'job_kill':
-      if (text === `requested cancellation of job ${target}`) return receipt(target, t('detail.receipt.cancel'), t, [], arg(args, 'reason'))
-      if (text.startsWith(`job ${target} had already finished `)) return receipt(target, t('detail.receipt.alreadyFinished'), t)
+      if (text === `requested cancellation of job ${target}`) return receipt(target, { label: t('detail.receipt.cancel'), tone: 'warning' }, t, [], arg(args, 'reason'))
+      if (text.startsWith(`job ${target} had already finished `)) return receipt(target, { label: t('detail.receipt.alreadyFinished'), tone: 'neutral' }, t)
       return null
     case 'terminal_open': {
       const match = /^started terminal session (\S+)(?: \((.*?)\))? \[type: ([^\]]+)\]\n([\s\S]*)$/u.exec(text)
       if (match === null || match[1] === undefined || match[3] === undefined || match[4] === undefined) return null
-      return detailList([{ title: match[2] ?? match[1], ...(match[2] === undefined ? {} : { subtitle: match[1] }), badge: { label: t('detail.receipt.started'), tone: 'neutral' }, fields: [{ label: t('detail.field.type'), value: match[3] }], code: { text: match[4] } }], match[2] ?? match[1], t)
+      return detailList([{ title: match[2] ?? match[1], ...(match[2] === undefined ? {} : { subtitle: match[1] }), badge: { label: t('detail.receipt.started'), tone: 'info' }, fields: [{ label: t('detail.field.type'), value: match[3] }], code: { text: match[4] } }], match[2] ?? match[1], t)
     }
     case 'terminal_read': {
       const match = /\n\[lines: (\d+)-(\d+) of (\d+)\](\n\[output truncated\])?$/u.exec(text)
@@ -178,11 +180,11 @@ export function controlDetails(name: string, args: Record<string, unknown>, text
     case 'terminal_signal': {
       const match = /^delivered (\S+) to foreground process group (\d+)$/u.exec(text)
       if (match === null || match[1] === undefined || match[2] === undefined) return null
-      return receipt(target, t('detail.receipt.signal'), t, [{ label: t('detail.field.signal'), value: match[1] }, { label: t('detail.field.processGroup'), value: match[2] }])
+      return receipt(target, { label: t('detail.receipt.signal'), tone: 'success' }, t, [{ label: t('detail.field.signal'), value: match[1] }, { label: t('detail.field.processGroup'), value: match[2] }])
     }
     case 'terminal_close':
-      if (text === `closed terminal session ${target}`) return receipt(target, t('detail.receipt.closed'), t)
-      if (text === `terminal session ${target} was already closing`) return receipt(target, t('detail.receipt.closing'), t)
+      if (text === `closed terminal session ${target}`) return receipt(target, { label: t('detail.receipt.closed'), tone: 'neutral' }, t)
+      if (text === `terminal session ${target} was already closing`) return receipt(target, { label: t('detail.receipt.closing'), tone: 'neutral' }, t)
       return null
     default: return null
   }

@@ -66,6 +66,8 @@ owner 载荷为 `ToolCallOwnerProps`：`callId`、`toolName`、冻结的 `block`
 
 Details 视图覆盖已注册的 36 个工具：目标和定时任务工具、Cordis 检查、workflow 与 Ralph 报告、Session 事件／搜索／轨迹查询、Agent 与 teammate 控制、后台作业、持久终端以及 LSP 导航。展开内容读取成功的记录结果，为失败或不支持的数据保留通用输入／输出，并保留 Inspect。日期包含查看者的时区，状态反映调用结果而非当前会话状态。浏览器适配器消费已记录的 producer 文本与 JSON；Host service 对象和 presenter 回调不会进入 Client。[紧凑工具详情](../../../.agents/notes/implemented/architecture/2026-09-10-compact-tool-details.zh.md)记录了呈现取舍。
 
+展开后的状态圆点和文字使用静态语义色。中断回执仅确认已发出中断请求。
+
 terminal model 使用浏览器安全入口 `@deepseek-ai/dsh-spill-policy/notice` 的 `hasSpillNotice`，而非独立的 UI 匹配规则。[spill-policy README](../../spill/spill-policy/README.zh.md#shared-notice-ownership) 负责提示文本的格式化与识别。该检查保守地选择通用输出；匹配的文本无法证明其来源，回放也不改变已记录的结果字节。
 </details>
 

@@ -168,6 +168,7 @@
   background: currentColor;
 }
 
+.badge[data-tone='info'] { color: var(--dsw-alias-state-business-primary); }
 .badge[data-tone='success'] { color: var(--dsw-alias-state-success-primary); }
 .badge[data-tone='warning'] { color: var(--dsw-alias-state-warn-primary); }
 .badge[data-tone='error'] { color: var(--dsw-alias-state-error-primary); }

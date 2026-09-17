@@ -58,7 +58,8 @@ export function detailBadge(status: string, t: DetailTranslate): NonNullable<Det
   const key = Object.hasOwn(STATUS_KEYS, status) ? STATUS_KEYS[status as keyof typeof STATUS_KEYS] : undefined
   const tone = ['completed', 'complete', 'done', 'accepted'].includes(status) ? 'success'
     : ['failed', 'error'].includes(status) ? 'error'
-      : ['blocked', 'killed', 'pending', 'queued', 'inactive'].includes(status) ? 'warning' : 'neutral'
+      : ['blocked', 'killed', 'pending', 'queued', 'inactive'].includes(status) ? 'warning'
+        : ['running', 'in_progress', 'provisioning'].includes(status) ? 'info' : 'neutral'
   return { label: key === undefined ? status : t(key), tone }
 }
 

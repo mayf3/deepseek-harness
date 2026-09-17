@@ -10,7 +10,7 @@ export interface ToolDetailItem {
   title?: string
   subtitle?: string
   description?: string
-  badge?: { label: string; tone: 'neutral' | 'success' | 'warning' | 'error' }
+  badge?: { label: string; tone: 'neutral' | 'info' | 'success' | 'warning' | 'error' }
   status?: { value: 'completed' | 'in_progress' | 'pending'; label: string }
   previousStatus?: string
   change?: { value: 'added' | 'removed' | 'updated'; label: string }
