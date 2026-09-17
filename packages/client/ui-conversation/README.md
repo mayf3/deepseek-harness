@@ -44,7 +44,7 @@ Claimed commands retain their identity and highlight when only their arguments a
 
 Workspace selection uses `uiWorkspace.openWorkspace` to prepare the target and commit navigation. Draft text and attachments move in its synchronous preparation callback only while that request is current; later navigation or owner disposal leaves the original draft intact.
 
-The package occupies the root-scoped `main` key `conversation`, whose wrapper declares the optional-Session `main.conversation` shell. It registers strict Session header/body entries, View list, composer chain and bar, input regions, Hero regions, queue dock, draft persistence, and phase calculation. `ctx.uiSession.provide()` materializes the Conversation and input sources from the same Session binding and supplies `inputActions` as a stable standard prop.
+The package occupies the root-scoped `main` key `conversation`. Its `main.conversation` shell keeps the strict Session Header outside the optional-Session `conversation.content` Component Factory. The Factory owns the shared body and Composer, reads the current Session through its standard Hook, and exposes one strict-Session local position, `views`; its default adapter renders the existing `conversation.session` entry, so that body and the Header retain one shared strict-Session store. Another occurrence can replace `views` without rendering the main Header. `ctx.uiSession.provide()` materializes the Conversation and input sources from the same Session binding and supplies `inputActions` as a stable standard prop.
 
 A blank Session retains the header's leading and corner controls, including the right-sidebar opener, while hiding its title, actions, utilities, and View tabs. Selecting a Workspace creates the Session needed by these controls; the first message is not required. Without a selected Session, the strict header is absent. Sidebar entries retain their own data and execution prerequisites.
 
@@ -128,6 +128,7 @@ None; Conversation assembly and browser input state do not alter provider-side p
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Only registered targets can render** — the shell deliberately has no implicit fallback target beyond the registered `chat` preference.
+- **Factory occurrences inherit their render-position Session** — `conversation.content` does not accept an independently addressed Session; that requires a separate Session-provider capability.
 
 
 <a id="dev-note"></a>

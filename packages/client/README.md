@@ -35,7 +35,7 @@ The kernel packages boot and serve the page; the UI feature packages present it.
 | [`locale/`](locale/README.md) | Provides localization preferences and message dictionaries | `ctx.locale` |
 | [`test-runtime/`](../test-support/client-runtime/README.md) | Shared repository test support for client feature packages | — |
 | [`ui-renderer/`](ui-renderer/README.md) | Binds slot data to React and mounts the assembled application | `ctx.uiRenderer` |
-| [`ui-slots/`](ui-slots/README.md) | Defines how UI features register and compose extension slots | — |
+| [`ui-slots/`](ui-slots/README.md) | Defines typed extension Slots and reusable Component Factories | — |
 | [`ui-session/`](ui-session/README.md) | Adapts Session Controller state into standard Slot sources and hooks | — |
 | [`ui-theme/`](ui-theme/README.md) | Applies the selected color theme | — |
 | [`ui-primitives/`](ui-primitives/README.md) | Provides shared React controls, icons, and content renderers | — |
