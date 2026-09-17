@@ -156,7 +156,7 @@ describe('web e2e: plugin configuration pages', () => {
     expect(await depth.inputValue()).toBe('2')
     await panel.getByRole('button', { name: 'Subagent 并行数量上限说明', exact: true }).click()
     const capacityRules = panel.getByRole('region', { name: 'Subagent 并行数量上限说明', exact: true })
-    expect(await capacityRules.getByText('同一主 Agent 下，所有递归层级同时存活的 Subagent 总数，等待中的 Subagent 和主 Agent 不计入。', { exact: true }).count()).toBe(1)
+    expect(await capacityRules.getByText('同一主 Agent 下，所有递归层级同时存活的 Subagent 总数，主 Agent 不计入。达到上限时，新的启动请求会被拒绝。', { exact: true }).count()).toBe(1)
     await panel.getByRole('button', { name: '返回插件列表', exact: true }).click()
     await openPage(panel, 'Subagent')
     expect(await depth.inputValue()).toBe('1')
