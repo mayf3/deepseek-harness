@@ -1,5 +1,5 @@
 ---
-description: "Right-Sidebar browser tabs for isolated HTTPS pages and opt-in loopback services."
+description: "Right-Sidebar browser tabs for sandboxed HTTP(S) pages, including loopback services."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Browse HTTPS pages and opt-in loopback HTTP services inside independent right-Sidebar tabs. The current carrier is an iframe with application-managed history in both Web and Desktop. The package never injects Electron or Node access into visited content.
+Browse HTTP(S) pages, including loopback services, inside independent right-Sidebar tabs. The current carrier is an iframe with application-managed history in both Web and Desktop. The package never injects Electron or Node access into visited content.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Browse HTTPS pages and opt-in loopback HTTP services inside independent right-Si
 <a id="use-this-package"></a>
 ## Use this package
 
-The shipped Web and Desktop compositions already mount this package. Open **Browser** from the right-Sidebar guide, then enter an HTTPS URL or a host name that should become HTTPS. Disable that tab's sandbox before opening a loopback HTTP URL. Each guide action creates another Browser tab.
+The shipped Web and Desktop compositions already mount this package. Open **Browser** from the right-Sidebar guide, enter an HTTP(S) URL, or select an HTTP(S) link in Assistant Markdown. A host name without a scheme becomes HTTPS. Public and loopback targets use the same default sandbox. Each guide action or message-link activation creates another Browser tab.
 
 ### When to choose it
 
@@ -42,7 +42,7 @@ The package has no configuration. A custom Web composition mounts its Host compa
 
 Client plugins can open a tab through `ctx.sidebarRight.openTab('browser', { params: { url } })`. The optional URL passes the same validation as address-bar input before navigation.
 
-The toolbar provides Back, Forward, Reload, Go, Open in system browser, and a rightmost per-tab sandbox toggle. Disabling the sandbox is temporary, displays a warning, and permits controller-directed loopback navigation. The external action accepts a known HTTPS or loopback HTTP target. The tab title is the Web host.
+The toolbar provides Back, Forward, Reload, Go, Open in system browser, and a rightmost per-tab sandbox toggle. Disabling the sandbox is temporary and displays a warning. The external action accepts a known HTTP(S) target. The tab title is the Web host.
 
 -----
 
@@ -54,13 +54,13 @@ The toolbar provides Back, Forward, Reload, Go, Open in system browser, and a ri
 
 ### Protocol policy
 
-The address parser accepts HTTPS and HTTP only for `localhost`, `[::1]`, and `127.0.0.0/8`. The controller permits those loopback targets only while the current tab's sandbox is disabled. It rejects public HTTP, `file:` URLs, script/data/blob input, embedded credentials, the DSH application origin, and malformed addresses. Document Preview owns local-file rendering.
+The address parser accepts HTTP and HTTPS, including loopback targets. It rejects `file:` URLs, script/data/blob input, embedded credentials, the DSH application origin, and malformed addresses. Document Preview owns local-file rendering.
 
 ### Iframe carrier
 
 Web and Desktop use `sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"` by default, without download or top-navigation capability. Popups leave the sandbox. The visited origin can use its own cookies and Web storage but a cross-origin target cannot read DSH DOM, storage, or API responses. The iframe sends no referrer and adds no package-owned Permissions Policy, so browser defaults and user grants apply. The toolbar can remove the sandbox for the current tab occurrence; the choice is not persisted. An unsandboxed page that reaches the DSH origin can access that origin's Web data. The package does not proxy or probe remote pages.
 
-Web records toolbar submissions and typed tab opens. A navigation state machine treats the first iframe load for each controlled revision as known and a later load as proof that the page changed to an unreadable URL. In that unknown state the address is marked, Back, Forward, and external-open are disabled, and Reload returns to the last controlled URL. A remounted body reloads the latest application-known URL and uses its optional initial URL only before the first controlled target. History API and fragment changes that emit no iframe load remain invisible.
+Web records toolbar submissions and typed tab opens. A navigation state machine treats the first iframe load for each controlled revision as known and a later load as proof that the page changed to an unreadable URL. In that unknown state the address is marked, Back, Forward, and external-open are disabled, and Reload returns to the last controlled URL. A remounted body reloads the latest application-known URL and uses its optional initial URL only before the first controlled target. History API and fragment changes that emit no iframe load remain invisible. An iframe `error` event displays a transient load-failure notice until the next controlled load without changing URL history.
 
 ### Controller
 
@@ -96,8 +96,9 @@ None; browsing does not enter a model request.
 
 The isolation policy deliberately gives up some browser compatibility:
 
-- Many sites refuse iframe embedding or need downloads or top-level navigation withheld by the default sandbox. Disabling the sandbox trades those restrictions for compatibility and permits controller-directed loopback navigation. It does not isolate the visited origin's cookies per Browser tab and cannot prevent an in-frame page from choosing its own next URL.
+- Many sites refuse iframe embedding or need downloads or top-level navigation withheld by the default sandbox. An HTTPS application can also block public HTTP pages as mixed content. Disabling the sandbox trades its restrictions for compatibility but does not bypass mixed-content or private-network policy. It does not isolate the visited origin's cookies per Browser tab and cannot prevent an in-frame page from choosing its own next URL.
 - A later iframe load reveals that navigation occurred but not the new cross-origin URL. History API and fragment changes may remain invisible; Web Back and Forward are unavailable after the state becomes unknown.
+- Browsers conceal many iframe failures for security: DNS, TLS, mixed-content, CSP, and `X-Frame-Options` failures may emit `load` or no actionable event instead of `error`. The load-failure notice is best-effort.
 - Local files are rejected and remain owned by Document Preview.
 - The proposed Electron `<webview>` carrier, per-tab cookie partitions, native history, and target-specific CDP connection are not implemented.
 

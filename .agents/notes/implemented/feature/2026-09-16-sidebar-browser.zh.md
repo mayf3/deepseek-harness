@@ -14,9 +14,11 @@ Status: implemented
 
 `@deepseek-ai/dsh-client-ui-sidebar-browser` 注册可多开的右侧 Sidebar `browser` tab 类型。`SidebarRightTabParamsMap.browser` 接受可选初始 URL，使其他 Client 插件无须导入本包运行时值即可打开 Browser。
 
-地址解析器接受 `https:`，以及仅指向 `localhost`、`[::1]` 与 `127.0.0.0/8` 的 `http:`；不带 scheme 的主机名补为 HTTPS。它拒绝内嵌凭据、应用自身 origin、畸形地址、公共 HTTP、`file:` URL，以及所有其他 scheme。该 tab 的 sandbox 启用时，controller 还会拒绝 loopback Web 目标。本地文件继续由 Document Preview 负责。
+`MarkdownDelegateProvider` 为嵌套的 Markdown anchor 提供可选 owner callback，用于委托普通 HTTP(S) 点击，同时保留带修饰键点击的原生行为。Chat 在 node list 外放置一个 Provider，并以 URL 作为 typed navigation 参数打开新的 `browser` tab；Markdown renderer 不导入 Browser feature。
 
-当前 Web 与 Desktop 都使用 iframe 载体。它的默认 Web 策略是 `sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"`，不具备下载或顶层导航能力；popup 会脱离 sandbox。same-origin 允许被访问的 origin 使用自己的 Cookie 与 Web storage；它不会让跨域目标与 DSH 变成同源。iframe 不发送 referrer，也不添加包自有的 Permissions Policy，因此浏览器默认策略与用户授权生效。最右侧 toolbar 开关会移除 sandbox attribute，并为当前 tab occurrence 允许 controller 发起 loopback 导航；该模式不持久化，启用期间持续显示警告。未受 sandbox 约束的页面一旦到达 DSH origin，就可以访问该 origin 的 Web 数据。本包不执行 Host 侧 URL probe 或代理。
+地址解析器接受 `http:` 与 `https:`，包括 loopback 目标；不带 scheme 的主机名补为 HTTPS。它拒绝内嵌凭据、应用自身 origin、畸形地址、`file:` URL，以及所有其他 scheme。本地文件继续由 Document Preview 负责。
+
+当前 Web 与 Desktop 都使用 iframe 载体。它的默认 Web 策略是 `sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"`，不具备下载或顶层导航能力；popup 会脱离 sandbox。same-origin 允许被访问的 origin 使用自己的 Cookie 与 Web storage；它不会让跨域目标与 DSH 变成同源。iframe 不发送 referrer，也不添加包自有的 Permissions Policy，因此浏览器默认策略与用户授权生效。最右侧 toolbar 开关会为当前 tab occurrence 移除 sandbox attribute；该模式不持久化，启用期间持续显示警告。未受 sandbox 约束的页面一旦到达 DSH origin，就可以访问该 origin 的 Web 数据。本包不执行 Host 侧 URL probe 或代理。
 
 每个 tab 获得一个 `BrowserController` class。它的命令接口只有 `loadUrl`、`goBack`、`goForward` 与 `reload`；它负责地址校验和 `BrowserNavigation` 状态机。`BrowserFrame` 接口负责临时 sandbox 与 document 状态以及载体操作，`IframeImpl` 为当前 iframe 载体实现该接口。Slot injection 通过 `useBrowserFrame` 提供按 key 索引的 frame 状态，并提供普通 callback，因此 React body 不接收 controller 或 observable source；它只负责可编辑草稿与 iframe DOM。未来的 `ElectronWebViewImpl` 可以实现相同接口，而不把 URL 或载体状态放进组件。
 
@@ -34,9 +36,8 @@ Browser 状态只属于呈现层，不进入 Session log、模型请求、resour
 | `loading` | 地址提交、应用 history 移动或刷新启动新的 revision。 | 请求 URL 仍是权威地址；后退和前进遵循应用 history 范围；刷新保持可用；外部打开遵循已知目标的协议。 |
 | `known` | 当前 revision 收到 iframe 的第一次 `load`。 | 即使第一次加载包含 HTTP redirect，请求 URL 仍是权威地址。控件规则与 `loading` 的已知目标规则相同。 |
 | `unknown` | 当前 revision 收到 iframe 的第二次或后续 `load`。 | 最后一个受控 URL 变灰，并标记 `URL 已变化`。iframe 不提供跨域 `canGoBack` 或 `canGoForward`，因此后退和前进禁用；外部打开禁用。刷新以最后一个受控 URL 启动新的 revision。 |
-| `failed` | iframe 加载前，当前目标被载体策略拒绝。 | 已知目标保持可编辑并显示失败信息。history、刷新与外部打开继续遵循已知目标。 |
 
-每个状态都允许编辑地址。无效或被 sandbox 阻止的草稿只报告地址错误，不改变当前导航状态。聚焦 unknown 地址会隐藏标记并显示前往按钮；回车与前往都会启动受控加载。切换 sandbox 模式会使用新的 revision 重新加载最后一个受控 Web 目标；恢复 sandbox 会拒绝当前 loopback 目标。不产生 iframe `load` 的 `pushState`、`replaceState` 与 fragment 变化仍不可观察。
+每个状态都允许编辑地址。无效草稿只报告地址错误，不改变当前导航状态。聚焦 unknown 地址会隐藏标记并显示前往按钮；回车与前往都会启动受控加载。切换 sandbox 模式会使用新的 revision 重新加载最后一个受控 Web 目标。iframe `error` event 只会为当前 `BrowserFrame` revision 标记临时加载失败 notice；它不改变 URL history，下一个受控 document 会清除它。浏览器不会为 DNS、TLS、mixed-content、CSP 或 `X-Frame-Options` 失败可靠触发该 event。不产生 iframe `load` 的 `pushState`、`replaceState` 与 fragment 变化仍不可观察。
 
 ## Deferred Electron carrier
 
@@ -44,7 +45,7 @@ Electron `<webview>` 支持已经完成设计，但当前不注册也不测试�
 
 Desktop 设计只在应用窗口启用 `webviewTag`。其隔离 preload 获得不可猜的 per-window capability，每个 Browser tab 再追加新的 UUID，形成独立非持久化 partition。主进程只接受携带该 capability 且初始地址为 `about:blank` 的 guest，删除任何 preload，并强制启用 sandbox 与 context isolation、在所有 frame 禁用 Node integration、启用 Web security 与安全内容检查、禁用嵌套 webview 和 plugin。
 
-主进程只允许页面发起的 main-frame 导航与重定向前往不含凭据的 HTTPS 或显式 loopback HTTP。请求可以使用 HTTPS、安全 WebSocket、data 与 Blob URL，也可仅在 loopback 使用 HTTP 与不安全 WebSocket；直接 file、公共 HTTP、自定义协议、extension 与特权请求都会被取消。permission 检查与请求、显示捕获、设备授权、下载、弹窗和拖放导航全部拒绝。
+主进程只允许页面发起的 main-frame 导航与重定向前往不含凭据的 HTTP(S)。请求可以使用 HTTP(S)、WebSocket、data 与 Blob URL；直接 file、自定义协议、extension 与特权请求都会被取消。permission 检查与请求、显示捕获、设备授权、下载、弹窗和拖放导航全部拒绝。
 
 view 对象把非活动 guest 保持连接并停放在自有隐藏 DOM host 中，再把它移回可见占位符而不重建。这会在 Sidebar body remount 后保留页面与 target identity。因为 `<webview>` 参与 renderer 布局与合成，普通 DOM dialog、menu、tooltip 与拖拽预览可以覆盖它。`WebContentsView` 仍不合适，因为它是原生 child surface：CSS 无法覆盖它，每个 overlay 或动画都需要主进程同步 visibility 与 bounds。
 
@@ -58,16 +59,16 @@ view 对象把非活动 guest 保持连接并停放在自有隐藏 DOM host 中�
 
 **在 Browser 中支持 `file:` URL。** 不采用，因为本地文件已由 Document Preview 负责，而 browser 导航使用不同的信任模型。Browser 直接拒绝该协议，不获取文件系统或 Workspace Files 能力。
 
-**通过 Host 代理 HTTPS 页面。** 不采用，因为兼容代理必须重写 URL、CSP、Cookie、module、stream、form 与 download，同时会把 Host 变成通用出站请求器。
+**通过 Host 代理网页。** 不采用，因为兼容代理必须重写 URL、CSP、Cookie、module、stream、form 与 download，同时会把 Host 变成通用出站请求器。
 
 **在首个 Browser 变更中实现 Electron 载体。** 延期处理，避免在没有打包应用证据覆盖 overlay stacking、target lifetime、Cookie 隔离与全部 permission 拒绝路径时启用新的 Electron guest surface。
 
 ## Verification
 
-单元测试覆盖协议解析、controller 命令与生命周期、确定性导航状态转换、有界 history 和插件 disposal。Keyless Web 场景启动随附 composition，并覆盖 HTTPS、后退、前进、sandbox 控制、unknown 导航和协议拒绝。
+单元测试覆盖协议解析、Markdown 链接委托、controller 命令与生命周期、确定性导航状态转换、有界 history、best-effort iframe error 和插件 disposal。Keyless Web 场景启动随附 composition，并覆盖消息链接路由、HTTP(S)、后退、前进、sandbox 控制、unknown 导航和协议拒绝。
 
 ## Consequences
 
-Browser 不增加 Electron 权限，并在当前 Web 与 Desktop 构建中保持相同行为。很多 HTTPS 站点拒绝 iframe 嵌入，或者依赖默认 sandbox 不提供的下载或顶层导航。关闭 sandbox 会用这些保护换取兼容性，并允许 controller 发起 loopback 导航，但不会增加 Electron 或 Node API。URL 检查无法阻止 iframe 内页面自行选择目标。后续 iframe load 能表明已经发生导航，但无法给出跨域 URL；History API 与 fragment 变化可能完全不可见。延期的 Electron 载体必须通过真实打包应用验证，才能成为当前行为。
+Browser 不增加 Electron 权限，并在当前 Web 与 Desktop 构建中保持相同行为。很多站点拒绝 iframe 嵌入，或者依赖默认 sandbox 不提供的下载或顶层导航。HTTPS 应用可能按 mixed-content 策略阻止公共 HTTP 页面，或限制 private-network 请求；关闭 sandbox 也无法绕过这些浏览器策略。关闭 sandbox 在其他方面会用自身保护换取兼容性，但不会增加 Electron 或 Node API。URL 检查无法阻止 iframe 内页面自行选择目标。后续 iframe load 能表明已经发生导航，但无法给出跨域 URL；History API 与 fragment 变化可能完全不可见。延期的 Electron 载体必须通过真实打包应用验证，才能成为当前行为。
 
 站点 Cookie 行为遵循用户浏览器，并不按 Browser tab 隔离。本地文件会被拒绝，并继续由 Document Preview 负责。持久化 URL 可能含敏感 query 或 fragment，因此用户不应在地址栏输入不希望保留在应用本地浏览器存储中的凭据。
