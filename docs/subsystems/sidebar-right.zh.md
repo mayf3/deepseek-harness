@@ -137,7 +137,7 @@ Host 的 `ctx.workspaceFiles` 服务与生成的 `workspaceFiles` Remote 命名�
 - **`text`**——`fallback`，`dsh-resource://file/**`，只认领 Session 地址。Document Preview 通过 `useResource<'file'>` 观察元数据，经 Remote 回调加载内容，并拥有渲染器选择、工具栏、逐 tab 刷新、滚动与源码定位；未知扩展名按纯文本渲染（[README](../../packages/client/ui-sidebar-documentpreview/README.zh.md)）。
 - **`files`**——`builtin`，以 `openTab('files')` 打开。工作区目录树，经 `list` 懒加载，用 `tab.actions.openResource(fileAddressFor(sessionId, root, path))` 在自己所在 pane 打开文件（[README](../../packages/client/ui-sidebar-files/README.zh.md)）。
 - **`browser`**——可多开的 `builtin`，以 `openTab('browser', { params: { url? } })` 打开。Assistant Markdown 会把 HTTP(S) 链接委托给该页面类型。它在默认 sandbox 下接受公共与 loopback HTTP(S) 目标，本地文件改用 Document Preview，并使用应用已知的 iframe history（[README](../../packages/client/ui-sidebar-browser/README.zh.md)）。
-- **`chat`**——`builtin`，`dsh-resource://chat/session/<child>?parent=<parent>&mode=<mode>`。资源提供方保留一个显式寻址的 subagent Conversation，并通过共享 Conversation Factory 渲染（[README](../../packages/client/ui-chat/README.zh.md)）。
+- **`subagentchat`**——`builtin`，`dsh-resource://subagentchat/session/<child>?parent=<parent>&mode=<mode>`。资源提供方保留一个显式寻址的 subagent Conversation，并通过共享 Conversation Factory 渲染（[README](../../packages/client/ui-subagent/README.zh.md)）。
 
 <a id="not-built"></a>
 ## 不做

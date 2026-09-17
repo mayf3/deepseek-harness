@@ -21,6 +21,12 @@
       "path": "../locale"
     },
     {
+      "path": "../resources"
+    },
+    {
+      "path": "../ui-chat"
+    },
+    {
       "path": "../ui-conversation"
     },
     {

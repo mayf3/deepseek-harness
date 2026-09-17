@@ -7,7 +7,9 @@ import { SubagentHeaderLineage, type SubagentCatalogInjected } from './SubagentH
 import {
   SubagentReadOnlyComposer, type SubagentReadOnlyMatch,
 } from './SubagentReadOnlyComposer.tsx'
+import { registerSidebarChat, subagentChatAddress } from './sidebar-chat/index.tsx'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -28,13 +30,8 @@ export type {
   SubagentReadOnlyComposerProps, SubagentReadOnlyMatch,
 } from './SubagentReadOnlyComposer.tsx'
 
-/** Required services for conversation slots, session navigation, and Sidebar resources. */
+/** Required services for subagent presentation and navigation. */
 export const inject = ['sessions', 'uiWorkspace', 'slots', 'locale', 'sidebarRight']
-
-function sidebarChatAddress(address: SubagentAddress): string {
-  const query = new URLSearchParams({ parent: address.parentSessionId, mode: address.mode })
-  return `dsh-resource://chat/session/${encodeURIComponent(address.childSessionId)}?${query}`
-}
 
 /** Claim the composer for one-shot history or an unavailable continuation owner. */
 function selectReadOnlySubagent(owner: ComposerChainProps): SubagentReadOnlyMatch | null {
@@ -57,14 +54,17 @@ function selectReadOnlySubagent(owner: ComposerChainProps): SubagentReadOnlyMatc
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-subagent: dictionaries')
+  ctx.inject(['resources', 'sidebarRightTabs'], (scope) => {
+    registerSidebarChat(scope, ctx.locale.bind(NS))
+  })
   const sessions = ctx.sessions
   const catalogActions = (_parentSessionId: SessionId): SubagentCatalogInjected => ({
     openChild(address: SubagentAddress) {
       ctx.uiWorkspace.openSession(address)
     },
     openChildAside(address: SubagentAddress) {
-      ctx.sidebarRight.openResource(sidebarChatAddress(address), {
-        kind: 'chat',
+      ctx.sidebarRight.openResource(subagentChatAddress(address), {
+        kind: 'subagentchat',
         preferNewPane: true,
       })
     },

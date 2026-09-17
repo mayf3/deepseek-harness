@@ -11,17 +11,17 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
-import type { NS } from '../locale.ts'
+import type { NS } from '../locales.ts'
 import css from './SidebarChat.module.css'
 
 /** Stable implementation identity for the Sidebar tab body. */
-export const SIDEBAR_CHAT_ID = '@deepseek-ai/dsh-client-ui-chat'
+export const SUBAGENT_CHAT_ID = '@deepseek-ai/dsh-client-ui-subagent'
 
 /** Resource-address prefix for an embedded Session chat. */
-export const SIDEBAR_CHAT_ADDRESS = 'dsh-resource://chat/session/'
+export const SUBAGENT_CHAT_ADDRESS = 'dsh-resource://subagentchat/session/'
 
 /** Value retained by one live chat resource occurrence. */
-export interface SidebarChatResource {
+export interface SubagentChatResource {
   readonly address: SubagentAddress
   readonly reference: SessionReference
 }
@@ -34,7 +34,7 @@ declare module '@deepseek-ai/dsh-api-session-controller/client' {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface ResourceProtocolMap {
-    chat: SidebarChatResource
+    subagentchat: SubagentChatResource
   }
 
   interface SlotMap {
@@ -48,12 +48,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
  * @param address - durable direct-parent subagent address.
  * @returns canonical Sidebar resource address.
  */
-export function sidebarChatAddress(address: SubagentAddress): string {
+export function subagentChatAddress(address: SubagentAddress): string {
   const query = new URLSearchParams({
     parent: address.parentSessionId,
     mode: address.mode,
   })
-  return `${SIDEBAR_CHAT_ADDRESS}${encodeURIComponent(address.childSessionId)}?${query}`
+  return `${SUBAGENT_CHAT_ADDRESS}${encodeURIComponent(address.childSessionId)}?${query}`
 }
 
 /**
@@ -61,14 +61,14 @@ export function sidebarChatAddress(address: SubagentAddress): string {
  * @param value - possible chat resource address.
  * @returns the encoded direct-parent address, or undefined for another or malformed resource.
  */
-export function parseSidebarChatAddress(value: string): SubagentAddress | undefined {
+export function parseSubagentChatAddress(value: string): SubagentAddress | undefined {
   let url: URL
   try {
     url = new URL(value)
   } catch (_invalidUrl) {
     return undefined
   }
-  if (url.protocol !== 'dsh-resource:' || url.hostname.toLowerCase() !== 'chat') return undefined
+  if (url.protocol !== 'dsh-resource:' || url.hostname.toLowerCase() !== 'subagentchat') return undefined
   const parts = url.pathname.split('/').filter(Boolean)
   if (parts.length !== 2 || parts[0] !== 'session') return undefined
   const parentSessionId = url.searchParams.get('parent')
@@ -99,12 +99,12 @@ function isAbortRequested(signal: AbortSignal): boolean {
   return signal.aborted
 }
 
-function chatResourceProvider(sessions: ISessions): ResourceProvider<'chat'> {
+function subagentChatResourceProvider(sessions: ISessions): ResourceProvider<'subagentchat'> {
   return {
-    protocol: 'chat',
+    protocol: 'subagentchat',
     async *open(resourceAddress, { signal }) {
-      const address = parseSidebarChatAddress(resourceAddress)
-      if (address === undefined) throw new Error(`ui-chat: invalid chat resource address "${resourceAddress}"`)
+      const address = parseSubagentChatAddress(resourceAddress)
+      if (address === undefined) throw new Error(`ui-subagent: invalid chat resource address "${resourceAddress}"`)
       if (isAbortRequested(signal)) return
       await sessions.refreshSubagents(address.parentSessionId)
       if (isAbortRequested(signal)) return
@@ -156,7 +156,7 @@ export type SidebarChatTabProps =
 /** Bind a chat resource's child reference around its Conversation slot. */
 export function SidebarChatTab({ useResource, useTabInfo, SessionProvider, renderSlot }: SidebarChatTabProps) {
   const { tab } = useTabInfo()
-  const resource = useResource<'chat'>(tab.contentId)
+  const resource = useResource<'subagentchat'>(tab.contentId)
   return (
     <div className={css.root} data-sidebar-chat="">
       {resource.value === undefined
@@ -177,28 +177,28 @@ export function SidebarChatTab({ useResource, useTabInfo, SessionProvider, rende
  */
 export function registerSidebarChat(ctx: Context, t: TranslateNS<typeof NS>): void {
   ctx.effect(
-    () => ctx.resources.register(chatResourceProvider(ctx.sessions)),
-    'ui-chat: Sidebar chat resources',
+    () => ctx.resources.register(subagentChatResourceProvider(ctx.sessions)),
+    'ui-subagent: Sidebar chat resources',
   )
   ctx.effect(() => ctx.sidebarRightTabs.register({
-    id: SIDEBAR_CHAT_ID,
-    kind: 'chat',
-    patterns: [`${SIDEBAR_CHAT_ADDRESS}**`],
+    id: SUBAGENT_CHAT_ID,
+    kind: 'subagentchat',
+    patterns: [`${SUBAGENT_CHAT_ADDRESS}**`],
     priority: 'builtin',
-    canOpen: address => parseSidebarChatAddress(address) !== undefined,
+    canOpen: address => parseSubagentChatAddress(address) !== undefined,
     title: (address) => {
-      const child = parseSidebarChatAddress(address)?.childSessionId
+      const child = parseSubagentChatAddress(address)?.childSessionId
       return child === undefined
-        ? t('view.chat')
+        ? t('sidebar.chat')
         : ctx.sessions.list.getSnapshot().byId[child]?.projectionValues?.subagent?.label ?? child
     },
-  } satisfies SidebarRightTabDefinition), 'ui-chat: Sidebar chat type')
+  } satisfies SidebarRightTabDefinition), 'ui-subagent: Sidebar chat type')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',
-    key: SIDEBAR_CHAT_ID,
+    key: SUBAGENT_CHAT_ID,
     children: { 'sidebar.chat.conversation': { kind: 'single', scope: 'session' } },
-  }, SidebarChatTab)), 'ui-chat: Sidebar chat body')
+  }, SidebarChatTab)), 'ui-subagent: Sidebar chat body')
   ctx.effect(() => ctx.slots.inject('sidebar.chat.conversation', () => ctx.slots.register({
     name: 'sidebar.chat.conversation',
-  }, ConversationSlotPanel)), 'ui-chat: Sidebar Conversation')
+  }, ConversationSlotPanel)), 'ui-subagent: Sidebar Conversation')
 }

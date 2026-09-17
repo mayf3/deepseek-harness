@@ -119,8 +119,8 @@ describe('apply', () => {
       {
         method: 'openResource',
         args: [
-          'dsh-resource://chat/session/c1?parent=parent&mode=continuable',
-          { kind: 'chat', preferNewPane: true },
+          'dsh-resource://subagentchat/session/c1?parent=parent&mode=continuable',
+          { kind: 'subagentchat', preferNewPane: true },
         ],
       },
       { method: 'refreshSubagents', args: [sid('parent')] },

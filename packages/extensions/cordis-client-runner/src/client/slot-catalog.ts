@@ -2447,13 +2447,13 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     keyDomain: '',
     hookContext: '',
     slotInject: '',
-    declaredBy: 'an entry in \'sidebar.right.pane.tab\' (client-ui-chat), so it exists while that entry is mounted',
+    declaredBy: 'an entry in \'sidebar.right.pane.tab\' (client-ui-subagent), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-chat ConversationSlotPanel',
+      'client-ui-subagent ConversationSlotPanel',
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.chat.conversation\', () => ctx.slots.register(\n      { name: \'sidebar.chat.conversation\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-chat/src/client/sidebar-chat/index.tsx:42',
+    source: 'packages/client/ui-subagent/src/client/sidebar-chat/index.tsx:42',
   },
   {
     key: 'sidebar.footer.action',
@@ -2593,7 +2593,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: 'SidebarRightTabInjected',
     declaredBy: 'an entry in \'rightbar.session\' (client-ui-sidebar-right), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-chat SidebarChatTab',
       'client-ui-deliverables ReviewTab',
       'client-ui-plan PlanPreview',
       'client-ui-sidebar-browser BrowserBody',
@@ -2601,6 +2600,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-sidebar-files FilesBody',
       'client-ui-sidebar-right GuideBody',
       'client-ui-sidebar-terminal LazyTerminalBody',
+      'client-ui-subagent SidebarChatTab',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.pane.tab\', () => ctx.slots.register(\n      { name: \'sidebar.right.pane.tab\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',

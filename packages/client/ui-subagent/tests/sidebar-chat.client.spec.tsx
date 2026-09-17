@@ -13,8 +13,8 @@ import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sideb
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import {
-  ConversationSlotPanel, FixedChatConversationView, parseSidebarChatAddress,
-  registerSidebarChat, sidebarChatAddress, SIDEBAR_CHAT_ID, type SidebarChatTabProps,
+  ConversationSlotPanel, FixedChatConversationView, parseSubagentChatAddress,
+  registerSidebarChat, subagentChatAddress, SUBAGENT_CHAT_ID, type SidebarChatTabProps,
 } from '../src/client/sidebar-chat/index.tsx'
 import { SidebarChatTab } from '../src/client/sidebar-chat/index.tsx'
 
@@ -33,10 +33,10 @@ afterEach(() => {
 
 describe('Sidebar chat address', () => {
   it('round-trips the child identity and direct-parent routing metadata', () => {
-    const resource = sidebarChatAddress(ADDRESS)
-    expect(resource).toBe('dsh-resource://chat/session/child%231?parent=parent%2Fa&mode=continuable')
-    expect(parseSidebarChatAddress(resource)).toEqual(ADDRESS)
-    expect(parseSidebarChatAddress(sidebarChatAddress({ ...ADDRESS, mode: 'one-shot' })))
+    const resource = subagentChatAddress(ADDRESS)
+    expect(resource).toBe('dsh-resource://subagentchat/session/child%231?parent=parent%2Fa&mode=continuable')
+    expect(parseSubagentChatAddress(resource)).toEqual(ADDRESS)
+    expect(parseSubagentChatAddress(subagentChatAddress({ ...ADDRESS, mode: 'one-shot' })))
       .toEqual({ ...ADDRESS, mode: 'one-shot' })
   })
 
@@ -44,13 +44,13 @@ describe('Sidebar chat address', () => {
     'not an address',
     'https://chat/session/child?parent=parent&mode=continuable',
     'dsh-resource://other/session/child?parent=parent&mode=continuable',
-    'dsh-resource://chat/other/child?parent=parent&mode=continuable',
-    'dsh-resource://chat/session/child?mode=continuable',
-    'dsh-resource://chat/session/child?parent=&mode=continuable',
-    'dsh-resource://chat/session/child?parent=parent&mode=unknown',
-    'dsh-resource://chat/session/%?parent=parent&mode=continuable',
+    'dsh-resource://subagentchat/other/child?parent=parent&mode=continuable',
+    'dsh-resource://subagentchat/session/child?mode=continuable',
+    'dsh-resource://subagentchat/session/child?parent=&mode=continuable',
+    'dsh-resource://subagentchat/session/child?parent=parent&mode=unknown',
+    'dsh-resource://subagentchat/session/%?parent=parent&mode=continuable',
   ])('rejects %s', (address) => {
-    expect(parseSidebarChatAddress(address)).toBeUndefined()
+    expect(parseSubagentChatAddress(address)).toBeUndefined()
   })
 })
 
@@ -80,12 +80,12 @@ describe('Sidebar chat registration', () => {
       } as unknown as SessionListState),
       subscribe: () => () => {},
     }
-    let provider: ResourceProvider<'chat'> | undefined
+    let provider: ResourceProvider<'subagentchat'> | undefined
     let definition: SidebarRightTabDefinition | undefined
     const registrations: { options: Record<string, unknown>; component: unknown }[] = []
     const ctx = {
       sessions: { retain, refreshSubagents, list } as unknown as ISessions,
-      resources: { register: (value: ResourceProvider<'chat'>) => { provider = value; return () => {} } },
+      resources: { register: (value: ResourceProvider<'subagentchat'>) => { provider = value; return () => {} } },
       sidebarRightTabs: { register: (value: SidebarRightTabDefinition) => { definition = value; return () => {} } },
       slots: {
         inject: (_name: string, install: () => () => void) => install(),
@@ -97,13 +97,14 @@ describe('Sidebar chat registration', () => {
       effect: (install: () => unknown) => { install(); return () => {} },
     } as unknown as Context
 
-    registerSidebarChat(ctx, (key: string) => key === 'view.chat' ? 'Chat' : key)
+    registerSidebarChat(ctx, (key: string) => key === 'sidebar.chat' ? 'Chat' : key)
 
-    expect(definition?.id).toBe(SIDEBAR_CHAT_ID)
-    expect(definition?.canOpen?.(sidebarChatAddress(ADDRESS))).toBe(true)
-    expect(definition?.canOpen?.('dsh-resource://chat/invalid')).toBe(false)
-    expect(definition?.title(sidebarChatAddress(ADDRESS))).toBe('Worker')
-    expect(definition?.title(sidebarChatAddress({ ...ADDRESS, childSessionId: 'unknown' as SessionId }))).toBe('unknown')
+    expect(definition?.id).toBe(SUBAGENT_CHAT_ID)
+    expect(definition?.kind).toBe('subagentchat')
+    expect(definition?.canOpen?.(subagentChatAddress(ADDRESS))).toBe(true)
+    expect(definition?.canOpen?.('dsh-resource://subagentchat/invalid')).toBe(false)
+    expect(definition?.title(subagentChatAddress(ADDRESS))).toBe('Worker')
+    expect(definition?.title(subagentChatAddress({ ...ADDRESS, childSessionId: 'unknown' as SessionId }))).toBe('unknown')
     expect(definition?.title('invalid')).toBe('Chat')
     expect(registrations.map(entry => entry.options.name)).toEqual([
       'sidebar.right.pane.tab',
@@ -111,7 +112,7 @@ describe('Sidebar chat registration', () => {
     ])
 
     const controller = new AbortController()
-    const stream = provider!.open(sidebarChatAddress(ADDRESS), { signal: controller.signal })[Symbol.asyncIterator]()
+    const stream = provider!.open(subagentChatAddress(ADDRESS), { signal: controller.signal })[Symbol.asyncIterator]()
     expect(await stream.next()).toEqual({ done: false, value: { ok: true, value: { address: ADDRESS, reference } } })
     expect(refreshSubagents).toHaveBeenCalledWith(PARENT)
     expect(retain).toHaveBeenCalledWith(ADDRESS, { source: 'sidebarChat', signal: controller.signal })
@@ -122,7 +123,7 @@ describe('Sidebar chat registration', () => {
     expect(release).toHaveBeenCalledOnce()
 
     const abortedAfterYield = new AbortController()
-    const yielded = provider!.open(sidebarChatAddress(ADDRESS), { signal: abortedAfterYield.signal })[Symbol.asyncIterator]()
+    const yielded = provider!.open(subagentChatAddress(ADDRESS), { signal: abortedAfterYield.signal })[Symbol.asyncIterator]()
     expect((await yielded.next()).done).toBe(false)
     abortedAfterYield.abort()
     expect(await yielded.next()).toEqual({ done: true, value: undefined })
@@ -132,7 +133,7 @@ describe('Sidebar chat registration', () => {
     refreshSubagents.mockImplementationOnce(() => new Promise<void>((resolve) => { finishRefresh = resolve }))
     const abortedDuringRefresh = new AbortController()
     const pending = provider!.open(
-      sidebarChatAddress(ADDRESS), { signal: abortedDuringRefresh.signal },
+      subagentChatAddress(ADDRESS), { signal: abortedDuringRefresh.signal },
     )[Symbol.asyncIterator]().next()
     await vi.waitFor(() => { expect(finishRefresh).toBeTypeOf('function') })
     abortedDuringRefresh.abort()
@@ -141,7 +142,7 @@ describe('Sidebar chat registration', () => {
 
     const alreadyAborted = new AbortController()
     alreadyAborted.abort()
-    const stopped = provider!.open(sidebarChatAddress(ADDRESS), { signal: alreadyAborted.signal })[Symbol.asyncIterator]()
+    const stopped = provider!.open(subagentChatAddress(ADDRESS), { signal: alreadyAborted.signal })[Symbol.asyncIterator]()
     expect(await stopped.next()).toEqual({ done: true, value: undefined })
     expect(retain).toHaveBeenCalledTimes(2)
     expect(release).toHaveBeenCalledTimes(2)
@@ -158,7 +159,7 @@ describe('Sidebar chat components', () => {
     const SessionProvider = vi.fn(({ children }: { children: ReactNode }) => <>{children}</>)
     const renderSlot = vi.fn(() => <span>child conversation</span>)
     const props = {
-      useTabInfo: () => ({ tab: { contentId: sidebarChatAddress(ADDRESS) } }),
+      useTabInfo: () => ({ tab: { contentId: subagentChatAddress(ADDRESS) } }),
       useResource: () => snapshot,
       SessionProvider,
       renderSlot,

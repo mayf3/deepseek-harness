@@ -137,7 +137,7 @@ The Host `ctx.workspaceFiles` service and generated `workspaceFiles` Remote name
 - **`text`** — `fallback`, `dsh-resource://file/**`, claiming Session addresses only. Document Preview observes metadata through `useResource<'file'>`, loads content through Remote callbacks, and owns renderer selection, the toolbar, per-tab refresh, scroll, and source navigation; unknown extensions render as plain text ([README](../../packages/client/ui-sidebar-documentpreview/README.md)).
 - **`files`** — `builtin`, opened as `openTab('files')`. The workspace directory tree, listed lazily through `list`, opening a file with `tab.actions.openResource(fileAddressFor(sessionId, root, path))` into its own pane ([README](../../packages/client/ui-sidebar-files/README.md)).
 - **`browser`** — multi-instance `builtin`, opened as `openTab('browser', { params: { url? } })`. Assistant Markdown delegates HTTP(S) links to this page type. It accepts public and loopback HTTP(S) targets under the default sandbox, rejects local files in favor of Document Preview, and uses application-known iframe history ([README](../../packages/client/ui-sidebar-browser/README.md)).
-- **`chat`** — `builtin`, `dsh-resource://chat/session/<child>?parent=<parent>&mode=<mode>`. An explicitly addressed subagent Conversation retained by the resource provider and rendered through the shared Conversation Factory ([README](../../packages/client/ui-chat/README.md)).
+- **`subagentchat`** — `builtin`, `dsh-resource://subagentchat/session/<child>?parent=<parent>&mode=<mode>`. An explicitly addressed subagent Conversation retained by the resource provider and rendered through the shared Conversation Factory ([README](../../packages/client/ui-subagent/README.md)).
 
 <a id="not-built"></a>
 ## Not built

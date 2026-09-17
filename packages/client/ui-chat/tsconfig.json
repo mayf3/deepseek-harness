@@ -69,9 +69,6 @@
       "path": "../locale"
     },
     {
-      "path": "../resources"
-    },
-    {
       "path": "../store"
     },
     {
