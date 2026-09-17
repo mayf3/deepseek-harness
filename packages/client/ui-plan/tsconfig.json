@@ -9,6 +9,9 @@
   ],
   "references": [
     {
+      "path": "../store"
+    },
+    {
       "path": "../../api/remotes/tsconfig.client.json"
     },
     {

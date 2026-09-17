@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Plan mode lets you review a plan before implementation. Enter with `/plan`, leave with the composer chip, and open a submitted plan in the right sidebar from its review card or permanent Chat card. Plans remain available after approval, rejection, or dismissal; reopening a plan focuses its existing tab, and browser reload restores the document from Session history.
+Plan mode lets you review a plan before implementation. Enter with `/plan` and leave with the composer chip. Submitted plans open automatically in the right sidebar for review and remain available from their permanent Chat cards after approval, rejection, or dismissal. Reopening a plan focuses its existing tab, and browser reload restores the document from Session history.
 
 ## Table of Contents
 
@@ -33,7 +33,7 @@ While the effective target is plan mode, the seat renders the warn-colored "Plan
 
 ### Reading submitted plans
 
-Each submitted plan has a permanent Chat card outside the Turn process disclosure. Click its title, or the review strip’s Open plan in sidebar button, to read and copy the complete Markdown. Different submissions retain separate tabs. Closing the document or review does not delete the plan; the review buttons alone decide whether implementation may begin.
+Each submitted plan has a permanent Chat card outside the Turn process disclosure, using the file-delivery card treatment with a Markdown icon, title, and Open action. A pending plan opens automatically once per submission in the current browser session. Closing it stays effective across review remounts; a new submission opens its own plan. Historical cards open only when clicked. Use the card or review strip’s Open plan in sidebar button to read and copy the complete Markdown. Different submissions retain separate tabs; the review buttons alone decide whether implementation may begin.
 
 ### Failures
 

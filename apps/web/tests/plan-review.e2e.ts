@@ -101,9 +101,9 @@ describe('web e2e: plan review takeover round trip', () => {
 
     const planCard = page.locator('[data-plan-card]')
     await planCard.waitFor({ state: 'visible' })
-    await card.getByRole('button', { name: 'Open plan in sidebar' }).click()
     const preview = page.locator('[data-plan-preview]')
     await preview.waitFor({ state: 'visible' })
+    expect(await card.getByRole('button', { name: 'Approve' }).isVisible()).toBe(true)
     expect(await preview.getByRole('heading', { level: 1 }).textContent()).toContain('--greeting')
     await card.getByRole('button', { name: 'Open plan in sidebar' }).click()
     expect(await page.locator('[data-plan-preview]').count()).toBe(1)
@@ -111,6 +111,7 @@ describe('web e2e: plan review takeover round trip', () => {
       await compareOrRefreshGolden(PREVIEW_EXPECTED, await captureStableAria(page, '[data-plan-preview]', scaffold.workspaceCwd), MODE)
     }
     await page.locator('[data-sidebar-right-toggle]').click()
+    await preview.waitFor({ state: 'hidden' })
     await planCard.click()
     await preview.waitFor({ state: 'visible' })
 
@@ -182,6 +183,8 @@ describe('web e2e: dismissed plan history', () => {
       await input.press('Enter')
       const review = page.locator('[data-plan-review-key]')
       await review.waitFor({ state: 'visible' })
+      await page.locator('[data-plan-preview]').waitFor({ state: 'visible' })
+      await page.locator('[data-sidebar-right-toggle]').click()
       await review.getByRole('button', { name: 'Chat about it', exact: true }).click()
       await settled
       const results = events.filter(event => event.type === 'tool/result')
@@ -197,6 +200,10 @@ describe('web e2e: dismissed plan history', () => {
       await page.locator('[data-plan-card]').waitFor({ state: 'visible' })
       await page.locator('[data-plan-preview]').waitFor({ state: 'visible' })
       expect(await page.locator('[data-plan-preview]').getByRole('heading', { level: 1 }).textContent()).toContain('--greeting')
+      await page.locator('[data-sidebar-right-toggle]').click()
+      await page.reload({ waitUntil: 'load' })
+      await page.locator('[data-plan-card]').waitFor({ state: 'visible' })
+      expect(await page.locator('[data-plan-preview]').count()).toBe(0)
       expect(tripwire.pageErrors).toEqual([])
     } finally {
       await browser?.close()

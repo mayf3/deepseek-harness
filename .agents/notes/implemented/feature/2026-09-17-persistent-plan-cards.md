@@ -14,7 +14,7 @@ A plan review occupies the composer only until the user answers or dismisses it.
 
 The review intent carries the tool-call identity. The question plugin declares an action slot, and the plan plugin contributes an opener there and on the historical card. Both open the resource identified by Session and invocation. Sidebar layout retains that address; the resource provider reads the existing Session history, paging backwards when the invocation is older than the opening window. Its temporary follow closes after the opening snapshot.
 
-The document is read-only. The pending review shows its status, sidebar opener, and decision buttons; the complete text is read in the sidebar. Approval stays in the pending-question owner; reopening a historical document does not revive a settled review or authorize implementation. Different submissions remain distinct even when they share a heading.
+The document is read-only. The pending review shows its status, sidebar opener, and decision buttons; the complete text opens automatically in the sidebar. A transient Session-scoped store records each automatically opened invocation, so review remounts preserve manual closure. Historical cards never trigger automatic navigation. The cards use the file-delivery treatment with a Markdown icon, plan title, and Open action. Approval stays in the pending-question owner; reopening a historical document does not revive a settled review or authorize implementation. Different submissions remain distinct even when they share a heading.
 
 ## Alternatives considered
 

@@ -9,6 +9,7 @@ import { PlanCard, PlanReviewOpen } from '../src/client/PlanCard.tsx'
 import { PlanPreview, PlanTitle } from '../src/client/PlanPreview.tsx'
 import { planAddress, parsePlanAddress, submittedPlan } from '../src/client/plan.ts'
 import { planDefinition } from '../src/client/plan-definition.ts'
+import { createPlanReviewStore } from '../src/client/review-store.ts'
 
 afterEach(cleanup)
 const markdown = '# Keep this plan\n\n## Goal\n\n- Review\n- Implement'
@@ -68,6 +69,9 @@ describe('plan entry points and document', () => {
       const openPlan = vi.fn()
       const props = { node: { data: plan }, t: makeTranslate(dictionary, commonEn), openPlan } as unknown as Parameters<typeof PlanCard>[0]
       const view = render(<PlanCard {...props} />)
+      expect(openPlan).not.toHaveBeenCalled()
+      expect(screen.getByText(dictionary['preview.action'])).toBeTruthy()
+      expect(screen.queryByText('Implement')).toBeNull()
       fireEvent.click(screen.getByRole('button'))
       expect(openPlan).toHaveBeenCalledWith(plan.callId)
       expect(screen.getByText(plan.title)).toBeTruthy()
@@ -76,12 +80,42 @@ describe('plan entry points and document', () => {
   })
   it('opens the review without approving or cancelling it', () => {
     const openPlan = vi.fn()
-    const props = { review: { callId: plan.callId }, t, openPlan } as unknown as Parameters<typeof PlanReviewOpen>[0]
+    const store = createPlanReviewStore().create()
+    const stateProps = {
+      actions: store.actions,
+      useStore: (select: (state: ReturnType<typeof store.getSnapshot>) => unknown) => select(store.getSnapshot()),
+    }
+    const props = { review: { callId: plan.callId }, t, openPlan, ...stateProps } as unknown as Parameters<typeof PlanReviewOpen>[0]
     const view = render(<PlanReviewOpen {...props} />)
+    expect(openPlan).toHaveBeenCalledExactlyOnceWith(plan.callId)
+    view.rerender(<PlanReviewOpen {...props} />)
+    expect(openPlan).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: 'Open plan in sidebar' }))
-    expect(openPlan).toHaveBeenCalledWith(plan.callId)
-    view.rerender(<PlanReviewOpen {...{ review: {}, t, openPlan } as unknown as Parameters<typeof PlanReviewOpen>[0]} />)
+    expect(openPlan).toHaveBeenCalledTimes(2)
+    view.rerender(<PlanReviewOpen {...{ ...props, review: {} } as unknown as Parameters<typeof PlanReviewOpen>[0]} />)
     expect(screen.queryByRole('button')).toBeNull()
+  })
+  it('preserves manual closure across remounts and opens a new submission', () => {
+    const store = createPlanReviewStore().create()
+    const openPlan = vi.fn()
+    const props = { review: { callId: plan.callId }, t, openPlan, actions: store.actions,
+      useStore: (select: (state: ReturnType<typeof store.getSnapshot>) => unknown) => select(store.getSnapshot()),
+    } as unknown as Parameters<typeof PlanReviewOpen>[0]
+    const first = render(<PlanReviewOpen {...props} />)
+    first.unmount()
+    const second = render(<PlanReviewOpen {...props} />)
+    expect(openPlan).toHaveBeenCalledTimes(1)
+    const revised = submittedPlan({ ...call, data: { ...call.data, callId: 'call:2' } })!
+    const nextProps = { ...props, review: { callId: revised.callId } } as unknown as Parameters<typeof PlanReviewOpen>[0]
+    second.rerender(<PlanReviewOpen {...nextProps} />)
+    expect(openPlan).toHaveBeenLastCalledWith(revised.callId)
+    expect(openPlan).toHaveBeenCalledTimes(2)
+    second.unmount()
+    const other = createPlanReviewStore().create()
+    render(<PlanReviewOpen {...{ ...props, actions: other.actions,
+      useStore: (select: (state: ReturnType<typeof other.getSnapshot>) => unknown) => select(other.getSnapshot()),
+    } as unknown as Parameters<typeof PlanReviewOpen>[0]} />)
+    expect(openPlan).toHaveBeenCalledTimes(3)
   })
   it('shows restored Markdown and its heading as the tab title', () => {
     const props = {
