@@ -44,7 +44,6 @@
   border-radius: 50%;
   corner-shape: round;
   background: var(--dsw-alias-state-warn-primary);
-  box-shadow: 0 0 0 3px var(--dsw-alias-state-warn-secondary);
 }
 
 .footer {
