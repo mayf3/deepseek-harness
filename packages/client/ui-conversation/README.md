@@ -38,6 +38,8 @@ Target packages declaration-merge their snapshot and Location data maps, then re
 
 The shared image slot props keep display choices separate from durable references: `thumbnail` requests a contained attachment-list thumbnail, while `compact` requests a cropped gallery tile. An optional per-image `label` supplies the accessible display name; loading and cache identity still use the original attachment reference. [ui-attachment](../ui-attachment/README.md) owns rendering and the lightbox.
 
+The context-occupancy button shows a ring and percentage below the input card, after the Session statistics. Clicking it opens the token breakdown in a panel kept inside the viewport, including when no statistics are shown; the button stays hidden until context usage and capacity are available.
+
 The composer registers the File command action and owns its label, availability, and native file-dialog callback. Menu availability and invocation both consult the mounted composer's current attachment-intake policy. Unmounting or locking the composer disables that action; disposing the plugin removes its registration. The callback binding stays inside the input module.
 
 `SessionInputShell` owns one Lexical editor per Session through its private [DraftEditorRuntime](src/client/input/editor/runtime.ts), while retaining submission, attachment selection, and recovery decisions. [DraftEditor](src/client/input/editor/DraftEditor.tsx) renders the borrowed editor; InputBar retains its Hooks and refs and installs DOM behavior through [view-binding](src/client/input/editor/view-binding.ts). Editor-facing types live in [draft-editor.ts](src/client/contract/draft-editor.ts), with shared input and submission types in [input.ts](src/client/contract/input.ts). This separation does not support simultaneous editable roots for one Session; [the two-stage isolation proposal](../../../.agents/notes/proposed/architecture/2026-09-14-composer-model-and-draft-editor.md) defines the remaining work.
@@ -46,7 +48,7 @@ Claimed commands retain their identity and highlight when only their arguments a
 
 Workspace selection uses `uiWorkspace.openWorkspace` to prepare the target and commit navigation. Draft text and attachments move in its synchronous preparation callback only while that request is current; later navigation or owner disposal leaves the original draft intact.
 
-The package occupies the root-scoped `main` key `conversation`, whose wrapper declares the optional-Session `main.conversation` shell. It registers strict Session header/body entries, View list, composer chain and bar, input regions, Hero regions, queue dock, draft persistence, and phase calculation. `ctx.uiSession.provide()` materializes the Conversation and input sources from the same Session binding and supplies `inputActions` as a stable standard prop.
+The package occupies the root-scoped `main` key `conversation`. Its `main.conversation` shell keeps the strict Session Header outside the optional-Session `conversation.content` Component Factory. The Factory owns the shared body and Composer, reads the current Session through its standard Hook, and exposes one strict-Session local position, `views`; its default adapter renders the existing `conversation.session` entry, so that body and the Header retain one shared strict-Session store. Another occurrence can replace `views` without rendering the main Header. `ctx.uiSession.provide()` materializes the Conversation and input sources from the same Session binding and supplies `inputActions` as a stable standard prop.
 
 A blank Session retains the header's leading and corner controls, including the right-sidebar opener, while hiding its title, actions, utilities, and View tabs. Selecting a Workspace creates the Session needed by these controls; the first message is not required. Without a selected Session, the strict header is absent. Sidebar entries retain their own data and execution prerequisites.
 
@@ -130,6 +132,7 @@ None; Conversation assembly and browser input state do not alter provider-side p
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Only registered targets can render** — the shell deliberately has no implicit fallback target beyond the registered `chat` preference.
+- **Factory occurrences inherit their render-position Session** — `conversation.content` does not accept an independently addressed Session; that requires a separate Session-provider capability.
 
 
 <a id="dev-note"></a>

@@ -143,6 +143,11 @@
   - superscript: "1"
   - text: .
 - paragraph:
+  - text: "Preview:"
+  - link "plain HTTP":
+    - /url: http://docs.example.test/plain
+  - text: .
+- paragraph:
   - text: "Upstream:"
   - link "the repository":
     - /url: https://github.com/example/link-gallery
@@ -167,7 +172,9 @@
 - paragraph:
   - img "Token preview"
 - text: css
+- button "Line numbers"
 - button "Copy"
+- text: Source
 - code: "--inline-code: #F5F5F5;"
 - paragraph: LINK_GALLERY_DONE
 - heading "Footnotes" [level=2]

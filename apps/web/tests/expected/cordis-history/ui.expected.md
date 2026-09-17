@@ -46,7 +46,9 @@
   - tab "Host" [selected]
 - tabpanel "Host":
   - text: javascript
+  - button "Line numbers"
   - button "Copy"
+  - text: Source
   - code: "return { name: \"snapshot-noop\", apply(ctx) {} }"
 - text: Result Defined snap-1/pkg-1 (snapshot noop); it is not running yet. Use cordis_run to activate this Package. Run controls live in the Cordis panel above Settings
 - button "Inspect"
@@ -122,7 +124,6 @@
 - button "Select model, current DeepSeek-V4-Flash":
   - text: DeepSeek-V4-Flash
   - img
-- button "0% of context used"
 - button "Send message" [disabled]
 - button "3 turns 7 steps":
   - img
@@ -130,3 +131,4 @@
 - button "66.8K tok · Cache hit 77%":
   - img
   - text: 66.8K tokCache hit 77%
+- button "0% of context used": 0%

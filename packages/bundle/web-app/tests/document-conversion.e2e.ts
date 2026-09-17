@@ -41,7 +41,7 @@ it('loads one shared conversion row and retains caller-owned PDFs after disposal
   await ctx.loader.await()
   const entry = [...ctx.loader.entries()].find(candidate => candidate.options.id === 'office-to-pdf')!
   await entry.fiber!.await()
-  expect(ctx.get('documentRenderController')).toBeUndefined()
+  expect(ctx.get('workspaceFiles')).toBeUndefined()
   expect(ctx.get('skills')).toBeUndefined()
   const bytes = await readFile(new URL('./fixtures/document-conversion.docx', import.meta.url))
   let reads = 0

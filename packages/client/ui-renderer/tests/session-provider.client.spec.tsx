@@ -74,8 +74,15 @@ function makeHost(body: SessionBody, options: { installRenderArea?: boolean; opt
     entriesOf: key => key === 'root' ? [rootEntry] : sessionEntries,
     entriesOfSlot: key => key === 'root' ? [rootEntry] : sessionEntries,
     reportEntryError: () => {},
+    reportFactoryError: () => {},
     specOf: key => key === 'k.session' ? { kind: 'single', scope } : undefined,
     isLive: () => true, storeOf: () => undefined,
+    factoryStoreOf: () => undefined,
+    retainFactoryOccurrence: () => () => {},
+    subscribeFactory: () => () => {},
+    getFactoryVersion: () => 0,
+    factoryOf: () => undefined,
+    isFactoryLive: () => false,
     root, scopeRevision: observable(0), scope: () => sessionAdapter,
   }
   return {

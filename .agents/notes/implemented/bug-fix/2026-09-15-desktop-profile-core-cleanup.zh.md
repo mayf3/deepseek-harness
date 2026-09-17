@@ -12,7 +12,7 @@ Status: implemented
 
 生产版 Desktop 在启动 Host 前，持有现有 profile 锁，清理已验证运行时描述符或旧 Desktop 包清单记录列出的包副本。清理删除对应依赖声明和 pnpm overrides，在包状态变化时使锁文件失效，并解除回退链接而不删除其目标。其他插件、bundle 选择、配置和会话数据保留。开发模式跳过清理。
 
-实现与临时启用常量集中在 `apps/desktop/src/profile-core-cleanup.ts`，由 profile 准备流程中的一个调用接入。每次生产启动都执行清理，因为开发模式或包操作可能重新产生残留。这限定了[原地修改 profile 决策](../architecture/2026-09-09-desktop-in-place-profile.zh.md)中的包保留范围；直接写入和失败恢复保持不变。
+实现与临时启用常量集中在 `apps/desktop/src/profile-core-cleanup.ts`，由 profile 准备流程中的一个调用接入。每次生产启动都执行清理，因为开发模式或包操作可能重新产生残留。这限定了[内置运行时决策](../architecture/2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)中的包保留范围；直接写入和失败恢复保持不变。
 
 ## Alternatives considered
 
