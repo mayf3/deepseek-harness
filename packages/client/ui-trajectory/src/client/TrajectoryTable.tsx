@@ -1531,6 +1531,7 @@ function MarkdownRecordContent({
   if (!rendered && record.cell.sourceBlocks && record.cell.sourceBlocks.length > 0) {
     return (
       <SourceBlocks
+        key={trajectoryRecordId(record.cell)}
         blocks={record.cell.sourceBlocks}
         onOpenCall={onOpenCall}
         t={t}

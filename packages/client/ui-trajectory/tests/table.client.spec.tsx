@@ -1064,6 +1064,61 @@ describe('TrajectoryTable', () => {
     },
   )
 
+  it('resets raw attachment disclosures on record selection but keeps them through history updates', () => {
+    const content = [
+      {
+        type: 'image' as const,
+        attachment: {
+          attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+          mediaType: 'image/png' as const,
+          width: 40,
+          height: 80,
+          bytes: 68,
+          name: 'shared.png',
+        },
+      },
+      {
+        type: 'file' as const,
+        attachment: {
+          attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`),
+          name: 'shared.txt',
+          bytes: 1,
+        },
+      },
+    ]
+    const nodes = ['First message', 'Second message'].map((text, index) => ({
+      kind: 'user' as const,
+      seq: index + 2,
+      time: (index + 2) * 1000,
+      source: { kind: 'user' as const },
+      content: [{ type: 'text' as const, text }, ...content],
+    }))
+    const turns = deriveTrajectoryLayout({ nodes, partial: null, runningCalls: [] }, t)
+    const view = render(<TrajectoryTable turns={turns} {...FOLD_PROPS} />)
+    fireEvent.click(screen.getByRole('row', { name: /First message/ }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Raw' }))
+    const disclosures = () => [...screen.getByRole('tabpanel').querySelectorAll('details')]
+    expect(disclosures()).toHaveLength(2)
+    expect(disclosures().every(disclosure => !disclosure.open)).toBe(true)
+    for (const disclosure of disclosures()) fireEvent.click(disclosure.querySelector('summary')!)
+    expect(disclosures().every(disclosure => disclosure.open)).toBe(true)
+
+    const older = { ...nodes[0]!, seq: 1, time: 1000, content: [{ type: 'text' as const, text: 'Older message' }] }
+    const expandedTurns = deriveTrajectoryLayout({ nodes: [older, ...nodes], partial: null, runningCalls: [] }, t)
+    view.rerender(<TrajectoryTable turns={expandedTurns} {...FOLD_PROPS} />)
+    expect(within(screen.getByRole('tabpanel')).getByText('First message', { exact: true })).toBeTruthy()
+    expect(disclosures().every(disclosure => disclosure.open)).toBe(true)
+
+    fireEvent.click(screen.getByRole('row', { name: /Second message/ }))
+    expect(screen.getByRole('tab', { name: 'Raw' }).getAttribute('aria-selected')).toBe('true')
+    expect(within(screen.getByRole('tabpanel')).getByText('Second message', { exact: true })).toBeTruthy()
+    expect(disclosures()).toHaveLength(2)
+    expect(disclosures().every(disclosure => !disclosure.open)).toBe(true)
+    for (const disclosure of disclosures()) fireEvent.click(disclosure.querySelector('summary')!)
+    fireEvent.click(screen.getByRole('row', { name: /First message/ }))
+    expect(disclosures().every(disclosure => !disclosure.open)).toBe(true)
+  })
+
   it('renders a tool-result image through the shared gallery in the Result tab', () => {
     const attachment = {
       attachmentId: `sha256:${'b'.repeat(64)}`,
