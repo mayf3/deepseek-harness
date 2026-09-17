@@ -10,8 +10,8 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import { installPrimaryRuntime, readPrimaryRuntime, workspaceDependencyPaths, type PrimaryRuntimeManifest } from '../src/primary-runtime.ts'
-import * as workspaceDependencies from '../src/workspace-dependencies.ts'
+import * as workspaceDependencies from '../src/index.ts'
+import { installPrimaryRuntime, readPrimaryRuntime, resolvePrimaryRuntime, workspaceDependencyPaths, type PrimaryRuntimeManifest } from '../src/index.ts'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -22,22 +22,23 @@ async function fixture() {
   const source = join(directory, 'resources')
   const root = join(directory, 'home', 'dsh-runtimes', 'dsh-primary-runtime')
   const manifest: PrimaryRuntimeManifest = {
-    desktopVersion: '1.0.0', platform: process.platform === 'win32' ? 'win32' : 'darwin', arch: process.arch,
+    desktopVersion: '1.0.0', platform: process.platform, arch: process.arch,
     components: { python: '3.12.14', node: '24.21.0', pnpm: '11.7.0', numpy: '2.3.5', pandas: '3.0.1' },
     pythonPackages: { 'python-docx': '1.2.0', 'python-pptx': '1.0.2', openpyxl: '3.1.5' },
   }
   const paths = workspaceDependencyPaths(source, manifest)
   for (const path of [paths.python, paths.node, paths.pnpm]) {
+    if (path === undefined) continue
     await mkdir(dirname(path), { recursive: true })
     await writeFile(path, 'interpreter')
   }
   await mkdir(paths.pythonPackages, { recursive: true })
-  await mkdir(paths.nodePackages, { recursive: true })
+  if (paths.nodePackages !== undefined) await mkdir(paths.nodePackages, { recursive: true })
   await writeFile(join(source, 'runtime.json'), JSON.stringify(manifest))
   return { source, root, manifest, directory }
 }
 
-it.each(['win32', 'darwin'])('returns %s interpreter and package paths', (platform) => {
+it.each(['win32', 'darwin', 'linux'])('returns %s interpreter and package paths', (platform) => {
   const manifest: PrimaryRuntimeManifest = { desktopVersion: '1', platform, arch: 'x64', components: { python: '3.12.14', node: '24.21.0', pnpm: '11.7.0', numpy: '2.3.5', pandas: '3.0.1' } }
   const paths = workspaceDependencyPaths('/runtime', manifest)
   expect(paths.pythonDistributions).toEqual({})
@@ -153,8 +154,8 @@ it.each([
   await expect(readPrimaryRuntime(source)).rejects.toThrow('invalid metadata')
 })
 
-it.skipIf(process.platform === 'linux')('loads the real tool through Cordis, exposes installed paths, and unregisters on disposal', async () => {
-  const { source, root, manifest, directory } = await fixture()
+it('loads the real tool through Cordis, exposes payload paths in place, and unregisters on disposal', async () => {
+  const { source, manifest, directory } = await fixture()
   const ctx = new Context()
   try {
     ctx.baseUrl = pathToFileURL(directory).href + '/'
@@ -171,7 +172,7 @@ it.skipIf(process.platform === 'linux')('loads the real tool through Cordis, exp
       },
     } as unknown as NonNullable<typeof ctx.loader.internal>
     const config = join(directory, 'cordis.yml')
-    await writeFile(config, `- name: agents\n- name: systemPrompt\n- name: tools\n- name: dependencies\n  config:\n    source: ${JSON.stringify(source)}\n    root: ${JSON.stringify(root)}\n`)
+    await writeFile(config, `- name: agents\n- name: systemPrompt\n- name: tools\n- name: dependencies\n  config:\n    source: ${JSON.stringify(source)}\n`)
     await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
     await ctx.loader.await()
     for (const entry of ctx.loader.entries()) await entry.fiber?.await()
@@ -180,7 +181,7 @@ it.skipIf(process.platform === 'linux')('loads the real tool through Cordis, exp
     const results = await Promise.all(['first', 'second'].map(id => ctx.tools.execute({ ...request, callId: ToolCallId(id) })))
     for (const result of results) {
       expect(result.isError).toBe(false)
-      expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(workspaceDependencyPaths(root, manifest), undefined, 2) }])
+      expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(workspaceDependencyPaths(source, manifest), undefined, 2) }])
     }
     expect(process.env).toEqual(environment)
     const entry = [...ctx.loader.entries()].find(entry => entry.options.name === 'dependencies')
@@ -190,4 +191,29 @@ it.skipIf(process.platform === 'linux')('loads the real tool through Cordis, exp
   } finally {
     await ctx.fiber.dispose()
   }
+})
+
+it('uses a payload in place without copying and tolerates a payload without Node.js or pnpm', async () => {
+  const { source, directory } = await fixture()
+  const manifest: PrimaryRuntimeManifest = {
+    desktopVersion: '1.0.0', platform: process.platform, arch: process.arch,
+    components: { python: '3.12.14', numpy: '2.3.5', pandas: '3.0.1' },
+    pythonPackages: { 'python-docx': '1.2.0' },
+  }
+  await writeFile(join(source, 'runtime.json'), JSON.stringify(manifest))
+  const paths = await resolvePrimaryRuntime(source)
+  expect(paths).toEqual({
+    python: join(source, 'dependencies', 'python', ...(process.platform === 'win32' ? ['python.exe'] : ['bin', 'python3'])),
+    pythonPackages: join(source, 'dependencies', 'python', ...(process.platform === 'win32' ? ['Lib'] : ['lib', 'python3.12']), 'site-packages'),
+    pythonDistributions: { 'python-docx': '1.2.0' },
+  })
+  await expect(readFile(join(directory, 'home', 'dsh-runtimes', 'dsh-primary-runtime', 'runtime.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+  await rm(paths.python)
+  await expect(resolvePrimaryRuntime(source)).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it('rejects a payload whose Node.js or pnpm version is malformed', async () => {
+  const { source, manifest } = await fixture()
+  await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, components: { ...manifest.components, node: 'latest' } }))
+  await expect(readPrimaryRuntime(source)).rejects.toThrow('invalid metadata')
 })
