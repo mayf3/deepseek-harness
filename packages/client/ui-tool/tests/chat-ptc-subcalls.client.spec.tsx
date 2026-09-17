@@ -104,8 +104,7 @@ async function bench(snapshot: ChatSnapshot) {
   const chat = createSnapshotStore(snapshot)
   const events = new ConversationEventRegistry(ctx)
   const views = new ConversationViewRegistry(ctx)
-  ctx.provide('developerTools', stubDeveloperTools() as never)
-  ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  ctx.provide('settingsScope', { developerTools: stubDeveloperTools(), bind: () => stubSettingsScope().scope } as never)
   ctx.provide('uiConversation', {
     events,
     views,

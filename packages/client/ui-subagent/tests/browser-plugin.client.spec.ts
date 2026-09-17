@@ -78,8 +78,7 @@ async function fullBench(sessions: SessionSummary[]) {
     },
   } as never)
   ctx.provide('remote', { $on: () => () => {} } as never)
-  ctx.provide('developerTools', stubDeveloperTools() as never)
-  ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  ctx.provide('settingsScope', { developerTools: stubDeveloperTools(), bind: () => stubSettingsScope().scope } as never)
   await provideSlotFaces(ctx)
   await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
   await ctx.plugin({ inject: [...inject], apply }).await()

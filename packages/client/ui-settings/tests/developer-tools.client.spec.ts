@@ -33,10 +33,10 @@ describe('developer tools settings', () => {
     new TestRemote(ctx, { settings: { describe: describeCall, mutate } })
     await ctx.plugin({ inject, apply: clientApply }).await()
     await ctx.settingsScope.describe().ensure()
-    await expect(ctx.developerTools.setEnabled(true)).rejects.toThrow('not saved')
+    await expect(ctx.settingsScope.developerTools.setEnabled(true)).rejects.toThrow('not saved')
     expect(mutate).toHaveBeenCalledWith(DEVELOPER_TOOLS_NAMESPACE, [{ op: 'set', path: ['enabled'], value: true }], 1)
     expect(describeCall).toHaveBeenCalledTimes(2)
-    expect(ctx.developerTools.enabled.getSnapshot()).toBe(false)
+    expect(ctx.settingsScope.developerTools.enabled.getSnapshot()).toBe(false)
   })
 
   it('shares one remote-browser preference across consumers and disposes it with the plugin', async () => {
@@ -47,13 +47,13 @@ describe('developer tools settings', () => {
     remote.$host = { home: undefined, isLoopback: false }
     const fiber = ctx.plugin({ inject, apply: clientApply })
     await fiber.await()
-    const preference = ctx.developerTools
-    expect(fiber.ctx.developerTools.enabled).toBe(preference.enabled)
+    const preference = ctx.settingsScope.developerTools
+    expect(fiber.ctx.settingsScope.developerTools.enabled).toBe(preference.enabled)
     await preference.setEnabled(true)
-    expect(fiber.ctx.developerTools.enabled.getSnapshot()).toBe(true)
+    expect(fiber.ctx.settingsScope.developerTools.enabled.getSnapshot()).toBe(true)
     expect(describeCall).not.toHaveBeenCalled()
     await fiber.dispose()
-    expect(ctx.get('developerTools')).toBeUndefined()
+    expect(ctx.get('settingsScope')).toBeUndefined()
   })
   it('defaults off, persists valid choices and removes its schema on disposal', async () => {
     const ctx = new Context()
@@ -73,7 +73,7 @@ describe('developer tools settings', () => {
 
   it('stays off until accepted settings arrive and follows external changes', async () => {
     const host = stubSettingsScope<DeveloperToolsSettings>()
-    const preference = new DeveloperToolsPreference(new Context(), host.scope)
+    const preference = new DeveloperToolsPreference(host.scope)
     const notify = vi.fn()
     const dispose = preference.enabled.subscribe(notify)
     expect(preference.enabled.getSnapshot()).toBe(false)
@@ -91,7 +91,7 @@ describe('developer tools settings', () => {
 it('keeps remote browser choices local and publishes only changed values', async () => {
   const host = stubSettingsScope<DeveloperToolsSettings>()
   host.publish({ mode: 'memory' })
-  const preference = new DeveloperToolsPreference(new Context(), host.scope)
+  const preference = new DeveloperToolsPreference(host.scope)
   const notify = vi.fn()
   const dispose = preference.enabled.subscribe(notify)
   expect(preference.enabled.getSnapshot()).toBe(false)
@@ -107,7 +107,7 @@ it('keeps remote browser choices local and publishes only changed values', async
 
 it('ignores host revisions that do not change enablement', () => {
   const host = stubSettingsScope<DeveloperToolsSettings>()
-  const preference = new DeveloperToolsPreference(new Context(), host.scope)
+  const preference = new DeveloperToolsPreference(host.scope)
   const notify = vi.fn()
   const dispose = preference.enabled.subscribe(notify)
   host.publish({ revision: 1 })

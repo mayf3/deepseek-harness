@@ -48,8 +48,7 @@ function sessionFakeFor() {
 
 async function bench() {
   const runtime = await SlotTestRuntime.create()
-  runtime.ctx.provide('developerTools', stubDeveloperTools() as never)
-  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  runtime.ctx.provide('settingsScope', { developerTools: stubDeveloperTools(), bind: () => stubSettingsScope().scope } as never)
   const layout = { closeRightbar: vi.fn(), openRightbar: vi.fn() }
   runtime.ctx.provide('layout', layout as never)
   const sidebarRight = {

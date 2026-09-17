@@ -62,7 +62,7 @@ export function stubSettingsScope<T>(): StubSettingsScope<T> {
 }
 
 /**
- * Build the developer preference service used by UI composition tests.
+ * Build the developer preference object used by UI composition tests.
  * @param enabled - initial developer-tool visibility.
  * @returns a shared observable and a writer that publishes the requested value.
  */

@@ -10,7 +10,7 @@ Diagnostic views, preset selection and changed-file summaries add complexity to 
 
 ## Decision
 
-The dedicated `ctx.developerTools` service binds the generic settings scope and exposes one accepted `ui-developer-tools.enabled` preference, defaulting off. General Settings offers the same switch on Web and desktop. The existing settings transport owns validation, ordered writes, persistence and recovery; loopback Web and desktop follow Host acceptance. Remote Web owns one browser-local observable shared by all consumers until reload, with no Host writes.
+The settings-owned `ctx.settingsScope.developerTools` preference binds a namespace scope and exposes one accepted `ui-developer-tools.enabled` preference, defaulting off. General Settings offers the same switch on Web and desktop. The existing settings transport owns validation, ordered writes, persistence and recovery; loopback Web and desktop follow Host acceptance. Remote Web owns one browser-local observable shared by all consumers until reload, with no Host writes.
 
 Off exposes only Chat, hides tool Inspect actions when no visible View declares tool-call inspection, removes the conversation View tab bar, hides the new-session preset chip, and omits the changed-files card and its summary read. Turning it off from another View activates Chat. The preset composition, saved default, Session events and explicit delivery cards remain unchanged. This preference is presentation policy, not Host authorization.
 

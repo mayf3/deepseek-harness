@@ -715,8 +715,7 @@ describe('plugin registration', () => {
       session,
     } as never)
     ctx.provide('remote.session', session as never)
-    ctx.provide('developerTools', stubDeveloperTools() as never)
-    ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+    ctx.provide('settingsScope', { developerTools: stubDeveloperTools(), bind: () => stubSettingsScope().scope } as never)
     await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
 
     const fiber = ctx.plugin({ inject: [...inject], apply })

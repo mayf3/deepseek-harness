@@ -76,8 +76,7 @@ async function bench(nodes: ToolResultNode[]) {
       openWorkspacePath: vi.fn(async () => ({ ok: true, value: { opened: true } })),
     },
   })
-  runtime.ctx.provide('developerTools', stubDeveloperTools() as never)
-  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  runtime.ctx.provide('settingsScope', { developerTools: stubDeveloperTools(), bind: () => stubSettingsScope().scope } as never)
   runtime.ctx.provide('layout', { openDetails: vi.fn(), closeDetails: vi.fn() })
   runtime.ctx.provide('sidebarRight', { openResource: vi.fn() } as never)
   runtime.ctx.provide('uiWorkspace', {

@@ -89,7 +89,7 @@ function setPageUrl(url: string): void {
 
 describe('ui-settings-general apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope', 'developerTools'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope'])
   })
 
   it('fills the five seats of the shell it declares, with the locale-following General label', async ({ mock, start }) => {
@@ -106,9 +106,9 @@ describe('ui-settings-general apply', () => {
     expect(c.ctx.slots.entries('settings.onboarding').filter(row => row.locale === NS)).toEqual([])
     const developerRow = c.ctx.slots.entries('settings.general.item').find(row => row.options.id === 'developer-tools')!
     const developer = (developerRow.inject as unknown as () => DeveloperToolsRowInjected)()
-    expect(developer.hooks.developerTools).toBe(c.ctx.developerTools.enabled)
+    expect(developer.hooks.developerTools).toBe(c.ctx.settingsScope.developerTools.enabled)
     expect(developer.hooks.developerTools.getSnapshot()).toBe(false)
-    const setEnabled = vi.spyOn(c.ctx.developerTools, 'setEnabled').mockResolvedValue(undefined)
+    const setEnabled = vi.spyOn(c.ctx.settingsScope.developerTools, 'setEnabled').mockResolvedValue(undefined)
     await developer.setEnabled(true)
     expect(setEnabled).toHaveBeenCalledExactlyOnceWith(true)
     const { controller, hooks } = actionInjectedOf(c)

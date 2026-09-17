@@ -43,7 +43,7 @@ interface Recorded {
 
 async function boot() {
   const ctx = new Context()
-  ctx.provide('developerTools', stubDeveloperTools() as never)
+  ctx.provide('settingsScope', { developerTools: stubDeveloperTools() } as never)
   const tabs = new SidebarRightTabRegistry(ctx)
   const registered: Recorded[] = []
   const slots = {

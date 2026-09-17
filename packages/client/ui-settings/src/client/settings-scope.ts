@@ -6,6 +6,8 @@
  * over its snapshot.
  */
 
+import { DeveloperToolsPreference } from './developer-tools.ts'
+import { DEVELOPER_TOOLS_NAMESPACE } from '../developer-tools-settings.ts'
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
@@ -231,6 +233,8 @@ declare module '@deepseek-ai/cordis' {
  * (`packages/client/tsdown.client.ts`).
  */
 export class SettingsScopeBinder extends Service {
+  /** Shared developer-tool preference owned by this settings provider. */
+  readonly developerTools: DeveloperToolsPreference
   private readonly mirror: SettingsDescribeMirror
   private readonly schema: SettingsSchemaService
   private readonly persistence: 'host' | 'memory'
@@ -257,6 +261,7 @@ export class SettingsScopeBinder extends Service {
     this.schema = config.schema
     this.persistence = config.persistence
     this.owner = ctx
+    this.developerTools = new DeveloperToolsPreference(this.bind({ namespace: DEVELOPER_TOOLS_NAMESPACE }))
   }
 
   /**

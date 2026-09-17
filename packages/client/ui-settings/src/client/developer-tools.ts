@@ -1,21 +1,18 @@
 /** One accepted preference drives every developer-tool consumer. */
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import { Service, type Context } from '@deepseek-ai/cordis'
 import type { DeveloperToolsSettings } from '../developer-tools-settings.ts'
 import type { SettingsScope } from './settings-contract.ts'
 
 /** Shared preference; no accepted value means developer tools are disabled. */
-export class DeveloperToolsPreference extends Service {
+export class DeveloperToolsPreference {
   /** Accepted enablement, observable through renderer-bound hooks. */
   readonly enabled: ObservableSnapshot<boolean>
   private readonly local = createSnapshotStore(false)
 
   /**
-   * @param ctx - preference-owning plugin context.
    * @param scope - settings-owned namespace controller.
    */
-  constructor(ctx: Context, private readonly scope: SettingsScope<DeveloperToolsSettings>) {
-    super(ctx, 'developerTools')
+  constructor(private readonly scope: SettingsScope<DeveloperToolsSettings>) {
     this.enabled = scope.getSnapshot().mode === 'memory' ? this.local : {
       getSnapshot: () => scope.getSnapshot().value?.enabled ?? false,
       subscribe: (listener) => {
@@ -41,11 +38,5 @@ export class DeveloperToolsPreference extends Service {
       return
     }
     if (!await this.scope.set('enabled', enabled)) throw new Error('Developer tools preference was not saved')
-  }
-}
-
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    developerTools: DeveloperToolsPreference
   }
 }

@@ -78,7 +78,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
  * Required browser services: the tab registry, the slot registry, copy, and the
  * Remote carrier with its `workspaceFiles` namespace.
  */
-export const inject = ['slots', 'locale', 'sidebarRightTabs', 'remote', 'remote.workspaceFiles', 'developerTools']
+export const inject = ['slots', 'locale', 'sidebarRightTabs', 'remote', 'remote.workspaceFiles', 'settingsScope']
 
 /**
  * Client plugin body: register the type, its dictionaries, its body, and its chip title.
