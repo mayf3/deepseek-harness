@@ -131,6 +131,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'session'
       owner: { view?: string }
     }
+    /** Resident navigation container, including when no Session is selected. */
+    'conversation.header': { kind: 'single'; scope: 'session-maybe' }
     /** Strict per-Session title, actions, and View navigation. */
     'conversation.session.header': { kind: 'single'; scope: 'session' }
     /** Optional replacement for one Session breadcrumb title. */
@@ -151,16 +153,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'session'
       owner: ConversationHeaderActionOwnerProps
     }
-    /**
-     * Leading seat before the Session breadcrumbs, for window-chrome-adjacent
-     * controls (macOS desktop sidebar reopen and New Session while the sidebar
-     * is hidden). The seat is laid out only while its occupant renders
-     * something, and it stays mounted through the blank-session state so a
-     * hidden sidebar always keeps a reopen control on screen.
-     */
-    'conversation.session.header.leading': {
+    /** Global navigation before the Session title, available without a Session. */
+    'conversation.header.leading': {
       kind: 'single'
-      scope: 'session'
+      scope: 'root'
       owner: ConversationHeaderLeadingOwnerProps
     }
     /**
@@ -275,7 +271,7 @@ export interface ConversationHeaderCornerOwnerProps {
   children?: never
 }
 
-/** The leading seat's occupant derives its state from standard Session props. */
+/** The leading seat exposes global navigation independently of a Session. */
 export interface ConversationHeaderLeadingOwnerProps {
   /** Marker field: the occupant receives no owner-specific values. */
   children?: never
@@ -419,7 +415,7 @@ export interface HeroBrandMarkOwnerProps {
 /** Full props of the resident optional-Session Conversation shell. */
 export type ConversationSlotProps =
   PropsRuntime<'main.conversation'>
-  & PropsRenderSlots<'conversation.session.header'>
+  & PropsRenderSlots<'conversation.header'>
   & PropsRenderFactories
 
 /** Inputs shared by main and embedded Conversation content occurrences. */
@@ -457,12 +453,16 @@ export type ConversationSessionSlotProps =
   & PropsStore<ConversationStore>
   & InjectFace<ConversationSessionInjected>
 
+/** Full props of the resident navigation header. */
+export type ConversationHeaderProps =
+  PropsRuntime<'conversation.header'>
+  & PropsRenderSlots<'conversation.header.leading' | 'conversation.session.header'>
+
 /** Full props of the strict Session header. */
 export type ConversationSessionHeaderSlotProps =
   PropsRuntime<'conversation.session.header'>
   & PropsRenderSlots<
     'conversation.session.header.lineage'
-    | 'conversation.session.header.leading'
     | 'conversation.session.header.actions'
     | 'conversation.session.header.utilities'
     | 'conversation.session.header.corner'

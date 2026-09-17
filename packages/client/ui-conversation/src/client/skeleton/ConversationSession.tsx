@@ -68,11 +68,8 @@ export function ConversationSessionHeader({
   const conversation = useConversation(s => s)
   const hideChrome = session.blank && conversationPhase(session, conversation) === 'blank'
   return (
-    <header className={clsx(css.header, hideChrome && css.headerBlank)}>
+    <>
       <div className={css.titleRow}>
-        <div className={css.headerLeading} data-conversation-header-leading="">
-          {renderSlot('conversation.session.header.leading', {})}
-        </div>
         {!hideChrome && (
           <>
             <div className={css.titleCluster}>
@@ -154,7 +151,7 @@ export function ConversationSessionHeader({
           ))}
         </div>
       )}
-    </header>
+    </>
   )
 }
 

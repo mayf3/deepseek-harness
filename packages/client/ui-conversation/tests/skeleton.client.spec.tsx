@@ -21,6 +21,7 @@ import { createConversationStore } from '../src/client/stores.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { ConversationContent } from '../src/client/skeleton/ConversationContent.tsx'
+import { ConversationHeader } from '../src/client/skeleton/ConversationHeader.tsx'
 import { ConversationMainPanel } from '../src/client/skeleton/ConversationMainPanel.tsx'
 import { ConversationSession, ConversationSessionHeader } from '../src/client/skeleton/ConversationSession.tsx'
 import { conversationPhase } from '../src/client/contract/snapshot.ts'
@@ -197,6 +198,9 @@ function mount(
       lineageOwners.push(owner as ConversationHeaderLineageOwnerProps)
       return opts?.fallback ?? null
     }
+    if (key === 'conversation.header') {
+      return <ConversationHeader {...props} __renders={undefined} renderSlot={renderSlot as never} />
+    }
     if (key === 'conversation.session.header') {
       return (
         <ConversationSessionHeader
@@ -363,7 +367,7 @@ function mount(
   }
   const view = render(<ConversationMainPanel {...props} />)
   return {
-    view, store, wiring, sink, retargetWorkspace, session, conversation, slotCalls, lineageOwners, seatOwners, open,
+    view, props, store, wiring, sink, retargetWorkspace, session, conversation, slotCalls, lineageOwners, seatOwners, open,
     pickerOwner: () => pickerOwner,
     rerender: () => { view.rerender(<ConversationMainPanel {...props} />) },
   }
@@ -388,6 +392,21 @@ describe('Hero chrome', () => {
 })
 
 describe('ConversationRoot resident composer', () => {
+  it('keeps global header navigation without selecting a Session', () => {
+    const b = mount(sessionSnapshotOf())
+    b.slotCalls.length = 0
+    b.props.sessionId = undefined
+    b.props.useSession = () => undefined
+    b.props.useConversation = () => undefined
+    b.view.unmount()
+    const view = render(<ConversationMainPanel {...b.props} />)
+    expect(view.container.querySelector('header')).not.toBeNull()
+    expect(view.getByTestId('view-conversation.header.leading')).toBeTruthy()
+    expect(b.slotCalls).not.toContain('conversation.session.header')
+    expect(view.queryByRole('tablist')).toBeNull()
+    expect(view.queryByTestId('view-conversation.session.header.corner')).toBeNull()
+  })
+
   it('does not redispatch composer child slots for an unrelated Session publication', () => {
     const b = mount(sessionSnapshotOf())
     const childKeys = new Set([
@@ -493,7 +512,7 @@ describe('ConversationRoot resident composer', () => {
     expect(host?.contains(seat)).toBe(true)
     expect(seat?.contains(textarea)).toBe(true)
     expect(b.slotCalls).toContain('conversation.session.header.lineage')
-    expect(b.slotCalls).toContain('conversation.session.header.leading')
+    expect(b.slotCalls).toContain('conversation.header.leading')
     expect(b.slotCalls).toContain('conversation.session.header.actions')
     expect(b.slotCalls).toContain('conversation.session.header.utilities')
     expect(b.slotCalls).toContain('conversation.session.header.corner')

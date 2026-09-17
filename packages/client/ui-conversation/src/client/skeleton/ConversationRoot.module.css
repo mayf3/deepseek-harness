@@ -13,6 +13,8 @@
    title row, the tab strip's 10px margin, a 16px tab line, and its 9px bottom
    inset — so no row below may grow past its figure. */
 .header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   flex: none;
   box-sizing: border-box;
   min-height: 76px;
@@ -46,6 +48,7 @@
 }
 
 .titleRow {
+  grid-column: 2;
   display: flex;
   align-items: center;
   gap: 0;
@@ -65,6 +68,8 @@
    occupant keeps the seat non-empty, so a seat-owned margin would push the
    breadcrumbs while nothing shows). */
 .headerLeading {
+  grid-column: 1;
+  grid-row: 1;
   display: flex;
   flex: none;
   align-items: center;
@@ -166,6 +171,7 @@
 /* figma Tab_Group 34:11441: 35px strip, gap 36, pad-left 8, tabs bottom-aligned.
    Positioned above the header's own paint, so the active bar covers the rule. */
 .tabs {
+  grid-column: 1 / -1;
   position: relative;
   z-index: 1;
   display: flex;
