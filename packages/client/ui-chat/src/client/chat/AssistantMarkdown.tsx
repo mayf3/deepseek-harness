@@ -26,6 +26,9 @@ export function localPathMediaUrl(protocol: string, origin: string, value: strin
 }
 
 export interface AssistantMarkdownProps {
+  /** Hide settled reasoning previews in Compact work details. */
+  compactTranscript?: boolean
+
   blocks: readonly AssistantBlock[]
   streaming: boolean
   /** Frozen partial of an aborted turn: rendered with a stopped marker. */
@@ -44,7 +47,7 @@ export interface AssistantMarkdownProps {
 
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
-  blocks, streaming, interrupted, renderMessageImages,
+  compactTranscript = true, blocks, streaming, interrupted, renderMessageImages,
   reasoningHidden = false, revealProcess, mentions, t,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
@@ -89,7 +92,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
             hidden={reasoningHidden}
             reveal={revealProcess}
           >
-            <ReasoningRow text={block.text} running={streaming && i === last} t={t} />
+            <ReasoningRow compact={compactTranscript} text={block.text} running={streaming && i === last} t={t} />
           </ProcessReasoning>,
         )
         break

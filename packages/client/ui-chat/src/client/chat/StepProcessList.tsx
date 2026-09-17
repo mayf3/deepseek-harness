@@ -17,28 +17,27 @@ type ListProps = SeatProps & { readonly useChat: ChatViewSlotProps['useChat']; r
 /** Ordered chat seats with configurable process defaults between assistant responses. */
 export const ChatNodeList = memo(function ChatNodeList({ useChat, expandedSteps, ...seatProps }: ListProps) {
   const snapshot = useChat(value => value)
-  return processRanges(snapshot).map(range => range.process
-    ? <StepProcess key={range.key} range={range} expandedSteps={expandedSteps}
-      nodes={range.seats.map(seat => snapshot.nodes.get(seat.nodeKey) as ChatNode)} {...seatProps} />
-    : <ChatNodeSeat key={range.key} {...seatProps} {...range.seats[0]} />)
+  return processRanges(snapshot).flatMap(range => expandedSteps && range.process
+    ? range.seats.map(seat => <ChatNodeSeat key={`${seat.nodeKey}:${seat.assistantPart ?? ''}`} {...seatProps} {...seat} />)
+    : range.process
+      ? <StepProcess key={range.key} range={range}
+        nodes={range.seats.map(seat => snapshot.nodes.get(seat.nodeKey) as ChatNode)} {...seatProps} />
+      : <ChatNodeSeat key={range.key} {...seatProps} {...range.seats[0]} />)
 })
 
-function StepProcess({ range, nodes, expandedSteps, ...seatProps }: SeatProps & {
+function StepProcess({ range, nodes, ...seatProps }: SeatProps & {
   readonly range: ProcessRange
   readonly nodes: readonly ChatNode[]
-  readonly expandedSteps: boolean
 }) {
   const { useChatNodeProcess, useStore, actions, t } = seatProps
-  const [open, setOpen] = useState(expandedSteps)
-  useEffect(() => { setOpen(expandedSteps) }, [expandedSteps])
+  const [open, setOpen] = useState(false)
   const bodyId = useId()
   const presentation = useChatNodeProcess(range.seats[0].nodeKey)
   const spec = presentation?.spec
   const stored = useStore(state => spec === undefined ? undefined : storedTurnProcessEntry(state, spec.turn))
   const alwaysOpen = (presentation !== undefined && !presentation.turnClosed)
     || nodes.some(turnProcessAlwaysOpen)
-  const outerFoldable = seatProps.compactTranscript
-    && (!seatProps.historyIncomplete || presentation?.turnStarted === true)
+  const outerFoldable = (!seatProps.historyIncomplete || presentation?.turnStarted === true)
     && spec !== undefined
   const outerHidden = outerFoldable && !alwaysOpen && stored?.answerStep !== (spec.answerStep ?? 0)
   const revealOuter = useCallback(() => {
@@ -52,12 +51,15 @@ function StepProcess({ range, nodes, expandedSteps, ...seatProps }: SeatProps & 
   const bodyRef = useSearchableHidden(!open, reveal)
   const summary = processActivity(nodes)
   const label = processTitle(summary, range.closed, t)
+  const detail = !seatProps.compactTranscript && !range.closed
+    ? summary.runningDetail
+    : ''
   return (
     <div ref={rootRef} className={css.root} data-chat-flow-key={range.key}
       data-chat-anchor-key={range.key} data-chat-turn={range.turn} data-step-process>
       <button type="button" className={css.title} aria-expanded={open} aria-controls={bodyId}
         onClick={(event) => { event.currentTarget.focus(); setOpen(!open) }}>
-        <span>{label}</span>
+        <span className={detail === '' ? undefined : css.label}>{detail === '' ? label : `${label} ${detail}`}</span>
         <IconChevronDownOutlineRegular className={css.chevron} />
       </button>
       <div ref={bodyRef} id={bodyId} className={`${css.body} ${flowCss.processBody}`} data-step-process-body>

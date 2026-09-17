@@ -90,18 +90,42 @@ function activity(name: string): ProcessActivity {
   return 'tools'
 }
 
+function liveToolDetail(argsRaw: string): string {
+  let args: unknown
+  try {
+    args = JSON.parse(argsRaw)
+  } catch {
+    // Partial argument JSON has no complete detail to preview.
+    return ''
+  }
+  if (args === null || typeof args !== 'object') return ''
+  for (const key of ['command', 'cmd', 'queries', 'query', 'pattern', 'url', 'file_path', 'path', 'description']) {
+    if (key in args) {
+      const value: unknown = Reflect.get(args, key)
+      if (Array.isArray(value) && value.every(item => typeof item === 'string')) {
+        const detail = value.join(', ').replace(/\s+/g, ' ').trim()
+        if (detail !== '') return detail
+      }
+      if (typeof value === 'string' && value.trim() !== '') return value.replace(/\s+/g, ' ').trim()
+    }
+  }
+  return ''
+}
+
 /**
  * Rank categories by distinct call count, breaking ties by first appearance.
  * @param nodes - process members, including recursive tools.
- * @returns all ranked categories and the latest running tool category.
+ * @returns all ranked categories and the latest running tool category and argument preview.
  */
 export function processActivity(nodes: readonly ChatNode[]): {
   counts: readonly { kind: ProcessActivity; count: number }[]
   running: ProcessActivity | undefined
+  runningDetail: string
 } {
   const counts = new Map<ProcessActivity, number>()
   const seen = new Set<string>()
   let running: ProcessActivity | undefined
+  let runningDetail = ''
   let runningTime = -Infinity
   const visit = (tool: ToolCallBlock): void => {
     if (seen.has(tool.callId)) return
@@ -111,6 +135,7 @@ export function processActivity(nodes: readonly ChatNode[]): {
       const kind = activity(call.name)
       if (isRunningTool(tool) && tool.time >= runningTime) {
         running = kind
+        runningDetail = liveToolDetail(tool.argsRaw)
         runningTime = tool.time
       }
       counts.set(kind, (counts.get(kind) ?? 0) + 1)
@@ -123,6 +148,7 @@ export function processActivity(nodes: readonly ChatNode[]): {
   return {
     counts: [...counts].map(([kind, count]) => ({ kind, count })).sort((a, b) => b.count - a.count),
     running,
+    runningDetail,
   }
 }
 

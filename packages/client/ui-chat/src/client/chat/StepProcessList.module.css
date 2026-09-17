@@ -4,6 +4,7 @@
 
 .title {
   display: flex;
+  max-width: 100%;
   align-items: center;
   gap: 6px;
   padding: 8px 0;
@@ -30,4 +31,11 @@
   overflow-y: auto;
   overscroll-behavior-y: contain;
   scrollbar-gutter: stable;
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

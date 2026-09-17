@@ -70,7 +70,6 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   }, [actions, processSpec, alwaysOpen])
   const processWindowReady = processSpec !== undefined
     && processPresentation !== undefined
-    && compactTranscript
     && processPresentation.turn === processSpec.turn
     && (!historyIncomplete || processPresentation.turnStarted)
   const processMember = routedNode !== undefined
@@ -126,9 +125,10 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       renderMessageImages,
       fileMentions,
       turnProcess,
+      compactTranscript,
     }, [
     node, cwd, openFile, openSkill, inspectCall, forkAt,
-    loadImage, renderMessageImages, fileMentions, turnProcess,
+    loadImage, renderMessageImages, fileMentions, turnProcess, compactTranscript,
   ])
   if (routedNode === undefined || owner === null) return null
   const turnData = turnDataOf(routedNode)

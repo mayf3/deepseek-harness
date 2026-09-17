@@ -629,6 +629,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     const toggle = view.getByRole('button', { name: chinese }) as HTMLButtonElement
     expect(toggle.disabled).toBe(true)
+    expect(toggle.querySelector('svg')).toBeNull()
     fireEvent.click(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(view.container.querySelector('[data-step-process]')?.hasAttribute('hidden')).toBe(false)
@@ -653,6 +654,36 @@ describe('ChatView', () => {
     expect(view.getByRole('button', { name: singular })).toBeTruthy()
     act(() => { h.setChat({ nodes: [userInTurn(1, 'inspect', 2), opening, result, toolResult(4, 'second', name), response] }) })
     expect(view.getByRole('button', { name: plural })).toBeTruthy()
+  })
+
+  it.each([
+    ['bash', { command: 'git status', description: 'Inspect changes' }, '正在运行命令 git status'],
+    ['web_search', { queries: ['Cordis plugins', 'DSH tools'] }, '正在搜索网页 Cordis plugins, DSH tools'],
+    ['web_fetch', { url: 'https://example.com/docs' }, '正在访问网页 https://example.com/docs'],
+    ['read', { file_path: '/src/main.ts' }, '正在读取文件 /src/main.ts'],
+  ])('shows live %s details only in Detailed secondary titles', (name, args, expected) => {
+    const h = makeHarness({
+      nodes: [userInTurn(1, 'inspect', 2), reasoningAssistant(2, 'private reasoning', 2)],
+      runningCalls: [{ ...runningCall('work', name), argsRaw: JSON.stringify(args) }],
+      running: true,
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const title = () => view.container.querySelector('[data-step-process] > button')?.textContent
+    const abstract = title()
+    act(() => { h.setTranscriptView('detailed') })
+    expect(title()).toBe(expected)
+    expect(title()).not.toContain('private reasoning')
+    act(() => { h.setTranscriptView('expanded') })
+    expect(title()).toBeUndefined()
+    act(() => { h.setTranscriptView('compact') })
+    expect(title()).toBe(abstract)
+    act(() => {
+      h.setTranscriptView('detailed')
+      h.setChat({ runningCalls: [], partial: { turn: 2, step: 2, blocks: [
+        { kind: 'reasoning', text: 'private reasoning' },
+      ] } })
+    })
+    expect(title()).toBe('正在分析请求')
   })
 
   it('closes a work range on streamed response text and keeps its expansion while more work runs', () => {
@@ -1722,6 +1753,7 @@ describe('ChatView', () => {
       expect(toggle.getAttribute('aria-expanded')).toBeNull()
       act(() => { h.set({ nodes: [user(1, 'question'), context(2, 'working context', 1)] }) })
       expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      expect(toggle.querySelector('svg')).toBeNull()
       const group = view.container.querySelector('[data-step-process]')!
       expect(group.getAttribute('hidden')).toBeNull()
       act(() => { h.set({ nodes: [user(1, 'question'), context(2, 'working context', 1), ...(hasAnswer ? [assistant(3, 'answer')] : [])],
@@ -1730,6 +1762,7 @@ describe('ChatView', () => {
       expect(toggle.getAttribute('aria-expanded')).toBe('false')
       expect(group.getAttribute('hidden')).toBe('until-found')
       expect((toggle as HTMLButtonElement).disabled).toBe(false)
+      expect(toggle.querySelector('svg')).not.toBeNull()
       act(() => { vi.advanceTimersByTime(3_000) })
       expect(toggle.textContent).toBe('Took 2s')
       view.unmount()
@@ -1748,7 +1781,7 @@ describe('ChatView', () => {
     })
     const view = render(<h.ChatView {...h.props} />)
     expect(turnProcessControl(view.container)?.getAttribute('aria-expanded')).toBe('true')
-    const processRow = view.getByText('inspect').closest('[data-chat-flow-kind="assistant-step"]') as HTMLElement
+    const processRow = () => view.getByText('inspect').closest('[data-chat-flow-kind="assistant-step"]') as HTMLElement
 
     act(() => {
       h.set({
@@ -1760,7 +1793,7 @@ describe('ChatView', () => {
     })
     const toggle = turnProcessControl(view.container)!
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(processRow.getAttribute('hidden')).toBe('until-found')
+    expect(processRow().getAttribute('hidden')).toBe('until-found')
   })
 
   it('switches completed Turns between the persisted Expanded and Compact modes', () => {
@@ -1770,18 +1803,21 @@ describe('ChatView', () => {
       turnEnds: new Map([[1, 5]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    const processRow = view.getByText('inspect').closest('[data-chat-flow-kind="assistant-step"]') as HTMLElement
+    const processRow = () => view.getByText('inspect').closest('[data-chat-flow-kind="assistant-step"]') as HTMLElement
 
     expect(turnProcessControl(view.container)?.getAttribute('aria-expanded')).toBe('false')
-    expect(processRow.getAttribute('hidden')).toBe('until-found')
+    expect(processRow().getAttribute('hidden')).toBe('until-found')
 
     act(() => { h.setTranscriptView('expanded') })
-    expect(turnProcessControl(view.container)).toBeNull()
-    expect(processRow.getAttribute('hidden')).toBeNull()
+    expect(turnProcessControl(view.container)?.getAttribute('aria-expanded')).toBe('false')
+    expect(processRow().getAttribute('hidden')).toBe('until-found')
+    fireEvent.click(turnProcessControl(view.container)!)
+    expect(processRow().getAttribute('hidden')).toBeNull()
+    fireEvent.click(turnProcessControl(view.container)!)
 
     act(() => { h.setTranscriptView('compact') })
     expect(turnProcessControl(view.container)?.getAttribute('aria-expanded')).toBe('false')
-    expect(processRow.getAttribute('hidden')).toBe('until-found')
+    expect(processRow().getAttribute('hidden')).toBe('until-found')
   })
 
   it('resets nested process disclosures when the whole Turn closes', () => {
@@ -1798,21 +1834,46 @@ describe('ChatView', () => {
     expect(inner.getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('switches secondary defaults between Detailed and Expanded and permits manual toggles', () => {
+  it('previews settled reasoning only in Detailed and Expanded work details', () => {
+    const final = {
+      ...assistant(3, 'answer', 1, 1),
+      blocks: [
+        { kind: 'reasoning' as const, text: '**Inspect the session**\nCheck persistence' },
+        { kind: 'text' as const, text: 'answer' },
+      ],
+    }
+    const h = makeHarness({ nodes: [user(1, 'question'), final], turnEnds: new Map([[1, 4]]) })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.queryByText('Inspect the session')).toBeNull()
+    for (const mode of ['detailed', 'expanded'] as const) {
+      act(() => { h.setTranscriptView(mode) })
+      expect(view.getByText('Inspect the session')).toBeTruthy()
+      expect(view.queryByText('Check persistence')).toBeNull()
+    }
+    act(() => { h.setTranscriptView('compact') })
+    expect(view.queryByText('Inspect the session')).toBeNull()
+  })
+
+  it('removes secondary groups in Expanded and restores collapsed groups in Detailed', () => {
     const h = makeHarness({ nodes: [user(1, 'question'), context(2, 'work', 1), assistant(3, 'answer')],
       turnEnds: new Map([[1, 4]]) })
     const view = render(<h.ChatView {...h.props} />)
     act(() => { h.setTranscriptView('detailed') })
-    expect(turnProcessControl(view.container)).toBeNull()
-    const body = view.container.querySelector('[data-step-process-body]')!
-    const toggle = view.container.querySelector<HTMLButtonElement>('[data-step-process] > button')!
-    expect(body.getAttribute('hidden')).toBe('until-found')
+    expect(turnProcessControl(view.container)?.getAttribute('aria-expanded')).toBe('false')
+    expect(view.container.querySelector('[data-step-process-body]')?.getAttribute('hidden')).toBe('until-found')
     act(() => { h.setTranscriptView('expanded') })
-    expect(body.hasAttribute('hidden')).toBe(false)
-    fireEvent.click(toggle)
-    expect(body.getAttribute('hidden')).toBe('until-found')
+    expect(turnProcessControl(view.container)?.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(turnProcessControl(view.container)!)
+    expect(view.container.querySelector('[data-step-process]')).toBeNull()
+    expect(view.container.querySelector('[data-step-process-body]')).toBeNull()
+    const contextRow = view.container.querySelector('[data-chat-flow-kind="context"]')!
+    expect(contextRow.parentElement?.hasAttribute('data-chat-flow')).toBe(true)
+    expect(contextRow.closest('[hidden]')).toBeNull()
+    expect(view.getByText('answer')).toBeTruthy()
     act(() => { h.setTranscriptView('detailed') })
-    fireEvent.click(toggle)
+    const body = view.container.querySelector('[data-step-process-body]')!
+    expect(body.getAttribute('hidden')).toBe('until-found')
+    fireEvent.click(view.container.querySelector<HTMLButtonElement>('[data-step-process] > button')!)
     expect(body.hasAttribute('hidden')).toBe(false)
   })
 

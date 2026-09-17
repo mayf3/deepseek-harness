@@ -40,7 +40,9 @@ describe('process activity summary', () => {
 
   it('reports the newest running nested call even when an older root is visited later', () => {
     const root = { ...call('code', 'run_code'), subCalls: [{ ...call('read', 'read'), time: 3, argsRaw: '{' }] }
-    expect(processActivity(nodes([root, { ...call('bash', 'bash'), time: 2 }])).running).toBe('read')
+    const summary = processActivity(nodes([root, { ...call('bash', 'bash'), time: 2 }]))
+    expect(summary.running).toBe('read')
+    expect(summary.runningDetail).toBe('')
   })
 
   it.each([

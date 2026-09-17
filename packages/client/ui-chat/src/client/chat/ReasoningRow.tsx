@@ -6,6 +6,11 @@ import { markdownLabels } from '../markdown-labels.ts'
 import a11yCss from './accessibility.module.css'
 import css from './ReasoningRow.module.css'
 
+function firstLine(text: string): string {
+  const newline = text.indexOf('\n')
+  return newline === -1 ? text : text.slice(0, newline)
+}
+
 function latestLine(text: string): string {
   const visible = text.trimEnd()
   const newline = visible.lastIndexOf('\n')
@@ -14,18 +19,20 @@ function latestLine(text: string): string {
 
 /**
  * Render one assistant reasoning block as the Think disclosure row. The
- * settled collapsed row shows only its title. Streaming summaries omit
- * double-asterisk markers; expanded content renders the complete Markdown
- * with secondary typography.
+ * settled collapsed row shows only its title in Compact mode. Other modes
+ * preview the first line. Streaming summaries omit double-asterisk markers;
+ * expanded content renders the complete Markdown with secondary typography.
+ * @param props.compact - whether work details use Compact mode.
  * @param props.text - complete or streaming reasoning text.
  * @param props.running - whether this block is the streaming tail.
  * @param props.t - conversation locale seat for status and Markdown actions.
  * @returns the reasoning disclosure.
  */
-export function ReasoningRow({ text, running, t }: { text: string; running: boolean; t: ChatViewSlotProps['t'] }) {
+export function ReasoningRow({ text, running, compact, t }: { compact: boolean; text: string; running: boolean; t: ChatViewSlotProps['t'] }) {
   const [expanded, setExpanded] = useState(false)
   const labels = useMemo(() => markdownLabels(t), [t])
-  const summary = running ? latestLine(text).replaceAll('**', '') : null
+  const showSummary = running || !compact
+  const summary = (running ? latestLine(text) : firstLine(text)).replaceAll('**', '')
 
   return (
     <div
@@ -46,7 +53,7 @@ export function ReasoningRow({ text, running, t }: { text: string; running: bool
         expandable
         expandOnRowClick
         onToggle={() => { setExpanded(value => !value) }}
-        collapsedContent={running ? (
+        collapsedContent={showSummary ? (
           <>
             <span className={css.separator} aria-hidden />
             <span className={css.summary} data-follow-end={running || undefined}>

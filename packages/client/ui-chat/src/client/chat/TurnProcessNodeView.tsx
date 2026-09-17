@@ -23,6 +23,7 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
     return () => { clearInterval(timer) }
   }, [ticking])
   if (!turnProcess.foldable) return null
+  const canCollapse = turnProcess.hasContent && !turnProcessAlwaysOpen(node)
   const running = turn?.status === 'open'
   const reason = turn?.end?.data.reason.kind
   const duration = turn?.start === undefined ? undefined
@@ -41,7 +42,7 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
       data-turn-process-messages={node.data.messageCount}
       data-turn-process-tool-calls={node.data.toolCallCount}
       data-turn-process-subagents={node.data.subagentCount}
-      disabled={!turnProcess.hasContent || turnProcessAlwaysOpen(node)}
+      disabled={!canCollapse}
       aria-expanded={turnProcess.hasContent ? open : undefined}
       onClick={(event) => {
         event.currentTarget.focus()
@@ -49,7 +50,7 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
       }}
     >
       <span className={css.label}>{label}</span>
-      {turnProcess.hasContent && <IconChevronDownOutlineRegular className={css.chevron} />}
+      {canCollapse && <IconChevronDownOutlineRegular className={css.chevron} />}
     </button>
   )
 })
