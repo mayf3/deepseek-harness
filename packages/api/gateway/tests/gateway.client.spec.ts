@@ -1,4 +1,4 @@
-import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, typertOwnedValue } from '@deepseek-ai/dsh-typert-protocol'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Fiber } from '@deepseek-ai/cordis'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
@@ -1640,6 +1640,83 @@ describe('Client Typert API', () => {
     await client.dispose()
   })
 
+  it('holds an owned Context through handler and reply settlement', async () => {
+    const replyEntered = Promise.withResolvers<undefined>()
+    const reply = Promise.withResolvers<Awaited<ReturnType<ConnectionHandle['rpc']['call']>>>()
+    const call = vi.fn<ConnectionHandle['rpc']['call']>(() => {
+      replyEntered.resolve(undefined)
+      return reply.promise
+    })
+    const { ctx, client, carrier } = await eventBench(call)
+    const target = ctx.extend()
+    const release = vi.fn()
+    const entered = Promise.withResolvers<undefined>()
+    const handler = Promise.withResolvers<undefined>()
+    ctx.typert.contexts.registerClient('agent', {
+      identity: candidate => candidate === target ? agentId('owned-context') : undefined,
+      resolve: () => typertOwnedValue(target, release),
+    })
+    target.remote.$on('fixture/approval', async () => {
+      entered.resolve(undefined)
+      await handler.promise
+      expect(release).not.toHaveBeenCalled()
+      return 'allowed'
+    })
+    try {
+      carrier.emit(approvalFrame('owned-event', 'owned-context', 'wait'))
+      await entered.promise
+      expect(release).not.toHaveBeenCalled()
+      handler.resolve(undefined)
+      await replyEntered.promise
+      expect(release).not.toHaveBeenCalled()
+      reply.resolve({ ok: true, value: undefined })
+      await vi.waitFor(() => { expect(release).toHaveBeenCalledOnce() })
+    } finally {
+      handler.resolve(undefined)
+      reply.resolve({ ok: true, value: undefined })
+      await client.dispose()
+    }
+  })
+
+  it.each(['success', 'failure'] as const)('keeps cancelled Context ownership through handler %s and joins disposal', async (outcome) => {
+    const { ctx, client, carrier, call } = await eventBench()
+    const target = ctx.extend()
+    const release = vi.fn()
+    const entered = Promise.withResolvers<AbortSignal>()
+    const handler = Promise.withResolvers<undefined>()
+    ctx.typert.contexts.registerClient('agent', {
+      identity: candidate => candidate === target ? agentId('owned-cancelled') : undefined,
+      resolve: () => typertOwnedValue(target, release),
+    })
+    target.remote.$on('fixture/approval', async (request) => {
+      if (request.signal === undefined) throw new Error('expected invocation cancellation')
+      entered.resolve(request.signal)
+      await handler.promise
+      expect(release).not.toHaveBeenCalled()
+      return 'allowed'
+    })
+    let disposal: Promise<void> | undefined
+    try {
+      carrier.emit(approvalFrame('owned-cancel-event', 'owned-cancelled', 'wait'))
+      const signal = await entered.promise
+      carrier.emit({ type: 'cancel', eventId: 'owned-cancel-event' })
+      await vi.waitFor(() => { expect(signal.aborted).toBe(true) })
+      expect(release).not.toHaveBeenCalled()
+      let disposed = false
+      disposal = client.dispose().then(() => { disposed = true })
+      expect(disposed).toBe(false)
+      if (outcome === 'failure') handler.reject(new Error('cancelled handler failed'))
+      else handler.resolve(undefined)
+      await disposal
+      expect(release).toHaveBeenCalledOnce()
+      expect(call).not.toHaveBeenCalled()
+    } finally {
+      handler.resolve(undefined)
+      await disposal
+      await client.dispose()
+    }
+  })
+
   it('fails the Connection generation when a result RPC is rejected', async () => {
     const call = vi.fn<ConnectionHandle['rpc']['call']>().mockResolvedValue({
       ok: false,
@@ -1835,13 +1912,11 @@ describe('Client Typert API', () => {
     carrier.emit(approvalFrame('event-cancel-race', 'agent-cancel-race', 'wait'))
     const deliverySignal = await entered.promise
 
-    release.resolve(undefined)
     carrier.emit({ type: 'cancel', eventId: 'event-cancel-race' })
     await vi.waitFor(() => { expect(deliverySignal.aborted).toBe(true) })
-    await Promise.resolve()
-    expect(call).not.toHaveBeenCalled()
-
+    release.resolve(undefined)
     await client.dispose()
+    expect(call).not.toHaveBeenCalled()
   })
 
   it('cancels pending listener work when the generation ends', async () => {

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
-import type { SessionPendingInteractionBase } from '@deepseek-ai/dsh-client-ui-session/client'
+import type {
+  SessionPendingInteraction, SessionStatus, SessionStatusSnapshot,
+} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { ScheduleId, ScheduleRecord } from '@deepseek-ai/dsh-schedule/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -15,23 +17,27 @@ const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
 const summary = (id: string, updatedAt: number, cwd?: string): SessionSummary => ({
   id: sid(id), displayTitle: id, running: false, blank: false,
-  updatedAt, ...(cwd === undefined ? {} : { cwd }),
+  updatedAt, ...(cwd === undefined ? {} : { cwd }), retainedBy: {},
 })
 const list = (...items: SessionSummary[]): SessionListState => ({
   ids: items.map(item => item.id),
   byId: Object.fromEntries(items.map(item => [item.id, item])),
-  current: undefined,
-  phase: 'ready', projectionsBySession: {}, jobsBySession: {}, currentAddress: undefined,
+  phase: 'ready', projectionsBySession: {}, jobsBySession: {},
 })
-const catalog = (
-  ...entries: Array<{ id: string; activity: 'running' | 'inactive' }>
-): SessionProjectionSnapshot => ({
-  values: { subagentCatalog: entries.map(entry => ({
-    id: sid(entry.id), mode: 'continuable', label: entry.id,
+const catalog = (...ids: string[]): SessionProjectionSnapshot => ({
+  values: { subagentCatalog: ids.map(id => ({
+    id: sid(id), mode: 'continuable', label: id,
     createdAt: 1,
   })) },
   state: 'ready',
   error: null,
+})
+const withMain = (state: SessionListState, id: SessionId): SessionListState => ({
+  ...state,
+  byId: {
+    ...state.byId,
+    [id]: { ...state.byId[id]!, retainedBy: { ...state.byId[id]!.retainedBy, mainView: 1 } },
+  },
 })
 const workspace = (id: string, sessionIds: string[], title = id): WorkspaceView => ({
   workspaceId: wid(id), path: `/projects/${id}`, title,
@@ -42,7 +48,11 @@ const view = (expandedGroups: readonly string[] = [], ungroupedOrder?: readonly 
   ...(ungroupedOrder === undefined ? {} : { ungroupedOrder }),
 })
 const noArchive: readonly SessionId[] = []
-const noAttention: ReadonlyMap<SessionId, SessionPendingInteractionBase> = new Map()
+const noAttention: SessionStatusSnapshot = new Map()
+const status = (
+  pendingInteraction: SessionPendingInteraction | undefined,
+  overrides: Partial<SessionStatus> = {},
+): SessionStatus => ({ running: undefined, pendingInteraction, completionUnread: false, ...overrides })
 const archived = (...ids: string[]): readonly SessionId[] => ids.map(sid)
 const schedule = (id: string, scheduledAt: string): ScheduleRecord => ({
   id: id as ScheduleId,
@@ -99,9 +109,9 @@ describe('deriveGroups', () => {
   it('projects pending-interaction state into grouped and flat rows', () => {
     const awaiting = { ...summary('awaiting', 10), running: true }
     const sessions = list(awaiting)
-    const attention: ReadonlyMap<SessionId, SessionPendingInteractionBase> = new Map([[
+    const attention: SessionStatusSnapshot = new Map([[
       awaiting.id,
-      { key: 'question:1', kind: 'plan-review', sessionId: awaiting.id },
+      status({ key: 'question:1', kind: 'plan-review', sessionId: awaiting.id } as SessionPendingInteraction, { running: true }),
     ]])
     const grouped = deriveGroups(
       sessions, [workspace('project', ['awaiting'])], noArchive, attention, view(['project']),
@@ -115,9 +125,9 @@ describe('deriveGroups', () => {
     'projects the %s pending-interaction kind',
     (kind) => {
       const awaiting = summary(kind, 10)
-      const attention: ReadonlyMap<SessionId, SessionPendingInteractionBase> = new Map([[
+      const attention: SessionStatusSnapshot = new Map([[
         awaiting.id,
-        { key: `${kind}:1`, kind, sessionId: awaiting.id },
+        status({ key: `${kind}:1`, kind, sessionId: awaiting.id } as SessionPendingInteraction),
       ]])
 
       expect(deriveFlat(list(awaiting), [awaiting.id], attention)[0]?.pendingInteraction).toBe(kind)
@@ -148,13 +158,10 @@ describe('deriveGroups', () => {
   })
 
   it('shows only the current blank session in its Workspace count and tree', () => {
-    const currentBlank = { ...summary('current-blank', 5), blank: true }
+    const currentBlank = { ...summary('current-blank', 5), blank: true, retainedBy: { mainView: 1 } }
     const staleBlank = { ...summary('stale-blank', 4), blank: true }
     const real = summary('shown', 3)
-    const sessions = {
-      ...list(real, currentBlank, staleBlank),
-      current: currentBlank.id,
-    }
+    const sessions = list(real, currentBlank, staleBlank)
     const groups = deriveGroups(
       sessions, [workspace('first', ['shown', 'current-blank', 'stale-blank'])],
       noArchive, noAttention, view(['first']),
@@ -176,21 +183,22 @@ describe('deriveGroups', () => {
   })
 
   it('projects the completion reminder into session and search rows (absent = false)', () => {
-    const done = { ...summary('done', 3), completed: true }
+    const done = summary('done', 3)
     const plain = summary('plain', 2)
     const sessions = list(done, plain)
+    const statuses: SessionStatusSnapshot = new Map([[done.id, status(undefined, { completionUnread: true })]])
     const groups = deriveGroups(
-      sessions, [workspace('first', ['done', 'plain'])], noArchive, noAttention, view(['first']),
+      sessions, [workspace('first', ['done', 'plain'])], noArchive, statuses, view(['first']),
     )
     const doneNode = groups[0]!.sessions.find(session => session.id === done.id)!
     const plainNode = groups[0]!.sessions.find(session => session.id === plain.id)!
     expect(doneNode.completed).toBe(true)
     expect(plainNode.completed).toBe(false)
-    expect(deriveFlat(sessions, visibleSessionIds(sessions, noArchive), noAttention)
+    expect(deriveFlat(sessions, visibleSessionIds(sessions, noArchive), statuses)
       .find(node => node.id === done.id)!.completed).toBe(true)
     const search = deriveSearchResults(
       sessions, [workspace('first', ['done', 'plain'])], 'done', noArchive,
-      noAttention, { items: [], hasMore: false }, 10,
+      statuses, { items: [], hasMore: false }, 10,
     )
     expect(search.items[0]?.completed).toBe(true)
   })
@@ -238,15 +246,14 @@ describe('deriveGroups', () => {
       ...summary('fork-child', 5), parentId: fork.id, origin: 'subagent' as const, running: true,
     }
     const sessions = {
-      ...list(parent, fork, subagent, grandchild, forkChild),
-      current: subagent.id,
+      ...withMain(list(parent, fork, subagent, grandchild, forkChild), subagent.id),
       projectionsBySession: {
         [parent.id]: catalog(
-          { id: 'subagent', activity: 'running' },
-          { id: 'inactive-child', activity: 'inactive' },
+          'subagent',
+          'inactive-child',
         ),
-        [fork.id]: catalog({ id: 'fork-child', activity: 'running' }),
-        [subagent.id]: catalog({ id: 'grandchild', activity: 'running' }),
+        [fork.id]: catalog('fork-child'),
+        [subagent.id]: catalog('grandchild'),
       },
     }
     const groups = deriveGroups(
@@ -269,6 +276,32 @@ describe('deriveGroups', () => {
       sessions, [workspace('first', ['parent', 'fork'])], 'parent', noArchive,
       noAttention, { items: [], hasMore: false }, 10,
     ).items[0]).toMatchObject({ id: parent.id, runningSubagentCount: 1 })
+  })
+
+  it('uses current child status only for members of the direct parent catalog', () => {
+    const parent = summary('parent', 1)
+    const child = { ...summary('child', 2), running: false }
+    const stopped = { ...summary('stopped', 3), running: true }
+    const unrelated = { ...summary('unrelated', 4), parentId: parent.id, running: true }
+    const sessions = {
+      ...list(parent, child, stopped, unrelated),
+      projectionsBySession: {
+        [parent.id]: catalog('child', 'stopped'),
+      },
+    }
+    const statuses = new Map<SessionId, SessionStatus>([
+      [child.id, status(undefined, { running: true })],
+      [stopped.id, status(undefined, { running: false })],
+      [unrelated.id, status(undefined, { running: true })],
+    ])
+    const counts = (snapshot: SessionStatusSnapshot) => [
+      deriveGroups(sessions, [workspace('first', ['parent'])], noArchive, snapshot, view(['first']))[0]!.sessions[0]!.runningSubagentCount,
+      deriveFlat(sessions, [parent.id], snapshot)[0]!.runningSubagentCount,
+      deriveSearchResults(sessions, [], 'parent', noArchive, snapshot, { items: [], hasMore: false }, 10).items[0]!.runningSubagentCount,
+    ]
+    expect(counts(statuses)).toEqual([1, 1, 1])
+    statuses.set(child.id, status(undefined, { running: false }))
+    expect(counts(statuses)).toEqual([0, 0, 0])
   })
 
   it('ignores fork lineage and sorts every ungrouped session as a top-level row', () => {
@@ -335,11 +368,11 @@ describe('deriveGroups', () => {
     const loose = summary('loose', 2)
     const ws = workspace('project', ['owned'])
     const ownedGroups = deriveGroups(
-      { ...list(owned, loose), current: owned.id }, [ws], noArchive, noAttention, view(),
+      withMain(list(owned, loose), owned.id), [ws], noArchive, noAttention, view(),
     )
     expect(ownedGroups.find(group => group.key === 'project')!.containsCurrent).toBe(true)
     const looseGroups = deriveGroups(
-      { ...list(owned, loose), current: loose.id }, [ws], noArchive, noAttention, view(),
+      withMain(list(owned, loose), loose.id), [ws], noArchive, noAttention, view(),
     )
     expect(looseGroups.find(group => group.key === UNGROUPED_KEY)!.containsCurrent).toBe(true)
   })
@@ -359,7 +392,7 @@ describe('deriveFlat', () => {
     const parent = summary('parent', 1)
     const fork = { ...summary('fork', 2), parentId: parent.id }
     const subagent = { ...summary('subagent', 3), parentId: parent.id, origin: 'subagent' as const }
-    const ids = visibleSessionIds({ ...list(parent, fork, subagent), current: subagent.id }, noArchive)
+    const ids = visibleSessionIds(withMain(list(parent, fork, subagent), subagent.id), noArchive)
     expect(ids).toEqual([parent.id, fork.id])
   })
 
@@ -369,12 +402,9 @@ describe('deriveFlat', () => {
   })
 
   it('shows only the current blank session and excludes blanks from search', () => {
-    const currentBlank = { ...summary('current-blank', 9), blank: true }
+    const currentBlank = { ...summary('current-blank', 9), blank: true, retainedBy: { mainView: 1 } }
     const staleBlank = { ...summary('stale-blank', 8), blank: true }
-    const sessions = {
-      ...list(currentBlank, summary('real', 1), staleBlank),
-      current: currentBlank.id,
-    }
+    const sessions = list(currentBlank, summary('real', 1), staleBlank)
     const rows = deriveFlat(sessions, visibleSessionIds(sessions, noArchive), noAttention)
     expect(rows.map(row => row.id)).toEqual([currentBlank.id, sid('real')])
     expect(rows.map(row => row.title)).toEqual(['', 'real'])
@@ -424,9 +454,9 @@ describe('deriveSearchResults', () => {
       ],
       ' NEEDLE ',
       noArchive,
-      new Map([[titleHit.id, {
+      new Map([[titleHit.id, status({
         key: 'question:1', kind: 'plan-review', sessionId: titleHit.id,
-      }]]),
+      } as SessionPendingInteraction)]]),
       {
         items: [
           { sessionId: contentHit.id, snippet: 'body needle excerpt' },
@@ -479,10 +509,7 @@ describe('deriveSearchResults', () => {
   it('excludes blank sessions from search regardless of query or content hits', () => {
     const currentBlank = { ...summary('opaque-current', 5), blank: true }
     const staleBlank = { ...summary('new session stale', 4), blank: true }
-    const sessions = {
-      ...list(currentBlank, staleBlank),
-      current: currentBlank.id,
-    }
+    const sessions = list(currentBlank, staleBlank)
     // Blank placeholders never match — not their localized-display title, not
     // their id, and not even a backend content hit naming them.
     const result = deriveSearchResults(

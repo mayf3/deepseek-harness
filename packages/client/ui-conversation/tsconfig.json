@@ -90,6 +90,9 @@
       "path": "../../util/crypto"
     },
     {
+      "path": "../../util/values"
+    },
+    {
       "path": "../../util/workspace-path"
     }
   ],

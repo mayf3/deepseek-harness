@@ -11,7 +11,7 @@ import {
   type StoredEntry, type Translate,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  HostContext, RootStandardProvider, ScopeProvider, SlotAssemblyError,
+  HostContext, RootStandardProvider, ScopeBindingProvider, ScopeProvider, SlotAssemblyError,
   keyedObservableHook, maybeObservableHook, observableHook, useHost, useRootBinding,
   useScopeBinding,
 } from './bindings.tsx'
@@ -312,6 +312,18 @@ function entryKeyOf(entry: StoredEntry): number {
   return key
 }
 
+let nextSessionGenerationKey = 0
+const sessionGenerationKeys = new WeakMap<object, number>()
+
+function sessionGenerationKeyOf(binding: ScopedStandardSourceBinding): number {
+  let key = sessionGenerationKeys.get(binding.ctx)
+  if (key === undefined) {
+    key = nextSessionGenerationKey++
+    sessionGenerationKeys.set(binding.ctx, key)
+  }
+  return key
+}
+
 /**
  * Per-entry isolation: one registrant crashing (component render or inject
  * factory) must not take down siblings. Assembly errors (missing providers)
@@ -345,7 +357,11 @@ const sessionStandardCache = new WeakMap<StandardSourceBinding, WeakMap<Standard
 const sessionMaybeStandardCache = new WeakMap<StandardSourceBinding, WeakMap<StandardSourceBinding, InjectedProps>>()
 
 /** Materialize one binding into stable framework Hook and plain-prop seats. */
-function materializeStandardBinding(binding: StandardSourceBinding, optional: boolean): InjectedProps {
+function materializeStandardBinding(
+  binding: StandardSourceBinding,
+  optional: boolean,
+  defaultKey?: string,
+): InjectedProps {
   const standard: InjectedProps = { ...binding.props }
   for (const [name, source] of Object.entries(binding.hooks)) {
     if (source === undefined && !optional) {
@@ -359,7 +375,7 @@ function materializeStandardBinding(binding: StandardSourceBinding, optional: bo
     if (source === undefined && !optional) {
       throw new SlotAssemblyError(`strict keyed standard hook '${name}' has no source resolver`)
     }
-    standard[standardHookPropName(name)] = keyedObservableHook(source)
+    standard[standardHookPropName(name)] = keyedObservableHook(source, defaultKey)
   }
   return standard
 }
@@ -386,7 +402,7 @@ function standardProps(
   let standard = perScope.get(scopeBinding)
   if (standard !== undefined) return standard
   standard = {
-    ...root,
+    ...materializeStandardBinding(rootBinding, false, scopeBinding.key),
     ...materializeStandardBinding(scopeBinding, scope === 'session-maybe'),
   }
   perScope.set(scopeBinding, standard)
@@ -404,7 +420,20 @@ function scopeAreaProvider(adapter: SlotScopeAdapter): SessionProviderComponent 
   }
   const renderArea = adapter.renderArea.bind(adapter)
   Provider = function ScopeAreaProvider(props: SessionAreaProps): ReactNode {
-    return renderArea(useScopeBinding(), props)
+    const inherited = useScopeBinding()
+    const explicit = Object.hasOwn(props, 'session')
+    const source = adapter.bindingSource(props.session)
+    const resolved = useSyncExternalStore(
+      listener => source.subscribe(listener),
+      () => source.getSnapshot(),
+      () => source.getSnapshot(),
+    )
+    const binding = explicit ? resolved : inherited
+    return (
+      <ScopeBindingProvider binding={binding}>
+        {renderArea(binding, props)}
+      </ScopeBindingProvider>
+    )
   }
   scopeAreaCache.set(adapter, Provider)
   return Provider
@@ -464,7 +493,7 @@ function standardKit(
     }
     // The session owner supplies area semantics; the renderer only binds its
     // adapter to the current generic scope source.
-    if (Object.values(entry.children).some(spec => spec.scope === 'session')) {
+    if (Object.values(entry.children).some(spec => spec.scope !== 'root')) {
       const adapter = host.scope('session')
       if (adapter === undefined) {
         throw new SlotAssemblyError("entry declares a session child without an installed 'session' scope adapter")
@@ -590,6 +619,9 @@ function SessionMaybeEntry({ entry, ownerProps, slotKey, slotInjected, hookConte
   hasHookContext: boolean
 }) {
   const binding = useScopeBinding()
+  const identity = binding.key === undefined
+    ? undefined
+    : (binding as ScopedStandardSourceBinding).ctx
   // The child key is an incarnation counter, NOT the session id: adoption
   // must keep the key constant across undefined → first id. Bookkeeping
   // lives in this stable (unkeyed) wrapper via the render-phase setState
@@ -598,16 +630,16 @@ function SessionMaybeEntry({ entry, ownerProps, slotKey, slotInjected, hookConte
   // guard conditions make it convergent — StrictMode-safe).
   const [state, setState] = useState<MaybeIncarnation>(FIRST_INCARNATION)
   let { adopted, epoch } = state
-  if (binding.key !== undefined && adopted === undefined) {
+  if (identity !== undefined && adopted === undefined) {
     // Adoption: same epoch — no remount.
-    adopted = binding.key
+    adopted = identity
     setState({ adopted, epoch })
-  } else if (adopted !== undefined && binding.key !== undefined && binding.key !== adopted) {
+  } else if (adopted !== undefined && identity !== undefined && identity !== adopted) {
     // Post-adoption session switch: next incarnation, born already adopted.
-    adopted = binding.key
+    adopted = identity
     epoch += 1
     setState({ adopted, epoch })
-  } else if (adopted !== undefined && binding.key === undefined) {
+  } else if (adopted !== undefined && identity === undefined) {
     // Back to no-session: next incarnation, born blank (adopts anew later).
     adopted = undefined
     epoch += 1
@@ -630,7 +662,7 @@ function SessionMaybeEntry({ entry, ownerProps, slotKey, slotInjected, hookConte
 /** Adoption bookkeeping of one session-maybe outlet (see SessionMaybeEntry). */
 interface MaybeIncarnation {
   /** Session this incarnation adopted; undefined while born blank and unadopted. */
-  readonly adopted: string | undefined
+  readonly adopted: object | undefined
   /** Incarnation counter — the child key; bumps exactly when an incarnation dies. */
   readonly epoch: number
 }
@@ -666,14 +698,15 @@ function StrictSessionEntry({ slotKey, entry, ownerProps, slotInjected, hookCont
   if (binding.key === undefined) {
     throw new SlotAssemblyError(`strict session slot '${slotKey}' rendered without a scope binding`)
   }
+  const scopedBinding = binding as ScopedStandardSourceBinding
   // Per-session remount rides this key; per-entry remount rides the outer
   // element's entry-identity key (the outlet's guarded() call).
   return (
-    <SlotErrorBoundary slotKey={slotKey} key={binding.key} onEntryError={onEntryError}>
+    <SlotErrorBoundary slotKey={slotKey} key={sessionGenerationKeyOf(scopedBinding)} onEntryError={onEntryError}>
       <SessionEntry
         entry={entry}
         ownerProps={ownerProps}
-        binding={binding as StandardSourceBinding & { readonly key: string }}
+        binding={scopedBinding}
         slotKey={slotKey}
         slotInjected={slotInjected}
         hookContext={hookContext}

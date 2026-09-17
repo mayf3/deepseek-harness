@@ -52,6 +52,8 @@ Electron chooses typed English or Chinese shell copy from its application locale
 
 Electron's native Edit menu supplies undo, redo, cut, copy, paste, and select-all commands and platform shortcuts for the focused window. Right-clicking an editable field opens these commands without shortcut labels, with availability supplied by Chromium; selected read-only text offers Copy.
 
+On macOS the custom application menu also declares the standard File, Window, and application menus, because replacing Electron's default menu drops Close Window (⌘W), Minimize (⌘M), and Hide (⌘H). Windows and Linux keep the application and Edit menus.
+
 ### Runtime and plugin activation
 
 The signed `resources/app.asar/dsh/desktop-runtime.json` binds the shell version, Electron's Node version, platform, architecture, shared package versions, and final file inventory. Startup reads the metadata and checks shared package records. Release schema, shell version, target compatibility, and file integrity are verified during packaging. Core packages are never copied into profile storage or installed by pnpm at first launch.
@@ -120,7 +122,9 @@ Each target owns its packed package inputs, prepared runtime, package set, dsh t
 
 ### Runtime file selection
 
-Production packages first pass through npm's publication rules and dependency installation. [Desktop's file policy](scripts/runtime-file-policy.ts) then filters the immutable `resources/app.asar/dsh/node_modules` copy before signing and integrity sealing. It omits TypeScript declarations, recognized JavaScript/CSS/TypeScript source maps, TypeScript build caches, Domino's test directory, selected native compiler outputs, and node-pty prebuilds for other platforms. It preserves runtime JavaScript, native modules and their DLL/EXE helpers, WASM, unknown assets, licenses, and notices. The policy does not alter npm tarballs, the bundled package manager, or user-installed plugin files.
+Desktop packs workspace packages locally and installs external dependencies through the target's bundled Node and pnpm. [Desktop's file policy](scripts/runtime-file-policy.ts) then filters the immutable `resources/app.asar/dsh/node_modules` copy before signing and integrity sealing. It omits TypeScript declarations, recognized JavaScript/CSS/TypeScript source maps, TypeScript build caches, Domino's test directory, selected native compiler outputs, and node-pty prebuilds for other platforms. It preserves runtime JavaScript, native modules and their DLL/EXE helpers, WASM, unknown assets, licenses, and notices. The policy does not alter npm tarballs, the bundled package manager, or user-installed plugin files.
+
+The [Office conversion provider](../../packages/document/office-to-pdf/README.md) carries the target’s declared native engine, or WASM when the kit declares no matching native target. Preparation rejects a missing target engine before packaging. Engine assets, licenses, and notices remain in the runtime dependency tree.
 
 The packaged application runs compiled JavaScript and pre-generated Typert metadata; it does not compile TypeScript plugins. Source-level debugger navigation and editor declarations remain available in development packages. [Copy-policy tests](tests/runtime-file-policy.spec.ts) cover exclusions and retained assets; `prepare:dsh` runs the [payload smoke](tests/fixtures/runtime-payload-smoke.mjs) under Electron RunAsNode before the Host smoke and final inventory verification.
 

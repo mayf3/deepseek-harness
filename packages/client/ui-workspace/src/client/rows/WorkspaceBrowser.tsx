@@ -169,7 +169,7 @@ function workspaceGroupHalf(e: { clientY: number; currentTarget: HTMLElement }):
 
 type SessionTreeProps = Pick<
   WorkspaceBrowserProps,
-  'useSessionPendingInteraction' | 'startSession' | 'open' | 'forkSession'
+  'useSessionStatus' | 'startSession' | 'open' | 'forkSession'
   | 'insertWorkspaceBefore' | 't' | 'usePanelInfo'
 > & {
   /** Always-mounted Session list snapshot. */
@@ -208,7 +208,7 @@ type SessionTreeProps = Pick<
 
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
-  list, useSessionPendingInteraction, startSession, open, forkSession, workspaces, ungroupedSessionIds,
+  list, useSessionStatus, startSession, open, forkSession, workspaces, ungroupedSessionIds,
   archivedSessionIds,
   workspaceReady, usePanelInfo,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
@@ -218,8 +218,10 @@ function SessionTree({
   revealSessionId, onSessionRevealed,
 }: SessionTreeProps) {
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
-  const pendingInteractions = useSessionPendingInteraction(s => s)
-  const current = panelActive ? undefined : list.current
+  const statuses = useSessionStatus(s => s)
+  const current = panelActive
+    ? undefined
+    : Object.values(list.byId).find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
   const revealGroup = revealSessionId === undefined || !workspaceReady
     ? undefined
     : owningGroupKey(workspaces, revealSessionId)
@@ -260,11 +262,11 @@ function SessionTree({
       .filter(key => groupExpansion[key] ?? ancestorKeys.has(key))
   }, [groupExpansion, parents, workspaces])
   const groups = useMemo(
-    () => deriveGroups(list, workspaces, archivedSessionIds, pendingInteractions, {
+    () => deriveGroups(list, workspaces, archivedSessionIds, statuses, {
       expandedGroups,
       ungroupedOrder: ungroupedSessionIds,
     }),
-    [list, workspaces, archivedSessionIds, pendingInteractions, expandedGroups, ungroupedSessionIds],
+    [list, workspaces, archivedSessionIds, statuses, expandedGroups, ungroupedSessionIds],
   )
   useEffect(() => {
     for (let key = revealGroup; key !== undefined; key = parents.get(key)) {
@@ -564,12 +566,12 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  list, sessionIds, useSessionPendingInteraction, open, forkSession, onSessionRename, onSessionArchive,
+  list, sessionIds, useSessionStatus, open, forkSession, onSessionRename, onSessionArchive,
   usePanelInfo, setSessionOrder,
   revealSessionId, onSessionRevealed, t,
 }: Pick<
   SessionTreeProps,
-  | 'useSessionPendingInteraction'
+  | 'useSessionStatus'
   | 'open'
   | 'forkSession'
   | 'onSessionRename'
@@ -584,14 +586,17 @@ function FlatList({
   sessionIds: readonly SessionId[]
 }) {
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
-  const pendingInteractions = useSessionPendingInteraction(s => s)
+  const statuses = useSessionStatus(s => s)
   const rows = useMemo(
-    () => deriveFlat(list, sessionIds, pendingInteractions),
-    [list, sessionIds, pendingInteractions],
+    () => deriveFlat(list, sessionIds, statuses),
+    [list, sessionIds, statuses],
   )
   const [drag, setDrag] = useState<DragState | null>(null)
   const dropCommitted = useRef(false)
   useNativeDragAcceptance(drag !== null)
+  const currentId = panelActive
+    ? undefined
+    : Object.values(list.byId).find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
   const commitDrag = (activeDrag: DragState, over: NonNullable<DragState['over']>): void => {
     if (dropCommitted.current) return
     dropCommitted.current = true
@@ -624,7 +629,7 @@ function FlatList({
             <SessionNodeItem
               key={node.id}
               node={node}
-              currentId={panelActive ? undefined : list.current}
+              currentId={currentId}
               now={now}
               onOpen={open}
               onRename={onSessionRename}
@@ -675,7 +680,7 @@ interface RemoteSearchState {
 /** Flat search body: local metadata matches plus the current Host result page. */
 function SearchResults({
   useSessions,
-  useSessionPendingInteraction,
+  useSessionStatus,
   open,
   workspaces,
   archivedSessionIds,
@@ -684,7 +689,7 @@ function SearchResults({
   resultLimit,
   usePanelInfo,
   t,
-}: Pick<WorkspaceBrowserProps, 'useSessions' | 'useSessionPendingInteraction' | 'open' | 't' | 'usePanelInfo'> & {
+}: Pick<WorkspaceBrowserProps, 'useSessions' | 'useSessionStatus' | 'open' | 't' | 'usePanelInfo'> & {
   workspaces: readonly WorkspaceView[]
   archivedSessionIds: readonly SessionNode['id'][]
   query: string
@@ -693,7 +698,7 @@ function SearchResults({
 }) {
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
   const list = useSessions(s => s)
-  const pendingInteractions = useSessionPendingInteraction(s => s)
+  const statuses = useSessionStatus(s => s)
   const currentRemote = remote.query === query
     ? remote
     : { query, status: 'loading' as const, items: [], hasMore: false }
@@ -703,14 +708,17 @@ function SearchResults({
       workspaces,
       query,
       archivedSessionIds,
-      pendingInteractions,
+      statuses,
       currentRemote,
       resultLimit,
     ),
-    [list, workspaces, query, archivedSessionIds, pendingInteractions, currentRemote, resultLimit],
+    [list, workspaces, query, archivedSessionIds, statuses, currentRemote, resultLimit],
   )
   const pending = currentRemote.status === 'loading'
   const failed = currentRemote.status === 'error'
+  const currentId = panelActive
+    ? undefined
+    : Object.values(list.byId).find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
 
   return (
     <div className={clsx(css.treeBody, css.wide)}>
@@ -720,7 +728,7 @@ function SearchResults({
             <SearchResultItem
               key={result.id}
               result={result}
-              currentId={panelActive ? undefined : list.current}
+              currentId={currentId}
               onOpen={open}
               t={t}
             />
@@ -758,7 +766,7 @@ export function WorkspaceBrowser({
   usePanelInfo,
   expandSidebar,
   useSessions,
-  useSessionPendingInteraction,
+  useSessionStatus,
   useWorkspaces,
   useStore,
   actions,
@@ -793,8 +801,10 @@ export function WorkspaceBrowser({
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
   const workspaceReady = workspacePhase === 'ready' && workspaceStreamState !== 'loading'
-  const currentBlank = list.current !== undefined && list.byId[list.current]?.blank === true
-    ? list.current
+  const mainSessionId = Object.values(list.byId)
+    .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
+  const currentBlank = mainSessionId !== undefined && list.byId[mainSessionId]?.blank === true
+    ? mainSessionId
     : undefined
   const ungroupedMemberIds = useMemo(() => {
     const accounted = new Set(workspaces.flatMap(workspace => workspace.sessionIds))
@@ -1238,7 +1248,7 @@ export function WorkspaceBrowser({
             <SearchResults
               usePanelInfo={usePanelInfo}
               useSessions={useSessions}
-              useSessionPendingInteraction={useSessionPendingInteraction}
+              useSessionStatus={useSessionStatus}
               open={openSearchResult}
               workspaces={workspaces}
               archivedSessionIds={archivedSessionIds}
@@ -1254,7 +1264,7 @@ export function WorkspaceBrowser({
                 usePanelInfo={usePanelInfo}
                 list={list}
                 sessionIds={orderedFlatSessionIds}
-                useSessionPendingInteraction={useSessionPendingInteraction}
+                useSessionStatus={useSessionStatus}
                 open={open} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
                 setSessionOrder={saveSessionOrder}
@@ -1267,7 +1277,7 @@ export function WorkspaceBrowser({
               <SessionTree
                 usePanelInfo={usePanelInfo}
                 list={list}
-                useSessionPendingInteraction={useSessionPendingInteraction}
+                useSessionStatus={useSessionStatus}
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
                 forkSession={forkSession}

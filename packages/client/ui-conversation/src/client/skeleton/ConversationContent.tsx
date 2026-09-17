@@ -133,12 +133,12 @@ function WidthHandle(props: {
  * @returns the unchanged Conversation body subtree.
  */
 export function ConversationContent({
-  sessionId, session, phase, hero, useSessions, useSessionPendingInteraction,
+  sessionId, session, phase, hero, useSessions, useSessionStatus,
   useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain,
   selectWorkspace, t, onHandleStart, onHandleDrag, onHandleCommit, onHandleEnd,
 }: ConversationContentProps) {
-  const pendingInteraction = useSessionPendingInteraction(snapshot =>
-    sessionId === undefined ? undefined : snapshot.get(sessionId))
+  const pendingInteraction = useSessionStatus(snapshot =>
+    sessionId === undefined ? undefined : snapshot.get(sessionId)?.pendingInteraction)
   const inputState = useInput(s => s)
   const cwd = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.cwd)
   const workspaces = useWorkspaces(s => s)

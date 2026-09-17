@@ -52,6 +52,8 @@ Keep this log exhaustive — every divergence from upstream must be listed.
 
 20. **`loader/src/config/entry.ts` fiber identity**: stores the original fiber from the registry result’s context instead of its PromiseLike wrapper. Configuration updates and service notifications therefore mutate the same lifecycle state; updating a provider and consumer together cannot strand the consumer in `PENDING`. Covered by `packages/boot/hmr/tests/modules.spec.ts` and the built profile reload regression in `apps/cli/tests/built-bin.e2e.ts`.
 
+21. **`cordis/src/logger.ts` exporter disposal**: each disposer retains its registration id, so removing an earlier exporter cannot delete a later console or telemetry exporter. Covered by startup collector cleanup in `packages/boot/app-boot/tests/app-boot.spec.ts` and disabled-feedback output in `packages/session/session-telemetry-otel/tests/loader-composition.e2e.ts`.
+
 ## Sync procedure
 
 To update a vendored package from upstream:

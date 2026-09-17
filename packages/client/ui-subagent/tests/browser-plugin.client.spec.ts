@@ -22,6 +22,7 @@ function summary(partial: Partial<SessionSummary> & { id: SessionId }): SessionS
   return {
     displayTitle: partial.id,
     running: false,
+    retainedBy: {},
     updatedAt: 0,
     ...partial,
   } as SessionSummary
@@ -33,7 +34,7 @@ const sid = (id: string) => id as SessionId
 function sessionsWith(sessions: SessionSummary[]) {
   const byId: Record<string, SessionSummary> = {}
   for (const s of sessions) byId[s.id] = s
-  const snapshot = { ids: sessions.map(s => s.id), byId, current: undefined } as unknown as SessionListState
+  const snapshot: SessionListState = { ids: sessions.map(s => s.id), byId, phase: 'ready', projectionsBySession: {}, jobsBySession: {} }
   const actionCalls: { method: string; args: unknown[] }[] = []
   const address: SubagentAddress = {
     parentSessionId: sid('parent'),
@@ -49,9 +50,6 @@ function sessionsWith(sessions: SessionSummary[]) {
     subagentAddress: (childSessionId: SessionId) => childSessionId === address.childSessionId
       ? address
       : undefined,
-    openSubagent: (address: SubagentAddress) => {
-      actionCalls.push({ method: 'openSubagent', args: [address] })
-    },
     refreshProjections: (parentSessionId: SessionId) => {
       actionCalls.push({ method: 'refreshProjections', args: [parentSessionId] })
       return Promise.resolve()
@@ -75,6 +73,11 @@ async function fullBench(sessions: SessionSummary[]) {
   const ctx = new Context()
   const face = sessionsWith(sessions)
   ctx.provide('sessions', face)
+  ctx.provide('uiWorkspace', {
+    openSession: (address: SubagentAddress) => {
+      face.actionCalls.push({ method: 'openSession', args: [address] })
+    },
+  } as never)
   ctx.provide('remote', { $on: () => () => {} } as never)
   ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   await provideSlotFaces(ctx)
@@ -95,7 +98,7 @@ const FAMILY: SessionSummary[] = [
 
 describe('apply', () => {
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['sessions', 'slots', 'locale'])
+    expect(inject).toEqual(['sessions', 'uiWorkspace', 'slots', 'locale'])
   })
 
   it('registers catalog actions and selects read-only subagent composers from session facts', async () => {
@@ -111,7 +114,7 @@ describe('apply', () => {
     actions.openChild(address)
     actions.refresh(sid('parent'))
     expect(face.actionCalls).toEqual([
-      { method: 'openSubagent', args: [address] },
+      { method: 'openSession', args: [address] },
       { method: 'refreshProjections', args: [sid('parent')] },
     ])
 

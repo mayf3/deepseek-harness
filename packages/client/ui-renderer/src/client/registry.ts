@@ -6,8 +6,8 @@
  * declaration injection through the caller's ctx.effect (fiber unload
  * collects both), the renderer installation contract (install()/renderSlot('root') +
  * the SlotRendererHost face), and the store INSTANCE axis — handle x scope
- * key -> create/cache, dropped with the last holding entry, session instances
- * cleared (with persisted state) on scope death.
+ * key -> create/cache, dropped with the last holding entry, and in-memory
+ * session instances released without clearing persisted state on scope death.
  */
 /* oxlint-disable typescript/no-redundant-type-constituents --
  * `keyof SlotMap & string` is the declare-merge key pattern: SlotMap only
@@ -315,22 +315,22 @@ export class SlotRegistry extends Service {
   }
 
   /**
-   * Bind all scoped Store handles to one owner Context lifetime. The cleanup
-   * materializes an otherwise-unused handle before clearing it, because a
-   * previous application run may have persisted state for a Slot that this
-   * scope never rendered. Rebinding the same key transfers cleanup ownership
-   * to the newest Context generation.
+   * Bind scoped Store instances to one Context generation. Rebinding the key
+   * drops the previous generation's memory instances before the new owner can
+   * resolve them. Cleanup never clears persisted state, which belongs to the
+   * durable scope key, or drops a replacement generation's instances.
    *
    * @param binding - materialized scope identity and its owning Context.
    */
   bindStoreScope(binding: Pick<ScopedStandardSourceBinding, 'key' | 'ctx'>): void {
     const current = this._storeScopeOwners.get(binding.key)
     if (current === binding.ctx) return
+    if (current !== undefined) this.releaseStoreScope(binding.key)
     this._storeScopeOwners.set(binding.key, binding.ctx)
     binding.ctx.effect(() => () => {
       if (this._storeScopeOwners.get(binding.key) !== binding.ctx) return
       this._storeScopeOwners.delete(binding.key)
-      this.clearStoreScope(binding.key)
+      this.releaseStoreScope(binding.key)
     }, `slots: store scope ${binding.key}`)
   }
 
@@ -548,12 +548,10 @@ export class SlotRegistry extends Service {
     return instance
   }
 
-  /** Clear every live non-root Store handle for one dead scope key. */
-  private clearStoreScope(key: string): void {
-    for (const [handle, record] of this._stores) {
+  /** Drop every materialized non-root Store instance for one ended Context generation. */
+  private releaseStoreScope(key: string): void {
+    for (const record of this._stores.values()) {
       if (record.scope === 'root') continue
-      const instance = record.instances.get(key) ?? handle.create(key)
-      instance.clearPersisted()
       record.instances.delete(key)
     }
   }

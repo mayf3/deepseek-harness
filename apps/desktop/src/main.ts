@@ -428,8 +428,17 @@ async function main(): Promise<void> {
     void pluginWindow.loadURL(`${SCHEME}://shell/plugin-manager.html`)
   }
 
+  // A custom application menu replaces Electron's default menu, so macOS needs
+  // its standard menus and application hide commands declared explicitly.
+  const darwin = process.platform === 'darwin'
+  const platformMenus: MenuItemConstructorOptions[] = darwin
+    ? [{ role: 'fileMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]
+    : [{ role: 'editMenu' }]
+  const hideCommands: MenuItemConstructorOptions[] = darwin
+    ? [{ role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }]
+    : []
   Menu.setApplicationMenu(Menu.buildFromTemplate([{
-    label: process.platform === 'darwin' ? app.name : messages.application,
+    label: darwin ? app.name : messages.application,
     submenu: [
       {
         label: messages.pluginsMenu,
@@ -438,9 +447,10 @@ async function main(): Promise<void> {
       },
       { label: messages.checkUpdatesMenu, click: () => { void checkAndPrompt(true) } },
       { type: 'separator' },
+      ...hideCommands,
       { role: 'quit' },
     ],
-  }, { role: 'editMenu' }]))
+  }, ...platformMenus]))
 
   const createMainWindow = (): BrowserWindow => {
     const window = createWindow(appPreload, true)
