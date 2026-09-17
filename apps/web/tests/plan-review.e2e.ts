@@ -174,6 +174,7 @@ describe('web e2e: dismissed plan history', () => {
     try {
       browser = await chromium.launch()
       const page = await newEnglishPage(browser)
+      await page.setViewportSize({ width: 620, height: 900 })
       const tripwire = watchConsole(page)
       await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
       await connectFreshWorkspace(page, scaffold.workspaceCwd)
