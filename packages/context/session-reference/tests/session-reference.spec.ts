@@ -747,7 +747,7 @@ describe('session reference discovery and preparation', () => {
     })])
   })
 
-  it('falls back to the Session id when a subagent projection has no label', async () => {
+  it('falls back to the projected title when a subagent projection has no label', async () => {
     const ctx = await harness()
     const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
     const child = { id: SessionId('child'), createdAt: 10, cwd: '/same' }
@@ -765,7 +765,7 @@ describe('session reference discovery and preparation', () => {
       .resolves.toEqual([expect.objectContaining({
         sessionId: child.id,
         label: 'Projected title',
-        displayTitle: child.id,
+        displayTitle: 'Projected title',
       })])
   })
 

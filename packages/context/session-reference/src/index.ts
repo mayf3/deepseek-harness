@@ -263,7 +263,7 @@ export class SessionReferenceResolver extends TypertRemoteService {
       label,
       displayTitle: subagent === undefined || subagent === null
         ? label
-        : subagent.label ?? record.header.id,
+        : subagent.label ?? label,
     }
   }
 
