@@ -620,7 +620,7 @@ describe('ChatView', () => {
     [{ kind: 'error', error: { code: 'UNKNOWN', message: 'failed' } }, 'Failed', '处理失败'],
   ] as const)('keeps %s turns expanded with a disabled title', (reason, english, chinese) => {
     const snapshot = chatSnapshotFixture({
-      nodes: [user(1, 'question'), context(2, 'work', 1), assistant(3, 'answer')],
+      nodes: [user(1, 'question'), reasoningAssistant(2, 'work', 1, 0), assistant(3, 'answer')],
       turnEnds: new Map([[1, 4]]),
       turnTimings: new Map([[1, { startTime: 10_000, endTime: 12_000 }]]),
     })
@@ -1597,109 +1597,45 @@ describe('ChatView', () => {
     expect(members[0]?.getAttribute('hidden')).toBeNull()
   })
 
-  it('folds injected Context in place with the rest of the Turn process', () => {
-    const h = makeHarness({
-      nodes: [
-        user(1, 'question'),
-        context(2, 'runtime policy changed', 1),
-        reasoningAssistant(3, 'inspect the repository', 1, 1),
-        toolResult(4, 'a'),
-        assistant(5, 'final answer', 1, 2),
-      ],
-      turnEnds: new Map([[1, 6]]),
-    })
+  it.each(['compact', 'detailed', 'expanded'] as const)('hides infrastructure rows without empty disclosures in %s', (mode) => {
+    const source = withSystemPrompt(chatSnapshotFixture({
+      nodes: [user(1, 'question'), context(2, 'runtime policy', 1),
+        command({ seq: 2.5, name: 'permission', args: 'read-only' }),
+        assistant(3, 'final answer', 1, 1)],
+      turnEnds: new Map([[1, 4]]),
+    }), new ChatSnapshotBuilder())
+    const h = makeHarness({ chat: source })
+    act(() => { h.setTranscriptView(mode) })
     const view = render(<h.ChatView {...h.props} />)
-    const contextRow = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="context"]')
-    const members = [...view.container.querySelectorAll<HTMLElement>('[data-turn-process-member]')]
-
-    expect(members).toHaveLength(3)
-    expect(members.map(member => member.dataset.chatFlowKind)).toEqual(['context', 'assistant-step', 'tool-call'])
-    expect(contextRow).not.toBeNull()
-    expect(contextRow?.getAttribute('hidden')).toBe('until-found')
-    fireEvent(contextRow!, new Event('beforematch'))
-    expect(members.map(member => member.getAttribute('hidden'))).toEqual([null, null, null])
+    expect(view.container.querySelector('[data-chat-flow-kind="system-prompt"]')).toBeNull()
+    expect(view.container.querySelector('[data-chat-flow-kind="context"]')).toBeNull()
+    expect(view.container.querySelector('[data-chat-flow-kind="command"]')).toBeNull()
+    expect(view.container.querySelector('[data-step-process]')).toBeNull()
+    expect(turnProcessControl(view.container)?.querySelector('svg')).toBeNull()
+    expect(view.getByText('final answer')).toBeTruthy()
   })
 
-  it('keeps the first System prompt above User and outside Process through completion and expansion', () => {
-    const builder = new ChatSnapshotBuilder()
-    const initial = withSystemPrompt(chatSnapshotFixture({
-      nodes: [userInTurn(2, 'question', 1), context(3, 'runtime policy', 1)],
-    }), builder)
-    const h = makeHarness({ chat: initial }, { running: true })
-    const view = render(<h.ChatView {...h.props} />)
-    const promptRow = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="system-prompt"]')!
-
-    expect(renderedFlowKinds(view.container)).toEqual(['system-prompt', 'user', 'context'])
-    expect(promptRow.getAttribute('hidden')).toBeNull()
-    expect(promptRow.hasAttribute('data-turn-process-member')).toBe(false)
-
-    act(() => {
-      h.set({
-        chat: withSystemPrompt(chatSnapshotFixture({
-          nodes: [
-            userInTurn(2, 'question', 1),
-            context(3, 'runtime policy', 1),
-            reasoningAssistant(4, 'inspect', 1, 1),
-          ],
-        }), builder),
-        running: true,
-      })
-    })
-    expect(renderedFlowKinds(view.container)).toEqual([
-      'system-prompt', 'user', 'turn-process', 'context', 'assistant-step',
-    ])
-    expect(view.container.querySelector('[data-chat-flow-kind="system-prompt"]')).toBe(promptRow)
-    expect(promptRow.getAttribute('hidden')).toBeNull()
-
-    act(() => {
-      h.set({
-        chat: withSystemPrompt(chatSnapshotFixture({
-          nodes: [
-            userInTurn(2, 'question', 1),
-            context(3, 'runtime policy', 1),
-            reasoningAssistant(4, 'inspect', 1, 1),
-            assistant(6, 'final answer', 1, 2),
-          ],
-          turnEnds: new Map([[1, 7]]),
-        }), builder),
-        running: false,
-      })
-    })
-    const toggle = turnProcessControl(view.container)!
-    const members = [...view.container.querySelectorAll<HTMLElement>('[data-turn-process-member]')]
-    expect(renderedFlowKinds(view.container)).toEqual([
-      'system-prompt', 'user', 'turn-process', 'context', 'assistant-step', 'assistant-step', 'turn-tail',
-    ])
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(promptRow.getAttribute('hidden')).toBeNull()
-    expect(promptRow.hasAttribute('data-turn-process-member')).toBe(false)
-    expect(members.map(member => member.dataset.chatFlowKind)).toEqual(['context', 'assistant-step'])
-    expect(members.map(member => member.getAttribute('hidden'))).toEqual(['until-found', 'until-found'])
-
-    fireEvent.click(toggle)
-    expect(renderedFlowKinds(view.container)).toEqual([
-      'system-prompt', 'user', 'turn-process', 'context', 'assistant-step', 'assistant-step', 'turn-tail',
-    ])
-    expect(promptRow.getAttribute('hidden')).toBeNull()
-    expect(members.map(member => member.getAttribute('hidden'))).toEqual([null, null])
-  })
-
-  it('folds Context under the fallback title when every summary count is zero', () => {
-    const h = makeHarness({
-      nodes: [user(1, 'question'), context(2, 'runtime policy', 1), assistant(3, 'final answer', 1, 1)],
+  it.each(['compact', 'detailed', 'expanded'] as const)('retains a waking context notice above the turn control in %s', (mode) => {
+    const source = chatSnapshotFixture({
+      nodes: [context(1, 'goal continuation', 1), reasoningAssistant(2, 'work', 1, 1),
+        assistant(3, 'answer', 1, 2)],
       turnEnds: new Map([[1, 4]]),
     })
+    const chat = new ChatSnapshotBuilder().replace({
+      nodes: source.nodes.values().map(node => node.kind === 'context' ? { ...node, kind: 'turn-trigger' } : node),
+      timeline: source.timeline,
+    })
+    const h = makeHarness({ chat })
+    act(() => { h.setTranscriptView(mode) })
     const view = render(<h.ChatView {...h.props} />)
-    const toggle = view.getByRole('button', { name: '已完成工作' })
-    const contextRow = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="context"]')
-
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(toggle.getAttribute('data-turn-process-tool-calls')).toBe('0')
-    expect(toggle.getAttribute('data-turn-process-messages')).toBe('0')
-    expect(toggle.getAttribute('data-turn-process-subagents')).toBe('0')
-    expect(contextRow?.getAttribute('hidden')).toBe('until-found')
-    fireEvent.click(toggle)
-    expect(contextRow?.getAttribute('hidden')).toBeNull()
+    const notice = view.container.querySelector('[data-chat-flow-kind="turn-trigger"]')!
+    expect(notice).not.toBeNull()
+    expect(notice.closest('[hidden]')).toBeNull()
+    const kinds = renderedFlowKinds(view.container)
+    expect(kinds.indexOf('turn-trigger')).toBeLessThan(kinds.indexOf('turn-process'))
+    fireEvent.click(turnProcessControl(view.container)!)
+    fireEvent.click(turnProcessControl(view.container)!)
+    expect(notice.closest('[hidden]')).toBeNull()
   })
 
   it('keeps ordinary spacing when steering separates the process control from its answer', () => {
@@ -1751,12 +1687,12 @@ describe('ChatView', () => {
       fireEvent.click(toggle)
       expect((toggle as HTMLButtonElement).disabled).toBe(true)
       expect(toggle.getAttribute('aria-expanded')).toBeNull()
-      act(() => { h.set({ nodes: [user(1, 'question'), context(2, 'working context', 1)] }) })
+      act(() => { h.set({ nodes: [user(1, 'question'), reasoningAssistant(2, 'working context', 1, 0)] }) })
       expect(toggle.getAttribute('aria-expanded')).toBe('true')
       expect(toggle.querySelector('svg')).toBeNull()
       const group = view.container.querySelector('[data-step-process]')!
       expect(group.getAttribute('hidden')).toBeNull()
-      act(() => { h.set({ nodes: [user(1, 'question'), context(2, 'working context', 1), ...(hasAnswer ? [assistant(3, 'answer')] : [])],
+      act(() => { h.set({ nodes: [user(1, 'question'), reasoningAssistant(2, 'working context', 1, 0), ...(hasAnswer ? [assistant(3, 'answer')] : [])],
         running: false, turnEnds: new Map([[1, 4]]),
         turnTimings: new Map([[1, { startTime: 10_000, endTime: 12_000 }]]) }) })
       expect(toggle.getAttribute('aria-expanded')).toBe('false')
@@ -1821,7 +1757,7 @@ describe('ChatView', () => {
   })
 
   it('resets nested process disclosures when the whole Turn closes', () => {
-    const h = makeHarness({ nodes: [user(1, 'question'), context(2, 'work', 1), assistant(3, 'answer')],
+    const h = makeHarness({ nodes: [user(1, 'question'), reasoningAssistant(2, 'work', 1, 0), assistant(3, 'answer')],
       turnEnds: new Map([[1, 4]]) })
     const view = render(<h.ChatView {...h.props} />)
     const outer = turnProcessControl(view.container)!
@@ -1855,7 +1791,7 @@ describe('ChatView', () => {
   })
 
   it('removes secondary groups in Expanded and restores collapsed groups in Detailed', () => {
-    const h = makeHarness({ nodes: [user(1, 'question'), context(2, 'work', 1), assistant(3, 'answer')],
+    const h = makeHarness({ nodes: [user(1, 'question'), reasoningAssistant(2, 'work', 1, 0), assistant(3, 'answer')],
       turnEnds: new Map([[1, 4]]) })
     const view = render(<h.ChatView {...h.props} />)
     act(() => { h.setTranscriptView('detailed') })
@@ -1866,7 +1802,7 @@ describe('ChatView', () => {
     fireEvent.click(turnProcessControl(view.container)!)
     expect(view.container.querySelector('[data-step-process]')).toBeNull()
     expect(view.container.querySelector('[data-step-process-body]')).toBeNull()
-    const contextRow = view.container.querySelector('[data-chat-flow-kind="context"]')!
+    const contextRow = view.container.querySelector('[data-chat-flow-kind="assistant-step"]')!
     expect(contextRow.parentElement?.hasAttribute('data-chat-flow')).toBe(true)
     expect(contextRow.closest('[hidden]')).toBeNull()
     expect(view.getByText('answer')).toBeTruthy()
@@ -1920,20 +1856,20 @@ describe('ChatView', () => {
 
   it('folds when the process controller first appears off-tail', () => {
     const h = makeHarness({
-      nodes: [user(1, 'question'), context(2, 'runtime policy', 1)],
+      nodes: [user(1, 'question'), reasoningAssistant(2, 'runtime policy', 1, 0)],
       running: true,
     })
     const view = render(<h.ChatView {...h.props} />)
     const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
     Object.defineProperty(scroller, 'scrollHeight', { value: 1_000, writable: true })
     Object.defineProperty(scroller, 'clientHeight', { value: 300, writable: true })
-    const contextRow = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="context"]')
+    const contextRow = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="assistant-step"]')
     readerScroll(scroller, 100)
 
     act(() => { h.set({
       nodes: [
         user(1, 'question'),
-        context(2, 'runtime policy', 1),
+        reasoningAssistant(2, 'runtime policy', 1, 0),
         assistant(3, 'final answer', 1, 1),
       ],
       running: false,
@@ -1947,20 +1883,20 @@ describe('ChatView', () => {
 
   it('keeps a focused process row visible when a live Turn completes', () => {
     const h = makeHarness({
-      nodes: [user(1, 'question'), context(2, 'runtime policy', 1)],
+      nodes: [user(1, 'question'), reasoningAssistant(2, 'runtime policy', 1, 0)],
       running: true,
     })
     const view = render(<h.ChatView {...h.props} />)
     fireEvent.click(view.getByRole('button', { name: '正在分析请求' }))
-    const contextToggle = view.getByRole('button', { name: '上下文注入' })
-    const contextRow = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="context"]')
+    const contextToggle = view.getByRole('button', { name: '思考' })
+    const contextRow = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="assistant-step"]')
     contextToggle.focus()
     expect(document.activeElement).toBe(contextToggle)
 
     act(() => { h.set({
       nodes: [
         user(1, 'question'),
-        context(2, 'runtime policy', 1),
+        reasoningAssistant(2, 'runtime policy', 1, 0),
         assistant(3, 'final answer', 1, 1),
       ],
       running: false,
@@ -1981,7 +1917,7 @@ describe('ChatView', () => {
     const h = makeHarness({
       nodes: [
         ...(kind === 'ordinary' ? [user(1, 'question')] : []),
-        context(2, 'goal continuation', 1),
+        reasoningAssistant(2, 'goal continuation', 1, 0),
         assistant(3, 'working', 1, 1),
         assistant(4, 'final answer', 1, 2),
       ],
@@ -2001,7 +1937,7 @@ describe('ChatView', () => {
 
   it('folds a truncated Turn when its start arrives even with more history unloaded', () => {
     const h = makeHarness({
-      nodes: [context(2, 'goal continuation', 1), assistant(3, 'working', 1, 1),
+      nodes: [reasoningAssistant(2, 'goal continuation', 1, 0), assistant(3, 'working', 1, 1),
         assistant(4, 'final answer', 1, 2)],
       turnEnds: new Map([[1, 5]]),
       hasMore: true,

@@ -1,3 +1,4 @@
+import { isVisibleChatNode } from '../contract/chat-visibility.ts'
 /** Consecutive process material, separated by visible assistant responses and turn boundaries. */
 import type { ChatNode } from '../contract/chat-nodes.ts'
 import { isRunningTool } from '../contract/chat-nodes.ts'
@@ -28,7 +29,6 @@ const INDEPENDENT = new Set(['user', 'steering', 'turn-trigger', 'model-retry', 
  */
 export function processRanges(snapshot: ChatSnapshot): ProcessRange[] {
   const ranges: ProcessRange[] = []
-  const responseTurns = new Set<number | undefined>()
   let pending: ProcessSeat[] = []
   let pendingTurn: number | undefined
   const flush = (closed: boolean): void => {
@@ -40,13 +40,12 @@ export function processRanges(snapshot: ChatSnapshot): ProcessRange[] {
   }
   for (const key of snapshot.order) {
     const node = snapshot.nodes.get(key) as ChatNode | undefined
-    if (node === undefined || node.visibility === 'hidden') continue
+    if (node === undefined || !isVisibleChatNode(node)) continue
     const location = node.location
     const turn = location.kind === 'turn' || location.kind === 'step' ? location.turn.turn : undefined
     if (pending.length > 0 && turn !== pendingTurn) flush(true)
     pendingTurn = turn
-    if (INDEPENDENT.has(node.kind) || turn === undefined
-      || (node.kind === 'system-prompt' && !responseTurns.has(turn))) {
+    if (INDEPENDENT.has(node.kind) || turn === undefined) {
       // The synthetic whole-turn control must not split an ongoing process range.
       if (node.kind === 'turn-process') {
         ranges.push({ key, seats: [{ nodeKey: key }], process: false, closed: true, turn })
@@ -59,7 +58,6 @@ export function processRanges(snapshot: ChatSnapshot): ProcessRange[] {
         pending.push({ nodeKey: key, assistantPart: 'reasoning' })
       }
       if (hasAssistantReplyContent(node.data.blocks)) {
-        responseTurns.add(turn)
         flush(true)
         ranges.push({ key, seats: [{ nodeKey: key, assistantPart: 'response' }], process: false, closed: true, turn })
       }

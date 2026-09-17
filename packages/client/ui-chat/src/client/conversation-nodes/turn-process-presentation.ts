@@ -1,3 +1,4 @@
+import { isVisibleChatNode } from '../contract/chat-visibility.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
 import type {
   ChatLocationNodeIndex, ChatNodeStore, ChatTurnProcessPresentation,
@@ -49,7 +50,7 @@ function derivePresentation(
   let compactAnswer = true
   for (const key of keys) {
     const node = nodes.get(key) as ChatNode | undefined
-    if (node === undefined || node.kind === 'turn-process') continue
+    if (node === undefined || !isVisibleChatNode(node) || node.kind === 'turn-process') continue
     if ((node.kind === 'user' || node.kind === 'steering' || node.kind === 'turn-trigger')
       && (openingHumanAnchor === undefined || node.anchorSeq > openingHumanAnchor)
       && (spec.answerAnchorSeq === null || node.anchorSeq < spec.answerAnchorSeq)) {

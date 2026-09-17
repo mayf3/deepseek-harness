@@ -1,3 +1,4 @@
+import { isVisibleChatNode } from '../contract/chat-visibility.ts'
 import { memo } from 'react'
 import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChatNode } from '../contract/chat-nodes.ts'
@@ -29,7 +30,8 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
     if (snapshot.timeline.turnOrder.at(-1) !== data.turn) return false
     const last = snapshot.locations.getTurn(data.turn)
       .map(key => snapshot.nodes.get(key) as ChatNode | undefined)
-      .findLast(candidate => candidate?.kind !== 'turn-tail' && candidate?.kind !== 'turn-process')
+      .findLast(candidate => candidate !== undefined && isVisibleChatNode(candidate)
+        && candidate.kind !== 'turn-tail' && candidate.kind !== 'turn-process')
     if (last?.kind !== 'assistant-step') return false
     const block = last.data.blocks.findLast(candidate =>
       (candidate.kind !== 'text' && candidate.kind !== 'reasoning') || candidate.text.trim() !== '')
