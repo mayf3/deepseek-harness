@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Choose an installed shell from the right sidebar's Start page to run commands in the Session workspace. Rename terminals in their tabs and recover retained processes after reloading the page. Collapse the sidebar to keep commands running; close a terminal tab to request process termination. Tab completion follows the shell configuration.
+Choose an installed shell from the right sidebar's Start page to run commands in the Session workspace. Rename terminals in their tabs and recover retained processes after reloading the page. Collapse the sidebar to keep commands running; close a terminal tab to request process termination. Tab completion follows the shell configuration. Commands use the execution environment’s system-user permissions independently of Agent permissions; see [user-terminal execution](../../api/terminal-controller/README.md#use-this-package).
 
 ## Table of Contents
 
@@ -41,7 +41,7 @@ The terminal background, default text, cursor, and selection follow the DSH them
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-This plugin registers the `terminal` type and body/title seats with the right sidebar. The guide uses a compact dark terminal card, while tab titles retain the line glyph. The React-free terminal model belongs to `api-terminal-controller`; keyed framework hooks expose its state. `ui-primitives` Menu and Button provide the shell picker and startup controls, including keyboard navigation and the selected-item marker. xterm.js and FitAddon render the screen and measure the viewport. The body reserves an 8px gap below the tab strip within the pane height. Input, including Tab and control characters, travels unchanged to the PTY.
+This plugin registers the `terminal` type and body/title seats with the right sidebar. The guide uses a compact dark terminal card, while tab titles retain the line glyph. The React-free terminal model belongs to `api-terminal-controller`; keyed framework hooks expose its state. `ui-primitives` Menu and Button provide the shell picker and startup controls, including keyboard navigation and the selected-item marker. The body loads its package-local `client.terminal.js` chunk when a terminal view mounts, keeping xterm.js and FitAddon out of the startup `client.js`; they then render the screen and measure the viewport. The body reserves an 8px gap below the tab strip within the pane height. Input, including Tab and control characters, travels unchanged to the PTY.
 
 A Session header contribution queries Host terminals and opens only those without an existing tab association. The terminal controller saves each globally unique content identity's Host association independently and owns content recovery; the sidebar owns layout persistence. A recovered view cannot allocate a replacement process. The sidebar's close handler schedules cleanup through the [terminal controller](../../api/terminal-controller/README.md#understand-the-implementation) and returns synchronously. Browser component cleanup and the tab's abort signal only detach browser work.
 
@@ -73,6 +73,7 @@ None; terminal output travels only between the browser and Host.
 - Completion menus and inline suggestions depend on shell configuration. The Web UI adds no independent completion engine.
 - Application OSC color overrides are retained by the mounted renderer; a newly opened renderer cannot recover them from the Host screen snapshot.
 - Terminal history is bounded. The feature does not send terminal output to the Agent, provide split terminal panes inside a tab, or restore processes after Host restart.
+- A failed terminal chunk load requires a page reload because React caches a rejected lazy import for the page lifetime.
 
 <a id="dev-note"></a>
 ### Dev Note

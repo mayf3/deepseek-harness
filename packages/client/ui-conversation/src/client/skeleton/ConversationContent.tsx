@@ -1,24 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
-import type { ConversationSlotProps, InputZone } from '../contract/slots.ts'
+import type { ConversationContentProps, ConversationViewsProps, InputZone } from '../contract/slots.ts'
 import { HeroShell, WorkspaceChip, workspaceLabel } from './EmptyHero.tsx'
 import css from './ConversationRoot.module.css'
-
-type ConversationContentProps = Omit<ConversationSlotProps, 'useSession' | 'useConversation'> & {
-  session: SessionSnapshot | undefined
-  phase: 'settling' | 'hero' | 'active'
-  hero: boolean
-  onHandleStart: () => number
-  onHandleDrag: (width: number) => void
-  onHandleCommit: (width: number) => void
-  onHandleEnd: () => void
-}
 
 const WHEEL_DELTA_LINE = 1
 const WHEEL_DELTA_PAGE = 2
 const FALLBACK_WHEEL_LINE_PX = 16
+
+function ConversationSessionView({ renderSlot }: ConversationViewsProps) {
+  return renderSlot('conversation.session', {})
+}
 
 /** Convert a wheel event's vertical delta to scrollport pixels. */
 function wheelDeltaY(event: React.WheelEvent, scrollport: HTMLElement): number {
@@ -133,12 +126,15 @@ function WidthHandle(props: {
  * @returns the unchanged Conversation body subtree.
  */
 export function ConversationContent({
-  sessionId, session, phase, hero, useSessions, useSessionPendingInteraction,
+  sessionId, phase, hero, useSession, useSessions, useSessionStatus,
   useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain,
-  selectWorkspace, t, onHandleStart, onHandleDrag, onHandleCommit, onHandleEnd,
+  selectWorkspace, t, useFactorySlot,
+  onHandleStart, onHandleDrag, onHandleCommit, onHandleEnd,
 }: ConversationContentProps) {
-  const pendingInteraction = useSessionPendingInteraction(snapshot =>
-    sessionId === undefined ? undefined : snapshot.get(sessionId))
+  const session = useSession(snapshot => snapshot)
+  const Views = useFactorySlot('views', ConversationSessionView)
+  const pendingInteraction = useSessionStatus(snapshot =>
+    sessionId === undefined ? undefined : snapshot.get(sessionId)?.pendingInteraction)
   const inputState = useInput(s => s)
   const cwd = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.cwd)
   const workspaces = useWorkspaces(s => s)
@@ -291,7 +287,7 @@ export function ConversationContent({
   return (
     <div className={css.body}>
       <div className={css.scrollBody} data-conversation-scroll="">
-        {sessionId === undefined ? null : renderSlot('conversation.session', {})}
+        {sessionId === undefined ? null : <Views />}
         {composerSeat}
       </div>
       {/* Width handles only while a transcript is on screen; the hero has no

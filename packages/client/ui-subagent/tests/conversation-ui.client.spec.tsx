@@ -56,14 +56,14 @@ function props(
         title: '正在扫描项目文件',
         displayTitle: 'worker',
         running: true,
+        retainedBy: {},
         blank: false,
         updatedAt: Date.now(),
       },
     },
-    current: PARENT, phase: 'ready',
+    phase: 'ready',
     subagentsByParent: value === undefined ? nested : { [PARENT]: value, ...nested },
     jobsBySession: {},
-    currentAddress: undefined,
   } satisfies SessionListState
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
@@ -85,6 +85,7 @@ function summary(id: SessionId, updatedAt: number): SessionSummary {
     id,
     displayTitle: id,
     running: false,
+    retainedBy: {},
     blank: false,
     updatedAt,
   }

@@ -186,6 +186,15 @@ async function setPanelWidth(page: Page, target: number): Promise<void> {
 }
 
 /** Tab titles inside one container, in strip order. */
+/**
+ * The closing prose's inline-code mention of the seeded file. The changed-files
+ * card below the prose offers the same open under the same accessible name, so
+ * the first match in document order is the prose's.
+ */
+function proseChip(root: Page): Locator {
+  return root.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).first()
+}
+
 async function tabTitles(root: Locator): Promise<string[]> {
   return await root.locator('[data-dockkit-tab-title]').allInnerTexts()
 }
@@ -266,9 +275,10 @@ describe('web e2e: shipped right Sidebar', () => {
         source: { kind: 'user' },
       }), { surfaceOp: 'append' })
       agent.session.append('step/start', { turn: 1, step: 1 })
-      // A successful mutation is what makes the turn tail offer a produced-file
-      // chip — the product's own way into the Sidebar. The file is written for
-      // real because the preview reads it through the workspace endpoint.
+      // A successful mutation is what lets the closing prose link the file's
+      // inline-code mention — the product's own way into the Sidebar. The file
+      // is written for real because the preview reads it through the workspace
+      // endpoint.
       //
       // It goes in the SESSION's cwd, not the scaffold's: the endpoint resolves
       // relative paths against the header-derived workspace root. Writing
@@ -298,7 +308,7 @@ describe('web e2e: shipped right Sidebar', () => {
         step: 1,
         message: createMessage({
           role: 'assistant',
-          content: [{ type: 'text', text: 'Ready.' }],
+          content: [{ type: 'text', text: `Ready. Wrote \`${SAMPLE_NAME}\`.` }],
           source: { kind: 'model', provider: 'fixture', model: 'fixture' },
         }),
       }, { surfaceOp: 'append' })
@@ -397,7 +407,7 @@ describe('web e2e: shipped right Sidebar', () => {
       }
 
       await expect.poll(async () => await tabTitles(column)).toEqual(['Start'])
-      await expect.poll(async () => await column.locator('[data-sidebar-right-guide-entry]').count()).toBe(2)
+      await expect.poll(async () => await column.locator('[data-sidebar-right-guide-entry]').count()).toBe(3)
       await column.locator('[data-sidebar-right-guide-entry="files"]').click()
 
       // A manual guide is closable beside Files and suppresses another add
@@ -730,10 +740,10 @@ describe('web e2e: shipped right Sidebar', () => {
         if (request.url().includes('workspaceFiles')) wire.sent += 1
       })
 
-      // The product's own entry point: the turn tail's produced-file chip. It
+      // The product's own entry point: the closing prose's file mention. It
       // reaches the Sidebar through openFile → ctx.sidebarRight.openResource, and the
       // text type claims the address.
-      const chip = page.getByRole('button', { name: `Open ${SAMPLE_NAME}` })
+      const chip = proseChip(page)
       await chip.click()
       await expect.poll(async () => await tabTitles(column)).toEqual(['Files', SAMPLE_NAME])
 
@@ -749,17 +759,18 @@ describe('web e2e: shipped right Sidebar', () => {
         .waitFor({ timeout: 15_000 })
         .catch(() => { throw new Error(`preview never settled; wire=${JSON.stringify(wire)}`) })
       expect(await column.locator('pre').first().innerText()).toContain('produced by the seeded turn')
-      // The whole batch-E chain in one frame: a produced-file chip in the
+      // The whole batch-E chain in one frame: a file mention in the
       // conversation, the tab it opened, and the file's real content read over
       // the workspace endpoint.
       await shot(page, '06-produced-chip-to-preview')
 
       // The directory scenario's V1 behaviour, asserted in the shipped product:
-      // there is no folder affordance at all. `openFile('.')` would name a
-      // directory, which a text preview correctly refuses, and the native opener
-      // it used to reach is gone — so the row offers nothing rather than a
-      // button that always fails.
-      expect(await page.getByRole('button', { name: /folder/i }).count()).toBe(0)
+      // the prose mention offers no folder affordance. `openFile('.')` would
+      // name a directory, which a text preview correctly refuses. The only
+      // folder action on the page is the changed-files card's header, and only
+      // when the Host has a desktop.
+      const folders = page.getByRole('button', { name: /folder/i })
+      expect(await folders.count()).toBe(await page.locator('[data-changed-files]').getByRole('button', { name: /folder/i }).count())
 
       // Split, then dock-drag: the kit's gestures drive the store's actions.
       await panes.first().locator('[data-dockkit-split-button]').click()
@@ -818,7 +829,7 @@ describe('web e2e: shipped right Sidebar', () => {
         const column = fx.locator('[data-rightbar-col]')
         await ensureExpanded(fx, column)
         await width(column)
-        await fx.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
+        await proseChip(fx).click()
         await column.locator('[data-textpreview-state="text"]').waitFor({ timeout: 15_000 })
         const wrap = column.locator('[data-textpreview-tool="wrap"]')
         expect(await wrap.getAttribute('aria-pressed')).toBe('true')
@@ -846,7 +857,7 @@ describe('web e2e: shipped right Sidebar', () => {
         await expect.poll(async () => await settled.getAttribute('aria-selected')).toBe('true')
         await expect.poll(records, { timeout: 15_000 }).toEqual(before)
         expect(await column.locator('[data-sidebar-right-open]').count()).toBe(1)
-        expect(await wrap.getAttribute('aria-pressed')).toBe('false')
+        expect(await wrap.getAttribute('aria-pressed')).toBe('true')
         expect(await column.locator('pre').first().innerText()).toContain('produced by the seeded turn')
         let warningStart = fxTripwire.warnings.length
         await fx.reload({ waitUntil: 'load' })
@@ -887,7 +898,7 @@ describe('web e2e: shipped right Sidebar', () => {
       //    leave it standing, since a pane emptied by a move is dropped.
       const first = panes.first()
       const strip = first.locator('[data-dockkit-strip]')
-      await page.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
+      await proseChip(page).click()
       await expect.poll(async () => await tabTitles(first)).toEqual(['Files', SAMPLE_NAME])
       const order = await tabTitles(first)
       // The insertion index is measured against chip midpoints, not strip width.
@@ -961,7 +972,7 @@ describe('web e2e: shipped right Sidebar', () => {
       const column = await resetSidebar(page)
       const panes = column.locator('[data-dockkit-pane]')
       expect(await column.locator('[data-dockkit-tab-close]').count()).toBe(1)
-      await page.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
+      await proseChip(page).click()
       await expect.poll(async () => await tabTitles(panes.first())).toEqual(['Files', SAMPLE_NAME])
       await panes.first().locator('[data-dockkit-split-button]').click()
       await expect.poll(async () => await panes.count()).toBe(2)
@@ -997,7 +1008,7 @@ describe('web e2e: shipped right Sidebar', () => {
       // sample file, close the guide (an ordinary close with two tabs), then
       // close the file: the column collapses in the same gesture, and the
       // settle rule reseeds the current default, so reopening shows Start.
-      await page.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
+      await proseChip(page).click()
       await expect.poll(async () => await tabTitles(column)).toEqual(['Start', SAMPLE_NAME])
       await column.locator('[data-dockkit-tab]').first().hover()
       await column.locator('[data-dockkit-tab-close]').first().click()

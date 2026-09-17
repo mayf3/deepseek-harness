@@ -1,7 +1,6 @@
 import { useCallback, useRef } from 'react'
 import type { ConversationSlotProps } from '../contract/slots.ts'
 import { conversationPhase } from '../contract/snapshot.ts'
-import { ConversationContent } from './ConversationContent.tsx'
 import css from './ConversationRoot.module.css'
 
 /** localStorage key for the dragged transcript width preference (px). */
@@ -40,7 +39,7 @@ function resolveContentWidth(columnWidth: number, preference: number | null): nu
  * @returns the unchanged root, Header, content, and width-control subtree.
  */
 export function ConversationMainPanel(props: ConversationSlotProps) {
-  const { sessionId, useSession, useSessions, useConversation, renderSlot } = props
+  const { sessionId, useSession, useSessions, useConversation, renderSlot, renderFactorySlot } = props
   const session = useSession(s => s)
   const conversation = useConversation(s => s)
   const shellPhase = session === undefined || conversation === undefined
@@ -131,16 +130,14 @@ export function ConversationMainPanel(props: ConversationSlotProps) {
   return (
     <div ref={rootResizeRef} className={css.root} data-phase={phase}>
       {sessionId === undefined ? null : renderSlot('conversation.session.header', {})}
-      <ConversationContent
-        {...props}
-        session={session}
-        phase={phase}
-        hero={hero}
-        onHandleStart={onHandleStart}
-        onHandleDrag={onHandleDrag}
-        onHandleCommit={onHandleCommit}
-        onHandleEnd={onHandleEnd}
-      />
+      {renderFactorySlot('conversation.content', {
+        phase,
+        hero,
+        onHandleStart,
+        onHandleDrag,
+        onHandleCommit,
+        onHandleEnd,
+      })}
     </div>
   )
 }

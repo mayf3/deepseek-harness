@@ -8,7 +8,7 @@ import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { TerminalViewState } from '@deepseek-ai/dsh-api-terminal-controller/client'
 import type { WebTerminalId } from '@deepseek-ai/dsh-api-terminal-controller/types'
-import { TerminalBody, type TerminalBodyProps } from '../src/client/TerminalBody.tsx'
+import { TerminalBody, type TerminalBodyProps } from '../src/client/terminal.tsx'
 import { TerminalTitle } from '../src/client/TerminalTitle.tsx'
 import { en, zh } from '../src/client/locales.ts'
 
