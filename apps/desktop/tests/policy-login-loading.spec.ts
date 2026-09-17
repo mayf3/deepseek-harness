@@ -1,14 +1,16 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { JSDOM } from 'jsdom'
 import { expect, it } from 'vitest'
 
-const html = readFileSync(join(import.meta.dirname, '../renderer/policy-login-loading.html'), 'utf8')
+const file = join(import.meta.dirname, '../renderer/policy-login-loading.html')
+const html = readFileSync(file, 'utf8')
 
 /** Load the packaged placeholder the way the login window does: a local document with a query. */
 function open(query = ''): Document {
   const dom = new JSDOM(html, {
-    url: `file:///app/renderer/policy-login-loading.html${query}`,
+    url: `${pathToFileURL(file).href}${query}`,
     runScripts: 'dangerously',
   })
   return dom.window.document
