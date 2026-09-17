@@ -4,8 +4,8 @@
  * cache frozen blocks as React elements; the rendered DOM is pinned
  * byte-for-byte by `tests/fixtures/markdown-dom` and must not drift.
  *
- * Untrusted-output policy (unchanged from the replaced pipeline): link and
- * image destinations pass a protocol allowlist, images additionally require
+ * External link and image destinations pass a protocol allowlist; settled
+ * local file links use an explicit owner callback. Images additionally require
  * absolute HTTP(S), raw HTML renders as literal text (no HTML enters the
  * DOM), and KaTeX runs without trusted commands. Fragment-anchor URLs fail
  * the allowlist, so footnote references and back-references render as plain
@@ -23,9 +23,10 @@ import type * as Md from 'mdast'
 import type {} from 'mdast-util-math'
 import { normalizeUri } from 'micromark-util-sanitize-uri'
 import { CodeBlock } from './CodeBlock.tsx'
+import { parseFileLink } from './file-link.ts'
 import { renderTexToReact } from './katex.tsx'
 import { LinkIcon, classifyLinkPath } from '../LinkIcon.tsx'
-import { useMarkdownExternalLinkDelegate } from './MarkdownDelegate.tsx'
+import { useMarkdownDelegate } from './MarkdownDelegate.tsx'
 import type { PositionedBlock } from './incremental.ts'
 import css from './MarkdownText.module.css'
 
@@ -339,7 +340,10 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
     case 'table':
       return renderTable(node, key, context)
     case 'link':
-      return renderAnchor(node.url, renderChildren(node.children, { ...context, inLink: true }), key, !anchorWrapsOnlyImages(node.children))
+      return renderAnchor(
+        node.url, renderChildren(node.children, { ...context, inLink: true }), key,
+        !anchorWrapsOnlyImages(node.children), context.streaming,
+      )
     case 'linkReference':
       return renderLinkReference(node, key, context)
     case 'image':
@@ -538,7 +542,7 @@ function MarkdownAnchor({ href, glyph, children }: {
   readonly glyph: boolean
   readonly children: ReactNode[]
 }): ReactNode {
-  const openExternalLink = useMarkdownExternalLinkDelegate()
+  const { openExternalLink } = useMarkdownDelegate()
   const external = ['http:', 'https:'].includes(new URL(href).protocol)
   const open = external ? openExternalLink : undefined
   return (
@@ -557,9 +561,33 @@ function MarkdownAnchor({ href, glyph, children }: {
   )
 }
 
-/** Anchor over a parsed markdown destination, which hast normalized before the allowlist saw it. */
-function renderAnchor(url: string, children: ReactNode[], key: Key, glyph = true): ReactNode {
+/** Local destinations use the scoped file delegate after settlement. */
+function renderAnchor(url: string, children: ReactNode[], key: Key, glyph = true, streaming = false): ReactNode {
+  const file = streaming ? undefined : parseFileLink(url)
+  if (file !== undefined) {
+    return <MarkdownFileLink key={key} file={file} glyph={glyph}>{children}</MarkdownFileLink>
+  }
   return renderSafeLink(normalizeUri(url), children, key, glyph)
+}
+
+function MarkdownFileLink({ file, glyph, children }: {
+  readonly file: { path: string; line?: number }
+  readonly glyph: boolean
+  readonly children: ReactNode[]
+}): ReactNode {
+  const { openFile } = useMarkdownDelegate()
+  if (openFile === undefined) return <>{children}</>
+  return (
+    <button
+      type="button"
+      className={clsx(css.fileMention, css.fileLink)}
+      title={file.path}
+      onClick={() => { openFile(file.path, file.line === undefined ? undefined : { line: file.line }) }}
+    >
+      {glyph && <LinkIcon kind={classifyLinkPath(file.path)} className={css.linkIcon} />}
+      {children}
+    </button>
+  )
 }
 
 /**
@@ -623,7 +651,7 @@ function renderLinkReference(
     return <Fragment key={key}>{'['}{renderChildren(node.children, context)}{referenceSuffix(node)}</Fragment>
   }
   const rendered = renderChildren(node.children, { ...context, inLink: true })
-  return renderAnchor(definition.url, rendered, key, !anchorWrapsOnlyImages(node.children))
+  return renderAnchor(definition.url, rendered, key, !anchorWrapsOnlyImages(node.children), context.streaming)
 }
 
 function renderImageReference(

@@ -782,7 +782,7 @@ export function ChatView({
               </button>
             </div>
           )}
-          <MarkdownDelegateProvider openExternalLink={openExternalLink}>
+          <MarkdownDelegateProvider openExternalLink={openExternalLink} openFile={requestOpenFile}>
             <ChatNodeList
               order={order}
               useChatNode={useChatNode}
