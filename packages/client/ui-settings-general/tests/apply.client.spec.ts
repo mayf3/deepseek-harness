@@ -13,6 +13,7 @@ import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-clie
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { LOCALE_SETTINGS_NAMESPACE, LocaleSettingsSchema } from '@deepseek-ai/dsh-client-locale/src/locale-settings.ts'
 import { inject } from '../src/client/index.ts'
+import type { DeveloperToolsRowInjected } from '../src/client/DeveloperToolsRow.tsx'
 import { CloseLabel, HeaderContent, TriggerContent } from '../src/client/chrome.tsx'
 import { GeneralSection } from '../src/client/GeneralSection.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
@@ -103,6 +104,13 @@ describe('ui-settings-general apply', () => {
     // The shared developer-tool control belongs to General; onboarding remains feature-owned.
     expect(c.ctx.slots.entries('settings.general.item').filter(row => row.locale === NS).map(row => row.options.id)).toEqual(['developer-tools'])
     expect(c.ctx.slots.entries('settings.onboarding').filter(row => row.locale === NS)).toEqual([])
+    const developerRow = c.ctx.slots.entries('settings.general.item').find(row => row.options.id === 'developer-tools')!
+    const developer = (developerRow.inject as unknown as () => DeveloperToolsRowInjected)()
+    expect(developer.hooks.developerTools).toBe(c.ctx.settingsScope.developerTools.enabled)
+    expect(developer.hooks.developerTools.getSnapshot()).toBe(false)
+    const setEnabled = vi.spyOn(c.ctx.settingsScope.developerTools, 'setEnabled').mockResolvedValue(undefined)
+    await developer.setEnabled(true)
+    expect(setEnabled).toHaveBeenCalledExactlyOnceWith(true)
     const { controller, hooks } = actionInjectedOf(c)
     expect(controller.store.getSnapshot().status).toBe('idle')
     expect(hooks.snapshot).toBe(controller.store)
