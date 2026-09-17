@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { MarkdownDelegateProvider } from '../src/index.ts'
 import { MarkdownText } from './markdown-test-components.tsx'
 
 afterEach(cleanup)
@@ -16,7 +17,11 @@ describe('Markdown file links', () => {
     ['file%23name%3F.txt', 'file#name?.txt', undefined],
   ])('opens %s through the preview callback', (target, path, options) => {
     const openFile = vi.fn()
-    const view = render(<MarkdownText text={`[source](${target})`} openFile={openFile} />)
+    const view = render(
+      <MarkdownDelegateProvider openFile={openFile}>
+        <MarkdownText text={`[source](${target})`} />
+      </MarkdownDelegateProvider>,
+    )
     const link = view.getByRole('button', { name: 'source' })
     expect(link.getAttribute('title')).toBe(path)
     fireEvent.click(link)
@@ -25,23 +30,34 @@ describe('Markdown file links', () => {
   })
 
   it.each(['', '![](https://example.com/image.png)'])('names an empty label %s with the decoded path', (label) => {
-    const view = render(<MarkdownText text={`[${label}](docs/My%20Notes.md)`} openFile={vi.fn()} />)
+    const view = render(
+      <MarkdownDelegateProvider openFile={vi.fn()}>
+        <MarkdownText text={`[${label}](docs/My%20Notes.md)`} />
+      </MarkdownDelegateProvider>,
+    )
     expect(view.getByRole('button', { name: 'docs/My Notes.md' })).toBeTruthy()
   })
 
   it('preserves an image label’s alternative text as the accessible name', () => {
-    const view = render(<MarkdownText text={'[![diagram](https://example.com/image.png)](src/a.ts)'} openFile={vi.fn()} />)
+    const view = render(
+      <MarkdownDelegateProvider openFile={vi.fn()}>
+        <MarkdownText text={'[![diagram](https://example.com/image.png)](src/a.ts)'} />
+      </MarkdownDelegateProvider>,
+    )
     expect(view.getByRole('button', { name: 'diagram' })).toBeTruthy()
   })
 
   it('handles reference links and code labels without nesting file-mention buttons', () => {
     const openFile = vi.fn()
     const resolve = vi.fn()
-    const view = render(<MarkdownText
-      text={'[see `index.ts`][source]\n\n[source]: src/index.ts#L3-L3'}
-      openFile={openFile}
-      fileMentions={{ resolve }}
-    />)
+    const view = render(
+      <MarkdownDelegateProvider openFile={openFile}>
+        <MarkdownText
+          text={'[see `index.ts`][source]\n\n[source]: src/index.ts#L3-L3'}
+          fileMentions={{ resolve }}
+        />
+      </MarkdownDelegateProvider>,
+    )
     fireEvent.click(view.getByRole('button', { name: 'see index.ts' }))
     expect(openFile).toHaveBeenCalledWith('src/index.ts', { line: 3 })
     expect(resolve).not.toHaveBeenCalled()
@@ -56,7 +72,11 @@ describe('Markdown file links', () => {
     'file.ts#L9007199254740992', 'file.ts#L1-L9007199254740992',
   ])('keeps unsupported destination %s inert', (target) => {
     const openFile = vi.fn()
-    const view = render(<MarkdownText text={`[source](${target})`} openFile={openFile} />)
+    const view = render(
+      <MarkdownDelegateProvider openFile={openFile}>
+        <MarkdownText text={`[source](${target})`} />
+      </MarkdownDelegateProvider>,
+    )
     expect(view.getByText('source')).toBeTruthy()
     expect(view.container.querySelector('button, a')).toBeNull()
     expect(openFile).not.toHaveBeenCalled()
@@ -73,14 +93,67 @@ describe('Markdown file links', () => {
     const first = vi.fn()
     const second = vi.fn()
     const text = '[source](src/a.ts)\n\nmore\n\n'
-    const view = render(<MarkdownText text={text} streaming openFile={first} />)
+    const view = render(
+      <MarkdownDelegateProvider openFile={first}>
+        <MarkdownText text={text} streaming />
+      </MarkdownDelegateProvider>,
+    )
     expect(view.queryByRole('button')).toBeNull()
-    view.rerender(<MarkdownText text={text} openFile={first} />)
+    view.rerender(
+      <MarkdownDelegateProvider openFile={first}>
+        <MarkdownText text={text} />
+      </MarkdownDelegateProvider>,
+    )
     fireEvent.click(view.getByRole('button', { name: 'source' }))
     expect(first).toHaveBeenCalledOnce()
-    view.rerender(<MarkdownText text={text} openFile={second} />)
+    view.rerender(
+      <MarkdownDelegateProvider openFile={second}>
+        <MarkdownText text={text} />
+      </MarkdownDelegateProvider>,
+    )
     fireEvent.click(view.getByRole('button', { name: 'source' }))
     expect(second).toHaveBeenCalledOnce()
     expect(first).toHaveBeenCalledOnce()
+  })
+
+  it('routes file and HTTP(S) links through the same provider', () => {
+    const openFile = vi.fn()
+    const openExternalLink = vi.fn()
+    const view = render(
+      <MarkdownDelegateProvider openFile={openFile} openExternalLink={openExternalLink}>
+        <MarkdownText text={'[source](src/a.ts#L4) [web](https://example.com)'} />
+      </MarkdownDelegateProvider>,
+    )
+    fireEvent.click(view.getByRole('button', { name: 'source' }))
+    expect(openFile).toHaveBeenCalledExactlyOnceWith('src/a.ts', { line: 4 })
+    expect(openExternalLink).not.toHaveBeenCalled()
+    fireEvent.click(view.getByRole('link', { name: 'web' }))
+    expect(openExternalLink).toHaveBeenCalledExactlyOnceWith('https://example.com')
+    expect(openFile).toHaveBeenCalledOnce()
+  })
+
+  it('updates cached links when the nearest provider gains, replaces, or removes its file handler', () => {
+    const outer = vi.fn()
+    const first = vi.fn()
+    const second = vi.fn()
+    const markdown = <MarkdownText text="[source](src/a.ts)" />
+    const scope = (openFile?: (path: string) => void) => (
+      <MarkdownDelegateProvider openFile={outer}>
+        <MarkdownDelegateProvider openFile={openFile}>{markdown}</MarkdownDelegateProvider>
+      </MarkdownDelegateProvider>
+    )
+    const view = render(scope())
+    expect(view.queryByRole('button')).toBeNull()
+    view.rerender(scope(first))
+    fireEvent.click(view.getByRole('button', { name: 'source' }))
+    expect(first).toHaveBeenCalledExactlyOnceWith('src/a.ts', undefined)
+    view.rerender(scope(second))
+    fireEvent.click(view.getByRole('button', { name: 'source' }))
+    expect(second).toHaveBeenCalledExactlyOnceWith('src/a.ts', undefined)
+    expect(first).toHaveBeenCalledOnce()
+    view.rerender(scope())
+    expect(view.queryByRole('button')).toBeNull()
+    expect(view.getByText('source')).toBeTruthy()
+    expect(outer).not.toHaveBeenCalled()
   })
 })

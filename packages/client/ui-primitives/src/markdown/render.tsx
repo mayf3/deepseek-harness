@@ -31,7 +31,7 @@ import { renderMermaid } from './mermaid.ts'
 import type { PreviewLabels } from './SourcePreview.tsx'
 import { renderTexToReact } from './katex.tsx'
 import { LinkIcon, classifyLinkPath } from '../LinkIcon.tsx'
-import { useMarkdownExternalLinkDelegate } from './MarkdownDelegate.tsx'
+import { useMarkdownDelegate } from './MarkdownDelegate.tsx'
 import type { PositionedBlock } from './incremental.ts'
 import css from './MarkdownText.module.css'
 
@@ -233,8 +233,6 @@ export interface MarkdownFileMentions {
  * numbering accumulated in document order while references render.
  */
 export interface MarkdownRenderContext {
-  /** Opens authored local file links in the owner's preview; settled renders only. */
-  readonly openFile?: ((path: string, options?: { line?: number }) => void) | undefined
   /** Streaming arm: fences highlight incrementally as they grow; TeX (including ```math fences) stays literal until the settled pass. */
   readonly streaming: boolean
   /** Localized fence copy-button labels. */
@@ -403,7 +401,7 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
     case 'link':
       return renderAnchor(
         node.url, renderChildren(node.children, { ...context, inLink: true }), key,
-        !anchorWrapsOnlyImages(node.children), context.openFile,
+        !anchorWrapsOnlyImages(node.children), context.streaming,
       )
     case 'linkReference':
       return renderLinkReference(node, key, context)
@@ -614,7 +612,7 @@ function MarkdownAnchor({ href, glyph, children }: {
   readonly glyph: boolean
   readonly children: ReactNode[]
 }): ReactNode {
-  const openExternalLink = useMarkdownExternalLinkDelegate()
+  const { openExternalLink } = useMarkdownDelegate()
   const external = ['http:', 'https:'].includes(new URL(href).protocol)
   const open = external ? openExternalLink : undefined
   return (
@@ -633,24 +631,33 @@ function MarkdownAnchor({ href, glyph, children }: {
   )
 }
 
-/** Local destinations use the preview callback; external destinations use the URL allowlist. */
-function renderAnchor(url: string, children: ReactNode[], key: Key, glyph = true, openFile?: MarkdownRenderContext['openFile']): ReactNode {
-  const file = openFile === undefined ? undefined : parseFileLink(url)
-  if (file !== undefined && openFile !== undefined) {
-    return (
-      <button
-        key={key}
-        type="button"
-        className={clsx(css.fileMention, css.fileLink)}
-        title={file.path}
-        onClick={() => { openFile(file.path, file.line === undefined ? undefined : { line: file.line }) }}
-      >
-        {glyph && <LinkIcon kind={classifyLinkPath(file.path)} className={css.linkIcon} />}
-        {children}
-      </button>
-    )
+/** Local destinations use the scoped file delegate after settlement. */
+function renderAnchor(url: string, children: ReactNode[], key: Key, glyph = true, streaming = false): ReactNode {
+  const file = streaming ? undefined : parseFileLink(url)
+  if (file !== undefined) {
+    return <MarkdownFileLink key={key} file={file} glyph={glyph}>{children}</MarkdownFileLink>
   }
   return renderSafeLink(normalizeUri(url), children, key, glyph)
+}
+
+function MarkdownFileLink({ file, glyph, children }: {
+  readonly file: { path: string; line?: number }
+  readonly glyph: boolean
+  readonly children: ReactNode[]
+}): ReactNode {
+  const { openFile } = useMarkdownDelegate()
+  if (openFile === undefined) return <>{children}</>
+  return (
+    <button
+      type="button"
+      className={clsx(css.fileMention, css.fileLink)}
+      title={file.path}
+      onClick={() => { openFile(file.path, file.line === undefined ? undefined : { line: file.line }) }}
+    >
+      {glyph && <LinkIcon kind={classifyLinkPath(file.path)} className={css.linkIcon} />}
+      {children}
+    </button>
+  )
 }
 
 /**
@@ -714,7 +721,7 @@ function renderLinkReference(
     return <Fragment key={key}>{'['}{renderChildren(node.children, context)}{referenceSuffix(node)}</Fragment>
   }
   const rendered = renderChildren(node.children, { ...context, inLink: true })
-  return renderAnchor(definition.url, rendered, key, !anchorWrapsOnlyImages(node.children), context.openFile)
+  return renderAnchor(definition.url, rendered, key, !anchorWrapsOnlyImages(node.children), context.streaming)
 }
 
 function renderImageReference(

@@ -36,7 +36,6 @@ function renderSettled(
   previews: FencePreviewCatalog | undefined,
   fileMentions: MarkdownFileMentions | undefined,
   pathImages: MarkdownPathImages | undefined,
-  openFile: MarkdownRenderContext['openFile'],
 ): ReactNode[] {
   const root = parseGfmWithMath(text)
   const targets = createReferenceTargets()
@@ -47,7 +46,6 @@ function renderSettled(
     previews,
     fileMentions,
     pathImages,
-    openFile,
     targets,
     footnoteOrder: [],
     footnoteCounts: new Map(),
@@ -178,21 +176,20 @@ class StreamingRenderer {
  * modified clicks retain native behavior. `variant="compact"` uses secondary
  * text sizing, uniform bold headings, and tight block spacing; the default
  * `body` variant uses the full document typography.
- * `openFile` enables local Markdown links in settled messages, including
- * `#L24` and `#L24-L30` destinations (ranges open at their first line).
+ * The provider's `openFile` enables local Markdown links in settled messages,
+ * including `#L24` and `#L24-L30` destinations (ranges open at their first line).
  * @returns A GFM document with TeX math rendered through KaTeX; raw HTML and
  * unsafe protocols are disabled. Local links without an opener remain text;
  * absolute HTTP(S) images render directly.
  */
 export const MarkdownText = memo(function MarkdownText({
-  text, streaming = false, labels, fileMentions, pathImages, openFile, variant = 'body',
+  text, streaming = false, labels, fileMentions, pathImages, variant = 'body',
 }: {
   text: string
   streaming?: boolean
   labels: MarkdownLabels
   fileMentions?: MarkdownFileMentions | undefined
   pathImages?: MarkdownPathImages | undefined
-  openFile?: MarkdownRenderContext['openFile']
   variant?: 'body' | 'compact'
 }) {
   const streamRef = useRef<StreamingRenderer | null>(null)
@@ -201,14 +198,14 @@ export const MarkdownText = memo(function MarkdownText({
   const children = useMemo(() => {
     if (!streaming) {
       streamRef.current = null
-      return renderSettled(text, labels, previews, fileMentions, pathImages, openFile)
+      return renderSettled(text, labels, previews, fileMentions, pathImages)
     }
     if (streamRef.current === null || streamLabelsRef.current !== labels) {
       streamRef.current = new StreamingRenderer(labels, previews)
       streamLabelsRef.current = labels
     }
     return streamRef.current.render(text)
-  }, [text, streaming, labels, previews, fileMentions, pathImages, openFile])
+  }, [text, streaming, labels, previews, fileMentions, pathImages])
   return <div className={clsx(css.markdown, variant === 'compact' && css.compact)}
     data-markdown-variant={variant === 'compact' ? variant : undefined}>{children}</div>
 })
