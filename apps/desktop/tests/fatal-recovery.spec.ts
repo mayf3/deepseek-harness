@@ -19,6 +19,35 @@ function fixture(locale = 'en') {
 
 afterEach(() => { vi.restoreAllMocks() })
 
+it.each(['en', 'zh-CN'])('offers only exit and restart for a listener conflict in %s', async (locale) => {
+  const { operations, choice, stopped, recovery } = fixture(locale)
+  const pending = recovery.report(new AggregateError([
+    new Error('webserver (@deepseek-ai/dsh-host-webserver): Error: listen EADDRINUSE: address already in use 127.0.0.1:19387'),
+  ], 'required startup failure'))
+  const options = operations.show.mock.calls[0]![0]
+  expect(options.buttons).toEqual([operations.messages().exitApplication, operations.messages().restartApplication])
+  await expect([options.title, options.message, options.detail, ...options.buttons!].join('\n') + '\n')
+    .toMatchFileSnapshot(`expected/fatal-address-in-use-${locale}.txt`)
+  choice.resolve({ response: 1, checkboxChecked: false })
+  stopped.resolve(undefined)
+  await pending
+  expect(operations.restart).toHaveBeenCalledOnce()
+  expect(operations.disablePlugins).not.toHaveBeenCalled()
+})
+
+it.each(['win32', 'darwin', 'linux'] as const)('offers the same listener conflict recovery on %s', async (platform) => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+  const { operations, choice, stopped, recovery } = fixture()
+  const pending = recovery.report(new Error('listen EADDRINUSE: address already in use'))
+  expect(operations.show.mock.calls[0]![0].buttons).toEqual([
+    operations.messages().exitApplication, operations.messages().restartApplication,
+  ])
+  expect(operations.show.mock.calls[0]![0].detail).toBe(operations.messages().startupAddressInUse)
+  choice.resolve({ response: 0, checkboxChecked: false })
+  stopped.resolve(undefined)
+  await pending
+})
+
 it.each(['en', 'zh-CN'])('records the %s native recovery dialog', async (locale) => {
   const { operations, choice, stopped, recovery } = fixture(locale)
   const pending = recovery.report(new AggregateError([new Error('Plugin initialization failed')], 'Desktop Host failed'))

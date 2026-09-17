@@ -12,7 +12,7 @@ Status: implemented
 
 Electron 主进程在 darwin 上以 `titleBarStyle: 'hiddenInset'`、`trafficLightPosition: { x: 16, y: 18 }`、`vibrancy: 'sidebar'`、`visualEffectState: 'active'` 与透明 `backgroundColor` 打开主窗口。`'active'` 让窗口失焦时材质保持稳定；`'followWindow'` 会在失焦时把侧边栏冲淡。
 
-所有 Web 侧调整均以 `html[data-platform]` 为开关，该属性仅由桌面 preload 设置（`document.documentElement.dataset.platform = process.platform`）。纯 Web 与非 darwin 桌面的渲染与之前完全一致。
+所有 macOS Web 侧调整均以 `html[data-platform='darwin']` 为开关，该属性仅由桌面 preload 设置（`document.documentElement.dataset.platform = process.platform`）。这些规则不适用于纯 Web 或其他桌面平台。[Windows 顶栏决策](2026-09-16-windows-desktop-titlebar.zh.md)负责其独立呈现。
 
 **透明链。** 毛玻璃只透过透明像素显现：darwin 上 `html`/`body`（ui-web base.css）与 AppFrame 透明，中间列铺不透明的 `--dsw-alias-bg-base`，侧边栏列铺侧边栏底色的半透明 `color-mix`，让材质透出。SidebarRoot 自身的不透明底色出于同一原因移到框架列。
 

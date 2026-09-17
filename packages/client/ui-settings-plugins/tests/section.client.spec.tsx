@@ -1,17 +1,17 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { SubagentCard, type SubagentCardProps } from '../src/client/SubagentCard.tsx'
+import type { SubagentLimitsCardState } from '../src/client/subagent-limits-card-controller.ts'
 import { AgentLoopCard } from '../src/client/AgentLoopCard.tsx'
 import type { AgentLoopCardProps } from '../src/client/AgentLoopCard.tsx'
 import { BashCard } from '../src/client/BashCard.tsx'
 import type { BashCardProps } from '../src/client/BashCard.tsx'
 import { PluginsSettingsSection } from '../src/client/PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionProps, PluginsSettingsTabEntry } from '../src/client/PluginsSettingsSection.tsx'
-import { SubagentModelSelectionCard } from '../src/client/SubagentModelSelectionCard.tsx'
-import type { SubagentModelSelectionCardProps } from '../src/client/SubagentModelSelectionCard.tsx'
 import { WebSearchCard } from '../src/client/WebSearchCard.tsx'
 import type { WebSearchCardProps } from '../src/client/WebSearchCard.tsx'
 import type { AgentLoopCardState } from '../src/client/agent-loop-card-controller.ts'
@@ -73,17 +73,29 @@ function renderBash(state: Partial<BashCardState> = {}) {
   return renderBashCard(state).actions
 }
 
-function renderSubagentModelSelection(state: Partial<SubagentModelSelectionCardState> = {}, view: ConfigView = 'page') {
-  const store = createSnapshotStore<SubagentModelSelectionCardState>({
+function renderSubagent(
+  limitState: Partial<SubagentLimitsCardState> = {},
+  modelState: Partial<SubagentModelSelectionCardState> = {},
+  view: ConfigView = 'page',
+) {
+  const limits = createSnapshotStore<SubagentLimitsCardState>({
+    ...settled,
+    maxDepth: field('3'),
+    maxActiveSubagents: field('8'),
+    ...limitState,
+  })
+  const models = createSnapshotStore<SubagentModelSelectionCardState>({
     ...settled,
     enabled: false,
     candidates: [],
     catalogStatus: 'idle',
     catalogPartial: false,
     conflicted: false,
-    ...state,
+    ...modelState,
   })
   const actions = {
+    editLimit: vi.fn(),
+    resetLimit: vi.fn(),
     toggleEnabled: vi.fn(),
     toggleModel: vi.fn(),
     retryCatalog: vi.fn(),
@@ -94,10 +106,15 @@ function renderSubagentModelSelection(state: Partial<SubagentModelSelectionCardS
     ...actions,
     view,
     t,
-    useSubagentModelSelectionCard: bindSnapshotSelector(store),
-  } as unknown as SubagentModelSelectionCardProps
-  render(<SubagentModelSelectionCard {...props} />)
-  return actions
+    useSubagentLimitsCard: bindSnapshotSelector(limits),
+    useSubagentModelSelectionCard: bindSnapshotSelector(models),
+  } as unknown as SubagentCardProps
+  render(<SubagentCard {...props} />)
+  return { actions, limits, models }
+}
+
+function renderSubagentModelSelection(state: Partial<SubagentModelSelectionCardState> = {}, view: ConfigView = 'page') {
+  return renderSubagent({ available: false }, state, view).actions
 }
 
 describe('PluginsSettingsSection', () => {
@@ -275,7 +292,7 @@ describe('BashCard', () => {
   })
 })
 
-describe('SubagentModelSelectionCard', () => {
+describe('Subagent model selection fields', () => {
   it('renders the default-off preference in its staged plugin card', () => {
     const actions = renderSubagentModelSelection()
 
@@ -363,12 +380,11 @@ describe('SubagentModelSelectionCard', () => {
 
   it('renders its one-liner in the summary view, says so when unavailable, and disables writes when read-only', () => {
     renderSubagentModelSelection({}, 'summary')
-    expect(document.body.textContent).toBe(en.subagentModelSelectionDescription)
+    expect(document.body.textContent).toBe(en.subagentDescription)
 
     cleanup()
     renderSubagentModelSelection({ available: false })
     expect(screen.getByRole('status').textContent).toBe(en.unavailable)
-    expect(screen.queryByRole('switch')).toBeNull()
 
     cleanup()
     const actions = renderSubagentModelSelection({ writable: false })
@@ -504,5 +520,119 @@ describe('WebSearchCard', () => {
       ['maxUses', '4'],
     ])
     expect(actions.resetField.mock.calls).toEqual([['baseURL'], ['maxUses']])
+  })
+})
+
+
+describe('SubagentCard', () => {
+  it('discards both drafts when leaving the page', () => {
+    const { actions } = renderSubagent({ dirty: true }, { dirty: true })
+    cleanup()
+    expect(actions.discard).toHaveBeenCalledOnce()
+  })
+
+  it('renders limits without model selection when only limits are served', () => {
+    renderSubagent({}, { available: false })
+    expect(screen.getByLabelText(en.subagentMaxDepth)).toBeTruthy()
+    expect(screen.queryByRole('switch')).toBeNull()
+  })
+
+  it('shows both sections on one page with one save footer', () => {
+    renderSubagent({ dirty: true })
+
+    expect(screen.getByRole('heading', { name: en.subagentLimitsTitle })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: en.subagentModelSelectionTitle })).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: en.save })).toHaveLength(1)
+  })
+
+  it('reveals field rules on demand without changing staged values', () => {
+    renderSubagent({ dirty: true, maxDepth: field('2') })
+    const depthHelp = screen.getByRole('button', { name: en.subagentDepthHelpLabel })
+    const capacityHelp = screen.getByRole('button', { name: en.subagentCapacityHelpLabel })
+    expect(depthHelp.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText(en.subagentDepthHelp)).toBeNull()
+    expect(screen.queryByText(en.subagentCapacityHelp)).toBeNull()
+
+    fireEvent.click(depthHelp)
+    expect(depthHelp.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('region', { name: en.subagentDepthHelpLabel })).toBeTruthy()
+    expect(screen.getByText(en.subagentDepthHelp)).toBeTruthy()
+    expect(screen.getByRole('table', { name: en.subagentDepthHelpLabel })).toBeTruthy()
+    expect(screen.getByRole('row', { name: `0 ${en.subagentDepthZero}` })).toBeTruthy()
+    expect(screen.getByRole('row', { name: `1 ${en.subagentDepthOne}` })).toBeTruthy()
+    expect(screen.getByText(en.subagentDepthOverride)).toBeTruthy()
+    fireEvent.click(capacityHelp)
+    expect(screen.getByText(en.subagentCapacityHelp)).toBeTruthy()
+    fireEvent.click(depthHelp)
+    expect(screen.queryByText(en.subagentDepthHelp)).toBeNull()
+    expect(screen.getByLabelText(en.subagentMaxDepth)).toHaveProperty('value', '2')
+    expect(screen.getByRole('button', { name: en.save })).toHaveProperty('disabled', false)
+  })
+
+  it('keeps validation visible when the rules are collapsed and links it to the input', () => {
+    renderSubagent({ dirty: true, invalid: true, maxDepth: field('1.5', { invalid: true }) })
+    const depth = screen.getByLabelText(en.subagentMaxDepth)
+    const messageId = depth.getAttribute('aria-describedby')!
+    expect(document.getElementById(messageId)?.textContent).toBe(en.subagentDepthInvalid)
+    expect(screen.queryByRole('region', { name: en.subagentDepthHelpLabel })).toBeNull()
+  })
+
+  it('edits and resets limits through the shared card', () => {
+    const { actions, limits } = renderSubagent({
+      dirty: true,
+      maxDepth: field('3', { overridden: true }),
+      maxActiveSubagents: field('8', { overridden: true }),
+    })
+    fireEvent.change(screen.getByLabelText(en.subagentMaxDepth), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText(en.subagentMaxActive), { target: { value: '12' } })
+    expect(actions.editLimit.mock.calls).toEqual([['maxDepth', '2'], ['maxActiveSubagents', '12']])
+    for (const button of screen.getAllByRole('button', { name: en.reset })) fireEvent.click(button)
+    expect(actions.resetLimit.mock.calls).toEqual([['maxDepth'], ['maxActiveSubagents']])
+    act(() => { limits.set({ ...limits.getSnapshot(), writable: false }) })
+    expect(screen.getByLabelText(en.subagentMaxActive)).toHaveProperty('disabled', true)
+  })
+
+  it('blocks saving both sections when a model selection is invalid or conflicted', () => {
+    const { models } = renderSubagent({ dirty: true }, { dirty: true, invalid: true })
+    expect(screen.getByRole('button', { name: en.save })).toHaveProperty('disabled', true)
+    act(() => { models.set({ ...models.getSnapshot(), invalid: false, conflicted: true }) })
+    expect(screen.getByRole('button', { name: en.save })).toHaveProperty('disabled', true)
+  })
+
+  it('locks both sections while either is saving and stays open after both settle', () => {
+    const { limits, models } = renderSubagent({ dirty: true }, { dirty: true })
+    act(() => {
+      limits.set({ ...limits.getSnapshot(), saving: true })
+      models.set({ ...models.getSnapshot(), saving: true })
+    })
+    expect(screen.getByLabelText(en.subagentMaxDepth)).toHaveProperty('disabled', true)
+    expect(screen.getByRole('switch')).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: en.saving })).toHaveProperty('disabled', true)
+    act(() => { limits.set({ ...limits.getSnapshot(), saving: false, dirty: false }) })
+    expect(screen.getByRole('switch')).toHaveProperty('disabled', true)
+    act(() => { models.set({ ...models.getSnapshot(), saving: false, dirty: false }) })
+    expect(screen.getByRole('switch')).toHaveProperty('disabled', false)
+    expect(screen.getByRole('button', { name: en.save })).toHaveProperty('disabled', true)
+  })
+
+  it('keeps a rejected section open after the other section saves', () => {
+    const { limits, models } = renderSubagent({ dirty: true }, { dirty: true })
+    act(() => {
+      limits.set({ ...limits.getSnapshot(), saving: true })
+      models.set({ ...models.getSnapshot(), saving: true })
+    })
+    act(() => {
+      limits.set({ ...limits.getSnapshot(), saving: false, dirty: false })
+      models.set({ ...models.getSnapshot(), saving: false, failed: true })
+    })
+    expect(screen.getByRole('switch')).toBeTruthy()
+    expect(screen.getByText(en.saveFailed)).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.save })).toHaveProperty('disabled', false)
+  })
+
+  it('renders model-only deployments without limit controls', () => {
+    renderSubagent({ available: false })
+    expect(screen.getByRole('switch')).toBeTruthy()
+    expect(screen.queryByLabelText(en.subagentMaxDepth)).toBeNull()
   })
 })

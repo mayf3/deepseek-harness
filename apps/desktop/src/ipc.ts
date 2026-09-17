@@ -8,6 +8,8 @@ export const DESKTOP_IPC = {
   bootFailed: 'dsh-desktop:boot-failed',
   directoryPick: 'dsh-desktop:directory-pick',
   nativeThemeSet: 'dsh-desktop:native-theme-set',
+  windowsAppearance: 'dsh-desktop:windows-appearance',
+  windowsMenu: 'dsh-desktop:windows-menu',
 } as const
 
 /** Scheme of Desktop-owned application documents. */

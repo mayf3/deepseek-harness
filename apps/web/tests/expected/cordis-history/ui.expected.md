@@ -122,7 +122,6 @@
 - button "Select model, current DeepSeek-V4-Flash":
   - text: DeepSeek-V4-Flash
   - img
-- button "0% of context used"
 - button "Send message" [disabled]
 - button "3 turns 7 steps":
   - img
@@ -130,3 +129,4 @@
 - button "66.8K tok · Cache hit 77%":
   - img
   - text: 66.8K tokCache hit 77%
+- button "0% of context used": 0%
