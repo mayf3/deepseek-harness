@@ -28,22 +28,4 @@ The Web file-reference prompt asks for a link on every existing-file mention out
 
 ## Consequences
 
-Source references need no new Session event. The static Web guidance is logged through the existing system-message mechanism. Links become active when the message settles. A range selects its first line; the preview does not highlight a multi-line selection. Unit tests cover destination parsing and callback wiring; the keyless `markdown-file-links` Web snapshot covers file content, colon labels, line navigation, and tab reuse through the shipped composition. The package tests check the guidance in every Web prompt sidecar and keep the final colon treatment aligned with the shipped paragraph. Historical input hashes and the evaluation runner’s keyless checks run in Linux PR CI. The evaluation runner waits for live process-group members to terminate, excluding zombies that can retain a group id after exit; a PID-existence probe cannot establish running work.
-
-## Prompt evaluation
-
-The development comparison ran four read-only tasks three times per variant. E counts eligible existing-file mentions, L valid links, M missing links, and I invalid links; E = L + M + I. A timed out once without a final answer; that attempt remains a failure and is excluded only from content denominators. These descriptive measurements are neither a weighted quality score nor a holdout evaluation.
-
-| Metric | A | B | C |
-| --- | ---: | ---: | ---: |
-| Completed first answers / attempts | 11/12 | 12/12 | 12/12 |
-| Valid-link coverage L/E | 453/476 (95.2%) | 539/585 (92.1%) | 467/592 (78.9%) |
-| Missing / invalid links | 23 / 0 | 45 / 1 | 124 / 1 |
-| Answers with M = I = 0 | 2/11 | 5/12 | 4/12 |
-| Unnecessary directory labels / named labels | 149/373 | 200/471 | 166/403 |
-| Full-path labels / named labels | 44/373 | 89/471 | 118/403 |
-| Balanced 11-answer coverage | 95.2% | 93.0% | 79.0% |
-
-The colon revision is a separate development run. Its first three answers contained 28 mixed `:start-Lend` suffixes, retained as failures. Explicitly forbidding both `#` and `L` in the suffix yielded 51 structurally valid links in one repeated explanation, but no colon labels, three missing links, and 27 unnecessary directory qualifiers. A subsequent user-accepted demo produced 18 structurally valid links, including three colon labels and no mixed suffix. Neither run establishes reliable compliance or exhaustive factual accuracy. Authentication failures, the timeout, and all first answers remain in the local experiment archive; the [committed metrics](../../../../packages/client/ui-deliverables/evals/file-references/results/2026-09-16/metrics.md) carry the extended 69-row metrics and task-rubric tables.
-
-Reusable [evaluation inputs and rubrics](../../../../packages/client/ui-deliverables/evals/file-references/README.md) live beside the prompt owner, with compact historical observations and failure records. Their manual runner uses the supported headless profile and keeps generated outputs outside version control. Package ownership keeps prompt changes and their regression criteria together; the repository performance benchmark tree has different input and timing requirements.
+Source references need no new Session event. The static Web guidance is logged through the existing system-message mechanism. Links become active when the message settles. A range selects its first line; the preview does not highlight a multi-line selection. Unit tests cover destination parsing and callback wiring; the keyless `markdown-file-links` Web snapshot covers file content, colon labels, line navigation, and tab reuse through the shipped composition. The package tests check the guidance in every Web prompt sidecar.

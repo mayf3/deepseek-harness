@@ -475,9 +475,6 @@ jobs:
       - name: Test production blame scoring
         run: uv run --python 3.10 --with-requirements .github/review-ownership/requirements.txt python -m unittest discover -s .github/review-ownership -p 'test_*.py'
 
-      - name: Test file-reference evaluation tools
-        run: python -m unittest discover -s packages/client/ui-deliverables/evals/file-references -p 'test_*.py' -v
-
       - name: Run complete keyless Python suite
         run: uv run --python 3.10 --group test --project python/sdk pytest
 

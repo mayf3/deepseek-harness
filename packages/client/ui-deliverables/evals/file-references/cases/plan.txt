@@ -1,1 +1,0 @@
-想让 packages/util/atomic-write 的 writeFileAtomic 支持 Buffer，同时保留现有字符串调用。请给一个最小修改方案，列出涉及的实现、测试、文档与调用方，说明兼容性和验证方式。只分析方案，不修改文件，不调用子代理。

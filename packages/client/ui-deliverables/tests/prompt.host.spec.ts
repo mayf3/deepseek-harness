@@ -31,8 +31,6 @@ describe('ui-deliverables node plugin', () => {
       .find(entry => entry.name === 'ui:deliverable-file-references')
     expect(section?.text).toMatchInlineSnapshot('"When you successfully create or modify files, mention the primary outputs in your final response. Outside commands, configuration expressions, and code blocks, link every mention of an existing file, including repeats and tables, to its full path relative to the working directory or absolute; append #L24 or #L24-L30 to the target for known lines. Use the filename or a clear alias as the label, adding only enough parent directories to distinguish files; keep full paths out of labels. Default to the name alone; when precise locations matter, append :24 or :24–30, with no # or L in the line suffix."')
 
-    const treatment = await readFile(new URL('../evals/file-references/prompts/a-colon.txt', import.meta.url), 'utf8')
-    expect(section?.text).toBe(`When you successfully create or modify files, mention the primary outputs in your final response. ${treatment.trim().split('\n').join(' ')}`)
     for (const scenario of ['cordis-tool-round', 'fresh-round-trip', 'ptc-round', 'schedule-catalog']) {
       const sidecar = await readFile(new URL(`../../../../snapshots/web/${scenario}/system-prompt.expected.md`, import.meta.url), 'utf8')
       expect(sidecar, scenario).toContain(section!.text)

@@ -67,7 +67,6 @@ Node 半部注册[模型体验](#model-experience)所述的静态 `ui:deliverabl
 
 当产出物面不够用时阅读以下页面。它们从卡片进入 Host 记录器、turn-tail 洞与词表背后的决策。
 
-- [文件引用评测](evals/file-references/README.zh.md) — 冻结提示词、任务、人工 rubric 和可复算的开发评测汇总。
 - [workspace-changes](../../deliverables/workspace-changes/README.zh.md)——记录并提供卡片所渲染摘要的 Host 插件。
 - [ui-conversation](../ui-conversation/README.zh.md)——声明 `conversation.chat.turnTail` 洞并渲染收尾正文。
 - [本轮改动文件卡片](../../../.agents/notes/implemented/feature/2026-09-11-turn-changed-files-card.zh.md)——用 git 记录的摘要取代修改调用行背后的决策。

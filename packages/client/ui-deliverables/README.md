@@ -67,7 +67,6 @@ Native opening uses an authenticated POST addressed by the viewed Session, event
 
 Read these pages when the deliverables surface is not enough. They move from the card to the Host recorder, the turn-tail hole, and the decisions behind the vocabulary.
 
-- [File-reference evaluation](evals/file-references/README.md) — frozen prompts, tasks, manual rubrics, and reproducible development-result summaries.
 - [workspace-changes](../../deliverables/workspace-changes/README.md) — the Host plugin that records and serves the summary the card renders.
 - [ui-conversation](../ui-conversation/README.md) — declares the `conversation.chat.turnTail` hole and renders the closing prose.
 - [Turn changed-files card](../../../.agents/notes/implemented/feature/2026-09-11-turn-changed-files-card.md) — the decision behind git-recorded summaries replacing the mutation-call row.
