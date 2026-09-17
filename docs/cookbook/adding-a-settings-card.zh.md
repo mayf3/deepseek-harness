@@ -1,14 +1,14 @@
-# Cookbook: 新增设置卡片
+# 手册：添加设置页
 
 [English](adding-a-settings-card.md) | 中文
 
-插件如何把自己的配置放上 Web 设置页。这条路径上没有任何一步需要改动本仓库：Host 服务每一个已注册的 settings 命名空间，而**插件配置**分区以卡片所编辑的命名空间为键，因此同时注册了两个半侧的插件会被自动配对。
+插件如何把自己的配置放到 Web 客户端的插件页上，以及如何向那里的其他插件页面贡献内容。这条路径不需要改动本仓库：Host 服务每一个已注册的设置命名空间，插件页声明了页面或贡献要注册进去的 slot。
 
-两个半侧住在同一个包里——Host 半侧在 `src/`，浏览器半侧在 `src/client/`，以 `./client` 导出并用 `dsh.client` 声明。[`packages/client/ui-theme`](../../packages/client/ui-theme) 是这种打包方式的现成例子；本分区自带的卡片在 [`packages/client/ui-settings-plugins`](../../packages/client/ui-settings-plugins)。
+社区组合包的两个半侧放在一个包里——宿主半侧在 `src/`，浏览器半侧在 `src/client/`，导出为 `./client` 并用 `dsh.client` 声明。包本身带不了浏览器半侧的内置插件，则把页面做成一个伴生客户端包；[`packages/client/ui-settings-shell`](../../packages/client/ui-settings-shell) 是模板。
 
-## 1. 注册命名空间（Host 半侧）
+## 1. 注册命名空间（宿主半侧）
 
-命名空间就是配对用的键，所以只挑一次，并在两个半侧都写出它。已经有 `cordis.yml` entry 的消费方应通过 `ctx.settings.installSection()` 注册——它把 entry 层叠在用户文档之下，并在没有挂载 settings provider 时照常工作：
+命名空间是连接键，选定一次，两个半侧拼写一致。已有 `cordis.yml` 条目的消费者应通过 `ctx.settings.installSection()` 注册，它把条目铺在用户文档之下，并在没有挂载设置提供方时照常工作：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -43,43 +43,58 @@ export function apply(ctx: Context, config: Config) {
 }
 ```
 
-字段上的 `role('secret')` 让它的值不出现在任何响应里；卡片把这类字段写进 `update`/`mutate` 载荷，或改为经 `credentials` 领域寻址一个凭据引用。`applies: 'restart'` 告诉配置表层：拥有方要到下次启动才会对变更生效。
+字段上的 `role('secret')` 让它的值不出现在任何响应里；页面改经 `credentials` 域写入这类字段。`applies: 'restart'` 告诉配置界面：所有者要到下次启动才响应更改。
 
-## 2. 注册卡片（浏览器半侧）
+## 2. 注册页面（浏览器半侧）
 
-卡片以自己的命名空间为键注册进 `settings.plugin.item`，并拥有其中的一切——外观、控件与文案。它通过 `ctx.settingsScope` 读写，后者用读取时的 revision 为每次写入设栅：
+页面注册进插件页的某个配置 slot，并拥有其中的一切——控件、文案和样式。组合包自己的配置进 `plugins.bundle.config`，以包名为键；组合包声明的某一行的配置进 `plugins.row.config`，以 `<包名>#<行 id>` 为键，这会给该行一个打开行页的配置控件。页面向每个条目索取两种视图：`summary` 是标题下的一句话，`page` 是表单。
+
+表单通过 `ctx.settingsScope` 读写，每次写入都以读取时的修订号作栅栏。`ui-primitives` 套件提供暂存编辑模型和控件，页面只需声明字段并渲染：
 
 ```ts ignore-check
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-// Type-only: the keyed slot's declaration. Cross-plugin collaboration goes
-// through cordis services; a value import fails the client bundle-purity gate.
-import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+// Type-only: the Plugins page's slot declarations and the settings scope.
+// Cross-plugin collaboration goes through cordis services; a value import
+// fails the client bundle-purity gate.
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import { SettingsFormModel, settingsNumberField, settingsTextField } from '@deepseek-ai/dsh-client-ui-primitives'
 
-export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope']
+export const inject = ['slots', 'locale', 'settingsScope']
 
 export function apply(ctx: ClientContext): void {
-  const card = new MyPluginCardController(ctx.settingsScope.bind({ namespace: 'my-plugin' }))
-  ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
-    name: 'settings.plugin.item',
-    key: 'my-plugin',
-    locale: 'settings.myPlugin',
-    inject: () => card.inject(),
-  }, MyPluginCard),
+  ctx.effect(() => ctx.locale.register('myPlugin', { zh, en }))
+  const form = new SettingsFormModel(
+    ctx.settingsScope.bind({ namespace: 'my-plugin' }),
+    [settingsTextField('endpoint'), settingsNumberField('retries')],
   )
+  const store = form.bind(() => ({ ...form.shell(), endpoint: form.field('endpoint'), retries: form.field('retries') }))
+  ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+    name: 'plugins.bundle.config',
+    key: '@acme/dsh-my-plugin',
+    locale: 'myPlugin',
+    inject: () => ({ hooks: { myPluginForm: store }, ...form.actions() }),
+  }, MyPluginPage))
 }
 ```
 
-scope 快照携带表单所需的一切：解析后的 `value`、组装层 `base`，以及原始的 `user` 层——字段是否被覆盖，取决于它在 `user` 层中是否**出现**，而非它的值。`scope.set(field, value)` 存一个字段，`scope.unset(field)` 把它清回组装层。
+`MyPluginPage` 在 `view === 'summary'` 时渲染 `t('summary')`，在 `page` 时渲染一个包着 `SettingsValueField` 控件的 `SettingsForm`，并以 `labels` 把文案交给框架。字段是否被覆盖看它在原始用户层里是否存在，而不看它的值；重置会清除该字段，让它重新继承组合层。只有保存才写入，离开页面即丢弃所有草稿。
 
-## 3. 标签页拿它做什么
+## 3. 向其他插件的页面贡献内容
 
-**插件配置**标签页读取 Host 服务了哪些命名空间，并为每个命名空间派发一个 slot 键。当 Host 服务了某卡片的键时它被渲染，否则被跳过，因此从未组装过 Host 半侧的部署不会留下这张卡片的任何痕迹。被服务却无人认领的命名空间什么都不渲染——归其他页面所有的那些命名空间（`ui-theme`、`permission`、`llm-*`）正是这样留在本标签页之外的。
+对某个不属于自己的组合包、行或官方插件有话要说的插件，注册进 `plugins.detail.actions`（页头的控件）、`plugins.detail.badge`（标题旁的标签）或 `plugins.detail.section`（页面自身内容之下的区块）。每个条目都以页面的 `subject` 渲染——`{ kind: 'bundle', pkg }`、`{ kind: 'row', pkg, row }` 或 `{ kind: 'item', id }`——对无话可说的 subject 返回 null：
 
-卡片按其注册进该 slot 的顺序出现；keyed entry 不声明自己的 `order`。
+```ts ignore-check
+ctx.slots.inject('plugins.detail.badge', () => ctx.slots.register({
+  name: 'plugins.detail.badge',
+  id: 'acme-update',
+  locale: 'acmeUpdate',
+}, ({ t, subject }) => subject.kind === 'bundle' && hasUpdate(subject.pkg) ? <Tag tone="info">{t('update')}</Tag> : null))
+```
 
-## 打包
+## 4. 浏览器半侧挂在哪里
 
-浏览器半侧由[客户端模块系统](../../packages/client/modules)提供给页面：它扫描已启用的 Loader entries 中声明了 `dsh.client` 的包，并提供每个包构建出的 `./client` 导出。因此只要 `cordis.yml` 挂载了该插件，它就会出现在页面上——无需重新构建 Web 应用。
+浏览器半侧由[客户端模块系统](../../packages/client/modules)送到页面：它扫描已启用的 Loader 条目，找出声明了 `dsh.client` 的包，送出每个包构建好的 `./client` 导出——但它只把一个包的半侧挂在说明符恰为裸包名的那一行上。从子路径导出挂载的行永远不带半侧，因此把一个包拆成多行的组合包，其半侧留在根行上，它注册的每个页面都随根行关闭而消失。需要在其他行关闭时仍保留页面的子插件，应作为独立的包发布。
 
 ```jsonc
 {
@@ -87,16 +102,8 @@ scope 快照携带表单所需的一切：解析后的 `value`、组装层 `base
     ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
     "./client": { "types": "./lib/types/client/index.d.ts", "default": "./lib/client.js" }
   },
-  "dsh": { "client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-ui-settings-plugins"] } }
+  "dsh": { "client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-ui-settings"] } }
 }
 ```
 
-bundle 必须是 loader 的 lazy-CJS factory 产物。在本仓库内，`tsdown.config.ts` 就是基于共享预设的三行：
-
-```ts ignore-check
-import { clientBundle } from '../tsdown.client.ts'
-
-export default clientBundle('@deepseek-ai/dsh-client-my-plugin', ['lib/types/index.js', 'lib/types/invariant.js'])
-```
-
-没有已发布的预设暴露该包，因此本仓库之外的包得自行复刻同样的输出格式。bundle 纯净度门禁同时拒绝跨插件的值导入，所以卡片无法导入本分区的卡片外观或其暂存表单模型——它渲染自己的那一份，并自行拥有暂存与 revision 设栅。这两条限制都记在[本分区的已知限制](../../packages/client/ui-settings-plugins/README.zh.md#known-limitations-and-deferred-work)里。
+内置命名空间的伴生包就是同样的浏览器半侧放在一个纯客户端包里，宿主 `apply` 为空，列入 Web 组合的插件花名册（[`packages/bundle/web-app/cordis.patch.yml`](../../packages/bundle/web-app/cordis.patch.yml)），并通过 `ctx.settingsScope.whileServed` 注册进 `plugins.item`，页面因此恰好在 Host 服务该命名空间期间存在。

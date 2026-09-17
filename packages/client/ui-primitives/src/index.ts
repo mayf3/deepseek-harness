@@ -44,6 +44,15 @@ export type { TooltipSide } from './Tooltip.tsx'
 export { Toast } from './Toast.tsx'
 export { fileSizeText } from './file-size.ts'
 export { writeClipboard } from './clipboard.ts'
+export { SettingsForm } from './settings-form/SettingsForm.tsx'
+export type { SettingsFormLabels, SettingsFormProps } from './settings-form/SettingsForm.tsx'
+export { SettingsSecretField, SettingsValueField } from './settings-form/fields.tsx'
+export type { SettingsFieldProps } from './settings-form/fields.tsx'
+export { SettingsFormModel, settingsNumberField, settingsTextField } from './settings-form/form-model.ts'
+export type {
+  SettingsFieldSpec, SettingsFieldState, SettingsFieldWrite, SettingsFormActions, SettingsFormScope,
+  SettingsFormScopeSnapshot, SettingsFormShell, SettingsSecretSpec,
+} from './settings-form/form-model.ts'
 export { relativeTime } from './relative-time.ts'
 export { rankByName } from './rank-by-name.ts'
 export { isDarwinDesktop } from './darwin-desktop.ts'

@@ -296,4 +296,35 @@ export class SettingsScopeBinder extends Service {
     }, `ui-settings: ${spec.namespace} settings scope`)
     return controller
   }
+
+  /**
+   * Keep a registration alive while the Host serves any of some namespaces:
+   * `register` runs once one of them is in the describe mirror, and its
+   * disposer runs when none is or when the returned disposer runs. A plugin
+   * whose page edits a namespace another plugin owns registers the page
+   * through this, so a deployment that never composed the owner shows no
+   * trace of the page.
+   * @param namespaces - the settings namespaces the registration follows.
+   * @param register - registers the contribution; returns its disposer.
+   * @returns the disposer ending the watch and any live registration.
+   */
+  whileServed(namespaces: readonly string[], register: () => () => void): () => void {
+    let off: (() => void) | undefined
+    const sync = (): void => {
+      const served = this.mirror.getSnapshot().view?.namespaces.some(view => namespaces.includes(view.ns)) ?? false
+      if (served && off === undefined) off = register()
+      else if (!served && off !== undefined) {
+        off()
+        off = undefined
+      }
+    }
+    const unsubscribe = this.mirror.subscribe(sync)
+    void this.mirror.ensure()
+    sync()
+    return () => {
+      unsubscribe()
+      off?.()
+      off = undefined
+    }
+  }
 }

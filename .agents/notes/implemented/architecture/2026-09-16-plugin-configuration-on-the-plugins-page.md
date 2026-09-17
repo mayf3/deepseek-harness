@@ -16,14 +16,14 @@ A plugin's settings lived in Settings, on the Plugins section's configuration ta
 
 **Only a save writes.** The form's discard control and its unsaved marker are gone: leaving a page drops the staged edits, which the form does on unmount. A save still writes through the client settings scope with the revision fence.
 
-**The four host-plane pages register from `ui-settings-plugins` while the Host serves their namespaces.** The package keeps the Settings section as the **Built-in plugins** shell around the inventory tab and registers each page through `ctx.slots.inject` when the shared settings mirror shows the namespace, disposing it when the namespace goes, so a deployment that does not compose the owning plugin shows no trace of it. The `settings.plugin.item` slot is retired.
+**The four host-plane pages register while the Host serves their namespaces.** Each page's package registers it through `ctx.slots.inject` when the shared settings mirror shows the namespace and disposes it when the namespace goes, so a deployment that does not compose the owning plugin shows no trace of it; since [settings pages as companion packages](2026-09-17-settings-pages-as-companion-packages.md) that is one companion package per page, and `ui-settings-plugins` keeps the Settings section as the **Built-in plugins** shell around the inventory tab. The `settings.plugin.item` slot is retired.
 
 **The Official group.** The optional bundles the installation ships open the group, tagged **Beta** where the feature is one (Agent Teams), with no official tag; the configuration pages follow. Auto review leaves `OPTIONAL_BUNDLES` and the CLI's dependencies: it is a published experimental package the install guide names as its example.
 
 ## Consequences
 
 - A bundle's browser half registers a form with one slot registration and its own dictionary; the bundle's patch must declare the row under the id in the key, and the registration exists while the row that carries the bundle's browser half is on: `dsh-client-modules` attaches that half to the row whose specifier is the bare package name, so a row-level page keyed to a subpath row disappears with the root row, not with its own.
-- The four pages, their forms, and the settings write path are unchanged; `ui-settings-plugins` keeps its name for the section it still owns while its pages live on the Plugins page.
+- The four pages, their forms, and the settings write path are unchanged; `ui-settings-plugins` keeps its name for the section it owns while the pages live on the Plugins page.
 - Settings lists the inventory only; the settings goldens that carried the Plugins nav entry and the configuration tab were re-recorded.
 
 ## Alternatives considered
