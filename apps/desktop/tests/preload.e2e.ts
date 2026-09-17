@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 const preload = (name: string): string => fileURLToPath(new URL(`../lib/${name}.cjs`, import.meta.url))
 
 describe.skipIf(!existsSync(preload('preload-app')))('built sandboxed Desktop preloads', () => {
-  it.each(['preload', 'preload-app', 'preload-welcome'])('%s loads without filesystem module access', (name) => {
+  it.each(['preload-app', 'preload-welcome'])('%s loads without filesystem module access', (name) => {
     const exposed = new Map<string, Record<string, unknown>>()
     const invoke = vi.fn(() => Promise.resolve({ languages: ['en-US'], preference: 'zh' }))
     const send = vi.fn()
@@ -21,7 +21,8 @@ describe.skipIf(!existsSync(preload('preload-app')))('built sandboxed Desktop pr
         return electron
       },
       process: { argv: ['electron', '--dsh-welcome-locale=en'] },
-      location: new URL('http://127.0.0.1:3080/'),
+      location: new URL('dsh-app://app/'),
+      document: { documentElement: { dataset: {} } },
       exports: {},
     })
     if (name === 'preload-app') {
@@ -31,7 +32,7 @@ describe.skipIf(!existsSync(preload('preload-app')))('built sandboxed Desktop pr
       bridge.onChange('zh')
       expect(send).toHaveBeenCalledWith('dsh-desktop:locale-changed', 'zh')
     } else {
-      expect(exposed.has(name === 'preload' ? 'dshDesktop' : 'dshWelcome')).toBe(true)
+      expect(exposed.has('dshWelcome')).toBe(true)
     }
   })
 })

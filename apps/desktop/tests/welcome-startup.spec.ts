@@ -30,12 +30,15 @@ vi.mock('electron', () => ({
     setAsDefaultProtocolClient: vi.fn(),
     whenReady: () => Promise.resolve(),
     getLocale: () => 'en',
+    getVersion: () => '1.0.0',
+    setAboutPanelOptions: vi.fn(),
     getAppPath: () => '/development-app',
     getPreferredSystemLanguages: () => ['en-US'],
     on: vi.fn(),
     quit: state.quit,
     exit: vi.fn(),
   },
+  powerMonitor: { on: vi.fn(), off: vi.fn() },
   BrowserWindow: class {
     constructor(options: unknown) { state.windowOptions = options }
     private ready: (() => void) | undefined
@@ -79,7 +82,16 @@ vi.mock('../src/welcome-backend.ts', () => ({
     account: { watch: () => () => {}, state: async () => ({ status: 'signed-out', attempt: null }) },
   }),
 }))
-vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: vi.fn() }))
+vi.mock('node:fs/promises', async importOriginal => ({
+  ...await importOriginal<typeof import('node:fs/promises')>(),
+  readFile: vi.fn(async () => '{}'),
+}))
+vi.mock('../src/update-dialog.ts', () => ({ DesktopUpdateDialog: class { dispose() {} } }))
+vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: class {
+  state = { phase: 'idle' }
+  check = vi.fn(async () => this.state)
+  dispose = vi.fn()
+} }))
 vi.mock('../src/welcome-window.ts', () => ({
   openWelcomeWindow: (locale: unknown, operations: WelcomeOperations) => {
     state.welcomeLocale = locale
@@ -104,6 +116,8 @@ it('starts the Host for a forced welcome preview and opens the workspace on skip
   vi.stubEnv('DSH_DESKTOP_DSH_DIR', '/runtime/dsh')
   vi.stubEnv('DSH_DESKTOP_HOST_INSPECT_PORT', undefined)
   vi.stubEnv('DSH_DESKTOP_OPEN_DEVTOOLS', '0')
+  vi.stubEnv('DSH_DESKTOP_MANDATORY_UPDATE_CONFIG', undefined)
+  vi.stubEnv('DSH_DESKTOP_UPDATE_JOURNAL_DIR', undefined)
   await import('../src/main.ts')
   await vi.waitFor(() => { expect(state.operations).toBeDefined() })
   expect(state.startHost).toHaveBeenCalledOnce()
@@ -134,6 +148,5 @@ it('starts the Host for a forced welcome preview and opens the workspace on skip
   expect(state.menu).toHaveBeenCalledTimes(initialMenus)
   changed(event, 'en')
   expect(state.menu).toHaveBeenCalledTimes(initialMenus + 1)
-  const shell = { senderFrame: { url: 'dsh-app://shell/plugin-manager.html' } }
-  expect(await state.handlers.get(DESKTOP_IPC.localeGet)!(shell)).toMatchObject({ id: 'en' })
+  expect(await bootstrap(event)).toEqual({ languages: ['en-US'], preference: 'en' })
 })

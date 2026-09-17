@@ -101,7 +101,7 @@ describe.skipIf(!existsSync(builtHost))('built Desktop welcome flow', () => {
       cpSync(join(repository, 'packages/skill/skill-office/assets'), join(root, 'runtime/office-skills'), { recursive: true })
       const paths = resolveDesktopPaths(home)
       const manager = new DesktopProjectManager(paths, {
-        node: process.execPath, pnpm: join(repository, 'apps/desktop/node_modules/pnpm/bin/pnpm.mjs'), dsh: project,
+        dsh: project,
       })
       await manager.applyRelease()
       writeFileSync(join(paths.profile, 'cordis.patch.yml'), `- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n- id: deepseek-account\n  config:\n    platformOrigin: ${platform.origin}\n    allowLoopbackHttp: true\n    requestHeaders:\n      Cookie: test_gate=synthetic\n`)

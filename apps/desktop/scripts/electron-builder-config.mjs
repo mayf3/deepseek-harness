@@ -87,6 +87,7 @@ export function createElectronBuilderConfig(
   if (preparedRuntime !== undefined) buildPaths.dsh = preparedRuntime
   return {
     appId,
+    protocols: [{ name: 'DeepSeek Harness', schemes: ['dsh'] }],
     extraMetadata: { dshDesktopAppId: appId, dshMandatoryUpdatePolicy: policy },
     productName: 'DeepSeek Harness',
     artifactName: 'deepseek-harness-${version}-${os}-${arch}.${ext}',

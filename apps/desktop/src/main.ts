@@ -131,6 +131,8 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
       titleBarStyle: 'hiddenInset' as const,
       trafficLightPosition: { x: 16, y: 18 },
       vibrancy: 'sidebar' as const,
+      // 'active' keeps the vibrancy material stable when the window blurs;
+      // 'followWindow' washes the sidebar out behind an unfocused window.
       visualEffectState: 'active' as const,
       backgroundColor: '#00000000',
     } : {}),
