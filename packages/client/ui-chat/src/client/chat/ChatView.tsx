@@ -7,7 +7,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
-import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconChevronDownOutline14, MarkdownDelegateProvider, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps, OpenFileOptions } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
 import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
@@ -217,7 +217,7 @@ const ChatNodeList = memo(function ChatNodeList({ order, ...seatProps }: ChatNod
  */
 export function ChatView({
   useSession, useChat, useChatNode, useChatNodeProcess, useSessions, useStore, actions, renderSlot,
-  sessionId, openFile, openSkill, loadOlder, loadThrough, loadImage, openView, chatScroll, forkAt, fileMentions,
+  sessionId, openFile, openSkill, openExternalLink, loadOlder, loadThrough, loadImage, openView, chatScroll, forkAt, fileMentions,
   useTranscriptView, useProjection, t,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
@@ -782,25 +782,27 @@ export function ChatView({
               </button>
             </div>
           )}
-          <ChatNodeList
-            order={order}
-            useChatNode={useChatNode}
-            useChatNodeProcess={useChatNodeProcess}
-            historyIncomplete={hasMore}
-            compactTranscript={compactTranscript}
-            useStore={useStore}
-            actions={actions}
-            cwd={cwd}
-            openFile={requestOpenFile}
-            openSkill={openSkill}
-            inspectCall={inspectCall}
-            forkAt={forkAt}
-            loadImage={loadImage}
-            renderMessageImages={renderMessageImages}
-            fileMentions={fileMentions}
-            renderSlot={renderSlot}
-            t={t}
-          />
+          <MarkdownDelegateProvider openExternalLink={openExternalLink}>
+            <ChatNodeList
+              order={order}
+              useChatNode={useChatNode}
+              useChatNodeProcess={useChatNodeProcess}
+              historyIncomplete={hasMore}
+              compactTranscript={compactTranscript}
+              useStore={useStore}
+              actions={actions}
+              cwd={cwd}
+              openFile={requestOpenFile}
+              openSkill={openSkill}
+              inspectCall={inspectCall}
+              forkAt={forkAt}
+              loadImage={loadImage}
+              renderMessageImages={renderMessageImages}
+              fileMentions={fileMentions}
+              renderSlot={renderSlot}
+              t={t}
+            />
+          </MarkdownDelegateProvider>
           {/* No pending placeholders: questions (ui-user-questions) and approvals
               (ApprovalPanel) both take over the composer, so a flow card would
               double-render the same wait. */}
