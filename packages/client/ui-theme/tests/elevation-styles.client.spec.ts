@@ -22,6 +22,8 @@ const NEUTRAL_BORDER = /--dsw-alias-border-/
 
 const sheetCss = readFileSync(
   fileURLToPath(new URL('../src/styles/gradient-shadow-text.css', import.meta.url)), 'utf8')
+const platformCss = readFileSync(
+  fileURLToPath(new URL('../src/styles/design-platform.css', import.meta.url)), 'utf8')
 
 describe('elevation tokens', () => {
   const rules = parseRules(sheetCss)
@@ -52,6 +54,48 @@ describe('elevation tokens', () => {
       expect(perElement.get(name), name).toMatch(/^var\(--dsw-elevation-stroke\), 0 /)
       expect(bodyOnly.has(name), name).toBe(false)
     }
+  })
+
+  it('defines the translucent menu material for both palettes', () => {
+    expect(bodyOnly.get('--dsw-menu-backdrop-filter')).toBe('blur(40px) saturate(150%)')
+    const platformRules = parseRules(platformCss)
+    const value = (selector: string): string | undefined => platformRules
+      .filter(rule => rule.selectors.includes(selector))
+      .flatMap(rule => rule.declarations)
+      .findLast(([property]) => property === '--dsw-specific-menu')?.[1]
+    expect(value('body')).toBe('rgba(248, 249, 250, 0.58)')
+    expect(value('body[data-ds-dark-theme]')).toBe('rgba(48, 49, 54, 0.5)')
+  })
+})
+
+/** Menu-fill rules that omit the shared backdrop filter. */
+function translucentMenusWithoutBackdrop(css: string): string[] {
+  return parseRules(css)
+    .filter(rule => rule.declarations.some(([property, value]) =>
+      (property === 'background' || property === 'background-color')
+      && value === 'var(--dsw-specific-menu)'))
+    .filter(rule => rule.declarations.some(([property, value]) =>
+      property === 'box-shadow' && ELEVATED_SHADOW.test(value)))
+    .filter(rule => !rule.declarations.some(([property, value]) =>
+      property === 'backdrop-filter' && value === 'var(--dsw-menu-backdrop-filter)'))
+    .map(rule => rule.selectors.join(', '))
+}
+
+describe('translucent menu surfaces pair fill and filter', () => {
+  it('rejects a menu fill without the shared backdrop filter', () => {
+    expect(translucentMenusWithoutBackdrop(
+      '.a { background: var(--dsw-specific-menu); box-shadow: var(--dsw-elevation-panel); }',
+    )).toEqual(['.a'])
+    expect(translucentMenusWithoutBackdrop(
+      '.a { background: var(--dsw-specific-menu); box-shadow: var(--dsw-elevation-panel); backdrop-filter: var(--dsw-menu-backdrop-filter); }',
+    )).toEqual([])
+  })
+
+  it('covers every package menu-fill consumer', () => {
+    const missing = packageStylesheets().flatMap(file =>
+      translucentMenusWithoutBackdrop(readFileSync(file, 'utf8'))
+        .map(selectors => `${file} ${selectors}`))
+    expect(missing).toEqual([])
   })
 })
 
@@ -144,7 +188,6 @@ describe('neutral solid borders are hairlines', () => {
    */
   const RING_TRACKS = new Set([
     'boot-page.module.css .spinner',
-    'TrajectoryTable.module.css .historyLoadingSpinner',
   ])
 
   it('rejects a wide neutral border and a wide filled divider', () => {

@@ -4,15 +4,17 @@ import { act, cleanup, createEvent, fireEvent, render, screen } from '@testing-l
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { RowDragProps } from '../src/client/rows/Rows.tsx'
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from '../src/client/rows/Rows.tsx'
 import type { GroupNode, SearchResultNode, SessionNode } from '../src/client/tree.ts'
-import { zh } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
 const t = makeTranslate(zh, commonZh) as never
+const tEn = makeTranslate(en, commonEn) as never
 
 const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
@@ -562,10 +564,10 @@ describe('workspace browser rows', () => {
   })
 
   it.each([
-    ['approval', '等待审批'],
-    ['plan-review', '计划待审'],
-    ['question', '等待回答'],
-  ] as const)('shows %s as warning ahead of the running state', (pendingInteraction, label) => {
+    ['approval', '等待审批', '待批准'],
+    ['plan-review', '计划待审', '计划待审'],
+    ['question', '等待回答', '待回答'],
+  ] as const)('shows %s as warning and replaces the row time', (pendingInteraction, label, compactLabel) => {
     vi.useFakeTimers()
     try {
       const node: SessionNode = {
@@ -576,9 +578,13 @@ describe('workspace browser rows', () => {
       const view = render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
         onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} t={t} />)
       const row = screen.getByRole('treeitem')
+      const title = screen.getByText('Needs input')
       expect(row.querySelector('[data-state="warning"]')).toBeTruthy()
       expect(row.querySelector('[data-state="ongoing"]')).toBeNull()
-      expect(screen.getByText(label)).toBeTruthy()
+      expect(row.textContent).toContain(label)
+      expect(title.nextElementSibling?.textContent).toBe(compactLabel)
+      expect(title.nextElementSibling?.getAttribute('aria-hidden')).toBe('true')
+      expect(row.textContent).not.toContain('刚刚')
 
       view.rerender(<SessionNodeItem node={{ ...node, running: false }} currentId={undefined} now={0}
         onOpen={vi.fn()} onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} t={t} />)
@@ -586,11 +592,30 @@ describe('workspace browser rows', () => {
 
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
       act(() => { vi.advanceTimersByTime(500) })
-      expect(screen.getAllByText(label)).toHaveLength(2)
+      expect(screen.getAllByText(label).length).toBeGreaterThanOrEqual(2)
+      expect(screen.getByText('刚刚')).toBeTruthy()
       expect(document.querySelectorAll('[data-state="warning"]')).toHaveLength(2)
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it.each([
+    ['approval', 'Approval'],
+    ['plan-review', 'Plan review'],
+    ['question', 'Answer'],
+  ] as const)('uses the compact English %s row label', (pendingInteraction, compactLabel) => {
+    const node: SessionNode = {
+      id: sid(pendingInteraction), title: 'Needs input', blank: false,
+      pendingInteraction, running: false, runningSubagentCount: 0, completed: false,
+      hasActiveSchedule: false, updatedAt: 0,
+    }
+    render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} t={tEn} />)
+    const row = screen.getByRole('treeitem')
+    expect(screen.getByText('Needs input').nextElementSibling?.textContent).toBe(compactLabel)
+    expect(screen.getByText('Needs input').nextElementSibling?.getAttribute('aria-hidden')).toBe('true')
+    expect(row.textContent).not.toContain('now')
   })
 
   it('idle hover card shows the Idle status line', () => {
@@ -604,7 +629,7 @@ describe('workspace browser rows', () => {
         onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
       act(() => { vi.advanceTimersByTime(500) })
-      expect(screen.getByText('空闲')).toBeTruthy()
+      expect(screen.getByText('空闲').parentElement?.querySelector('[data-state="idle"]')).not.toBeNull()
       expect(screen.getAllByText('刚刚')).toHaveLength(2)
     } finally {
       vi.useRealTimers()

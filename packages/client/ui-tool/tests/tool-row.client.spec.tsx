@@ -340,14 +340,12 @@ describe('ToolRow', () => {
     expect(view.queryByText(/"a": 1/)).toBeNull()
   })
 
-  it('running keeps the icon (row sweep carries the signal); error swaps in a StateDot', () => {
+  it('keeps the business icon across running and error states', () => {
     const runningView = render(<ToolRow {...rowProps} state="running" />)
     expect(runningView.queryByTestId('tool-icon')).not.toBeNull()
     expect(runningView.container.querySelector('[data-state="running"]')).not.toBeNull()
     const errorView = render(<ToolRow {...rowProps} state="error" />)
-    expect(errorView.container.querySelector('[data-testid="tool-icon"]')).toBeNull()
-    // The dot rides the idle slot, so an expandable error row keeps the
-    // icon→chevron hover preview instead of losing it with the icon.
+    expect(errorView.container.querySelector('[data-testid="tool-icon"]')).not.toBeNull()
     expect(errorView.container.querySelector('[class*="chevronHover"]')).not.toBeNull()
   })
 
@@ -503,6 +501,20 @@ describe('GenericToolCard', () => {
     expect(view.getByText('Bash')).toBeTruthy()
     expect(view.getByText('List files')).toBeTruthy()
     expect(view.container.querySelector('[data-variant="bash"]')).not.toBeNull()
+  })
+
+  it.each([
+    'bash', 'read', 'grep', 'write', 'run_code', 'unknown_tool',
+  ] as const)('keeps the %s business family artwork on failure', (toolName) => {
+    const failed = result({
+      call: { name: toolName, argsRaw: '{}' },
+      content: [{ type: 'text', text: 'failed' }],
+      isError: true,
+    })
+    const view = render(<GenericToolCard {...props(toolName, failed)} />)
+    const root = view.container.querySelector(`[data-tool="${toolName}"]`)!
+    expect(root.querySelector('[data-disclosure-row] > :first-child svg')).not.toBeNull()
+    expect(root.querySelector('[data-state]')).toBeNull()
   })
 
   it('unknown tools land on the others variant titled Tool call', () => {

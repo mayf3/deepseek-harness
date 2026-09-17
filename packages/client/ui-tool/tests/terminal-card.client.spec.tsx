@@ -429,9 +429,8 @@ describe('BashRow terminal card', () => {
     expect(view.getByText('List files')).toBeTruthy()
   })
 
-  // The row's leading StateDot and the card's run-state dot describe the same
-  // command, so a running row whose card claimed 'done' would be a contradiction
-  // the reader sees on one line.
+  // The row's running state and the card's run-state dot describe the same
+  // command, so a running row whose card claimed 'done' would contradict itself.
   it('agrees with the summary row about the run state', () => {
     const runningView = render(<BashRow {...rowProps(running())} />)
     expect(runningView.container.querySelector('[data-variant="bash"]')?.getAttribute('data-state')).toBe('running')

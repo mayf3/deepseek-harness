@@ -344,9 +344,8 @@
   border: 0.5px solid var(--dsw-alias-border-l1);
 }
 
-/* Visually hidden run-state label for assistive technology: the StateDot and
-   the running sweep are aria-hidden / colour-only, so the text carries the
-   running/failed/interrupted state to a screen reader. */
+/* Visually hidden run-state label for assistive technology: the running sweep
+   and visual settlement styling are color-only. */
 .visuallyHidden {
   position: absolute;
   width: 1px;

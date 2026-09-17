@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { IconDownloadOutline16, IconEllipsisOutline16, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconDownloadOutlineRegular, IconEllipsisOutlineRegular, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SessionLogDownloadDialog, type SessionLogDownloadDialogProps } from './Dialog.tsx'
 import css from './HeaderAction.module.css'
 
@@ -22,7 +22,7 @@ export function SessionLogDownloadHeaderAction(props: SessionLogDownloadDialogPr
         align="end"
         dense
         onClose={() => { setOpen(false) }}
-        items={[{ id: 'download', label: t('menu.download'), icon: <IconDownloadOutline16 />, disabled: busy }]}
+        items={[{ id: 'download', label: t('menu.download'), icon: <IconDownloadOutlineRegular />, disabled: busy }]}
         onSelect={() => {
           setOpen(false)
           void request(sessionId)
@@ -37,7 +37,7 @@ export function SessionLogDownloadHeaderAction(props: SessionLogDownloadDialogPr
             aria-busy={busy}
             onClick={() => { setOpen(value => !value) }}
           >
-            <IconEllipsisOutline16 />
+            <IconEllipsisOutlineRegular />
           </button>
         )}
       />

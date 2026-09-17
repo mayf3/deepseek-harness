@@ -1,6 +1,6 @@
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
 import {
-  IconChevronDownOutline14, IconInspectOutline12, IconSkillOutline16, StateDot,
+  IconChevronDownOutlineRegular, IconInspectOutlineRegular, IconSkillOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -72,24 +72,15 @@ function skillRowModel(block: ToolCallViewProps['block']): SkillRowModel {
   }
 }
 
-/** State substitution for the collapsed leading slot. */
-function leadingFor(state: SkillRowState): ReactNode {
-  switch (state) {
-    case 'error': return <StateDot state="error" />
-    case 'stopped': return <StateDot state="warning" />
-    default: return <IconSkillOutline16 size={14} />
-  }
-}
-
 /** Leading disclosure slot: state icon at rest, chevron on hover or while open. */
-function disclosureLeading(state: SkillRowState, open: boolean, expandable: boolean): ReactNode {
-  if (open) return <IconChevronDownOutline14 className={css.chevron} />
-  const icon = leadingFor(state)
+function disclosureLeading(open: boolean, expandable: boolean): ReactNode {
+  if (open) return <IconChevronDownOutlineRegular className={css.chevron} />
+  const icon = <IconSkillOutlineRegular size={14} />
   if (!expandable) return icon
   return (
     <>
       <span className={css.iconIdle}>{icon}</span>
-      <IconChevronDownOutline14 className={`${css.chevron} ${css.chevronHover}`} />
+      <IconChevronDownOutlineRegular className={`${css.chevron} ${css.chevronHover}`} />
     </>
   )
 }
@@ -131,7 +122,7 @@ export function SkillRow({ block, inspect, t }: SkillRowProps) {
     onClick: toggleExpand,
     onKeyDown: toggleFromKeyboard,
   } : {}
-  const leading = disclosureLeading(model.state, open, expandable)
+  const leading = disclosureLeading(open, expandable)
   return (
     <div className={css.card} data-tool="skill" data-state={model.state}>
       <div
@@ -155,7 +146,7 @@ export function SkillRow({ block, inspect, t }: SkillRowProps) {
           </section>
           {inspect !== undefined ? (
             <button type="button" className={css.inspectButton} onClick={inspect}>
-              <IconInspectOutline12 />
+              <IconInspectOutlineRegular />
               {t('row.inspect')}
             </button>
           ) : null}

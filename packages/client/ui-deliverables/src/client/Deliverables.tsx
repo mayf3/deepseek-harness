@@ -1,7 +1,7 @@
 /** The changed-files card, shown only while the Host serves the turn's summary, and explicitly declared files for a closing turn. */
 import { useEffect, useState } from 'react'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { Button, IconChevronDownOutline14, IconChevronUpOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GlobalStandardProps, InjectFace, PropsLocale, PropsRuntime, SessionStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { PresentedOpenController } from './present-open.ts'
@@ -110,7 +110,7 @@ export function Deliverables({
         aria-label={t(expanded ? 'presented.collapseAria' : 'presented.expandAria', { count: matched.presented.length })}
         onClick={() => { setExpanded(value => !value) }}>
         <span>{t(expanded ? 'presented.collapse' : 'presented.all', { count: matched.presented.length })}</span>
-        {expanded ? <IconChevronUpOutline14 /> : <IconChevronDownOutline14 />}
+        {expanded ? <IconChevronUpOutlineRegular /> : <IconChevronDownOutlineRegular />}
       </button>}
     </div>}
   </>

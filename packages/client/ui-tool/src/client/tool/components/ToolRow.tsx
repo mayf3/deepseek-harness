@@ -1,7 +1,8 @@
 import { useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  CodeBlock, DiffBlock, DisclosureRow, IconInspectOutline12, ReadBlock, SearchBlock, StateDot, TerminalBlock, WebBlock,
+  CodeBlock, DiffBlock, DisclosureRow, IconInspectOutlineRegular, ReadBlock, SearchBlock,
+  TerminalBlock, WebBlock,
   diffTotals,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderSlots, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -87,15 +88,7 @@ export interface ToolRowProps {
   inspect?: (() => void) | undefined
 }
 
-function leadingFor(state: ToolRowState, icon: ReactNode): ReactNode {
-  switch (state) {
-    case 'error': return <StateDot state="error" />
-    case 'stopped': return <StateDot state="warning" />
-    default: return icon
-  }
-}
-
-/** Visually hidden run-state label: the StateDot and the CSS sweep are both
+/** Visually hidden run-state label: the status artwork and CSS sweep are both
  *  aria-hidden / colour-only, so assistive technology needs this text to know a
  *  row is running, failed, or interrupted. null in the ok state (the icon and
  *  summary already describe a settled row). */
@@ -201,7 +194,7 @@ export function ToolRow({
         leadingClassName={css.leading}
         titleClassName={css.title}
         chevronClassName={css.chevron}
-        icon={leadingFor(state, icon)}
+        icon={icon}
         title={title}
         open={open}
         expandable={expandable}
@@ -325,7 +318,7 @@ export function ToolRow({
               className={css.inspectButton}
               onClick={inspect}
             >
-              <IconInspectOutline12 />
+              <IconInspectOutlineRegular />
               {t('row.inspect')}
             </button>
           )}

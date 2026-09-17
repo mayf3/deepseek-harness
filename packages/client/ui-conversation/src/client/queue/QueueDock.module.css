@@ -31,7 +31,8 @@
   width: 100%;
   padding: 2px 0;
   border-radius: 12px 12px 0 0;
-  background: var(--dsw-specific-tip);
+  background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }

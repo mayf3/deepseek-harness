@@ -256,6 +256,7 @@ describe('FileMutationRow diff card', () => {
     cleanup()
     const errorView = render(<FileMutationRow {...rowProps(settled({ isError: true }))} />)
     expect(errorView.container.querySelector('[data-state="error"]')).not.toBeNull()
+    expect(errorView.container.querySelector('[data-state="error"] svg')).not.toBeNull()
   })
 
   it('a mutation result with no metadata renders the summary row alone', () => {
@@ -299,8 +300,9 @@ describe('FileMutationRow diff card', () => {
       error: { name: 'ToolError', code: 'interrupted' },
     }))} />)
     expect(view.container.querySelector('[data-state="stopped"]')).not.toBeNull()
-    // The amber StateDot is aria-hidden, so ToolRow carries the state to AT as
-    // visually-hidden text; without it a stopped row is a colour-only signal.
+    expect(view.container.querySelector('[data-state="stopped"] svg')).not.toBeNull()
+    // The dashed glyph is aria-hidden, so ToolRow carries the state to AT as
+    // visually-hidden text; without it a stopped row is a visual-only signal.
     expect(view.getByText('已停止')).toBeTruthy()
   })
 

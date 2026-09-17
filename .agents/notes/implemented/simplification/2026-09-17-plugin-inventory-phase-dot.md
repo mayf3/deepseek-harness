@@ -32,4 +32,4 @@ Row enablement, tag tones, grouping, search and list behavior are unchanged, as 
 
 The package spec pins the rule in both scopes: `loading` and `pending` (global) and `unloading` (preset) keep a dot, while `active`, `failed` and a row without a live fiber render none. `apps/web/tests/settings-chrome.e2e.ts` asserts the assembled global group contains enabled rows and no `role="img"` element named `运行中`.
 
-The remaining dots' palette, halo and animation, and the tag capsule itself, stay owned by [the shared client control decision](../architecture/2026-09-05-shared-client-control-primitives.md).
+The remaining dots' palette and animation are owned by [the StateDot visual language decision](../feature/2026-09-17-state-dot-visual-language.md); the tag capsule remains owned by [the shared client control decision](../architecture/2026-09-05-shared-client-control-primitives.md).

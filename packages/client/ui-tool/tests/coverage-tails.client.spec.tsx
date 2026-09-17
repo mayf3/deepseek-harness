@@ -41,12 +41,12 @@ function bashProps(block: RunningToolCall | ToolResultNode): BashRowProps {
 }
 
 describe('Tool presentation tails', () => {
-  it('ToolRow stopped state renders the warning dot in the leading slot', () => {
+  it('ToolRow stopped state retains the supplied business icon in the leading slot', () => {
     const view = render(
-      <ToolRow t={t} variant="bash" icon={<i data-testid="icon" />} title="Bash" summary="s" state="stopped" />,
+      <ToolRow t={t} variant="bash" icon={<i data-testid="icon" />}
+        title="Bash" summary="s" state="stopped" />,
     )
-    expect(view.queryByTestId('icon')).toBeNull()
-    expect(view.container.querySelector('[data-state="stopped"]')).not.toBeNull()
+    expect(view.queryByTestId('icon')).not.toBeNull()
   })
 
   it('a settled others-variant row renders the sparkle icon in the leading slot', () => {
@@ -79,7 +79,7 @@ describe('Tool presentation tails', () => {
     expect(row.getAttribute('data-clickable')).toBeNull()
   })
 
-  it('BashRow carries data-state for running and StateDots for error/stopped', () => {
+  it('BashRow retains its business icon for failed and stopped states', () => {
     const running: RunningToolCall = {
       callId: 'c1', name: 'bash', argsRaw: '{"command":"ls","description":"List"}',
       turn: 1, step: 1, time: 1_000, subCalls: [],
@@ -104,11 +104,13 @@ describe('Tool presentation tails', () => {
     const errorView = render(<BashRow {...bashProps(errorResult)} />)
     expect(errorView.container.querySelector('[data-sample="bash"]')).not.toBeNull()
     expect(errorView.container.querySelector('[data-state="error"]')).not.toBeNull()
+    expect(errorView.container.querySelector('[data-state="error"] svg')).not.toBeNull()
     expect(errorView.getByText('失败')).toBeTruthy()
     errorView.unmount()
 
     const stoppedView = render(<BashRow {...bashProps(stoppedResult)} />)
     expect(stoppedView.container.querySelector('[data-state="stopped"]')).not.toBeNull()
+    expect(stoppedView.container.querySelector('[data-state="stopped"] svg')).not.toBeNull()
     expect(stoppedView.getByText('已停止')).toBeTruthy()
   })
 })

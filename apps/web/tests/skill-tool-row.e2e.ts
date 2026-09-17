@@ -77,6 +77,48 @@ describe.skipIf(MODE === 'record')('web e2e: dedicated Skill tool row', () => {
     expect(tripwire.warnings).toEqual([])
   }, 60_000)
 
+  it('keeps the collapsed Skill line on the global ToolCall font-size axis', async () => {
+    const call = page.locator('[data-tool="skill"]')
+    const toggle = call.getByRole('button', { name: 'Skill editing-cordis-compositions' })
+    if (await toggle.getAttribute('aria-expanded') === 'true') await toggle.click()
+    await expect.poll(() => toggle.getAttribute('aria-expanded')).toBe('false')
+    const row = call.locator(':scope > div').first()
+    const title = call.getByText('Skill', { exact: true })
+    const summary = call.getByText('editing-cordis-compositions', { exact: true })
+
+    expect(await title.evaluate(element => getComputedStyle(element).fontSize)).toBe('13px')
+
+    const previous = await page.evaluate(() => ({
+      fontSize: {
+        value: document.body.style.getPropertyValue('--dsh-content-font-size-secondary'),
+        priority: document.body.style.getPropertyPriority('--dsh-content-font-size-secondary'),
+      },
+      delta: {
+        value: document.body.style.getPropertyValue('--dsh-content-font-delta'),
+        priority: document.body.style.getPropertyPriority('--dsh-content-font-delta'),
+      },
+    }))
+    await page.evaluate(() => {
+      document.body.style.setProperty('--dsh-content-font-size-secondary', '15px')
+      document.body.style.setProperty('--dsh-content-font-delta', '2px')
+    })
+    try {
+      expect(await title.evaluate(element => getComputedStyle(element).fontSize)).toBe('15px')
+      expect(await summary.evaluate(element => getComputedStyle(element).fontSize)).toBe('15px')
+      expect(await row.evaluate(element => getComputedStyle(element).height)).toBe('26px')
+      expect(await row.locator('svg').first().evaluate(element => getComputedStyle(element).width)).toBe('16px')
+    } finally {
+      await page.evaluate((saved) => {
+        const restore = (name: string, entry: { value: string; priority: string }): void => {
+          if (entry.value === '') document.body.style.removeProperty(name)
+          else document.body.style.setProperty(name, entry.value, entry.priority)
+        }
+        restore('--dsh-content-font-size-secondary', saved.fontSize)
+        restore('--dsh-content-font-delta', saved.delta)
+      }, previous)
+    }
+  })
+
   it('keeps its snapshot inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md'])
   })
