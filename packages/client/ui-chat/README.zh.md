@@ -29,7 +29,7 @@ kind: "package-reference"
 <a id="reference-previews"></a>
 ## 引用预览
 
-已发送的文件引用及消息日志确认调用的 skill 可在右侧栏打开预览。文件路径使用当前查看的 Session；skill 名称由该 Session 当前的输入触发源解析。两者悬停或聚焦时均使用正文文件链接的虚线下划线。会话、目录和命令标签仍只作为引用展示。
+Assistant Markdown 中的 HTTP(S) 链接在普通点击时会在该类型已注册时打开新的右侧 Sidebar Browser tab，否则改用系统浏览器；带修饰键的点击保留原生外部链接行为。已发送的文件引用及消息日志确认调用的 skill 也可在右侧栏打开预览。文件路径使用当前查看的 Session；skill 名称由该 Session 当前的输入触发源解析。两者悬停或聚焦时均使用正文文件链接的虚线下划线。会话、目录和命令标签仍只作为引用展示。
 
 <a id="system-prompt-row"></a>
 ## 系统提示词行

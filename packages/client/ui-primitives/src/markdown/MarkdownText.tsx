@@ -157,12 +157,14 @@ class StreamingRenderer {
  * identity discards the streaming render cache mid-message. `fileMentions`
  * links inline-code tokens its resolver recognizes as real files, and
  * `pathImages` rewrites image destinations that are local file paths into
- * displayable URLs its resolver vouches for; both vocabularies are the
+ * displayable URLs its resolver vouches for. Those two vocabularies are the
  * single streaming gate — they apply to settled renders only, because a
  * streaming message's vocabulary is not final and frozen cached elements
- * must not bake in handlers that could go stale. `variant="compact"` uses
- * secondary text sizing, uniform bold headings, and tight block spacing;
- * the default `body` variant uses the full document typography.
+ * must not bake in handlers that could go stale. A surrounding
+ * `MarkdownDelegateProvider` can delegate ordinary HTTP(S) activation while
+ * modified clicks retain native behavior. `variant="compact"` uses secondary
+ * text sizing, uniform bold headings, and tight block spacing; the default
+ * `body` variant uses the full document typography.
  * @returns A GFM document with TeX math rendered through KaTeX; raw HTML,
  * relative links, and unsafe protocols are disabled, while absolute HTTP(S)
  * images render directly.

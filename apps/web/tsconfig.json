@@ -46,6 +46,7 @@
     "tests/details-session-lifecycle.e2e.ts",
     "tests/document-preview.e2e.ts",
     "tests/office-fixture.ts",
+    "tests/sidebar-browser.e2e.ts",
     "tests/plugin-config.e2e.ts",
     "tests/plugin-manager.e2e.ts",
     "tests/plugin-install-cancel.e2e.ts",
