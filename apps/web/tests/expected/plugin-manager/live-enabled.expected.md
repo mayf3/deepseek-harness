@@ -5,16 +5,12 @@
   - img
   - text: 添加插件
 - heading "官方" [level=3]
-- text: "6"
+- text: "5"
 - list:
   - listitem:
     - button "查看 智能体团队": 智能体团队
-    - text: Beta 启用智能体团队协作与团队工具。
+    - text: Beta 启用团队协作、团队工具及成员与任务看板。
     - switch "启用 智能体团队"
-  - listitem:
-    - button "查看 智能体团队 Web 界面": 智能体团队 Web 界面
-    - text: Beta 在浏览器中查看团队成员、任务看板和成员会话。
-    - switch "启用 智能体团队 Web 界面"
   - listitem:
     - button "查看 终端": 终端
     - text: 限制 agent 运行的每一条命令。
