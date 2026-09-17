@@ -183,8 +183,8 @@
   width: 100%;
   color: var(--dsw-alias-label-tertiary);
   font-family: var(--ds-font-family-code);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .cardTrailing {
