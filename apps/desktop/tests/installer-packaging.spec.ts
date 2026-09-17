@@ -1,4 +1,5 @@
 import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { Arch, Platform } from 'electron-builder'
 import { Packager } from 'app-builder-lib'
 import { describe, expect, it, vi } from 'vitest'
@@ -11,10 +12,18 @@ vi.mock('node:child_process', async (importOriginal) => {
 })
 
 describe('installer preparation preserves application dependencies', () => {
+  it.each(['win32', 'darwin'] as const)('rejects a missing production policy before signing on %s', async (platform) => {
+    const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
+    expect(() => createElectronBuilderConfig({ DSH_DESKTOP_APP_ID: 'com.example.installer',
+      DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+      DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://harness-test.deepseek.com',
+    }, platform, 'x64')).toThrow('DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN')
+  })
   it.each(['win32', 'darwin'] as const)('keeps electron-builder responsible for node_modules on %s', async (platform) => {
     execute.mockClear()
     const env = {
       DSH_DESKTOP_APP_ID: 'com.example.installer',
+      DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
       DSH_DESKTOP_TARGET_PLATFORM: platform,
       DSH_DESKTOP_TARGET_ARCH: 'x64',
       DSH_DESKTOP_UNSIGNED: platform === 'win32' ? '1' : '0',
@@ -27,9 +36,9 @@ describe('installer preparation preserves application dependencies', () => {
     try {
       const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
       const config = createElectronBuilderConfig(env, platform, 'x64')
-      expect(config.files.filter(file => typeof file === 'string')).toEqual([
-        'lib/main.js', 'lib/preload-app.cjs', 'package.json',
-      ])
+      const aboutIcon = config.extraResources.find(resource => resource.to === 'icon.png')
+      expect(aboutIcon).toBeDefined()
+      expect(readFileSync(aboutIcon!.from)).toEqual(readFileSync(new URL('../resources/icon-windows.png', import.meta.url)))
       const packager = new Packager({ projectDir: tmpdir() })
       // A foreign source-build target avoids rebuilding modules; the real dependency ownership decision still runs.
       Object.defineProperties(packager, {

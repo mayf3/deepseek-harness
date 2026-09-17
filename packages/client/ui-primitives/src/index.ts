@@ -66,9 +66,7 @@ export type {
   WebBlockProps, WebSearchBlockProps, WebFetchBlockProps, WebSourceView, WebBlockLabels,
 } from './WebBlock.tsx'
 export { CodeBlock } from './markdown/CodeBlock.tsx'
-export type {
-  CodeBlockPreview, CodeBlockPreviewLabels, CodeBlockPreviewRenderer, CodeBlockProps,
-} from './markdown/CodeBlock.tsx'
+export type { CodeBlockProps } from './markdown/CodeBlock.tsx'
 export { JsonBlock } from './markdown/JsonBlock.tsx'
 export { MarkdownDelegateProvider } from './markdown/MarkdownDelegate.tsx'
 export type { MarkdownDelegateProviderProps, MarkdownExternalLinkHandler } from './markdown/MarkdownDelegate.tsx'

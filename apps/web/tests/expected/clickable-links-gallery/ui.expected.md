@@ -172,9 +172,7 @@
 - paragraph:
   - img "Token preview"
 - text: css
-- button "Line numbers"
 - button "Copy"
-- text: Source
 - code: "--inline-code: #F5F5F5;"
 - paragraph: LINK_GALLERY_DONE
 - heading "Footnotes" [level=2]

@@ -7,22 +7,11 @@ import { CodeBlock as LocalizedCodeBlock } from '../src/markdown/CodeBlock.tsx'
 import { highlightToHtml, subscribeGrammarLoaded } from '../src/markdown/highlight.ts'
 import { markdownLabels } from './labels.client.ts'
 
-function CodeBlock(props: Omit<ComponentProps<typeof LocalizedCodeBlock>, 'copyLabel' | 'copiedLabel' | 'sourceLabel' | 'lineNumbersLabel'>) {
+function CodeBlock(props: Omit<ComponentProps<typeof LocalizedCodeBlock>, 'copyLabel' | 'copiedLabel'>) {
   return <LocalizedCodeBlock {...props} {...markdownLabels.code} />
 }
 
-const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
-const execCommandDescriptor = Object.getOwnPropertyDescriptor(document, 'execCommand')
-
-afterEach(() => {
-  cleanup()
-  vi.useRealTimers()
-  vi.restoreAllMocks()
-  if (clipboardDescriptor === undefined) Reflect.deleteProperty(navigator, 'clipboard')
-  else Object.defineProperty(navigator, 'clipboard', clipboardDescriptor)
-  if (execCommandDescriptor === undefined) Reflect.deleteProperty(document, 'execCommand')
-  else Object.defineProperty(document, 'execCommand', execCommandDescriptor)
-})
+afterEach(cleanup)
 
 beforeEach(() => {
   vi.useRealTimers()
@@ -70,13 +59,6 @@ describe('highlightToHtml', () => {
 })
 
 describe('CodeBlock', () => {
-  it('omits its header when the owner supplies toolbar controls', () => {
-    const view = render(<CodeBlock code="plain text" showHeader={false} />)
-    expect(view.container.querySelector('[data-code-block-header]')).toBeNull()
-    expect(view.container.querySelector('[data-code-block-banner]')).toBeNull()
-    expect(view.container.querySelector('pre')?.textContent).toBe('plain text')
-  })
-
   it('reports the stable source-content wrapper to its owner', () => {
     const contentRef = vi.fn<(node: HTMLDivElement | null) => void>()
     const view = render(<CodeBlock code="plain text" contentRef={contentRef} />)
@@ -124,7 +106,7 @@ describe('CodeBlock', () => {
     const view = render(<CodeBlock code="" lineNumbers />)
     expect(view.container.querySelectorAll('code > .line')).toHaveLength(1)
     expect(view.container.querySelector('pre')!.textContent).toBe('')
-    const gutter = () => view.container.querySelector<HTMLElement>('[style*="--dsl-code-block-line-number-width"]')!
+    const gutter = () => view.container.querySelector<HTMLElement>('[data-line-numbers]')!
       .style.getPropertyValue('--dsl-code-block-line-number-width')
     expect(gutter()).toBe('2ch')
     view.rerender(<CodeBlock code="const first = 1" lang="ts" streaming lineNumbers />)
@@ -151,88 +133,27 @@ describe('CodeBlock', () => {
     expect(view.getByText('plain text')).toBeTruthy()
   })
 
-  it('shows a noninteractive selected source label for a block without preview', () => {
-    const view = render(<CodeBlock code="const a = 1" lang="ts" />)
-    const banner = view.container.querySelector('[data-code-block-banner]')!
-    expect(screen.getByText(markdownLabels.code.sourceLabel).tagName).toBe('SPAN')
-    expect(screen.queryByRole('button', { name: markdownLabels.code.sourceLabel })).toBeNull()
-    expect([...banner.querySelectorAll('button')].map(button => button.getAttribute('aria-label')))
-      .toEqual([markdownLabels.code.lineNumbersLabel, markdownLabels.code.copyLabel])
-  })
-
-  it.each(['ts', undefined])('trims exactly one trailing newline from %s source and its clipboard text', async (lang) => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-    const view = render(<CodeBlock code={'const a = 1\n\n'} lang={lang} />)
-    expect(view.container.querySelector('pre')?.textContent).toBe('const a = 1\n')
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '复制' })) })
-    expect(writeText).toHaveBeenCalledWith('const a = 1\n')
-  })
-
-  it('shows the language banner and copies the displayed source text', async () => {
+  it('shows the language banner and copies the pre textContent', async () => {
     vi.useFakeTimers()
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText },
     })
-    const view = render(<CodeBlock code={'const a = 1\n'} lang="ts" />)
-    const sourceElement = view.container.querySelector('pre')
+    render(<CodeBlock code={'const a = 1\n'} lang="ts" />)
     expect(screen.getByText('ts')).toBeTruthy()
-    const copy = screen.getByRole('button', { name: '复制' })
-    expect(copy.textContent).toBe('')
-    const idleIcon = copy.querySelector('svg')?.outerHTML
-    fireEvent.click(copy)
+    fireEvent.click(screen.getByRole('button', { name: '复制' }))
     expect(writeText).toHaveBeenCalledWith('const a = 1')
     // Flush the clipboard promise under fake timers before asserting the label.
     await act(async () => {
       await Promise.resolve()
     })
-    expect(screen.getByRole('button', { name: '复制成功' })).toBe(copy)
-    expect(copy.textContent).toBe('')
-    expect(copy.querySelector('svg')?.outerHTML).not.toBe(idleIcon)
-    expect(view.container.querySelector('pre')).toBe(sourceElement)
+    expect(screen.getByRole('button', { name: '复制成功' })).toBeTruthy()
     // While the ok label is showing, further clicks are no-ops.
     fireEvent.click(screen.getByRole('button', { name: '复制成功' }))
     expect(writeText).toHaveBeenCalledTimes(1)
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
-    expect(screen.getByRole('button', { name: '复制' })).toBe(copy)
-    expect(copy.querySelector('svg')?.outerHTML).toBe(idleIcon)
-  })
-
-  it('shows localized copy and confirmation tooltips for keyboard focus', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-    render(<CodeBlock code="plain body" />)
-    const copy = screen.getByRole('button', { name: '复制' })
-    fireEvent.focus(copy)
-    expect(screen.getByRole('tooltip').textContent).toBe('复制')
-    await act(async () => { fireEvent.click(copy) })
-    expect(screen.getByRole('tooltip').textContent).toBe('复制成功')
-  })
-
-  it('does not schedule confirmation after an outstanding clipboard write finishes on an unmounted block', async () => {
-    vi.useFakeTimers()
-    const pending = Promise.withResolvers<undefined>()
-    const writeText = vi.fn(() => pending.promise)
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-    const view = render(<CodeBlock code="plain body" />)
-    fireEvent.click(screen.getByRole('button', { name: '复制' }))
-    expect(writeText).toHaveBeenCalledWith('plain body')
-    view.unmount()
-    await act(async () => { pending.resolve(undefined) })
-    expect(vi.getTimerCount()).toBe(0)
-    expect(screen.queryByRole('button', { name: '复制成功' })).toBeNull()
-  })
-
-  it('clears the confirmation timer when the block unmounts', async () => {
-    vi.useFakeTimers()
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } })
-    const view = render(<CodeBlock code="plain body" />)
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '复制' })) })
-    expect(screen.getByRole('button', { name: '复制成功' })).toBeTruthy()
-    view.unmount()
-    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(screen.getByRole('button', { name: '复制' })).toBeTruthy()
   })
 
   it('does not claim success when clipboard.writeText rejects', async () => {

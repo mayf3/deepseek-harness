@@ -22,10 +22,7 @@ export function PlanPreview({ useTabInfo, useResource, t }: PlanPreviewProps) {
   const params = tab.tab.navigation.params
   const plan = temporary ? (params !== undefined && 'planReview' in params ? params.planReview : undefined) : resource.value
   const labels = useMemo(() => ({
-    code: {
-      copyLabel: t('copy'), copiedLabel: t('copied'), sourceLabel: t('markdown.code.source'),
-      lineNumbersLabel: t('markdown.code.lineNumbers'),
-    },
+    code: { copyLabel: t('copy'), copiedLabel: t('copied') },
     footnotes: t('markdown.footnotes'),
   }), [t])
   if (plan === undefined) return (
