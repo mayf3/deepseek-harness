@@ -19,7 +19,8 @@ export function pdfTextRenderer(host: HTMLDivElement): RenderPdfText {
     container.style.setProperty('--scale-round-y', '1px')
     host.append(container)
     const resize = (): void => {
-      container.style.transform = `scale(${host.getBoundingClientRect().width / viewport.width})`
+      // Width fitting must compose with the viewer's page rotation and translation.
+      container.style.scale = String(host.getBoundingClientRect().width / viewport.width)
     }
     const observer = new ResizeObserver(resize)
     observer.observe(host)

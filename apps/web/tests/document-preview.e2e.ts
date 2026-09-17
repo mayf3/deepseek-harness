@@ -157,6 +157,7 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       ].join('')),
       writeFile(join(cwd, 'smoke.pdf'), pdfFixture()),
       writeFile(join(cwd, 'user-unit.pdf'), pdfFixture(2)),
+      ...[90, 180, 270].map(rotation => writeFile(join(cwd, `rotated-${rotation}.pdf`), pdfFixture(4, rotation))),
       writeFile(join(cwd, 'selection.pdf'), selectionPdfFixture()),
       ...['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].map(extension => writeFile(join(cwd, `unavailable.${extension}`), Buffer.from('PK\u0003\u0004OFFICE_BINARY_PREVIEW'))),
       writeFile(join(cwd, 'clip.mp4'), Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])),
@@ -348,6 +349,35 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
     await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible' })
     await copyPdfText(page, preview, 'Selectable PDF text')
     sections.push('## PDF page units\n\n- UserUnit 2: selected and copied text aligns with the canvas')
+
+    const viewportSize = page.viewportSize()!
+    try {
+      for (const rotation of [90, 180, 270]) {
+        await openFile(`rotated-${rotation}.pdf`)
+        for (const width of [viewportSize.width, 1280]) {
+          await page.setViewportSize({ ...viewportSize, width })
+          await copyPdfText(page, preview, 'Selectable PDF text')
+          // The fixture's only black pixels are text; canvas ink is independent of the overlay geometry.
+          await expect.poll(() => preview.locator('[data-pdf-page]').first().evaluate((node) => {
+            const canvas = node.querySelector('canvas')!
+            const canvasBox = canvas.getBoundingClientRect()
+            const textBox = node.querySelector('.textLayer span')!.getBoundingClientRect()
+            const pixels = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data
+            let ink = 0
+            let aligned = 0
+            for (let i = 0; i < pixels.length; i += 4) {
+              if (pixels[i + 3]! < 128 || Math.max(pixels[i]!, pixels[i + 1]!, pixels[i + 2]!) > 80) continue
+              ink++
+              const x = canvasBox.left + ((i / 4) % canvas.width + 0.5) * canvasBox.width / canvas.width
+              const y = canvasBox.top + (Math.floor(i / 4 / canvas.width) + 0.5) * canvasBox.height / canvas.height
+              if (x >= textBox.left - 1 && x <= textBox.right + 1 && y >= textBox.top - 1 && y <= textBox.bottom + 1) aligned++
+            }
+            return ink === 0 ? 0 : aligned / ink
+          })).toBeGreaterThan(0.95)
+        }
+      }
+    } finally { await page.setViewportSize(viewportSize) }
+    sections.push('## PDF page rotation\n\n- 90, 180, 270 degrees: selection and copied text align with canvas ink before and after resizing')
 
     await openFile('selection.pdf')
     await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible' })

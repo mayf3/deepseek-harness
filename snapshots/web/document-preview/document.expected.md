@@ -39,6 +39,10 @@
 
 - UserUnit 2: selected and copied text aligns with the canvas
 
+## PDF page rotation
+
+- 90, 180, 270 degrees: selection and copied text align with canvas ink before and after resizing
+
 ## PDF drag selection
 
 - Table selection: forward and backward drags exclude later sections

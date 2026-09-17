@@ -20,7 +20,7 @@ Document Preview 将资源观察与内容读取分开。[资源模型](2026-09-0
 
 Markdown 和代码通过累积的分页文本复用增量渲染原语。HTML、PDF 和图片读取完整 `Uint8Array<ArrayBuffer>` 数据；Host 传输保持 base64。发布后的缓冲区只读借用，绝不持久化进布局或 Session JSON。PDF.js 在自有 Worker 中运行，字体和解码数据以相同版本随包发布，转移输入前先复制，以保留 Preview 的缓冲区。HTML 在 Blob iframe 中运行，设置 `sandbox="allow-scripts"`，不授予同源、弹窗、表单、下载或顶层导航权限。浏览器保持正常的外部网络规则。有上限的静态本地 JS/CSS 读取由父页面负责；不透明源 iframe 创建自己的资源 Blob，因为它不能加载父源创建的 Blob。PNG、JPEG、GIF、WebP、BMP、ICO 和 SVG 使用图片专用 Blob URL，在 `<img>` 静态图片上下文中渲染。比面板宽的图片按纵横比缩小到面板宽度；较小的图片保留固有 CSS 像素尺寸并由 auto margin 居中，较高的图片扩展共享滚动区的纵向范围（[侧边栏预览打磨](../feature/2026-09-11-sidebar-document-preview-polish.zh.md)）。渲染器不提供缩放或拖拽平移。SVG 标记绝不进入应用 DOM 或 iframe，因此脚本保持不可执行，也无法访问父页面。替换 HTML 或图片时会撤销其根 Blob URL。
 
-PDF.js 官方 TextLayerBuilder 在适配宽度的 canvas 上负责选择边界和复制规范化，共享页面清理，并使用由组件拥有的 resize observer。其内容结束标记和堆叠规则限制空白区域中的选择；换行高亮被抑制。逐页取消使用 builder 的清理操作，而不 abort 第一页的信号，因为官方选择监听器跨页面共享。
+PDF.js 官方 TextLayerBuilder 在适配宽度的 canvas 上负责选择边界和复制规范化，共享页面清理，并使用由组件拥有的 resize observer。响应式尺寸适配使用独立的 CSS `scale` 属性，与 PDF.js 的页面旋转和平移变换组合。其内容结束标记和堆叠规则限制空白区域中的选择；换行高亮被抑制。逐页取消使用 builder 的清理操作，而不 abort 第一页的信号，因为官方选择监听器跨页面共享。
 
 ## 考虑过的替代方案
 

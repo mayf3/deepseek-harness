@@ -38,10 +38,10 @@ it('aligns selectable text to the displayed width and removes its observer and D
   expect(api.create).toHaveBeenCalledWith({ pdfPage: page })
   expect(api.render).toHaveBeenCalledWith({ viewport })
   expect(observe).toHaveBeenCalledWith(host)
-  expect((host.firstElementChild as HTMLElement).style.transform).toBe('scale(0.5)')
+  expect((host.firstElementChild as HTMLElement).style.scale).toBe('0.5')
   width = 100
   resize!([], {} as ResizeObserver)
-  expect((host.firstElementChild as HTMLElement).style.transform).toBe('scale(0.25)')
+  expect((host.firstElementChild as HTMLElement).style.scale).toBe('0.25')
   task.cancel()
   expect(disconnect).toHaveBeenCalledOnce()
   expect(api.cancel).toHaveBeenCalledOnce()
