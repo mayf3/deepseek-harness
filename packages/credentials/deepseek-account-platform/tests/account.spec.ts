@@ -18,7 +18,7 @@ afterEach(async () => { while (cleanups.length) await cleanups.pop()!() })
 
 async function fixture(contact: { email: string; mobile?: string; mobile_number?: string } = {
   email: 't***@example.invalid', mobile: '138****5678',
-}, requestHeaders: Record<string, string> = {}, rewriteBrowserOrigin = false, accountRequestHeaders: Record<string, string> = {}) {
+}, requestHeaders: Record<string, string> = {}, rewriteBrowserOrigin = false, accountRequestHeaders: Record<string, string> = {}, embeddedPageDist = '') {
   const home = await mkdtemp(join(tmpdir(), 'dsh-account-'))
   cleanups.push(() => rm(home, { recursive: true, force: true }))
   let init: Record<string, string> = {}
@@ -116,7 +116,8 @@ async function fixture(contact: { email: string; mobile?: string; mobile_number?
   const authorization = ctx.plugin(AuthorizationService)
   await authorization
   const provider = ctx.plugin(PlatformAccount, {
-    platformOrigin: origin, allowLoopbackHttp: true, requestHeaders, accountRequestHeaders, rewriteBrowserOrigin, logoutRetryDelayMs: 1,
+    platformOrigin: origin, embeddedPageDist, allowLoopbackHttp: true, requestHeaders, accountRequestHeaders,
+    rewriteBrowserOrigin, logoutRetryDelayMs: 1,
   })
   await provider
   cleanups.push(async () => { await provider.dispose(); await authorization.dispose(); await credentials.dispose(); await web.dispose() })
@@ -610,4 +611,12 @@ it('overlays account cookies without changing authorization or logout routing', 
     expect(row.cookie).toBe(detail ? 'gate=private; route=account' : 'gate=private; route=auth')
   }
   expect(JSON.stringify(await f.account.getState())).not.toContain('private')
+})
+
+it('carries the configured embedded frontend selector in the private Platform session', async () => {
+  const f = await fixture(undefined, {}, false, {}, 'feat/test')
+  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.wait('waiting-browser')
+  await fetch(f.callback(), { redirect: 'manual' })
+  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test', embeddedPageDist: 'feat/test' })
 })

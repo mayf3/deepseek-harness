@@ -184,12 +184,12 @@ describe('desktop host process', () => {
 })
 
 it('carries Platform credentials over private IPC and clears them on shutdown', async () => {
-  const runtime = projectWithHost(HTTP_HOST.replace("process.send({ type: 'ready'", "process.send({ type: 'platform-session', session: { origin: 'https://platform.deepseek.com', token: 'fixture-secret' } }); process.send({ type: 'ready'"))
+  const runtime = projectWithHost(HTTP_HOST.replace("process.send({ type: 'ready'", "process.send({ type: 'platform-session', session: { origin: 'https://platform.deepseek.com', token: 'fixture-secret', embeddedPageDist: 'feat/test' } }); process.send({ type: 'ready'"))
   const changed = vi.fn()
   const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, undefined, undefined, 'link', undefined, changed)
   hosts.push(host)
   await host.start()
-  expect(changed).toHaveBeenCalledWith({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
+  expect(changed).toHaveBeenCalledWith({ origin: 'https://platform.deepseek.com', token: 'fixture-secret', embeddedPageDist: 'feat/test' })
   await host.stop()
   expect(changed).toHaveBeenLastCalledWith(null)
 })

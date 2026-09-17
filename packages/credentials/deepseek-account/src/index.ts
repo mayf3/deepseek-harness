@@ -13,6 +13,8 @@ declare module '@deepseek-ai/cordis' {
 export interface PlatformSession {
   readonly origin: string
   readonly token: string
+  /** Optional dist query value selecting the embedded frontend deployment. */
+  readonly embeddedPageDist?: string
   /** Private deployment headers for native requests; excluded from renderer bootstrap. */
   readonly requestHeaders?: Readonly<Record<string, string>>
 }

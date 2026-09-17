@@ -23,6 +23,8 @@ const device = z.object({ id: z.uuid() })
 export interface Config {
   /** Platform origin serving auth-api and browser pages. */
   platformOrigin?: string
+  /** Optional frontend deployment selector for embedded Usage and Top-up pages. */
+  embeddedPageDist?: string
   /** Allow HTTP only on loopback for the development Mock. */
   allowLoopbackHttp?: boolean
   /** Map authorization and completion pages to platformOrigin for private development proxies. */
@@ -43,6 +45,7 @@ export interface Config {
 /** Validated deployment choices. */
 export const Config = Schema.object({
   platformOrigin: Schema.string().default('https://platform.deepseek.com'),
+  embeddedPageDist: Schema.string().default(''),
   allowLoopbackHttp: Schema.boolean().default(false),
   rewriteBrowserOrigin: Schema.boolean().default(false),
   requestHeaders: Schema.dict(Schema.string().role('secret')).default({}),
@@ -72,6 +75,7 @@ export class PlatformAccount extends DeepSeekAccount {
   static inject = ['credentials', 'authorization']
   static Config = Config
   private readonly origin: string
+  private readonly embeddedPageDist: string
   private readonly rewriteBrowserOrigin: boolean
   private readonly requestHeaders: Record<string, string>
   private readonly accountRequestHeaders: Record<string, string>
@@ -90,6 +94,7 @@ export class PlatformAccount extends DeepSeekAccount {
   constructor(ctx: Context, config: Config = {}) {
     super(ctx)
     const resolved = Config(config)
+    this.embeddedPageDist = resolved.embeddedPageDist
     this.origin = platformOrigin(resolved.platformOrigin, resolved.allowLoopbackHttp)
     this.rewriteBrowserOrigin = resolved.rewriteBrowserOrigin
     this.requestHeaders = platformHeaders(resolved.requestHeaders)
@@ -177,6 +182,7 @@ export class PlatformAccount extends DeepSeekAccount {
     if (!parsed.success) throw new PlatformAuthError('storage')
     if (parsed.data.issuer !== this.origin) throw new PlatformAuthError('protocol')
     return { origin: this.origin, token: parsed.data.token,
+      ...(this.embeddedPageDist ? { embeddedPageDist: this.embeddedPageDist } : {}),
       ...(Object.keys(this.accountRequestHeaders).length ? { requestHeaders: { ...this.accountRequestHeaders } } : {}) }
   }
 

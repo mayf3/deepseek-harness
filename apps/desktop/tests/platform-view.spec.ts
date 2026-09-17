@@ -155,3 +155,17 @@ it('injects deployment headers only at the Platform origin and excludes them fro
     .toEqual({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
   manager.close()
 })
+
+it.each(['usage', 'top-up'] as const)('selects the configured frontend deployment for %s', async (page) => {
+  const { manager, owner } = setup()
+  manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret', embeddedPageDist: 'feat/test&other=value' })
+  await manager.open(owner, page, bounds)
+  const url = new URL(view().webContents.loadURL.mock.calls[0]![0] as string)
+  expect(url.origin).toBe('https://platform.deepseek.com')
+  expect(url.pathname).toBe(page === 'usage' ? '/usage' : '/top_up')
+  expect([...url.searchParams]).toEqual([['dist', 'feat/test&other=value']])
+  const previous = view().webContents
+  manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret', embeddedPageDist: 'another' })
+  expect(previous.close).toHaveBeenCalledOnce()
+  manager.close()
+})
