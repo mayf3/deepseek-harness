@@ -19,7 +19,7 @@ A tab type is two registrations that share the definition's `id`: a static defin
 | [`client/resources`](../../packages/client/resources/README.md) | `ctx.resources`, `useResource`, the protocol → value roster `ResourceProtocolMap` |
 | [`api/workspace-files`](../../packages/api/workspace-files/README.md) | Host `ctx.workspaceFiles`, the `workspaceFiles` Remote namespace, and the Client `file` resource provider |
 | [`util/workspace-path`](../../packages/util/workspace-path/README.md) | The file address grammar: `fileAddressFor`, `parseFileAddress` |
-| [`client/ui-sidebar-documentpreview`](../../packages/client/ui-sidebar-documentpreview/README.md), [`client/ui-sidebar-files`](../../packages/client/ui-sidebar-files/README.md) | The shipped `text` and `files` types |
+| [`client/ui-sidebar-documentpreview`](../../packages/client/ui-sidebar-documentpreview/README.md), [`client/ui-sidebar-files`](../../packages/client/ui-sidebar-files/README.md), [`client/ui-sidebar-browser`](../../packages/client/ui-sidebar-browser/README.md) | The shipped `text`, `files`, and `browser` types |
 
 ## Addresses
 
@@ -135,6 +135,7 @@ The Host `ctx.workspaceFiles` service and generated `workspaceFiles` Remote name
 - **`guide`** — `builtin`, opened as `openTab('guide')`. A muted compass sits above one capsule per contributed `guide` entry, in `order`; short lists show registered descriptions, and every missing icon uses the shipped placeholder. Picking a capsule opens the contributing type as a page in the guide tab's place. A pane holds at most one guide tab, and the strip's add control appears only while its pane has none. A new pane receives the registered default page: the sole guide entry directly, or the guide when the entry count is not one ([guide](../../packages/client/ui-sidebar-right/README.md#the-guide)).
 - **`text`** — `fallback`, `dsh-resource://file/**`, claiming Session addresses only. Document Preview observes metadata through `useResource<'file'>`, loads content through Remote callbacks, and owns renderer selection, the toolbar, per-tab refresh, scroll, and source navigation; unknown extensions render as plain text ([README](../../packages/client/ui-sidebar-documentpreview/README.md)).
 - **`files`** — `builtin`, opened as `openTab('files')`. The workspace directory tree, listed lazily through `list`, opening a file with `tab.actions.openResource(fileAddressFor(sessionId, root, path))` into its own pane ([README](../../packages/client/ui-sidebar-files/README.md)).
+- **`browser`** — multi-instance `builtin`, opened as `openTab('browser', { params: { url? } })`. It accepts HTTPS, permits loopback HTTP after a per-tab sandbox opt-out, rejects local files in favor of Document Preview, and uses application-known iframe history ([README](../../packages/client/ui-sidebar-browser/README.md)).
 
 <a id="not-built"></a>
 ## Not built
@@ -147,4 +148,4 @@ The Host `ctx.workspaceFiles` service and generated `workspaceFiles` Remote name
 - Naming a tab implementation when opening: `openResource` names a kind at most; document-renderer selection belongs to the file tab's toolbar.
 - An address lookup on the service (`find`): a caller opens with `revealIfOpened` and lets the surface de-duplicate.
 - Navigation addresses beyond the Sidebar's own `sidebar://<kind>` bookkeeping; their grammar waits for the navigation controller as a whole.
-- A user-facing undo, a content navigation stack, and tab icons ([deferred](../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.md#deferred)).
+- A user-facing undo and general cross-type content navigation stack ([deferred](../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.md#deferred)); Browser owns only its own page history.
