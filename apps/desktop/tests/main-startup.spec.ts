@@ -96,6 +96,7 @@ const harness = await vi.hoisted(async () => {
     windows, hosts, handlers, app, FakeWindow, FakeHost,
     failWindow(error: Error) { windowFailure = error },
     popup,
+    protocolHandle: vi.fn<(scheme: string, handler: (request: Request) => Promise<Response>) => void>(),
     socketHeaders: vi.fn(),
     ipcOn: vi.fn<(channel: string, listener: (event: { sender: unknown; senderFrame: unknown }, ...args: unknown[]) => void) => void>(),
     menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn((_items: MenuItemConstructorOptions[]) => ({ popup })) },
@@ -106,7 +107,6 @@ const harness = await vi.hoisted(async () => {
     },
     openExternal: vi.fn(),
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
-    mutateFailure: vi.fn<() => void>(),
     disableAllPlugins: vi.fn(async () => {
       pluginsEnabled = false
       return 'desktop-test-profile/cordis.patch.yml.bak-1789555200000'
@@ -115,7 +115,6 @@ const harness = await vi.hoisted(async () => {
     get hostStarted() { return hostStarted }, get navigated() { return navigated },
     get dialogShown() { return dialogShown }, get quitCompleted() { return quitCompleted },
     nextNavigation() { navigated = deferred(); return navigated.promise },
-    nextHostStart() { hostStarted = deferred(); return hostStarted.promise },
     get pluginsEnabled() { return pluginsEnabled },
     set pluginsEnabled(value: boolean) { pluginsEnabled = value },
     reset() {
@@ -141,26 +140,13 @@ vi.mock('electron', () => ({
   },
   Menu: harness.menu,
   session: { defaultSession: { webRequest: { onBeforeSendHeaders: harness.socketHeaders } } },
-  protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
+  protocol: { registerSchemesAsPrivileged: vi.fn(), handle: harness.protocolHandle },
 }))
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: 'desktop-test-profile' }) }))
 vi.mock('../src/project-manager.ts', () => ({
   DesktopProjectManager: class {
     readonly applyRelease = harness.applyRelease
     disableAllPlugins = harness.disableAllPlugins
-    async mutate(_mutation: unknown, hooks: { beforeChange(): Promise<void>; afterChange(): Promise<void> }) {
-      await hooks.beforeChange()
-      try {
-        harness.mutateFailure()
-        harness.pluginsEnabled = false
-      } catch (error) {
-        try { await hooks.afterChange() } catch (restartError) {
-          throw new AggregateError([error, restartError], 'Desktop package operation and backend restart failed')
-        }
-        throw error
-      }
-      await hooks.afterChange()
-    }
 
   },
 }))
@@ -170,7 +156,7 @@ vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: vi.fn
 function invoke(channel: string, ...args: unknown[]): unknown {
   const handler = harness.handlers.get(channel)
   if (handler === undefined) throw new Error(`missing handler ${channel}`)
-  return handler({ senderFrame: { url: channel === DESKTOP_IPC.boot ? 'dsh-app://app/' : 'dsh-app://shell/plugin-manager.html' } }, ...args)
+  return handler({ senderFrame: { url: 'dsh-app://app/' } }, ...args)
 }
 
 beforeEach(() => {
@@ -200,6 +186,18 @@ afterEach(async () => {
 })
 
 describe('desktop main startup', () => {
+  it.each(['darwin', 'win32', 'linux'] as const)('exposes application IPC and rejects the removed shell document on %s', async (platform) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    expect([...harness.handlers.keys()].sort()).toEqual([
+      DESKTOP_IPC.boot, DESKTOP_IPC.bootFailed, DESKTOP_IPC.directoryPick,
+      ...(platform === 'win32' ? [DESKTOP_IPC.windowsMenu] : []),
+    ].sort())
+    const handler = harness.protocolHandle.mock.calls[0]![1]
+    expect((await handler(new Request('dsh-app://shell/plugin-manager.html'))).status).toBe(404)
+  })
+
   it.each(['darwin', 'win32', 'linux'] as const)('uses platform-owned titlebar styling on %s', async (platform) => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
     await import('../src/main.ts')
@@ -262,7 +260,7 @@ describe('desktop main startup', () => {
     expect(() => handler(event, 'application', NaN, 34)).toThrow('invalid popup request')
     const application = handler(event, 'application', 48, 34)
     expect(harness.menu.buildFromTemplate.mock.lastCall![0].map(item => item.label ?? item.type)).toEqual([
-      '桌面插件…', '检查更新…', 'separator', '退出',
+      '检查更新…', 'separator', '退出',
     ])
     expect(harness.popup.mock.lastCall![0]).toMatchObject({ window, x: 48, y: 34 })
     expect(harness.popup.mock.lastCall![0].callback).toBeTypeOf('function')
@@ -284,9 +282,8 @@ describe('desktop main startup', () => {
     await edit
     const preventDefault = vi.fn()
     window.webContents.emit('before-input-event', { preventDefault }, { type: 'keyDown', control: true, key: ',' })
-    expect(preventDefault).toHaveBeenCalledOnce()
-    expect(harness.windows[1]!.urls).toEqual(['dsh-app://shell/plugin-manager.html'])
-    expect(harness.windows[1]!.options).not.toHaveProperty('titleBarStyle')
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(harness.windows).toHaveLength(1)
   })
 
   it.each(['darwin', 'linux'] as const)('adds the standard macOS window commands only on macOS (%s)', async (platform) => {
@@ -304,8 +301,8 @@ describe('desktop main startup', () => {
       : ['Application', 'editMenu'])
     const application = template[0]!.submenu as MenuItemConstructorOptions[]
     expect(application.map(describeItem)).toEqual(platform === 'darwin'
-      ? [en.pluginsMenu, en.checkUpdatesMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
-      : [en.pluginsMenu, en.checkUpdatesMenu, 'separator', 'quit'])
+      ? [en.checkUpdatesMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
+      : [en.checkUpdatesMenu, 'separator', 'quit'])
     expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
   })
 
@@ -455,46 +452,6 @@ describe('desktop main startup', () => {
     expect(harness.dialog.showMessageBox.mock.calls[0]![0].detail).toContain('Desktop page failed to load')
   })
 
-  it('returns package-operation failures locally without opening fatal recovery', async () => {
-    await import('../src/main.ts')
-    await harness.preparing.promise
-    harness.prepared.resolve()
-    await harness.hostStarted.promise
-    const host = harness.hosts[0]!
-    host.ready.resolve()
-    await Promise.resolve(invoke(DESKTOP_IPC.boot))
-    harness.mutateFailure.mockImplementationOnce(() => { throw new Error('package write failed') })
-    host.exited.resolve()
-    const nextStarted = harness.nextHostStart()
-    const failure = expect(invoke(DESKTOP_IPC.pluginsAdd, 'example-plugin')).rejects.toThrow('package write failed')
-    await nextStarted
-    harness.hosts[1]!.ready.resolve()
-    await failure
-    expect(harness.dialog.showMessageBox).not.toHaveBeenCalled()
-    expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/', 'dsh-app://app/'])
-  })
-
-  it('opens fatal recovery when the Host cannot restart after a package change', async () => {
-    await import('../src/main.ts')
-    await harness.preparing.promise
-    harness.prepared.resolve()
-    await harness.hostStarted.promise
-    const host = harness.hosts[0]!
-    host.ready.resolve()
-    await Promise.resolve(invoke(DESKTOP_IPC.boot))
-    host.exited.resolve()
-    const nextStarted = harness.nextHostStart()
-    const failure = expect(invoke(DESKTOP_IPC.pluginsAdd, 'example-plugin')).rejects.toThrow('new Host failed')
-    await nextStarted
-    const replacement = harness.hosts[1]!
-    replacement.exited.resolve()
-    replacement.ready.reject(new Error('new Host failed'))
-    await failure
-    expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
-    expect(harness.dialog.showMessageBox.mock.calls[0]![0].detail).toContain('new Host failed')
-    expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
-  })
-
   it('offers all recovery choices when resources fail before the Host starts', async () => {
     await import('../src/main.ts')
     await harness.preparing.promise
@@ -625,7 +582,6 @@ describe('desktop main startup', () => {
     expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
     expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
     expect(harness.handlers.has('dsh-desktop:backend-retry')).toBe(false)
-    await expect(invoke(DESKTOP_IPC.pluginsAdd, 'example-plugin')).rejects.toThrow('The application could not start or stopped unexpectedly.')
     expect(harness.hosts).toHaveLength(1)
   })
 

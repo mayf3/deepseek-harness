@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-16-windows-desktop-titlebar.md
-2026-09-16-windows-desktop-titlebar.md: 679e24b9e5b27e1f7dfce86ef35fd3d472651c37
-2026-09-16-windows-desktop-titlebar.zh.md: 6cc3c1ce35d150b8211caf5bcf350607f9b173fa
+2026-09-16-windows-desktop-titlebar.md: 17fd2aac308cff0b4357a0c39c3fe757cfc60f5b
+2026-09-16-windows-desktop-titlebar.zh.md: 05903d86960942204d7b18d4155266c144effc1a
