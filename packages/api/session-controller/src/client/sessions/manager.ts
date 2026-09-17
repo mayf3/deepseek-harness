@@ -17,7 +17,6 @@ import { flattenLineage } from './lineage.ts'
 // the 'title' projection key this manager projects into list rows (and any
 // useProjection('title') consumer reads). Zero value imports by construction.
 import type {} from '@deepseek-ai/dsh-session-title/client'
-import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { Notifier } from './notifier.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import { Session } from './session.ts'
@@ -583,18 +582,12 @@ export class SessionManager {
    * @param frame - baseline or live control replacement from Session Controller.
    */
   handleControlFrame(frame: SessionControlFrame): void {
-    switch (frame.type) {
-      case 'baseline':
-        this.replaceControlBaseline(frame.value)
-        return
-      case 'projection':
-        this.projectionStore(frame.sessionId).apply(frame.key, frame.value, SessionSeq(frame.seq))
-        this.notifier.markDirty()
-        return
-      /* v8 ignore next 2 -- closed-union exhaustiveness guard */
-      default:
-        assertNever(frame)
+    if (frame.type === 'baseline') {
+      this.replaceControlBaseline(frame.value)
+      return
     }
+    this.projectionStore(frame.sessionId).apply(frame.key, frame.value, SessionSeq(frame.seq))
+    this.notifier.markDirty()
   }
 
   private replaceControlBaseline(baseline: SessionControlBaseline): void {
