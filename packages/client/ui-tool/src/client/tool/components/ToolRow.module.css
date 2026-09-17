@@ -350,7 +350,7 @@
 }
 
 /* Visually hidden run-state label for assistive technology: the running sweep
-   and error summary tone are color-only. Interrupted rows use visible text. */
+   and settlement summary tones are color-only. */
 .visuallyHidden {
   position: absolute;
   width: 1px;

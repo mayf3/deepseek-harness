@@ -564,7 +564,7 @@ describe('workspace browser rows', () => {
   })
 
   it.each([
-    ['approval', '等待审批', '待批准'],
+    ['approval', '等待审批', '待审批'],
     ['plan-review', '计划待审', '计划待审'],
     ['question', '等待回答', '待回答'],
   ] as const)('shows %s as warning and replaces the row time', (pendingInteraction, label, compactLabel) => {

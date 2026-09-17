@@ -30,7 +30,7 @@ describe('SkillRow.module.css summary line', () => {
       'width: calc(16px + var(--dsh-content-font-delta, 0px))',
       'height: calc(16px + var(--dsh-content-font-delta, 0px))',
     ]))
-    expect(declarations('.leading svg:not([data-state])')).toEqual(expect.arrayContaining([
+    expect(declarations('.leading svg')).toEqual(expect.arrayContaining([
       'width: calc(14px + var(--dsh-content-font-delta, 0px))',
       'height: calc(14px + var(--dsh-content-font-delta, 0px))',
     ]))

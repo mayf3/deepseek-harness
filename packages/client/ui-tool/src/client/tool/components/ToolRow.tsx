@@ -88,11 +88,12 @@ export interface ToolRowProps {
   inspect?: (() => void) | undefined
 }
 
-/** Visually hidden run-state label for the color-only running sweep and error tone. */
+/** Visually hidden run-state label for color-only running and settlement cues. */
 function stateStatus(state: ToolRowState, t: TranslateNS<'conversation'>): string | null {
   switch (state) {
     case 'running': return t('row.running')
     case 'error': return t('row.failed')
+    case 'stopped': return t('row.stopped')
     default: return null
   }
 }
@@ -152,12 +153,10 @@ export function ToolRow({
   const status = stateStatus(state, t)
   const normalSummary = terminalBody?.description ?? summary
   // A failure keeps its first result line when available and otherwise turns
-  // the ordinary summary red. An interruption replaces the normal summary
-  // with visible warning text while retaining the business icon.
-  const settlementLine = state === 'error'
-    ? errorSummary ?? normalSummary
-    : state === 'stopped' ? t('row.stopped') : null
-  const summaryText = settlementLine ?? normalSummary
+  // the ordinary summary red. An interruption turns the tool-owned summary
+  // amber while retaining the business icon and hidden state announcement.
+  const failureLine = state === 'error' ? errorSummary ?? normalSummary : null
+  const summaryText = failureLine ?? normalSummary
   // A diff row's collapsed line carries the card's +/- totals (the same
   // numbers the expanded footer prints) so the change size reads without
   // expanding; an explicit summarySuffix (none today on diff rows) wins.
@@ -166,11 +165,12 @@ export function ToolRow({
     const { added, removed } = diffTotals(diffBody.card.diffs)
     return `+${added} -${removed}`
   }, [diffBody])
-  const suffix = settlementLine === null ? summarySuffix ?? diffStat : null
+  const settledWithCue = state === 'error' || state === 'stopped'
+  const suffix = settledWithCue ? null : summarySuffix ?? diffStat
   const toggleExpand = () => {
     setExpanded(v => !v)
   }
-  const openFile = filePath !== undefined && onOpenFile !== undefined && settlementLine === null
+  const openFile = filePath !== undefined && onOpenFile !== undefined && !settledWithCue
     ? (event: MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation()
       if (filePathLine === undefined) onOpenFile(filePath)

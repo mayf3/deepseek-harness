@@ -47,7 +47,7 @@ describe('Tool presentation tails', () => {
         title="Bash" summary="s" state="stopped" />,
     )
     expect(view.queryByTestId('icon')).not.toBeNull()
-    const summary = view.getByText('已停止')
+    const summary = view.getByText('s')
     expect(summary.className).toContain('stoppedSummary')
   })
 
