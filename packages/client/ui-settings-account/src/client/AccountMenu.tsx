@@ -20,7 +20,8 @@ export function AccountMenu({
   const account = useAccount(state => state)
   const signedIn = account.view?.status === 'credential-stored'
   const profile = account.details?.profile
-  const label = profile === undefined ? null : profile.status === 'ready' ? profile.value.name ?? t('signedIn') : t('signedIn')
+  const label = profile === undefined ? null : profile.status === 'ready'
+    ? profile.value.name ?? profile.value.contact ?? t('signedIn') : t('signedIn')
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)

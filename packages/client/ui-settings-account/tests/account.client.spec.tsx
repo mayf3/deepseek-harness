@@ -155,3 +155,21 @@ it.each(['usage', 'top-up'] as const)('shows an accessible spinner until %s fini
   await act(async () => { loaded.resolve(undefined) })
   expect(screen.queryByRole('status', { name: en.loading })).toBeNull()
 })
+
+
+it.each([
+  ['Preferred name', '138****0000', 'Preferred name'],
+  [null, '138****0000', '138****0000'],
+  [null, 'u***@example.com', 'u***@example.com'],
+  [null, null, en.signedIn],
+])('uses the sidebar profile label %s / %s', async (name, contact, expected) => {
+  const operations = mount({ status: 'credential-stored', attempt: null }, en, {
+    profile: { status: 'ready', value: { id: null, name, contact } },
+  })
+  cleanup()
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations}
+    useAccount={selector => selector(operations.hooks.account.getSnapshot())}
+    wide openSettings={() => {}} openOnboarding={() => {}} t={key => en[key as AccountKey]} />)
+  expect(screen.getByRole('button', { name: en.menu }).textContent).toBe(expected)
+})
