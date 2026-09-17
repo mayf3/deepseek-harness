@@ -188,9 +188,11 @@ export class AgentPresetSeatController {
    *
    * Called both by `select()` and by whoever observes the current session
    * changing, because the session may appear either before or after the pick.
-   * @returns once the switch settled, or immediately when there is nothing to do.
+   * List updates do not repeat a selection while its response is pending.
+   * @returns once a new switch settles, or immediately when no switch starts.
    */
   async apply(): Promise<void> {
+    if (this.store.getSnapshot().busy) return
     const staged = this.staged.id
     const session = this.currentSession()
     if (staged === undefined) {

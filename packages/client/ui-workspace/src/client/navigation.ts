@@ -159,20 +159,20 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   openSession(target: SessionTarget): void {
-    this.replaceMain(target, this.lifetime.signal)
+    this.replaceMain(target, this.lifetime.signal, 'reveal')
   }
 
   async openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void> {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
     const sessionId = await this.connectWorkspace(workspaceId)
     if (navigation.aborted) return
-    this.replaceMain(sessionId, navigation, beforeOpen)
+    this.replaceMain(sessionId, navigation, 'reveal', beforeOpen)
   }
 
   async forkSession(sessionId: SessionId): Promise<void> {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
     const childId = await this.sessions.fork({ sessionId, increaseTitle: true })
-    if (!navigation.aborted) this.replaceMain(childId, navigation)
+    if (!navigation.aborted) this.replaceMain(childId, navigation, 'reveal')
   }
 
   startSession(workspaceId?: WorkspaceId): void {
@@ -246,7 +246,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
           if (saved.subagentAddress !== undefined) {
             void this.sessions.refreshProjections(saved.subagentAddress.parentSessionId)
           }
-          this.openSession(savedTarget)
+          this.replaceMain(savedTarget, this.lifetime.signal, 'preserve')
           initial = 'done'
         } catch (reason: unknown) {
           initial = 'waiting'
@@ -262,7 +262,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       initial = 'connecting'
       void this.connectWorkspace(target).then(
         (sessionId) => {
-          if (this.mainReference === undefined) this.openSession(sessionId)
+          if (this.mainReference === undefined) this.replaceMain(sessionId, this.lifetime.signal, 'preserve')
         },
       ).then(
         () => { initial = 'done' },
@@ -303,6 +303,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   private replaceMain(
     target: SessionTarget,
     signal: AbortSignal,
+    panel: 'reveal' | 'preserve',
     beforeOpen?: (sessionId: SessionId) => void,
   ): void {
     signal.throwIfAborted()
@@ -329,7 +330,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     this.mainReference = reference
     previous?.release()
     void this.sessions.refreshProjections(reference.sessionId)
-    this.ctx.layout.selectPanel(null)
+    if (panel === 'reveal') this.ctx.layout.selectPanel(null)
   }
 
 }

@@ -499,6 +499,34 @@ describe('UiWorkspaceService', () => {
     expect(b.sessions.retain.mock.calls.map(([target]) => target)).toEqual([sid('chosen')])
   })
 
+  it('keeps a chosen panel and pending navigation when initial connection finishes', async () => {
+    const created = Promise.withResolvers<SessionId>()
+    const b = bench({
+      workspaces: workspaceState([workspace('a')]),
+      sessions: sessionState(),
+      configureSessions: (sessions) => { sessions.create.mockReturnValueOnce(created.promise) },
+    })
+    const panel = 'other-panel' as MainPanelId
+    b.layout.selectPanel(panel)
+    const navigation = b.layout.beginNavigation()
+    created.resolve(sid('restored'))
+    await expect.poll(() => b.sessions.retained.length).toBe(1)
+    expect(b.sessions.retained[0]!.reference.sessionId).toBe(sid('restored'))
+    expect(b.selectPanel.mock.calls).toEqual([[panel]])
+    expect(navigation.aborted).toBe(false)
+  })
+
+  it('keeps a chosen panel when the saved target becomes discoverable', () => {
+    const saved = sid('saved')
+    persistSelection({ sessionId: saved })
+    const b = bench({ workspaces: workspaceState(), sessions: sessionState([], 'pending') })
+    const panel = 'other-panel' as MainPanelId
+    b.layout.selectPanel(panel)
+    b.sessions.list.set(sessionState([summary('saved')]))
+    expect(b.sessions.retained[0]!.reference.sessionId).toBe(saved)
+    expect(b.selectPanel.mock.calls).toEqual([[panel]])
+  })
+
   it('restores a persisted subagent address without a parent catalog', () => {
     const address: SubagentAddress = {
       parentSessionId: sid('parent'),

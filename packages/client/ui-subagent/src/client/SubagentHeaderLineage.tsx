@@ -374,6 +374,7 @@ interface CatalogDropdownSharedProps extends SubagentCatalogInjected {
   /** Whether an ordinary title needs a breadcrumb separator before its count. */
   separator?: boolean
   useSessions: SubagentHeaderLineageProps['useSessions']
+  useSessionStatus: SubagentHeaderLineageProps['useSessionStatus']
   t: TranslateNS<typeof NS>
 }
 
@@ -415,20 +416,21 @@ function catalogMenuPosition(trigger: HTMLButtonElement): CSSProperties {
 /** One trigger-plus-tree dropdown over the catalog rooted at `rootSessionId`. */
 function CatalogDropdown({
   rootSessionId, currentSessionId, displayTitle, openTitle, variant, separator = false,
-  useSessions, openChild, refresh, t,
+  useSessions, useSessionStatus, openChild, refresh, t,
 }: CatalogDropdownProps) {
   const ancestorSwitcher = variant === 'switcher' && openTitle !== undefined
   const projections = useSessions(state => state.projectionsBySession)
   const summaries = useSessions(state => state.byId)
+  const statuses = useSessionStatus(value => value)
   const catalogs = useMemo<Catalogs>(() => Object.fromEntries(Object.entries(projections).map(([id, snapshot]) => [id, {
     state: snapshot.state === 'idle'
       ? snapshot.values.subagentCatalog === undefined ? 'loading' : 'ready'
       : snapshot.state,
     error: snapshot.error,
     entries: (snapshot.values.subagentCatalog ?? []).map(entry => ({
-      ...entry, activity: summaries[entry.id]?.running === true ? 'running' as const : 'inactive' as const,
+      ...entry, activity: (statuses.get(entry.id)?.running ?? summaries[entry.id]?.running) === true ? 'running' as const : 'inactive' as const,
     })),
-  }])), [projections, summaries])
+  }])), [projections, summaries, statuses])
   const catalog = catalogs[rootSessionId]
   const [open, setOpen] = useState(false)
   const [menuPosition, setMenuPosition] = useState<CSSProperties>()
@@ -696,7 +698,7 @@ function CatalogDropdown({
  */
 export function SubagentHeaderLineage({
   lineageSessionId, displayTitle, openTitle,
-  useSessions, useSession, openChild, refresh, t,
+  useSessions, useSession, useSessionStatus, openChild, refresh, t,
 }: SubagentHeaderLineageProps) {
   const address = useSession(session => session.subagent?.address)
   const parentId = useSessions((state) => {
@@ -706,7 +708,7 @@ export function SubagentHeaderLineage({
     }
     return undefined
   })
-  const shared = { useSessions, openChild, refresh, t }
+  const shared = { useSessions, useSessionStatus, openChild, refresh, t }
   if (parentId === undefined) {
     return (
       <CatalogDropdown

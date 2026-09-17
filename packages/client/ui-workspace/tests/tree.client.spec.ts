@@ -24,11 +24,9 @@ const list = (...items: SessionSummary[]): SessionListState => ({
   byId: Object.fromEntries(items.map(item => [item.id, item])),
   phase: 'ready', projectionsBySession: {}, jobsBySession: {},
 })
-const catalog = (
-  ...entries: Array<{ id: string; activity: 'running' | 'inactive' }>
-): SessionProjectionSnapshot => ({
-  values: { subagentCatalog: entries.map(entry => ({
-    id: sid(entry.id), mode: 'continuable', label: entry.id,
+const catalog = (...ids: string[]): SessionProjectionSnapshot => ({
+  values: { subagentCatalog: ids.map(id => ({
+    id: sid(id), mode: 'continuable', label: id,
     createdAt: 1,
   })) },
   state: 'ready',
@@ -251,11 +249,11 @@ describe('deriveGroups', () => {
       ...withMain(list(parent, fork, subagent, grandchild, forkChild), subagent.id),
       projectionsBySession: {
         [parent.id]: catalog(
-          { id: 'subagent', activity: 'running' },
-          { id: 'inactive-child', activity: 'inactive' },
+          'subagent',
+          'inactive-child',
         ),
-        [fork.id]: catalog({ id: 'fork-child', activity: 'running' }),
-        [subagent.id]: catalog({ id: 'grandchild', activity: 'running' }),
+        [fork.id]: catalog('fork-child'),
+        [subagent.id]: catalog('grandchild'),
       },
     }
     const groups = deriveGroups(
@@ -288,7 +286,7 @@ describe('deriveGroups', () => {
     const sessions = {
       ...list(parent, child, stopped, unrelated),
       projectionsBySession: {
-        [parent.id]: catalog({ id: 'child', activity: 'inactive' }, { id: 'stopped', activity: 'running' }),
+        [parent.id]: catalog('child', 'stopped'),
       },
     }
     const statuses = new Map<SessionId, SessionStatus>([

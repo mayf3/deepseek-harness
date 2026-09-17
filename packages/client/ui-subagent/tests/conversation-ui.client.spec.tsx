@@ -7,6 +7,7 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SubagentAddress, SubagentCatalogRow } from '@deepseek-ai/dsh-subagent/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import {
   SubagentHeaderLineage, type SubagentHeaderLineageProps,
 } from '../src/client/SubagentHeaderLineage.tsx'
@@ -52,6 +53,7 @@ function props(
   boundAddress?: SubagentAddress,
 ) {
   const catalogs = value === undefined ? nested : { [PARENT]: value, ...nested }
+  const statuses: SessionStatusSnapshot = new Map()
   const state = {
     ids: [CHILD],
     byId: summaries ?? {
@@ -81,6 +83,7 @@ function props(
   return {
     sessionId: PARENT,
     useSessions,
+    useSessionStatus: <T,>(select: (snapshot: SessionStatusSnapshot) => T): T => select(statuses),
     useSession: <T,>(select: (snapshot: SessionSnapshot) => T): T => select({
       subagent: boundAddress === undefined ? undefined : { address: boundAddress },
     } as SessionSnapshot),
@@ -112,6 +115,19 @@ function hoverCatalog(trigger: HTMLElement): void {
 }
 
 describe('SubagentHeaderLineage', () => {
+  it('shows current catalog-only child status before Host list discovery', () => {
+    const input = props(catalog({ entries: [{ id: CHILD, mode: 'continuable', label: 'worker', activity: 'inactive' }] }))
+    const initial = input.useSessions(state => state)
+    const statuses: SessionStatusSnapshot = new Map([[CHILD, {
+      running: true, completionUnread: false, pendingInteraction: undefined,
+    }]])
+    render(<SubagentHeaderLineage {...input}
+      useSessions={select => select({ ...initial, ids: [] })}
+      useSessionStatus={select => select(statuses)}
+    />)
+    expect(screen.getByRole('button', { name: '1 个子代理，正在运行' })).toBeTruthy()
+  })
+
   it('shows retained children while an idle projection awaits refresh', () => {
     const injected = props(catalog())
     const initial = injected.useSessions(state => state)

@@ -74,6 +74,7 @@ const ROSTER_HIDDEN = {
 
 async function bench(options: {
   failSettingsUpdate?: boolean
+  selectGate?: Promise<void>
 } = {}) {
   const ctx = new Context()
   // The host's answer, mutable so a spec can move the default the way the
@@ -141,7 +142,7 @@ async function bench(options: {
     deletePreset: () => Promise.resolve({ ok: true as const, value: undefined }),
     select: (_agentId: SessionId, agentPreset: string) => {
       calls.push(`select:${agentPreset}`)
-      return Promise.resolve({ ok: true as const, value: agentPreset })
+      return Promise.resolve(options.selectGate).then(() => ({ ok: true as const, value: agentPreset }))
     },
   }
   ctx.provide('remote.agentPresets', agentPresets as never)
@@ -471,6 +472,58 @@ describe('ui-agent-preset apply', () => {
     sessions.notify()
     await first.load()
     await ctx.fiber.dispose()
+  })
+
+  it.each(['feature', 'binding'] as const)('tracks bound preset changes until its %s owner stops', async (disposedOwner) => {
+    const selection = Promise.withResolvers<undefined>()
+    const { ctx, slots, calls } = await bench({ selectGate: selection.promise })
+    try {
+      declareRoot(slots)
+      declareConversation(slots)
+      ctx.provide('conversation', {} as never)
+      const state = {
+        current: 's1',
+        byId: { s1: { id: 's1', blank: true, projectionValues: {} as { agentPreset?: string } } },
+      }
+      const sessions = sessionsDouble(ctx, state)
+      const bindingOwner = ctx.plugin({ apply() {} })
+      await bindingOwner.await()
+      sessions.binding('s1')!.ctx = bindingOwner.ctx
+      ctx.provide('sessions', sessions as never)
+      ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
+      const feature = ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply })
+      await feature.await()
+      const seat = (slots.entries('conversation.hero.agentPreset')[0]!
+        .inject as unknown as (sessionId: SessionId) => AgentPresetSeatInjected)(SessionId('s1'))
+      await seat.load()
+      expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('')
+
+      state.byId.s1.projectionValues.agentPreset = 'standard'
+      sessions.notify()
+      expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
+      state.byId.s1.projectionValues.agentPreset = 'minimal'
+      sessions.notify()
+      expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('minimal')
+      expect(calls.filter(call => call.startsWith('select:'))).toEqual([])
+
+      const selecting = seat.select('standard')
+      expect(seat.hooks.agentPresetSeat.getSnapshot().busy).toBe(true)
+      sessions.notify()
+      sessions.notify()
+      expect(calls.filter(call => call.startsWith('select:'))).toEqual(['select:standard'])
+      selection.resolve(undefined)
+      await selecting
+      state.byId.s1.projectionValues.agentPreset = 'standard'
+      sessions.notify()
+
+      await (disposedOwner === 'feature' ? feature : bindingOwner).dispose()
+      state.byId.s1.projectionValues.agentPreset = 'minimal'
+      sessions.notify()
+      expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
+    } finally {
+      selection.resolve(undefined)
+      await ctx.fiber.dispose()
+    }
   })
 
   it('does not sync a blank Session that is not retained by the main view', async () => {

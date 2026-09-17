@@ -70,9 +70,9 @@ export function apply(ctx: ClientContext): void {
   const seats = new WeakMapWithValues<SessionBinding, AgentPresetSeatController>()
   const unboundSeat = new AgentPresetSeatController(ctx, () => undefined, staged)
   const seatFor = (scope: ClientContext, binding: SessionBinding): AgentPresetSeatController => {
-    let seat = seats.get(binding)
-    if (seat !== undefined) return seat
-    seat = new AgentPresetSeatController(scope, () => {
+    const existing = seats.get(binding)
+    if (existing !== undefined) return existing
+    const seat = new AgentPresetSeatController(scope, () => {
       if (scope.sessions.binding(binding.sessionId) !== binding) return undefined
       const summary = scope.sessions.list.getSnapshot().byId[binding.sessionId]
       return summary !== undefined
@@ -81,9 +81,13 @@ export function apply(ctx: ClientContext): void {
         : undefined
     }, staged)
     seats.set(binding, seat)
-    binding.ctx.effect(() => () => {
-      seats.delete(binding)
-    }, 'ui-agent-preset: Provider binding')
+    scope.effect(() => binding.ctx.effect(() => {
+      const stop = scope.sessions.list.subscribe(() => { void seat.apply() })
+      return () => {
+        stop()
+        seats.delete(binding)
+      }
+    }, 'ui-agent-preset: Provider binding'), 'ui-agent-preset: bound selection')
     return seat
   }
   const section = new AgentPresetSectionController(ctx, () => {
