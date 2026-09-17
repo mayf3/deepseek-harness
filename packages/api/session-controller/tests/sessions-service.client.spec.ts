@@ -747,20 +747,28 @@ describe('catalog-addressed navigation', () => {
     expect(b.mock.remote.session.projections).toHaveBeenCalledOnce()
   })
 
-  it('loads parent projections without retaining a child and keeps one-shot labels optional', async ({ bench }) => {
-    const b = bench()
-    b.mock.remote.session.projections.mockResolvedValue(ok({
-      asOfSeq: 0, values: { subagentCatalog: [{ id: sid('one-shot'), createdAt: 1, mode: 'one-shot' }] },
-    }))
-    await b.svc.refreshProjections(sid('root'))
-    expect(b.svc.list.getSnapshot().byId[sid('one-shot')]?.displayTitle).toBe('one-shot')
-    expect(b.svc.binding(sid('one-shot'))).toBeUndefined()
-    expect(b.svc.retainInfo(sid('one-shot')).getSnapshot().referenceCount).toBe(0)
-    expect(b.mock.remote.session.projections).toHaveBeenCalledOnce()
-    expect(b.mock.log.requests(FOLLOW)).toHaveLength(0)
-  })
+  for (const title of [undefined, 'Investigate startup']) {
+    it(`loads an unretained one-shot child with projected title ${String(title)}`, async ({ bench }) => {
+      const b = bench()
+      if (title !== undefined) b.svc.handleControlFrame({
+        type: 'projection', sessionId: sid('one-shot'), key: 'title', value: title, seq: 2,
+      })
+      b.mock.remote.session.projections.mockResolvedValue(ok({
+        asOfSeq: 0, values: { subagentCatalog: [{ id: sid('one-shot'), createdAt: 1, mode: 'one-shot' }] },
+      }))
+      await b.svc.refreshProjections(sid('root'))
+      expect(b.svc.list.getSnapshot().byId[sid('one-shot')]?.displayTitle).toBe(title ?? 'one-shot')
+      if (title !== undefined) expect(b.svc.list.getSnapshot().byId[sid('one-shot')]).toMatchObject({
+        title, projectionValues: { title },
+      })
+      expect(b.svc.binding(sid('one-shot'))).toBeUndefined()
+      expect(b.svc.retainInfo(sid('one-shot')).getSnapshot().referenceCount).toBe(0)
+      expect(b.mock.remote.session.projections).toHaveBeenCalledOnce()
+      expect(b.mock.log.requests(FOLLOW)).toHaveLength(0)
+    })
+  }
 
-  it('uses catalog labels for a listed addressed route', async ({ bench }) => {
+  it('keeps projected titles in standard list rows for an addressed route', async ({ bench }) => {
     const b = bench()
     b.mock.remote.session.projections.mockImplementation((payload) => {
       const { sessionId } = payload as { sessionId: SessionId }
@@ -770,7 +778,7 @@ describe('catalog-addressed navigation', () => {
         }] } }))
       }
       if (sessionId === sid('child')) {
-        return Promise.resolve(ok({ asOfSeq: 0, values: { subagentCatalog: [{ createdAt: 1,
+        return Promise.resolve(ok({ asOfSeq: 0, values: { title: 'Child session title', subagentCatalog: [{ createdAt: 1,
           id: sid('grandchild'), mode: 'continuable', label: 'Grandchild',
         }] } }))
       }
@@ -778,7 +786,10 @@ describe('catalog-addressed navigation', () => {
     })
     await feedList(b, [
       { id: 'root' },
-      { id: 'child', cwd: '/summary-child', parentId: 'root', origin: 'subagent' },
+      {
+        id: 'child', cwd: '/summary-child', parentId: 'root', origin: 'subagent',
+        projections: { title: 'Child session title' },
+      },
       { id: 'grandchild', cwd: '/summary-grandchild', parentId: 'child', origin: 'subagent' },
     ])
     await b.svc.refreshProjections(sid('root'))
@@ -788,7 +799,11 @@ describe('catalog-addressed navigation', () => {
     }, { source: 'controllerOperation' })
     await _reference.ready
 
-    expect(b.svc.list.getSnapshot().byId[sid('child')]?.displayTitle).toBe('Child')
+    expect(b.svc.list.getSnapshot().byId[sid('child')]).toMatchObject({
+      title: 'Child session title',
+      displayTitle: 'Child session title',
+      projectionValues: { title: 'Child session title' },
+    })
     expect(b.svc.list.getSnapshot().byId[sid('grandchild')]?.displayTitle).toBe('Grandchild')
   })
 

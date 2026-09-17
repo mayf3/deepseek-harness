@@ -5,6 +5,7 @@
     "enter-validates-current-path-and-unchecked-launch",
     "completion-preserves-window-position",
     "welcome-ready-before-first-show",
+    "welcome-presented-on-first-show",
     "successful-install-paints-100-before-finish",
     "registered-directory-with-trailing-separators",
     "registered-directory-and-checked-launch",

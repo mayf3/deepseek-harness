@@ -8,6 +8,7 @@ import type { PdfStore, PdfView } from './store.ts'
 import { renderPdfPage, type PdfDocument } from './document.ts'
 import { openPdf } from './runtime.ts'
 import { PdfWorkerFailure } from './errors.ts'
+import { pdfTextRenderer } from './text.ts'
 import type {} from './locales.ts'
 import css from './PdfBody.module.css'
 
@@ -94,6 +95,8 @@ function PdfPage({ document, page, requested: initiallyRequested, onVisible, sig
 } & PropsLocale<'sidebarPdf'>): ReactNode {
   const host = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
+  const text = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState<number>()
   const [requested, setRequested] = useState(initiallyRequested)
   const [state, setState] = useState<'loading' | 'ready'>('loading')
   const [failure, setFailure] = useState<{ readonly error: unknown }>()
@@ -125,11 +128,16 @@ function PdfPage({ document, page, requested: initiallyRequested, onVisible, sig
     const renderSignal = AbortSignal.any([lifetime.signal, signal])
     setState('loading')
     setFailure(undefined)
-    void renderPdfPage(document, page, node, renderSignal, window.devicePixelRatio).then(
-      () => { if (!renderSignal.aborted) setState('ready') },
+    const createText = pdfTextRenderer(text.current as HTMLDivElement)
+    let textTask: ReturnType<typeof createText> | undefined
+    void renderPdfPage(document, page, node, renderSignal, window.devicePixelRatio, (pdfPage, viewport) => {
+      textTask = createText(pdfPage, viewport)
+      return textTask
+    }).then(
+      (size) => { if (!renderSignal.aborted) { setWidth(size.width); setState('ready') } },
       (error: unknown) => { if (!renderSignal.aborted) setFailure({ error }) },
     )
-    return () => { lifetime.abort() }
+    return () => { lifetime.abort(); textTask?.cancel() }
   }, [document, page, requested, signal, attempt])
   return <div ref={host} className={css.page} data-pdf-page={page}>
     {failure === undefined && state !== 'ready' && (requested
@@ -139,8 +147,10 @@ function PdfPage({ document, page, requested: initiallyRequested, onVisible, sig
       <span>{failureText(failure.error, t)}</span>
       <Button size="sm" onClick={() => { setAttempt(value => value + 1) }}>{t('retry')}</Button>
     </div>}
-    <canvas ref={canvas} className={css.canvas} role="img" aria-label={t('pageImage', { page })}
-      hidden={state !== 'ready' || failure !== undefined} />
+    <div className={css.surface} style={{ width }} hidden={state !== 'ready' || failure !== undefined}>
+      <canvas ref={canvas} className={css.canvas} role="img" aria-label={t('pageImage', { page })} />
+      <div ref={text} className={css.text} data-pdf-text />
+    </div>
   </div>
 }
 

@@ -3,6 +3,14 @@
     - button "Collapse event-sourcing researcher descendants":
       - img
     - text: event-sourcing researcher Explain event sourcing in one · continuable · not running 7.9K tok {{duration}}
+    - button "Open event-sourcing researcher in sidebar":
+      - img
   - group:
-    - treeitem "example editor continuable · not running 0 tok · {{duration}}" [level=2]: example editor continuable · not running 0 tok {{duration}}
-  - treeitem "event-sourcing reviewer one-shot · not running 0 tok · {{duration}}" [level=1]: event-sourcing reviewer one-shot · not running 0 tok ~6mo 12d
+    - treeitem "example editor continuable · not running 0 tok · {{duration}}" [level=2]:
+      - text: example editor continuable · not running 0 tok {{duration}}
+      - button "Open example editor in sidebar":
+        - img
+  - treeitem "event-sourcing reviewer one-shot · not running 0 tok · {{duration}}" [level=1]:
+    - text: event-sourcing reviewer one-shot · not running 0 tok ~6mo 12d
+    - button "Open event-sourcing reviewer in sidebar":
+      - img

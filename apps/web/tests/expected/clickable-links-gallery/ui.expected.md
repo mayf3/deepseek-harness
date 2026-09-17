@@ -143,6 +143,11 @@
   - superscript: "1"
   - text: .
 - paragraph:
+  - text: "Preview:"
+  - link "plain HTTP":
+    - /url: http://docs.example.test/plain
+  - text: .
+- paragraph:
   - text: "Upstream:"
   - link "the repository":
     - /url: https://github.com/example/link-gallery

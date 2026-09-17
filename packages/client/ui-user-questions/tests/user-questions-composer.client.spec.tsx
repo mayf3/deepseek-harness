@@ -107,6 +107,8 @@ const inputState: InputState = {
  *  the composed props type mandates delivery of the rest (framework hooks are
  *  plain stubs per the client testing discipline). */
 const kitBase: Omit<QuestionComposerProps, 'matched' | 'useStore' | 'actions'> = {
+  renderSlot: () => null,
+  SessionProvider: ({ children }) => children,
   session: undefined,
   sessionId: SID,
   pendingInteraction: undefined,

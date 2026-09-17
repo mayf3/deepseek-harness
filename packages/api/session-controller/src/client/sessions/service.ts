@@ -642,16 +642,25 @@ export class ClientSessions implements ISessions {
     for (const [parentId, projection] of Object.entries(projectionsBySession)) {
       for (const child of projection.values.subagentCatalog ?? []) {
         const childId = child.id
-        const displayTitle = child.label ?? childId
         const summary = byId[childId]
+        const projectionValues = summary?.projectionValues ?? this.manager.projectionValues(childId)
+        const projectedTitle = projectionValues?.title
+        const title = typeof projectedTitle === 'string' && projectedTitle !== '' ? projectedTitle : undefined
+        const displayTitle = title ?? child.label ?? childId
         if (summary === undefined) {
           byId[childId] = {
             id: childId, displayTitle, parentId: parentId as SessionId,
             origin: 'subagent', running: this.scopes.get(childId)?.session.getSnapshot().running ?? false, blank: false, updatedAt: 0,
             retainedBy: this.retentionSnapshot(childId).retainedBy,
+            ...(projectionValues === undefined ? {} : { projectionValues }),
+            ...(title === undefined ? {} : { title }),
           }
-        } else if (summary.displayTitle !== displayTitle) {
-          byId[childId] = { ...summary, displayTitle }
+        } else if (summary.displayTitle !== displayTitle || summary.projectionValues !== projectionValues) {
+          byId[childId] = {
+            ...summary,
+            displayTitle,
+            ...(projectionValues === undefined ? {} : { projectionValues }),
+          }
         }
       }
     }

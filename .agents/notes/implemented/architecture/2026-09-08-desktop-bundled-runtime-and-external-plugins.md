@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)
 
-Profile mutation and recovery follow the [in-place profile decision](2026-09-09-desktop-in-place-profile.md).
+Plugin management and native recovery follow the [shared Web wrapper decision](2026-09-10-desktop-web-wrapper.md).
 
 The [Electron runtime decision](2026-09-11-desktop-electron-node-runtime.md) supersedes the separate upstream Node executable; other decisions in this note remain applicable.
 
@@ -40,11 +40,11 @@ First launch creates profile metadata and host links without running pnpm, prese
 
 Native canonical paths identify shared package directories. Windows launchers can vary path casing without moving the application; string equality would trigger unnecessary profile preparation. Profile cleanup explicitly unlinks every nested directory link before removing real directories. A Windows fixture under Electron 44 reproduces recursive `fs.rmSync` deleting files through a nested junction, while bundled upstream Node 24.17 preserves them. Cleanup qualification therefore includes the real Electron runtime; Node-only tests do not establish target preservation.
 
-Dependency mutations use ordinary pnpm add and remove commands, including their configured lifecycle scripts. Installation sources and dependency resolution belong to pnpm. Bundle declarations select automatic activation; patch validation belongs to the bundle loader. Plain dependencies remain installed without activation. The bundled pnpm reads normal user and profile settings, including registry and build permissions. Desktop supplies no runtime build allowlist, strict-build setting, version-range restriction, or fixed profile identity. Unreadable package metadata does not prevent listing, disabling, or removing a dependency. Development uses the same manager against a separate plugin profile, with workspace packages supplied by the development runtime.
+The shared [plugin manager](../../../../packages/boot/plugin-manager/README.md) owns supported package specifications, bundle validation, activation, and installation failure handling. The bundled pnpm reads normal user and profile settings. Development uses the same Web manager against a separate Desktop profile, with workspace packages supplied by the development runtime.
 
-Desktop stops the Host before package mutations and waits for pnpm exit before restarting it. Shared cleanup removes only fallback-owned links, preserving pnpm entries. The [in-place decision](2026-09-09-desktop-in-place-profile.md) owns partial failures and explicit recovery.
+The shared Web plugin manager owns package mutations and activation; Electron retains profile preparation and native recovery. The [Web wrapper decision](2026-09-10-desktop-web-wrapper.md) owns these responsibilities.
 
-The [immediate-window decision](2026-09-09-desktop-immediate-window-and-direct-start.md) owns direct Host startup and recovery in the main window. Users can update, remove, disable, or re-enable plugins and retry startup. Incompatible plugins are not silently deleted or automatically downgraded.
+The [immediate-window decision](2026-09-09-desktop-immediate-window-and-direct-start.md) owns direct Host startup. The native recovery dialog can disable third-party bundles and back up the profile patch when the Web application cannot start. Installed plugin files remain available for repair.
 
 ## Alternatives considered
 

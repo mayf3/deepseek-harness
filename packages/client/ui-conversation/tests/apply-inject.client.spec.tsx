@@ -101,8 +101,10 @@ async function bench() {
     return { instance, injected }
   }
   const residentApi = (id: SessionId | undefined) => {
-    const entry = entryOf('main.conversation')
-    return (entry.inject as unknown as (sessionId: SessionId | undefined) => ConversationInjected)(id)
+    const definition = runtime.factoryOf('conversation.content')
+    return (definition.inject as unknown as (
+      sessionId: SessionId | undefined,
+    ) => ConversationInjected)(id)
   }
   const headerApi = (id: SessionId) => {
     const entry = entryOf('conversation.session.header')

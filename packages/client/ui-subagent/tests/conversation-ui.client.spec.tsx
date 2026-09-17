@@ -88,6 +88,7 @@ function props(
       subagent: boundAddress === undefined ? undefined : { address: boundAddress },
     } as SessionSnapshot),
     openChild: vi.fn(),
+    openChildAside: vi.fn(),
     refresh: vi.fn(),
     lineageSessionId: PARENT,
     displayTitle: 'Parent title',
@@ -214,6 +215,14 @@ describe('SubagentHeaderLineage', () => {
     expect(screen.getByRole('button', { name: '展开 worker 的下级子代理' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '展开 reviewer 的下级子代理' })).toBeTruthy()
 
+    const sidebarButton = screen.getByRole('button', { name: '在侧边栏打开 worker' })
+    fireEvent.keyDown(sidebarButton, { key: 'Enter' })
+    fireEvent.click(sidebarButton)
+    expect(input.openChildAside).toHaveBeenCalledWith({
+      parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable',
+    })
+
+    hoverCatalog(trigger)
     fireEvent.click(screen.getByRole('treeitem', { name: /worker/ }))
     expect(input.openChild).toHaveBeenCalledWith({
       parentSessionId: PARENT,

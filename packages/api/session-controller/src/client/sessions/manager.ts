@@ -2,6 +2,7 @@
 
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import { SessionSeq, type SessionId, type SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
+import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type {
   SessionControlBaseline,
@@ -19,7 +20,6 @@ import { flattenLineage } from './lineage.ts'
 // useProjection('title') consumer reads). Zero value imports by construction.
 import type {} from '@deepseek-ai/dsh-session-title/client'
 import { Notifier } from './notifier.ts'
-import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import { ProjectionValueStore } from './projection-store.ts'
 import { Session } from './session.ts'
 import type { SessionRemotes } from './remotes.ts'
@@ -527,6 +527,15 @@ export class SessionManager {
   getListSnapshot(): SessionListSnapshot {
     this.notifier.ensureFresh()
     return this.listSnapshotCache
+  }
+
+  /**
+   * Read cached projection values for a Session that may exist only in a loaded subagent catalog.
+   * @param sessionId - Session whose control or history baseline supplied projections.
+   * @returns current values, or undefined before any projection store exists.
+   */
+  projectionValues(sessionId: SessionId): Readonly<Partial<SessionProjectionMap>> | undefined {
+    return this.projectionStores.get(sessionId)?.values()
   }
 
   // ---- Live control and Host-event sinks ----

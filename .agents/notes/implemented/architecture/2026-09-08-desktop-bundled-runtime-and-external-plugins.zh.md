@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-09-08-desktop-bundled-runtime-and-external-plugins.md) | 中文
 
-profile 修改与恢复遵循[直接修改 profile 决策](2026-09-09-desktop-in-place-profile.zh.md)。
+插件管理和原生恢复遵循[共享 Web 薄壳决策](2026-09-10-desktop-web-wrapper.zh.md)。
 
 [Electron 运行时决策](2026-09-11-desktop-electron-node-runtime.zh.md)替代独立上游 Node 可执行文件的选择；本文其他决策仍然适用。
 
@@ -40,11 +40,11 @@ profile manifest 分别记录 pnpm 安装的依赖及已启用 bundle 列表。�
 
 共享包目录使用原生规范路径识别。Windows 启动器可能改变路径大小写而不移动应用；字符串相等判断会触发不必要的 profile 准备。profile 清理在移除真实目录前，显式解除每一个嵌套目录链接。Windows 夹具在 Electron 44 下复现了递归 `fs.rmSync` 沿嵌套 junction 删除目标文件，而内置上游 Node 24.17 会保留它们。因此清理验收包含真实 Electron 运行时；仅在 Node 下测试不能证明目标文件会保留。
 
-依赖修改使用普通的 pnpm add 和 remove 命令，并遵循其生命周期脚本配置。安装来源和依赖解析由 pnpm 负责。bundle 声明决定自动启用；patch 验证由 bundle 加载器负责。普通依赖安装后不自动启用。内置 pnpm 读取正常的用户和 profile 设置，包括 registry 和构建权限。Desktop 不提供运行时构建许可列表、严格构建设置、版本范围限制或固定 profile 身份。包元数据不可读时，仍可列出、禁用或删除依赖。开发模式使用同一管理器操作独立的插件 profile，工作区包由开发运行时提供。
+共享[插件管理器](../../../../packages/boot/plugin-manager/README.zh.md)负责支持的包规格、bundle 验证、激活和安装失败处理。内置 pnpm 读取正常的用户和 profile 设置。开发模式使用相同的 Web 管理器操作独立 Desktop profile，工作区包由开发运行时提供。
 
-Desktop 在包变更前停止 Host，并等待 pnpm 退出后重新启动。共享清理仅移除模块补全逻辑拥有的链接，保留 pnpm 条目。[原位修改决策](2026-09-09-desktop-in-place-profile.zh.md)负责部分失败与显式恢复。
+共享 Web 插件管理器负责包变更和激活；Electron 保留 profile 准备和原生恢复。[Web 薄壳决策](2026-09-10-desktop-web-wrapper.zh.md)负责这些职责。
 
-[立即显示窗口决策](2026-09-09-desktop-immediate-window-and-direct-start.zh.md)规定实际 Host 启动和主窗口恢复。用户可以更新、删除、禁用或重新启用插件并重试启动。不兼容插件不会被静默删除或自动降级。
+[立即显示窗口决策](2026-09-09-desktop-immediate-window-and-direct-start.zh.md)负责直接启动 Host。Web 应用无法启动时，原生恢复对话框可禁用第三方 bundle 并备份 profile patch。已安装插件文件保留以供修复。
 
 ## 考虑过的替代方案
 

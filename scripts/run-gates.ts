@@ -779,6 +779,7 @@ function docSyncLeafGates(options: {
     pnpmExec('docs-site-projection', [
       'vitest', 'run', 'scripts/project-doc-site.spec.ts', 'scripts/verify-doc-site-fragments.spec.ts',
       'website/tests/mermaid-viewer.spec.ts',
+      'website/tests/code-groups.spec.ts',
       'website/tests/page-markdown-actions.spec.ts', 'website/tests/raw-markdown.spec.ts',
     ], {
       label: 'documentation site checks',

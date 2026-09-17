@@ -22,7 +22,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import type { ChatFileMentions, TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { Deliverables, selectDeliverables, type DeliverablesInjected } from '../src/client/Deliverables.tsx'
+import { Deliverables, DeliverablesTail, selectDeliverables, type DeliverablesInjected } from '../src/client/Deliverables.tsx'
 import type { ReviewInjected } from '../src/client/ReviewTab.tsx'
 import { ChangesSummaryStore } from '../src/client/changes-summary.ts'
 import { changesSummaryUrl, type ChangesSummary } from '../src/changes.ts'
@@ -681,7 +681,7 @@ describe('plugin registration', () => {
     ctx.slots.register({
       name: 'root',
       children: {
-        'conversation.chat.turnTail': { kind: 'chain', scope: 'session' },
+        'conversation.chat.turnTail': { kind: 'list', scope: 'session' },
         'tool.call.toolview': { kind: 'keyed', scope: 'session' },
         'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
       },
@@ -941,4 +941,14 @@ it('loads desktop information once the tail renders and not again while it is kn
   controller.host.set({ name: 'desktop', available: true, fileManager: 'finder' })
   view.rerender(<Deliverables {...shared} matched={{ changes: null, presented: [{ path: 'report.txt', seq: 2, index: 0 }] }} />)
   expect(props.reloadPresentedHost).toHaveBeenCalledOnce()
+})
+
+it('contributes file artifacts to the tail list only for turns with deliveries', () => {
+  const owner = tailOwner(undefined, 3)
+  const props = { ...openProps(), ...owner, sessionId: SessionId('session'), t: makeTranslate(en) } as unknown as Parameters<typeof DeliverablesTail>[0]
+  const view = render(<DeliverablesTail {...props} />)
+  expect(view.container.innerHTML).toBe('')
+  const withFile = tailOwner({ produced: [], presented: [{ path: 'report.md', seq: 2, index: 0 }] }, 3)
+  view.rerender(<DeliverablesTail {...props} {...withFile} />)
+  expect(view.getByText('report.md')).toBeTruthy()
 })

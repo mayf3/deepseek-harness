@@ -7,6 +7,9 @@
     "noEmit": true,
     "rewriteRelativeImportExtensions": false
   },
+  "files": [
+    "packages/client/ui-settings-general/src/client/desktop-update-bridge.ts"
+  ],
   "include": [
     "apps/web/product-isolation.ts",
     "apps/web/tests/default-product-isolation.e2e.ts",
@@ -38,6 +41,8 @@
     "apps/web/tests/lifecycle-chrome.e2e.ts",
     "apps/web/tests/details-session-lifecycle.e2e.ts",
     "apps/web/tests/document-preview.e2e.ts",
+    "apps/web/tests/office-fixture.ts",
+    "apps/web/tests/sidebar-browser.e2e.ts",
     "apps/web/tests/plugin-config.e2e.ts",
     "apps/web/tests/plugin-manager.e2e.ts",
     "apps/web/tests/plugin-install-cancel.e2e.ts",
@@ -62,6 +67,7 @@
     "apps/web/tests/cold-blank-session.e2e.ts",
     "apps/web/tests/stats-paged-history.e2e.ts",
     "apps/web/tests/sidebar-scrollbar.e2e.ts",
+    "apps/web/tests/sidebar-title-hover-scroll.e2e.ts",
     "apps/web/tests/rail-search-expand.e2e.ts",
     "apps/web/tests/conversation-column-overflow.e2e.ts",
     "apps/web/tests/ptc-round.e2e.ts",
@@ -70,6 +76,7 @@
     "apps/web/tests/present-svg.e2e.ts",
     "apps/web/tests/composer-draft-scroll.e2e.ts",
     "apps/web/tests/composer-placeholder.e2e.ts",
+    "apps/web/tests/context-meter.e2e.ts",
     "apps/web/tests/cordis-tool-round.e2e.ts",
     "apps/web/tests/web-search-round.e2e.ts",
     "apps/web/tests/file-upload-round.e2e.ts",
@@ -78,8 +85,10 @@
     "apps/web/tests/fork-mid-turn.e2e.ts",
     "apps/web/tests/message-feedback.e2e.ts",
     "apps/web/tests/markdown-images.e2e.ts",
+    "apps/web/tests/markdown-file-links.e2e.ts",
     "apps/web/tests/reference-composer.e2e.ts",
     "apps/web/tests/markdown-wide-table.e2e.ts",
+    "apps/web/tests/thinking-markdown.e2e.ts",
     "apps/web/tests/math-rendering.e2e.ts",
     "apps/web/tests/markdown-cjk-strong.e2e.ts",
     "apps/web/tests/markdown-inline-code-links.e2e.ts",
@@ -151,6 +160,7 @@
     "scripts/client-bundle-purity.spec.ts"
   ],
   "references": [
+    { "path": "./packages/client/connection/tsconfig.host.json" },
     { "path": "./packages/skill/skill-office" },
     { "path": "./packages/browser-use/browser-use" },
     { "path": "./packages/experimental/browser-use-runtime" },
@@ -161,6 +171,7 @@
     { "path": "./packages/computer-use/computer-use" },
     { "path": "./packages/experimental/computer-use-cua-driver-mcp" },
     { "path": "./packages/experimental/computer-use-cua-driver-native" },
+    { "path": "./packages/client/ui-sidebar-documentpreview/tsconfig.host.json" },
     { "path": "./packages/document/office-to-pdf" },
     { "path": "./packages/client/ui-deliverables/tsconfig.host.json" },
     { "path": "./vendor/cosmokit" },
