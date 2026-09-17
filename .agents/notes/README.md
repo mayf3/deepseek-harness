@@ -43,9 +43,15 @@ Once sealed, every archived triplet is permanently frozen. Do not edit, translat
 
 ## When to write one
 
-Every non-trivial change MUST add or update at least one Agent Note in the same PR. A change is non-trivial when it alters behavior, architecture, a contract shared across files or packages, process or tooling, testing strategy, an on-disk, wire, or configuration format, or another decision a maintainer may reasonably revisit. A proposal for substantial future work starts in `proposed/`; a decision already made starts in `implemented/`. Pick the class folder that matches the decision (see [Classification](#classification)).
+Add or update an Agent Note in the same PR only when a decision has lasting maintenance value: identify a concrete mistake a future maintainer could plausibly make and the non-obvious constraint or genuine trade-off that code, tests, and existing documentation do not explain. Behavior changes, user visibility, file count, and added tests alone do not qualify. Put ordinary change rationale in the PR description and current behavior in its existing documentation.
 
-Updating the Agent Note that already owns the decision satisfies the rule; do not create a duplicate. Only a purely mechanical or local edit with no change to behavior, contracts, structure, process, or rationale is exempt. An Agent Note is never edited into a *different decision*: supersede it with a new one, and keep both notes cross-linked unless the old note is later fully consolidated under the rule below. Editing an `implemented/` Agent Note to track where its existing decision lives is required, not forbidden; see [implemented/AGENTS.md](implemented/AGENTS.md).
+Local UI presentation and interaction changes default to no new note: copy, spacing, colors, icons, status indicators, layout, and visibility conditions. Changes involving persistence, protocols, permissions, cross-component state ownership, or shared interaction rules still use the lasting-value test above; UI code is not a blanket exemption. Removing a redundant status dot while retaining transition indicators needs no note when the reason fits in the PR description and tests capture the behavior.
+
+Do not create notes that merely expand a change summary, implementation detail, or test inventory, or invent alternatives to fill the template. If a new implemented note would immediately qualify for low-future-value archival, do not create it.
+
+Update an existing owning note when its facts become stale, even for a local edit; see [implemented/AGENTS.md](implemented/AGENTS.md). Extend that note for rationale about the same decision instead of creating a duplicate. An Agent Note is never edited into a *different decision*: supersede it with a new one, and keep both notes cross-linked unless the old note is later fully consolidated under the rule below.
+
+Qualifying proposals start in `proposed/`; decisions already made start in `implemented/`. Pick the matching [class](#classification).
 
 An implemented Agent Note that is fully superseded may be consolidated into the current owning note and deleted. Before deletion, the owner must preserve every unique rationale, alternative, consequence, required verification, and named coverage gap; repair every inbound link; and delete the Chinese counterpart and consistency record in the same change. Partial supersession does not qualify: keep both notes cross-linked and update every fact that remains current. Consolidation must not rewrite the old file into its opposite or rely on git history as the only copy of rationale.
 
