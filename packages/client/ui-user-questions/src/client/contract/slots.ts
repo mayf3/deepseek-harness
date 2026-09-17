@@ -94,7 +94,7 @@ export function planReviewOf(questions: readonly QuestionItem[]): PlanReview | u
     id: question.id,
     question: question.question,
     plan: question.detail,
-    ...intent.callId === undefined ? {} : { callId: intent.callId },
+    ...(intent.callId === undefined ? {} : { callId: intent.callId }),
     approve,
     ...(decline === undefined ? {} : { decline }),
   }

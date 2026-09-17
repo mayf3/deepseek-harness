@@ -190,8 +190,17 @@ describe('web e2e: dismissed plan history', () => {
       await page.locator('[data-sidebar-right-toggle]').click()
       await review.getByRole('button', { name: 'Request changes', exact: true }).click()
       await settled
+      const call = events.find((event): event is SessionEvent<'tool/call'> =>
+        event.type === 'tool/call' && event.data.name === 'exit_plan_mode')
+      expect(call).toBeDefined()
       const results = events.filter(event => event.type === 'tool/result')
-      expect(results.some(event => JSON.stringify(event).includes('dismissed the plan review'))).toBe(true)
+      const result = results.find(event => event.data.message.source.callId === call?.data.callId)
+      expect(result?.data.message.content[0]).toMatchObject({ type: 'tool-result', isError: true })
+      expect(JSON.stringify(result)).toContain('dismissed the plan review')
+      expect(results.some(event => JSON.stringify(event).includes('Plan approved'))).toBe(false)
+      const modes = events.filter(event => event.type === 'plan/mode')
+      expect(modes).toHaveLength(1)
+      expect(modes[0]).toMatchObject({ data: { active: true } })
       expect(await review.count()).toBe(0)
       const card = page.locator('[data-plan-card]')
       await card.waitFor({ state: 'visible' })
@@ -208,6 +217,7 @@ describe('web e2e: dismissed plan history', () => {
       await page.locator('[data-plan-card]').waitFor({ state: 'visible' })
       expect(await page.locator('[data-plan-preview]').isVisible()).toBe(false)
       expect(tripwire.pageErrors).toEqual([])
+      expect(tripwire.warnings).toEqual([])
     } finally {
       await browser?.close()
       await scaffold.close()

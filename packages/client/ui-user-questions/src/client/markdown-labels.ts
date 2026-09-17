@@ -1,4 +1,4 @@
-/** Localized Markdown controls shared by question and plan-review bodies. */
+/** Localized Markdown controls for question details. */
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { QuestionComposerProps } from './contract/slots.ts'
 

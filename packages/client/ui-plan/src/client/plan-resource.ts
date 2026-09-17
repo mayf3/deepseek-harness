@@ -1,4 +1,4 @@
-/** Read immutable plan arguments through the existing cold-safe Session history API. */
+/** Read immutable plan arguments from a Session snapshot and earlier history pages. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionFollowFrame } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { ResourceProvider } from '@deepseek-ai/dsh-client-resources/client'
@@ -28,6 +28,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /**
  * Bind plan reads to the generated Session Remote face.
+ * Opening a follow reads projections and may activate a prepared Session on the Host.
+ * Generated Remote streams can throw carrier failures; the provider reports failed
+ * reads as resource failure frames and preserves Remote error codes.
  * @param remote - Existing Session history API.
  * @returns a provider whose reads stop after finding the exact invocation.
  */

@@ -16,7 +16,13 @@ type PlanPreviewProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'pl
 export function PlanPreview({ useTabInfo, useResource, t }: PlanPreviewProps) {
   const tab = useTabInfo()
   const resource = useResource<'plan'>(tab.tab.navigation.address)
-  const labels = useMemo(() => ({ code: { copyLabel: t('copy'), copiedLabel: t('copied') }, footnotes: t('markdown.footnotes') }), [t])
+  const labels = useMemo(() => ({
+    code: {
+      copyLabel: t('copy'), copiedLabel: t('copied'), sourceLabel: t('markdown.code.source'),
+      lineNumbersLabel: t('markdown.code.lineNumbers'),
+    },
+    footnotes: t('markdown.footnotes'),
+  }), [t])
   const plan = resource.value
   if (plan === undefined) return (
     <div className={css.message} role="status">
@@ -26,7 +32,7 @@ export function PlanPreview({ useTabInfo, useResource, t }: PlanPreviewProps) {
   )
   return (
     <section className={css.preview} data-plan-preview={plan.callId} aria-label={plan.title}>
-      <div className={css.toolbar}><button type="button" className={css.reviewOpen} aria-label={t('copy')}
+      <div className={css.toolbar}><button type="button" className={css.iconButton} aria-label={t('copy')}
         onClick={() => { void writeClipboard(plan.markdown) }}><IconCopyOutline16 /></button></div>
       <div className={css.document}><MarkdownText text={plan.markdown} labels={labels} /></div>
     </section>
