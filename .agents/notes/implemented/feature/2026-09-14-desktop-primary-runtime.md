@@ -34,6 +34,8 @@ Desktop ZIP extraction pins `extract-zip` to `yauzl` 3.4.0 through a scoped depe
 
 **Signing only the interpreter or bypassing native smoke.** Windows code integrity also evaluates DLLs and Python extensions. A signed launcher cannot make an unsigned extension load, and skipping execution would hide unusable installed dependencies. Preserving valid upstream signatures avoids unnecessary hardware operations and retains upstream attribution.
 
+Dependency manifests use electron-builder's own cleanup before inventory sealing. Its archive writer otherwise changes package metadata after signing; pre-applying that transformation keeps the final archive verifiable without replacing the sealed inventory after packaging.
+
 ## Consequences
 
 The application carries additional native files and replaces the complete managed payload on upgrade. Running interpreters can prevent replacement on Windows. Native build smoke, install/reuse/recovery tests and a keyless tool-error session cover distinct installation and model-output paths; macOS signing uses the existing native-runtime signer. Interpreter archives and Python wheels are hash-pinned, and licenses remain with their distributions.
