@@ -203,6 +203,7 @@ async function main(): Promise<void> {
   let mandatoryUI: DesktopMandatoryUpdateWindow | undefined
   let policyAuth: DesktopPolicyTestAuth | undefined
   const isQuitting = (): boolean => quitting
+  const currentMainWindow = (): BrowserWindow | undefined => mainWindow
   const ordinaryDialogs = new Set<AbortController>()
   const locale = resolveDesktopLocale(app.getLocale())
   const messages = locale.messages
@@ -762,9 +763,10 @@ async function main(): Promise<void> {
   automaticCheck()
   await reconcileBackend().catch(() => undefined)
   // Window lifecycle callbacks run while backend startup is pending.
-  if (quitting) return
-  if (mainWindow !== undefined && development && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
+  if (isQuitting()) return
+  const window = currentMainWindow()
+  if (window !== undefined && development && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
+    window.webContents.openDevTools({ mode: 'detach' })
   }
   publishUpdate(updateState)
 }
