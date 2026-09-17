@@ -51,7 +51,7 @@ describe('BrowserNavigation', () => {
     expect(navigation.snapshot.navigation).toEqual({ status: 'loading', revision: reload.revision })
   })
 
-  it('keeps blocked requests revision-scoped and leaves address failures outside navigation', () => {
+  it('leaves address failures outside navigation', () => {
     const navigation = new BrowserNavigation()
     navigation.frameLoaded(1)
     navigation.navigate(httpsTarget(1))
@@ -60,18 +60,9 @@ describe('BrowserNavigation', () => {
     navigation.frameLoaded(revision)
     expect(navigation.snapshot.navigation).toEqual({ status: 'known', revision })
 
-    navigation.reload()
-    const reloadRevision = navigation.snapshot.request!.revision
-    navigation.requestBlocked(reloadRevision - 1, 'loopback')
-    expect(navigation.snapshot.navigation).toEqual({ status: 'loading', revision: reloadRevision })
-    navigation.requestBlocked(reloadRevision, 'loopback')
-    expect(navigation.snapshot).toMatchObject({
-      navigation: { status: 'failed', revision: reloadRevision },
-      failure: { kind: 'address', reason: 'loopback' },
-    })
     navigation.addressFailed('invalid')
     expect(navigation.snapshot).toMatchObject({
-      navigation: { status: 'failed', revision: reloadRevision },
+      navigation: { status: 'known', revision },
       failure: { kind: 'address', reason: 'invalid' },
     })
   })

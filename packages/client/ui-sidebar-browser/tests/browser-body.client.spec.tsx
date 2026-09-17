@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
@@ -64,7 +64,7 @@ function mountBrowser(navigation?: { readonly url?: string }) {
   } as unknown as BrowserBodyProps
   const renderBody = () => render(<BrowserBody {...props} />)
   return {
-    view: renderBody(), remount: renderBody, store, lifetime,
+    view: renderBody(), remount: renderBody, store, lifetime, injected,
   }
 }
 
@@ -103,11 +103,15 @@ describe('BrowserBody', () => {
     expect(frame.getAttribute('allow')).toBeNull()
     expect(frame.getAttribute('referrerpolicy')).toBe('no-referrer')
     const disableSandbox = mounted.view.getByRole('button', { name: zh['sandbox.disable'] })
+    const protectedMark = disableSandbox.querySelector('svg path:last-child')?.getAttribute('d')
     fireEvent.click(disableSandbox)
     await waitFor(() => { expect(mounted.view.container.querySelector('iframe')?.getAttribute('sandbox')).toBeNull() })
     expect(mounted.view.getByRole('status').textContent).toBe(zh['sandbox.warning'])
-    fireEvent.click(mounted.view.getByRole('button', { name: zh['sandbox.enable'] }))
+    const enableSandbox = mounted.view.getByRole('button', { name: zh['sandbox.enable'] })
+    expect(enableSandbox.querySelector('svg path:last-child')?.getAttribute('d')).not.toBe(protectedMark)
+    fireEvent.click(enableSandbox)
     await waitFor(() => { expect(mounted.view.container.querySelector('iframe')?.getAttribute('sandbox')).toBe(WEB_BROWSER_SANDBOX) })
+    expect(mounted.view.getByRole('button', { name: zh['sandbox.disable'] }).querySelector('svg path:last-child')?.getAttribute('d')).toBe(protectedMark)
 
     fireEvent.change(input, { target: { value: 'https://example.com/two' } })
     fireEvent.submit(input.closest('form')!)
@@ -159,17 +163,36 @@ describe('BrowserBody', () => {
     expect(mounted.store.getSnapshot().byTab[TAB]?.navigation).toEqual({ status: 'loading', revision: revision + 1 })
   })
 
-  it('shows a loopback policy failure without a loading placeholder', async () => {
+  it('shows a best-effort iframe error notice until the next controlled load', async () => {
     const mounted = mountBrowser()
     const input = mounted.view.getByRole('textbox')
-    fireEvent.click(mounted.view.getByRole('button', { name: zh['sandbox.disable'] }))
+    fireEvent.change(input, { target: { value: 'https://example.com/one' } })
+    fireEvent.submit(input.closest('form')!)
+    await waitFor(() => { expect(mounted.view.container.querySelector('iframe')).not.toBeNull() })
+    const failedRevision = mounted.store.getSnapshot().byTab[TAB]!.request!.revision
+
+    act(() => { mounted.injected.reportLoadFailed(TAB, failedRevision) })
+    expect(mounted.injected.keyedHooks.browserFrame(TAB)?.getSnapshot().loadFailed).toBe(true)
+    await waitFor(() => { expect(mounted.view.getByText(zh['web.loadFailed'])).toBeDefined() })
+    fireEvent.click(mounted.view.getByRole('button', { name: zh.reload }))
+    await waitFor(() => { expect(mounted.view.queryByText(zh['web.loadFailed'])).toBeNull() })
+    act(() => { mounted.injected.reportLoadFailed(TAB, failedRevision) })
+    expect(mounted.view.queryByText(zh['web.loadFailed'])).toBeNull()
+  })
+
+  it('loads loopback under the default sandbox and keeps it across sandbox changes', async () => {
+    const mounted = mountBrowser()
+    const input = mounted.view.getByRole('textbox')
     fireEvent.change(input, { target: { value: 'http://localhost:5173/' } })
     fireEvent.submit(input.closest('form')!)
     await waitFor(() => { expect(mounted.view.container.querySelector('iframe')?.getAttribute('src')).toBe('http://localhost:5173/') })
+    expect(mounted.view.container.querySelector('iframe')?.getAttribute('sandbox')).toBe(WEB_BROWSER_SANDBOX)
 
+    fireEvent.click(mounted.view.getByRole('button', { name: zh['sandbox.disable'] }))
+    await waitFor(() => { expect(mounted.view.container.querySelector('iframe')?.getAttribute('sandbox')).toBeNull() })
     fireEvent.click(mounted.view.getByRole('button', { name: zh['sandbox.enable'] }))
-    expect(mounted.view.getByRole('alert').textContent).toBe(zh['error.loopback'])
-    expect(mounted.view.queryByText(zh.loading)).toBeNull()
+    await waitFor(() => { expect(mounted.view.container.querySelector('iframe')?.getAttribute('sandbox')).toBe(WEB_BROWSER_SANDBOX) })
+    expect(mounted.view.container.querySelector('iframe')?.getAttribute('src')).toBe('http://localhost:5173/')
   })
 
   it('opens known Web targets externally and consumes an initial typed navigation', async () => {

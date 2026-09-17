@@ -15,6 +15,7 @@ export interface BrowserDocument {
 export interface BrowserFrameState {
   readonly document: BrowserDocument | undefined
   readonly sandboxed: boolean
+  readonly loadFailed: boolean
 }
 
 /** Browser rendering operations shared by Web and future Electron implementations. */
@@ -27,6 +28,8 @@ export interface BrowserFrame extends HostObservable<BrowserFrameState> {
   clearDocument(): BrowserDocument | undefined
   /** @param revision - rendered document revision reported by the carrier. */
   reportLoaded(revision: number): void
+  /** @param revision - rendered document revision whose carrier reported an error. */
+  reportLoadFailed(revision: number): void
 }
 
 /** Owns transient iframe and sandbox-toggle state independently from URL navigation. */
@@ -34,6 +37,7 @@ export class IframeImpl implements BrowserFrame {
   private readonly store: SnapshotStore<BrowserFrameState> = createSnapshotStore({
     document: undefined,
     sandboxed: true,
+    loadFailed: false,
   })
 
   /**
@@ -69,7 +73,7 @@ export class IframeImpl implements BrowserFrame {
    * @internal
    */
   setDocument(document: BrowserDocument): void {
-    this.store.set({ ...this.store.getSnapshot(), document })
+    this.store.set({ ...this.store.getSnapshot(), document, loadFailed: false })
   }
 
   /**
@@ -78,13 +82,23 @@ export class IframeImpl implements BrowserFrame {
    * @internal
    */
   clearDocument(): BrowserDocument | undefined {
-    const document = this.store.getSnapshot().document
-    if (document !== undefined) this.store.set({ ...this.store.getSnapshot(), document: undefined })
+    const current = this.store.getSnapshot()
+    const { document } = current
+    if (document !== undefined) {
+      this.store.set({ ...current, document: undefined, loadFailed: false })
+    }
     return document
   }
 
   /** @param revision - rendered document revision reported by the iframe. */
   reportLoaded(revision: number): void {
     this.documentLoaded(revision)
+  }
+
+  /** @param revision - rendered document revision whose iframe emitted `error`. */
+  reportLoadFailed(revision: number): void {
+    const current = this.store.getSnapshot()
+    if (current.document?.revision !== revision || current.loadFailed) return
+    this.store.set({ ...current, loadFailed: true })
   }
 }

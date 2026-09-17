@@ -18,10 +18,21 @@ describe('IframeImpl', () => {
       src: 'https://example.test/',
       revision: 4,
     }
+    frame.reportLoadFailed(4)
+    expect(frame.getSnapshot().loadFailed).toBe(false)
     frame.setDocument(document)
+    frame.reportLoadFailed(3)
+    expect(frame.getSnapshot().loadFailed).toBe(false)
+    frame.reportLoadFailed(4)
+    frame.reportLoadFailed(4)
+    expect(frame.getSnapshot().loadFailed).toBe(true)
     frame.reportLoaded(4)
     expect(loaded).toHaveBeenCalledWith(4)
-    expect(frame.clearDocument()).toBe(document)
+    frame.setDocument({ ...document, revision: 5 })
+    expect(frame.getSnapshot().loadFailed).toBe(false)
+    expect(frame.clearDocument()?.revision).toBe(5)
+    frame.reportLoadFailed(5)
+    expect(frame.getSnapshot().loadFailed).toBe(false)
     expect(frame.clearDocument()).toBeUndefined()
     expect(listener).toHaveBeenCalled()
     unsubscribe()

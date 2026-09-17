@@ -1,4 +1,4 @@
-/** Address parsing for the Sidebar browser's HTTPS and loopback HTTP allowlist. */
+/** Address parsing for the Sidebar browser's HTTP(S) allowlist. */
 
 /** Maximum accepted address length; this bounds persisted navigation state. */
 export const MAX_BROWSER_URL_LENGTH = 16 * 1024
@@ -9,7 +9,7 @@ export type BrowserTarget =
   | { readonly kind: 'http'; readonly url: string; readonly title: string }
 
 /** Why an address was refused before navigation. */
-export type BrowserAddressFailure = 'empty' | 'invalid' | 'protocol' | 'credentials' | 'application-origin' | 'loopback'
+export type BrowserAddressFailure = 'empty' | 'invalid' | 'protocol' | 'credentials' | 'application-origin'
 
 /** Result of parsing an address-bar value. */
 export type BrowserAddressResult =
@@ -32,7 +32,7 @@ export function parseBrowserAddress(input: string, applicationOrigin?: string): 
   let url: URL
   try { url = new URL(candidate) } catch { return { ok: false, reason: 'invalid' } }
   if (url.username !== '' || url.password !== '') return { ok: false, reason: 'credentials' }
-  if (url.protocol === 'https:' || (url.protocol === 'http:' && isLoopbackHostname(url.hostname))) {
+  if (url.protocol === 'https:' || url.protocol === 'http:') {
     if (applicationOrigin !== undefined && applicationOrigin !== 'null') {
       try {
         if (url.origin === new URL(applicationOrigin).origin) return { ok: false, reason: 'application-origin' }
@@ -43,16 +43,4 @@ export function parseBrowserAddress(input: string, applicationOrigin?: string): 
     return { ok: true, target: { kind: url.protocol === 'https:' ? 'https' : 'http', url: url.href, title: url.hostname } }
   }
   return { ok: false, reason: 'protocol' }
-}
-
-/**
- * Test whether a normalized URL host belongs to the local loopback interface.
- * @param hostname - URL hostname with IPv6 brackets retained.
- * @returns whether the hostname is localhost, IPv6 loopback, or IPv4 127/8.
- */
-export function isLoopbackHostname(hostname: string): boolean {
-  if (hostname === 'localhost' || hostname === '[::1]') return true
-  const octets = hostname.split('.')
-  return octets.length === 4 && octets[0] === '127'
-    && octets.every(part => /^\d{1,3}$/u.test(part) && Number(part) <= 255)
 }

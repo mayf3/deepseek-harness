@@ -1,4 +1,4 @@
-/** Register the HTTPS Browser tab type in the right Sidebar. */
+/** Register the HTTP(S) Browser tab type in the right Sidebar. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'

@@ -39,6 +39,10 @@ describe.skipIf(MODE === 'record')('web e2e: Sidebar Browser', () => {
         body: `<h1>${name}</h1><a href="/inside">Inside navigation</a><p>isolated HTTPS fixture</p>`,
       })
     })
+    await page.route('http://127.0.0.1:3080/**', async route => route.fulfill({
+      contentType: 'text/html',
+      body: '<h1>loopback</h1>',
+    }))
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
@@ -49,7 +53,7 @@ describe.skipIf(MODE === 'record')('web e2e: Sidebar Browser', () => {
     await scaffold?.close()
   })
 
-  it('navigates sandboxed HTTPS with application-known history', async () => {
+  it('navigates sandboxed HTTP(S) with application-known history', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-sidebar-browser'))
     const settled = scaffold.whenTurnSettled()
     const composer = page.locator('[data-composer-input]').first()
@@ -60,17 +64,17 @@ describe.skipIf(MODE === 'record')('web e2e: Sidebar Browser', () => {
     const column = page.locator('[data-rightbar-col]')
     await page.locator('[data-sidebar-right-expand]').click()
     await column.locator('[data-sidebar-right-guide-entry="browser"]').click()
-    const input = column.getByRole('textbox', { name: 'Enter an HTTPS or local HTTP address' })
+    const input = column.getByRole('textbox', { name: 'Enter an HTTP(S) address' })
     await input.fill('https://browser.test/one')
     await input.press('Enter')
     const frame = column.locator('[data-sidebar-browser-frame]')
     await frame.waitFor({ state: 'visible' })
     await page.frameLocator('[data-sidebar-browser-frame]').getByRole('heading', { name: 'one' }).waitFor()
     expect(await frame.getAttribute('allow')).toBeNull()
-    await column.getByRole('button', { name: 'Disable sandbox and allow loopback' }).click()
+    await column.getByRole('button', { name: 'Disable sandbox restrictions' }).click()
     await expect.poll(() => frame.getAttribute('sandbox')).toBeNull()
     await column.getByText('Sandbox restrictions are disabled; a page that reaches the DSH origin can access its Web data.', { exact: true }).waitFor()
-    await column.getByRole('button', { name: 'Restore sandbox and block loopback' }).click()
+    await column.getByRole('button', { name: 'Restore sandbox restrictions' }).click()
     await expect.poll(() => frame.getAttribute('sandbox')).toBe('allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox')
     await page.frameLocator('[data-sidebar-browser-frame]').getByRole('link', { name: 'Inside navigation' }).click()
     await page.frameLocator('[data-sidebar-browser-frame]').getByRole('heading', { name: 'inside' }).waitFor()
@@ -88,10 +92,15 @@ describe.skipIf(MODE === 'record')('web e2e: Sidebar Browser', () => {
     await column.getByRole('button', { name: 'Forward', exact: true }).click()
     await page.frameLocator('[data-sidebar-browser-frame]').getByRole('heading', { name: 'two' }).waitFor()
 
+    await input.fill('http://127.0.0.1:3080/preview')
+    await input.press('Enter')
+    await page.frameLocator('[data-sidebar-browser-frame]').getByRole('heading', { name: 'loopback' }).waitFor()
+    expect(await frame.getAttribute('sandbox')).toBe('allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox')
+
     await input.fill('file:///work/index.html')
     await input.press('Enter')
     const blocked = await column.getByRole('alert').innerText()
-    expect(blocked).toBe('Only HTTPS and loopback HTTP addresses are supported; use Document Preview for local files.')
+    expect(blocked).toBe('Only HTTP and HTTPS addresses are supported; use Document Preview for local files.')
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await mkdir(SNAPSHOT_DIR, { recursive: true })
@@ -99,9 +108,10 @@ describe.skipIf(MODE === 'record')('web e2e: Sidebar Browser', () => {
       '# Sidebar Browser', '',
       '- HTTPS sandbox: allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox',
       '- Permissions Policy: browser defaults',
-      '- Sandbox toggle: per-tab and temporary; disabling also allows loopback navigation',
+      '- Sandbox toggle: per-tab and temporary',
       '- Unknown navigation: marker shown; Back, Forward, and external-open disabled',
       '- HTTPS history: one -> two -> one -> two',
+      '- Loopback HTTP: loaded under the default sandbox',
       `- Invalid protocol: ${blocked}`,
     ].join('\n'), MODE)
     await assertFixtureInventory(SNAPSHOT_DIR, ['browser.expected.md'])

@@ -7,8 +7,7 @@ import type { BrowserFrame, BrowserFrameState } from './BrowserFrame.ts'
 import { BrowserNavigation } from './BrowserNavigation.ts'
 import type { BrowserTabState } from './BrowserNavigation.ts'
 import type { BrowserStore } from './store.ts'
-import { isLoopbackHostname, parseBrowserAddress } from './url.ts'
-import type { BrowserTarget } from './url.ts'
+import { parseBrowserAddress } from './url.ts'
 
 /** Construction dependencies for one tab-scoped Browser controller. */
 export interface BrowserControllerOptions {
@@ -50,11 +49,6 @@ export class BrowserController {
       this.publish()
       return
     }
-    if (this.loopbackBlocked(parsed.target)) {
-      this.navigation.addressFailed('loopback')
-      this.publish()
-      return
-    }
     const current = BrowserNavigation.current(this.navigation.snapshot)
     if (current?.url === parsed.target.url) {
       this.reload()
@@ -87,11 +81,6 @@ export class BrowserController {
   private start(request: NonNullable<BrowserTabState['request']>): void {
     this.publish()
     this.frame.clearDocument()
-    if (this.loopbackBlocked(request.target)) {
-      this.navigation.requestBlocked(request.revision, 'loopback')
-      this.publish()
-      return
-    }
     this.frame.setDocument({ target: request.target, src: request.target.url, revision: request.revision })
   }
 
@@ -100,11 +89,6 @@ export class BrowserController {
     const previous = this.navigation.snapshot
     this.navigation.frameLoaded(revision)
     if (this.navigation.snapshot !== previous) this.publish()
-  }
-
-  private loopbackBlocked(target: BrowserTarget): boolean {
-    return this.frame.getSnapshot().sandboxed
-      && isLoopbackHostname(new URL(target.url).hostname)
   }
 
   private publish(): void {
@@ -141,6 +125,8 @@ export interface BrowserInjected {
   toggleSandbox(tabId: TabId): void
   /** @param tabId - tab occurrence. @param revision - rendered document revision. */
   reportLoaded(tabId: TabId, revision: number): void
+  /** @param tabId - tab occurrence. @param revision - rendered document revision that emitted `error`. */
+  reportLoadFailed(tabId: TabId, revision: number): void
 }
 
 /**
@@ -175,5 +161,6 @@ export function createBrowserControllers(
     reload: (tabId) => { controller(tabId)?.reload() },
     toggleSandbox: (tabId) => { controller(tabId)?.frame.toggleSandbox() },
     reportLoaded: (tabId, revision) => { controller(tabId)?.frame.reportLoaded(revision) },
+    reportLoadFailed: (tabId, revision) => { controller(tabId)?.frame.reportLoadFailed(revision) },
   }
 }

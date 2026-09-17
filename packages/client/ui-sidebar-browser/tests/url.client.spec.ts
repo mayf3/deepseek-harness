@@ -16,14 +16,16 @@ describe('Browser address policy', () => {
     })
   })
 
-  it('allows HTTP only on explicit loopback hosts', () => {
+  it('accepts HTTP including loopback hosts', () => {
     expect(parseBrowserAddress('http://localhost:5173/app', APP)).toEqual({
       ok: true, target: { kind: 'http', url: 'http://localhost:5173/app', title: 'localhost' },
     })
     expect(parseBrowserAddress('http://127.42.0.9/', APP)).toMatchObject({ ok: true, target: { kind: 'http' } })
     expect(parseBrowserAddress('http://[::1]:8080/', APP)).toMatchObject({ ok: true, target: { kind: 'http' } })
-    expect(parseBrowserAddress('http://example.com/', APP)).toEqual({ ok: false, reason: 'protocol' })
-    expect(parseBrowserAddress('http://128.0.0.1/', APP)).toEqual({ ok: false, reason: 'protocol' })
+    expect(parseBrowserAddress('http://example.com/', APP)).toEqual({
+      ok: true, target: { kind: 'http', url: 'http://example.com/', title: 'example.com' },
+    })
+    expect(parseBrowserAddress('http://128.0.0.1/', APP)).toMatchObject({ ok: true, target: { kind: 'http' } })
   })
 
   it('rejects every undeclared or privileged form', () => {

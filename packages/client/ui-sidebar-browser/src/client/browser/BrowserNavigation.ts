@@ -13,7 +13,6 @@ export type BrowserNavigationStatus =
   | { readonly status: 'loading'; readonly revision: number }
   | { readonly status: 'known'; readonly revision: number }
   | { readonly status: 'unknown'; readonly revision: number }
-  | { readonly status: 'failed'; readonly revision: number }
 
 /** Address-policy or loading failure shown below the toolbar. */
 export type BrowserFailure =
@@ -156,21 +155,6 @@ export class BrowserNavigation {
       this.value = { ...this.value, navigation: { status: 'known', revision } }
     } else if (navigation.status === 'known') {
       this.value = { ...this.value, navigation: { status: 'unknown', revision } }
-    }
-  }
-
-  /**
-   * Refuse a current request after its target becomes disallowed by carrier policy.
-   * @param revision - blocked request revision.
-   * @param reason - address-policy refusal.
-   */
-  requestBlocked(revision: number, reason: BrowserAddressFailure): void {
-    const navigation = this.value.navigation
-    if (navigation.status !== 'loading' || navigation.revision !== revision) return
-    this.value = {
-      ...this.value,
-      navigation: { status: 'failed', revision },
-      failure: { kind: 'address', reason },
     }
   }
 

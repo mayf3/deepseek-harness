@@ -100,7 +100,7 @@ describe('BrowserController', () => {
     expect(face.keyedHooks.browserFrame(TAB)).toBe(replacement)
   })
 
-  it('allows loopback only while this tab has disabled its sandbox', () => {
+  it('loads loopback under sandbox and reloads it across sandbox changes', () => {
     const store = createBrowserStore().create('browser-controller-loopback-test')
     const face = createBrowserControllers(store.actions)
     const tabLifetime = lifetime()
@@ -108,20 +108,35 @@ describe('BrowserController', () => {
     const frame = face.keyedHooks.browserFrame(TAB)!
 
     face.loadUrl(TAB, 'http://localhost:5173/app')
-    expect(store.getSnapshot().byTab[TAB]).toMatchObject({
-      navigation: { status: 'empty' }, failure: { kind: 'address', reason: 'loopback' },
+    expect(frame.getSnapshot()).toMatchObject({
+      sandboxed: true,
+      document: { src: 'http://localhost:5173/app' },
     })
-    expect(frame.getSnapshot().document).toBeUndefined()
+    const beforeToggle = store.getSnapshot().byTab[TAB]!.request!.revision
 
     face.toggleSandbox(TAB)
     expect(frame.getSnapshot().sandboxed).toBe(false)
-    face.loadUrl(TAB, 'http://localhost:5173/app')
     expect(frame.getSnapshot().document?.src).toBe('http://localhost:5173/app')
+    expect(store.getSnapshot().byTab[TAB]?.request?.revision).toBe(beforeToggle + 1)
 
     face.toggleSandbox(TAB)
-    expect(frame.getSnapshot()).toEqual({ document: undefined, sandboxed: true })
-    expect(store.getSnapshot().byTab[TAB]).toMatchObject({
-      navigation: { status: 'failed' }, failure: { kind: 'address', reason: 'loopback' },
+    expect(frame.getSnapshot()).toMatchObject({
+      sandboxed: true,
+      document: { src: 'http://localhost:5173/app' },
+    })
+    expect(store.getSnapshot().byTab[TAB]?.request?.revision).toBe(beforeToggle + 2)
+  })
+
+  it('loads public HTTP without changing the sandbox policy', () => {
+    const store = createBrowserStore().create('browser-controller-http-test')
+    const face = createBrowserControllers(store.actions)
+    const tabLifetime = lifetime()
+    face.mount(TAB, tabLifetime.signal, APP)
+
+    face.loadUrl(TAB, 'http://example.test/path')
+    expect(face.keyedHooks.browserFrame(TAB)?.getSnapshot()).toMatchObject({
+      sandboxed: true,
+      document: { src: 'http://example.test/path' },
     })
   })
 })
