@@ -68,7 +68,7 @@ Only the Lead can create teammates or interrupt them.
 
 Any member can send a message to any other member or to the Lead. A live member receives it immediately; an offline member's messages queue and arrive when it resumes. Messages are never lost and never delivered twice.
 
-Every message uses Steer: a running target receives it at the nearest step boundary, an inactive target starts a turn if loaded or cold-resumes otherwise. The sender always sees the outcome — accepted by the target inbox, or retained as queued when delivery is temporarily unavailable. A queued message is already safely stored, so it must not be resent.
+Every message uses Steer: a running target receives it at the nearest step boundary; an inactive target starts a turn if loaded or cold-resumes otherwise. The sender always sees the outcome — accepted by the target inbox, or retained as queued when delivery is temporarily unavailable. A queued message is already safely stored, so it must not be resent.
 
 ### Shared task board
 
@@ -198,7 +198,7 @@ These limits describe what a team cannot do yet or what needs special operationa
 - **One process and one shared checkout** — members share cwd and observe edits immediately; this package provides no worktree, remote member, merge, or filesystem lock.
 - **Advisory write scopes** — Bash, formatters, code generators, and direct external writers can bypass filesystem version checks; Leads must coordinate ownership and review the final diff.
 - **Flat immutable roster** — only the Lead creates direct teammates; there is no nested Team, rename, deletion, or name reuse.
-- **No automatic ownership release** — idle, interruption, process exit, and failed work do not release a task owner.
+- **No automatic ownership release** — inactivity, interruption, process exit, and failed work do not release a task owner.
 - **Mailbox is not cross-process exactly-once** — concurrent harness processes over one Team are unsupported.
 
 <a id="dev-note"></a>
