@@ -51,6 +51,16 @@ type RowPhase = NonNullable<PackageRow['phase']>
 /** How long the list marks a package an install just enabled. */
 const HIGHLIGHT_MS = 2_400
 
+/** Built-in profile bundles stay out of this page even when the profile declares them as dependencies. */
+const BUILTIN_PROFILE_BUNDLES = new Set([
+  '@deepseek-ai/dsh-base',
+  '@deepseek-ai/dsh-web-app',
+  '@deepseek-ai/dsh-headless',
+  '@deepseek-ai/dsh-sdk-app',
+  '@deepseek-ai/dsh-acp-app',
+  '@deepseek-ai/dsh-sdk-minimal',
+])
+
 /** How long a toast holds: long enough to read a failure that names what broke. */
 function toastHoldMs(text: string): number {
   return Math.min(8_000, Math.max(3_000, text.length * 80))
@@ -848,7 +858,8 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   // The page manages what the person installed, what the installation ships for them to switch on, and a
   // selected name the Host cannot read; the installation's other bundles are inspected in the Settings
   // Plugins section's Plugin list tab.
-  const listed = state.packages.filter(pkg => pkg.installed || pkg.optional || pkg.error !== undefined)
+  const listed = state.packages.filter(pkg => !BUILTIN_PROFILE_BUNDLES.has(pkg.name)
+    && (pkg.installed || pkg.optional || pkg.error !== undefined))
   const mine = listed.filter(pkg => pkg.installed || !pkg.optional)
   const official = listed.filter(pkg => pkg.optional && !pkg.installed)
   const loaded = state.status === 'ready' || state.status === 'error'

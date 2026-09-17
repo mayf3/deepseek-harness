@@ -19,6 +19,8 @@ export const DESKTOP_IPC = {
   updatesInstall: 'dsh-desktop:updates-install',
   updatesState: 'dsh-desktop:updates-state',
   nativeThemeSet: 'dsh-desktop:native-theme-set',
+  windowsAppearance: 'dsh-desktop:windows-appearance',
+  windowsMenu: 'dsh-desktop:windows-menu',
 } as const
 
 /** Desktop release update state rendered by desktop-owned UI. */

@@ -155,6 +155,39 @@ describe('PluginManagerPage', () => {
     expect(locked.getAttribute('title')).toBe(en.reasonManagementRequired)
   })
 
+  it('omits built-in profile dependencies from cards and counts while retaining optional and third-party bundles', () => {
+    renderTab({
+      packages: [
+        ...[
+          '@deepseek-ai/dsh-base',
+          '@deepseek-ai/dsh-web-app',
+          '@deepseek-ai/dsh-headless',
+          '@deepseek-ai/dsh-sdk-app',
+          '@deepseek-ai/dsh-acp-app',
+          '@deepseek-ai/dsh-sdk-minimal',
+        ].map(name => pkg({ name })),
+        pkg({ name: '@acme/dsh-base', readOnlyReason: 'management-required' }),
+        pkg({ name: 'dsh-better-sidebar' }),
+        pkg({ name: '@deepseek-ai/dsh-experimental-agent-team-profile', installed: false, optional: true }),
+      ],
+    })
+    expect(screen.getAllByRole('listitem').map(card => card.getAttribute('data-plugin-package'))).toEqual([
+      '@deepseek-ai/dsh-experimental-agent-team-profile', '@acme/dsh-base', 'dsh-better-sidebar',
+    ])
+    expect([...document.querySelectorAll('[data-plugin-count]')].map(count => count.textContent)).toEqual(['1', '2'])
+  })
+
+  it.each([false, true])('shows an empty list for built-in bundles with errors and installed=%s', (installed) => {
+    renderTab({
+      packages: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'].map(name => pkg({
+        name, installed, error: { code: 'operation-error', diagnostic: 'Unreadable bundle' },
+      })),
+    })
+    expect(screen.getByText(en.empty)).toBeTruthy()
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0)
+    expect(document.querySelectorAll('[data-plugin-count]')).toHaveLength(0)
+  })
+
   it('opens an official bundle\'s page with its beta tag and no uninstall, and switches it on', () => {
     const { actions } = renderTab({
       packages: [pkg({ name: '@deepseek-ai/dsh-experimental-agent-team-profile', installed: false, optional: true, enabled: false })],

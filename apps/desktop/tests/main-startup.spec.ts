@@ -1,7 +1,8 @@
+import { WINDOWS_TITLEBAR_HEIGHT } from '../src/windows-layout.ts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { IpcMainInvokeEvent, MenuItemConstructorOptions } from 'electron'
+import type { IpcMainInvokeEvent } from 'electron'
 import { join } from 'node:path'
-import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron'
+import type { MenuItemConstructorOptions, MessageBoxOptions, MessageBoxReturnValue } from 'electron'
 import { DESKTOP_IPC } from '../src/ipc.ts'
 import { en } from '../src/locale.ts'
 
@@ -35,11 +36,17 @@ const harness = await vi.hoisted(async () => {
       setWindowOpenHandler: vi.fn(),
       openDevTools: vi.fn(),
       getURL: () => this.urls.at(-1) ?? '',
+      getZoomFactor: () => 1,
+      focus: vi.fn(),
+      sendInputEvent: vi.fn(),
       send: vi.fn(),
     })
     readonly show = vi.fn()
     readonly focus = vi.fn()
     readonly restore = vi.fn()
+    readonly setSize = vi.fn()
+    readonly setTitle = vi.fn()
+    readonly setTitleBarOverlay = vi.fn()
     constructor(readonly options: { show: boolean }) { super(); if (windowFailure !== undefined) throw windowFailure; windows.push(this) }
     isDestroyed() { return this.destroyed }
     isMinimized() { return false }
@@ -84,16 +91,14 @@ const harness = await vi.hoisted(async () => {
       if (event.preventDefault.mock.calls.length === 0) quitCompleted.resolve()
     }),
   })
-  const popup = vi.fn()
+  const popup = vi.fn<(options: { window: FakeWindow; x?: number; y?: number; callback?: () => void }) => void>()
   return {
     windows, hosts, handlers, app, FakeWindow, FakeHost,
     failWindow(error: Error) { windowFailure = error },
     popup,
     socketHeaders: vi.fn(),
-    menu: {
-      setApplicationMenu: vi.fn(),
-      buildFromTemplate: vi.fn((_items: MenuItemConstructorOptions[]) => ({ popup })),
-    },
+    ipcOn: vi.fn<(channel: string, listener: (event: { sender: unknown; senderFrame: unknown }, ...args: unknown[]) => void) => void>(),
+    menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn((_items: MenuItemConstructorOptions[]) => ({ popup })) },
     dialog: {
       showOpenDialog: vi.fn(),
       showErrorBox: vi.fn(),
@@ -131,7 +136,7 @@ vi.mock('electron', () => ({
   shell: { openExternal: harness.openExternal },
   nativeTheme: { themeSource: 'system' },
   ipcMain: {
-    on: vi.fn(),
+    on: harness.ipcOn,
     handle: (channel: string, handler: (event: { senderFrame: { url: string } }) => unknown) => { if (harness.handlers.has(channel)) throw new Error(`duplicate IPC handler ${channel}`); harness.handlers.set(channel, handler) },
   },
   Menu: harness.menu,
@@ -195,7 +200,7 @@ afterEach(async () => {
 })
 
 describe('desktop main startup', () => {
-  it.each(['darwin', 'win32', 'linux'] as const)('limits native titlebar styling to macOS on %s', async (platform) => {
+  it.each(['darwin', 'win32', 'linux'] as const)('uses platform-owned titlebar styling on %s', async (platform) => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
     await import('../src/main.ts')
     await harness.preparing.promise
@@ -203,6 +208,10 @@ describe('desktop main startup', () => {
     expect(window.urls).toEqual(['dsh-app://app/'])
     if (platform === 'darwin') {
       expect(window.options).toMatchObject({ titleBarStyle: 'hiddenInset', vibrancy: 'sidebar', backgroundColor: '#00000000' })
+    } else if (platform === 'win32') {
+      expect(window.options).toMatchObject({ titleBarStyle: 'hidden', titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT } })
+      expect(window.options).not.toHaveProperty('vibrancy')
+      expect(harness.menu.setApplicationMenu).toHaveBeenCalledWith(null)
     } else {
       expect(window.options).not.toHaveProperty('titleBarStyle')
       expect(window.options).not.toHaveProperty('vibrancy')
@@ -210,7 +219,77 @@ describe('desktop main startup', () => {
     expect(harness.hosts).toHaveLength(0)
   })
 
-  it.each(['darwin', 'win32', 'linux'] as const)('adds the standard macOS window commands only on macOS (%s)', async (platform) => {
+  it('follows the Windows primary document language and palette without trusting other frames', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    const listener = harness.ipcOn.mock.calls.find(([channel]) => channel === DESKTOP_IPC.windowsAppearance)![1]
+    const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+    listener({ ...event, senderFrame: { url: 'dsh-app://app/' } }, 'zh-CN', '#ffffff', '#000000')
+    expect(window.setTitleBarOverlay).not.toHaveBeenCalled()
+    listener(event, 'zh-CN', 'rgb(249, 250, 251)', '#0f1115')
+    expect(window.setTitleBarOverlay).toHaveBeenCalledWith({ color: 'rgb(249, 250, 251)', symbolColor: '#0f1115' })
+    window.webContents.emit('context-menu', {}, { isEditable: false, selectionText: 'text', editFlags: { canCopy: true } })
+    expect(harness.menu.buildFromTemplate).toHaveBeenLastCalledWith([{ role: 'copy', enabled: true, label: '复制', accelerator: '' }])
+    listener(event, 'en', '#1b1b1c', '#f9fafb')
+    window.webContents.emit('context-menu', {}, { isEditable: false, selectionText: 'text', editFlags: { canCopy: true } })
+    expect(harness.menu.buildFromTemplate).toHaveBeenLastCalledWith([{ role: 'copy', enabled: true, label: 'Copy', accelerator: '' }])
+    window.setTitleBarOverlay.mockClear()
+    listener(event, 'en', 'url(file:///bad)', '#fff')
+    expect(window.setTitleBarOverlay).not.toHaveBeenCalled()
+    listener(event, {}, '#fff', '#000')
+    expect(window.setTitleBarOverlay).toHaveBeenLastCalledWith({ color: '#fff', symbolColor: '#000' })
+    window.setTitleBarOverlay.mockClear()
+    window.webContents.mainFrame.url = 'dsh-app://shell/plugin-manager.html'
+    listener(event, 'zh-CN', '#fff', '#000')
+    expect(window.setTitleBarOverlay).not.toHaveBeenCalled()
+    expect(harness.menu.setApplicationMenu).toHaveBeenCalledExactlyOnceWith(null)
+  })
+
+  it('maps Windows caption menus to localized native commands and rejects foreign popup requests', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+    const appearance = harness.ipcOn.mock.calls.find(([channel]) => channel === DESKTOP_IPC.windowsAppearance)![1]
+    appearance(event, 'zh-CN', '#fff', '#000')
+    const handler = harness.handlers.get(DESKTOP_IPC.windowsMenu)!
+    const foreignEvent = { ...event, sender: {} }
+    expect(() => handler(foreignEvent, 'application', 48, 34)).toThrow('rejected sender')
+    expect(() => handler(event, 'arbitrary-command', 48, 34)).toThrow('invalid popup request')
+    expect(() => handler(event, 'application', NaN, 34)).toThrow('invalid popup request')
+    const application = handler(event, 'application', 48, 34)
+    expect(harness.menu.buildFromTemplate.mock.lastCall![0].map(item => item.label ?? item.type)).toEqual([
+      '桌面插件…', '检查更新…', 'separator', '退出',
+    ])
+    expect(harness.popup.mock.lastCall![0]).toMatchObject({ window, x: 48, y: 34 })
+    expect(harness.popup.mock.lastCall![0].callback).toBeTypeOf('function')
+    harness.popup.mock.lastCall![0].callback!()
+    await application
+    const edit = handler(event, 'edit', 104, 34)
+    expect(harness.menu.buildFromTemplate.mock.lastCall![0].map(item => item.label ?? item.type)).toEqual([
+      '撤销', '重做', 'separator', '剪切', '复制', '粘贴', '删除', 'separator', '全选',
+    ])
+    const commands = harness.menu.buildFromTemplate.mock.lastCall![0].filter(item => item.type !== 'separator')
+    for (const [index, keyCode] of ['Z', 'Y', 'X', 'C', 'V', 'Delete', 'A'].entries()) {
+      const click = commands[index]!.click as () => void
+      click()
+      const modifiers = keyCode === 'Delete' ? [] : ['control']
+      expect(window.webContents.sendInputEvent).toHaveBeenNthCalledWith(index * 2 + 1, { type: 'keyDown', keyCode, modifiers })
+      expect(window.webContents.sendInputEvent).toHaveBeenNthCalledWith(index * 2 + 2, { type: 'keyUp', keyCode, modifiers })
+    }
+    harness.popup.mock.lastCall![0].callback!()
+    await edit
+    const preventDefault = vi.fn()
+    window.webContents.emit('before-input-event', { preventDefault }, { type: 'keyDown', control: true, key: ',' })
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(harness.windows[1]!.urls).toEqual(['dsh-app://shell/plugin-manager.html'])
+    expect(harness.windows[1]!.options).not.toHaveProperty('titleBarStyle')
+  })
+
+  it.each(['darwin', 'linux'] as const)('adds the standard macOS window commands only on macOS (%s)', async (platform) => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
     await import('../src/main.ts')
     await harness.preparing.promise
@@ -287,7 +366,8 @@ describe('desktop main startup', () => {
     expect(harness.windows[0]!.urls).toEqual(['dsh-app://app/'])
   })
 
-  it('offers native editing actions on right-click and only copy for selected read-only text', async () => {
+  it('retains macOS native editing actions on right-click and only copy for selected read-only text', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     await import('../src/main.ts')
     await harness.preparing.promise
     const window = harness.windows[0]!
