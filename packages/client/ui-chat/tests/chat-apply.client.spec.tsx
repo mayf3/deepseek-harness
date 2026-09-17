@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { describe, expect, it, vi } from 'vitest'
 import { act, render } from '@testing-library/react'
-import { stubDeveloperTools,
+import {
   SlotTestRuntime, stubSettingsScope, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -38,7 +39,7 @@ async function bench() {
   const runtime = await SlotTestRuntime.create()
   const chatSettings = stubSettingsScope<ChatSettings>()
   runtime.ctx.provide('settingsScope', {
-    developerTools: stubDeveloperTools(),
+    developerTools: { enabled: createSnapshotStore(true) },
     bind: ({ namespace }: { namespace: string }) => namespace === CHAT_SETTINGS_NAMESPACE
       ? chatSettings.scope
       : stubSettingsScope().scope,

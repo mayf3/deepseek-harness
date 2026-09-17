@@ -1,6 +1,5 @@
-/** Test doubles for settings transport and developer-tool preferences. */
+/** Test doubles for settings transport. */
 import { vi } from 'vitest'
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
   SettingsScope, SettingsScopeSnapshot,
 } from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -58,21 +57,5 @@ export function stubSettingsScope<T>(): StubSettingsScope<T> {
       snapshot = { ...snapshot, ...next }
       for (const listener of [...listeners]) listener()
     },
-  }
-}
-
-/**
- * Build the developer preference object used by UI composition tests.
- * @param enabled - initial developer-tool visibility.
- * @returns a shared observable and a writer that publishes the requested value.
- */
-export function stubDeveloperTools(enabled = true): {
-  enabled: SnapshotStore<boolean>
-  setEnabled(enabled: boolean): Promise<void>
-} {
-  const source = createSnapshotStore(enabled)
-  return {
-    enabled: source,
-    setEnabled: vi.fn((next: boolean) => { source.set(next); return Promise.resolve() }),
   }
 }

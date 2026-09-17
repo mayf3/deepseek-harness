@@ -1,5 +1,5 @@
 /** HTML metadata and keyed slot contributions share one identity and unwind with their fiber. */
-import { stubDeveloperTools } from '@deepseek-ai/dsh-client-test-runtime'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
@@ -31,7 +31,7 @@ describe('HTML registration', () => {
 
   it('registers its dictionary and matching keyed body, and removes all contributions on disposal', async () => {
     const ctx = new Context()
-    ctx.provide('settingsScope', { developerTools: stubDeveloperTools() } as never)
+    ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) } } as never)
     // No Session or Tab services are mounted; the global callback must use its file address.
     const registry = new DocumentPreviewRegistry()
     const dictionaries = new Map<string, unknown>()
