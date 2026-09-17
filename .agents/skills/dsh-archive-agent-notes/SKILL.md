@@ -11,13 +11,9 @@ Reduce the active decision corpus without erasing history that can still guide w
 
 Read [the Agent Note rules](../../notes/README.md), [the archive instructions](../../notes/archived/AGENTS.md), and the applicable active lifecycle instructions before classifying. Use current code, configuration, package docs, generated catalogs, newer Agent Notes, and inbound links to establish whether a rationale still owns or constrains anything.
 
-## Check whether a note is needed
-
-Apply the [creation criteria](../../notes/README.md#when-to-write-one) before drafting. Local UI changes default to no new note. Require a concrete future maintenance mistake and rationale absent from code, tests, and existing docs; user-visible behavior or added tests alone do not qualify. Do not create a note that would immediately belong in the low-future-value archive. Keep existing owning notes accurate.
-
 ## Check supersession when adding a note
 
-Every new Agent Note triggers a scoped audit of active notes covering the same decision, mechanism, or rejected alternative. Classify each full or partial supersession while writing the new note: archive qualifying implemented triplets in the same PR, retain and cross-link partial supersessions or independently useful rationale, reject obsolete proposals, and delete rejected notes that no longer prevent a plausible mistake. Apply the Agent Note consolidation rule when the new owner absorbs every unique proposition; do not defer a known match to a later corpus audit.
+Before drafting, apply the [creation criteria](../../notes/README.md#when-to-write-one). Every new Agent Note triggers a scoped audit of active notes covering the same decision, mechanism, or rejected alternative. Classify each full or partial supersession while writing the new note: archive qualifying implemented triplets in the same PR, retain and cross-link partial supersessions or independently useful rationale, reject obsolete proposals, and delete rejected notes that no longer prevent a plausible mistake. Apply the Agent Note consolidation rule when the new owner absorbs every unique proposition; do not defer a known match to a later corpus audit.
 
 ## Classify by future value
 
