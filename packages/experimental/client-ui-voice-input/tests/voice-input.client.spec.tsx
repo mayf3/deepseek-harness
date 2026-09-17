@@ -251,7 +251,9 @@ it('does not restore recording when capture reports failure before start settles
 
 it('allows recording while verified local resources are waking', async () => {
   const b = fixture(), state = b.readiness.getSnapshot()
-  act(() => { b.readiness.set({ ...state, catalog: { ...state.catalog!, providers: [{ ...state.catalog!.providers[0]!, preparation: { phase: 'waking' } }] } }) })
+  act(() => { b.readiness.set({ ...state, catalog: { ...state.catalog!, providers: [
+    { ...state.catalog!.providers[0]!, preparation: { phase: 'waking', startedAt: 0 } },
+  ] } }) })
   await start()
   stop()
   await waitFor(() => { expect(b.inputActions.insertText).toHaveBeenCalledWith(transcript.text, expect.anything()) })
