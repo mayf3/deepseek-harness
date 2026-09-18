@@ -15,11 +15,10 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "GitHub event received {{clock}}":
-  - text: GitHub event received
-  - time: {{clock}}
-- status: Worked
-- button "Took {{duration}}" [disabled]
+- button "System prompt"
+- button "Thought for a while" [expanded]
+- button "Context injection webhook github webhook handled by review-pr-when-ready"
+- button "Context injection @deepseek-ai/dsh-system-prompt"
 - paragraph: "Review complete: no actionable findings."
 - button "Copy"
 - button "Good response"

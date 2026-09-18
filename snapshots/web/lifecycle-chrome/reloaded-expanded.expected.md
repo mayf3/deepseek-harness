@@ -7,11 +7,12 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
+- button "System prompt"
 - text: Reply with the single word LIGHTHOUSE and stop. {{clock}}
 - button "Copy"
-- status: Worked
-- button "Took {{duration}}" [expanded]
-- button "Analysis completed"
+- button "Thought for a while" [expanded]
+- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Think The user wants me to reply with a single word. Let me comply."
 - paragraph: LIGHTHOUSE
 - button "Copy"
 - button "Good response"

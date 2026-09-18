@@ -135,10 +135,11 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     // The marker IS the synchronization: the second call is provably parked,
     // so the first step's message and tool result are already durable.
     await expect.poll(() => existsSync(marker), { timeout: 20_000 }).toBe(true)
-    const liveProcess = page.locator('[data-turn-process]')
-    expect(await liveProcess.count()).toBe(1)
-    expect(await liveProcess.textContent()).toMatch(/^Deep diving for /)
-    expect(await page.getByRole('status').filter({ hasText: 'Deep diving...' }).count()).toBe(1)
+    expect(await page.locator('[data-turn-process]').count()).toBe(0)
+    await expect.poll(
+      () => page.getByRole('status').filter({ hasText: 'Deep diving...' }).isVisible(),
+      { timeout: 10_000 },
+    ).toBe(true)
     await page.locator('[data-streaming="true"]')
       .getByText('partial', { exact: true })
       .waitFor({ timeout: 10_000 })
@@ -231,7 +232,7 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     expect(tripwire.warnings).toEqual([])
   }, 60_000)
 
-  it.skipIf(MODE === 'record')('switches a completed Turn between Compact, Detailed, and Expanded', async () => {
+  it.skipIf(MODE === 'record')('switches a completed Turn between Compact and Normal', async () => {
     await launch()
     onTestFailed(() => saveFailureShot(page, 'web-e2e-turn-process-setting'))
     const { settled } = await sendPrompt()
@@ -244,30 +245,22 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
 
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Settings' })
-    const workDetailsRow = dialog.getByText('Work details', { exact: true }).locator('xpath=../..')
-    await workDetailsRow.getByRole('button', { name: 'Compact', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Detailed', exact: true }).click()
-    await page.keyboard.press('Escape')
-    await expect.poll(() => process.count(), { timeout: 10_000 }).toBe(1)
-    expect(await tool.isVisible()).toBe(false)
-    await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    await workDetailsRow.getByRole('button', { name: 'Detailed', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Expanded', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Compact', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Normal', exact: true }).click()
     await page.keyboard.press('Escape')
 
-    await expect.poll(() => process.count(), { timeout: 10_000 }).toBe(1)
-    await process.click()
+    await expect.poll(() => process.count(), { timeout: 10_000 }).toBe(0)
     await tool.waitFor({ state: 'visible', timeout: 10_000 })
     await expect.poll(async () => readFile(join(scaffold!.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
-      .toMatch(/ui-chat:\n\s+transcriptView: expanded/)
+      .toMatch(/ui-chat:\n\s+transcriptView: normal/)
 
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     const restored = page.getByRole('dialog', { name: 'Settings' })
-    await restored.getByRole('button', { name: 'Expanded', exact: true }).click()
+    await restored.getByRole('button', { name: 'Normal', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Compact', exact: true }).click()
     await page.keyboard.press('Escape')
     await process.waitFor({ timeout: 10_000 })
-    expect(await process.getAttribute('aria-expanded')).toBe('true')
+    expect(await process.getAttribute('aria-expanded')).toBe('false')
     expect(await tool.isVisible()).toBe(false)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
@@ -277,8 +270,6 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     await launch(undefined, 200)
     onTestFailed(() => saveFailureShot(page, 'web-e2e-turn-tail-actions-focused'))
     const { settled } = await sendPrompt()
-    const stepProcess = page.locator('[data-step-process] > button[data-process-activity="commands"]')
-    await stepProcess.click()
     const tool = page.getByRole('button', { name: 'Bash Print alpha to stdout' })
     await tool.waitFor({ timeout: 30_000 })
     await tool.focus()

@@ -1,8 +1,6 @@
 import { useState } from 'react'
 import type { ChatViewSlotProps, CommandRowOwnerProps } from '../contract/slots.ts'
-import {
-  DisclosureRow, IconApiOutlineRegular, TextShimmer,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconApiOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import a11yCss from './accessibility.module.css'
 import css from './GenericCommandCard.module.css'
 
@@ -31,7 +29,6 @@ export function GenericCommandCard({ node, t, runningSummary }: GenericCommandCa
   // command name.
   const title = node.name ?? t('command.title')
   const state = stateOf(node.outcome)
-  const running = state === 'running'
   const body = text !== undefined && text.includes('\n') ? text : null
   const open = expanded && body !== null
   return (
@@ -44,7 +41,7 @@ export function GenericCommandCard({ node, t, runningSummary }: GenericCommandCa
         titleClassName={css.title}
         chevronClassName={css.chevron}
         icon={<IconApiOutlineRegular size={14} />}
-        title={running ? <TextShimmer>{title}</TextShimmer> : title}
+        title={title}
         open={open}
         expandable={body !== null}
         expandOnRowClick
@@ -53,9 +50,7 @@ export function GenericCommandCard({ node, t, runningSummary }: GenericCommandCa
         collapsedContent={(
           <>
             <span className={css.separator} aria-hidden />
-            <span className={css.summary} data-error={state === 'error' || undefined}>
-              {running ? <TextShimmer>{summary}</TextShimmer> : summary}
-            </span>
+            <span className={css.summary} data-error={state === 'error' || undefined}>{summary}</span>
           </>
         )}
       >

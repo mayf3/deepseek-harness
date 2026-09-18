@@ -9,7 +9,6 @@
 // and no event references the workspace, so the lane replays on any host
 // with a usable `pwsh` — the lane mounts the pwsh stack through an overlay
 // (the shipped tree keeps the bash stack).
-import { expandOwningTurnProcess } from './support.ts'
 import { spawnSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -82,7 +81,6 @@ describe.skipIf(MODE === 'record' || !HAS_PWSH)('web e2e: pwsh calls use the bas
     // The tool row is expand-gated: the settled row uses the bash layout and carries the
     // shell-family variant, and the terminal card lives in the expanded body.
     const row = page.locator('[data-tool="pwsh"]').first()
-    await expandOwningTurnProcess(page, row)
     await row.waitFor({ timeout: 15_000 })
     if (await row.getAttribute('aria-expanded') !== 'true') await row.click()
     const card = page.locator('[data-terminal]').first()

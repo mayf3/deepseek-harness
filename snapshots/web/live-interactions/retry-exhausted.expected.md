@@ -7,10 +7,10 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
+- button "System prompt"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
-- status: Failed
-- button "Failed" [disabled] [expanded]
+- button "Context injection @deepseek-ai/dsh-system-prompt"
 - group:
   - status: Retried model request (2/2) · {{duration}}
 - status:

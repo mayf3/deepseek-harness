@@ -105,9 +105,9 @@ describe('Chat apply wiring', () => {
     const face = (row.inject as unknown as () => TranscriptViewRowInjected)()
 
     expect(face.hooks.transcriptView.getSnapshot()).toBe('compact')
-    face.setTranscriptView('expanded')
-    expect(face.hooks.transcriptView.getSnapshot()).toBe('expanded')
-    expect(b.chatSettings.set).toHaveBeenCalledWith('transcriptView', 'expanded')
+    face.setTranscriptView('normal')
+    expect(face.hooks.transcriptView.getSnapshot()).toBe('normal')
+    expect(b.chatSettings.set).toHaveBeenCalledWith('transcriptView', 'normal')
 
     b.chatSettings.publish({
       status: 'ready', value: { transcriptView: 'compact', performanceUsage: 'detailed' }, revision: 1, writable: true,

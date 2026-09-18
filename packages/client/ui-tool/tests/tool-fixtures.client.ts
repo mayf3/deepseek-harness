@@ -30,10 +30,6 @@ export function toolChatSnapshot(
   const byKey = new Map(nodes.map(node => [node.key, node]))
   const empty: readonly string[] = []
   return {
-    stepProcesses: {
-      layout: nodes.map(node => ({ key: node.key, seats: [{ nodeKey: node.key }], process: false, turn: undefined })),
-      get: () => undefined, footer: () => undefined,
-    },
     order: nodes.map(node => node.key),
     nodes: {
       get: key => byKey.get(key),

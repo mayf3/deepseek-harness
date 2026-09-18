@@ -377,10 +377,7 @@ describe('web e2e: clickable links gallery', () => {
     // it opens first. Rows expand via a right-edge click: the row center can
     // land on the nested fileLink button, which would hand the path to the
     // Host's opener.
-    await page.locator('[data-turn-process]').click()
-    for (const toggle of await page.locator('[data-step-process] > button[aria-expanded="false"]').all()) {
-      await toggle.click()
-    }
+    await page.getByRole('button', { name: `${String(CALLS.length)} tool calls` }).click()
     for (const row of [
       /^Search clickable link styles/,
       /^Fetch /,

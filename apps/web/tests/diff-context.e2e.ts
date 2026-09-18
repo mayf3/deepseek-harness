@@ -1,5 +1,4 @@
 /** Cold Session rendering covers exact context and bounded whole-fragment replacements. */
-import { expandOwningTurnProcess } from './support.ts'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
@@ -52,7 +51,6 @@ describe.skipIf(MODE === 'record').each(CASES)('web e2e: $name', (scenario) => {
     const edit = page.locator('[data-variant="edit"]')
     expect(await edit.textContent()).toContain(scenario.totals)
     expect(await edit.locator('[data-diff]').count()).toBe(0)
-    await expandOwningTurnProcess(page, edit)
     await edit.locator('[data-expandable]').click()
     const card = edit.locator('[data-diff]')
     await card.waitFor()

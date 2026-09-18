@@ -390,7 +390,7 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     expect(tripwire.warnings).toEqual([])
   })
 
-  it('renders the direct message without an infrastructure recall row', async () => {
+  it('renders the durable direct-message then recall order', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-order'))
     const group = page.getByRole('treeitem', { name: /Ungrouped/ })
     await group.waitFor({ timeout: 15_000 })
@@ -402,13 +402,12 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     const target = groupSection.locator('[role="treeitem"]').nth(1)
     await target.waitFor({ timeout: 15_000 })
     await target.click()
-    await page.getByText('what changed?', { exact: false }).first().waitFor({ timeout: 15_000 })
-    expect(await page.getByRole('button', { name: /^Session recall\s*Research notes$/ }).count()).toBe(0)
+    await page.getByRole('button', { name: /^Session recall\s*Research notes$/ }).waitFor({ timeout: 15_000 })
 
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(TARGET_SESSION_ID).join('{{targetId}}')
     await compareOrRefreshGolden(ORDER_EXPECTED, snapshot, MODE)
-    expect(snapshot).toContain('Research notes what changed?')
+    expect(snapshot.indexOf('Research notes what changed?')).toBeLessThan(snapshot.indexOf('Session recall Research notes'))
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, ['menu.expected.md', 'order.expected.md'])

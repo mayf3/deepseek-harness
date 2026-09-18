@@ -1,18 +1,18 @@
 import { type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutlineRegular, IconChevronUpOutlineRegular } from './icons/index.tsx'
+import { IconChevronDownOutlineRegular } from './icons/index.tsx'
 import css from './DisclosureRow.module.css'
 
 /** Shared 24px disclosure chrome for compact flow rows. */
 export interface DisclosureRowProps {
   icon: ReactNode
-  title: ReactNode
+  title: string
   open: boolean
   expandable: boolean
   onToggle: () => void
   /** Makes the complete title row the disclosure target. */
   expandOnRowClick?: boolean | undefined
-  /** Replaces the collapsed icon with a down chevron while the row is hovered. */
+  /** Replaces the collapsed icon with a chevron while the row is hovered. */
   previewChevron?: boolean | undefined
   /** Keeps `collapsedContent` inline while open. */
   keepContentWhenOpen?: boolean | undefined
@@ -66,7 +66,7 @@ export function DisclosureRow({
     )
     : icon
   const leading = open
-    ? <IconChevronUpOutlineRegular className={chevronClassName} />
+    ? <IconChevronDownOutlineRegular className={chevronClassName} />
     : collapsedLeading
 
   return (

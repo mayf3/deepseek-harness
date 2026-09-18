@@ -83,12 +83,17 @@
   text-overflow: ellipsis;
 }
 
-.summary[data-streaming] {
-  mask-image: linear-gradient(to right, black calc(100% - 48px), transparent);
+.summary[data-follow-end] {
+  display: flex;
+  justify-content: flex-end;
 }
 
-.summary[data-streaming] .summaryText {
+.summary[data-follow-end] .summaryText {
+  flex: 0 0 auto;
+  width: max-content;
+  min-width: 100%;
   overflow: visible;
+  text-align: start;
   text-overflow: clip;
 }
 

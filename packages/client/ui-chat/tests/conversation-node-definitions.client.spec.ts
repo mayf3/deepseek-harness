@@ -21,7 +21,7 @@ import { chatViewDefinition } from '../src/client/conversation-nodes/chat-snapsh
 import { commandDefinition } from '../src/client/conversation-nodes/command.ts'
 import { compactionDefinition } from '../src/client/conversation-nodes/compaction.ts'
 import { unknownFallbackDefinition } from '../src/client/conversation-nodes/fallback.ts'
-import { nextStepInboxDefinition, nextTurnInboxDefinition } from '../src/client/conversation-nodes/inbox.ts'
+import { nextStepInboxDefinition } from '../src/client/conversation-nodes/inbox.ts'
 import { messageDefinition } from '../src/client/conversation-nodes/message.ts'
 import { inspectRequestPrompt } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { requestPromptDefinition, systemMessageDefinition } from '../src/client/conversation-nodes/request-prompt.ts'
@@ -37,7 +37,6 @@ import type {
 
 const DEFINITIONS: readonly ConversationNodeDefinition[] = [
   nextStepInboxDefinition,
-  nextTurnInboxDefinition,
   messageDefinition,
   systemMessageDefinition(inspectSystemPrompt),
   requestPromptDefinition(inspectRequestPrompt),
@@ -221,13 +220,6 @@ function toolResult(callId: string, text: string, isError = false) {
 }
 
 describe('built-in conversation node Definitions', () => {
-  it('publishes the process control as soon as turn/start arrives', () => {
-    const value = assembler([at(1, 'turn/start', { turn: 1 })])
-    expect(node(snapshot(value), 'turn-process')?.data).toMatchObject({
-      turn: 1, controlAnchorSeq: 1, answerAnchorSeq: null,
-    })
-  })
-
   it('rejects an unrelated event passed directly to the request-prompt start', () => {
     const input = at(1, 'turn/start', { turn: 1 })
     const invalidStart = {
@@ -471,7 +463,7 @@ describe('built-in conversation node Definitions', () => {
     ])
     const opening = snapshot(value)
     expect(opening.order.map(key => opening.nodes.get(key)?.kind)).toEqual([
-      'user', 'turn-process', 'context',
+      'user', 'context',
     ])
 
     value.append(at(5, 'assistant/live-chunk', {
@@ -886,7 +878,7 @@ describe('built-in conversation node Definitions', () => {
       }, { surfaceOp: 'append' }),
     ])
     const toolOnlySnapshot = snapshot(toolOnlyValue)
-    expect(toolOnlySnapshot.order.map(key => toolOnlySnapshot.nodes.get(key)?.kind)).toEqual(['turn-process'])
+    expect(toolOnlySnapshot.order).toEqual([])
     expect(node(toolOnlySnapshot, 'assistant-step')?.visibility).toBe('hidden')
     expect(toolOnlySnapshot.legacy.nodes).toMatchObject([{
       kind: 'assistant',
@@ -1361,7 +1353,7 @@ describe('built-in conversation node Definitions', () => {
     expect(after.order.slice(0, oldOrder.length)).toEqual(oldOrder)
     expect(oldOrder.map(key => after.nodes.get(key))).toEqual(oldNodes)
     expect(after.order.map(key => after.nodes.get(key)?.kind)).toEqual([
-      'user', 'turn-process', 'assistant-step', 'turn-tail', 'user', 'turn-process',
+      'user', 'turn-process', 'assistant-step', 'turn-tail', 'user',
     ])
   })
 
@@ -1455,7 +1447,7 @@ describe('built-in conversation node Definitions', () => {
     expect(node(snapshot(value), 'user')).toBeUndefined()
   })
 
-  it('keeps the Turn tail below steering received after a response', () => {
+  it('orders claimed steering after the finalized Turn tail', () => {
     const steering = textMessage('steer-after-answer', 'change direction')
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
@@ -1484,7 +1476,7 @@ describe('built-in conversation node Definitions', () => {
     const current = snapshot(value)
     const steeringNode = node(current, 'steering')
     expect(steeringNode).toBeDefined()
-    expect(current.locations.getTurn(1).at(-1)).toBe(node(current, 'turn-tail')?.key)
+    expect(current.locations.getTurn(1).at(-1)).toBe(steeringNode?.key)
   })
 
   it('classifies appended producer context from durable source metadata', () => {
@@ -1632,7 +1624,6 @@ describe('built-in conversation node Definitions', () => {
     expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual([
       'system-prompt',
       'user',
-      'turn-process',
       'context',
     ])
     expect(node(current, 'system-prompt')?.anchorSeq).toBe(1)
@@ -1709,12 +1700,12 @@ describe('built-in conversation node Definitions', () => {
     ])
 
     const current = snapshot(value)
-    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['system-prompt', 'user', 'turn-process'])
+    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['system-prompt', 'user'])
 
     value.append(systemAt(5, '# Replaced', 3))
     value.flush()
     const replaced = snapshot(value)
-    expect(replaced.order.map(key => replaced.nodes.get(key)?.kind)).toEqual(['system-prompt', 'user', 'turn-process'])
+    expect(replaced.order.map(key => replaced.nodes.get(key)?.kind)).toEqual(['system-prompt', 'user'])
   })
 
   it('presents an in-history prompt update as its own card and lets no same-step header repeat it', () => {
@@ -1789,7 +1780,7 @@ describe('built-in conversation node Definitions', () => {
     ])
 
     const current = snapshot(value)
-    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['system-prompt', 'user', 'turn-process'])
+    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['system-prompt', 'user'])
   })
 
   it('keeps the initial system prompt before the opening User as Turn process state changes', () => {
@@ -1813,7 +1804,7 @@ describe('built-in conversation node Definitions', () => {
     }
     const promptKey = node(snapshot(value), 'system-prompt')?.key
 
-    expect(kinds()).toEqual(['system-prompt', 'user', 'turn-process', 'context'])
+    expect(kinds()).toEqual(['system-prompt', 'user', 'context'])
 
     value.append(at(7, 'assistant/live-chunk', {
       turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'thinking' },
@@ -2525,52 +2516,5 @@ describe('built-in conversation node Definitions', () => {
       command: { commandId: 'command-1', name: 'compact', outcome: { kind: 'success' } },
       compaction: { summary: 'manual summary', summaryEventSeq: 20 },
     })
-  })
-})
-
-
-describe('non-human turn triggers', () => {
-  it.each(['next-turn', 'next-step'] as const)('classifies non-human opening claims (%s)', (target) => {
-    const message = { ...textMessage('wake', 'scheduled task'), source: { kind: 'plugin', plugin: 'schedule' } }
-    const value = assembler([
-      at(1, 'agent/inbox/spliced', { target, start: 0, inserted: [message] }),
-      at(2, 'turn/start', { turn: 1 }),
-      at(3, 'agent/inbox/spliced', { target, start: 0, removedCount: 1, inserted: [] }),
-      at(4, 'step/start', { turn: 1, step: 1 }),
-      at(5, 'user/message', message, { surfaceOp: 'append' }),
-      at(6, 'user/message', { ...textMessage('policy', 'AGENTS.md'), source: { kind: 'plugin', plugin: 'instructions' } },
-        { surfaceOp: 'append' }),
-    ])
-    const current = snapshot(value)
-    const kinds = current.order.map(key => current.nodes.get(key)?.kind)
-    expect(kinds).toEqual(['turn-trigger', 'turn-process', 'context'])
-  })
-
-  it.each([1, 2])('keeps next-step context inside a human turn (step %s)', (step) => {
-    const human = textMessage('human', 'work')
-    const notice = { ...textMessage('notice', 'background result'), source: { kind: 'plugin', plugin: 'tool-jobs' } }
-    const value = assembler([
-      at(1, 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [human] }),
-      at(2, 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [notice] }),
-      at(3, 'turn/start', { turn: 1 }),
-      at(4, 'agent/inbox/spliced', { target: 'next-step', start: 0, removedCount: 1, inserted: [] }),
-      at(5, 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] }),
-      at(6, 'step/start', { turn: 1, step }),
-      at(7, 'user/message', notice, { surfaceOp: 'append' }),
-      at(8, 'user/message', human, { surfaceOp: 'append' }),
-    ])
-    expect([...snapshot(value).nodes.values()].map(value => value.kind)).not.toContain('turn-trigger')
-  })
-
-  it('does not reinterpret user-attributed SDK input as an external trigger', () => {
-    const message = textMessage('sdk', 'work')
-    const value = assembler([
-      at(1, 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [message] }),
-      at(2, 'turn/start', { turn: 1 }),
-      at(3, 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] }),
-      at(4, 'step/start', { turn: 1, step: 1 }),
-      at(5, 'user/message', message, { surfaceOp: 'append' }),
-    ])
-    expect(snapshot(value).order.map(key => snapshot(value).nodes.get(key)?.kind)).toEqual(['user', 'turn-process'])
   })
 })

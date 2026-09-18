@@ -122,7 +122,7 @@ function latestAnswer(turn: TurnLocation): Readonly<FinalAssistantChatData> | nu
 }
 
 function processSpec(state: TurnProcessState, turn: TurnLocation): TurnProcessSpec | null {
-  const controlAnchorSeq = state.controlAnchorSeq ?? turn.start?.seq
+  const controlAnchorSeq = state.controlAnchorSeq
   if (controlAnchorSeq === undefined) return null
   const answer = latestAnswer(turn)
   const counts = {

@@ -10,7 +10,7 @@ export interface DeveloperToolsSettings {
   enabled: boolean
 }
 
-/** New installations and missing values enable developer tools. */
+/** New installations and missing values use the basic interface. */
 export const DeveloperToolsSettingsSchema: z<DeveloperToolsSettings> = z.object({
-  enabled: z.boolean().default(true),
+  enabled: z.boolean().default(false),
 })

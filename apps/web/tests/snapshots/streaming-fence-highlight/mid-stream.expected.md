@@ -7,13 +7,14 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
+- button "System prompt"
 - text: Stream one TypeScript fence for the highlighting snapshot. {{clock}}
 - button "Copy"
-- status: Deep diving...
-- button "Deep diving for {{duration}}" [disabled] [expanded]
+- button "Context injection @deepseek-ai/dsh-system-prompt"
 - text: ts
 - button "Copy"
 - code: "const first: number = 1 const second = \"two\" let tail"
+- status: Deep diving...
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"
 - 'button "Access mode, current: Workspace Write"': Workspace Write

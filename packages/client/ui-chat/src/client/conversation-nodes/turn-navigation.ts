@@ -1,4 +1,3 @@
-import { isVisibleChatNode } from '../contract/chat-visibility.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
 import type { ChatLocationNodeIndex, ChatNodeStore, TurnNavigationItem } from '../contract/snapshot.ts'
 
@@ -83,7 +82,7 @@ export function turnNavigationItem(
 ): TurnNavigationItem | undefined {
   const loaded = locations.getTurn(turn)
     .map(key => nodes.get(key))
-    .filter((node): node is ChatNode => node !== undefined && isVisibleChatNode(node as ChatNode))
+    .filter((node): node is ChatNode => node !== undefined && node.visibility === 'visible')
   const user = loaded.find(node => node.kind === 'user')
   const anchor = user ?? loaded[0]
   if (anchor === undefined) return undefined

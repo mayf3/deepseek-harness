@@ -328,11 +328,18 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
         await input.press('Enter')
         if (MODE !== 'record') {
           const thinking = page.locator('[data-variant="think"][data-state="running"]')
-          await expandOwningTurnProcess(page, thinking)
           await expect.poll(() => thinking.getByRole('button').getAttribute('aria-expanded')).toBe('false')
-          expect(await thinking.getByRole('button').innerText()).toContain('Think')
-          // This replay holds an unfinished first line, before a paragraph preview is available.
-          expect(await thinking.locator('[class*="summaryText"]').count()).toBe(0)
+          const liveTail = thinking.locator('[data-follow-end]')
+          await expect.poll(async () => {
+            if (await liveTail.count() !== 1) return false
+            return await liveTail.evaluate((element) => {
+              const text = element.firstElementChild
+              if (!(text instanceof HTMLElement)) return false
+              const viewport = element.getBoundingClientRect()
+              const content = text.getBoundingClientRect()
+              return content.width > viewport.width && Math.abs(content.right - viewport.right) <= 1
+            })
+          }, { timeout: 10_000, interval: 10 }).toBe(true)
         }
         observedReasoning.resolve(undefined)
         return await settled

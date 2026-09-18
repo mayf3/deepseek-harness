@@ -2,8 +2,7 @@ import { useMemo, useState, type KeyboardEvent } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import clsx from 'clsx'
 import {
-  IconApiOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconInspectOutlineRegular,
-  TerminalBlock, TextShimmer,
+  IconApiOutlineRegular, IconChevronDownOutlineRegular, IconInspectOutlineRegular, TerminalBlock,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
@@ -21,18 +20,13 @@ import css from './bash-sample.module.css'
 
 type BashRowProps = ToolCallViewProps & PropsLocale<'conversation'>
 
-/** Visually hidden status for the business icon and animated text treatment. */
+/** Visually hidden status for the color-only running sweep and error tone. */
 function stateStatus(state: ToolRowState, t: BashRowProps['t']): string | null {
   switch (state) {
     case 'running': return t('bash.running')
     case 'error': return t('bash.failed')
-    case 'stopped': return t('bash.stopped')
     default: return null
   }
-}
-
-function liveText(text: string, running: boolean) {
-  return running ? <TextShimmer>{text}</TextShimmer> : text
 }
 
 /** Renders expandable Bash output with an accessible lifecycle label. */
@@ -67,7 +61,6 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
   const settlementLine = state === 'error'
     ? model.errorSummary ?? normalSummary
     : state === 'stopped' ? t('bash.stopped') : null
-  const running = state === 'running'
   const toggleExpand = () => {
     setExpanded(v => !v)
   }
@@ -78,7 +71,7 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
   }
   const businessIcon = <IconApiOutlineRegular size={14} />
   const leading = open
-    ? <IconChevronUpOutlineRegular className={css.chevron} />
+    ? <IconChevronDownOutlineRegular className={css.chevron} />
     : expandable
       ? (
         <>
@@ -103,14 +96,14 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
       >
         <span className={css.leading}>{leading}</span>
         {status !== null && <span className={css.visuallyHidden}>{status}</span>}
-        <span className={css.title}>{liveText(t(model.titleKey), running)}</span>
+        <span className={css.title}>{t(model.titleKey)}</span>
         <span className={css.sep} aria-hidden />
         <span className={clsx(
           css.summary,
           state === 'error' && css.errorSummary,
           state === 'stopped' && css.stoppedSummary,
         )}>
-          {liveText(settlementLine ?? normalSummary, running)}
+          {settlementLine ?? normalSummary}
         </span>
       </div>
       {open && (

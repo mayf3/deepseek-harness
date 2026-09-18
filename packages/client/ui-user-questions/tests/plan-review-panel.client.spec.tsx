@@ -70,7 +70,6 @@ const conversationState: ConversationState = {
 const emptyKeys: readonly string[] = []
 const emptyNodeSource = { getSnapshot: () => undefined, subscribe: () => () => {} }
 const chatState: ChatState = {
-  stepProcesses: { layout: [], get: () => undefined, footer: () => undefined },
   order: emptyKeys,
   nodes: {
     get: () => undefined,

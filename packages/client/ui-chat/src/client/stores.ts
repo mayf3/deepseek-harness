@@ -12,7 +12,7 @@ type ChatActions = {
 }
 
 /**
- * Resolve the manual disclosure override for one Turn.
+ * Resolve the manually expanded answer for one Turn.
  * @param state - Chat store snapshot.
  * @param turn - owning Turn.
  * @returns the Turn's stored entry, when present.

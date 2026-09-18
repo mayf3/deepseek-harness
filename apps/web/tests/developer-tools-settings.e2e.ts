@@ -1,4 +1,4 @@
-/** An explicit disabled setting overrides the Host default and survive browser reload through the ordinary settings UI. */
+/** Shared settings are off on a fresh Host and survive browser reload through the ordinary settings UI. */
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
@@ -16,7 +16,7 @@ it('persists developer tools in the Host settings document and restores the acce
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   const toggle = page.getByRole('switch', { name: 'Developer tools' })
   expect(await toggle.getAttribute('aria-checked')).toBe('false')
-  expect(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')).toContain('ui-developer-tools:\n  enabled: false')
+  expect(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')).not.toContain('ui-developer-tools:')
   await toggle.click()
   await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('true')
   expect(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')).toContain('ui-developer-tools:\n  enabled: true')
