@@ -126,13 +126,23 @@ export function resolveTargetPolicy(
 
 /**
  * Scale one routed policy into concrete token budgets for its model capacity.
+ *
+ * A routed request reserves output tokens that the provider charges to the same
+ * window as the prompt, so only the capacity left after that reservation is
+ * available to messages. Both budgets scale that message budget: scaling the
+ * whole window instead would place the pressure gate above the point where the
+ * provider starts rejecting the request, leaving proactive compaction
+ * unreachable.
+ *
  * @param policy - merged policy for the exact routed target.
  * @param contextWindow - positive adapter-owned capacity for that target.
+ * @param reservedCompletionTokens - output tokens one routed request reserves.
  * @returns detached immutable pressure and retention budgets.
  */
 export function resolveCompactSpec(
   policy: ResolvedTargetPolicy,
   contextWindow: number,
+  reservedCompletionTokens = 0,
 ): ResolvedCompactSpec {
   const targetKey = `${policy.target.provider}/${policy.target.model}`
   if (!Number.isInteger(contextWindow) || contextWindow <= 0) {
@@ -141,9 +151,25 @@ export function resolveCompactSpec(
       `BasicCompactionConfig: contextWindow (${contextWindow}) must be a positive integer`,
     )
   }
-  const thresholdTokens = Math.floor(contextWindow * policy.thresholdRatio)
+  if (!Number.isInteger(reservedCompletionTokens) || reservedCompletionTokens < 0) {
+    throw new TargetPressureConfigError(
+      targetKey,
+      `BasicCompactionConfig: reservedCompletionTokens (${reservedCompletionTokens}) `
+      + 'must be a non-negative integer',
+    )
+  }
+  const messageBudgetTokens = contextWindow - reservedCompletionTokens
+  if (messageBudgetTokens <= 0) {
+    throw new TargetPressureConfigError(
+      targetKey,
+      `BasicCompactionConfig: ${targetKey} reserves ${reservedCompletionTokens} completion tokens `
+      + `of its ${contextWindow}-token context window, leaving no message budget; the routed `
+      + "request's output cap must be smaller than the declared context window",
+    )
+  }
+  const thresholdTokens = Math.floor(messageBudgetTokens * policy.thresholdRatio)
   const retainTokens = policy.retainTokens === undefined
-    ? Math.floor(contextWindow * policy.retainRatio)
+    ? Math.floor(messageBudgetTokens * policy.retainRatio)
     : policy.retainTokens
   if (retainTokens >= thresholdTokens) {
     throw new TargetPressureConfigError(
@@ -155,6 +181,7 @@ export function resolveCompactSpec(
   return deepFreeze({
     target: { ...policy.target },
     contextWindow,
+    reservedCompletionTokens,
     thresholdRatio: policy.thresholdRatio,
     thresholdTokens,
     retainTokens,

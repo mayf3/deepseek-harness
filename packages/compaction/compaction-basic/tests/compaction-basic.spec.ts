@@ -397,6 +397,43 @@ describe('compact configuration and defaults', () => {
     })
   })
 
+  it('scales both budgets by the message budget left after the reserved completion tokens', () => {
+    const policy = resolveTargetPolicy(resolveConfig({
+      thresholdRatio: 0.8,
+      retainRatio: 0.16,
+    }), { provider: MODEL, model: MODEL })
+
+    // 1_048_576 - 256_000 = 792_576 available to messages: a 256_000-token
+    // reserve must not leave the gate (800_000 on the whole window) above the
+    // point where the provider rejects the request.
+    expect(resolveCompactSpec(policy, 1_048_576, 256_000)).toMatchObject({
+      contextWindow: 1_048_576,
+      reservedCompletionTokens: 256_000,
+      thresholdTokens: 634_060,
+      retainTokens: 126_812,
+    })
+
+    // No declared reserve keeps the whole window available, as before.
+    expect(resolveCompactSpec(policy, 1_000)).toMatchObject({
+      reservedCompletionTokens: 0,
+      thresholdTokens: 800,
+      retainTokens: 160,
+    })
+  })
+
+  it('rejects a reserve that leaves no message budget or is not a count', () => {
+    const policy = resolveTargetPolicy(resolveConfig({}), { provider: MODEL, model: MODEL })
+
+    expect(() => resolveCompactSpec(policy, 1_000, 1_000))
+      .toThrow(/reserves 1000 completion tokens.*leaving no message budget/)
+    expect(() => resolveCompactSpec(policy, 1_000, 1_500))
+      .toThrow(/leaving no message budget/)
+    expect(() => resolveCompactSpec(policy, 1_000, -1))
+      .toThrow(/reservedCompletionTokens \(-1\) must be a non-negative integer/)
+    expect(() => resolveCompactSpec(policy, 1_000, 1.5))
+      .toThrow(/reservedCompletionTokens \(1.5\) must be a non-negative integer/)
+  })
+
   it('inherits, clears, and replaces the summarization target as a pair', () => {
     const config = resolveConfig({
       summarizationProvider: 'default-provider',
@@ -562,6 +599,45 @@ describe('pressure measurement and retention', () => {
       header: { config: { provider: 'small', model: 'shared-id' } },
       reason: 'change',
     })
+    await expect(compactIfNeeded(compact, session)).resolves.not.toBeNull()
+  })
+
+  it('gates pressure on the reserve the routed envelope records', async () => {
+    const ctx = createContext(1_000)
+    const compact = service({ auto: false, thresholdRatio: 0.8, retainRatio: 0.1 }, ctx)
+    const session = conversation(4)
+    const measured = ctx.tokenMeter.measure(session).totalTokens
+
+    // Premise: the measured pressure clears 80% of the whole window, so the
+    // gate the reserve-free deployment uses stays closed.
+    expect(measured).toBeLessThan(800)
+    await expect(compactIfNeeded(compact, session)).resolves.toBeNull()
+
+    // The same pressure exceeds 80% of the budget left once the request
+    // reserves its output tokens: a gate scaled by the whole window would miss it.
+    const maxTokens = 1_000 - Math.floor(measured / 0.8) - 1
+    session.append('request/header', {
+      header: { config: { provider: MODEL, model: MODEL, maxTokens } },
+      reason: 'change',
+    })
+    await expect(compactIfNeeded(compact, session)).resolves.not.toBeNull()
+  })
+
+  it('falls back to the adapter request cap when the envelope records no reserve', async () => {
+    const ctx = createContext(1_000)
+    const compact = service({ auto: false, thresholdRatio: 0.8, retainRatio: 0.1 }, ctx)
+    const session = conversation(4)
+    const measured = ctx.tokenMeter.measure(session).totalTokens
+    expect(measured).toBeLessThan(800)
+
+    vi.spyOn(ctx.llm, 'resolveModelInfo').mockImplementation((provider, model) => Promise.resolve({
+      provider,
+      id: model,
+      name: model,
+      context: { contextWindow: 1_000 },
+      defaultMaxTokens: 1_000 - Math.floor(measured / 0.8) - 1,
+    }))
+
     await expect(compactIfNeeded(compact, session)).resolves.not.toBeNull()
   })
 

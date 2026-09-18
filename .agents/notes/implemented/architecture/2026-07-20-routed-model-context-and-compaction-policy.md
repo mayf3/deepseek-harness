@@ -26,7 +26,7 @@ The hand-rolled DeepSeek adapter accepts optional `contextWindow` on each config
 
 Compact-basic owns consumer policy. Top-level fields define defaults; `modelPolicies` contains partial overrides keyed by the exact `{ provider, model }` pair. Duplicate targets and unknown or invalid fields fail plugin load. `thresholdRatio` defaults to `0.8`, and retention defaults to `retainRatio: 0.16`; callers may use an absolute `retainTokens` instead, but the two retention forms are mutually exclusive. After inheritance, a ratio retention that is not below its threshold ratio also fails plugin load because no model capacity can make that policy valid.
 
-For proactive pressure, compaction-basic reads the latest durable request route, resolves its adapter capacity and exact-target policy, and scales ratios into a `ResolvedCompactSpec`. It performs this resolution on every check, so a provider or model switch in one session changes capacity and policy immediately. An absolute retained budget that is not below the scaled threshold fails when the target capacity first makes that comparison possible.
+For proactive pressure, compaction-basic reads the latest durable request route, resolves its adapter capacity and exact-target policy, and scales ratios into a `ResolvedCompactSpec`. Ratios scale the route's *message budget* — its context window minus the output tokens one request reserves — because a provider charges the prompt and that reservation to the same window. Scaling the whole window instead places the threshold above the point where the provider refuses the request, so proactive pressure can never fire and only provider-confirmed overflow can condense. The reservation is the effective envelope's `maxTokens`, else the adapter's per-request output default. It performs this resolution on every check, so a provider or model switch in one session changes capacity and policy immediately. An absolute retained budget that is not below the scaled threshold fails when the target capacity first makes that comparison possible.
 
 The same exact-target override can select summarization provider/model, summarization output cap, convergence retries, and overflow retry cap. These are compaction concerns and never enter an LLM provider.
 
@@ -36,7 +36,7 @@ An adapter that lacks capacity metadata remains a valid LLM route. Manual proact
 
 ## Testing
 
-Service tests cover detached context metadata, invalid adapter output, catalog independence, and default absence. Adapter tests cover DeepSeek exact/default/unlisted resolution, invalid capacities, and pi-ai exact descriptor resolution. Compact tests cover ratio scaling, exact provider/model overrides, load-time rejection of invalid merged ratios, runtime absolute-budget validation, same-model-id provider switches, target-specific warning suppression, and capacity-independent overflow recovery. Loader fixtures reject the removed token-meter capacity setting, and examples configure capacity on adapters.
+Service tests cover detached context metadata, invalid adapter output, catalog independence, and default absence. Adapter tests cover DeepSeek exact/default/unlisted resolution, invalid capacities, and pi-ai exact descriptor resolution. Compact tests cover ratio scaling against the message budget left after the routed request's reservation (envelope cap and adapter-default fallback), exact provider/model overrides, load-time rejection of invalid merged ratios, runtime absolute-budget validation, same-model-id provider switches, target-specific warning suppression, and capacity-independent overflow recovery. Loader fixtures reject the removed token-meter capacity setting, and examples configure capacity on adapters.
 
 ## Alternatives considered
 
@@ -52,6 +52,6 @@ Service tests cover detached context metadata, invalid adapter output, catalog i
 - The same compaction-basic instance safely handles different windows, provider switches, and identical model ids under different providers without consulting discovery metadata.
 - LLM-only and meter-only compositions remain valid; loading compaction-basic adds no reverse dependency from adapters.
 - DeepSeek deployments may set exact per-model capacities, or use `defaultContextWindow` for entries without capacity and unlisted pass-through ids.
-- Ratio defaults scale naturally across models, while exact-target absolute retention remains available for deployment-specific behavior.
+- Ratio defaults scale naturally across models and exclude the output tokens each request reserves, while exact-target absolute retention remains available for deployment-specific behavior.
 
 This note supersedes the global-capacity and no-model-policy parts of the [replay token meter service Agent Note](../../archived/architecture/2026-07-15-replay-token-meter-service.md). Its single-fold measurement decision remains unchanged.

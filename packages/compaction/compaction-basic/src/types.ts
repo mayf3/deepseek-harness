@@ -8,9 +8,9 @@ import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 
 /** Policy fields shared by the default policy and exact model overrides. */
 export interface CompactionPolicyConfig {
-  /** Compact at this fraction of the model's context window. Defaults to `0.8`. */
+  /** Compact at this fraction of the model's message budget: context window minus reserved output tokens. Defaults to `0.8`. */
   thresholdRatio?: number
-  /** Recent context retained as a fraction of the model's window. Defaults to `0.16`. */
+  /** Recent context retained as a fraction of that same message budget. Defaults to `0.16`. */
   retainRatio?: number
   /** Absolute recent-context budget; mutually exclusive with `retainRatio`. */
   retainTokens?: number
@@ -71,6 +71,8 @@ export type ResolvedTargetPolicy = ResolvedPolicyFields & ResolvedRetention & {
 /** One routed model's concrete pressure and retention budget. */
 export type ResolvedCompactSpec = Omit<ResolvedTargetPolicy, 'retainRatio' | 'retainTokens'> & {
   readonly contextWindow: number
+  /** Output tokens one routed request reserves, excluded from both budgets. */
+  readonly reservedCompletionTokens: number
   readonly thresholdTokens: number
   readonly retainTokens: number
 }

@@ -35,7 +35,12 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('compaction: a long session compa
     // Reasoning tokens require a larger generation cap than the retained checkpoint.
     ctx = await codingHarness(workdir, {
       personaPrefix: SYSTEM_PROMPT,
-      modelContextWindow: 8000,
+      // Pressure counts only the message budget left after the request's
+      // reserved output tokens, so the advertised capacity must exceed that
+      // cap: 15_000 - 7_000 leaves the 8000-token window this scenario used to
+      // advertise on its own, and a threshold of 4000 tokens unchanged.
+      modelContextWindow: 15_000,
+      modelMaxTokens: 7_000,
       compact: {
         thresholdRatio: 0.5,
         retainTokens: 400,
