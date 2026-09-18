@@ -43,6 +43,9 @@ if (typeof window !== 'undefined') {
  * Attach a hover/focus tooltip to an anchor element.
  * @param props.label - bubble text, or a resolver evaluated only while the bubble is visible.
  * @param props.side - placement relative to the anchor (default 'right').
+ * @param props.align - horizontal anchor-edge alignment for 'bottom'/'top' bubbles: 'end' pins
+ * the bubble's right edge to the anchor's (for anchors beside other hover surfaces the centered
+ * bubble would overlap); default 'center'. Ignored for side 'right'.
  * @param props.delayMs - hover delay in milliseconds; keyboard focus remains immediate.
  * @param props.disabled - suppress the bubble while true; the anchor renders identically so
  * toggling never remounts it (which would cut its CSS transitions).
@@ -53,7 +56,7 @@ if (typeof window !== 'undefined') {
  * anchor dismisses the bubble until the next trigger, and focus arriving after a pointer
  * interaction (a closing menu refocusing its trigger) never raises it.
  */
-export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, maxWidth, children }: { label: TooltipLabel; side?: TooltipSide; delayMs?: number; disabled?: boolean; maxWidth?: number; children: ReactElement<AnchorProps> }) {
+export function Tooltip({ label, side = 'right', align = 'center', delayMs = 0, disabled = false, maxWidth, children }: { label: TooltipLabel; side?: TooltipSide; align?: 'center' | 'end'; delayMs?: number; disabled?: boolean; maxWidth?: number; children: ReactElement<AnchorProps> }) {
   const anchor = useRef<HTMLElement | null>(null)
   // React 18 keeps the element's ref outside props; forward it so wrapping an
   // anchor in Tooltip never silently severs the owner's ref.
@@ -154,7 +157,11 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
     // Every show starts from the requested side; the fit pass flips it only
     // where this anchor's position demands it.
     setPlacement(side)
-    setPos({ x: side === 'right' ? r.right + 10 : r.left + r.width / 2, top: r.top, bottom: r.bottom })
+    setPos({
+      x: side === 'right' ? r.right + 10 : align === 'end' ? r.right : r.left + r.width / 2,
+      top: r.top,
+      bottom: r.bottom,
+    })
     announce(true)
   }
   const showAfterHoverDelay = () => {
@@ -195,6 +202,7 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
           ref={bubble}
           className={css.bubble}
           data-side={placement}
+          data-align={align}
           style={{ left: pos.x, top: y, ...maxWidth === undefined ? {} : { maxWidth } }}
           role="tooltip"
         >

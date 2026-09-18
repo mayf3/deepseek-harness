@@ -176,20 +176,18 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
             portal
             closeOnPointerLeave
             anchor={(
-              <Tooltip label={t('actions.more')} side="bottom" delayMs={500}>
-                <button
-                  type="button"
-                  className={css.iconButton}
-                  aria-label={t('actions.workspace.aria', { name: label })}
-                  onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
-                >
-                  <IconEllipsisOutlineRegular />
-                </button>
-              </Tooltip>
+              <button
+                type="button"
+                className={css.iconButton}
+                aria-label={t('actions.workspace.aria', { name: label })}
+                onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
+              >
+                <IconEllipsisOutlineRegular />
+              </button>
             )}
           />
         )}
-        <Tooltip label={t('actions.newSession')} side="bottom" delayMs={500}>
+        <Tooltip label={t('actions.newSession')} side="bottom" align="end" delayMs={500}>
           <button
             type="button"
             className={css.iconButton}
@@ -213,6 +211,7 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
         createdAt={row.createdAt}
         t={t}
       />}
+      openDelayMs={800}
       disabled={menuOpen}
       copyText={row.cwd}
       copyLabel={t('copy')}
@@ -396,14 +395,16 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }: 
         {result.hasActiveSchedule && <ActiveScheduleIndicator t={t} search />}
         {result.archived && (
           <span className={css.rowActions}>
-            <button
-              type="button"
-              className={css.iconButton}
-              aria-label={t('menu.unarchiveSession')}
-              onClick={(e) => { e.stopPropagation(); onUnarchive(result.id) }}
-            >
-              <IconUnarchiveOutlineRegular size={14} />
-            </button>
+            <Tooltip label={t('actions.unarchive')} side="bottom" align="end" delayMs={500}>
+              <button
+                type="button"
+                className={css.iconButton}
+                aria-label={t('menu.unarchiveSession')}
+                onClick={(e) => { e.stopPropagation(); onUnarchive(result.id) }}
+              >
+                <IconUnarchiveOutlineRegular size={14} />
+              </button>
+            </Tooltip>
           </span>
         )}
       </span>
@@ -502,7 +503,7 @@ export function SessionNodeItem({
       className={clsx(
         css.sessionRow, selected && css.selected, menuOpen && css.menuOpen,
         row.archived && css.archived,
-        flat && !showStatus && !row.archived && css.flatSessionRowWithoutStatus,
+        flat && !showStatus && css.flatSessionRowWithoutStatus,
         drag?.marker === 'before' && css.dropBefore, drag?.marker === 'after' && css.dropAfter,
       )}
       role="treeitem"
@@ -585,19 +586,17 @@ export function SessionNodeItem({
             portal
             closeOnPointerLeave
             anchor={(
-              <Tooltip label={t('actions.more')} side="bottom" delayMs={500}>
-                <button
-                  type="button"
-                  className={css.iconButton}
-                  aria-label={t('actions.session.aria', { name: title })}
-                  onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
-                >
-                  <IconEllipsisOutlineRegular />
-                </button>
-              </Tooltip>
+              <button
+                type="button"
+                className={css.iconButton}
+                aria-label={t('actions.session.aria', { name: title })}
+                onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
+              >
+                <IconEllipsisOutlineRegular />
+              </button>
             )}
           />
-          <Tooltip label={row.archived ? t('menu.unarchiveSession') : t('menu.archiveSession')} side="bottom" delayMs={500}>
+          <Tooltip label={row.archived ? t('actions.unarchive') : t('actions.archive')} side="bottom" align="end" delayMs={500}>
             <button
               type="button"
               className={css.iconButton}
@@ -613,7 +612,7 @@ export function SessionNodeItem({
           </Tooltip>
           {/* Rightmost so it lands where the rest-state pin marker sits. */}
           {!row.archived && (
-            <Tooltip label={row.pinned ? t('menu.unpinSession') : t('menu.pinSession')} side="bottom" delayMs={500}>
+            <Tooltip label={row.pinned ? t('actions.unpin') : t('actions.pin')} side="bottom" align="end" delayMs={500}>
               <button
                 type="button"
                 className={css.iconButton}
@@ -632,6 +631,7 @@ export function SessionNodeItem({
     <HoverCard
       anchor={ownRow}
       content={<SessionHoverContent node={node} now={now} t={t} />}
+      openDelayMs={800}
       disabled={menuOpen || drag?.active === true}
       copyText={row.blank ? undefined : row.title}
       copyLabel={t('copy')}

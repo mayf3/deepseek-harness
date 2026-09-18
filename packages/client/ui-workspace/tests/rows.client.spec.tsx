@@ -251,7 +251,7 @@ describe('workspace browser rows', () => {
       expect(screen.queryByText('进行中')).toBeNull()
 
       fireEvent.pointerEnter(row.parentElement as HTMLElement)
-      act(() => { vi.advanceTimersByTime(500) })
+      act(() => { vi.advanceTimersByTime(800) })
       expect(screen.getAllByText('2 个子代理运行中')).toHaveLength(2)
     } finally {
       vi.useRealTimers()
@@ -273,7 +273,7 @@ describe('workspace browser rows', () => {
       expect(screen.getByText('1 个子代理运行中')).toBeTruthy()
 
       fireEvent.pointerEnter(row.parentElement as HTMLElement)
-      act(() => { vi.advanceTimersByTime(500) })
+      act(() => { vi.advanceTimersByTime(800) })
       expect(screen.getAllByText('进行中')).toHaveLength(2)
       expect(screen.getAllByText('1 个子代理运行中')).toHaveLength(2)
     } finally {
@@ -347,7 +347,7 @@ describe('workspace browser rows', () => {
       }
       render(<ProjectRowItem group={group} onToggle={vi.fn()} onCreate={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
-      act(() => { vi.advanceTimersByTime(500) })
+      act(() => { vi.advanceTimersByTime(800) })
       // Card body: full title + cwd + absolute creation time.
       expect(screen.getAllByText('Project')).toHaveLength(2)
       expect(screen.getByText('/projects/project')).toBeTruthy()
@@ -372,7 +372,7 @@ describe('workspace browser rows', () => {
       }
       render(<ProjectRowItem group={group} home="/home/u" onToggle={vi.fn()} onCreate={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
-      act(() => { vi.advanceTimersByTime(500) })
+      act(() => { vi.advanceTimersByTime(800) })
       expect(screen.getByText('~/Documents/project')).toBeTruthy()
       expect(screen.queryByText('/home/u/Documents/project')).toBeNull()
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: '复制: /home/u/Documents/project' })) })
@@ -392,7 +392,7 @@ describe('workspace browser rows', () => {
       }
       render(<ProjectRowItem group={group} home="/home/u" onToggle={vi.fn()} onCreate={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
-      act(() => { vi.advanceTimersByTime(500) })
+      act(() => { vi.advanceTimersByTime(800) })
       expect(screen.getAllByText('Project')).toHaveLength(2)
       expect(screen.getByText(/^创建于 \d+年\d+月\d+日 /)).toBeTruthy()
       expect(screen.queryByRole('button', { name: /^复制:/ })).toBeNull()
@@ -410,7 +410,7 @@ describe('workspace browser rows', () => {
       }
       render(<ProjectRowItem group={group} home="C:\\Users\\u" onToggle={vi.fn()} onCreate={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
-      act(() => { vi.advanceTimersByTime(500) })
+      act(() => { vi.advanceTimersByTime(800) })
       expect(screen.getByText('C:\\Users\\u\\project')).toBeTruthy()
     } finally {
       vi.useRealTimers()
@@ -441,7 +441,7 @@ describe('workspace browser rows', () => {
       // The hover card keeps title + status but drops the timestamp line.
       const wrapper = screen.getByRole('treeitem').parentElement as HTMLElement
       fireEvent.pointerEnter(wrapper)
-      act(() => { vi.advanceTimersByTime(500) })
+      act(() => { vi.advanceTimersByTime(800) })
       expect(screen.getAllByText('新会话').length).toBeGreaterThanOrEqual(2)
       expect(screen.getByText('空闲')).toBeTruthy()
       expect(screen.queryByText('刚刚')).toBeNull()
@@ -498,7 +498,7 @@ describe('workspace browser rows', () => {
         onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} onUnarchive={vi.fn()} onPin={vi.fn()} t={t} />)
       const wrapper = screen.getByRole('treeitem').parentElement as HTMLElement
       fireEvent.pointerEnter(wrapper)
-      act(() => { vi.advanceTimersByTime(500) })
+      act(() => { vi.advanceTimersByTime(800) })
       // Card body: full title + relative time + running status.
       expect(screen.getAllByText('Hovered')).toHaveLength(2)
       expect(screen.getByText('1分钟前')).toBeTruthy()
@@ -542,7 +542,7 @@ describe('workspace browser rows', () => {
       expect(screen.getByRole('treeitem').querySelector('[data-state="warning"]')).toBeTruthy()
 
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
-      act(() => { vi.advanceTimersByTime(500) })
+      act(() => { vi.advanceTimersByTime(800) })
       expect(screen.getAllByText(label).length).toBeGreaterThanOrEqual(2)
       expect(screen.getByText('刚刚')).toBeTruthy()
       expect(document.querySelectorAll('[data-state="warning"]')).toHaveLength(2)
@@ -579,7 +579,7 @@ describe('workspace browser rows', () => {
       render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
         onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} onUnarchive={vi.fn()} onPin={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
-      act(() => { vi.advanceTimersByTime(500) })
+      act(() => { vi.advanceTimersByTime(800) })
       expect(screen.getByText('空闲').parentElement?.querySelector('[data-state="idle"]')).not.toBeNull()
       expect(screen.getAllByText('刚刚')).toHaveLength(2)
     } finally {
@@ -597,7 +597,7 @@ describe('workspace browser rows', () => {
       render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
         onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} onUnarchive={vi.fn()} onPin={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
-      act(() => { vi.advanceTimersByTime(500) })
+      act(() => { vi.advanceTimersByTime(800) })
       // Row's visually-hidden reminder label plus the hover card's status line.
       expect(screen.getAllByText('已完成')).toHaveLength(2)
     } finally {
@@ -615,7 +615,7 @@ describe('workspace browser rows', () => {
       const { rerender } = render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
         onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} onUnarchive={vi.fn()} onPin={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
-      act(() => { vi.advanceTimersByTime(500) })
+      act(() => { vi.advanceTimersByTime(800) })
       // Row indicator label plus the hover card's archived line; the idle
       // resting status would restate the same inactivity and stays out.
       expect(screen.getAllByText('已归档')).toHaveLength(1)

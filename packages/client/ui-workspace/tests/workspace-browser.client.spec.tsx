@@ -274,7 +274,7 @@ describe('WorkspaceBrowser', () => {
         useHostInfo: selector => selector({ home: '/home/u', isLoopback: true }),
       })
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
-      act(() => { vi.advanceTimersByTime(500) })
+      act(() => { vi.advanceTimersByTime(800) })
       expect(screen.getByText('~/Documents/project')).toBeTruthy()
     } finally {
       vi.useRealTimers()
