@@ -39,6 +39,19 @@ html[data-platform='darwin'] body {
   background: transparent;
 }
 
+/* The transparent window disables backdrop-filter: Chromium composites it
+   against the root surface, which vibrancy leaves transparent, so the blur in
+   --dsw-menu-backdrop-filter renders as nothing and half-opaque menu fills
+   let underlying text bleed through. Compensate with near-opaque fills on the
+   same design-platform hues (light 248 249 250 / dark 48 49 54). */
+html[data-platform='darwin'] body {
+  --dsw-specific-menu: rgba(248, 249, 250, 0.94);
+}
+
+html[data-platform='darwin'] body[data-ds-dark-theme] {
+  --dsw-specific-menu: rgba(48, 49, 54, 0.94);
+}
+
 /* macOS desktop: the app frame publishes window drag bands, and Electron
    composes app-regions from geometry, not hit testing — a surface covering a
    band would otherwise drag the window instead of receiving clicks. Every
