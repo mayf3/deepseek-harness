@@ -20,7 +20,6 @@
 - button "Bad response"
 - button "Branch into a new conversation"
 - button "Usage 17.3K tok"
-- button "Ran for {{duration}}"
 - text: {{clock}}
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"

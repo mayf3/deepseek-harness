@@ -18,7 +18,6 @@
 - button "Good response"
 - button "Bad response"
 - button "Branch into a new conversation"
-- button "Ran for {{duration}}"
 - text: {{clock}}
 - 'button "feedback Feedback recorded for session session-{{uuid}} Anonymous user: {{uuid}}."'
 - textbox "Message or run a task, / commands, @ files or sessions"

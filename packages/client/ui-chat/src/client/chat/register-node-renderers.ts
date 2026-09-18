@@ -1,4 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { PerformanceUsageMode } from '../../chat-settings.ts'
 import { NS } from '../locale.ts'
 import { AssistantNodeView } from './AssistantNodeView.tsx'
 import { CommandNodeView, ManualCompactionNodeView } from './CommandNodeView.tsx'
@@ -13,8 +15,9 @@ import { TurnTailNodeView } from './TurnTailNodeView.tsx'
 /**
  * Register this package's business renderers behind the keyed Chat Node seat.
  * @param ctx - owning UI Conversation context.
+ * @param performanceUsage - live statistics detail preference.
  */
-export function registerChatNodeRenderers(ctx: Context): void {
+export function registerChatNodeRenderers(ctx: Context, performanceUsage: ObservableSnapshot<PerformanceUsageMode>): void {
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'user', locale: NS }, UserMessageNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
@@ -47,6 +50,7 @@ export function registerChatNodeRenderers(ctx: Context): void {
     name: 'conversation.chat.node',
     key: 'turn-tail',
     locale: NS,
+    inject: () => ({ hooks: { performanceUsage } }),
     children: {
       'conversation.chat.turnTail': { kind: 'list', scope: 'session' },
       'conversation.chat.assistant-actions': { kind: 'list', scope: 'session' },

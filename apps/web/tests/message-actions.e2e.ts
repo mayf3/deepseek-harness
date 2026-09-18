@@ -11,7 +11,7 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
-  assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
+  acknowledgeReloadConnectionLoss, assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, parseSeedFixture, renderSeedFixture, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
@@ -313,6 +313,35 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
   })
 
+  it.skipIf(MODE === 'record')('persists performance detail and hides statistics in Compact', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-performance-usage'))
+    const stats = page.locator('[data-composer-stats]')
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Settings', exact: true })
+    const row = dialog.getByText('Performance & usage', { exact: true }).locator('../..')
+    await row.getByRole('button', { name: 'Detailed', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Compact', exact: true }).click()
+    await expect.poll(() => scaffold.ctx.settings.get('ui-chat')).toMatchObject({ performanceUsage: 'compact' })
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    await expect.poll(() => stats.locator('button').count()).toBe(0)
+    expect(await stats.textContent()).not.toContain('turns')
+    expect(await stats.textContent()).toContain('Cache hit')
+    await stats.hover()
+    expect(await page.getByRole('dialog').count()).toBe(0)
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'compact.expected.md'), await captureStableAria(page, '[data-composer-stats]', scaffold.workspaceCwd), MODE)
+    const warningStart = tripwire.warnings.length
+    await page.reload()
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await row.getByRole('button', { name: 'Compact', exact: true }).waitFor()
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    await row.getByRole('button', { name: 'Compact', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Detailed', exact: true }).click()
+    await expect.poll(() => scaffold.ctx.settings.get('ui-chat')).toMatchObject({ performanceUsage: 'detailed' })
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    await expect.poll(() => stats.locator('button').count()).toBe(2)
+    expect(await page.locator('[data-turn-tail]').getByRole('button', { name: /Ran for/ }).count()).toBe(0)
+  })
+
   it.skipIf(MODE === 'record')('forks through the settled-message and session-row actions', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-message-fork'))
     // The second answer is followed by another completed user turn in the source.
@@ -380,6 +409,6 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
   it.skipIf(MODE === 'record')('issued zero model calls and kept a closed inventory', async () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['fork.expected.md', 'ui.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['compact.expected.md', 'fork.expected.md', 'ui.expected.md'])
   })
 })
