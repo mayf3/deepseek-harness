@@ -1,6 +1,6 @@
 /** Materialize the complete production runtime before publishing Desktop resources. */
 
-import { spawn, execFile } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join, relative, resolve } from 'node:path'
@@ -17,7 +17,8 @@ import {
   verifyDesktopCoreLockfile,
 } from '../src/core-package-set.ts'
 import { smokePrimaryRuntime } from './prepare-primary-runtime.ts'
-import { smokeDesktopRuntime } from './smoke-runtime.ts'
+import { smokePreparedRuntime } from './smoke-prepared-runtime.ts'
+import { prepareRuntimeManifests } from './prepare-runtime-manifests.ts'
 import { writeDesktopRuntime, verifyDesktopRuntime } from '../src/runtime-tree.ts'
 import {
   resolveDesktopAppId,
@@ -147,18 +148,14 @@ async function main(): Promise<void> {
       await signMacOSRuntime(DSH_OUTPUT_ROOT, resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env))
       await signMacOSRuntime(join(RUNTIME_ROOT, 'primary-runtime'), resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env))
     }
+    await prepareRuntimeManifests(DSH_OUTPUT_ROOT)
     smokePrimaryRuntime(join(RUNTIME_ROOT, 'primary-runtime'))
     writeDesktopRuntime(DSH_OUTPUT_ROOT, release, packageSet.packages.map(entry => entry.name), target)
     const descriptor = await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
-    await new Promise<void>((accept, reject) => {
-      execFile(NODE, ['--expose-internals', join(APP_ROOT, 'tests/fixtures/runtime-payload-smoke.mjs'), DSH_OUTPUT_ROOT],
-        { timeout: 120_000, env: desktopNodeEnvironment(NODE, join(RUNTIME_ROOT, 'bin'), { ...process.env, NODE_OPTIONS: '' }) }, (error, stdout, stderr) => {
-          if (error !== null) reject(new Error(`desktop native payload smoke failed: ${stderr}`, { cause: error }))
-          else { process.stdout.write(stdout); accept() }
-        })
-    })
-    await smokeDesktopRuntime(DSH_OUTPUT_ROOT, NODE, descriptor)
-    await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
+    if (!process.argv.includes('--defer-runtime-smoke')) {
+      await smokePreparedRuntime(DSH_OUTPUT_ROOT, NODE, RUNTIME_ROOT, descriptor)
+      await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
+    }
   } catch (error) {
     rmSync(DSH_OUTPUT_ROOT, { recursive: true, force: true })
     throw error

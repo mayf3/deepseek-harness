@@ -10,8 +10,9 @@ import type {
 } from '@deepseek-ai/dsh-experimental-agent-team/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  IconCheckOutline14, IconCloseOutline16, IconEditOutline16, IconPlusOutline16,
-  IconRefreshOutline14, IconTrashOutline16, IconUserOutline16, StateDot,
+  IconCheckOutlineRegular, IconCloseOutlineRegular, IconEditOutlineRegular, IconPlusOutlineRegular,
+  IconRefreshOutlineRegular, IconTrashOutlineRegular, IconUserOutlineRegular, StateDot,
+  type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -92,6 +93,26 @@ function memberStatusKey(status: TeamRosterMember['status']): TeamKey {
     case 'inactive': return 'memberStatus.inactive'
     case 'provisioning': return 'memberStatus.provisioning'
     case 'failed': return 'memberStatus.failed'
+  }
+}
+
+function memberDotState(status: TeamRosterMember['status']): StateDotState {
+  switch (status) {
+    case 'running':
+    case 'provisioning': return 'ongoing'
+    case 'idle':
+    case 'inactive': return 'idle'
+    case 'failed': return 'error'
+  }
+}
+
+function taskDotState(task: TeamTask): StateDotState {
+  switch (task.status) {
+    case 'pending': return task.ready ? 'idle' : 'warning'
+    case 'in_progress': return 'ongoing'
+    case 'completed': return 'done'
+    /* v8 ignore next -- Team views omit deleted task tombstones. */
+    case 'deleted': return 'idle'
   }
 }
 
@@ -255,7 +276,7 @@ export function TeamAction({
           if (next) void refresh()
         }}
       >
-        <IconUserOutline16 size={14} />
+        <IconUserOutlineRegular size={14} />
         <span>{t('trigger')}</span>
         {teammates.length > 0 && <span className={css.count}>{teammates.length}</span>}
       </button>
@@ -264,15 +285,22 @@ export function TeamAction({
           <div className={css.toolbar}>
             <strong>{t('trigger')}</strong>
             <span className={css.spacer} />
+            {loading && view !== null && (
+              <span role="status" aria-label={t('loading')}><StateDot state="ongoing" /></span>
+            )}
             <button type="button" className={css.iconButton} aria-label={t('refresh')} onClick={() => { void refresh() }}>
-              <IconRefreshOutline14 />
+              <IconRefreshOutlineRegular size={14} />
             </button>
             <button type="button" className={css.iconButton} aria-label={t('close')} onClick={() => { setOpen(false) }}>
-              <IconCloseOutline16 size={14} />
+              <IconCloseOutlineRegular size={14} />
             </button>
           </div>
-          {error !== null && <div className={css.error} role="alert">{error}</div>}
-          {loading && view === null && <div className={css.notice}>{t('loading')}</div>}
+          {error !== null && (
+            <div className={css.error} role="alert"><StateDot state="error" />{error}</div>
+          )}
+          {loading && view === null && (
+            <div className={css.notice} role="status"><StateDot state="ongoing" />{t('loading')}</div>
+          )}
           {view !== null && (
             <>
               <section>
@@ -289,7 +317,7 @@ export function TeamAction({
                         void openTeammate(sessionId, member).catch((reason: unknown) => { setError(String(reason)) })
                       }}
                     >
-                      <StateDot state={member.status === 'running' ? 'ongoing' : member.status === 'failed' ? 'error' : 'done'} />
+                      <StateDot state={memberDotState(member.status)} />
                       <span className={css.memberText}>
                         <span>{member.name}</span>
                         <small>{t(memberStatusKey(member.status))}{member.model === undefined ? '' : ` · ${t('model')}: ${member.model}`}</small>
@@ -303,7 +331,7 @@ export function TeamAction({
                 <div className={css.sectionTitle}>
                   <h3>{t('tasks')}</h3>
                   <button type="button" className={css.smallButton} onClick={() => { setCreating(true) }}>
-                    <IconPlusOutline16 size={13} /> {t('create')}
+                    <IconPlusOutlineRegular size={13} /> {t('create')}
                   </button>
                 </div>
                 {creating && (
@@ -334,7 +362,10 @@ export function TeamAction({
                       <article key={task.id} className={css.task}>
                         <div className={css.taskTitle}>
                           <strong>{task.subject}</strong>
-                          <span>{t(statusKey(task.status))}</span>
+                          <span className={css.taskState}>
+                            <StateDot state={taskDotState(task)} />
+                            <span>{t(statusKey(task.status))}</span>
+                          </span>
                         </div>
                         <p>{task.description}</p>
                         <div className={css.meta}>
@@ -365,14 +396,14 @@ export function TeamAction({
                             </select>
                           </label>
                           <button type="button" onClick={() => { startEdit(task) }} disabled={pendingTasks.has(task.id)}>
-                            <IconEditOutline16 size={13} /> {t('edit')}
+                            <IconEditOutlineRegular size={13} /> {t('edit')}
                           </button>
                           {task.status === 'in_progress' && (
                             <button type="button" disabled={pendingTasks.has(task.id)} onClick={() => {
                               void settleTask(task.id, () => updateTask(sessionId, {
                                 taskId: task.id, expectedRevision: task.revision, action: 'complete',
                               }))
-                            }}><IconCheckOutline14 /> {t('complete')}</button>
+                            }}><IconCheckOutlineRegular size={14} /> {t('complete')}</button>
                           )}
                           {task.status === 'completed' && (
                             <button type="button" disabled={pendingTasks.has(task.id)} onClick={() => {
@@ -385,7 +416,7 @@ export function TeamAction({
                             void settleTask(task.id, () => updateTask(sessionId, {
                               taskId: task.id, expectedRevision: task.revision, action: 'delete',
                             }))
-                          }}><IconTrashOutline16 size={13} /> {t('delete')}</button>
+                          }}><IconTrashOutlineRegular size={13} /> {t('delete')}</button>
                         </div>
                       </article>
                     ))}

@@ -16,6 +16,7 @@ kind: "package-reference"
 
 - [引用预览](#reference-previews)
 - [系统提示词行](#system-prompt-row)
+- [指令与失败行](#command-and-failure-rows)
 - [轮次 token 用量](#turn-token-usage)
 - [已完成轮次的页脚](#completed-turn-footer)
 - [轮次过程折叠](#turn-process-folding)
@@ -37,6 +38,11 @@ Assistant Markdown 中的 HTTP(S) 链接在普通点击时会在该类型已注�
 ## 系统提示词行
 
 每个非空追加的 `system/message` 都拥有一行折叠提示词，包括无 header 窗口起点的完整提示词；同一步骤的 header 不会重复它。Chat 也会为非空的初始请求、显式消息序列起点、文本发生变化的 `system/message` surface 节点替换（文本读取自 `request/header` 处 surface 顺序中最后一个非空存活系统节点），或前序 header 尚未进入已加载历史窗口的非初始请求显示一行默认折叠的 `系统提示词`。即使系统文本未变，恢复也会重复该行，包括分页补齐前序 header 和系统节点后；同一序列内仅配置或仅工具变化、工具步骤与重试不会重复，且 `system/message` 事件绝不会渲染为对话消息。该行位于请求的用户消息之前，与提供方 envelope 顺序一致；展开后显示模型所见的确切文本，并保留其原始换行。系统节点为空或位于已加载窗口之外的请求不创建该行，直到包含该节点的分页到达。
+
+<a id="command-and-failure-rows"></a>
+## 指令与失败行
+
+通用指令行在所有生命周期状态中都保留普通指令图标；失败仍通过行状态与摘要明确表达。终止轮次的错误仍是独立的红点提示；模型的中间重试不会创建该提示，达到输出 token 上限时使用琥珀色警告点。
 
 -----
 

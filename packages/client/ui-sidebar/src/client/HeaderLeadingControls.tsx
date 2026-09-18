@@ -1,6 +1,6 @@
 /** macOS-desktop resident-header controls for the fully hidden sidebar. */
 import {
-  IconNewChatOutline16, IconPanelLeftOutline16, isDarwinDesktop, Tooltip,
+  IconNewChatOutlineMedium, IconPanelLeftOutlineRegular, isDarwinDesktop, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the conversation header slot declarations.
@@ -35,7 +35,7 @@ export function HeaderLeadingControls({ toggleSidebar, startSession, t }: Header
           aria-label={t('toggle.open')}
           onClick={() => { toggleSidebar() }}
         >
-          <IconPanelLeftOutline16 size={16} />
+          <IconPanelLeftOutlineRegular size={16} />
         </button>
       </Tooltip>
       <Tooltip label={t('session.new.label')} delayMs={500}>
@@ -45,7 +45,7 @@ export function HeaderLeadingControls({ toggleSidebar, startSession, t }: Header
           aria-label={t('session.new.label')}
           onClick={() => { startSession() }}
         >
-          <IconNewChatOutline16 size={16} />
+          <IconNewChatOutlineMedium size={16} />
         </button>
       </Tooltip>
     </div>

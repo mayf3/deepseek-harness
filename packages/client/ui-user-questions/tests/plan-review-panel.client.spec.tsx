@@ -239,6 +239,7 @@ describe('PlanReviewPanel', () => {
 
     expect(document.querySelector('[data-plan-review-key]')?.getAttribute('data-plan-review-key')).toBe(carrier.key)
     expect(screen.getByText(zh['plan.header'])).toBeTruthy()
+    expect(document.querySelector('[data-plan-review-key] [data-state="warning"]')).not.toBeNull()
     expect(screen.getByRole('heading', { name: 'Ship the picker' })).toBeTruthy()
     expect(screen.getByText('read the store')).toBeTruthy()
     expect(screen.getAllByRole('button')).toHaveLength(2)
@@ -279,6 +280,8 @@ describe('PlanReviewPanel', () => {
     expect(approve.getAttribute('title')).toBe('Leave plan mode; the plan is carried out from the next step.')
     fireEvent.click(approve)
     expect(answer).toHaveBeenCalledWith(decision('Approve'))
+    expect(document.querySelector('[data-plan-review-key] [data-state="ongoing"]')).not.toBeNull()
+    expect(document.querySelector('[data-plan-review-key] section')?.getAttribute('aria-busy')).toBe('true')
     // One-shot: every action locks until the host's resolved frame lands.
     expect(approve.hasAttribute('disabled')).toBe(true)
     expect(screen.getByRole('button', { name: zh['plan.discuss'] }).hasAttribute('disabled')).toBe(true)
