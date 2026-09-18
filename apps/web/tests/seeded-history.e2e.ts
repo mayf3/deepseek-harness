@@ -458,6 +458,23 @@ describe('web e2e: seeded history renders through cold resume', () => {
     await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('false')
   })
 
+  it.skipIf(MODE === 'record')('restores the active turn rail mark across Chat and Trajectory', async () => {
+    const rail = page.getByRole('navigation', { name: 'Turn navigation' })
+    const current = rail.locator('[aria-current="true"]')
+    await current.waitFor({ state: 'visible' })
+    const active = await current.getAttribute('aria-label')
+    const scroller = page.locator('[data-conversation-scroll]')
+    const top = await scroller.evaluate(element => element.scrollTop)
+
+    await page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
+    await page.getByLabel('Trajectory timeline', { exact: true }).waitFor({ state: 'visible' })
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click()
+
+    await expect.poll(() => current.getAttribute('aria-label')).toBe(active)
+    await expect.poll(async () => Math.abs(await scroller.evaluate(element => element.scrollTop) - top)).toBeLessThanOrEqual(2)
+    expect(tripwire.pageErrors).toEqual([])
+  })
+
   it.skipIf(MODE === 'record')('file-path tool rows rebuilt from the cold log open the right Sidebar', async () => {
     onTestFailed(async () => {
       await mkdir(fileURLToPath(new URL('../../../.artifacts/screenshots/0907-2205-sidebar', import.meta.url)), { recursive: true })
