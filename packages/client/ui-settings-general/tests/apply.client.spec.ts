@@ -107,7 +107,7 @@ describe('ui-settings-general apply', () => {
     const developerRow = c.ctx.slots.entries('settings.general.item').find(row => row.options.id === 'developer-tools')!
     const developer = (developerRow.inject as unknown as () => DeveloperToolsRowInjected)()
     expect(developer.hooks.developerTools).toBe(c.ctx.settingsScope.developerTools.enabled)
-    expect(developer.hooks.developerTools.getSnapshot()).toBe(false)
+    expect(developer.hooks.developerTools.getSnapshot()).toBe(true)
     const setEnabled = vi.spyOn(c.ctx.settingsScope.developerTools, 'setEnabled').mockResolvedValue(undefined)
     await developer.setEnabled(true)
     expect(setEnabled).toHaveBeenCalledExactlyOnceWith(true)

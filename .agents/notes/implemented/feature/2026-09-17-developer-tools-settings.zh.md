@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-设置域内的 `ctx.settingsScope.developerTools` 偏好对象绑定命名空间 scope，提供一个已接受的 `ui-developer-tools.enabled` 偏好，默认关闭。Web 和桌面端的通用设置提供同一个开关。现有设置传输负责验证、有序写入、持久化和恢复；回环 Web 和桌面端跟随 Host 接受的状态。远程 Web 持有一个所有消费者共享的浏览器本地可观察值，刷新后重置，不发送 Host 写入。
+设置域内的 `ctx.settingsScope.developerTools` 偏好对象绑定命名空间 scope，提供一个已接受的 `ui-developer-tools.enabled` 偏好，默认开启。Web 和桌面端的通用设置提供同一个开关。现有设置传输负责验证、有序写入、持久化和恢复；回环 Web 和桌面端跟随 Host 接受的状态。远程 Web 持有一个所有消费者共享的浏览器本地可观察值，刷新后重置，不发送 Host 写入。
 
 关闭时仅展示 Chat，在没有可见 View 声明工具调用检查能力时隐藏 Inspect 操作，移除会话 View 标签栏，隐藏新会话预设入口，并省略改动文件卡片及其摘要读取。在其他 View 中关闭开关会激活 Chat。预设组合、保存的默认值、Session 事件和显式交付卡片保持不变。此偏好是展示策略，不是 Host 授权。
 
@@ -26,4 +26,4 @@ Status: implemented
 
 基础 HTML 放弃 JavaScript、外部与关联资源和链接导航；行内样式与 data 图片仍可用。高级模式保留正常浏览器网络能力，不增加父源、弹窗、表单或顶层导航权限。此设置不约束第三方预览实现，也不撤销 Host 文件系统读取权限。
 
-组件和设置测试覆盖默认值、schema 拒绝、已接受状态更新、入口折叠、改动文件展示和 iframe 清理。基于已记录 Session 的[文档预览](../../../../apps/web/tests/document-preview.e2e.ts)与[改动文件](../../../../apps/web/tests/changed-files-turn.e2e.ts)场景验证真实设置控件及共用渲染器。浏览器脚手架默认开启开发者工具，仅设置外壳、文档预览、改动文件和开发者工具场景显式保留产品默认值；这些场景共同覆盖诊断控件隐藏、静态预览和切回 Chat。Host 拒绝写入后会恢复已接受状态，并显示本地化重试提示。原生 Electron 执行尚未验证。
+组件和设置测试覆盖默认值、schema 拒绝、已接受状态更新、入口折叠、改动文件展示和 iframe 清理。基于已记录 Session 的[文档预览](../../../../apps/web/tests/document-preview.e2e.ts)与[改动文件](../../../../apps/web/tests/changed-files-turn.e2e.ts)场景验证真实设置控件及共用渲染器。浏览器脚手架保留已保存的偏好或产品默认值，场景可显式设置偏好。设置外壳、文档预览、改动文件和开发者工具场景显式关闭开发者工具；这些场景共同覆盖诊断控件隐藏、静态预览和切回 Chat。Host 拒绝写入后会恢复已接受状态，并显示本地化重试提示。原生 Electron 执行尚未验证。
