@@ -917,6 +917,8 @@ def smoke_sdk_office(executable: Path) -> None:
             api_key="sk-keyless-smoke",
             base_url="http://127.0.0.1:9",
             env={"DSH_PERMISSION_MODE": "danger-full-access", "DSH_TELEMETRY_DISABLED": "1"},
+            # The startup plugin awaits a converter with a 120-second deadline before JSON-RPC is ready.
+            initialize_timeout_seconds=180,
             request_timeout_seconds=180,
         ):
             pass
