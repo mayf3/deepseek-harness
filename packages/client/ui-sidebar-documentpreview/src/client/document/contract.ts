@@ -53,6 +53,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
         }
       }
     }
+    /** Renderer-specific controls before the document toolbar's reload button. */
+    'sidebar.right.tab.document.action': {
+      kind: 'keyed'
+      scope: 'session'
+      owner: { readonly content: DocumentContent }
+      hookContext: UseSidebarRightTabInfo
+      inject: { hooks: { tabInfo: SlotHookFactory<'sidebar.right.tab.document', UseSidebarRightTabInfo> } }
+    }
   }
 }
 

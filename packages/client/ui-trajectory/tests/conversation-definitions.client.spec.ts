@@ -172,6 +172,10 @@ function systemMessage(text: string) {
 }
 
 describe('Trajectory conversation Definitions', () => {
+  it('addresses tool-call inspection with the persisted call identity', () => {
+    expect(trajectoryViewDefinition.toolCallFocus?.('call-1')).toBe('call-1')
+  })
+
   it('assembles streaming usage, preserves retry facts, and materializes interruption', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
