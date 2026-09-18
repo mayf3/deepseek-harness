@@ -10,7 +10,7 @@ kind: "package-reference"
 ## 概述
 
 在右侧 Sidebar 预览可读文件，无需另开 tab 即可切换已注册的渲染器。Markdown 和代码接收累计文本页；PDF、HTML 和常见图片接收完整字节；未知文件扩展名使用纯文本。Office 文档在本地转换为 PDF。tab 负责加载、文件状态、渲染器选择、换行和重新载入，文档正文通过同一元数据注册表与子 slot 注册。另有两个子 slot 让别的插件从头部和从无法渲染文件的空态把当前文件交给 Host 桌面。Sidebar tab 的 kind 为 `text`。
-
+在右侧 Sidebar 预览文件，并切换已注册的渲染器。Markdown 和代码支持分页文本；PDF、HTML 和常见图片接收完整字节；未知扩展名使用纯文本。Office 文档在本地转换为 PDF。tab 提供文件状态、渲染器选择、换行和重新载入。插件可在头部和不支持预览的空态中添加本地打开控件。
 ## 目录
 
 - [注册了什么](#what-it-registers)

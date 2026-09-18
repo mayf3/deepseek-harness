@@ -10,7 +10,7 @@ English | [中文](README.zh.md)
 ## Summary
 
 Preview readable files in the right Sidebar and choose among registered renderers without opening another tab. Markdown and code receive accumulated text pages; PDF, HTML, and common images receive complete bytes; unknown file extensions use plain text. Office documents convert locally to PDF. The tab owns loading, file status, renderer selection, wrap, and reload, while document bodies register through the same metadata registry and child slot. Two further child slots let another plugin hand the previewed file to the Host desktop from the header and from the empty state of a file the preview cannot render. The Sidebar tab kind is `text`.
-
+Preview files in the right Sidebar and choose among registered renderers. Markdown and code support paged text; PDF, HTML, and common images receive complete bytes; unknown extensions use plain text. Office documents convert locally to PDF. The tab provides file status, renderer selection, wrap, and reload. Plugins can add local opening controls to the header and unsupported-preview empty state.
 ## Table of Contents
 
 - [What it registers](#what-it-registers)

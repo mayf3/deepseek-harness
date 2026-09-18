@@ -42,7 +42,7 @@
       "path": "../ui-session"
     },
     {
-      "path": "../ui-sidebar-documentpreview"
+      "path": "../ui-sidebar-documentpreview/tsconfig.client.json"
     },
     {
       "path": "../ui-slots"
