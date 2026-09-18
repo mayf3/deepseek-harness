@@ -14,7 +14,7 @@ Status: implemented
 
 在同一收起条件下框架发布 `--dsh-frame-leading-clearance: 160px`——红绿灯加座内两个控件占据的行内带宽，自框架左边缘起量。窗口全屏隐藏红绿灯（桌面 preload 把状态镜像到 `html[data-fullscreen]`）：座移入其空出的带宽（`left: 12px`），避让量降到 `84px`。会话标题行是唯一消费者：它 pad `max(0px, clearance - 20px)`（其头部已 pad 20px）。两种侧栏状态下都始于窗口顶带之下的入口页（插件管理器页头）改用 `--dsh-frame-top-clearance`（48px，darwin 框架上无条件发布）做顶部内边距，纵向避开顶带而非行内缩进。
 
-ui-sidebar 把 `HeaderLeadingControls` 改注册到 `shell.leading` 而非会话座，复用 shell 的 inject face 与 locale；因挂载条件归框架所有，组件无条件渲染，其平台判断与 CSS 收起门控被删除。会话 slot `conversation.session.header.leading` 按 pre-stable API 规则整体移除——声明、owner props 接口、children 条目、头部渲染座与 CSS（更新所有消费者，不留兼容垫层），同时解除 ui-sidebar 对 ui-conversation 的依赖。
+ui-sidebar 把 `HeaderLeadingControls` 改注册到 `shell.leading` 而非会话座，复用 shell 的 inject face 与 locale；因挂载条件归框架所有，组件无条件渲染，其平台判断与 CSS 收起门控被删除，同时解除 ui-sidebar 对 ui-conversation 的依赖。原 `conversation.session.header.leading` slot 按 pre-stable API 规则不复存在（更新所有消费者，不留兼容垫层）；会话头现在自带无会话可用的 `conversation.header.leading` 座（root 作用域、无 Session 也渲染）作为公开扩展点，因窗口 chrome 控件已住进 `shell.leading`，出厂组合中它保持空置。
 
 ## Alternatives considered
 
@@ -29,7 +29,7 @@ ui-sidebar 把 `HeaderLeadingControls` 改注册到 `shell.leading` 而非会话
 ## Consequences
 
 - 侧边栏隐藏时，现有与未来的每个主面板都免费获得重新打开与 New Session 控件；会话接入 `--dsh-frame-leading-clearance`，入口页改用无条件发布的 `--dsh-frame-top-clearance`。
-- `conversation.session.header.leading` 从客户端目录中消失；`shell.leading` 取而代之，成为任何包都可占据的公开 root 作用域座。
+- `conversation.session.header.leading` 从客户端目录中消失；`shell.leading` 作为公开 root 作用域座承载窗口 chrome，会话头无会话可用的 `conversation.header.leading` 则是另一个公开座，出厂组合中无占用者。
 - ui-sidebar 不再依赖 ui-conversation（inject 列表、devDependency 与 tsconfig 引用均已移除）。
 - 挂载条件显式点名 darwin：Windows 的 `data-windows-titlebar` 收起同样得到零宽列，但保留自己的固定 caption 控件，框架座会与之重复。未来某平台若隐藏整列且不留自己的 chrome，通过放宽该条件接入。
 

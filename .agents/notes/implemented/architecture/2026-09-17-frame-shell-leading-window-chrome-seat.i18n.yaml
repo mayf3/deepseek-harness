@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-17-frame-shell-leading-window-chrome-seat.md
-2026-09-17-frame-shell-leading-window-chrome-seat.md: d0d581b29ddafaa78a03f51bca9c0d5f9ac0bd60
-2026-09-17-frame-shell-leading-window-chrome-seat.zh.md: c670387363679d4053beb4e8085a2ec4f89134f1
+2026-09-17-frame-shell-leading-window-chrome-seat.md: cc3ef576900e38dc26c46438fd5d490ac4361be0
+2026-09-17-frame-shell-leading-window-chrome-seat.zh.md: c652f313d4f4863decc14e556a1674487d1d3fea

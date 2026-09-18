@@ -14,7 +14,7 @@ The window chrome belongs to the frame, not to one panel. ui-layout declares a f
 
 Under the same collapsed condition the frame publishes `--dsh-frame-leading-clearance: 160px` — the inline band the traffic lights plus the seat's two controls occupy, measured from the frame's left edge. Window fullscreen hides the traffic lights (the desktop preload mirrors the state onto `html[data-fullscreen]`): the seat moves to `left: 12px` into their vacated band and the clearance drops to `84px`. The conversation title row is the one consumer: it pads `max(0px, clearance - 20px)` (its header already pads 20px). Entry pages that start below the window strip in both sidebar states (the plugin manager's page head) instead pad their top by `--dsh-frame-top-clearance` (48px, published on the darwin frame unconditionally), which clears the strip vertically rather than indenting inline.
 
-ui-sidebar registers `HeaderLeadingControls` into `shell.leading` instead of the conversation seat, reusing the shell's inject face and locale; the component renders unconditionally because the frame owns the mount condition, and its platform check and CSS collapse-gating are deleted. The conversation slot `conversation.session.header.leading` is removed outright — declaration, owner-props interface, children entry, header render seat, and CSS — per the pre-stable API rule (every consumer updated, no compatibility shim), which also drops ui-sidebar's dependency on ui-conversation.
+ui-sidebar registers `HeaderLeadingControls` into `shell.leading` instead of the conversation seat, reusing the shell's inject face and locale; the component renders unconditionally because the frame owns the mount condition, and its platform check and CSS collapse-gating are deleted. This also drops ui-sidebar's dependency on ui-conversation. The original `conversation.session.header.leading` slot is gone per the pre-stable API rule (every consumer updated, no compatibility shim); the conversation header now exposes its own sessionless `conversation.header.leading` seat (root-scoped, rendered without a Session) as a public extension point, empty in the shipped composition because the window-chrome controls live in `shell.leading`.
 
 ## Alternatives considered
 
@@ -29,7 +29,7 @@ ui-sidebar registers `HeaderLeadingControls` into `shell.leading` instead of the
 ## Consequences
 
 - Every current and future main panel keeps the reopen and New Session controls while the sidebar is hidden, at zero per-panel cost; the conversation opts into `--dsh-frame-leading-clearance`, and entry pages take the unconditional `--dsh-frame-top-clearance` instead.
-- `conversation.session.header.leading` no longer exists in the client catalog; `shell.leading` replaces it as a public root-scoped seat any package may occupy.
+- `conversation.session.header.leading` no longer exists in the client catalog; `shell.leading` carries the window chrome as a public root-scoped seat, while the conversation header's sessionless `conversation.header.leading` remains a separate public seat with no shipped occupant.
 - ui-sidebar no longer depends on ui-conversation (inject list, devDependency, and tsconfig reference removed).
 - The mount condition names darwin explicitly: Windows' `data-windows-titlebar` collapse also yields a zero-width column but keeps its own fixed caption controls, which a frame seat would duplicate. A platform that later hides its column without leaving its own chrome opts in by widening the condition.
 
