@@ -31,6 +31,7 @@ import type { EnterBehaviorRowInjected } from './settings/EnterBehaviorRow.tsx'
 import { ConversationRoot } from './skeleton/ConversationRoot.tsx'
 import { ConversationContent } from './skeleton/ConversationContent.tsx'
 import { ConversationPanel } from './skeleton/ConversationPanel.tsx'
+import { ConversationHeader } from './skeleton/ConversationHeader.tsx'
 import { ConversationSession, ConversationSessionHeader } from './skeleton/ConversationSession.tsx'
 import { InputBar } from './skeleton/InputBar.tsx'
 import { todoDockEntry } from './skeleton/TodoPanel.tsx'
@@ -241,7 +242,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const registerConversationRoot = () => slots.register({
     name: 'main.conversation',
     children: {
-      'conversation.session.header': { kind: 'single', scope: 'session' },
+      'conversation.header': { kind: 'single', scope: 'session-maybe' },
     },
   }, ConversationRoot)
 
@@ -328,12 +329,19 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     },
   }, ConversationSession)
 
-  const registerConversationHeader = () => slots.register({
+  const registerHeader = () => slots.register({
+    name: 'conversation.header',
+    children: {
+      'conversation.header.leading': { kind: 'single', scope: 'root' },
+      'conversation.session.header': { kind: 'single', scope: 'session' },
+    },
+  }, ConversationHeader)
+
+  const registerSessionHeader = () => slots.register({
     name: 'conversation.session.header',
     locale: NS,
     children: {
       'conversation.session.header.lineage': { kind: 'single', scope: 'session' },
-      'conversation.session.header.leading': { kind: 'single', scope: 'session' },
       'conversation.session.header.actions': { kind: 'list', scope: 'session' },
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'conversation.session.header.corner': { kind: 'single', scope: 'session' },
@@ -444,7 +452,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     yield registerConversationRoot()
     yield registerConversationContent()
     yield registerConversationSession()
-    yield registerConversationHeader()
+    yield registerHeader()
+    yield registerSessionHeader()
     yield registerComposerBar()
   })
 

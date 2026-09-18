@@ -76,6 +76,8 @@ describe('target-neutral Conversation apply wiring', () => {
       .toMatchObject({ views: { scope: 'session' } })
     expect(b.runtime.slots.entries('conversation.session')).toHaveLength(1)
     expect(b.runtime.slots.entries('conversation.session.header')).toHaveLength(1)
+    expect(b.runtime.slots.spec('conversation.header')).toEqual({ kind: 'single', scope: 'session-maybe' })
+    expect(b.runtime.slots.spec('conversation.header.leading')).toEqual({ kind: 'single', scope: 'root' })
     expect(b.runtime.slots.entries('conversation.composer.bar')).toHaveLength(1)
     await b.runtime.dispose()
   })
