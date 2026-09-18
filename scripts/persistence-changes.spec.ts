@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, posix, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { canonicalizeSchema, schemaDigest } from './persistence-schema-model.ts'
 import type { PersistenceRoot, PersistenceSchemaInventory, SchemaNode, SchemaProperty, SourceCompatibility } from './persistence-schema-model.ts'
@@ -179,7 +179,7 @@ function contents(root: string): Record<string, string> {
   const files: Record<string, string> = {}
   const visit = (directory: string): void => {
     for (const entry of readdirSync(join(root, directory), { withFileTypes: true })) {
-      const path = join(directory, entry.name)
+      const path = posix.join(directory, entry.name)
       if (entry.isDirectory()) visit(path)
       else files[path] = readFileSync(join(root, path), 'utf8')
     }
