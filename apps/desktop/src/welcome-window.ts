@@ -76,17 +76,17 @@ export async function openWelcomeWindow(locale: DesktopLocale, operations: Welco
     if (typeof id !== 'string') throw new Error('desktop welcome: invalid attempt')
     return operations.cancelSignIn(id as SignInAttemptId)
   })
-  ipcMain.handle(WELCOME_IPC.reopen, async (event, id: unknown) => {
+  ipcMain.handle(WELCOME_IPC.copyLink, async (event, id: unknown) => {
     assertSender(event)
     if (typeof id !== 'string') throw new Error('desktop welcome: invalid attempt')
-    return operations.reopenSignIn(id as SignInAttemptId)
+    return operations.copySignInLink(id as SignInAttemptId)
   })
   window.once('closed', () => {
     ipcMain.removeHandler(WELCOME_IPC.saveApiKey)
     ipcMain.removeHandler(WELCOME_IPC.skip)
     ipcMain.removeHandler(WELCOME_IPC.start)
     ipcMain.removeHandler(WELCOME_IPC.cancel)
-    ipcMain.removeHandler(WELCOME_IPC.reopen)
+    ipcMain.removeHandler(WELCOME_IPC.copyLink)
   })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event) => { event.preventDefault() })

@@ -2,6 +2,7 @@ vi.mock('../src/web-document.ts', () => ({ authenticateWebHost: async () => 'tes
 /** Welcome startup uses the Host before transitioning to the workspace. */
 
 import { afterEach, expect, it, vi } from 'vitest'
+import type { AccountView } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { WelcomeOperations } from '../src/welcome-api.ts'
 import { DESKTOP_IPC } from '../src/ipc.ts'
 
@@ -9,6 +10,10 @@ const state = vi.hoisted(() => ({
   appListeners: new Map<string, (...args: unknown[]) => void>(),
   beforeRead: vi.fn(async () => {}),
   beforeWelcome: vi.fn(async () => {}),
+  copy: vi.fn(),
+  accountState: vi.fn<() => Promise<AccountView>>().mockResolvedValue({
+    status: 'signed-out', attempt: null, links: { usageUrl: '', topUpUrl: '' },
+  }),
   quit: vi.fn(),
   startHost: vi.fn().mockResolvedValue({ url: 'http://127.0.0.1:3080/?token=test', injections: [] }),
   stopHost: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -26,6 +31,7 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.mock('electron', () => ({
+  clipboard: { writeText: state.copy },
   app: {
     isPackaged: false,
     name: 'Harness',
@@ -90,7 +96,7 @@ vi.mock('../src/welcome-backend.ts', () => ({
       return { loggedIn: false, hasApiKey: false, writable: true, localePreference: state.preference }
     },
     save: async () => ({ ok: true }),
-    account: { watch: () => () => {}, state: async () => ({ status: 'signed-out', attempt: null }) },
+    account: { watch: () => () => {}, state: state.accountState },
   }),
 }))
 vi.mock('node:fs/promises', async importOriginal => ({
@@ -156,6 +162,16 @@ it('starts the Host for welcome onboarding and opens the workspace on skip witho
   expect(state.showWorkspace).not.toHaveBeenCalled()
   state.loadWorkspace.mockClear()
   expect(state.welcomeLocale).toMatchObject({ id: 'zh-CN' })
+  const attemptId = 'login' as NonNullable<AccountView['attempt']>['id']
+  const account: AccountView = { status: 'signed-out', links: { usageUrl: '', topUpUrl: '' },
+    attempt: { id: attemptId, phase: 'waiting-browser', authorizeUrl: 'https://example.test/login' } }
+  state.accountState.mockResolvedValue(account)
+  await state.operations!.copySignInLink(attemptId)
+  expect(state.copy).toHaveBeenCalledExactlyOnceWith('https://example.test/login')
+  await expect(state.operations!.copySignInLink('stale' as typeof attemptId)).rejects.toThrow('login link is unavailable')
+  state.accountState.mockResolvedValue({ ...account, attempt: { id: attemptId, phase: 'expired' } })
+  await expect(state.operations!.copySignInLink(attemptId)).rejects.toThrow('login link is unavailable')
+  expect(state.copy).toHaveBeenCalledOnce()
   await state.operations!.skip()
   expect(state.loadWorkspace).not.toHaveBeenCalled()
   expect(state.showWorkspace).toHaveBeenCalledOnce()
@@ -168,7 +184,8 @@ it('starts the Host for welcome onboarding and opens the workspace on skip witho
   expect(state.showWorkspace).toHaveBeenCalledTimes(3)
   expect(state.quit).not.toHaveBeenCalled()
   expect(state.stopHost).not.toHaveBeenCalled()
-  const contents = state.contents as { mainFrame: { url: string } }
+  const contents = state.contents as { mainFrame: { url: string }; send: ReturnType<typeof vi.fn> }
+  expect(contents.send).toHaveBeenCalledWith(DESKTOP_IPC.enterWorkspace)
   const event = { sender: contents, senderFrame: contents.mainFrame }
   const bootstrap = state.handlers.get(DESKTOP_IPC.localeBootstrap)!
   expect(await bootstrap(event)).toEqual({ languages: ['en-US'], preference: 'zh' })

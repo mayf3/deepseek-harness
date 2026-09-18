@@ -5,6 +5,7 @@ import type { IpcMainInvokeEvent } from 'electron'
 /** IPC channel names kept private to the desktop application bundle. */
 export const DESKTOP_IPC = {
   boot: 'dsh-desktop:boot',
+  enterWorkspace: 'dsh-desktop:enter-workspace',
   bootFailed: 'dsh-desktop:boot-failed',
   directoryPick: 'dsh-desktop:directory-pick',
   localeBootstrap: 'dsh-desktop:locale-bootstrap',

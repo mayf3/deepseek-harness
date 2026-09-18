@@ -51,7 +51,7 @@ function openApiKey() {
   form.hidden = false
   document.querySelector('#key-actions').hidden = false
   welcome.setAttribute('aria-labelledby', 'key-title')
-  welcome.classList.remove('expired-page')
+  welcome.classList.remove('expired-page', 'waiting-page')
   welcome.classList.add('key-page')
   input.focus()
 }
@@ -125,10 +125,12 @@ let authPageVisible = false
 const authPage = document.querySelector('#auth-page')
 const authActions = document.querySelector('#auth-actions')
 const authStatus = document.querySelector('#auth-status')
-const authReopen = document.querySelector('#auth-reopen')
+const authCopy = document.querySelector('#auth-copy')
+const authLoading = document.querySelector('#auth-loading')
 const authRetry = document.querySelector('#auth-retry')
 const authCancel = document.querySelector('#auth-cancel')
-authReopen.textContent = messages.welcomeAuthReopen
+authCopy.textContent = messages.welcomeAuthCopyLink
+authLoading.setAttribute('aria-label', messages.welcomeAuthExchanging)
 authRetry.textContent = messages.welcomeAuthRetry
 document.querySelector('#auth-api-key').textContent = messages.welcomeApiKey
 authCancel.textContent = messages.welcomeAuthCancel
@@ -139,6 +141,7 @@ function showAccount(state) {
   if (attempt === null && !authPageVisible) return
   authAttempt = attempt
   if (attempt?.phase === 'cancelled') {
+    welcome.classList.remove('waiting-page', 'expired-page')
     welcome.setAttribute('aria-labelledby', 'welcome-heading')
     authPageVisible = false
     authPage.hidden = true
@@ -159,14 +162,19 @@ function showAccount(state) {
     : phase === 'waiting-browser' ? messages.welcomeAuthWaiting
       : phase === 'expired' ? messages.welcomeAuthExpired
         : phase === 'failed' ? messages.welcomeAuthFailed : messages.welcomeAuthExchanging
-  document.querySelector('#auth-description').hidden = phase !== 'expired'
-  document.querySelector('#auth-description').textContent = messages.welcomeAuthExpiredDescription
+  const waiting = phase === 'waiting-browser'
+  document.querySelector('#auth-description').hidden = phase !== 'expired' && !waiting
+  document.querySelector('#auth-description').textContent = waiting ? messages.welcomeAuthWaitingDescription : messages.welcomeAuthExpiredDescription
+  authCopy.hidden = !waiting
+  authCopy.disabled = !waiting
+  authCopy.textContent = messages.welcomeAuthCopyLink
+  authPage.classList.toggle('auth-waiting', waiting)
+  welcome.classList.toggle('waiting-page', waiting)
   authPage.classList.toggle('auth-expired', phase === 'expired')
   welcome.classList.toggle('expired-page', phase === 'expired')
   document.querySelector('#auth-api-key').hidden = !failed
   authCancel.hidden = failed
-  authReopen.hidden = failed
-  authReopen.disabled = phase !== 'waiting-browser'
+  authLoading.hidden = failed
   authRetry.hidden = !failed
   authCancel.disabled = phase === 'committing' || phase === 'succeeded' || (phase === 'initializing' && !attempt?.id)
 }
@@ -186,10 +194,18 @@ authCancel.addEventListener('click', async () => {
     else showAccount({ attempt: { phase: 'cancelled' } })
   } catch { authCancel.disabled = false }
 })
-authReopen.addEventListener('click', async () => {
-  if (!authAttempt?.id) return
-  try { await api.reopenSignIn(authAttempt.id) }
-  catch { authStatus.textContent = messages.welcomeAuthFailed }
+authCopy.addEventListener('click', async () => {
+  const attempt = authAttempt
+  if (attempt?.phase !== 'waiting-browser') return
+  authCopy.disabled = true
+  try {
+    await api.copySignInLink(attempt.id)
+    if (authAttempt === attempt) authCopy.textContent = messages.welcomeAuthCopied
+  } catch {
+    if (authAttempt === attempt) authCopy.textContent = messages.welcomeAuthCopyFailed
+  } finally {
+    if (authAttempt === attempt) authCopy.disabled = false
+  }
 })
 const stopAccount = api.onAccountState(showAccount)
 window.addEventListener('pagehide', stopAccount, { once: true })

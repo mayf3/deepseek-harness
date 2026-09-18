@@ -1,3 +1,4 @@
+import { JSDOM } from 'jsdom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { syncWindowsAppearance } from '../src/preload-windows.ts'
 import { DESKTOP_IPC, type DshDesktopProductApi } from '../src/ipc.ts'
@@ -25,7 +26,8 @@ it('limits product documents to update status and a native confirmation action',
   expect(api.updates).not.toHaveProperty('install')
   const listener = vi.fn()
   const dispose = api.updates.subscribe(listener)
-  const handler = electron.ipcRenderer.on.mock.calls[0]?.[1] as (event: unknown, state: unknown) => void
+  const handler = electron.ipcRenderer.on.mock.calls.find(([channel]) => channel === DESKTOP_IPC.updatesPresentation)?.[1] as
+    (event: unknown, state: unknown) => void
   handler({}, { visible: false })
   expect(listener).toHaveBeenCalledWith({ visible: false })
   dispose()
@@ -76,3 +78,23 @@ it.each(['dsh-app://app/', 'dsh-app://shell/plugin-manager.html', 'https://examp
     expect(syncWindowsAppearance).toHaveBeenCalledTimes(url === 'dsh-app://app/' ? 1 : 0)
   },
 )
+
+it('moves welcome-entry focus to the document without changing keyboard tab order', async () => {
+  const dom = new JSDOM('<body><button>Sidebar</button><input></body>')
+  try {
+    vi.stubGlobal('document', dom.window.document)
+    vi.stubGlobal('location', new URL('dsh-app://app/'))
+    await import('../src/preload-app.ts')
+    const enter = electron.ipcRenderer.on.mock.calls.find(([channel]) => channel === DESKTOP_IPC.enterWorkspace)![1] as () => void
+    const button = dom.window.document.querySelector('button')!
+    button.focus()
+    enter()
+    expect(dom.window.document.activeElement).toBe(dom.window.document.body)
+    expect(dom.window.document.body.hasAttribute('tabindex')).toBe(false)
+    expect(button.tabIndex).toBe(0)
+    dom.window.document.body.setAttribute('tabindex', '-1')
+    button.focus()
+    enter()
+    expect(dom.window.document.body.getAttribute('tabindex')).toBe('-1')
+  } finally { dom.window.close() }
+})

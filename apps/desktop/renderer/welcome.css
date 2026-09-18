@@ -298,3 +298,35 @@ body {
 .auth-expired p { line-height: 16px; letter-spacing: normal; }
 
 .welcome.expired-page { padding-bottom: 60px; }
+
+.auth-waiting { gap: 12px; padding-top: 28px; }
+.auth-waiting h1 { font-size: 20px; line-height: 24px; font-weight: 400; letter-spacing: normal; }
+.auth-waiting p { line-height: 16px; letter-spacing: normal; }
+.welcome.waiting-page { padding-bottom: 60px; }
+.auth-waiting .copy-link {
+  margin-top: 20px;
+  padding: 0;
+  width: 272px;
+  min-height: 17px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 17px;
+  cursor: pointer;
+  app-region: no-drag;
+  text-decoration: underline;
+}
+#auth-loading:disabled { opacity: 1; }
+.auth-spinner {
+  display: block;
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  mask: url('assets/welcome-loading.svg') center / contain no-repeat;
+  animation: welcome-spin 1s linear infinite;
+}
+@keyframes welcome-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .auth-spinner { animation: none; } }

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   Menu,
@@ -789,7 +790,10 @@ async function main(): Promise<void> {
     if (quitting || recovery.active || window.isDestroyed()) return
     window.show()
     enteredWorkspace = true
-    welcomeWindow?.close()
+    if (welcomeWindow !== undefined) {
+      welcomeWindow.close()
+      window.webContents.send(DESKTOP_IPC.enterWorkspace)
+    }
     welcomeWindow = undefined
     if (development && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
       window.webContents.openDevTools({ mode: 'detach' })
@@ -808,11 +812,12 @@ async function main(): Promise<void> {
           if (welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
           return welcomeBackend.account.cancel(id)
         },
-        reopenSignIn: async (id) => {
+        copySignInLink: async (id) => {
           const state = await welcomeBackend?.account.state()
-          if (state?.attempt?.id === id && state.attempt.phase === 'waiting-browser' && state.attempt.authorizeUrl !== undefined) {
-            await shell.openExternal(state.attempt.authorizeUrl)
+          if (state?.attempt?.id !== id || state.attempt.phase !== 'waiting-browser' || state.attempt.authorizeUrl === undefined) {
+            throw new Error('desktop welcome: login link is unavailable')
           }
+          await clipboard.writeText(state.attempt.authorizeUrl)
         },
         saveApiKey: async (apiKey) => {
           if (backend.host === undefined || welcomeBackend === undefined) return { ok: false }

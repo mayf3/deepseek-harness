@@ -12,7 +12,7 @@ const api: WelcomeApi = {
   ...resolveDesktopLocale(locale),
   startSignIn: () => ipcRenderer.invoke(WELCOME_IPC.start) as Promise<AccountView>,
   cancelSignIn: (id: SignInAttemptId) => ipcRenderer.invoke(WELCOME_IPC.cancel, id) as Promise<AccountView>,
-  reopenSignIn: (id: SignInAttemptId) => ipcRenderer.invoke(WELCOME_IPC.reopen, id) as Promise<void>,
+  copySignInLink: (id: SignInAttemptId) => ipcRenderer.invoke(WELCOME_IPC.copyLink, id) as Promise<void>,
   onAccountState: (listener) => {
     const receive = (_event: Electron.IpcRendererEvent, state: AccountView): void =>{  listener(state) }
     ipcRenderer.on(WELCOME_IPC.state, receive)

@@ -17,7 +17,7 @@ function mount(language = 'zh-CN') {
     onAccountState: vi.fn((_listener: (state: AccountView) => void) => () => undefined),
     startSignIn: vi.fn(async () => ({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null })),
     cancelSignIn: vi.fn(async () => ({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null })),
-    reopenSignIn: vi.fn(async () => undefined),
+    copySignInLink: vi.fn(async () => undefined),
     ...resolveDesktopLocale(language),
     saveApiKey: vi.fn<(value: string) => Promise<WelcomeSaveResult>>().mockResolvedValue({ ok: true }),
     skip: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -39,7 +39,7 @@ function mount(language = 'zh-CN') {
       ...heading === 'welcome-heading' ? [document.querySelector('#welcome-description')!.textContent] : [],
       ...heading === 'key-title' ? [document.querySelector('#key-description')!.textContent, `${input.placeholder} [password]`] : [],
       ...[...document.querySelectorAll('button')].filter(item => item.closest('[hidden]') === null)
-        .map(item => `${item.textContent}${item.disabled ? ' [disabled]' : ''}`),
+        .map(item => `${item.textContent || item.getAttribute('aria-label')}${item.disabled ? ' [disabled]' : ''}`),
       '',
     ].join('\n')
   }
@@ -166,4 +166,26 @@ it.each(['zh-CN', 'en'])('renders %s timeout with manual retry and API-key alter
   view.button('#auth-api-key').click()
   expect(view.document.querySelector('#auth-page')!.hasAttribute('hidden')).toBe(true)
   expect(view.document.querySelector('#key-form')!.hasAttribute('hidden')).toBe(false)
+})
+
+it.each(['zh-CN', 'en'])('renders %s browser fallback and copies only the active login link', async (language) => {
+  const view = mount(language)
+  const receive = view.api.onAccountState.mock.calls[0]![0]
+  const waiting: AccountView = { status: 'signed-out', links: { usageUrl: '', topUpUrl: '' },
+    attempt: { id: 'waiting' as NonNullable<AccountView['attempt']>['id'], phase: 'waiting-browser', authorizeUrl: 'https://example.test/login' } }
+  receive(waiting)
+  await expect(view.copy() + view.document.querySelector('#auth-description')!.textContent + '\n')
+    .toMatchFileSnapshot(`./expected/welcome/${language}-waiting.expected.txt`)
+  view.button('#auth-copy').click()
+  await vi.waitFor(() => { expect(view.button('#auth-copy').textContent).toBe(view.api.messages.welcomeAuthCopied) })
+  expect(view.api.copySignInLink).toHaveBeenCalledWith('waiting')
+  view.api.copySignInLink.mockRejectedValueOnce(new Error('clipboard unavailable'))
+  view.button('#auth-copy').click()
+  await vi.waitFor(() => { expect(view.button('#auth-copy').textContent).toBe(view.api.messages.welcomeAuthCopyFailed) })
+  expect(view.button('#auth-cancel').disabled).toBe(false)
+  receive({ ...waiting, attempt: { ...waiting.attempt!, phase: 'exchanging' } })
+  expect(view.button('#auth-copy').hidden).toBe(true)
+  expect(view.button('#auth-loading').hidden).toBe(false)
+  receive({ ...waiting, attempt: { ...waiting.attempt!, phase: 'cancelled' } })
+  expect(view.document.querySelector('main')!.classList.contains('waiting-page')).toBe(false)
 })
