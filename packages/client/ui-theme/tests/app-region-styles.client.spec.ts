@@ -54,8 +54,9 @@ describe('window drag-region ownership', () => {
 
   it('reports a drag rule outside the allowlist and exempts the owners', () => {
     const drag = '.evil { -webkit-app-region: drag; }'
-    expect(offenders(['/packages/client/ui-evil/src/client/Evil.module.css'], () => drag))
-      .toEqual(['/packages/client/ui-evil/src/client/Evil.module.css .evil'])
+    // Fixture path avoids the packages/ prefix: verify-package-paths checks such references against disk.
+    expect(offenders(['/elsewhere/client/ui-evil/src/client/Evil.module.css'], () => drag))
+      .toEqual(['/elsewhere/client/ui-evil/src/client/Evil.module.css .evil'])
     expect(offenders([`/packages/${DRAG_OWNERS[0]!}`], () => drag)).toEqual([])
   })
 
