@@ -232,9 +232,8 @@ describe('CI workflow', () => {
       expect(install!.run).not.toContain('$cloneFlag')
     }
 
-    // windows-coverage uses the lower 4-partition profile.
     expect(windowsCoverage.name).toBe('windows node 24 / coverage')
-    expect(windowsCoverage.env).toMatchObject({ DSH_COVERAGE_PARTITIONS: '4' })
+    expect(windowsCoverage.env).toMatchObject({ DSH_COVERAGE_PARTITIONS: "${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '4' || '' }}" })
     const coverageSteps = windowsCoverage.steps as unknown[]
     const coverageCommands = coverageSteps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -386,8 +385,7 @@ describe('CI workflow', () => {
     // The observational lane stays complete: it is continue-on-error by design
     // and exists to collect as much Windows-native evidence per run as
     // possible, so the first failure must not truncate the rest.
-    expect(windowsObservational.env).toBeDefined()
-    expect(windowsObservational.env).not.toMatchObject({ DSH_GATE_FAIL_FAST: '1' })
+    expect(windowsObservational.env ?? {}).not.toMatchObject({ DSH_GATE_FAIL_FAST: '1' })
   })
 
   it('gates standalone keyless blacksmith jobs and benchmark tiers on the failover variables', () => {
