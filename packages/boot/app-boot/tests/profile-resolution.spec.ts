@@ -206,6 +206,51 @@ describe('profile resolution generation', { concurrent: false }, () => {
     expect(existsSync(join(f.root, 'profiles', 'node_modules'))).toBe(false)
   })
 
+  it.each([
+    ['installation', 'symlink'],
+    ['installation', 'directory'],
+    ['bundle', 'symlink'],
+    ['bundle', 'directory'],
+  ] as const)('canonicalizes transitive %s import anchors (%s packages)', async (origin, layout) => {
+    const f = fixture('bridge')
+    const linked = layout === 'symlink'
+    const workspace = join(f.root, 'workspace')
+    const bridge = linked ? join(workspace, 'bridge') : f.installed
+    const middle = linked ? join(workspace, 'middle') : join(bridge, 'node_modules', 'middle')
+    pkg(bridge, 'bridge', 1, { middle: '*' })
+    pkg(middle, 'middle', 2, { leaf: '*' })
+    const logicalLeaf = join(bridge, 'node_modules', 'leaf')
+    const workspaceLeaf = join(workspace, 'node_modules', 'leaf')
+    pkg(logicalLeaf, 'leaf', 1)
+    pkg(workspaceLeaf, 'leaf', 2)
+    const installAnchor = linked ? join(f.root, 'install-link', 'package.json') : f.installAnchor
+    if (linked) {
+      rmSync(f.installed, { recursive: true })
+      symlinkSync(bridge, f.installed, 'junction')
+      symlinkSync(middle, join(bridge, 'node_modules', 'middle'), 'junction')
+      symlinkSync(dirname(f.installAnchor), dirname(installAnchor), 'junction')
+    }
+    if (origin === 'bundle') {
+      pkg(dirname(f.installAnchor), 'test-app', 0)
+      f.profile.layers.push({
+        packageName: 'bridge', packageDir: f.installed,
+        patchPath: join(f.installed, 'cordis.patch.yml'), patches: [],
+      })
+    }
+    expect(createRequire(join(bridge, 'node_modules', 'middle', 'package.json'))('leaf')).toEqual({ marker: 1 })
+    const generation = await createProfileResolutionGeneration({
+      installAnchor, profile: f.profile, home: f.root,
+    })
+    expect(generation.entries.find(entry => entry.name === 'test-app')?.declarer).toBe(f.installAnchor)
+    expect(generation.entries.find(entry => entry.name === 'middle')?.declarer)
+      .toBe(join(bridge, 'package.json'))
+    expect(generation.entries.find(entry => entry.name === 'leaf')).toMatchObject({
+      packageDir: linked ? workspaceLeaf : logicalLeaf,
+      declarer: join(middle, 'package.json'),
+      version: linked ? '2.0.0' : '1.0.0',
+    })
+  })
+
   it('keeps each earlier root complete before considering a later root', async () => {
     const f = fixture('installation-bridge')
     const installedBridge = f.installed

@@ -1,0 +1,161 @@
+/** Real CLI profile imports in source and built launches, including npm-link dependency layouts. */
+
+import { mkdir, mkdtemp, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { resolveExampleLaunch, type ExampleMode } from '@deepseek-ai/dsh-loader-smoke'
+import { execa } from 'execa'
+import { expect, it } from 'vitest'
+
+const repoRoot = fileURLToPath(new URL('../../../../../../', import.meta.url))
+const processTimeoutMs = 75_000
+const bundleName = 'profile-resolution-bundle'
+const bridgeName = 'profile-resolution-bridge'
+const leafName = 'profile-resolution-leaf'
+const marker = 'DSH_PROFILE_RESOLUTION '
+
+interface ResolutionEvidence {
+  execArgv: string[]
+  esm: { version: string; url: string }
+  cjs: { version: string; filename: string }
+  sameEsmLeaf: boolean
+  sameCjsLeaf: boolean
+  toolsInstance: boolean
+  scheduler: boolean
+  modules: string[]
+}
+
+async function writePackage(dir: string, manifest: Record<string, unknown>, files: Record<string, string>): Promise<void> {
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, 'package.json'), JSON.stringify(manifest) + '\n')
+  for (const [name, content] of Object.entries(files)) await writeFile(join(dir, name), content + '\n')
+}
+
+/**
+ * Register the same runtime-resolution assertions in the source-only and built-bin lanes.
+ * @param mode - source uses the CLI's ESM-only tsx hook; lib requires built workspace exports.
+ */
+export function testProfileResolution(mode: ExampleMode): void {
+  it.each(['installed', 'npm-link'] as const)(`resolves a %s profile dependency graph in ${mode} mode`, {
+    timeout: processTimeoutMs + 15_000, retry: 0,
+  }, async (layout) => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-profile-resolution-'))
+    const links: string[] = []
+    try {
+      const home = join(root, 'home')
+      const profileDir = join(home, 'profiles', 'headless')
+      const installedBundle = join(profileDir, 'node_modules', bundleName)
+      const bundleDir = layout === 'npm-link' ? join(root, 'work', bundleName) : installedBundle
+      const installedBridge = join(bundleDir, 'node_modules', bridgeName)
+      const bridgeDir = layout === 'npm-link' ? join(root, 'dependencies', bridgeName) : installedBridge
+      const logicalLeaf = join(bundleDir, 'node_modules', leafName)
+      const realLeaf = join(root, 'dependencies', 'node_modules', leafName)
+      const exports = { import: './index.mjs', require: './index.cjs' }
+      await writePackage(bundleDir, {
+        name: bundleName, version: '1.0.0', dependencies: { [bridgeName]: '*' },
+        dsh: { bundle: { patch: './cordis.patch.yml' } },
+      }, { 'cordis.patch.yml': '[]' })
+      await writePackage(bridgeDir, {
+        name: bridgeName, version: '1.0.0', exports, dependencies: { [leafName]: '*' },
+      }, {
+        'index.mjs': `export { leaf } from '${leafName}'`,
+        'index.cjs': `module.exports = require('${leafName}')`,
+      })
+      for (const [dir, version] of [[logicalLeaf, '1.0.0'], [realLeaf, '2.0.0']] as const) {
+        await writePackage(dir, { name: leafName, version, exports }, {
+          'index.mjs': `export const leaf = { version: '${version}', url: import.meta.url }`,
+          'index.cjs': `exports.leaf = { version: '${version}', filename: __filename }`,
+        })
+      }
+      if (layout === 'npm-link') {
+        const globalBundle = join(root, 'npm-global', 'node_modules', bundleName)
+        for (const [target, link] of [[bundleDir, globalBundle], [globalBundle, installedBundle], [bridgeDir, installedBridge]] as const) {
+          await mkdir(dirname(link), { recursive: true })
+          await symlink(target, link, 'junction')
+          links.push(link)
+        }
+      }
+
+      // The probe imports from the profile, where the bundle's transitive dependencies need fallback.
+      await writePackage(profileDir, {
+        name: 'resolution-profile', private: true, dependencies: { [bundleName]: '*' },
+        dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless', bundleName] } },
+      }, {
+        'probe.mjs': [
+          "import { createRequire } from 'node:module'",
+          "import Tools, { TOOL_RUNTIME_SCHEDULER } from '@deepseek-ai/dsh-tools'",
+          `import { leaf } from '${leafName}'`,
+          `import { leaf as bridgeLeaf } from '${bridgeName}'`,
+          'const require = createRequire(import.meta.url)',
+          "export const inject = ['tools', 'agentLoop', 'loader']",
+          'export function apply(ctx) {',
+          "  const ready = ctx.get('appReady')",
+          "  const exit = ctx.get('appExit')",
+          '  ctx.effect(() => ready.onReady(() => {',
+          `    const cjs = require('${leafName}').leaf`,
+          '    const evidence = {',
+          '      execArgv: process.execArgv, esm: leaf, cjs,',
+          '      sameEsmLeaf: leaf === bridgeLeaf,',
+          `      sameCjsLeaf: cjs === require('${bridgeName}').leaf,`,
+          '      toolsInstance: ctx.tools instanceof Tools,',
+          "      scheduler: typeof ctx.tools[TOOL_RUNTIME_SCHEDULER]?.prepare === 'function',",
+          '      modules: [...ctx.loader.internal.loadCache.keys()]',
+          '        .filter(url => /\\/packages\\/core\\/(?:tools|agent-loop)\\//.test(url)),',
+          '    }',
+          `    process.stdout.write('${marker}' + JSON.stringify(evidence) + '\\n')`,
+          '    exit(0)',
+          "  }), 'profile resolution probe')",
+          '}',
+        ].join('\n'),
+        'cordis.patch.yml': JSON.stringify([
+          { id: 'headless-startup', disabled: true },
+          { id: 'headless-runner', disabled: true },
+          { id: 'llm-deepseek', disabled: true },
+          { insert: [{ id: 'resolution-probe', name: join(profileDir, 'probe.mjs') }] },
+        ]),
+      })
+      const launch = resolveExampleLaunch({
+        srcBin: join(repoRoot, 'apps/cli/src/bin.ts'),
+        mode, sourceImport: 'tsx/esm', tsconfigPath: join(repoRoot, 'tsconfig.json'),
+        configArgs: ['--profile', 'headless'],
+        env: {
+          DSH_HOME: home, DSH_AGENTS_HOME: join(root, 'agents'), DSH_TELEMETRY_DISABLED: '1',
+          NODE_OPTIONS: undefined, TSX_TSCONFIG_PATH: undefined,
+        },
+      })
+      const result = await execa(launch.command, launch.args, {
+        cwd: repoRoot, env: launch.env, input: '', timeout: processTimeoutMs,
+        killSignal: 'SIGKILL', reject: false,
+      })
+      const diagnostic = `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+      expect(result.timedOut, diagnostic).toBe(false)
+      expect(result.signal, diagnostic).toBeUndefined()
+      expect(result.exitCode, diagnostic).toBe(0)
+      const records = result.stdout.split('\n').filter(line => line.startsWith(marker))
+      expect(records, diagnostic).toHaveLength(1)
+      const evidence = JSON.parse(records[0]!.slice(marker.length)) as ResolutionEvidence
+      const selectedLeaf = layout === 'npm-link' ? realLeaf : logicalLeaf
+      const version = layout === 'npm-link' ? '2.0.0' : '1.0.0'
+      expect(evidence.esm).toEqual({ version, url: pathToFileURL(await realpath(join(selectedLeaf, 'index.mjs'))).href })
+      expect(evidence.cjs).toEqual({ version, filename: await realpath(join(selectedLeaf, 'index.cjs')) })
+      expect(evidence.sameEsmLeaf).toBe(true)
+      expect(evidence.sameCjsLeaf).toBe(true)
+      expect(evidence.toolsInstance).toBe(true)
+      expect(evidence.scheduler).toBe(true)
+      expect(evidence.execArgv).toEqual(mode === 'src' ? launch.args.slice(0, 2) : [])
+      for (const name of ['tools', 'agent-loop']) {
+        const selected = mode === 'src' ? 'src/index.ts' : 'lib/index.js'
+        const other = mode === 'src' ? 'lib' : 'src'
+        expect(evidence.modules.filter(url => url.endsWith(`/packages/core/${name}/${selected}`))).toHaveLength(1)
+        expect(evidence.modules.filter(url => url.includes(`/packages/core/${name}/${other}/`))).toEqual([])
+      }
+    } finally {
+      try {
+        for (const link of links.reverse()) await unlink(link)
+      } finally {
+        await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+      }
+    }
+  })
+}
