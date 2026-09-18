@@ -812,6 +812,8 @@ describe('desktop main startup', () => {
     expect(host.stop).not.toHaveBeenCalled()
     request.mockImplementationOnce(async () => Response.json({ code: 0, data: { biz_code: 0, biz_data: null } }))
     await vi.advanceTimersByTimeAsync(20_000)
+    expect(modal.isDestroyed()).toBe(false)
+    await vi.advanceTimersByTimeAsync(150)
     expect(modal.isDestroyed()).toBe(true)
     expect(host.stop).not.toHaveBeenCalled()
     expect(request.mock.calls[0]![1]!.headers).toMatchObject({ 'x-client-bundle-id': 'com.deepseek.dsh', 'x-client-version': '1.0.0' })
