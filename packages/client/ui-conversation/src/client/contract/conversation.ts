@@ -276,6 +276,12 @@ export interface ConversationViewBuilder<Node extends ConversationViewNode = Con
 /** Registry contribution that creates an isolated builder when a Session first uses this target. */
 export interface ConversationViewDefinition<Node extends ConversationViewNode = ConversationViewNode, Snapshot = unknown> {
   readonly target: string
+  /**
+   * Address a tool call in this target's inspector; absent for non-inspection views.
+   * @param callId - tool-call identity from the Session.
+   * @returns the target's opaque focus identity.
+   */
+  toolCallFocus?(callId: string): string
   /** @returns a new Session-owned incremental builder. */
   create(): ConversationViewBuilder<Node, Snapshot>
   /**
