@@ -15,7 +15,7 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import LlmRuntime, { createAssistantMessage, createSystemMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createAssistantMessage, createSystemMessage, createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
@@ -53,6 +53,37 @@ async function send(agent: Agent, text: string) {
 }
 
 describe('direct Messages HTTP', () => {
+  it('continues through Messages with assistant blocks in saved user history', async () => {
+    const http = await endpoint()
+    const notice = createUserMessage({ source: { kind: 'plugin', plugin: 'saved-notice' }, content: [
+      { type: 'text', text: 'Background subagent finished.' },
+      { type: 'reasoning', text: 'child reasoning' },
+      { type: 'tool-call', id: ToolCallId('child-call'), name: 'read', arguments: '{}' },
+      { type: 'text', text: 'Its closing message: answer.' },
+    ] })
+    const empty = createUserMessage({ source: { kind: 'user' }, content: [{ type: 'reasoning', text: 'no closing text' }] })
+    const history = [notice, empty]
+    const saved = JSON.stringify(history)
+    const llm = adapter({ baseURL: http.url })
+    const first = await assemble(llm.stream(options({ messages: history })))
+    const second = await assemble(llm.stream(options({ messages: [...history, first.message, user('continue')] })))
+
+    expect(first.assembler.finish.kind).toBe('stop')
+    expect(second.assembler.finish.kind).toBe('stop')
+    expect(http.requests).toHaveLength(2)
+    const wireNotice = { role: 'user', content: [
+      { type: 'text', text: 'Background subagent finished.' },
+      { type: 'text', text: 'Its closing message: answer.' },
+    ] }
+    expect(http.requests[0]?.body.messages).toEqual([wireNotice])
+    expect(http.requests[1]?.body.messages).toEqual([
+      wireNotice,
+      { role: 'assistant', content: [{ type: 'text', text: 'Hello 世界' }] },
+      { role: 'user', content: [{ type: 'text', text: 'continue' }] },
+    ])
+    expect(JSON.stringify(history)).toBe(saved)
+  })
+
   it('continues without a diagnostic callback when replay metadata is unusable', async () => {
     const http = await endpoint()
     const message = createAssistantMessage({ content: [{ type: 'text', text: 'Remember 731.' }], source: {

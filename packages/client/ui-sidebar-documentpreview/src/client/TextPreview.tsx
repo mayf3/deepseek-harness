@@ -82,7 +82,7 @@ export interface TextPreviewInjected extends TextInjected {
 /** The body's composed props: the tab, its navigation, the shared store and face, and copy. */
 export type TextPreviewProps =
   & PropsRuntime<'sidebar.right.pane.tab'>
-  & PropsRenderSlots<'sidebar.right.tab.document'>
+  & PropsRenderSlots<'sidebar.right.tab.document' | 'sidebar.right.tab.document.action'>
   & PropsStore<TextStore>
   & InjectFace<TextPreviewInjected>
   & PropsLocale<'sidebarDocumentPreview'>
@@ -318,6 +318,7 @@ export function TextPreview({
             </button>
           </Tooltip>
         )}
+        {content !== undefined && renderSlot('sidebar.right.tab.document.action', { content }, { entryKey: selected.id, hookContext: useTabInfo })}
         <Tooltip label={t('reload')} side="bottom" delayMs={500}>
           <button
             type="button"

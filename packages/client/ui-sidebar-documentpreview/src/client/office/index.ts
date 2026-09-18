@@ -14,6 +14,7 @@ import { OfficePreviewCache, type ReadOfficeBytes, type ReadOfficeDocument } fro
 import { pdfBodyRegistration } from '../pdf/index.ts'
 import { LazyPdfBody } from '../pdf/LazyPdfBody.tsx'
 import { OfficeBody, type OfficeBodyInjected } from './OfficeBody.tsx'
+import { OfficeFontAction } from './OfficeFontAction.tsx'
 import { createOfficeStore } from './store.ts'
 import type { Config } from '../../config.ts'
 
@@ -44,6 +45,9 @@ export function apply(ctx: Context, config: Config['office']): void {
     title: () => t('title'), loading: 'renderer', wrap: false,
   }))
   const store = createOfficeStore()
+  ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document.action', () => ctx.slots.register({
+    name: 'sidebar.right.tab.document.action', key: id, locale: 'sidebarOffice', store,
+  }, OfficeFontAction)))
   const retainTab = retainDocumentTabs(ctx)
   const documentT = ctx.locale.bind('sidebarDocumentPreview')
   ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register({

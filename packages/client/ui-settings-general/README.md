@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to give the dsh web client a Settings panel, connection-recovery control, feature-contributed navigation, and sequential first-run onboarding. Users can open it from the sidebar, retry a failed connection immediately, and access a local configuration file when the Host makes one available on a loopback browser. Feature packages supply their own settings rows, sections, and onboarding steps; this package supplies their shared presentation and does not add onboarding copy or built-in General rows.
+Use this package to give the dsh web client a Settings panel, connection-recovery control, feature-contributed navigation, and sequential first-run onboarding. Users can open it from the sidebar, retry a failed connection immediately, and access a local configuration file when the Host makes one available on a loopback browser. Feature packages supply their own settings rows, sections, and onboarding steps; this package supplies their shared presentation and the Developer tools switch without adding onboarding copy.
 
 ## Table of Contents
 
@@ -31,7 +31,9 @@ In Desktop, the account-row update control shows availability, progress, verific
 
 ### The General section
 
-The General section holds rows registered into `settings.general.item` by feature packages — it has no built-in rows. Feature plugins own the row copy and behavior; the shell only provides the section and its slot. The Appearance row, for example, lives in ui-theme.
+The Developer tools switch controls the shared preference described by [ui-settings](../ui-settings/README.md#use-this-package). It is available in both Web and desktop, follows accepted changes immediately, and disables duplicate input while a write settles. A failed write displays localized retry guidance.
+
+The General section holds the built-in Developer tools row and rows registered into `settings.general.item` by feature packages. Each registrant owns its row copy and behavior. The Appearance row, for example, lives in ui-theme.
 
 ### Opening the configuration file
 
@@ -49,7 +51,7 @@ The onboarding ledger projects in ascending order and mounts exactly one step at
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The shell owns the chrome and the projections; every piece of content and copy belongs to a registrant.
+The shell owns the chrome and the projections; it contributes the Developer tools row, while feature registrants own their additional content and copy.
 
 ### Ledger projections
 
@@ -100,7 +102,7 @@ None; this package neither assembles nor sends a provider request.
 
 These limits define what the shell itself provides versus what features must supply; they are current package constraints.
 
-- **The General section has no built-in rows** — each row appears only when its owning feature plugin is mounted; the shell cannot fill the section alone.
+- **Additional General rows require their feature plugins** — the shell supplies Developer tools; feature plugins supply the remaining preferences.
 
 <a id="dev-note"></a>
 ### Dev Note
