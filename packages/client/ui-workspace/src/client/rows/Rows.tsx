@@ -12,7 +12,7 @@ import {
   HoverCard, IconAlarmClockOutlineRegular, IconArchiveOutlineRegular, IconBranchOutlineRegular,
   IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderCloseRegular, IconFolderOpenRegular,
   IconNewChatOutlineRegular, IconPinFillRegular, IconPinOutlineRegular, IconTrashOutlineRegular,
-  IconTriangleRightFillRegular, IconUnarchiveOutlineRegular, Menu, relativeTime, StateDot,
+  IconTriangleRightFillRegular, IconUnarchiveOutlineRegular, Menu, relativeTime, StateDot, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
@@ -176,25 +176,29 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
             portal
             closeOnPointerLeave
             anchor={(
-              <button
-                type="button"
-                className={css.iconButton}
-                aria-label={t('actions.workspace.aria', { name: label })}
-                onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
-              >
-                <IconEllipsisOutlineRegular />
-              </button>
+              <Tooltip label={t('actions.more')} side="bottom" delayMs={500}>
+                <button
+                  type="button"
+                  className={css.iconButton}
+                  aria-label={t('actions.workspace.aria', { name: label })}
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
+                >
+                  <IconEllipsisOutlineRegular />
+                </button>
+              </Tooltip>
             )}
           />
         )}
-        <button
-          type="button"
-          className={css.iconButton}
-          aria-label={t('actions.newSession.aria', { name: label })}
-          onClick={(e) => { e.stopPropagation(); onCreate() }}
-        >
-          <IconNewChatOutlineRegular />
-        </button>
+        <Tooltip label={t('actions.newSession')} side="bottom" delayMs={500}>
+          <button
+            type="button"
+            className={css.iconButton}
+            aria-label={t('actions.newSession.aria', { name: label })}
+            onClick={(e) => { e.stopPropagation(); onCreate() }}
+          >
+            <IconNewChatOutlineRegular />
+          </button>
+        </Tooltip>
       </span>
     </div>
   )
@@ -581,41 +585,44 @@ export function SessionNodeItem({
             portal
             closeOnPointerLeave
             anchor={(
-              <button
-                type="button"
-                className={css.iconButton}
-                aria-label={t('actions.session.aria', { name: title })}
-                onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
-              >
-                <IconEllipsisOutlineRegular />
-              </button>
+              <Tooltip label={t('actions.more')} side="bottom" delayMs={500}>
+                <button
+                  type="button"
+                  className={css.iconButton}
+                  aria-label={t('actions.session.aria', { name: title })}
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
+                >
+                  <IconEllipsisOutlineRegular />
+                </button>
+              </Tooltip>
             )}
           />
-          {/* No tooltips on the hover actions: the row's hover card sits right
-              beside these buttons and the two bubbles collide; the actions
-              speak through their aria-labels and the resulting toasts. */}
-          <button
-            type="button"
-            className={css.iconButton}
-            aria-label={row.archived ? t('menu.unarchiveSession') : t('menu.archiveSession')}
-            onClick={(e) => {
-              e.stopPropagation()
-              if (row.archived) onUnarchive(node.id)
-              else onArchive(node.id)
-            }}
-          >
-            {row.archived ? <IconUnarchiveOutlineRegular size={14} /> : <IconArchiveOutlineRegular size={14} />}
-          </button>
-          {/* Rightmost so it lands where the rest-state pin marker sits. */}
-          {!row.archived && (
+          <Tooltip label={row.archived ? t('menu.unarchiveSession') : t('menu.archiveSession')} side="bottom" delayMs={500}>
             <button
               type="button"
               className={css.iconButton}
-              aria-label={row.pinned ? t('menu.unpinSession') : t('menu.pinSession')}
-              onClick={(e) => { e.stopPropagation(); onPin(node.id, !row.pinned) }}
+              aria-label={row.archived ? t('menu.unarchiveSession') : t('menu.archiveSession')}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (row.archived) onUnarchive(node.id)
+                else onArchive(node.id)
+              }}
             >
-              {row.pinned ? <IconPinFillRegular size={14} /> : <IconPinOutlineRegular size={14} />}
+              {row.archived ? <IconUnarchiveOutlineRegular size={14} /> : <IconArchiveOutlineRegular size={14} />}
             </button>
+          </Tooltip>
+          {/* Rightmost so it lands where the rest-state pin marker sits. */}
+          {!row.archived && (
+            <Tooltip label={row.pinned ? t('menu.unpinSession') : t('menu.pinSession')} side="bottom" delayMs={500}>
+              <button
+                type="button"
+                className={css.iconButton}
+                aria-label={row.pinned ? t('menu.unpinSession') : t('menu.pinSession')}
+                onClick={(e) => { e.stopPropagation(); onPin(node.id, !row.pinned) }}
+              >
+                {row.pinned ? <IconPinFillRegular size={14} /> : <IconPinOutlineRegular size={14} />}
+              </button>
+            </Tooltip>
           )}
         </span>
       )}

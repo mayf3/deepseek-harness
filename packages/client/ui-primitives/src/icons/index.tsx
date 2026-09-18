@@ -1559,10 +1559,10 @@ export const IconArchiveCheckOutlineMedium = (props: IconProps) => (
 const IconSlidersTwoOutlineArtwork = ({ size = 16, className, strokeWidth }: WeightedIconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none"
     stroke="currentColor" strokeLinecap="round" aria-hidden="true" strokeWidth={strokeWidth}>
-    <path d="M2.3 5.4h5.85M12.05 5.4h1.65" />
-    <circle cx="9.95" cy="5.4" r="1.45" />
-    <path d="M2.3 10.6h1.65M7.85 10.6h5.85" />
-    <circle cx="5.75" cy="10.6" r="1.45" />
+    <path d="M2.3 5h5.85M12.05 5h1.65" />
+    <circle cx="9.95" cy="5" r="1.45" />
+    <path d="M2.3 11h1.65M7.85 11h5.85" />
+    <circle cx="5.75" cy="11" r="1.45" />
   </svg>
 )
 
