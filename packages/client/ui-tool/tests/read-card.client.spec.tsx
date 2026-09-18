@@ -261,6 +261,7 @@ describe('ReadRow keyed toolview', () => {
       content: [{ type: 'text', text: 'ENOENT' }],
     }))} />)
     expect(view.container.querySelector('[data-variant="read"]')?.getAttribute('data-state')).toBe('error')
+    expect(view.container.querySelector('[data-state="error"] svg')).not.toBeNull()
     expect(view.container.querySelector('[data-read]')).toBeNull()
   })
 
@@ -269,6 +270,7 @@ describe('ReadRow keyed toolview', () => {
       isError: true, error: { name: 'ToolError', code: 'interrupted' },
     }))} />)
     expect(view.container.querySelector('[data-variant="read"]')?.getAttribute('data-state')).toBe('stopped')
+    expect(view.container.querySelector('[data-state="stopped"] svg')).not.toBeNull()
   })
 
   it('registers under the read key of the keyed toolview slot', () => {

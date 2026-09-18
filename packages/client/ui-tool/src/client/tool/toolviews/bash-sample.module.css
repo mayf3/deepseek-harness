@@ -129,8 +129,7 @@
 }
 
 /* Same glyph-scaling rule as DisclosureRow's leading: the CSS edge overrides
-   the svg attributes so the 14px glyph follows the font-size delta; StateDot
-   (data-state) keeps its fixed figma size.
+   the svg attributes so the 14px business glyph follows the font-size delta.
    TODO: this bash header duplicates the DisclosureRow structure (and this is
    the fourth copy of the glyph rule, with DisclosureRow, MessageItem
    .compactionLeading, and MessageIconActions); migrating the bash row onto
@@ -198,6 +197,10 @@
 /* Error row's collapsed summary: the failure's first line in the error color. */
 .errorSummary {
   color: var(--dsw-alias-state-error-primary);
+}
+
+.stoppedSummary {
+  color: var(--dsw-alias-state-warn-label);
 }
 
 /* Hover-revealed Inspect pill under the expanded terminal's bottom-left —

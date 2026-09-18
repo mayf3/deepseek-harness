@@ -67,8 +67,9 @@ export function ConversationSessionHeader({
   const session = useSession(s => s)
   const conversation = useConversation(s => s)
   const hideChrome = session.blank && conversationPhase(session, conversation) === 'blank'
+  const showTabs = !hideChrome && tabs.length > 1
   return (
-    <header className={clsx(css.header, hideChrome && css.headerBlank)}>
+    <header className={clsx(css.header, !showTabs && css.headerCompact, hideChrome && css.headerBlank)}>
       <div className={css.titleRow}>
         <div className={css.headerLeading} data-conversation-header-leading="">
           {renderSlot('conversation.session.header.leading', {})}
@@ -138,7 +139,7 @@ export function ConversationSessionHeader({
           {renderSlot('conversation.session.header.corner', {})}
         </div>
       </div>
-      {!hideChrome && tabs.length > 1 && (
+      {showTabs && (
         <div className={css.tabs} role="tablist">
           {tabs.map(viewTab => (
             <button

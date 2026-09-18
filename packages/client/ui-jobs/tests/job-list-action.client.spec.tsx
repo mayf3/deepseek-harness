@@ -131,6 +131,8 @@ describe('JobListAction rows', () => {
     fireEvent.click(screen.getByRole('button'))
     const words = rowCells().map(cells => cells[2])
     expect(new Set(words)).toEqual(new Set(['运行中', '正在停止', '已完成', '已取消', '已失败']))
+    expect([...screen.getByRole('list').querySelectorAll(':scope > li [data-state]')].map(node => node.getAttribute('data-state')))
+      .toEqual(['ongoing', 'warning', 'done', 'warning', 'error'])
   })
 })
 

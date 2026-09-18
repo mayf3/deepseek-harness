@@ -145,6 +145,7 @@ const harness = await vi.hoisted(async () => {
     set publishUpdate(value: (state: DesktopUpdateState) => DesktopUpdateState) { publishUpdate = value },
     dialog: { showOpenDialog: vi.fn(), showErrorBox: vi.fn(), showMessageBox: vi.fn() },
     openExternal: vi.fn(),
+    protocolHandle: vi.fn<(scheme: string, handler: (request: Request) => Response | Promise<Response>) => void>(),
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
     disableAllPlugins: vi.fn(async () => {
       pluginsEnabled = false
@@ -207,7 +208,7 @@ vi.mock('electron', () => ({
   },
   Menu: { setApplicationMenu: harness.menu.setApplicationMenu, buildFromTemplate: harness.menu },
   session: { defaultSession: { webRequest: { onBeforeSendHeaders: harness.socketHeaders } } },
-  protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
+  protocol: { registerSchemesAsPrivileged: vi.fn(), handle: harness.protocolHandle },
   powerMonitor: harness.powerMonitor,
 }))
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -339,6 +340,19 @@ describe('desktop main startup', () => {
     } finally {
       vi.mocked(web.serveWebDocument).mockReset()
     }
+  })
+
+  it('serves shell dialogs and their assets without forwarding them to the Host', async () => {
+    await readyForUpdate()
+    const { serveWebDocument, forwardWebRequest } = await import('../src/web-document.ts')
+    const handler = harness.protocolHandle.mock.calls[0]![1]
+    for (const file of ['update-dialog.html', 'update-dialog.js', 'update-dialog.css', 'update-close.svg', 'mandatory-update.html']) {
+      const request = new Request(`dsh-app://shell/${file}`)
+      await handler(request)
+      expect(serveWebDocument).toHaveBeenLastCalledWith(request, join('desktop-test-app', 'renderer'))
+    }
+    expect(forwardWebRequest).not.toHaveBeenCalled()
+    expect((await handler(new Request('dsh-app://unknown/update-dialog.html'))).status).toBe(404)
   })
 
   it.each([
@@ -747,6 +761,19 @@ describe('desktop main startup', () => {
     harness.app.emit('second-instance')
     expect(window.show).not.toHaveBeenCalled()
     expect(window.focus).not.toHaveBeenCalled()
+    host.exited.resolve()
+    await harness.quitCompleted.promise
+  })
+
+  it('finishes quitting when the native window is destroyed before its closed listener clears ownership', async () => {
+    const host = await readyForUpdate()
+    const window = harness.windows[0]!
+    window.destroyed = true
+    window.hide.mockImplementation(() => { throw new TypeError('Object has been destroyed') })
+    expect(() => { harness.app.quit() }).not.toThrow()
+    expect(window.hide).not.toHaveBeenCalled()
+    await host.stopping.promise
+    window.emit('closed')
     host.exited.resolve()
     await harness.quitCompleted.promise
   })

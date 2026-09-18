@@ -403,7 +403,7 @@ describe('PluginInventorySettingsTab', () => {
       .mockResolvedValueOnce({ entries: [] })
     render(<PluginInventorySettingsTab {...props(list)} />)
 
-    expect((await screen.findByRole('alert')).textContent).toBe(en.error)
+    expect((await screen.findByRole('alert')).querySelector('[data-state="error"]')).not.toBeNull()
     expect(screen.queryByText('private transport detail')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.retry }))
     await waitFor(() => { expect(list).toHaveBeenCalledTimes(2) })
@@ -418,7 +418,7 @@ describe('PluginInventorySettingsTab', () => {
 
     const deferred = Promise.withResolvers<Snapshot>()
     const pending = render(<PluginInventorySettingsTab {...props(() => deferred.promise)} />)
-    expect(screen.getByText(en.loading)).toBeTruthy()
+    expect(screen.getByText(en.loading).querySelector('[data-state="ongoing"]')).not.toBeNull()
     pending.unmount()
     await act(async () => { deferred.resolve(SNAPSHOT) })
 
@@ -434,9 +434,10 @@ it('shows current-page sync errors and retries without re-reading Host inventory
   const sync = createSnapshotStore<ClientEntryState>({ syncing: true, failures: [] })
   const retryClient = vi.fn()
   render(<PluginInventorySettingsTab {...props(list)} useClientSync={bindSnapshotSelector(sync)} retryClient={retryClient} />)
-  expect(screen.getByRole('status').textContent).toContain('Syncing plugins on this page')
+  expect(screen.getByText(en.clientSyncing).closest('[role="status"]')?.querySelector('[data-state="ongoing"]')).not.toBeNull()
   await waitFor(() => { expect(list).toHaveBeenCalledOnce() })
   act(() => { sync.set({ syncing: false, failures: [{ id: 'client-addon', message: 'download failed' }] }) })
+  expect(screen.getByRole('alert').querySelector('[data-state="error"]')).not.toBeNull()
   expect(screen.getByText('client-addon: download failed')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Retry this page' }))
   expect(retryClient).toHaveBeenCalledOnce()

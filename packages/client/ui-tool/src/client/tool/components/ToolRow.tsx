@@ -1,7 +1,8 @@
 import { useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  CodeBlock, DiffBlock, DisclosureRow, IconInspectOutline12, ReadBlock, SearchBlock, StateDot, TerminalBlock, WebBlock,
+  CodeBlock, DiffBlock, DisclosureRow, IconInspectOutlineRegular, ReadBlock, SearchBlock,
+  TerminalBlock, WebBlock,
   diffTotals,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderSlots, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -87,18 +88,7 @@ export interface ToolRowProps {
   inspect?: (() => void) | undefined
 }
 
-function leadingFor(state: ToolRowState, icon: ReactNode): ReactNode {
-  switch (state) {
-    case 'error': return <StateDot state="error" />
-    case 'stopped': return <StateDot state="warning" />
-    default: return icon
-  }
-}
-
-/** Visually hidden run-state label: the StateDot and the CSS sweep are both
- *  aria-hidden / colour-only, so assistive technology needs this text to know a
- *  row is running, failed, or interrupted. null in the ok state (the icon and
- *  summary already describe a settled row). */
+/** Visually hidden run-state label for color-only running and settlement cues. */
 function stateStatus(state: ToolRowState, t: TranslateNS<'conversation'>): string | null {
   switch (state) {
     case 'running': return t('row.running')
@@ -161,9 +151,12 @@ export function ToolRow({
     [card, inputRaw, open, variant],
   )
   const status = stateStatus(state, t)
-  // A failure must replace, not supplement, the normal summary.
-  const failureLine = state === 'error' ? errorSummary ?? null : null
-  const summaryText = failureLine ?? terminalBody?.description ?? summary
+  const normalSummary = terminalBody?.description ?? summary
+  // A failure keeps its first result line when available and otherwise turns
+  // the ordinary summary red. An interruption turns the tool-owned summary
+  // amber while retaining the business icon and hidden state announcement.
+  const failureLine = state === 'error' ? errorSummary ?? normalSummary : null
+  const summaryText = failureLine ?? normalSummary
   // A diff row's collapsed line carries the card's +/- totals (the same
   // numbers the expanded footer prints) so the change size reads without
   // expanding; an explicit summarySuffix (none today on diff rows) wins.
@@ -172,11 +165,12 @@ export function ToolRow({
     const { added, removed } = diffTotals(diffBody.card.diffs)
     return `+${added} -${removed}`
   }, [diffBody])
-  const suffix = failureLine === null ? summarySuffix ?? diffStat : null
+  const settledWithCue = state === 'error' || state === 'stopped'
+  const suffix = settledWithCue ? null : summarySuffix ?? diffStat
   const toggleExpand = () => {
     setExpanded(v => !v)
   }
-  const openFile = filePath !== undefined && onOpenFile !== undefined && failureLine === null
+  const openFile = filePath !== undefined && onOpenFile !== undefined && !settledWithCue
     ? (event: MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation()
       if (filePathLine === undefined) onOpenFile(filePath)
@@ -201,7 +195,7 @@ export function ToolRow({
         leadingClassName={css.leading}
         titleClassName={css.title}
         chevronClassName={css.chevron}
-        icon={leadingFor(state, icon)}
+        icon={icon}
         title={title}
         open={open}
         expandable={expandable}
@@ -224,7 +218,11 @@ export function ToolRow({
               </button>
             ) : (
               <span
-                className={clsx(css.summary, failureLine !== null && css.errorSummary)}
+                className={clsx(
+                  css.summary,
+                  state === 'error' && css.errorSummary,
+                  state === 'stopped' && css.stoppedSummary,
+                )}
               >
                 {summaryText}
               </span>
@@ -325,7 +323,7 @@ export function ToolRow({
               className={css.inspectButton}
               onClick={inspect}
             >
-              <IconInspectOutline12 />
+              <IconInspectOutlineRegular />
               {t('row.inspect')}
             </button>
           )}

@@ -16,7 +16,7 @@
 import { useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconCloseOutline16, IconPanelLeftOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCloseOutlineRegular, IconPanelLeftOutlineRegular, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DockIntents, DockLabels, TabRenderer } from '../contract/adapter.ts'
 import type { FloatRect, LayoutState, PaneId, TabId } from '../contract/types.ts'
 import { FLOAT_MIN_SIZE } from '../engine/constraints.ts'
@@ -135,7 +135,7 @@ export function FloatLayer({ state, intents, labels, renderTab, renderTabTitle, 
                   onPointerDown={(event) => { event.stopPropagation() }}
                   onClick={() => { intents.unfloatPane(paneId) }}
                 >
-                  <IconPanelLeftOutline16 className={css.dockGlyph} />
+                  <IconPanelLeftOutlineRegular className={css.dockGlyph} />
                 </button>
               </Tooltip>
               {(canCloseTab?.(tab.id) ?? true) && (
@@ -148,7 +148,7 @@ export function FloatLayer({ state, intents, labels, renderTab, renderTabTitle, 
                     onPointerDown={(event) => { event.stopPropagation() }}
                     onClick={() => { intents.closeTab(tab.id) }}
                   >
-                    <IconCloseOutline16 />
+                    <IconCloseOutlineRegular />
                   </button>
                 </Tooltip>
               )}

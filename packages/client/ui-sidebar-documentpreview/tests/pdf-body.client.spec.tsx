@@ -107,6 +107,7 @@ describe('PDF body', () => {
     const view = render(<h.View />)
     expect(screen.getByRole('status').getAttribute('aria-label')).toBe('Reading…')
     expect(screen.getByRole('status').hasAttribute('data-document-loading')).toBe(true)
+    expect(screen.getByRole('status').querySelector('[data-state="ongoing"]')).not.toBeNull()
     await act(async () => { loads[0]!.deferred.resolve(documentOf()) })
     await act(async () => {})
     expect(view.container.querySelector('[role="toolbar"]')).toBeNull()

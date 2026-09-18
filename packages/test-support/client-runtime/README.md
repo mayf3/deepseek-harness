@@ -125,7 +125,7 @@ The bench copies no production logic: it mounts the production `SlotRegistry`, p
 | [`src/snapshot.ts`](src/snapshot.ts) | DOM snapshot serializer (class-hash folding, `<svg>` fingerprint) |
 | [`src/remote.ts`](src/remote.ts) | `TestRemote` double for host RPC, `RemoteError` value re-export |
 | [`src/translate.ts`](src/translate.ts) + [`src/locale-env.ts`](src/locale-env.ts) | Translation and pinned-browser-language test helpers |
-| [`src/settings-scope.ts`](src/settings-scope.ts) | `stubSettingsScope` with test-driven publications and a write spy |
+| [`src/settings-scope.ts`](src/settings-scope.ts) | `stubSettingsScope` with test-driven publications and write spies |
 | [`src/assembly/roster.ts`](src/assembly/roster.ts) | `ClientRosterRow`, `ClientRoster` (`of`/`closure`/`pick`/`without`), the `AssemblyPlan` it annotates, and `graphFromRoster` |
 | [`src/assembly/modules.ts`](src/assembly/modules.ts) | Source `/client` imports and replacements, registered through the production module facade's pending factory queue |
 | [`src/assembly/test-client.ts`](src/assembly/test-client.ts) | `TestClient`: instance-bound Connection, shared jsdom shims, `bootClient`, mount, readiness wait, `reload`/`unload`/`dispose` |
