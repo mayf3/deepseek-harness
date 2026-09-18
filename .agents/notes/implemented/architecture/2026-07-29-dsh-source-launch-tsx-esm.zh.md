@@ -20,7 +20,7 @@ tsx 负责 workspace `paths` 映射，不检查导入方是否把每个包声明
 
 导入方 URL 含有 `/node_modules/` 时，tsx 会跳过 paths 映射。因此，[profile resolution generation](2026-09-09-profile-resolution-generations.zh.md)记录声明包的真实锚点，也覆盖递归依赖。这让 workspace fallback import 一致解析到 `src/`，避免混用构建后的 `lib/` 提供方与模块本地 Symbol 不同的源码调用方。没有 workspace 映射的包仍使用普通导出解析。
 
-node-compat CI 矩阵运行 `dsh-source-launch-smoke`（`apps/cli/tests/source-launch.compat.spec.ts`）：无密钥启动断言必需 profile 的诊断、真实 headless 工具派发，以及不混用 Tools/AgentLoop `src/` 与 `lib/` 实例的 profile 依赖解析。源码与构建入口测试共享普通目录和 npm-link profile 用例；后者通过普通 Node 加载构建后的导出。模块钩子或 TypeScript 处理的后续变化由这些真实入口检查。
+node-compat CI 矩阵在不执行 build 的情况下运行 `dsh-source-launch-smoke`（`apps/cli/tests/source-launch.compat.spec.ts`）：无密钥启动断言必需 profile 的诊断，以及不混用 Tools/AgentLoop `src/` 与 `lib/` 实例的 profile 依赖解析。源码与构建入口测试共享普通目录和 npm-link profile 用例；后者通过普通 Node 加载构建后的导出。必跑的 build-backed smoke 还运行 `apps/cli/tests/profiles/headless/tests/source-tool.built.e2e.ts`：在 native addon 和生成的 typert 贡献文件就绪后，通过 tsx 检查真实 headless 工具派发，同时仍要求核心 workspace 模块从源码加载。模块钩子或 TypeScript 处理的后续变化由这些真实入口检查。
 
 ## 备选方案
 
