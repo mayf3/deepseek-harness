@@ -18,6 +18,8 @@ V4 格式恢复器与当前 JSONL 扫描器共用同一强制跨事件关系校�
 
 已安装的 Session 接纳器继续负责事件封装、消息角色与元数据、规范请求头，以及 surface 替换的引用覆盖。可选运行时不变式提供诊断；持久化准入不要求安装它们。原生 system 消息准入还会在物理恢复可能丢弃行之前，校验坐标、身份、内容块及已知 image/tool-call 字段。额外 JSON 字段和非空的未知内容标签保持不变，退役的 tool-result 包装会被拒绝。退役的 `request/header.header.system` 和必需的 `tool/code-dispatch*` 标签仍在恢复前强制拒绝；标记为可忽略的过时 PTC 记录保持不透明。仅通过物理分帧不能证明语义有效。
 
+`EpochHeader.system` 通过带有 `@persistenceReserved` 的 `system?: never` 显式保留退役键。目录保留其空值集合，使允许某个值被识别为对禁止字段的修改，而非普通可选字段添加。原生读取方和 Session 接纳继续拒绝该键；系统提示词仍由 `system/message` 事件承载。
+
 ## Alternatives considered
 
 **将 V4 投影回冻结的 V3 校验视图。** 这会将当前准入与退役表示绑定，并容易让新增字段在投影中消失。冻结代际仍可独立读取，当前恢复器解释自己的字段。

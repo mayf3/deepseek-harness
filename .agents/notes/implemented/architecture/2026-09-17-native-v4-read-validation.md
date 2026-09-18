@@ -18,6 +18,8 @@ An unfinished tail may retain an open turn, step, tool call, or compaction. A cl
 
 Installed Session adoption continues to own event envelopes, message roles and metadata, canonical request headers, and surface replacement reference coverage. Optional runtime invariants provide diagnostics; their installation is not required for durable admission. Native system-message admission also validates coordinates, identity, content blocks, and known image/tool-call fields before physical recovery can discard rows. Additional JSON fields and unknown nonempty content tags remain intact; retired tool-result wrappers are refused. Retired `request/header.header.system` and required `tool/code-dispatch*` tags remain hard refusals before recovery; obsolete ignorable PTC records remain opaque. Physical framing alone does not establish semantic validity.
 
+`EpochHeader.system` explicitly reserves the retired key as `system?: never` with `@persistenceReserved`. The catalog retains its empty value set so permitting a value is a change to a forbidden field, rather than an ordinary optional-field addition. The native reader and Session adoption continue to reject that key; system prompts remain `system/message` events.
+
 ## Alternatives considered
 
 **Project V4 back into a frozen V3 validation view.** This couples current acceptance to retired representations and invites new fields to disappear in the projection. Frozen generations remain independently readable, while the current restorer interprets its own fields.
