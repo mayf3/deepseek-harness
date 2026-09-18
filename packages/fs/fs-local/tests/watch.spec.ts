@@ -16,9 +16,9 @@ afterEach(() => { vi.restoreAllMocks() })
 async function setup(kind: 'file' | 'directory' | 'missing' = 'file') {
   const watcher = new chokidar.FSWatcher()
   onTestFinished(() => watcher.close())
-  const started = Promise.withResolvers<void>()
+  const started = Promise.withResolvers<undefined>()
   const watch = vi.mocked(chokidar.watch).mockReset().mockImplementation(() => {
-    started.resolve()
+    started.resolve(undefined)
     return watcher
   })
   const ctx = new Context()
@@ -39,9 +39,9 @@ describe('local filesystem watch', () => {
     const h = await setup(kind)
     const pending = h.fs.watch(h.target, h.changed, h.controller.signal)
     await h.started
-    expect(h.watch).toHaveBeenCalledExactlyOnceWith(dirname(h.path), { ignoreInitial: true, depth: 0, ignored: expect.any(Function) })
     const ignored = h.watch.mock.calls[0]![1]!.ignored
     if (typeof ignored !== 'function') throw new Error('Expected a target filter')
+    expect(h.watch).toHaveBeenCalledExactlyOnceWith(dirname(h.path), { ignoreInitial: true, depth: 0, ignored })
     expect(ignored(dirname(h.path))).toBe(false)
     expect(ignored(h.path)).toBe(false)
     expect(ignored(join(dirname(h.path), 'unrelated.txt'))).toBe(true)

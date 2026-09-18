@@ -98,6 +98,53 @@ describe('filesFace', () => {
     expect(snapshot()!.levels[child]).toEqual({ kind: 'ready', level: current })
   })
 
+  it.each([false, true])('keeps deep expansion intent while restoring an ancestor (reopen: %s)', async (reopen) => {
+    const h = mount()
+    const refresh = vi.spyOn(DirectoryNode.prototype, 'refresh')
+    onTestFinished(() => { refresh.mockRestore() })
+    const src = `${ROOT}/src`
+    const components = `${src}/components`
+    const nested = `${components}/nested`
+    const srcLevel: DirLevel = { entries: [{ name: 'components', type: 'directory' }], truncated: false }
+    const componentsLevel: DirLevel = { entries: [{ name: 'nested', type: 'directory' }], truncated: false }
+    const empty: DirLevel = { entries: [], truncated: false }
+    const toggle = (parent: string, path: string): void => {
+      h.face.toggle(TAB, parent, path, h.snapshot()!.expanded, h.controller.signal)
+    }
+    h.face.start(TAB, ROOT, h.controller.signal)
+    await h.watches.ready(ROOT)
+    await h.settle({ ok: true, value: LEVEL })
+    for (const [parent, path, level] of [[ROOT, src, srcLevel], [src, components, componentsLevel], [components, nested, empty]] as const) {
+      toggle(parent, path)
+      await h.watches.ready(path)
+      await h.settle({ ok: true, value: level })
+    }
+    toggle(ROOT, src)
+    await Promise.all(h.watches.opened.slice(1).map(stream => stream.released.promise))
+    toggle(ROOT, src)
+    await h.watches.ready(src, 1)
+    expect(h.outstanding()).toEqual([src])
+    expect(h.watches.opened.filter(stream => !stream.signal.aborted).map(stream => stream.path)).toEqual([ROOT, src])
+
+    toggle(components, nested)
+    expect(h.snapshot()!.expanded).not.toContain(nested)
+    if (reopen) {
+      toggle(components, nested)
+      expect(h.snapshot()!.expanded).toContain(nested)
+    }
+    await h.settle({ ok: true, value: srcLevel })
+    await h.watches.ready(components, 1)
+    const reading = refresh.mock.results.at(-1)
+    if (reading?.type !== 'return') throw new Error('Expected the restored directory to start listing')
+    await h.settle({ ok: true, value: componentsLevel })
+    await reading.value
+    expect(h.watches.opened.filter(stream => stream.path === nested)).toHaveLength(reopen ? 2 : 1)
+    if (reopen) {
+      await h.watches.ready(nested, 1)
+      await h.settle({ ok: true, value: empty })
+    }
+  })
+
   it('abort forgets the bucket and a late settlement writes nothing', async () => {
     const { face, watches, settle, snapshot, controller } = mount()
     face.start(TAB, ROOT, controller.signal)
@@ -130,6 +177,8 @@ describe('filesFace', () => {
 
   it('ignores expansion after cancellation or when its parent is not active', async () => {
     const h = mount()
+    h.face.toggle(TAB, ROOT, `${ROOT}/src`, [ROOT], h.controller.signal)
+    expect(h.snapshot()).toBeUndefined()
     h.face.start(TAB, ROOT, h.controller.signal)
     const stream = await h.watches.ready(ROOT)
     await h.settle({ ok: true, value: LEVEL })

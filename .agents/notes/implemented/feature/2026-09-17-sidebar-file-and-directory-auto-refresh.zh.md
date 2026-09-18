@@ -1,6 +1,6 @@
 # Agent Note: Sidebar 文件预览与目录树按需监听并自动刷新
 
-Status: proposed
+Status: implemented
 
 [English](2026-09-17-sidebar-file-and-directory-auto-refresh.md) | 中文
 
@@ -19,9 +19,9 @@ Sidebar 的 Document Preview 和 Files 面板都需要反映磁盘上的最新�
 
 `Resource` 当前承载文件元数据，不持有预览正文。正文由 Document Preview 或它选择的渲染器读取。因此，“元数据更新”和“重新加载正文”应保持各自的职责，不把正文缓存搬进通用 Resource，也不要求每个渲染器直接接触文件系统监听。
 
-## 方案
+## 决策
 
-在现有 FS、Workspace 文件流、Resource 和 Sidebar 组件之间补齐按需监听。文件与目录共用系统监听能力和现有 Remote 流传输，但消费方式不同。
+按需监听连接现有 FS、Workspace 文件流、Resource 和 Sidebar 组件。文件与目录共用系统监听能力和现有 Remote 流传输，但消费方式不同。
 
 - Document Preview：监听当前文件，Resource 发布新元数据，预览自动调用已有 reload。HTML 的根文件和引用的 CSS／JS 都加入同一个 `ResourceGroup`，任一成员变化都使整个 HTML 预览失效。
 - Files 面板：以目录节点树管理读取和监听。每个已打开的目录节点只加载并监听自己的直接子项；Client 打开多少层子树，就逐层加载并订阅多少层，不提前遍历未打开的后代。
@@ -30,17 +30,17 @@ Sidebar 的 Document Preview 和 Files 面板都需要反映磁盘上的最新�
 - 使用本地 Chokidar 系统监听，不定时轮询整个 Workspace，不默认递归扫描所有后代。
 - 保留两个面板的手动刷新入口和自动刷新开关功能，但暂时隐藏开关的 icon 按钮。开关状态及切换逻辑不变，新 Tab 默认开启；隐藏入口不关闭监控或自动刷新。
 
-本次只增加变化通知触发现有 reload／list，不增加刷新失败后保留旧预览内容的行为。下面按已有类型和新增对象说明职责、数据流及验收范围；未通过的验收项不视为已完成。
+变化通知触发现有 reload／list；刷新失败后不保留旧预览内容。下面说明实现对象的职责、数据流及验证。
 
-## 类与文件改动
+## 实现对象与职责
 
 ### FS 与 Host
 
-| 类或类型 | 所在文件 | 拟改动 |
+| 类或类型 | 所在文件 | 职责 |
 |---|---|---|
 | `FileSystem` | [fs/src/index.ts](../../../../packages/fs/fs/src/index.ts) | 声明抽象的单目标 `watch(target, changed, signal)` 方法；文件观察自身，目录观察直接子项；就绪后返回异步关闭函数，不支持的提供方显式抛异常，不新增 FS 错误码 |
 | `FsTarget` | [fs/src/types.ts](../../../../packages/fs/fs/src/types.ts) | 沿用现有目标类型，不单独增加 FS 监听事件体系，也不让上层解析 `targetKey` |
-| `LocalFileSystem` | [fs-local/src/index.ts](../../../../packages/fs/fs-local/src/index.ts) | 实现 Chokidar 适配；把本机事件归一化为 FS 监听通知，并在结束时等待 watcher 关闭；依赖声明在 `fs-local` |
+| `LocalFileSystem` | [fs-local/src/index.ts](../../../../packages/fs/fs-local/src/index.ts) | 文件监听其父目录并过滤到目标，目录监听自身；等待 Chokidar 就绪和关闭；依赖声明在 `fs-local` |
 | `SandboxedFileSystem` | [fs-sandbox/src/index.ts](../../../../packages/fs/fs-sandbox/src/index.ts) | 继承本地只读监听能力，不复制 watcher 实现；保留自身对写入、编辑的策略检查 |
 | `SshFileSystem` | [fs-ssh/src/index.ts](../../../../packages/ssh/fs-ssh/src/index.ts) | `watch()` 显式抛出普通异常；Host 转成 `workspace-file/watch-unsupported` 的 `RemoteError`，不跨包导入或判断 `FsError` 实体，也不把远端 `processPath()` 传给本机 Chokidar |
 | `WorkspaceFiles` | [workspace-files/src/index.ts](../../../../packages/api/workspace-files/src/index.ts) | 使用仅携带目标路径的 `changes(scope, path, signal)`；Host stat 决定是否执行目录包含检查，目标类型变化后也检查，普通文件沿用文件读取权限 |
@@ -50,18 +50,18 @@ Sidebar 的 Document Preview 和 Files 面板都需要反映磁盘上的最新�
 
 ### Client 与 Sidebar
 
-| 类、函数或类型 | 所在文件 | 拟改动 |
+| 类、函数或类型 | 所在文件 | 职责 |
 |---|---|---|
 | `ChangeFeed`、`SessionFeed`、`Follower` | [workspace-files/src/client/change-feed.ts](../../../../packages/api/workspace-files/src/client/change-feed.ts) | 将流的键改为 Session 加目标路径，继续复用既有就绪、路径绑定、取消和重连逻辑；此版不为了命名重排类结构 |
 | `createFileResourceProvider` | [workspace-files/src/client/provider.ts](../../../../packages/api/workspace-files/src/client/provider.ts) | 将文件地址中的 Session 与路径传给目标流；首次读取及后续通知都发布完整元数据，不能只换 `version` 而继续沿用旧 `bytes` |
 | `ResourceRegistry`、`ResourceProvider`、`UseResource` | [Resource 定义](../../../../packages/client/resources/src/client/contract.ts)、[ResourceRegistry](../../../../packages/client/resources/src/client/resources.ts) | 保持现有流、持有计数和订阅模型；不新增第二套 `onChange`，不为此增加通用正文 reload API |
 | `TextPreview` | [TextPreview.tsx](../../../../packages/client/ui-sidebar-documentpreview/src/client/TextPreview.tsx) | Resource 或 group 变化且开关开启时自动触发现有 reload；保留错误状态与手动刷新，独立自动刷新按钮暂时隐藏 |
 | `textFace`、`TabReads`、`createTextStore` | [预览 face](../../../../packages/client/ui-sidebar-documentpreview/src/client/face.ts)、[预览存储](../../../../packages/client/ui-sidebar-documentpreview/src/client/store.ts) | 每个 Tab 持有一个 group，补充默认开启的 `autoRefresh` 和表示待刷新的 `resourcesDirty`；复用正文读取代次与 `loadRevision` |
-| 新增的包内 `ResourceGroup` | [resource-group.ts](../../../../packages/client/ui-sidebar-documentpreview/src/client/document/resource-group.ts) | 通过现有 `resources.source(address)` 观察成员；`add` 加入资源，`set` 更新完整成员列表，`close` 释放全部成员，不改变通用 Resource 服务 |
+| 包内 `ResourceGroup` | [resource-group.ts](../../../../packages/client/ui-sidebar-documentpreview/src/client/document/resource-group.ts) | 通过现有 `resources.source(address)` 观察成员；`add` 加入资源，`set` 更新完整成员列表，`close` 释放全部成员，不改变通用 Resource 服务 |
 | `DocumentBodyOwner`、`HtmlBody`、`createReadHtmlRelative` | [渲染器输入](../../../../packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts)、[HTML body](../../../../packages/client/ui-sidebar-documentpreview/src/client/html/HtmlBody.tsx)、[关联文件读取](../../../../packages/client/ui-sidebar-documentpreview/src/client/html/read-relative.ts) | 渲染器通过 `addResource` 声明读取到的成员，通过 `setResources` 提交本次依赖列表；HTML 在每次读取返回后按 Host 报告的路径加入 CSS／JS 资源，解析结束后释放不再引用的成员 |
 | 各文档渲染器 | [DocumentContent](../../../../packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts) 及同包各渲染器目录 | 不接 watch；继续消费文本、字节或 renderer revision；`failed()` 结束渲染器加载但不记录成功版本。检查刷新时取消旧任务、释放旧对象及保留现有视图偏好 |
 | `filesFace`、`FilesInjected` | [Files face](../../../../packages/client/ui-sidebar-files/src/client/face.ts) | 继续作为已有业务入口，直接持有各 Tab 根节点；绑定目录读取和变化流，转发展开、折叠、刷新及自动刷新开关，不新增 `FilesController` |
-| 新增的包内 `DirectoryNode` | [directory-node.ts](../../../../packages/client/ui-sidebar-files/src/client/directory-node.ts) | 表示一个已打开的目录，拥有本目录变化流、读取状态和已打开子节点；负责局部刷新、展开、递归关闭，以及向子节点传递自动刷新状态 |
+| 包内 `DirectoryNode` | [directory-node.ts](../../../../packages/client/ui-sidebar-files/src/client/directory-node.ts) | 表示一个已打开的目录，拥有本目录变化流、读取状态和已打开子节点；负责局部刷新、展开、递归关闭，以及向子节点传递自动刷新状态；`setExpanded` 按最新展开偏好更新待恢复节点 |
 | `createFilesStore`、`FilesTabState`、`LevelState` | [Files store](../../../../packages/client/ui-sidebar-files/src/client/store.ts) | 保留展开、滚动和目录显示数据；区分首次加载与已有内容上的刷新，避免每次后台重读都把子树卸载；不保存 watcher 或 AbortController |
 | `FilesBody`、`Level`、`Entry` | [FilesBody.tsx](../../../../packages/client/ui-sidebar-files/src/client/FilesBody.tsx) | 将展开、折叠、刷新和面板卸载交给注入回调；按节点展示结果渲染，不扫描整棵树生成监听集合，展示仍只读已有框架钩子与存储 |
 | Files 注册入口 | [Files client/index.ts](../../../../packages/client/ui-sidebar-files/src/client/index.ts) | 给现有 `filesFace` 增加目录变化流回调；异步副作用留在注入实现，不引入另一个功能插件的运行时导出 |
@@ -98,7 +98,7 @@ Resource 发布的路径、版本和大小来自同一次 stat。先沿用现有
 - `FileSystem.watch()` 接受本提供方解析出的目标；本机或远端路径的含义由 FS 提供方负责。
 - 文件监听保持文件读取的访问规则。现有预览允许通过所选 FS 读取部分 Workspace 外的路径，不能把目录树的范围限制顺手强加给这些文件。
 - 目录监听保持 `list()` 的 Workspace 范围及路径检查，目标类型变化后也执行检查，不因新增 watch 扩大目录浏览权限。
-- 父目录保持存在时，文件监听覆盖原地写入、临时文件替换、删除和同一路径重建。Chokidar 可在内部观察必要的父目录，但对外仍是指定文件的监听。
+- 父目录保持存在时，文件监听覆盖原地写入、临时文件替换、删除和同一路径重建。本地提供方直接监听父目录，将条目和事件过滤到目标文件，等待父目录 watcher 就绪后才报告就绪，目标文件尚不存在时也适用。
 - 目录监听只关注该目录自身和直接子项，不递归打开尚未展开的子目录；直接子项的创建、删除、重命名、类型或可见元数据变化都使这一层失效。
 - 本地实现采用系统事件模式；若需要调整写入稳定时间、事件合并窗口等部署参数，应由拥有它们的配置声明，不散落在组件里。
 - 系统 watch 只驱动 UI 刷新，不把外部磁盘变化伪装成某个 agent 已读取文件的 `fs/observed`，不改变文件编辑的已观察版本策略。
@@ -217,7 +217,7 @@ Files 的运行时对象本身就是一棵按需打开的目录树，不先建�
 | 列表更新 | 保留仍存在的已打开子节点，关闭已删除、重命名或变为文件的分支；不重新打开所有节点 |
 | 整树关闭 | 对根节点执行关闭，自然递归释放整棵活动子树，不另遍历全局监听注册表 |
 
-`createFilesStore.expanded` 可以继续保存用户的展开偏好，但不是另一份监听注册表。父目录关闭后，即使存储保留了后代展开偏好，也不能继续持有这些后代的活动节点。重新打开时先读取父目录，再对仍存在且需要恢复的子目录逐层建立节点；父节点尚在恢复时，深层后代的折叠点击可能被忽略，该交互修复仍延期。
+`createFilesStore.expanded` 保存用户的展开偏好，但不是另一份监听注册表。父目录关闭后，即使存储保留了后代展开偏好，也不能继续持有这些后代的活动节点。重新打开时先读取父目录，再对仍存在且需要恢复的子目录逐层建立节点。即使父节点尚未创建，展开和折叠也会更新存储与待恢复状态；后代恢复时遵循最新偏好，不会重新打开已折叠的分支。
 
 ```text
 workspace/                  watch
@@ -284,7 +284,7 @@ Files 监听跟随 Tab 生命周期；折叠关闭对应子树，关闭 Tab 则�
 - 目录后台刷新保留当前列表，不另存没有显示用途的 `refreshing` 标记；只有没有可显示列表时才进入 `loading`，避免子树闪烁和监听反复重建。
 - 目录折叠、删除或 Tab 关闭后，已取消读取的晚到结果不得重新创建状态或恢复监听。即使生成器停在已产出的帧上，取消也会关闭 Host watcher；流与插件拆除等待关闭完成。
 - 父目录保持存在时，文件短暂消失不结束监听；正常文件变化与监听自身失败分别处理。同路径文件监听覆盖原子保存与删除重建。
-- 原有文件读取并非事务快照，stat 与正文读取之间仍可能发生写入；本方案保证后续通知触发刷新，不声称每次读取都获得原子快照。
+- 原有文件读取并非事务快照，stat 与正文读取之间仍可能发生写入；后续通知触发刷新，自动刷新不保证每次读取都获得原子快照。
 
 ## 不采用的替代方案
 
@@ -300,17 +300,11 @@ Files 监听跟随 Tab 生命周期；折叠关闭对应子树，关闭 Tab 则�
 
 **在 Workspace API 中直接调用 Chokidar。** API 不拥有执行世界，SSH 路径可能只在远端存在。watch 必须由实际 FS 提供方实现。
 
-## 实施范围与验收
+## 验证
 
-实施可按下面的顺序推进，每一步都保留同一套目标明确的监听模型。
+FS、Workspace API、预览和 Files 各自的测试覆盖监听生命周期、元数据更新和自动刷新。[Web 文档预览测试](../../../../apps/web/tests/document-preview.e2e.ts) 从正式 Web 组合验证文件预览。会话事件日志、持久化格式和模型输入均不变。
 
-1. FS 定义和本地提供方：文件与非递归目录 watch、就绪、错误和异步释放；沙箱本地提供方继承。
-2. Workspace Remote：仅传路径的请求、基于 stat 的目录包含检查、文件元数据帧、目录失效帧，以及重连后的重新读取。
-3. Document Preview：ResourceGroup、HTML 的 CSS／JS 成员、自动刷新开关，以及三种现有 reload 路径。
-4. Files：现有 face 加按需 `DirectoryNode` 树、自动刷新开关、节点局部刷新、折叠递归释放和重新展开逐层补读。
-5. 同步受影响 README、JSDoc、Remote 生成声明和用户输出验证；不修改会话事件日志、持久化格式或模型输入。
-
-| 验收场景 | 预期结果 |
+| 场景 | 已验证行为 |
 |---|---|
 | 外部原地写入、原子替换、Shell 写入 | 打开的文件预览自动更新，不依赖 `fs/observed` |
 | 文本、完整字节、自主加载渲染器 | 三种模式都刷新，旧请求不能覆盖新结果，Office 失败后允许后续文件变化重试 |
@@ -322,17 +316,18 @@ Files 监听跟随 Tab 生命周期；折叠关闭对应子树，关闭 Tab 则�
 | 已展开子目录变化 | 只刷新对应目录层，保留其他层与展开偏好 |
 | 未展开的深层目录 | 不创建深层 watcher，不递归遍历 |
 | 折叠父目录 | 释放它和不可见后代的监听；文件预览若仍打开则独立继续监听 |
+| 祖先恢复期间折叠或重新展开深层后代 | 立即记录最新偏好，恢复时只打开仍需展开的分支 |
 | 重新展开、切回 Files、连接恢复 | 重新读取当前列表，不依赖错过事件的回放 |
 | 文件删除后重建，或子目录替换为文件 | 父目录保持存在时，文件监听在同一路径恢复；目录列表释放失效子树 |
 | 快速写入、重复通知、读取中或收尾时再修改 | 有限次补读并收敛到最新状态，不无限刷新 |
 | 关闭 Tab、卸载插件、取消初始化 | 即使不再拉取下一帧，所属监听也完全关闭；晚到通知和读取不再写入状态 |
 | 不支持监听的提供方、越界目录请求 | 明确报告支持状态或访问错误，不观察错误执行世界或扩大目录权限 |
 
-验证应包含可控事件源下的就绪与取消测试、真实临时目录上的本地 watch 集成测试，以及从真实 Web 组合进入的文件预览和目录树动线。真实文件测试等待 watcher 就绪后再操作，通过观察到的状态结束，不靠固定 sleep 猜测事件时机。用户可见自动刷新应更新对应的无密钥回放或拥有者本地预期输出，不制作 GIF；这里列出验收范围，执行结果记录在 PR 中。
+可控事件源和延迟读取验证就绪、取消及恢复期间的展开操作。真实本地 watch 测试使用临时目录，等待 watcher 就绪后再操作，通过观察到的状态结束，不靠固定 sleep 猜测事件时机。Web 预览测试和包内 UI 测试覆盖用户可见行为；命令执行结果记录在 PR 中。
 
-## 风险与后续范围
+## 影响
 
-- Linux 上父目录删除并重建后的自动监听恢复仍延期，本提案不承诺该场景；父目录保持存在时，同路径文件重建仍受支持。
+- Linux 上父目录删除并重建后的自动监听恢复仍延期；父目录保持存在时，同路径文件重建仍受支持。
 - OS 文件事件不是持久消息，断线或进程重启可能丢通知，因此每一代流就绪后都要重新取得当前状态。
 - 多个已打开文件和展开目录会增加 watcher 与流数量；第一版用按需生命周期控制数量，不提前加入复杂的跨消费者去重服务。
 - 自动刷新可能打断阅读，尤其是 HTML 内部交互和 Office 转换。保留视图偏好、合并连续变化，但不承诺保存任意嵌入文档的运行状态。
@@ -341,10 +336,10 @@ Files 监听跟随 Tab 生命周期；折叠关闭对应子树，关闭 Tab 则�
 
 ## 与已有 Agent Note 的关系
 
-本提案增加自动刷新和系统监听，不替代已有 Resource、文件读取授权和渲染器职责的整体设计。以下记录仍有独立价值，本文仅引用，不修改或归档它们。
+自动刷新和系统监听保留已有 Resource 模型、文件读取授权和渲染器职责。以下记录仍有独立的设计理由；本文负责目标级监听、自动 reload 和目录监听生命周期。
 
 - [Client Resource 模型](../../implemented/architecture/2026-09-05-client-resource-model.zh.md)：保留地址、提供方、订阅和持有期；新增行为由已有流承载。
-- [Workspace 文件服务](../../implemented/architecture/2026-09-05-workspace-files-service.zh.md)：保留读取与列表接口职责；拟调整其 Session 范围观察流及事件来源。
-- [文档预览操作](../../implemented/architecture/2026-09-08-document-preview-operations.zh.md)：保留正文加载所有权和三种加载方式；拟改变文件变化后的手动确认刷新行为。
+- [Workspace 文件服务](../../implemented/architecture/2026-09-05-workspace-files-service.zh.md)：读取与列表接口职责不变；目标级系统监听替代仅转发操作观察的 Session 流。
+- [文档预览操作](../../implemented/architecture/2026-09-08-document-preview-operations.zh.md)：正文加载所有权和三种加载方式不变；自动刷新使用其现有 reload 路径。
 - [Workspace 文件读取授权](../../implemented/architecture/2026-09-09-workspace-file-read-authority.zh.md)：保留文件读取与目录浏览的不同访问范围；目标 watch 分别遵循对应规则。
-- [Sidebar 文本预览与文件树](../../implemented/feature/2026-09-05-sidebar-text-preview-and-file-tree.zh.md)：保留按 Tab 的展开、导航和滚动状态；拟增加目录自动失效及展开期监听。
+- [Sidebar 文本预览与文件树](../../implemented/feature/2026-09-05-sidebar-text-preview-and-file-tree.zh.md)：按 Tab 的展开、导航和滚动状态不变；已打开节点负责目录自动失效与监听。

@@ -48,6 +48,15 @@ export class DirectoryNode {
   }
 
   /**
+   * Update the expansion preferences used by pending directory listings.
+   * @param expanded - latest expansion preferences from the store.
+   */
+  setExpanded(expanded: readonly string[]): void {
+    this.restore = expanded
+    for (const child of this.children.values()) child.setExpanded(expanded)
+  }
+
+  /**
    * Open a direct child using this node's lifetime and automatic-refresh setting.
    * @param path - absolute direct-child directory path.
    * @param restore - descendant expansion preferences to restore after listing.

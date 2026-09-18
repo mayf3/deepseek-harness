@@ -133,7 +133,7 @@ export interface FilesInjected {
    */
   readonly load: (tabId: TabId, path: string, signal: AbortSignal) => void
   /**
-   * Open or collapse one directory, listing it the first time it opens.
+   * Open or collapse one directory, retaining intent during ancestor restoration.
    * @param tabId - the tab being drawn.
    * @param parentPath - the listed parent directory's exact tree key.
    * @param path - absolute directory path.
@@ -205,10 +205,15 @@ export function filesFace(
       load: (tabId, path, signal) => { void load(tabId, path, signal) },
       toggle(tabId, parentPath, path, expanded, signal) {
         if (signal.aborted) return
-        const parent = roots.get(tabId)?.find(parentPath)
-        if (parent === undefined) return
-        if (expanded.includes(path)) void parent.collapse(path)
-        else parent.expand(path, expanded)
+        const root = roots.get(tabId)
+        if (root === undefined) return
+        const parent = root.find(parentPath)
+        if (parent === undefined && !expanded.includes(parentPath)) return
+        const collapsing = expanded.includes(path)
+        const next = collapsing ? expanded.filter(value => value !== path) : [...expanded, path]
+        root.setExpanded(next)
+        if (collapsing) void parent?.collapse(path)
+        else parent?.expand(path, next)
         actions.toggled(tabId, path)
       },
     }

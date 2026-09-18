@@ -1,6 +1,6 @@
 # Agent Note: On-demand watching and automatic refresh for Sidebar previews and file trees
 
-Status: proposed
+Status: implemented
 
 English | [中文](2026-09-17-sidebar-file-and-directory-auto-refresh.zh.md)
 
@@ -19,9 +19,9 @@ The starting implementation has both read paths but no complete automatic-refres
 
 `Resource` holds file metadata, not preview contents. Document Preview or its selected renderer reads the contents. Metadata updates and content reloads therefore remain separate responsibilities: the generic Resource acquires no content cache, and renderers do not directly manage filesystem watchers.
 
-## Proposal
+## Decision
 
-Connect on-demand observation through the existing FS, Workspace file stream, Resource, and Sidebar components. Files and directories share OS watching and the existing Remote stream transport, but consume them differently.
+On-demand observation connects the existing FS, Workspace file stream, Resource, and Sidebar components. Files and directories share OS watching and the existing Remote stream transport, but consume them differently.
 
 - Document Preview follows the current file. Its Resource publishes new metadata, and the preview invokes its existing reload. The HTML root and referenced CSS/JS files join one `ResourceGroup`; any member change invalidates the whole HTML preview.
 - Files manages reads and watchers through a directory-node tree. Each open node loads and watches only its direct entries. The Client loads and subscribes to exactly the subtree levels it opens, without traversing unopened descendants.
@@ -30,17 +30,17 @@ Connect on-demand observation through the existing FS, Workspace file stream, Re
 - Local Chokidar watches use OS events, without polling the whole Workspace or recursively scanning all descendants by default.
 - Both panels retain manual refresh and automatic-refresh functionality, but temporarily hide the automatic-refresh icon button. State and toggle logic remain; new Tabs default to enabled. Hiding the control does not stop observation or automatic refresh.
 
-This change only connects notifications to existing reload/list operations; it does not add retention of previous preview content after a failed reload. The following sections distinguish existing types from new objects and describe responsibilities, data flow, and acceptance scope. An acceptance item is not complete until it passes.
+Notifications invoke existing reload/list operations; a failed reload does not retain previous preview content. The following sections describe the implementation's responsibilities, data flow, and verification.
 
-## Class and file changes
+## Implementation and responsibilities
 
 ### FS and Host
 
-| Class or type | File | Intended change |
+| Class or type | File | Responsibility |
 |---|---|---|
 | `FileSystem` | [fs/src/index.ts](../../../../packages/fs/fs/src/index.ts) | Declare abstract single-target `watch(target, changed, signal)`: a file observes itself; a directory observes its direct entries. Resolve with an async close function once ready. Unsupported providers explicitly throw, without a new FS error code |
 | `FsTarget` | [fs/src/types.ts](../../../../packages/fs/fs/src/types.ts) | Reuse the existing target type, without another FS watch-event system or upper-layer parsing of `targetKey` |
-| `LocalFileSystem` | [fs-local/src/index.ts](../../../../packages/fs/fs-local/src/index.ts) | Adapt Chokidar, normalize local events into FS invalidation, and await watcher closure; declare the dependency in `fs-local` |
+| `LocalFileSystem` | [fs-local/src/index.ts](../../../../packages/fs/fs-local/src/index.ts) | Watches a file's parent with target-only filtering, or the directory itself for directory targets; awaits Chokidar readiness and closure; owns the Chokidar dependency |
 | `SandboxedFileSystem` | [fs-sandbox/src/index.ts](../../../../packages/fs/fs-sandbox/src/index.ts) | Inherit local read-only observation without duplicating the watcher; retain its write and edit policy checks |
 | `SshFileSystem` | [fs-ssh/src/index.ts](../../../../packages/ssh/fs-ssh/src/index.ts) | `watch()` explicitly throws an ordinary exception; the Host converts it to a `workspace-file/watch-unsupported` `RemoteError`, without importing or checking an `FsError` runtime class across packages or passing remote `processPath()` values to local Chokidar |
 | `WorkspaceFiles` | [workspace-files/src/index.ts](../../../../packages/api/workspace-files/src/index.ts) | Use `changes(scope, path, signal)` with only the target path. Host stat determines whether directory containment applies, including after type changes; ordinary files retain file-read authority |
@@ -50,18 +50,18 @@ This change only connects notifications to existing reload/list operations; it d
 
 ### Client and Sidebar
 
-| Class, function, or type | File | Intended change |
+| Class, function, or type | File | Responsibility |
 |---|---|---|
 | `ChangeFeed`, `SessionFeed`, `Follower` | [workspace-files/src/client/change-feed.ts](../../../../packages/api/workspace-files/src/client/change-feed.ts) | Key streams by Session and target path; reuse readiness, path binding, cancellation, and reconnect logic without reorganizing classes just to rename them |
 | `createFileResourceProvider` | [workspace-files/src/client/provider.ts](../../../../packages/api/workspace-files/src/client/provider.ts) | Pass the address's Session and path to the target stream; publish complete metadata initially and after notifications, rather than replacing `version` while retaining stale `bytes` |
 | `ResourceRegistry`, `ResourceProvider`, `UseResource` | [Resource definitions](../../../../packages/client/resources/src/client/contract.ts), [ResourceRegistry](../../../../packages/client/resources/src/client/resources.ts) | Keep existing streaming, retention counts, and subscriptions; add neither a second `onChange` nor a generic content-reload API |
 | `TextPreview` | [TextPreview.tsx](../../../../packages/client/ui-sidebar-documentpreview/src/client/TextPreview.tsx) | Invoke existing reload when a Resource or group changes and automatic refresh is enabled; retain errors and manual refresh, with the separate automatic-refresh button temporarily hidden |
 | `textFace`, `TabReads`, `createTextStore` | [Preview face](../../../../packages/client/ui-sidebar-documentpreview/src/client/face.ts), [Preview store](../../../../packages/client/ui-sidebar-documentpreview/src/client/store.ts) | Own one group per Tab; add default-enabled `autoRefresh` and pending-refresh flag `resourcesDirty`; reuse content-read generations and `loadRevision` |
-| New package-private `ResourceGroup` | [resource-group.ts](../../../../packages/client/ui-sidebar-documentpreview/src/client/document/resource-group.ts) | Observe members through existing `resources.source(address)`; `add` joins a resource, `set` reconciles full membership, and `close` releases all members without changing the generic Resource service |
+| Package-private `ResourceGroup` | [resource-group.ts](../../../../packages/client/ui-sidebar-documentpreview/src/client/document/resource-group.ts) | Observes members through existing `resources.source(address)`; `add` joins a resource, `set` reconciles full membership, and `close` releases all members without changing the generic Resource service |
 | `DocumentBodyOwner`, `HtmlBody`, `createReadHtmlRelative` | [Renderer inputs](../../../../packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts), [HTML body](../../../../packages/client/ui-sidebar-documentpreview/src/client/html/HtmlBody.tsx), [Related-file reader](../../../../packages/client/ui-sidebar-documentpreview/src/client/html/read-relative.ts) | Renderers declare read members through `addResource` and publish the current dependency list through `setResources`; HTML adds CSS/JS resources from Host-reported paths after each read returns and releases unreferenced members after parsing |
 | Document renderers | [DocumentContent](../../../../packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts) and renderer directories in the same package | Do not watch directly; keep consuming text, bytes, or renderer revisions; `failed()` ends renderer loading without recording a successful version. Check cancellation of previous work, release of old objects, and retention of existing view preferences during refresh |
 | `filesFace`, `FilesInjected` | [Files face](../../../../packages/client/ui-sidebar-files/src/client/face.ts) | Remain the existing business entry point, directly owning each Tab's root node; bind directory reads and change streams and forward expand, collapse, refresh, and automatic-refresh operations without a new `FilesController` |
-| New package-private `DirectoryNode` | [directory-node.ts](../../../../packages/client/ui-sidebar-files/src/client/directory-node.ts) | Represent one open directory, owning its stream, read state, and open children; handle local refresh, expansion, recursive closure, and propagation of automatic-refresh state |
+| Package-private `DirectoryNode` | [directory-node.ts](../../../../packages/client/ui-sidebar-files/src/client/directory-node.ts) | Represents one open directory, owning its stream, read state, and open children; handles local refresh, expansion, recursive closure, and propagation of automatic-refresh state; `setExpanded` updates pending restoration from the latest expansion preferences |
 | `createFilesStore`, `FilesTabState`, `LevelState` | [Files store](../../../../packages/client/ui-sidebar-files/src/client/store.ts) | Retain expansion, scrolling, and displayed directory data; distinguish initial loading from refresh over existing content to avoid unmounting subtrees on every background read; hold no watcher or AbortController |
 | `FilesBody`, `Level`, `Entry` | [FilesBody.tsx](../../../../packages/client/ui-sidebar-files/src/client/FilesBody.tsx) | Delegate expansion, collapse, refresh, and panel unmount to injected callbacks; render node results without scanning the entire tree into a watch set, using existing framework hooks and store reads |
 | Files registration | [Files client/index.ts](../../../../packages/client/ui-sidebar-files/src/client/index.ts) | Add a directory-change callback to the existing `filesFace`; keep async effects in injection, without importing another feature plugin's runtime exports |
@@ -98,7 +98,7 @@ Resource path, version, and size come from the same stat. Keep the existing smal
 - `FileSystem.watch()` accepts a target resolved by its provider; the FS provider owns the meaning of local or remote paths.
 - File watching retains file-read access rules. Existing previews may read some paths outside the Workspace through the selected FS; directory-tree containment must not be imposed on those files.
 - Directory watching retains `list()`'s Workspace scope and path checks, including after target type changes, without widening browsing authority.
-- File watching covers in-place writes, replacement by a temporary file, deletion, and recreation at the same path while the parent directory remains. Chokidar may internally observe the necessary parent directory, but the public watch still targets the specified file.
+- File watching covers in-place writes, replacement by a temporary file, deletion, and recreation at the same path while the parent directory remains. The local provider watches that parent directly, filters entries and events to the target file, and waits for the parent watcher to be ready before reporting readiness, including when the file does not yet exist.
 - A directory watch observes itself and direct entries, without recursively opening unexpanded children. Creation, deletion, renaming, type changes, and visible metadata changes of direct entries invalidate that level.
 - Local watching uses OS events. Deployment controls such as write-stability time or event-coalescing windows, if needed, belong in their owner's configuration rather than scattered component constants.
 - OS watching drives UI refresh only. It does not fabricate an agent's authoritative `fs/observed` read observation or change the observed-version policy for editing.
@@ -217,7 +217,7 @@ The Files runtime is itself an on-demand directory tree. It does not first const
 | Listing update | Retain open children still present; close deleted, renamed, or file-replaced branches without reopening every node |
 | Close tree | Closing the root recursively releases the active tree, without traversing another global watcher registry |
 
-`createFilesStore.expanded` may retain user expansion preferences, but is not another watcher registry. Closing a parent cannot retain active descendant nodes merely because their preferences remain. Reopening first reads the parent, then progressively restores still-present children. A deep descendant's collapse click can be ignored while its parent node is still being restored; this interaction fix is deferred.
+`createFilesStore.expanded` retains user expansion preferences, but is not another watcher registry. Closing a parent cannot retain active descendant nodes merely because their preferences remain. Reopening first reads the parent, then progressively restores still-present children. Expand and collapse actions update the store and pending restoration even when the parent node is not yet active; restored descendants follow the latest preferences instead of reopening a collapsed branch.
 
 ```text
 workspace/                  watch
@@ -284,7 +284,7 @@ Observation, reads, and presentation need a few explicit ordering rules, not dis
 - Background directory refresh retains the displayed listing without a display-unused `refreshing` flag. Only a directory without displayable entries enters `loading`, avoiding subtree flicker and repeated watcher reconstruction.
 - After collapse, deletion, or Tab closure, late cancelled reads cannot recreate state or restore watchers. Cancellation closes the Host watcher even while the generator is suspended at a yielded frame; stream and plugin teardown await closure.
 - Temporary file disappearance while its parent remains does not end observation. Ordinary file changes and watcher failures remain distinct; same-path file watches cover atomic saves and delete/recreate.
-- Existing file reads are not transaction snapshots: writes can occur between stat and content reading. Later notifications trigger refresh; the proposal does not promise an atomic snapshot for every read.
+- Existing file reads are not transaction snapshots: writes can occur between stat and content reading. Later notifications trigger refresh; automatic refresh does not promise an atomic snapshot for every read.
 
 ## Alternatives considered
 
@@ -300,17 +300,11 @@ Observation, reads, and presentation need a few explicit ordering rules, not dis
 
 **Call Chokidar directly in the Workspace API.** The API does not own the execution world; SSH paths may exist only remotely. The actual FS provider must implement watching.
 
-## Acceptance criteria
+## Verification
 
-Implementation can proceed in the following order, retaining the same explicit-target observation model throughout.
+The owning FS, Workspace API, preview, and Files tests exercise watch lifetimes, metadata updates, and automatic refresh. The [Web document-preview test](../../../../apps/web/tests/document-preview.e2e.ts) exercises previews through the shipped Web composition. Session event logs, persistence formats, and model input are unchanged.
 
-1. FS definition and local provider: file and nonrecursive directory watches, readiness, errors, and async release; the sandboxed local provider inherits them.
-2. Workspace Remote: path-only requests, stat-based directory containment, file metadata frames, directory invalidation frames, and rereads after reconnect.
-3. Document Preview: ResourceGroup, HTML CSS/JS membership, automatic-refresh control, and the three existing reload paths.
-4. Files: the existing face with an on-demand `DirectoryNode` tree, automatic-refresh control, local refresh, recursive collapse release, and progressive rereads on reopening.
-5. Update affected READMEs, JSDoc, generated Remote declarations, and user-output verification; leave Session event logs, persistence formats, and model input unchanged.
-
-| Acceptance scenario | Expected result |
+| Scenario | Verified behavior |
 |---|---|
 | External in-place writes, atomic replacement, shell writes | Open previews refresh without depending on `fs/observed` |
 | Text, complete bytes, renderer-owned loading | All three modes refresh; old requests cannot overwrite new results, and Office failures allow a later file change to retry |
@@ -322,17 +316,18 @@ Implementation can proceed in the following order, retaining the same explicit-t
 | An expanded child changes | Refresh only its level while preserving other levels and expansion preferences |
 | Unexpanded deep directories | No deep watcher or recursive traversal |
 | Collapse a parent | Release its watch and hidden descendants; an independently open file preview keeps watching |
+| Collapse or reexpand a deep descendant during ancestor restoration | Record the latest preference immediately; restoration opens only branches still expanded |
 | Reopen, return to Files, or reconnect | Obtain current listings without depending on replay of missed events |
 | Delete/recreate a file, or replace a child directory with a file | File watches recover at the same path while the parent remains; directory listings release invalid subtrees |
 | Rapid writes, duplicate notifications, changes during reads or their completion | Converge on current state with finite rereads, without endless refresh |
 | Close Tab, unload plugin, cancel initialization | Close all owned watches even when no further frame is requested; late notifications and reads no longer write state |
 | Unsupported providers or out-of-workspace directories | Report unavailable observation or access errors explicitly, without watching the wrong execution world or widening directory authority |
 
-Verification includes controlled readiness/cancellation tests, real local-watch integration on temporary directories, and preview/tree flows through the real Web composition. Real-file tests wait for watch readiness before acting and finish on observable state, not fixed sleeps. User-visible refresh updates the corresponding keyless replay or owner-local expected output; no GIF is produced. This section states acceptance scope; executed results belong in the PR.
+Controlled streams and deferred reads verify readiness, cancellation, and expansion during restoration. Real local-watch tests use temporary directories, wait for readiness before acting, and finish on observable state rather than fixed sleeps. The Web preview test and owner-local UI tests cover user-visible behavior; executed command results belong in the PR.
 
-## Risks
+## Consequences
 
-- Automatic watch recovery after a parent directory is deleted and recreated on Linux is deferred; this proposal does not promise that scenario. Same-path file recreation while the parent remains stays supported.
+- Automatic watch recovery after a parent directory is deleted and recreated on Linux is deferred. Same-path file recreation while the parent remains stays supported.
 - OS file events are not durable messages. Disconnects and process restarts may lose notifications, so every stream generation obtains current state after readiness.
 - Open files and expanded directories increase watcher and stream counts. The first version controls this through on-demand lifetimes, without an advance cross-consumer deduplication service.
 - Automatic refresh may interrupt reading, especially HTML interactions and Office conversion. View preferences and coalescing remain, but arbitrary embedded-document runtime state is not preserved.
@@ -341,10 +336,10 @@ Verification includes controlled readiness/cancellation tests, real local-watch 
 
 ## Relationship to existing Agent Notes
 
-This proposal adds automatic refresh and OS watching without replacing the overall Resource, file-read authorization, or renderer ownership design. The following records retain independent value; this note references them without editing or archiving them.
+Automatic refresh and OS watching retain the Resource model, file-read authorization, and renderer ownership. The following records retain independent rationale; this note owns target-scoped observation, automatic reload, and directory-watch lifetimes.
 
 - [Client Resource model](../../implemented/architecture/2026-09-05-client-resource-model.md): retain addresses, providers, subscriptions, and lifetimes; existing streams carry the new behavior.
-- [Workspace file service](../../implemented/architecture/2026-09-05-workspace-files-service.md): retain read and listing responsibilities; revise Session-scoped observation streams and event sources.
-- [Document preview operations](../../implemented/architecture/2026-09-08-document-preview-operations.md): retain content-loading ownership and all three modes; change manual confirmation after file updates.
+- [Workspace file service](../../implemented/architecture/2026-09-05-workspace-files-service.md): read and listing responsibilities remain; target-scoped OS observation replaces the Session-scoped operation-only stream.
+- [Document preview operations](../../implemented/architecture/2026-09-08-document-preview-operations.md): content-loading ownership and all three modes remain; automatic refresh uses their existing reload paths.
 - [Workspace file-read authority](../../implemented/architecture/2026-09-09-workspace-file-read-authority.md): retain distinct access scopes for file reading and directory browsing; target watches follow their respective rules.
-- [Sidebar text preview and file tree](../../implemented/feature/2026-09-05-sidebar-text-preview-and-file-tree.md): retain per-Tab expansion, navigation, and scrolling; add automatic directory invalidation and watches for expanded nodes.
+- [Sidebar text preview and file tree](../../implemented/feature/2026-09-05-sidebar-text-preview-and-file-tree.md): per-Tab expansion, navigation, and scrolling remain; open nodes own automatic directory invalidation and watching.

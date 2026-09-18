@@ -45,7 +45,7 @@ A level cut by the endpoint's entry cap ends with a marker; an empty level says 
 
 State lives in the type's own store, bucketed by tab id: `root`, `levels` (loading / ready / failed per absolute path), `expanded`, `autoRefresh`, and `scrollTop`, which the body tracks locally while scrolling and commits once when it unmounts. Because the store outlives the body, switching to another sidebar tab and back remounts the tree with its levels intact and its scroll offset restored. The owner's `signal` ends a bucket: on abort the tab is forgotten, and neither a listing that settles afterwards nor the unmount's offset commit writes anything.
 
-Each open `DirectoryNode` owns its target watch for the Tab lifetime; collapse closes that node and its hidden descendants. Automatic refresh defaults to enabled; its separate toggle is hidden while state, labels, styles, and toggle logic remain. Changes received during a directory read or its completion remain pending for another refresh.
+Each open `DirectoryNode` owns its target watch for the Tab lifetime; collapse closes that node and its hidden descendants. Expansion changes during ancestor restoration update the store and pending nodes, so restored descendants follow the latest expansion preferences. Automatic refresh defaults to enabled; its separate toggle is hidden while state, labels, styles, and toggle logic remain. Changes received during a directory read or its completion remain pending for another refresh.
 
 <a id="model-experience"></a>
 ## Model Experience
@@ -60,7 +60,6 @@ None; directory listings travel over the Remote and assemble no model request.
 
 <a id="known-limitations-and-deferred-work"></a>
 - **Listing only.** No search, artifact filter, drag-and-drop, rename, context menu, or current-file highlight.
-- **Restoration clicks.** A deep descendant's collapse click can be ignored while its parent node is still being restored; this interaction fix is deferred.
 - **One root.** The tree is rooted at the session's working directory; there is no way to browse above it, and the Host refuses paths outside the workspace root anyway.
 
 <a id="dev-note"></a>
