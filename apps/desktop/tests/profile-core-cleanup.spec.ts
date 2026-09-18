@@ -56,19 +56,15 @@ it('does not clean development profiles', () => {
   expect(existsSync(join(root, 'pnpm-lock.yaml'))).toBe(true)
 })
 
-it('unlinks development fallbacks without deleting their target, including dangling links', () => {
+it('unlinks core packages without deleting their target, including dangling links', () => {
   const root = fixture()
   const target = join(root, 'development-package')
   mkdirSync(target)
   writeFileSync(join(target, 'sentinel'), 'keep')
-  const owned = join(root, '.dsh-module-fallback', 'node_modules', core)
-  mkdirSync(join(owned, '..'), { recursive: true })
-  symlinkSync(target, owned, 'junction')
   rmSync(join(root, 'node_modules', core), { recursive: true })
-  symlinkSync(owned, join(root, 'node_modules', core), 'junction')
+  symlinkSync(target, join(root, 'node_modules', core), 'junction')
   cleanProfileCorePackages(root, [core], true)
   expect(readFileSync(join(target, 'sentinel'), 'utf8')).toBe('keep')
-  expect(existsSync(owned)).toBe(false)
   symlinkSync(target, join(root, 'node_modules', core), 'junction')
   rmSync(target, { recursive: true })
   cleanProfileCorePackages(root, [core], true)

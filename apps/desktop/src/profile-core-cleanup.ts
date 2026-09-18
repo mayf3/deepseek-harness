@@ -65,8 +65,7 @@ export function cleanProfileCorePackages(profile: string, packageNames: readonly
   if (existsSync(recordPath)) {
     for (const entry of readDesktopCorePackageSet(profile).packages) names.add(entry.name)
   }
-  const roots = [join(profile, 'node_modules'), join(profile, '.dsh-module-fallback', 'node_modules')]
-  requireDirectory(join(profile, '.dsh-module-fallback'))
+  const roots = [join(profile, 'node_modules')]
   for (const root of roots) {
     requireDirectory(root)
     for (const name of names) requireDirectory(dirname(join(root, name)))

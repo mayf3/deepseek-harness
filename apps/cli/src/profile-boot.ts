@@ -19,8 +19,6 @@ import {
   boot,
   readProfilePatches,
   createProfileResolutionGeneration,
-  healProfilesModuleFallback,
-  healIsolatedProfileModuleFallback,
   initProfile,
   installFailLoud,
   loadOverlayPatches,
@@ -32,7 +30,6 @@ import {
   type ProfileContext,
   type Profile,
   type ProfileResolutionGeneration,
-  type ProfileResolutionMode,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
@@ -191,7 +188,6 @@ interface ComposedProfile {
  * then the telemetry switch.
  * @param name - the profile name.
  * @param patchFiles - `--patch` overlay paths, in argv order.
- * @param resolutionMode - runtime lookup, disk links, or dual verification of both.
  * @param fromDefaultProfile - shipped template for a missing named profile.
  * @param resolvedProfile - application-owned profile and installation.
  * @returns the profile and its patch layers.
@@ -199,17 +195,13 @@ interface ComposedProfile {
 async function composeProfile(
   name: string,
   patchFiles: readonly string[],
-  resolutionMode: ProfileResolutionMode,
   fromDefaultProfile?: string,
   resolvedProfile?: ResolvedProfileRuntime,
 ): Promise<ComposedProfile> {
   const profile = resolvedProfile?.profile ?? prepareProfile(name, true, fromDefaultProfile)
   if (resolvedProfile !== undefined) writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   const resolutionOptions = { installAnchor: resolvedProfile?.installAnchor ?? INSTALL_ANCHOR, profile }
-  if (resolvedProfile !== undefined && resolutionMode !== 'runtime') healIsolatedProfileModuleFallback(resolvedProfile)
-  const resolution = resolutionMode === 'runtime' || resolvedProfile !== undefined
-    ? await createProfileResolutionGeneration(resolutionOptions)
-    : await healProfilesModuleFallback(resolutionOptions)
+  const resolution = await createProfileResolutionGeneration(resolutionOptions)
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   return { profile, resolution, overlays }
 }
@@ -238,8 +230,6 @@ export interface RunProfileOptions {
   args: readonly string[]
   /** Application-owned package runtime, scoped to plugin package operations. */
   packageManager?: ProfileContext['packageManager']
-  /** Module fallback backend; defaults to runtime. Plain Node callers may override it; pkg executables always use runtime. */
-  resolutionMode?: ProfileResolutionMode
 }
 
 /**
@@ -259,8 +249,6 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     (message) => { process.stderr.write(`${NAME}: ${message}\n`) },
   )
 
-  const packaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
-  const resolutionMode = packaged ? 'runtime' : options.resolutionMode ?? 'runtime'
   const app: { current?: Context } = {}
   let disposal: Promise<void> | undefined
   const dispose = (): Promise<void> => disposal ??= (async () => {
@@ -273,7 +261,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   })()
   try {
     const composed = await composeProfile(
-      options.profile, options.patchFiles, resolutionMode, options.fromDefaultProfile, options.resolvedProfile,
+      options.profile, options.patchFiles, options.fromDefaultProfile, options.resolvedProfile,
     )
     const appReady = createAppReady()
     const shutdown = createProcessShutdown(dispose)
@@ -309,9 +297,8 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       // Before any config-tree entry mounts, so plugins resolve all launch-time
       // environment values from the same immutable launch snapshot.
       hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
-      await hostCtx.plugin(PluginPackages, resolutionMode === 'link' ? {} : {
+      await hostCtx.plugin(PluginPackages, {
         generation: composed.resolution,
-        behavior: resolutionMode === 'dual' ? 'verify' : 'enforce',
       })
       // The command line and bounded exit request are launcher facts available
       // to every app plugin that injects the argument snapshot.

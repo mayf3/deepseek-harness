@@ -15,36 +15,20 @@
  * Module resolution is two-anchor by construction: a bundle name resolves
  * first from the dsh installation (the launcher's own package), then from the
  * profile directory. Pnpm-managed entries in the profile's `node_modules`
- * resolve first. Dsh-owned links add packages carried only by selected
- * bundles, while `$DSH_HOME/profiles/node_modules` supplies the installation
- * dependency closure through Node's ordinary parent-walk. Plain Node uses
- * symlinks for that shared fallback; packaged executables use ESM proxies so
- * external plugins retain the installation's module instances.
+ * resolve first. A runtime generation supplies packages carried by the
+ * installation and selected bundles to Node's ESM and CommonJS resolvers.
  * @module @deepseek-ai/dsh-app-boot/profile
  */
 
 import { createRequire } from 'node:module'
-import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync,
-  symlinkSync, unlinkSync, writeFileSync,
-} from 'node:fs'
-import { basename, dirname, join, relative, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
-import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { DshPackageManifest } from '@deepseek-ai/dsh-package-manifest'
-import { resolve as resolvePackage, type Package as ResolvePackageManifest } from 'resolve.exports'
 import { loadOverlayPatches } from './index.ts'
-import {
-  canonicalLinkPath,
-  isPackagedExecutable,
-  isProfileModuleFallbackLink,
-  PROFILE_MODULE_FALLBACK_DIR,
-  realModuleDirectory,
-  symlinkPointsTo,
-} from './profile-resolution/legacy-links.ts'
+import { realModuleDirectory } from './profile-resolution/legacy-links.ts'
 
 /** Directory under the Harness home holding every profile. */
 export const PROFILES_DIR = 'profiles'
@@ -113,9 +97,6 @@ export interface ProfileResolutionGeneration {
   readonly entries: readonly ProfileResolutionEntry[]
 }
 
-/** Startup backend selection for one computed profile resolution generation. */
-export type ProfileResolutionMode = 'link' | 'dual' | 'runtime'
-
 /**
  * Resolve a profile's directory under the Harness home.
  * @param name - the profile name (`dsh --profile <name>`).
@@ -124,7 +105,7 @@ export type ProfileResolutionMode = 'link' | 'dual' | 'runtime'
  */
 export function resolveProfileDir(name: string, home: string = resolveDshHome()): string {
   if (name === '' || name.includes('/') || name.includes('\\') || name === '.' || name === '..'
-    // The launcher-maintained flat module fallback lives at this sibling path.
+    // Node reserves this name for dependency lookup.
     || name === 'node_modules') {
     throw new Error(`dsh: invalid profile name ${JSON.stringify(name)}`)
   }
@@ -175,8 +156,7 @@ const PROFILE_PATCH_TEMPLATE = `# Your patch layer for this dsh profile, applied
 `
 
 // The hoisted linker gives out-of-tree plugins a flat node_modules whose
-// missing peers (cordis and friends) fall through to the healed
-// profiles/node_modules installation fallback, so every plugin shares the
+// missing peers (cordis and friends) use the runtime generation, so every plugin shares the
 // installation's single cordis instance instead of a duplicate. pnpm ≥10
 // reads its settings from pnpm-workspace.yaml, not .npmrc.
 const PROFILE_PNPM_WORKSPACE = `packages:
@@ -214,247 +194,6 @@ export function initProfile(
   if (!existsSync(workspacePath)) writeFileSync(workspacePath, PROFILE_PNPM_WORKSPACE)
 }
 
-function readModuleProxyRecord(link: string): ModuleProxyRecord | undefined {
-  try {
-    return JSON.parse(readFileSync(join(link, 'package.json'), 'utf8')) as ModuleProxyRecord
-  } catch {
-    // Missing or invalid metadata is not managed state; callers reject it.
-    return undefined
-  }
-}
-
-/** Ensure `link` is a symlink to `target`, replacing a wrong link or a dsh-managed packaged proxy. */
-function ensureSymlink(link: string, target: string): void {
-  let stat
-  try {
-    stat = lstatSync(link)
-  } catch {
-    // Missing link (first run) — created below. Any other lstat failure on a
-    // path we just created the parent of would resurface on symlinkSync.
-    stat = undefined
-  }
-  if (stat !== undefined) {
-    if (!stat.isSymbolicLink()) {
-      const existing = stat.isDirectory() ? readModuleProxyRecord(link) : undefined
-      if (existing?.dsh?.moduleFallback?.targets === undefined) {
-        throw new Error(`dsh: ${link} exists and is not a symlink or dsh-managed module proxy; remove it so dsh can manage the installation fallback`)
-      }
-      rmSync(link, { recursive: true })
-      stat = undefined
-    }
-    if (stat !== undefined) {
-      if (symlinkPointsTo(link, target)) return
-      // unlink deletes the reparse point itself on Windows too; rmSync treats a
-      // junction as a directory and throws EISDIR unless recursive.
-      unlinkSync(link)
-    }
-  }
-  try {
-    symlinkSync(target, link, 'junction')
-  } catch (error) {
-    // Concurrent launches heal the same fallback; losing the race to a
-    // process writing the identical link is success, anything else is not.
-    // The window between the lstat miss above and this write cannot be
-    // staged deterministically from the public API.
-    /* v8 ignore next 4 */
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST'
-      || !lstatSync(link).isSymbolicLink() || !symlinkPointsTo(link, target)) {
-      throw error
-    }
-  }
-}
-
-/** Add one profile-owned fallback link without replacing a pnpm-managed entry. */
-function ensureProfileSymlink(link: string, target: string): void {
-  try {
-    lstatSync(link)
-    return
-  } catch (error) {
-    /* v8 ignore next -- a non-ENOENT lstat failure requires a host filesystem fault */
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
-  ensureSymlink(link, target)
-}
-
-/** Package names represented by owned symlinks below one fallback node_modules. */
-function ownedPackageNames(modulesDir: string): string[] {
-  return readdirSync(modulesDir, { withFileTypes: true }).flatMap((entry) => {
-    if (entry.name.startsWith('@') && entry.isDirectory()) {
-      return readdirSync(join(modulesDir, entry.name), { withFileTypes: true })
-        .filter(child => child.isSymbolicLink())
-        .map(child => `${entry.name}/${child.name}`)
-    }
-    return entry.isSymbolicLink() ? [entry.name] : []
-  })
-}
-
-/** Remove an obsolete owned target and its profile projection when still connected. */
-function removeProfileSymlink(profileModulesDir: string, ownedModulesDir: string, packageName: string): void {
-  const ownedLink = join(ownedModulesDir, packageName)
-  const profileLink = join(profileModulesDir, packageName)
-  try {
-    if (lstatSync(profileLink).isSymbolicLink() && symlinkPointsTo(profileLink, ownedLink)) unlinkSync(profileLink)
-  } catch (error) {
-    /* v8 ignore next -- a non-ENOENT lstat failure requires a host filesystem fault */
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
-  try {
-    unlinkSync(ownedLink)
-  } catch (error) {
-    /* v8 ignore next -- concurrent identical cleanup may remove the link first */
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
-}
-
-interface ModuleProxyManifest {
-  name: string
-  version: string
-  private: true
-  type: 'module'
-  exports: Record<string, string>
-  dsh: { moduleFallback: { targets: Record<string, string> } }
-}
-
-interface ModuleProxyRecord {
-  version?: unknown
-  dsh?: { moduleFallback?: { targets?: unknown } }
-}
-
-/** Resolve one available explicit package export under Node ESM import conditions. */
-function packageEntryFromPackage(
-  packageName: string,
-  packageDir: string,
-  declared: ResolvePackageManifest['exports'],
-  subpath: string,
-): string | undefined {
-  let candidates: string[] | void
-  try {
-    candidates = resolvePackage({ name: packageName, exports: declared }, subpath)
-  } catch (error) {
-    if ((error as Error).message.startsWith('No known conditions for ')) return undefined
-    const specifier = subpath === '.' ? packageName : packageName + subpath.slice(1)
-    throw new Error(`dsh: cannot resolve ESM export ${specifier} from installed package ${packageName}`, { cause: error })
-  }
-  for (const candidate of candidates ?? []) {
-    const target = candidate
-    const entry = resolve(packageDir, target)
-    const relativeEntry = relative(packageDir, entry)
-    if (!target.startsWith('./') || /^\.\.(?:[\\/]|$)/u.test(relativeEntry)) {
-      throw new Error(`dsh: installed package ${packageName} export ${subpath} resolves outside its package: ${target}`)
-    }
-    if (existsSync(entry) && statSync(entry).isFile()) return pathToFileURL(entry).href
-  }
-  return undefined
-}
-
-/** Resolve every explicit ESM runtime export that an out-of-tree plugin can import. */
-function packageProxySource(
-  packageName: string,
-  packageDir: string,
-): { version: string; targets: Record<string, string> } {
-  const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as {
-    bin?: unknown
-    exports?: unknown
-    main?: unknown
-    types?: unknown
-    typings?: unknown
-    version?: unknown
-  }
-  if (typeof manifest.version !== 'string' || manifest.version.length === 0) {
-    throw new Error(`dsh: installed package ${packageName} must declare a non-empty version`)
-  }
-  const declared = manifest.exports
-  if (declared === undefined) {
-    const main = typeof manifest.main === 'string' && manifest.main.length > 0 ? manifest.main : undefined
-    const entry = join(packageDir, main ?? 'index')
-    try {
-      const resolved = createRequire(join(packageDir, 'package.json')).resolve(entry)
-      return { version: manifest.version, targets: { '.': pathToFileURL(resolved).href } }
-    } catch (error) {
-      if (main === undefined
-        && (manifest.bin !== undefined || manifest.types !== undefined || manifest.typings !== undefined)) {
-        return { version: manifest.version, targets: {} }
-      }
-      throw new Error(`dsh: installed package ${packageName} main entry is missing at ${entry}`, { cause: error })
-    }
-  }
-  const subpaths = declared !== null && typeof declared === 'object' && !Array.isArray(declared)
-    && Object.keys(declared).some(key => key.startsWith('.'))
-    ? Object.keys(declared).filter(key => key === '.' || (
-      key.startsWith('./') && !key.includes('*') && !key.endsWith('/') && key !== './package.json'
-    ))
-    : ['.']
-  const targets: Record<string, string> = {}
-  for (const subpath of subpaths) {
-    const target = packageEntryFromPackage(
-      packageName,
-      packageDir,
-      declared as ResolvePackageManifest['exports'],
-      subpath,
-    )
-    if (target !== undefined) targets[subpath] = target
-  }
-  return { version: manifest.version, targets }
-}
-
-/**
- * Materialize a real package proxy whose exports retain pkg's virtual module
- * URL. Files outside the executable cannot traverse a symlink into
- * `/snapshot`, while an ESM re-export can import that URL and preserves the
- * executable's single module instance for out-of-tree plugin peers.
- */
-function ensureModuleProxy(
-  link: string,
-  packageName: string,
-  version: string,
-  targets: Record<string, string>,
-): void {
-  const proxyExports = Object.fromEntries(
-    Object.keys(targets).map((subpath, index) => [subpath, `./entry-${index}.js`]),
-  )
-  const manifest: ModuleProxyManifest = {
-    name: packageName,
-    version,
-    private: true,
-    type: 'module',
-    exports: proxyExports,
-    dsh: { moduleFallback: { targets } },
-  }
-  let stat
-  try {
-    stat = lstatSync(link)
-  } catch {
-    stat = undefined
-  }
-  if (stat?.isSymbolicLink()) {
-    unlinkSync(link)
-    stat = undefined
-  }
-  if (stat !== undefined) {
-    const existing = readModuleProxyRecord(link)
-    if (existing?.dsh?.moduleFallback?.targets === undefined) {
-      throw new Error(`dsh: ${link} exists and is not a dsh-managed module proxy; remove it so dsh can manage the installation fallback`)
-    }
-    if (existing.version === version
-      && JSON.stringify(existing.dsh.moduleFallback.targets) === JSON.stringify(targets)
-      && Object.keys(targets).every((_, index) => existsSync(join(link, `entry-${index}.js`)))) return
-    rmSync(link, { recursive: true })
-  }
-  mkdirSync(link, { recursive: true })
-  writeFileSync(join(link, 'package.json'), JSON.stringify(manifest, undefined, 2) + '\n')
-  for (const [index, target] of Object.values(targets).entries()) {
-    const specifier = JSON.stringify(target)
-    writeFileSync(
-      join(link, `entry-${index}.js`),
-      `export * from ${specifier}\nimport * as target from ${specifier}\nexport default target.default\n`,
-    )
-  }
-}
-
-type ModuleFallbackEntry =
-  | { kind: 'symlink'; packageName: string; packageDir: string }
-  | { kind: 'proxy'; packageName: string; version: string; targets: Record<string, string> }
-
 /** Read one package manifest used while traversing a module-fallback dependency graph. */
 function readModuleFallbackManifest(anchor: string): ProfileManifest {
   return JSON.parse(readFileSync(anchor, 'utf8')) as ProfileManifest
@@ -467,9 +206,8 @@ function profileDependencyNames(manifest: ProfileManifest): string[] {
 
 /** Resolve the installation generation that every profile must find through the fallback directory. */
 function resolveModuleFallbackEntries(
-  installAnchor: string, materialize = true, skippedBundles: ReadonlySet<string> = new Set(),
+  installAnchor: string, skippedBundles: ReadonlySet<string>,
 ): {
-  entries: ModuleFallbackEntry[]
   packageNames: ReadonlySet<string>
   packageDirs: ReadonlyMap<string, string>
   declarers: ReadonlyMap<string, string>
@@ -513,90 +251,40 @@ function resolveModuleFallbackEntries(
       queue.push({ anchor: manifestPath, manifest })
     }
   }
-  const entries = !materialize
-    ? []
-    : !isPackagedExecutable()
-      ? [...links].map(([packageName, packageDir]) => ({ kind: 'symlink' as const, packageName, packageDir }))
-      : [...links].flatMap(([packageName, packageDir]) => {
-        const source = packageProxySource(packageName, packageDir)
-        return Object.keys(source.targets).length === 0
-          ? []
-          : [{ kind: 'proxy' as const, packageName, version: source.version, targets: source.targets }]
-      })
-  return { entries, packageNames: new Set(links.keys()), packageDirs: links, declarers, versions }
+  return { packageNames: new Set(links.keys()), packageDirs: links, declarers, versions }
 }
 
-/** Return whether one existing fallback entry already matches its resolved installation generation. */
-function moduleFallbackEntryCurrent(modulesDir: string, entry: ModuleFallbackEntry): boolean {
-  const link = join(modulesDir, entry.packageName)
-  try {
-    const stat = lstatSync(link)
-    if (entry.kind === 'symlink') {
-      return stat.isSymbolicLink() && readlinkSync(link) === entry.packageDir
-    }
-    if (!stat.isDirectory()) return false
-    const existing = readModuleProxyRecord(link)
-    return existing?.version === entry.version
-      && JSON.stringify(existing.dsh?.moduleFallback?.targets) === JSON.stringify(entry.targets)
-      && Object.keys(entry.targets).every((_, index) => existsSync(join(link, `entry-${index}.js`)))
-  } catch {
-    return false
-  }
-}
-
-/** Return whether every required fallback entry is already ready for this installation. */
-function moduleFallbackCurrent(modulesDir: string, entries: readonly ModuleFallbackEntry[]): boolean {
-  return entries.every(entry => moduleFallbackEntryCurrent(modulesDir, entry))
-}
-
-/** Inputs for {@link healProfilesModuleFallback}. */
-export interface ProfileModuleFallbackOptions {
+/** Inputs for {@link createProfileResolutionGeneration}. */
+export interface ProfileResolutionOptions {
   /** Absolute package.json path of the running dsh installation. */
   installAnchor: string
   /** Loaded profile whose selected bundles may carry profile-local plugins. */
   profile?: Profile
   /** Harness home; defaults to {@link resolveDshHome}. */
   home?: string
-  /** Whether to materialize the computed generation; defaults to true. */
-  materialize?: boolean
 }
 
 /**
- * Maintain module fallbacks for one profile launch. The shared
- * `$DSH_HOME/profiles/node_modules` mirrors the dsh installation dependency
- * closure. Plain Node writes symlinks; a packaged executable writes ESM
- * proxies under a cross-process lock because operating-system links cannot
- * enter pkg's virtual filesystem. Missing packages carried only by selected
- * bundles are linked through a profile-owned directory into that profile's
- * `node_modules`; pnpm-managed entries remain authoritative, and another
- * profile's links cannot change its resolution.
+ * Compute a profile resolution generation without writing module-resolution files.
  * @param options - installation anchor, optional loaded profile, and Harness home.
- * @returns the computed fallback generation after optional materialization.
+ * @returns the complete immutable generation.
  */
-export async function healProfilesModuleFallback(
-  options: ProfileModuleFallbackOptions,
+export async function createProfileResolutionGeneration(
+  options: ProfileResolutionOptions,
 ): Promise<ProfileResolutionGeneration> {
-  const { installAnchor, profile, home = resolveDshHome(), materialize = true } = options
+  const { installAnchor, profile, home = resolveDshHome() } = options
   const profilesDir = join(home, PROFILES_DIR)
-  const modulesDir = join(profilesDir, 'node_modules')
-  if (materialize) mkdirSync(modulesDir, { recursive: true })
   const manifest = readOptionalProfileManifest(profile)
-  const { entries, packageNames, packageDirs, declarers, versions } = resolveModuleFallbackEntries(
-    installAnchor, materialize, skippedProfileBundles(profile, manifest),
+  const { packageNames, packageDirs, declarers, versions } = resolveModuleFallbackEntries(
+    installAnchor, skippedProfileBundles(profile, manifest),
   )
-  if (materialize && !moduleFallbackCurrent(modulesDir, entries)) {
-    await withFileLock(modulesDir, () => {
-      if (!moduleFallbackCurrent(modulesDir, entries)) healProfilesModuleFallbackLocked(entries, modulesDir)
-      return Promise.resolve()
-    })
-  }
   const profileDeclarers = new Map<string, string>()
   const profileVersions = new Map<string, string | undefined>()
   const localPackageNames = profile === undefined ? [] : installedProfilePackageNames(profile, manifest)
   const profilePackages: ReadonlyMap<string, string> = profile === undefined
     ? new Map<string, string>()
-    : healProfileModuleFallback(profile, packageNames, materialize, profileDeclarers, profileVersions)
-  return Object.freeze({
+    : resolveProfileModuleFallback(profile, packageNames, profileDeclarers, profileVersions)
+  return await Promise.resolve(Object.freeze({
     profilesDir,
     profileDir: profile?.dir,
     localPackageNames: Object.freeze(localPackageNames),
@@ -610,7 +298,7 @@ export async function healProfilesModuleFallback(
         declarer: profileDeclarers.get(name) as string, scope: 'profile' as const,
       })),
     ]),
-  })
+  }))
 }
 
 /** Synthetic profiles used by direct callers may have no on-disk manifest. */
@@ -636,65 +324,13 @@ function installedProfilePackageNames(profile: Profile, manifest: ProfileManifes
   if (manifest === undefined) return []
   return profileDependencyNames(manifest).filter((name) => {
     const candidate = join(profile.dir, 'node_modules', name)
-    if (!existsSync(join(candidate, 'package.json'))) return false
-    return !isProfileModuleFallbackLink(profile.dir, name)
+    return existsSync(join(candidate, 'package.json'))
   })
-}
-
-/**
- * Compute a profile resolution generation without materializing links or proxies.
- * @param options - installation anchor, profile, and optional Harness home.
- * @returns the complete immutable generation.
- */
-export function createProfileResolutionGeneration(
-  options: Omit<ProfileModuleFallbackOptions, 'materialize'>,
-): Promise<ProfileResolutionGeneration> {
-  return healProfilesModuleFallback({ ...options, materialize: false })
-}
-
-/**
- * Supply an application-owned profile with filesystem packages from its installation and selected bundles.
- * All fallback links belong to the profile; no shared Harness-home directory is written.
- * Existing pnpm-managed packages remain authoritative. The caller serializes profile mutations.
- * @param options - owning installation package.json and the loaded application profile.
- */
-export function healIsolatedProfileModuleFallback(options: { installAnchor: string; profile: Profile }): void {
-  const installationLinks = resolveModuleFallbackEntries(
-    options.installAnchor, false, skippedProfileBundles(options.profile, readOptionalProfileManifest(options.profile)),
-  ).packageDirs
-  healProfileModuleFallback(options.profile, new Set(installationLinks.keys()), true, undefined, undefined, installationLinks)
-}
-
-/**
- * Detach this profile's fallback links before a package-manager mutation.
- * Installed packages and links replaced by pnpm remain untouched; the next profile launch restores fallbacks.
- * @param profileDir - profile directory whose package mutation is serialized by the caller.
- */
-export function unlinkProfileModuleFallback(profileDir: string): void {
-  const ownedModulesDir = join(profileDir, PROFILE_MODULE_FALLBACK_DIR, 'node_modules')
-  if (!existsSync(ownedModulesDir)) return
-  for (const name of ownedPackageNames(ownedModulesDir)) {
-    removeProfileSymlink(join(profileDir, 'node_modules'), ownedModulesDir, name)
-  }
-}
-
-/** Heal one module-fallback generation while the cross-process writer lock is held. */
-function healProfilesModuleFallbackLocked(entries: readonly ModuleFallbackEntry[], modulesDir: string): void {
-  for (const entry of entries) {
-    const link = join(modulesDir, entry.packageName)
-    mkdirSync(dirname(link), { recursive: true })
-    if (entry.kind === 'proxy') {
-      ensureModuleProxy(link, entry.packageName, entry.version, entry.targets)
-    } else {
-      ensureSymlink(link, entry.packageDir)
-    }
-  }
 }
 
 /** Collect the first resolvable package directory for each dependency name. */
 function dependencyClosure(
   anchors: readonly string[], reserved: ReadonlySet<string>,
-  exclude: (candidate: string, packageName: string) => boolean,
   declarers?: Map<string, string>,
   versions?: Map<string, string | undefined>,
 ): Map<string, string> {
@@ -717,7 +353,7 @@ function dependencyClosure(
       /* v8 ignore next -- an installable package manifest always declares dependencies or peers */
       for (const dep of profileDependencyNames(next.manifest)) {
         if (visited.has(dep)) continue
-        const dir = packageDirFromAnchor(next.anchor, dep, exclude)
+        const dir = packageDirFromAnchor(next.anchor, dep)
         // A declared-but-uninstalled dependency cannot be loader-visible.
         if (dir === undefined) continue
         visited.add(dep)
@@ -733,51 +369,18 @@ function dependencyClosure(
   return links
 }
 
-/** Reconcile packages carried only by selected bundles into one profile. */
-function healProfileModuleFallback(
-  profile: Profile, installationPackageNames: ReadonlySet<string>, materialize = true,
+/** Resolve packages carried only by selected bundles for one profile. */
+function resolveProfileModuleFallback(
+  profile: Profile, installationPackageNames: ReadonlySet<string>,
   declarers?: Map<string, string>,
   versions?: Map<string, string | undefined>,
-  installationLinks: ReadonlyMap<string, string> = new Map(),
 ): Map<string, string> {
-  const profileModulesDir = join(profile.dir, 'node_modules')
-  const ownedModulesDir = join(profile.dir, PROFILE_MODULE_FALLBACK_DIR, 'node_modules')
-  if (materialize) {
-    mkdirSync(profileModulesDir, { recursive: true })
-    mkdirSync(ownedModulesDir, { recursive: true })
-  }
   const bundleAnchors = profile.layers
     .filter(layer => !installationPackageNames.has(layer.packageName))
     .map(layer => join(layer.packageDir, 'package.json'))
-  const bundleLinks = dependencyClosure(bundleAnchors, installationPackageNames, (candidate, packageName) => {
-    const profileLink = join(profileModulesDir, packageName)
-    if (canonicalLinkPath(candidate) !== canonicalLinkPath(profileLink)) return false
-    try {
-      return lstatSync(profileLink).isSymbolicLink()
-        && symlinkPointsTo(profileLink, join(ownedModulesDir, packageName))
-    } catch (error) {
-      // A concurrent cleanup may remove the projection after package discovery.
-      /* v8 ignore next 2 -- a non-ENOENT lstat failure requires a host filesystem fault */
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true
-      /* v8 ignore next -- see the host-filesystem exception above */
-      throw error
-    }
-  }, declarers, versions)
+  const bundleLinks = dependencyClosure(bundleAnchors, installationPackageNames, declarers, versions)
   for (const layer of profile.layers) bundleLinks.delete(layer.packageName)
-  const links = new Map([...installationLinks, ...bundleLinks])
-  if (!materialize) return links
-  for (const packageName of ownedPackageNames(ownedModulesDir)) {
-    if (!links.has(packageName)) removeProfileSymlink(profileModulesDir, ownedModulesDir, packageName)
-  }
-  for (const [packageName, target] of links) {
-    const ownedLink = join(ownedModulesDir, packageName)
-    mkdirSync(dirname(ownedLink), { recursive: true })
-    ensureSymlink(ownedLink, target)
-    const profileLink = join(profileModulesDir, packageName)
-    mkdirSync(dirname(profileLink), { recursive: true })
-    ensureProfileSymlink(profileLink, ownedLink)
-  }
-  return links
+  return bundleLinks
 }
 
 /**
@@ -851,13 +454,12 @@ function normalizeShippedProfile(name: string, dir: string, manifest: ProfileMan
  */
 function packageDirFromAnchor(
   anchor: string, packageName: string,
-  exclude: (candidate: string, packageName: string) => boolean = () => false,
 ): string | undefined {
   // resolve.paths returns null only for builtins, which no bundle name is.
   /* v8 ignore next */
   for (const searchPath of createRequire(anchor).resolve.paths(packageName) ?? []) {
     const candidate = join(searchPath, packageName)
-    if (existsSync(join(candidate, 'package.json')) && !exclude(candidate, packageName)) return candidate
+    if (existsSync(join(candidate, 'package.json'))) return candidate
   }
   return undefined
 }

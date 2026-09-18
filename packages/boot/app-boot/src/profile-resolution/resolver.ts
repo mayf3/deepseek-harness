@@ -7,7 +7,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { getEnvironmentData, setEnvironmentData } from 'node:worker_threads'
 import type { ModuleLoaderV1, ModuleLoaderV2, ResolveResult } from '@deepseek-ai/cordis-plugin-loader'
 import { imports as resolvePackageImports, type Package as ResolvePackageManifest } from 'resolve.exports'
-import { isProfileModuleFallbackLink } from './legacy-links.ts'
 import type { ProfileResolutionEntry, ProfileResolutionGeneration } from '../profile.ts'
 
 const WORKER_RESOLUTION_KEY = '@deepseek-ai/dsh-app-boot/profile-resolution'
@@ -83,9 +82,6 @@ interface CompiledGeneration {
   readonly esmRoutes: ResolutionRoutes
   readonly cjsRoutes: ResolutionRoutes
 }
-
-/** Whether runtime resolution redirects requests or verifies the materialized backend. */
-export type ProfileResolutionBehavior = 'enforce' | 'verify'
 
 /** Active resolver registration in one Node isolate. */
 export interface ProfileResolutionRegistration {
@@ -171,14 +167,14 @@ function nativePackageDir(parent: string, name: string): string | undefined {
 
 function localPackageCandidate(
   searchPath: string, name: string, flavor: 'esm' | 'cjs',
-): { packageDir: string; canBeManagedLink: boolean } | undefined {
+): { packageDir: string } | undefined {
   const candidate = join(searchPath, name)
   const stat = statSync(candidate, { throwIfNoEntry: false })
   const found = flavor === 'esm'
     ? stat?.isDirectory() === true
     : stat !== undefined
       || ['.js', '.json', '.node'].some(extension => existsSync(candidate + extension))
-  return found ? { packageDir: candidate, canBeManagedLink: stat !== undefined } : undefined
+  return found ? { packageDir: candidate } : undefined
 }
 
 function selfReferenceName(parent: string): string | false | null {
@@ -280,9 +276,7 @@ function isUnselectedPackageMiss(error: unknown): boolean {
 
 function sameResolution(left: string, right: string): boolean {
   if (left === right) return true
-  const leftPath = left.startsWith('file:') ? fileURLToPath(left) : left
-  const rightPath = right.startsWith('file:') ? fileURLToPath(right) : right
-  return canonicalPath(leftPath) === canonicalPath(rightPath)
+  return canonicalPath(left) === canonicalPath(right)
 }
 
 /** One mutable pointer to immutable generation data. */
@@ -345,19 +339,13 @@ class ResolutionRouter {
     }
 
     const target = generation.entries.get(name)
-    const candidates: Array<{ packageDir: string; canBeManagedLink: boolean }> = []
+    const candidates: Array<{ packageDir: string }> = []
     const localSearchPaths: string[] = []
     for (const searchPath of createRequire(parent).resolve.paths(name) as string[]) {
       if (generation.shared.has(resolve(searchPath))) break
       localSearchPaths.push(searchPath)
       const candidate = localPackageCandidate(searchPath, name, flavor)
-      if (candidate !== undefined) {
-        const legacy = candidate.canBeManagedLink && generation.profile.some(prefix => (
-          candidate.packageDir === join(prefix, 'node_modules', name)
-          && isProfileModuleFallbackLink(prefix.slice(0, -1), name)
-        ))
-        if (!legacy) candidates.push(candidate)
-      }
+      if (candidate !== undefined) candidates.push(candidate)
     }
     if (candidates.length > 0) {
       if (flavor === 'cjs' && nativeResolve !== undefined) {
@@ -391,7 +379,7 @@ class ResolutionRouter {
 
     const eligible = target?.scope === 'installation'
       || (target?.scope === 'profile' && parentRoutes.activeProfile)
-    const after = join(dirname(profilesDir), 'package.json')
+    const after = join(profilesDir, 'package.json')
     const route: ResolutionRoute = eligible
       ? { kind: 'fallback', entry: target, after }
       : { kind: 'after-fallback', parent: after }
@@ -597,32 +585,13 @@ function throwWithoutCjsAnchor(error: unknown, anchor: string): never {
   throw error
 }
 
-function assertEquivalent(actual: string, expected: string, request: string, parent: string): void {
-  if (sameResolution(actual, expected)) return
-  throw new Error(
-    `profile resolution mismatch for ${JSON.stringify(request)} from ${parent}: disk resolved ${actual}, generation resolved ${expected}`,
-  )
-}
-
-function assertOptionalEquivalent(
-  actual: string | undefined, expected: string | undefined, request: string, parent: string,
-): void {
-  if (actual === undefined && expected === undefined) return
-  if (actual !== undefined && expected !== undefined && sameResolution(actual, expected)) return
-  throw new Error(
-    `profile resolution mismatch for ${JSON.stringify(request)} from ${parent}: disk selected ${actual ?? 'nothing'}, generation selected ${expected ?? 'nothing'}`,
-  )
-}
-
 /**
  * Install one profile generation on Node's default ESM and CommonJS resolvers.
  * @param generation - complete package table and profile scope.
- * @param behavior - enforce the generation, or verify a materialized generation.
  * @returns a registration that replaces the generation or restores the native methods.
  */
 export function installProfileResolution(
   generation: ProfileResolutionGeneration,
-  behavior: ProfileResolutionBehavior = 'enforce',
 ): ProfileResolutionRegistration {
   const router = new ResolutionRouter(generation)
   const { esm, esmDefaultResolve, esmConditions, cjs, cjsConditions, modern } = internalModules()
@@ -669,18 +638,7 @@ export function installProfileResolution(
         } catch (error) {
           return restoreImporter(error)
         }
-        if (behavior === 'enforce') return expected
-        const actual = native(request, parent, attributes)
-        /* v8 ignore start -- Node 22 is the asynchronous adapter and is covered by the external version matrix */
-        if (expected instanceof Promise || actual instanceof Promise) {
-          return Promise.all([actual, expected]).then(([resolved, wanted]) => {
-            assertEquivalent(resolved.url, wanted.url, request, parent)
-            return resolved
-          })
-        }
-        /* v8 ignore stop */
-        assertEquivalent(actual.url, expected.url, request, parent)
-        return actual
+        return expected
       }
       const cacheable = attributes === EMPTY_ATTRIBUTES || Object.keys(attributes).length === 0
       if (cacheable && state.esm !== undefined) return state.esm
@@ -691,51 +649,20 @@ export function installProfileResolution(
         return result
       }
       const routedParent = pathToFileURL(route.kind === 'fallback' ? route.entry.declarer : route.parent).href
-      if (behavior === 'enforce') {
-        const previous = delegatedEsm
-        delegatedEsm = { parent: routedParent, request }
-        const restoreImporter = (error: unknown): never => throwWithImporter(error, routedParent, parent)
-        try {
-          let result: ResolveResult | Promise<ResolveResult>
-          try {
-            result = native(request, routedParent, attributes)
-          } catch (error) {
-            return restoreImporter(error)
-          }
-          /* v8 ignore next -- Node 24+ resolves synchronously; the Node 22 matrix covers its Promise result */
-          if (result instanceof Promise) return result.catch(restoreImporter)
-          if (cacheable) state.esm = result
-          return result
-        } finally {
-          delegatedEsm = previous
-        }
-      }
-      const actual = native(request, parent, attributes)
       const previous = delegatedEsm
       delegatedEsm = { parent: routedParent, request }
       const restoreImporter = (error: unknown): never => throwWithImporter(error, routedParent, parent)
       try {
-        let expected: ResolveResult | Promise<ResolveResult>
+        let result: ResolveResult | Promise<ResolveResult>
         try {
-          const result = native(request, routedParent, attributes)
-          expected = result
-          /* v8 ignore next -- Node 24+ resolves synchronously; the Node 22 matrix covers its Promise result */
-          if (result instanceof Promise) expected = result.catch(restoreImporter)
+          result = native(request, routedParent, attributes)
         } catch (error) {
           return restoreImporter(error)
         }
-        /* v8 ignore start -- Node 22 is the asynchronous adapter and is covered by the external version matrix */
-        if (expected instanceof Promise || actual instanceof Promise) {
-          return Promise.all([actual, expected]).then(([resolved, wanted]) => {
-            assertEquivalent(resolved.url, wanted.url, request, parent)
-            if (cacheable) state.esm = resolved
-            return resolved
-          })
-        }
-        /* v8 ignore stop */
-        assertEquivalent(actual.url, expected.url, request, parent)
-        if (cacheable) state.esm = actual
-        return actual
+        /* v8 ignore next -- Node 24+ resolves synchronously; the Node 22 matrix covers its Promise result */
+        if (result instanceof Promise) return result.catch(restoreImporter)
+        if (cacheable) state.esm = result
+        return result
       } finally {
         delegatedEsm = previous
       }
@@ -867,11 +794,7 @@ export function installProfileResolution(
         ? packageImportsTarget(parentFilename, request, conditions)
         : undefined
       if (target === undefined) return originalFilename.call(cjs, request, parent, main, options)
-      const expected = resolvePackageImportCjs(target, conditions)
-      if (behavior === 'enforce') return expected
-      const actual = originalFilename.call(cjs, request, parent, main, options)
-      assertEquivalent(actual, expected, request, parentFilename)
-      return actual
+      return resolvePackageImportCjs(target, conditions)
     }
     if (cacheable && state.cjs !== undefined) return state.cjs
     const route = state.route
@@ -920,14 +843,8 @@ export function installProfileResolution(
           }
         }
       }
-      if (behavior === 'enforce') {
-        if (cacheable) state.cjs = expected
-        return expected
-      }
-      const actual = originalFilename.call(cjs, request, parent, main, options)
-      assertEquivalent(actual, expected, request, parentFilename)
-      if (cacheable) state.cjs = actual
-      return actual
+      if (cacheable) state.cjs = expected
+      return expected
     } finally {
       delegatedCjs--
     }
@@ -936,19 +853,7 @@ export function installProfileResolution(
 
   return {
     packageDir(specifier, parentURL) {
-      const expected = router.packageDir(specifier, parentURL)
-      if (behavior !== 'verify' || !startsWithin(parentURL, profileUrls)) return expected
-      const name = barePackageName(specifier)
-      if (name === undefined) return expected
-      let parent: string
-      try {
-        parent = fileURLToPath(parentURL)
-      } catch {
-        return expected
-      }
-      const actual = nativePackageDir(parent, name)
-      assertOptionalEquivalent(actual, expected, specifier, parentURL)
-      return expected
+      return router.packageDir(specifier, parentURL)
     },
     replace(next) { router.replace(next) },
     dispose() {
@@ -962,14 +867,12 @@ export function installProfileResolution(
 /**
  * Publish one generation for Harness-owned Workers.
  * @param generation - complete package table and profile scope.
- * @param behavior - enforce or verify the generation in newly created Workers.
  * @returns a disposer restoring the previous thread environment data.
  */
 export function registerWorkerResolution(
   generation: ProfileResolutionGeneration,
-  behavior: ProfileResolutionBehavior = 'enforce',
 ): () => void {
   const previous = getEnvironmentData(WORKER_RESOLUTION_KEY)
-  setEnvironmentData(WORKER_RESOLUTION_KEY, { generation, behavior })
+  setEnvironmentData(WORKER_RESOLUTION_KEY, { generation })
   return () => { setEnvironmentData(WORKER_RESOLUTION_KEY, previous) }
 }
