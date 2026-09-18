@@ -318,7 +318,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 3,
+        "sessionFormatVersion": 4,
         "throughSeq": 19
       }
     },
@@ -501,24 +501,19 @@
         "turn": 1,
         "step": 1,
         "message": {
+          "role": "tool",
           "source": {
             "kind": "tool",
             "callId": "advanced-code"
           },
+          "toolCallId": "advanced-code",
           "content": [
             {
-              "type": "tool-result",
-              "toolCallId": "advanced-code",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "42"
-                }
-              ],
-              "isError": false
+              "type": "text",
+              "text": "42"
             }
           ],
-          "role": "user",
+          "isError": false,
           "id": "{{messageId}}"
         }
       },
@@ -551,7 +546,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 3,
+        "sessionFormatVersion": 4,
         "throughSeq": 27
       }
     },
@@ -699,24 +694,19 @@
         "turn": 1,
         "step": 2,
         "message": {
+          "role": "tool",
           "source": {
             "kind": "tool",
             "callId": "advanced-denied-native"
           },
+          "toolCallId": "advanced-denied-native",
           "content": [
             {
-              "type": "tool-result",
-              "toolCallId": "advanced-denied-native",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "Error: Auto review rejected tool \"snapshot_double\"; its body was not executed"
-                }
-              ],
-              "isError": true
+              "type": "text",
+              "text": "Error: Auto review rejected tool \"snapshot_double\"; its body was not executed"
             }
           ],
-          "role": "user",
+          "isError": true,
           "id": "{{messageId}}"
         },
         "error": {
@@ -754,7 +744,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 3,
+        "sessionFormatVersion": 4,
         "throughSeq": 33
       }
     },
@@ -942,24 +932,19 @@
         "turn": 1,
         "step": 3,
         "message": {
+          "role": "tool",
           "source": {
             "kind": "tool",
             "callId": "advanced-denied-ptc"
           },
+          "toolCallId": "advanced-denied-ptc",
           "content": [
             {
-              "type": "tool-result",
-              "toolCallId": "advanced-denied-ptc",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "Auto review rejected tool \"snapshot_double\"; its body was not executed"
-                }
-              ],
-              "isError": false
+              "type": "text",
+              "text": "Auto review rejected tool \"snapshot_double\"; its body was not executed"
             }
           ],
-          "role": "user",
+          "isError": false,
           "id": "{{messageId}}"
         }
       },
@@ -992,7 +977,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 3,
+        "sessionFormatVersion": 4,
         "throughSeq": 41
       }
     },
@@ -1152,24 +1137,19 @@
         "turn": 1,
         "step": 4,
         "message": {
+          "role": "tool",
           "source": {
             "kind": "tool",
             "callId": "advanced-direct-child"
           },
+          "toolCallId": "advanced-direct-child",
           "content": [
             {
-              "type": "tool-result",
-              "toolCallId": "advanced-direct-child",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "DIRECT_CHILD_OK"
-                }
-              ],
-              "isError": false
+              "type": "text",
+              "text": "DIRECT_CHILD_OK"
             }
           ],
-          "role": "user",
+          "isError": false,
           "id": "{{messageId}}"
         }
       },
@@ -1202,7 +1182,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 3,
+        "sessionFormatVersion": 4,
         "throughSeq": 48
       }
     },
@@ -1401,24 +1381,19 @@
         "turn": 1,
         "step": 5,
         "message": {
+          "role": "tool",
           "source": {
             "kind": "tool",
             "callId": "advanced-workflow"
           },
+          "toolCallId": "advanced-workflow",
           "content": [
             {
-              "type": "tool-result",
-              "toolCallId": "advanced-workflow",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "workflow \"advanced-exe-snapshot\" completed (1 agent).\nReturn value:\n{\n  \"reply\": \"WORKFLOW_CHILD_OK\"\n}"
-                }
-              ],
-              "isError": false
+              "type": "text",
+              "text": "workflow \"advanced-exe-snapshot\" completed (1 agent).\nReturn value:\n{\n  \"reply\": \"WORKFLOW_CHILD_OK\"\n}"
             }
           ],
-          "role": "user",
+          "isError": false,
           "id": "{{messageId}}"
         }
       },
@@ -1451,7 +1426,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 3,
+        "sessionFormatVersion": 4,
         "throughSeq": 59
       }
     },
@@ -2088,7 +2063,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 3,
+            "sessionFormatVersion": 4,
             "throughSeq": 19
           }
         }
@@ -2301,24 +2276,19 @@
             "turn": 1,
             "step": 1,
             "message": {
+              "role": "tool",
               "source": {
                 "kind": "tool",
                 "callId": "advanced-code"
               },
+              "toolCallId": "advanced-code",
               "content": [
                 {
-                  "type": "tool-result",
-                  "toolCallId": "advanced-code",
-                  "content": [
-                    {
-                      "type": "text",
-                      "text": "42"
-                    }
-                  ],
-                  "isError": false
+                  "type": "text",
+                  "text": "42"
                 }
               ],
-              "role": "user",
+              "isError": false,
               "id": "{{messageId}}"
             }
           },
@@ -2369,7 +2339,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 3,
+            "sessionFormatVersion": 4,
             "throughSeq": 27
           }
         }
@@ -2535,24 +2505,19 @@
             "turn": 1,
             "step": 2,
             "message": {
+              "role": "tool",
               "source": {
                 "kind": "tool",
                 "callId": "advanced-denied-native"
               },
+              "toolCallId": "advanced-denied-native",
               "content": [
                 {
-                  "type": "tool-result",
-                  "toolCallId": "advanced-denied-native",
-                  "content": [
-                    {
-                      "type": "text",
-                      "text": "Error: Auto review rejected tool \"snapshot_double\"; its body was not executed"
-                    }
-                  ],
-                  "isError": true
+                  "type": "text",
+                  "text": "Error: Auto review rejected tool \"snapshot_double\"; its body was not executed"
                 }
               ],
-              "role": "user",
+              "isError": true,
               "id": "{{messageId}}"
             },
             "error": {
@@ -2608,7 +2573,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 3,
+            "sessionFormatVersion": 4,
             "throughSeq": 33
           }
         }
@@ -2826,24 +2791,19 @@
             "turn": 1,
             "step": 3,
             "message": {
+              "role": "tool",
               "source": {
                 "kind": "tool",
                 "callId": "advanced-denied-ptc"
               },
+              "toolCallId": "advanced-denied-ptc",
               "content": [
                 {
-                  "type": "tool-result",
-                  "toolCallId": "advanced-denied-ptc",
-                  "content": [
-                    {
-                      "type": "text",
-                      "text": "Auto review rejected tool \"snapshot_double\"; its body was not executed"
-                    }
-                  ],
-                  "isError": false
+                  "type": "text",
+                  "text": "Auto review rejected tool \"snapshot_double\"; its body was not executed"
                 }
               ],
-              "role": "user",
+              "isError": false,
               "id": "{{messageId}}"
             }
           },
@@ -2894,7 +2854,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 3,
+            "sessionFormatVersion": 4,
             "throughSeq": 41
           }
         }
@@ -3425,7 +3385,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{child-1}}",
-            "sessionFormatVersion": 3,
+            "sessionFormatVersion": 4,
             "throughSeq": 16
           }
         }
@@ -3613,24 +3573,19 @@
             "turn": 1,
             "step": 4,
             "message": {
+              "role": "tool",
               "source": {
                 "kind": "tool",
                 "callId": "advanced-direct-child"
               },
+              "toolCallId": "advanced-direct-child",
               "content": [
                 {
-                  "type": "tool-result",
-                  "toolCallId": "advanced-direct-child",
-                  "content": [
-                    {
-                      "type": "text",
-                      "text": "DIRECT_CHILD_OK"
-                    }
-                  ],
-                  "isError": false
+                  "type": "text",
+                  "text": "DIRECT_CHILD_OK"
                 }
               ],
-              "role": "user",
+              "isError": false,
               "id": "{{messageId}}"
             }
           },
@@ -3681,7 +3636,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 3,
+            "sessionFormatVersion": 4,
             "throughSeq": 48
           }
         }
@@ -4243,7 +4198,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{child-2}}",
-            "sessionFormatVersion": 3,
+            "sessionFormatVersion": 4,
             "throughSeq": 16
           }
         }
@@ -4462,24 +4417,19 @@
             "turn": 1,
             "step": 5,
             "message": {
+              "role": "tool",
               "source": {
                 "kind": "tool",
                 "callId": "advanced-workflow"
               },
+              "toolCallId": "advanced-workflow",
               "content": [
                 {
-                  "type": "tool-result",
-                  "toolCallId": "advanced-workflow",
-                  "content": [
-                    {
-                      "type": "text",
-                      "text": "workflow \"advanced-exe-snapshot\" completed (1 agent).\nReturn value:\n{\n  \"reply\": \"WORKFLOW_CHILD_OK\"\n}"
-                    }
-                  ],
-                  "isError": false
+                  "type": "text",
+                  "text": "workflow \"advanced-exe-snapshot\" completed (1 agent).\nReturn value:\n{\n  \"reply\": \"WORKFLOW_CHILD_OK\"\n}"
                 }
               ],
-              "role": "user",
+              "isError": false,
               "id": "{{messageId}}"
             }
           },
@@ -4530,7 +4480,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 3,
+            "sessionFormatVersion": 4,
             "throughSeq": 59
           }
         }
