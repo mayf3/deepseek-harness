@@ -229,10 +229,11 @@
 }
 
 /* macOS hiddenInset titlebar: the logo row extends the frame band's drag
-   below 52px. Safe as a drag source: it precedes the sidebar's overlay slots
-   in document order, so their no-drag still wins. The brand's pointer
-   New-Session shortcut yields to the drag (keyboard activation stays); the
-   dedicated New Session button below keeps the pointer path. */
+   below 52px, and the brand rides it — SidebarRoot renders the wordmark as a
+   plain span there, so the global interactive no-drag rule never subtracts
+   it; the dedicated New Session button below keeps the pointer and keyboard
+   paths. Safe as a drag source: it precedes the sidebar's overlay slots in
+   document order, so their no-drag still wins. */
 :global([data-platform='darwin']) .logoRow {
   -webkit-app-region: drag;
 }
@@ -252,6 +253,12 @@
   background: transparent;
   color: inherit;
   cursor: pointer;
+}
+
+/* On macOS the brand is a window-drag surface, not a New Session button;
+   a pointer cursor would promise a click that drags the window instead. */
+:global([data-platform='darwin']) .brand {
+  cursor: default;
 }
 
 /* Mark and name are independent slots; the shell owns their shared baseline,
