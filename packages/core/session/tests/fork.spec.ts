@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, ToolCallId, createMessage } from '@deepseek-ai/dsh-llm'
+import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionForkError, SessionId, SessionLogOffset, SessionSeq, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SurfaceEvent, TurnEndReason } from '@deepseek-ai/dsh-session'
 
@@ -85,7 +86,8 @@ describe('SessionStore.fork', () => {
     expect(child.snapshotEvents()).not.toBe(source.snapshotEvents())
     expect(child.snapshotEvents()[1]).not.toBe(source.snapshotEvents()[1])
     expect(() => {
-      firstUserMessage(child.snapshotEvents()).data.content[0] = { type: 'text', text: 'child mutation' }
+      (firstUserMessage(child.snapshotEvents()).data as unknown as { content: { type: string; text?: string }[] }).content[0]
+        = { type: 'text', text: 'child mutation' }
     }).toThrow(TypeError)
     expect(firstUserMessage(source.snapshotEvents()).data.content).toEqual([{ type: 'text', text: 'hello' }])
     expect(firstUserMessage(child.snapshotEvents()).data.content).toEqual([{ type: 'text', text: 'hello' }])
@@ -339,9 +341,11 @@ describe('fork boundaries inside an open turn', () => {
     // request-time patch: the derived messages end with the error tool result.
     const derived = child.deriveMessages()
     expect(derived.at(-1)).toMatchObject({
-      role: 'user',
+      role: 'tool',
       source: { kind: 'tool', callId: ToolCallId('call-ns') },
-      content: [{ type: 'tool-result', isError: true }],
+      toolCallId: ToolCallId('call-ns'),
+      isError: true,
+      content: [{ type: 'text' }],
     })
   })
 
@@ -431,7 +435,10 @@ describe('fork boundaries around a surface replacement', () => {
     source.append('turn/start', { turn: 2 })
     const replacement = source.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'summary of earlier work' }],
-      source: { kind: 'plugin', plugin: 'compaction' },
+      source: {
+        kind: 'compact-checkpoint',
+        compactionId: 'open-bracket' as Extract<MessageSource, { readonly kind: 'compact-checkpoint' }>['compactionId'],
+      },
     }), {
       surfaceOp: { op: 'replace', startSeq: replacedSeq, endSeq: replacedSeq },
       sourceEventSeqs: [replacedSeq],

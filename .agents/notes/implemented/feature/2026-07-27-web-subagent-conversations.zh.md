@@ -16,6 +16,8 @@ UI 还必须保留[持久化目录](../architecture/2026-09-01-parent-owned-suba
 
 Web 产品通过页头的当前 title 谱系区域公开选中会话中由会话支撑的直接 subagent。用户可以懒加载展开后代目录，并在现有对话区域中打开任一 mode。one-shot child 永久只读。可继续 child 只有在其确切直接 parent agent 存活时才接受用户后续消息；否则，其持久化 transcript 仍然可读，并附带恢复说明。
 
+同一个页头行还可以把 child 作为 `dsh-resource://subagentchat/session/<childSessionId>?parent=<parentSessionId>&mode=<mode>` 在右侧 Sidebar 打开。打开时优先使用独立分栏；无法分栏时回退到当前分栏。Sidebar tab 使用共享 Conversation Component Factory 渲染并省略宽度控制，因此主对话与嵌入式对话共用一套组装，而不共享布局界面。
+
 每个打开的 child 都携带目录派生地址 `{ parentSessionId, childSessionId, mode }`。选择专用历史与提示词传输的是包含 mode 的地址，而不是谱系或粗粒度 origin 标记。历史操作会从持久化存储读取会话，而不触发激活。可继续提示词通过 `subagent.prompt` 携带 Queue 或 Steer 投递，并在 inbox 接受消息时以 `{ messageId }` 成功返回；它不会公开 Activation、等待完成或返回结果。相邻 Agent 的模型消息使用单独拥有的固定 Steer 操作。
 
 通用 Host 领域遵守同一所有权边界。`session.history` 与 `session.fork` 的源端会读取已附加 Session 或检查持久化存储，而不获取 Agent；history 从所检查的确切前缀归并冷态投影值，fork 则发布一个普通的独立会话。绑定到 Agent 的通用会话、命令与目标路由会对由会话支撑的 subagent 返回 `agent-busy`；显式 id 的 `session.create` 接纳与仅针对已附加会话的队列控件亦然。拒绝分类器接受粗粒度 `origin` 标记、会话自身后缀中的 `subagent/descriptor`，或 parent 对其确切的存活运行时所有权；这些信号只会阻止通用路径取得所有权，绝不取代目录 mode 或直接 parent 授权。
@@ -37,7 +39,7 @@ Figma 中的 [subagent 列表](https://www.figma.com/design/jRBBK7zBgcszdVWQ0Fh5
 
 ## 产品约定
 
-直接 catalog 有子项或读取失败时显示 child 数量控件；空目录缺席、加载中或成功读取为空时均隐藏该控件。普通会话会用斜杠分隔当前 title 和该控件。每一级 subagent 面包屑都将紧凑的 12px title 与固定显示的双向箭头组合成一个控件：当前面包屑使用主标签颜色和 500 字重，祖先则使用三级标签颜色和 400 字重。悬停组合控件 150ms 后会打开其直接 parent 目录；浮层菜单具有短暂的跨越宽限时间，ArrowDown 保留为键盘入口。点击祖先会取消待触发的悬停、关闭已打开的目录，并且只向上导航。每个直接 parent 目录都可切换 sibling，并会加粗其选中行；目录 label 优先于可选的会话摘要 title，缺失的切换器目录在交互时加载。只有当前 subagent 会追加自己的直接 child 数量控件。过长的 title 会在固定箭头之前截断。触发器报告直接 catalog 的总数与运行数。普通侧边栏 row 隐藏 origin 为 subagent 的 Session，并从同一份已加载 catalog map 读取直接运行 child 数；Session summary 提供 activity，但绝不创建 membership。待处理交互优先于 parent 的运行中状态；二者无论哪一项存在都会保持为主要状态，而直接 child activity 则成为悬停与无障碍状态中的第二项。两者均不存在时，直接 child activity 优先于未查看的完成提醒；最后一个运行中的直接 child 停止后，该提醒会恢复。tree row 在 child catalog 缺席、加载中或失败时保持可展开，只有 catalog 成功加载为空后才成为已知叶子。加载时显示通用提示，不会从 summary 生成占位 row。tree 会呈现 continuable 与 one-shot row；one-shot 的可选 label 缺失时，回退到其 Session id。
+直接 catalog 有子项或读取失败时显示 child 数量控件；空目录缺席、加载中或成功读取为空时均隐藏该控件。普通会话会用斜杠分隔当前 title 和该控件。每一级 subagent 面包屑都将紧凑的 12px title 与固定显示的双向箭头组合成一个控件：当前面包屑使用主标签颜色和 500 字重，祖先则使用三级标签颜色和 400 字重。悬停组合控件 150ms 后会打开其直接 parent 目录；浮层菜单具有短暂的跨越宽限时间，ArrowDown 保留为键盘入口。点击祖先会取消待触发的悬停、关闭已打开的目录，并且只向上导航。每个直接 parent 目录都可切换 sibling，并会加粗其选中行；目录 label 优先于可选的会话摘要 title，缺失的切换器目录在交互时加载。只有当前 subagent 会追加自己的直接 child 数量控件。过长的 title 会在固定箭头之前截断。触发器报告直接 catalog 的总数与运行数。普通侧边栏 row 隐藏 origin 为 subagent 的 Session，并从同一份已加载 catalog map 读取直接运行 child 数；Session summary 提供 activity，但绝不创建 membership。运行中的直接 child 使用共享的三级灰色 ongoing loading。待处理交互优先于 parent 的运行中状态；二者无论哪一项存在都会保持为主要状态，而直接 child activity 则成为悬停与无障碍状态中的第二项。普通 Workspace 行存在待处理的审批、计划审阅或问题时，会用紧凑的「待批准」「计划待审」或「待回答」替换相对时间；悬停与无障碍详情仍保留完整状态和相对时间。两种主要状态均不存在时，直接 child activity 优先于未查看的完成提醒；最后一个运行中的直接 child 停止后，该提醒会恢复。tree row 在 child catalog 缺席、加载中或失败时保持可展开，只有 catalog 成功加载为空后才成为已知叶子。加载时显示通用提示，不会从 summary 生成占位 row。tree 会呈现 continuable 与 one-shot row；one-shot 的可选 label 缺失时，回退到其 Session id。
 
 `running` 表示子 Agent driver 正在处理工作；`inactive` 表示该 driver 空闲或不存在。Session 列表基线与状态事件提供活动状态，移除事件将完成的子代理标为 inactive 并保留其展示 projection。共享的父 `subagentCatalog` projection 提供成员关系。初始读取与推送值进入同一个 projection store，较新序号优先。[projection 消费决策](../simplification/2026-09-08-web-subagent-catalog-projections.zh.md) 说明加载、重连与同步取舍。提示词响应仍是投递时的权威依据。
 

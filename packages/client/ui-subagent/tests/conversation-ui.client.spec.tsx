@@ -88,6 +88,7 @@ function props(
       subagent: boundAddress === undefined ? undefined : { address: boundAddress },
     } as SessionSnapshot),
     openChild: vi.fn(),
+    openChildAside: vi.fn(),
     refresh: vi.fn(),
     lineageSessionId: PARENT,
     displayTitle: 'Parent title',
@@ -214,6 +215,14 @@ describe('SubagentHeaderLineage', () => {
     expect(screen.getByRole('button', { name: '展开 worker 的下级子代理' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '展开 reviewer 的下级子代理' })).toBeTruthy()
 
+    const sidebarButton = screen.getByRole('button', { name: '在侧边栏打开 worker' })
+    fireEvent.keyDown(sidebarButton, { key: 'Enter' })
+    fireEvent.click(sidebarButton)
+    expect(input.openChildAside).toHaveBeenCalledWith({
+      parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable',
+    })
+
+    hoverCatalog(trigger)
     fireEvent.click(screen.getByRole('treeitem', { name: /worker/ }))
     expect(input.openChild).toHaveBeenCalledWith({
       parentSessionId: PARENT,
@@ -393,7 +402,7 @@ describe('SubagentHeaderLineage', () => {
     })
   })
 
-  it('shows durable token totals, ticks active duration by seconds, and freezes inactive rows', async () => {
+  it('shows durable completion and token totals, ticks active duration, and freezes inactive rows', async () => {
     const now = 2_000_000_000_000
     const minute = 60_000
     const hour = 60 * minute
@@ -449,6 +458,11 @@ describe('SubagentHeaderLineage', () => {
         projectionValues: {
           subagentTiming: {
             settledMs,
+            ...(id === 'finished'
+              ? { lastTurnCompleted: true }
+              : id === 'interrupted'
+                ? { lastTurnCompleted: false }
+                : {}),
             ...(activeSince === undefined || activeThrough === undefined
               ? {}
               : { active: { since: activeSince, through: activeThrough } }),
@@ -471,8 +485,13 @@ describe('SubagentHeaderLineage', () => {
     const durationMetric = runningMetrics.getByText('1分10秒')
     expect(tokenMetric.parentElement).toBe(durationMetric.parentElement)
     expect(tokenMetric.nextElementSibling).toBe(durationMetric)
-    expect(screen.getByRole('treeitem', { name: /finished.*123 tok · 1小时02分03秒/ })).toBeTruthy()
-    expect(screen.getByRole('treeitem', { name: /interrupted.*123M tok · 6秒/ })).toBeTruthy()
+    const finishedRow = screen.getByRole('treeitem', { name: /finished.*已完成.*123 tok · 1小时02分03秒/ })
+    expect(finishedRow.querySelector('[data-state="done"]')).not.toBeNull()
+    const interruptedRow = screen.getByRole('treeitem', { name: /interrupted.*当前未运行.*123M tok · 6秒/ })
+    expect(interruptedRow.querySelector('[data-state="idle"]')).not.toBeNull()
+    for (const row of [runningRow, finishedRow, interruptedRow]) {
+      expect(row.querySelector('[data-state]')?.parentElement?.className).toContain('rowActivitySlot')
+    }
     expect(screen.getByRole('treeitem', { name: /days.*12天05小时06分07秒/ })).toBeTruthy()
     expect(screen.getByText('12天5小时').getAttribute('title'))
       .toBe('总活跃耗时：12天05小时06分07秒')
@@ -484,8 +503,8 @@ describe('SubagentHeaderLineage', () => {
 
     await vi.advanceTimersByTimeAsync(1_000)
     expect(screen.getByRole('treeitem', { name: /running.*4\.6K tok · 1分11秒/ })).toBeTruthy()
-    expect(screen.getByRole('treeitem', { name: /finished.*123 tok · 1小时02分03秒/ })).toBeTruthy()
-    expect(screen.getByRole('treeitem', { name: /interrupted.*123M tok · 6秒/ })).toBeTruthy()
+    expect(screen.getByRole('treeitem', { name: /finished.*已完成.*123 tok · 1小时02分03秒/ })).toBeTruthy()
+    expect(screen.getByRole('treeitem', { name: /interrupted.*当前未运行.*123M tok · 6秒/ })).toBeTruthy()
   })
 
   it('ticks expanded running grandchildren under an idle child and releases their clock on collapse', async () => {
@@ -596,8 +615,8 @@ describe('SubagentHeaderLineage', () => {
     }, summaries)
     view.rerender(<SubagentHeaderLineage {...ready} />)
     expect(screen.getByRole('group').getAttribute('aria-busy')).toBeNull()
-    expect(screen.getByRole('treeitem', { name: /indexer/ })).toBeTruthy()
-    expect(screen.getByRole('treeitem', { name: /critic/ })).toBeTruthy()
+    expect(screen.getByRole('treeitem', { name: /indexer/ }).querySelector('[data-state="idle"]')).not.toBeNull()
+    expect(screen.getByRole('treeitem', { name: /critic/ }).querySelector('[data-state="ongoing"]')).not.toBeNull()
     expect(screen.queryByText('正在加载子代理…')).toBeNull()
   })
 

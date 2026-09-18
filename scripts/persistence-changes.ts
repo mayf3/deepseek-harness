@@ -5,6 +5,7 @@ import { basename, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { JSON_SCHEMA, load } from 'js-yaml'
 import { canonicalizeSchema, schemaDigest } from './persistence-schema-model.ts'
+import { matchingSourceCompatibility, sourceKindGroups, validSourceCompatibility } from './persistence-source-policy.ts'
 import type { CanonicalSchema, PersistenceRoot, PersistenceSchemaInventory, SchemaNode, SchemaTupleElement } from './persistence-schema-model.ts'
 import { extractPersistenceSchema } from './persistence-schema.ts'
 import { persistenceCatalogArtifacts } from './gen-persistence-catalog.ts'
@@ -65,6 +66,8 @@ const CHANGE_DESCRIPTIONS = {
   'tuple-length-changed': 'tuple length changed',
   'tuple-element-cardinality-changed': 'tuple element cardinality changed',
   'union-variants-changed': 'union variants changed',
+  'source-policy-changed': 'source compatibility policy changed',
+  'attribution-kind-added': 'attribution-only source kind added',
 } as const
 
 /** Stable structural classification independent of diagnostic prose. */
@@ -169,7 +172,7 @@ function reference(value: unknown, count: number, label: string): number {
   return value as number
 }
 
-function parseSchema(value: unknown, label: string): CanonicalSchema {
+function parseSchema(value: unknown, label: string, formatVersion: 1 | 2): CanonicalSchema {
   const input = record(value, label)
   keys(input, ['root', 'nodes'], label)
   if (input.root !== 0) throw new Error(`${label}.root must be zero`)
@@ -211,7 +214,17 @@ function parseSchema(value: unknown, label: string): CanonicalSchema {
         const names = new Set<string>()
         for (const rawProperty of array(node.properties, label)) {
           const property = record(rawProperty, label)
-          keys(property, ['name', 'type', 'optional'], label)
+          keys(property, ['name', 'type', 'optional'], label, formatVersion === 2 ? ['compatibility'] : [])
+          if (property.compatibility !== undefined) {
+            const policy = record(property.compatibility, `${label} source compatibility`)
+            keys(policy, ['version', 'policy', 'binding', 'discriminator', 'unknownKinds', 'attributionKinds'], label)
+            if (policy.version !== 1 || policy.policy !== 'session-source-attribution'
+              || !['session.user-message.source', 'session.developer-message.source'].includes(String(policy.binding))
+              || policy.discriminator !== 'kind' || policy.unknownKinds !== 'preserve') {
+              throw new Error(`${label}: unsupported source compatibility policy`)
+            }
+            for (const kind of array(policy.attributionKinds, label)) textValue(kind, label)
+          }
           if (typeof property.name !== 'string') throw new Error(`${label}: property name must be a string`)
           const name = property.name
           if (names.has(name)) throw new Error(`${label}: duplicate property ${name}`)
@@ -237,6 +250,14 @@ function parseSchema(value: unknown, label: string): CanonicalSchema {
     }
   }
   const schema = input as unknown as CanonicalSchema
+  for (const node of schema.nodes) {
+    if (node.kind !== 'object') continue
+    for (const property of node.properties) {
+      if (property.compatibility !== undefined && !validSourceCompatibility(schema.nodes, node, property)) {
+        throw new Error(`${label}: invalid source compatibility binding or attribution kinds`)
+      }
+    }
+  }
   const canonical = canonicalizeSchema(schema.nodes, schema.root)
   if (JSON.stringify(canonical) !== JSON.stringify(schema)) throw new Error(`${label}: schema is not canonical`)
   return schema
@@ -261,7 +282,7 @@ export function parseHistoricalPersistenceSnapshot(value: unknown): PersistenceS
 function parseSnapshot(value: unknown, historical: boolean): PersistenceSchemaInventory {
   const input = record(value, 'schema inventory')
   keys(input, ['formatVersion', 'roots', 'types'], 'schema inventory')
-  if (input.formatVersion !== 1) throw new Error('unsupported persistence schema normalization version')
+  if (input.formatVersion !== 1 && input.formatVersion !== 2) throw new Error('unsupported persistence schema normalization version')
   const names = new Set<string>()
   for (const rawRoot of array(input.roots, 'schema roots')) {
     const root = record(rawRoot, 'schema root')
@@ -275,14 +296,14 @@ function parseSnapshot(value: unknown, historical: boolean): PersistenceSchemaIn
     } else if ((root.kind !== 'header' || !['SessionHeader', 'JsonlHeaderLine'].includes(key))
       && (root.kind !== 'envelope' || key !== 'SessionEventEnvelope')) throw new Error(`invalid schema root ${key}`)
     if (root.kind !== 'event' && (root.event !== undefined || root.surface !== undefined)) throw new Error(`${key}: non-event metadata`)
-    const schema = parseSchema(root.schema, key)
+    const schema = parseSchema(root.schema, key, input.formatVersion)
     if (root.kind === 'event') validateEventMetadata(schema, String(root.event), root.surface === true, historical)
     if (digest(root.digest, `${key} digest`) !== schemaDigest(schema)) throw new Error(`${key}: schema digest mismatch`)
   }
   for (const rawType of array(input.types, 'schema types')) {
     const type = record(rawType, 'schema type')
     keys(type, ['digest', 'schema', 'names', 'sources'], 'schema type')
-    const schema = parseSchema(type.schema, 'shared schema')
+    const schema = parseSchema(type.schema, 'shared schema', input.formatVersion)
     if (digest(type.digest, 'shared digest') !== schemaDigest(schema)) throw new Error('shared schema digest mismatch')
     for (const name of array(type.names, 'type names')) textValue(name, 'type name')
     for (const source of array(type.sources, 'type sources')) {
@@ -339,7 +360,7 @@ function matchUnionVariants(candidates: readonly (readonly number[])[]): number[
   return matches
 }
 
-/** Classify structural differences; only optional payload properties and ordinary event additions are additive.
+/** Classify structural differences using the reader promises saved with each schema.
  * @param before - predecessor root, or absence for an addition.
  * @param after - successor root, or absence for deletion.
  * @returns concrete changes and their format-bump requirement.
@@ -392,7 +413,30 @@ export function classifyPersistenceChange(before: PersistenceRoot | null, after:
         const child = `${path}.${name}`
         if (next === undefined) { add(child, 'property-removed'); continue }
         if (property.optional !== next.optional) add(child, next.optional ? 'property-made-optional' : 'property-made-required', scope !== 'body' || !next.optional)
-        descend(property.type, next.type, child, scope === 'body' || scope === 'event' && name === 'data' ? 'body' : 'strict')
+        const childScope = scope === 'body' || scope === 'event' && name === 'data' ? 'body' : 'strict'
+        if (property.compatibility !== undefined || next.compatibility !== undefined) {
+          const oldGroups = sourceKindGroups(oldRoot.schema.nodes, property.type)
+          const newGroups = sourceKindGroups(newRoot.schema.nodes, next.type)
+          if (childScope === 'body' && property.compatibility !== undefined && next.compatibility !== undefined
+            && oldGroups !== undefined && newGroups !== undefined
+            && validSourceCompatibility(oldRoot.schema.nodes, oldNode, property)
+            && validSourceCompatibility(newRoot.schema.nodes, newNode, next)
+            && matchingSourceCompatibility(property.compatibility, next.compatibility, oldGroups.keys())) {
+            for (const [kind, oldTypes] of oldGroups) {
+              const newTypes = newGroups.get(kind)
+              if (newTypes === undefined) add(`${child}[kind=${JSON.stringify(kind)}]`, 'union-variants-changed')
+              else differences.push(...compareAlternatives(oldTypes, newTypes, `${child}[kind=${JSON.stringify(kind)}]`, childScope, active))
+            }
+            for (const kind of newGroups.keys()) {
+              if (!oldGroups.has(kind)) add(`${child}[kind=${JSON.stringify(kind)}]`,
+                next.compatibility.attributionKinds.includes(kind) ? 'attribution-kind-added' : 'union-variants-changed',
+                !next.compatibility.attributionKinds.includes(kind))
+            }
+            continue
+          }
+          if (JSON.stringify(property.compatibility) !== JSON.stringify(next.compatibility)) add(child, 'source-policy-changed')
+        }
+        descend(property.type, next.type, child, childScope)
       }
       for (const [name, property] of newProps) {
         if (!oldProps.has(name)) add(`${path}.${name}`, property.optional ? 'optional-property-added' : 'required-property-added', scope !== 'body' || !property.optional)
@@ -419,19 +463,24 @@ export function classifyPersistenceChange(before: PersistenceRoot | null, after:
       return differences
     }
     if (oldNode.kind === 'union' && newNode.kind === 'union') {
-      if (oldNode.types.length !== newNode.types.length) return [describe(path, 'union-variants-changed')]
-      const candidates = oldNode.types.map(oldType => newNode.types.map(newType => compare(oldType, newType, path, scope, active)))
-      const matching = matchUnionVariants(candidates.map(row => row.flatMap((candidate, index) =>
-        candidate.every(change => !change.requiresVersionBump) ? [index] : [])))
-      if (matching !== undefined) return matching.flatMap((next, previous) => candidates[previous]?.[next] ?? [])
-      const oldTypes = new Map(oldNode.types.map(index => [fingerprint(oldRoot.schema, index, 0), index]))
-      const newTypes = new Map(newNode.types.map(index => [fingerprint(newRoot.schema, index, 1), index]))
-      const removed = [...oldTypes].filter(([hash]) => !newTypes.has(hash)).map(([, index]) => index)
-      const added = [...newTypes].filter(([hash]) => !oldTypes.has(hash)).map(([, index]) => index)
-      if (removed.length === 1 && added.length === 1) return compare(removed[0] as number, added[0] as number, path, scope, active)
-      return [describe(path, 'union-variants-changed')]
+      return compareAlternatives(oldNode.types, newNode.types, path, scope, active)
     }
     return [describe(path, 'type-changed')]
+  }
+  function compareAlternatives(
+    oldTypes: readonly number[], newTypes: readonly number[], path: string, scope: Scope, active: ReadonlySet<string>,
+  ): PersistenceTypeChange[] {
+    if (oldTypes.length !== newTypes.length) return [describe(path, 'union-variants-changed')]
+    const candidates = oldTypes.map(oldType => newTypes.map(newType => compare(oldType, newType, path, scope, active)))
+    const matching = matchUnionVariants(candidates.map(row => row.flatMap((candidate, index) =>
+      candidate.every(change => !change.requiresVersionBump) ? [index] : [])))
+    if (matching !== undefined) return matching.flatMap((next, previous) => candidates[previous]?.[next] ?? [])
+    const oldByHash = new Map(oldTypes.map(index => [fingerprint(oldRoot.schema, index, 0), index]))
+    const newByHash = new Map(newTypes.map(index => [fingerprint(newRoot.schema, index, 1), index]))
+    const removed = [...oldByHash].filter(([hash]) => !newByHash.has(hash)).map(([, index]) => index)
+    const added = [...newByHash].filter(([hash]) => !oldByHash.has(hash)).map(([, index]) => index)
+    if (removed.length === 1 && added.length === 1) return compare(removed[0] as number, added[0] as number, path, scope, active)
+    return [describe(path, 'union-variants-changed')]
   }
   changes.push(...compare(0, 0, key, before.kind === 'event' ? 'event' : 'strict', new Set()))
   if (changes.length === 0) changes.push(describe(key, 'type-changed'))
@@ -743,7 +792,7 @@ function executeCommand(
     root: key, previous: history?.tips.get(key)?.id ?? null,
     after: roots.find(root => root.key === key)?.digest ?? null, decision,
   })) }
-  const snapshot: PersistenceSchemaInventory = { formatVersion: 1, roots, types: [] }
+  const snapshot: PersistenceSchemaInventory = { formatVersion: current.formatVersion, roots, types: [] }
   validatePersistenceHistory([...prior, { record: change, snapshot }])
   const document = (chinese: boolean): string => {
     const supplied = chinese ? prose?.zh : prose?.en

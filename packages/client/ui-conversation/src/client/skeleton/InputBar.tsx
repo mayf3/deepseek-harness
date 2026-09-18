@@ -17,7 +17,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent, MouseEvent } from 'react'
 import clsx from 'clsx'
 import {
-  IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
+  IconPlusOutlineMedium, IconWarningOutlineRegular, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: the `plan` projection key merge (the TodoDock posture — the
 // composer reads a host-computed value; the domain owns the key).
@@ -171,7 +171,7 @@ export const InputBar = memo(function InputBar({
     focusDraftEditor(editor, revealSelection)
   }, [locked, sessionId, editor])
 
-  // A persisted draft arrives AFTER the unlock effect: ConversationSession
+  // A persisted draft arrives AFTER the unlock effect: DefaultConversationViews
   // adopts it in its own mount effect, and a parent's mount effect runs after
   // its children's. Reveal when the draft becomes non-empty so a restored long
   // draft does not stay at its head with the caret at its end. This effect does
@@ -347,7 +347,7 @@ export const InputBar = memo(function InputBar({
         <Toast
           key={toast.seq}
           text={toast.text}
-          icon={<IconWarningOutline16 />}
+          icon={<IconWarningOutlineRegular />}
           anchor={cardRef.current}
           onDone={dismissToast}
         />
@@ -418,7 +418,7 @@ export const InputBar = memo(function InputBar({
                 onMouseDown={keepFocus}
                 onClick={onToggleCommandMenu}
               >
-                <IconPlusOutline16 size={14} />
+                <IconPlusOutlineMedium size={14} />
               </button>
             </Tooltip>
             <input
@@ -442,7 +442,6 @@ export const InputBar = memo(function InputBar({
               ? null
               : renderSlot('conversation.input.right', {})}
             {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
-            <ContextMeter useProjection={useProjection} t={t} />
             {interruptible && (
               <Tooltip label={t('input.stop')} side="top" delayMs={500} disabled={stop === undefined}>
                 <button
@@ -482,9 +481,12 @@ export const InputBar = memo(function InputBar({
           </div>
         </div>
       </div>
-      {variant === 'composer' && input !== undefined && sessionId !== undefined
-        ? renderSlot('conversation.composer.dock', {})
-        : null}
+      <div className={css.dock}>
+        {variant === 'composer' && input !== undefined && sessionId !== undefined
+          ? renderSlot('conversation.composer.dock', {})
+          : null}
+        <ContextMeter useProjection={useProjection} t={t} />
+      </div>
     </div>
   )
 })

@@ -33,6 +33,14 @@ pnpm --silent run verify-persistence-changes --json
 
 阅读报告中的根、路径、变更种类和版本要求。被引用类型可能影响多个事件摘要；检查每个受影响的根。在历史覆盖新 schema 之前，验证会失败。陈旧生成清单也会导致验证失败；记录命令会刷新它。若重排字段或联合类型分支后 `changes` 为空，运行 `pnpm run gen-persistence-catalog` 并重新检查。即使复制的声明或源码位置产生目录 diff，未变的摘要也无需新增确认记录。
 
+要独立于确认历史评审 PR，先将 base 和 head 的目录保存为本地 JSON 文件，再运行：
+
+```sh
+pnpm --silent run persistence-review --before .artifacts/base.schema.json --after docs/persistence-schema.json
+```
+
+在报告旁记录这些文件对应的 commit。添加 `--json` 可获取结构化输出。此只读比较将共享变更与受影响的根类型归组，使用实际字面量 `kind`/`form` 值代替联合类型位置。无法唯一匹配的候选项保留为独立的新增与删除。兼容性部分复制每个根类型的权威分类结果；结构说明不替代确认检查。当前目录标签和声明名称是描述元数据；结构锚点和指纹标识类型。
+
 <a id="acknowledge"></a>
 ## 1. 记录变更
 

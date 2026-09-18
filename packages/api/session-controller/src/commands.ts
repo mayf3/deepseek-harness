@@ -432,6 +432,7 @@ export class SessionCommandController {
    */
   async updateQueue(request: SessionUpdateQueueRequest): Promise<SessionUpdateQueueValue> {
     if (request.action.kind === 'edit') {
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- Remote callers can submit untyped JSON.
       if (request.action.content.some(block => block.type !== 'text')) {
         throw new RemoteError(
           'session/attachment-invalid',
@@ -532,6 +533,9 @@ export class SessionCommandController {
 
   private rejectCreation(sessionId: SessionId, error: unknown): never {
     if (remoteErrorOf(error) !== undefined) throw error
+    if (error instanceof Error && error.name === 'SessionAlreadyOwnedError') {
+      throw new RemoteError('session/writer-held', error.message, { sessionId })
+    }
     if (error instanceof ApiSessionPresetConflict) {
       throw new RemoteError('agent-preset/conflict', error.message, {
         sessionId: error.sessionId,

@@ -7,7 +7,7 @@
 // row assembly lives here once instead of being copied per tool.
 
 import type { ReactNode } from 'react'
-import { IconBrowseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBrowseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
 import { toolRowModel } from '../models/tool-call-model.ts'
@@ -44,7 +44,7 @@ export function readFamilyRow(
       t={t}
       variant={model.variant}
       toolName={toolName}
-      icon={<IconBrowseOutline16 size={14} />}
+      icon={<IconBrowseOutlineRegular size={14} />}
       title={t(model.titleKey)}
       summary={model.summary}
       bodyRaw={null}

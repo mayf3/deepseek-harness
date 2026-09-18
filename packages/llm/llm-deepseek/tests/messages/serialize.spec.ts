@@ -1,7 +1,7 @@
 /** Request conversion and durable replay validation. */
 import { describe, expect, it, vi } from 'vitest'
-import { createAssistantMessage, createMessage, createSystemMessage, createToolResultMessage, ReasoningEffortId, ToolCallId } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, GenerateOptions, ImageBlock, Message } from '@deepseek-ai/dsh-llm'
+import { createDeveloperMessage, createUserMessage, createAssistantMessage, createMessage, createSystemMessage, createToolResultMessage, ReasoningEffortId, ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, GenerateOptions, ImageBlock, Message, RequestMessage, RequestUserInput } from '@deepseek-ai/dsh-llm'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { resolveAdapterOptions } from '../../src/config.ts'
@@ -16,17 +16,64 @@ const connection = resolveAdapterOptions({})
 const call = (id = 'a'): ContentBlock => ({ type: 'tool-call', id: ToolCallId(id), name: 'read', arguments: '{"path":"a"}' })
 const assistant = (content: ContentBlock[]) => createAssistantMessage({ content, source: { provider: 'deepseek-official', model: MODEL } })
 const result = (id = 'a', content: ContentBlock[] = [{ type: 'text', text: 'result' }]) => createToolResultMessage({ callId: ToolCallId(id), content, isError: false })
-const body = (messages: Message[] = [user()], overrides: Partial<GenerateOptions> = {}) => serialize(
+const body = (messages: RequestMessage[] = [user()], overrides: Partial<GenerateOptions> = {}) => serialize(
   options({ messages, ...overrides }), connection, messages, new Map(), () => undefined,
 )
 const capable = resolveAdapterOptions({ models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
 const nativeBody = (messages: Message[]) => serialize(options({ messages }), capable, messages, new Map(), () => undefined)
 
 describe('Messages request conversion', () => {
+  it.each(['user', 'system', 'assistant', 'tool'] as const)('rejects tool-change blocks in %s history', (role) => {
+    for (const type of ['tool-addition', 'tool-removal'] as const) {
+      const message = { id: 'invalid', role, source: { kind: 'test' }, content: [{ type, toolName: 'search' }] } as unknown as Message
+      expect(() => body([message])).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_CONTENT' }))
+    }
+  })
+
+  it('rejects deferred tool definitions until provider loading is implemented', () => {
+    expect(() => body([], { tools: [{ name: 'search', description: '', parameters: {}, deferLoading: true }] }))
+      .toThrow(expect.objectContaining({ code: 'UNSUPPORTED_CONTENT' }))
+  })
+
+  it('preserves the exact request with request-only text after durable tool results', () => {
+    const prefix = [user(), assistant([call()]), result()]
+    const input: RequestUserInput = { role: 'user', content: [{ type: 'text', text: 'review or summarize this input' }] }
+    const durable = createUserMessage({ content: input.content, source: { kind: 'user' } })
+    expect(body([...prefix, input], { system: 'policy' })).toEqual(body([...prefix, durable], { system: 'policy' }))
+  })
+
+  it('preserves request-only image content through image preparation and wire conversion', async () => {
+    const attachment: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'e'.repeat(64)}`), mediaType: 'image/png', bytes: 3, width: 1, height: 1,
+    }
+    const version: RequestImageAttachment = {
+      variantId: ImageVariantId(`sha256:${'f'.repeat(64)}`), attachment, data: Uint8Array.of(1, 2, 3),
+      mediaType: 'image/png', bytes: 3, width: 1, height: 1, depth: 'uchar', space: 'srgb', hasAlpha: true,
+    }
+    const input: RequestUserInput = { role: 'user', content: [
+      { type: 'text', text: 'before' }, { type: 'image', attachment }, { type: 'text', text: 'after' },
+    ] }
+    const store = { readImageRequest: async () => version } as unknown as AttachmentStore
+    const vision = resolveAdapterOptions({ models: [{ id: MODEL, inputModalities: ['text', 'image'] }] })
+    const durable = createUserMessage({ content: input.content, source: { kind: 'user' } })
+    const actual = await prepareImages([input], vision, MODEL, store, () => undefined, new AbortController().signal)
+    const expected = await prepareImages([durable], vision, MODEL, store, () => undefined, new AbortController().signal)
+    expect(serialize(options({ messages: [input] }), vision, actual.messages, actual.versions, () => undefined))
+      .toEqual(serialize(options({ messages: [durable] }), vision, expected.messages, expected.versions, () => undefined))
+    expect(actual.messages[0]).toBe(input)
+    expect(input).not.toHaveProperty('id')
+    expect(input).not.toHaveProperty('source')
+  })
+
+  it('rejects developer history while provider serialization is unsupported', () => {
+    const message = createDeveloperMessage({ content: [{ type: 'tool-addition', toolName: 'search' }], source: { kind: 'tool-registry' } })
+    expect(() => body([message])).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_CONTENT' }))
+  })
+
   it('keeps the original top-level prompt and cached prefix while appending native system updates', () => {
-    const head = createSystemMessage('original', 'test')
+    const head = createSystemMessage('original')
     const first = [head, user('first')]
-    const update = createSystemMessage('updated', 'test')
+    const update = createSystemMessage('updated')
     const second = [...first, assistant([{ type: 'text', text: 'one' }]), update, user('second')]
     const saved = JSON.stringify(second)
     const before = nativeBody(first)
@@ -43,8 +90,8 @@ describe('Messages request conversion', () => {
   })
 
   it('places system updates after all parallel tool results and before the next assistant', () => {
-    const history = [createSystemMessage('original', 'test'), user(), assistant([call(), call('b')]),
-      createSystemMessage('first update', 'test'), result(), createSystemMessage('second update', 'test'), result('b'),
+    const history = [createSystemMessage('original'), user(), assistant([call(), call('b')]),
+      createSystemMessage('first update'), result(), createSystemMessage('second update'), result('b'),
       user('more input'), assistant([{ type: 'text', text: 'done' }])]
     const request = nativeBody(history)
     expect(request.messages.map(message => message.role)).toEqual(['user', 'assistant', 'user', 'system', 'system', 'assistant'])
@@ -55,14 +102,47 @@ describe('Messages request conversion', () => {
   })
 
   it('accepts native trailing updates without a top-level prompt and rejects unrepresentable positions', () => {
-    const update = createSystemMessage('update', 'test')
+    const update = createSystemMessage('update')
     expect(nativeBody([user(), update])).toMatchObject({ messages: [
       { role: 'user' }, { role: 'system', content: [{ type: 'text', text: 'update' }] },
     ] })
     expect(nativeBody([user(), update]).system).toBeUndefined()
     expect(() => nativeBody([user(), assistant([{ type: 'text', text: 'done' }]), update])).toThrow(/preceding user/)
-    expect(() => nativeBody([user(), createSystemMessage('', 'test')])).toThrow(/empty in-history/)
+    expect(() => nativeBody([user(), createSystemMessage('')])).toThrow(/empty in-history/)
     expect(() => nativeBody([user(), assistant([call(), call('b')]), update, result()])).toThrow(/immediate results/)
+  })
+
+  it.each([[], [{ type: 'reasoning', text: 'child reasoning' }], [call('child-call')]] satisfies ContentBlock[][])(
+    'rejects native system updates when their user input is omitted %#', (...content) => {
+      const empty = createMessage({ role: 'user', source: { kind: 'user' }, content })
+      const history = [user(), assistant([{ type: 'text', text: 'answer' }]), createSystemMessage('updated'), empty]
+      const saved = JSON.stringify(history)
+      for (const messages of [history, [...history, assistant([{ type: 'text', text: 'next answer' }])]]) {
+        expect(() => nativeBody(messages)).toThrow(expect.objectContaining({
+          code: 'UNSUPPORTED_CONTENT',
+          message: 'DeepSeek Messages cannot represent system update without a preceding user or tool-result turn',
+        }))
+      }
+      expect(JSON.stringify(history)).toBe(saved)
+    },
+  )
+
+  it('keeps native system updates after retained text or tool results beside omitted user input', () => {
+    const reasoning: ContentBlock = { type: 'reasoning', text: 'child reasoning' }
+    const empty = createMessage({ role: 'user', source: { kind: 'user' }, content: [reasoning] })
+    const update = createSystemMessage('updated')
+    for (const [previous, retained, expected] of [
+      [assistant([{ type: 'text', text: 'answer' }]), user('continue'), [{ type: 'text', text: 'continue' }]],
+      [assistant([call()]), result('a', [reasoning]), [{ type: 'tool_result', tool_use_id: 'a', content: [], is_error: false }]],
+    ] as const) {
+      const history = [user(), previous, update, empty, retained, assistant([{ type: 'text', text: 'done' }])]
+      const saved = JSON.stringify(history)
+      const request = nativeBody(history)
+      expect(request.messages.map(message => message.role)).toEqual(['user', 'assistant', 'user', 'system', 'assistant'])
+      expect(request.messages[2]?.content).toEqual(expected)
+      expect(request.messages[3]?.content).toEqual([{ type: 'text', text: 'updated' }])
+      expect(JSON.stringify(history)).toBe(saved)
+    }
   })
 
   it('groups parallel results before ordinary text and keeps tool failure content', () => {
@@ -82,12 +162,59 @@ describe('Messages request conversion', () => {
   it('preserves empty results without inventing model-visible output', () => {
     const response = body([user(), assistant([call()]), result('a', [])])
     expect(response.messages[2]?.content[0]).toMatchObject({ content: [] })
-    const minimal = createMessage({ role: 'user', source: { kind: 'user' }, content: [{ type: 'tool-result', toolCallId: ToolCallId('a'), content: [{ type: 'text', text: '' }] }] })
+    const { isError: _isError, ...minimal } = createToolResultMessage({ callId: ToolCallId('a'), content: [{ type: 'text', text: '' }], isError: false })
     expect(body([assistant([call()]), minimal]).messages[1]?.content[0]).toEqual({ type: 'tool_result', tool_use_id: 'a', content: [] })
   })
 
+  it('omits assistant-only blocks from user input while preserving text and durable content', () => {
+    const history = [createMessage({ role: 'user', source: { kind: 'user' }, content: [
+      { type: 'text', text: 'Background subagent finished.\n' },
+      { type: 'reasoning', text: 'child reasoning' },
+      call('child-call'),
+      { type: 'text', text: '  child answer  ' },
+    ] })]
+    const saved = JSON.stringify(history)
+
+    expect(body(history).messages).toEqual([{ role: 'user', content: [
+      { type: 'text', text: 'Background subagent finished.\n' },
+      { type: 'text', text: '  child answer  ' },
+    ] }])
+    expect(JSON.stringify(history)).toBe(saved)
+  })
+
+  it('omits assistant-only blocks inside tool results while retaining calls, errors and empty results', () => {
+    const reasoning: ContentBlock = { type: 'reasoning', text: 'tool reasoning' }
+    const history = [assistant([reasoning, call(), call('b')]),
+      createToolResultMessage({ callId: ToolCallId('a'), content: [reasoning, call('nested-call'), { type: 'text', text: '  result\n' }], isError: true }),
+      result('b', [reasoning, call('another-nested-call')]),
+    ]
+    const saved = JSON.stringify(history)
+
+    expect(body(history).messages).toEqual([
+      { role: 'assistant', content: [
+        { type: 'thinking', thinking: 'tool reasoning' },
+        ...['a', 'b'].map(id => ({ type: 'tool_use', id, name: 'read', input: { path: 'a' } })),
+      ] },
+      { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: 'a', content: [{ type: 'text', text: '  result\n' }], is_error: true },
+        { type: 'tool_result', tool_use_id: 'b', content: [], is_error: false },
+      ] },
+    ])
+    expect(JSON.stringify(history)).toBe(saved)
+  })
+
+  it.each([
+    [], [{ type: 'reasoning', text: 'child reasoning' }], [call('child-call')],
+  ] satisfies ContentBlock[][])('omits empty user input after conversion %#', (...content) => {
+    const empty = createMessage({ role: 'user', source: { kind: 'user' }, content })
+    expect(body([empty, user(), assistant([{ type: 'text', text: 'answer' }]), empty]).messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'answer' }] },
+    ])
+  })
+
   it('collects leading system text and maps tools, stop sequences and explicit output cap', () => {
-    const system = createMessage({ role: 'system', source: { kind: 'plugin', plugin: 'test' }, content: [{ type: 'text', text: 'instructions' }] })
+    const system = createMessage({ role: 'system', source: { kind: 'system-prompt' }, content: [{ type: 'text', text: 'instructions' }] })
     expect(body([system, user()], { system: 'top', maxTokens: 123, stop: ['END'], tools: [{ name: 'read', description: 'Read a file', parameters: { type: 'object' } }] })).toMatchObject({
       system: 'top\n\ninstructions', max_tokens: 123, stop_sequences: ['END'], tools: [{ name: 'read', description: 'Read a file', input_schema: { type: 'object' } }],
     })
@@ -96,9 +223,9 @@ describe('Messages request conversion', () => {
 
   it('uses the latest complete system snapshot without changing tool history or durable messages', () => {
     const conversation = [user(), assistant([call()]), result(), assistant([{ type: 'text', text: 'done' }]), user('continue')]
-    const history = [createSystemMessage('obsolete', 'test'), ...conversation.slice(0, 2),
-      createSystemMessage('intermediate', 'test'), ...conversation.slice(2, 4),
-      createSystemMessage('current', 'test'), conversation[4]!]
+    const history = [createSystemMessage('obsolete'), ...conversation.slice(0, 2),
+      createSystemMessage('intermediate'), ...conversation.slice(2, 4),
+      createSystemMessage('current'), conversation[4]!]
     const saved = JSON.stringify(history)
     expect(body(history)).toEqual({ ...body(conversation), system: 'current' })
     expect(body(history, { system: 'one-shot prefix' }).system).toBe('one-shot prefix\n\ncurrent')
@@ -106,22 +233,22 @@ describe('Messages request conversion', () => {
   })
 
   it('replaces adjacent system snapshots and joins blocks only within the current snapshot', () => {
-    const latest = createMessage({ role: 'system', source: { kind: 'plugin', plugin: 'test' },
+    const latest = createMessage({ role: 'system', source: { kind: 'system-prompt' },
       content: [{ type: 'text', text: 'part one' }, { type: 'text', text: ' and part two' }] })
-    expect(body([createSystemMessage('old', 'test'), latest, user()]).system).toBe('part one and part two')
+    expect(body([createSystemMessage('old'), latest, user()]).system).toBe('part one and part two')
   })
 
   it.each([[], [{ type: 'text' as const, text: '' }]].map(content => ({ content })))('clears earlier prompt snapshots with empty content %#', ({ content }) => {
-    const cleared = createMessage({ role: 'system', source: { kind: 'plugin', plugin: 'test' }, content })
-    const history = [createSystemMessage('old', 'test'), user(), cleared]
+    const cleared = createMessage({ role: 'system', source: { kind: 'system-prompt' }, content })
+    const history = [createSystemMessage('old'), user(), cleared]
     expect(body(history).system).toBeUndefined()
     expect(body(history, { system: 'one-shot prefix' }).system).toBe('one-shot prefix')
     expect(body(history, { system: '' }).system).toBeUndefined()
   })
 
   it('rejects non-text system content even when a later snapshot supersedes it', () => {
-    const invalid = createMessage({ role: 'system', source: { kind: 'plugin', plugin: 'test' }, content: [{ type: 'reasoning', text: 'bad' }] })
-    expect(() => body([invalid, user(), createSystemMessage('current', 'test')])).toThrow(/non-text system/)
+    const invalid = createMessage({ role: 'system', source: { kind: 'system-prompt' }, content: [{ type: 'reasoning', text: 'bad' }] })
+    expect(() => body([invalid, user(), createSystemMessage('current')])).toThrow(/non-text system/)
   })
 
   it.each(['off', 'low', 'high', 'max'])('maps reasoning effort %s', (effort) => {
@@ -290,14 +417,14 @@ describe('Messages images', () => {
     })
     const history = [result('a', [image, image])]
     const prepared = await prepareImages(history, config, model, attachments, access, signal)
-    expect(prepared.messages[0]?.content[0]).toMatchObject({ content: [image, image] })
+    expect(prepared.messages[0]?.content).toMatchObject([image, image])
     expect(() => inlineImages(prepared.messages, prepared.versions, config)).toThrow(expect.objectContaining({
       failure: expect.objectContaining({ code: 'IMAGE_OFFLOAD_REQUIRED', offloadImages: 1 }) as unknown,
     }))
     const offloaded: ImageBlock = { ...image, offloaded: true }
     const retry = await prepareImages([result('a', [offloaded, image])], config, model, attachments, access, signal)
-    expect(inlineImages(retry.messages, retry.versions, config)[0]?.content[0]).toMatchObject({ content: [{ type: 'text' }, { type: 'image' }] })
-    expect(history[0]?.content[0]).toMatchObject({ content: [image, image] })
+    expect(inlineImages(retry.messages, retry.versions, config)[0]?.content).toMatchObject([{ type: 'text' }, { type: 'image' }])
+    expect(history[0]?.content).toMatchObject([image, image])
     expect(imagePricing(config, model, access).priceImages([image, image]).map(entry => entry.visualTokens))
       .toEqual([expect.any(Number), expect.any(Number)])
     const large = { readImageRequest: async () => ({ ...version, bytes: 30, data: new Uint8Array(30) }) } as unknown as AttachmentStore
@@ -313,7 +440,9 @@ describe('Messages images', () => {
     await expect(prepareImages([assistant([image])], connection, model, attachments, access, signal)).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
     expect(() => body([result('a', [image])])).toThrow(/image/)
     expect(() => body([assistant([image])])).toThrow(/assistant/)
-    expect(() => body([result('a', [{ type: 'reasoning', text: 'bad' }])])).toThrow(/user/)
+    // @ts-expect-error -- malformed provider input can carry a retired nested result block.
+    expect(() => body([result('a', [{ type: 'tool-result', toolCallId: ToolCallId('nested'), content: [] }])]))
+      .toThrow(/user\/tool-result content tool-result/)
     expect(() => serialize(options({ model }), connection, [result('a', [image])], new Map([[ref.attachmentId, version]]), access, undefined, new Map()))
       .toThrow(/request file id is missing/)
   })

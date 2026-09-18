@@ -57,6 +57,28 @@ describe('SessionManager instances', () => {
     expect(session.getSnapshot().running).toBe(true) // list preceded instantiation
   })
 
+  it('initializes blankness from metadata published before the Session and list exist', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    const published = Promise.withResolvers<undefined>()
+    const stopObserving = manager.subscribe(() => { published.resolve(undefined) })
+    try {
+      manager.handleControlFrame({ type: 'projection', sessionId: S1,
+        key: 'sessionListMetadata', value: { blank: false, lastPromptAt: 1200 }, seq: 8 })
+      manager.handleControlFrame({ type: 'projection', sessionId: S2,
+        key: 'sessionListMetadata', value: { blank: true, lastPromptAt: null }, seq: 2 })
+      // The initial notification must finish while neither Session is resident.
+      await published.promise
+
+      expect(manager.getListSnapshot().items).toEqual([])
+      expect(manager.get(S1).getSnapshot()).toMatchObject({ blank: false, running: false })
+      expect(manager.get(S2).getSnapshot()).toMatchObject({ blank: true, running: false })
+      expect(manager.get('fk-unobserved' as SessionId).getSnapshot().blank).toBe(true)
+    } finally {
+      stopObserving()
+      await manager.dispose()
+    }
+  })
+
 })
 
 describe('SessionManager query lifetime', () => {
@@ -105,6 +127,28 @@ describe('SessionManager query lifetime', () => {
 })
 
 describe('list lifecycle', () => {
+  it('uses metadata received before the list without reblanking started rows', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    try {
+      manager.handleControlFrame({ type: 'projection', sessionId: S1,
+        key: 'sessionListMetadata', value: { blank: false, lastPromptAt: 1200 }, seq: 8 })
+      manager.handleControlFrame({ type: 'projection', sessionId: S2,
+        key: 'sessionListMetadata', value: { blank: true, lastPromptAt: null }, seq: 2 })
+      remote.session.list.mockResolvedValue(ok({ items: [
+        summary(S1, { blank: true }), summary(S2),
+      ] as never[] }))
+      await manager.refreshList()
+      expect(manager.getListSnapshot().items.map(item => item.blank)).toEqual([false, false])
+      expect(manager.get(S1).getSnapshot().blank).toBe(false)
+      expect(manager.get(S2).getSnapshot().blank).toBe(false)
+      manager.handleControlFrame({ type: 'projection', sessionId: S1,
+        key: 'sessionListMetadata', value: { blank: true, lastPromptAt: null }, seq: 7 })
+      expect(manager.getListSnapshot().items[0]).toMatchObject({ blank: false, updatedAt: 1200 })
+    } finally {
+      await manager.dispose()
+    }
+  })
+
   it('fills missing durable links without overwriting established rows and projects first-send engagement', async ({ mock, remote }) => {
     const manager = makeManager(mock, remote)
     remote.session.list.mockResolvedValueOnce(ok({ items: [
@@ -121,6 +165,39 @@ describe('list lifecycle', () => {
         expect.objectContaining({ sessionId: S1, cwd: '/filled', parentSessionId: S2, origin: 'subagent', blank: false }),
         expect.objectContaining({ sessionId: S2, cwd: '/existing', updatedAt: 200, blank: false }),
       ]))
+    } finally {
+      await manager.dispose()
+    }
+  })
+
+  it('keeps an opened conversation out of blank-session reuse after a stale list refresh', async ({ mock, remote }) => {
+    const stale = {
+      ...summary(S1, { blank: true, cwd: '/workspace' }),
+      projections: { asOfSeq: 2, values: {
+        sessionListMetadata: { blank: true, lastPromptAt: null },
+      } },
+    }
+    remote.session.list.mockResolvedValue(ok({ items: [stale] as never[] }))
+    const manager = makeManager(mock, remote)
+    try {
+      await manager.refreshList()
+      const session = manager.get(S1)
+      expect(session.getSnapshot().blank).toBe(true)
+
+      // History opening can be newer than the metadata-only list cache.
+      session.projections.seed({ asOfSeq: SessionSeq(61), values: {
+        sessionListMetadata: { blank: false, lastPromptAt: 1200 },
+      } })
+      await vi.waitFor(() => {
+        expect(manager.getListSnapshot().items[0]).toMatchObject({ blank: false, updatedAt: 1200 })
+        expect(session.getSnapshot().blank).toBe(false)
+      })
+
+      await manager.refreshList()
+      expect(manager.getListSnapshot().items[0]).toMatchObject({ blank: false, updatedAt: 1200 })
+      expect(session.getSnapshot().blank).toBe(false)
+      manager.handleSessionAdded(stale)
+      expect(session.getSnapshot().blank).toBe(false)
     } finally {
       await manager.dispose()
     }

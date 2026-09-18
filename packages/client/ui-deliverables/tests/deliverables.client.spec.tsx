@@ -6,6 +6,7 @@
  * registrations' fiber-teardown removal (HMR safety) against the real
  * SlotRegistry.
  */
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Context } from '@deepseek-ai/cordis'
 import { cleanup, fireEvent, render, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -22,7 +23,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import type { ChatFileMentions, TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { Deliverables, selectDeliverables, type DeliverablesInjected } from '../src/client/Deliverables.tsx'
+import { Deliverables, DeliverablesTail, selectDeliverables, type DeliverablesInjected } from '../src/client/Deliverables.tsx'
 import type { ReviewInjected } from '../src/client/ReviewTab.tsx'
 import { ChangesSummaryStore } from '../src/client/changes-summary.ts'
 import { changesSummaryUrl, type ChangesSummary } from '../src/changes.ts'
@@ -40,6 +41,7 @@ function openProps(controller = new PresentedOpenController(), summaries = new C
   controller.host.set({ name: 'desktop', available: true, fileManager: 'finder' })
   const sessions: SessionListState = { ids: [], byId: {}, phase: 'ready', projectionsBySession: {}, jobsBySession: {} }
   return {
+    useShowCodeDiff: <T,>(select: (value: boolean) => T): T => select(true),
     useSessions: <T,>(select: (state: SessionListState) => T): T => select(sessions),
     reloadPresentedHost: vi.fn(() => controller.loadHost()),
     useChangesSummary: <T,>(select: (state: ReturnType<typeof summaries.state.getSnapshot>) => T): T =>
@@ -183,8 +185,12 @@ function result(seq: number, callId: string, isError = false, turn = 1): Session
     turn,
     step: 1,
     message: {
-      source: { type: 'tool-result', callId },
-      content: [{ type: 'tool-result', content: [], isError }],
+      id: `result-${callId}`,
+      role: 'tool',
+      toolCallId: callId,
+      source: { kind: 'tool', callId },
+      content: [],
+      isError,
     },
   })
 }
@@ -494,6 +500,19 @@ describe('ChangedFiles card', () => {
     return { props, openFile, view }
   }
 
+  it('hides changed files and avoids summary reads when developer tools are off', () => {
+    const props = openProps(new PresentedOpenController(), servedStore())
+    const base = { ...props, matched: { changes, presented: [] }, openFile: vi.fn(), sessionId: SessionId('child-session'), t: makeTranslate(en) }
+    const off = { useShowCodeDiff: <T,>(select: (enabled: boolean) => T): T => select(false) }
+    const view = render(<Deliverables {...base} {...off} />)
+    expect(view.container.querySelector('[data-changed-files]')).toBeNull()
+    expect(props.loadChangesSummary).not.toHaveBeenCalled()
+    view.rerender(<Deliverables {...base} />)
+    expect(view.container.querySelector('[data-changed-files]')).not.toBeNull()
+    view.rerender(<Deliverables {...base} {...off} />)
+    expect(view.container.querySelector('[data-changed-files]')).toBeNull()
+  })
+
   it('reads the announced summary once and renders nothing while it loads, when it is gone, or when it lists no file', async () => {
     const summaries = new ChangesSummaryStore()
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
@@ -567,17 +586,21 @@ describe('ChangedFiles card', () => {
     expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 5)]).toBe('loading')
   })
 
-  it('summarizes the turn, folds after three rows, and opens the review from the header and each row', () => {
+  it('summarizes the turn, folds after four rows, and opens the review from the header and each row', () => {
     const { props, openFile, view } = renderCard()
     const card = view.container.querySelector('[data-changed-files]')
     if (!(card instanceof HTMLElement)) throw new Error('changed-files card missing')
     expect(within(card).getByText('Edited 11 files')).toBeTruthy()
     expect(within(card).getByText('+1,232')).toBeTruthy()
     expect(within(card).getByText('-326')).toBeTruthy()
-    expect(within(card).getAllByRole('listitem')).toHaveLength(3)
+    expect(within(card).getByText('Preview in sidebar')).toBeTruthy()
+    expect(within(card).getAllByRole('listitem')).toHaveLength(4)
     expect(within(card).getByText('config/design-token')).toBeTruthy()
     expect(within(card).getByText('+42')).toBeTruthy()
-    expect(within(card).queryByText('src/index.ts')).toBeNull()
+    expect(within(card).getByText('src/index.ts')).toBeTruthy()
+    expect(within(card).queryByText('~/.zshrc')).toBeNull()
+    expect(within(card).getByRole('button', { name: 'Review this turn’s changes in the sidebar' })
+      .querySelector('svg')?.getAttribute('width')).toBe('10')
     fireEvent.click(within(card).getByRole('button', { name: 'View changes to config/feature-flags.json' }))
     expect(props.openChangesReview).toHaveBeenLastCalledWith({ sessionId: 'child-session', seq: 5, turn: 1 }, 1)
     expect(props.openChanged).not.toHaveBeenCalled()
@@ -597,7 +620,7 @@ describe('ChangedFiles card', () => {
     expect(collapse.getAttribute('aria-expanded')).toBe('true')
     expect(card.lastElementChild).toBe(collapse)
     fireEvent.click(collapse)
-    expect(within(card).getAllByRole('listitem')).toHaveLength(3)
+    expect(within(card).getAllByRole('listitem')).toHaveLength(4)
   })
 
   it('opens the review the same way without a desktop', () => {
@@ -681,7 +704,7 @@ describe('plugin registration', () => {
     ctx.slots.register({
       name: 'root',
       children: {
-        'conversation.chat.turnTail': { kind: 'chain', scope: 'session' },
+        'conversation.chat.turnTail': { kind: 'list', scope: 'session' },
         'tool.call.toolview': { kind: 'keyed', scope: 'session' },
         'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
       },
@@ -701,7 +724,7 @@ describe('plugin registration', () => {
       session,
     } as never)
     ctx.provide('remote.session', session as never)
-    ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+    ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
     await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
 
     const fiber = ctx.plugin({ inject: [...inject], apply })
@@ -941,4 +964,14 @@ it('loads desktop information once the tail renders and not again while it is kn
   controller.host.set({ name: 'desktop', available: true, fileManager: 'finder' })
   view.rerender(<Deliverables {...shared} matched={{ changes: null, presented: [{ path: 'report.txt', seq: 2, index: 0 }] }} />)
   expect(props.reloadPresentedHost).toHaveBeenCalledOnce()
+})
+
+it('contributes file artifacts to the tail list only for turns with deliveries', () => {
+  const owner = tailOwner(undefined, 3)
+  const props = { ...openProps(), ...owner, sessionId: SessionId('session'), t: makeTranslate(en) } as unknown as Parameters<typeof DeliverablesTail>[0]
+  const view = render(<DeliverablesTail {...props} />)
+  expect(view.container.innerHTML).toBe('')
+  const withFile = tailOwner({ produced: [], presented: [{ path: 'report.md', seq: 2, index: 0 }] }, 3)
+  view.rerender(<DeliverablesTail {...props} {...withFile} />)
+  expect(view.getByText('report.md')).toBeTruthy()
 })

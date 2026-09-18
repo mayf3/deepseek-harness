@@ -33,6 +33,14 @@ Use `--silent` when consuming JSON: pnpm otherwise appends lifecycle failure tex
 
 Read the reported root, path, change kind, and version requirement. A referenced type can affect several event digests; inspect every affected root. Until the history covers the new schemas, verification fails. A stale generated inventory also fails verification; the recording command refreshes it. If `changes` is empty after reordering fields or union alternatives, run `pnpm run gen-persistence-catalog` and repeat the check. An unchanged digest needs no new acknowledgement even when copied declarations or source locations produce a catalog diff.
 
+To review a PR independently of its acknowledgement history, save the base and head inventories as local JSON files and run:
+
+```sh
+pnpm --silent run persistence-review --before .artifacts/base.schema.json --after docs/persistence-schema.json
+```
+
+Record the commits supplying those files with the report. Add `--json` for structured output. This read-only comparison groups shared changes with their affected roots and uses actual literal `kind`/`form` values instead of union positions. Ambiguous alternatives remain separate additions and removals. Its compatibility section copies every root's authoritative classifier result; the structural explanation does not replace acknowledgement checks. Current catalog labels and declaration names are descriptive metadata; structural anchors and fingerprints identify types.
+
 <a id="acknowledge"></a>
 ## 1. Record the change
 

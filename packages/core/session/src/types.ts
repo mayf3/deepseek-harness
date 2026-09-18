@@ -1,6 +1,7 @@
 import { brandNumber, brandString, type Branded, type BrandedNumber } from '@deepseek-ai/dsh-brand'
 import type {
   AssistantMessage,
+  DeveloperMessage,
   AssistantStreamRecord,
   ToolCallId,
   LlmCallConfig,
@@ -243,6 +244,10 @@ export interface EpochHeader {
   adapterDefaults?: LlmCallConfigAdapterDefaults
   /** Assembled tool schemas; absent for a tool-less request. */
   tools?: ToolSchema[]
+  /** Retired request text; system prompts belong to system/message events.
+   * @persistenceReserved
+   */
+  system?: never
 }
 
 /** Registration-bound metadata for one resolved model route. */
@@ -302,6 +307,14 @@ export interface SessionEventMap {
    * project their `content` verbatim; `source` tells them apart.
    */
   'user/message': UserMessage
+  /** An incremental agent session change admitted at the named turn and step. */
+  'developer/message': {
+    turn: number
+    step: number
+    message: DeveloperMessage
+    /** Earlier request/header defining every tool addition; required exactly when additions are present. */
+    headerSeq?: SessionSeq
+  }
   /**
    * The rendered system prompt on the model-visible surface. The loop appends
    * the first one as surface node 0 before the step's first `user/message`.
@@ -365,7 +378,7 @@ export interface SessionEventMap {
     message: ToolResultMessage
     /**
      * Optional failure identity and raw user-facing reason, outside model content;
-     * allowed only when the tool-result block has `isError: true`.
+     * allowed only when the message has `isError: true`.
      */
     error?: { name: string; code: string; reason?: string }
     meta?: JsonValue
@@ -388,19 +401,21 @@ export interface SessionEventMap {
    */
   'request/context': RequestContext
   /**
-   * Marks the end of a constructor seed. Events before it have smaller seq
-   * values and came from the seed (resume, fork, or replay); this lifecycle
-   * produced none of them. This log-only event is the durable projection of
-   * {@link Session.firstLiveSeq}.
+   * Separates inherited or restored history from later lifecycle-owned work.
+   * This log-only marker need not be at {@link Session.firstLiveSeq}: a fork
+   * seed can already contain its tagged marker and child-owned synthetic
+   * closers before construction.
    *
    * A fresh fork child owns one `{ inherited: true }` marker at its exact
    * inherited-prefix cut, even when that prefix ends in an ancestor marker.
-   * The last tagged marker is the current Session's cut; untagged markers keep
-   * ordinary restore and replay lifecycle boundaries.
+   * `buildForkSeed` appends that marker before any synthetic closers; the
+   * `Session` constructor supplies it when given only the inherited prefix.
+   * The last tagged marker is the current Session's cut; untagged markers
+   * keep ordinary restore and replay lifecycle boundaries.
    *
-   * `Session`'s constructor is the only legitimate writer. The invariant
-   * companion deliberately constrains nothing here, so a plugin appending one
-   * would silently classify every live bracket before it as seed history.
+   * Only the `Session` constructor and `buildForkSeed` may create this marker.
+   * The invariant companion deliberately constrains nothing here, so a plugin
+   * appending one would silently classify every live bracket before it as seed history.
    *
    * An owner of a standalone open/close bracket (`compaction/start` …
    * `compaction/end`) reads it because seed history and live work are otherwise
@@ -423,6 +438,7 @@ export type SessionEventType = keyof SessionEventMap
  */
 export type SurfaceEventType =
   | 'system/message'
+  | 'developer/message'
   | 'user/message'
   | 'assistant/message'
   | 'tool/result'

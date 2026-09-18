@@ -199,7 +199,7 @@ function withMigratedEmptyHead(log: readonly SessionEvent[]): readonly unknown[]
       type: 'system/message', seq: 2, time: log[1]!.time, surfaceOp: 'append',
       data: { turn: 1, step: 1, message: {
         id: expect.stringMatching(/^v2-to-v3-system-[0-9a-f]{64}$/) as unknown,
-        role: 'system', content: [], source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' },
+        role: 'system', content: [], source: { kind: 'system-prompt' },
       } },
     },
     ...log.slice(2).map(event => ({ ...event, seq: SessionSeq(event.seq + 1) })),
@@ -666,16 +666,17 @@ describe('JsonlSessionPersistence: stored-format refusals', () => {
       .rejects.toThrow(/contains event type "request\/header-delta" \(seq 1\) unknown to this harness/)
   })
 
-  it('rejects a stored v0 full header carrying the legacy fallback reason', async () => {
+  it('rejects a stored full header carrying the legacy fallback reason', async () => {
     const m = meta('legacy-header-fallback', '/legacy')
     const path = rawLogPath(root, m.cwd, m.id)
     await mkdir(sessionDir(root, m.cwd, m.id), { recursive: true })
     await writeFile(path, [
       JSON.stringify(toHeaderLine(m)),
+      JSON.stringify({ type: 'turn/start', seq: SessionSeq(0), time: 1, data: { turn: 1 } }),
       JSON.stringify({
         type: 'request/header',
-        seq: SessionSeq(0),
-        time: 1,
+        seq: SessionSeq(1),
+        time: 2,
         data: { header: { config: { provider: 'mock', model: 'legacy' } }, reason: 'fallback' },
       }),
       '',
@@ -2200,6 +2201,32 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
     // A turn/end exists, so the prefix up to it is committed — but it has a hole.
     // Truncating it would silently drop committed data → unloadable.
     expect(() => scanLog(Buffer.from(log))).toThrow(/seq gap/)
+  })
+
+  it.each([
+    ['assistant/message', {}, /assistant\/message requires a message/],
+    ['agent/inbox/spliced', { inserted: null }, /agent\/inbox\/spliced requires message array/],
+    ['session/title-llm-request', { messages: [null] }, /session\/title-llm-request requires message objects/],
+  ])('rejects malformed %s message slots before exposing a native scan', (type, data, error) => {
+    const prefix = [
+      { type: 'session', version: SESSION_FORMAT_VERSION, id: 'malformed-tail', createdAt: 1, isSeeded: false, delegationDepth: 0 },
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+    ].map(row => JSON.stringify(row)).join('\n') + '\n'
+    const malformed = JSON.stringify({ type, seq: 1, time: 2, data }) + '\n'
+    expect(() => scanLog(Buffer.from(prefix + malformed))).toThrow(error)
+    const committed = JSON.stringify({ type: 'turn/end', seq: 2, time: 3, data: { turn: 1, reason: { kind: 'completed' } } }) + '\n'
+    expect(() => scanLog(Buffer.from(prefix + malformed + committed))).toThrow(error)
+  })
+
+  it.each([false, true])('rejects malformed native tool results before recovery (sealed=%s)', (sealed) => {
+    const rows = [
+      { type: 'session', version: SESSION_FORMAT_VERSION, id: 'malformed-tool', createdAt: 1, isSeeded: false, delegationDepth: 0 },
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      { type: 'tool/result', seq: 1, time: 2, data: { message: [] } },
+      ...(sealed ? [{ type: 'turn/end', seq: 2, time: 3, data: { turn: 1, reason: { kind: 'completed' } } }] : []),
+    ]
+    const log = rows.map(row => JSON.stringify(row)).join('\n') + '\n'
+    expect(() => scanLog(Buffer.from(log))).toThrow(/tool\/result.*message must be an object/)
   })
 
   it('rejects malformed records before a later committed turn/end', () => {

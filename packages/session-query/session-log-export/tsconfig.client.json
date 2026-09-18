@@ -19,6 +19,7 @@
     { "path": "../../client/store" },
     { "path": "../../client/ui-commands" },
     { "path": "../../client/ui-conversation" },
+    { "path": "../../client/ui-message-feedback" },
     { "path": "../../client/ui-primitives" },
     { "path": "../../client/ui-renderer" },
     { "path": "../../client/ui-session" },

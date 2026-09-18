@@ -376,7 +376,8 @@ describe('JSONL immutable generation publication', () => {
       events[0], events[1],
       expect.objectContaining({ type: 'system/message', seq: 2, surfaceOp: 'append', data: expect.objectContaining({ message: expect.objectContaining({ role: 'system', content: [] }) as unknown }) as unknown }) as unknown,
       ...events.slice(2).map(event => event.seq === 3
-        ? { ...event, seq: 4, surfaceOp: { op: 'replace', startSeq: 3, endSeq: 3 }, sourceEventSeqs: [3] }
+        ? { ...event, seq: 4, surfaceOp: { op: 'replace', startSeq: 3, endSeq: 3 }, sourceEventSeqs: [3],
+          data: { ...event.data as Record<string, unknown>, source: { kind: 'summary-fixture' } } }
         : event.seq === 4 ? { ...event, seq: 5, data: { header: { config }, reason: 'initial' } } : { ...event, seq: event.seq + 1 }),
     ]
 
@@ -398,7 +399,10 @@ describe('JSONL immutable generation publication', () => {
       ...boundaryBase,
       data: { ...boundaryBase.data, text: 'x'.repeat(1024 * 1024 - JSON.stringify(boundaryBase).length) },
     }
-    const largeEvent = { ...event0, seq: 1, data: { turn: 1, text: 'y'.repeat(1024 * 1024) } }
+    const largeEvent = { type: 'user/message', seq: 1, time: 3, surfaceOp: 'append', data: {
+      id: 'large-message', role: 'user', source: { kind: 'user' },
+      content: [{ type: 'text', text: 'y'.repeat(1024 * 1024) }],
+    } }
     const finalEvent = { ...event1, seq: 2 }
     await writeFile(request.sourcePath, line(header(0)) + line(boundaryEvent) + line(largeEvent) + line(finalEvent))
     let now = 0

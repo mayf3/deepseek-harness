@@ -144,14 +144,16 @@ root
 │     │     │     └─ tool.view.cordis
 │     │     ├─ conversation.message.images
 │     │     └─ conversation.trajectory.images
-│     ├─ conversation.session.header
-│     │  ├─ conversation.session.header.lineage
-│     │  ├─ conversation.session.header.leading
-│     │  ├─ conversation.session.header.actions
-│     │  ├─ conversation.session.header.utilities
-│     │  └─ conversation.session.header.corner
+│     ├─ conversation.header
+│     │  ├─ conversation.header.leading
+│     │  └─ conversation.session.header
+│     │     ├─ conversation.session.header.lineage
+│     │     ├─ conversation.session.header.actions
+│     │     ├─ conversation.session.header.utilities
+│     │     └─ conversation.session.header.corner
 │     ├─ conversation.composer
-│     │  └─ conversation.approval.detail
+│     │  ├─ conversation.approval.detail
+│     │  └─ conversation.plan-review.actions
 │     ├─ conversation.composer.bar
 │     │  ├─ conversation.input.attachments
 │     │  ├─ conversation.input.permission

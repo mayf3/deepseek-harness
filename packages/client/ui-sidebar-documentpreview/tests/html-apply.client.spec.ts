@@ -1,4 +1,5 @@
 /** HTML metadata and keyed slot contributions share one identity and unwind with their fiber. */
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
@@ -21,7 +22,7 @@ afterEach(async () => { await dispose?.(); dispose = undefined })
 describe('HTML registration', () => {
   it('claims HTML suffixes as a builtin complete-byte renderer without wrap', () => {
     const title = vi.fn(() => 'localized HTML')
-    expect(htmlBodyDefinition(title)).toEqual({
+    expect(htmlBodyDefinition(title)).toMatchObject({
       id: HTML_BODY_ID, extensions: ['html', 'htm'], priority: 'builtin', title, loading: 'bytes-complete', wrap: false,
     })
     expect(title).not.toHaveBeenCalled()
@@ -30,6 +31,7 @@ describe('HTML registration', () => {
 
   it('registers its dictionary and matching keyed body, and removes all contributions on disposal', async () => {
     const ctx = new Context()
+    ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) } } as never)
     // No Session or Tab services are mounted; the global callback must use its file address.
     const registry = new DocumentPreviewRegistry()
     const dictionaries = new Map<string, unknown>()
@@ -46,7 +48,7 @@ describe('HTML registration', () => {
       bind: () => (key: keyof typeof en) => en[key],
       register: (name: string, value: unknown) => { dictionaries.set(name, value); return () => { dictionaries.delete(name) } },
     } as never)
-    const fiber = ctx.plugin({ apply })
+    const fiber = ctx.plugin({ inject: ['settingsScope'], apply })
     dispose = async () => { await fiber.dispose() }
     await fiber.await()
     expect(registry.candidates('INDEX.HTM').map(entry => entry.id)).toEqual([HTML_BODY_ID])

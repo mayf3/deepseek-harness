@@ -312,8 +312,7 @@ function assembledRuntimeContexts(log: PersistedLog): string[] {
       data?: { source?: { kind?: string; plugin?: string }; content?: Array<{ type?: string; text?: unknown }> }
     }
     if (event.type !== 'user/message'
-      || event.data?.source?.kind !== 'plugin'
-      || event.data.source.plugin !== '@deepseek-ai/dsh-system-prompt') return []
+      || event.data?.source?.kind !== 'runtime-context') return []
     return event.data.content?.flatMap(block => block.type === 'text' && typeof block.text === 'string' ? [block.text] : []) ?? []
   })
 }
@@ -830,7 +829,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         const denied = records(ordered[0]!.content).find(record => record.type === 'tool/result'
           && JSON.stringify(record).includes('call_over_capacity'))
         expect(denied).toMatchObject({ data: {
-          message: { content: [{ isError: true, content: [{ type: 'text', text: expect.stringContaining('subagent limit reached (active child limit: 1)') }] }] },
+          message: { content: [{ type: 'text', text: expect.stringContaining('subagent limit reached (active child limit: 1)') }], isError: true },
         } })
       }
       if (scenario.name === 'tool-error-details') {

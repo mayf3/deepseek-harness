@@ -97,6 +97,8 @@ describe('SkillRow', () => {
     }))} />)
     const row = screen.getByRole('button', { name: 'skill 加载失败SkillSkillError: missing resource' })
     expect(view.container.querySelector('[data-tool="skill"]')?.getAttribute('data-state')).toBe('error')
+    expect(view.container.querySelector('[data-tool="skill"] > div > span:first-child svg')).not.toBeNull()
+    expect(view.container.querySelector('[data-tool="skill"] [data-state]')).toBeNull()
     expect(row.textContent).not.toContain('Check SKILL.md.')
     fireEvent.click(row)
     const output = view.container.querySelector('pre')!
@@ -108,8 +110,10 @@ describe('SkillRow', () => {
     const stoppedView = render(<SkillRow {...props(settled({
       error: { name: 'InterruptedError', code: 'interrupted' },
     }))} />)
-    expect(stoppedView.container.textContent).toContain('skill 加载已中止')
-    expect(stoppedView.container.querySelector('[data-state="warning"]')).not.toBeNull()
+    const stoppedSummary = stoppedView.getByText('skill 加载已中止')
+    expect(stoppedSummary.className).toContain('stoppedSummary')
+    expect(stoppedView.container.querySelector('[data-tool="skill"] > div > span:first-child svg')).not.toBeNull()
+    expect(stoppedView.container.querySelector('[data-tool="skill"] [data-state]')).toBeNull()
     cleanup()
 
     const structuredView = render(<SkillRow {...props(settled({

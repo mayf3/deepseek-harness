@@ -266,6 +266,8 @@ A local one-shot provider appends the descriptor inside the child's initial turn
 
 ## Durable enumeration: `listChildren()`, `listDescendants()`, and their entries
 
+The model-facing `list_agents` adapter reports current activity as `running` or `inactive`. These values do not describe task completion or guarantee that `send_message` will succeed.
+
 `SubagentRuntime.listChildren(parentSessionId, signal?)` reads the parent's `subagentCatalog` view through a live-preferred Session observation and releases that observation on success or failure. It returns direct-child entries in parent event order without reading child logs or enumerating the Session corpus. Query failures propagate; a missing catalog projection fails explicitly. Browser rows derive membership from the shared projection store and add activity from Session status; the control stream pushes complete catalog updates. `listDescendants()` retains corpus traversal, child-identity diagnostics, and complete `hasChildren` computation. [The parent-catalog Agent Note](../../.agents/notes/implemented/architecture/2026-09-01-parent-owned-subagent-catalog.md) owns creation, fork isolation, ordering, and persistence costs.
 
 `SubagentRuntime.listDescendants(rootSessionId)` applies the same live-preferred corpus and projection-backed interpretation to the root's complete descendant tree in stable pre-order. Ordinary sessions and one-shot children remain traversal nodes, so continuable descendants below them are discovered; only `origin: 'subagent'` candidates produce rows. Each returned child or diagnostic adds its position from the enumerated durable header, while a cold inspection revalidates that complete lifecycle before serving identity:
@@ -300,7 +302,7 @@ interface SubagentResult {
    * are skipped. Without a non-empty message, the output is its accumulated
    * assistant text stream, or `[]` when the child produced neither.
    */
-  readonly output: ContentBlock[]
+  readonly output: readonly ContentBlock[]
   /**
    * The structured result after a requested `outputSchema` was successfully
    * satisfied. Requesting a schema does not guarantee presence: a provider can

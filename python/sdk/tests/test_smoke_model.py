@@ -590,6 +590,9 @@ def test_committed_python_native_goldens_compare_current_output_without_rewritin
     directory = SMOKE[f"{scenario}_SNAPSHOT_DIRECTORY"]
     filenames = SMOKE[f"{scenario}_SNAPSHOT_FILENAMES"]
     before = {path.name: path.read_bytes() for path in directory.iterdir() if path.is_file()}
+    selected = SMOKE["selected_snapshot_session_files"](directory)
+    first = next(iter(selected.values()))
+    source_version = SMOKE["session_header_version"](before[first.name].decode("utf-8"), first.name)
 
     def current_writer(value: object) -> object:
         if isinstance(value, list):
@@ -598,18 +601,19 @@ def test_committed_python_native_goldens_compare_current_output_without_rewritin
             return value
         result = {key: current_writer(item) for key, item in value.items()}
         if result.get("type") == "session":
-            assert result["version"] == 3
+            assert result["version"] == source_version
             result["version"] = SESSION_FORMAT_VERSION
         if result.get("type") == "session-log-deepseek/delivery-accepted":
-            assert result["data"]["sessionFormatVersion"] == 3
+            assert result["data"]["sessionFormatVersion"] == source_version
             result["data"]["sessionFormatVersion"] = SESSION_FORMAT_VERSION
         return result
 
     fresh = {}
     for name in filenames:
-        content = before[name].decode("utf-8")
-        if name.endswith(".jsonl"):
-            parsed = SMOKE["parse_snapshot_session_filename"](name)
+        parsed = SMOKE["parse_snapshot_session_filename"](name)
+        source_name = selected[parsed[0]].name if parsed is not None else name
+        content = before[source_name].decode("utf-8")
+        if parsed is not None:
             fresh[SMOKE["snapshot_session_filename"](parsed[0], SESSION_FORMAT_VERSION)] = SMOKE["render_jsonl"]([
                 current_writer(json.loads(line)) for line in content.splitlines() if line
             ])

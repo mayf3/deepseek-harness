@@ -11,8 +11,8 @@
 仅追加的事件类型。可通过声明合并扩展：插件通过 declaration merging 声明额外的事件类型。例如[压缩（compaction） seam](compaction.zh.md) 添加了 `compaction/start` / `compaction/summary` / `compaction/end`，`@deepseek-ai/dsh-hook-protocol` 为钩子桥接添加了仅记录日志的 `hook/invoked` / `hook/result` 记录。与 `compaction/*` 一样，这些都不是 `SurfaceEventType`（没有 `surfaceOp`）。生成的[持久化日志事件目录](../persistence-catalog.zh.md)列举了所有成员（核心与合并扩展的），包含其 payload、surface 标记与声明位置。
 
 ```ts type-equiv
-/** A user-role specialization of the one shared message representation. */
-interface UserMessage extends Message {
+/** A user-role specialization of the shared message representation. */
+interface UserMessage extends MessageBase {
   readonly role: 'user'
 }
 ```
@@ -53,6 +53,14 @@ interface SessionEventMap {
    * project their `content` verbatim; `source` tells them apart.
    */
   'user/message': UserMessage
+  /** An incremental agent session change admitted at the named turn and step. */
+  'developer/message': {
+    turn: number
+    step: number
+    message: DeveloperMessage
+    /** Earlier request/header defining every tool addition; required exactly when additions are present. */
+    headerSeq?: SessionSeq
+  }
   /**
    * The rendered system prompt on the model-visible surface. The loop appends
    * the first one as surface node 0 before the step's first `user/message`.
@@ -116,7 +124,7 @@ interface SessionEventMap {
     message: ToolResultMessage
     /**
      * Optional failure identity and raw user-facing reason, outside model content;
-     * allowed only when the tool-result block has `isError: true`.
+     * allowed only when the message has `isError: true`.
      */
     error?: { name: string; code: string; reason?: string }
     meta?: JsonValue
@@ -139,19 +147,21 @@ interface SessionEventMap {
    */
   'request/context': RequestContext
   /**
-   * Marks the end of a constructor seed. Events before it have smaller seq
-   * values and came from the seed (resume, fork, or replay); this lifecycle
-   * produced none of them. This log-only event is the durable projection of
-   * {@link Session.firstLiveSeq}.
+   * Separates inherited or restored history from later lifecycle-owned work.
+   * This log-only marker need not be at {@link Session.firstLiveSeq}: a fork
+   * seed can already contain its tagged marker and child-owned synthetic
+   * closers before construction.
    *
    * A fresh fork child owns one `{ inherited: true }` marker at its exact
    * inherited-prefix cut, even when that prefix ends in an ancestor marker.
-   * The last tagged marker is the current Session's cut; untagged markers keep
-   * ordinary restore and replay lifecycle boundaries.
+   * `buildForkSeed` appends that marker before any synthetic closers; the
+   * `Session` constructor supplies it when given only the inherited prefix.
+   * The last tagged marker is the current Session's cut; untagged markers
+   * keep ordinary restore and replay lifecycle boundaries.
    *
-   * `Session`'s constructor is the only legitimate writer. The invariant
-   * companion deliberately constrains nothing here, so a plugin appending one
-   * would silently classify every live bracket before it as seed history.
+   * Only the `Session` constructor and `buildForkSeed` may create this marker.
+   * The invariant companion deliberately constrains nothing here, so a plugin
+   * appending one would silently classify every live bracket before it as seed history.
    *
    * An owner of a standalone open/close bracket (`compaction/start` …
    * `compaction/end`) reads it because seed history and live work are otherwise
@@ -186,6 +196,10 @@ interface EpochHeader {
   adapterDefaults?: LlmCallConfigAdapterDefaults
   /** Assembled tool schemas; absent for a tool-less request. */
   tools?: ToolSchema[]
+  /** Retired request text; system prompts belong to system/message events.
+   * @persistenceReserved
+   */
+  system?: never
 }
 ```
 
@@ -277,13 +291,13 @@ type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 `SessionEventType = keyof SessionEventMap`。由于 `SessionEventMap` 可通过合并扩展，对 `SessionEvent` 的 switch 语句禁止使用 `assertNever`：插件添加的变体是合法的未知值；处理已知 case 后在 `default` 中放行。
 
-每个 surface 事件都要求 `surfaceOp`；已知仅日志事件禁止两个 surface 元数据字段。原生未知或已退役的可忽略信封保持不透明。`assistant/message` 嵌入其提供方 stream，并禁止 `sourceEventSeqs`。System、user 与 tool surface 事件可以在来源归属或替换覆盖需要时引用完整、非空且唯一的较早事件集合。`tool/result` 仅在工具结果块带有 `isError: true` 时可以携带 `data.error`；失败结果的失败身份仍可省略。
+每个 surface 事件都要求 `surfaceOp`；已知仅日志事件禁止两个 surface 元数据字段。原生未知或已退役的可忽略信封保持不透明。`assistant/message` 嵌入其提供方 stream，并禁止 `sourceEventSeqs`。System、user 与 tool surface 事件可以在来源归属或替换覆盖需要时引用完整、非空且唯一的较早事件集合。`tool/result` 仅在消息带有 `isError: true` 时可以携带 `data.error`；失败结果的失败身份仍可省略。
 
 <a id="surface-types"></a>
 
 ## Surface 类型
 
-四种产生消息的类型（`SurfaceEventType`：`system/message`、`user/message`、`assistant/message`、`tool/result`）携带 surface 元数据，用来声明它们如何加入有序的派生 surface。`system/message` 承载渲染后的系统提示词：循环把第一条追加为 surface 第 0 号节点，并在提示词变化时恰好替换最新的系统节点，或在历史内路由上追加一条新的；surface 折叠拒绝任何其他覆盖第 0 号节点 `system/message` 的替换，而后续系统节点是普通历史，压缩替换可以遮蔽它。见 [session surface Agent Note](../../.agents/notes/implemented/architecture/2026-06-18-session-surface.zh.md)。
+产生消息的类型（`SurfaceEventType`：`system/message`、`developer/message`、`user/message`、`assistant/message`、`tool/result`）携带 surface 元数据，用来声明它们如何加入有序的派生 surface。`system/message` 承载渲染后的系统提示词：循环把第一条追加为 surface 第 0 号节点，并在提示词变化时恰好替换最新的系统节点，或在历史内路由上追加一条新的；surface 折叠拒绝任何其他覆盖第 0 号节点 `system/message` 的替换，而后续系统节点是普通历史，压缩替换可以遮蔽它。见 [session surface Agent Note](../../.agents/notes/implemented/architecture/2026-06-18-session-surface.zh.md)。
 
 ### `SurfaceEventType`：事件类型中产生消息的子集
 
@@ -296,6 +310,7 @@ type SessionEvent<T extends SessionEventType = SessionEventType> = {
  */
 type SurfaceEventType =
   | 'system/message'
+  | 'developer/message'
   | 'user/message'
   | 'assistant/message'
   | 'tool/result'
@@ -650,7 +665,7 @@ declare class Session {
 
 - `user/message` → 一条携带确切 `content` 的 user 消息；可选 envelope 仅作为日志中的展示元数据保留。
 - `assistant/message` → 一条 assistant 消息，包含生成它的提供方和模型，以及可选的适配器私有回放状态。其嵌入式紧凑 stream 是回放、usage 与 UI 证据，而不是第二条 message。**内容为空的** `assistant/message` 也会跳过：因 max-tokens 而截断且无内容的步骤仍会记录一条 `assistant/message` 来保存 stream、usage、提供方和模型，但无内容的 assistant 轮次不得进入提供方 transcript（文本记录）。
-- `tool/result` → 一条携带 `tool-result` 块的 user 消息。
+- `tool/result` → 一条一等 tool-role 消息，携带结果内容与工具调用标识。
 - `user/message`（注入上下文，即非 `user` 来源）→ 按时间顺序在相应位置生成一条 user-role 消息，并原样承载其 `content`；其类型化 source 标明生产方，并携带所有生产方专用数据。
 
 其余所有事件（`turn/*`、`step/*`、`assistant/attempt`、插件所属的 `llm/retry`）均为结构信息，不会投影为消息。token 记账会展开每个 `assistant/message` 或 `assistant/attempt` 的嵌入式 stream，message 顶层 `usage` 存在时仍是已提交 message 的权威。失败的模型请求 attempt 因此可以保留提供方 usage，而无需虚构 assistant message。当前逻辑校验会拒绝没有提供方／模型的 request header 和 assistant 消息，而不会猜测路由；受支持的历史表示会在当前 Session 存在前，由其相邻格式迁移边归一化并校验。
@@ -709,7 +724,7 @@ interface TurnEndReasonMap {
 }
 ```
 
-`max-tokens` 与模型调用中同名的 `FinishReason` 对应：只要轮次内有任何步骤以 `max-tokens` 结束，整个轮次就以 `max-tokens` 而不是 `completed` 结束（即使之后继续执行，截断事实仍优先），让消费方能够区分正常停止和截断停止。取消和错误仍是不同的结果。`interrupted` 是唯一不会由任何 loop 发出的原因：它由崩溃恢复合成（见 [persistence.md](persistence.zh.md)）。该 map 可通过合并扩展。
+`max-tokens` 与模型调用中同名的 `FinishReason` 对应：只要轮次内有任何步骤以 `max-tokens` 结束，整个轮次就以 `max-tokens` 而不是 `completed` 结束（即使之后继续执行，截断事实仍优先），让消费方能够区分正常停止和截断停止。取消和错误仍是不同的结果。loop 不会实时发出 `interrupted` 或 `forked`：崩溃恢复合成 `interrupted`（见 [persistence.md](persistence.zh.md)），而 fork 种子构造合成 `forked`。该 map 可通过合并扩展。
 
 ## 执行封闭与独立事件
 
@@ -719,7 +734,7 @@ interface TurnEndReasonMap {
 
 ## 种子结束边界：`session/end-seed`
 
-新 fork constructor 要求 seed 等于 inherited prefix，并在精确持久 cut 追加 `session/end-seed { inherited: true }`。restore 会保留该 tagged marker，并且只在完整 stored seed 尚未以 marker 结尾时追加普通 `session/end-seed {}`。两种形式都只进入 log 且不产生 message；`Session` constructor 是唯一合法 writer。
+`buildForkSeed` 在精确的 inherited-prefix cut 追加 `session/end-seed { inherited: true }`，然后添加合成的 fork 结束事件。`Session` constructor 保留该预先构造的 marker，或在 seed 仅含 inherited prefix 时追加 marker。restore 保留 tagged marker，并且只在完整 stored seed 尚未以 marker 结尾时追加普通 `session/end-seed {}`。两种形式都只进入 log 且不产生 message；只有 constructor 和 `buildForkSeed` 可以创建它们。
 
 对于 fork lineage，定位 payload 携带 `inherited: true` 的最后一个 marker；当前格式 decoding 只在 `SessionHeader.isSeeded` 为 true 时要求该 marker，并从其 seq 推导 `inheritedEventCount`。对于 lifecycle ownership，定位任一形式的最后一个 `session/end-seed`。重新打开已经以任一 marker 结尾的 seed 时，不会再追加普通 marker。
 
@@ -826,11 +841,11 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspectio
 workspaceDesktop(): { name: string; available: boolean; fileManager: 'finder' | 'explorer' | 'directory' | null }
 
 /**
- * Open one path prepared by a Session-aware caller on the Host desktop.
+ * Verify one path through the composed filesystem and open it on the Host desktop.
  * @param request - path after best-effort Session workspace resolution.
  * @param signal - caller lifetime; abort terminates the native command.
  * @returns confirmation after the native opener accepts the path.
- * @throws RemoteError when the request is invalid, cancelled, or the opener fails.
+ * @throws RemoteError when the request is invalid, has no verified Host mapping, is cancelled, or the opener fails.
  */
 @Remote('openWorkspacePath') async openWorkspacePath( request: SessionOpenWorkspacePathRequest, signal: AbortSignal, ): Promise<SessionOpenWorkspacePathValue>
 

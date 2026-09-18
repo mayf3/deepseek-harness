@@ -45,6 +45,18 @@ const AUTO_PARENT_ONE_SHOT = 'AUTO_PARENT_ONE_SHOT'
 const AUTO_PARENT_CONTINUABLE = 'AUTO_PARENT_CONTINUABLE'
 const AUTO_PARENT_ADJUST = 'AUTO_PARENT_ADJUST'
 
+/** Identify the one-shot Auto Review request and check its request-only outer input. */
+function isAutoReviewRequest(options: GenerateOptions): boolean {
+  if (options.system?.startsWith('REVIEW_POLICY\n') !== true) return false
+  expect(options.messages).toHaveLength(1)
+  const message = options.messages[0]
+  expect(message).toMatchObject({ role: 'user', content: [{ type: 'text' }] })
+  expect(message?.content).toHaveLength(1)
+  expect(message).not.toHaveProperty('id')
+  expect(message).not.toHaveProperty('source')
+  return true
+}
+
 type RpcResult<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
 
 /** POST one generated Remote unary through the authenticated Web carrier. */
@@ -94,14 +106,13 @@ class ShippedAutoAdapter extends LlmAdapter {
 
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
-    const source = options.messages[0]?.source
-    if (source?.kind === 'plugin' && source.plugin === 'dsh-experimental-auto-review') {
+    if (isAutoReviewRequest(options)) {
       yield* textChunks(JSON.stringify({
         risk: 'medium', decision: 'deny', reason: AUTO_RAW_REASON,
       }))
       return
     }
-    if (options.messages.some(message => message.content.some(block => block.type === 'tool-result'))) {
+    if (options.messages.some(message => message.role === 'tool')) {
       yield* textChunks(AUTO_FINAL_TEXT)
       return
     }
@@ -214,8 +225,7 @@ class ShippedChildAutoAdapter extends LlmAdapter {
 
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
-    const source = options.messages[0]?.source
-    const response = source?.kind === 'plugin' && source.plugin === 'dsh-experimental-auto-review'
+    const response = isAutoReviewRequest(options)
       ? this.reviewResponse(options)
       : this.mainResponse(options)
     yield* response
@@ -429,10 +439,9 @@ function toolOutcomes(events: readonly SessionEvent[]): Array<{ name: string; co
   }
   return events.flatMap((event) => {
     if (event.type !== 'tool/result') return []
-    const block = event.data.message.content.find(item => item.type === 'tool-result')
-    if (block === undefined) return []
-    const name = names.get(block.toolCallId)
-    if (name === undefined) throw new Error(`tool result ${block.toolCallId} has no matching call`)
+    const { toolCallId } = event.data.message
+    const name = names.get(toolCallId)
+    if (name === undefined) throw new Error(`tool result ${toolCallId} has no matching call`)
     return [{ name, ...event.data.error === undefined ? {} : { code: event.data.error.code } }]
   })
 }
@@ -794,7 +803,7 @@ it('routes one browser-authored Auto request through the same model before a rea
   expect(prompt).toBeDefined()
   const result = events.find((event): event is Extract<SessionEvent, { type: 'tool/result' }> => (
     event.type === 'tool/result'
-      && event.data.message.content.some(block => block.toolCallId === AUTO_CALL_ID)
+      && event.data.message.toolCallId === AUTO_CALL_ID
   ))
   expect(result?.data.error).toEqual({
     name: 'AutoReviewDeniedError',

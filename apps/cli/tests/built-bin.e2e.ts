@@ -984,7 +984,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     try {
       await waitForFile(fixture.ready)
       expect(readFileSync(fixture.echo, 'utf8')).toBe('bundle-default')
-      expect(existsSync(join(fixture.home, 'profiles', 'node_modules'))).toBe(true)
+      expect(existsSync(join(fixture.home, 'profiles', 'node_modules'))).toBe(false)
       requestProfileShutdown(child, fixture)
       expect((await child).exitCode).toBe(0)
     } finally {

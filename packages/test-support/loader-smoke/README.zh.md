@@ -41,7 +41,7 @@ const result = await runLoaderSmoke({
 })
 ```
 
-当场景固定一个设计好的失败面——即一次性轮次以错误结果结束——时设置 `expectedExitCode`；以任何其他方式退出（包括成功退出）都会使冒烟测试失败。
+源码 smoke 测试支持的 `dsh` 启动器时，设置 `sourceImport: 'tsx/esm'`；built 模式忽略此选项。当场景固定一个设计好的失败面——即一次性轮次以错误结果结束——时设置 `expectedExitCode`；以任何其他方式退出（包括成功退出）都会使冒烟测试失败。
 
 ### 测试交付 profile
 

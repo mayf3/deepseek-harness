@@ -134,7 +134,7 @@ describe('first-party Session format catalog', () => {
             turn: 1, step: 1,
             message: {
               id: 'v2-to-v3-system-9673c4ed630de6c21ea6bd6b573094ea8e5e216843a1b572a68657499ad9667b',
-              role: 'system', source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' }, content: [],
+              role: 'system', source: { kind: 'system-prompt' }, content: [],
             },
           },
         },
@@ -187,7 +187,7 @@ describe('first-party Session format catalog', () => {
     const restore = createSessionFormatCatalogWithChildren([]).createRestore(sourceHeader, { recovery: 'strict', validation: 'current' })
     for (const row of rows) restore.decodeRow(row)
     const artifact = restore.finish()
-    const renamedMessage = (id: string) => ({ ...message(id), source: { kind: 'plugin', plugin: 'tools-ptc' } })
+    const renamedMessage = (id: string) => ({ ...message(id), source: { kind: 'ptc-mode' } })
     const expected = [
       rows[0], rows[1],
       expect.objectContaining({ type: 'system/message', seq: 2 }),
@@ -263,13 +263,17 @@ describe('first-party Session format catalog', () => {
     }).toThrow(/format v2 delivery marker claims target format v3/)
   })
 
-  it('validates complete relationships after streaming migration', () => {
+  it('finishes a streaming migration with the target header and dense rows', () => {
     const stream = createSessionFormatCatalogWithChildren([]).createRestore({
-      type: 'session', version: 1, id: 'invalid-stream', createdAt: 1, delegationDepth: 0,
+      type: 'session', version: 1, id: 'streaming', createdAt: 1, delegationDepth: 0,
     }, { recovery: 'strict', validation: 'current' })
-    stream.decodeRow({ type: 'step/start', seq: 0, time: 2, data: { turn: 1, step: 1 } })
+    stream.decodeRow({ type: 'feedback/record', seq: 0, time: 2, data: { text: 'retained' } })
 
-    expect(() => stream.finish()).toThrow(/open turn/)
+    expect(stream.finish()).toMatchObject({
+      header: { version: 4, id: 'streaming' },
+      inheritedEventCount: 0,
+      events: [{ type: 'feedback/record', seq: 0 }],
+    })
   })
 })
 

@@ -11,6 +11,7 @@
 import { isAbsolute, join } from 'node:path'
 import {
   SESSION_FORMAT_VERSION,
+  KNOWN_SESSION_EVENT_TYPES,
   SessionLogOffset,
 } from '@deepseek-ai/dsh-session'
 import type {
@@ -464,7 +465,7 @@ export class SessionLogScanner {
   finish(): SessionLogScan {
     this.finished = true
     const artifact = this.restore.finish()
-    assertReleasedV4Relationships(artifact)
+    assertReleasedV4Relationships(artifact, KNOWN_SESSION_EVENT_TYPES)
     return {
       meta: this.meta,
       inheritedEventCount: SessionLogOffset(artifact.inheritedEventCount),
@@ -489,7 +490,7 @@ export class SessionLogScanner {
     // This scanner accepts only current-generation files. Owned structural refusal must
     // precede its recoverable-tail suppression, independently of the strict decoder state.
     try {
-      assertV4RowAdmission(decoded)
+      assertV4RowAdmission(decoded, KNOWN_SESSION_EVENT_TYPES)
     } catch (error: unknown) {
       if (error instanceof SessionFormatUnsupportedMigrationError) throw new SessionFormatUnsupportedError(error.message)
       throw error

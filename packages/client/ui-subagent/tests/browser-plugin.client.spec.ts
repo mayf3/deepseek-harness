@@ -1,4 +1,5 @@
 /** ui-subagent browser half: catalog actions and read-only composer routing. */
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Context } from '@deepseek-ai/cordis'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { describe, expect, it } from 'vitest'
@@ -78,8 +79,13 @@ async function fullBench(sessions: SessionSummary[]) {
       face.actionCalls.push({ method: 'openSession', args: [address] })
     },
   } as never)
+  ctx.provide('sidebarRight', {
+    openResource: (address: string, options: unknown) => {
+      face.actionCalls.push({ method: 'openResource', args: [address, options] })
+    },
+  } as never)
   ctx.provide('remote', { $on: () => () => {} } as never)
-  ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
   await provideSlotFaces(ctx)
   await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
   await ctx.plugin({ inject: [...inject], apply }).await()
@@ -98,7 +104,7 @@ const FAMILY: SessionSummary[] = [
 
 describe('apply', () => {
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['sessions', 'uiWorkspace', 'slots', 'locale'])
+    expect(inject).toEqual(['sessions', 'uiWorkspace', 'slots', 'locale', 'sidebarRight'])
   })
 
   it('registers catalog actions and selects read-only subagent composers from session facts', async () => {
@@ -112,9 +118,17 @@ describe('apply', () => {
       mode: 'continuable',
     }
     actions.openChild(address)
+    actions.openChildAside(address)
     actions.refresh(sid('parent'))
     expect(face.actionCalls).toEqual([
       { method: 'openSession', args: [address] },
+      {
+        method: 'openResource',
+        args: [
+          'dsh-resource://subagentchat/session/c1?parent=parent&mode=continuable',
+          { kind: 'subagentchat', preferNewPane: true },
+        ],
+      },
       { method: 'refreshProjections', args: [sid('parent')] },
     ])
 

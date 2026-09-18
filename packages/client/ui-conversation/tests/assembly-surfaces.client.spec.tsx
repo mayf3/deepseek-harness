@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** Conversation assembly acceptance independent of Tool presentation. */
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
@@ -79,7 +80,7 @@ function WorkspaceProbe({ open }: EmptyWorkspaceOwnerProps) {
 async function bench(opts?: { blank?: boolean }) {
   const runtime = await SlotTestRuntime.create()
   const openSession = provideWorkspaceNavigation(runtime)
-  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  runtime.ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
@@ -102,7 +103,7 @@ describe('resident composer', () => {
   it('renders the locked view state while no session exists at all', async () => {
     const runtime = await SlotTestRuntime.create()
     provideWorkspaceNavigation(runtime)
-    runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+    runtime.ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
     const locale = new LocaleRuntime(runtime.ctx)
     runtime.ctx.provide('locale', locale)
     runtime.slots.installLocale(locale)
@@ -129,7 +130,7 @@ describe('resident composer', () => {
   it('keeps the complete Hero tree mounted when the first Workspace session appears', async () => {
     const runtime = await SlotTestRuntime.create()
     const openSession = provideWorkspaceNavigation(runtime)
-    runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+    runtime.ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
     const locale = new LocaleRuntime(runtime.ctx)
     runtime.ctx.provide('locale', locale)
     runtime.slots.installLocale(locale)
@@ -196,7 +197,7 @@ describe('prompt rejection through the assembled composer', () => {
   it('renders the promptError alert strip and keeps the draft in the machine', async () => {
     const runtime = await SlotTestRuntime.create()
     const openSession = provideWorkspaceNavigation(runtime)
-    runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+    runtime.ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
     const locale = new LocaleRuntime(runtime.ctx)
     runtime.ctx.provide('locale', locale)
     runtime.slots.installLocale(locale)
