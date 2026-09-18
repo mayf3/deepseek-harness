@@ -12,7 +12,7 @@ Status: implemented
 
 窗口 chrome 属于框架，不属于某个面板。ui-layout 声明第五个 root 作用域子 slot `shell.leading`（single），AppFrame 把它的座渲染为覆盖各列的框架级盒子——仅在 `sidebarCollapsed && collapsedWidth === 0`（darwin 桌面全隐藏，唯一让窗口 chrome 无处安放的状态）时挂载。座位于框架左上角（left 88px 避开 hiddenInset 红绿灯，top 11px 让 28px 控件对齐会话标题行中线，z-index 15 高于列内容、低于框架浮层），并带 `-webkit-app-region: no-drag`，把自己从下方任何拖拽带中减去。
 
-在同一收起条件下框架发布 `--dsh-frame-leading-clearance: 160px`——红绿灯加座内两个控件占据的行内带宽，自框架左边缘起量。内容抵达左上角的主面板以它做内边距并减去自身已有的缩进：会话标题行 pad `max(0px, clearance - 20px)`（其头部已 pad 20px）；插件管理器页头 pad `max(0px, clearance - clamp(24px, 4vw, 48px) - max(0px, (100% - 960px) / 2))`，居中列只在窗口窄到真正碰撞时才缩进。
+在同一收起条件下框架发布 `--dsh-frame-leading-clearance: 160px`——红绿灯加座内两个控件占据的行内带宽，自框架左边缘起量。窗口全屏隐藏红绿灯（桌面 preload 把状态镜像到 `html[data-fullscreen]`）：座移入其空出的带宽（`left: 12px`），避让量降到 `84px`。会话标题行是唯一消费者：它 pad `max(0px, clearance - 20px)`（其头部已 pad 20px）。两种侧栏状态下都始于窗口顶带之下的入口页（插件管理器页头）改用 `--dsh-frame-top-clearance`（48px，darwin 框架上无条件发布）做顶部内边距，纵向避开顶带而非行内缩进。
 
 ui-sidebar 把 `HeaderLeadingControls` 改注册到 `shell.leading` 而非会话座，复用 shell 的 inject face 与 locale；因挂载条件归框架所有，组件无条件渲染，其平台判断与 CSS 收起门控被删除。会话 slot `conversation.session.header.leading` 按 pre-stable API 规则整体移除——声明、owner props 接口、children 条目、头部渲染座与 CSS（更新所有消费者，不留兼容垫层），同时解除 ui-sidebar 对 ui-conversation 的依赖。
 
@@ -28,7 +28,7 @@ ui-sidebar 把 `HeaderLeadingControls` 改注册到 `shell.leading` 而非会话
 
 ## Consequences
 
-- 侧边栏隐藏时，现有与未来的每个主面板都免费获得重新打开与 New Session 控件；内容抵达左上角的面板自行接入 `--dsh-frame-leading-clearance`。
+- 侧边栏隐藏时，现有与未来的每个主面板都免费获得重新打开与 New Session 控件；会话接入 `--dsh-frame-leading-clearance`，入口页改用无条件发布的 `--dsh-frame-top-clearance`。
 - `conversation.session.header.leading` 从客户端目录中消失；`shell.leading` 取而代之，成为任何包都可占据的公开 root 作用域座。
 - ui-sidebar 不再依赖 ui-conversation（inject 列表、devDependency 与 tsconfig 引用均已移除）。
 - 在当前组合中该座仅 darwin 可达（只有 darwin 收起会隐藏整列），但挂载条件与平台无关：未来任何隐藏整列的平台都自动获得该座。
