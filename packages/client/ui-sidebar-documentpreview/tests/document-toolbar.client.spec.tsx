@@ -307,7 +307,7 @@ describe('document toolbar', () => {
     const header = view.container.querySelector('[data-textpreview-path]')?.parentElement
     expect(header?.querySelector('[data-slot="sidebar.right.tab.document.actions"]')?.getAttribute('data-slot-path')).toBe(ABSOLUTE_PATH)
     const empty = view.container.querySelector('[data-textpreview-unsupported]')
-    expect(empty?.querySelector('[data-slot="sidebar.right.tab.document.unpreviewable"]')?.getAttribute('data-slot-file')).toBe('work/clip.mp4')
+    expect(empty?.querySelector('[data-slot="sidebar.right.tab.document.unpreviewable"]')?.getAttribute('data-slot-path')).toBe(ABSOLUTE_PATH)
     expect(h.read).not.toHaveBeenCalled()
     expect(h.bytes).not.toHaveBeenCalled()
     h.controller.abort()
