@@ -192,7 +192,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       await expect.poll(async () => (await metrics(left)).y).toBe(0)
       expect((await metrics(left)).x).toBe(initialLeft.maxX)
     } finally {
-      await scrollLayout.evaluate(element => element.remove())
+      await scrollLayout.evaluate(element => element.parentNode!.removeChild(element))
     }
     await review.getByRole('button', { name: '自动换行' }).click()
     await review.locator('[data-review-view][data-review-wrap]').waitFor({ state: 'visible' })
