@@ -284,15 +284,15 @@ function SplitColumns({ hunks }: { hunks: readonly WorkspaceDiffHunk[] }): React
   const follow = (side: 'left' | 'right') => (event: UIEvent<HTMLDivElement>): void => {
     const peer = side === 'left' ? 'right' : 'left'
     const other = columns.current[peer]
+    /* v8 ignore next -- Both column refs are attached before browser scroll events can run. */
+    if (other === null) return
     for (const axis of ['scrollLeft', 'scrollTop'] as const) {
       const value = event.currentTarget[axis]
       if (offsets.current[side][axis] === value) continue
       offsets.current[side][axis] = value
-      if (other !== null) {
-        other[axis] = value
-        // Record the browser-clamped offset so its scroll event cannot pull the source back.
-        offsets.current[peer][axis] = other[axis]
-      }
+      other[axis] = value
+      // Record the browser-clamped offset so its scroll event cannot pull the source back.
+      offsets.current[peer][axis] = other[axis]
     }
   }
   return (
