@@ -675,44 +675,52 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       await preview.getByRole('button', { name: 'Read the file again', exact: true }).click()
       await canvas.waitFor({ state: 'visible' })
       expect(convert).toHaveBeenCalledTimes(1)
-      const notice = preview.locator('[data-office-font-notice]')
-      const more = notice.getByRole('button', { name: 'Show more', exact: true })
-      await more.waitFor({ state: 'visible' })
+      const warning = preview.locator('[data-office-font-warning]').getByRole('button')
+      await warning.waitFor({ state: 'visible' })
+      expect(await warning.getAttribute('aria-expanded')).toBe('false')
+      expect(await page.getByRole('dialog', { name: 'Missing fonts', exact: true }).count()).toBe(0)
+      const warningBox = (await warning.boundingBox())!
+      const reloadBox = (await preview.getByRole('button', { name: 'Read the file again', exact: true }).boundingBox())!
+      expect(warningBox.x + warningBox.width).toBeLessThanOrEqual(reloadBox.x)
+      expect(Math.abs(warningBox.y + warningBox.height / 2 - reloadBox.y - reloadBox.height / 2)).toBeLessThan(1)
+      await warning.hover()
+      await page.getByRole('tooltip', { name: /Missing fonts:/ }).waitFor({ state: 'visible' })
       const before = await canvas.evaluate(node => node.getBoundingClientRect().top)
-      await more.click()
+      await successShot(page, 'office-font-warning')
+      await warning.click()
       const details = page.getByRole('dialog', { name: 'Missing fonts', exact: true })
       await details.getByText('DSH Missing Preview Font', { exact: true }).waitFor({ state: 'visible' })
+      expect(await page.getByRole('tooltip', { name: /Missing fonts:/ }).count()).toBe(0)
       await successShot(page, 'office-font-details')
       await page.keyboard.press('Escape')
       await expect.poll(() => details.count()).toBe(0)
-      expect(await more.evaluate(node => node === document.activeElement)).toBe(true)
-      await more.click()
+      expect(await warning.evaluate(node => node === document.activeElement)).toBe(true)
+      await warning.click()
       await page.getByRole('button', { name: 'Close font details', exact: true }).click()
-      expect(await more.isVisible()).toBe(true)
-      await notice.getByRole('button', { name: 'Dismiss font notice', exact: true }).click()
-      await expect.poll(() => notice.evaluate(node => node.getBoundingClientRect().height)).toBe(0)
+      expect(await warning.isVisible()).toBe(true)
       const after = await canvas.evaluate(node => node.getBoundingClientRect().top)
-      expect(before - after).toBeGreaterThan(40)
+      expect(after).toBe(before)
       const topInset = await preview.evaluate((node) => {
         const body = node.querySelector('[data-textpreview-body]')!.getBoundingClientRect()
         const canvas = node.querySelector('canvas')!.getBoundingClientRect()
         return canvas.top - body.top
       })
       expect(topInset).toBe(0)
-      await successShot(page, 'office-font-dismissed')
       await compareOrRefreshGolden(fileURLToPath(new URL('./expected/office-font-notice.md', import.meta.url)), [
-        '# Office font notice', '',
+        '# Office font warning', '',
+        '- Warning precedes reload in the same toolbar: true',
+        '- Details open only on request: true',
         '- Requested absent family is listed: true',
-        '- Escape restores focus to Show more: true',
-        '- Closing details preserves the notice: true',
-        '- Dismissing the notice collapses its occupied height: 0',
-        `- Document top inset after dismissal: ${topInset}px`,
+        '- Escape restores focus to the warning: true',
+        '- Closing details preserves the warning and document position: true',
+        `- Document top inset: ${topInset}px`,
       ].join('\n'), MODE)
       await successShot(page, 'office-docx')
       for (const extension of ['doc', 'xls', 'xlsx', 'ppt', 'pptx']) {
         await openPreviewFile(column, filesTab, preview, `chinese.${extension}`)
         await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible', timeout: 60_000 })
         await expect.poll(async () => (await preview.locator('[data-pdf-text]').allTextContents()).join(''), { timeout: 30_000 }).toContain('中文文档')
+        if (['doc', 'xls', 'ppt'].includes(extension)) expect(await warning.count()).toBe(0)
         await successShot(page, `office-${extension}`)
       }
       expect(convert).toHaveBeenCalledTimes(6)

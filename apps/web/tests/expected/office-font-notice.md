@@ -1,7 +1,8 @@
-# Office font notice
+# Office font warning
 
+- Warning precedes reload in the same toolbar: true
+- Details open only on request: true
 - Requested absent family is listed: true
-- Escape restores focus to Show more: true
-- Closing details preserves the notice: true
-- Dismissing the notice collapses its occupied height: 0
-- Document top inset after dismissal: 0px
+- Escape restores focus to the warning: true
+- Closing details preserves the warning and document position: true
+- Document top inset: 0px
