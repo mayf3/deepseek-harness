@@ -6,6 +6,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { BundleInfo, ChangeResult, ManagementError, PluginEntryId, PluginInfo, PluginInstallRequestId } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ConfigLedger } from '../src/client/config-ledger.ts'
 import { packageView, PluginManagerController, rowKey, sortPackages } from '../src/client/manager-store.ts'
 
 const ROW_ENTRY = 'include:sidebar' as PluginEntryId
@@ -55,6 +57,12 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+/** A configuration ledger with nothing registered, as the page binds it beside the store. */
+const NO_CONFIG: HostObservable<ConfigLedger> = {
+  getSnapshot: () => ({ items: [], bundles: new Set(), rows: new Set() }),
+  subscribe: () => () => {},
+}
+
 function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}) {
   const inventory = { list: overrides.inventory ?? vi.fn(() => Promise.resolve(ok({ entries: [], managementAvailable: true }))) }
   const plugins = {
@@ -70,7 +78,7 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
   }
   const ctx = { remote: { pluginManager: plugins, pluginInventory: inventory } } as never
   const controller = new PluginManagerController(ctx)
-  const face = controller.inject()
+  const face = controller.inject(NO_CONFIG)
   const state = () => controller.getSnapshot()
   /** The request id of the run the dialog just handed to the Host. */
   const started = async (): Promise<PluginInstallRequestId> => {
@@ -457,6 +465,33 @@ describe('PluginManagerController', () => {
     await vi.waitFor(() => { expect(state().install.phase).toBe('idle') })
     expect(state().install).toMatchObject({ open: true, spec: 'slow', failure: null })
     expect(state().notice).toEqual({ kind: 'cancelled', seq: 1 })
+  })
+
+  it.each(['cancelled', 'too-late'] as const)('closes the dialog once the Host confirms the stop its close control asked for, and stays on %s', async (status) => {
+    const pending = deferred<ReturnType<typeof ok<ChangeResult>>>()
+    const { plugins, face, state, controller, started } = bench({
+      installBundle: vi.fn().mockReturnValue(pending.promise),
+      cancelInstall: vi.fn().mockResolvedValue(ok({ status })),
+    })
+    // Before a run exists there is nothing to stop, and the dialog stays as it is.
+    face.openInstall()
+    face.cancelInstallAndClose()
+    expect(state().install).toMatchObject({ open: true, phase: 'idle' })
+    face.editInstallSpec('slow')
+    face.runInstall()
+    const requestId = await started()
+    controller.installProgress({ requestId, phase: 'installing' })
+    face.cancelInstallAndClose()
+    expect(state().install.phase).toBe('cancelling')
+    if (status === 'cancelled') {
+      await vi.waitFor(() => { expect(state().install).toMatchObject({ open: false, phase: 'idle', spec: '' }) })
+      expect(state().notice).toEqual({ kind: 'cancelled', seq: 1 })
+    } else {
+      await vi.waitFor(() => { expect(state().install.phase).toBe('applying') })
+      expect(state().install.open).toBe(true)
+    }
+    expect(plugins.cancelInstall).toHaveBeenCalledExactlyOnceWith(requestId)
+    pending.resolve(ok({ ...failed(), application: 'cancelled' }))
   })
 
   it.each([false, true])('drops a stop the Host confirms once the run settled, or after disposal (%s)', async (dispose) => {

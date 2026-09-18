@@ -53,6 +53,12 @@ export const PAGE_MESSAGES = 50
 /** Messages requested per page while a turn jump loops backwards (fewer, larger round trips). */
 export const JUMP_PAGE_MESSAGES = 200
 
+interface PendingHistory {
+  beforeSeq: SessionLogOffset
+  hasMore: boolean
+  readonly pages: (readonly SessionEventLikeEntry[])[]
+}
+
 /** Manager-owned observers of a Session object's local state edges. */
 export interface SessionOptions {
   /** Catalog-discovered address selecting non-activating subagent transport. */
@@ -97,6 +103,7 @@ export class Session implements SessionFace {
   private jumpTargetSeq: SessionSeq | null = null
   /** The running jump loop's completion, shared by retargeting callers. */
   private jumpPromise: Promise<void> | null = null
+  private pendingHistory: PendingHistory | null = null
   private readonly stopObservingInbox: () => void
   private readonly assistantStream = new ClientAssistantStream()
   private running = false
@@ -419,6 +426,14 @@ export class Session implements SessionFace {
     // target behind — only the loop's finally clears that field, and no
     // loop starts here.
     if (this.loadingOlder) return Promise.resolve()
+    const events = this.events
+    if (events === undefined) return Promise.resolve()
+    const pending: PendingHistory = {
+      beforeSeq: this.baseSeq,
+      hasMore: this.hasMore,
+      pages: [],
+    }
+    this.pendingHistory = pending
     this.jumpTargetSeq = seq
     this.loadingOlder = true
     this.notifier.markDirty()
@@ -428,15 +443,13 @@ export class Session implements SessionFace {
     const generation = this.openGeneration
     this.jumpPromise = (async () => {
       try {
-        while (this.hasMore && this.jumpTargetSeq !== null && this.baseSeq > this.jumpTargetSeq) {
+        while (pending.hasMore && this.jumpTargetSeq !== null && pending.beforeSeq > this.jumpTargetSeq) {
           if (generation !== this.openGeneration) return
-          const events = this.events
-          if (events === undefined) return
-          const before = this.baseSeq
-          await events.prepend({ beforeSeq: this.baseSeq, maxMessages: JUMP_PAGE_MESSAGES })
+          const before = pending.beforeSeq
+          await events.prepend({ beforeSeq: before, maxMessages: JUMP_PAGE_MESSAGES })
           // No-progress guard: an empty or dropped page that still claims more
           // history must end the loop, not spin it.
-          if (this.baseSeq >= before) return
+          if (pending.beforeSeq >= before) return
         }
       } catch (error) {
         if (!isRemoteFailure(error)) {
@@ -445,7 +458,11 @@ export class Session implements SessionFace {
       } finally {
         this.jumpTargetSeq = null
         this.jumpPromise = null
+        this.pendingHistory = null
         this.loadingOlder = false
+        if (generation === this.openGeneration && pending.pages.length > 0) {
+          this.prependWindow(pending.pages.reverse().flat(), pending.hasMore)
+        }
         this.notifier.markDirty()
       }
     })()
@@ -647,6 +664,11 @@ export class Session implements SessionFace {
     const visible = this.assistantStream.replace(entries, assistantStream)
     this.baseSeq = SessionLogOffset(entries[0]?.event.seq ?? 0)
     this.hasMore = hasMore
+    if (this.pendingHistory !== null) {
+      this.pendingHistory.beforeSeq = this.baseSeq
+      this.pendingHistory.hasMore = hasMore
+      this.pendingHistory.pages.length = 0
+    }
     if (visible.some(entry => entry.event.type === 'turn/start')) this.firstPromptPendingTurn = false
     if (projections !== undefined) this.projections.seed(projections)
     this.eventSource.replace(visible, hasMore)
@@ -683,6 +705,13 @@ export class Session implements SessionFace {
 
   /** Prepend one stream-validated history page. */
   private prependWindow(entries: readonly SessionEventLikeEntry[], hasMore: boolean): void {
+    if (this.pendingHistory !== null) {
+      const pending = this.pendingHistory
+      pending.beforeSeq = entries[0] === undefined ? pending.beforeSeq : SessionLogOffset(entries[0].event.seq)
+      pending.hasMore = hasMore
+      pending.pages.push(entries)
+      return
+    }
     this.baseSeq = entries[0] === undefined ? this.baseSeq : SessionLogOffset(entries[0].event.seq)
     this.hasMore = hasMore
     this.eventSource.prepend(entries, hasMore)

@@ -71,12 +71,18 @@ describe('ui-plugin-manager browser plugin', () => {
     expect(icon.component).toBe(PluginsPanelIcon)
     const unread = () => { throw new Error('The sidebar icon must not read application state') }
     const glyph = render(<PluginsPanelIcon size={18} active={false}
-      usePanelInfo={unread} useSessions={unread} useSessionPendingInteraction={unread} useWorkspaces={unread} useResource={unread} />)
+      usePanelInfo={unread} useSessions={unread} useSessionStatus={unread} useSessionRetainInfo={unread}
+      useWorkspaces={unread} useResource={unread} />)
     expect(glyph.container.querySelector('svg')?.getAttribute('width')).toBe('18')
     expect(icon.options).toMatchObject({ id: PANEL_ID, order: 0 })
     expect(icon.locale).toBe(NS)
     expect(resolveSlotLabel(icon.options.label)).toBe('插件')
+    // The page declares the slots a plugin's configuration arrives through, and binds their projection beside its state.
+    expect(b.slots.spec('plugins.item')).toMatchObject({ kind: 'list', scope: 'root' })
+    expect(b.slots.spec('plugins.bundle.config')).toMatchObject({ kind: 'keyed', scope: 'root' })
+    expect(b.slots.spec('plugins.row.config')).toMatchObject({ kind: 'keyed', scope: 'root' })
     const face = (entry.inject as unknown as () => PluginManagerFace)()
+    expect(face.hooks.configLedger.getSnapshot()).toEqual({ items: [], bundles: new Set(), rows: new Set() })
     // A Host change before the first render is not a reason to read.
     b.remote.emit('plugin-manager/changed', [{ reason: 'install' }])
     b.ctx.emit('connection/reset')

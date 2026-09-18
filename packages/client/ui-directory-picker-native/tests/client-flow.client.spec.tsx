@@ -22,6 +22,7 @@ vi.mock(desktopIpc.electron, () => ({
 }))
 vi.mock('../../../../apps/desktop/src/preload-platform.ts', () => ({ markDocumentPlatform: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/preload-theme.ts', () => ({ syncNativeTheme: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/preload-windows.ts', () => ({ syncWindowsAppearance: vi.fn() }))
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 

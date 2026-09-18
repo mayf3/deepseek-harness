@@ -233,3 +233,17 @@ it('asks the registry through pnpm view in the profile directory and reports how
   expect(missing).toMatchObject({ exitCode: null, timedOut: false })
   expect(missing.cause).toMatchObject({ message: 'spawn pnpm ENOENT', code: 'ENOENT' })
 })
+
+it('uses application-owned executable arguments and environment for package operations and inspection', async () => {
+  const { dir, context } = fixture()
+  const runtime = { command: '/app/electron', args: ['--expose-internals', '/app/pnpm.mjs'], env: { ELECTRON_RUN_AS_NODE: '1', PATH: '/app/bin' } }
+  command.run.mockImplementationOnce(() => result(0, ''))
+  await runProfilePnpm(context, ['add', './extra'], { ...runtime, execution: 'service', outputBytes: 100, activateNewBundles: false })
+  expect(command.run).toHaveBeenLastCalledWith(runtime.command, [...runtime.args, 'add', resolve(context.cwd, 'extra')],
+    expect.objectContaining({ env: expect.objectContaining(runtime.env) as unknown }))
+  command.run.mockResolvedValueOnce(Object.assign({ exitCode: 0, failed: false }, { stdout: '{}', stderr: '', timedOut: false }))
+  await viewProfilePackage(dir, 'example', { ...runtime, timeoutMs: 1000 })
+  expect(command.run).toHaveBeenLastCalledWith(runtime.command,
+    [...runtime.args, 'view', 'example', 'name', 'version', 'description', 'dsh', '--json'],
+    expect.objectContaining({ env: expect.objectContaining(runtime.env) as unknown }))
+})

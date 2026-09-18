@@ -5,6 +5,7 @@ import { defineComponent, h, onBeforeUnmount, onMounted, watch } from 'vue'
 import type { MermaidViewer } from './mermaid-viewer.ts'
 import { PageMarkdownActions } from './page-markdown-actions.ts'
 import './mermaid-viewer.css'
+import './code-group.css'
 import './page-markdown-actions.css'
 
 export default {

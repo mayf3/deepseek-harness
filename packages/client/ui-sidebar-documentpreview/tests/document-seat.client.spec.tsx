@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** Document extension registration and dispatch through the production Sidebar and Slot renderer. */
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
@@ -36,6 +37,7 @@ afterEach(async () => {
 async function boot() {
   const rt = await SlotTestRuntime.create()
   runtime = rt
+  rt.ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) } } as never)
   rt.ctx.provide('layout', { openRightbar: vi.fn(), closeRightbar: vi.fn() } as never)
   const locale = new LocaleRuntime(rt.ctx)
   rt.ctx.provide('locale', locale)
@@ -45,6 +47,7 @@ async function boot() {
     'conversation.session.header.corner': { kind: 'single', scope: 'session' },
   })
   await rt.sessions.add({ id: SESSION })
+  await rt.sessions.retainFor(rt.ctx, SESSION, { source: 'mainView' }).ready
   await rt.mount({ inject: [...resourcesInject], apply: resourcesApply })
   const read = vi.fn<ClientRemote['workspaceFiles']['read']>().mockImplementation(async (_sessionId, _path, range) => ({
     ok: true,
@@ -54,8 +57,7 @@ async function boot() {
     ok: true, value: { absolutePath: '/host/notes', version: 'v1', offset: 0, data: btoa('all'), bytes: 3, eof: true },
   })
   const workspaceFiles = { read, readAll: bytes }
-  rt.ctx.provide('remote', { workspaceFiles } as never)
-  rt.ctx.provide('remote.workspaceFiles', workspaceFiles as never)
+  rt.remote.provideNamespaces({ workspaceFiles })
   rt.ctx.effect(() => rt.ctx.resources.register({
     protocol: 'file',
     open: async function* (_address, { signal }) {
@@ -83,7 +85,7 @@ async function boot() {
             data-renderer={id} data-renderer-tab={tab.id}
             data-renderer-path={resource.value?.absolutePath} data-renderer-version={resource.value?.version}
           >
-            {props.content.kind === 'text' ? props.content.text : new TextDecoder().decode(props.content.data)}
+            {props.content.kind === 'text' ? props.content.text : props.content.kind === 'bytes' ? new TextDecoder().decode(props.content.data) : 'renderer'}
           </div>
         )
       },

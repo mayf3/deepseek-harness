@@ -43,12 +43,15 @@ export class DesktopFatalRecovery {
     let detail = desktopErrorState(error).message
     let message = messages.fatalSummary
     for (;;) {
+      const addressInUse = /\blisten EADDRINUSE\b/u.test(detail)
       const { response } = await this.operations.show({
         type: 'error',
         title: messages.startupFailed,
         message,
-        detail: dialogDetail(detail, messages),
-        buttons: [messages.exitApplication, messages.restartApplication, messages.disableThirdPartyPlugins],
+        detail: addressInUse ? messages.startupAddressInUse : dialogDetail(detail, messages),
+        buttons: addressInUse
+          ? [messages.exitApplication, messages.restartApplication]
+          : [messages.exitApplication, messages.restartApplication, messages.disableThirdPartyPlugins],
         defaultId: 1,
         cancelId: 0,
         noLink: true,

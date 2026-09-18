@@ -13,6 +13,7 @@ kind: "package-reference"
 ## 目录
 
 - [使用本包](#use-this-package)
+- [Client 引用](#client-references)
 - [会话媒体引用](#session-media-references)
 - [配置](#configuration)
 - [模型体验](#model-experience)
@@ -32,7 +33,7 @@ Client journal 在发布 follow 快照、live entry 或历史页之前验证精�
 
 Client 列表行和驻留 Session 使用当前 `sessionListMetadata` 投影纠正过期的空白会话提示；最近活动时间取摘要时间戳与投影中最后一次用户提示词时间的较晚值。当 SessionManager 在列表行到达前创建实例时，会使用已保留的该 Session 元数据对账空白状态。因此，即使旧列表响应仍将已有对话标为空白，新会话操作也不会复用已经打开过的对话。
 
-Client 列表刷新保留未变化的行对象，并在顺序和值均相同时复用条目数组。缓存成员检查使用每次刷新构建的 ID 集合，因此对账成本随当前列表和保留缓存的规模线性增长。
+Client 列表刷新保留未变化的行对象，并在顺序和值均相同时复用条目数组。每行的 `retainedBy` 包含本地引用来源的正计数；Host 元数据刷新不能覆盖它们。缓存成员检查使用每次刷新构建的 ID 集合，因此对账成本随当前列表和保留缓存的规模线性增长。
 
 Client 适配器提供 `SessionEventStream`，即绑定到一个普通 Session 或 direct subagent address 的 Gateway `RemoteJournalStream`。它在读取首个 page 前打开 follow，只发布连续的 `replace`、`prepend`、`append` 与 `settle-assistant` 变更，并通过 tail page 修复重连或 seq 缺口。向后分页有两个动词：`loadOlder()` 拉一页 50 条消息，而 `loadThrough(seq)`——轮次跳转加载器——按每页 200 条消息循环拉取直到窗口覆盖目标 seq，重复调用会下调共享目标，遇到无进展的页即停止，忙碌状态复用同一个 `loadingOlder` 快照位。Web 适配器显式选择接收无 cursor 的 Assistant frame：每个 opening 携带活跃 attempt 的 `startedAfterSeq`、`nextIndex` 与紧凑 stream，每个 stream member 都成为排在持久 cursor 之间的 Client-only `assistant/live-chunk` 条目。Host 会随该 baseline 捕获 follower 本地到达序号，并抑制该 cut 及之前的 buffered frame；replacement Agent 可以从 revision 一重新开始。活跃 opening 之后到达的持久 `assistant/message` 或 `assistant/attempt` 只有在其 seq 晚于 `startedAfterSeq` 且轮次与步骤匹配时才会保持暂存；匹配的 end type、seq 与 index 会发布一个具名 settlement delta，删除该 attempt 的瞬态 row、加入持久条目，并保留同一步骤中更早的 retry。已知 attempt 的 revision、密集 index 或 settlement 缺口会重新打开 follow；若 controller 错过 start，则忽略 unknown-attempt frame，并正常发布其持久 settlement。Abandoned end 会发布不含持久条目的 settlement delta，使瞬态 row 立即退出。持久缺口修复 page 不携带 Assistant baseline，因此 held notification 会重新打开 follow 一次，以取得配对的 page 与 baseline。每条历史 record 只覆盖自身的事件 seq。业务、persistence 或无法恢复的连续性错误会终止 stream，只有物理载体断开才触发自动恢复。`SessionControlStream` 是 Gateway `RemoteSnapshotStream`；每代都以完整的进程本地 baseline 开始，因此重连会替换 jobs 和 projection 状态，而不会把瞬态值当作 durable event。每次 Host generation 就绪时，同步的 Client 订阅会先清除保留的投影值及其水位，再刷新查询并重新打开 control stream，其中也包括 control baseline 中没有列出的 Session。首次 control stream 会等待 generation 就绪，确保其 opening 值不会先于旧状态清理到达。上一代尚未完成的 list 响应无法重新发布这些值。同一 generation 内，延迟到达的 control baseline 不能覆盖或清除较新的 list、history 或 live 值。持久 `inbox` 投影通过与其他投影相同的冷读取和重连路径传输两份待处理列表。Client Agent 上下文提供独立 [`fileUpload`](../../client/file-upload/README.zh.md) 服务使用的身份；Session 对象提供生命周期、prompt、queue 与历史操作，不提供文件传输。
 
@@ -42,6 +43,17 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 面向用户调用的 `skills/list` 元数据包含胜出提供方可选的指令文件 `path`。输入框可据此预览文件，无需加载每个 skill 的正文或激活冷态 Agent。
 
 分叉复制截至选中已结束轮次的历史，并包含其 `turn/end`。该位置之后的事件均被排除，包括排队输入和模型设置变更。省略锚点或锚点超出日志末尾时，选择最后一个已结束轮次；位于未结束轮次内的锚点会被拒绝。
+
+恢复会话时若已有写句柄占用，返回 `session/writer-held`，并携带会话 id；其他恢复失败仍返回 `gateway/internal`。
+
+`loadThrough(seq)` 在共享目标被覆盖或加载结束前私下保留较早页面，随后把成功取得的页面按顺序作为一次前插发布。历史加载期间实时事件仍然可见。后续页面失败时保留已成功取得的部分；历史窗口被替换时丢弃被替换窗口的暂存页面。普通 `loadOlder()` 仍直接发布其单页结果。
+
+<a id="client-references"></a>
+## Client 引用
+
+`sessions.retain(target, { source, signal? })` 立即获取一个精确 Client generation 的引用，并启动其共享的首次历史打开。目标是已知 Session id 或持久的直接父子 subagent 地址；Host 在打开历史时校验显式地址。返回引用支持幂等的 `release()` 和 `Symbol.dispose`；其 `ready` Promise 跟随共享的 `Session.open()` 结果，并在该次尝试结算时解析为确切 binding，包括 Remote failure 以 `openState: 'error'` 表示的情况。仅当 `Session.open()` 拒绝、等待方取消或引用提前释放时，`ready` 才拒绝。取消一个等待方不会取消其他 owner 的打开。`sessions.using(target, options, operation)` 等待该次结算，持有引用直到回调结束，并传播被拒绝的就绪与回调失败。
+
+引用保活本地会话数据、作用域 Context 和历史流，不保活 Host Agent。最后一个引用释放时，generation 先退出可访问映射，再执行清理；后续获取可以为同一 id 创建新 generation。`binding(id)` 和 `scope(id)` 只借用已有 generation。`retainInfo(id)` 独立于目录成员关系观察稳定的只读来源计数，不执行历史 I/O。消费方来源键可通过声明合并扩展；导航和完成确认属于 UI 消费方，不属于本控制器。所有权与清理规则见 [Client 会话引用](../../../.agents/notes/implemented/architecture/2026-09-15-client-session-references.zh.md)。
 
 <a id="session-media-references"></a>
 ## 会话媒体引用

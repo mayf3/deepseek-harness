@@ -14,12 +14,13 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import clsx from 'clsx'
 import {
   ConnectionIndicator,
-  IconAgentPresetOutline16, IconArchiveOutline20, IconCloseOutline16, IconDataOutline16,
-  IconPersonalizationOutline16, IconSettingsOutline16,
+  IconAgentPresetOutlineMedium, IconArchiveOutlineMedium, IconCloseOutlineRegular, IconDataOutlineMedium,
+  IconPersonalizationOutlineMedium, IconSettingsOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConnectionIndicatorState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
 import css from './SettingsRoot.module.css'
+import { DesktopUpdateIndicator } from './DesktopUpdateIndicator.tsx'
 
 const RECOVERY_CONFIRMATION_MS = 2_000
 
@@ -28,12 +29,11 @@ const CONNECTING_MIN_VISIBLE_MS = 800
 
 /** Nav glyph by section id; unknown ids fall back to the settings gear. */
 function navIcon(id: string) {
-  if (id === 'models') return <IconDataOutline16 className={css.navIcon} size={16} />
-  if (id === 'agent-presets') return <IconAgentPresetOutline16 className={css.navIcon} size={16} />
-  if (id === 'plugins') return <IconPersonalizationOutline16 className={css.navIcon} size={16} />
-  // 20-native glyph in the rail's 16px icon slot, as on the Session row menu.
-  if (id === 'archived-sessions') return <IconArchiveOutline20 className={css.navIcon} size={16} />
-  return <IconSettingsOutline16 className={css.navIcon} size={16} />
+  if (id === 'models') return <IconDataOutlineMedium className={css.navIcon} size={16} />
+  if (id === 'agent-presets') return <IconAgentPresetOutlineMedium className={css.navIcon} size={16} />
+  if (id === 'plugins') return <IconPersonalizationOutlineMedium className={css.navIcon} size={16} />
+  if (id === 'archived-sessions') return <IconArchiveOutlineMedium className={css.navIcon} size={16} />
+  return <IconSettingsOutlineMedium className={css.navIcon} size={16} />
 }
 
 type PanelProps = {
@@ -92,7 +92,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
           <div className={css.header}>
             <div className={css.actions}>{renderSlot('settings.action', {})}</div>
             <button ref={closeButton} type="button" className={css.close} onClick={onClose}>
-              <IconCloseOutline16 size={14} />
+              <IconCloseOutlineRegular size={14} />
               <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>
             </button>
           </div>
@@ -113,6 +113,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
 export function SettingsRoot(props: SettingsRootComponentProps) {
   const {
     wide, reconnect, useConnectionState, useSections, useOnboardingSteps, useSessions, renderSlot, t,
+    useDesktopUpdate, openDesktopUpdate,
   } = props
   const [open, setOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
@@ -140,12 +141,15 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   // freshly localized text on locale change, and the trigger/header/close
   // seats re-render through their own outlets' subscriptions.
   const rows = useSections(s => s)
+  const desktopUpdate = useDesktopUpdate(state => state)
   const connectionState = useConnectionState(state => state)
   const previousConnectionState = useRef(connectionState)
   const onboardingSteps = useOnboardingSteps(s => s)
-  const onboardingActive = useSessions(state =>
-    state.phase === 'ready'
-    && (state.current === undefined || state.byId[state.current]?.blank === true))
+  const onboardingActive = useSessions((state) => {
+    const main = Object.values(state.byId)
+      .find(session => (session.retainedBy.mainView ?? 0) > 0)
+    return state.phase === 'ready' && (main === undefined || main.blank)
+  })
   const onboardingStep = onboardingActive
     ? onboardingSteps.find(step => !completedOnboarding.has(step.id))
     : undefined
@@ -223,7 +227,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           {renderSlot('settings.trigger', { wide })}
         </button>
         <ConnectionIndicator
-          state={wide ? connectionIndicator : undefined}
+          state={wide && desktopUpdate.presentation?.phase !== 'installing' ? connectionIndicator : undefined}
           disconnectedLabel={t('connection.error')}
           connectingLabel={t('connection.connecting')}
           recoveredLabel={t('connection.connected')}
@@ -231,6 +235,8 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           restartActionLabel={t('connection.restart')}
           onReconnect={reconnect}
         />
+        <DesktopUpdateIndicator wide={wide} hidden={connectionIndicator !== undefined && desktopUpdate.presentation?.phase !== 'installing'}
+          t={t} view={desktopUpdate} onOpen={openDesktopUpdate} />
       </div>
       {open && (
         <SettingsPanel

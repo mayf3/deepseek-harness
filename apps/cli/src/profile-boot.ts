@@ -191,6 +191,7 @@ interface ComposedProfile {
  * then the telemetry switch.
  * @param name - the profile name.
  * @param patchFiles - `--patch` overlay paths, in argv order.
+ * @param resolutionMode - runtime lookup, disk links, or dual verification of both.
  * @param fromDefaultProfile - shipped template for a missing named profile.
  * @param resolvedProfile - application-owned profile and installation.
  * @returns the profile and its patch layers.
@@ -235,7 +236,9 @@ export interface RunProfileOptions {
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
-  /** Module fallback backend; pkg executables always use runtime resolution. */
+  /** Application-owned package runtime, scoped to plugin package operations. */
+  packageManager?: ProfileContext['packageManager']
+  /** Module fallback backend; defaults to runtime. Plain Node callers may override it; pkg executables always use runtime. */
   resolutionMode?: ProfileResolutionMode
 }
 
@@ -257,7 +260,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   )
 
   const packaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
-  const resolutionMode = packaged ? 'runtime' : options.resolutionMode ?? 'link'
+  const resolutionMode = packaged ? 'runtime' : options.resolutionMode ?? 'runtime'
   const app: { current?: Context } = {}
   let disposal: Promise<void> | undefined
   const dispose = (): Promise<void> => disposal ??= (async () => {
@@ -293,6 +296,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
     const profileContext: ProfileContext = {
       name: options.profile,
+      ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
       dir: composed.profile.dir, patchPath: composed.profile.patchPath,
       installAnchor: options.resolvedProfile?.installAnchor ?? INSTALL_ANCHOR,
       startedBundles: composed.profile.layers.map(layer => layer.packageName),

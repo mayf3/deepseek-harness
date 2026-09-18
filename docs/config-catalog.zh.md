@@ -430,7 +430,7 @@ export interface ConnectionRecoveryConfig {
 }
 ```
 
-来源：[`packages/client/connection/src/index.ts:72`](../packages/client/connection/src/index.ts)
+来源： [`packages/client/connection/src/index.ts:87`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -447,6 +447,29 @@ export interface Config {
 ```
 
 来源：[`packages/client/hmr/src/index.ts:30`](../packages/client/hmr/src/index.ts)
+
+<a id="deepseek-aidsh-client-ui-sidebar-documentpreview"></a>
+
+## `@deepseek-ai/dsh-client-ui-sidebar-documentpreview`
+
+```ts config-catalog
+/** Transient Office conversion reuse within one Client connection. */
+export interface Config {
+  /** Retained PDF limits; pending conversions share cancellation by reader lifetime. */
+  office: {
+    /** Maximum retained completed PDFs. */
+    maxCachedEntries: number
+    /** Maximum retained PDF bytes, counted by each binary buffer's byteLength. */
+    maxCachedBytes: number
+    /** Maximum unsettled Host conversion RPCs, including cancellation teardown. */
+    maxPending: number
+    /** Maximum readers including source and renderer metadata lookups. */
+    maxReaders: number
+  }
+}
+```
+
+来源：[`packages/client/ui-sidebar-documentpreview/src/config.ts:5`](../packages/client/ui-sidebar-documentpreview/src/config.ts)
 
 <a id="deepseek-aidsh-compaction-basic"></a>
 
@@ -1720,6 +1743,56 @@ export interface Config {
 
 来源：[`packages/feedback/message-feedback/src/index.ts:40`](../packages/feedback/message-feedback/src/index.ts)
 
+<a id="deepseek-aidsh-office-to-pdf"></a>
+
+## `@deepseek-ai/dsh-office-to-pdf`
+
+```ts config-catalog
+/** Provider concurrency and kit rendering/font configuration. */
+export interface Config {
+  /** Maximum simultaneous conversions; queued callers remain cancellable. */
+  maxConcurrentConversions: number
+  /** Maximum metadata-only jobs awaiting source admission. */
+  maxQueuedJobs: number
+  /** Maximum outstanding conversion readers. */
+  maxReaders: number
+  /** Maximum reserved bytes across admitted source reads and conversions. */
+  maxSourceBytes: number
+  /** Maximum concurrent background jobs; zero refuses speculative work. */
+  maxBackgroundConversions: number
+  /** Maximum retained content-addressed PDFs. */
+  maxCachedEntries: number
+  /** Maximum retained PDF bytes. */
+  maxCachedBytes: number
+  /** Maximum retained source-version aliases to cached content. */
+  maxSourceEntries: number
+  /** Conversion deadline in milliseconds; excludes the DSH queue. */
+  timeoutMs: number
+  /** Maximum authorized source bytes. */
+  maxInputBytes: number
+  /** Maximum complete PDF bytes. */
+  maxOutputBytes: number
+  /** Exported raster-image DPI. */
+  maxImageResolution: number
+  /** Maximum OOXML ZIP entries. */
+  maxArchiveEntries: number
+  /** Maximum total declared uncompressed OOXML bytes. */
+  maxUncompressedBytes: number
+  /** Absolute font roots; omission uses the kit's platform defaults. */
+  fontDirectories?: string[]
+  /** Ordered font-family preference groups; omission retains the kit defaults. */
+  fontFallbacks?: string[][]
+  /** Maximum physical font files indexed by each converter. */
+  maxFontFiles: number
+  /** Maximum individual font-file bytes. */
+  maxFontFileBytes: number
+  /** Maximum original font bytes loaded for a conversion. */
+  maxLoadedFontBytes: number
+}
+```
+
+来源： [`packages/document/office-to-pdf/src/index.ts:31`](../packages/document/office-to-pdf/src/index.ts)
+
 <a id="deepseek-aidsh-permission-presets"></a>
 
 ## `@deepseek-ai/dsh-permission-presets`
@@ -2587,6 +2660,22 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
 来源：[`packages/storage/storage-sqlite/src/index.ts:24`](../packages/storage/storage-sqlite/src/index.ts)
 
+<a id="deepseek-aidsh-subagent"></a>
+
+## `@deepseek-ai/dsh-subagent`
+
+```ts config-catalog
+/** Host configuration for continuable subagent capacity. */
+export interface Config {
+  /** Maximum live children sharing uninterrupted continuable parent links; defaults to 8. */
+  maxActiveSubagents?: number
+  /** Default delegation depth for tools without an explicit limit; defaults to 1. */
+  maxDepth?: number
+}
+```
+
+来源： [`packages/subagent/subagent/src/index.ts:190`](../packages/subagent/subagent/src/index.ts)
+
 <a id="deepseek-aidsh-subagent-acp"></a>
 
 ## `@deepseek-ai/dsh-subagent-acp`
@@ -3104,7 +3193,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/fs/tool-present/src/index.ts:15`](../packages/fs/tool-present/src/index.ts)
+来源：[`packages/deliverables/tool-present/src/index.ts:15`](../packages/deliverables/tool-present/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
@@ -3272,13 +3361,14 @@ export interface Config {
     deny?: string[]
   }
   /**
-   * Maximum child depth: a non-negative safe integer (default `3`; `0` forbids
-   * delegation entirely), or `'provider-managed'` to send no cap. A numeric cap
+   * Maximum child depth: a non-negative safe integer (`0` forbids delegation),
+   * or `'provider-managed'` to send no cap. A numeric cap
    * requires the provider's `depthLimit` capability (mount fails loud
    * otherwise). The provider checks the calling agent's current depth at every
    * start; the tool remains model-visible so runtime policy owns rejection.
    * `'provider-managed'` is for an out-of-process provider whose recursion
-   * budget belongs to the child runtime or its own deployment.
+   * budget belongs to the child runtime or its own deployment. Omission reads
+   * the current Host subagent depth setting (default `1`) at each delegation.
    */
   maxDepth?: number | 'provider-managed'
 }
@@ -3651,6 +3741,33 @@ export interface Config {
 
 来源： [`packages/workflow/workflow-ptc/src/index.ts:32`](../packages/workflow/workflow-ptc/src/index.ts)
 
+<a id="deepseek-aidsh-workspace-changes"></a>
+
+## `@deepseek-ai/dsh-workspace-changes`
+
+依赖： `subprocess`
+
+```ts config-catalog
+/** Snapshot, capture, and comparison bounds. Invalid values fail plugin load. */
+export interface Config {
+  /** Milliseconds one git command may run before the turn's record is abandoned. */
+  timeoutMs: number
+  /** Bytes of git output retained per command; a larger diff listing abandons the record. */
+  outputMaxBytes: number
+  /** Maximum files carried by one summary; `total` still reports the complete count. */
+  maxFiles: number
+  /**
+   * Bytes a file may hold to be captured around a file-tool edit or read from a snapshot for its comparison.
+   * A larger file gets no comparison; one captured around a file-tool edit is also listed without counts.
+   */
+  maxFileBytes: number
+  /** Milliseconds a line comparison may run before it degrades to whole-file replacement. */
+  diffTimeoutMs: number
+}
+```
+
+来源： [`packages/deliverables/workspace-changes/src/index.ts:36`](../packages/deliverables/workspace-changes/src/index.ts)
+
 ## 无配置的可加载插件
 
 这些插件通过 `cordis.yml` 中不含 `config:` 块的条目加载；它们未声明任何配置接口。
@@ -3697,7 +3814,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-settings-plugins`（[`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-unarchive-sessions`（[`packages/client/ui-settings-unarchive-sessions/src/index.ts`](../packages/client/ui-settings-unarchive-sessions/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-sidebar`（[`packages/client/ui-sidebar/src/index.ts`](../packages/client/ui-sidebar/src/index.ts)）
-- `@deepseek-ai/dsh-client-ui-sidebar-documentpreview`（[`packages/client/ui-sidebar-documentpreview/src/index.ts`](../packages/client/ui-sidebar-documentpreview/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-sidebar-browser`（[`packages/client/ui-sidebar-browser/src/index.ts`](../packages/client/ui-sidebar-browser/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-sidebar-files`（[`packages/client/ui-sidebar-files/src/index.ts`](../packages/client/ui-sidebar-files/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-sidebar-right`（[`packages/client/ui-sidebar-right/src/index.ts`](../packages/client/ui-sidebar-right/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-sidebar-terminal`（[`packages/client/ui-sidebar-terminal/src/index.ts`](../packages/client/ui-sidebar-terminal/src/index.ts)）
@@ -3738,13 +3855,12 @@ export interface Config {
 - `@deepseek-ai/dsh-session-turn-outline` — 需要 `sessionProjections`（[`packages/session/session-turn-outline/src/index.ts`](../packages/session/session-turn-outline/src/index.ts)）
 - `@deepseek-ai/dsh-skill-badge` — 需要 `skills`（[`packages/skill/skill-badge/src/index.ts`](../packages/skill/skill-badge/src/index.ts)）
 - `@deepseek-ai/dsh-storage`（[`packages/storage/storage/src/index.ts`](../packages/storage/storage/src/index.ts)）
-- `@deepseek-ai/dsh-subagent`（[`packages/subagent/subagent/src/index.ts`](../packages/subagent/subagent/src/index.ts)）
 - `@deepseek-ai/dsh-subprocess-local`（[`packages/subprocess/subprocess-local/src/index.ts`](../packages/subprocess/subprocess-local/src/index.ts)）
 - `@deepseek-ai/dsh-subprocess-ssh` — 需要 `ssh`（[`packages/ssh/subprocess-ssh/src/index.ts`](../packages/ssh/subprocess-ssh/src/index.ts)）
 - `@deepseek-ai/dsh-terminal`（[`packages/terminal/terminal/src/index.ts`](../packages/terminal/terminal/src/index.ts)）
 - `@deepseek-ai/dsh-tool-ask-user` — 需要 `tools` · `userInteraction`（[`packages/interaction/tool-ask-user/src/index.ts`](../packages/interaction/tool-ask-user/src/index.ts)）
 - `@deepseek-ai/dsh-tool-call-timeout-policy` — 需要 `tools`（[`packages/guard/timeout-policy/src/index.ts`](../packages/guard/timeout-policy/src/index.ts)）
-- `@deepseek-ai/dsh-tool-cordis` — 需要 `tools` · `systemPrompt` · `dynamicCordisRunner` · `cordisInspect`（[`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts)）
+- `@deepseek-ai/dsh-tool-cordis` — 需要 `tools` · `systemPrompt` · `cordisInspect`（[`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts)）
 - `@deepseek-ai/dsh-tool-subagent-control` — 需要 `tools` · `subagents`（[`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts)）
 - `@deepseek-ai/dsh-user-questions`（[`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts)）
 - `@deepseek-ai/dsh-webhook` — 需要 `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry`（[`packages/webhook/webhook/src/index.ts`](../packages/webhook/webhook/src/index.ts)）
@@ -3790,7 +3906,6 @@ export interface Config {
 - `@deepseek-ai/dsh-cmdline`（[`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts)）
 - `@deepseek-ai/dsh-deque`（[`packages/util/deque/src/index.ts`](../packages/util/deque/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-agent-team-profile`（[`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts)）
-- `@deepseek-ai/dsh-experimental-agent-team-web-profile`（[`packages/experimental/agent-team-web-profile/src/index.ts`](../packages/experimental/agent-team-web-profile/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-browser-use-runtime` ([`packages/experimental/browser-use-runtime/src/index.ts`](../packages/experimental/browser-use-runtime/src/index.ts))
 - `@deepseek-ai/dsh-experimental-webworker-packer`（[`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-runtime`（[`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts)）

@@ -3,6 +3,7 @@
 // and the inline key write lands in an isolated harness home without a reload
 // or model call.
 import { randomBytes } from 'node:crypto'
+import { assertModelInputLayout } from './model-input-layout.ts'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -208,11 +209,12 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     expect(await settings.getByLabel('模型 ID 2').inputValue()).toBe('deepseek-v4-pro')
     expect(await settings.getByRole('button', { name: /删除模型/ }).count()).toBe(2)
     await settings.getByRole('button', { name: '模型选项 1' }).click()
-    expect(await settings.getByLabel('图片输入 1').inputValue()).toBe('enabled')
+    expect(await settings.getByRole('group', { name: '输入类型 1' }).getByRole('checkbox', { name: '图片' }).isChecked()).toBe(true)
+    await assertModelInputLayout(page, settings)
     const defaultModels = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(DEFAULT_MODELS_EXPECTED, defaultModels, MODE)
     await settings.getByLabel('显示名称 1').fill('Configured Flash')
-    await settings.getByLabel('图片输入 1').selectOption('disabled')
+    await settings.getByRole('group', { name: '输入类型 1' }).getByRole('checkbox', { name: '图片' }).uncheck()
     await settings.getByRole('button', { name: '保存', exact: true }).click()
     await settings.getByLabel('模型 ID 1').waitFor({ state: 'detached', timeout: 15_000 })
     const savedDefaults = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
@@ -238,8 +240,8 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await settings.getByRole('button', { name: '模型选项 1' }).click()
     await settings.getByLabel('上下文窗口 1').fill('131072')
     await settings.getByLabel('最大输出 token 数 1').fill('64K')
-    expect(await settings.getByLabel('图片输入 1').inputValue()).toBe('default')
-    await settings.getByLabel('图片输入 1').selectOption('enabled')
+    expect(await settings.getByRole('group', { name: '输入类型 1' }).getByRole('checkbox', { name: '图片' }).isChecked()).toBe(false)
+    await settings.getByRole('group', { name: '输入类型 1' }).getByRole('checkbox', { name: '图片' }).check()
 
     await expect.poll(
       () => settings.getByLabel('API 密钥', { exact: true }).getAttribute('placeholder'),
@@ -262,7 +264,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await deepSeek.locator('xpath=ancestor::li').getByRole('button', { name: '编辑' }).click()
     await settings.getByText('自定义设置').click()
     await settings.getByRole('button', { name: '模型选项 1' }).click()
-    expect(await settings.getByLabel('图片输入 1').inputValue()).toBe('enabled')
+    expect(await settings.getByRole('group', { name: '输入类型 1' }).getByRole('checkbox', { name: '图片' }).isChecked()).toBe(true)
     await settings.getByRole('button', { name: '取消', exact: true }).click()
 
     await page.keyboard.press('Escape')
