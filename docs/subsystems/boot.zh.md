@@ -12,9 +12,11 @@
 
 `BundleInfo` 包含包名、可选的安装版本、组合层选择状态、删除可用性及可选的解析错误。
 
-`InstallBundleOptions.enabled` 默认为 true，false 表示安装但不选择组合包层。`approvedBuilds` 在安装前向指定的待审批包名授予持久脚本权限。
+`InstallBundleOptions.enabled` 默认为 true，false 表示安装但不选择组合包层。`approvedBuilds` 在安装前向指定的待审批包名授予持久脚本权限。`registry` 指定首先询问的注册表；缺省为配置的那个。
 
-`ChangeResult.changed` 报告磁盘修改，独立于 `application`：`applied`、`restart-required`、`overridden` 或 `failed`。可选的 `error` 包含可本地化的错误码和外部诊断。`packageResult` 记录 pnpm 退出码、有界输出、截断标志及完整诊断日志路径。`pendingBuilds` 列出整个 profile 尚未决定的包；`approvedBuilds` 记录本次操作授予权限的包名。
+`PluginRegistries` 携带配置的第一个注册表（`null` 即 pnpm 自身配置指定的那个）、随后依次询问的备选注册表，以及 `resolved`——pnpm 自身配置指向的 URL，未读到时为 `null`。`InspectOptions.registry` 指定一次查询首先询问的注册表。
+
+`ChangeResult.changed` 报告磁盘修改，独立于 `application`：`applied`、`restart-required`、`overridden` 或 `failed`。可选的 `error` 包含可本地化的错误码和外部诊断。`packageResult` 记录 pnpm 退出码、有界输出、截断标志及完整诊断日志路径。`pendingBuilds` 列出整个 profile 尚未决定的包；`approvedBuilds` 记录本次操作授予权限的包名；`registries` 按顺序列出一次安装问过的注册表；`failedAt` 说明最后一次失败的运行连不上的是所问的注册表，还是 git 或 tarball spec 自身拉取的主机。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -72,12 +74,18 @@ Manage profile files and apply their declared reload lifecycle.
  */
 @Remote listBundles(): Promise<BundleInfo[]>
 
+/** Read the registries this manager asks: the configured first one, its fallbacks in order, and what pnpm's own configuration names.
+ * @returns The registries in pnpm's comparison form; null is the one pnpm's own configuration names, `resolved` as pnpm reads it now.
+ */
+@Remote async registries(): Promise<PluginRegistries>
+
 /** Read what a spec names before installing it.
  * @param spec One package spec: a registry name, an absolute path, a git address, or a tarball.
+ * @param options The registry asked first.
  * @param signal Ends a registry lookup early.
  * @returns The package the spec names, or why it is refused.
  */
-@Remote async inspect(spec: string, signal?: AbortSignal): Promise<PluginSpecInspection>
+@Remote async inspect(spec: string, options?: InspectOptions, signal?: AbortSignal): Promise<PluginSpecInspection>
 
 /** Persist a plugin entry's desired enablement and apply it on live profiles.
  * @param id Loader entry identity returned by listPlugins.
@@ -98,11 +106,18 @@ Manage profile files and apply their declared reload lifecycle.
  * that fails, is cancelled, or adds a package without a bundle patch restores
  * `package.json` and `pnpm-lock.yaml` as they were; downloaded files can stay.
  * @param spec One package spec, including local paths relative to the invocation directory.
- * @param options Whether to activate the installed bundle (defaults to true), the request id a cancellation names, and
- * the pending build scripts to allow for this profile before pnpm runs.
- * @returns Package-manager diagnostics and observed activation outcome.
+ * @param options Whether to activate the installed bundle (defaults to true), the request id a cancellation names,
+ * the pending build scripts to allow for this profile before pnpm runs, and the registry asked first.
+ * @returns Package-manager diagnostics, the registries asked, and the observed activation outcome.
  */
 @Remote installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>
+
+/** Recover the result of an active installation without cancelling it.
+ * @param requestId The id supplied when installation started.
+ * @returns The installation's outcome after it settles, or null if no active request has that id.
+ * Completed results are not retained; null establishes neither success nor cancellation.
+ */
+@Remote async waitForInstall(requestId: PluginInstallRequestId): Promise<ChangeResult | null>
 
 /** Stop an installation this manager owns and wait until its files are back.
  * @param requestId The id the installation was started with.
@@ -208,13 +223,14 @@ Source: [`packages/boot/plugin-manager/src/types.ts`](../../packages/boot/plugin
 
 #### `plugin-manager/install-state` — emit
 
-An installation moved between its Host phases.
+An installation moved between its Host phases. `installing` is announced once per registry the installation asks, with the attempt's registry and position; `cancelling` and `applying` once.
 
 ```ts cordis-catalog
 /**
- * An installation moved between its Host phases.
+ * An installation moved between its Host phases. `installing` is announced once per registry the
+ * installation asks, with the attempt's registry and position; `cancelling` and `applying` once.
  * @mode emit
- * @param progress - the installation's request id and phase.
+ * @param progress - the installation's request id and phase, with the attempt while installing.
  */
 'plugin-manager/install-state'(progress: PluginInstallProgress): void
 ```
