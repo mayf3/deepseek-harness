@@ -194,7 +194,7 @@ describe('CI workflow', () => {
     }
 
     // windows-build runs the blocking build/site pair.
-    expect(windowsBuild.name).toBe('windows node 24 / build')
+    expect(windowsBuild.name).toBe('windows node 24 / build & observational')
     const buildSteps = windowsBuild.steps as unknown[]
     const buildCommands = buildSteps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -230,9 +230,8 @@ describe('CI workflow', () => {
       expect(install!.run).not.toContain('$cloneFlag')
     }
 
-    // windows-coverage uses the lower 4-partition profile.
     expect(windowsCoverage.name).toBe('windows node 24 / coverage')
-    expect(windowsCoverage.env).toMatchObject({ DSH_COVERAGE_PARTITIONS: '4' })
+    expect(windowsCoverage.env).toMatchObject({ DSH_COVERAGE_PARTITIONS: "${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '4' || '' }}" })
     const coverageSteps = windowsCoverage.steps as unknown[]
     const coverageCommands = coverageSteps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -267,7 +266,10 @@ describe('CI workflow', () => {
       shell: 'pwsh',
       'continue-on-error': true,
       'timeout-minutes': 15,
-      env: { DSH_GATE_FAIL_FAST: '', DSH_PUBLINT_CONCURRENCY: '8' },
+      env: {
+        DSH_GATE_FAIL_FAST: '',
+        DSH_PUBLINT_CONCURRENCY: "${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '8' || '' }}",
+      },
     })
     expect(observational?.if).toBeUndefined()
     expect(buildCommands.findIndex(step => step.id === 'observational'))

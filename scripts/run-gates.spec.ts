@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it, vi, type MockInstance } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import {
   cliGateOptions,
+  ciWorkerEnvironment,
   collectDescendants,
   defaultConcurrency,
   formatGateResultReason,
@@ -13,6 +14,10 @@ import {
   type Gate,
   type GateResult,
 } from './run-gates.ts'
+
+// Graph fixtures select their own browser pool instead of inheriting the CI host's pool.
+beforeEach(() => vi.stubEnv('DSH_WEB_SNAPSHOT_WORKERS', undefined))
+afterEach(() => vi.unstubAllEnvs())
 
 /**
  * Capture output a gate streams through runGate's streamOutput path.
@@ -134,6 +139,59 @@ function withEnv<T>(name: string, value: string | undefined, action: () => T): T
     else process.env[name] = previous
   }
 }
+
+describe('CI worker allocation', () => {
+  it.each([1, 2, 4, 8, 16, 64])('shares a %i CPU coverage budget without multiplying pools', (cpus) => {
+    const env = ciWorkerEnvironment('ci-coverage', {}, cpus)
+    const exempt = Math.max(1, Math.floor(cpus / 3))
+    const instrumented = Number(env.DSH_COVERAGE_PARTITIONS ?? 1)
+    expect(Number(env.DSH_COVERAGE_MAX_WORKERS)).toBe(cpus)
+    expect(instrumented + exempt).toBe(Math.max(2, cpus))
+    expect(defaultConcurrency('ci-coverage', 3, cpus).workers).toBe(Math.min(3, cpus))
+    if (cpus <= 2) expect(env.DSH_COVERAGE_PARTITIONS).toBeUndefined()
+  })
+
+  it('bounds overlapping readers and lets the isolated browser pool use the runner', () => {
+    const env = ciWorkerEnvironment('ci-consumers', {}, 16)
+    expect(env).toMatchObject({
+      DSH_OXLINT_THREADS: '8',
+      DSH_PUBLINT_CONCURRENCY: '8',
+      DSH_SNAPSHOT_MAX_WORKERS: '1',
+      DSH_SNAPSHOT_MAX_CONCURRENCY: '8',
+      DSH_WEB_SNAPSHOT_WORKERS: '16',
+    })
+  })
+
+  it('preserves serial reference overrides on large hosts', () => {
+    const inherited = {
+      DSH_GATE_CONCURRENCY: '1',
+      DSH_COVERAGE_MAX_WORKERS: '1',
+      DSH_OXLINT_THREADS: '1',
+      DSH_PUBLINT_CONCURRENCY: '1',
+      DSH_SNAPSHOT_MAX_CONCURRENCY: '1',
+      DSH_WEB_SNAPSHOT_WORKERS: '1',
+    }
+    const additions = ciWorkerEnvironment('ci-primary', inherited, 64)
+    expect(additions).toEqual({ DSH_SNAPSHOT_MAX_WORKERS: '1' })
+    expect(inherited.DSH_COVERAGE_MAX_WORKERS).toBe('1')
+  })
+
+  it('honors an explicit coverage budget and partition override', () => {
+    expect(ciWorkerEnvironment('ci-coverage', { DSH_COVERAGE_MAX_WORKERS: '6' }, 16))
+      .toHaveProperty('DSH_COVERAGE_PARTITIONS', '4')
+    expect(ciWorkerEnvironment('ci-coverage', { DSH_COVERAGE_PARTITIONS: '3' }, 16))
+      .not.toHaveProperty('DSH_COVERAGE_PARTITIONS')
+  })
+
+  it.each(['0', '-1', 'NaN', '2.5'])('rejects invalid worker budget %s', (raw) => {
+    expect(() => ciWorkerEnvironment('ci-coverage', { DSH_COVERAGE_MAX_WORKERS: raw }, 16))
+      .toThrow('DSH_COVERAGE_MAX_WORKERS must be a positive integer')
+  })
+
+  it('keeps local documentation defaults unchanged', () => {
+    expect(ciWorkerEnvironment('doc-sync', {}, 64)).toEqual({})
+  })
+})
 
 describe('gate graph validation', () => {
   it.each([
@@ -645,8 +703,8 @@ describe('Node 24 lane ownership', () => {
     const subject = withPnpmEntrypoint(() => gatesForMode('ci-consumers'))
 
     expect(defaultConcurrency('ci-consumers', subject.length, 4)).toEqual({
-      workers: 11,
-      source: 'ci-consumers gate count',
+      workers: 4,
+      source: '4 available CPU(s)',
     })
     expect(subject.map(item => item.id)).toEqual([
       'build',
