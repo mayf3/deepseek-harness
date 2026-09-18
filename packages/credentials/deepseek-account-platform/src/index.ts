@@ -7,7 +7,7 @@ import { finished } from 'node:stream/promises'
 import { Context, Service } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
-import { DeepSeekAccount, mergePlatformCookies, type PlatformSession, type AccountDetails, type AccountView, type SignInAttemptId, type SignInAttemptView } from '@deepseek-ai/dsh-deepseek-account'
+import { DeepSeekAccount, desktopClientHeaders, mergePlatformCookies, type PlatformSession, type AccountDetails, type AccountView, type SignInAttemptId, type SignInAttemptView } from '@deepseek-ai/dsh-deepseek-account'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import type { AuthorizationSession } from '@deepseek-ai/dsh-authorization'
 import { profile, readAccountDetail } from './details.ts'
@@ -23,6 +23,8 @@ const device = z.object({ id: z.uuid() })
 export interface Config {
   /** Platform origin serving auth-api and browser pages. */
   platformOrigin?: string
+  /** Native desktop identity for Host API requests only; null omits the client platform header. */
+  desktopPlatform?: 'darwin' | 'win32' | null
   /** Optional frontend deployment selector for embedded Usage and Top-up pages. */
   embeddedPageDist?: string
   /** Exact HTTP(S) origin allowed to receive account tokens for inference and files. */
@@ -47,6 +49,7 @@ export interface Config {
 /** Validated deployment choices. */
 export const Config = Schema.object({
   platformOrigin: Schema.string().default('https://platform.deepseek.com'),
+  desktopPlatform: Schema.union([Schema.const('darwin'), Schema.const('win32'), Schema.const(null)]).default(null),
   embeddedPageDist: Schema.string().default(''),
   inferenceOrigin: Schema.string().default('https://api.deepseek.com'),
   allowLoopbackHttp: Schema.boolean().default(false),
@@ -81,6 +84,7 @@ export class PlatformAccount extends DeepSeekAccount {
   private readonly embeddedPageDist: string
   private readonly inferenceOrigin: string
   private readonly rewriteBrowserOrigin: boolean
+  private readonly clientHeaders: Record<string, string>
   private readonly requestHeaders: Record<string, string>
   private readonly accountRequestHeaders: Record<string, string>
   private readonly requestTimeout: number
@@ -107,6 +111,7 @@ export class PlatformAccount extends DeepSeekAccount {
     }
     this.inferenceOrigin = inference.origin
     this.rewriteBrowserOrigin = resolved.rewriteBrowserOrigin
+    this.clientHeaders = desktopClientHeaders(resolved.desktopPlatform)
     this.requestHeaders = platformHeaders(resolved.requestHeaders)
     const accountHeaders = platformHeaders(resolved.accountRequestHeaders)
     this.accountRequestHeaders = { ...this.requestHeaders, ...accountHeaders }
@@ -189,7 +194,8 @@ export class PlatformAccount extends DeepSeekAccount {
       return initial as AccountDetails[K]
     }
     const details = await readAccountDetail(field, this.origin, parsed.data.token,
-      AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]), this.accountRequestHeaders)
+      AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.requestTimeout)]),
+      { ...this.accountRequestHeaders, ...this.clientHeaders })
     return this.detailsLifetime !== lifetime ? null : details
   }
 
@@ -323,7 +329,7 @@ export class PlatformAccount extends DeepSeekAccount {
   private revoke(token: string): void {
     if (this.closed) return
     const revocation = revokeAccount(this.origin, token, this.logoutPolicy,
-      this.logoutLifetime.signal, this.requestHeaders).finally(() => { this.revocations.delete(revocation) })
+      this.logoutLifetime.signal, { ...this.requestHeaders, ...this.clientHeaders }).finally(() => { this.revocations.delete(revocation) })
     this.revocations.add(revocation)
   }
 
@@ -455,7 +461,7 @@ export class PlatformAccount extends DeepSeekAccount {
 
   private request(method: string, body: unknown, signal: AbortSignal): Promise<unknown> {
     return requestPlatform(this.origin, method, body,
-      AbortSignal.any([signal, AbortSignal.timeout(this.requestTimeout)]), this.requestHeaders)
+      AbortSignal.any([signal, AbortSignal.timeout(this.requestTimeout)]), { ...this.requestHeaders, ...this.clientHeaders })
   }
 
   private finishFailedCallback(attempt: Attempt): void {

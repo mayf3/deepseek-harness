@@ -10,7 +10,7 @@ import WebServer from '@deepseek-ai/dsh-host-webserver'
 import AuthorizationService from '@deepseek-ai/dsh-authorization'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
-import { PlatformAccount } from '../src/index.ts'
+import { Config, PlatformAccount } from '../src/index.ts'
 import { browserUrl, platformHeaders, platformOrigin, loginOrigin } from '../src/protocol.ts'
 
 const cleanups: Array<() => Promise<unknown>> = []
@@ -26,6 +26,7 @@ async function fixture(
   inferenceOrigin = 'https://api.deepseek.com',
   beforeAccount?: (ctx: Context, origin: string) => Promise<void>,
   embeddedPageDist = '',
+  desktopPlatform: 'darwin' | 'win32' | null = null,
 ) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-account-'))
   cleanups.push(() => rm(home, { recursive: true, force: true }))
@@ -52,10 +53,15 @@ async function fixture(
   let invalidSummary = false
   const detailsStarted = Promise.withResolvers<undefined>()
   const detailRequests: Array<{ path: string; authorization: string | undefined }> = []
-  const receivedHeaders: Array<{ path: string | undefined; cookie: string | undefined; authorization: string | undefined }> = []
+  const receivedHeaders: Array<{
+    clientPlatform: string | undefined
+    path: string | undefined
+    cookie: string | undefined
+    authorization: string | undefined
+  }> = []
   const handle = async (req: IncomingMessage, res: ServerResponse) => {
     expect(req.headers.authorization).toBeUndefined()
-    receivedHeaders.push({ path: req.url, cookie: req.headers.cookie, authorization: req.headers['x-dsh-auth-token'] as string | undefined })
+    receivedHeaders.push({ clientPlatform: req.headers['x-client-platform'] as string | undefined, path: req.url, cookie: req.headers.cookie, authorization: req.headers['x-dsh-auth-token'] as string | undefined })
     if (redirect) { res.writeHead(302, { location: `${origin}/redirect-target` }).end(); return }
     if (req.url === '/auth-api/v0/users/logout') {
       logoutCount++
@@ -125,7 +131,8 @@ async function fixture(
   await authorization
   await beforeAccount?.(ctx, origin)
   const provider = ctx.plugin(PlatformAccount, {
-    platformOrigin: origin, inferenceOrigin, embeddedPageDist, allowLoopbackHttp: true, requestHeaders, accountRequestHeaders,
+    platformOrigin: origin, inferenceOrigin, embeddedPageDist, desktopPlatform,
+    allowLoopbackHttp: true, requestHeaders, accountRequestHeaders,
     rewriteBrowserOrigin, logoutRetryDelayMs: 1,
   })
   await provider
@@ -679,4 +686,34 @@ it('carries the configured embedded frontend selector in the private Platform se
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
   expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test', embeddedPageDist: 'feat/test' })
+})
+
+it.each([
+  ['darwin', 'desktop-mac'], ['win32', 'desktop-win'], [null, undefined],
+] as const)('identifies %s Host API requests without changing embedded page headers', async (desktopPlatform, expected) => {
+  const f = await fixture(undefined, { Cookie: 'test_gate=synthetic' }, false, {}, undefined, undefined, '', desktopPlatform)
+  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.wait('waiting-browser')
+  const attempt = (await f.account.getState()).attempt!
+  await f.account.cancelSignIn(attempt.id)
+  await f.cancellationReceived.promise
+  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.wait('waiting-browser')
+  await fetch(f.callback(), { redirect: 'manual' })
+  await readDetails(f.account)
+  expect(await f.account.getPlatformSession()).toMatchObject({ requestHeaders: { cookie: 'test_gate=synthetic' } })
+  expect((await f.account.getPlatformSession())?.requestHeaders).not.toHaveProperty('x-client-platform')
+  await f.account.signOut()
+  await expect.poll(f.logoutCount).toBe(1)
+  expect(f.receivedHeaders.map(item => item.path)).toEqual([
+    '/auth-api/v0/dsh/auth_init', '/auth-api/v0/dsh/auth_cancel',
+    '/auth-api/v0/dsh/auth_init', '/auth-api/v0/dsh/auth_exchange',
+    '/auth-api/v0/users/current', '/api/v0/users/get_user_summary', '/auth-api/v0/users/logout',
+  ])
+  expect(f.receivedHeaders.map(item => item.clientPlatform)).toEqual(f.receivedHeaders.map(() => expected))
+})
+
+it('rejects unsupported native desktop platforms in configuration', () => {
+  // @ts-expect-error Configuration files can name unsupported operating systems.
+  expect(() => Config({ desktopPlatform: 'linux' })).toThrow()
 })

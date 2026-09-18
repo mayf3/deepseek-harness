@@ -11,6 +11,8 @@ kind: "package-reference"
 
 getPlatformSession 仅在已存授权的 issuer 与 platformOrigin 一致时导出该授权。这个仅限 Host 的操作支持原生 Platform 内嵌，不扩大 resolveToken 配置的模型及文件请求来源。
 
+`desktopPlatform` 默认为 `null`。Desktop profile 提供 `darwin` 或 `win32`，使 Host 的授权、资料、余额和退登请求携带 `x-client-platform: desktop-mac` 或 `desktop-win`，覆盖部署配置中的同名请求头。内嵌 Platform 页面保留原有部署请求头，其他 profile 不自动添加此请求头。
+
 ## 概述
 
 通过系统浏览器登录，并将账号凭证保存在现有本地凭证存储中。本地取消会阻止迟到的回调和兑换响应使用户登录。

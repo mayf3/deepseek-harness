@@ -11,6 +11,8 @@ New attempts map the caller’s UI language to Platform en_US or zh_CN; active a
 
 getPlatformSession exports the stored grant only when its issuer matches platformOrigin. This Host-only operation supports native Platform embedding without widening the model/file origin configured for resolveToken.
 
+`desktopPlatform` defaults to `null`. The Desktop profile supplies `darwin` or `win32`; Host authorization, profile, balance, and logout requests then carry `x-client-platform: desktop-mac` or `desktop-win`, overriding that header in deployment configuration. Embedded Platform pages retain their deployment headers. Other profiles omit the automatic header.
+
 ## Summary
 
 Sign in through the system browser and keep the account credential in the existing local credential store. Local cancellation prevents late callbacks and exchange responses from signing the user in.

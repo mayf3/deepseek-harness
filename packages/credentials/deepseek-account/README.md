@@ -9,6 +9,8 @@ English | [中文](README.zh.md)
 
 getPlatformSession returns a Host-only origin/token snapshot for native Platform embedding, or null when signed out. It is absent from account-controller RPC and Client state. Consumers destroy documents holding a snapshot when the account changes.
 
+`desktopClientHeaders` maps the native `darwin` and `win32` platforms to the shared Desktop account and update-policy request header; `null` adds no header.
+
 ## Summary
 
 Account consumers read stored login state, start or cancel a browser login, and sign out without editing API keys. Host model consumers resolve account credentials only for the provider-configured inference origin.

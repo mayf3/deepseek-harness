@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DesktopMandatoryUpdatePolicy, desktopPolicyPage, resolveDesktopPolicyConfig, type DesktopPolicyState } from '../src/mandatory-update-policy.ts'
 
-const identity = { platform: 'desktop-win', arch: 'x64', version: '0.1.5-rc.1', bundledDshVersion: '0.1.5-rc.1',
+const identity = { platform: 'win32', arch: 'x64', version: '0.1.5-rc.1', bundledDshVersion: '0.1.5-rc.1',
   bundleId: 'com.deepseek.dsh', locale: 'zh-CN' } as const
 const force = { code: 40005, data: { show_content: { title: '<b>Update</b>', detail: 'Required upgrade' },
   desktop_app_link: 'https://downloads.example.com/desktop?os=win' } }
