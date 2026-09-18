@@ -13,7 +13,7 @@ vi.mock('electron', () => ({ ipcMain: {
   handle: (channel: string, handler: (...args: unknown[]) => unknown) => native.handlers.set(channel, handler),
   removeHandler: (channel: string) => native.handlers.delete(channel),
 }, app: { quit: native.quit }, shell: { openExternal: native.open }, clipboard: { writeText: native.write, readText: native.read } }))
-vi.mock('../src/update-overlay.ts', () => ({ createMandatoryUpdateWindow: () => window }))
+vi.mock('../src/update-overlay.ts', () => ({ createUpdateOverlay: vi.fn(() => window) }))
 
 let window: ReturnType<typeof fakeWindow>
 let ui: DesktopMandatoryUpdateWindow | undefined
@@ -21,12 +21,14 @@ function fakeWindow() {
   const contents = Object.assign(new EventEmitter(), { mainFrame: { url: 'dsh-app://shell/mandatory-update.html' },
     send: vi.fn(), setWindowOpenHandler: vi.fn() })
   return Object.assign(new EventEmitter(), { webContents: contents, setMenu: vi.fn(), setTitle: vi.fn(),
-    loadURL: vi.fn(async () => {}), destroy: vi.fn(), isDestroyed: () => false,
+    loadURL: vi.fn(async () => {}), destroy: vi.fn(), isDestroyed: (): boolean => false,
     isFocused: () => true, isMinimized: () => false, focus: vi.fn(), show: vi.fn(), restore: vi.fn() })
 }
-afterEach(() => { ui?.dispose(); vi.clearAllMocks(); native.handlers.clear(); vi.useRealTimers() })
-function setup() {
+afterEach(() => { ui?.dispose(); vi.restoreAllMocks(); vi.clearAllMocks(); native.handlers.clear(); vi.useRealTimers() })
+function setup(platform: NodeJS.Platform = 'darwin') {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
   window = fakeWindow()
+  if (platform === 'win32') window.webContents.mainFrame.url = 'dsh-app://app/'
   let policy: DesktopPolicyState = { blocking: true, checking: false, page: 'https://downloads.example.com/desktop' }
   let update: DesktopUpdateState = { phase: 'ready', version: '1.0.1-nightly.1' }
   const install = vi.fn(async () => update)
@@ -41,6 +43,15 @@ function setup() {
   return { view, action, install, policy(next: DesktopPolicyState) { policy = next; ui!.sync() },
     update(next: DesktopUpdateState) { update = next; ui!.sync() } }
 }
+
+it('releases IPC after the Windows main window has already been destroyed', () => {
+  setup('win32')
+  vi.spyOn(window, 'isDestroyed').mockReturnValue(true)
+  Object.defineProperty(window, 'webContents', { get() { throw new Error('Object has been destroyed') } })
+  expect(() => { ui!.dispose() }).not.toThrow()
+  expect(native.handlers.size).toBe(0)
+  expect(() => { ui!.dispose() }).not.toThrow()
+})
 
 it('waits for a version-bound second click in the same modal and rejects obsolete or hidden responses', async () => {
   const f = setup()
@@ -151,4 +162,20 @@ it('fades on clearance, reuses a reblocked window, and cancels teardown on dispo
   f.policy({ blocking: false, checking: false })
   ui!.dispose()
   expect(vi.getTimerCount()).toBe(0)
+})
+
+it('publishes Windows overlays into the main document without creating or destroying a window', () => {
+  const f = setup('win32')
+  expect(window.loadURL).not.toHaveBeenCalled()
+  expect(ui!.confirmationWindow).toBe(window)
+  expect(window.webContents.send).toHaveBeenLastCalledWith(MANDATORY_IPC.state, f.view())
+  window.webContents.emit('did-finish-load')
+  expect(window.webContents.send).toHaveBeenCalledTimes(2)
+  const event = { sender: window.webContents, senderFrame: { ...window.webContents.mainFrame } }
+  expect(() => native.handlers.get(MANDATORY_IPC.status)!(event)).toThrow(/unowned/)
+  f.policy({ blocking: false, checking: false })
+  expect(window.destroy).not.toHaveBeenCalled()
+  ui!.dispose()
+  expect(window.destroy).not.toHaveBeenCalled()
+  expect(window.webContents.listenerCount('did-finish-load')).toBe(0)
 })

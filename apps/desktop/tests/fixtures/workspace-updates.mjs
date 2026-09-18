@@ -1,4 +1,5 @@
 /** Real Electron main entry, preload, shared Web Host, and local updater; no installer executes. */
+import { mandatoryFrameDriver } from './mandatory-frame.mjs'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { appendFile, readFile, writeFile } from 'node:fs/promises'
@@ -95,6 +96,9 @@ async function documentReady(window, expression) {
   })`))
 }
 async function windowAt(url) {
+  if (process.platform === 'win32' && url === 'dsh-app://shell/mandatory-update.html') {
+    return mandatoryFrameDriver(await windowAt('dsh-app://app/'))
+  }
   const existing = BrowserWindow.getAllWindows().find(window => window.webContents.getURL() === url)
   if (existing) return existing
   return new Promise((resolve, reject) => {
@@ -173,9 +177,9 @@ async function qualify() {
   try {
     await import(entry)
     console.log('workspace qualification: compiled main module loaded')
-    const applicationUrl = await fixture.ready.promise
+    await fixture.ready.promise
     console.log('workspace qualification: Host process ready')
-    mainWindow = await windowAt(new URL('/', applicationUrl).href)
+    mainWindow = await windowAt('dsh-app://app/')
     await documentReady(mainWindow, `document.querySelector('[class*="frame"]') && window.dshDesktop?.updates`)
     assert.equal(mainWindow.isVisible(), true, 'Workspace qualification requires a visible application window')
     console.log('workspace qualification: workspace document ready')
@@ -272,16 +276,20 @@ async function qualify() {
     await documentReady(mandatory, `document.getElementById('title')?.textContent === '需要更新'`)
     console.log('workspace qualification: mandatory title rendered')
     assert.equal(await mandatory.webContents.executeJavaScript(`document.getElementById('title').children.length`), 0)
-    assert.equal(mandatory.isMovable(), true)
-    assert.equal(mandatory.isResizable(), true)
-    assert.equal(mandatory.isMaximizable(), true)
-    const originalBounds = mandatory.getBounds()
-    mandatory.setPosition(originalBounds.x + 20, originalBounds.y + 20)
-    assert.notDeepEqual(mandatory.getBounds(), originalBounds)
-    mandatory.maximize()
-    await waitFor(() => mandatory.isMaximized(), 'mandatory maximize')
-    mandatory.unmaximize()
-    await waitFor(() => !mandatory.isMaximized(), 'mandatory restore')
+    assert.equal(mandatory.isModal(), false)
+    assert.equal(mainWindow.isEnabled(), true)
+    if (process.platform === 'win32') assert.equal(mainWindow.getChildWindows().length, 0)
+    const originalBounds = mainWindow.getBounds()
+    mainWindow.setPosition(originalBounds.x + 20, originalBounds.y + 20)
+    mainWindow.maximize()
+    await waitFor(() => mainWindow.isMaximized(), 'blocked parent maximize')
+    mainWindow.unmaximize()
+    await waitFor(() => !mainWindow.isMaximized(), 'blocked parent restore')
+    if (process.platform === 'win32') {
+      const viewport = await mandatory.webContents.executeJavaScript('({ width: innerWidth, height: innerHeight })')
+      const bounds = mainWindow.getContentBounds()
+      assert.deepEqual(viewport, { width: bounds.width, height: bounds.height - 40 })
+    }
     mandatory.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
     mandatory.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
     assert.equal((await control('status')).queued, 1)
