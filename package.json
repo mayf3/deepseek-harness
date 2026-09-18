@@ -165,6 +165,7 @@
     "gen-persistence-catalog": "tsx scripts/gen-persistence-catalog.ts",
     "verify-persistence-catalog": "tsx scripts/gen-persistence-catalog.ts --check",
     "persistence-changes": "tsx scripts/persistence-changes.ts",
+    "persistence-review": "tsx scripts/persistence-review.ts",
     "verify-persistence-changes": "tsx scripts/persistence-changes.ts --check",
     "verify-persistence-releases": "tsx scripts/persistence-releases.ts",
     "verify-persistence-formats": "tsx scripts/persistence-formats.ts",

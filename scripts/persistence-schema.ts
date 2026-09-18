@@ -4,15 +4,19 @@ import { readFileSync } from 'node:fs'
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
 import { collectLogEvents } from './persistence-catalog-source.ts'
+import { sourceCompatibilityAnnotations } from './persistence-source-annotations.ts'
+import { validSourceCompatibility } from './persistence-source-policy.ts'
 import {
   canonicalizeSchema,
   schemaChildren,
   schemaDigest,
+  schemaHasCompatibility,
   type PersistenceRoot,
   type PersistenceSchemaInventory,
   type PersistenceType,
   type SchemaNode,
   type SchemaProperty,
+  type SourceCompatibility,
 } from './persistence-schema-model.ts'
 
 interface DeclarationMetadata {
@@ -207,6 +211,7 @@ class SchemaExtractor {
   private readonly declarationMetadata = new Map<number, DeclarationMetadata>()
 
   private readonly checker: ts.TypeChecker
+  private readonly sourcePolicies: ReadonlyMap<ts.Declaration, readonly SourceCompatibility[]>
 
   constructor(
     private readonly root: string,
@@ -214,6 +219,7 @@ class SchemaExtractor {
     private readonly declarationSources: ReadonlyMap<ts.Type, readonly ts.Node[]>,
   ) {
     this.checker = program.getTypeChecker()
+    this.sourcePolicies = sourceCompatibilityAnnotations(root, program)
   }
 
   convert(type: ts.Type, site: ts.Node): number {
@@ -294,7 +300,11 @@ class SchemaExtractor {
       if (optional && (propertyType.isUnion() ? propertyType.types : [propertyType])
         .every(member => (member.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Never)) !== 0)) continue
       const child = this.valueType(propertyType, declaration, optional)
-      properties.push({ name: property.getName(), type: child, optional })
+      const policies = this.propertyPolicies(type, property, declaration)
+      if (policies.length > 1) this.fail(type, declaration, 'ambiguous source compatibility binding')
+      properties.push({ name: property.getName(), type: child, optional,
+        ...(policies[0] === undefined ? {} : { compatibility: policies[0] }),
+      })
     }
     const indices = this.checker.getIndexInfosOfType(type).map(info => ({
       key: this.convert(info.keyType, site),
@@ -302,6 +312,19 @@ class SchemaExtractor {
     }))
     if (properties.length === 0 && indices.length === 0) this.fail(type, site, 'unconstrained empty object type is not an explicit JSON record')
     return { kind: 'object', properties, indices }
+  }
+
+  private propertyPolicies(type: ts.Type, property: ts.Symbol, site: ts.Node): readonly SourceCompatibility[] {
+    const declared = (property.declarations ?? []).flatMap(declaration => this.sourcePolicies.get(declaration) ?? [])
+    if (declared.length === 0) return []
+    const roleProperty = this.checker.getPropertyOfType(type, 'role')
+    if (roleProperty === undefined || (roleProperty.flags & ts.SymbolFlags.Optional) !== 0) return []
+    const role = this.checker.getTypeOfSymbolAtLocation(roleProperty, site)
+    if (!(role.flags & ts.TypeFlags.StringLiteral)) return []
+    const binding = (role as ts.StringLiteralType).value === 'user' ? 'session.user-message.source'
+      : (role as ts.StringLiteralType).value === 'developer' ? 'session.developer-message.source'
+        : undefined
+    return declared.filter(policy => policy.binding === binding)
   }
 
   private rejectClass(type: ts.Type, site: ts.Node): void {
@@ -354,6 +377,14 @@ class SchemaExtractor {
   }
 
   inventory(inputs: readonly RootInput[]): PersistenceSchemaInventory {
+    for (const node of this.nodes) {
+      if (node.kind !== 'object') continue
+      for (const property of node.properties) {
+        if (property.compatibility !== undefined && !validSourceCompatibility(this.nodes, node, property)) {
+          throw new PersistenceSchemaError('persistence schema: invalid source compatibility binding or attribution kinds')
+        }
+      }
+    }
     const roots = inputs.map((input) => {
       const schema = canonicalizeSchema(this.nodes, input.node)
       return {
@@ -366,22 +397,13 @@ class SchemaExtractor {
       }
     })
     const found = new Set<number>()
-    const paths = new Map<number, Set<string>>()
-    const visit = (id: number, path: string): void => {
-      const names = paths.get(id) ?? new Set<string>()
-      names.add(path)
-      paths.set(id, names)
+    const visit = (id: number): void => {
       if (found.has(id)) return
       found.add(id)
       const node = this.nodes[id] as SchemaNode
-      if (node.kind === 'object') {
-        for (const property of node.properties) visit(property.type, `${path}.${property.name}`)
-        for (const index of node.indices) { visit(index.key, `${path}.[key]`); visit(index.value, `${path}.[value]`) }
-      } else {
-        for (const [index, child] of schemaChildren(node).entries()) visit(child, `${path}[${String(index)}]`)
-      }
+      for (const child of schemaChildren(node)) visit(child)
     }
-    for (const input of inputs) visit(input.node, input.key)
+    for (const input of inputs) visit(input.node)
     const types = new Map<string, { schema: PersistenceType['schema']; names: Set<string>; sources: Set<string> }>()
     for (const id of found) {
       const schema = canonicalizeSchema(this.nodes, id)
@@ -390,14 +412,10 @@ class SchemaExtractor {
       const declarationMetadata = this.declarationMetadata.get(id)
       for (const name of declarationMetadata?.names ?? []) item.names.add(name)
       for (const source of declarationMetadata?.sources ?? []) item.sources.add(source)
-      const kind = schema.nodes[0]?.kind
-      if (kind !== 'primitive' && kind !== 'literal' && (declarationMetadata === undefined || declarationMetadata.names.size === 0)) {
-        for (const path of paths.get(id) ?? []) item.names.add(path)
-      }
       types.set(digest, item)
     }
     return {
-      formatVersion: 1,
+      formatVersion: roots.some(root => schemaHasCompatibility(root.schema)) ? 2 : 1,
       roots,
       types: [...types].sort(([left], [right]) => compare(left, right)).map(([digest, item]) => ({
         digest,
