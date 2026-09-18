@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { PluginEntryId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { PluginEntryId, PluginInstallRequestId } from '@deepseek-ai/dsh-api-remotes/client'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ReactNode } from 'react'
@@ -68,7 +68,6 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     editInstallSpec: vi.fn(),
     runInstall: vi.fn(),
     cancelInstall: vi.fn(),
-    cancelInstallAndClose: vi.fn(),
     toggleInstallDetails: vi.fn(),
     approveBuildsAndRetry: vi.fn(),
     enableInstalled: vi.fn(),
@@ -505,18 +504,17 @@ describe('PluginManagerPage', () => {
     expect(actions.cancelInstall).toHaveBeenCalledTimes(2)
     expect(screen.queryByRole('button', { name: en.close })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.installCloseCancels }))
-    expect(actions.cancelInstallAndClose).toHaveBeenCalledOnce()
-    expect(actions.closeInstall).not.toHaveBeenCalled()
+    expect(actions.closeInstall).toHaveBeenCalledOnce()
   })
 
   it('waits with the Host through starting, stopping, and applying, and words an unconfirmed stop', () => {
     const subject = { spec: 'slow', status: 'accepted', kind: 'registry', name: 'slow', bundle: true } as const
     const { actions, set } = renderTab({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'starting', subject } })
-    // Before the Host acknowledges the run there is nothing to stop: cancel, back, and close all wait.
     expect(screen.getByRole('status').textContent).toBe(en.installStarting)
-    expect(screen.getByRole('button', { name: en.installCancel })).toHaveProperty('disabled', true)
-    expect(screen.getByRole('button', { name: en.installEditAria })).toHaveProperty('disabled', true)
-    expect(screen.getByRole('button', { name: en.close })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: en.installCancel })).toHaveProperty('disabled', false)
+    expect(screen.getByRole('button', { name: en.installEditAria })).toHaveProperty('disabled', false)
+    fireEvent.click(screen.getByRole('button', { name: en.installCloseCancels }))
+    expect(actions.closeInstall).toHaveBeenCalledOnce()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'running', subject } })
     fireEvent.click(screen.getByRole('button', { name: en.installCancel }))
     fireEvent.click(screen.getByRole('button', { name: en.installEditAria }))
@@ -530,10 +528,12 @@ describe('PluginManagerPage', () => {
     })
     expect(screen.getByRole('status').textContent).toBe(en.installCancelling)
     expect(screen.getByRole('button', { name: en.installCancelling })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: en.close })).toHaveProperty('disabled', false)
     expect(within(document.querySelector('[data-terminal]') as HTMLElement).getByText(en.installCancelledShort)).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'applying', subject } })
     expect(screen.getByRole('status').textContent).toBe(en.installApplying)
     expect(screen.getByRole('button', { name: en.installCancel })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: en.close })).toHaveProperty('disabled', false)
     // A stop the Host could not confirm says so over the running screen.
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'running', subject, failure: { reason: 'offline', cancelUnconfirmed: true } } })
     expect(screen.getByRole('alert').textContent).toContain('offline')
@@ -728,6 +728,11 @@ describe('PluginManagerPage', () => {
       expect(screen.getByRole('alert').textContent).toContain(en.failedDisable.replace('{reason}', en.reasonOperationError))
       set({ notice: { kind: 'failed', action: 'rowEnable', reason: 'x', packageName: 'pkg-1', seq: 8 } })
       expect(screen.getByRole('alert').textContent).toContain(en.failedRowEnable.replace('{reason}', 'x'))
+      for (const [index, outcome] of (['done', 'failed', 'unconfirmed', 'applying'] as const).entries()) {
+        set({ notice: { kind: 'install', outcome, seq: 9 + index } })
+        const key = ({ done: 'installBackgroundDone', failed: 'installBackgroundFailed', unconfirmed: 'installBackgroundUnconfirmed', applying: 'installBackgroundApplying' } as const)[outcome]
+        expect(screen.getByRole('alert').textContent).toContain(en[key])
+      }
       // No button to press: the toast retires on its own and the store forgets it.
       expect(screen.queryByRole('button', { name: /got it/i })).toBeNull()
       expect(actions.dismissNotice).not.toHaveBeenCalled()
@@ -737,5 +742,19 @@ describe('PluginManagerPage', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('offers the retained installation and keeps its uncertain state cancellable', () => {
+    const { actions } = renderTab({ install: {
+      ...IDLE_INSTALL, open: true, phase: 'unconfirmed', requestId: 'pending-install' as PluginInstallRequestId,
+      failure: { reason: 'offline', cancelUnconfirmed: true },
+    } })
+    fireEvent.click(screen.getByRole('button', { name: en.installViewTask }))
+    expect(actions.openInstall).toHaveBeenCalledOnce()
+    expect(screen.getByRole('status').textContent).toBe(en.installUnconfirmedTitle)
+    fireEvent.click(screen.getByRole('button', { name: en.installCancel }))
+    expect(actions.cancelInstall).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: en.installCloseCancels }))
+    expect(actions.closeInstall).toHaveBeenCalledOnce()
   })
 })

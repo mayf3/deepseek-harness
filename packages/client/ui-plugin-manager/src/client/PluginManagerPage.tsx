@@ -552,6 +552,7 @@ const SCREEN_TITLE_KEYS = {
   running: 'installingTitle',
   cancelling: 'installCancelling',
   applying: 'installApplying',
+  unconfirmed: 'installUnconfirmedTitle',
   done: 'installedTitle',
   failed: 'installFailedTitle',
 } satisfies Record<Exclude<InstallState['phase'], 'idle' | 'checking'>, PluginManagerLocaleKey>
@@ -597,7 +598,7 @@ function SubjectCard({ subject, t }: { readonly subject: InstallSubject; readonl
  * install scripts undecided shows them for approval in place of plain retry.
  */
 function InstallDialog({
-  install, t, onClose, onEditSpec, onRun, onCancel, onCancelAndClose, onToggleDetails, onEnableNow, onApproveBuilds,
+  install, t, onClose, onEditSpec, onRun, onCancel, onToggleDetails, onEnableNow, onApproveBuilds,
 }: {
   readonly install: InstallState
   readonly t: Translate
@@ -605,8 +606,6 @@ function InstallDialog({
   readonly onEditSpec: (text: string) => void
   readonly onRun: () => void
   readonly onCancel: () => void
-  /** The close control while the Host runs the install: stop the run, then close. */
-  readonly onCancelAndClose: () => void
   readonly onToggleDetails: () => void
   readonly onEnableNow: () => void
   readonly onApproveBuilds: () => void
@@ -703,8 +702,8 @@ function InstallDialog({
   }
   const heading = t(SCREEN_TITLE_KEYS[phase])
   const pending = isInstallPending(phase)
-  // Only a run the Host acknowledged can be stopped; before that, and while it stops or applies, the controls wait.
-  const stoppable = phase === 'running' || phase === 'failed'
+  const cancellable = phase === 'starting' || phase === 'running' || phase === 'unconfirmed'
+  const stoppable = cancellable || phase === 'failed'
   const unconfirmed = install.failure?.cancelUnconfirmed === true ? install.failure.reason : undefined
   const pendingBuilds = phase === 'failed' ? install.failure?.pendingBuilds ?? [] : []
   const approvable = pendingBuilds.length > 0
@@ -724,9 +723,8 @@ function InstallDialog({
           <button
             type="button"
             className={css.wizardClose}
-            aria-label={t(phase === 'running' ? 'installCloseCancels' : 'close')}
-            disabled={pending && phase !== 'running'}
-            onClick={phase === 'running' ? onCancelAndClose : onClose}
+            aria-label={t(cancellable ? 'installCloseCancels' : 'close')}
+            onClick={onClose}
           >
             <IconCloseOutlineRegular size={14} />
           </button>
@@ -771,7 +769,7 @@ function InstallDialog({
             </button>
             {pending
               ? (
-                <Button variant="outline" size="sm" disabled={phase !== 'running'} onClick={onCancel}>
+                <Button variant="outline" size="sm" disabled={!cancellable} onClick={onCancel}>
                   {t(phase === 'cancelling' ? 'installCancelling' : 'installCancel')}
                 </Button>
               )
@@ -918,7 +916,9 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
               <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
                 <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutlineRegular /></span>
               </button>
-              <Button variant="primary" size="sm" icon={<IconPlusOutlineRegular size={13} />} disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
+              <Button variant="primary" size="sm" icon={<IconPlusOutlineRegular size={13} />} disabled={!loaded} onClick={props.openInstall}>
+                {t(state.install.requestId === undefined ? 'addPlugin' : 'installViewTask')}
+              </Button>
             </div>
           </header>
         )
@@ -1002,7 +1002,6 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         onEditSpec={props.editInstallSpec}
         onRun={props.runInstall}
         onCancel={props.cancelInstall}
-        onCancelAndClose={props.cancelInstallAndClose}
         onToggleDetails={props.toggleInstallDetails}
         onEnableNow={props.enableInstalled}
         onApproveBuilds={props.approveBuildsAndRetry}

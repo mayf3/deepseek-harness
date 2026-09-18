@@ -35,6 +35,7 @@ export type ManagerNotice =
   | { readonly kind: 'restart'; readonly packageName: string; readonly seq: number }
   | { readonly kind: 'overridden'; readonly packageName: string; readonly seq: number }
   | { readonly kind: 'cancelled'; readonly seq: number }
+  | { readonly kind: 'install'; readonly outcome: 'done' | 'failed' | 'unconfirmed' | 'applying'; readonly seq: number }
   | {
     readonly kind: 'failed'
     /** What was being done when it failed. */
@@ -108,14 +109,16 @@ export interface InstallRun {
  * `checking`, then installed through the Host-owned phases — `starting` until
  * the Host acknowledges the run, `running`, `cancelling` while the Host stops
  * it, `applying` once the bundle is being loaded, which closed the cancellation
- * window — and the outcome shown as `done` or `failed`. A refused check, a
+ * window — and the outcome shown as `done` or `failed`. A lost response leaves
+ * `unconfirmed`, with cancellation and closing available. Closing preserves the
+ * Host-owned operation. A refused check, a
  * confirmed cancellation, and the back control return to `idle` with the spec kept.
  */
 export interface InstallState {
   readonly open: boolean
   /** The package spec as typed. */
   readonly spec: string
-  readonly phase: 'idle' | 'checking' | 'starting' | 'running' | 'cancelling' | 'applying' | 'done' | 'failed'
+  readonly phase: 'idle' | 'checking' | 'starting' | 'running' | 'cancelling' | 'applying' | 'unconfirmed' | 'done' | 'failed'
   /** Identifies this dialog's installation, including log and cancellation messages. */
   readonly requestId?: PluginInstallRequestId
   /** Why the spec was refused before installing; shown under the field. */
@@ -124,7 +127,7 @@ export interface InstallState {
   readonly subject: InstallSubject | null
   /** The pnpm runs of the open install, in the order they started. */
   readonly runs: readonly InstallRun[]
-  /** Whether the run's command and output are unfolded. */
+  /** Whether the run's command and output are unfolded, including after reopening. */
   readonly detailsOpen: boolean
   /** The bundle the finished run added, left off until enabled from the installed screen. */
   readonly installed: string | null
@@ -157,7 +160,7 @@ export interface InstallState {
  * @returns true until an authoritative result settles the installation.
  */
 export function isInstallPending(phase: InstallState['phase']): boolean {
-  return phase === 'starting' || phase === 'running' || phase === 'cancelling' || phase === 'applying'
+  return phase === 'starting' || phase === 'running' || phase === 'cancelling' || phase === 'applying' || phase === 'unconfirmed'
 }
 
 /** A destructive action waiting for the user's confirmation: a package's uninstall. */
@@ -193,7 +196,7 @@ export interface PluginManagerFace {
   /** Read the Host again. */
   refresh: () => void
   openInstall: () => void
-  /** Close the dialog; a check in flight is dropped, a Host-owned run has to be cancelled first. */
+  /** Hide immediately, abort a check, or request cancellation while retaining the Host-owned installation. */
   closeInstall: () => void
   editInstallSpec: (text: string) => void
   /** Check the spec with the Host, then install it; from the failed screen, run it again. */
@@ -202,11 +205,6 @@ export interface PluginManagerFace {
   approveBuildsAndRetry: () => void
   /** Leave the check or the failed screen for the spec, or ask the Host to stop the run and wait for its cleanup. */
   cancelInstall: () => void
-  /**
-   * While the Host runs the install, ask it to stop and close the dialog once
-   * it confirms; the dialog stays when it cannot. Otherwise nothing.
-   */
-  cancelInstallAndClose: () => void
   toggleInstallDetails: () => void
   /** Enable the bundle the finished install added, then close the dialog and mark it in the list. */
   enableInstalled: () => void
@@ -314,6 +312,13 @@ const IDLE_INSTALL: InstallState = {
   installed: null, restartRequired: false, failure: null, approvedBuilds: [], enabling: false,
 }
 
+/** Cancellation stays owned until the Host accepts the install or confirms its outcome. */
+interface InstallCancellation {
+  readonly requestId: PluginInstallRequestId
+  acknowledged: boolean
+  waitingForStart: boolean
+}
+
 /** Reads and mutates the profile's plugins through the `pluginManager` Remote. */
 export class PluginManagerController {
   private readonly store: SnapshotStore<PluginManagerState>
@@ -324,6 +329,7 @@ export class PluginManagerController {
   private pendingConfirm: (() => Promise<void>) | undefined
   /** Cancels the check the dialog has in flight. */
   private inspectAbort: AbortController | undefined
+  private cancellation: InstallCancellation | undefined
   private noticeSeq = 0
 
   /**
@@ -363,10 +369,15 @@ export class PluginManagerController {
       ensure: () => { if (this.getSnapshot().status === 'idle') void this.load() },
       refresh: () => { void this.load() },
       openInstall: () => {
-        if (!isInstallPending(this.getSnapshot().install.phase)) this.patch({ install: { ...IDLE_INSTALL, open: true } })
+        const install = this.getSnapshot().install
+        this.patch({ install: { ...(install.requestId === undefined ? IDLE_INSTALL : install), open: true } })
       },
       closeInstall: () => {
-        if (isInstallPending(this.getSnapshot().install.phase)) return
+        if (isInstallPending(this.getSnapshot().install.phase)) {
+          this.patchInstall({ open: false })
+          void this.cancelInstall()
+          return
+        }
         this.abortInspect()
         this.patch({ install: IDLE_INSTALL })
       },
@@ -379,7 +390,6 @@ export class PluginManagerController {
       runInstall: () => { void this.runInstall() },
       approveBuildsAndRetry: () => { void this.approveBuildsAndRetry() },
       cancelInstall: () => { void this.cancelInstall() },
-      cancelInstallAndClose: () => { void this.cancelInstall(true) },
       toggleInstallDetails: () => { this.patchInstall({ detailsOpen: !this.getSnapshot().install.detailsOpen }) },
       enableInstalled: () => { void this.enableInstalled() },
       clearHighlight: () => { if (this.getSnapshot().highlight !== null) this.patch({ highlight: null }) },
@@ -412,6 +422,14 @@ export class PluginManagerController {
   installProgress(progress: PluginInstallProgress): void {
     const install = this.getSnapshot().install
     if (install.requestId !== progress.requestId || !isInstallPending(install.phase)) return
+    const cancellation = this.cancellation
+    if (progress.phase === 'installing' && cancellation?.requestId === progress.requestId) {
+      cancellation.acknowledged = true
+      if (cancellation.waitingForStart) {
+        void this.sendCancellation(cancellation)
+        return
+      }
+    }
     // A queued start notification cannot undo the local user's cancellation request.
     if (install.phase === 'cancelling' && progress.phase === 'installing') return
     this.patchInstall({ phase: progress.phase === 'installing' ? 'running' : progress.phase })
@@ -425,6 +443,10 @@ export class PluginManagerController {
   appendLog(chunk: PluginInstallLogChunk): void {
     const install = this.getSnapshot().install
     if (chunk.requestId !== install.requestId) return
+    // Output also acknowledges an install when its start notification was lost.
+    if (install.requestId !== undefined && (install.phase === 'starting' || install.phase === 'cancelling' || install.phase === 'unconfirmed')) {
+      this.installProgress({ requestId: install.requestId, phase: 'installing' })
+    }
     const index = install.runs.findIndex(run => run.jobId === chunk.jobId)
     if (index === -1 && !isInstallPending(install.phase)) return
     const settled = chunk.exitCode === undefined ? {} : { exitCode: chunk.exitCode }
@@ -553,6 +575,7 @@ export class PluginManagerController {
   private async startInstall(subject: InstallSubject, approvedBuilds?: readonly string[]): Promise<void> {
     const { spec } = subject
     const requestId = randomUUID() as PluginInstallRequestId
+    this.cancellation = undefined
     this.patchInstall({ phase: 'starting', requestId, subject, runs: [], failure: null, installed: null, approvedBuilds: [] })
     // The Host announces `plugin-manager/changed` while the run is still on
     // the wire, and every such event reads again; those reads must not cancel
@@ -563,7 +586,10 @@ export class PluginManagerController {
     if (this.disposed || this.getSnapshot().install.requestId !== requestId) return
     const runs = this.getSnapshot().install.runs
     if (!result.ok) {
-      this.patchInstall({ phase: 'failed', runs: settledRuns(runs, null), failure: { reason: result.error.message } })
+      // A failed transport does not establish whether the Host stopped the installation.
+      this.patchInstall({ phase: 'unconfirmed', failure: { reason: result.error.message, cancelUnconfirmed: true } })
+      this.notifyHiddenInstall('unconfirmed')
+      return
     } else if (result.value.application === 'cancelled') {
       this.offerSpecAgain({ kind: 'cancelled', seq: ++this.noticeSeq })
     } else if (result.value.application === 'failed') {
@@ -583,6 +609,9 @@ export class PluginManagerController {
         approvedBuilds: result.value.approvedBuilds ?? [],
       })
     }
+    this.cancellation = undefined
+    const phase = this.getSnapshot().install.phase
+    if (phase === 'done' || phase === 'failed') this.notifyHiddenInstall(phase)
     void this.load()
   }
 
@@ -599,37 +628,65 @@ export class PluginManagerController {
 
   /**
    * Leave the check or the failed screen for the spec at once; a Host-owned
-   * run is asked to stop and the dialog waits for the Host's word, since
+   * run is asked to stop and its state waits for the Host's word, since
    * neither a dropped RPC nor a closed connection means pnpm has stopped.
-   * @param closeAfter - stop only a running install, and close the dialog once the Host confirms the stop.
    */
-  private async cancelInstall(closeAfter = false): Promise<void> {
+  private async cancelInstall(): Promise<void> {
     const install = this.getSnapshot().install
-    if (!closeAfter && (install.phase === 'checking' || install.phase === 'failed')) {
+    if (install.phase === 'checking' || install.phase === 'failed') {
       this.abortInspect()
       this.offerSpecAgain()
       return
     }
-    if (install.phase !== 'running' || install.requestId === undefined) return
-    const requestId = install.requestId
+    if ((install.phase !== 'starting' && install.phase !== 'running' && install.phase !== 'unconfirmed') || install.requestId === undefined) return
+    if (this.cancellation !== undefined && !this.cancellation.waitingForStart) return
+    const cancellation: InstallCancellation = {
+      requestId: install.requestId, acknowledged: install.phase === 'running', waitingForStart: false,
+    }
+    this.cancellation = cancellation
+    await this.sendCancellation(cancellation)
+  }
+
+  /** A cancellation that overtakes installation is retried after the Host acknowledges that request. */
+  private async sendCancellation(cancellation: InstallCancellation): Promise<void> {
+    const { requestId, acknowledged } = cancellation
+    cancellation.waitingForStart = false
     this.patchInstall({ phase: 'cancelling', failure: null })
     const result = await this.ctx.remote.pluginManager.cancelInstall(requestId)
     const current = this.getSnapshot().install
-    if (this.disposed || current.requestId !== requestId || !isInstallPending(current.phase)) return
+    if (this.disposed || this.cancellation !== cancellation || current.requestId !== requestId || !isInstallPending(current.phase)) return
     if (!result.ok) {
-      this.patchInstall({ phase: 'running', failure: { reason: result.error.message, cancelUnconfirmed: true } })
+      cancellation.waitingForStart = !cancellation.acknowledged
+      if (cancellation.acknowledged) this.cancellation = undefined
+      this.patchInstall({ phase: 'unconfirmed', failure: { reason: result.error.message, cancelUnconfirmed: true } })
+      this.notifyHiddenInstall('unconfirmed')
       return
     }
     if (result.value.status === 'cancelled') {
       const notice: ManagerNotice = { kind: 'cancelled', seq: ++this.noticeSeq }
-      if (closeAfter) this.patch({ install: IDLE_INSTALL, notice })
-      else this.offerSpecAgain(notice)
+      this.offerSpecAgain(notice)
       void this.load()
     } else if (result.value.status === 'too-late') {
+      this.cancellation = undefined
       this.patchInstall({ phase: 'applying' })
+      this.notifyHiddenInstall('applying')
+    } else if (!acknowledged) {
+      if (cancellation.acknowledged) {
+        await this.sendCancellation(cancellation)
+      } else {
+        cancellation.waitingForStart = true
+        this.patchInstall({ phase: 'unconfirmed', failure: { reason: '', cancelUnconfirmed: true } })
+        this.notifyHiddenInstall('unconfirmed')
+      }
     } else {
-      this.patchInstall({ phase: 'running', failure: { reason: '', cancelUnconfirmed: true } })
+      this.cancellation = undefined
+      this.patchInstall({ phase: 'unconfirmed', failure: { reason: '', cancelUnconfirmed: true } })
+      this.notifyHiddenInstall('unconfirmed')
     }
+  }
+
+  private notifyHiddenInstall(outcome: Extract<ManagerNotice, { kind: 'install' }>['outcome']): void {
+    if (!this.getSnapshot().install.open) this.patch({ notice: { kind: 'install', outcome, seq: ++this.noticeSeq } })
   }
 
   /**
@@ -638,6 +695,7 @@ export class PluginManagerController {
    * stopped the run.
    */
   private offerSpecAgain(notice: ManagerNotice | null = null): void {
+    this.cancellation = undefined
     const { open, spec } = this.getSnapshot().install
     this.patch({ install: { ...IDLE_INSTALL, open, spec }, ...notice === null ? {} : { notice } })
   }

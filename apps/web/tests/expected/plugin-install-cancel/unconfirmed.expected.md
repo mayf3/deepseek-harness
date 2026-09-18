@@ -1,0 +1,9 @@
+- dialog "安装状态尚未确认":
+  - button "返回编辑": 编辑
+  - button "取消安装并关闭"
+  - status: 安装状态尚未确认
+  - alert: 尚未确认安装已停止，请重试取消或等待安装结果。
+  - paragraph: slow-package
+  - paragraph: 版本 1.0.0
+  - button "查看安装详情"
+  - button "取消安装"
