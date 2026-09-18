@@ -23,7 +23,7 @@ const device = z.object({ id: z.uuid() })
 export interface Config {
   /** Platform origin serving auth-api and browser pages. */
   platformOrigin?: string
-  /** Native desktop identity for Host API requests only; null omits the client platform header. */
+  /** Native desktop identity for Host API and embedded Platform requests; null omits the client platform header. */
   desktopPlatform?: 'darwin' | 'win32' | null
   /** Optional frontend deployment selector for embedded Usage and Top-up pages. */
   embeddedPageDist?: string
@@ -215,9 +215,10 @@ export class PlatformAccount extends DeepSeekAccount {
     const parsed = grant.safeParse(record.payload)
     if (!parsed.success) throw new PlatformAuthError('storage')
     if (parsed.data.issuer !== this.origin) throw new PlatformAuthError('protocol')
+    const requestHeaders = { ...this.accountRequestHeaders, ...this.clientHeaders }
     return { origin: this.origin, token: parsed.data.token,
       ...(this.embeddedPageDist ? { embeddedPageDist: this.embeddedPageDist } : {}),
-      ...(Object.keys(this.accountRequestHeaders).length ? { requestHeaders: { ...this.accountRequestHeaders } } : {}) }
+      ...(Object.keys(requestHeaders).length ? { requestHeaders } : {}) }
   }
 
   override async resolveToken(url: string): Promise<string | undefined> {

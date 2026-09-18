@@ -709,8 +709,9 @@ it('carries the configured embedded frontend selector in the private Platform se
 
 it.each([
   ['darwin', 'desktop-mac'], ['win32', 'desktop-win'], [null, undefined],
-] as const)('identifies %s Host API requests without changing embedded page headers', async (desktopPlatform, expected) => {
-  const f = await fixture(undefined, { Cookie: 'test_gate=synthetic' }, false, {}, undefined, undefined, '', desktopPlatform)
+] as const)('identifies %s Host API and embedded Platform requests', async (desktopPlatform, expected) => {
+  const f = await fixture(undefined, { Cookie: 'test_gate=synthetic', ...(desktopPlatform === null ? {} : { 'X-Client-Platform': 'web' }) },
+    false, {}, undefined, undefined, '', desktopPlatform)
   await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   const attempt = (await f.account.getState()).attempt!
@@ -721,7 +722,7 @@ it.each([
   await fetch(f.callback(), { redirect: 'manual' })
   await readDetails(f.account)
   expect(await f.account.getPlatformSession()).toMatchObject({ requestHeaders: { cookie: 'test_gate=synthetic' } })
-  expect((await f.account.getPlatformSession())?.requestHeaders).not.toHaveProperty('x-client-platform')
+  expect((await f.account.getPlatformSession())?.requestHeaders?.['x-client-platform']).toBe(expected)
   await f.account.signOut()
   await expect.poll(f.logoutCount).toBe(1)
   expect(f.receivedHeaders.map(item => item.path)).toEqual([

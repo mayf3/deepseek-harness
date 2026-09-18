@@ -149,7 +149,7 @@ it('does not reveal a document closed before its load settles', async () => {
 it('injects deployment headers only at the Platform origin and excludes them from bootstrap', async () => {
   const { manager, owner } = setup()
   manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret',
-    requestHeaders: { cookie: 'route=new; gate=private', 'x-private-gate': 'private' } })
+    requestHeaders: { cookie: 'route=new; gate=private', 'x-private-gate': 'private', 'x-client-platform': 'desktop-mac' } })
   await manager.open(owner, 'usage', bounds)
   const browserSession = state.sessions.at(-1) as { webRequest: { onBeforeSendHeaders: ReturnType<typeof vi.fn> } }
   const intercept = browserSession.webRequest.onBeforeSendHeaders.mock.calls[0]![0] as (
@@ -160,11 +160,11 @@ it('injects deployment headers only at the Platform origin and excludes them fro
   for (const path of ['/usage', '/top_up', '/api/v0/users/get_user_summary']) {
     intercept({ url: `https://platform.deepseek.com${path}`, requestHeaders: { Cookie: 'route=old; browser=keep', Accept: 'application/json' } }, callback)
     expect(callback).toHaveBeenLastCalledWith({ requestHeaders: {
-      cookie: 'route=new; browser=keep; gate=private', accept: 'application/json', 'x-private-gate': 'private',
+      cookie: 'route=new; browser=keep; gate=private', accept: 'application/json', 'x-private-gate': 'private', 'x-client-platform': 'desktop-mac',
     } })
   }
   intercept({ url: 'https://other.example/api', requestHeaders: {
-    cookie: 'route=new; gate=private', 'x-private-gate': 'private', accept: 'application/json',
+    cookie: 'route=new; gate=private', 'x-private-gate': 'private', 'x-client-platform': 'desktop-mac', accept: 'application/json',
   } }, callback)
   expect(callback).toHaveBeenLastCalledWith({ requestHeaders: { accept: 'application/json' } })
   const sender = view().webContents

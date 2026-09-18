@@ -612,7 +612,7 @@ Requires: `credentials` · `authorization`
 export interface Config {
   /** Platform origin serving auth-api and browser pages. */
   platformOrigin?: string
-  /** Native desktop identity for Host API requests only; null omits the client platform header. */
+  /** Native desktop identity for Host API and embedded Platform requests; null omits the client platform header. */
   desktopPlatform?: 'darwin' | 'win32' | null
   /** Optional frontend deployment selector for embedded Usage and Top-up pages. */
   embeddedPageDist?: string

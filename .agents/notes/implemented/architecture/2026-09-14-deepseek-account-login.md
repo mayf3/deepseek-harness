@@ -20,7 +20,7 @@ Authorization registers a temporary /oauth/callback route on the Host webServer.
 
 Platform navigation and authorization share one validated platformOrigin from Cordis configuration. Private profile patches or environment expressions supply deployment-specific origins without committing development addresses.
 
-The Desktop profile supplies the native platform for Host API headers. Account and update-policy clients share one mapping to avoid different client identities for the same installation. This identity does not depend on a login attempt, since stored grants also issue requests after restart. Embedded pages retain their separately configured headers.
+The Desktop profile supplies the native platform for Host API headers. Account and update-policy clients share one mapping to avoid different client identities for the same installation. This identity does not depend on a login attempt, since stored grants also issue requests after restart. Embedded pages use the same platform identity and retain their other separately configured headers.
 
 ## Alternatives considered
 
