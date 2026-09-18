@@ -77,20 +77,25 @@ export function ConversationSessionHeader({
               <nav className={css.crumbs} aria-label={t('session.hierarchy')}>
                 {ancestry.map((summary, index) => {
                   const last = index === ancestry.length - 1
-                  const title = (
-                    <button
-                      type="button"
-                      className={clsx(
-                        css.crumb,
-                        summary.subagent && css.crumbSubagent,
-                        last && css.crumbCurrent,
-                      )}
-                      disabled={last}
-                      onClick={() => { open(summary.id) }}
-                    >
-                      {summary.displayTitle}
-                    </button>
-                  )
+                  // The current crumb has no navigation, so it is plain text
+                  // rather than a disabled button: on darwin desktop a button
+                  // would subtract itself from the window drag band (ui-web
+                  // base.css) and leave the title inert for dragging too.
+                  const title = last
+                    ? (
+                      <span className={clsx(css.crumb, summary.subagent && css.crumbSubagent, css.crumbCurrent)}>
+                        {summary.displayTitle}
+                      </span>
+                    )
+                    : (
+                      <button
+                        type="button"
+                        className={clsx(css.crumb, summary.subagent && css.crumbSubagent)}
+                        onClick={() => { open(summary.id) }}
+                      >
+                        {summary.displayTitle}
+                      </button>
+                    )
                   const lineage = last || summary.subagent
                   const lineageOwner = {
                     lineageSessionId: summary.id,

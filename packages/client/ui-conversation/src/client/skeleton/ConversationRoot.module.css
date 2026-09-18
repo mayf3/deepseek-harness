@@ -93,6 +93,7 @@
 }
 
 .crumb {
+  display: inline-block;
   max-width: 220px;
   overflow: hidden;
   padding: 4px 8px;
@@ -112,7 +113,7 @@
   line-height: 18px;
 }
 
-.crumb:hover:not(:disabled) {
+button.crumb:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
