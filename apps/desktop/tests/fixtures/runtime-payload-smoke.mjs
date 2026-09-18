@@ -16,8 +16,6 @@ assert.equal(process.versions.node, descriptor.release.nodeVersion, 'Run with th
 assert.equal(process.platform, descriptor.platform)
 assert.equal(process.arch, descriptor.arch)
 const resourcesRuntime = process.argv[3] ?? join(dirname(root), 'runtime')
-const { verifyDesktopRuntime } = await import('../../lib/types/runtime-tree.js')
-await verifyDesktopRuntime(root, descriptor.release.version, { platform: process.platform, arch: process.arch })
 const requireRuntime = createRequire(join(root, 'package.json'))
 const scratch = mkdtempSync(join(tmpdir(), 'dsh-runtime-payload-'))
 

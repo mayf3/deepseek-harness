@@ -394,6 +394,7 @@ export async function packageTarget(
       ...desktopElectronBuilderArguments(target, true),
       '--config.mac.notarize=false',
     ], electronBuilderEnv)
+    await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
     await packageMacOSArtifacts({
       arch: target.arch,
       version: packageVersion(join(APP_ROOT, 'package.json'), 'desktop package'),
@@ -403,7 +404,9 @@ export async function packageTarget(
   } else {
     await signedStage('artifacts', () => execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv))
   }
-  if (signPrimaryRuntime) await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
+  if (target.platform !== 'darwin' || invocation.directory) {
+    await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts', ...(invocation.unsigned ? ['--unsigned'] : [])], targetEnv)
+  }
   if (!invocation.directory && !invocation.unsigned) writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
 }
 

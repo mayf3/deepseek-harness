@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { afterEach, expect, it, vi } from 'vitest'
 import { packageTarget, parseDesktopPackageInvocation } from '../scripts/package-target.ts'
+import { packageMacOSArtifacts } from '../scripts/package-macos.ts'
 import { withWindowsSigningStage } from '../scripts/windows-signing-stage.mjs'
 import { prepareWindowsSignatureCacheDirectory } from '../scripts/windows-signature-cache-directory.mjs'
 
@@ -11,6 +12,8 @@ vi.mock('../scripts/windows-signature-cache-directory.mjs', () => ({
   prepareWindowsSignatureCacheDirectory: vi.fn(async () => {}),
   resolveWindowsSignatureCacheDirectory: vi.fn(() => 'C:\\fixture-cache'),
 }))
+
+vi.mock('../scripts/package-macos.ts', () => ({ packageMacOSArtifacts: vi.fn() }))
 
 // Keep the real orchestration and manifest reads; this suite owns no release directories or subprocesses.
 vi.mock('node:fs', async importOriginal => ({
@@ -83,5 +86,33 @@ it.each(['--unsigned', '--prepare-only'])('keeps %s hardware-free and creates no
   expect(stages).not.toContain('run sign:primary-runtime --dsh')
   expect(withWindowsSigningStage).not.toHaveBeenCalled()
   for (const call of run.run.mock.calls) expect(call[3].env).not.toHaveProperty('DSH_DESKTOP_WINDOWS_TOKEN_PIN')
+  expect(writeFileSync).not.toHaveBeenCalled()
+  expect(stages.includes('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')).toBe(mode === '--unsigned')
+})
+
+it('checks the assembled macOS runtime before notarizing and recording the release', async () => {
+  const { run, stages } = supervisor()
+  vi.mocked(packageMacOSArtifacts).mockImplementationOnce(async () => {
+    expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts')
+    expect(writeFileSync).not.toHaveBeenCalled()
+  })
+  await packageTarget(parseDesktopPackageInvocation(['mac-arm64'], 'darwin', 'arm64'), environment, run)
+  expect(packageMacOSArtifacts).toHaveBeenCalledOnce()
+  expect(writeFileSync).toHaveBeenCalledOnce()
+})
+
+it('refuses macOS notarization and release records after an assembled-runtime failure', async () => {
+  const { run } = supervisor('exec tsx scripts/smoke-packaged-runtime.ts')
+  await expect(packageTarget(parseDesktopPackageInvocation(['mac-arm64'], 'darwin', 'arm64'), environment, run))
+    .rejects.toThrow('stage refused')
+  expect(packageMacOSArtifacts).not.toHaveBeenCalled()
+  expect(writeFileSync).not.toHaveBeenCalled()
+})
+
+it('checks macOS directory packages without writing a release record', async () => {
+  const { run, stages } = supervisor()
+  await packageTarget(parseDesktopPackageInvocation(['mac-arm64', '--dir'], 'darwin', 'arm64'), environment, run)
+  expect(stages.at(-1)).toBe('exec tsx scripts/smoke-packaged-runtime.ts')
+  expect(packageMacOSArtifacts).not.toHaveBeenCalled()
   expect(writeFileSync).not.toHaveBeenCalled()
 })

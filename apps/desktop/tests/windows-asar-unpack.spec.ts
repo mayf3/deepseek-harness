@@ -1,4 +1,4 @@
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -10,6 +10,8 @@ import { readAsar } from 'app-builder-lib/out/asar/asar.js'
 import { afterEach, expect, it, vi } from 'vitest'
 import { prepareWindowsAsarUnpack, verifyWindowsAsarUnpack } from '../scripts/windows-asar-unpack.mjs'
 import { createElectronBuilderConfig } from '../scripts/electron-builder-config.mjs'
+import { verifyRuntimeArchive } from '../scripts/verify-runtime-archive.ts'
+import { inventoryDesktopRuntime } from '../src/runtime-tree.ts'
 
 vi.mock('../scripts/windows-sign.mjs', async importOriginal => ({
   ...await importOriginal<typeof import('../scripts/windows-sign.mjs')>(),
@@ -182,4 +184,51 @@ it.each([true, false])('validates the real builder hook for unsigned=%s', async 
     await config.afterPack(input.context)
     await expect(config.afterSign(input.context)).rejects.toThrow('PE bytes changed')
   }
+})
+
+it.each([false, true])('keeps the complete Office engine outside ASAR with external source=%s', async (external) => {
+  const input = await fixture(external)
+  const engine = join('node_modules', '@deepseek-ai', 'libreoffice-kit-darwin-arm64')
+  const files = ['package.json', 'prebuilds.json', 'bin/libreoffice-kit', 'program/registry/main.xcd']
+  for (const file of files) {
+    const path = join(input.source, engine, file)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, '{}')
+  }
+  const config = createElectronBuilderConfig({
+    DSH_DESKTOP_APP_ID: 'com.example.office', DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
+    DSH_DESKTOP_UNSIGNED: '1',
+  }, 'win32', 'x64', input.source)
+  input.config.asarUnpack = [...config.asarUnpack]
+  await config.beforePack(input.context)
+  await packageFixture(input)
+  const archive = await readAsar(join(input.resources, 'app.asar'))
+  for (const file of files) {
+    expect(archive.getFile(join('dsh', engine, file), false).unpacked).toBe(true)
+    expect(await readFile(join(input.resources, 'app.asar.unpacked', 'dsh', engine, file), 'utf8')).toBe('{}')
+  }
+})
+
+it('verifies archived bytes and file membership against the preparation inventory', async () => {
+  const input = await fixture(false)
+  const expected = inventoryDesktopRuntime(input.source)
+  await packageFixture(input)
+  const archive = join(input.resources, 'app.asar')
+  await expect(verifyRuntimeArchive(archive, expected)).resolves.toBeUndefined()
+  await expect(verifyRuntimeArchive(archive, expected.slice(1))).rejects.toThrow('ASAR integrity')
+  await expect(verifyRuntimeArchive(archive, [...expected, { ...expected[0]!, path: 'missing' }])).rejects.toThrow('ASAR integrity')
+  await writeFile(join(input.resources, 'app.asar.unpacked/dsh/node_modules/foo/native.node'), 'tampered')
+  await expect(verifyRuntimeArchive(archive, expected)).rejects.toThrow('ASAR integrity')
+})
+
+it.skipIf(process.platform === 'win32')('checks packed executable records and physical unpacked permissions', async () => {
+  const input = await fixture(false)
+  for (const name of ['extensionless', 'native.node']) await chmod(join(input.source, 'node_modules/foo', name), 0o755)
+  const expected = inventoryDesktopRuntime(input.source)
+  await packageFixture(input)
+  const archive = join(input.resources, 'app.asar')
+  await expect(verifyRuntimeArchive(archive, expected)).resolves.toBeUndefined()
+  await expect(verifyRuntimeArchive(archive, expected.map(file => ({ ...file, executable: false })))).rejects.toThrow('ASAR integrity')
+  await chmod(join(input.resources, 'app.asar.unpacked/dsh/node_modules/foo/native.node'), 0o644)
+  await expect(verifyRuntimeArchive(archive, expected)).rejects.toThrow('ASAR integrity')
 })
