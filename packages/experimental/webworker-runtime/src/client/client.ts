@@ -294,7 +294,8 @@ export class WorkerTunnel {
    * The image packs each bundle with a trailing `sourceURL` naming its image
    * path, so the blob shows under that name in the debugger instead of as an
    * anonymous blob entry.
-   * @param url - Graph combo URL (`/plugins/??<id>/client.js&rev=...`).
+   * @param url - Graph combo reference (`plugins/??<id>/client.js&rev=...`), which
+   * this tunnel resolves against the page origin it maps from.
    */
   async loadBundle(url: string): Promise<void> {
     const response = await this.fetch(url)

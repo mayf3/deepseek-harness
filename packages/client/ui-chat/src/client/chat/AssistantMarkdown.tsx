@@ -10,19 +10,16 @@ import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './AssistantMarkdown.module.css'
 
 /**
- * Map one authored media destination to the same-origin workspace-file URL.
- * @param protocol - `window.location.protocol` at render time.
- * @param origin - `window.location.origin` at render time.
- * @param value - The authored markdown destination, exactly as written.
- * @returns The API URL for an absolute POSIX path on an HTTP(S) page, or
- * undefined when the destination cannot be a Host-served local file
- * (non-HTTP transport such as Electron `file://`, protocol-relative or
- * relative destinations).
+ * Resolve an authored POSIX image path against the document's file API.
+ * @param base - canonical `document.baseURI` at render time.
+ * @param value - authored markdown destination.
+ * @returns an absolute HTTP(S) file-API URL, or undefined for unsupported
+ * protocols and non-local paths.
  */
-export function localPathMediaUrl(protocol: string, origin: string, value: string): string | undefined {
-  if (protocol !== 'http:' && protocol !== 'https:') return undefined
-  if (value.length === 0 || !value.startsWith('/') || value.startsWith('//')) return undefined
-  return `${origin}/api/file?path=${encodeURIComponent(value)}`
+export function localPathMediaUrl(base: string, value: string): string | undefined {
+  if (!value.startsWith('/') || value.startsWith('//')) return undefined
+  if (!base.startsWith('http:') && !base.startsWith('https:')) return undefined
+  return new URL(`api/file?path=${encodeURIComponent(value)}`, base).href
 }
 
 export interface AssistantMarkdownProps {
@@ -50,12 +47,9 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
   const labels = useMemo(() => markdownLabels(t), [t])
-  // Local media paths in the closing prose rewrite to the same-origin file
-  // API (policy re-validation lives host-side). The vocabulary identity is
-  // stable per page load because MarkdownText memoizes on it.
+  // MarkdownText memoizes its vocabulary; keep its identity stable across renders.
   const pathImages = useMemo<MarkdownPathImages>(() => {
-    const { protocol, origin } = window.location
-    return { resolve: value => localPathMediaUrl(protocol, origin, value) }
+    return { resolve: value => localPathMediaUrl(document.baseURI, value) }
   }, [])
   const last = blocks.length - 1
   // Tool-call heads render as tool rows in the chat view's grouping pass, so

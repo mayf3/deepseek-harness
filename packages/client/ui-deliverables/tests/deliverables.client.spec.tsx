@@ -644,8 +644,8 @@ describe('ChangedFiles card', () => {
   it('keeps every count in place whatever the native-open gestures of the review tab are doing', () => {
     const controller = new PresentedOpenController()
     controller.state.set({
-      '/api/changes.open?sessionId=child-session&seq=5&index=0': 'opening',
-      '/api/changes.open?sessionId=child-session&seq=5&index=1': 'error',
+      'api/changes.open?sessionId=child-session&seq=5&index=0': 'opening',
+      'api/changes.open?sessionId=child-session&seq=5&index=1': 'error',
     })
     const { view } = renderCard(controller)
     // Native-open gestures belong to the review tab; the card shows counts only.
@@ -770,31 +770,31 @@ describe('plugin registration', () => {
     expect(face.hooks.presentedHost.getSnapshot()).toMatchObject({ name: 'desktop' })
     fetcher.mockResolvedValueOnce(Response.json({ turn: 1, files: [], total: 0, added: 0, deleted: 0 }))
     await face.loadChangesSummary(SessionId('child-session'), 5)
-    expect(face.hooks.changesSummary.getSnapshot()['/api/changes.summary?sessionId=child-session&seq=5']).toEqual({ turn: 1, files: [], total: 0, added: 0, deleted: 0 })
+    expect(face.hooks.changesSummary.getSnapshot()['api/changes.summary?sessionId=child-session&seq=5']).toEqual({ turn: 1, files: [], total: 0, added: 0, deleted: 0 })
     ctx.emit('connection/reset')
     expect(face.hooks.presentedHost.getSnapshot()).toBeNull()
     // The replaced connection may reach a Host that no longer serves the summaries read so far.
     expect(face.hooks.changesSummary.getSnapshot()).toEqual({})
     await face.openPresented(SessionId('child-session'), 2, 0)
-    expect(face.hooks.presentedOpen.getSnapshot()['/api/present.open?sessionId=child-session&seq=2&index=0']).toBe('opened')
+    expect(face.hooks.presentedOpen.getSnapshot()['api/present.open?sessionId=child-session&seq=2&index=0']).toBe('opened')
     await face.openChanged(SessionId('child-session'), 5, 0)
-    expect(face.hooks.presentedOpen.getSnapshot()['/api/changes.open?sessionId=child-session&seq=5&index=0']).toBe('opened')
+    expect(face.hooks.presentedOpen.getSnapshot()['api/changes.open?sessionId=child-session&seq=5&index=0']).toBe('opened')
     face.openChangesReview({ sessionId: SessionId('child-session'), seq: 5, turn: 3 }, 1)
     expect(openResource).toHaveBeenCalledWith('dsh-resource://changes-review/session/child-session/5/3', { params: { index: 1 } })
     expect((registered as { title(address: string): string }).title('dsh-resource://changes-review/session/child-session/5/3')).toBe('Review · turn 3')
     const tabFace = tabEntry!.inject!(SessionId('child-session') as never) as unknown as ReviewInjected
     fetcher.mockResolvedValueOnce(Response.json({ turn: 3, files: [], total: 0, added: 0, deleted: 0 }))
     await tabFace.loadChangesSummary(SessionId('child-session'), 6)
-    expect(tabFace.hooks.changesSummary.getSnapshot()['/api/changes.summary?sessionId=child-session&seq=6']).toEqual({ turn: 3, files: [], total: 0, added: 0, deleted: 0 })
+    expect(tabFace.hooks.changesSummary.getSnapshot()['api/changes.summary?sessionId=child-session&seq=6']).toEqual({ turn: 3, files: [], total: 0, added: 0, deleted: 0 })
     fetcher.mockResolvedValueOnce(Response.json({ kind: 'binary', path: 'src/a.ts', display: 'src/a.ts' }))
     await tabFace.loadChangesDiff(SessionId('child-session'), 5, 1)
-    expect(tabFace.hooks.changesDiff.getSnapshot()['/api/changes.diff?sessionId=child-session&seq=5&index=1']).toEqual({ kind: 'binary', path: 'src/a.ts', display: 'src/a.ts' })
+    expect(tabFace.hooks.changesDiff.getSnapshot()['api/changes.diff?sessionId=child-session&seq=5&index=1']).toEqual({ kind: 'binary', path: 'src/a.ts', display: 'src/a.ts' })
     expect(tabFace.hooks.presentedHost).toBe(face.hooks.presentedHost)
     fetcher.mockResolvedValueOnce(Response.json({ name: 'desktop', available: true, fileManager: 'finder' }))
     await tabFace.reloadPresentedHost()
     fetcher.mockResolvedValueOnce(new Response(null, { status: 204 }))
     await tabFace.openChanged(SessionId('child-session'), 5, 1)
-    expect(tabFace.hooks.presentedOpen.getSnapshot()['/api/changes.open?sessionId=child-session&seq=5&index=1']).toBe('opened')
+    expect(tabFace.hooks.presentedOpen.getSnapshot()['api/changes.open?sessionId=child-session&seq=5&index=1']).toBe('opened')
     ctx.emit('connection/reset')
     expect(tabFace.hooks.changesDiff.getSnapshot()).toEqual({})
     // A turn that produced nothing yields no vocabulary at all.
@@ -928,7 +928,7 @@ it('lets one delivered file span the complete row without an expansion control',
 
 it.each(['opening', 'opened', 'error'] as const)('shows the %s state and permits retries after failure', (phase) => {
   const controller = new PresentedOpenController()
-  controller.state.set({ '/api/present.open?sessionId=session&seq=2&index=0': phase })
+  controller.state.set({ 'api/present.open?sessionId=session&seq=2&index=0': phase })
   const props = openProps(controller)
   const view = render(<Deliverables {...props} matched={{ changes: null, presented: [
     { path: 'report.txt', seq: 2, index: 0 },

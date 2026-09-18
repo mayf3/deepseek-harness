@@ -8,12 +8,14 @@ import {
 import type { ClientConnectionRpc, ConnectionRpcResult } from '../rpc.ts'
 import { randomUuid } from './random-uuid.ts'
 
-const INTERNAL_BASE = 'http://dsh.internal'
 const CHANNEL_PATTERN = /^\/[A-Za-z0-9._~-]+$/
 const ENDPOINT_SEGMENT_PATTERN = /^[A-Za-z0-9_$.-]+$/
 
-/** Transport this caller posts through; same signature as the global `fetch`. */
-export type RpcFetch = (input: URL, init: RequestInit) => Promise<Response>
+/**
+ * Transport this caller posts through; same signature as the global `fetch`.
+ * Receives the document-relative route so a carrier resolves it against its own base.
+ */
+export type RpcFetch = (input: string | URL, init: RequestInit) => Promise<Response>
 
 /** Worker-local opener for decoded Gateway Remote streams. */
 export type RpcStreamOpen = (
@@ -40,8 +42,11 @@ export function createWebConnectionRpc(doFetch?: RpcFetch, openStream?: RpcStrea
         method: endpoint,
         payload,
       }
+      // The channel key is absolute; a page posts the document-relative form, and
+      // a carrier that resolves against the Host root accepts the same form.
+      const route = `${channel}/${endpoint}`.slice(1)
       const response = await send(
-        new URL(`${channel}/${endpoint}`, resolveBase()),
+        route,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -103,11 +108,6 @@ function parseConnectionResponse(value: unknown): {
 
 function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function resolveBase(): string {
-  const location = (globalThis as { location?: { origin?: string } }).location
-  return location?.origin !== undefined && location.origin !== 'null' ? location.origin : INTERNAL_BASE
 }
 
 function assertTarget(channel: string, endpoint: string): void {

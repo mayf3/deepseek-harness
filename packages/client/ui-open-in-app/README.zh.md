@@ -41,7 +41,7 @@ kind: "package-reference"
 <details>
 <summary>实现内幕——点击展开</summary>
 
-插件通过标准 slot/inject 机制把分体按钮注册到 `conversation.session.header.utilities`，并以一个 effect 注册 `open-in-app` 词典。一个页面生命周期的 controller（[`src/client/controller.ts`](src/client/controller.ts)）拥有每页一次的可用性读取、持久化选择的 snapshot store 与启动 POST；组件经 inject 的 `hooks` 隔间接收两个 store，因此所有会话头部共享同一份事实。路由路径与 wire 载荷类型从主机包的浏览器安全子路径 `@deepseek-ai/dsh-host-open-in-app/shared` 内联。飞行中的启动由 ref 守卫——启动期间的重复点击与菜单选择被整体忽略（否则会持久化一个该手势从未打开的选择）——busy/error 视觉由围绕 `launch` promise 的定时器驱动。
+插件通过标准 slot/inject 机制把分体按钮注册到 `conversation.session.header.utilities`，并以一个 effect 注册 `open-in-app` 词典。一个页面生命周期的 controller（[`src/client/controller.ts`](src/client/controller.ts)）拥有每页一次的可用性读取、持久化选择的 snapshot store 与启动 POST；组件经 inject 的 `hooks` 隔间接收两个 store，因此所有会话头部共享同一份事实。文档相对的路由形式与 wire 载荷类型来自主机包的浏览器安全子路径 `@deepseek-ai/dsh-host-open-in-app/shared`。飞行中的启动由 ref 守卫——启动期间的重复点击与菜单选择被整体忽略（否则会持久化一个该手势从未打开的选择）——busy/error 视觉由围绕 `launch` promise 的定时器驱动。
 
 文件控件注册在文档预览的 `sidebar.right.tab.document.actions` 与 `sidebar.right.tab.document.unpreviewable` 子 slot 上，owner props 携带文件在执行环境中的绝对路径。第二个页面生命周期的 controller（[`src/client/open-path.ts`](src/client/open-path.ts)）每页读取一次 Session Remote 的 `session.canOpenWorkspacePath`，写进两个控件共用的桌面 snapshot store，并把每个手势交给 `session.openWorkspacePath`，带上路径，定位时再带 `action: 'reveal'`；被拒绝或抛错的调用解析为控件要提示的失败种类。两个控件共用一个手势 hook，由它持有 pending 标志和 toast，所以一个控件的手势不会改变另一个控件的样子。节点半边是一个空 `apply`，让插件出现在主机侧的插件名册上。
 
