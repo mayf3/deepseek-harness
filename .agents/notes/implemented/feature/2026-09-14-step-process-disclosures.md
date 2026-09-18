@@ -26,7 +26,7 @@ Whole-turn folding checks each Turn independently: while history is paginated, i
 
 The whole-turn control appears at the start event and remains expanded and disabled during execution. Compact uses it as the sole turn-level activity label, displaying `Deep diving for …` (Chinese `深度求索中，用时…`) with a minimum of 1s and no leading icon; running, completed, stopped, and failed whole-Turn labels all use tertiary text at one pixel below the normal status size; Compact, Detailed, and Expanded use this whole-Turn control as the only turn-level running label. Its live clock refreshes once per second, shows whole seconds without padding single-digit seconds, and changes from minutes to hours at exactly 60 minutes. Normal completion fixes the clock, displays `Took …`, and defaults to collapsed. Cancellation and failure display `Stopped` and `Failed` respectively and remain expanded with a disabled control.
 
-Work details provides Compact, Detailed, and Expanded defaults for the two disclosure levels. Legacy normal settings resolve to Expanded on read; new choices persist only current values.
+Work details provides Compact, Detailed, and Expanded defaults for the two disclosure levels. Legacy compact settings remain Compact and normal settings resolve to Detailed on read; Expanded is a new option; new choices persist only current values.
 
 ## Consequences
 

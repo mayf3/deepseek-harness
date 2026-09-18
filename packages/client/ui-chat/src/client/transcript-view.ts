@@ -34,7 +34,7 @@ export class TranscriptViewPolicy {
   private adopt(): void {
     const section = this.host.getSnapshot().value
     if (section === undefined) return
-    const mode = section.transcriptView === 'normal' ? 'expanded' : section.transcriptView
+    const mode = section.transcriptView === 'normal' ? 'detailed' : section.transcriptView
     if (this.mode.getSnapshot() !== mode) this.mode.set(mode)
   }
 }
