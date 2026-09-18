@@ -23,6 +23,8 @@ interface AnchorProps {
   onFocus?: FocusEventHandler | undefined
   onBlur?: FocusEventHandler | undefined
   onPointerDown?: PointerEventHandler | undefined
+  onPointerUp?: PointerEventHandler | undefined
+  onPointerCancel?: PointerEventHandler | undefined
 }
 
 type TooltipLabel = string | (() => string)
