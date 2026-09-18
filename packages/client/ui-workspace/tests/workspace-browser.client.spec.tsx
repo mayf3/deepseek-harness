@@ -871,7 +871,7 @@ describe('WorkspaceBrowser', () => {
     })
   })
 
-  it('teaches the filter once, then confirms later archives with an undo/filter toast', async () => {
+  it('confirms every archive with an undo/filter toast', async () => {
     const archiveSession = vi.fn(async () => {})
     const unarchiveSession = vi.fn(async () => {})
     const b = mount({
@@ -886,14 +886,7 @@ describe('WorkspaceBrowser', () => {
     }
     const flush = () => act(async () => { await Promise.resolve() })
 
-    // First archive: the anchored callout teaches the filter, no toast.
-    archive('one')
-    await flush()
-    expect(screen.getByText('已归档的会话可以通过筛选展示')).toBeTruthy()
-    expect(screen.queryByRole('alert')).toBeNull()
-    expect(b.store.getSnapshot().archiveHintSeen).toBe(true)
-
-    // Later archives confirm with the actionable toast; a back-to-back
+    // Every archive confirms with the actionable toast; a back-to-back
     // archive replaces the still-showing toast.
     archive('two')
     await flush()

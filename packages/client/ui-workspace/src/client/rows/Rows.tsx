@@ -11,8 +11,8 @@ import clsx from 'clsx'
 import {
   HoverCard, IconAlarmClockOutlineRegular, IconArchiveOutlineRegular, IconBranchOutlineRegular,
   IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderCloseRegular, IconFolderOpenRegular,
-  IconPinFillRegular, IconPinOutlineRegular, IconPlusOutlineMedium, IconTrashOutlineRegular, IconTriangleRightFillRegular,
-  IconUnarchiveOutlineRegular, Menu, relativeTime, StateDot,
+  IconNewChatOutlineRegular, IconPinFillRegular, IconPinOutlineRegular, IconTrashOutlineRegular,
+  IconTriangleRightFillRegular, IconUnarchiveOutlineRegular, Menu, relativeTime, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
@@ -26,30 +26,6 @@ type RowTranslate = WorkspaceBrowserProps['t']
 /** Row display title: blank rows show the localized New Session label. */
 function displayTitle(node: SessionNode, t: RowTranslate): string {
   return node.blank ? t('session.new') : node.title
-}
-
-/**
- * Reveal a title wider than its one-line cell while its row is hovered: the
- * title clips its own text, so the far edge (a fork's incremented title, for
- * example) is reachable by scrolling the element to its end. Leaving returns it
- * to the start in one step, because the resting ellipsis and the narrowed cell
- * would otherwise meet the text while it travelled back. A title that fits has
- * no scroll range to move, and the stylesheet decides whether either move
- * glides or jumps.
- * @param title - the row's clipping title element.
- * @param revealed - whether the pointer is on the row.
- */
-function revealClippedTitle(title: HTMLSpanElement | null, revealed: boolean): void {
-  /* v8 ignore next -- defensive: the title span renders unconditionally. */
-  if (title === null) return
-  if (revealed) {
-    title.scrollLeft = title.scrollWidth - title.clientWidth
-    return
-  }
-  // jsdom implements no scrollTo; the lane's direct assignment is instant there
-  // anyway, so both paths land on the same resting position.
-  if (typeof title.scrollTo === 'function') title.scrollTo({ left: 0, behavior: 'instant' })
-  else title.scrollLeft = 0
 }
 
 /** Localized compact relative time ("刚刚"/"5分钟" in zh, "now"/"5min" in en). */
@@ -217,7 +193,7 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
           aria-label={t('actions.newSession.aria', { name: label })}
           onClick={(e) => { e.stopPropagation(); onCreate() }}
         >
-          <IconPlusOutlineMedium />
+          <IconNewChatOutlineRegular />
         </button>
       </span>
     </div>
@@ -351,7 +327,7 @@ function SessionHoverContent({ node, now, t }: { node: SessionNode; now: number;
   // On archived rows the archived line already says the session is inactive,
   // so resting statuses (idle/completed) drop; live activity still shows.
   const statuses = sessionStatuses(node, t)
-    .filter(status => !(node.archived && status.state === 'done'))
+    .filter(status => !(node.archived && (status.state === 'done' || status.state === 'idle')))
   return (
     <div className={css.hoverContent}>
       <div className={css.hoverTitle}>{displayTitle(node, t)}</div>
@@ -491,7 +467,6 @@ export function SessionNodeItem({
   const draggable = drag !== undefined && !row.blank && !row.archived
   const [menuOpen, setMenuOpen] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
-  const titleRef = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     if (onReveal === undefined) return
     rowRef.current?.scrollIntoView({ block: 'nearest' })
@@ -504,8 +479,7 @@ export function SessionNodeItem({
     ? [
       { id: 'rename', label: t('rename'), icon: <IconEditOutlineRegular /> },
       { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutlineRegular /> },
-      // 20-native glyph in the menu's 16px icon slot (Menu.module.css .itemIcon).
-      { id: 'unarchive', label: t('menu.unarchiveSession'), icon: <IconUnarchiveOutlineRegular size={16} /> },
+      { id: 'unarchive', label: t('menu.unarchiveSession'), icon: <IconUnarchiveOutlineRegular size={14} /> },
     ]
     : [
       {
@@ -515,7 +489,7 @@ export function SessionNodeItem({
       },
       { id: 'rename', label: t('rename'), icon: <IconEditOutlineRegular /> },
       { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutlineRegular /> },
-      { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutlineRegular size={16} /> },
+      { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutlineRegular size={14} /> },
     ]
   // Figma session cell: pad 8, status slot 16, then a 4px title gap.
   const ownRow = (
@@ -530,8 +504,6 @@ export function SessionNodeItem({
       role="treeitem"
       aria-selected={selected}
       onClick={() => { onOpen(node.id) }}
-      onPointerEnter={() => { revealClippedTitle(titleRef.current, true) }}
-      onPointerLeave={() => { revealClippedTitle(titleRef.current, false) }}
       draggable={draggable}
       onDragStart={!draggable
         ? undefined
@@ -568,7 +540,6 @@ export function SessionNodeItem({
         </span>
       )}
       <span
-        ref={titleRef}
         className={css.title}
         onDoubleClick={row.blank
           ? undefined
@@ -616,7 +587,7 @@ export function SessionNodeItem({
                 aria-label={t('actions.session.aria', { name: title })}
                 onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
               >
-                <IconEllipsisOutlineRegular size={14} />
+                <IconEllipsisOutlineRegular />
               </button>
             )}
           />

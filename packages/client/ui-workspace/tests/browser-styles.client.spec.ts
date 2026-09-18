@@ -108,11 +108,7 @@ describe('WorkspaceBrowser.module.css list', () => {
       .toBe('var(--dsw-alias-interactive-bg-hover)')
   })
 
-  it('reveals a clipped session title by scrolling it on row hover', () => {
-    // Smooth versus reduced motion is pinned as a computed style in
-    // apps/web/tests/sidebar-title-hover-scroll.e2e.ts: this helper merges
-    // same-selector rules across media queries, so the reduce override would
-    // mask the smooth declaration here.
+  it('fades a hovered title out through the mask instead of the resting ellipsis', () => {
     expect(rowDeclarations('.sessionRow .title')?.get('flex')).toBe('1')
     expect(rowDeclarations('.sessionRow:hover .title')?.get('text-overflow')).toBe('clip')
   })

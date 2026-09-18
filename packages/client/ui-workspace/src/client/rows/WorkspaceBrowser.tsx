@@ -9,14 +9,15 @@
  * menu in between; the flow and its error dialog live in WorkspacePicker
  * (same package — direct composition, no slot between them).
  */
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import autoAnimate, { type AnimationController, type AutoAnimationPlugin } from '@formkit/auto-animate'
 import {
-  Button, IconArchiveCheckOutlineRegular, IconArchiveOutlineRegular, IconChevronsUpDownOutlineRegular,
-  IconClockOutlineRegular, IconCloseFillRegular, IconFlatListOutlineRegular, IconFolderCloseRegular,
-  IconProjectAddOutlineRegular, IconSearchOutlineRegular, IconSlidersTwoOutlineRegular,
-  IconWarningOutlineRegular, IconWorkspaceTreeOutlineRegular, Menu, Modal, Toast, Tooltip,
+  Button, IconArchiveCheckOutlineRegular, IconArchiveOutlineRegular, IconCheckOutlineRegular,
+  IconChevronsUpDownOutlineRegular, IconClockOutlineRegular, IconCloseFillRegular,
+  IconFlatListOutlineRegular, IconFolderCloseRegular, IconProjectAddOutlineRegular,
+  IconSearchOutlineRegular, IconSlidersTwoOutlineRegular, IconWarningOutlineRegular,
+  IconWorkspaceTreeOutlineRegular, Menu, Modal, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   SessionListState, SessionSearchResultItem,
@@ -245,7 +246,7 @@ function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, onGroupPick, onOrde
         { id: 'updated', label: t('orderBy.updated'), icon: <IconClockOutlineRegular /> },
         { type: 'separator' as const, id: 'archived-filter-separator' },
         { type: 'label' as const, id: 'filter-by', text: t('filterBy.label') },
-        { id: 'show-archived', label: t('viewOptions.showArchived'), icon: <IconArchiveOutlineRegular size={16} /> },
+        { id: 'show-archived', label: t('viewOptions.showArchived'), icon: <IconArchiveOutlineRegular /> },
         { id: 'only-archived', label: t('viewOptions.onlyArchived'), icon: <IconArchiveCheckOutlineRegular /> },
       ]}
       selectedIds={[
@@ -265,6 +266,7 @@ function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, onGroupPick, onOrde
       }}
       align="end"
       dense
+      listClassName={css.viewOptionsMenu}
       // Portal: the section header clips overflow, so an in-place list would
       // be cut off at the header's bounds.
       portal
@@ -285,79 +287,8 @@ function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, onGroupPick, onOrde
   )
 }
 
-/** Hold before the archive callout dismisses itself. */
-const ARCHIVE_HINT_HOLD_MS = 3000
 /** Hold for the actionable post-archive toast: two buttons need a longer read-and-react window than a plain notice. */
 const ARCHIVE_TOAST_HOLD_MS = 6000
-/** Minimum gap between the archive callout and the viewport edges. */
-const ARCHIVE_HINT_EDGE_MARGIN = 12
-
-/**
- * Post-archive callout bubble under the view-options button, naming the filter
- * that reveals archived rows. Fixed positioning escapes the section header's
- * overflow clipping without a portal (the Tooltip primitive's approach).
- * The bubble centers on the anchor but slides back inside the viewport when
- * the edges refuse it; the arrow stays on the anchor center either way.
- * Dismissed by its hold timer or any pointer press on the page.
- */
-function ArchiveFilterHint({ anchor, text, onDone }: {
-  anchor: HTMLElement | null
-  text: string
-  onDone: () => void
-}) {
-  useEffect(() => {
-    const timer = setTimeout(onDone, ARCHIVE_HINT_HOLD_MS)
-    // Capture phase: a press anywhere dismisses, even when the target stops
-    // propagation (menus, rows).
-    const dismiss = (): void => { onDone() }
-    document.addEventListener('pointerdown', dismiss, true)
-    return () => {
-      clearTimeout(timer)
-      document.removeEventListener('pointerdown', dismiss, true)
-    }
-  }, [onDone])
-  const bubble = useRef<HTMLSpanElement | null>(null)
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
-  // Horizontal slide applied to keep the bubble inside the viewport; the
-  // arrow compensates by the same amount to keep pointing at the anchor.
-  const [dx, setDx] = useState(0)
-  useLayoutEffect(() => {
-    if (anchor === null) return
-    const measure = (): void => {
-      const rect = anchor.getBoundingClientRect()
-      setPos({ x: rect.left + rect.width / 2, y: rect.bottom + 8 })
-    }
-    measure()
-    window.addEventListener('resize', measure)
-    return () => { window.removeEventListener('resize', measure) }
-  }, [anchor])
-  useLayoutEffect(() => {
-    const el = bubble.current
-    if (el === null || pos === null) return
-    // Reset first so a larger viewport releases a previous slide.
-    el.style.left = `${String(pos.x)}px`
-    const r = el.getBoundingClientRect()
-    let slide = 0
-    if (r.right > window.innerWidth - ARCHIVE_HINT_EDGE_MARGIN) {
-      slide = window.innerWidth - ARCHIVE_HINT_EDGE_MARGIN - r.right
-    }
-    if (r.left + slide < ARCHIVE_HINT_EDGE_MARGIN) slide = ARCHIVE_HINT_EDGE_MARGIN - r.left
-    el.style.left = `${String(pos.x + slide)}px`
-    setDx(slide)
-  }, [pos])
-  if (pos === null) return null
-  return (
-    <span
-      ref={bubble}
-      className={css.archiveHint}
-      role="status"
-      style={{ left: pos.x + dx, top: pos.y }}
-    >
-      <span className={css.archiveHintArrow} style={{ left: `calc(50% - ${String(dx)}px)` }} />
-      {text}
-    </span>
-  )
-}
 
 /** In-flight root-row drag: source identity plus the current insert marker. */
 interface DragState {
@@ -979,7 +910,6 @@ function SearchResults({
     [list, workspaces, query, archivedSessionIds, archivedFilter, statuses, currentRemote, resultLimit],
   )
   const pending = currentRemote.status === 'loading'
-  const failed = currentRemote.status === 'error'
   const currentId = panelActive
     ? undefined
     : Object.values(list.byId).find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
@@ -1079,11 +1009,7 @@ export function WorkspaceBrowser({
   const archivedFilter = useStore(s => s.archivedFilter ?? 'default')
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
-  const archiveHintSeen = useStore(s => s.archiveHintSeen)
-  // Archive callout under the view-options button; the seq keys remounts so
-  // consecutive archives restart the hold.
   const viewOptionsButton = useRef<HTMLButtonElement | null>(null)
-  const [archiveHintSeq, setArchiveHintSeq] = useState(0)
   // Each bump opens the view-options menu (the archive toast's filter action).
   const [viewOptionsOpenSeq, setViewOptionsOpenSeq] = useState(0)
   // One transient banner at a time; the seq keys remounts so a repeat message restarts its hold.
@@ -1389,14 +1315,6 @@ export function WorkspaceBrowser({
   // same posture as reorder rejections.
   const onSessionArchive = (sessionId: SessionNode['id']) => {
     archiveSession(sessionId).then(() => {
-      // The first archive teaches the filter with the anchored callout; every
-      // later archive confirms with an actionable toast instead (undo the
-      // archive, or open the view-options menu on the filter items).
-      if (!archiveHintSeen) {
-        actions.markArchiveHintSeen()
-        setArchiveHintSeq(seq => seq + 1)
-        return
-      }
       setToast(current => ({
         text: t('toast.archived'),
         seq: (current?.seq ?? 0) + 1,
@@ -1779,18 +1697,10 @@ export function WorkspaceBrowser({
           key={`toast-${String(toast.seq)}`}
           text={toast.text}
           {...toast.tone === 'success'
-            ? { tone: 'success' as const }
+            ? { icon: <span className={css.toastIcon}><IconCheckOutlineRegular size={12} /></span> }
             : { icon: <IconWarningOutlineRegular /> }}
           {...toast.actions === undefined ? {} : { actions: toast.actions, holdMs: ARCHIVE_TOAST_HOLD_MS }}
           onDone={() => { setToast(null) }}
-        />
-      )}
-      {archiveHintSeq > 0 && (
-        <ArchiveFilterHint
-          key={`hint-${String(archiveHintSeq)}`}
-          anchor={viewOptionsButton.current}
-          text={t('hint.archivedFilter')}
-          onDone={() => { setArchiveHintSeq(0) }}
         />
       )}
     </div>

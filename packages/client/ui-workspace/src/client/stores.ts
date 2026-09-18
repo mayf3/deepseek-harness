@@ -30,8 +30,6 @@ type WorkspaceViewState = {
    * fallback at the rehydration boundary.
    */
   archivedFilter: ArchivedFilter
-  /** The one-time hint pointing at the view menu after the first archive has been shown. */
-  archiveHintSeen: boolean
 }
 
 /**
@@ -58,7 +56,6 @@ type WorkspaceViewActions = {
     initialOrders: Readonly<Record<string, readonly string[]>>,
   ) => void
   setArchivedFilter: (draft: WorkspaceViewState, filter: ArchivedFilter) => void
-  markArchiveHintSeen: (draft: WorkspaceViewState) => void
 }
 
 /** Copy read-only projections into the persisted mutable store representation. */
@@ -80,7 +77,6 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
       groupExpansion: {},
       sessionOrderByAccount: {},
       archivedFilter: 'default',
-      archiveHintSeen: false,
     }),
     persist: 'dsh.workspace.view.v5',
     actions: {
@@ -111,7 +107,6 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
         d.sessionOrderByAccount[accountKey] = [...order]
       },
       setArchivedFilter: (d, filter: ArchivedFilter) => { d.archivedFilter = filter },
-      markArchiveHintSeen: (d) => { d.archiveHintSeen = true },
     },
   })
 }

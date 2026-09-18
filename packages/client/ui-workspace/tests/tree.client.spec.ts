@@ -667,13 +667,6 @@ describe('createWorkspaceViewStore', () => {
     expect(store.getSnapshot().sessionOrderByAccount).toEqual({})
   })
 
-  it('records the one-time archive hint', () => {
-    const store = createWorkspaceViewStore().create()
-    expect(store.getSnapshot().archiveHintSeen).toBe(false)
-    store.actions.markArchiveHintSeen()
-    expect(store.getSnapshot().archiveHintSeen).toBe(true)
-  })
-
   it('removes view state outside the retained Workspace key set', () => {
     const store = createWorkspaceViewStore().create()
     store.actions.setGroupExpanded('', true)

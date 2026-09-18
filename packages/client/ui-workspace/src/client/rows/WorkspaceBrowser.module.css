@@ -34,6 +34,12 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* View-options dropdown card: labels are short, so a content-sized card reads
+   cramped and its width shifts with the locale — hold a stable floor. */
+.viewOptionsMenu {
+  min-width: 200px;
+}
+
 /* Section header: title, an inline search control, and the two trailing
    actions. Expanding search collapses the action cluster and takes its room. */
 .sectionHeader {
@@ -550,48 +556,21 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Post-archive callout bubble (tooltip visual): centered under the
-   view-options button, sliding inside the viewport when needed while the
-   arrow stays on the anchor. */
-.archiveHint {
-  position: fixed;
-  z-index: 100;
-  width: max-content;
-  max-width: 50vw;
-  padding: 3px 7px;
-  border-radius: 8px;
-  background: var(--dsw-alias-tooltip-bg);
-  color: var(--dsw-static-neutral-bluish-00);
-  font-size: 13px;
-  line-height: 20px;
-  transform: translateX(-50%);
-  pointer-events: none;
-  animation: archive-hint-in 150ms var(--ds-ease-in-out);
-}
-
-/* Upward triangle riding the bubble's top edge; its inline `left` tracks the
-   anchor center when the bubble itself has been slid off-center. */
-.archiveHintArrow {
-  position: absolute;
-  top: -5px;
-  width: 0;
-  height: 0;
-  transform: translateX(-50%);
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-bottom: 5px solid var(--dsw-alias-tooltip-bg);
-}
-
-@keyframes archive-hint-in {
-  from { opacity: 0; }
+/* The design's ringed green check for the success toast; the Toast icon seat
+   defaults to the warning tint. */
+.toastIcon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--dsw-alias-state-success-primary);
+  border-radius: 50%;
+  corner-shape: round;
+  color: var(--dsw-alias-state-success-primary);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .wide {
-    animation: none;
-  }
-
-  .archiveHint {
     animation: none;
   }
 
