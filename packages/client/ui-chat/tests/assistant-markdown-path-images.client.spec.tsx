@@ -25,6 +25,7 @@ describe('localPathMediaUrl', () => {
   })
 
   it('keeps non-HTTP transports inert', () => {
+    expect(localPathMediaUrl('dsh-app:', 'dsh-app://app', '/tmp/graph.png')).toBeUndefined()
     expect(localPathMediaUrl('file:', 'file:///app', '/tmp/graph.png')).toBeUndefined()
     expect(localPathMediaUrl('ws:', ORIGIN, '/tmp/graph.png')).toBeUndefined()
   })

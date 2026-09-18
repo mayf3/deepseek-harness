@@ -474,43 +474,50 @@ async function main(): Promise<void> {
         if (manual) await Promise.all([checkPolicyManually(), updateSchedule.check(true)])
         return
       }
-      let state = updates.state
-      if (manual || state.phase === 'idle' || (state.phase === 'error' && state.failedOperation === 'check')) {
-        const controller = new AbortController()
-        ordinaryDialogs.add(controller)
-        const progress = mainWindow === undefined ? Promise.resolve() : updateDialog.show(mainWindow, { type: 'info', title: messages.updateCheckTitle,
-          message: messages.updateChecking, buttons: [messages.later], cancelId: 0, signal: controller.signal })
-        try {
+      let controller: AbortController | undefined
+      let progress: Promise<unknown> | undefined
+      try {
+        let state = updates.state
+        if (manual || state.phase === 'idle' || (state.phase === 'error' && state.failedOperation === 'check')) {
+          controller = new AbortController()
+          ordinaryDialogs.add(controller)
+          progress = mainWindow === undefined ? Promise.resolve() : updateDialog.show(mainWindow, { type: 'info', title: messages.updateCheckTitle,
+            message: messages.updateChecking, buttons: [messages.later], cancelId: 0, signal: controller.signal })
           if (!joinedPolicyAuthentication) {
             void checkPolicyManually('deferred').catch((error: unknown) => { console.error(error) })
           }
           state = await updateSchedule.check(true)
-        } finally { controller.abort(); ordinaryDialogs.delete(controller); await progress }
-      }
-      if (isMandatory()) { mandatoryUI?.focus(); return }
-      if (state.phase === 'error' && state.failedOperation === 'check') { await showUpdateFailure(state); return }
-      if (state.phase === 'idle') {
-        await ordinaryMessageBox({ type: 'info', title: messages.updateCheckTitle,
-          message: formatDesktopMessage(messages.updateCurrent, { version: app.getVersion() }) })
-        return
-      }
-      if (state.phase === 'ready' || (state.phase === 'error' && state.failedOperation === 'install')) {
-        if (state.version !== undefined) {
-          failedOperation = 'install'
-          await showUpdateFailure(await updates.install(state.version))
         }
-        return
-      }
-      if (state.phase !== 'available' && !(state.phase === 'error' && state.failedOperation === 'download')) return
-      if (manual) {
-        const result = await ordinaryMessageBox({ title: messages.updateCheckTitle, message: messages.updateAvailable,
-          detail: formatDesktopMessage(messages.updateDetail, { version: state.version ?? '' }),
-          buttons: [messages.updateDownload], cancelId: 1 })
-        if (result.response !== 0) return
-      }
-      if (!isMandatory() && state.version !== undefined) {
-        failedOperation = 'download'
-        await showUpdateFailure(await downloadUpdate(state.version))
+        if (isMandatory()) { mandatoryUI?.focus(); return }
+        if (state.phase === 'error' && state.failedOperation === 'check') { await showUpdateFailure(state); return }
+        if (state.phase === 'idle') {
+          await ordinaryMessageBox({ type: 'info', title: messages.updateCheckTitle,
+            message: formatDesktopMessage(messages.updateCurrent, { version: app.getVersion() }) })
+          return
+        }
+        if (state.phase === 'ready' || (state.phase === 'error' && state.failedOperation === 'install')) {
+          if (state.version !== undefined) {
+            failedOperation = 'install'
+            await showUpdateFailure(await updates.install(state.version))
+          }
+          return
+        }
+        if (state.phase !== 'available' && !(state.phase === 'error' && state.failedOperation === 'download')) return
+        if (manual) {
+          const result = await ordinaryMessageBox({ title: messages.updateCheckTitle, message: messages.updateAvailable,
+            detail: formatDesktopMessage(messages.updateDetail, { version: state.version ?? '' }),
+            buttons: [messages.updateDownload], cancelId: 1 })
+          if (result.response !== 0) return
+        }
+        if (!isMandatory() && state.version !== undefined) {
+          controller?.abort()
+          failedOperation = 'download'
+          await showUpdateFailure(await downloadUpdate(state.version))
+        }
+      } finally {
+        controller?.abort()
+        if (controller !== undefined) ordinaryDialogs.delete(controller)
+        await progress
       }
     }).catch((error: unknown) => showUpdateFailure({ phase: 'error', failedOperation,
       message: desktopErrorState(error).message }))
@@ -728,7 +735,8 @@ async function main(): Promise<void> {
   const policyConfig = resolveDesktopPolicyConfig(policyInput, !app.isPackaged)
   if (policyConfig !== undefined) {
     if (policyConfig.authentication === 'feishu-test') {
-      policyAuth = new DesktopPolicyTestAuth(policyConfig.origin, locale, () => mandatoryUI?.confirmationWindow ?? mainWindow,
+      policyAuth = new DesktopPolicyTestAuth(policyConfig.origin, policyConfig.allowedAuthOrigins, locale,
+        () => mandatoryUI?.confirmationWindow ?? mainWindow,
         (event) => { console.info(`desktop policy authentication: ${event}`); updateJournal?.action(`policy-login-${event}`) })
     }
     const bundleId = app.isPackaged

@@ -228,7 +228,9 @@ function CatalogLoadingRows({
         className={`${css.row} ${css.disabled} ${css.loadingRow}`}
       >
         <span className={css.disclosureSpace} />
-        <StateDot state="ongoing" />
+        <span className={css.rowActivitySlot}>
+          <StateDot state="ongoing" />
+        </span>
         <span className={css.content}>
           <span className={css.label}>{t('loading.label')}</span>
         </span>
@@ -283,7 +285,9 @@ function CatalogRows({
                 title={reason}
               >
                 {reserveDisclosure && <span className={css.disclosureSpace} />}
-                <StateDot state="error" />
+                <span className={css.rowActivitySlot}>
+                  <StateDot state="error" />
+                </span>
                 <span className={css.content}>
                   <span className={css.label}>{entry.id}</span>
                   <span className={css.summary}>{reason}</span>
@@ -302,7 +306,13 @@ function CatalogRows({
         const summary = summaries[entry.id]
         const label = entry.label ?? entry.id
         const mode = entry.mode === 'one-shot' ? t('mode.oneShot') : t('mode.continuable')
-        const activity = entry.activity === 'running' ? t('activity.running') : t('activity.inactive')
+        const completed = entry.activity === 'inactive'
+          && summary?.projectionValues?.subagentTiming?.lastTurnCompleted === true
+        const activity = entry.activity === 'running'
+          ? t('activity.running')
+          : completed
+            ? t('activity.completed')
+            : t('activity.inactive')
         const secondary = [summary?.title, mode, activity]
           .filter(value => value !== undefined)
           .join(' · ')
@@ -382,7 +392,9 @@ function CatalogRows({
                   </button>
                 )}
               <div className={css.clickarea}>
-                <StateDot state={entry.activity === 'running' ? 'ongoing' : 'idle'} />
+                <span className={css.rowActivitySlot}>
+                  <StateDot state={entry.activity === 'running' ? 'ongoing' : completed ? 'done' : 'idle'} />
+                </span>
                 <span className={css.content}>
                   <span className={`${css.label} ${isCurrent ? css.currentLabel : ''}`}>{label}</span>
                   <span className={css.summary}>{secondary}</span>

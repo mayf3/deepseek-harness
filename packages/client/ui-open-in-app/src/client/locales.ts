@@ -1,4 +1,4 @@
-/** `open-in-app` namespace dictionaries. */
+/** `open-in-app` namespace dictionaries: the workspace split button and the document-preview path controls. */
 
 /** Dictionary namespace owned by this plugin. */
 export const NS = 'open-in-app'
@@ -44,6 +44,14 @@ export const zh = {
   'open.error': '打开失败',
   'menu.toggle': '选择打开方式',
   'menu.aria': '打开方式',
+  'path.open': '打开',
+  'path.open.tooltip': '用默认应用打开',
+  'path.more': '更多打开方式',
+  'path.defaultApp': '用默认应用打开',
+  'path.reveal': '显示文件位置',
+  'path.unpreviewable': '用默认应用打开',
+  'path.openError': '打开失败，请重试',
+  'path.revealError': '无法显示文件位置，请重试',
   ...PRODUCT_NAMES,
   'app.finder': '访达',
   'app.explorer': '文件资源管理器',
@@ -58,6 +66,14 @@ export const en: Record<OpenInAppKey, string> = {
   'open.error': 'Failed to open',
   'menu.toggle': 'Choose an app to open in',
   'menu.aria': 'Open in',
+  'path.open': 'Open',
+  'path.open.tooltip': 'Open in default app',
+  'path.more': 'More ways to open',
+  'path.defaultApp': 'Open in default app',
+  'path.reveal': 'Show file location',
+  'path.unpreviewable': 'Open in default app',
+  'path.openError': 'Could not open. Try again.',
+  'path.revealError': 'Could not show the file location. Try again.',
   ...PRODUCT_NAMES,
   'app.finder': 'Finder',
   'app.explorer': 'File Explorer',
