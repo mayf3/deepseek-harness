@@ -559,10 +559,10 @@ describe('workspace browser rows', () => {
     const node: SessionNode = {
       id: sid(pendingInteraction), title: 'Needs input', blank: false,
       pendingInteraction, running: false, runningSubagentCount: 0, completed: false,
-      hasActiveSchedule: false, updatedAt: 0,
+      hasActiveSchedule: false, updatedAt: 0, pinned: false, archived: false,
     }
     render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
-      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} t={tEn} />)
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} onUnarchive={vi.fn()} onPin={vi.fn()} t={tEn} />)
     const row = screen.getByRole('treeitem')
     expect(screen.getByText('Needs input').nextElementSibling?.textContent).toBe(compactLabel)
     expect(screen.getByText('Needs input').nextElementSibling?.getAttribute('aria-hidden')).toBe('true')
