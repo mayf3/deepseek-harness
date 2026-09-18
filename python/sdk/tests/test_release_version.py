@@ -26,6 +26,18 @@ def test_release_tag_is_optional_for_non_release_builds() -> None:
     build_python_release.validate_release_tag(None, "1.2.3")
 
 
+def test_wheel_verification_uses_distribution_metadata_not_nested_libraries(tmp_path: Path) -> None:
+    wheel = tmp_path / "sdk.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("nested/library.dist-info/WHEEL", "Tag: cp312-cp312-linux_x86_64\n")
+        archive.writestr("nested/library.dist-info/METADATA", "Name: library\nVersion: 0.0.1\n")
+        archive.writestr("deepseek_harness_sdk-1.2.3.dist-info/WHEEL", "Tag: py3-none-any\n")
+        archive.writestr("deepseek_harness_sdk-1.2.3.dist-info/METADATA",
+                         "Name: deepseek-harness-sdk\nVersion: 1.2.3\nLicense-Expression: MIT\n"
+                         "License-File: LICENSE\nRequires-Dist: deepseek-harness-runtime-bin==1.2.3\n")
+    build_python_release.verify_wheel(wheel, "sdk", "1.2.3", None)
+
+
 def test_release_tag_must_match_repository_version() -> None:
     build_python_release.validate_release_tag("python-v1.2.3", "1.2.3")
 
@@ -124,6 +136,10 @@ def test_stage_runtime_copies_platform_payload(
     office_asset = office / "node_modules" / "@deepseek-ai" / "libreoffice-kit-wasm" / "assets" / "soffice.data"
     office_asset.parent.mkdir(parents=True)
     office_asset.write_bytes(b"office data")
+    resources = executable.with_name(f"{executable.name.removesuffix('.exe')}-resources")
+    resource = resources / "office-skills/scripts/check_office.py"
+    resource.parent.mkdir(parents=True)
+    resource.write_text("checker")
     destination = tmp_path / "staging"
 
     build_python_release.stage_runtime(destination, "1.2.3", executable, executable.name)
@@ -135,6 +151,7 @@ def test_stage_runtime_copies_platform_payload(
         if path.is_file()
     } == expected
     assert (runtime_dir / office.name / office_asset.relative_to(office)).read_bytes() == b"office data"
+    assert (runtime_dir / resources.name / resource.relative_to(resources)).read_text() == "checker"
     pyproject = (destination / "pyproject.toml").read_text()
     assert 'license = "MIT"' in pyproject
     assert 'license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]' in pyproject

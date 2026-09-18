@@ -44,11 +44,11 @@ kind: "package-reference"
 
 `runtime.json` 记录 `desktopVersion`、`platform`（`win32`、`darwin` 或 `linux`）、`arch`、可选的 `payloadDigest`、顶层 `python` 与可选的 `node`/`pnpm` 版本，以及完整的 `pythonPackages` 分发包版本表。声明 pnpm 时必须同时声明 Node.js。numpy、pandas 等 Python 库只出现在 `pythonPackages` 中。条目位于 `dependencies/`：`python/bin/python3`（Windows 为 `python/python.exe`）及其下的 `site-packages`；声明了才有的 `node/bin/node`、`node/node_modules` 与 `pnpm/bin/pnpm.mjs`。平台或架构与当前进程不符的清单被拒绝。
 
-`DSH_PRIMARY_RUNTIME` 非空时，`sdk` profile 启用本工具和 Office skills。profile 从启动目录解析该路径，并加载同级 `office-skills/` 资源。缺少 skill 资源会产生启动警告并使 Office skills 不可用；无效或不完整的运行时 payload 会在首次工具调用时失败。未设置或为空时，两行都禁用。profile patch 可以覆盖任意一行，配置变更需要重启 SDK 进程。
+打包的 `sdk` profile 默认使用随包 Python 和 Office skills；`DSH_PRIMARY_RUNTIME` 覆盖资源位置，空值表示禁用。没有载体默认路径的源码启动仍需显式启用。独立选择 skills 的方式见[运行时配置](../../../python/sdk-runtime/README.zh.md)。缺少 skill 资源会产生启动警告；无效或不完整的外部运行时 payload 在首次工具调用时失败。profile 配置变更需要重启 SDK 进程。
 
 ### 构建载体 payload
 
-在已安装依赖的仓库 checkout 中运行 `CI=true pnpm run prepare:primary-runtime --target linux-x64 --output /tmp/dsh-office`，会生成 `primary-runtime/` 和 `office-skills/`。[共享下载锁](../../../scripts/primary-runtime/lock.json)还覆盖 `mac-arm64`、`mac-x64` 和 `win-x64`。`--python-only` 省略 Node.js 和 pnpm；`--cache` 选择经过哈希校验的归档缓存。入口仅对本机目标执行解释器与 Office 读写检查。跨目标构建必须在部署前到目标主机执行这些检查。
+在已安装依赖的仓库 checkout 中运行 `CI=true pnpm run prepare:primary-runtime --target linux-x64 --output /tmp/dsh-office`，会生成 `primary-runtime/` 和 `office-skills/`。[共享下载锁](../../../scripts/primary-runtime/lock.json)还覆盖 `linux-arm64`、`mac-arm64`、`mac-x64` 和 `win-x64`。`--python-only` 省略 Node.js 和 pnpm；`--cache` 选择经过哈希校验的归档缓存。入口仅对本机目标执行解释器与 Office 读写检查。跨目标构建必须在部署前到目标主机执行这些检查。
 
 容器可将这两个目录复制到不可变镜像层，并将 `DSH_PRIMARY_RUNTIME` 设为 `primary-runtime/` 的绝对路径。SDK 原位查询该 payload。Desktop 使用同一构建器，并保留 Harness-home 安装与签名检查。
 
@@ -114,7 +114,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- Linux 构建目标为 GNU/Linux x64；尚未锁定 Linux ARM64 与 musl payload。
+- Linux 目标需要 glibc；尚未锁定 musl payload。
 - Windows 上原地使用的 payload 须在载体里已可执行；原地模式不修复权限。
 
 <a id="dev-note"></a>

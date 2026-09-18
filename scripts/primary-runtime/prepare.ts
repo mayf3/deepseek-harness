@@ -144,8 +144,8 @@ export async function preparePrimaryRuntime(options: PreparePrimaryRuntimeOption
     await extractTar({ file: await pythonArchive(target, paths.downloads), cwd: dependencies })
     const manifest: PrimaryRuntimeManifest = {
       desktopVersion: options.version,
-      platform: target === 'win-x64' ? 'win32' : target === 'linux-x64' ? 'linux' : 'darwin',
-      arch: target === 'mac-arm64' ? 'arm64' : 'x64',
+      platform: target === 'win-x64' ? 'win32' : target.startsWith('linux-') ? 'linux' : 'darwin',
+      arch: target.endsWith('-arm64') ? 'arm64' : 'x64',
       payloadDigest: primaryRuntimePayloadDigest(target, lock, pnpmVersion),
       python: lock.pythonVersion,
       ...(pnpmVersion === undefined ? {} : { node: lock.nodeVersion, pnpm: pnpmVersion }),

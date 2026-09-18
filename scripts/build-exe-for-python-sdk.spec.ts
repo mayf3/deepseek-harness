@@ -101,6 +101,8 @@ describe('Python runtime executable builder CLI', () => {
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('exec pkg')
     expect(result.stdout).toContain('--sea --targets node24-macos-x64')
+    expect(result.stdout).toContain('prepare Python and Office skills for mac-x64')
+    expect(result.stdout).toContain('deepseek-harness-sdk-runtime-macos-x64-resources')
   })
 
   it('rejects a Windows arm64 product before any build step', () => {

@@ -28,6 +28,10 @@ if (aclRunner !== undefined && process.argv[2] === aclRunner) {
   Reflect.deleteProperty(process.env, 'DSH_PTC_RUNTIME_NODE')
   await import('@deepseek-ai/dsh-ptc-runtime-node/process')
 } else if (selection === undefined) {
+  if (isSea()) {
+    // Carrier default stays separate so process/home environment and profile patches can override it.
+    process.env.DSH_BUNDLED_PRIMARY_RUNTIME = `${process.execPath.replace(/\.exe$/i, '')}-resources/primary-runtime`
+  }
   const { runCli } = await import('@deepseek-ai/dsh/lib/bin.js')
   await runCli()
 } else {

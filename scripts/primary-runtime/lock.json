@@ -98,6 +98,30 @@
           "sha256": "379f8a75cf6eb7eef0af074b55f49ab73b868388a98de14646abcdfa4564bb11"
         }
       ]
+    },
+    "linux-arm64": {
+      "nodeArchive": "linux-arm64.tar.gz",
+      "nodeSha256": "724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5",
+      "pythonTarget": "aarch64-unknown-linux-gnu",
+      "pythonSha256": "577b4bec0793ad1ff0cbff9adbd0df078eddde38a4c41bf5d83ad381a85ee39d",
+      "wheels": [
+        {
+          "url": "https://files.pythonhosted.org/packages/74/78/fcd41e5a0ce4f3f7b003da85825acddae6d7ecb60cf25194741b036ca7d6/numpy-2.3.5-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+          "sha256": "8b973c57ff8e184109db042c842423ff4f60446239bd585a5131cc47f06f789d"
+        },
+        {
+          "url": "https://files.pythonhosted.org/packages/d7/39/327802e0b6d693182403c144edacbc27eb82907b57062f23ef5a4c4a5ea7/pandas-3.0.1-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+          "sha256": "b8e36891080b87823aff3640c78649b91b8ff6eea3c0d70aeabd72ea43ab069b"
+        },
+        {
+          "url": "https://files.pythonhosted.org/packages/25/27/ac8f99618ffd3dde21db0f4d4b1d2ab00c0880595bfd17df103f7f39fd0c/pillow-12.3.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+          "sha256": "d9c7f76c0673154f044e9d78c8655fb4213f6ca31a836df48b40fe5d187717b9"
+        },
+        {
+          "url": "https://files.pythonhosted.org/packages/1e/1c/722e88883173097a1a375153e3c2447eba3060d0231522cf6596e99f4195/lxml-6.1.3-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+          "sha256": "f683dc6300317700025e41d89a43e0276692ded16113a3c43eab704d605c58e5"
+        }
+      ]
     }
   },
   "wheels": [
