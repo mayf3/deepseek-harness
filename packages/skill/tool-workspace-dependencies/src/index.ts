@@ -155,9 +155,17 @@ export function workspaceDependencyPaths(root: string, manifest: PrimaryRuntimeM
   }
 }
 
-function payloadEntries(paths: WorkspaceDependencies): string[] {
-  return [paths.python, paths.node, paths.pnpm, paths.pythonPackages, paths.nodePackages]
-    .filter((path): path is string => path !== undefined)
+async function validatePayloadEntries(paths: WorkspaceDependencies): Promise<void> {
+  for (const [path, kind] of [
+    [paths.python, 'file'], [paths.node, 'file'], [paths.pnpm, 'file'],
+    [paths.pythonPackages, 'directory'], [paths.nodePackages, 'directory'],
+  ] as const) {
+    if (path === undefined) continue
+    const entry = await stat(path)
+    if (!(kind === 'file' ? entry.isFile() : entry.isDirectory())) {
+      throw new Error(`primary runtime: expected ${kind} at ${path}`)
+    }
+  }
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -183,7 +191,7 @@ async function compatibleManifest(source: string): Promise<PrimaryRuntimeManifes
  */
 export async function resolvePrimaryRuntime(source: string): Promise<WorkspaceDependencies> {
   const paths = workspaceDependencyPaths(source, await compatibleManifest(source))
-  for (const path of payloadEntries(paths)) await stat(path)
+  await validatePayloadEntries(paths)
   return paths
 }
 
@@ -202,14 +210,14 @@ export async function installPrimaryRuntime(source: string, root: string): Promi
   if (!rootExists && previousExists) await rename(previous, root)
   if (await exists(join(root, 'runtime.json')) && JSON.stringify(await readPrimaryRuntime(root)) === JSON.stringify(manifest)) {
     const paths = workspaceDependencyPaths(root, manifest)
-    for (const path of payloadEntries(paths)) await stat(path)
+    await validatePayloadEntries(paths)
     return paths
   }
   const staging = await mkdtemp(join(dirname(root), '.primary-runtime-'))
   try {
     await cp(source, staging, { recursive: true, dereference: true })
     const paths = workspaceDependencyPaths(staging, manifest)
-    for (const path of payloadEntries(paths)) await stat(path)
+    await validatePayloadEntries(paths)
     await rm(previous, { recursive: true, force: true })
     const replacing = await exists(root)
     if (replacing) await rename(root, previous)

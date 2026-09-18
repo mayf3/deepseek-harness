@@ -432,12 +432,16 @@ async function officeFixture(root: string, pythonOnly: boolean) {
   return { source, paths }
 }
 
-it.each(['unset', 'empty', 'bundled', 'full', 'python-only', 'missing-assets'] as const)('composes Office resources through the SDK profile (%s)', async (mode) => {
+it.each(['unset', 'empty', 'bundled', 'full', 'python-only', 'missing-assets', 'wrong-type'] as const)('composes Office resources through the SDK profile (%s)', async (mode) => {
   const root = await mkdtemp(join(tmpdir(), 'sdk-office-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const enabled = mode !== 'unset' && mode !== 'empty'
   const { source, paths } = await officeFixture(root, mode === 'python-only')
   if (mode === 'missing-assets') await rm(join(root, 'resources', 'office-skills'), { recursive: true })
+  if (mode === 'wrong-type') {
+    await rm(paths.python)
+    await mkdir(paths.python)
+  }
   const requests: Record<string, unknown>[] = []
   const server = createServer((request, response) => {
     let body = ''
@@ -490,7 +494,24 @@ it.each(['unset', 'empty', 'bundled', 'full', 'python-only', 'missing-assets'] a
   for (const name of ['office-docx', 'office-pptx', 'office-xlsx']) {
     expect(JSON.stringify(requests[0]!.messages).includes(name)).toBe(enabled && mode !== 'missing-assets')
   }
-  if (enabled) {
+  if (mode === 'wrong-type') {
+    expect(requests).toHaveLength(2)
+    const messages = requests[1]!.messages as { content: { type: string; tool_use_id?: string; content?: unknown }[] }[]
+    const result = messages.flatMap(message => message.content).find(block => block.tool_use_id === 'workspace-dependencies')
+    expect(JSON.parse(JSON.stringify(result).replaceAll(JSON.stringify(paths.python).slice(1, -1), '<python>'))).toMatchInlineSnapshot(`
+      {
+        "content": [
+          {
+            "text": "Error: primary runtime: expected file at <python>",
+            "type": "text",
+          },
+        ],
+        "is_error": true,
+        "tool_use_id": "workspace-dependencies",
+        "type": "tool_result",
+      }
+    `)
+  } else if (enabled) {
     expect(requests).toHaveLength(2)
     expect(requests[1]!.messages).toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'user', content: expect.arrayContaining([

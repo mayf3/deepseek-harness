@@ -132,6 +132,22 @@ it('refuses linked installation directories without modifying their targets', as
   expect(await readFile(join(outside, 'keep'), 'utf8')).toBe('untouched')
 })
 
+it.each(['in-place', 'copy', 'reuse'] as const)('rejects wrong payload entry types during %s preparation', async (mode) => {
+  for (const field of ['python', 'node', 'pnpm', 'pythonPackages', 'nodePackages'] as const) {
+    const { source, root, manifest } = await fixture()
+    if (mode === 'reuse') await installPrimaryRuntime(source, root)
+    const paths = workspaceDependencyPaths(mode === 'reuse' ? root : source, manifest)
+    const path = paths[field]!
+    const directory = field.endsWith('Packages')
+    await rm(path, { recursive: true })
+    if (directory) await writeFile(path, 'not a library directory')
+    else await mkdir(path)
+    const operation = mode === 'in-place' ? resolvePrimaryRuntime(source) : installPrimaryRuntime(source, root)
+    await expect(operation).rejects.toThrow(`expected ${directory ? 'directory' : 'file'} at`)
+    if (mode === 'copy') await expect(readFile(join(root, 'runtime.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+  }
+})
+
 it('rejects malformed metadata and incompatible targets', async () => {
   const { source, root, manifest } = await fixture()
   await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, arch: process.arch === 'x64' ? 'arm64' : 'x64' }))
