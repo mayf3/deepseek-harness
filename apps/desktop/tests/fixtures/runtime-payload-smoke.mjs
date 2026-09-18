@@ -36,9 +36,11 @@ console.log('desktop-node-script-ok')
 `)
   const environment = Object.fromEntries(Object.entries(process.env).filter(([name]) => /^(?:systemroot|windir|comspec)$/iu.test(name)))
   const systemBin = process.platform === 'win32' ? join(process.env.SystemRoot, 'System32') : '/usr/bin:/bin'
+  // This dependency-free fixture checks script launch, without pnpm's implicit install and update-network check.
   const output = execFileSync(process.execPath, ['--expose-internals', pnpm, 'run', 'check'], {
     cwd: scratch, encoding: 'utf8', timeout: 45_000,
-    env: { ...environment, ELECTRON_RUN_AS_NODE: '1', DSH_DESKTOP_NODE_EXECUTABLE: process.execPath,
+    env: { ...environment, pnpm_config_verify_deps_before_run: 'false',
+      ELECTRON_RUN_AS_NODE: '1', DSH_DESKTOP_NODE_EXECUTABLE: process.execPath,
       PATH: `${bin}${delimiter}${systemBin}`, HOME: scratch, USERPROFILE: scratch, TMP: scratch, TEMP: scratch, TMPDIR: scratch },
   })
   assert.match(output, /desktop-node-script-ok/u)

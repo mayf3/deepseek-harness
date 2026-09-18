@@ -403,8 +403,6 @@ export async function packageTarget(
     }, artifact => execute(desktopElectronBuilderArguments(target, false, artifact), electronBuilderEnv))
   } else {
     await signedStage('artifacts', () => execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv))
-  }
-  if (target.platform !== 'darwin' || invocation.directory) {
     await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts', ...(invocation.unsigned ? ['--unsigned'] : [])], targetEnv)
   }
   if (!invocation.directory && !invocation.unsigned) writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
