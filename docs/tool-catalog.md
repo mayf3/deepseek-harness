@@ -627,7 +627,7 @@ The bash tool is the model-facing consumer of the bash executor seam. A `run_in_
 
 ### `present`
 
-Declare selected existing files accessible through the Session filesystem as final deliverables. Use present when the user needs a separate file deliverable, especially Office documents, spreadsheets, and slide decks. Prefer showing results in your final response when that is sufficient; creating or editing a file does not by itself require present. Usually select the 1-2 most important deliverables per call; include more when the task calls for them. The files must already exist. The user opens the current source files; their contents are not copied or preserved.
+Declare selected existing files accessible through the Session filesystem as final deliverables. Use present when the user needs a separate file deliverable, especially Office documents, spreadsheets, and slide decks. Prefer showing results in your final response when that is sufficient; creating or editing a file does not by itself require present. Usually select the 1-2 most important deliverables; include more when the task calls for them. The files must already exist. The user opens the current source files; their contents are not copied or preserved.
 
 ```json
 {

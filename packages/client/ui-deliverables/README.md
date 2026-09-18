@@ -87,7 +87,7 @@ Read these pages when the deliverables surface is not enough. They move from the
 
 #### What the model sees
 
-The guidance prefers primary results in the final reply: Markdown images with absolute file paths display inline, and file links open Sidebar previews. It recommends separate `present` cards for complete file deliverables, especially Office files, usually selecting the most important one or two while allowing more when needed. It treats code changes as already having a diff view and discourages extra commands to inspect its visibility. It asks the model to link every existing-file mention outside commands, configuration expressions, and code blocks, including repeats and tables. Labels default to filenames or clear aliases, with only enough parent directories to distinguish files. Precise references display `filename:24` or `filename:24–30`; their destinations retain full relative or absolute paths with `#L24` or `#L24-L30` anchors. The display suffix contains neither `#` nor `L`.
+The guidance prefers primary results in the final reply: file links open Sidebar previews, and image previews include a file link for clients without inline-image support. It recommends separate `present` cards for complete file deliverables, especially Office files, usually selecting the most important one or two while allowing more when needed. It discourages cards solely for code edits and extra commands to inspect diff visibility. This guidance applies even with developer tools disabled: it accepts fewer file surfaces to avoid duplicate presentation and unnecessary tool calls. It asks the model to link every existing-file mention outside commands, configuration expressions, and code blocks, including repeats and tables. Labels default to filenames or clear aliases, with only enough parent directories to distinguish files. Precise references display `filename:24` or `filename:24–30`; their destinations retain full relative or absolute paths with `#L24` or `#L24-L30` anchors. The display suffix contains neither `#` nor `L`.
 
 #### Token effect
 
@@ -104,6 +104,7 @@ The section is static at first-party order 9000 for the lifetime of the package 
 
 These limits define the current deliverables vocabulary. They are current package constraints, not a general file-linking comparison or a task backlog.
 
+- **Inline local images require HTTP(S) and POSIX absolute paths**: Desktop’s `dsh-app:` pages and Windows drive-letter paths do not support inline local images. The guidance retains a Markdown file link so users can open the Sidebar preview.
 - **Mention matching is exact path or unique basename only** — a suffix mention stays inert; widening the matcher is deferred until a real closing-message shape needs it.
 - **Terminal-created files require explicit delivery** — the card lists them once git records the change, but delivery cards and inline-code references require `present`; explicit Markdown links can reference existing files directly.
 - **Declarations do not preserve file contents** — reopening or transferring a Session requires source files accessible through the viewed Session’s filesystem. Missing files, directories, and final symbolic links return 404.
