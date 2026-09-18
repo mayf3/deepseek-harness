@@ -210,6 +210,19 @@ describe('RightbarSeat presentation', () => {
     expect(h.frame.closeRightbar).toHaveBeenCalled()
   })
 
+  it('skips the nudge while the darwin seat has no surface to render', async () => {
+    // The seat's first render returns null (the open effect has not created
+    // the surface yet), so the nudge effect fires with an unattached panel ref.
+    document.documentElement.dataset.platform = 'darwin'
+    try {
+      const h = await mountSeat()
+      const panel = element(h.view.container, '[data-sidebar-right-panel]')
+      expect(panel.hasAttribute('data-sidebar-right-region-nudge')).toBe(false)
+    } finally {
+      delete document.documentElement.dataset.platform
+    }
+  })
+
   it('pulses the app-region nudge at each open and close edge on macOS only', async () => {
     const h = await mountSeat()
     const panel = element(h.view.container, '[data-sidebar-right-panel]')
