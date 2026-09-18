@@ -1,9 +1,10 @@
 /** Toolbar warning and non-modal details for the current preview’s missing fonts. */
 import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import clsx from 'clsx'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { Button, IconCloseOutlineRegular, Tooltip, useAnchoredPosition, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconFontWarning } from '../icons.tsx'
+import { Button, IconCloseOutlineRegular, IconWarningTriangleOutlineRegular, Tooltip, useAnchoredPosition, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
+import common from '../TextPreview.module.css'
 import css from './FontNotice.module.css'
 
 /** Notice inputs supplied by the document owner and Office locale registration. */
@@ -38,10 +39,10 @@ export function FontNotice({ fonts, t }: FontNoticeProps): ReactNode {
   return <>
     <Tooltip label={label} side="bottom" delayMs={500} disabled={open}>
       <span ref={anchor} className={css.anchor} data-office-font-warning>
-        <button type="button" className={css.warning} aria-label={label}
+        <button type="button" className={clsx(common.tool, css.warning)} aria-label={label}
           aria-expanded={open} aria-controls={open ? id : undefined} aria-haspopup="dialog"
           onClick={() => { setExpanded(value => !value) }}>
-          <IconFontWarning />
+          <IconWarningTriangleOutlineRegular />
         </button>
       </span>
     </Tooltip>

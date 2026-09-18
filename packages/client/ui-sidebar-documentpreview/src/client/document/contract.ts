@@ -41,14 +41,6 @@ export interface DocumentBodyOwner {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
-    /** Renderer-specific controls before the document toolbar's reload button. */
-    'sidebar.right.tab.document.action': {
-      kind: 'keyed'
-      scope: 'session'
-      owner: { readonly content: DocumentContent }
-      hookContext: UseSidebarRightTabInfo
-      inject: { hooks: { tabInfo: SlotHookFactory<'sidebar.right.tab.document', UseSidebarRightTabInfo> } }
-    }
     /** Document body selected by a registered implementation id. */
     'sidebar.right.tab.document': {
       kind: 'keyed'
@@ -60,6 +52,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
           tabInfo: SlotHookFactory<'sidebar.right.tab.document', UseSidebarRightTabInfo>
         }
       }
+    }
+    /** Renderer-specific controls before the document toolbar's reload button. */
+    'sidebar.right.tab.document.action': {
+      kind: 'keyed'
+      scope: 'session'
+      owner: { readonly content: DocumentContent }
+      hookContext: UseSidebarRightTabInfo
+      inject: { hooks: { tabInfo: SlotHookFactory<'sidebar.right.tab.document', UseSidebarRightTabInfo> } }
     }
   }
 }

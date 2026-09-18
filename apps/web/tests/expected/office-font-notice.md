@@ -1,6 +1,7 @@
 # Office font warning
 
 - Warning precedes reload in the same toolbar: true
+- Warning and reload share button geometry and icon size: true
 - Details open only on request: true
 - Requested absent family is listed: true
 - Escape restores focus to the warning: true

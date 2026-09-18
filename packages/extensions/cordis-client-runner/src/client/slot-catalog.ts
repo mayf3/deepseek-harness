@@ -2707,7 +2707,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:53',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:45',
   },
   {
     key: 'sidebar.right.tab.document.action',
@@ -2755,7 +2755,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document.action\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document.action\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:45',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:57',
   },
   {
     key: 'sidebar.right.tab.document.office.pdf',

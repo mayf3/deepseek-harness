@@ -680,10 +680,18 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       expect(await warning.getAttribute('aria-expanded')).toBe('false')
       expect(await page.getByRole('dialog', { name: 'Missing fonts', exact: true }).count()).toBe(0)
       const warningBox = (await warning.boundingBox())!
-      const reloadBox = (await preview.getByRole('button', { name: 'Read the file again', exact: true }).boundingBox())!
+      const reload = preview.getByRole('button', { name: 'Read the file again', exact: true })
+      const reloadBox = (await reload.boundingBox())!
       expect(warningBox.x + warningBox.width).toBeLessThanOrEqual(reloadBox.x)
       expect(Math.abs(warningBox.y + warningBox.height / 2 - reloadBox.y - reloadBox.height / 2)).toBeLessThan(1)
+      expect([warningBox.width, warningBox.height]).toEqual([reloadBox.width, reloadBox.height])
+      expect(await warning.evaluate(node => getComputedStyle(node).borderRadius))
+        .toBe(await reload.evaluate(node => getComputedStyle(node).borderRadius))
+      expect(await warning.locator('svg').evaluate(node => node.getBoundingClientRect().width))
+        .toBe(await reload.locator('svg').evaluate(node => node.getBoundingClientRect().width))
+      const warningColor = await warning.evaluate(node => getComputedStyle(node).color)
       await warning.hover()
+      expect(await warning.evaluate(node => getComputedStyle(node).color)).toBe(warningColor)
       await page.getByRole('tooltip', { name: /Missing fonts:/ }).waitFor({ state: 'visible' })
       const before = await canvas.evaluate(node => node.getBoundingClientRect().top)
       await successShot(page, 'office-font-warning')
@@ -709,6 +717,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       await compareOrRefreshGolden(fileURLToPath(new URL('./expected/office-font-notice.md', import.meta.url)), [
         '# Office font warning', '',
         '- Warning precedes reload in the same toolbar: true',
+        '- Warning and reload share button geometry and icon size: true',
         '- Details open only on request: true',
         '- Requested absent family is listed: true',
         '- Escape restores focus to the warning: true',

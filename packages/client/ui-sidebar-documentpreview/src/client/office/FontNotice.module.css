@@ -3,21 +3,11 @@
   flex: none;
 }
 
-.warning {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
+.anchor .warning, .anchor .warning:hover {
   color: var(--dsw-alias-state-warn-label);
-  background: transparent;
-  cursor: pointer;
 }
 
-.warning:hover, .warning[aria-expanded='true'] {
+.anchor .warning:hover, .anchor .warning[aria-expanded='true'] {
   background: var(--dsw-alias-state-warn-tertiary);
 }
 

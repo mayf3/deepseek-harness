@@ -39,12 +39,3 @@ export const IconWrapFill16 = ({ size = 16, className }: IconProps) => (
     <path d="M15 15H14V1H15V15Z" fill="currentColor" />
   </svg>
 )
-
-/** Rounded triangle with an exclamation mark for unavailable document fonts. */
-export const IconFontWarning = ({ size = 18, className }: IconProps) => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M10.3 3.9a2 2 0 0 1 3.4 0l8 14a2 2 0 0 1-1.7 3.1H4a2 2 0 0 1-1.7-3.1Z" />
-    <path d="M12 9v4m0 4h.01" />
-  </svg>
-)
