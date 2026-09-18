@@ -79,6 +79,8 @@ export const TRUSTEE_IS_SID = 0
 export const NO_MULTIPLE_TRUSTEE = 0
 /** EXPLICIT_ACCESS mode that grants access. */
 export const GRANT_ACCESS = 1
+/** EXPLICIT_ACCESS mode that denies access. */
+export const DENY_ACCESS = 3
 /** EXPLICIT_ACCESS mode that revokes access. */
 export const REVOKE_ACCESS = 4
 /** ACE inheritance flags for child containers and objects. */
@@ -107,6 +109,8 @@ export const LOCKFILE_EXCLUSIVE_LOCK = 0x2
 export const LOCKFILE_FAIL_IMMEDIATELY = 0x1
 /** ACE type for an allowed-access entry. */
 export const ACCESS_ALLOWED_ACE_TYPE = 0
+/** ACE type for a denied-access entry (shares the allowed ACE's Mask/SID layout). */
+export const ACCESS_DENIED_ACE_TYPE = 1
 /** Maximum SID sub-authority count. */
 export const SID_MAX_SUB_AUTHORITIES = 15
 /** ACE flag marking inherited entries. */

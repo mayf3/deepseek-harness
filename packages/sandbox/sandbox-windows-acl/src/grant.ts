@@ -34,20 +34,29 @@ export class AclWriteGrant {
   private readonly api: Win32Bindings
   private readonly sidPtr: NativePtr
   private readonly lowLabelSidPtr: NativePtr
+  private readonly worldSidPtr: NativePtr
   private readonly revocablePaths: string[] = []
   private readonly standingPaths: string[] = []
 
-  private constructor(api: Win32Bindings, sidPtr: NativePtr, lowLabelSidPtr: NativePtr, writeSid: string) {
+  private constructor(
+    api: Win32Bindings,
+    sidPtr: NativePtr,
+    lowLabelSidPtr: NativePtr,
+    worldSidPtr: NativePtr,
+    writeSid: string,
+  ) {
     this.api = api
     this.sidPtr = sidPtr
     this.lowLabelSidPtr = lowLabelSidPtr
+    this.worldSidPtr = worldSidPtr
     this.writeSid = writeSid
   }
 
   /**
-   * Parse the SID string, create the Low integrity SID the grants label with,
-   * and open the binding table (lazily, once per server). Fail-closed: any
-   * failure throws — nothing is granted yet.
+   * Parse the SID string, create the Low integrity SID the grants label with
+   * and the world SID their ambient-delete deny names, and open the binding
+   * table (lazily, once per server). Fail-closed: any failure throws — nothing
+   * is granted yet.
    * @param writeSid - the workspace (`S-1-4-x-y`) or temp (`S-1-4-x-y-1`) capability SID string.
    * @param api - optional already-resolved bindings (tests).
    * @returns the ready grant (no ACEs yet).
@@ -60,15 +69,21 @@ export class AclWriteGrant {
     }
     const sidPtr = decodePtr(sidSlot)
     if (sidPtr === null) throwLastError(bindings, 'ConvertStringSidToSidW', `null SID for ${writeSid}`)
-    return new AclWriteGrant(bindings, sidPtr, makeWellKnownSid(bindings, abi.WinLowLabelSid), writeSid)
+    return new AclWriteGrant(
+      bindings,
+      sidPtr,
+      makeWellKnownSid(bindings, abi.WinLowLabelSid),
+      makeWellKnownSid(bindings, abi.WinWorldSid),
+      writeSid,
+    )
   }
 
   /**
-   * Grant the write ACE and the Low mandatory label on one directory
-   * (idempotent: an already-standing exact ACE plus exact label skips the
-   * eager full-tree re-propagation — see {@link grantWrite}) and record the
-   * path for {@link dispose} unless it is standing. The path is recorded
-   * BEFORE the grant: a post-apply throw (a LocalFree failure after
+   * Grant the write ACE, the ambient-delete deny, and the Low mandatory label
+   * on one directory (idempotent: an already-standing exact ACE, deny, and
+   * label skip the eager full-tree re-propagation — see {@link grantWrite})
+   * and record the path for {@link dispose} unless it is standing. The path is
+   * recorded BEFORE the grant: a post-apply throw (a LocalFree failure after
    * SetNamedSecurityInfoW succeeded) must still revoke it, and revoking an
    * ungranted path is a no-op merge. Callers treat a throw as a failed
    * materialization and dispose the instance to revoke the paths granted so
@@ -80,7 +95,7 @@ export class AclWriteGrant {
    */
   add(path: string, standing = false): void {
     ;(standing ? this.standingPaths : this.revocablePaths).push(path)
-    grantWrite(this.api, path, this.sidPtr, this.lowLabelSidPtr)
+    grantWrite(this.api, path, this.sidPtr, this.lowLabelSidPtr, this.worldSidPtr)
   }
 
   /** Every directory currently carrying the grant, in grant order. */
@@ -98,7 +113,11 @@ export class AclWriteGrant {
         failures.push(error)
       }
     }
-    for (const [label, sidPtr] of [['write SID', this.sidPtr], ['Low label SID', this.lowLabelSidPtr]] as const) {
+    for (const [label, sidPtr] of [
+      ['write SID', this.sidPtr],
+      ['Low label SID', this.lowLabelSidPtr],
+      ['world SID', this.worldSidPtr],
+    ] as const) {
       try {
         const freed = this.api.localFree(sidPtr)
         if (!isNullPtr(freed)) throwLastError(this.api, 'LocalFree', label)

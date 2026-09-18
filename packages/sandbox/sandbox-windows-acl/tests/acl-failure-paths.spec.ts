@@ -73,34 +73,76 @@ function craftLowLabelSid(): NativePtr {
   return craftSid(1, 0, [0, 0, 0, 0, 0, 16])
 }
 
+/** The world SID the grant's ambient-delete deny names (crafted like the other stubs: 8 header bytes, no sub-authorities). */
+function craftWorldSid(): NativePtr {
+  return craftSid(1, 0, [0, 0, 0, 0, 0, 1])
+}
+
+/** Write one 16-byte ACE (AceType@0, AceFlags@1, AceSize@2, Mask@4, inline SID@8) at `offset`. */
+function writeAce(acl: NativePtr, offset: number, aceType: number, mask: number, sid: NativePtr, match: boolean): void {
+  koffi.encode(acl, offset + 0, 'uint8', aceType)
+  koffi.encode(acl, offset + 1, 'uint8', abi.SUB_CONTAINERS_AND_OBJECTS_INHERIT)
+  koffi.encode(acl, offset + 2, 'uint16', 16)
+  koffi.encode(acl, offset + 4, 'uint32', mask)
+  for (let byte = 0; byte < 8; byte++) {
+    koffi.encode(acl, offset + 8 + byte, 'uint8', match
+      ? koffi.decode(sid, byte, 'uint8') as number
+      : byte === 0 ? 9 : 0)
+  }
+}
+
 /**
  * One in-memory ACL carrying a single inheritable ACE: header (AclRevision@0,
- * AclSize@2, AceCount@4) then a 16-byte ACE (AceType@0, AceFlags@1,
- * AceSize@2, Mask@4, inline SID@8). `match` selects whether the inline SID
- * bytes equal `sid`.
+ * AclSize@2, AceCount@4) then a 16-byte ACE. `match` selects whether the
+ * inline SID bytes equal `sid`.
  */
-function craftAcl(aceType: number, mask: number, sid: NativePtr, match: boolean, aceSize = 16, aclSize = 24, count = 1): NativePtr {
+function craftAcl(aceType: number, mask: number, sid: NativePtr, match: boolean): NativePtr {
   const acl = allocBytes(32)
   koffi.encode(acl, 'uint8', 2) // AclRevision
-  koffi.encode(acl, 2, 'uint16', aclSize)
-  koffi.encode(acl, 4, 'uint16', count)
-  const ace = 8
-  koffi.encode(acl, ace + 0, 'uint8', aceType)
-  koffi.encode(acl, ace + 1, 'uint8', abi.SUB_CONTAINERS_AND_OBJECTS_INHERIT)
-  koffi.encode(acl, ace + 2, 'uint16', aceSize)
-  koffi.encode(acl, ace + 4, 'uint32', mask)
-  const inlineSid = ace + 8
-  for (let offset = 0; offset < 8; offset++) {
-    koffi.encode(acl, inlineSid + offset, 'uint8', match
-      ? koffi.decode(sid, offset, 'uint8') as number
-      : offset === 0 ? 9 : 0)
-  }
+  koffi.encode(acl, 2, 'uint16', 24)
+  koffi.encode(acl, 4, 'uint16', 1)
+  writeAce(acl, 8, aceType, mask, sid, match)
   return acl
 }
 
-/** The DACL the exact-grant skip looks for: the capability ACE with GRANT_MASK. */
-function craftAclWithGrant(sid: NativePtr, match: boolean): NativePtr {
-  return craftAcl(abi.ACCESS_ALLOWED_ACE_TYPE, abi.GRANT_MASK, sid, match)
+/**
+ * A two-ACE DACL: the ambient-delete deny plus the capability grant, each with
+ * caller-chosen type, mask, and trustee match so the skip's field checks can be
+ * driven one at a time.
+ */
+function craftPair(
+  grantSid: NativePtr,
+  world: NativePtr,
+  denyType: number,
+  denyMask: number,
+  denyMatches: boolean,
+  grantMatches: boolean,
+): NativePtr {
+  const acl = allocBytes(64)
+  koffi.encode(acl, 'uint8', 2)
+  koffi.encode(acl, 2, 'uint16', 40)
+  koffi.encode(acl, 4, 'uint16', 2)
+  writeAce(acl, 8, denyType, denyMask, world, denyMatches)
+  writeAce(acl, 24, abi.ACCESS_ALLOWED_ACE_TYPE, abi.GRANT_MASK, grantSid, grantMatches)
+  return acl
+}
+
+/**
+ * The DACL a fully granted directory carries: the ambient-delete deny for the
+ * world SID plus the capability grant. `grantMatches` selects whether the
+ * grant's inline SID equals `sid` (the deny always matches), and
+ * `includeDeny` drops the deny to model a root granted by an earlier build.
+ */
+function craftGrantedAcl(sid: NativePtr, world: NativePtr, grantMatches: boolean, includeDeny = true): NativePtr {
+  if (!includeDeny) {
+    const acl = allocBytes(64)
+    koffi.encode(acl, 'uint8', 2)
+    koffi.encode(acl, 2, 'uint16', 24)
+    koffi.encode(acl, 4, 'uint16', 1)
+    writeAce(acl, 8, abi.ACCESS_ALLOWED_ACE_TYPE, abi.GRANT_MASK, sid, grantMatches)
+    return acl
+  }
+  return craftPair(sid, world, abi.ACCESS_DENIED_ACE_TYPE, abi.FILE_DELETE_CHILD, true, grantMatches)
 }
 
 /** The label ACL the exact-label skip looks for: the Low no-write-up label ACE. */
@@ -180,7 +222,7 @@ describe('buildLowLabelAcl failure paths', () => {
     const api = aclApi({ getLengthSid: vi.fn(() => 0) })
     let caught: unknown
     try {
-      grantWrite(api, 'C:\\granted', craftSid(1, 0), craftLowLabelSid())
+      grantWrite(api, 'C:\\granted', craftSid(1, 0), craftLowLabelSid(), craftWorldSid())
     } catch (error) {
       caught = error
     }
@@ -192,7 +234,7 @@ describe('buildLowLabelAcl failure paths', () => {
     const api = aclApi({ localAlloc: vi.fn(() => 0n as NativePtr) })
     let caught: unknown
     try {
-      grantWrite(api, 'C:\\granted', craftSid(1, 0), craftLowLabelSid())
+      grantWrite(api, 'C:\\granted', craftSid(1, 0), craftLowLabelSid(), craftWorldSid())
     } catch (error) {
       caught = error
     }
@@ -205,7 +247,7 @@ describe('buildLowLabelAcl failure paths', () => {
     const api = aclApi({ initializeAcl: vi.fn(() => 0), localFree })
     let caught: unknown
     try {
-      grantWrite(api, 'C:\\granted', craftSid(1, 0), craftLowLabelSid())
+      grantWrite(api, 'C:\\granted', craftSid(1, 0), craftLowLabelSid(), craftWorldSid())
     } catch (error) {
       caught = error
     }
@@ -219,7 +261,7 @@ describe('buildLowLabelAcl failure paths', () => {
     const api = aclApi({ addMandatoryAce: vi.fn(() => 0), localFree })
     let caught: unknown
     try {
-      grantWrite(api, 'C:\\granted', craftSid(1, 0), craftLowLabelSid())
+      grantWrite(api, 'C:\\granted', craftSid(1, 0), craftLowLabelSid(), craftWorldSid())
     } catch (error) {
       caught = error
     }
@@ -235,7 +277,7 @@ describe('mergeAndApply failure paths', () => {
     const sid = craftSid(1, 0)
     let caught: unknown
     try {
-      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid())
+      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid(), craftWorldSid())
     } catch (error) {
       caught = error
     }
@@ -248,7 +290,7 @@ describe('mergeAndApply failure paths', () => {
     const sid = craftSid(1, 0)
     let caught: unknown
     try {
-      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid())
+      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid(), craftWorldSid())
     } catch (error) {
       caught = error
     }
@@ -266,7 +308,7 @@ describe('mergeAndApply failure paths', () => {
     const sid = craftSid(1, 0)
     let caught: unknown
     try {
-      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid())
+      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid(), craftWorldSid())
     } catch (error) {
       caught = error
     }
@@ -285,7 +327,7 @@ describe('mergeAndApply failure paths', () => {
     const sid = craftSid(1, 0)
     let caught: unknown
     try {
-      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid())
+      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid(), craftWorldSid())
     } catch (error) {
       caught = error
     }
@@ -300,7 +342,7 @@ describe('mergeAndApply failure paths', () => {
     const sid = craftSid(1, 0)
     let caught: unknown
     try {
-      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid())
+      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid(), craftWorldSid())
     } catch (error) {
       caught = error
     }
@@ -318,7 +360,7 @@ describe('mergeAndApply failure paths', () => {
     const sid = craftSid(1, 0)
     let caught: unknown
     try {
-      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid())
+      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid(), craftWorldSid())
     } catch (error) {
       caught = error
     }
@@ -333,7 +375,7 @@ describe('mergeAndApply failure paths', () => {
     const sid = craftSid(1, 0)
     let caught: unknown
     try {
-      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid())
+      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid(), craftWorldSid())
     } catch (error) {
       caught = error
     }
@@ -355,7 +397,7 @@ describe('mergeAndApply failure paths', () => {
     const sid = craftSid(1, 0)
     let caught: unknown
     try {
-      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid())
+      grantWrite(api, 'C:\\granted', sid, craftLowLabelSid(), craftWorldSid())
     } catch (error) {
       caught = error
     }
@@ -369,14 +411,15 @@ describe('the exact-ACE/exact-label skip and ACL-walk defenses', () => {
   it('grantWrite skips the apply when the standing exact ACE and the exact label match (descriptor freed, nothing merged)', () => {
     const sid = craftSid(1, 0)
     const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
     const localFree = vi.fn(() => 0n as NativePtr)
     const setNamedSecurityInfoW = vi.fn(() => 0)
     const api = aclApi({
-      getNamedSecurityInfoW: readStub(craftAclWithGrant(sid, true), craftAclWithLabel(lowSid, true), 6n),
+      getNamedSecurityInfoW: readStub(craftGrantedAcl(sid, world, true), craftAclWithLabel(lowSid, true), 6n),
       localFree,
       setNamedSecurityInfoW,
     })
-    grantWrite(api, 'C:\\granted', sid, lowSid)
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
     expect(setNamedSecurityInfoW).not.toHaveBeenCalled()
     expect(localFree).toHaveBeenCalledWith(6n)
   })
@@ -384,15 +427,16 @@ describe('the exact-ACE/exact-label skip and ACL-walk defenses', () => {
   it('grantWrite skips the apply without freeing when the exact ACE and label stand but no descriptor owns them', () => {
     const sid = craftSid(1, 0)
     const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
     const localFree = vi.fn(() => 0n as NativePtr)
     const setNamedSecurityInfoW = vi.fn(() => 0)
     const api = aclApi({
       // the read "returned" ACLs with no descriptor allocation of their own
-      getNamedSecurityInfoW: readStub(craftAclWithGrant(sid, true), craftAclWithLabel(lowSid, true), null),
+      getNamedSecurityInfoW: readStub(craftGrantedAcl(sid, world, true), craftAclWithLabel(lowSid, true), null),
       localFree,
       setNamedSecurityInfoW,
     })
-    grantWrite(api, 'C:\\granted', sid, lowSid)
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
     expect(setNamedSecurityInfoW).not.toHaveBeenCalled()
     expect(localFree).not.toHaveBeenCalled()
   })
@@ -400,13 +444,14 @@ describe('the exact-ACE/exact-label skip and ACL-walk defenses', () => {
   it('grantWrite reports a failed descriptor LocalFree on the exact-ACE/exact-label skip path', () => {
     const sid = craftSid(1, 0)
     const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
     const api = aclApi({
-      getNamedSecurityInfoW: readStub(craftAclWithGrant(sid, true), craftAclWithLabel(lowSid, true), 6n),
+      getNamedSecurityInfoW: readStub(craftGrantedAcl(sid, world, true), craftAclWithLabel(lowSid, true), 6n),
       localFree: vi.fn(() => 1n as NativePtr),
     })
     let caught: unknown
     try {
-      grantWrite(api, 'C:\\granted', sid, lowSid)
+      grantWrite(api, 'C:\\granted', sid, lowSid, world)
     } catch (error) {
       caught = error
     }
@@ -414,45 +459,107 @@ describe('the exact-ACE/exact-label skip and ACL-walk defenses', () => {
     expect((caught as Win32Error).api).toBe('LocalFree')
   })
 
+  it('does not skip when a root granted by an earlier build carries the ACE and label but no ambient-delete deny', () => {
+    const sid = craftSid(1, 0)
+    const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
+    const setNamedSecurityInfoW = vi.fn(() => 0)
+    const api = aclApi({
+      getNamedSecurityInfoW: readStub(craftGrantedAcl(sid, world, true, false), craftAclWithLabel(lowSid, true), 6n),
+      setNamedSecurityInfoW,
+    })
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
+    expect(setNamedSecurityInfoW).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not skip when the deny names another trustee', () => {
+    const sid = craftSid(1, 0)
+    const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
+    const setNamedSecurityInfoW = vi.fn(() => 0)
+    const api = aclApi({
+      getNamedSecurityInfoW: readStub(
+        craftPair(sid, world, abi.ACCESS_DENIED_ACE_TYPE, abi.FILE_DELETE_CHILD, false, true), craftAclWithLabel(lowSid, true), 6n,
+      ),
+      setNamedSecurityInfoW,
+    })
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
+    expect(setNamedSecurityInfoW).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not treat a deny of another right as the ambient-delete deny', () => {
+    const sid = craftSid(1, 0)
+    const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
+    const setNamedSecurityInfoW = vi.fn(() => 0)
+    const api = aclApi({
+      getNamedSecurityInfoW: readStub(
+        craftPair(sid, world, abi.ACCESS_DENIED_ACE_TYPE, abi.GRANT_MASK, true, true), craftAclWithLabel(lowSid, true), 6n,
+      ),
+      setNamedSecurityInfoW,
+    })
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
+    expect(setNamedSecurityInfoW).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not treat an Allow ACE as the ambient-delete deny', () => {
+    const sid = craftSid(1, 0)
+    const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
+    const setNamedSecurityInfoW = vi.fn(() => 0)
+    const api = aclApi({
+      getNamedSecurityInfoW: readStub(
+        craftPair(sid, world, abi.ACCESS_ALLOWED_ACE_TYPE, abi.FILE_DELETE_CHILD, true, true), craftAclWithLabel(lowSid, true), 6n,
+      ),
+      setNamedSecurityInfoW,
+    })
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
+    expect(setNamedSecurityInfoW).toHaveBeenCalledTimes(1)
+  })
+
   it('does not skip when the standing ACE and label match but the label ACL is absent', () => {
     const sid = craftSid(1, 0)
     const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
     const setNamedSecurityInfoW = vi.fn(() => 0)
     const api = aclApi({
-      getNamedSecurityInfoW: readStub(craftAclWithGrant(sid, true), null, 6n),
+      getNamedSecurityInfoW: readStub(craftGrantedAcl(sid, world, true), null, 6n),
       setNamedSecurityInfoW,
     })
-    grantWrite(api, 'C:\\granted', sid, lowSid)
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
     expect(setNamedSecurityInfoW).toHaveBeenCalledTimes(1)
   })
 
   it('does not skip when the exact ACE stands but the label names another integrity level', () => {
     const sid = craftSid(1, 0)
     const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
     const setNamedSecurityInfoW = vi.fn(() => 0)
     const api = aclApi({
-      getNamedSecurityInfoW: readStub(craftAclWithGrant(sid, true), craftAclWithLabel(lowSid, false), 6n),
+      getNamedSecurityInfoW: readStub(craftGrantedAcl(sid, world, true), craftAclWithLabel(lowSid, false), 6n),
       setNamedSecurityInfoW,
     })
-    grantWrite(api, 'C:\\granted', sid, lowSid)
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
     expect(setNamedSecurityInfoW).toHaveBeenCalledTimes(1)
   })
 
   it('falls back to the merge path when the standing ACE names a different SID', () => {
     const sid = craftSid(1, 0)
     const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
     const setNamedSecurityInfoW = vi.fn(() => 0)
     const api = aclApi({
-      getNamedSecurityInfoW: readStub(craftAclWithGrant(sid, false), craftAclWithLabel(lowSid, true), 6n),
+      getNamedSecurityInfoW: readStub(craftGrantedAcl(sid, world, false), craftAclWithLabel(lowSid, true), 6n),
       setNamedSecurityInfoW,
     })
-    grantWrite(api, 'C:\\granted', sid, lowSid)
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
     expect(setNamedSecurityInfoW).toHaveBeenCalledTimes(1)
   })
 
   it('treats an implausibly small ACL size as no exact grant', () => {
     const sid = craftSid(1, 0)
     const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
     const acl = allocBytes(32)
     koffi.encode(acl, 'uint8', 2)
     koffi.encode(acl, 2, 'uint16', 4) // smaller than the 8-byte ACL header
@@ -462,13 +569,14 @@ describe('the exact-ACE/exact-label skip and ACL-walk defenses', () => {
       getNamedSecurityInfoW: readStub(acl, craftAclWithLabel(lowSid, true), 6n),
       setNamedSecurityInfoW,
     })
-    grantWrite(api, 'C:\\granted', sid, lowSid)
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
     expect(setNamedSecurityInfoW).toHaveBeenCalledTimes(1)
   })
 
   it('treats an ACE that would overrun the ACL as no exact grant', () => {
     const sid = craftSid(1, 0)
     const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
     const acl = allocBytes(32)
     koffi.encode(acl, 'uint8', 2)
     koffi.encode(acl, 2, 'uint16', 8) // header only: no room for any ACE
@@ -479,29 +587,31 @@ describe('the exact-ACE/exact-label skip and ACL-walk defenses', () => {
       getNamedSecurityInfoW: readStub(acl, craftAclWithLabel(lowSid, true), 6n),
       setNamedSecurityInfoW,
     })
-    grantWrite(api, 'C:\\granted', sid, lowSid)
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
     expect(setNamedSecurityInfoW).toHaveBeenCalledTimes(1)
   })
 
   it('treats an implausibly small label ACL size as no exact label', () => {
     const sid = craftSid(1, 0)
     const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
     const label = allocBytes(32)
     koffi.encode(label, 'uint8', 2)
     koffi.encode(label, 2, 'uint16', 4) // smaller than the 8-byte ACL header
     koffi.encode(label, 4, 'uint16', 1)
     const setNamedSecurityInfoW = vi.fn(() => 0)
     const api = aclApi({
-      getNamedSecurityInfoW: readStub(craftAclWithGrant(sid, true), label, 6n),
+      getNamedSecurityInfoW: readStub(craftGrantedAcl(sid, world, true), label, 6n),
       setNamedSecurityInfoW,
     })
-    grantWrite(api, 'C:\\granted', sid, lowSid)
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
     expect(setNamedSecurityInfoW).toHaveBeenCalledTimes(1)
   })
 
   it('treats a label ACE that would overrun its ACL as no exact label', () => {
     const sid = craftSid(1, 0)
     const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
     const label = allocBytes(32)
     koffi.encode(label, 'uint8', 2)
     koffi.encode(label, 2, 'uint16', 8) // header only: no room for any ACE
@@ -509,43 +619,45 @@ describe('the exact-ACE/exact-label skip and ACL-walk defenses', () => {
     koffi.encode(label, 10, 'uint16', 100) // the walk reads a lying ACE size
     const setNamedSecurityInfoW = vi.fn(() => 0)
     const api = aclApi({
-      getNamedSecurityInfoW: readStub(craftAclWithGrant(sid, true), label, 6n),
+      getNamedSecurityInfoW: readStub(craftGrantedAcl(sid, world, true), label, 6n),
       setNamedSecurityInfoW,
     })
-    grantWrite(api, 'C:\\granted', sid, lowSid)
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
     expect(setNamedSecurityInfoW).toHaveBeenCalledTimes(1)
   })
 
   it('does not treat a no-write-up ACL Allow ACE as the mandatory label', () => {
     const sid = craftSid(1, 0)
     const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
     const setNamedSecurityInfoW = vi.fn(() => 0)
     const api = aclApi({
       // Same mask and SID, but an ACCESS_ALLOWED_ACE is not a mandatory label.
       getNamedSecurityInfoW: readStub(
-        craftAclWithGrant(sid, true),
+        craftGrantedAcl(sid, world, true),
         craftAcl(abi.ACCESS_ALLOWED_ACE_TYPE, abi.SYSTEM_MANDATORY_LABEL_NO_WRITE_UP, lowSid, true),
         6n,
       ),
       setNamedSecurityInfoW,
     })
-    grantWrite(api, 'C:\\granted', sid, lowSid)
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
     expect(setNamedSecurityInfoW).toHaveBeenCalledTimes(1)
   })
 
   it('does not treat a label ACE granting write-up as the exact label', () => {
     const sid = craftSid(1, 0)
     const lowSid = craftLowLabelSid()
+    const world = craftWorldSid()
     const setNamedSecurityInfoW = vi.fn(() => 0)
     const api = aclApi({
       getNamedSecurityInfoW: readStub(
-        craftAclWithGrant(sid, true),
+        craftGrantedAcl(sid, world, true),
         craftAcl(abi.SYSTEM_MANDATORY_LABEL_ACE_TYPE, 0, lowSid, true),
         6n,
       ),
       setNamedSecurityInfoW,
     })
-    grantWrite(api, 'C:\\granted', sid, lowSid)
+    grantWrite(api, 'C:\\granted', sid, lowSid, world)
     expect(setNamedSecurityInfoW).toHaveBeenCalledTimes(1)
   })
 })

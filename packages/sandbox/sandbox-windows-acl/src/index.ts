@@ -263,29 +263,29 @@ export class AclSandbox {
       // provision would re-propagate the whole tree) and the temp ACE is
       // REVOCABLE (dispose() removes it before the private directory is
       // deleted; the ambient temp root is never granted).
-      // The Low integrity SID every granted directory is labeled with and the
-      // confined token itself is lowered to.
+      // The Low integrity SID every granted directory is labeled with (and the
+      // confined token is lowered to) plus the world SID the grants deny the
+      // ambient parent-directory delete right to.
       const lowLabelSid = makeWellKnownSid(api, abi.WinLowLabelSid)
-      this.sidAllocations.push(lowLabelSid)
+      const worldSid = makeWellKnownSid(api, abi.WinWorldSid)
+      this.sidAllocations.push(lowLabelSid, worldSid)
 
       if (this.manageDacls) {
         if (this.writeSidPtr !== undefined) {
           for (const path of this.writableDirs) {
-            grantWrite(api, path, this.writeSidPtr, lowLabelSid)
+            grantWrite(api, path, this.writeSidPtr, lowLabelSid, worldSid)
           }
           if (tempDir !== null && this.tempWriteSidPtr !== undefined) {
             // Record BEFORE granting: grantWrite can throw after a successful
             // apply (a LocalFree failure), and the fail-closed catch must still
             // revoke that path (revoking an ungranted path is a no-op merge).
             this.grantedPaths.push({ path: tempDir, sidPtr: this.tempWriteSidPtr })
-            grantWrite(api, tempDir, this.tempWriteSidPtr, lowLabelSid)
+            grantWrite(api, tempDir, this.tempWriteSidPtr, lowLabelSid, worldSid)
           }
         }
       }
       const logonSid = findLogonSid(api, currentToken)
       this.sidAllocations.push(logonSid)
-      const worldSid = makeWellKnownSid(api, abi.WinWorldSid)
-      this.sidAllocations.push(worldSid)
       const writeSids = [this.writeSidPtr, this.tempWriteSidPtr].filter((sid): sid is NativePtr => sid !== undefined)
       restrictedToken = createRestrictedToken(
         api, currentToken, logonSid, writeSids,

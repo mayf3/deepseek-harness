@@ -450,6 +450,71 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
     }
   }, 60_000)
 
+  it('cross-root delete regression: one session cannot delete inside ANOTHER granted root', () => {
+    // Both roots carry the Low label, so the integrity check alone would let a
+    // confined child delete in the other one: Windows authorizes a delete from
+    // the parent directory's FILE_DELETE_CHILD, which the write-restricted
+    // intersection does not reach. The grant therefore denies that right to the
+    // world SID, leaving the capability ACE's DELETE bit as the only delete
+    // authority inside a granted root.
+    const otherWorkspace = join(scratchRoot, 'other-workspace')
+    const otherTemp = join(scratchRoot, 'other-temp')
+    mkdirSync(otherWorkspace)
+    mkdirSync(otherTemp)
+    const otherWorkspaceSid = workspaceWriteSid(otherWorkspace)
+    const otherTempSid = tempWriteSid(otherTemp)
+    const otherWorkspaceGrant = AclWriteGrant.create(otherWorkspaceSid)
+    const otherTempGrant = AclWriteGrant.create(otherTempSid)
+    otherWorkspaceGrant.add(otherWorkspace, true)
+    otherTempGrant.add(otherTemp)
+    // Session A's own roots, granted the same way, run through the runner.
+    const ownWorkspace = join(scratchRoot, 'own-workspace')
+    const ownTemp = join(scratchRoot, 'own-temp')
+    mkdirSync(ownWorkspace)
+    mkdirSync(ownTemp)
+    const ownWorkspaceSid = workspaceWriteSid(ownWorkspace)
+    const ownTempSid = tempWriteSid(ownTemp)
+    const ownWorkspaceGrant = AclWriteGrant.create(ownWorkspaceSid)
+    const ownTempGrant = AclWriteGrant.create(ownTempSid)
+    ownWorkspaceGrant.add(ownWorkspace, true)
+    ownTempGrant.add(ownTemp)
+    try {
+      const victims = {
+        ownWork: join(ownWorkspace, 'victim.txt'),
+        otherWork: join(otherWorkspace, 'victim.txt'),
+        ownTemp: join(ownTemp, 'victim.txt'),
+        otherTemp: join(otherTemp, 'victim.txt'),
+      }
+      for (const path of Object.values(victims)) writeFileSync(path, 'delete me')
+      const probe = [
+        "$ErrorActionPreference='SilentlyContinue';",
+        ...Object.entries(victims).map(([name, path]) =>
+          `try{[System.IO.File]::Delete('${path}');'${name}: DELETED'}catch{'${name}: DENIED'};`),
+      ].join('')
+      const result = runRunner([
+        '--workspace', ownWorkspace, '--temp', ownTemp, '--mode', 'workspace-write',
+        '--write-sid', ownWorkspaceSid, '--temp-write-sid', ownTempSid,
+        '--', 'pwsh', '/NoLogo', '/NonInteractive', '/NoProfile', '/Command', probe,
+      ])
+      expect(result.status, `stderr: ${result.stderr}`).toBe(0)
+      expect(result.stdout).toContain('ownWork: DELETED')
+      expect(result.stdout).toContain('ownTemp: DELETED')
+      expect(result.stdout).toContain('otherWork: DENIED')
+      expect(result.stdout).toContain('otherTemp: DENIED')
+      expect(existsSync(victims.otherWork)).toBe(true)
+      expect(existsSync(victims.otherTemp)).toBe(true)
+      expect(existsSync(victims.ownWork)).toBe(false)
+      expect(existsSync(victims.ownTemp)).toBe(false)
+    } finally {
+      ownWorkspaceGrant.dispose()
+      ownTempGrant.dispose()
+      otherWorkspaceGrant.dispose()
+      otherTempGrant.dispose()
+      rmSync(ownTemp, { recursive: true, force: true })
+      rmSync(otherTemp, { recursive: true, force: true })
+    }
+  }, 60_000)
+
   it('the Low mandatory label closes the Everyone-Modify ambient boundary under BOTH modes', () => {
     // Everyone is a required keep-alive restricting SID: without it early DLL
     // initialization and CNG fail. A normal DACL that grants Everyone Modify

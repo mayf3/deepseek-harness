@@ -6,12 +6,16 @@
  * system text, and the affected path.
  *
  * Each grant is a PAIR of edits applied in ONE SetNamedSecurityInfoW call:
- * the capability-SID allow ACE in the DACL, and a Low mandatory label with the
- * no-write-up policy in the label ACL ({@link buildLowLabelAcl}). The label
- * denies write-class access to every object that is not labeled Low, and the
- * kernel applies that policy inside the access check itself — including the
- * parent directory's FILE_DELETE_CHILD authority, which the token's
- * write-restricted intersection does not reach.
+ * a Deny ACE removing the ambient parent-directory delete right
+ * (`Everyone` / `FILE_DELETE_CHILD`) plus the capability-SID allow ACE in the
+ * DACL, and a Low mandatory label with the no-write-up policy in the label
+ * ACL ({@link buildLowLabelAcl}). The deny makes the capability ACE's DELETE
+ * bit the only delete authority inside the granted roots — Windows otherwise
+ * authorizes a delete from the parent directory's `FILE_DELETE_CHILD`, which
+ * the token's write-restricted intersection does not reach, so one confined
+ * child could delete files in another granted root. The label denies
+ * write-class access to every object that is not labeled Low, and the kernel
+ * applies that policy inside the access check itself.
  *
  * Concurrency: grants are read-merge-write against the directory's CURRENT
  * DACL, and the whole get-merge-set sequence runs under a per-path exclusive
@@ -208,15 +212,16 @@ function hasExactLabel(labelAcl: NativePtr, lowLabelSidPtr: NativePtr): boolean 
 }
 
 /**
- * Shared tail of grantWrite and revokeWrite: merge `entry` into `oldAcl`
+ * Shared tail of grantWrite and revokeWrite: merge `entries` into `oldAcl`
  * (null = no explicit DACL yet; SetEntriesInAclW builds one from scratch),
  * free the descriptor before applying the merged ACL, apply the merged DACL
  * together with `labelAcl` in one SetNamedSecurityInfoW call (null clears the
  * label), then free both ACLs — checking every call and reporting with the
- * caller's label.
+ * caller's label. The entry count derives from the buffer, so a grant can
+ * carry its capability ACE and its ambient-delete deny in one merge.
  * @param api - the binding table.
  * @param path - the directory the DACL and label edits apply to.
- * @param entry - the EXPLICIT_ACCESS_W to merge (grant or revoke).
+ * @param entries - packed EXPLICIT_ACCESS_W records to merge (grant, deny, or revoke).
  * @param oldAcl - the current explicit DACL (from {@link readCurrentSecurity}).
  * @param labelAcl - the label ACL to apply, or null to clear the mandatory label.
  * @param descriptor - the descriptor allocation owning `oldAcl`.
@@ -225,14 +230,14 @@ function hasExactLabel(labelAcl: NativePtr, lowLabelSidPtr: NativePtr): boolean 
 function mergeAndApply(
   api: Win32Bindings,
   path: string,
-  entry: Buffer,
+  entries: Buffer,
   oldAcl: NativePtr | null,
   labelAcl: NativePtr | null,
   descriptor: NativePtr | null,
   label: string,
 ): void {
   const newAclSlot = allocPtrSlot()
-  const mergeResult = api.setEntriesInAclW(1, entry, oldAcl, newAclSlot)
+  const mergeResult = api.setEntriesInAclW(entries.length / abi.EXPLICIT_ACCESS_W_SIZE, entries, oldAcl, newAclSlot)
   if (mergeResult !== abi.ERROR_SUCCESS) {
     if (descriptor !== null) api.localFree(descriptor) // frees the ACL block too
     throwWin32(api, 'SetEntriesInAclW', mergeResult, `${label}(${path})`)
@@ -259,62 +264,111 @@ function mergeAndApply(
 }
 
 /**
- * True when the explicit DACL already carries the EXACT write grant this
- * module would add (Allow ACE, OI|CI inheritance, {@link abi.GRANT_MASK}, the
- * capability SID). Every field is read through koffi.decode at pointer offsets —
- * no memcpy, no pointer arithmetic. The ACE's SID is INLINE (embedded in the
- * ACE after the 4-byte mask — there is no pointer to read; reading one
- * yields garbage addresses and crashed EqualSid, verified by gdb), so it is
- * compared field-by-field against the capability SID through bounded offset
- * reads ({@link sameSidAt}). A malformed header reads as "no exact grant"
- * so the caller falls back to the merge-apply path, which owns the robust
- * failure handling.
- * @param oldAcl - the current explicit DACL pointer (from {@link readCurrentDacl}).
- * @param sidPtr - the capability SID to match.
- * @returns whether the exact grant ACE is already present.
+ * True when the explicit DACL already carries the EXACT entry
+ * `(aceType, OI|CI inheritance, mask, trustee SID)`. Every field is read
+ * through koffi.decode at pointer offsets — no memcpy, no pointer arithmetic.
+ * The ACE's SID is INLINE (embedded in the ACE after the 4-byte mask — there
+ * is no pointer to read; reading one yields garbage addresses and crashed
+ * EqualSid, verified by gdb), so it is compared field-by-field against the
+ * trustee SID through bounded offset reads ({@link sameSidAt}). Allowed and
+ * denied ACEs share the Mask@4/SID@8 layout. A malformed header reads as "no
+ * exact entry" so the caller falls back to the merge-apply path, which owns
+ * the robust failure handling.
+ * @param acl - the current explicit DACL pointer (from {@link readCurrentSecurity}).
+ * @param aceType - the ACE type to match.
+ * @param mask - the access mask to match.
+ * @param sidPtr - the trustee SID to match.
+ * @returns whether the exact entry is already present.
  */
-function hasExactGrant(oldAcl: NativePtr, sidPtr: NativePtr): boolean {
-  const aclSize = decodeUint16At(oldAcl, 2)
-  const aceCount = decodeUint16At(oldAcl, 4)
+function hasExactEntry(acl: NativePtr, aceType: number, mask: number, sidPtr: NativePtr): boolean {
+  const aclSize = decodeUint16At(acl, 2)
+  const aceCount = decodeUint16At(acl, 4)
   if (aclSize < 8 || aclSize > 1_048_576) return false // implausible: fall back to the merge path
   let offset = 8 // the first ACE follows the 8-byte ACL header
   for (let index = 0; index < aceCount; index++) {
-    // ACE_HEADER: AceType@0, AceFlags@1, AceSize@2 (WORD);
-    // ACCESS_ALLOWED_ACE: Mask@4, inline SID@8.
-    const aceSize = decodeUint16At(oldAcl, offset + 2)
+    // ACE_HEADER: AceType@0, AceFlags@1, AceSize@2 (WORD); Mask@4, inline SID@8.
+    const aceSize = decodeUint16At(acl, offset + 2)
     if (aceSize < 8 || offset + aceSize > aclSize) return false // implausible: fall back to the merge path
-    const exact = decodeUint8At(oldAcl, offset) === abi.ACCESS_ALLOWED_ACE_TYPE
-      && decodeUint8At(oldAcl, offset + 1) === abi.SUB_CONTAINERS_AND_OBJECTS_INHERIT
-      && decodeUint32At(oldAcl, offset + 4) === abi.GRANT_MASK
-    if (exact && sameSidAt(oldAcl, offset + 8, sidPtr, 0)) return true
+    const exact = decodeUint8At(acl, offset) === aceType
+      && decodeUint8At(acl, offset + 1) === abi.SUB_CONTAINERS_AND_OBJECTS_INHERIT
+      && decodeUint32At(acl, offset + 4) === mask
+    if (exact && sameSidAt(acl, offset + 8, sidPtr, 0)) return true
     offset += aceSize
   }
   return false
 }
 
 /**
+ * True when the explicit DACL already carries the EXACT write grant this
+ * module would add: the Allow ACE for {@link abi.GRANT_MASK} naming the
+ * capability SID.
+ * @param oldAcl - the current explicit DACL pointer (from {@link readCurrentSecurity}).
+ * @param sidPtr - the capability SID to match.
+ * @returns whether the exact grant ACE is already present.
+ */
+function hasExactGrant(oldAcl: NativePtr, sidPtr: NativePtr): boolean {
+  return hasExactEntry(oldAcl, abi.ACCESS_ALLOWED_ACE_TYPE, abi.GRANT_MASK, sidPtr)
+}
+
+/**
+ * True when the merge's ambient-delete deny is already present: the exact
+ * Deny ACE for {@link abi.FILE_DELETE_CHILD} naming the world SID. Together
+ * with {@link hasExactGrant} and the label check this gates the idempotent
+ * skip, so a root granted by an earlier build receives the deny on its next
+ * provision instead of keeping the parent-`FILE_DELETE_CHILD` route open.
+ * @param oldAcl - the current explicit DACL pointer (from {@link readCurrentSecurity}).
+ * @param worldSidPtr - the Everyone SID the deny names.
+ * @returns whether the exact deny ACE is already present.
+ */
+function hasExactDeny(oldAcl: NativePtr, worldSidPtr: NativePtr): boolean {
+  return hasExactEntry(oldAcl, abi.ACCESS_DENIED_ACE_TYPE, abi.FILE_DELETE_CHILD, worldSidPtr)
+}
+
+/**
  * Grant `GRANT_MASK` (Write+Delete, displays as "Modify") to the capability SID
- * on `path`, inheriting to subcontainers and objects, and apply the Low
- * mandatory label to the same directory in the same call. Idempotent: when the
- * directory's current explicit DACL already carries the exact ACE AND its label
- * ACL the exact label (the per-workspace grant surviving from a previous server
- * lifetime), the SetNamedSecurityInfoW apply is SKIPPED — it would otherwise
- * re-propagate the identical security descriptor across the whole tree (eager
- * inheritance; minutes on large workspaces). Otherwise read-merge-write: the
- * new ACE merges into the directory's CURRENT explicit DACL (same shape as
- * {@link revokeWrite}), so pre-existing explicit ACEs survive. Runs under the
- * per-path lock. The directory must be owned by the caller (owner implicit
- * WRITE_DAC) — same precondition as the POC.
+ * on `path`, deny the ambient `FILE_DELETE_CHILD` right to the world SID, and
+ * apply the Low mandatory label — all in one SetNamedSecurityInfoW call.
+ *
+ * The deny closes the parent-directory delete route inside the granted roots:
+ * Windows authorizes a delete from the object's own DELETE right OR from the
+ * parent's `FILE_DELETE_CHILD`, and the token's write-restricted intersection
+ * reaches only the first, so without the deny one confined child could delete
+ * files in ANOTHER granted root (another workspace, a live sibling temp
+ * directory) whose Low label clears the integrity check. With the deny in
+ * place the capability ACE's DELETE bit is the only delete authority inside
+ * the granted roots, for the confined child and the ambient user alike; a file
+ * whose own DACL grants no DELETE is therefore no longer deletable by its
+ * parent's default rights.
+ *
+ * Idempotent: when the directory's current explicit DACL already carries the
+ * exact ACE and deny AND its label ACL the exact label (the per-workspace
+ * grant surviving from a previous server lifetime), the SetNamedSecurityInfoW
+ * apply is SKIPPED — it would otherwise re-propagate the identical security
+ * descriptor across the whole tree (eager inheritance; minutes on large
+ * workspaces). Otherwise read-merge-write: the entries merge into the
+ * directory's CURRENT explicit DACL (same shape as {@link revokeWrite}), so
+ * pre-existing explicit ACEs survive. Runs under the per-path lock. The
+ * directory must be owned by the caller (owner implicit WRITE_DAC) — same
+ * precondition as the POC.
  * @param api - the binding table.
  * @param path - the directory whose DACL and label gain the grant (the workspace or temp root).
  * @param sidPtr - the capability SID the ACE names.
  * @param lowLabelSidPtr - the Low integrity SID the mandatory label names.
+ * @param worldSidPtr - the Everyone SID the ambient-delete deny names.
  */
-export function grantWrite(api: Win32Bindings, path: string, sidPtr: NativePtr, lowLabelSidPtr: NativePtr): void {
+export function grantWrite(
+  api: Win32Bindings,
+  path: string,
+  sidPtr: NativePtr,
+  lowLabelSidPtr: NativePtr,
+  worldSidPtr: NativePtr,
+): void {
   withPathLock(api, path, () => {
     const { oldAcl, labelAcl, descriptor } = readCurrentSecurity(api, path)
-    if (oldAcl !== null && labelAcl !== null && hasExactGrant(oldAcl, sidPtr) && hasExactLabel(labelAcl, lowLabelSidPtr)) {
-      // The exact ACE and label stand: releasing the descriptor is the whole operation.
+    if (oldAcl !== null && labelAcl !== null
+      && hasExactGrant(oldAcl, sidPtr) && hasExactDeny(oldAcl, worldSidPtr)
+      && hasExactLabel(labelAcl, lowLabelSidPtr)) {
+      // The exact ACE, deny, and label stand: releasing the descriptor is the whole operation.
       if (descriptor !== null) {
         const freed = api.localFree(descriptor)
         if (!isNullPtr(freed)) throwLastError(api, 'LocalFree', `grantWrite(${path}) descriptor`)
@@ -322,7 +376,11 @@ export function grantWrite(api: Win32Bindings, path: string, sidPtr: NativePtr, 
       return
     }
     mergeAndApply(
-      api, path, buildExplicitAccess(sidPtr, abi.GRANT_ACCESS, abi.GRANT_MASK),
+      api, path,
+      Buffer.concat([
+        buildExplicitAccess(worldSidPtr, abi.DENY_ACCESS, abi.FILE_DELETE_CHILD),
+        buildExplicitAccess(sidPtr, abi.GRANT_ACCESS, abi.GRANT_MASK),
+      ]),
       oldAcl, buildLowLabelAcl(api, lowLabelSidPtr), descriptor, 'grantWrite',
     )
   })

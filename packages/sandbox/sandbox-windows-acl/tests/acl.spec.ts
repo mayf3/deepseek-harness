@@ -115,6 +115,11 @@ function lowLabelSid(api: Win32Bindings): NativePtr {
   return makeWellKnownSid(api, abi.WinLowLabelSid)
 }
 
+/** The world SID (S-1-1-0) every grant denies the ambient delete right to. */
+function worldSid(api: Win32Bindings): NativePtr {
+  return makeWellKnownSid(api, abi.WinWorldSid)
+}
+
 /**
  * Read the directory's mandatory label ACEs (inherited entries excluded) —
  * same ACE layout as {@link readDirectAces}, read through the label security
@@ -170,6 +175,7 @@ describe.skipIf(!isWin32)('ACL editing', () => {
     const usersSid = sidFromString(api, 'S-1-5-32-545')
     const capabilitySid = sidFromString(api, 'S-1-4-4242-1')
     const lowSid = lowLabelSid(api)
+    const world = worldSid(api)
     try {
       // Install one explicit ACE (Users + benign read mask) with the
       // package's own bindings, exactly like a pre-existing explicit DACL
@@ -186,7 +192,12 @@ describe.skipIf(!isWin32)('ACL editing', () => {
       expect(applyResult, `SetNamedSecurityInfoW setup (${applyResult})`).toBe(abi.ERROR_SUCCESS)
       expect(isNullPtr(freed)).toBe(true)
 
-      grantWrite(api, dir, capabilitySid, lowSid)
+      grantWrite(api, dir, capabilitySid, lowSid, world)
+
+      const granted = readDirectAces(api, dir)
+      expect(granted.some(ace => ace.sid === 'S-1-5-32-545')).toBe(true) // explicit ACE preserved
+      expect(granted.some(ace => ace.sid === 'S-1-4-4242-1')).toBe(true)
+
       revokeWrite(api, dir, capabilitySid)
 
       const aces = readDirectAces(api, dir)
@@ -197,43 +208,53 @@ describe.skipIf(!isWin32)('ACL editing', () => {
       if (!isNullPtr(usersSid)) api.localFree(usersSid)
       if (!isNullPtr(capabilitySid)) api.localFree(capabilitySid)
       if (!isNullPtr(lowSid)) api.localFree(lowSid)
+      if (!isNullPtr(world)) api.localFree(world)
     }
   })
 
-  it('grantWrite applies the Low no-write-up label; revokeWrite clears it in the same edit', async () => {
+  it('grantWrite applies the Low no-write-up label and denies the ambient parent-delete right; revokeWrite clears both capability and label', async () => {
     const api = await win32()
     const dir = scratch()
     const capabilitySid = sidFromString(api, 'S-1-4-4242-9')
     const lowSid = lowLabelSid(api)
+    const world = worldSid(api)
     try {
       expect(readLabelAces(api, dir)).toEqual([])
-      grantWrite(api, dir, capabilitySid, lowSid)
+      grantWrite(api, dir, capabilitySid, lowSid, world)
       expect(readLabelAces(api, dir)).toEqual([
         { sid: 'S-1-16-4096', mask: abi.SYSTEM_MANDATORY_LABEL_NO_WRITE_UP },
       ])
+      // The ambient delete route inside another granted root is what the deny
+      // removes; the capability ACE stays the only delete authority there.
+      const denied = readDirectAces(api, dir).filter(ace => ace.sid === 'S-1-1-0')
+      expect(denied).toEqual([{ sid: 'S-1-1-0', mask: abi.FILE_DELETE_CHILD }])
       revokeWrite(api, dir, capabilitySid)
       expect(readLabelAces(api, dir)).toEqual([])
+      expect(readDirectAces(api, dir).some(ace => ace.sid === 'S-1-4-4242-9')).toBe(false)
     } finally {
       if (!isNullPtr(capabilitySid)) api.localFree(capabilitySid)
       if (!isNullPtr(lowSid)) api.localFree(lowSid)
+      if (!isNullPtr(world)) api.localFree(world)
     }
   })
 
-  it('grantWrite is idempotent: a second grant over the standing exact ACE and label skips the SetNamedSecurityInfoW apply (no eager full-tree re-propagation)', async () => {
+  it('grantWrite is idempotent: a second grant over the standing exact ACE, deny, and label skips the SetNamedSecurityInfoW apply (no eager full-tree re-propagation)', async () => {
     const api = await win32()
     const dir = scratch()
     const capabilitySid = sidFromString(api, 'S-1-4-4242-2')
     const lowSid = lowLabelSid(api)
+    const world = worldSid(api)
     const apply = vi.spyOn(api, 'setNamedSecurityInfoW')
     try {
-      grantWrite(api, dir, capabilitySid, lowSid)
+      grantWrite(api, dir, capabilitySid, lowSid, world)
       expect(apply).toHaveBeenCalledTimes(1)
-      // The exact ACE and label now stand (the per-session grant surviving
-      // from a previous server lifetime): the second grant is a read only.
-      grantWrite(api, dir, capabilitySid, lowSid)
+      // The exact ACE, deny, and label now stand (the per-session grant
+      // surviving from a previous server lifetime): the second grant is a read only.
+      grantWrite(api, dir, capabilitySid, lowSid, world)
       expect(apply).toHaveBeenCalledTimes(1)
       const aces = readDirectAces(api, dir)
       expect(aces.filter(ace => ace.sid === 'S-1-4-4242-2')).toHaveLength(1)
+      expect(aces.filter(ace => ace.sid === 'S-1-1-0')).toHaveLength(1)
       expect(readLabelAces(api, dir)).toHaveLength(1)
       revokeWrite(api, dir, capabilitySid)
       expect(readDirectAces(api, dir).some(ace => ace.sid === 'S-1-4-4242-2')).toBe(false)
@@ -241,6 +262,7 @@ describe.skipIf(!isWin32)('ACL editing', () => {
       apply.mockRestore()
       if (!isNullPtr(capabilitySid)) api.localFree(capabilitySid)
       if (!isNullPtr(lowSid)) api.localFree(lowSid)
+      if (!isNullPtr(world)) api.localFree(world)
     }
   })
 

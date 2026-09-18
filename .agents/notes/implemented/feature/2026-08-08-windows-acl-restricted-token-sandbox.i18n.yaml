@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-08-windows-acl-restricted-token-sandbox.md
-2026-08-08-windows-acl-restricted-token-sandbox.md: 1218d39271908cd09440646608088deb3ca64ed4
-2026-08-08-windows-acl-restricted-token-sandbox.zh.md: 8b78fbe7132064f81a1f12f2c3a4e177b13337a1
+2026-08-08-windows-acl-restricted-token-sandbox.md: 2ab157c697d8917f2e3c6315e5ef161ce6eb5229
+2026-08-08-windows-acl-restricted-token-sandbox.zh.md: 10cac08c3161c6c723414c4274333af4eebc36f3
