@@ -274,12 +274,14 @@ describe('CI workflow', () => {
     expect(observational?.if).toBeUndefined()
     expect(buildCommands.findIndex(step => step.id === 'observational'))
       .toBeGreaterThan(buildCommands.findIndex(step => step.run === 'pnpm run check:ci:windows-blocking'))
-    expect(buildCommands).toContainEqual({
-      name: 'Report Windows observational failures',
+    const report = buildCommands.find(step => step.name === 'Report Windows observational failures')
+    expect(report).toMatchObject({
+      'continue-on-error': true,
       if: "steps.observational.outcome == 'failure'",
       shell: 'pwsh',
-      run: "Write-Output '::warning::Windows observational checks failed; see the observational step for diagnostics.'",
     })
+    expect(report?.run).toContain('::warning::')
+    expect(report?.run).toContain('Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append')
 
     // serial-windows: master-only standby, self-hosted, non-blocking, lives in ci-master.
     expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")

@@ -33,7 +33,6 @@ export type Mode =
   | 'ci-consumers'
   | 'ci-windows-blocking'
   | 'ci-windows-complete'
-  | 'ci-windows-observational'
   | 'ci-windows-observational-ready'
   | 'node-compat'
   | 'check-all'
@@ -148,7 +147,6 @@ function parseMode(raw: string | undefined): Mode {
     case 'ci-consumers':
     case 'ci-windows-blocking':
     case 'ci-windows-complete':
-    case 'ci-windows-observational':
     case 'ci-windows-observational-ready':
     case 'node-compat':
     case 'check-all':
@@ -158,7 +156,7 @@ function parseMode(raw: string | undefined): Mode {
       return raw
     default:
       throw new Error(
-        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-bench | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational | ci-windows-observational-ready | node-compat | check-all | hygiene | doc-sync | doc-quick, got ${JSON.stringify(raw)}.`,
+        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-bench | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational-ready | node-compat | check-all | hygiene | doc-sync | doc-quick, got ${JSON.stringify(raw)}.`,
       )
   }
 }
@@ -295,8 +293,6 @@ export function gatesForMode(selected: Mode): Gate[] {
       return ciWindowsBlockingGates()
     case 'ci-windows-complete':
       return ciWindowsCompleteGates()
-    case 'ci-windows-observational':
-      return ciWindowsObservationalGates()
     case 'ci-windows-observational-ready':
       // The caller owns the successful workspace build; all diagnostics remain.
       return ciWindowsObservationalGates()
