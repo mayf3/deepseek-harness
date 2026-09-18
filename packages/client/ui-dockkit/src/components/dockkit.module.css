@@ -221,6 +221,20 @@
   margin-left: 4px;
 }
 
+/* macOS desktop: an embedder may pin this surface under the window's top drag
+   band (ui-layout .leadingBand — full-window geometry that Electron composes
+   in DOM order, not by stacking). The chip run, the strip-end chrome, and the
+   pane body subtract their whole boxes so tabs, controls, and content stay
+   clickable even where they overlap the band; the strip's blank fill and top
+   inset keep the band's drag, so the row moves the window like a native tab
+   bar. Hidden surfaces contribute nothing: Blink skips non-visible boxes when
+   it collects draggable regions. */
+:global(html[data-platform='darwin']) .stripTabs,
+:global(html[data-platform='darwin']) .stripChrome,
+:global(html[data-platform='darwin']) .paneBody {
+  -webkit-app-region: no-drag;
+}
+
 /* The slot between two chips: a 10px box with a hairline down its centre.
    Targeted by a drag, the same box draws the caret instead, so the chips
    around it never move. */
