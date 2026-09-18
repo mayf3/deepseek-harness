@@ -18414,7 +18414,7 @@
         "event:session/end-seed.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:412"
+        "packages/core/session/src/types.ts:414"
       ]
     },
     {
@@ -27412,7 +27412,7 @@
         "packages/core/session/src/types.ts#SurfaceOp"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:446"
+        "packages/core/session/src/types.ts:448"
       ]
     },
     {
@@ -51975,7 +51975,7 @@
         "SessionEventEnvelope[6].surfaceOp[1]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:448"
+        "packages/core/session/src/types.ts:450"
       ]
     },
     {
