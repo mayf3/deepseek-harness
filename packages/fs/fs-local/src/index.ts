@@ -8,7 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { constants as bufferConstants } from 'node:buffer'
 import { once } from 'node:events'
 import { watch } from 'chokidar'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import z from '@deepseek-ai/schemastery'
 import { FileSystem, FsError, FsVersion } from '@deepseek-ai/dsh-fs'
@@ -68,8 +68,17 @@ const MAX_DIFF_BASIS_BYTES = Math.min(
 export class LocalFileSystem extends FileSystem {
   override async watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>> {
     signal.throwIfAborted()
-    const watcher = watch(this.processPath(target), { ignoreInitial: true, depth: 0 })
-    watcher.on('all', () => { changed() })
+    const path = resolve(this.processPath(target))
+    const directory = (await this.stat(target, signal))?.type === 'directory'
+    signal.throwIfAborted()
+    const root = directory ? path : dirname(path)
+    const watcher = watch(root, {
+      ignoreInitial: true, depth: 0,
+      ignored: entry => !directory && resolve(entry) !== root && resolve(entry) !== path,
+    })
+    watcher.on('all', (_event, entry) => {
+      if (directory || resolve(entry) === path) changed()
+    })
     watcher.on('error', (error) => { changed(error instanceof Error ? error : new Error(String(error))) })
     try {
       await once(watcher, 'ready', { signal })

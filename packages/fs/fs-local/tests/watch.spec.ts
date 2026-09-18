@@ -1,6 +1,7 @@
 /** Watch initialization and asynchronous release at the Chokidar adapter. */
 import { Context } from '@deepseek-ai/cordis'
-import { FsTargetKey } from '@deepseek-ai/dsh-fs'
+import { FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
+import { dirname, join, resolve } from 'node:path'
 import * as chokidar from 'chokidar'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { LocalFileSystem } from '../src/index.ts'
@@ -12,32 +13,48 @@ vi.mock('chokidar', async (importOriginal) => {
 
 afterEach(() => { vi.restoreAllMocks() })
 
-async function setup() {
+async function setup(kind: 'file' | 'directory' | 'missing' = 'file') {
   const watcher = new chokidar.FSWatcher()
   onTestFinished(() => watcher.close())
-  const watch = vi.mocked(chokidar.watch).mockReset().mockReturnValue(watcher)
+  const started = Promise.withResolvers<void>()
+  const watch = vi.mocked(chokidar.watch).mockReset().mockImplementation(() => {
+    started.resolve()
+    return watcher
+  })
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   await ctx.plugin(LocalFileSystem)
-  const target = { targetKey: FsTargetKey('/workspace/file.txt'), displayPath: 'file.txt' }
+  const path = resolve('/workspace/file.txt')
+  const target = { targetKey: FsTargetKey(path), displayPath: 'file.txt' }
+  const stat = vi.spyOn(ctx.fs, 'stat').mockResolvedValue(kind === 'missing'
+    ? undefined : { type: kind, version: FsVersion('v1'), size: 1 })
   const changed = vi.fn<(error?: Error) => void>()
   const controller = new AbortController()
   onTestFinished(() => { controller.abort() })
-  return { watcher, watch, fs: ctx.fs, target, changed, controller }
+  return { watcher, watch, fs: ctx.fs, target, changed, controller, path, stat, started: started.promise }
 }
 
 describe('local filesystem watch', () => {
-  it('waits for ready, forwards invalidation, and awaits watcher closure', async () => {
-    const h = await setup()
+  it.each(['file', 'missing'] as const)('waits for the parent watch of a %s target and awaits closure', async (kind) => {
+    const h = await setup(kind)
     const pending = h.fs.watch(h.target, h.changed, h.controller.signal)
-    expect(h.watch).toHaveBeenCalledExactlyOnceWith('/workspace/file.txt', { ignoreInitial: true, depth: 0 })
+    await h.started
+    expect(h.watch).toHaveBeenCalledExactlyOnceWith(dirname(h.path), { ignoreInitial: true, depth: 0, ignored: expect.any(Function) })
+    const ignored = h.watch.mock.calls[0]![1]!.ignored
+    if (typeof ignored !== 'function') throw new Error('Expected a target filter')
+    expect(ignored(dirname(h.path))).toBe(false)
+    expect(ignored(h.path)).toBe(false)
+    expect(ignored(join(dirname(h.path), 'unrelated.txt'))).toBe(true)
     let ready = false
     void pending.then(() => { ready = true })
     await Promise.resolve(undefined)
     expect(ready).toBe(false)
     h.watcher.emit('ready')
     const close = await pending
-    h.watcher.emit('all', 'change', '/workspace/file.txt')
+    h.watcher.emit('all', 'addDir', dirname(h.path))
+    h.watcher.emit('all', 'change', join(dirname(h.path), 'unrelated.txt'))
+    expect(h.changed).not.toHaveBeenCalled()
+    h.watcher.emit('all', 'change', h.path)
     expect(h.changed).toHaveBeenCalledExactlyOnceWith()
     const closed = Promise.withResolvers<undefined>()
     onTestFinished(() => { closed.resolve(undefined) })
@@ -53,6 +70,33 @@ describe('local filesystem watch', () => {
     expect(h.watcher.closed).toBe(true)
   })
 
+  it('watches a directory itself without filtering its direct entries', async () => {
+    const h = await setup('directory')
+    const pending = h.fs.watch(h.target, h.changed, h.controller.signal)
+    await h.started
+    expect(h.watch.mock.calls[0]![0]).toBe(h.path)
+    const ignored = h.watch.mock.calls[0]![1]!.ignored
+    if (typeof ignored !== 'function') throw new Error('Expected a target filter')
+    expect(ignored(join(h.path, 'child.txt'))).toBe(false)
+    h.watcher.emit('ready')
+    const close = await pending
+    h.watcher.emit('all', 'change', join(h.path, 'child.txt'))
+    expect(h.changed).toHaveBeenCalledExactlyOnceWith()
+    await close()
+  })
+
+  it('does not acquire a watcher when cancelled during metadata lookup', async () => {
+    const h = await setup()
+    const metadata = Promise.withResolvers<undefined>()
+    h.stat.mockReturnValueOnce(metadata.promise)
+    const pending = h.fs.watch(h.target, h.changed, h.controller.signal)
+    const rejected = expect(pending).rejects.toThrow()
+    h.controller.abort()
+    metadata.resolve(undefined)
+    await rejected
+    expect(h.watch).not.toHaveBeenCalled()
+  })
+
   it('rejects an already-cancelled initialization without acquiring a watcher', async () => {
     const h = await setup()
     h.controller.abort()
@@ -64,6 +108,7 @@ describe('local filesystem watch', () => {
     const h = await setup()
     const pending = h.fs.watch(h.target, h.changed, h.controller.signal)
     const rejected = expect(pending).rejects.toThrow()
+    await h.started
     h.controller.abort()
     await rejected
     expect(h.watcher.closed).toBe(true)
@@ -75,6 +120,7 @@ describe('local filesystem watch', () => {
     const error = new Error('watch failed')
     const pending = h.fs.watch(h.target, h.changed, h.controller.signal)
     const rejected = expect(pending).rejects.toBe(error)
+    await h.started
     h.watcher.emit('error', error)
     await rejected
     expect(h.changed).toHaveBeenCalledExactlyOnceWith(error)
@@ -84,6 +130,7 @@ describe('local filesystem watch', () => {
   it('normalizes watcher errors after initialization', async () => {
     const h = await setup()
     const pending = h.fs.watch(h.target, h.changed, h.controller.signal)
+    await h.started
     h.watcher.emit('ready')
     const close = await pending
     const error = new Error('watch failed')

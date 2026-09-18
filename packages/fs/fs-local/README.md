@@ -54,7 +54,7 @@ Read any regular UTF-8 text file whole or as a stream, read raw bytes up to a ca
 
 Read, listing, and mutation failures are typed `FsError`s with stable codes — `FS_NOT_FOUND`, `FS_NOT_TEXT` (binary content), `FS_STALE_VERSION` (changed since observation), `FS_EDIT_NOT_FOUND` or `FS_AMBIGUOUS_EDIT` (no unique literal match), and others — so callers branch on the code, never on message text. A missing target on an edit reports `FS_STALE_VERSION` whether or not the version guard is supplied.
 
-Chokidar observes one file or a directory's direct entries through OS events, without polling or recursive watching. File watches cover in-place writes, atomic replacement, deletion, and same-path recreation while the parent directory remains.
+Chokidar observes one file or a directory's direct entries through OS events, without polling or recursive watching. Files use a filtered parent-directory watch, so readiness also covers creation of an initially missing file. File watches cover in-place writes, atomic replacement, deletion, and same-path recreation while the parent directory remains.
 
 -----
 
@@ -129,7 +129,6 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 These limits define when the local backend is a poor fit or needs special operational care. They are current package constraints, not a general filesystem comparison or a task backlog.
 
 - **`config.cwd` is not a sandbox** — it is a resolution default, not containment: absolute paths and `..` escape it. Enforce containment with a stricter `ctx.fs` backend or a permission plugin on the `tools/execute` waterfall.
-- **Initially missing targets** — Chokidar can report readiness before the parent-directory watch is attached; creation immediately after readiness can be missed.
 - **Linux parent-directory recreation** — restoring observation after a parent directory is deleted and recreated is deferred; same-path file recreation while its parent remains is supported.
 - **Version tokens depend on filesystem metadata** — they combine device, inode, size, nanosecond mtime, and nanosecond ctime; a storage layer that cannot update any of those facts for a rewrite can still defeat the stale guard.
 - **`editText` holds the whole file (plus the edited copy) in memory** — streaming exists only on the read path.
