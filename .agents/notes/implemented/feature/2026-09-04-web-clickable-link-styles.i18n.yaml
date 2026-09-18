@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-04-web-clickable-link-styles.md
-2026-09-04-web-clickable-link-styles.md: eddceb8af8b39b24ebf85870b893ecd4d7939c96
-2026-09-04-web-clickable-link-styles.zh.md: dbb2c9ac34605e45ef0f404628ac710384983b57

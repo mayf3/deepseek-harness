@@ -63,6 +63,7 @@ export function ConversationSessionHeader({
   const selectedId = useStore(s => s.view)
   const active = resolveActiveView(tabs, selectedId)
   const ancestry = useSessions(s => deriveAncestry(s, sessionId), equalBreadcrumbs)
+  const showTabs = !hideChrome && tabs.length > 1
   return (
     <>
       <div className={css.titleRow}>
@@ -131,7 +132,7 @@ export function ConversationSessionHeader({
           {renderSlot('conversation.session.header.corner', {})}
         </div>
       </div>
-      {!hideChrome && tabs.length > 1 && (
+      {showTabs && (
         <div className={css.tabs} role="tablist">
           {tabs.map(viewTab => (
             <button

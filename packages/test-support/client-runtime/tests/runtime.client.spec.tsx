@@ -843,7 +843,8 @@ describe('stubbed settings scope', () => {
     })
 
     await host.scope.set('preference', 'dark')
-    await host.scope.unset('preference')
+    await expect(host.scope.unset('preference')).resolves.toBe(true)
+    await expect(host.scope.mutate([{ op: 'set', path: ['preference'], value: 'dark' }])).resolves.toBe(true)
     host.publish({
       status: 'ready',
       value: { preference: 'system' },
