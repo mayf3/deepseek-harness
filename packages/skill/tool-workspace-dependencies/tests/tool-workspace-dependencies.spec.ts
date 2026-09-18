@@ -12,7 +12,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import * as workspaceDependencies from '../src/index.ts'
-import { installPrimaryRuntime, readPrimaryRuntime, resolvePrimaryRuntime, workspaceDependencyPaths, type PrimaryRuntimeManifest } from '../src/index.ts'
+import { installPrimaryRuntime, parsePrimaryRuntime, readPrimaryRuntime, resolvePrimaryRuntime, workspaceDependencyPaths, type PrimaryRuntimeManifest } from '../src/index.ts'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof fs>()
@@ -32,7 +32,7 @@ async function fixture() {
   const root = join(directory, 'home', 'dsh-runtimes', 'dsh-primary-runtime')
   const manifest: PrimaryRuntimeManifest = {
     desktopVersion: '1.0.0', platform: process.platform, arch: process.arch,
-    components: { python: '3.12.14', node: '24.21.0', pnpm: '11.7.0', numpy: '2.3.5', pandas: '3.0.1' },
+    python: '3.12.14', node: '24.21.0', pnpm: '11.7.0',
     pythonPackages: { 'python-docx': '1.2.0', 'python-pptx': '1.0.2', openpyxl: '3.1.5' },
   }
   const paths = workspaceDependencyPaths(source, manifest)
@@ -48,7 +48,7 @@ async function fixture() {
 }
 
 it.each(['win32', 'darwin', 'linux'])('returns %s interpreter and package paths', (platform) => {
-  const manifest: PrimaryRuntimeManifest = { desktopVersion: '1', platform, arch: 'x64', components: { python: '3.12.14', node: '24.21.0', pnpm: '11.7.0', numpy: '2.3.5', pandas: '3.0.1' } }
+  const manifest: PrimaryRuntimeManifest = { desktopVersion: '1', platform, arch: 'x64', python: '3.12.14', node: '24.21.0', pnpm: '11.7.0', pythonPackages: {} }
   const paths = workspaceDependencyPaths('/runtime', manifest)
   expect(paths.pythonDistributions).toEqual({})
   expect(paths.python).toBe(join('/runtime', 'dependencies', 'python', ...(platform === 'win32' ? ['python.exe'] : ['bin', 'python3'])))
@@ -136,18 +136,27 @@ it('rejects malformed metadata and incompatible targets', async () => {
   const { source, root, manifest } = await fixture()
   await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, arch: process.arch === 'x64' ? 'arm64' : 'x64' }))
   await expect(installPrimaryRuntime(source, root)).rejects.toThrow('incompatible')
-  await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, components: { ...manifest.components, python: '../escape' } }))
+  await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, python: '../escape' }))
   await expect(readPrimaryRuntime(source)).rejects.toThrow('invalid metadata')
 })
 
-it.each([['numpy', 'numpy'], ['pandas', 'pandas'], ['Numpy', 'numpy'], ['PANDAS', 'pandas']] as const)('rejects conflicting %s component and distribution versions', async (distribution, name) => {
-  const { source, manifest } = await fixture()
-  await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, pythonPackages: { [distribution]: '0.0.1' } }))
-  await expect(readPrimaryRuntime(source)).rejects.toThrow(`conflicting ${name} distribution version`)
-  const consistent = { ...manifest, pythonPackages: { [distribution]: manifest.components[name] } }
-  await writeFile(join(source, 'runtime.json'), JSON.stringify(consistent))
-  expect(await readPrimaryRuntime(source)).toEqual(consistent)
-})
+/** Previous Desktop files carry interpreter and selected library versions under components. */
+function legacyManifest(manifest: PrimaryRuntimeManifest) {
+  const { python, node, pnpm, ...metadata } = manifest
+  return { ...metadata, components: { python, node, pnpm, numpy: '2.3.5', pandas: '3.0.1' } }
+}
+
+it.each([['numpy', 'numpy'], ['pandas', 'pandas'], ['Numpy', 'numpy'], ['PANDAS', 'pandas']] as const)(
+  'rejects conflicting %s versions in a legacy manifest', async (distribution, name) => {
+    const { source, manifest } = await fixture()
+    const legacy = legacyManifest(manifest)
+    await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...legacy, pythonPackages: { [distribution]: '0.0.1' } }))
+    await expect(readPrimaryRuntime(source)).rejects.toThrow(`conflicting ${name} distribution version`)
+    const pythonPackages = { [distribution]: legacy.components[name] }
+    await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...legacy, pythonPackages }))
+    expect(await readPrimaryRuntime(source)).toEqual({ ...manifest, pythonPackages })
+  },
+)
 
 it.each([
   { payloadDigest: 'invalid' },
@@ -206,7 +215,7 @@ it('uses a payload in place without copying and tolerates a payload without Node
   const { source, directory } = await fixture()
   const manifest: PrimaryRuntimeManifest = {
     desktopVersion: '1.0.0', platform: process.platform, arch: process.arch,
-    components: { python: '3.12.14', numpy: '2.3.5', pandas: '3.0.1' },
+    python: '3.12.14',
     pythonPackages: { 'python-docx': '1.2.0' },
   }
   await writeFile(join(source, 'runtime.json'), JSON.stringify(manifest))
@@ -223,7 +232,7 @@ it('uses a payload in place without copying and tolerates a payload without Node
 
 it('rejects a payload whose Node.js or pnpm version is malformed', async () => {
   const { source, manifest } = await fixture()
-  await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, components: { ...manifest.components, node: 'latest' } }))
+  await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, node: 'latest' }))
   await expect(readPrimaryRuntime(source)).rejects.toThrow('invalid metadata')
 })
 
@@ -248,8 +257,9 @@ async function tool(config: workspaceDependencies.Config) {
 }
 
 it.each([null, [], { desktopVersion: '' }, { platform: 'unsupported' }, { arch: 'ia32' },
-  { components: null }, { components: { python: 3 } }, { payloadDigest: 1 },
-  { pythonPackages: null }, { pythonPackages: { numpy: 3 } },
+  { python: undefined }, { python: 3 }, { node: 24 }, { pnpm: 'latest' }, { payloadDigest: 1 },
+  { pythonPackages: undefined }, { pythonPackages: null }, { pythonPackages: 3 }, { pythonPackages: { numpy: 3 } },
+  { desktopVersion: 1 }, { platform: ['linux'] }, { arch: ['x64'] },
 ])('rejects malformed manifest fields: %j', async (invalid) => {
   const { source, manifest } = await fixture()
   const value = invalid === null || Array.isArray(invalid) ? invalid : { ...manifest, ...invalid }
@@ -259,7 +269,7 @@ it.each([null, [], { desktopVersion: '' }, { platform: 'unsupported' }, { arch: 
 
 it('reads legacy metadata without a distribution map and rejects incompatible platforms', async () => {
   const { source, manifest } = await fixture()
-  const { pythonPackages: _packages, ...legacy } = manifest
+  const { pythonPackages: _packages, ...legacy } = legacyManifest(manifest)
   await writeFile(join(source, 'runtime.json'), JSON.stringify(legacy))
   expect((await resolvePrimaryRuntime(source)).pythonDistributions).toEqual({})
   await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, platform: process.platform === 'linux' ? 'darwin' : 'linux' }))
@@ -359,4 +369,49 @@ it('validates the previous directory even when a current installation exists', a
   await symlink(outside, `${root}.previous`, process.platform === 'win32' ? 'junction' : 'dir')
   await expect(installPrimaryRuntime(source, root)).rejects.toThrow('filesystem link')
   expect(await readFile(join(outside, 'keep'), 'utf8')).toBe('untouched')
+})
+
+it('normalizes legacy metadata without rewriting the source or leaking components', async () => {
+  const { source, manifest } = await fixture()
+  const stored = JSON.stringify(legacyManifest(manifest))
+  await writeFile(join(source, 'runtime.json'), stored)
+  expect(await readPrimaryRuntime(source)).toEqual(manifest)
+  expect(await readFile(join(source, 'runtime.json'), 'utf8')).toBe(stored)
+  expect(await resolvePrimaryRuntime(source)).toEqual(workspaceDependencyPaths(source, manifest))
+})
+
+it('reuses an equivalent legacy installation without replacing user-added packages', async () => {
+  const { source, root, manifest } = await fixture()
+  const stored = JSON.stringify(legacyManifest(manifest))
+  await writeFile(join(source, 'runtime.json'), stored)
+  const installed = await installPrimaryRuntime(source, root)
+  await writeFile(join(installed.pythonPackages, 'user-package.py'), 'keep')
+  await writeFile(join(source, 'runtime.json'), JSON.stringify(manifest))
+  expect(await installPrimaryRuntime(source, root)).toEqual(installed)
+  expect(await readFile(join(root, 'runtime.json'), 'utf8')).toBe(stored)
+  expect(await readFile(join(installed.pythonPackages, 'user-package.py'), 'utf8')).toBe('keep')
+})
+
+it('accepts flat Python libraries without requiring or singling out numpy and pandas', async () => {
+  const { source, manifest } = await fixture()
+  const flat = { ...manifest, pythonPackages: { 'custom-library': '1.0.0' } }
+  await writeFile(join(source, 'runtime.json'), JSON.stringify(flat))
+  expect(await readPrimaryRuntime(source)).toEqual(flat)
+  expect((await resolvePrimaryRuntime(source)).pythonDistributions).toEqual(flat.pythonPackages)
+})
+
+it.each(['python', 'node', 'pnpm'])('rejects mixed legacy and flat %s fields', async (name) => {
+  const { manifest } = await fixture()
+  expect(() => parsePrimaryRuntime({ ...legacyManifest(manifest), [name]: '1.0.0' })).toThrow('invalid metadata')
+})
+
+it.each([null, [], 'invalid', { python: '3.12.14' }])('rejects malformed legacy components: %j', async (components) => {
+  const { manifest } = await fixture()
+  expect(() => parsePrimaryRuntime({ ...legacyManifest(manifest), components })).toThrow('invalid metadata')
+})
+
+it.each(['flat', 'legacy'])('rejects pnpm without a Node.js interpreter in %s metadata', async (format) => {
+  const { manifest } = await fixture()
+  const { node: _node, ...input } = manifest
+  expect(() => parsePrimaryRuntime(format === 'legacy' ? legacyManifest(input) : input)).toThrow('invalid metadata')
 })

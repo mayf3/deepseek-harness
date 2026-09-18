@@ -29,24 +29,21 @@ export const Config: z<Config> = z.object({
   root: z.string().min(1),
 })
 
-/** Versions recorded by the payload build, independent of user-installed packages. */
+/** Canonical build metadata, independent of user-installed packages; legacy files are normalized on read. */
 export interface PrimaryRuntimeManifest {
   readonly desktopVersion: string
   readonly platform: string
   readonly arch: string
   /** Locked payload identity; absent only in installations made before payload hashing. */
   readonly payloadDigest?: string
-  /** Installed wheel distribution versions; absent in older release manifests. */
-  readonly pythonPackages?: Readonly<Record<string, string>>
-  readonly components: {
-    readonly python: string
-    /** Absent when the payload ships no Node.js. */
-    readonly node?: string
-    /** Absent when the payload ships no pnpm. */
-    readonly pnpm?: string
-    readonly numpy: string
-    readonly pandas: string
-  }
+  /** Bundled Python interpreter version. */
+  readonly python: string
+  /** Absent when the payload ships no Node.js. */
+  readonly node?: string
+  /** Bundled pnpm version; requires a bundled Node.js executable. */
+  readonly pnpm?: string
+  /** All recorded Python distribution versions; empty for legacy files without a distribution map. */
+  readonly pythonPackages: Readonly<Record<string, string>>
 }
 
 /** Absolute entry points and bundled versions; pnpm runs through the returned Node executable. */
@@ -63,43 +60,76 @@ export interface WorkspaceDependencies {
 const VERSION = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/u
 const PLATFORMS = ['win32', 'darwin', 'linux']
 
-function isVersion(value: unknown): boolean {
+function isVersion(value: unknown): value is string {
   return typeof value === 'string' && VERSION.test(value)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isDistributionMap(value: unknown): value is Readonly<Record<string, string>> {
+  return isRecord(value) && Object.entries(value).every(([name, version]) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(name)
+    && typeof version === 'string' && /^\d[\w.!+-]*$/u.test(version))
+}
+
 /**
- * Read build metadata, rejecting duplicate normalized names and conflicting component/distribution versions.
+ * Validate payload JSON and normalize legacy component fields to top-level versions.
+ * @param value - Untrusted decoded runtime.json contents.
+ * @returns Canonical metadata with one Python distribution map and no components field.
+ * @throws For malformed or mixed formats, duplicate distribution names, or inconsistent legacy metadata.
+ */
+export function parsePrimaryRuntime(value: unknown): PrimaryRuntimeManifest {
+  if (!isRecord(value)) throw new Error('primary runtime: invalid metadata')
+  const legacy = value.components !== undefined
+  const versions = legacy ? value.components : value
+  if (!isRecord(versions) || (legacy && ['python', 'node', 'pnpm'].some(key => value[key] !== undefined))) {
+    throw new Error('primary runtime: invalid metadata')
+  }
+  const { desktopVersion, platform, arch, payloadDigest } = value
+  const { python, node, pnpm } = versions
+  const pythonPackages = value.pythonPackages === undefined && legacy ? {} : value.pythonPackages
+  if (typeof desktopVersion !== 'string' || desktopVersion.length === 0
+    || typeof platform !== 'string' || !PLATFORMS.includes(platform)
+    || typeof arch !== 'string' || !['x64', 'arm64'].includes(arch)
+    || !isVersion(python)
+    || (node !== undefined && !isVersion(node))
+    || (pnpm !== undefined && (!isVersion(pnpm) || node === undefined))
+    || (payloadDigest !== undefined && (typeof payloadDigest !== 'string' || !/^[a-f0-9]{64}$/u.test(payloadDigest)))
+    || !isDistributionMap(pythonPackages)) {
+    throw new Error('primary runtime: invalid metadata')
+  }
+  const entries = Object.entries(pythonPackages)
+  const distributions = new Map(entries.map(([name, version]) => [name.toLowerCase().replace(/[-_.]+/gu, '-'), version]))
+  if (distributions.size !== entries.length) throw new Error('primary runtime: invalid metadata')
+  // Only the old on-disk format duplicates these versions. New manifests use the distribution map alone.
+  if (legacy) {
+    for (const name of ['numpy', 'pandas'] as const) {
+      if (!isVersion(versions[name])) throw new Error('primary runtime: invalid metadata')
+      const version = distributions.get(name)
+      if (version !== undefined && version !== versions[name]) {
+        throw new Error(`primary runtime: conflicting ${name} distribution version`)
+      }
+    }
+  }
+  return {
+    desktopVersion, platform, arch,
+    ...(payloadDigest === undefined ? {} : { payloadDigest }),
+    python,
+    ...(node === undefined ? {} : { node }),
+    ...(pnpm === undefined ? {} : { pnpm }),
+    pythonPackages,
+  }
+}
+
+/**
+ * Read and normalize build metadata without rewriting the source file.
  * @param root - Installed or bundled primary runtime directory.
- * @returns Validated component versions and target identifiers.
+ * @returns Validated top-level versions and target identifiers, including for legacy components manifests.
  */
 export async function readPrimaryRuntime(root: string): Promise<PrimaryRuntimeManifest> {
   const value: unknown = JSON.parse(await readFile(join(root, 'runtime.json'), 'utf8'))
-  if (typeof value !== 'object' || value === null) throw new Error('primary runtime: invalid metadata')
-  const record = value as Record<string, unknown>
-  const components = record.components as Record<string, unknown> | null | undefined
-  const packages = record.pythonPackages
-  if (typeof record.desktopVersion !== 'string' || record.desktopVersion.length === 0
-    || !PLATFORMS.includes(String(record.platform)) || !['x64', 'arm64'].includes(String(record.arch))
-    || typeof components !== 'object' || components === null
-    || !['python', 'numpy', 'pandas'].every(key => isVersion(components[key]))
-    || !['node', 'pnpm'].every(key => components[key] === undefined || isVersion(components[key]))
-    || (record.payloadDigest !== undefined && (typeof record.payloadDigest !== 'string' || !/^[a-f0-9]{64}$/u.test(record.payloadDigest)))
-    || (packages !== undefined && (typeof packages !== 'object' || packages === null || Array.isArray(packages)
-      || !Object.entries(packages).every(([name, version]) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(name)
-        && typeof version === 'string' && /^\d[\w.!+-]*$/u.test(version))))) {
-    throw new Error('primary runtime: invalid metadata')
-  }
-  const manifest = value as PrimaryRuntimeManifest
-  const entries = Object.entries(manifest.pythonPackages ?? {})
-  const distributions = new Map(entries.map(([name, version]) => [name.toLowerCase().replace(/[-_.]+/gu, '-'), version]))
-  if (distributions.size !== entries.length) throw new Error('primary runtime: invalid metadata')
-  for (const name of ['numpy', 'pandas'] as const) {
-    const version = distributions.get(name)
-    if (version !== undefined && version !== manifest.components[name]) {
-      throw new Error(`primary runtime: conflicting ${name} distribution version`)
-    }
-  }
-  return manifest
+  return parsePrimaryRuntime(value)
 }
 
 /**
@@ -111,17 +141,17 @@ export async function readPrimaryRuntime(root: string): Promise<PrimaryRuntimeMa
 export function workspaceDependencyPaths(root: string, manifest: PrimaryRuntimeManifest): WorkspaceDependencies {
   const dependencies = join(root, 'dependencies')
   const windows = manifest.platform === 'win32'
-  const node = manifest.components.node === undefined ? {} : {
+  const node = manifest.node === undefined ? {} : {
     node: join(dependencies, 'node', 'bin', windows ? 'node.exe' : 'node'),
     nodePackages: join(dependencies, 'node', 'node_modules'),
   }
-  const pnpm = manifest.components.pnpm === undefined ? {} : { pnpm: join(dependencies, 'pnpm', 'bin', 'pnpm.mjs') }
+  const pnpm = manifest.pnpm === undefined ? {} : { pnpm: join(dependencies, 'pnpm', 'bin', 'pnpm.mjs') }
   return {
     python: join(dependencies, 'python', ...(windows ? ['python.exe'] : ['bin', 'python3'])),
     ...node,
     ...pnpm,
-    pythonPackages: join(dependencies, 'python', ...(windows ? ['Lib'] : ['lib', `python${manifest.components.python.split('.').slice(0, 2).join('.')}`]), 'site-packages'),
-    pythonDistributions: manifest.pythonPackages ?? {},
+    pythonPackages: join(dependencies, 'python', ...(windows ? ['Lib'] : ['lib', `python${manifest.python.split('.').slice(0, 2).join('.')}`]), 'site-packages'),
+    pythonDistributions: manifest.pythonPackages,
   }
 }
 

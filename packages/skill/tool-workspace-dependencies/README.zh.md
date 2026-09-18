@@ -42,7 +42,7 @@ kind: "package-reference"
 
 ### payload 布局
 
-`runtime.json` 记录 `desktopVersion`、`platform`（`win32`、`darwin` 或 `linux`）、`arch`、`components` 各版本（`python`、`numpy`、`pandas`；`node` 与 `pnpm` 可选），以及可选的 `payloadDigest` 与 `pythonPackages`。条目位于 `dependencies/`：`python/bin/python3`（Windows 为 `python/python.exe`）及其下的 `site-packages`；声明了才有的 `node/bin/node`、`node/node_modules` 与 `pnpm/bin/pnpm.mjs`。平台或架构与当前进程不符的清单被拒绝。
+`runtime.json` 记录 `desktopVersion`、`platform`（`win32`、`darwin` 或 `linux`）、`arch`、可选的 `payloadDigest`、顶层 `python` 与可选的 `node`/`pnpm` 版本，以及完整的 `pythonPackages` 分发包版本表。声明 pnpm 时必须同时声明 Node.js。numpy、pandas 等 Python 库只出现在 `pythonPackages` 中。条目位于 `dependencies/`：`python/bin/python3`（Windows 为 `python/python.exe`）及其下的 `site-packages`；声明了才有的 `node/bin/node`、`node/node_modules` 与 `pnpm/bin/pnpm.mjs`。平台或架构与当前进程不符的清单被拒绝。
 
 `DSH_PRIMARY_RUNTIME` 非空时，`sdk` profile 启用本工具和 Office skills。profile 从启动目录解析该路径，并加载同级 `office-skills/` 资源。缺少 skill 资源会产生启动警告并使 Office skills 不可用；无效或不完整的运行时 payload 会在首次工具调用时失败。未设置或为空时，两行都禁用。profile patch 可以覆盖任意一行，配置变更需要重启 SDK 进程。
 
@@ -60,7 +60,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-`readPrimaryRuntime` 校验清单，拒绝归一化后重名的发行版以及与 components 表不一致的 numpy/pandas 版本。`workspaceDependencyPaths` 推导各平台的条目路径。`installPrimaryRuntime` 复制到暂存目录、校验每个声明的条目、再换入正式位置，失败时保留旧树；`resolvePrimaryRuntime` 做同样的校验但不复制。工具在插件生命周期内记住首次成功的结果。
+`readPrimaryRuntime` 与构建冒烟检查共用 `parsePrimaryRuntime`。它校验扁平清单，拒绝归一化后重名的分发包。旧 `components` 元数据在内存中归一化，并保留旧格式的一致性校验；旧分发包版本表缺失时转换为空表。混用顶层与旧组件版本字段会被拒绝。读取不改写元数据，归一化后等价的清单可复用已安装产物。`workspaceDependencyPaths` 推导各平台的条目路径。`installPrimaryRuntime` 复制到暂存目录、校验每个声明的条目、再换入正式位置，失败时保留旧树；`resolvePrimaryRuntime` 做同样的校验但不复制。工具在插件生命周期内记住首次成功的结果。
 
 | 文件 | 职责 |
 |---|---|

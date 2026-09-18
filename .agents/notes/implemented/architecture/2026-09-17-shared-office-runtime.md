@@ -16,6 +16,8 @@ The [shared build entry](../../../../scripts/primary-runtime/prepare.ts) owns th
 
 The [Desktop primary-runtime decision](../feature/2026-09-14-desktop-primary-runtime.md) continues to own Desktop installation and platform signing. This decision replaces only its Desktop-only builder and query placement; both records remain active.
 
+`runtime.json` stores Python, Node.js and pnpm versions at the top level and all Python distribution versions in `pythonPackages`. Build metadata does not single out numpy or pandas. The shared parser accepts legacy `components` files without rewriting them, retains their consistency checks, and returns only the canonical flat fields. Mixed formats are rejected. The build digest includes the assembly format so changed manifest bytes invalidate payload reuse.
+
 ## Alternatives considered
 
 **Keep implementation in Desktop.** This leaves SDK and container builders depending on application packaging and signing code despite needing only interpreters, Office resources and a query.
@@ -23,6 +25,8 @@ The [Desktop primary-runtime decision](../feature/2026-09-14-desktop-primary-run
 **Enable Office in the common base.** A base deployment has no guaranteed bundled interpreter or resources. Explicit SDK carrier configuration makes that requirement observable without changing unrelated profiles.
 
 **Always copy to the Harness home.** Copying duplicates image-layer content, requires a writable destination and cannot serve the intended immutable carrier deployment.
+
+**One component field per Python library.** This duplicates the distribution map and requires schema changes for each library. A complete map records the locked package set independently of the interpreter and package-manager fields.
 
 ## Consequences
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-17-shared-office-runtime.md
-2026-09-17-shared-office-runtime.md: 5925974ce96a91afcb97f89af58f87a3b2d8ff93
-2026-09-17-shared-office-runtime.zh.md: 61be67508f285cb3e06305c95eed617e0d5f4218
+2026-09-17-shared-office-runtime.md: c25ce3a66660f1dca9959ecbb155ae38f7046d00
+2026-09-17-shared-office-runtime.zh.md: 8889a6b13d55919d4b5e92b06d434186d70dbe6a

@@ -16,6 +16,8 @@ SDK 部署需要与 Desktop 相同的 Office 创作库，同时将解释器 payl
 
 [Desktop 第一方运行时决策](../feature/2026-09-14-desktop-primary-runtime.zh.md)继续持有 Desktop 安装与平台签名规则。本决策仅替代其中由 Desktop 独占构建器和查询实现的部分；两份记录均保持有效。
 
+`runtime.json` 在顶层保存 Python、Node.js 和 pnpm 版本，并在 `pythonPackages` 中保存全部 Python 分发包版本。构建元数据不单独列出 numpy 或 pandas。共享解析器接受旧 `components` 文件而不改写它们，保留旧格式的一致性校验，并仅返回统一的扁平字段。混合格式会被拒绝。构建摘要包含组装格式，因此清单字节变化会使旧产物身份失效。
+
 ## 考虑过的替代方案
 
 **将实现保留在 Desktop。** SDK 和容器构建器只需要解释器、Office 资源和查询，却仍会依赖应用打包及签名代码。
@@ -23,6 +25,8 @@ SDK 部署需要与 Desktop 相同的 Office 创作库，同时将解释器 payl
 **在公共 base 中启用 Office。** base 部署不保证提供内置解释器或资源。显式 SDK 载体配置可以让该要求可见，并保持其他 profile 的行为。
 
 **总是复制到 Harness home。** 复制会重复镜像层内容、要求目标可写，也无法满足预期的不可变载体部署。
+
+**为每个 Python 库增加组件字段。** 这会重复分发包版本表，并使新增库要求修改 schema。完整版本表将锁定包集合与解释器、包管理器字段分开记录。
 
 ## 影响
 

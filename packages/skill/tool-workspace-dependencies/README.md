@@ -42,7 +42,7 @@ Mount the plugin beside the tool registry with the payload directory. Configurat
 
 ### Payload layout
 
-`runtime.json` records `desktopVersion`, `platform` (`win32`, `darwin`, or `linux`), `arch`, the `components` versions (`python`, `numpy`, `pandas`; `node` and `pnpm` are optional), and optionally `payloadDigest` and `pythonPackages`. Entries live under `dependencies/`: `python/bin/python3` (`python/python.exe` on Windows) with `site-packages` beneath it, and, when declared, `node/bin/node` with `node/node_modules` and `pnpm/bin/pnpm.mjs`. A manifest whose platform or architecture differs from the running process is rejected.
+`runtime.json` records `desktopVersion`, `platform` (`win32`, `darwin`, or `linux`), `arch`, optional `payloadDigest`, top-level `python`, optional `node`/`pnpm` versions, and the complete `pythonPackages` distribution-version map. A pnpm entry requires Node.js. Python libraries, including numpy and pandas, appear only in `pythonPackages`. Entries live under `dependencies/`: `python/bin/python3` (`python/python.exe` on Windows) with `site-packages` beneath it, and, when declared, `node/bin/node` with `node/node_modules` and `pnpm/bin/pnpm.mjs`. A manifest whose platform or architecture differs from the running process is rejected.
 
 The `sdk` profile enables this tool and the Office skills when `DSH_PRIMARY_RUNTIME` is nonempty. The profile resolves that path from the launch directory and loads sibling `office-skills/` resources. Missing skill resources produce a startup warning and leave Office skills unavailable; invalid or incomplete runtime payloads fail the first tool call. Unset or empty configuration disables both rows. Profile patches can override either row, and changes require restarting the SDK process.
 
@@ -60,7 +60,7 @@ A container can copy both directories into an immutable image layer and set `DSH
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`readPrimaryRuntime` validates the manifest and rejects duplicate normalized distribution names and numpy/pandas versions that disagree with the components table. `workspaceDependencyPaths` derives the platform-specific entries. `installPrimaryRuntime` copies into a staging directory, verifies every declared entry, and swaps it into place while retaining the previous tree on failure; `resolvePrimaryRuntime` verifies the same entries without copying. The tool memoizes the first successful preparation for the plugin's lifetime.
+`readPrimaryRuntime` and build smoke checks share `parsePrimaryRuntime`. It validates the flat manifest and rejects duplicate normalized distribution names. Legacy `components` metadata is normalized in memory, retaining its consistency checks; a missing legacy distribution map becomes empty. Mixed flat and legacy version fields are rejected. Reads do not rewrite metadata, and equivalent normalized manifests can reuse an installed payload. `workspaceDependencyPaths` derives the platform-specific entries. `installPrimaryRuntime` copies into a staging directory, verifies every declared entry, and swaps it into place while retaining the previous tree on failure; `resolvePrimaryRuntime` verifies the same entries without copying. The tool memoizes the first successful preparation for the plugin's lifetime.
 
 | File | Responsibility |
 |---|---|

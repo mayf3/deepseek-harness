@@ -415,8 +415,8 @@ async function officeFixture(root: string, pythonOnly: boolean) {
   const source = join(root, 'resources', 'primary-runtime')
   const manifest: PrimaryRuntimeManifest = {
     desktopVersion: '1.0.0', platform: process.platform, arch: process.arch,
-    components: { python: '3.12.14', numpy: '2.3.5', pandas: '3.0.1',
-      ...(pythonOnly ? {} : { node: '24.21.0', pnpm: '11.7.0' }) },
+    python: '3.12.14',
+    ...(pythonOnly ? {} : { node: '24.21.0', pnpm: '11.7.0' }),
     pythonPackages: { 'python-docx': '1.2.0', 'python-pptx': '1.0.2', openpyxl: '3.1.5' },
   }
   const paths = workspaceDependencyPaths(source, manifest)
