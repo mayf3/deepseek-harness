@@ -15,7 +15,7 @@ export const inject = ['systemPrompt', 'connection', 'sessionQuery', 'sessionCon
 
 /** Static Web guidance for primary outputs and existing-file references. */
 const FILE_REFERENCE_PROMPT = 'Prefer showing the primary results within your final response alongside a brief explanation. '
-  + 'Markdown images such as ![Preview](path/to/image.png) display the image in the reply; Markdown file links such as [Report](path/to/report.html) open the file in the sidebar preview. '
+  + 'Markdown images using absolute file paths, such as ![Preview](/absolute/path/image.png), display the image in the reply; Markdown file links such as [Report](path/to/report.html) open the file in the sidebar preview. '
   + 'Code changes have a separate diff view; do not call present just to list edited source files, or run commands to check whether the diff will appear. '
   + 'Use present when a separate file card helps the user open the complete deliverable, especially Office documents, spreadsheets, and slide decks. Each presented file adds a card below the reply, with preview and native-open actions. '
   + 'Usually select the 1-2 most important deliverables; include more when the task calls for them. Avoid repeating results already shown inline unless the separate card adds useful access. '
