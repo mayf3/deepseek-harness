@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ISessions, SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
-import { IconPaperclipOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconPaperclipOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { createSnapshotStore, type BoundActions } from '@deepseek-ai/dsh-client-store'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -99,7 +99,7 @@ interface FileCommandRegistry {
   register(contribution: {
     name: string
     label(): string
-    icon: typeof IconPaperclipOutline16
+    icon: typeof IconPaperclipOutlineRegular
     available(session: { sessionId: SessionId }): boolean
     ui: { kind: 'action'; run(session: { sessionId: SessionId }): void }
   }): () => void
@@ -209,7 +209,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     scope.effect(() => commands.register({
       name: 'file',
       label: () => t('input.file'),
-      icon: IconPaperclipOutline16,
+      icon: IconPaperclipOutlineRegular,
       available: session => inputHub.canPickFiles(session.sessionId),
       ui: { kind: 'action', run: (session) => { inputHub.pickFiles(session.sessionId) } },
     }), 'ui-conversation: File action')

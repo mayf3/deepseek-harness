@@ -30,6 +30,7 @@ export interface UpdateDialogApi {
   respond(index: number): Promise<void>
 }
 
+// main.ts's protocol.handle shell route serves this document and its renderer assets; the modal requires that route.
 const page = 'dsh-app://shell/update-dialog.html'
 
 /** One replaceable confirmation window; aborted checks and mandatory policy cancel ordinary prompts. */

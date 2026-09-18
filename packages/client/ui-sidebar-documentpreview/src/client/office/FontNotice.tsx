@@ -2,7 +2,9 @@
 import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { Button, IconCloseOutline16, IconWarningOutline16, useAnchoredPosition, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button, IconCloseOutlineRegular, IconWarningOutlineRegular, useAnchoredPosition, useDismissOnOutsidePointer,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './FontNotice.module.css'
 
 /** Notice inputs supplied by the document owner and Office locale registration. */
@@ -54,7 +56,7 @@ export function FontNotice({ resourceAddress, sourceVersion, fonts, t }: FontNot
     <div className={css.space} data-office-font-notice data-dismissed={!visible} aria-hidden={!visible} {...(!visible ? { inert: '' } : {})}>
       <div className={css.clip}>
         <div ref={root} className={css.notice}>
-          <IconWarningOutline16 className={css.warning} />
+          <IconWarningOutlineRegular className={css.warning} />
           <span ref={message} className={css.message} role="status">
             <span>{t('missingFonts', { fonts: fonts.join(', ') })}</span>
           </span>
@@ -65,7 +67,7 @@ export function FontNotice({ resourceAddress, sourceVersion, fonts, t }: FontNot
             </Button>
           </span>
           <Button size="sm" className={css.close} aria-label={t('dismissNotice')}
-            onClick={() => { setDismissed(identity); setExpanded(undefined) }} icon={<IconCloseOutline16 />} />
+            onClick={() => { setDismissed(identity); setExpanded(undefined) }} icon={<IconCloseOutlineRegular />} />
         </div>
       </div>
     </div>
@@ -79,7 +81,7 @@ export function FontNotice({ resourceAddress, sourceVersion, fonts, t }: FontNot
       }}>
       <div className={css.panelHeader}>
         <h3 id={`${id}-title`}>{t('missingFontsTitle')}</h3>
-        <Button size="sm" aria-label={t('closeDetails')} onClick={closeDetails} icon={<IconCloseOutline16 />} />
+        <Button size="sm" aria-label={t('closeDetails')} onClick={closeDetails} icon={<IconCloseOutlineRegular />} />
       </div>
       <p id={`${id}-description`} className={css.description}>{t('missingFontsDescription')}</p>
       <p className={css.count}>{t('missingFontsCount', { count: fonts.length })}</p>

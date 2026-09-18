@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-**断连药丸静态地展示其动作。** [ConnectionIndicator.tsx](../../../../packages/client/ui-primitives/src/ConnectionIndicator.tsx) 在断连文案旁常驻渲染重试图形（`IconRefreshOutline14`），文案为 `连接异常，刷新重试` / `Disconnected`（中文文案同时点明重试动作）；点击药丸仍会立即重连。悬停换文案和隐藏的最宽 label 占位 span 全部移除，药丸宽度随当前 label 自适应。连接中状态改用旋转圆弧 spinner 取代感叹号图形。出现与移除以 150ms 淡入淡出——可见状态之间的切换则原地替换内容：`EXIT_MS` 延迟卸载以匹配样式表的 `.leaving` 过渡，`prefers-reduced-motion` 会禁用全部动画与过渡。外观定为高 28px、水平内边距 8px、图标间距 4px、圆角 13px，以及 label 颜色 20% 透明度的 1px 边框。
+**断连药丸静态地展示其动作。** [ConnectionIndicator.tsx](../../../../packages/client/ui-primitives/src/ConnectionIndicator.tsx) 在断连文案旁常驻渲染重试图形（`IconRefreshOutlineRegular`），文案为 `连接异常，刷新重试` / `Disconnected`（中文文案同时点明重试动作）；点击药丸仍会立即重连。悬停换文案和隐藏的最宽 label 占位 span 全部移除，药丸宽度随当前 label 自适应。连接中状态改用旋转圆弧 spinner 取代感叹号图形。出现与移除以 150ms 淡入淡出——可见状态之间的切换则原地替换内容：`EXIT_MS` 延迟卸载以匹配样式表的 `.leaving` 过渡，`prefers-reduced-motion` 会禁用全部动画与过渡。外观定为高 28px、水平内边距 8px、图标间距 4px、圆角 13px，以及 label 颜色 20% 透明度的 1px 边框。
 
 **外壳拥有尝试节奏。** [SettingsRoot.tsx](../../../../packages/client/ui-settings-general/src/client/SettingsRoot.tsx) 让连接中药丸至少可见 `CONNECTING_MIN_VISIBLE_MS`（800ms），亚秒级重试不再闪动；无论手动还是自动，每次尝试都显示同一个文案`重新连接中`（`connection.connecting`）。2 秒恢复确认（`RECOVERY_CONFIRMATION_MS`）从恢复药丸实际可见时起算，驻留推迟其出现也不会缩短确认时长。两个时长是各自持有方的内置展示常量，不是配置。
 

@@ -43,6 +43,7 @@ export interface MandatoryUpdateWindowOptions {
   readonly install: (version: string) => Promise<DesktopUpdateState>
 }
 
+// main.ts's protocol.handle shell route serves this document and its renderer assets; the modal requires that route.
 const page = 'dsh-app://shell/mandatory-update.html'
 
 /** A modal child blocks the product window without cancelling work in the Host. */

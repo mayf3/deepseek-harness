@@ -1,6 +1,5 @@
 - region "Temporary review":
-  - button "Copy":
-    - img
+  - button "Copy"
   - heading "Temporary review" [level=1]
   - paragraph: Review without a tool invocation.
   - heading "Implementation" [level=2]

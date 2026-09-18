@@ -206,7 +206,7 @@ describe('run_code sub-calls through the real chat machinery', () => {
     expect(pre!.querySelectorAll('span[style]').length).toBeGreaterThan(3)
   })
 
-  it('an isError sub-call renders the error state dot exactly like a failed native row', async () => {
+  it('an isError sub-call renders the same error row state as a failed native row', async () => {
     const parent = 'call-64'
     const subCalls = [
       subCall(11, parent, 1, 'mystery', { n: 1 }, 'Error: boom', true),

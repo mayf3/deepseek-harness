@@ -1,3 +1,5 @@
+import type { AfterPackContext, BeforePackContext } from 'app-builder-lib'
+
 /** Electron-builder fields asserted by the Desktop release tests. */
 export interface DesktopElectronBuilderConfig {
   readonly appId: string
@@ -45,7 +47,9 @@ export interface DesktopElectronBuilderConfig {
     readonly installerLanguages: readonly ['en_US', 'zh_CN']
   }
   readonly beforeBuild: () => Promise<boolean>
-  readonly beforePack: (context: { readonly appOutDir: string }) => Promise<void>
+  readonly beforePack: (context: BeforePackContext) => Promise<void>
+  readonly afterPack: (context: AfterPackContext) => Promise<void>
+  readonly afterSign: (context: AfterPackContext) => Promise<void>
   readonly artifactBuildCompleted: (artifact: { readonly file: string }) => Promise<void> | undefined
   readonly publish: readonly [{ readonly provider: 'generic', readonly url: string }] | null
 }
