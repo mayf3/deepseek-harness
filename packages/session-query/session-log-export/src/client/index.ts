@@ -56,6 +56,7 @@ export function apply(ctx: ClientContext): void {
       hooks: { sessionLogDownload: controller.store, feedbackAvailable },
       request: (sessionId: SessionId) => controller.download(sessionId),
       dismiss: (sessionId: SessionId) => { controller.dismiss(sessionId) },
+      // The feedback plugin can unload between the menu render and this click.
       openFeedback: (sessionId: SessionId) => { ctx.get('feedbackUi')?.openSession(sessionId) },
     }),
   }, SessionLogDownloadHeaderAction))

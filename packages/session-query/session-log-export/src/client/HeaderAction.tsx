@@ -8,10 +8,13 @@ import { SessionLogDownloadDialog, type SessionLogDownloadDialogProps } from './
 import type { SessionLogDownloadDialogInjected } from './Dialog.tsx'
 import css from './HeaderAction.module.css'
 
-/** The optional feedback plugin controls whether the Header offers its form. */
+/** Session download controls with observable feedback availability and a Session feedback action. */
 export interface SessionLogDownloadHeaderInjected extends SessionLogDownloadDialogInjected {
   hooks: SessionLogDownloadDialogInjected['hooks'] & { feedbackAvailable: ObservableSnapshot<boolean> }
-  /** @param sessionId - Session whose existing feedback form to open. */
+  /**
+   * Open the existing Session feedback draft without recording feedback; no-op after the feedback plugin unloads.
+   * @param sessionId - Session whose feedback form to open.
+   */
   openFeedback: (sessionId: SessionId) => void
 }
 

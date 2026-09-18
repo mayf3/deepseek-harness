@@ -3,7 +3,8 @@
  * conversation.chat.assistant-actions strip, the feedback dialog and its
  * acknowledgement and failure toasts in conversation.input.overlay, and the `/feedback`
  * decoration that opens the dialog from the composer menu or a bare typed
- * command. One FeedbackSurface per Session backs every entry in that Session.
+ * command. The feedbackUi service opens the same dialog for other plugins.
+ * One FeedbackSurface per Session backs every entry in that Session.
  * @module @deepseek-ai/dsh-client-ui-message-feedback/client
  */
 
@@ -60,7 +61,8 @@ export const inject = ['slots', 'remote', 'remote.messageFeedback', 'remote.sess
 
 /**
  * Client plugin body: the per-message feedback entry, the Session's dialog
- * entry, the `/feedback` decoration, and their per-session surfaces.
+ * entry, the `feedbackUi` service, the `/feedback` decoration, and their
+ * per-session surfaces.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {

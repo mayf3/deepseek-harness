@@ -47,7 +47,20 @@ describe('packaging run records', () => {
         cwd: root, env: environment,
       })).rejects.toThrow('fatal failed')
       const descendant = JSON.parse(await readFile(join(run.directory, 'descendant.json'), 'utf8')) as { pid: number }
-      expect(() => process.kill(descendant.pid, 0)).toThrow()
+      // Linux can retain a dead descendant as a zombie until its new parent reaps it.
+      await expect.poll(async () => {
+        try {
+          if (process.platform === 'linux') {
+            const status = await readFile(`/proc/${descendant.pid}/status`, 'utf8')
+            return /^State:\s+[ZXx]\b/m.test(status)
+          }
+          process.kill(descendant.pid, 0)
+          return false
+        } catch (error) {
+          if (['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) return true
+          throw error
+        }
+      }, { timeout: 5_000 }).toBe(true)
       const events = (await readFile(join(run.directory, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { type: string; fatalObserved?: boolean; terminationError?: boolean })
       expect(events.at(-1)).toMatchObject({ type: 'stage-end', fatalObserved: true, terminationError: false })
       run.finish(false)

@@ -1,8 +1,6 @@
-// Keyless browser regression for durable per-message feedback. Cold-seeds a
-// settled two-turn transcript (zero model calls), records a Like through the
-// feedback dialog, replaces it through the same dialog with a Dislike, proves
-// the judgment survives a full page reload from the Host's canonical log, then
-// retracts it.
+// Keyless browser regression for durable message and Session feedback. A
+// cold-seeded, settled two-turn transcript avoids model calls while exercising
+// message ratings and the Session Header dialog against the Host's canonical log.
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'

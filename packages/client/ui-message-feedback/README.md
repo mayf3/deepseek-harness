@@ -25,7 +25,7 @@ This package is the Web GUI's feedback surface: the Like/Dislike pair in the fin
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin alongside `ui-conversation` and `ui-commands`; the Like/Dislike pair then appears in the action row of each turn's closing assistant message, between copy and branch, and Feedback in either the composer menu or the Session Header’s more-actions menu opens the same dialog. A recorded rating shows the filled glyph and stays visible without hover. Like and Dislike both open the dialog: seven category chips and a detail box are optional, and Submit records the selected judgment with whatever was filled in before the toast thanks the user; the conversation log travels with every feedback event. Clicking the recorded rating retracts it without opening the dialog. A bare `/feedback`, picked from the menu or typed and sent without text, opens the same dialog for the Session; `/feedback <text>` keeps the Host command path and its acknowledgement row.
+Mount this plugin alongside `ui-conversation` and `ui-commands`; the Like/Dislike pair then appears in the action row of each turn's closing assistant message, between copy and branch, and Feedback in the composer menu opens the same dialog. Mounting `session-log-export` also adds Feedback to the Session Header's more-actions menu. A recorded rating shows the filled glyph and stays visible without hover. Like and Dislike both open the dialog: seven category chips and a detail box are optional, and Submit records the selected judgment with whatever was filled in before the toast thanks the user; the conversation log travels with every feedback event. Clicking the recorded rating retracts it without opening the dialog. A bare `/feedback`, picked from the menu or typed and sent without text, opens the same dialog for the Session; `/feedback <text>` keeps the Host command path and its acknowledgement row.
 
 ### Failures
 
@@ -90,4 +90,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The plugin owns two slot registrations, one command decoration, and one per-session controller-pair map, all released by the plugin fiber's effect disposers. The lifecycle spec proves the registrations are withdrawn and every controller pair is dropped when the owning fiber is disposed, so no second authority exists to check at runtime.
+**Runtime invariant:** No companion is published. The plugin owns two slot registrations, one command decoration, the `feedbackUi` service, and one per-session controller-pair map, all released with the owning plugin fiber. The lifecycle spec verifies that the registrations and service are withdrawn and every controller pair is dropped when the fiber is disposed, so no second authority exists to check at runtime.
