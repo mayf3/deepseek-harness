@@ -32,12 +32,13 @@ vi.mock('electron', () => ({
 
 afterEach(() => { state.views.length = 0; state.sessions.length = 0; state.loadFailure = undefined; vi.clearAllMocks() })
 function setup() {
+  const removeChildView = vi.fn()
   const owner = Object.assign(new EventEmitter(), {
-    webContents: new EventEmitter(), contentView: { addChildView: vi.fn(), removeChildView: vi.fn() }, isDestroyed: () => false,
+    webContents: new EventEmitter(), contentView: { addChildView: vi.fn(), removeChildView }, isDestroyed: () => false,
   }) as unknown as BrowserWindow
   const manager = new DesktopPlatformView('/bundled/preload.cjs')
   manager.setSession({ origin: 'https://platform.deepseek.com', token: 'fixture-secret' })
-  return { manager, owner }
+  return { manager, owner, removeChildView }
 }
 function view() {
   return state.views.at(-1) as {
@@ -188,11 +189,11 @@ it.each(['usage', 'top-up'] as const)('selects the configured frontend deploymen
 
 
 it('removes the native view when its application document reloads, without renderer cleanup', async () => {
-  const { manager, owner } = setup()
+  const { manager, owner, removeChildView } = setup()
   await manager.open(owner, 'usage', bounds)
   const child = view()
   owner.webContents.emit('did-start-navigation', {}, 'dsh-app://app/', false, true)
-  expect(owner.contentView.removeChildView).toHaveBeenCalledWith(child)
+  expect(removeChildView).toHaveBeenCalledWith(child)
   expect(child.webContents.close).toHaveBeenCalledOnce()
   expect(owner.webContents.listenerCount('did-start-navigation')).toBe(0)
   expect(owner.listenerCount('closed')).toBe(0)

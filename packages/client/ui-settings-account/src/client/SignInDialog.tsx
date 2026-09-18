@@ -1,6 +1,6 @@
 /** Account authorization dialog shared by onboarding and explicit login. */
 import { useEffect, useState } from 'react'
-import { Button, IconCloseOutline16, IconLoadingOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconCloseOutlineRegular, IconLoadingOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountSnapshot } from './AccountSection.tsx'
 import type { SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { AccountKey } from './locales.ts'
@@ -42,7 +42,7 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
       <div className={css.header}>
         <h2 className={css.title}>{title}</h2>
         <button type="button" className={css.close} aria-label={t('close')} onClick={dismiss}>
-          <IconCloseOutline16 size={14} />
+          <IconCloseOutlineRegular size={14} />
         </button>
       </div>
       {active ? <p className={css.description}>
@@ -62,7 +62,7 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
         onClick={active ? dismiss : useApiKey}>{t(active ? 'cancel' : 'addApiKey')}</Button>
       <Button variant="primary" className={css.primaryButton} disabled={active || account.view === undefined}
         aria-label={active ? t('waiting') : undefined} onClick={() => { void run(start) }}>
-        {active ? <IconLoadingOutline16 className={css.spinner} /> : t(expired || error ? 'retry' : 'signIn')}
+        {active ? <IconLoadingOutlineRegular className={css.spinner} /> : t(expired || error ? 'retry' : 'signIn')}
       </Button>
     </div>
   </Modal>

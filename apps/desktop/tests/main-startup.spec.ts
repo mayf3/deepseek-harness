@@ -541,12 +541,11 @@ describe('desktop main startup', () => {
   })
 
   it('serves packaged shell documents instead of rejecting the shell origin', async () => {
-    const { protocol } = await import('electron')
     const { serveWebDocument } = await import('../src/web-document.ts')
     vi.mocked(serveWebDocument).mockResolvedValue(new Response('shell document'))
     await import('../src/main.ts')
     await harness.preparing.promise
-    const handler = vi.mocked(protocol.handle).mock.calls[0]![1] as unknown as (request: Request) => Promise<Response>
+    const handler = harness.protocolHandle.mock.calls[0]![1]
     const request = new Request('dsh-app://shell/update-dialog.html')
     expect(await (await handler(request)).text()).toBe('shell document')
     expect(serveWebDocument).toHaveBeenCalledWith(request, join('desktop-test-app', 'renderer'))
@@ -1414,7 +1413,8 @@ describe('desktop main startup', () => {
     preferences.resolve(Response.json({ hasApiKey: true, localePreference: null }))
     await startup
     expect(harness.windows[0]!.urls).not.toContain('http://127.0.0.1:3080/?token=test')
-    expect(harness.dialog.showMessageBox.mock.calls[0]![0].detail).toContain('backend exited during startup preferences')
+    const failureDialog = harness.dialog.showMessageBox.mock.calls[0]![0] as { detail: string }
+    expect(failureDialog.detail).toContain('backend exited during startup preferences')
     expect(harness.windows[0]!.show).not.toHaveBeenCalled()
   })
 

@@ -1,6 +1,6 @@
 /** Sidebar account launcher and locally authoritative sign-out action. */
 import { useState } from 'react'
-import { Menu, IconPaperPlaneOutline14, IconSettingsOutline16, IconUserOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Menu, IconPaperPlaneOutlineMedium, IconSettingsOutlineMedium, IconUserOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountSectionInjected } from './AccountSection.tsx'
 import { SignInDialog } from './SignInDialog.tsx'
@@ -33,17 +33,17 @@ export function AccountMenu({
     finally { setBusy(false) }
   }
   return <div className={css.root}>
-    <Menu open={open} side="top" portal autoFocus className={css.anchor} listClassName={css.menu}
+    <Menu open={open} side="top" portal autoFocus className={css.anchor}
       anchor={<button type="button" className={css.trigger} aria-label={t('menu')}
         aria-haspopup="menu" aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
-        <span className={css.avatar}><IconUserOutline16 size={16} /></span>
+        <span className={css.avatar}><IconUserOutlineMedium size={16} /></span>
         {wide && <span className={css.label}>{signedIn ? label : t('signedOut')}</span>}
       </button>}
       items={[
-        { id: 'settings', label: t('settings'), icon: <IconSettingsOutline16 size={16} /> },
-        { id: 'contact', label: t('contactUs'), icon: <IconPaperPlaneOutline14 size={16} /> },
+        { id: 'settings', label: t('settings'), icon: <IconSettingsOutlineMedium size={16} /> },
+        { id: 'contact', label: t('contactUs'), icon: <IconPaperPlaneOutlineMedium size={16} /> },
         ...(signedIn ? [{ id: 'signout', label: t('signOut'), icon: <LogoutIcon />, disabled: busy }]
-          : [{ id: 'signin', label: t('signIn'), icon: <IconUserOutline16 size={16} /> }]),
+          : [{ id: 'signin', label: t('signIn'), icon: <IconUserOutlineMedium size={16} /> }]),
       ]}
       onClose={() => { setOpen(false) }}
       onSelect={(id) => {

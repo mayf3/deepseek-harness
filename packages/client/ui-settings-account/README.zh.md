@@ -28,6 +28,8 @@ Desktop 的用量和充值操作在 48px 返回栏下方打开隔离的原生 Pl
 
 “联系我们”在 Desktop 的系统浏览器或 Web 的新标签页打开飞书问卷。链接通过 prefill_* 参数填写已有的 Platform UID、构建版本、界面语言和屏幕物理分辨率，并为所有上下文字段设置 hide_*=1；不传 token 或联系方式。可在 ui-settings-account 插件配置 contactFormUrl，切换到另一个 HTTPS 问卷。问卷支持 Harness 来源选项前，contactSource 默认为空；OS 和设备字段沿用 Web 实现，保持未填写。
 
+侧边栏账号菜单使用公共 Menu 的表面、背景模糊、间距和菜单项排版；功能样式仅设置入口布局。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 

@@ -1,7 +1,7 @@
 /** Desktop Platform viewport; the native child owns remote content and credentials. */
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { IconChevronLeftOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronLeftOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './PlatformOverlay.module.css'
 
 /** Non-secret commands supplied by the desktop application preload. */
@@ -60,7 +60,7 @@ export function PlatformOverlay({ bridge, page, backLabel, loadingLabel, failure
       <div className={css.controls}>
         <span className={css.trafficLights} aria-hidden="true" />
         <button ref={back} className={css.back} onClick={onClose}>
-          <IconChevronLeftOutline14 size={16} />{backLabel}
+          <IconChevronLeftOutlineRegular size={16} />{backLabel}
         </button>
       </div>
     </header>
