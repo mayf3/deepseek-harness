@@ -5,6 +5,8 @@ import { join, resolve } from 'node:path'
 import { createWindowsTokenSigner } from './windows-sign.mjs'
 import { inspectWindowsRuntimeSignature, signWindowsCode, type WindowsCodeSigningOptions } from './windows-runtime-signature.mjs'
 import { createCachedSigner, signatureCacheIdentity } from './windows-signature-cache.mjs'
+import { prepareWindowsSignatureCacheDirectory, resolveWindowsSignatureCacheDirectory } from './windows-signature-cache-directory.mjs'
+import { withWindowsSigningStage } from './windows-signing-stage.mjs'
 import { failPackagingRun, recordPackagingEvent } from './packaging-run.mjs'
 import { resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import { smokePrimaryRuntime } from './prepare-primary-runtime.ts'
@@ -50,30 +52,38 @@ async function main(): Promise<void> {
   const certificateFile = process.env.DSH_DESKTOP_WINDOWS_CER_FILE
   if (!certificateFile) throw new Error('primary runtime signing requires the configured certificate')
   const thumbprint = new X509Certificate(await readFile(certificateFile)).fingerprint.replaceAll(':', '')
+  const record = (event: object): void => { recordPackagingEvent(runDirectory, event) }
   try {
-    const paths = resolveDesktopTargetBuildPaths()
-    const record = (event: object): void => { recordPackagingEvent(runDirectory, event) }
-    const sign = createWindowsTokenSigner({ certificateFile, signTool: process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
-      keyContainer: process.env.DSH_DESKTOP_WINDOWS_KEY_CONTAINER, tokenPin: process.env.DSH_DESKTOP_WINDOWS_TOKEN_PIN })
-    const identity = await signatureCacheIdentity([
-      await realpath(certificateFile), await realpath(process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL!),
-      join(import.meta.dirname, 'windows-sign.cmd'), join(import.meta.dirname, 'windows-sign.mjs'),
-      join(import.meta.dirname, 'windows-timestamp.mjs'),
-    ])
-    const options = {
-      thumbprint,
-      sign: createCachedSigner({ root: join(paths.root, 'signature-cache'), identity, thumbprint,
-        sign, inspect: inspectWindowsRuntimeSignature, record }),
-      record,
-    }
-    if (process.argv.includes('--dsh')) {
-      const version = JSON.parse(await readFile(join(paths.dsh, 'package.json'), 'utf8')).version as string
-      await signWindowsDesktopRuntime(paths.dsh, version, { ...options,
-        smoke: descriptor => smokePreparedRuntime(paths.dsh, join(paths.electron, 'electron.exe'), paths.runtime, descriptor),
-      })
-    } else {
-      await signWindowsPrimaryRuntime(join(paths.runtime, 'primary-runtime'), { ...options, smoke: smokePrimaryRuntime })
-    }
+    await withWindowsSigningStage({ stage: process.argv.includes('--dsh') ? 'dsh-runtime' : 'primary-runtime', record }, async () => {
+      const paths = resolveDesktopTargetBuildPaths()
+      const sign = createWindowsTokenSigner({ certificateFile, signTool: process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
+        keyContainer: process.env.DSH_DESKTOP_WINDOWS_KEY_CONTAINER, tokenPin: process.env.DSH_DESKTOP_WINDOWS_TOKEN_PIN })
+      const identity = await signatureCacheIdentity([
+        await realpath(certificateFile), await realpath(process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL!),
+        join(import.meta.dirname, 'windows-sign.cmd'), join(import.meta.dirname, 'windows-sign.mjs'),
+        join(import.meta.dirname, 'windows-timestamp.mjs'),
+      ])
+      const cacheRoot = resolveWindowsSignatureCacheDirectory(process.env)
+      await prepareWindowsSignatureCacheDirectory(cacheRoot)
+      const cachedSign = createCachedSigner({ root: cacheRoot, identity, thumbprint,
+        sign, inspect: inspectWindowsRuntimeSignature, record })
+      const options = { thumbprint, sign: cachedSign, record }
+      record({ type: 'signature-cache-open', root: cachedSign.summary().root, identity })
+      try {
+        if (process.argv.includes('--dsh')) {
+          const version = JSON.parse(await readFile(join(paths.dsh, 'package.json'), 'utf8')).version as string
+          await signWindowsDesktopRuntime(paths.dsh, version, { ...options,
+            smoke: descriptor => smokePreparedRuntime(paths.dsh, join(paths.electron, 'electron.exe'), paths.runtime, descriptor),
+          })
+        } else {
+          await signWindowsPrimaryRuntime(join(paths.runtime, 'primary-runtime'), { ...options, smoke: smokePrimaryRuntime })
+        }
+      } finally {
+        const summary = cachedSign.summary()
+        record({ type: 'signature-cache-summary', ...summary })
+        process.stdout.write(`SIGNATURE_CACHE_SUMMARY ${JSON.stringify(summary)}\n`)
+      }
+    })
   } catch (error) {
     failPackagingRun(runDirectory, 'primary-runtime-signing-or-smoke-failed')
     throw error

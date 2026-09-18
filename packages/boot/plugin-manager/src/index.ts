@@ -136,6 +136,8 @@ export class PluginManager extends TypertRemoteService {
     lockWaitMs: z.number().step(1).min(0).default(120000),
     inspectTimeoutMs: z.number().step(1).min(1000).default(20000),
   })
+  /** Management bundles remain protected if their files become unreadable. */
+  private readonly managementBundles = new Set<string>()
   private readonly ownerEntryId: string | undefined
   private readonly packageOperations = new Set<Promise<unknown>>()
   private readonly profile: ProfileContext
@@ -153,6 +155,7 @@ export class PluginManager extends TypertRemoteService {
     this.ownerEntryId = ctx.fiber.entry?.id
     this.ownerContext = ctx
     this.profile = ctx.profileContext
+    for (const name of this.profile.startedBundles) this.protectsManager(name)
     this.outputBytes = (config as Required<Config>).outputBytes
     this.lockWaitMs = (config as Required<Config>).lockWaitMs
     this.inspectTimeoutMs = (config as Required<Config>).inspectTimeoutMs
@@ -203,13 +206,14 @@ export class PluginManager extends TypertRemoteService {
       const optional = OPTIONAL_BUNDLES.includes(name)
       const removable = installed && !Object.hasOwn(installation.dependencies ?? {}, name)
       const enabled = selected.includes(name)
+      const readOnlyReason = this.protectsManager(name) ? 'management-required' as const : undefined
       try {
         const info = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
         if (info === undefined) {
-          if (enabled) bundles.push({ name, enabled, installed, optional, removable, error: { code: 'not-bundle' }, rows: [], overrides: [] })
+          if (enabled) bundles.push({ name, enabled, installed, optional, removable: removable && readOnlyReason === undefined,
+            ...(readOnlyReason === undefined ? {} : { readOnlyReason }), error: { code: 'not-bundle' }, rows: [], overrides: [] })
           continue
         }
-        const readOnlyReason = this.protectsManager(name) ? 'management-required' as const : undefined
         bundles.push({ name, ...(info.version === undefined ? {} : { version: info.version }),
           ...(info.description === undefined || info.description === '' ? {} : { description: info.description }),
           enabled, installed, optional, removable: removable && readOnlyReason === undefined,
@@ -217,7 +221,8 @@ export class PluginManager extends TypertRemoteService {
           ...this.declaredRows(name, info) })
       } catch (error) {
         if (enabled || installed) {
-          bundles.push({ name, enabled, installed, optional, removable, error: managementError(error), rows: [], overrides: [] })
+          bundles.push({ name, enabled, installed, optional, removable: removable && readOnlyReason === undefined,
+            ...(readOnlyReason === undefined ? {} : { readOnlyReason }), error: managementError(error), rows: [], overrides: [] })
         }
       }
     }
@@ -424,8 +429,8 @@ export class PluginManager extends TypertRemoteService {
         const bundle = (await this.listBundles()).find(item => item.name === name)
         if (bundle === undefined || !bundle.removable) throw new ManagementFailure('not-removable')
         if (this.ownerContext.get('hmr') === undefined && (this.profile.startedBundles.includes(name)
-          || this.bundleRows(name).some(row => [...this.ctx.loader.entries()]
-            .some(entry => entry.options.id === row.id && entry.fiber !== undefined)))) {
+          || (bundle.error === undefined && this.bundleRows(name).some(row => [...this.ctx.loader.entries()]
+            .some(entry => entry.options.id === row.id && entry.fiber !== undefined))))) {
           throw new ManagementFailure('stop-profile')
         }
         const contributions = bundle.error === undefined ? this.bundleRows(name) : []
@@ -523,6 +528,7 @@ export class PluginManager extends TypertRemoteService {
     if ((enabled || !previous.includes(name)) && bundleManifest(name, this.profile.dir, this.profile.installAnchor) === undefined) {
       throw new ManagementFailure('not-bundle')
     }
+    if (enabled) this.bundleRows(name)
     if (!enabled && previous.includes(name)) {
       if (this.protectsManager(name)) throw new ManagementFailure('management-required')
     }
@@ -530,6 +536,7 @@ export class PluginManager extends TypertRemoteService {
     if (JSON.stringify(previous) === JSON.stringify(bundles)) return
     manifest.dsh = { ...manifest.dsh, profile: { ...manifest.dsh?.profile, bundles } }
     await saveManifest(this.profile.dir, manifest)
+    if (enabled) this.protectsManager(name)
   }
 
   private bundleRows(name: string): EntryOptions[] {
@@ -540,7 +547,15 @@ export class PluginManager extends TypertRemoteService {
   }
 
   private protectsManager(name: string): boolean {
-    return this.bundleRows(name).some(row => protectedModules.has(row.name) || `include:${row.id}` === this.ownerEntryId)
+    if (this.managementBundles.has(name)) return true
+    let rows: EntryOptions[]
+    try { rows = this.bundleRows(name) } catch (_error) {
+      // Unreadable bundles contribute no new rows; listBundles reports their diagnostics.
+      return false
+    }
+    const protectedBundle = rows.some(row => protectedModules.has(row.name) || `include:${row.id}` === this.ownerEntryId)
+    if (protectedBundle) this.managementBundles.add(name)
+    return protectedBundle
   }
 
   private configure<T>(operation: () => Promise<T>): Promise<T> {

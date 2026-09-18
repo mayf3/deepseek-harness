@@ -253,20 +253,59 @@ describe('TextPreview — pages', () => {
   })
 
   it('says why a page failed and retries the same page', async () => {
+    const h = harness({ 1: failure('gateway/internal', { path: PATH }) })
+    const view = render(<TextPreview {...h.props()} />)
+    await settle()
+    const failed = view.container.querySelector('[data-textpreview-failed]')
+    expect(failed?.getAttribute('data-textpreview-failed')).toBe('gateway/internal')
+    expect(view.container.textContent).toContain('error.unavailable(message=boom)')
+    // Nothing read yet: the failure stands as the body, under the file's type sheet.
+    expect(failed?.querySelector('svg')).not.toBeNull()
+    expect(view.container.querySelector('[data-textpreview-more]')).toBeNull()
+    expect(view.container.querySelector('[data-slot="sidebar.right.tab.document.unpreviewable"]')).toBeNull()
+    h.script(1, page(1, ['one'], true))
+    click(view.container, '[data-textpreview-retry]')
+    await settle()
+    expect(h.read).toHaveBeenLastCalledWith(SESSION, PATH, 1, h.controller.signal)
+    expect(lines(view.container)).toEqual(['one\n'])
+    expect(view.container.querySelector('[data-textpreview-failed]')).toBeNull()
+  })
+
+  it('hands a readable file it cannot render to the unpreviewable seat instead of Retry', async () => {
     const h = harness({ 1: failure('workspace-file/not-text', { path: PATH }) })
     const view = render(<TextPreview {...h.props()} />)
     await settle()
     const failed = view.container.querySelector('[data-textpreview-failed]')
     expect(failed?.getAttribute('data-textpreview-failed')).toBe('workspace-file/not-text')
     expect(view.container.textContent).toContain('error.notText')
-    // Nothing read yet: the failure stands as the body, under the file's type sheet.
-    expect(failed?.querySelector('svg')).not.toBeNull()
-    expect(view.container.querySelector('[data-textpreview-more]')).toBeNull()
-    h.script(1, page(1, ['one'], true))
-    click(view.container, '[data-textpreview-retry]')
+    expect(view.container.querySelector('[data-textpreview-retry]')).toBeNull()
+    const seat = failed?.querySelector('[data-slot="sidebar.right.tab.document.unpreviewable"]')
+    expect(seat?.getAttribute('data-slot-path')).toBe(ABSOLUTE_PATH)
+    // The header's own handoff seat receives the same file.
+    const actions = view.container.querySelector('[data-slot="sidebar.right.tab.document.actions"]')
+    expect(actions?.getAttribute('data-slot-path')).toBe(ABSOLUTE_PATH)
+  })
+
+  it('offers neither Retry nor a handoff for a path with nothing to show', async () => {
+    const h = harness({ 1: failure('workspace-file/not-found', { path: PATH }) })
+    const view = render(<TextPreview {...h.props()} />)
     await settle()
-    expect(h.read).toHaveBeenLastCalledWith(SESSION, PATH, 1, h.controller.signal)
-    expect(lines(view.container)).toEqual(['one\n'])
+    expect(view.container.querySelector('[data-textpreview-failed]')?.getAttribute('data-textpreview-failed')).toBe('workspace-file/not-found')
+    expect(view.container.querySelector('[data-textpreview-retry]')).toBeNull()
+    expect(view.container.querySelector('[data-slot="sidebar.right.tab.document.unpreviewable"]')).toBeNull()
+  })
+
+  it('withholds the handoff seats until the file reports a Host path', async () => {
+    const h = harness({ 1: failure('workspace-file/not-text', { path: PATH }) })
+    h.setVersion(undefined)
+    const view = render(<TextPreview {...h.props()} />)
+    await settle()
+    expect(view.container.querySelector('[data-textpreview-failed]')).not.toBeNull()
+    expect(view.container.querySelector('[data-slot]')).toBeNull()
+    h.script(1, page(1, ['reloaded'], true))
+    click(view.container, '[data-textpreview-tool="reload"]')
+    await settle()
+    expect(h.read).toHaveBeenCalledTimes(2)
     expect(view.container.querySelector('[data-textpreview-failed]')).toBeNull()
   })
 

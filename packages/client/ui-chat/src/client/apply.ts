@@ -35,6 +35,8 @@ import { TranscriptViewRow, type TranscriptViewRowInjected } from './settings/Tr
 import { createChatStore } from './stores.ts'
 import { TranscriptViewPolicy } from './transcript-view.ts'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../chat-settings.ts'
+import { PerformanceUsageRow, type PerformanceUsageRowInjected } from './settings/PerformanceUsageRow.tsx'
+import { PerformanceUsagePolicy } from './performance-usage.ts'
 import { useTurnDataValue } from './chat/use-turn-data.ts'
 
 const CHAT_NODE_INJECT: ChatNodeTurnDataInjected = {
@@ -70,7 +72,6 @@ export function apply(ctx: Context): void {
     return source
   }
   registerConversationNodes(ctx)
-  registerChatNodeRenderers(ctx)
   ctx.uiSession.provide({
     hooks: ['chat'],
     resolve: binding => ({ hooks: { chat: chatSource(binding) } }),
@@ -80,9 +81,22 @@ export function apply(ctx: Context): void {
   const t = ctx.locale.bind(NS)
   const chatStore = createChatStore()
   const chatScrollPositions = new Map<SessionId, ChatScrollPosition>()
-  const transcriptView = new TranscriptViewPolicy(
-    ctx.settingsScope.bind<ChatSettings>({ namespace: CHAT_SETTINGS_NAMESPACE }),
-  )
+  const chatSettings = ctx.settingsScope.bind<ChatSettings>({ namespace: CHAT_SETTINGS_NAMESPACE })
+  const transcriptView = new TranscriptViewPolicy(chatSettings)
+  const performancePolicy = new PerformanceUsagePolicy(chatSettings)
+  const performanceUsage = performancePolicy.mode
+  registerChatNodeRenderers(ctx, performanceUsage)
+
+  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+    name: 'settings.general.item',
+    id: 'performance-usage',
+    order: 13,
+    locale: NS,
+    inject: (): PerformanceUsageRowInjected => ({
+      hooks: { performanceUsage },
+      setPerformanceUsage: (mode) => { performancePolicy.setMode(mode) },
+    }),
+  }, PerformanceUsageRow))
 
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item',
@@ -179,6 +193,7 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('conversation.composer.dock', () =>
     ctx.slots.register({
       name: 'conversation.composer.dock', id: 'stats', order: 0, locale: NS,
+      inject: () => ({ hooks: { performanceUsage } }),
     }, StatsPills))
 
   ctx.slots.inject('conversation.approval.detail', () =>
