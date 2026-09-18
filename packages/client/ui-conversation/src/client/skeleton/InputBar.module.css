@@ -296,6 +296,18 @@
   gap: 12px;
 }
 
+/* Narrow rows drop the roomy control gaps: the mode chips and the send circle
+   are fixed-width, so a long model name beside the plan chip wraps the
+   trailing group while the first line still has room to spare. The 8px rhythm
+   keeps the row on one line down to the icon-only model trigger. */
+@container (max-width: 560px) {
+  .tools,
+  .modes,
+  .trailing {
+    gap: 8px;
+  }
+}
+
 /* Attach circle (figma + control): 28px, selector fill, primary glyph. */
 .add {
   display: grid;
