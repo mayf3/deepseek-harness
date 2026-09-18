@@ -1,5 +1,5 @@
 vi.mock('../src/web-document.ts', () => ({ authenticateWebHost: async () => 'test-cookie', serveWebDocument: vi.fn(), forwardWebRequest: vi.fn() }))
-/** Preview startup must use the same Host and workspace transition as ordinary Desktop startup. */
+/** Welcome startup uses the Host before transitioning to the workspace. */
 
 import { afterEach, expect, it, vi } from 'vitest'
 import type { WelcomeOperations } from '../src/welcome-api.ts'
@@ -72,12 +72,14 @@ vi.mock('../src/host-process.ts', () => ({
   DesktopHostProcess: class {
     start = state.startHost
     stop = state.stopHost
-    fetch() { return Promise.resolve(Response.json({ hasApiKey: true, writable: true, localePreference: state.preference })) }
+    fetch() {
+      return Promise.resolve(Response.json({ loggedIn: false, hasApiKey: false, writable: true, localePreference: state.preference }))
+    }
   },
 }))
 vi.mock('../src/welcome-backend.ts', () => ({
   connectDesktopWelcome: async () => ({
-    read: async () => ({ hasApiKey: true, writable: true, localePreference: state.preference }),
+    read: async () => ({ loggedIn: false, hasApiKey: false, writable: true, localePreference: state.preference }),
     save: async () => ({ ok: true }),
     account: { watch: () => () => {}, state: async () => ({ status: 'signed-out', attempt: null }) },
   }),
@@ -107,9 +109,8 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-it('starts the Host for a forced welcome preview and opens the workspace on skip without quitting', async () => {
+it('starts the Host for welcome onboarding and opens the workspace on skip without quitting', async () => {
   vi.useFakeTimers()
-  vi.spyOn(process, 'argv', 'get').mockReturnValue(['electron', 'desktop', '--preview-welcome'])
   vi.stubEnv('DSH_DESKTOP_DEV_PROJECT_DIR', '/development-profile')
   vi.stubEnv('DSH_DESKTOP_NODE_BINARY', '/runtime/node')
   vi.stubEnv('DSH_DESKTOP_PNPM_ENTRY', '/runtime/pnpm')

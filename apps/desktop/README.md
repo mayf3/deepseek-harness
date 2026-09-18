@@ -106,15 +106,9 @@ Desktop checks configured model API-key references after the Host starts and bef
 
 The welcome window reads the shared `locale.preference` before it appears. An explicit English or Chinese choice wins; otherwise Desktop picks the first supported OS language and falls back to English. The main UI reads the same preference and OS language order through its isolated preload before mounting. Language changes in Settings update the shell’s current dictionary and menu; automatic selection writes no preference. The welcome window has no language selector.
 
-### Welcome window preview
+### Welcome window appearance
 
-Build the complete Desktop application and force its welcome page, including when a key is already configured:
-
-```sh
-pnpm run dev:desktop --preview-welcome
-```
-
-The preview uses the same Host, development project, Harness home, browser data, and single-instance lock as normal development startup. It follows system appearance with the design’s Platform light/dark colors and shows the 600 × 700 [entry layout](https://www.figma.com/design/jRBBK7zBgcszdVWQ0Fh5J8/Harness?node-id=2121-39334) and the API-key form, with native window controls, a draggable title area, a local brand SVG, system sans-serif fallbacks, and an Old Style serif stack for the tagline. The window uses macOS titlebar vibrancy or Windows acrylic behind a transparent renderer, without an additional white overlay or whole-window opacity reduction. Buttons share the platform motion timings, and Reduce Motion disables their transitions. The OS owns blur strength and outer corners. macOS Reduce Transparency suppresses translucency, and Increase Contrast forces that setting on. Save and continue writes to the development credential store; Set up later opens the real workspace without saving a key or completion flag. The flag changes only the initial welcome-page decision. The generated project links the declared workspace dependency closure as well as pnpm’s hoisted packages, so unhoisted configured plugins remain resolvable. [The window note](../../.agents/notes/implemented/architecture/2026-09-08-desktop-welcome-window-material.md) owns the material and onboarding decisions.
+The welcome window follows system appearance with the design’s Platform light/dark colors and shows the 600 × 700 [entry layout](https://www.figma.com/design/jRBBK7zBgcszdVWQ0Fh5J8/Harness?node-id=2121-39334) and the API-key form, with native window controls, a draggable title area, a local brand SVG, system sans-serif fallbacks, and an Old Style serif stack for the product name in the welcome heading. The window uses macOS titlebar vibrancy or Windows acrylic behind a transparent renderer, without an additional white overlay or whole-window opacity reduction. Buttons share the platform motion timings, and Reduce Motion disables their transitions. The OS owns blur strength and outer corners. macOS Reduce Transparency suppresses translucency, and Increase Contrast forces that setting on. Save and continue writes to the development credential store; Set up later opens the real workspace without saving a key or completion flag. The generated project links the declared workspace dependency closure as well as pnpm’s hoisted packages, so unhoisted configured plugins remain resolvable. [The window note](../../.agents/notes/implemented/architecture/2026-09-08-desktop-welcome-window-material.md) owns the material and onboarding decisions.
 
 ## Package
 

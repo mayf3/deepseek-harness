@@ -7,6 +7,7 @@ document.querySelector('.brand').alt = messages.welcomeBrand
 document.querySelector('#tagline-before').textContent = messages.welcomeTaglineBefore
 document.querySelector('#tagline-brand').textContent = messages.welcomeTaglineBrand
 document.querySelector('#tagline-after').textContent = messages.welcomeTaglineAfter
+document.querySelector('#welcome-description').textContent = messages.welcomeDescription
 document.querySelector('#sign-in').textContent = messages.welcomeSignIn
 document.querySelector('#api-key').textContent = messages.welcomeApiKey
 document.querySelector('#key-title').textContent = messages.welcomeKeyTitle
@@ -66,7 +67,7 @@ back.addEventListener('click', () => {
   document.querySelector('#key-actions').hidden = true
   document.querySelector('#tagline').hidden = false
   document.querySelector('#entry-actions').hidden = false
-  welcome.setAttribute('aria-labelledby', 'tagline')
+  welcome.setAttribute('aria-labelledby', 'welcome-heading')
   welcome.classList.remove('key-page')
   document.querySelector('#api-key').focus()
 })
@@ -138,7 +139,7 @@ function showAccount(state) {
   if (attempt === null && !authPageVisible) return
   authAttempt = attempt
   if (attempt?.phase === 'cancelled') {
-    welcome.setAttribute('aria-labelledby', 'tagline')
+    welcome.setAttribute('aria-labelledby', 'welcome-heading')
     authPageVisible = false
     authPage.hidden = true
     authActions.hidden = true

@@ -55,7 +55,7 @@ async function runPackageScript(script: string, cwd: string): Promise<void> {
   await run(process.execPath, [packageManager, 'run', script], cwd)
 }
 
-async function launchElectron(previewWelcome: boolean): Promise<void> {
+async function launchElectron(): Promise<void> {
   const require = createRequire(import.meta.url)
   const electron: unknown = require('electron')
   if (typeof electron !== 'string') throw new Error('desktop development: electron executable is unavailable')
@@ -76,7 +76,7 @@ async function launchElectron(previewWelcome: boolean): Promise<void> {
   if (process.platform === 'darwin') {
     const executable = prepareDevelopmentApp({ electron, appRoot: APP_ROOT, directory: DEVELOPMENT_ROOT, home, userData,
       mainPort, rendererPort, hostPort, openDevtools: environment.DSH_DESKTOP_OPEN_DEVTOOLS! })
-    await run(executable, previewWelcome ? ['--preview-welcome'] : [], APP_ROOT, environment)
+    await run(executable, [], APP_ROOT, environment)
     return
   }
   await run(electron, [
@@ -84,12 +84,11 @@ async function launchElectron(previewWelcome: boolean): Promise<void> {
     `--remote-debugging-port=${String(rendererPort)}`,
     `--user-data-dir=${userData}`,
     APP_ROOT,
-    ...previewWelcome ? ['--preview-welcome'] : [],
   ], APP_ROOT, environment)
 }
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { 'skip-build': { type: 'boolean', default: false }, 'preview-welcome': { type: 'boolean', default: false } } })
+  const { values } = parseArgs({ options: { 'skip-build': { type: 'boolean', default: false } } })
   if (!values['skip-build']) {
     await runPackageScript('build', REPOSITORY_ROOT)
     await runPackageScript('build', APP_ROOT)
@@ -118,7 +117,7 @@ async function main(): Promise<void> {
     release,
   })
   await preparePrimaryRuntime()
-  await launchElectron(values['preview-welcome'])
+  await launchElectron()
 }
 
 await main().catch((error: unknown) => {

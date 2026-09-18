@@ -104,6 +104,16 @@ body {
   white-space: nowrap;
 }
 
+.tagline h1,
+.tagline p {
+  margin: 0;
+  font: inherit;
+}
+
+.tagline p {
+  margin-top: 8px;
+}
+
 .tagline em {
   color: var(--dsw-alias-label-primary);
   font-family: var(--dsw-font-family-serif);

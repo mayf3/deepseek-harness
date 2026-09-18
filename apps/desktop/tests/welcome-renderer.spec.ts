@@ -36,6 +36,7 @@ function mount(language = 'zh-CN') {
     const heading = document.querySelector('main')!.getAttribute('aria-labelledby')!
     return [
       document.title, document.querySelector('img')!.alt, document.getElementById(heading)!.textContent,
+      ...heading === 'welcome-heading' ? [document.querySelector('#welcome-description')!.textContent] : [],
       ...heading === 'key-title' ? [document.querySelector('#key-description')!.textContent, `${input.placeholder} [password]`] : [],
       ...[...document.querySelectorAll('button')].filter(item => item.closest('[hidden]') === null)
         .map(item => `${item.textContent}${item.disabled ? ' [disabled]' : ''}`),
