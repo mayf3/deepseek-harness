@@ -64,8 +64,10 @@
 .activitySlot {
   display: inline-flex;
   flex: none;
-  width: 10px;
-  height: 10px;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
 }
 
 .trigger:hover,
@@ -158,9 +160,13 @@
   border-radius: 7px;
 }
 
-.row > :global([data-state]),
-.clickarea > :global([data-state]) {
-  margin-top: 3px;
+.rowActivitySlot {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 17px;
 }
 
 .disclosure,

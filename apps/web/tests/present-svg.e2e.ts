@@ -1,4 +1,4 @@
-/** A file request elicits explicit SVG delivery without naming the present tool. */
+/** An explicit file-card request exercises SVG delivery without naming the present tool. */
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -17,7 +17,7 @@ import { connectFreshWorkspaceZh, ZH_BROWSER_LOCALE } from './support.ts'
 const DIR = fileURLToPath(new URL('../../../snapshots/web/present-svg', import.meta.url))
 const FIXTURE = join(DIR, 'session.v3.jsonl')
 const MODE = webSnapshotMode()
-const PROMPT = '简单画一个 SVG 表示冯诺依曼架构, 保存为 von-neumann.svg'
+const RECORD_PROMPT = '简单画一个 SVG 表示冯诺依曼架构，保存为 von-neumann.svg，并提供独立文件卡片，方便打开。'
 const FILE = 'von-neumann.svg'
 
 describe('web e2e: requested SVG is explicitly delivered', () => {
@@ -65,11 +65,12 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
     }
   })
 
-  it('writes valid SVG and calls present before the final reply', async () => {
-    if (MODE !== 'record') expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT])
+  it('writes valid SVG and provides the requested file card before the final reply', async () => {
+    const prompts = MODE === 'record' ? [RECORD_PROMPT] : fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))
+    expect(prompts).toHaveLength(1)
     const settled = scaffold.whenTurnSettled()
     const input = page.locator('[data-composer-input]').first()
-    await input.fill(PROMPT)
+    await input.fill(prompts[0]!)
     await input.press('Enter')
     const sessionId = await settled
     const session = scaffold.ctx.agents.get(sessionId)?.session
@@ -91,7 +92,7 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
     const events = session.snapshotEvents()
     const declarations = events.filter(event => event.type === 'deliverables/presented')
     const delivery = declarations.find(event => event.data.files.some(file => resolve(cwd, file.path) === join(cwd, FILE)))
-    expect(delivery, 'the file request must produce a successful present declaration').toBeDefined()
+    expect(delivery, 'explicit file-card delivery requires a successful present declaration').toBeDefined()
     if (delivery === undefined) throw new Error('SVG was written but not delivered')
     expect(events.some(event => (
       event.type === 'tool/call' && event.data.name === 'present' && event.data.callId === delivery.data.callId

@@ -275,6 +275,7 @@ function makeHarness(
   // Rows and the harness must observe the same chat-store instance.
   const chat = createChatStore().create()
   const transcriptView = createSnapshotStore<TranscriptViewMode>('compact')
+  const performanceUsage = createSnapshotStore<'compact' | 'detailed'>('detailed')
   const t = makeTranslate(zh, commonZh)
   const toolOwners: Array<{
     callId: string
@@ -334,6 +335,7 @@ function makeHarness(
       case 'turn-tail':
         return (
           <TurnTailNodeView
+            usePerformanceUsage={bindSnapshotSelector(performanceUsage)}
             {...nodeProps<'turn-tail'>()}
             renderSlot={renderTurnTailSlot}
             SessionProvider={props.SessionProvider}
@@ -442,6 +444,7 @@ function makeHarness(
     openFile, openSkill, loadOlder, loadThrough, openView,
     setOutline: (value: unknown) => { outlineValue = value },
     chatScroll, forkAt, toolOwners,
+    setPerformanceUsage: (mode: 'compact' | 'detailed') => { performanceUsage.set(mode) },
     setTranscriptView: (mode: TranscriptViewMode) => { transcriptView.set(mode) },
     setNodeRenderer: (renderer: React.ComponentProps<typeof ChatNodeSeat>['renderSlot']) => {
       nodeSlotOverride = renderer
@@ -1898,7 +1901,7 @@ describe('ChatView', () => {
     expect(view.getAllByRole('button', { name: '复制' })).toHaveLength(4)
   })
 
-  it('the actions-owning assistant footer shows the turn run time', () => {
+  it('the assistant footer omits turn run time', () => {
     const h = makeHarness({
       nodes: [
         user(1, 'hi'), // time 1_000
@@ -1911,10 +1914,10 @@ describe('ChatView', () => {
     })
     const view = render(<h.ChatView {...h.props} />)
     // The exact turn/end includes trailing tool activity after the final text.
-    expect(view.container.querySelector('[data-turn-tail="1"]')?.textContent).toContain('用时 19秒')
+    expect(view.container.querySelector('[data-turn-tail="1"]')?.textContent).not.toContain('用时 19秒')
   })
 
-  it('the actions-owning assistant footer shows an hour-scale run time', () => {
+  it('the assistant footer omits hour-scale run time', () => {
     const h = makeHarness({
       nodes: [
         user(1, 'hi'),
@@ -1927,10 +1930,10 @@ describe('ChatView', () => {
     })
     const view = render(<h.ChatView {...h.props} />)
     expect(view.container.querySelector('[data-turn-tail="1"]')?.textContent)
-      .toContain('用时 1小时05分03秒')
+      .not.toContain('用时 1小时05分03秒')
   })
 
-  it('the settled footer exposes ttft, decode throughput, and usage as the details trigger', () => {
+  it('the settled footer shows usage only in Detailed mode', () => {
     const first: AssistantMessageNode = {
       kind: 'assistant', seq: 2, time: 2_000, turn: 1, step: 1, blocks: [{ kind: 'text', text: 'mid' }],
       timing: { stepStartTime: 1_000, firstTokenTime: 2_200, completedTime: 5_200 },
@@ -1964,17 +1967,11 @@ describe('ChatView', () => {
     expect(dialog.textContent).toContain('缓存命中49.4%')
     expect(dialog.textContent).toContain('未缓存输入5,060 tok')
     fireEvent.keyDown(document, { key: 'Escape' })
-    // The time pill carries the run time; first-step ttft (1.2s) and 100
-    // tokens over 5s of decode move into its dialog.
-    const timeTrigger = view.getByRole('button', { name: /用时 19秒/ })
-    expect(timeTrigger.textContent).toBe('用时 19秒')
-    expect(view.queryByText(/速度 20 tok\/s|首 token/)).toBeNull()
-    fireEvent.click(timeTrigger)
-    const timeDialog = view.getByRole('dialog')
-    expect(timeDialog.getAttribute('aria-label')).toBe('本轮用时和速度')
-    expect(timeDialog.textContent).toContain('本轮总用时19秒')
-    expect(timeDialog.textContent).toContain('输出速度（TPS）20 tok/s')
-    expect(timeDialog.textContent).toContain('首 token 用时（TTFT）1.2秒')
+    expect(view.queryByRole('button', { name: /用时/ })).toBeNull()
+    act(() => { h.setPerformanceUsage('compact') })
+    expect(view.queryByRole('button', { name: /用量/ })).toBeNull()
+    act(() => { h.setPerformanceUsage('detailed') })
+    expect(view.getByRole('button', { name: /用量/ })).toBeTruthy()
   })
 
   it('withholds the usage-details trigger when turn usage is outside the window', () => {
@@ -1989,9 +1986,7 @@ describe('ChatView', () => {
       turnEnds: new Map([[1, 20]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    // Timing facts keep their pill, but with no usage in the window there is
-    // no usage pill to click.
-    expect(view.getByRole('button', { name: /用时/ })).toBeTruthy()
+    expect(view.queryByRole('button', { name: /用时/ })).toBeNull()
     expect(view.queryByRole('button', { name: /用量/ })).toBeNull()
   })
 

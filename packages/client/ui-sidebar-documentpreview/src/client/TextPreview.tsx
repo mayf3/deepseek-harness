@@ -15,11 +15,12 @@ import type { ReactNode, RefObject } from 'react'
 import clsx from 'clsx'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import { FileTypeIcon, IconRefreshOutlineRegular, Menu, Tooltip, classifyFileType } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  FileTypeIcon, IconNowrapFillRegular, IconRefreshOutlineRegular, IconWrapFillRegular, Menu, Tooltip, classifyFileType,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { TextInjected } from './face.ts'
-import { failureLine } from './failure-line.ts'
-import { IconNowrapFill16, IconWrapFill16 } from './icons.tsx'
+import { emptyFailureRecourse, failureLine } from './failure-line.ts'
 import { LoadingIndicator } from './LoadingIndicator.tsx'
 import { hostFileOf } from './rpc.ts'
 import type { TextStore } from './store.ts'
@@ -82,7 +83,7 @@ export interface TextPreviewInjected extends TextInjected {
 /** The body's composed props: the tab, its navigation, the shared store and face, and copy. */
 export type TextPreviewProps =
   & PropsRuntime<'sidebar.right.pane.tab'>
-  & PropsRenderSlots<'sidebar.right.tab.document' | 'sidebar.right.tab.document.action'>
+  & PropsRenderSlots<'sidebar.right.tab.document' | 'sidebar.right.tab.document.action' | 'sidebar.right.tab.document.actions' | 'sidebar.right.tab.document.unpreviewable'>
   & PropsStore<TextStore>
   & InjectFace<TextPreviewInjected>
   & PropsLocale<'sidebarDocumentPreview'>
@@ -121,7 +122,10 @@ export function TextPreview({
   const pathRef = useRef<HTMLDivElement | null>(null)
   const pathTextRef = useRef<HTMLSpanElement | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
-  const displayPath = meta.value?.absolutePath ?? current?.complete?.absolutePath ?? file.path
+  const absolutePath = meta.value?.absolutePath ?? current?.complete?.absolutePath
+  const displayPath = absolutePath ?? file.path
+  // Contributions that hand the file to the Host wait for its Host path.
+  const fileOwner = absolutePath === undefined ? undefined : { absolutePath }
   usePathClipped(pathRef, pathTextRef, displayPath, state !== undefined)
   // Every tab of this type is a `file` resource address, so its params are the
   // `file` type's; the union is narrowed on the one field read, not validated.
@@ -208,18 +212,21 @@ export function TextPreview({
   }, [mode, loaded, current?.complete, current?.eof, current?.loadRevision, rendererReload, actions, tab.id])
 
   // A known binary suffix with no matching renderer never reads: no plain-text
-  // fallback, no viewer control, only the path and the unsupported line.
+  // fallback, no viewer control, only the path, the unsupported line, and the
+  // contributions that hand the file to the Host.
   if (selected === undefined && unviewable) {
     const { name: unsupportedName } = pathPartsOf(displayPath)
     return (
       <div className={css.preview} data-textpreview-state="unsupported" data-textpreview-url={tab.contentId}>
         <div className={css.header}>
           <HeaderPath pathRef={pathRef} pathTextRef={pathTextRef} path={displayPath} />
+          {fileOwner !== undefined && renderSlot('sidebar.right.tab.document.actions', fileOwner)}
         </div>
         <div className={css.body} data-textpreview-body>
           <div className={css.empty} data-textpreview-unsupported>
             <FileTypeIcon kind={classifyFileType(unsupportedName)} size={36} className={css.emptyIcon} />
             <p className={css.emptyLine}>{t('unsupportedFile')}</p>
+            {fileOwner !== undefined && renderSlot('sidebar.right.tab.document.unpreviewable', fileOwner)}
           </div>
         </div>
       </div>
@@ -314,7 +321,7 @@ export function TextPreview({
               data-textpreview-tool="wrap"
               onClick={() => { actions.toggledWrap(tab.id) }}
             >
-              {state.wrap ? <IconNowrapFill16 /> : <IconWrapFill16 />}
+              {state.wrap ? <IconNowrapFillRegular /> : <IconWrapFillRegular />}
             </button>
           </Tooltip>
         )}
@@ -330,6 +337,7 @@ export function TextPreview({
             <IconRefreshOutlineRegular />
           </button>
         </Tooltip>
+        {fileOwner !== undefined && renderSlot('sidebar.right.tab.document.actions', fileOwner)}
       </div>
       <div
         ref={bindBody}
@@ -370,20 +378,27 @@ export function TextPreview({
             </p>
           )
           : (
-            // With no content, retry the selected renderer's read; metadata
-            // observation remains owned by the resource provider.
+            // With no content, the failure names its recourse: retry the
+            // selected renderer's read when a second read may resolve it, hand
+            // a file this preview cannot render to the unpreviewable
+            // contributions, and offer nothing for a path with nothing to show.
+            // Metadata observation remains owned by the resource provider.
             <div className={css.empty} data-textpreview-failed={current.failure.code}>
               <FileTypeIcon kind={classifyFileType(name)} size={36} className={css.emptyIcon} />
               <p className={css.emptyLine}>{failureLine(t, current.failure)}</p>
-              <button
-                type="button"
-                className={css.retry}
-                data-textpreview-retry
-                onClick={reload}
-              >
-                <IconRefreshOutlineRegular size={14} />
-                {t('retry')}
-              </button>
+              {emptyFailureRecourse(current.failure) === 'open' && fileOwner !== undefined
+                && renderSlot('sidebar.right.tab.document.unpreviewable', fileOwner)}
+              {emptyFailureRecourse(current.failure) === 'retry' && (
+                <button
+                  type="button"
+                  className={css.retry}
+                  data-textpreview-retry
+                  onClick={reload}
+                >
+                  <IconRefreshOutlineRegular size={14} />
+                  {t('retry')}
+                </button>
+              )}
             </div>
           ))}
         {mode === 'text-pages' && current !== undefined && loaded.length > 0 && !current.eof && current.failure === undefined && (

@@ -120,6 +120,10 @@ describe('Session creation failures', () => {
       code: 'session/conflict',
     },
     {
+      error: Object.assign(new Error('writer already held'), { name: 'SessionAlreadyOwnedError' }),
+      code: 'session/writer-held',
+    },
+    {
       error: new Error('factory unavailable'),
       code: 'gateway/internal',
     },
