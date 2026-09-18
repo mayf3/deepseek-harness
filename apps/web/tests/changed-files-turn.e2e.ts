@@ -184,7 +184,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       await left.evaluate((element) => { element.scrollTop = element.scrollHeight })
       await expect.poll(async () => (await metrics(right)).y).toBe(initialLeft.maxY)
       // Two frames allow the browser-generated peer event to run before checking the source.
-      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => { resolve() }))))
       expect((await metrics(left)).x).toBe(initialLeft.maxX)
       expect((await metrics(left)).y).toBe(initialLeft.maxY)
       expect((await metrics(left)).bottom).toBeCloseTo((await metrics(right)).bottom, 1)
