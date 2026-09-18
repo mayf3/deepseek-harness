@@ -205,6 +205,33 @@ function validateReachableDeclarations(
   return definitions
 }
 
+function isNeverOrUndefined(type: ts.Type): boolean {
+  return (type.isUnion() ? type.types : [type])
+    .every(member => (member.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Never)) !== 0)
+}
+
+function reservedPropertyAnnotations(root: string, program: ts.Program): ReadonlySet<ts.Declaration> {
+  const checker = program.getTypeChecker()
+  const reserved = new Set<ts.Declaration>()
+  for (const file of program.getSourceFiles()) {
+    const path = slash(relative(root, file.fileName))
+    if (!path.startsWith('packages/') || path.includes('/node_modules/')) continue
+    const visit = (node: ts.Node): void => {
+      const tags = ts.getJSDocTags(node).filter(tag => tag.tagName.text === 'persistenceReserved')
+      if (tags.length > 0) {
+        if (tags.length !== 1 || tags[0]?.comment !== undefined || !ts.isPropertySignature(node)
+          || node.questionToken === undefined || !isNeverOrUndefined(checker.getTypeAtLocation(node))) {
+          throw new PersistenceSchemaError(`persistence schema: ${path}: @persistenceReserved requires one argument-free marker on an optional never or undefined property`)
+        }
+        reserved.add(node)
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(file)
+  }
+  return reserved
+}
+
 class SchemaExtractor {
   readonly nodes: SchemaNode[] = []
   private readonly cache = new Map<ts.Type, number>()
@@ -212,6 +239,7 @@ class SchemaExtractor {
 
   private readonly checker: ts.TypeChecker
   private readonly sourcePolicies: ReadonlyMap<ts.Declaration, readonly SourceCompatibility[]>
+  private readonly reservedProperties: ReadonlySet<ts.Declaration>
 
   constructor(
     private readonly root: string,
@@ -220,6 +248,7 @@ class SchemaExtractor {
   ) {
     this.checker = program.getTypeChecker()
     this.sourcePolicies = sourceCompatibilityAnnotations(root, program)
+    this.reservedProperties = reservedPropertyAnnotations(root, program)
   }
 
   convert(type: ts.Type, site: ts.Node): number {
@@ -297,8 +326,11 @@ class SchemaExtractor {
       const declaration = property.valueDeclaration ?? property.declarations?.[0] ?? site
       const propertyType = this.checker.getTypeOfSymbolAtLocation(property, declaration)
       const optional = (property.flags & ts.SymbolFlags.Optional) !== 0
-      if (optional && (propertyType.isUnion() ? propertyType.types : [propertyType])
-        .every(member => (member.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Never)) !== 0)) continue
+      const reserved = property.declarations?.some(declaration => this.reservedProperties.has(declaration)) === true
+      if (reserved && (!optional || !isNeverOrUndefined(propertyType))) {
+        this.fail(type, declaration, '@persistenceReserved must remain an optional never or undefined property')
+      }
+      if (optional && isNeverOrUndefined(propertyType) && !reserved) continue
       const child = this.valueType(propertyType, declaration, optional)
       const policies = this.propertyPolicies(type, property, declaration)
       if (policies.length > 1) this.fail(type, declaration, 'ambiguous source compatibility binding')

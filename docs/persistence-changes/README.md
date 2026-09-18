@@ -57,6 +57,8 @@ The extractor accepts an explicit `@persistenceSource` binding for a core-owned 
 
 A same-version explanation states why old records can omit the addition and why older readers can ignore it without changing replay. For required-to-optional changes, it explains how readers handle an absent value. The checker validates the type classification; reviewers assess the explanation. A version-bump record includes the increasing header version in the same transition and follows the [Session-format procedure](../cookbook/adding-a-session-format-version.md).
 
+When a reader rejects a JSON property by name, declare the property as optional `never` and mark it with argument-free `@persistenceReserved`. The extractor retains the forbidden field, so allowing a JSON value later requires an existing-field type change. Required or JSON-valued properties cannot carry this marker. Unmarked optional `never` and `undefined` properties retain their existing omission behavior.
+
 <a id="history-and-limitations"></a>
 ## History and limitations
 
