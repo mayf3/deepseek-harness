@@ -63,6 +63,16 @@
   border: none;
 }
 
+/* Electron drag regions are window geometry, not stacking: the frame's leading
+   band and the sidebar logo row's drag rects underneath keep taking the pointer
+   through this fixed overlay, turning non-interactive panel content (file
+   preview text, images, webviews) into window drag. The panel appears after
+   both in DOM order, so this subtracts its whole box; the strips' blank runs
+   give up the drag affordance in exchange. */
+:global(html[data-platform='darwin']) .panel[data-sidebar-right-panel='fullscreen'] {
+  -webkit-app-region: no-drag;
+}
+
 /* Windows keeps caption controls above fullscreen file and terminal panels. */
 :global([data-windows-titlebar]) .panel[data-sidebar-right-panel='fullscreen'] {
   overflow: hidden;

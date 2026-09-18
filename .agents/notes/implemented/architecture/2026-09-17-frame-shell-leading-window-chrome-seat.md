@@ -10,7 +10,7 @@ The [macOS hidden-titlebar work](../feature/2026-09-13-macos-hidden-titlebar-vib
 
 ## Decision
 
-The window chrome belongs to the frame, not to one panel. ui-layout declares a fifth root-scoped child slot, `shell.leading` (single), and AppFrame renders its seat as a frame-level box over the columns — mounted only while `sidebarCollapsed && collapsedWidth === 0`, the darwin desktop full-hide state, the one state that leaves window chrome without a home. The seat sits at the frame's top-left (left 88px clears the hiddenInset traffic lights, top 11px centers the 28px controls on the conversation title row, z-index 15 above column content and below frame overlays) and carries `-webkit-app-region: no-drag`, subtracting itself from any drag band beneath it.
+The window chrome belongs to the frame, not to one panel. ui-layout declares a fifth root-scoped child slot, `shell.leading` (single), and AppFrame renders its seat as a frame-level box over the columns — mounted only on the darwin desktop while `sidebarCollapsed`, the full-hide state that leaves window chrome without a home (Windows' zero-width collapse keeps its fixed caption controls, so the seat must not mount a second set there). The seat sits at the frame's top-left (left 88px clears the hiddenInset traffic lights, top 11px centers the 28px controls on the conversation title row, z-index 15 above column content and below frame overlays) and carries `-webkit-app-region: no-drag`, subtracting itself from any drag band beneath it.
 
 Under the same collapsed condition the frame publishes `--dsh-frame-leading-clearance: 160px` — the inline band the traffic lights plus the seat's two controls occupy, measured from the frame's left edge. Window fullscreen hides the traffic lights (the desktop preload mirrors the state onto `html[data-fullscreen]`): the seat moves to `left: 12px` into their vacated band and the clearance drops to `84px`. The conversation title row is the one consumer: it pads `max(0px, clearance - 20px)` (its header already pads 20px). Entry pages that start below the window strip in both sidebar states (the plugin manager's page head) instead pad their top by `--dsh-frame-top-clearance` (48px, published on the darwin frame unconditionally), which clears the strip vertically rather than indenting inline.
 
@@ -31,7 +31,7 @@ ui-sidebar registers `HeaderLeadingControls` into `shell.leading` instead of the
 - Every current and future main panel keeps the reopen and New Session controls while the sidebar is hidden, at zero per-panel cost; the conversation opts into `--dsh-frame-leading-clearance`, and entry pages take the unconditional `--dsh-frame-top-clearance` instead.
 - `conversation.session.header.leading` no longer exists in the client catalog; `shell.leading` replaces it as a public root-scoped seat any package may occupy.
 - ui-sidebar no longer depends on ui-conversation (inject list, devDependency, and tsconfig reference removed).
-- The seat is darwin-reachable only in the shipped composition (only the darwin collapse hides the column), but the mount condition is platform-agnostic: a platform that later hides its column gets the seat for free.
+- The mount condition names darwin explicitly: Windows' `data-windows-titlebar` collapse also yields a zero-width column but keeps its own fixed caption controls, which a frame seat would duplicate. A platform that later hides its column without leaving its own chrome opts in by widening the condition.
 
 ## Testing
 

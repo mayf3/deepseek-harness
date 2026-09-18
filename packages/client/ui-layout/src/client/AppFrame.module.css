@@ -141,10 +141,11 @@
 }
 
 /* Published while the shell.leading seat is mounted (same condition as the
-   TSX mount: only the darwin collapse hides the column entirely): the inline
-   band the window chrome occupies, measured from the frame's left edge —
-   traffic lights to x 68, controls at x 88 (28 + 8 + 28), then 8px of air.
-   Main panels whose content reaches the top-left corner pad by this. */
+   TSX mount: darwin with the sidebar collapsed — the collapse that hides the
+   column entirely): the inline band the window chrome occupies, measured from
+   the frame's left edge — traffic lights to x 68, controls at x 88
+   (28 + 8 + 28), then 8px of air. Main panels whose content reaches the
+   top-left corner pad by this. */
 :global([data-platform='darwin']) .frame[data-sidebar-collapsed] {
   --dsh-frame-leading-clearance: 160px;
 }
