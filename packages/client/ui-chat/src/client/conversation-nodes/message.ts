@@ -45,13 +45,14 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
   kind: 'input-message',
   target: 'chat',
   match: (event) => {
+    if (event.type === 'user/message') {
+      return isAppendSurfaceEvent(event) && !isCompactionCheckpoint(event)
+        ? { id: String(event.data.id), role: 'start' }
+        : null
+    }
     // Developer history is persisted for V4; presentation is intentionally deferred.
     if (event.type === 'developer/message') throw new Error('Chat developer messages are not supported yet')
-    return event.type === 'user/message'
-      && isAppendSurfaceEvent(event)
-      && !isCompactionCheckpoint(event)
-      ? { id: String(event.data.id), role: 'start' }
-      : null
+    return null
   },
   start: (_context, match, reader) => {
     if (match.event.type !== 'user/message') throw new Error('input-message start requires user/message')
