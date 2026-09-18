@@ -86,7 +86,9 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
 
   beforeAll(async () => {
     outsideRoot = await mkdtemp(join(tmpdir(), 'dsh-preview-outside-'))
-    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false, extraOverlayPath: PAGING_PATCH })
+    scaffold = await launchWebScaffold({
+      developerTools: false, replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false, extraOverlayPath: PAGING_PATCH,
+    })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
@@ -111,17 +113,30 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       await mkdir(SHOT_DIR, { recursive: true })
       await saveFailureShot(page, `screenshots/0908-document-preview/smoke-${process.pid}`)
     })
+    expect(await page.locator('[data-slot="conversation.hero.agentPreset"] button').count()).toBe(0)
+    expect(scaffold.ctx.settings.get('ui-developer-tools')).toEqual({ enabled: false })
     const settled = scaffold.whenTurnSettled()
     const input = page.locator('[data-composer-input]').first()
     await input.fill(PROMPT)
     await input.press('Enter')
     const sessionId = await settled
     await page.getByText('LIGHTHOUSE', { exact: true }).waitFor({ timeout: 15_000 })
+    expect(await page.getByRole('tablist').count()).toBe(0)
     const cwd = scaffold.ctx.agents.get(sessionId)?.session.header.cwd
     if (cwd === undefined) throw new Error('settled Session has no workspace cwd')
     if (outsideRoot === undefined) throw new Error('outside fixture directory is unavailable')
     const outsideScript = join(outsideRoot, 'outside.js')
     const outsideReference = relative(cwd, outsideScript).replace(/\\/g, '/')
+    let previewNetworkRequests = 0
+    await page.route('https://preview.invalid/developer-tools.png', async (route) => {
+      previewNetworkRequests += 1
+      await route.fulfill({ status: 200, contentType: 'image/png', body: TINY_PNG })
+    })
+    const blockedRequests: string[] = []
+    await page.route('https://blocked-preview.invalid/**', async (route) => {
+      blockedRequests.push(route.request().url())
+      await route.fulfill({ status: 200, contentType: 'text/html', body: 'ESCAPED' })
+    })
     const markdownText = [
       '# Markdown smoke', '', 'Rendered from the workspace.', '',
       ...Array.from({ length: (PAGE_LINES - 4) / 2 }, (_, index) => [`Paragraph ${index + 1}: ${'visible prefix '.repeat(20)}`, '']).flat(),
@@ -132,12 +147,24 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       'const tail = "CODE_TAIL";',
     ]
     await Promise.all([
+      writeFile(join(cwd, 'hostile.html'), `<!doctype html><html lang="en" class="dark"><head>
+        <link rel="preconnect" href="https://blocked-preview.invalid">
+        <noscript><meta http-equiv="refresh" content="0;url=https://blocked-preview.invalid/refresh"></noscript>
+        </head><body style="margin:0"><h1>Static adversarial preview</h1>
+        <a id="plain-link" href="https://blocked-preview.invalid/plain">Plain link</a>
+        <div><template shadowrootmode="open"><a id="shadow-link" href="https://blocked-preview.invalid/shadow">Shadow link</a><template><iframe src="https://blocked-preview.invalid/frame"></iframe></template></template></div>
+        <svg><a id="svg-link" href="https://blocked-preview.invalid/svg"><text y="20">SVG link</text><set attributeName="href" to="https://blocked-preview.invalid/set"/><animate attributeName="href" values="https://blocked-preview.invalid/animate"/></a></svg>
+        <img src="https://blocked-preview.invalid/image"><iframe src="https://blocked-preview.invalid/direct-frame"></iframe>
+        <math id="math-link" href="https://blocked-preview.invalid/math"><mi>x</mi></math>
+        <form><math><mtext></form><form><mglyph><style></math><a id="mutation-link" href="https://blocked-preview.invalid/mutation">Mutation link</a>
+        </body></html>`),
       writeFile(join(cwd, 'smoke.md'), markdownText),
       writeFile(join(cwd, 'pages.ts'), codeLines.join('\n')),
       writeFile(join(cwd, 'notes.unknown'), 'UNKNOWN_SUFFIX\nPlain fallback.'),
       writeFile(join(cwd, 'smoke.html'), [
         '<!doctype html><link rel="stylesheet" href="./local.css">',
         '<h1>HTML smoke</h1><p id="result">pending</p><p id="local-result">pending</p><p id="parent-result">pending</p>',
+        '<img src="https://preview.invalid/developer-tools.png" width="1" height="1" alt="">',
         '<p id="outside-result">pending</p>',
         '<script>document.getElementById("result").textContent="INLINE_OK";',
         'try{parent.document.documentElement.setAttribute("data-document-preview-escape","true");document.getElementById("parent-result").textContent="parent-accessible"}',
@@ -263,10 +290,51 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       `- Same tab: ${String(await markdownTab.getAttribute('data-dockkit-tab') === markdownTabId)}`,
     ].join('\n'))
 
+    await openFile('hostile.html')
+    const hostileFrame = page.frameLocator('[data-html-preview]')
+    await hostileFrame.getByRole('heading', { name: 'Static adversarial preview' }).waitFor()
+    expect(await hostileFrame.locator('html').getAttribute('class')).toBe('dark')
+    expect(await hostileFrame.locator('body').evaluate(node => getComputedStyle(node).margin)).toBe('0px')
+    for (const id of ['plain-link', 'svg-link', 'math-link']) {
+      const link = hostileFrame.locator(`#${id}`)
+      expect(await link.getAttribute('href')).toBeNull()
+      await link.click()
+    }
+    // DOMPurify leaves ordinary templates inert and removes declarative shadow roots.
+    expect(await hostileFrame.locator('#shadow-link').count()).toBe(0)
+    expect(await hostileFrame.locator('[href], [xlink\\:href]').count()).toBe(0)
+    const mutationLink = hostileFrame.locator('#mutation-link')
+    if (await mutationLink.count() > 0) await mutationLink.click()
+    expect(await hostileFrame.locator('noscript, link, set, animate, iframe').count()).toBe(0)
+    expect(blockedRequests).toEqual([])
+    await hostileFrame.getByRole('heading', { name: 'Static adversarial preview' }).waitFor()
+
     await openFile('smoke.html')
     await expect.poll(() => viewer.innerText()).toBe('HTML')
     const iframe = preview.locator('[data-html-preview]')
     await iframe.waitFor({ timeout: 15_000 })
+    expect(await iframe.getAttribute('sandbox')).toBe('')
+    const basicHtml = page.frameLocator('[data-html-preview]')
+    await basicHtml.getByRole('heading', { name: 'HTML smoke', exact: true }).waitFor()
+    expect(await basicHtml.locator('#result').innerText()).toBe('pending')
+    expect(await basicHtml.locator('#local-result').innerText()).toBe('pending')
+    expect(previewNetworkRequests).toBe(0)
+    await successShot(page, 'html-basic')
+    sections.push([
+      '## Basic HTML', '',
+      '- Developer tools: off by default on Web and desktop',
+      '- Sandbox: no permissions',
+      `- Inline script: ${await basicHtml.locator('#result').innerText()}`,
+      `- Local script: ${await basicHtml.locator('#local-result').innerText()}`,
+      `- Network requests: ${previewNetworkRequests}`,
+    ].join('\n'))
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    const settings = page.getByRole('dialog', { name: 'Settings' })
+    await settings.getByRole('switch', { name: 'Developer tools' }).click()
+    await expect.poll(() => settings.getByRole('switch', { name: 'Developer tools' }).getAttribute('aria-checked')).toBe('true')
+    await successShot(page, 'developer-tools-setting')
+    await settings.getByRole('button', { name: 'Close', exact: true }).click()
+    await expect.poll(() => iframe.getAttribute('sandbox')).toBe('allow-scripts')
     expect(await iframe.getAttribute('sandbox')).toBe('allow-scripts')
     expect(await iframe.evaluate((node) => {
       const host = node.closest('[data-textpreview-body]')
@@ -283,12 +351,21 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
     const html = page.frameLocator('[data-html-preview]')
     await html.getByRole('heading', { name: 'HTML smoke', exact: true }).waitFor({ timeout: 15_000 })
     await expect.poll(() => html.locator('#result').innerText()).toBe('INLINE_OK')
+    await expect.poll(() => previewNetworkRequests).toBe(1)
     await expect.poll(() => html.locator('#local-result').innerText()).toBe('LOCAL_JS_OK')
     await expect.poll(() => html.locator('#outside-result').innerText()).toBe('OUTSIDE_JS_OK')
     await expect.poll(() => html.locator('#local-result').evaluate(node => getComputedStyle(node).color)).toBe('rgb(12, 34, 56)')
     await expect.poll(() => html.locator('#parent-result').innerText()).toBe('parent-blocked')
     expect(await html.locator('#parent-result').getAttribute('data-error')).toBe('SecurityError')
     expect(await page.locator('html').getAttribute('data-document-preview-escape')).toBeNull()
+    await page.getByRole('tab', { name: /Trajectory/ }).click()
+    await scaffold.ctx.settings.update('ui-developer-tools', { enabled: false })
+    await expect.poll(() => page.getByRole('tab', { name: /Trajectory/ }).count()).toBe(0)
+    await expect.poll(() => iframe.getAttribute('sandbox')).toBe('')
+    expect(await page.getByText('LIGHTHOUSE', { exact: true }).count()).toBeGreaterThan(0)
+    await scaffold.ctx.settings.update('ui-developer-tools', { enabled: true })
+    await expect.poll(() => iframe.getAttribute('sandbox')).toBe('allow-scripts')
+    await expect.poll(() => html.locator('#result').innerText()).toBe('INLINE_OK')
     await successShot(page, 'html')
     sections.push([
       '## HTML', '',

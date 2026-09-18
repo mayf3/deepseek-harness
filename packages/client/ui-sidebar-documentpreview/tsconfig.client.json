@@ -64,6 +64,9 @@
     },
     {
       "path": "../../document/office-to-pdf"
+    },
+    {
+      "path": "../ui-settings"
     }
   ]
 }
