@@ -565,9 +565,15 @@ const SUBJECT_KIND_KEYS = {
   tarball: 'installSubjectTarball',
 } satisfies Record<InstallSubject['kind'], PluginManagerLocaleKey | undefined>
 
-/** The registries asked, as a person reads them, in the dictionary's list form. */
+/** The registries asked, by name, in the dictionary's list form. */
 function registryList(registries: readonly Registry[], t: Translate, resolved: string | null): string {
-  return registries.map(registry => registryText(registry, t, resolved)).join(t('registryListSeparator'))
+  return registries.map(registry => registryText(registry, t, resolved).name).join(t('registryListSeparator'))
+}
+
+/** An option's label: the registry's name with the host it names, unless the host is the name. */
+function registryOption(registry: Registry, t: Translate, resolved: string | null): string {
+  const { name, host } = registryText(registry, t, resolved)
+  return name === host ? name : t('registryWithHost', { name, host })
 }
 
 /**
@@ -663,7 +669,7 @@ function InstallDialog({
     const empty = install.spec.trim() === ''
     const choice = install.registry
     const resolved = install.registries?.resolved ?? null
-    const chosenTitle = choice.kind === 'custom' ? t('registryCustom') : registryText(choice.registry, t, resolved)
+    const chosenTitle = choice.kind === 'custom' ? t('registryCustom') : registryText(choice.registry, t, resolved).name
     const inputProblem = install.inputError
     // A check no registry answered names every registry asked; any other refusal reads by its problem.
     const askedByCheck = inputProblem?.registries ?? []
@@ -783,7 +789,7 @@ function InstallDialog({
                   return (
                     <label key={registry ?? ''} className={css.registryOption} data-checked={checked}>
                       <input type="radio" name={registryId} checked={checked} onChange={() => { onChooseRegistry({ kind: 'offered', registry }) }} />
-                      <span className={css.registryTitle}><span>{registryText(registry, t, resolved)}</span></span>
+                      <span className={css.registryTitle}><span>{registryOption(registry, t, resolved)}</span></span>
                     </label>
                   )
                 })}
@@ -837,7 +843,7 @@ function InstallDialog({
   const resolved = install.registries?.resolved ?? null
   const attemptLine = pending && asked !== null && current !== undefined && previous !== undefined
     ? t('installAttempt', {
-      previous: registryText(previous, t, resolved), registry: registryText(current, t, resolved),
+      previous: registryText(previous, t, resolved).name, registry: registryText(current, t, resolved).name,
       index: String(asked.registries.length), total: String(asked.total),
     })
     : null
@@ -930,7 +936,7 @@ function InstallDialog({
                     <div key={run.jobId} className={css.run}>
                       {registry === undefined
                         ? null
-                        : <p className={css.attemptBadge}>{t('installAttemptBadge', { index: String(index + 1), registry: registryText(registry, t, resolved) })}</p>}
+                        : <p className={css.attemptBadge}>{t('installAttemptBadge', { index: String(index + 1), registry: registryText(registry, t, resolved).name })}</p>}
                       <TerminalBlock
                         command={run.command}
                         output={run.output}

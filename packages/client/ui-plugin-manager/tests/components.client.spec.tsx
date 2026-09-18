@@ -43,8 +43,9 @@ const OFFICIAL = 'https://registry.npmjs.org/'
 /** The registries the Host asks: pnpm's own first, which names npm's own registry, then the mirror. */
 const REGISTRIES = { registry: null, fallbackRegistries: [MIRROR], resolved: OFFICIAL }
 
-/** pnpm's own registry as the options title it while it names npm's own. */
-const OFFICIAL_DEFAULT = en.registryDefault.replace('{host}', 'registry.npmjs.org')
+/** pnpm's own registry as the options label it while it names npm's own; the control and the messages use the name alone. */
+const OFFICIAL_OPTION = en.registryWithHost.replace('{name}', en.registryDefault).replace('{host}', 'registry.npmjs.org')
+const MIRROR_OPTION = en.registryWithHost.replace('{name}', en.registryNpmmirror).replace('{host}', 'registry.npmmirror.com')
 
 const IDLE_INSTALL: InstallState = {
   open: false, spec: '', registries: null, registry: { kind: 'offered', registry: null }, registryOpen: false, registryError: false, attempts: null,
@@ -476,7 +477,7 @@ describe('PluginManagerPage', () => {
     }
     // A check no registry answered names them all.
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', inputError: { problem: 'network', reason: 'r', registries: [null, MIRROR] } } })
-    expect(screen.getByRole('alert').textContent).toBe(en.installProblemNetworkAll.replace('{registries}', `${OFFICIAL_DEFAULT}, ${en.registryNpmmirror}`))
+    expect(screen.getByRole('alert').textContent).toBe(en.installProblemNetworkAll.replace('{registries}', `${en.registryDefault}, ${en.registryNpmmirror}`))
     fireEvent.click(screen.getByRole('button', { name: en.close }))
     expect(actions.closeInstall).toHaveBeenCalledTimes(1)
   })
@@ -674,17 +675,19 @@ describe('PluginManagerPage', () => {
   it('offers the registries under the spec, folded by default, and picks or types one', () => {
     const open = { ...IDLE_INSTALL, open: true, registries: REGISTRIES }
     const { actions, set } = renderTab({ install: open })
-    // Folded, the toggle names the registry the install asks first, tagged as the default while the Host asks it first.
-    const toggle = screen.getByRole('button', { name: `${en.registryToggle} ${OFFICIAL_DEFAULT}` })
+    // Folded, the toggle names the registry the install asks first, by name alone.
+    const toggle = screen.getByRole('button', { name: `${en.registryToggle} ${en.registryDefault}` })
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByRole('radio')).toBeNull()
     fireEvent.click(toggle)
     expect(actions.toggleRegistryOptions).toHaveBeenCalledTimes(1)
     set({ install: { ...open, registryOpen: true } })
-    expect(screen.getByRole('button', { name: `${en.registryToggle} ${OFFICIAL_DEFAULT}` }).getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('button', { name: `${en.registryToggle} ${en.registryDefault}` }).getAttribute('aria-expanded')).toBe('true')
     const radios = screen.getAllByRole('radio')
     expect(radios).toHaveLength(3)
     expect(radios[0]).toHaveProperty('checked', true)
+    // The options carry the host each names; the control does not.
+    expect(radios.map(radio => radio.parentElement?.textContent)).toEqual([OFFICIAL_OPTION, MIRROR_OPTION, en.registryCustom])
     // The options float from the toggle, so the dialog card itself does not grow.
     expect(screen.getByRole('dialog').contains(screen.getByRole('group', { name: en.registryLegend }))).toBe(false)
     // Escape folds the options without reaching the dialog; a pointer outside them folds them too.
@@ -695,7 +698,7 @@ describe('PluginManagerPage', () => {
     expect(actions.toggleRegistryOptions).toHaveBeenCalledTimes(3)
     fireEvent.pointerDown(screen.getByRole('group', { name: en.registryLegend }))
     expect(actions.toggleRegistryOptions).toHaveBeenCalledTimes(3)
-    fireEvent.click(screen.getByRole('radio', { name: en.registryNpmmirror }))
+    fireEvent.click(screen.getByRole('radio', { name: MIRROR_OPTION }))
     expect(actions.chooseRegistry).toHaveBeenLastCalledWith({ kind: 'offered', registry: MIRROR })
     set({ install: { ...open, registryOpen: true, registry: { kind: 'offered', registry: MIRROR } } })
     expect(screen.getByRole('button', { name: `${en.registryToggle} ${en.registryNpmmirror}` })).toBeTruthy()
@@ -722,14 +725,14 @@ describe('PluginManagerPage', () => {
     // A registry the Host configured that the dictionary does not know reads by its host, listed first.
     const corporate = { registry: 'https://npm.corp.example/', fallbackRegistries: [], resolved: OFFICIAL }
     set({ install: { ...open, registryOpen: true, registries: corporate, registry: { kind: 'offered', registry: 'https://npm.corp.example/' } } })
-    expect(screen.getAllByRole('radio').map(radio => radio.parentElement?.textContent)).toEqual(['npm.corp.example', OFFICIAL_DEFAULT, en.registryCustom])
+    expect(screen.getAllByRole('radio').map(radio => radio.parentElement?.textContent)).toEqual(['npm.corp.example', OFFICIAL_OPTION, en.registryCustom])
     // pnpm's own configuration naming another registry reads as the default registry with that host.
     set({ install: { ...open, registryOpen: true, registries: { ...REGISTRIES, resolved: 'https://npm.corp.example/' } } })
-    expect(screen.getByRole('button', { name: `${en.registryToggle} ${en.registryDefault.replace('{host}', 'npm.corp.example')}` })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: en.registryWithHost.replace('{name}', en.registryDefault).replace('{host}', 'npm.corp.example') })).toBeTruthy()
     // Before the Host answers, only pnpm's own is offered, read as npm's own.
     set({ install: { ...open, registryOpen: true, registries: null } })
     expect(screen.getAllByRole('radio')).toHaveLength(2)
-    expect(screen.getByRole('button', { name: `${en.registryToggle} ${OFFICIAL_DEFAULT}` })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: OFFICIAL_OPTION })).toBeTruthy()
   })
 
   it('names the registry each attempt asks while installing, badges each run, and says when every registry failed', () => {
@@ -745,12 +748,12 @@ describe('PluginManagerPage', () => {
     })
     expect(screen.getByRole('status').textContent).toBe(en.installingTitle)
     expect(screen.getByText(en.installAttempt
-      .replace('{previous}', OFFICIAL_DEFAULT).replace('{registry}', en.registryNpmmirror).replace('{index}', '2').replace('{total}', '2'))).toBeTruthy()
-    expect(screen.getByText(en.installAttemptBadge.replace('{index}', '1').replace('{registry}', OFFICIAL_DEFAULT))).toBeTruthy()
+      .replace('{previous}', en.registryDefault).replace('{registry}', en.registryNpmmirror).replace('{index}', '2').replace('{total}', '2'))).toBeTruthy()
+    expect(screen.getByText(en.installAttemptBadge.replace('{index}', '1').replace('{registry}', en.registryDefault))).toBeTruthy()
     expect(screen.getByText(en.installAttemptBadge.replace('{index}', '2').replace('{registry}', en.registryNpmmirror))).toBeTruthy()
     // The first attempt says nothing about a registry before it; a single run carries no badge.
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'running', subject, runs: [runs[0] as never], detailsOpen: true, attempts: { registries: [null], total: 2 } } })
-    expect(screen.queryByText(en.installAttemptBadge.replace('{index}', '1').replace('{registry}', OFFICIAL_DEFAULT))).toBeNull()
+    expect(screen.queryByText(en.installAttemptBadge.replace('{index}', '1').replace('{registry}', en.registryDefault))).toBeNull()
     expect(screen.getByRole('status').parentElement?.textContent).toBe(en.installingTitle)
     // Every registry failed: the failure names them all, and the registries can be changed from here.
     set({
@@ -759,7 +762,7 @@ describe('PluginManagerPage', () => {
         attempts: { registries: [null, MIRROR], total: 2 }, failure: { reason: 'ERR', kind: 'network', failedAt: 'registry' },
       },
     })
-    expect(screen.getByText(en.installFailureNetworkAll.replace('{registries}', `${OFFICIAL_DEFAULT}, ${en.registryNpmmirror}`))).toBeTruthy()
+    expect(screen.getByText(en.installFailureNetworkAll.replace('{registries}', `${en.registryDefault}, ${en.registryNpmmirror}`))).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.installChangeRegistry }))
     expect(actions.changeRegistry).toHaveBeenCalledTimes(1)
     // One registry that failed reads as the plain network failure; a stale copy on it still offers another registry.

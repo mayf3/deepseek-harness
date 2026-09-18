@@ -7,5 +7,5 @@
     - /placeholder: 例如 @deepseek-ai/dsh-experimental-auto-review
     - text: slow-package
   - button "不知道该填什么？"
-  - button "安装源 默认安装源（registry.npmjs.org）"
+  - button "安装源 默认安装源"
   - button "安装"
