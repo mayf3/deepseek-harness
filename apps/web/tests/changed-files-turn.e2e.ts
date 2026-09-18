@@ -51,6 +51,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       await writeFile(replayOverride, JSON.stringify(script).replaceAll('{{cwd}}', JSON.stringify(cwdToken).slice(1, -1)))
     }
     scaffold = await launchWebScaffold({
+      developerTools: false,
       compareReplaySession: true,
       extraOverlayPath: fileURLToPath(new URL('./changed-files-turn.overlay.yml', import.meta.url)),
       ...(replayOverride === undefined ? {} : { replayFixture: FIXTURE, replayOverride }),
@@ -106,6 +107,18 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     expect(await readFile(join(cwd, 'notes.txt'), 'utf8')).toBe('start\ndone\n')
 
     const card = page.locator('[data-changed-files]')
+    expect(await card.count()).toBe(0)
+    const header = page.locator('header').filter({ has: page.locator('[data-conversation-header-leading]') })
+    expect(await header.getByRole('tablist').count()).toBe(0)
+    const compactHeight = await header.evaluate(element => element.getBoundingClientRect().height)
+    expect(compactHeight).toBeLessThan(60)
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const settings = page.getByRole('dialog', { name: '设置' })
+    await settings.getByRole('switch', { name: '开发者工具' }).click()
+    await expect.poll(() => settings.getByRole('switch', { name: '开发者工具' }).getAttribute('aria-checked')).toBe('true')
+    await settings.getByRole('button', { name: '关闭', exact: true }).click()
+    await header.getByRole('tablist').waitFor({ state: 'visible' })
+    expect(await header.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThan(compactHeight)
     await card.waitFor({ state: 'visible' })
     expect(await card.getByText('已编辑 4 个文件', { exact: true }).count()).toBe(1)
     expect(await card.getByRole('listitem').count()).toBe(3)
@@ -144,6 +157,43 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     await review.locator('[data-review-view="split"]').waitFor({ state: 'visible' })
     await expect.poll(() => drawn(review.locator('[data-diff-side="left"]'))).toEqual(['del:1# 示例项目', 'context:2', 'context:3一个用于演示的仓库。'])
     expect(await drawn(review.locator('[data-diff-side="right"]'))).toEqual(['del:1# 项目说明', 'context:2', 'context:3一个用于演示的仓库。'])
+    // Constrain the recorded three-row diff to exercise unequal horizontal ranges and classic scrollbars.
+    const scrollLayout = await page.addStyleTag({ content: `
+      [data-changes-review] { height: 120px !important; }
+      [data-diff-side] { scrollbar-width: auto; }
+      [data-diff-side]::-webkit-scrollbar { width: 16px; height: 16px; }
+      [data-diff-side="left"] { width: 65px; }
+    ` })
+    try {
+      const left = review.locator('[data-diff-side="left"]')
+      const right = review.locator('[data-diff-side="right"]')
+      const metrics = (side: typeof left) => side.evaluate(element => ({
+        x: element.scrollLeft, y: element.scrollTop,
+        maxX: element.scrollWidth - element.clientWidth,
+        maxY: element.scrollHeight - element.clientHeight,
+        bottom: element.lastElementChild!.getBoundingClientRect().bottom,
+      }))
+      const initialLeft = await metrics(left)
+      const initialRight = await metrics(right)
+      expect(initialLeft.maxX).toBeGreaterThan(0)
+      expect(initialRight.maxX).toBe(0)
+      expect(initialLeft.maxY).toBeGreaterThan(0)
+      expect(initialLeft.maxY).toBe(initialRight.maxY)
+      await left.evaluate((element) => { element.scrollLeft = element.scrollWidth })
+      await expect.poll(async () => (await metrics(left)).x).toBe(initialLeft.maxX)
+      await left.evaluate((element) => { element.scrollTop = element.scrollHeight })
+      await expect.poll(async () => (await metrics(right)).y).toBe(initialLeft.maxY)
+      // Two frames allow the browser-generated peer event to run before checking the source.
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => { resolve() }))))
+      expect((await metrics(left)).x).toBe(initialLeft.maxX)
+      expect((await metrics(left)).y).toBe(initialLeft.maxY)
+      expect((await metrics(left)).bottom).toBeCloseTo((await metrics(right)).bottom, 1)
+      await right.evaluate((element) => { element.scrollTop = 0 })
+      await expect.poll(async () => (await metrics(left)).y).toBe(0)
+      expect((await metrics(left)).x).toBe(initialLeft.maxX)
+    } finally {
+      await scrollLayout.evaluate(element => element.parentNode!.removeChild(element))
+    }
     await review.getByRole('button', { name: '自动换行' }).click()
     await review.locator('[data-review-view][data-review-wrap]').waitFor({ state: 'visible' })
     await expect.poll(() => drawn(review)).toEqual(['del:1# 示例项目1# 项目说明', 'context:22', 'context:3一个用于演示的仓库。3一个用于演示的仓库。'])

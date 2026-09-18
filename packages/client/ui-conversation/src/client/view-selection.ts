@@ -1,6 +1,7 @@
 import type { ViewTab } from './contract/views.ts'
 
-const DEFAULT_VIEW_ID = 'chat'
+/** Chat remains available when developer tools are disabled. */
+export const DEFAULT_VIEW_ID = 'chat'
 
 /**
  * Resolve a preferred registered View, then Chat, without choosing another View.

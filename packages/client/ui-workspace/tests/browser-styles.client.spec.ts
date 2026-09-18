@@ -45,7 +45,7 @@ describe('WorkspaceBrowser.module.css list', () => {
 
   it('counts the themed scrollbar inside the shell trailing inset', () => {
     expect(root?.get('--dsh-session-list-edge-inset')).toBe('var(--dsh-sidebar-inline-padding)')
-    expect(root?.get('--dsh-session-list-scrollbar-width')).toBe('8px')
+    expect(root?.get('--dsh-session-list-scrollbar-width')).toBe('5px')
     expect(root?.get('--dsh-session-list-scrollbar-offset')).toBe('2px')
     expect(root?.get('padding-right')).toBe('var(--dsh-session-list-edge-inset)')
     expect(listArea?.get('margin-left')).toBe('-4px')
@@ -106,6 +106,15 @@ describe('WorkspaceBrowser.module.css list', () => {
     expect(rowDeclarations('.searchResultRow')?.get('min-height')).toBe('48px')
     expect(rowDeclarations('.sessionRow.selected')?.get('background'))
       .toBe('var(--dsw-alias-interactive-bg-hover)')
+  })
+
+  it('reveals a clipped session title by scrolling it on row hover', () => {
+    // Smooth versus reduced motion is pinned as a computed style in
+    // apps/web/tests/sidebar-title-hover-scroll.e2e.ts: this helper merges
+    // same-selector rules across media queries, so the reduce override would
+    // mask the smooth declaration here.
+    expect(rowDeclarations('.sessionRow .title')?.get('flex')).toBe('1')
+    expect(rowDeclarations('.sessionRow:hover .title')?.get('text-overflow')).toBe('clip')
   })
 
   it('pins both rail controls to the shared left anchor during the column slide', () => {

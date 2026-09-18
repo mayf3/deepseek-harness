@@ -6,7 +6,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, UIEvent } from 'react'
 import {
-  Button, IconChevronDownOutline14, IconCodeOutline16, IconPanelLeftOutline16, IconRightUpOutline16, IconWrapLinesOutline16, Menu, Tooltip,
+  Button, IconChevronDownOutlineRegular, IconCodeOutlineRegular, IconPanelLeftOutlineRegular,
+  IconRightUpOutlineRegular, IconWrapLinesOutlineRegular, Menu, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -207,7 +208,7 @@ export function ReviewTab({
               aria-label={t('review.selectFile')} title={file.display} data-review-file={file.path}
               onClick={() => { setMenuOpen(value => !value) }}>
               <span className={css.selectorText}>{file.display}</span>
-              <IconChevronDownOutline14 size={12} />
+              <IconChevronDownOutlineRegular size={12} />
             </button>}
             items={files.map((entry, at) => ({ id: String(at), label: <span className={css.item}>
               <span className={css.itemPath}>{entry.display}</span>
@@ -219,20 +220,20 @@ export function ReviewTab({
         <span className={css.tools}>
           <Tooltip label={t(split ? 'review.unified' : 'review.split')} side="bottom" delayMs={500}>
             <button type="button" className={css.tool} aria-pressed={split} aria-label={t('review.splitAria')} data-review-tool="split"
-              onClick={() => { actions.toggledSplit(tab.id) }}><IconPanelLeftOutline16 /></button>
+              onClick={() => { actions.toggledSplit(tab.id) }}><IconPanelLeftOutlineRegular /></button>
           </Tooltip>
           <Tooltip label={t(wrap ? 'review.nowrap' : 'review.wrap')} side="bottom" delayMs={500}>
             <button type="button" className={css.tool} aria-pressed={wrap} aria-label={t('review.wrapAria')} data-review-tool="wrap"
-              onClick={() => { actions.toggledWrap(tab.id) }}><IconWrapLinesOutline16 /></button>
+              onClick={() => { actions.toggledWrap(tab.id) }}><IconWrapLinesOutlineRegular /></button>
           </Tooltip>
           {file !== undefined && <Tooltip label={t('review.openFile')} side="bottom" delayMs={500}>
             <button type="button" className={css.tool} aria-label={t('review.openFileAria', { name: file.display })} data-review-tool="open-file"
-              onClick={() => { tab.actions.openResource(fileAddressFor(sessionId, cwd, file.path)) }}><IconCodeOutline16 /></button>
+              onClick={() => { tab.actions.openResource(fileAddressFor(sessionId, cwd, file.path)) }}><IconCodeOutlineRegular /></button>
           </Tooltip>}
           {file !== undefined && native && <Tooltip label={t(phase === 'error' ? 'diff.openNativeError' : 'diff.openNative')} side="bottom" delayMs={500}>
             <button type="button" className={css.tool} disabled={phase === 'opening'} data-review-tool="open-native"
               aria-label={t('diff.openNativeAria', { name: file.display })} data-error={phase === 'error' || undefined}
-              onClick={() => { void openChanged(sessionId, seq, index) }}><IconRightUpOutline16 /></button>
+              onClick={() => { void openChanged(sessionId, seq, index) }}><IconRightUpOutlineRegular /></button>
           </Tooltip>}
         </span>
       </div>
@@ -272,17 +273,27 @@ function hunkHeader(hunk: WorkspaceDiffHunk): string {
 
 /**
  * The side-by-side view without wrapping: two columns that clip their long
- * lines and scroll sideways together, so a long line on one side never runs
- * under the other and both sides show the same columns of text. Every line is
- * one fixed-height row, which keeps the sides aligned.
+ * lines and scroll together on both axes, so a long line on one side never
+ * runs under the other and both sides show the same rows and columns of text.
+ * Every line is one fixed-height row, which keeps the sides aligned.
  */
 function SplitColumns({ hunks }: { hunks: readonly WorkspaceDiffHunk[] }): ReactNode {
   const paired = useMemo(() => hunks.map(hunk => ({ header: hunkHeader(hunk), rows: splitRows(hunk) })), [hunks])
   const columns = useRef<Record<'left' | 'right', HTMLDivElement | null>>({ left: null, right: null })
-  // Mirror one side's horizontal offset onto the other; the mirrored side's own scroll event then finds nothing to change.
+  const offsets = useRef({ left: { scrollLeft: 0, scrollTop: 0 }, right: { scrollLeft: 0, scrollTop: 0 } })
   const follow = (side: 'left' | 'right') => (event: UIEvent<HTMLDivElement>): void => {
-    const other = columns.current[side === 'left' ? 'right' : 'left']
-    if (other !== null && other.scrollLeft !== event.currentTarget.scrollLeft) other.scrollLeft = event.currentTarget.scrollLeft
+    const peer = side === 'left' ? 'right' : 'left'
+    const other = columns.current[peer]
+    /* v8 ignore next -- Both column refs are attached before browser scroll events can run. */
+    if (other === null) return
+    for (const axis of ['scrollLeft', 'scrollTop'] as const) {
+      const value = event.currentTarget[axis]
+      if (offsets.current[side][axis] === value) continue
+      offsets.current[side][axis] = value
+      other[axis] = value
+      // Record the browser-clamped offset so its scroll event cannot pull the source back.
+      offsets.current[peer][axis] = other[axis]
+    }
   }
   return (
     <div className={css.columns}>

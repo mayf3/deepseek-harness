@@ -10,7 +10,7 @@
 
 `dsh <name>` 是 `dsh --profile <name>` 的简写，启动位于 `$DSH_HOME/profiles/<name>` 的 profile。简写中的名称必须紧跟 `dsh`；`plugin` 仍为插件管理命令，因此启动同名 profile 时须使用 `dsh --profile plugin`。生效配置树以空根节点为起点，依次叠加 profile manifest（元数据清单）的 `dsh.profile.bundles` 列表中指定的各组合包 patch、profile 自身的 `cordis.patch.yml`、home 级的 `$DSH_HOME/cordis.patch.yml`（这是各 profile 共享的机器本地偏好，因此优先于逐 profile 配置层），以及按 argv 顺序指定的各个 `--patch <path>` 覆盖层。对同一配置行，后应用的层优先。patch 会替换目标行的整个 `config` 值，而不是深度合并其中的键；patch 也可以插入新行。最终 YAML 组合决定是否由 `dsh-hmr` 监视配置；未启用 HMR 时，更改需要重启。配置解析、schema 校验、模块解析或插件启动失败时，系统会报告错误并以非零状态退出。收到 SIGINT 或 SIGTERM 时，挂载的根节点会先 dispose（资源释放）再退出。
 
-组合包名称先从 dsh 安装目录解析，再从 profile 目录解析。因此，内置组合包（`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-headless`、`@deepseek-ai/dsh-sdk-app`、`@deepseek-ai/dsh-sdk-minimal`、`@deepseek-ai/dsh-acp-app`）始终来自当前运行的 `dsh` 所属的安装；树外组合包来自 profile 中由 pnpm 管理的 `node_modules`。挂载配置行前，launcher 会按此顺序遍历安装与所选 bundle，并物化计算出的 fallback 链接。内部 runtime 与 dual 模式会在测试中消费同一份不可变 generation，但不改变 CLI 的 link 模式行为。所有模式都保留 profile 已安装包的原生优先级。
+组合包名称先从 dsh 安装目录解析，再从 profile 目录解析。因此，内置组合包（`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-headless`、`@deepseek-ai/dsh-sdk-app`、`@deepseek-ai/dsh-sdk-minimal`、`@deepseek-ai/dsh-acp-app`）始终来自当前运行的 `dsh` 所属的安装；树外组合包来自 profile 中由 pnpm 管理的 `node_modules`。挂载配置行前，launcher 会按此顺序遍历安装与所选 bundle，并将生成的不可变 generation 安装到 Node 的运行时解析器中。启动不会创建共享或 profile 自有的 fallback 链接。profile 已安装包保留原生优先级；profile 初始化和包管理器写入与运行时解析相互独立。
 
 `web`、`headless`、`sdk`、`sdk-minimal` 和 `acp` profile 首次使用时会从随附模板自动初始化（`web`：base + web-app，实时应用 patch；`headless`：base + headless，只在启动时应用 patch；`sdk`：base + sdk-app，只在启动时应用 patch；`sdk-minimal`：独立组合包，只在启动时应用 patch；`acp`：base + acp-app，只在启动时应用 patch）。其他缺失的 profile 会显式报错，并提示运行 `dsh plugin --profile <name> add <package>`。
 
@@ -51,6 +51,15 @@ dsh --profile web --patch ./extra.yml --dump-config
 ```
 
 `--dump-default-config` 只打印组合包各层；`--dump-config` 额外加上 profile 的 `cordis.patch.yml`、home 级的 `$DSH_HOME/cordis.patch.yml` 和 `--patch` overlay。两者都会打印注释，标明每行由哪个文件提供，以及哪些 overlay 修改过它；`!!js` 表达式保持未求值，插入行中的相对插件名以各自 patch 文件所在目录解析，找不到目标的 patch 会报告到 stderr。dump 操作会初始化缺失的 profile 文件，但不会准备 `$DSH_HOME/profiles/node_modules` 下的运行时模块 fallback。它不会运行应用的命令行参数提供方，因此展示的是解析任何应用参数之前的组合配置树；如果调用中包含应用参数，dump 会拒绝该调用。
+
+<a id="startup-diagnostics"></a>
+## 启动诊断
+
+必需插件激活失败时，CLI 先输出失败插件及其原始堆栈，再列出等待中的插件和缺失服务。等待列表中的必需插件排在前面。末尾的 `Full diagnostics:` 行指向直接位于 `$DSH_HOME/logs/`（默认 `~/.dsh/logs/`）下的唯一 `startup-<timestamp>-<uuid>.log` 文件。CLI 完成报告和 stderr 写入后会明确以退出码 1 结束，即使插件仍有打开的句柄；不会覆盖以前的报告，也不会自动删除它们。
+
+报告包含 DSH 和 Node 版本、平台、profile、根配置路径、每个未激活插件的模块与状态、原始错误，以及启动期间的警告和错误参数，包括尚无 Fiber 的导入错误。Node 检查输出保留嵌套原因、聚合成员、循环引用、不可枚举属性和 Symbol 属性，并关闭深度、字符串及数组长度限制。自定义检查函数被禁用，访问器只描述而不求值。收集器包含失败后的异步清理日志，并在启动结算后停止。它不会独立于已记录错误额外收集环境变量或配置内容。插件原始错误可能包含配置或凭据值；报告开头会提醒读者在分享前检查内容。报告不脱敏。
+
+在 POSIX 上，新目录和文件分别请求 `0700` 和 `0600` 权限。CLI 仅在写入成功后输出文件路径。如果日志目录或文件无法写入，stderr 会包含写入错误及完整报告，退出码仍为 1。只有可选插件激活异常时，维持正常警告输出，不创建报告。
 
 ## 插件管理
 

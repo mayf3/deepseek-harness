@@ -238,7 +238,7 @@ describe('OpenInAppAction launching', () => {
     if (img !== null) fireEvent.error(img)
     await waitFor(() => {
       expect(container.querySelector('img')).toBeNull()
-      expect(container.querySelector('svg rect')).not.toBeNull()
+      expect(container.querySelector('svg path[fill-opacity="0.05"]')).not.toBeNull()
     })
   })
 })

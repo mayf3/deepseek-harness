@@ -1,4 +1,4 @@
-/** Test double for the client settings-scope seam. */
+/** Test doubles for settings transport. */
 import { vi } from 'vitest'
 import type {
   SettingsScope, SettingsScopeSnapshot,
@@ -35,9 +35,9 @@ export function stubSettingsScope<T>(): StubSettingsScope<T> {
     revision: undefined, writable: false, mode: 'host',
   }
   const listeners = new Set<() => void>()
-  const set = vi.fn(() => Promise.resolve())
-  const mutate = vi.fn(() => Promise.resolve())
-  const unset = vi.fn(() => Promise.resolve())
+  const set = vi.fn(() => Promise.resolve(true))
+  const mutate = vi.fn(() => Promise.resolve(true))
+  const unset = vi.fn(() => Promise.resolve(true))
   return {
     scope: {
       getSnapshot: () => snapshot,

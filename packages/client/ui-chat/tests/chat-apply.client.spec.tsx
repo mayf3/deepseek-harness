@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { describe, expect, it, vi } from 'vitest'
 import { act, render } from '@testing-library/react'
 import {
-  SlotTestRuntime, TestRemote, stubSettingsScope, usePinnedBrowserLanguages,
+  SlotTestRuntime, stubSettingsScope, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
@@ -22,6 +23,7 @@ import {
 import type {
   ChatNodeTurnDataInjected, ChatSnapshot, TranscriptViewRowInjected, UseChatNodeTurnData,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { PerformanceUsageRowInjected } from '../src/client/settings/PerformanceUsageRow.tsx'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
@@ -38,20 +40,24 @@ async function bench() {
   const runtime = await SlotTestRuntime.create()
   const chatSettings = stubSettingsScope<ChatSettings>()
   runtime.ctx.provide('settingsScope', {
+    developerTools: { enabled: createSnapshotStore(true) },
     bind: ({ namespace }: { namespace: string }) => namespace === CHAT_SETTINGS_NAMESPACE
       ? chatSettings.scope
       : stubSettingsScope().scope,
   } as never)
   runtime.ctx.provide('layout', { openRightbar: vi.fn(), closeRightbar: vi.fn() } as never)
-  runtime.ctx.provide('sidebarRight', { openResource: vi.fn() } as never)
+  runtime.ctx.provide('sidebarRight', { openResource: vi.fn(), openTab: vi.fn() } as never)
+  runtime.ctx.provide('sidebarRightTabs', { register: vi.fn(() => () => {}) } as never)
+  runtime.ctx.provide('resources', { register: vi.fn(() => () => {}) } as never)
+  const openSession = vi.fn<(id: SessionId) => void>()
   runtime.ctx.provide('uiWorkspace', {
     openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
       beforeOpen(SID)
-      runtime.sessions.open(SID)
+      openSession(SID)
     }),
-    openSession: (id: SessionId) => { runtime.sessions.open(id) },
+    openSession,
   } as never)
-  new TestRemote(runtime.ctx, {
+  runtime.remote.provideNamespaces({
     session: { openWorkspacePath: vi.fn(async () => ({ ok: true, value: { opened: true } })) },
   })
   const locale = new LocaleRuntime(runtime.ctx)
@@ -88,7 +94,7 @@ describe('Chat apply wiring', () => {
     expect(b.runtime.slots.entries('conversation.composer.dock').map(row => row.options.id))
       .toEqual(['stats'])
     expect(b.runtime.slots.entries('settings.general.item').map(row => row.options.id))
-      .toEqual(['transcript-view', 'composer-enter'])
+      .toEqual(['transcript-view', 'performance-usage', 'composer-enter'])
     await b.runtime.dispose()
   })
 
@@ -104,9 +110,28 @@ describe('Chat apply wiring', () => {
     expect(b.chatSettings.set).toHaveBeenCalledWith('transcriptView', 'normal')
 
     b.chatSettings.publish({
-      status: 'ready', value: { transcriptView: 'compact' }, revision: 1, writable: true,
+      status: 'ready', value: { transcriptView: 'compact', performanceUsage: 'detailed' }, revision: 1, writable: true,
     })
     expect(face.hooks.transcriptView.getSnapshot()).toBe('compact')
+    await b.runtime.dispose()
+  })
+
+  it('shares the accepted performance preference with settings, composer, and turn tails', async () => {
+    const b = await bench()
+    const row = b.runtime.slots.entries('settings.general.item').find(entry => entry.options.id === 'performance-usage')!
+    const face = (row.inject as unknown as () => PerformanceUsageRowInjected)()
+    expect(face.hooks.performanceUsage.getSnapshot()).toBe('detailed')
+    face.setPerformanceUsage('compact')
+    expect(b.chatSettings.set).toHaveBeenCalledWith('performanceUsage', 'compact')
+    b.chatSettings.publish({ value: { transcriptView: 'compact', performanceUsage: 'compact' } })
+    expect(face.hooks.performanceUsage.getSnapshot()).toBe('compact')
+    for (const entry of [
+      b.runtime.slots.entries('conversation.composer.dock').find(entry => entry.options.id === 'stats')!,
+      b.runtime.slots.entries('conversation.chat.node').find(entry => entry.options.key === 'turn-tail')!,
+    ]) {
+      const injected = (entry.inject as unknown as () => Pick<PerformanceUsageRowInjected, 'hooks'>)()
+      expect(injected.hooks.performanceUsage).toBe(face.hooks.performanceUsage)
+    }
     await b.runtime.dispose()
   })
 
@@ -133,16 +158,16 @@ describe('Chat apply wiring', () => {
 
   it('keeps the Chat standard source total while its target enters and leaves', async () => {
     const b = await bench()
-    await b.runtime.sessions.add({ id: SID }, { current: false })
-    const binding = b.runtime.sessions.binding(SID)
-    if (binding === undefined) throw new Error('Chat source test Session binding is unavailable')
+    await b.runtime.sessions.add({ id: SID })
+    using reference = b.runtime.sessions.retain(SID)
+    const binding = reference.binding
     const resolveSource = (owner: SessionBinding): ObservableSnapshot<ChatSnapshot> => {
       const contribution = b.sourceDescriptor.resolve(owner) as {
         hooks: { chat: ObservableSnapshot<ChatSnapshot> }
       }
       return contribution.hooks.chat
     }
-    const source = b.runtime.ctx.uiSession.adapter.resolve(SID)!.hooks.chat as
+    const source = b.runtime.ctx.uiSession.adapter.bindingSource(reference).getSnapshot().hooks.chat as
       ObservableSnapshot<ChatSnapshot>
     expect(resolveSource(binding)).toBe(source)
     expect(resolveSource(binding)).toBe(source)

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DesktopHostProcess } from '../src/host-process.ts'
+import { DesktopHostProcess, DesktopHostUncleanExitError } from '../src/host-process.ts'
 
 const roots: string[] = []
 const hosts: DesktopHostProcess[] = []
@@ -30,10 +30,14 @@ server.listen(0, '127.0.0.1', () => {
   process.send({ type: 'ready', url: 'http://127.0.0.1:' + server.address().port + '/?token=fixture' })
 })
 process.on('message', message => {
+  if (message.type === 'update-tasks') {
+    process.send({ type: 'update-tasks', requestId: message.requestId, active: message.action === 'lock' })
+    return
+  }
   if (message.type !== 'shutdown') return
   server.close(() => {
     writeFileSync(join(process.argv[3], 'stopped'), '')
-    process.disconnect()
+    process.send({ type: 'shutdown-complete' }, () => process.disconnect())
   })
   server.closeAllConnections()
 })
@@ -63,6 +67,35 @@ afterEach(async () => {
 })
 
 describe('desktop host process', () => {
+  it('correlates task inspections and admission changes over private IPC', async () => {
+    const host = hostProcess(projectWithHost())
+    await expect(host.updateTasks('inspect')).rejects.toThrow('Host is unavailable')
+    await host.start()
+    expect(await Promise.all([host.updateTasks('inspect'), host.updateTasks('lock'), host.updateTasks('unlock')]))
+      .toEqual([false, true, false])
+    await host.stop(true)
+    await expect(host.updateTasks('inspect')).rejects.toThrow('Host is unavailable')
+  })
+
+  it.each([
+    'process.exit(17)',
+    'process.exit(0)',
+  ])('refuses installation when exit lacks successful teardown acknowledgement: %s', async (exit) => {
+    const host = hostProcess(projectWithHost(`
+      process.send({ type: 'ready', url: 'http://127.0.0.1:3080/' })
+      process.on('message', message => {
+        if (message.type === 'shutdown') process.stderr.write('token=fixture-secret', () => { ${exit} })
+      })
+    `))
+    await host.start()
+    const error = await host.stop(true).then(() => undefined, (error: unknown) => error)
+    expect(error).toBeInstanceOf(DesktopHostUncleanExitError)
+    expect(String(error)).toContain('shutdown acknowledged false')
+    expect(String(error)).toContain('graceful deadline exceeded false')
+    expect(String(error)).not.toContain('fixture-secret')
+    await expect(host.stop()).resolves.toBeUndefined()
+  })
+
   it('returns the Web authentication URL and waits for graceful shutdown', async () => {
     const runtime = projectWithHost()
     const failure = vi.fn()
