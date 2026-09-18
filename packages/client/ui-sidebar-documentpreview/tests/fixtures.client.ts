@@ -32,7 +32,7 @@ type BodySlot = PropsRenderSlots<'sidebar.right.tab.document'>['renderSlot']
 /** Preserve the body-slot callback used by component fixtures. */
 export function documentSlots(body: BodySlot): TextPreviewProps['renderSlot'] {
   return (name: string, owner: unknown, options?: unknown) => name === 'sidebar.right.tab.document'
-    ? body(name, owner as unknown as Parameters<BodySlot>[1], options as Parameters<BodySlot>[2])
+    ? body(name, owner as Parameters<BodySlot>[1], options as Parameters<BodySlot>[2])
     : null
 }
 

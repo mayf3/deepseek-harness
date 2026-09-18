@@ -179,7 +179,7 @@ it('uses the native reveal adapter without a test override and respects unsuppor
 it.each(['open', 'reveal'] as const)('rejects an unmapped remote path before native %s', async (action) => {
   const ctx = await context()
   const mapping = vi.spyOn(ctx.fs, 'processPathFromHostPath').mockReturnValue(undefined)
-  onTestFinished(() => mapping.mockRestore())
+  onTestFinished(() => { mapping.mockRestore() })
   const openPath = vi.fn(async () => {})
   const revealPath = vi.fn(async () => {})
   const controller = createSessionTestController(ctx, {
@@ -194,7 +194,7 @@ it.each(['open', 'reveal'] as const)('rejects an unmapped remote path before nat
 it('rejects a filesystem mapping that resolves to another process path', async () => {
   const ctx = await context()
   const mapping = vi.spyOn(ctx.fs, 'processPath').mockReturnValue('/different/report.html')
-  onTestFinished(() => mapping.mockRestore())
+  onTestFinished(() => { mapping.mockRestore() })
   const openPath = vi.fn(async () => {})
   const controller = createSessionTestController(ctx, {
     defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', openPath,
@@ -207,7 +207,7 @@ it('rejects a filesystem mapping that resolves to another process path', async (
 it('dispatches default-app opening to the association adapter', async () => {
   const ctx = await context()
   const open = vi.spyOn(nativeCommand, 'openNativeAssociatedPath').mockResolvedValue(undefined)
-  onTestFinished(() => open.mockRestore())
+  onTestFinished(() => { open.mockRestore() })
   const controller = createSessionTestController(ctx, {
     defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', nativeOpen: true,
   })

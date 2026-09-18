@@ -48,7 +48,7 @@ it('lets a non-Office renderer load content, report its version, and reload thro
   }
   const renderSlot: TextPreviewProps['renderSlot'] = (name: string, input: unknown) => {
     if (name !== 'sidebar.right.tab.document') return null
-    const owner = input as unknown as OwnerOf<'sidebar.right.tab.document'>
+    const owner = input as OwnerOf<'sidebar.right.tab.document'>
     return <CustomBody content={owner.content} />
   }
   const useDocumentPreviews: TextPreviewProps['useDocumentPreviews'] = selector => selector([custom])
@@ -107,7 +107,7 @@ function setup() {
         actions: office.actions, t: makeTranslate(en) } as unknown as OfficeFontActionProps} />
     }
     if (key !== 'sidebar.right.tab.document') return null
-    const owner = input as unknown as OwnerOf<'sidebar.right.tab.document'>
+    const owner = input as OwnerOf<'sidebar.right.tab.document'>
     if (owner.content.kind !== 'renderer') return <p>Raw bytes</p>
     request = owner.content
     // The component fixture supplies the standard seats used by Office; the real slot binding is exercised by the browser scenario.
