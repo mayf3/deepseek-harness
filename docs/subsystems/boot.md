@@ -112,6 +112,13 @@ Manage profile files and apply their declared reload lifecycle.
  */
 @Remote installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>
 
+/** Recover the result of an active installation without cancelling it.
+ * @param requestId The id supplied when installation started.
+ * @returns The installation's outcome after it settles, or null if no active request has that id.
+ * Completed results are not retained; null establishes neither success nor cancellation.
+ */
+@Remote async waitForInstall(requestId: PluginInstallRequestId): Promise<ChangeResult | null>
+
 /** Stop an installation this manager owns and wait until its files are back.
  * @param requestId The id the installation was started with.
  * @returns `cancelled` once pnpm exited and the files are restored, `too-late` once the bundle is being
