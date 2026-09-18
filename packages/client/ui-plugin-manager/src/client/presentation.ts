@@ -18,9 +18,9 @@ const BUILTIN_COPY = new Map<string, { title: PluginManagerLocaleKey; descriptio
   }],
 ])
 
-/** The registries with copy of their own, by host: a name, the line under it, and the tag that says whom it serves. */
-const REGISTRY_COPY = new Map<string, { title: PluginManagerLocaleKey; hint: PluginManagerLocaleKey; badge: PluginManagerLocaleKey }>([
-  ['registry.npmmirror.com', { title: 'registryNpmmirror', hint: 'registryNpmmirrorHint', badge: 'registryNpmmirrorBadge' }],
+/** The registries with copy of their own, by host: a name and the line under it. */
+const REGISTRY_COPY = new Map<string, { title: PluginManagerLocaleKey; hint: PluginManagerLocaleKey }>([
+  ['registry.npmmirror.com', { title: 'registryNpmmirror', hint: 'registryNpmmirrorHint' }],
 ])
 
 /** npm's own registry, which pnpm names without any configuration. */
@@ -32,9 +32,9 @@ const OFFICIAL_NPM_HOST = 'registry.npmjs.org'
  * @param registry - the registry, null for the one pnpm's own configuration names.
  * @param t - the manager's translate seat.
  * @param resolved - the URL pnpm's own configuration names, null while unknown.
- * @returns the title, the line under it, and the tag beside it when it has one.
+ * @returns the title and the line under it.
  */
-export function registryText(registry: Registry, t: Translate, resolved: string | null): { title: string; hint: string; badge?: string } {
+export function registryText(registry: Registry, t: Translate, resolved: string | null): { title: string; hint: string } {
   if (registry === null) {
     // Unknown, or npm's own: the official registry. Anything else pnpm names reads by its host.
     if (resolved === null || registryHost(resolved) === OFFICIAL_NPM_HOST) return { title: t('registryOfficial'), hint: t('registryOfficialHint') }
@@ -43,7 +43,7 @@ export function registryText(registry: Registry, t: Translate, resolved: string 
   const host = registryHost(registry)
   const keys = REGISTRY_COPY.get(host)
   if (keys === undefined) return { title: host, hint: registry }
-  return { title: t(keys.title), hint: t(keys.hint), badge: t(keys.badge) }
+  return { title: t(keys.title), hint: t(keys.hint) }
 }
 
 /** The host of a registry URL; the URL as written when it does not parse. */

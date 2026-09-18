@@ -686,7 +686,17 @@ describe('PluginManagerPage', () => {
     expect(radios).toHaveLength(3)
     expect(radios[0]).toHaveProperty('checked', true)
     expect(screen.getByText(en.registryOfficialHint)).toBeTruthy()
-    expect(screen.getByText(en.registryNpmmirrorBadge)).toBeTruthy()
+    expect(screen.getByText(en.registryNpmmirrorHint)).toBeTruthy()
+    // The options float from the toggle, so the dialog card itself does not grow.
+    expect(screen.getByRole('dialog').contains(screen.getByRole('group', { name: en.registryLegend }))).toBe(false)
+    // Escape folds the options without reaching the dialog; a pointer outside them folds them too.
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(actions.toggleRegistryOptions).toHaveBeenCalledTimes(2)
+    expect(actions.closeInstall).not.toHaveBeenCalled()
+    fireEvent.pointerDown(document.body)
+    expect(actions.toggleRegistryOptions).toHaveBeenCalledTimes(3)
+    fireEvent.pointerDown(screen.getByRole('group', { name: en.registryLegend }))
+    expect(actions.toggleRegistryOptions).toHaveBeenCalledTimes(3)
     // The note names the registries asked after the chosen one, in order.
     expect(screen.getByText(en.registryFallbackNote.replace('{order}', en.registryNpmmirror))).toBeTruthy()
     fireEvent.click(screen.getByRole('radio', { name: new RegExp(en.registryNpmmirror) }))

@@ -628,7 +628,7 @@ export class PluginManagerController {
     const controller = new AbortController()
     this.inspectAbort = controller
     this.patchInstall({
-      phase: 'checking', inputError: null, subject: null, runs: [], detailsOpen: false, attempts: null,
+      phase: 'checking', inputError: null, subject: null, runs: [], detailsOpen: false, attempts: null, registryOpen: false,
       installed: null, restartRequired: false, failure: null, approvedBuilds: [],
     })
     const inspected = await this.ctx.remote.pluginManager.inspect(spec, { registry }, controller.signal)

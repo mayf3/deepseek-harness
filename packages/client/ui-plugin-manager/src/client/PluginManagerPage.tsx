@@ -9,14 +9,15 @@
  * the page declares.
  */
 
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { PluginInstallFailureKind, PluginRegistries, Registry } from '@deepseek-ai/dsh-api-remotes/client'
 import { normalizeRegistry, registryPlan } from '@deepseek-ai/dsh-plugin-manager/registry'
 import {
   Button, IconChevronDownOutlineRegular, IconChevronLeftOutlineRegular,
   IconChevronRightOutlineRegular, IconCloseOutlineRegular, IconCordisPluginOutlineRegular,
   IconPluginPinwheelOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
-  IconWarningOutlineRegular, Input, Modal, StateDot, Switch, Tag, TerminalBlock, Toast,
+  IconWarningOutlineRegular, Input, Modal, StateDot, Switch, Tag, TerminalBlock, Toast, useAnchoredPosition, useDismissOnOutsidePointer,
   type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -650,6 +651,27 @@ function InstallDialog({
   const registryErrorId = useId()
   const [guideOpen, setGuideOpen] = useState(false)
   const { phase } = install
+  // The registry options float over the dialog from their toggle, so unfolding them never adds to its height;
+  // the store folds them when a run starts, so they show at the spec only.
+  const registryToggleRef = useRef<HTMLButtonElement | null>(null)
+  const registryPanelRef = useRef<HTMLFieldSetElement | null>(null)
+  const registryShown = install.registryOpen && phase === 'idle'
+  const registryPosition = useAnchoredPosition({
+    open: registryShown, anchorRef: registryToggleRef, panelRef: registryPanelRef, align: 'end', gap: 6, margin: 12,
+  })
+  // The hook only ever asks to close.
+  useDismissOnOutsidePointer(registryToggleRef, registryShown, onToggleRegistry, registryPanelRef)
+  useEffect(() => {
+    if (!registryShown) return
+    // Escape folds the options and goes no further: the dialog under them listens for the same key.
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      onToggleRegistry()
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => { document.removeEventListener('keydown', onKeyDown, true) }
+  }, [registryShown, onToggleRegistry])
   if (phase === 'idle' || phase === 'checking') {
     const checking = phase === 'checking'
     const empty = install.spec.trim() === ''
@@ -677,6 +699,7 @@ function InstallDialog({
         closeLabel={t('close')}
         description={t('installDescription')}
         className={css.installDialog as string}
+        contentClassName={css.installContent as string}
         footer={(
           <Button variant="primary" className={css.wide} disabled={checking || empty} aria-busy={checking} onClick={onRun}>
             {checking ? <StateDot state="ongoing" /> : null}
@@ -713,10 +736,12 @@ function InstallDialog({
               <span>{t(guideOpen ? 'installGuideHide' : 'installGuideToggle')}</span>
             </button>
             <button
+              ref={registryToggleRef}
               type="button"
               className={css.registryToggle}
               aria-expanded={install.registryOpen}
               aria-controls={registryId}
+              aria-haspopup="dialog"
               disabled={checking}
               onClick={onToggleRegistry}
             >
@@ -762,10 +787,16 @@ function InstallDialog({
               </div>
             )
             : null}
-          {install.registryOpen
-            ? (
-              <fieldset id={registryId} className={css.registry} data-install-registry disabled={checking}>
-                <legend className={css.registryLegend}>{t('registryLegend')}</legend>
+          {registryShown
+            ? createPortal(
+              <fieldset
+                ref={registryPanelRef}
+                id={registryId}
+                className={css.registry}
+                style={registryPosition ?? { visibility: 'hidden', left: 0, top: 0 }}
+                data-install-registry
+                aria-label={t('registryLegend')}
+              >
                 {offeredRegistries(install.registries).map((registry) => {
                   const text = registryText(registry, t, resolved)
                   const checked = choice.kind === 'offered' && choice.registry === registry
@@ -775,7 +806,6 @@ function InstallDialog({
                       <span className={css.registryMain}>
                         <span className={css.registryTitle}>
                           <span>{titleOf(registry)}</span>
-                          {text.badge === undefined ? null : <span className={css.registryBadge}>{text.badge}</span>}
                         </span>
                         <span className={css.registryHint}>{text.hint}</span>
                       </span>
@@ -812,7 +842,8 @@ function InstallDialog({
                 <p className={css.registryNote}>
                   {after.length === 0 ? t('registryNoFallbackNote') : t('registryFallbackNote', { order: registryList(after, t, resolved) })}
                 </p>
-              </fieldset>
+              </fieldset>,
+              document.body,
             )
             : null}
         </div>
