@@ -636,9 +636,11 @@
   width: min(440px, calc(100vw - 24px));
   margin: 0;
   padding: 8px 10px 12px;
-  border: 0.5px solid var(--dsw-alias-border-l3);
+  border: 0;
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-2);
+  /* The neutral stroke is the elevation's hairline, not a border beside it. */
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
   box-shadow: var(--dsw-elevation-prominent);
   min-width: 0;
 }
