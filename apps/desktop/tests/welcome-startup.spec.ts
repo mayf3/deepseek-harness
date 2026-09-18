@@ -6,6 +6,9 @@ import type { WelcomeOperations } from '../src/welcome-api.ts'
 import { DESKTOP_IPC } from '../src/ipc.ts'
 
 const state = vi.hoisted(() => ({
+  appListeners: new Map<string, (...args: unknown[]) => void>(),
+  beforeRead: vi.fn(async () => {}),
+  beforeWelcome: vi.fn(async () => {}),
   quit: vi.fn(),
   startHost: vi.fn().mockResolvedValue({ url: 'http://127.0.0.1:3080/?token=test', injections: [] }),
   stopHost: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -34,7 +37,7 @@ vi.mock('electron', () => ({
     setAboutPanelOptions: vi.fn(),
     getAppPath: () => '/development-app',
     getPreferredSystemLanguages: () => ['en-US'],
-    on: vi.fn(),
+    on: (name: string, callback: (...args: unknown[]) => void) => { state.appListeners.set(name, callback) },
     quit: state.quit,
     exit: vi.fn(),
   },
@@ -47,6 +50,9 @@ vi.mock('electron', () => ({
     once(name: string, callback: () => void) { if (name === 'ready-to-show') this.ready = callback; return this }
     on() { return this }
     isDestroyed() { return false }
+    isMinimized() { return false }
+    restore = vi.fn()
+    focus = vi.fn()
     hide = vi.fn()
     show = state.showWorkspace
     async loadURL(url: string) { state.contents = this.webContents; await state.loadWorkspace(url); this.ready?.() }
@@ -79,7 +85,10 @@ vi.mock('../src/host-process.ts', () => ({
 }))
 vi.mock('../src/welcome-backend.ts', () => ({
   connectDesktopWelcome: async () => ({
-    read: async () => ({ loggedIn: false, hasApiKey: false, writable: true, localePreference: state.preference }),
+    read: async () => {
+      await state.beforeRead()
+      return { loggedIn: false, hasApiKey: false, writable: true, localePreference: state.preference }
+    },
     save: async () => ({ ok: true }),
     account: { watch: () => () => {}, state: async () => ({ status: 'signed-out', attempt: null }) },
   }),
@@ -95,10 +104,11 @@ vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: class
   dispose = vi.fn()
 } }))
 vi.mock('../src/welcome-window.ts', () => ({
-  openWelcomeWindow: (locale: unknown, operations: WelcomeOperations) => {
+  openWelcomeWindow: async (locale: unknown, operations: WelcomeOperations) => {
     state.welcomeLocale = locale
     state.operations = operations
-    return Promise.resolve({ once: vi.fn(), close: state.closeWelcome })
+    await state.beforeWelcome()
+    return { once: vi.fn(), close: state.closeWelcome }
   },
 }))
 
@@ -119,7 +129,27 @@ it('starts the Host for welcome onboarding and opens the workspace on skip witho
   vi.stubEnv('DSH_DESKTOP_OPEN_DEVTOOLS', '0')
   vi.stubEnv('DSH_DESKTOP_MANDATORY_UPDATE_CONFIG', undefined)
   vi.stubEnv('DSH_DESKTOP_UPDATE_JOURNAL_DIR', undefined)
+  const reading = Promise.withResolvers<undefined>()
+  const loading = Promise.withResolvers<undefined>()
+  state.beforeRead.mockReturnValueOnce(reading.promise)
+  state.beforeWelcome.mockReturnValueOnce(loading.promise)
+  const activate = () => {
+    state.appListeners.get('second-instance')!()
+    state.appListeners.get('open-url')!({ preventDefault: vi.fn() }, 'dsh://open')
+  }
   await import('../src/main.ts')
+  await vi.waitFor(() => { expect(state.beforeRead).toHaveBeenCalledOnce() })
+  try {
+    activate()
+    expect(state.showWorkspace).not.toHaveBeenCalled()
+    reading.resolve(undefined)
+    await vi.waitFor(() => { expect(state.beforeWelcome).toHaveBeenCalledOnce() })
+    activate()
+    expect(state.showWorkspace).not.toHaveBeenCalled()
+  } finally {
+    reading.resolve(undefined)
+    loading.resolve(undefined)
+  }
   await vi.waitFor(() => { expect(state.operations).toBeDefined() })
   expect(state.startHost).toHaveBeenCalledOnce()
   expect(state.loadWorkspace).toHaveBeenCalledExactlyOnceWith('dsh-app://app/')
@@ -134,6 +164,8 @@ it('starts the Host for welcome onboarding and opens the workspace on skip witho
     webPreferences: { contextIsolation: true, sandbox: true },
   })
   expect(state.closeWelcome).toHaveBeenCalledOnce()
+  activate()
+  expect(state.showWorkspace).toHaveBeenCalledTimes(3)
   expect(state.quit).not.toHaveBeenCalled()
   expect(state.stopHost).not.toHaveBeenCalled()
   const contents = state.contents as { mainFrame: { url: string } }

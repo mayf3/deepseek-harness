@@ -865,6 +865,8 @@ async function main(): Promise<void> {
       void (backend.state.phase === 'ready' ? openInitialWindow() : navigateMain(applicationUrl)).catch(reportFatal)
       return
     }
+    // Startup and sign-out select the visible window before activation may reveal the workspace.
+    if (window === mainWindow && !enteredWorkspace) return
     if (window.isMinimized()) window.restore()
     window.show()
     window.focus()
