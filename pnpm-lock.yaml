@@ -219,9 +219,6 @@ importers:
       '@deepseek-ai/dsh-experimental-agent-team-profile':
         specifier: workspace:^
         version: link:../../packages/experimental/agent-team-profile
-      '@deepseek-ai/dsh-experimental-agent-team-web-profile':
-        specifier: workspace:^
-        version: link:../../packages/experimental/agent-team-web-profile
       '@deepseek-ai/dsh-fs-local':
         specifier: workspace:^
         version: link:../../packages/fs/fs-local
@@ -6212,25 +6209,12 @@ importers:
       '@deepseek-ai/dsh-experimental-agent-team':
         specifier: workspace:^
         version: link:../agent-team
-      '@deepseek-ai/dsh-experimental-tool-agent-team':
-        specifier: workspace:^
-        version: link:../tool-agent-team
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/cordis-plugin-include':
-        specifier: workspace:^
-        version: link:../../../vendor/include
-      js-yaml:
-        specifier: ^4.2.0
-        version: 4.3.1
-
-  packages/experimental/agent-team-web-profile:
-    dependencies:
       '@deepseek-ai/dsh-experimental-client-ui-agent-team':
         specifier: workspace:^
         version: link:../client-ui-agent-team
+      '@deepseek-ai/dsh-experimental-tool-agent-team':
+        specifier: workspace:^
+        version: link:../tool-agent-team
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
