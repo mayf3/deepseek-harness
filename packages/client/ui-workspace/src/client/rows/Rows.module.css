@@ -101,13 +101,12 @@
   height: 20px;
 }
 
-/* Session cell (figma): pad 8, a 16px status slot, then a 4px title gap. */
+/* Session cell (figma): pad 8, a 16px status slot, then a 4px title gap.
+   Row appearance/removal animates through the browser's auto-animate
+   containers, so the row itself declares no mount animation. */
 .sessionRow {
   height: 32px;
   gap: 0;
-  /* Mount fade: session rows appear by unfolding a group (or the tree
-     mounting). Stable row keys keep already-visible rows from replaying it. */
-  animation: row-in 150ms var(--ds-ease-in-out);
 }
 
 .sessionRow .title {
@@ -116,10 +115,6 @@
 
 .flatSessionRowWithoutStatus .title {
   margin-left: 0;
-}
-
-@keyframes row-in {
-  from { opacity: 0; }
 }
 
 .slot {
@@ -240,6 +235,29 @@
   margin-left: 4px;
 }
 
+.pinIndicator {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  color: var(--dsw-alias-label-caption);
+}
+
+/* Archived rows stay in place but read as inactive: title and time drop to
+   the caption label step (one step above dimmed, which reads as too faint
+   over the sidebar fill). Archived search rows drop their meta line to the
+   same step so both lines read as one unit. */
+.sessionRow.archived .title,
+.sessionRow.archived .time,
+.searchResultRow.archived .searchResultTitle,
+.searchResultRow.archived .searchResultWorkspace,
+.searchResultRow.archived .searchResultSnippet {
+  color: var(--dsw-alias-label-caption);
+}
+
 .dot {
   flex: none;
 }
@@ -255,14 +273,39 @@
 
 .projectRow:hover .rowActions,
 .sessionRow:hover .rowActions,
+.searchResultRow:hover .rowActions,
 .projectRow.menuOpen .rowActions,
 .sessionRow.menuOpen .rowActions {
   display: inline-flex;
 }
 
+/* The search heading has no trailing time cell, so the unarchive action
+   right-aligns itself. */
+.searchResultHeading .rowActions {
+  margin-left: auto;
+}
+
 .sessionRow:hover .time,
 .sessionRow.menuOpen .time {
   display: none;
+}
+
+/* Hover swaps the trailing cell to the action buttons, which already carry
+   the pin/archive glyphs — hide the static markers so they do not double. */
+.sessionRow:hover .pinIndicator,
+.sessionRow.menuOpen .pinIndicator {
+  display: none;
+}
+
+/* Hover truncation fades the title's own alpha out instead of clipping to
+   "…": an overlay gradient would need the sidebar's fill, which macOS
+   vibrancy makes translucent, while a mask works over any backdrop. Short
+   titles never reach the faded band, so only overflow is affected. */
+.sessionRow:hover .title,
+.sessionRow.menuOpen .title {
+  text-overflow: clip;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
 }
 
 /* An open row menu pins the hover affordances (figma: the row keeps its
@@ -350,6 +393,12 @@
   color: #ADB2B8;
 }
 
+/* Archive glyph rides the status row's text color; slight inset aligns it with the 6px status dots. */
+.hoverArchived svg {
+  flex-shrink: 0;
+  margin: 0 -4px;
+}
+
 .iconButton {
   flex: none;
   display: inline-flex;
@@ -376,7 +425,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sessionRow,
   .arrow {
     animation: none;
     transition: none;

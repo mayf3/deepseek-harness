@@ -114,10 +114,33 @@ export interface WorkspaceArchiveValue {
   readonly archivedSessionIds: readonly SessionId[]
 }
 
+/** Session requested for pinning ahead of unpinned Sessions on grouping surfaces. */
+export interface WorkspacePinSessionRequest {
+  readonly sessionId: SessionId
+}
+
+/** Session requested for unpinning back to its natural list position. */
+export interface WorkspaceUnpinSessionRequest {
+  readonly sessionId: SessionId
+}
+
+/** One pinned Session entry: the Session and the epoch-millisecond instant it was pinned at. */
+export interface WorkspacePinnedSession {
+  readonly sessionId: SessionId
+  readonly pinnedAt: number
+}
+
+/** Complete pinned Session set after a mutation, most recently pinned first. */
+export interface WorkspacePinValue {
+  readonly pinnedSessions: readonly WorkspacePinnedSession[]
+}
+
 /** Complete reconnect baseline for Workspace browser state. */
 export interface WorkspaceBaseline {
   readonly items: readonly WorkspaceView[]
   readonly archivedSessionIds: readonly SessionId[]
+  /** Registry-global pin set, most recently pinned first. */
+  readonly pinnedSessions: readonly WorkspacePinnedSession[]
 }
 
 /** One ordered Workspace change after a generation's baseline. */
@@ -126,6 +149,7 @@ export type WorkspaceFollowIncrement =
   | { readonly type: 'remove'; readonly workspaceId: WorkspaceId }
   | { readonly type: 'order'; readonly workspaceIds: readonly WorkspaceId[] }
   | { readonly type: 'archived'; readonly archivedSessionIds: readonly SessionId[] }
+  | { readonly type: 'pinned'; readonly pinnedSessions: readonly WorkspacePinnedSession[] }
 
 /** Workspace state stream; every generation starts with exactly one baseline. */
 export type WorkspaceFollowFrame =

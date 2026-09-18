@@ -88,6 +88,7 @@ function workspaceState(
   return {
     items,
     archivedSessionIds,
+    pinnedSessions: [],
     phase,
     state: phase === 'ready' ? 'idle' : 'loading',
     error: null,
@@ -189,6 +190,8 @@ class FakeWorkspaces implements IWorkspaces {
   declare readonly delete: IWorkspaces['delete']
   declare readonly insertBefore: IWorkspaces['insertBefore']
   declare readonly insertSessionBefore: IWorkspaces['insertSessionBefore']
+  declare readonly pinSession: IWorkspaces['pinSession']
+  declare readonly unpinSession: IWorkspaces['unpinSession']
 
   constructor(initial: WorkspaceSnapshot) {
     this.list = new MutableSource(initial)

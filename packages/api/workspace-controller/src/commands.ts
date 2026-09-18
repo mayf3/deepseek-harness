@@ -3,13 +3,14 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import {
+  WorkspaceArchivedSessionPinError,
   WorkspaceId,
   WorkspaceMoveInvalidError,
   WorkspaceOrderInvalidError,
   WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import { workspaceView } from './feed.ts'
+import { pinnedSessionViews, workspaceView } from './feed.ts'
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
@@ -20,8 +21,11 @@ import type {
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
+  WorkspacePinSessionRequest,
+  WorkspacePinValue,
   WorkspaceRenameRequest,
   WorkspaceUnarchiveSessionRequest,
+  WorkspaceUnpinSessionRequest,
   WorkspaceValue,
 } from './types.ts'
 
@@ -171,6 +175,38 @@ export class WorkspaceCommands {
   async unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue> {
     await this.ctx.workspaceRegistry.unarchiveSession(request.sessionId)
     return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds] }
+  }
+
+  /**
+   * Add one known unarchived Session to the registry-global pin set.
+   * @param request - Session identity to pin.
+   * @returns the complete resulting pin set, most recently pinned first.
+   */
+  async pinSession(request: WorkspacePinSessionRequest): Promise<WorkspacePinValue> {
+    try {
+      await this.ctx.workspaceRegistry.pinSession(request.sessionId)
+    } catch (error) {
+      if (error instanceof WorkspaceUnknownSessionError) {
+        throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId }, { cause: error })
+      }
+      if (error instanceof WorkspaceArchivedSessionPinError) {
+        throw new RemoteError('gateway/bad-request', error.message, {}, { cause: error })
+      }
+      throw error
+    }
+    return { pinnedSessions: pinnedSessionViews(this.ctx.workspaceRegistry.pinnedSessions) }
+  }
+
+  /**
+   * Drop one Session from the registry-global pin set. An id that is not
+   * pinned is not an error: the call is idempotent, so a lost race with
+   * another surface resolves as a no-op.
+   * @param request - Session identity to unpin.
+   * @returns the complete resulting pin set, most recently pinned first.
+   */
+  async unpinSession(request: WorkspaceUnpinSessionRequest): Promise<WorkspacePinValue> {
+    await this.ctx.workspaceRegistry.unpinSession(request.sessionId)
+    return { pinnedSessions: pinnedSessionViews(this.ctx.workspaceRegistry.pinnedSessions) }
   }
 
   private requireWorkspace(workspaceId: WorkspaceId): Workspace {

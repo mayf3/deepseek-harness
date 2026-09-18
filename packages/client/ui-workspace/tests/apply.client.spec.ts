@@ -48,7 +48,7 @@ async function bench() {
   ctx.provide('workspaces', {
     list: {
       getSnapshot: () => ({
-        items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+        items: [], archivedSessionIds: [], pinnedSessions: [], state: 'idle', phase: 'ready', error: null,
       }),
       subscribe,
     },

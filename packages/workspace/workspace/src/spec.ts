@@ -41,18 +41,35 @@ const workspacePendingMutation = z.discriminatedUnion('operation', [
 ])
 
 /**
+ * One registry-global pin entry: the session and the wall-clock epoch
+ * milliseconds it was pinned at. Grouping surfaces rank a pinned row by the
+ * later of `pinnedAt` and the session's own update recency.
+ */
+const pinnedSessionEntry = z.object({
+  id: z.string().transform(value => brandString<SessionId>(value)),
+  pinnedAt: z.number(),
+})
+
+/** One stored pin entry inferred from {@link pinnedSessionEntry}. */
+export type PinnedSession = z.infer<typeof pinnedSessionEntry>
+
+/**
  * Durable registry state. `initialized` distinguishes a valid empty registry
  * from one that still needs the header-only history bootstrap;
  * `workspaceIds` is the authoritative display order. `archivedSessionIds` is
  * the registry-global archive set layered over workspace accounting: an
  * archived session keeps its `sessionIds` slot (unarchiving must restore the
  * position), so the set never participates in the one-owner accounting
- * invariant. Defaulted so records written before the field parse unchanged.
+ * invariant. `pinnedSessions` is the registry-global pin set in pin order
+ * (most recently pinned first); pinning and archival are mutually
+ * exclusive, so archiving drops the session's pin. Both session sets are
+ * defaulted so records written before the fields parse unchanged.
  */
 export const workspaceDomainState = z.object({
   initialized: z.boolean(),
   workspaceIds: z.array(workspaceId),
   archivedSessionIds: z.array(z.string().transform(value => brandString<SessionId>(value))).default([]),
+  pinnedSessions: z.array(pinnedSessionEntry).default([]),
   pendingMutation: workspacePendingMutation.optional(),
 })
 
@@ -70,7 +87,7 @@ export const workspaceDomainSpec = defineDomain({
   version: 2,
   global: {
     schema: workspaceDomainState,
-    initial: { initialized: false, workspaceIds: [], archivedSessionIds: [] },
+    initial: { initialized: false, workspaceIds: [], archivedSessionIds: [], pinnedSessions: [] },
   },
   tables: { workspaces: domainTable<WorkspaceId, WorkspaceRecord>(workspaceRecord) },
 })

@@ -257,23 +257,66 @@ describe('Tooltip', () => {
     }
   })
 
+  it('a click on the anchor dismisses the bubble even while the anchor stays focused', () => {
+    render(
+      <Tooltip label="Pin session">
+        <button type="button">anchor</button>
+      </Tooltip>,
+    )
+    const anchor = screen.getByText('anchor')
+    // Pointer click: browsers focus the button first, then deliver the click.
+    fireEvent.focus(anchor)
+    fireEvent.mouseEnter(anchor)
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+    fireEvent.click(anchor)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    // The retained focus alone must not resurrect it on mouse leave.
+    fireEvent.mouseLeave(anchor)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    // A fresh hover shows the (possibly relabelled) bubble again.
+    fireEvent.mouseEnter(anchor)
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+  })
+
+  it('focus arriving after a pointer interaction does not raise the bubble', () => {
+    render(
+      <Tooltip label="View options">
+        <button type="button">anchor</button>
+      </Tooltip>,
+    )
+    const anchor = screen.getByText('anchor')
+    // A closing menu refocuses its trigger after a mouse selection: the last
+    // interaction was a pointerdown on the menu row, not a key press.
+    fireEvent.pointerDown(document.body)
+    fireEvent.focus(anchor)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    fireEvent.blur(anchor)
+    // The next key press restores focus-driven bubbles (keyboard selection).
+    fireEvent.keyDown(document.body, { key: 'Tab' })
+    fireEvent.focus(anchor)
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+  })
+
   it('chains the anchor\'s own handlers ahead of the tooltip\'s', () => {
     const onMouseEnter = vi.fn()
     const onMouseLeave = vi.fn()
+    const onClick = vi.fn()
     const onFocus = vi.fn()
     const onBlur = vi.fn()
     render(
       <Tooltip label="Chained">
-        <button type="button" onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onFocus={onFocus} onBlur={onBlur}>anchor</button>
+        <button type="button" onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onClick={onClick} onFocus={onFocus} onBlur={onBlur}>anchor</button>
       </Tooltip>,
     )
     const anchor = screen.getByText('anchor')
     fireEvent.mouseEnter(anchor)
     fireEvent.mouseLeave(anchor)
+    fireEvent.click(anchor)
     fireEvent.focus(anchor)
     fireEvent.blur(anchor)
     expect(onMouseEnter).toHaveBeenCalledOnce()
     expect(onMouseLeave).toHaveBeenCalledOnce()
+    expect(onClick).toHaveBeenCalledOnce()
     expect(onFocus).toHaveBeenCalledOnce()
     expect(onBlur).toHaveBeenCalledOnce()
   })

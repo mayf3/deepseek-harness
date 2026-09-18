@@ -6,6 +6,7 @@
  * share from the return type.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
+import type { ArchivedFilter } from './tree.ts'
 
 /** Browser-local order account for the hierarchy-free flat Session list. */
 export const FLAT_SESSION_ORDER_KEY = '__flat_session_order__'
@@ -23,6 +24,14 @@ type WorkspaceViewState = {
   groupExpansion: Record<string, boolean>
   /** Saved manual order per Workspace group plus the browser-local flat-list account. */
   sessionOrderByAccount: Record<string, string[]>
+  /**
+   * Archived-row visibility, kept across reloads like the other view options.
+   * Pre-filter v5 blobs lack the field; the browser reads it with a 'default'
+   * fallback at the rehydration boundary.
+   */
+  archivedFilter: ArchivedFilter
+  /** The one-time hint pointing at the view menu after the first archive has been shown. */
+  archiveHintSeen: boolean
 }
 
 /**
@@ -48,6 +57,8 @@ type WorkspaceViewActions = {
     order: readonly string[],
     initialOrders: Readonly<Record<string, readonly string[]>>,
   ) => void
+  setArchivedFilter: (draft: WorkspaceViewState, filter: ArchivedFilter) => void
+  markArchiveHintSeen: (draft: WorkspaceViewState) => void
 }
 
 /** Copy read-only projections into the persisted mutable store representation. */
@@ -68,6 +79,8 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
       orderBy: 'updated',
       groupExpansion: {},
       sessionOrderByAccount: {},
+      archivedFilter: 'default',
+      archiveHintSeen: false,
     }),
     persist: 'dsh.workspace.view.v5',
     actions: {
@@ -97,6 +110,8 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
         d.orderBy = 'manual'
         d.sessionOrderByAccount[accountKey] = [...order]
       },
+      setArchivedFilter: (d, filter: ArchivedFilter) => { d.archivedFilter = filter },
+      markArchiveHintSeen: (d) => { d.archiveHintSeen = true },
     },
   })
 }

@@ -20,11 +20,24 @@ interface AnchorProps {
   ref?: Ref<HTMLElement> | undefined
   onMouseEnter?: MouseEventHandler | undefined
   onMouseLeave?: MouseEventHandler | undefined
+  onClick?: MouseEventHandler | undefined
   onFocus?: FocusEventHandler | undefined
   onBlur?: FocusEventHandler | undefined
 }
 
 type TooltipLabel = string | (() => string)
+
+// Focus alone cannot reveal how it arrived: a closing menu hands focus back to
+// its trigger, and after a mouse selection that programmatic return must not
+// raise the trigger's bubble, while keyboard focus must. Capture-phase window
+// listeners record the last input modality for every Tooltip. The guard keeps
+// the module loadable where no window exists (node-side imports of the
+// package's pure helpers).
+let pointerModality = false
+if (typeof window !== 'undefined') {
+  window.addEventListener('pointerdown', () => { pointerModality = true }, true)
+  window.addEventListener('keydown', () => { pointerModality = false }, true)
+}
 
 /**
  * Attach a hover/focus tooltip to an anchor element.
@@ -36,7 +49,9 @@ type TooltipLabel = string | (() => string)
  * @param props.maxWidth - bubble width cap in pixels, for labels long enough that the default
  * half-viewport cap would render a slab wider than the surface the anchor sits on.
  * @param props.children - a single anchor element; its own ref (callback or object) is forwarded alongside the tooltip's.
- * @returns the cloned anchor plus a fixed-position bubble while hovered/focused.
+ * @returns the cloned anchor plus a fixed-position bubble while hovered/focused; clicking the
+ * anchor dismisses the bubble until the next trigger, and focus arriving after a pointer
+ * interaction (a closing menu refocusing its trigger) never raises it.
  */
 export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, maxWidth, children }: { label: TooltipLabel; side?: TooltipSide; delayMs?: number; disabled?: boolean; maxWidth?: number; children: ReactElement<AnchorProps> }) {
   const anchor = useRef<HTMLElement | null>(null)
@@ -168,7 +183,11 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
         ref: mergedRef,
         onMouseEnter: (e) => { children.props.onMouseEnter?.(e); triggers.current.hover = true; showAfterHoverDelay() },
         onMouseLeave: (e) => { children.props.onMouseLeave?.(e); triggers.current.hover = false; cancelShow(); withdraw() },
-        onFocus: (e) => { children.props.onFocus?.(e); triggers.current.focus = true; cancelShow(); show() },
+        // Activating the anchor dismisses the bubble: the action often changes
+        // what the anchor now does (pin → unpin), and the click leaves the
+        // anchor focused, which would otherwise pin the relabelled bubble up.
+        onClick: (e) => { children.props.onClick?.(e); triggers.current.focus = false; cancelShow(); withdraw() },
+        onFocus: (e) => { children.props.onFocus?.(e); if (pointerModality) return; triggers.current.focus = true; cancelShow(); show() },
         onBlur: (e) => { children.props.onBlur?.(e); triggers.current.focus = false; hide() },
       })}
       {visible && !suppressed && (

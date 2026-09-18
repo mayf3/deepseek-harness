@@ -59,6 +59,36 @@ describe('Toast', () => {
     }
   })
 
+  it('flows prefixed actions inline as one sentence and hands each press to the owner', () => {
+    vi.useFakeTimers()
+    try {
+      const undo = vi.fn()
+      const filter = vi.fn()
+      const view = render(
+        <Toast
+          text="会话已归档，可"
+          tone="success"
+          actions={[
+            { label: '撤销', onClick: undo },
+            { prefix: '或', label: '筛选已归档会话', onClick: filter },
+          ]}
+          onDone={vi.fn()}
+        />,
+      )
+      // The success tone brings the circled green check itself; no icon prop.
+      const glyph = view.getByRole('alert').querySelector('[aria-hidden]')
+      expect(glyph?.className).toContain('success')
+      expect(glyph?.querySelector('svg')).toBeTruthy()
+      expect(view.getByRole('alert').textContent).toBe('会话已归档，可撤销或筛选已归档会话')
+      fireEvent.click(view.getByRole('button', { name: '撤销' }))
+      expect(undo).toHaveBeenCalledTimes(1)
+      fireEvent.click(view.getByRole('button', { name: '筛选已归档会话' }))
+      expect(filter).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('renders without an icon and cancels its timer on unmount', () => {
     vi.useFakeTimers()
     try {

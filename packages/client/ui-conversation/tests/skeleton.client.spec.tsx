@@ -111,7 +111,7 @@ function workspace(id = 'w1'): WorkspaceView {
 }
 
 const workspaceState = (items: readonly WorkspaceView[]): WorkspaceSnapshot => ({
-  items, archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+  items, archivedSessionIds: [], pinnedSessions: [], state: 'idle', phase: 'ready', error: null,
 })
 
 function sessionSnapshotOf(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {

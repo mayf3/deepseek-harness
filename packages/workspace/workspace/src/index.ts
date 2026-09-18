@@ -17,12 +17,12 @@ import type { WorkspaceEntityHost } from './entity.ts'
 export { WorkspaceMoveInvalidError } from './entity.ts'
 import { defaultWorkspaceTitle, realpathNormalize } from './paths.ts'
 import { workspaceDomainSpec } from './spec.ts'
-import type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
+import type { PinnedSession, WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 import type { Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts'
 
 export type { Workspace } from './types.ts'
 export { workspaceDomainState, workspaceRecord, workspaceDomainSpec } from './spec.ts'
-export type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
+export type { PinnedSession, WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 export { realpathNormalize } from './paths.ts'
 
 /** Identifies one workspace record (see `src/types.ts` for the brand rationale). */
@@ -38,16 +38,29 @@ export function WorkspaceId(id: string): WorkspaceId {
 }
 
 /**
- * An archiveSession request named a session neither live nor in session
- * persistence — a definite miss only; storage faults propagate as themselves.
+ * An archiveSession or pinSession request named a session neither live nor in
+ * session persistence — a definite miss only; storage faults propagate as
+ * themselves.
  */
 export class WorkspaceUnknownSessionError extends Error {
   /**
    * @param sessionId - The unknown session id.
+   * @param verb - The registry operation that named the session.
+   */
+  constructor(readonly sessionId: SessionId, verb: 'archive' | 'pin') {
+    super(`cannot ${verb} session '${sessionId}': live sessions and session persistence hold no such session`)
+    this.name = 'WorkspaceUnknownSessionError'
+  }
+}
+
+/** A pinSession request named a session currently in the archive set; pinning and archival are mutually exclusive. */
+export class WorkspaceArchivedSessionPinError extends Error {
+  /**
+   * @param sessionId - The archived session id.
    */
   constructor(readonly sessionId: SessionId) {
-    super(`cannot archive session '${sessionId}': live sessions and session persistence hold no such session`)
-    this.name = 'WorkspaceUnknownSessionError'
+    super(`cannot pin session '${sessionId}': the session is archived`)
+    this.name = 'WorkspaceArchivedSessionPinError'
   }
 }
 
@@ -236,7 +249,9 @@ export class WorkspaceRegistry extends Service {
   /**
    * Archive one session durably. The session must exist (live or in session
    * persistence); its workspace accounting — or lack of one — is irrelevant.
-   * An already archived id resolves without writing.
+   * Archiving drops the session's pin in the same durable write (pinning and
+   * archival are mutually exclusive). An already archived id resolves without
+   * writing.
    * @param sessionId - The session to archive.
    * @returns resolution after durability.
    */
@@ -246,10 +261,14 @@ export class WorkspaceRegistry extends Service {
       // check-then-write pair cannot interleave with another archive.
       if (this.requireState().archivedSessionIds.includes(sessionId)) return
       if (!(await this.sessionKnown(sessionId))) {
-        throw new WorkspaceUnknownSessionError(sessionId)
+        throw new WorkspaceUnknownSessionError(sessionId, 'archive')
       }
       const state = this.requireState()
-      await this.setState({ ...state, archivedSessionIds: [...state.archivedSessionIds, sessionId] })
+      await this.setState({
+        ...state,
+        archivedSessionIds: [...state.archivedSessionIds, sessionId],
+        pinnedSessions: state.pinnedSessions.filter(entry => entry.id !== sessionId),
+      })
     })
   }
 
@@ -272,6 +291,65 @@ export class WorkspaceRegistry extends Service {
       await this.setState({
         ...state,
         archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+      })
+    })
+  }
+
+  /**
+   * The registry-global pin set: sessions surfaced ahead of every unpinned
+   * session on grouping surfaces. Pinning never touches workspace accounting.
+   * @returns the pin entries in pin order (most recently pinned first), each
+   * carrying the epoch-millisecond `pinnedAt` it was pinned at.
+   */
+  get pinnedSessions(): readonly PinnedSession[] {
+    return this.requireState().pinnedSessions
+  }
+
+  /**
+   * Pin one session durably, prepending it to the registry-global pin set
+   * with the current wall-clock time as its `pinnedAt`. The session must
+   * exist (live or in session persistence) and must not be archived (pinning
+   * and archival are mutually exclusive). An already pinned id resolves
+   * without writing and keeps its original `pinnedAt`.
+   * @param sessionId - The session to pin.
+   * @returns resolution after durability.
+   */
+  pinSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      // The chain slot serializes against every other registry write, so this
+      // check-then-write pair cannot interleave with another pin or archive.
+      if (this.requireState().pinnedSessions.some(entry => entry.id === sessionId)) return
+      if (this.requireState().archivedSessionIds.includes(sessionId)) {
+        throw new WorkspaceArchivedSessionPinError(sessionId)
+      }
+      if (!(await this.sessionKnown(sessionId))) {
+        throw new WorkspaceUnknownSessionError(sessionId, 'pin')
+      }
+      const state = this.requireState()
+      await this.setState({
+        ...state,
+        pinnedSessions: [{ id: sessionId, pinnedAt: Date.now() }, ...state.pinnedSessions],
+      })
+    })
+  }
+
+  /**
+   * Unpin one session durably by dropping it from the registry-global pin
+   * set. Unpinning runs no session-existence check because removing an id
+   * cannot introduce an unknown one, so an entry whose session is gone still
+   * resolves. An id that is not pinned resolves without writing.
+   * @param sessionId - The session to unpin.
+   * @returns resolution after durability.
+   */
+  unpinSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      // The chain slot serializes against every other registry write, so this
+      // check-then-write pair cannot interleave with a concurrent pin.
+      const state = this.requireState()
+      if (!state.pinnedSessions.some(entry => entry.id === sessionId)) return
+      await this.setState({
+        ...state,
+        pinnedSessions: state.pinnedSessions.filter(entry => entry.id !== sessionId),
       })
     })
   }
@@ -353,6 +431,7 @@ export class WorkspaceRegistry extends Service {
         initialized: true,
         workspaceIds: [id, ...state.workspaceIds],
         archivedSessionIds: state.archivedSessionIds,
+        pinnedSessions: state.pinnedSessions,
       })
     } catch (error) {
       this.entities.delete(id)
@@ -385,6 +464,7 @@ export class WorkspaceRegistry extends Service {
       initialized: true,
       workspaceIds: state.workspaceIds.filter(workspaceId => workspaceId !== id),
       archivedSessionIds: state.archivedSessionIds,
+      pinnedSessions: state.pinnedSessions,
     }
     await this.setState({
       ...nextState,
@@ -442,6 +522,7 @@ export class WorkspaceRegistry extends Service {
       initialized: state.initialized,
       workspaceIds: state.workspaceIds,
       archivedSessionIds: state.archivedSessionIds,
+      pinnedSessions: state.pinnedSessions,
     })
   }
 
@@ -524,9 +605,19 @@ export class WorkspaceRegistry extends Service {
       .map(([id]) => id)
 
     if (!sameIds(state.workspaceIds, workspaceIds)) {
-      await this.setState({ initialized: false, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+      await this.setState({
+        initialized: false,
+        workspaceIds,
+        archivedSessionIds: state.archivedSessionIds,
+        pinnedSessions: state.pinnedSessions,
+      })
     }
-    await this.setState({ initialized: true, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+    await this.setState({
+      initialized: true,
+      workspaceIds,
+      archivedSessionIds: state.archivedSessionIds,
+      pinnedSessions: state.pinnedSessions,
+    })
   }
 
   private validateStoredState(state: WorkspaceDomainState): void {
