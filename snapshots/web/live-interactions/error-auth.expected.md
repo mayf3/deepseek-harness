@@ -9,6 +9,7 @@
     - tab "Trajectory"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy"
+- status: Failed
 - button "Failed" [disabled]
 - status:
   - text: This turn failedAPI key is invalid

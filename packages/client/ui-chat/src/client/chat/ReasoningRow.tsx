@@ -17,7 +17,8 @@ function latestCompletedParagraphFirstLine(text: string): string {
   const separator = /\r?\n[\t ]*\r?\n/g
   while (true) {
     const nextParagraph = separator.exec(text)
-    const paragraphEnd = nextParagraph?.index ?? text.length
+    const paragraphEnd = nextParagraph === null ? text.length
+      : nextParagraph.index + nextParagraph[0].indexOf('\n')
     const newline = text.indexOf('\n', paragraphStart)
     if (newline !== -1 && newline <= paragraphEnd) {
       const candidate = text.slice(paragraphStart, newline).trim()

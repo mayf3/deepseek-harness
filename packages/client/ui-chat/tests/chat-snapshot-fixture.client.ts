@@ -1,3 +1,4 @@
+import { ChatStepProcessProjector } from '../src/client/conversation-nodes/step-process-index.ts'
 import type {
   AssistantChatData, AssistantMessageNode, ChatConversationViewNode, ChatNode, ChatSnapshot, ConversationNode,
   ChatLocationNodeIndex, ChatNodeProcessSource, ChatNodeSource, ChatNodeStore,
@@ -517,9 +518,13 @@ export function chatSnapshotFixture(input: {
     && derived.every((item, index) => sameTurnNavigationItem(kept[index], item))
     ? kept
     : derived
+  const stepProcesses = previous?.stepProcesses instanceof ChatStepProcessProjector
+    ? previous.stepProcesses : new ChatStepProcessProjector()
+  stepProcesses.replace({ order, nodes: store, timeline })
   for (const data of turnData.values()) data.publish()
   store.publish()
   return {
+    stepProcesses,
     order,
     nodes: store,
     locations,

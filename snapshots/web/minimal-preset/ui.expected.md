@@ -9,6 +9,7 @@
     - tab "Trajectory"
 - text: "Use the bash tool to run exactly: printf 'MINIMAL_BASH_CARD_OK\\n'. Then reply exactly MINIMAL_PRESET_REQUEST_OK and stop. {{clock}}"
 - button "Copy"
+- status: Worked
 - button "Took {{duration}}" [expanded]
 - button "Ran commands" [expanded]
 - button "Bash printf 'MINIMAL_BASH_CARD_OK\\n'" [expanded]

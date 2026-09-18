@@ -3,6 +3,7 @@ import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primit
 import type { ChatNodeViewProps } from '../contract/slots.ts'
 import { turnProcessAlwaysOpen } from '../contract/turn-process.ts'
 import { formatLiveRunDuration, formatRunDuration, LIVE_RUN_CLOCK_INTERVAL_MS } from './message-chrome.ts'
+import a11yCss from './accessibility.module.css'
 import css from './TurnProcessNodeView.module.css'
 
 /** Turn-level process disclosure controller. */
@@ -37,24 +38,31 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
       : reason === 'error' ? t('message.turnProcess.failed')
         : duration === undefined ? t('message.turnProcess.worked')
           : t('message.turnProcess.took', { duration })
+  const announcement = running ? t('chat.deepDiving')
+    : reason === 'aborted' ? t('message.stopped')
+      : reason === 'error' ? t('message.turnProcess.failed')
+        : t('message.turnProcess.worked')
   return (
-    <button
-      type="button"
-      className={css.root}
-      data-open={open || undefined}
-      data-turn-process={node.data.turn}
-      data-turn-process-messages={node.data.messageCount}
-      data-turn-process-tool-calls={node.data.toolCallCount}
-      data-turn-process-subagents={node.data.subagentCount}
-      disabled={!canCollapse}
-      aria-expanded={turnProcess.hasContent ? open : undefined}
-      onClick={(event) => {
-        event.currentTarget.focus()
-        turnProcess.setOpen(!open)
-      }}
-    >
-      <span className={css.label}>{label}</span>
-      {canCollapse && <IconChevronDownOutlineRegular className={css.chevron} />}
-    </button>
+    <>
+      <span className={a11yCss.visuallyHidden} role="status" aria-live="polite" aria-atomic="true">{announcement}</span>
+      <button
+        type="button"
+        className={css.root}
+        data-open={open || undefined}
+        data-turn-process={node.data.turn}
+        data-turn-process-messages={node.data.messageCount}
+        data-turn-process-tool-calls={node.data.toolCallCount}
+        data-turn-process-subagents={node.data.subagentCount}
+        disabled={!canCollapse}
+        aria-expanded={turnProcess.hasContent ? open : undefined}
+        onClick={(event) => {
+          event.currentTarget.focus()
+          turnProcess.setOpen(!open)
+        }}
+      >
+        <span className={css.label}>{label}</span>
+        {canCollapse && <IconChevronDownOutlineRegular className={css.chevron} />}
+      </button>
+    </>
   )
 })

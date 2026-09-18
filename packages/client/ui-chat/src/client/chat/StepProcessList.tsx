@@ -10,12 +10,11 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
+import type { ProcessActivity, ProcessActivitySummary, ProcessRange } from '../contract/step-process.ts'
 import { turnProcessAlwaysOpen } from '../contract/turn-process.ts'
 import { storedTurnProcessEntry } from '../stores.ts'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
-import {
-  processActivity, processRanges, processTitle, type ProcessActivity, type ProcessRange,
-} from './step-process.ts'
+import { processTitle } from './step-process.ts'
 import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './StepProcessList.module.css'
 import flowCss from './ChatView.module.css'
@@ -95,18 +94,26 @@ function useStableLiveProcessTitle(desired: LiveProcessTitle, active: boolean): 
 
 /** Ordered chat seats with configurable process defaults between assistant responses. */
 export const ChatNodeList = memo(function ChatNodeList({ useChat, expandedSteps, ...seatProps }: ListProps) {
-  const snapshot = useChat(value => value)
-  return processRanges(snapshot).flatMap(range => expandedSteps && range.process
+  const layout = useChat(snapshot => snapshot.stepProcesses.layout)
+  return layout.flatMap(range => expandedSteps && range.process
     ? range.seats.map(seat => <ChatNodeSeat key={`${seat.nodeKey}:${seat.assistantPart ?? ''}`} {...seatProps} {...seat} />)
     : range.process
-      ? <StepProcess key={range.key} range={range}
-        nodes={range.seats.map(seat => snapshot.nodes.get(seat.nodeKey) as ChatNode)} {...seatProps} />
+      ? <StepProcessSeat key={range.key} groupKey={range.key} useChat={useChat} {...seatProps} />
       : <ChatNodeSeat key={range.key} {...seatProps} {...range.seats[0]} />)
 })
 
-function StepProcess({ range, nodes, ...seatProps }: SeatProps & {
+const StepProcessSeat = memo(function StepProcessSeat({ groupKey, useChat, ...seatProps }: SeatProps & {
+  readonly groupKey: string
+  readonly useChat: ChatViewSlotProps['useChat']
+}) {
+  const group = useChat(snapshot => snapshot.stepProcesses.get(groupKey))
+  return group === undefined ? null : <StepProcess {...group} {...seatProps} />
+})
+
+function StepProcess({ range, nodes, summary, ...seatProps }: SeatProps & {
   readonly range: ProcessRange
   readonly nodes: readonly ChatNode[]
+  readonly summary: ProcessActivitySummary
 }) {
   const { useChatNodeProcess, useStore, actions, t } = seatProps
   const [open, setOpen] = useState(false)
@@ -149,7 +156,6 @@ function StepProcess({ range, nodes, ...seatProps }: SeatProps & {
     for (const child of body.children) observer.observe(child)
     return () => { observer.disconnect() }
   }, [bodyRef, nodes.length, open, syncScrollEdges])
-  const summary = processActivity(nodes)
   const desiredLiveTitle: LiveProcessTitle = {
     activity: summary.running ?? 'thinking',
     detail: summary.runningDetail,

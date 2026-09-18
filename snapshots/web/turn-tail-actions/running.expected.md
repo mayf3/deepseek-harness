@@ -10,6 +10,7 @@
 - text: Begin your reply with the plain sentence "Reading the workspace now." as text, and in that same message call the bash tool with the command "echo alpha". After the tool result, reply with the single word DONE and stop. {{clock}}
 - button "Copy"
 - tooltip "Copy"
+- status: Deep diving...
 - button "Deep diving for {{duration}}" [disabled] [expanded]
 - button "Analysis completed"
 - paragraph: Reading the workspace now.

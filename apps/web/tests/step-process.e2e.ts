@@ -76,8 +76,7 @@ it('keeps completed step work collapsed inside an expanded turn and bounds its s
       expect(await body.getAttribute('hidden')).toBeNull()
       await expect.poll(() => activityIcon.evaluate(element => getComputedStyle(element).opacity)).toBe('0')
       await expect.poll(() => chevron.evaluate(element => getComputedStyle(element).opacity)).toBe('1')
-      expect(await chevron.locator('path').getAttribute('d'))
-        .toBe('M12 10L8.70711 6.70711C8.31658 6.31658 7.68342 6.31658 7.29289 6.70711L4 10')
+      expect(await toggle.getAttribute('aria-expanded')).toBe('true')
       expect(await toggle.evaluate(element => getComputedStyle(element).paddingBottom)).toBe('16px')
       const leafSpacing = await body.evaluate((element) => {
         const rows = [...element.children].filter(row => !row.hasAttribute('hidden'))
@@ -95,7 +94,6 @@ it('keeps completed step work collapsed inside an expanded turn and bounds its s
       })
       await expect.poll(() => body.getAttribute('data-scroll-up')).toBeNull()
       await expect.poll(() => body.getAttribute('data-scroll-down')).toBe('true')
-      await page.screenshot({ path: '/tmp/dsh-step-process-expanded.png' })
       const geometry = await body.evaluate((element) => {
         const style = getComputedStyle(element)
         element.scrollTop = (element.scrollHeight - element.clientHeight) / 2
@@ -114,7 +112,6 @@ it('keeps completed step work collapsed inside an expanded turn and bounds its s
         element.dispatchEvent(new Event('scroll'))
       })
       await expect.poll(() => body.getAttribute('data-scroll-down')).toBeNull()
-      await page.screenshot({ path: '/tmp/dsh-step-process-expanded.png' })
       await outer.click()
       await outer.click()
       expect(await toggle.getAttribute('aria-expanded')).toBe('false')
@@ -273,7 +270,6 @@ it('keeps a waking notice above and independent of the turn disclosure', async (
         await outer.ariaSnapshot(), webSnapshotMode())
       expect(await button.getAttribute('aria-expanded')).toBe('true')
       expect(await notice.isVisible()).toBe(true)
-      await page.screenshot({ path: '/tmp/dsh-turn-trigger-expanded.png' })
     } finally { await browser.close() }
   } finally { await scaffold.close() }
 })

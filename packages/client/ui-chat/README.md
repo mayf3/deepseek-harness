@@ -15,7 +15,8 @@ File-mention providers receive the viewed Session ID with the closing-turn owner
 ## Table of Contents
 
 - [Reference previews](#reference-previews)
-- [System prompt row](#system-prompt-row)
+- [System prompt visibility](#system-prompt-row)
+- [Command and failure rows](#command-and-failure-rows)
 - [Turn token usage](#turn-token-usage)
 - [Completed-turn footer](#completed-turn-footer)
 - [Turn Process Folding](#turn-process-folding)
@@ -29,12 +30,21 @@ File-mention providers receive the viewed Session ID with the closing-turn owner
 <a id="reference-previews"></a>
 ## Reference previews
 
-Sent file references and skills confirmed by the message’s logged invocation open in the right Sidebar. File paths use the viewed Session; skill names resolve through its current input-trigger source. Both use the prose file-link dotted underline on hover or focus. Sessions, directories, and command labels remain non-navigating references.
+Chat supplies file and HTTP(S) navigation through one `MarkdownDelegateProvider` around its node list. Assistant Markdown file links open in the right Sidebar after the message settles, including references to unmodified files. Relative paths resolve in the viewed Session's workspace; absolute paths retain the same Session's filesystem access. `#L24` and `#L24-L30` navigate to the first specified line and reuse an existing file tab. Missing files show the preview's error state.
+
+HTTP(S) links in Assistant Markdown open a new right-Sidebar Browser tab on ordinary clicks when that type is registered, or the system browser otherwise; modified clicks retain the native external-link behavior. Sent file references and skills confirmed by the message’s logged invocation also open in the right Sidebar. File paths use the viewed Session; skill names resolve through its current input-trigger source. Both use the prose file-link dotted underline on hover or focus. Sessions, directories, and command labels remain non-navigating references.
 
 <a id="system-prompt-row"></a>
-## System prompt row
+## System prompt visibility
 
-Each nonempty appended `system/message` owns a collapsed prompt row, including a complete prompt at the start of a headerless window; the same-step header does not duplicate it. Chat also shows a collapsed `System prompt` row for a non-empty initial request, explicit message-series start, or `system/message` surface node replacement whose text differs, reading the last nonempty surviving system node in surface order at the `request/header`; a non-initial request whose preceding header is outside the loaded history window also shows one. A resume repeats the row even when its system text is unchanged, including after pagination supplies the preceding header and system node; same-series config-only or tool-only changes, tool steps, and retries create no repetition, and a `system/message` event is never rendered as a transcript message. The row appears before that request's user messages, matching the provider envelope, and expands to the exact model-visible text with its original line breaks. A request whose system node is empty or outside the loaded window creates no row until the page holding the node arrives.
+System prompts have no Chat row in any Work details mode. Their durable records remain available in trajectory inspection; Chat filtering does not change model input.
+
+<a id="command-and-failure-rows"></a>
+## Command and failure rows
+
+Generic command rows retain the ordinary command glyph in every lifecycle state; failure remains explicit through the row state and summary. A terminal Turn failure remains a separate red-dot notice; intermediate model retries do not create that notice, and an output-token limit uses the amber warning dot.
+
+-----
 
 <a id="turn-token-usage"></a>
 ## Turn token usage
@@ -51,6 +61,8 @@ On non-loopback browsers, the preference remains process-local because the setti
 The completed-turn action footer sits at the bottom of its Turn, 20px below the preceding prose or extension content. Only the latest Turn ending in response content keeps its actions visible; trailing reasoning, tools, notices, or other content makes them appear on hover or keyboard focus, like historical Turns. Devices without hover keep actions visible. Feedback and copy still address the last text response.
 
 -----
+
+The Chat snapshot builder owns stable step-group layout, cached activity summaries, and Turn-footer eligibility. Body-only stream updates refresh the affected groups without scanning historical groups; renderer-seat changes and pagination rebuild layout while retaining unchanged group identities. Unknown Turn status does not mark a trailing group complete. Whole-Turn lifecycle changes announce through a polite status region; clock ticks do not repeat that announcement.
 
 <a id="turn-process-folding"></a>
 ## Turn Process Folding
@@ -108,4 +120,4 @@ None.
 
 **Runtime invariant:** No companion is published. Conversation and Slot registration enforce Chat target consistency.
 
-Non-human input claimed from the next-turn Inbox appears as an independent trigger notice above the Turn control. A first-step next-step claim also qualifies when that Turn has no next-turn claim or human input in its next-step batch. Ordinary pre-step injections remain context rows. The compact outlined header shows a source-family icon, title, and subdued time without repeating a subject, and the whole notice highlights on hover. The notice stays visible in every work-details mode, defaults to collapsed, and expands independently of process folding to show a short explanation and the original model-facing content without source metadata. Titles recognize schedules, jobs, goals, agent/team messages, webhooks, and Cordis runner outcomes; task messages use the paper-plane icon, each other recognized source family uses its matching primitive icon, and unknown sources or status formats retain the context-injection fallback. User-attributed SDK and delegated inputs remain user messages because the log does not distinguish their caller.
+Non-human input claimed from the next-turn Inbox appears as an independent trigger notice above the Turn control. A first-step next-step claim also qualifies when that Turn has no next-turn claim or human input in its next-step batch. Ordinary pre-step injections are hidden in every Work details mode; their durable records remain available in trajectory inspection. The compact outlined header shows a source-family icon, title, and subdued time without repeating a subject, and the whole notice highlights on hover. The notice stays visible in every work-details mode, defaults to collapsed, and expands independently of process folding to show a short explanation and the original model-facing content without source metadata. Titles recognize schedules, jobs, goals, agent/team messages, webhooks, and Cordis runner outcomes; task messages use the paper-plane icon, each other recognized source family uses its matching primitive icon, and unknown sources or status formats retain the context-injection fallback. User-attributed SDK and delegated inputs remain user messages because the log does not distinguish their caller.

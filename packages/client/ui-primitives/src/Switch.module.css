@@ -41,12 +41,10 @@
   height: 16px;
   border-radius: 50%;
   corner-shape: round;
-  /* The resting thumb stays white against the neutral track. */
-  background: var(--dsw-static-neutral-00);
+  background: var(--dsw-alias-label-primary-foreground);
   transition: transform 120ms ease;
 }
 
 .switch[aria-checked='true'] .thumb {
-  background: var(--dsw-alias-label-primary-foreground);
   transform: translateX(16px);
 }

@@ -9,6 +9,7 @@
     - tab "Trajectory"
 - text: Stream one TypeScript fence for the highlighting snapshot. {{clock}}
 - button "Copy"
+- status: Deep diving...
 - button "Deep diving for {{duration}}" [disabled] [expanded]
 - text: ts
 - button "Copy"

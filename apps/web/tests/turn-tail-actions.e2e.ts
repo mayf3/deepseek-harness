@@ -138,7 +138,7 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     const liveProcess = page.locator('[data-turn-process]')
     expect(await liveProcess.count()).toBe(1)
     expect(await liveProcess.textContent()).toMatch(/^Deep diving for /)
-    expect(await page.getByRole('status').filter({ hasText: 'Deep diving...' }).count()).toBe(0)
+    expect(await page.getByRole('status').filter({ hasText: 'Deep diving...' }).count()).toBe(1)
     await page.locator('[data-streaming="true"]')
       .getByText('partial', { exact: true })
       .waitFor({ timeout: 10_000 })

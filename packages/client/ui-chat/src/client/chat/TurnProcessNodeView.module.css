@@ -4,7 +4,7 @@
   align-items: center;
   width: 100%;
   min-width: 0;
-  height: 33px;
+  height: calc(33px + var(--dsh-content-font-delta, 0px));
   padding: 0 0 8px;
   border: none;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
@@ -43,8 +43,8 @@
 .label {
   min-width: 0;
   overflow: hidden;
-  font-size: 13px;
-  line-height: 24px;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
   text-overflow: ellipsis;
   white-space: nowrap;
 }

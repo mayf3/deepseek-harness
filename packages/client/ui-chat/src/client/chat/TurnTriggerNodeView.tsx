@@ -7,6 +7,7 @@ import {
   type IconProps,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeViewProps } from '../contract/slots.ts'
+import { formatMessageClock } from './message-chrome.ts'
 import { ContextContentBody } from './ContextBody.tsx'
 import { turnTriggerDetails, type TurnTriggerIcon } from './turn-trigger.ts'
 import css from './TurnTriggerNodeView.module.css'
@@ -31,7 +32,7 @@ export function TurnTriggerNodeView({ node, t }: ChatNodeViewProps<'turn-trigger
   const details = turnTriggerDetails(node.data)
   const TriggerIcon = TRIGGER_ICONS[details.icon]
   const date = new Date(node.data.time)
-  const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  const time = formatMessageClock(node.data.time, t)
   return (
     <section className={css.root} data-turn-trigger>
       <button className={css.header} type="button" aria-expanded={open} aria-controls={bodyId} onClick={() => { setOpen(!open) }}>

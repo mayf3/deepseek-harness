@@ -98,6 +98,23 @@ describe('ReasoningRow', () => {
 
   })
 
+  it.each(['\n', '\r\n'])('holds completed paragraph previews across streamed %j line endings', (newline) => {
+    const renderText = (text: string) => (
+      <AssistantMarkdown t={t} blocks={[{ kind: 'reasoning', text }]} streaming renderMessageImages={renderMessageImages} />
+    )
+    const view = render(renderText(`First paragraph${newline}${newline}Pending`))
+    expect(view.getByText('First paragraph')).toBeTruthy()
+    expect(view.queryByText('Pending')).toBeNull()
+
+    view.rerender(renderText(`First paragraph${newline}${newline}Second paragraph${newline} ${newline}Third`))
+    expect(view.getByText('Second paragraph')).toBeTruthy()
+    expect(view.queryByText('Third')).toBeNull()
+
+    view.rerender(renderText(`First paragraph${newline}${newline}Second paragraph${newline} ${newline}Third${newline}More tokens`))
+    expect(view.getByText('Third')).toBeTruthy()
+    expect(view.queryByText('More tokens')).toBeNull()
+  })
+
   it('expands completed reasoning from the Think title', () => {
     const view = render(
       <AssistantMarkdown

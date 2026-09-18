@@ -161,7 +161,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     const liveLabel = await liveControl.textContent()
     expect(liveLabel).toMatch(/^Deep diving for /)
     await expect.poll(() => liveControl.textContent(), { timeout: 10_000 }).not.toBe(liveLabel)
-    expect(await page.getByRole('status').filter({ hasText: 'Deep diving...' }).count()).toBe(0)
+    expect(await page.getByRole('status').filter({ hasText: 'Deep diving...' }).count()).toBe(1)
     await page.locator('[data-streaming="true"]')
       .getByText('partial', { exact: true })
       .waitFor({ timeout: 30_000 })

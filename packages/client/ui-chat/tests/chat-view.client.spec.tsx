@@ -35,12 +35,11 @@ import { en, zh } from '../src/client/locale.ts'
 import { AssistantNodeView } from '../src/client/chat/AssistantNodeView.tsx'
 import { CommandNodeView, ManualCompactionNodeView } from '../src/client/chat/CommandNodeView.tsx'
 import {
-  CompactionNodeView, ContextMessageNodeView, RetryNodeView, TurnErrorNodeView,
+  CompactionNodeView, RetryNodeView, TurnErrorNodeView,
   TurnMaxTokensNodeView, UnknownNodeView, UserMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
 import { TurnTailNodeView } from '../src/client/chat/TurnTailNodeView.tsx'
 import { TurnProcessNodeView } from '../src/client/chat/TurnProcessNodeView.tsx'
-import { SystemPromptNodeView } from '../src/client/chat/SystemPromptRow.tsx'
 import { formatLiveRunDuration, formatRunDuration } from '../src/client/chat/message-chrome.ts'
 import { ChatSnapshotBuilder } from '../src/client/conversation-nodes/chat-snapshot-builder.ts'
 import type { TurnProcessSpec } from '../src/client/contract/turn-process.ts'
@@ -307,7 +306,7 @@ function makeHarness(
       case 'steering':
         return <UserMessageNodeView {...nodeProps<'user' | 'steering'>()} />
       case 'context':
-        return <ContextMessageNodeView {...nodeProps<'context'>()} />
+        throw new Error('hidden context reached the Chat renderer')
       case 'assistant-step':
         return <AssistantNodeView {...nodeProps<'assistant-step'>()} />
       case 'command':
@@ -331,7 +330,7 @@ function makeHarness(
       case 'turn-process':
         return <TurnProcessNodeView {...nodeProps<'turn-process'>()} />
       case 'system-prompt':
-        return <SystemPromptNodeView {...nodeProps<'system-prompt'>()} />
+        throw new Error('hidden system prompt reached the Chat renderer')
       case 'turn-tail':
         return (
           <TurnTailNodeView
@@ -1576,6 +1575,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     const statuses = view.getAllByRole('status')
     expect(statuses.map(status => status.textContent)).toEqual([
+      '深度求索中',
       '已达到输出 token 上限回答被截断，已有输出保留在对话中。发送“继续”可让模型接着输出。',
     ])
     expect(view.queryByText('本轮运行失败')).toBeNull()
@@ -1760,7 +1760,7 @@ describe('ChatView', () => {
       h.props.t = makeTranslate(en, commonEn)
       const view = render(<h.ChatView {...h.props} />)
       const toggle = view.getByRole('button', { name: 'Deep diving for 1s' })
-      expect(view.queryByRole('status')).toBeNull()
+      expect(view.getByRole('status').getAttribute('aria-live')).toBe('polite')
       expect(toggle.querySelector('[data-text-shimmer]')).toBeNull()
       expect(toggle.getAttribute('aria-expanded')).toBeNull()
       act(() => { vi.advanceTimersByTime(2_000) })
@@ -2437,7 +2437,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
     expect(h.toolOwners[0]?.block).toMatchObject({ callId: 'r1', argsRaw: '{"command":"cmd-r1"}' })
-    expect(view.queryByRole('status')).toBeNull()
+    expect(view.getByRole('status').getAttribute('aria-live')).toBe('polite')
   })
 
   it('keeps the Tool renderer mounted when a running call settles into log order', () => {
@@ -2498,7 +2498,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     const control = turnProcessControl(view.container)!
     expect(control.textContent).toMatch(/^深度求索中，用时2分\d{1,2}秒$/)
-    expect(view.queryByRole('status')).toBeNull()
+    expect(view.getByRole('status').getAttribute('aria-live')).toBe('polite')
     act(() => {
       h.setSession({ testInbox: { 'next-turn': [], 'next-step': [{
         id: 'steering-occurrence' as never,

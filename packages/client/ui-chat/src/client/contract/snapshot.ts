@@ -3,6 +3,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatConversationViewNode } from './chat-nodes.ts'
 import type { TurnProcessSpec } from './turn-process.ts'
+import type { ChatStepProcessIndex } from './step-process.ts'
 
 export type {
   AssistantBlock, AssistantMessageNode, AssistantProviderMetadataView, AssistantRequestConfig,
@@ -92,6 +93,7 @@ export interface LegacyConversationSlice {
 
 /** Incremental Chat publication with immutable order and stable live keyed readers. */
 export interface ChatSnapshot {
+  readonly stepProcesses: ChatStepProcessIndex
   readonly order: readonly string[]
   readonly nodes: ChatNodeStore
   readonly locations: ChatLocationNodeIndex
@@ -119,6 +121,7 @@ const EMPTY_NODE_PROCESS_SOURCE: ChatNodeProcessSource = {
 
 /** Empty Chat target used before a view builder is registered. */
 export const EMPTY_CHAT_SNAPSHOT: ChatSnapshot = {
+  stepProcesses: { layout: EMPTY_LIST, get: () => undefined, footer: () => undefined },
   order: EMPTY_LIST,
   nodes: {
     get: () => undefined,
