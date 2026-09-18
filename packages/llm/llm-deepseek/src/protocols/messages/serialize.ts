@@ -39,6 +39,8 @@ function assistant(message: Message, model: string, onReplayDegrade?: (reason: s
 }
 
 /** Serialize one complete request using already prepared image bytes.
+ * User and tool-result content omits reasoning and tool-call blocks.
+ * Empty user messages are skipped; empty tool results retain their call ids.
  * @param options - provider-neutral request.
  * @param connection - validated defaults and thinking policy.
  * @param history - image-projected history with complete system snapshots; durable messages remain unchanged.
@@ -58,6 +60,7 @@ export function serialize(
   const inHistory = model?.systemPromptUpdate === 'in-history'
   const input = (blocks: readonly ContentBlock[]): WireInput[] => blocks.flatMap((block): WireInput[] => {
     if (block.type === 'text') return block.text ? [{ type: 'text', text: block.text }] : []
+    if (block.type === 'reasoning' || block.type === 'tool-call') return []
     if (block.type !== 'image') return unsupported(`user/tool-result content ${block.type}`)
     const version = images.get(block.attachment.attachmentId)
     if (version === undefined) throw new LlmError('DeepSeek Messages request image is missing', 'INVALID_REQUEST')
@@ -98,6 +101,7 @@ export function serialize(
       if (block.type !== 'tool-result') return input([block])
       return [{ type: 'tool_result', tool_use_id: block.toolCallId, content: input(block.content), ...block.isError === undefined ? {} : { is_error: block.isError } }]
     })
+    if (message.role === 'user' && content.length === 0) continue
     const previous = messages.at(-1)
     if (previous?.role === message.role) previous.content.push(...content)
     else messages.push({ role: message.role, content })
