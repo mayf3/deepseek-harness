@@ -15,7 +15,7 @@ import koffi from 'koffi'
 import { allocBytes, isNullPtr } from '../src/ffi.ts'
 import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
 import {
-  createRestrictedToken, findLogonSid, makeWellKnownSid, openCurrentProcessToken, setTokenDefaultDaclGrant,
+  createRestrictedToken, findLogonSid, makeWellKnownSid, openCurrentProcessToken, restrictTokenIntegrity, setTokenDefaultDaclGrant,
 } from '../src/token.ts'
 import * as abi from '../src/win32-abi.ts'
 
@@ -368,6 +368,41 @@ describe('setTokenDefaultDaclGrant failure paths', () => {
     ;(api.localFree as unknown as ReturnType<typeof vi.fn>).mockImplementation(localFree)
     setTokenDefaultDaclGrant(api, token, sid)
     expect(localFree).toHaveBeenCalledWith(99n)
+  })
+})
+
+describe('restrictTokenIntegrity', () => {
+  it('sets TokenIntegrityLevel to the Low label SID with SE_GROUP_INTEGRITY', () => {
+    const lowSid = allocBytes(12)
+    const setTokenInformation = vi.fn((
+      _token: unknown, cls: number, info: Buffer, length: number,
+    ) => {
+      expect(cls).toBe(abi.TokenIntegrityLevel)
+      expect(length).toBe(abi.TOKEN_MANDATORY_LABEL_SIZE + 12)
+      expect(info.readBigUInt64LE(0)).toBe(koffi.address(lowSid))
+      expect(info.readUInt32LE(8)).toBe(abi.SE_GROUP_INTEGRITY)
+      return 1
+    })
+    const api = { getLengthSid: vi.fn(() => 12), setTokenInformation } as unknown as Win32Bindings
+    restrictTokenIntegrity(api, 5n as NativePtr, lowSid)
+    expect(setTokenInformation).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails closed when SetTokenInformation rejects the integrity level', () => {
+    const api = {
+      getLengthSid: vi.fn(() => 12),
+      setTokenInformation: vi.fn(() => 0),
+      getLastError: vi.fn(() => 5),
+      formatMessageW: vi.fn(() => 0),
+    } as unknown as Win32Bindings
+    let caught: unknown
+    try {
+      restrictTokenIntegrity(api, 5n as NativePtr, allocBytes(12))
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(Win32Error)
+    expect((caught as Win32Error).api).toBe('SetTokenInformation')
   })
 })
 

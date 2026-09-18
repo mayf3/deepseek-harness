@@ -23,6 +23,12 @@ function grantThenFailApi(): { api: Win32Bindings; failReads: () => void } {
       koffi.encode(slot, PVOID, 42n)
       return 1
     }),
+    createWellKnownSid: vi.fn(() => 1),
+    isValidSid: vi.fn(() => 1),
+    getLengthSid: vi.fn(() => 12),
+    localAlloc: vi.fn(() => 11n),
+    initializeAcl: vi.fn(() => 1),
+    addMandatoryAce: vi.fn(() => 1),
     getTempPathW: vi.fn((_length: number, buffer: Buffer) => {
       const temp = tmpdir().endsWith('/') || tmpdir().endsWith('\\') ? tmpdir() : `${tmpdir()}/`
       buffer.write(temp, 'utf16le')
@@ -34,10 +40,11 @@ function grantThenFailApi(): { api: Win32Bindings; failReads: () => void } {
     closeHandle: vi.fn(() => 1),
     getNamedSecurityInfoW: vi.fn((
       _path: unknown, _type: unknown, _info: unknown, _owner: unknown, _group: unknown,
-      dacl: NativePtr, _sacl: unknown, descriptor: NativePtr,
+      dacl: NativePtr, sacl: NativePtr, descriptor: NativePtr,
     ) => {
       if (state.failReads) return 2 // ERROR_FILE_NOT_FOUND — the revoke's read fails
       koffi.encode(dacl, PVOID, 0n) // no explicit DACL: the merge builds one
+      koffi.encode(sacl, PVOID, 0n)
       koffi.encode(descriptor, PVOID, 0n)
       return 0
     }),
@@ -90,11 +97,26 @@ describe('AclWriteGrant failure paths', () => {
         koffi.encode(slot, PVOID, 42n)
         return 1
       }),
+      createWellKnownSid: vi.fn(() => 1),
+      isValidSid: vi.fn(() => 1),
       localFree: vi.fn(() => 1n), // non-NULL: LocalFree "failed"
       getLastError: vi.fn(() => 87),
       formatMessageW: vi.fn(() => 0),
     } as unknown as Win32Bindings
     const grant = AclWriteGrant.create('S-1-4-42-42', api)
     expect(() =>{  grant.dispose() }).toThrow(AggregateError)
+  })
+
+  it('create fails closed when the Low label SID cannot be created', () => {
+    const api = {
+      convertStringSidToSidW: vi.fn((_sid: string, slot: NativePtr) => {
+        koffi.encode(slot, PVOID, 42n)
+        return 1
+      }),
+      createWellKnownSid: vi.fn(() => 0),
+      getLastError: vi.fn(() => 87),
+      formatMessageW: vi.fn(() => 0),
+    } as unknown as Win32Bindings
+    expect(() => AclWriteGrant.create('S-1-4-42-42', api)).toThrow(/CreateWellKnownSid/)
   })
 })

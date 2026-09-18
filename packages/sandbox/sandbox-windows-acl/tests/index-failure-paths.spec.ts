@@ -35,6 +35,8 @@ interface HappyStubs {
   createRestrictedToken: MockFn
   createJobObjectW: MockFn
   getNamedSecurityInfoW: MockFn
+  setTokenInformation: MockFn
+  addMandatoryAce: MockFn
 }
 
 const state = vi.hoisted(() => ({ stubs: undefined as HappyStubs | undefined }))
@@ -86,9 +88,10 @@ function happyStubs(): HappyStubs {
   const createFileW = vi.fn(() => fresh())
   const getNamedSecurityInfoW = vi.fn((
     _path: unknown, _type: unknown, _info: unknown, _owner: unknown, _group: unknown,
-    dacl: NativePtr, _sacl: unknown, descriptor: NativePtr,
+    dacl: NativePtr, sacl: NativePtr, descriptor: NativePtr,
   ) => {
     koffi.encode(dacl, PVOID, 0n)
+    koffi.encode(sacl, PVOID, 0n)
     koffi.encode(descriptor, PVOID, 0n)
     return 0
   })
@@ -97,6 +100,9 @@ function happyStubs(): HappyStubs {
     return 0
   })
   const setNamedSecurityInfoW = vi.fn(() => 0)
+  const localAlloc = vi.fn(() => fresh())
+  const initializeAcl = vi.fn(() => 1)
+  const addMandatoryAce = vi.fn(() => 1)
   const getTokenInformation = vi.fn((_token: unknown, cls: number, info: Buffer | null, _length: number, needed: NativePtr) => {
     if (info === null) {
       koffi.encode(needed, 'uint32', cls === abi.TokenGroups ? 24 : 8)
@@ -158,6 +164,7 @@ function happyStubs(): HappyStubs {
     openProcess, openProcessToken, convertStringSidToSidW, getTempPathW, createFileW,
     lockFileEx: vi.fn(() => 1), unlockFileEx: vi.fn(() => 1),
     getNamedSecurityInfoW, setEntriesInAclW, setNamedSecurityInfoW, getTokenInformation,
+    localAlloc, initializeAcl, addMandatoryAce,
     getLengthSid, copySid, createWellKnownSid, isValidSid, createRestrictedToken,
     setTokenInformation, createPipe, setHandleInformation, createProcessAsUserW,
     peekNamedPipe, readFile, waitForSingleObject, getExitCodeProcess, createJobObjectW,
@@ -167,7 +174,7 @@ function happyStubs(): HappyStubs {
   } as unknown as Win32Bindings
   return {
     api, setNamedSecurityInfoW, convertStringSidToSidW, closeHandle, localFree,
-    createRestrictedToken, createJobObjectW, getNamedSecurityInfoW,
+    createRestrictedToken, createJobObjectW, getNamedSecurityInfoW, setTokenInformation, addMandatoryAce,
   }
 }
 
@@ -338,10 +345,11 @@ describe('AclSandbox init', () => {
     localFree.mockImplementation(() => (inCleanup ? 1n : 0n))
     getNamedSecurityInfoW.mockImplementation((
       _path: unknown, _type: unknown, _info: unknown, _owner: unknown, _group: unknown,
-      dacl: NativePtr, _sacl: unknown, descriptor: NativePtr,
+      dacl: NativePtr, sacl: NativePtr, descriptor: NativePtr,
     ) => {
       if (inCleanup) return 2 // the cleanup's revocation read fails too
       koffi.encode(dacl, PVOID, 0n)
+      koffi.encode(sacl, PVOID, 0n)
       koffi.encode(descriptor, PVOID, 0n)
       return 0
     })
@@ -352,7 +360,8 @@ describe('AclSandbox init', () => {
       tempWriteSid: 'S-1-4-9000-10-1',
       mode: 'workspace-write',
     })
-    await expect(sandbox.init()).rejects.toThrow(/5 cleanup operation\(s\) also failed/u)
+    // Five SID frees/mutations fail plus the Low label SID the init allocated.
+    await expect(sandbox.init()).rejects.toThrow(/6 cleanup operation\(s\) also failed/u)
     expect(sandbox.tempDir).toBeUndefined()
   })
 })

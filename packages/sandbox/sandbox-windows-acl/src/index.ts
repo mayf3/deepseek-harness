@@ -10,7 +10,14 @@
  * keep-alive group logon SID + Everyone; Authenticated Users, INTERACTIVE,
  * and LOCAL are absent from both lists — see the seam's dual-list contract
  * in `packages/sandbox/sandbox-local` and the package README's Modes section
- * for the complete boundary). The write SID is the per-WORKSPACE identity
+ * for the complete boundary). The intersection covers only the write bits of
+ * the object's OWN access check: Windows can also authorize a write or delete
+ * from the parent directory's FILE_DELETE_CHILD right, which no restricting
+ * SID has to co-sign. The token is therefore ALSO lowered to Low integrity
+ * and every granted directory carries a Low no-write-up label, so the
+ * kernel's mandatory-integrity check — evaluated inside the access check
+ * regardless of which right supplied the authority — confines the child to
+ * the labeled roots. The write SID is the per-WORKSPACE identity
  * ({@link workspaceWriteSid}): deterministic from the canonical workspace
  * path, so the workspace-root ACE materializes once per workspace per
  * machine and every later provision hits the exact-ACE skip — the
@@ -49,7 +56,7 @@ import { allocPtrSlot, decodePtr, isNullPtr, throwLastError, win32 } from './ffi
 import type { NativePtr, Win32Bindings } from './ffi.ts'
 import { assertPrivateTempDisjoint } from './path-boundary.ts'
 import { drainPipe, spawnSandboxed, spawnSandboxedInherited, waitForExit } from './spawn.ts'
-import { createRestrictedToken, findLogonSid, makeWellKnownSid, openCurrentProcessToken, setTokenDefaultDaclGrant } from './token.ts'
+import { createRestrictedToken, findLogonSid, makeWellKnownSid, openCurrentProcessToken, restrictTokenIntegrity, setTokenDefaultDaclGrant } from './token.ts'
 import * as abi from './win32-abi.ts'
 
 export { AclWriteGrant } from './grant.ts'
@@ -256,17 +263,22 @@ export class AclSandbox {
       // provision would re-propagate the whole tree) and the temp ACE is
       // REVOCABLE (dispose() removes it before the private directory is
       // deleted; the ambient temp root is never granted).
+      // The Low integrity SID every granted directory is labeled with and the
+      // confined token itself is lowered to.
+      const lowLabelSid = makeWellKnownSid(api, abi.WinLowLabelSid)
+      this.sidAllocations.push(lowLabelSid)
+
       if (this.manageDacls) {
         if (this.writeSidPtr !== undefined) {
           for (const path of this.writableDirs) {
-            grantWrite(api, path, this.writeSidPtr)
+            grantWrite(api, path, this.writeSidPtr, lowLabelSid)
           }
           if (tempDir !== null && this.tempWriteSidPtr !== undefined) {
             // Record BEFORE granting: grantWrite can throw after a successful
             // apply (a LocalFree failure), and the fail-closed catch must still
             // revoke that path (revoking an ungranted path is a no-op merge).
             this.grantedPaths.push({ path: tempDir, sidPtr: this.tempWriteSidPtr })
-            grantWrite(api, tempDir, this.tempWriteSidPtr)
+            grantWrite(api, tempDir, this.tempWriteSidPtr, lowLabelSid)
           }
         }
       }
@@ -280,6 +292,13 @@ export class AclSandbox {
         { world: worldSid },
         this.mode,
       )
+      // Lower the confined token to Low integrity. The write-SID intersection
+      // does not reach the parent directory's FILE_DELETE_CHILD authority, so
+      // without the matching label a confined child could delete anything its
+      // ambient user SIDs may delete; the label plus this level close that
+      // route, and the granted directories stay writable because
+      // grantWrite labels them Low too.
+      restrictTokenIntegrity(api, restrictedToken, lowLabelSid)
       this.token = restrictedToken
       // The restricted token's default DACL still names only the user's
       // ambient SIDs — none of the restricting SIDs. Every NEW object the

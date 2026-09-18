@@ -78,10 +78,13 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
     const probe = [
       "$ErrorActionPreference='SilentlyContinue';",
       // The private-temp capability lets PowerShell complete its startup
-      // AppLocker probe, so without a host policy workspace-write stays in
-      // FullLanguage. Read-only cannot create those scratch files and fails
-      // that probe closed to ConstrainedLanguage (pinned below).
+      // AppLocker probe, so workspace-write stays in FullLanguage. Read-only
+      // cannot create those scratch files and fails that probe closed to
+      // ConstrainedLanguage (pinned below).
       '\'LANGMODE: \' + $ExecutionContext.SessionState.LanguageMode;',
+      // The integrity level the token was lowered to: the mandatory label on
+      // the granted directories is what makes them writable at this level.
+      "(whoami /groups | Select-String 'Mandatory Label') -replace '\\s+', ' ';",
       `try{Set-Content -Path '${writableDir}\\child-wrote.txt' -Value ok -ErrorAction Stop;'TARGET-WRITE: OK'}catch{'TARGET-WRITE: DENIED'};`,
       "try{Set-Content -Path (Join-Path $env:TEMP 'child-wrote.txt') -Value ok -ErrorAction Stop;'TEMP-WRITE: OK'}catch{'TEMP-WRITE: DENIED'};",
       `try{Set-Content -Path '${escapeFile}' -Value ok -ErrorAction Stop;'ESCAPE-WRITE: OK (ESCAPE!)'}catch{'ESCAPE-WRITE: DENIED'};`,
@@ -98,6 +101,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
     ])
     expect(result.status, `stderr: ${result.stderr}`).toBe(0)
     expect(result.stdout).toContain('LANGMODE: FullLanguage')
+    expect(result.stdout).toContain('S-1-16-4096')
     expect(result.stdout).toContain('TARGET-WRITE: OK')
     expect(result.stdout).toContain('TEMP-WRITE: OK')
     expect(result.stdout).toContain('ESCAPE-WRITE: DENIED')
@@ -395,19 +399,72 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
     }
   }, 30_000)
 
-  it('partial boundary: an external Everyone-Modify directory stays writable under BOTH modes', () => {
+  it('delete-escape regression: deletes outside the granted roots are denied in BOTH modes, through every delete authority', () => {
+    // Windows authorizes a delete from EITHER the object's own DELETE right OR
+    // the parent directory's FILE_DELETE_CHILD right, and the
+    // WRITE_RESTRICTED pass-2 intersection only covers the first. Every
+    // ordinary directory the ambient user SIDs control (a project checkout,
+    // %TEMP%, the profile) grants FILE_DELETE_CHILD, so `cmd /c del` deleted
+    // files outside the workspace even though a plain write from the same
+    // child was denied. The Low mandatory label closes both routes because the
+    // kernel applies the integrity policy inside the access check, whichever
+    // right supplied the authority; the remaining delete paths below are the
+    // ones a confined child reaches for.
+    for (const mode of ['read-only', 'workspace-write'] as const) {
+      const victims = {
+        cmd: join(scratchRoot, `delete-${mode}-cmd.txt`),
+        dotnet: join(scratchRoot, `delete-${mode}-dotnet.txt`),
+        remove: join(scratchRoot, `delete-${mode}-remove.txt`),
+        unlink: join(scratchRoot, `delete-${mode}-unlink.txt`),
+        inside: join(writableDir, `delete-${mode}-inside.txt`),
+      }
+      for (const path of Object.values(victims)) writeFileSync(path, 'delete me')
+      const quoted = (path: string) => `'${path}'`
+      const probe = [
+        "$ErrorActionPreference='SilentlyContinue';",
+        `& '${process.env.SystemRoot ?? 'C:\\Windows'}\\System32\\cmd.exe' /c del /f /q ${quoted(victims.cmd)} 2>&1 | Out-Null;`
+          + `'CMD-DEL: ' + $(if (Test-Path -LiteralPath ${quoted(victims.cmd)}) {'DENIED'} else {'DELETED'});`,
+        `try{[System.IO.File]::Delete(${quoted(victims.dotnet)});'DOTNET-DELETE: DELETED'}catch{'DOTNET-DELETE: DENIED'};`,
+        `try{Remove-Item -LiteralPath ${quoted(victims.remove)} -ErrorAction Stop;'REMOVE-ITEM: DELETED'}catch{'REMOVE-ITEM: DENIED'};`,
+        `node -e "const fs=require('node:fs');try{fs.unlinkSync(process.argv[1]);console.log('NODE-UNLINK: DELETED')}catch(e){console.log('NODE-UNLINK: DENIED')}" ${quoted(victims.unlink)};`,
+        `try{[System.IO.File]::Delete(${quoted(victims.inside)});'INSIDE-DELETE: DELETED'}catch{'INSIDE-DELETE: DENIED'}`,
+      ].join('')
+      const result = runRunner([
+        '--workspace', writableDir, '--temp', isolatedTemp, '--mode', mode,
+        '--', 'pwsh', '/NoLogo', '/NonInteractive', '/NoProfile', '/Command', probe,
+      ])
+      expect(result.status, `mode: ${mode}\nstderr: ${result.stderr}`).toBe(0)
+      expect(result.stdout, `mode: ${mode}`).toContain('CMD-DEL: DENIED')
+      expect(result.stdout, `mode: ${mode}`).toContain('DOTNET-DELETE: DENIED')
+      expect(result.stdout, `mode: ${mode}`).toContain('REMOVE-ITEM: DENIED')
+      expect(result.stdout, `mode: ${mode}`).toContain('NODE-UNLINK: DENIED')
+      for (const path of [victims.cmd, victims.dotnet, victims.remove, victims.unlink]) {
+        expect(existsSync(path), `mode: ${mode}, ${path}`).toBe(true)
+      }
+      // The granted root keeps its own delete authority: read-only carries no
+      // write SID, so only workspace-write may delete there.
+      expect(result.stdout, `mode: ${mode}`).toContain(
+        mode === 'workspace-write' ? 'INSIDE-DELETE: DELETED' : 'INSIDE-DELETE: DENIED',
+      )
+      expect(existsSync(victims.inside), `mode: ${mode}`).toBe(mode === 'read-only')
+    }
+  }, 60_000)
+
+  it('the Low mandatory label closes the Everyone-Modify ambient boundary under BOTH modes', () => {
     // Everyone is a required keep-alive restricting SID: without it early DLL
     // initialization and CNG fail. A normal DACL that grants Everyone Modify
-    // therefore also clears the WRITE_RESTRICTED pass-2 check. Pin this
-    // unavoidable gap beside the provider's `partial` enforcement report.
+    // therefore also clears the WRITE_RESTRICTED pass-2 check. The Low label
+    // still denies the write, because the kernel evaluates the integrity
+    // policy inside the access check regardless of which right supplied the
+    // authority.
     for (const mode of ['read-only', 'workspace-write'] as const) {
       const target = join(worldWritableDir, `${mode}.txt`)
       const result = runRunner([
         '--workspace', writableDir, '--temp', isolatedTemp, '--mode', mode,
         '--', process.execPath, '-e', "require('node:fs').writeFileSync(process.argv[1], 'written')", target,
       ])
-      expect(result.status, `mode: ${mode}\nstderr: ${result.stderr}`).toBe(0)
-      expect(existsSync(target), `mode: ${mode}`).toBe(true)
+      expect(result.status, `mode: ${mode}\nstderr: ${result.stderr}`).not.toBe(0)
+      expect(existsSync(target), `mode: ${mode}`).toBe(false)
     }
   }, 30_000)
 

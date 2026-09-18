@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-在 Windows 上，本包将子进程的写入限制在工作区和私有临时目录内。`workspace-write` 授予对这两个位置的写入权限，`read-only` 则均不授予。挂载 `dsh-sandbox-local` 后，受限的 bash 和 PowerShell 命令会自动获得此行为；调用方也可以直接使用公开 `AclSandbox` API，并捕获标准流。任何 Win32 操作失败都会阻止子进程在不受限制的情况下启动。该保证特意标记为部分强制，因为进程启动会保留 Everyone 访问权限，NTFS 硬链接也可以通过其他路径暴露同一文件；调用方可通过报告的 `partial` 强制级别检测此限制。
+在 Windows 上，本包将子进程的写入与删除限制在工作区和私有临时目录内：`workspace-write` 授予这两处，`read-only` 均不授予。挂载 `dsh-sandbox-local` 后，受限的 bash 与 PowerShell 命令即获得此行为；调用方也可以直接使用公开 `AclSandbox` API；任何 Win32 操作失败都会阻止不受限制的 spawn。边界由两层共同强制：受限令牌的能力 SID 交叉检查，以及授予目录上的 Low 完整性标签；但该保证仍为部分强制：进程启动保留 Everyone 访问，硬链接是文件对象别名，而被其他 AppContainer 工具 ACL 过的文件不可读。
 
 ## 目录
 
@@ -59,15 +59,15 @@ await sandbox.init() // throws on ANY Win32 failure — never spawns unrestricte
 const child = sandbox.spawn({ command: 'pwsh', args: ['-NoProfile', '-Command', '...'], cwd: workspaceRoot })
 const { stdout, stderr, exitCode } = await child.wait()
 
-sandbox.dispose() // revokes the revocable (temp) grant, keeps the standing workspace ACE; reports every cleanup failure
+sandbox.dispose() // revokes the revocable (temp) grant and label, keeps the standing workspace pair
 rmSync(tempDir, { recursive: true, force: true })
 ```
 
-工作区 ACE 以常驻方式授予——`dispose()` 保留它们，因为它们是跨实例的复用缓存——而不同的临时 SID 以可回收方式授予。服务端对应实现是 `AclWriteGrant` 类：每个目录一次 `add(path, standing)`，`dispose()` 撤销可回收路径并释放 SID。
+工作区的安全描述符改动以常驻方式授予——`dispose()` 保留它们，因为它们是跨实例的复用缓存——而不同的临时 SID 以可回收方式授予。每次授权就是一次调用，同时携带能力 SID 允许 ACE 与 Low 禁止上调标签。服务端对应实现是 `AclWriteGrant` 类：每个目录一次 `add(path, standing)`，`dispose()` 撤销可回收路径并释放各 SID。
 
 ### 隔离给你带来什么
 
-在 `workspace-write` 下，子进程可以写入工作区及其私有临时目录；受 ACL 管辖的其他写入都会被拒绝，已记录的 Everyone 与硬链接边界除外。在 `read-only` 下不存在显式写入授权，因此写入会被拒绝，同样带有已记录的边界。
+在 `workspace-write` 下，子进程可以写入工作区及其私有临时目录；受 ACL 管辖的其他写入与删除都会被拒绝，已记录的硬链接与 AppContainer ACL 边界除外。在 `read-only` 下不存在显式写入授权，因此写入与删除都会被拒绝，同样带有已记录的边界。
 
 临时隔离按每个活跃的会话/工作区对进行：共享工作区的会话共享其写权限，但无法写入彼此的临时目录。新的提供方总会选择新的临时路径和 SID，因此崩溃残留既无法阻止恢复的会话，也无法向其授权。
 
@@ -87,11 +87,11 @@ rmSync(tempDir, { recursive: true, force: true })
 
 ### 机制
 
-调用者令牌被复制为 `WRITE_RESTRICTED` 受限令牌，其 restricting SIDs 携带彼此独立的工作区与私有临时目录能力。Windows 执行两次访问检查——先对正常 SID，再对 restricting SID——并且只在两次检查都通过时才授予写类访问。工作区 SID 由规范工作区路径确定性派生（`workspaceWriteSid`），因此工作区根目录 ACE 每台机器每个工作区只物化一次，之后每次会话、调用或重启都命中精确 ACE 跳过。每个活跃的会话/工作区对则获得一个随机私有临时目录，以及一个从该路径派生的 SID（`tempWriteSid`），因此各会话共享预期的工作区权限，却不会继承彼此的临时目录权限。每个策略专用 Win32 调用和 [`dsh-win32-process`](../../subprocess/win32-process/README.zh.md) 提供的进程原语都有检查；失败抛出携带 API 名、精确错误码、系统文本与失败上下文的 `Win32Error`——从构造上 fail-closed。
+调用者令牌被复制为 `WRITE_RESTRICTED` 受限令牌，其 restricting SIDs 携带彼此独立的工作区与私有临时目录能力，该令牌还会被降级为 Low 完整性。Windows 执行两次访问检查——先对正常 SID，再对 restricting SID——并且只在两次检查都通过时才授予写类访问；与此同时，内核的强制完整性检查会拒绝对任何未标记为 Low 的对象进行写类访问。写 SID 交叉检查只覆盖对象自身的那次访问检查：Windows 也可以依据父目录的 `FILE_DELETE_CHILD` 权限批准写入或删除，而这项权限不需要任何 restricting SID 副署，因此只带交叉检查的令牌仍可删除其环境用户 SID 所控制的任何文件。完整性标签封堵了这条路径：无论权限来自哪一项，强制检查都在访问检查内部执行，而每个被授权目录都在添加 ACE 的同一次调用中被标记为 Low。工作区 SID 由规范工作区路径确定性派生（`workspaceWriteSid`），因此工作区根目录的安全描述符改动每台机器每个工作区只物化一次，之后每次会话、调用或重启都命中精确 ACE／精确标签跳过。每个活跃的会话/工作区对则获得一个随机私有临时目录，以及一个从该路径派生的 SID（`tempWriteSid`），因此各会话共享预期的工作区权限，却不会继承彼此的临时目录权限。每个策略专用 Win32 调用和 [`dsh-win32-process`](../../subprocess/win32-process/README.zh.md) 提供的进程原语都有检查；失败抛出携带 API 名、精确错误码、系统文本与失败上下文的 `Win32Error`——从构造上 fail-closed。
 
 ### 模式与令牌列表
 
-`workspace-write`（登录 SID、Everyone、工作区 SID、临时 SID）为工作区与会话的私有临时子目录分别授予 Write；`read-only`（登录 SID、Everyone——不含写入 SID）不授予任何内容。保活组（登录 SID + Everyone）在两种模式下都存在：没有它，早期 DLL 初始化会以 `0xC0000142` 死亡、CNG 会让 pwsh 以 `0xE0434352` 崩溃。写入 SID 有意留在 read-only 列表之外：先前 workspace-write 时期留下的常驻授权 ACE 仍然失效，因为 write-restricted 的 pass-2 检查只授予 restricting 列表所携带的内容，而常驻 ACE 让重新升级免于重新传播。
+`workspace-write`（登录 SID、Everyone、工作区 SID、临时 SID）为工作区与会话的私有临时子目录分别授予 Write；`read-only`（登录 SID、Everyone——不含写入 SID）不授予任何内容。两种模式都 spawn 降级为 Low 完整性的令牌，对它而言只有被标记 Low 的目录保持可写。保活组（登录 SID + Everyone）在两种模式下都存在：没有它，早期 DLL 初始化会以 `0xC0000142` 死亡、CNG 会让 pwsh 以 `0xE0434352` 崩溃。写入 SID 有意留在 read-only 列表之外：先前 workspace-write 时期留下的常驻授权 ACE 仍然失效，因为 write-restricted 的 pass-2 检查只授予 restricting 列表所携带的内容，而常驻安全描述符改动让重新升级免于重新传播。
 
 NUL 写入是环境性的、不是被授权的：设备 DACL 授予 Everyone 读+写+执行（`0x1201BF`），因此访问掩码落在其内的打开者（cmd 的 `> NUL`、node 的 `\\.\NUL`）在两种模式下都能写。`Set-Content NUL` 在两种模式下都失败（PowerShell/.NET 层效应，非设备 DACL 所致），而 PowerShell 的 `> $null` 重定向不受影响。
 
@@ -111,15 +111,15 @@ seam 先把确定性工作区 SID 的 ACE 常驻物化（每个工作区每服�
 
 ### 已验证边界
 
-- **Everyone 授权仍是环境中的写权限来源。** Everyone 必须保留在两种 restricting 列表中（移除它会破坏早期 DLL 初始化与 CNG）；外部 NTFS 对象若其 DACL 向 Everyone 授予所请求的写权限，就会同时通过两次检查，并在两种模式下保持可写。
-- **硬链接是文件对象别名，而非路径别名。** 传播到已有硬链接上的可继承工作区 ACE 会修改底层同一文件的安全描述符，因此同一对象也可通过外部别名写入；拒绝工作区中的所有多链接文件不具可行性，因为普通 pnpm 安装会使用硬链接。
-- **写入受限；读取、网络与进程可见性不受限。** `WRITE_RESTRICTED` 只交叉检查写访问，因此受限子进程可以读取调用者可读的任何文件并打开套接字；`read-only` 因而需要读侧策略才能表达。
+- **Everyone 仍留在两种 restricting 列表中，但不再带来写权限。** 保活组是早期 DLL 初始化与 CNG 所必需的；如今 Low 标签会拒绝对被标记根目录之外、由 Everyone 授权的写入，因此这一旧缺口已关闭。
+- **写入与删除受限；读取、网络与进程可见性不受限。** 两层都不交叉检查读取，因此受限子进程可以读取调用者可读的任何文件并打开套接字；`read-only` 因而需要读侧策略才能表达。
+- **硬链接是文件对象别名，而非路径别名。** 传播到已有硬链接上的可继承工作区授权会标记并授权底层同一文件的安全描述符，因此同一对象也可通过外部别名写入；拒绝工作区中的所有多链接文件不具可行性，因为普通 pnpm 安装会使用硬链接。
 - **控制台隔离不可用。** 以 `CREATE_NO_WINDOW` / `CREATE_NEW_CONSOLE` 创建的子进程在 DLL 初始化期间以 `STATUS_DLL_INIT_FAILED`（`0xC0000142`）死亡；子进程共享宿主控制台，基于管道的 stdio 重定向不受影响。
-- **ACL 授权是对真实目录的驻留改动。** 工作区 ACE 按设计常驻（复用缓存，绝不撤销）；临时 ACE 由 `dispose()` 撤销；手工 `icacls` 清理无法在本平台回收它们（`ERROR_NONE_MAPPED` 1332），请通过本模块回收。
+- **安全描述符改动是对真实目录的驻留改动。** 工作区 ACE 与标签按设计常驻（复用缓存，绝不撤销）；临时改动由 `dispose()` 撤销；手工 `icacls` 清理无法在本平台回收它们（`ERROR_NONE_MAPPED` 1332），请通过本模块回收。
 - **被授权目录必须由调用者拥有。** 所有者的隐式 `WRITE_DAC` 是沙箱无需提权即可编辑 DACL 的原因。
 - **环境临时根目录绝不会被隐式授权。** 直接调用方必须提供已存在的私有 `tempDir` 及其不同的 `tempWriteSid`，或用 `tempDir: null` 禁用临时写入；实际临时目录不得与任何可写根目录重叠。
 - **受限子进程的临时能力按每个活跃的会话/工作区对私有。** runner 在 spawn 之前把 TMP/TEMP 改写为该私有目录；共享同一工作区 SID 的两个令牌无法写入彼此的临时目录。
-- **受限令牌下 `whoami` 与令牌检查 cmdlet 会失败。** 子进程对复制令牌的 `GetTokenInformation` 部分不可用，这是诊断噪音而非运行故障。
+- **`whoami` 与令牌检查 cmdlet 可以运行，但报告的是被削减的令牌。** `whoami /groups` 成功并报告 `S-1-16-4096`，这是观察当前完整性级别最简便的方式。
 
 ### 头文件验证与源码索引
 
@@ -173,7 +173,8 @@ seam 先把确定性工作区 SID 的 ACE 常驻物化（每个工作区每服�
 - **受限孙进程的管道 stdio 捕获不可用。** libuv 的管道 stdio 用的是 NAMED pipe，其 client 端打开所请求的写访问没有任何 restricting SID 被授予（是 Win32 层的默认 SD 模板，而非令牌默认 DACL），因此受限进程内 `spawn(..., { stdio: 'pipe' })` 以 EPERM 失败；继承与忽略 stdio 的 spawn 可用，匿名管道（PowerShell 的管道）因受限令牌默认 DACL 携带 restricting SID 全权 ACE 而可用。
 - **授权物化是急切的全树传播。** 在带可继承 ACE 的目录上调用 `SetNamedSecurityInfoW` 会立即遍历每个后代（大型工作区树上以数十秒计）；按工作区身份每台机器每个工作区只付一次，精确 ACE 跳过让后续每次供给都很便宜。
 - **读侧隔离与网络策略不在范围内**——`WRITE_RESTRICTED` 只交叉检查写访问；将此后端与读侧策略配对以获得更强隔离。
-- **宽目录与 FAT 卷警告已推迟；FAT 类目标保持可写。** UI 侧警告尚未实现，FAT 卷作为授权根会大声失败，而授权根之外的 FAT 类目标没有安全描述符，因此在两种受限模式下都可写；FAT 被视为遗留残留。
+- **读取会被其他基于 AppContainer 的工具以包 SID 授权过的对象挡住。** 当文件的 DACL 携带针对包 SID（`S-1-15-2-…`）的 ACE 时，即使该 DACL 同时向用户授予完全控制、向 Everyone 授予读取，Windows 也会拒绝 Low 完整性的令牌访问它。以 AppContainer 自我隔离的工具正是会写入这类 ACE，因此被它们标记过的项目树对本后端的子进程将变得不可读。移除外来 ACE（或重新安装受影响的目录树）即可恢复访问；本包无法反向授予。
+- **宽目录与 FAT 卷警告已推迟；FAT 类残留未经验证。** UI 侧警告尚未实现，FAT 卷作为授权根会大声失败，而授权根之外的 FAT 类目标不存储安全描述符；其有效完整性标签由系统分配而非记录在对象上，因此标签层在该处的行为未经测试。FAT 仍被视为遗留残留。
 - **PowerShell 语言模式因受限模式而异。** 在 `read-only` 下，PowerShell 无法在临时目录中创建 AppLocker 探针文件，因此会保守地以 ConstrainedLanguage 启动（`Add-Type`、非核心 .NET 静态调用、COM 与反射失败）；交付的 `workspace-write` 路径可让探针完成，因此除非主机范围的 WDAC/AppLocker 策略另有规定，否则 pwsh 保持 FullLanguage，而直接使用 `AclSandbox` 并配置 `tempDir: null` 时则没有这一保证。这一区别属于 PowerShell 启动行为，不是 ACL 写入边界的一部分。
 
 <a id="dev-note"></a>
