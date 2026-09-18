@@ -531,7 +531,7 @@ declare module './message.js' {
     expect(() => extractPersistenceSchema(sourceFixture(producer))).toThrow(error)
   })
 
-  it.each(['auto-review', 'compact-basic', 'code-mode'])('rejects reintroduced historical kind %s as new attribution', (kind) => {
+  it.each(['auto-review', 'compact-basic', 'ptc-mode'])('rejects reserved producer kind %s as new attribution', (kind) => {
     for (const role of ['user', 'developer'] as const) {
       const root = sourceFixture(`${ATTRIBUTION} reintroduced: {kind: '${kind}'}`, role)
       expect(() => extractPersistenceSchema(root)).toThrow('invalid source compatibility')

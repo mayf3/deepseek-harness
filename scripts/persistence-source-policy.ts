@@ -6,7 +6,7 @@ import type { SchemaNode, SchemaProperty, SourceCompatibility } from './persiste
 // Existing kinds outside this set also reject retroactive qualification during comparison.
 const RESERVED_SOURCE_KINDS = new Set([
   'user', 'model', 'tool', 'system-prompt', 'compact-checkpoint', 'dsh-session-title-llm', 'tool-registry', 'runtime-context', 'plugin',
-  'auto-review', 'compact-basic', 'code-mode',
+  'auto-review', 'compact-basic', 'ptc-mode',
 ])
 
 /**

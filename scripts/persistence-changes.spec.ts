@@ -726,7 +726,7 @@ describe('recorded source compatibility policy', () => {
     expect(validatePersistenceHistory([entry(BASE_ID, before, null, true), entry(NEXT_ID, after, BASE_ID)]).tips.get('event:example/source')?.root).toEqual(after.roots[0])
   })
 
-  it.each(['auto-review', 'compact-basic', 'code-mode'])('rejects saved qualification of historical kind %s', (kind) => {
+  it.each(['auto-review', 'compact-basic', 'ptc-mode'])('rejects saved qualification of reserved producer kind %s', (kind) => {
     const root = attributedRoot([EXISTING_SOURCE, { kind }], { policy: attributionPolicy([kind]) })
     const snapshot: PersistenceSchemaInventory = { formatVersion: 2, roots: [root], types: [] }
     expect(() => parsePersistenceSnapshot(snapshot)).toThrow('invalid source compatibility')
