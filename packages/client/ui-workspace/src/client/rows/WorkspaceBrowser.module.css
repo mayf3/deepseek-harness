@@ -556,19 +556,6 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* The design's ringed green check for the success toast; the Toast icon seat
-   defaults to the warning tint. */
-.toastIcon {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border: 1.5px solid var(--dsw-alias-state-success-primary);
-  border-radius: 50%;
-  corner-shape: round;
-  color: var(--dsw-alias-state-success-primary);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .wide {
     animation: none;

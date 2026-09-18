@@ -13,7 +13,7 @@ import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, us
 import clsx from 'clsx'
 import autoAnimate, { type AnimationController, type AutoAnimationPlugin } from '@formkit/auto-animate'
 import {
-  Button, IconArchiveCheckOutlineRegular, IconArchiveOutlineRegular, IconCheckOutlineRegular,
+  Button, IconArchiveCheckOutlineRegular, IconArchiveOutlineRegular,
   IconChevronsUpDownOutlineRegular, IconClockOutlineRegular, IconCloseFillRegular,
   IconFlatListOutlineRegular, IconFolderCloseRegular, IconProjectAddOutlineRegular,
   IconSearchOutlineRegular, IconSlidersTwoOutlineRegular, IconWarningOutlineRegular,
@@ -1697,7 +1697,7 @@ export function WorkspaceBrowser({
           key={`toast-${String(toast.seq)}`}
           text={toast.text}
           {...toast.tone === 'success'
-            ? { icon: <span className={css.toastIcon}><IconCheckOutlineRegular size={12} /></span> }
+            ? { tone: 'success' as const }
             : { icon: <IconWarningOutlineRegular /> }}
           {...toast.actions === undefined ? {} : { actions: toast.actions, holdMs: ARCHIVE_TOAST_HOLD_MS }}
           onDone={() => { setToast(null) }}
