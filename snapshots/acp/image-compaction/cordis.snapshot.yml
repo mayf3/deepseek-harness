@@ -61,6 +61,7 @@
 - id: compaction-basic
   name: '@deepseek-ai/dsh-compaction-basic'
   config:
+    headroomTokens: 0
     retainTokens: 100
 
 - insert:

@@ -294,7 +294,7 @@ function service(
   config: BasicCompactionConfig = { auto: false },
   ctx = createContext(),
 ): TestCompactionEngine {
-  return new TestCompactionEngine(ctx, config)
+  return new TestCompactionEngine(ctx, { headroomTokens: 0, ...config })
 }
 
 async function compactIfNeeded(
@@ -312,6 +312,7 @@ describe('compact configuration and defaults', () => {
 
     expect(resolved).toEqual({
       thresholdRatio: 0.8,
+      headroomTokens: 65_536,
       retainRatio: 0.16,
       summarizationProvider: '',
       summarizationModel: '',
@@ -345,12 +346,14 @@ describe('compact configuration and defaults', () => {
 
   it('merges exact provider/model policy overrides and scales ratios per model', () => {
     const config = resolveConfig({
+      headroomTokens: 0,
       thresholdRatio: 0.8,
       retainRatio: 0.1,
       modelPolicies: [{
         provider: 'small-provider',
         model: 'shared-id',
         thresholdRatio: 0.5,
+        headroomTokens: 600,
         retainTokens: 120,
       }],
     })
@@ -364,7 +367,7 @@ describe('compact configuration and defaults', () => {
     })
 
     expect(resolveCompactSpec(small, 1_000)).toMatchObject({
-      thresholdTokens: 500,
+      thresholdTokens: 400,
       retainTokens: 120,
     })
     expect(resolveCompactSpec(otherProvider, 2_000)).toMatchObject({
@@ -373,6 +376,7 @@ describe('compact configuration and defaults', () => {
     })
 
     const ratioOverride = resolveTargetPolicy(resolveConfig({
+      headroomTokens: 0,
       retainTokens: 200,
       modelPolicies: [{
         provider: 'ratio-provider',
@@ -397,26 +401,37 @@ describe('compact configuration and defaults', () => {
     })
   })
 
-  it('scales both budgets by the message budget left after the reserved completion tokens', () => {
-    const policy = resolveTargetPolicy(resolveConfig({
-      thresholdRatio: 0.8,
-      retainRatio: 0.16,
-    }), { provider: MODEL, model: MODEL })
+  it.each([
+    [1_048_576, 256_000, 727_040, 126_812],
+    [1_000_000, 0, 800_000, 160_000],
+    [1_000_000, 100_000, 800_000, 144_000],
+    [1_000_000, 134_464, 800_000, 138_485],
+    [1_000_000, 256_000, 678_464, 119_040],
+  ])('reserves 64K headroom in window %i with output cap %i', (window, output, threshold, retained) => {
+    const policy = resolveTargetPolicy(resolveConfig({}), { provider: MODEL, model: MODEL })
 
-    // 1_048_576 - 256_000 = 792_576 available to messages: a 256_000-token
-    // reserve must not leave the gate (838_860 on the whole window) above the
-    // point where the provider rejects the request.
-    expect(resolveCompactSpec(policy, 1_048_576, 256_000)).toMatchObject({
-      contextWindow: 1_048_576,
-      thresholdTokens: 634_060,
-      retainTokens: 126_812,
+    expect(resolveCompactSpec(policy, window, output)).toMatchObject({
+      contextWindow: window,
+      thresholdTokens: threshold,
+      retainTokens: retained,
     })
+  })
 
-    // An undeclared reserve leaves the whole window available.
-    expect(resolveCompactSpec(policy, 1_000)).toMatchObject({
-      thresholdTokens: 800,
-      retainTokens: 160,
-    })
+  it('uses the window fraction when output is unspecified', () => {
+    const policy = resolveTargetPolicy(resolveConfig({}), { provider: MODEL, model: MODEL })
+    expect(resolveCompactSpec(policy, 1_000_000).thresholdTokens).toBe(800_000)
+  })
+
+  it.each([500, 501])('rejects headroom %i that exhausts the remaining capacity', (headroomTokens) => {
+    const policy = resolveTargetPolicy(resolveConfig({ headroomTokens }), { provider: MODEL, model: MODEL })
+    expect(() => resolveCompactSpec(policy, 1_000, 500))
+      .toThrow(/headroom tokens.*leaving no pressure budget/)
+  })
+
+  it('rejects ratio retention that reaches the headroom-limited threshold', () => {
+    const policy = resolveTargetPolicy(resolveConfig({ headroomTokens: 420 }), { provider: MODEL, model: MODEL })
+    expect(() => resolveCompactSpec(policy, 1_000, 500))
+      .toThrow(/retainTokens \(80\) must be less than threshold tokens 80/)
   })
 
   it('rejects a reserve that leaves no message budget or is not a count', () => {
@@ -470,6 +485,10 @@ describe('compact configuration and defaults', () => {
   it('validates common values and pressure-policy invariants', () => {
     const bad = [
       [{ maxTokens: 0 }, /maxTokens/],
+      [{ headroomTokens: -1 }, /headroomTokens.*non-negative integer/],
+      [{ headroomTokens: 0.5 }, /headroomTokens.*non-negative integer/],
+      [{ headroomTokens: '65536' }, /headroomTokens.*non-negative integer/],
+      [{ modelPolicies: [{ provider: MODEL, model: MODEL, headroomTokens: -1 }] }, /headroomTokens.*non-negative integer/],
       [{ compactionRetries: -1 }, /compactionRetries/],
       [{ maxOverflowRetries: -1 }, /maxOverflowRetries/],
       [{ auto: 'yes' }, /auto must be a boolean/],
@@ -523,6 +542,7 @@ describe('compact configuration and defaults', () => {
     }
 
     const invalidPressure = resolveTargetPolicy(resolveConfig({
+      headroomTokens: 0,
       thresholdRatio: 0.5,
       retainTokens: 500,
     }), { provider: MODEL, model: MODEL })
@@ -611,9 +631,8 @@ describe('pressure measurement and retention', () => {
     expect(measured).toBeLessThan(800)
     await expect(compactIfNeeded(compact, session)).resolves.toBeNull()
 
-    // The same pressure exceeds 80% of the budget left once the request
-    // reserves its output tokens: a gate scaled by the whole window would miss it.
-    const maxTokens = 1_000 - Math.floor(measured / 0.8) - 1
+    // The output reservation lowers the threshold below the measured history.
+    const maxTokens = 1_000 - measured + 1
     session.append('request/header', {
       header: { config: { provider: MODEL, model: MODEL, maxTokens } },
       reason: 'change',
@@ -633,7 +652,7 @@ describe('pressure measurement and retention', () => {
       id: model,
       name: model,
       context: { contextWindow: 1_000 },
-      defaultMaxTokens: 1_000 - Math.floor(measured / 0.8) - 1,
+      defaultMaxTokens: 1_000 - measured + 1,
     }))
 
     await expect(compactIfNeeded(compact, session)).resolves.not.toBeNull()
@@ -908,6 +927,7 @@ describe('optional model-free tool-result pruning', () => {
     const ctx = createContext(10_000)
     const prune = new ToolResultPruner(ctx, pruneConfig)
     const compact = new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       auto: false,
       thresholdRatio: 0.8,
       retainTokens: 100,
@@ -925,6 +945,7 @@ describe('optional model-free tool-result pruning', () => {
     const ctx = createContext(1_000)
     void new ToolResultPruner(ctx, pruneConfig)
     const compact = new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       auto: false,
       thresholdRatio: 0.5,
       retainTokens: 50,
@@ -942,6 +963,7 @@ describe('optional model-free tool-result pruning', () => {
     const ctx = createContext(2_000)
     void new ToolResultPruner(ctx, pruneConfig)
     const compact = new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       auto: false,
       thresholdRatio: 0.5,
       retainTokens: 50,
@@ -957,6 +979,7 @@ describe('optional model-free tool-result pruning', () => {
   it('retains the original compaction-basic behavior without the optional plugin', async () => {
     const ctx = createContext(2_000)
     const compact = new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       auto: false,
       thresholdRatio: 0.5,
       retainTokens: 50,
@@ -1653,6 +1676,7 @@ describe('automatic listener and loader composition', () => {
   it('compacts before a step above threshold using the durable routed model and remains idle below it', async () => {
     const ctx = createContext()
     const compact = new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       thresholdRatio: 0.5,
       retainTokens: 180,
     })
@@ -1669,6 +1693,7 @@ describe('automatic listener and loader composition', () => {
   it('skips pre-step pressure when the step signal is already aborted', async () => {
     const ctx = createContext()
     const compact = new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       thresholdRatio: 0.5,
       retainTokens: 180,
     })
@@ -1687,6 +1712,7 @@ describe('automatic listener and loader composition', () => {
     const warnings: string[] = []
     ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
     const compact = new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       thresholdRatio: 0.5,
       retainTokens: 180,
     })
@@ -1708,6 +1734,7 @@ describe('automatic listener and loader composition', () => {
       name: model,
     }))
     void new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       thresholdRatio: 0.5,
       retainTokens: 180,
     })
@@ -1726,6 +1753,7 @@ describe('automatic listener and loader composition', () => {
     const warnings: string[] = []
     ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
     void new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       thresholdRatio: 0.5,
       retainTokens: 500,
     })
@@ -1768,6 +1796,7 @@ describe('automatic listener and loader composition', () => {
   it('force-compacts below normal pressure for canonical overflow and retries only after replacement', async () => {
     const ctx = createContext(10_000)
     void new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       thresholdRatio: 1,
       retainTokens: 900,
     })
@@ -1792,6 +1821,7 @@ describe('automatic listener and loader composition', () => {
       tailChars: 10,
     })
     const compact = new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       thresholdRatio: 1,
       retainTokens: 900,
     })
@@ -1811,6 +1841,7 @@ describe('automatic listener and loader composition', () => {
       tailChars: 10,
     })
     const compact = new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       thresholdRatio: 1,
       retainTokens: 900,
     })
@@ -1832,6 +1863,7 @@ describe('automatic listener and loader composition', () => {
       tailChars: 10,
     })
     const compact = new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       thresholdRatio: 1,
       retainTokens: 900,
     })
@@ -1855,6 +1887,7 @@ describe('automatic listener and loader composition', () => {
       tailChars: 10,
     })
     const compact = new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       thresholdRatio: 1,
       retainTokens: 900,
     })
@@ -1869,6 +1902,7 @@ describe('automatic listener and loader composition', () => {
   it('preserves the newest whole tool-call/result pair during forced overflow compaction', async () => {
     const ctx = createContext()
     void new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       thresholdRatio: 1,
       retainTokens: 90,
     })
@@ -2006,6 +2040,7 @@ describe('automatic listener and loader composition', () => {
   it('applies the routed model override to the overflow retry cap', async () => {
     const ctx = createContext()
     const compact = new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       maxOverflowRetries: 2,
       modelPolicies: [{
         provider: MODEL,
@@ -2037,6 +2072,7 @@ describe('automatic listener and loader composition', () => {
   it('maxOverflowRetries:0 disables recovery without disabling post-step pressure', async () => {
     const ctx = createContext()
     void new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       maxOverflowRetries: 0,
       thresholdRatio: 0.5,
       retainTokens: 180,
@@ -2052,6 +2088,7 @@ describe('automatic listener and loader composition', () => {
   it('auto:false installs neither automatic listener', async () => {
     const ctx = createContext()
     void new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       auto: false,
       thresholdRatio: 0.5,
       retainTokens: 180,
@@ -2216,6 +2253,7 @@ describe('route-priced image pressure', () => {
     const session = imageConversation()
     const before = ctx.tokenMeter.measure(session)
     const compact = new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
       auto: false,
       thresholdRatio: 0.8,
       retainTokens: 350,

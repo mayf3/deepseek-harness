@@ -59,12 +59,13 @@ You can verify success by watching the conversation continue past the point wher
 
 ### Tuning when condensation starts
 
-All settings are optional. The defaults start condensing at 80% of the routed model's message budget — its context window minus the output tokens one request reserves — and keep the newest 16% of that budget verbatim; the table below is the complete policy surface, and the generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-compaction-basic) is the exhaustive source.
+All settings are optional. With context window `W`, effective request output cap `O`, and headroom `B`, the default trigger is `floor(min(W × 0.8, W − O − B))`, where `B = 65,536` tokens. Retention keeps the newest 16% of `W − O` verbatim. The table below lists every setting; the generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-compaction-basic) also includes their types.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `thresholdRatio` | `0.8` | Start condensing at `floor(messageBudget × ratio)`, where `messageBudget` is the routed context window minus the output tokens one request reserves. |
-| `retainRatio` | `0.16` | Recent conversation kept verbatim as a fraction of that same message budget; mutually exclusive with `retainTokens`. |
+| `thresholdRatio` | `0.8` | Window fraction used in `floor(min(W × thresholdRatio, W − O − headroomTokens))`. |
+| `headroomTokens` | `65536` | Additional pressure headroom beyond the routed output reservation; a non-negative integer. |
+| `retainRatio` | `0.16` | Recent conversation kept verbatim as a fraction of `W − O`; mutually exclusive with `retainTokens`. |
 | `retainTokens` | — | Absolute recent-conversation budget kept verbatim; mutually exclusive with `retainRatio` and must be below the resolved threshold. |
 | `summarizationProvider` | `''` | Set together with `summarizationModel`; an empty pair uses the latest routed request target, then the `AgentOptions` pair. |
 | `summarizationModel` | `''` | Set together with `summarizationProvider`; an empty pair uses the latest routed request target, then the `AgentOptions` pair. |
@@ -74,7 +75,7 @@ All settings are optional. The defaults start condensing at 80% of the routed mo
 | `modelPolicies` | `[]` | Exact `{ provider, model, ...partialPolicy }` overrides for individual model routes. |
 | `auto` | `true` | Enable automatic condensation and overflow recovery; set `false` for manual-only operation. |
 
-Misconfiguration fails fast: an unknown setting, a duplicate per-model override, both retention forms together, or a ratio retention that is not below the threshold all reject the plugin at load. An absolute `retainTokens` budget — top-level or per-model — that is not below its threshold fails when that model is first used, because the comparison needs the model's message budget. Proactive pressure requires the adapter model's `contextWindow` to exceed the effective request `maxTokens`. To compact earlier, lower `thresholdRatio` or an exact `modelPolicies` override; a reduced `contextWindow` must still leave room for messages after the output reservation.
+Misconfiguration fails fast: unknown settings, duplicate per-model overrides, invalid token counts, both retention forms together, or a retention ratio at least as large as the threshold ratio reject the plugin at load. When the model is first used, `W − O − B` must be positive and the resolved retained budget must be below the trigger. Small-window deployments must configure headroom that fits their capacity; lower `thresholdRatio` to compact earlier.
 
 ### What happens when condensation runs
 
@@ -111,7 +112,7 @@ The backend is built on four commitments:
 
 With `auto: true`, a serial `agent/pre-step` listener checks pressure before request derivation: it prices the latest durable routed request envelope through `ctx.tokenMeter`, and when pressure crosses the routed model's threshold it prunes, then summarizes the oldest balanced span while keeping a priced recent tail. Every selected range starts at the first surface node that is not a `system/message`, so a system prompt at surface node 0 is never shadowed; a later `system/message` appended by an in-history prompt update is ordinary history that the range may shadow, and the agent loop's projection then replaces node 0 with the current prompt when their text differs ([decision rule](../../core/agent-loop/README.md#understand-the-implementation)). The `agent/request-error` listener reacts to a provider-confirmed `CONTEXT_WINDOW_EXCEEDED`: it bypasses the normal threshold and retention policy, attempts one maximal balanced head reduction, and authorizes a retry only after the surface replacement generation advances. Cancellation stays authoritative throughout.
 
-Pressure policy resolves capacity from the adapter that owns the durable route. Missing capacity, an output reservation at least as large as the window, or an absolute retention budget at least as large as the threshold makes the manual pressure path throw a target-specific configuration error. The automatic listener warns once for that exact target and skips proactive compaction until its configuration is corrected; provider-confirmed overflow recovery remains available.
+Pressure policy resolves capacity from the adapter that owns the durable route. Missing capacity, output plus headroom exhausting the window, or a retained budget at least as large as the threshold makes the manual pressure path throw a target-specific configuration error. The automatic listener warns once for that exact target and skips proactive compaction until its configuration is corrected; provider-confirmed overflow recovery remains available.
 
 ### Summarization mechanics
 
@@ -125,7 +126,7 @@ The transaction validates the surface span and the durable lock, appends `compac
 
 ### Config resolution
 
-`resolveConfig` validates and detaches the defaults, `resolveTargetPolicy` merges an exact provider/model override over them, and `resolveCompactSpec` scales the merged policy into concrete token budgets using the adapter-owned context capacity minus the routed request’s reserved output tokens. Model discovery (`listModels()`) is never consulted for policy; only the durable route's capacity matters.
+`resolveConfig` validates and detaches defaults, `resolveTargetPolicy` merges exact provider/model overrides, and `resolveCompactSpec` resolves the trigger and retained budget using adapter capacity and the routed request’s output reservation. The effective envelope’s `maxTokens` supplies that reservation, falling back to the adapter default and then zero. Model discovery (`listModels()`) is never consulted for policy; only the durable route's capacity matters.
 
 ### Source map
 

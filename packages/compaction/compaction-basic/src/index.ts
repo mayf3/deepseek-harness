@@ -79,6 +79,7 @@ function conversationTarget(
 }
 
 const thresholdRatioSchema = z.number()
+const headroomTokensSchema = z.number().step(1).min(0)
 const retainRatioSchema = z.number()
 const retainTokensSchema = z.number().step(1).min(0)
 const summarizationProviderSchema = z.string()
@@ -91,6 +92,7 @@ const modelPolicy: z<ModelCompactPolicyConfig> = z.object({
   provider: z.string().required(),
   model: z.string().required(),
   thresholdRatio: thresholdRatioSchema,
+  headroomTokens: headroomTokensSchema,
   retainRatio: retainRatioSchema,
   retainTokens: retainTokensSchema,
   summarizationProvider: summarizationProviderSchema,
@@ -113,6 +115,7 @@ export class BasicCompactionEngine extends CompactionEngine {
 
   static Config: z<BasicCompactionConfig> = z.object({
     thresholdRatio: thresholdRatioSchema,
+    headroomTokens: headroomTokensSchema,
     retainRatio: retainRatioSchema,
     retainTokens: retainTokensSchema,
     summarizationProvider: summarizationProviderSchema,

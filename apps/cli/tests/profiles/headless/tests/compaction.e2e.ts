@@ -40,6 +40,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('compaction: a long session compa
       modelMaxTokens: 7_000,
       compact: {
         thresholdRatio: 0.5,
+        headroomTokens: 4_000,
         retainTokens: 400,
         summarizationProvider: '',
         summarizationModel: '',
