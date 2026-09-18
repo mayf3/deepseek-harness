@@ -5,7 +5,7 @@ import type {
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { LlmAttemptId, MessageId } from '@deepseek-ai/dsh-llm/brand'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { TextBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId, SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
@@ -154,7 +154,7 @@ export type QueueAction =
   | {
     readonly kind: 'edit'
     /** Non-empty text-only replacement content. */
-    readonly content: readonly ContentBlock[]
+    readonly content: readonly TextBlock[]
   }
   | { readonly kind: 'remove' }
   | { readonly kind: 'steer' }
