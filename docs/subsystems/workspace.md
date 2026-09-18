@@ -418,12 +418,12 @@ Host Remote file reads and workspace directory observations over the composed fi
  * Watch one file or a directory's direct entries in the Session's filesystem.
  * Files use the backend's read authority; directories remain workspace-scoped.
  * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
- * @param request - target path and file or directory watch intent.
+ * @param path - target path; the Host determines its type and confines directories to the workspace.
  * @param signal - generation cancellation.
  * @returns `ready` once the target watch is active, then current metadata for queued and live invalidations.
  * @throws RemoteError when watching is unavailable or a directory is outside the workspace.
  */
-@Remote({ mode: 'stream' }) changes( workspaceFileScope: WorkspaceFileScope, request: WorkspaceWatchRequest, signal: AbortSignal, ): AsyncIterable<WorkspaceFileWatchFrame>
+@Remote({ mode: 'stream' }) changes(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>
 ```
 
 Source: [`packages/api/workspace-files/src/index.ts`](../../packages/api/workspace-files/src/index.ts)

@@ -7,7 +7,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { FileSystem, FsObservation, FsTarget } from '@deepseek-ai/dsh-fs'
 import { FsVersion } from '@deepseek-ai/dsh-fs'
 import { WorkspaceFiles } from '../src/index.ts'
-import type { WorkspaceWatchRequest } from '../src/types.ts'
 import { failureOf, openWorkspace, type Harness } from './harness.ts'
 
 let harness: Harness
@@ -52,10 +51,10 @@ const present = (version: string): FsObservation => ({ kind: 'present', version:
 /** Own the iterator until its asynchronous watcher close has settled, including failed assertions. */
 function open(
   service: WorkspaceFiles,
-  request: WorkspaceWatchRequest,
+  path: string,
   controller = new AbortController(),
 ) {
-  const iterator = service.changes(harness.scope, request, controller.signal)[Symbol.asyncIterator]()
+  const iterator = service.changes(harness.scope, path, controller.signal)[Symbol.asyncIterator]()
   const close = async (): Promise<void> => {
     controller.abort()
     await iterator.return?.()
@@ -97,7 +96,7 @@ describe('workspaceFiles.changes — target frames', () => {
       options?.signal?.throwIfAborted()
       return root
     })
-    const stream = open(service, { kind: 'file', path })
+    const stream = open(service, path)
     const acknowledged = vi.fn()
     const first = stream.next().then((result) => { acknowledged(); return result })
     try {
@@ -133,7 +132,7 @@ describe('workspaceFiles.changes — target frames', () => {
       await release.promise
       return unwatch
     })
-    const stream = open(service, { kind: 'file', path })
+    const stream = open(service, path)
     const acknowledged = vi.fn()
     const first = stream.next().then((result) => { acknowledged(); return result })
     try {
@@ -158,7 +157,7 @@ describe('workspaceFiles.changes — target frames', () => {
     const current = await service.stat(harness.scope, path, new AbortController().signal)
     const fs = harness.ctx.fs
     const target = await fs.resolve(path)
-    const stream = open(service, { kind: 'file', path })
+    const stream = open(service, path)
     await ready(stream)
     const stat = vi.spyOn(fs, 'stat')
     const pending = stream.next()
@@ -189,7 +188,7 @@ describe('workspaceFiles.changes — target frames', () => {
       await writeFile(path, 'fresh bytes')
       const service = harness.endpoint()
       const current = await service.stat(harness.scope, path, new AbortController().signal)
-      const stream = open(service, { kind: 'file', path: 'fresh.txt' })
+      const stream = open(service, 'fresh.txt')
       await ready(stream)
       const pending = stream.next()
       await observe(path, observation)
@@ -203,7 +202,7 @@ describe('workspaceFiles.changes — target frames', () => {
   it('reports absence when stat finds no file despite a present observation', async () => {
     const path = join(harness.workspace, 'gone.txt')
     const target = await harness.ctx.fs.resolve(path)
-    const stream = open(harness.endpoint(), { kind: 'file', path })
+    const stream = open(harness.endpoint(), path)
     await ready(stream)
     const pending = stream.next()
     await observe(path, present('formerly-present'))
@@ -217,7 +216,7 @@ describe('workspaceFiles.changes — target frames', () => {
     const path = join(harness.workspace, 'queued.txt')
     await writeFile(path, 'first')
     const service = harness.endpoint()
-    const stream = open(service, { kind: 'file', path })
+    const stream = open(service, path)
     await ready(stream)
     await observe(path, present('queued-one'))
     await observe(path, present('queued-two'))
@@ -240,8 +239,8 @@ describe('workspaceFiles.changes — target frames', () => {
     await writeFile(path, 'shared')
     const service = harness.endpoint()
     const current = await service.stat(harness.scope, path, new AbortController().signal)
-    const one = open(service, { kind: 'file', path })
-    const two = open(service, { kind: 'file', path })
+    const one = open(service, path)
+    const two = open(service, path)
     await ready(one)
     await ready(two)
     const first = one.next()
@@ -269,7 +268,7 @@ describe('workspaceFiles.changes — backends and access', () => {
     const path = join(harness.workspace, 'remote.txt')
     await writeFile(path, 'still readable')
     const service = harness.endpoint()
-    const stream = open(service, { kind: 'file', path })
+    const stream = open(service, path)
     await expect(failureOf(stream.next())).resolves.toEqual({
       code: 'workspace-file/watch-unsupported', details: { path },
     })
@@ -292,7 +291,7 @@ describe('workspaceFiles.changes — backends and access', () => {
     'Provider rejected watch initialization',
   ])('reports watcher initialization failure as unavailable: %s', async (failure) => {
     watch.mockRejectedValueOnce(failure)
-    const stream = open(harness.endpoint(), { kind: 'directory', path: harness.workspace })
+    const stream = open(harness.endpoint(), harness.workspace)
     await expect(stream.next()).rejects.toMatchObject({
       code: 'workspace-file/watch-unsupported',
       message: typeof failure === 'string' ? failure : failure.message,
@@ -303,7 +302,7 @@ describe('workspaceFiles.changes — backends and access', () => {
   })
 
   it('reports a watcher callback failure and awaits its close', async () => {
-    const stream = open(harness.endpoint(), { kind: 'directory', path: harness.workspace })
+    const stream = open(harness.endpoint(), harness.workspace)
     await ready(stream)
     const pending = stream.next()
     const failure = new Error('Watch failed after readiness')
@@ -322,7 +321,7 @@ describe('workspaceFiles.changes — backends and access', () => {
       signal.throwIfAborted()
       return unwatch
     })
-    const stream = open(harness.endpoint(), { kind: 'directory', path: harness.workspace })
+    const stream = open(harness.endpoint(), harness.workspace)
     const first = stream.next()
     const failure = new Error('Watch failed before readiness')
     try {
@@ -352,7 +351,7 @@ describe('workspaceFiles.changes — backends and access', () => {
       await release.promise
     })
     const stat = vi.spyOn(harness.ctx.fs, 'stat')
-    const stream = open(harness.endpoint(), { kind: 'directory', path: harness.workspace })
+    const stream = open(harness.endpoint(), harness.workspace)
     const settled = vi.fn()
     const first = stream.next()
     const settlement = first.then(settled, settled)
@@ -361,7 +360,7 @@ describe('workspaceFiles.changes — backends and access', () => {
       await Promise.resolve()
       expect(settled).not.toHaveBeenCalled()
       expect(stream.controller.signal.aborted).toBe(false)
-      expect(stat).not.toHaveBeenCalled()
+      expect(stat).toHaveBeenCalledExactlyOnceWith(watch.mock.calls[0]![0], watch.mock.calls[0]![2])
       release.resolve(undefined)
       await expect(first).rejects.toMatchObject({
         code: 'workspace-file/watch-unsupported', message: failure.message, details: { path: harness.workspace },
@@ -376,7 +375,7 @@ describe('workspaceFiles.changes — backends and access', () => {
   })
 
   it('rejects an outside directory before opening a watcher', async () => {
-    const stream = open(harness.endpoint(), { kind: 'directory', path: harness.outside })
+    const stream = open(harness.endpoint(), harness.outside)
     await expect(failureOf(stream.next())).resolves.toEqual({
       code: 'workspace-file/outside-workspace', details: { path: harness.outside },
     })
@@ -388,7 +387,7 @@ describe('workspaceFiles.changes — backends and access', () => {
     await writeFile(path, 'outside contents')
     const service = harness.endpoint()
     const current = await service.stat(harness.scope, path, new AbortController().signal)
-    const stream = open(service, { kind: 'file', path })
+    const stream = open(service, path)
     await ready(stream)
     expect(watch.mock.calls[0]![0]).toEqual(await harness.ctx.fs.resolve(path))
     const pending = stream.next()
@@ -400,6 +399,26 @@ describe('workspaceFiles.changes — backends and access', () => {
     await expect(service.read(harness.scope, path, {}, stream.controller.signal)).resolves.toMatchObject({
       text: 'outside contents', eof: true,
     })
+  })
+
+  it('rejects and closes an outside target when a later stat finds a directory', async () => {
+    const path = join(harness.outside, 'changed-kind')
+    await writeFile(path, 'initial file')
+    const stat = vi.spyOn(harness.ctx.fs, 'stat')
+    const stream = open(harness.endpoint(), path)
+    await ready(stream)
+    const [target, changed, signal] = watch.mock.calls[0]!
+    expect(stat).toHaveBeenCalledExactlyOnceWith(target, signal)
+    await rm(path)
+    await mkdir(path)
+    const pending = stream.next()
+    changed()
+    await expect(failureOf(pending)).resolves.toEqual({
+      code: 'workspace-file/outside-workspace', details: { path },
+    })
+    expect(stat.mock.calls).toEqual([[target, signal], [target, signal]])
+    expect(unwatch).toHaveBeenCalledTimes(1)
+    await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
   })
 
   it.each(['create', 'modify', 'remove'] as const)(
@@ -414,7 +433,7 @@ describe('workspaceFiles.changes — backends and access', () => {
       const observed = vi.fn()
       const detach = harness.ctx.on('fs/observed', observed)
       cleanups.push(async () => { detach() })
-      const stream = open(service, { kind: 'directory', path: harness.workspace })
+      const stream = open(service, harness.workspace)
       await ready(stream)
       const pending = stream.next()
       if (operation === 'remove') await rm(path)
@@ -459,7 +478,7 @@ describe('workspaceFiles.changes — cancellation and disposal', () => {
       return root
     })
     const owner = await ownedEndpoint()
-    const stream = open(owner.service, { kind: 'directory', path: harness.workspace })
+    const stream = open(owner.service, harness.workspace)
     const first = stream.next()
     try {
       const lifetime = await entered.promise
@@ -484,13 +503,13 @@ describe('workspaceFiles.changes — cancellation and disposal', () => {
   it('refuses an already-aborted signal without acquiring a watcher', async () => {
     const controller = new AbortController()
     controller.abort()
-    const stream = open(harness.endpoint(), { kind: 'directory', path: harness.workspace }, controller)
+    const stream = open(harness.endpoint(), harness.workspace, controller)
     await expect(stream.next()).rejects.toMatchObject({ name: 'AbortError' })
     expect(watch).not.toHaveBeenCalled()
   })
 
   it('ends an idle generation and closes its watcher on cancellation', async () => {
-    const stream = open(harness.endpoint(), { kind: 'directory', path: harness.workspace })
+    const stream = open(harness.endpoint(), harness.workspace)
     await ready(stream)
     const pending = stream.next()
     stream.controller.abort()
@@ -498,8 +517,58 @@ describe('workspaceFiles.changes — cancellation and disposal', () => {
     expect(unwatch).toHaveBeenCalledTimes(1)
   })
 
+  it.each(['cancel', 'dispose'] as const)('closes a generation paused at ready on %s and awaits watcher closure', async (ending) => {
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    unwatch.mockImplementationOnce(async () => {
+      entered.resolve(undefined)
+      await release.promise
+    })
+    const owner = await ownedEndpoint()
+    const stream = open(owner.service, harness.workspace)
+    cleanups.push(async () => { release.resolve(undefined) })
+    await ready(stream)
+    const finished = vi.fn()
+    let disposal: Promise<void> | undefined
+    try {
+      if (ending === 'cancel') {
+        stream.controller.abort()
+        await entered.promise
+        await observe(harness.workspace, present('closing'))
+      }
+      disposal = owner.dispose().then(finished)
+      await entered.promise
+      expect(stream.controller.signal.aborted).toBe(ending === 'cancel')
+      expect(unwatch).toHaveBeenCalledTimes(1)
+      expect(finished).not.toHaveBeenCalled()
+      release.resolve(undefined)
+      await disposal
+      expect(finished).toHaveBeenCalledTimes(1)
+      await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
+      expect(unwatch).toHaveBeenCalledTimes(1)
+    } finally {
+      release.resolve(undefined)
+      await stream.close()
+      if (disposal !== undefined) await disposal
+    }
+  })
+
+  it('reports watcher-close failures without requiring another pull', async () => {
+    const failure = new Error('Watcher close failed')
+    const reported = Promise.withResolvers<unknown>()
+    const error = vi.spyOn(harness.ctx.logger, 'error').mockImplementation((value) => { reported.resolve(value) })
+    cleanups.push(async () => { error.mockRestore() })
+    unwatch.mockRejectedValueOnce(failure)
+    const stream = open(harness.endpoint(), harness.workspace)
+    await ready(stream)
+    stream.controller.abort()
+    await expect(reported.promise).resolves.toBe(failure)
+    await expect(stream.next()).rejects.toBe(failure)
+    expect(unwatch).toHaveBeenCalledOnce()
+  })
+
   it('drops queued invalidations when cancelled after ready and before another pull', async () => {
-    const stream = open(harness.endpoint(), { kind: 'directory', path: harness.workspace })
+    const stream = open(harness.endpoint(), harness.workspace)
     await ready(stream)
     await observe(harness.workspace, present('queued'))
     const stat = vi.spyOn(harness.ctx.fs, 'stat')
@@ -525,7 +594,7 @@ describe('workspaceFiles.changes — cancellation and disposal', () => {
         options?.signal?.throwIfAborted()
         return resolve(requested, options)
       })
-      const stream = open(harness.endpoint(), { kind: 'file', path })
+      const stream = open(harness.endpoint(), path)
       const pending = stream.next()
       try {
         const lifetime = await entered.promise
@@ -554,7 +623,7 @@ describe('workspaceFiles.changes — cancellation and disposal', () => {
       await release.promise
       return target
     })
-    const stream = open(harness.endpoint(), { kind: 'file', path })
+    const stream = open(harness.endpoint(), path)
     const pending = stream.next()
     try {
       await entered.promise
@@ -578,7 +647,7 @@ describe('workspaceFiles.changes — cancellation and disposal', () => {
         if (settlement === 'reject') signal.throwIfAborted()
         return unwatch
       })
-      const stream = open(harness.endpoint(), { kind: 'directory', path: harness.workspace })
+      const stream = open(harness.endpoint(), harness.workspace)
       const pending = stream.next()
       try {
         const lifetime = await entered.promise
@@ -593,9 +662,14 @@ describe('workspaceFiles.changes — cancellation and disposal', () => {
     },
   )
 
-  it.each(['reject', 'return'] as const)(
-    'does not publish a change when stat settles by %s after cancellation',
-    async (settlement) => {
+  it.each([
+    { phase: 'initial', settlement: 'reject' },
+    { phase: 'initial', settlement: 'return' },
+    { phase: 'change', settlement: 'reject' },
+    { phase: 'change', settlement: 'return' },
+  ] as const)(
+    'ends quietly when $phase stat settles by $settlement after cancellation',
+    async ({ phase, settlement }) => {
       const path = join(harness.workspace, 'late-stat.txt')
       await writeFile(path, 'contents')
       const fs = harness.ctx.fs
@@ -603,23 +677,23 @@ describe('workspaceFiles.changes — cancellation and disposal', () => {
       const info = await fs.stat(target)
       const entered = Promise.withResolvers<AbortSignal | undefined>()
       const release = Promise.withResolvers<undefined>()
+      const stream = open(harness.endpoint(), path)
+      if (phase === 'change') await ready(stream)
       vi.spyOn(fs, 'stat').mockImplementationOnce(async (_target, signal) => {
         entered.resolve(signal)
         await release.promise
         if (settlement === 'reject') signal?.throwIfAborted()
         return info
       })
-      const stream = open(harness.endpoint(), { kind: 'file', path })
-      await ready(stream)
       const pending = stream.next()
       try {
-        await observe(path, present('trigger'))
+        if (phase === 'change') await observe(path, present('trigger'))
         const lifetime = await entered.promise
         stream.controller.abort()
         expect(lifetime?.aborted).toBe(true)
         release.resolve(undefined)
         await expect(pending).resolves.toEqual({ done: true, value: undefined })
-        expect(unwatch).toHaveBeenCalledTimes(1)
+        expect(unwatch).toHaveBeenCalledTimes(phase === 'change' ? 1 : 0)
       } finally {
         release.resolve(undefined)
       }
@@ -636,7 +710,7 @@ describe('workspaceFiles.changes — cancellation and disposal', () => {
       return resolve(requested, options)
     })
     const stat = vi.spyOn(harness.ctx.fs, 'stat')
-    const stream = open(harness.endpoint(), { kind: 'file', path })
+    const stream = open(harness.endpoint(), path)
     await expect(stream.next()).rejects.toBe(failure)
     expect(stream.controller.signal.aborted).toBe(false)
     expect(watch).not.toHaveBeenCalled()
@@ -646,9 +720,9 @@ describe('workspaceFiles.changes — cancellation and disposal', () => {
 
   it('propagates a non-cancellation stat failure without publishing absence and closes the watcher', async () => {
     const failure = new Error('Metadata read failed')
-    const stat = vi.spyOn(harness.ctx.fs, 'stat').mockRejectedValueOnce(failure)
-    const stream = open(harness.endpoint(), { kind: 'directory', path: harness.workspace })
+    const stream = open(harness.endpoint(), harness.workspace)
     await ready(stream)
+    const stat = vi.spyOn(harness.ctx.fs, 'stat').mockRejectedValueOnce(failure)
     const pending = stream.next()
     const [target, changed, signal] = watch.mock.calls[0]!
     changed()
@@ -666,7 +740,7 @@ describe('workspaceFiles.changes — cancellation and disposal', () => {
       entered.resolve(undefined)
       await release.promise
     })
-    const stream = open(harness.endpoint(), { kind: 'directory', path: harness.workspace })
+    const stream = open(harness.endpoint(), harness.workspace)
     await ready(stream)
     const finished = vi.fn()
     const returned = Promise.resolve(stream.return()).then((result) => { finished(); return result })
@@ -698,8 +772,8 @@ describe('workspaceFiles.changes — cancellation and disposal', () => {
       await release.promise
     })
     const owner = await ownedEndpoint()
-    const one = open(owner.service, { kind: 'file', path })
-    const two = open(owner.service, { kind: 'file', path })
+    const one = open(owner.service, path)
+    const two = open(owner.service, path)
     await ready(one)
     await ready(two)
     const first = one.next()
@@ -715,9 +789,9 @@ describe('workspaceFiles.changes — cancellation and disposal', () => {
       await disposal
       expect(finished).toHaveBeenCalledTimes(1)
       expect(unwatch).toHaveBeenCalledTimes(2)
-      const stat = vi.spyOn(fs, 'stat')
-      const live = open(harness.endpoint(), { kind: 'file', path })
+      const live = open(harness.endpoint(), path)
       await ready(live)
+      const stat = vi.spyOn(fs, 'stat')
       const next = live.next()
       watch.mock.calls[0]![1]()
       watch.mock.calls[1]![1]()

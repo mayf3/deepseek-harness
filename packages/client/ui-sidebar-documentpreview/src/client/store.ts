@@ -101,6 +101,7 @@ type TextActions = {
   selected: (draft: TextState, tabId: TabId, rendererId: string | undefined) => void
   loading: (draft: TextState, tabId: TabId, mode?: DocumentLoadMode, observedVersion?: string, contentRendererId?: string) => void
   rendered: (draft: TextState, tabId: TabId, revision: number, version: string) => void
+  rendererFailed: (draft: TextState, tabId: TabId, revision: number) => void
   complete: (draft: TextState, tabId: TabId, file: DocumentFileBytes) => void
   page: (draft: TextState, tabId: TabId, page: WorkspaceFileText) => void
   failed: (draft: TextState, tabId: TabId, failure: RemoteFailure) => void
@@ -157,6 +158,12 @@ export function createTextStore(): EngineStoreHandle<TextState, TextActions> {
         const state = d.byTab[tabId]
         if (state?.mode !== 'renderer' || state.loadRevision !== revision) return
         state.version = version
+        state.loading = false
+      },
+      /** @param d - draft. @param tabId - owning tab. @param revision - failed content revision. */
+      rendererFailed: (d, tabId: TabId, revision: number) => {
+        const state = d.byTab[tabId]
+        if (state?.mode !== 'renderer' || state.loadRevision !== revision) return
         state.loading = false
       },
       /** @param d - draft. @param tabId - owning tab. @param file - complete byte result for this view. */

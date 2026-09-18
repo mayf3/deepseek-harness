@@ -387,6 +387,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     await expect.poll(() => html.locator('#parent-result').innerText()).toBe('parent-blocked')
     expect(await html.locator('#parent-result').getAttribute('data-error')).toBe('SecurityError')
     expect(await page.locator('html').getAttribute('data-document-preview-escape')).toBeNull()
+    expect(previewNetworkRequests).toBe(1)
     const beforeStyleSave = await iframe.getAttribute('src')
     await writeFile(join(cwd, 'local.css'), '#local-result { color: rgb(56, 34, 12); }')
     await expect.poll(() => html.locator('#local-result').evaluate(node => getComputedStyle(node).color)).toBe('rgb(56, 34, 12)')

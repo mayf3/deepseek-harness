@@ -91,7 +91,7 @@ export abstract class FileSystem extends Service {
   /**
    * Observe one file or a directory's direct entries in this provider's execution world.
    * @param target - resolved file or directory, including an absent path to observe for creation.
-   * @param changed - invalidation callback; an error reports that observation failed.
+   * @param changed - invalidation callback; errors can be reported during or after initialization.
    * @param signal - cancels watcher initialization; the caller closes an initialized watcher.
    * @returns a promise resolving once observation is active, with an asynchronous close function.
    * @throws when the provider does not support watching or cannot initialize the watcher.

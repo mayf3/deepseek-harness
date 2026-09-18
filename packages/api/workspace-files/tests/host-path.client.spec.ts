@@ -43,7 +43,7 @@ describe('Host-resolved file paths', () => {
     const { iterator } = open()
     const first = iterator.next()
     const watch = await remote.ready(0)
-    expect(watch).toMatchObject({ sessionId: SESSION, path: RELATIVE, kind: 'file' })
+    expect(watch).toMatchObject({ sessionId: SESSION, path: RELATIVE })
     const request = await remote.waitForStat(0)
     expect(remote.calls).toEqual(['changes', 'accept', 'stat'])
     expect(request).toMatchObject({ sessionId: SESSION, path: RELATIVE })
@@ -166,7 +166,7 @@ describe('Host-resolved file paths', () => {
     const { iterator } = open(address)
     const first = iterator.next()
     const watch = await remote.ready(0)
-    expect(watch).toMatchObject({ sessionId: SESSION, path, kind: 'file' })
+    expect(watch).toMatchObject({ sessionId: SESSION, path })
     const request = await remote.waitForStat(0)
     expect(request).toMatchObject({ sessionId: SESSION, path })
     const source = watch.source

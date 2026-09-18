@@ -71,7 +71,11 @@ export function OfficeBody(props: OfficeBodyProps): ReactNode {
     return () => { controller.abort() }
   }, [revision, resourceAddress, tab.id, tab.signal, read, actions, describeFailure, settled])
   const file = view?.file
-  useEffect(() => { if (file !== undefined) request?.loaded(file.version) }, [file, request?.loaded])
+  useEffect(() => {
+    if (request === undefined) return
+    if (file !== undefined) request.loaded(file.version)
+    else if (view?.failure !== undefined) request.failed()
+  }, [file, view?.failure, request])
   if (request === undefined) return null
   if (view?.failure !== undefined) {
     const { name } = pathPartsOf(resourceAddress)

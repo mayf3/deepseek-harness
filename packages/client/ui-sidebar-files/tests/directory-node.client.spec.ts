@@ -59,6 +59,18 @@ async function listReady(node: DirectoryNode, script: ScriptedList, level: DirLe
 }
 
 describe('DirectoryNode', () => {
+  it('rereads an invalidation arriving between read completion and refresh cleanup', async () => {
+    const pending = Promise.withResolvers<DirLevel>()
+    const load = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(EMPTY)
+    const node = new DirectoryNode(ROOT, load, async function* () {}, vi.fn(), new AbortController().signal)
+    onTestFinished(() => node.close())
+    const reading = node.refresh()
+    pending.resolve(EMPTY)
+    queueMicrotask(() => { void node.refresh() })
+    await reading
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
   it('opens one watch per expanded directory and waits for each ready before its first list', async () => {
     const { node, script } = mount()
     expect(node.open()).toBe(node)

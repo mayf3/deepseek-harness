@@ -115,38 +115,32 @@ export interface WorkspaceDirectoryListing {
 }
 
 /**
- * One observation of a workspace file made by an instrumented filesystem
- * operation. Frames report observations, not deltas: a consumer already
- * holding `version` learns nothing new from the frame and can ignore it.
+ * Current target metadata after a filesystem invalidation. File consumers may
+ * ignore an already known version; directory consumers relist on every frame
+ * because a child's metadata can change without changing the directory version.
  */
 export type WorkspaceFileChange =
   | {
-    /** Absolute path of the observed file, in the same form as {@link WorkspaceFileStat.absolutePath}. */
+    /** Absolute target path, in the same form as {@link WorkspaceFileStat.absolutePath}. */
     readonly absolutePath: string
-    /** Opaque freshness token after the observed operation; never parsed. */
+    /** Opaque freshness token from the current stat; never parsed. */
     readonly version: string
   }
   | {
-    /** Absolute path of the observed file, in the same form as {@link WorkspaceFileStat.absolutePath}. */
+    /** Absolute target path, in the same form as {@link WorkspaceFileStat.absolutePath}. */
     readonly absolutePath: string
-    /** The file was observed to be gone. */
+    /** The target was observed to be gone. */
     readonly absent: true
   }
 
 /**
  * One frame of a workspace file watch generation. `ready` confirms that the
- * Host is observing filesystem operations and has resolved the workspace
- * root; observations queued during that resolution follow as `change` frames.
+ * Host has initialized the target watcher; queued and live invalidations
+ * follow as `change` frames with current target metadata.
  */
 export type WorkspaceFileWatchFrame =
   | { readonly kind: 'ready' }
   | { readonly kind: 'change'; readonly change: WorkspaceFileChange }
-
-/** One watch target; directory intent restricts observation to the Workspace and direct entries. */
-export interface WorkspaceWatchRequest {
-  readonly path: string
-  readonly kind: 'file' | 'directory'
-}
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
@@ -154,7 +148,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'workspace-file/watch-unsupported': { readonly path: string }
     /** No entry exists at that path inside the workspace. */
     'workspace-file/not-found': { readonly path: string }
-    /** The directory listing path resolves outside the session's workspace root. */
+    /** The directory listing or watch path resolves outside the Session's workspace root. */
     'workspace-file/outside-workspace': { readonly path: string }
     /** The requested page exceeds the configured byte cap; nothing is returned. */
     'workspace-file/too-large': { readonly path: string; readonly limit: number }

@@ -104,7 +104,6 @@ describe('document extension seat', () => {
       await waitFor(() => { expect(h.view.container.querySelectorAll('[data-textpreview-line]')).toHaveLength(2) })
       expect(h.read.mock.calls).toEqual([
         ['address-session', path, { offset: 1 }, expect.any(AbortSignal)],
-        ['address-session', path, { offset: 1 }, expect.any(AbortSignal)],
       ])
       expect(h.bytes).not.toHaveBeenCalled()
     },
@@ -134,7 +133,7 @@ describe('document extension seat', () => {
     Object.defineProperties(body, { clientHeight: { configurable: true, value: 100 }, scrollHeight: { configurable: true, value: 200 } })
     fireEvent.scroll(body, { target: { scrollTop: 100 } })
     await waitFor(() => { expect(h.view.container.querySelectorAll('[data-textpreview-line]')).toHaveLength(3) })
-    expect(h.read.mock.calls.map(([_sessionId, _path, range]) => range.offset)).toEqual([1, 1, 3])
+    expect(h.read.mock.calls.map(([_sessionId, _path, range]) => range.offset)).toEqual([1, 3])
   })
 
   it('defaults to an extension, switches implementations without changing tabs, and restores a builtin on removal', async () => {
@@ -152,7 +151,7 @@ describe('document extension seat', () => {
     })
     const tab = h.view.container.querySelector('[data-renderer-tab]')?.getAttribute('data-renderer-tab')
     expect(h.read).not.toHaveBeenCalled()
-    expect(h.bytes).toHaveBeenCalledTimes(2)
+    expect(h.bytes).toHaveBeenCalledOnce()
     fireEvent.click(h.view.container.querySelector('[data-document-viewer-menu]')!)
     fireEvent.click(screen.getByRole('menuitem', { name: 'builtin-reader' }))
     await waitFor(() => { expect(h.view.container.querySelector('[data-renderer="builtin-reader"]')?.textContent).toBe('first\nsecond') })
@@ -174,6 +173,6 @@ describe('document extension seat', () => {
     })
     await act(async () => { await remove!() })
     await waitFor(() => { expect(h.view.container.querySelector('[data-document-markdown]')).not.toBeNull() })
-    expect(h.read).toHaveBeenCalledTimes(2)
+    expect(h.read).toHaveBeenCalledOnce()
   })
 })

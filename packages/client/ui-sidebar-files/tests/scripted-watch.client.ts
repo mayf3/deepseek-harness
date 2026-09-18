@@ -4,7 +4,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WatchWorkspaceDirectory } from '../src/client/face.ts'
 
 type Event = 'ready' | 'change'
-type Frame = { kind: 'event'; value: Event; delivered: () => void } | { kind: 'error'; error: Error }
+type Frame = { kind: 'event'; value: Event; delivered: () => void } | { kind: 'error'; error: unknown }
 
 /** One directory subscription; delivering an event waits for the consumer's next pull. */
 export class DirectoryWatch implements AsyncIterable<Event> {
@@ -27,7 +27,7 @@ export class DirectoryWatch implements AsyncIterable<Event> {
     })
   }
 
-  fail(error: Error): void {
+  fail(error: unknown): void {
     this.queue.push({ kind: 'error', error })
     this.wake?.()
   }

@@ -40,7 +40,7 @@ describe('ChangeFeed — one Host stream per Session and target', () => {
     const second = follow(S1, PATH)
     await expect(second.ready).resolves.toBe(true)
     expect(remote.calls).toEqual(['changes', 'accept'])
-    expect(remote.opened).toMatchObject([{ sessionId: S1, kind: 'file', path: PATH }])
+    expect(remote.opened).toMatchObject([{ sessionId: S1, path: PATH }])
 
     await remote.opened[0]!.source.deliver({ kind: 'change', change: { absolutePath: PATH, version: 'v1' } })
     await expect(second.it.next()).resolves.toEqual({ done: false, value: { kind: 'changed', version: 'v1' } })
@@ -59,10 +59,10 @@ describe('ChangeFeed — one Host stream per Session and target', () => {
     const otherSession = follow(S2, PATH)
     await Promise.all([remote.ready(0), remote.ready(1), remote.ready(2)])
     await expect(Promise.all([one.ready, twin.ready, otherPath.ready, otherSession.ready])).resolves.toEqual([true, true, true, true])
-    expect(remote.opened.map(({ sessionId, path, kind }) => ({ sessionId, path, kind }))).toEqual([
-      { sessionId: S1, path: PATH, kind: 'file' },
-      { sessionId: S1, path: '/w/b.txt', kind: 'file' },
-      { sessionId: S2, path: PATH, kind: 'file' },
+    expect(remote.opened.map(({ sessionId, path }) => ({ sessionId, path }))).toEqual([
+      { sessionId: S1, path: PATH },
+      { sessionId: S1, path: '/w/b.txt' },
+      { sessionId: S2, path: PATH },
     ])
   })
 

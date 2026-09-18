@@ -20,7 +20,7 @@ export type ReadHtmlRelated = (address: string, relativePath: string, signal: Ab
  * @param readRelated - Remote reader using the Session in the root HTML address.
  * @param address - root HTML file address.
  * @param lifetime - tab lifetime.
- * @param addResource - subscribes to each dependency before its bytes are read.
+ * @param addResource - subscribes to the dependency path reported by the Host.
  * @returns a reader that strips URL query/fragment, decodes one path, and preserves Host failures.
  */
 export function createReadHtmlRelative(
@@ -38,12 +38,15 @@ export function createReadHtmlRelative(
     const combined = AbortSignal.any([lifetime, signal])
     combined.throwIfAborted()
     const file = hostFileOf(address)
-    const base = file.path.replaceAll('\\', '/')
-    const dependency = sessionFileAddress(file.sessionId, `${base.slice(0, base.lastIndexOf('/') + 1)}${path}`)
-    addResource(dependency)
     const result = await readRelated(address, path, combined)
     combined.throwIfAborted()
-    if (!result.ok) throw new Error(result.error.message)
+    if (!result.ok) {
+      if ('path' in result.error.details && typeof result.error.details.path === 'string') {
+        addResource(sessionFileAddress(file.sessionId, result.error.details.path))
+      }
+      throw new Error(result.error.message)
+    }
+    addResource(sessionFileAddress(file.sessionId, result.value.absolutePath))
     return documentFileBytes(result.value)
   }
 }

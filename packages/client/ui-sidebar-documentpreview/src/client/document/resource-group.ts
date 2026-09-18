@@ -10,7 +10,7 @@ export class ResourceGroup {
   constructor(private readonly resources: Resources, private readonly changed: () => void) {}
 
   /**
-   * Subscribe once; initial metadata and later changes invalidate the preview.
+   * Subscribe once; initial metadata establishes the baseline for later changes.
    * @param address - complete resource address.
    */
   add(address: string): void {
@@ -21,7 +21,7 @@ export class ResourceGroup {
       const next = source.getSnapshot() as ResourceSnapshot<WorkspaceFileStat>
       if (next.status !== 'live' && next.status !== 'failed') return
       const key = next.status === 'live' ? `live:${next.value?.version}` : `failed:${next.failure?.code}`
-      const changed = key !== previous
+      const changed = previous !== undefined && key !== previous
       previous = key
       if (changed) this.changed()
     }

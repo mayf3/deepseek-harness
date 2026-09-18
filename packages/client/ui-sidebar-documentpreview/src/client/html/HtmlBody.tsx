@@ -78,6 +78,9 @@ export function HtmlBody({
 }: HtmlBodyProps): ReactNode {
   const interactivePreview = useInteractivePreview(value => value)
   const { tab } = useTabInfo()
+  useEffect(() => {
+    if (!interactivePreview) setResources([])
+  }, [interactivePreview, setResources])
   if (content.kind !== 'bytes') return null
   if (!interactivePreview) return <BasicHtmlFrame data={content.data} t={t} />
   return <HtmlFrame key={resourceAddress} data={content.data} resourceAddress={resourceAddress}

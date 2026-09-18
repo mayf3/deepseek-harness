@@ -1,6 +1,7 @@
 /** HTML URL decoding stays local; ordinary Remote reads leave path resolution and authorization to the Host. */
 import { describe, expect, it, vi } from 'vitest'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
+import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import { createReadHtmlRelative } from '../src/client/html/read-relative.ts'
 import type { ReadHtmlRelated } from '../src/client/html/read-relative.ts'
 
@@ -12,13 +13,46 @@ describe('HTML relative file reader', () => {
     const readRelated = vi.fn<ReadHtmlRelated>().mockResolvedValue({ ok: true, value })
     const tab = new AbortController()
     const loading = new AbortController()
-    const read = createReadHtmlRelative(readRelated, ADDRESS, tab.signal, vi.fn())
+    const addResource = vi.fn()
+    const read = createReadHtmlRelative(readRelated, ADDRESS, tab.signal, addResource)
     await expect(read('../a%20b.js?v=1#fragment', loading.signal)).resolves.toEqual({ ...value, data: new Uint8Array([120]) })
     const signal = readRelated.mock.calls[0]?.[2]
     expect(readRelated).toHaveBeenCalledExactlyOnceWith(ADDRESS, '../a b.js', signal)
+    expect(addResource).toHaveBeenCalledExactlyOnceWith(sessionFileAddress('html', value.absolutePath))
     expect(signal?.aborted).toBe(false)
     tab.abort()
     expect(signal?.aborted).toBe(true)
+  })
+
+  it('observes the Host-resolved dependency instead of a symlink and parent-segment spelling', async () => {
+    const value = { absolutePath: '/workspace/style.css', data: btoa('x'), version: 'v1', offset: 0, eof: true }
+    const readRelated = vi.fn<ReadHtmlRelated>().mockResolvedValue({ ok: true, value })
+    const addResource = vi.fn()
+    const signal = new AbortController().signal
+    await createReadHtmlRelative(readRelated, ADDRESS, signal, addResource)('linked/../style.css', signal)
+    expect(addResource).toHaveBeenCalledExactlyOnceWith(sessionFileAddress('html', value.absolutePath))
+  })
+
+  it('observes the Host-reported missing path so creation can invalidate the preview', async () => {
+    const path = '/workspace/missing.css'
+    const readRelated = vi.fn<ReadHtmlRelated>().mockResolvedValue({
+      ok: false, error: new RemoteError('workspace-file/not-found', 'Missing dependency', { path }),
+    })
+    const addResource = vi.fn()
+    const signal = new AbortController().signal
+    await expect(createReadHtmlRelative(readRelated, ADDRESS, signal, addResource)('linked/../missing.css', signal))
+      .rejects.toThrow('Missing dependency')
+    expect(addResource).toHaveBeenCalledExactlyOnceWith(sessionFileAddress('html', path))
+  })
+
+  it('does not guess a dependency path when the Host failure contains none', async () => {
+    const readRelated = vi.fn<ReadHtmlRelated>().mockResolvedValue({
+      ok: false, error: new RemoteError('gateway/internal', 'Read failed', {}),
+    })
+    const addResource = vi.fn()
+    const signal = new AbortController().signal
+    await expect(createReadHtmlRelative(readRelated, ADDRESS, signal, addResource)('asset.css', signal)).rejects.toThrow('Read failed')
+    expect(addResource).not.toHaveBeenCalled()
   })
 
   it('refuses non-relative references and preserves Host permission failures', async () => {

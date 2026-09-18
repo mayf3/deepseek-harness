@@ -89,7 +89,7 @@ export class DirectoryNode {
   /** Queue a reread, coalescing with active work. @returns completion of the active read and its coalesced rereads. */
   refresh(): Promise<void> {
     this.dirty = true
-    this.reading ??= this.read().finally(() => { this.reading = undefined })
+    this.reading ??= this.read()
     return this.reading
   }
 
@@ -124,20 +124,24 @@ export class DirectoryNode {
 
   private async read(): Promise<void> {
     const readAgain = (): boolean => this.dirty && this.automatic && !this.signal.aborted
-    do {
-      this.dirty = false
-      const level = await this.load(this.path, this.signal)
-      if (this.signal.aborted || level === undefined) return
-      this.initialized = true
-      const directories = new Set(level.entries.filter(entry => entry.type === 'directory')
-        .map(entry => `${this.path.replace(/[/\\]+$/, '')}/${entry.name}`))
-      for (const path of this.children.keys()) {
-        if (!directories.has(path)) await this.collapse(path)
-      }
-      for (const path of directories) {
-        if (this.restore.includes(path)) this.expand(path, this.restore)
-      }
-      this.restore = []
-    } while (readAgain())
+    try {
+      do {
+        this.dirty = false
+        const level = await this.load(this.path, this.signal)
+        if (this.signal.aborted || level === undefined) return
+        this.initialized = true
+        const directories = new Set(level.entries.filter(entry => entry.type === 'directory')
+          .map(entry => `${this.path.replace(/[/\\]+$/, '')}/${entry.name}`))
+        for (const path of this.children.keys()) {
+          if (!directories.has(path)) await this.collapse(path)
+        }
+        for (const path of directories) {
+          if (this.restore.includes(path)) this.expand(path, this.restore)
+        }
+        this.restore = []
+      } while (readAgain())
+    } finally {
+      this.reading = undefined
+    }
   }
 }

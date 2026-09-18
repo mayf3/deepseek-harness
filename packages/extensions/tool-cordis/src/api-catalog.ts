@@ -978,7 +978,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'abstract watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>>',
         description: 'Observe one file or a directory\'s direct entries in this provider\'s execution world.',
-        parameters: [{ name: 'target', description: 'resolved file or directory, including an absent path to observe for creation.' }, { name: 'changed', description: 'invalidation callback; an error reports that observation failed.' }, { name: 'signal', description: 'cancels watcher initialization; the caller closes an initialized watcher.' }],
+        parameters: [{ name: 'target', description: 'resolved file or directory, including an absent path to observe for creation.' }, { name: 'changed', description: 'invalidation callback; errors can be reported during or after initialization.' }, { name: 'signal', description: 'cancels watcher initialization; the caller closes an initialized watcher.' }],
         returns: 'a promise resolving once observation is active, with an asynchronous close function.',
         throws: ['when the provider does not support watching or cannot initialize the watcher.'],
       },
@@ -3337,9 +3337,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the directory\'s children in the backend\'s stable name order, bounded by the entry cap.',
       },
       {
-        signature: '@Remote({ mode: \'stream\' }) changes( workspaceFileScope: WorkspaceFileScope, request: WorkspaceWatchRequest, signal: AbortSignal, ): AsyncIterable<WorkspaceFileWatchFrame>',
+        signature: '@Remote({ mode: \'stream\' }) changes(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>',
         description: 'Watch one file or a directory\'s direct entries in the Session\'s filesystem. Files use the backend\'s read authority; directories remain workspace-scoped.',
-        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'request', description: 'target path and file or directory watch intent.' }, { name: 'signal', description: 'generation cancellation.' }],
+        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'target path; the Host determines its type and confines directories to the workspace.' }, { name: 'signal', description: 'generation cancellation.' }],
         returns: '`ready` once the target watch is active, then current metadata for queued and live invalidations.',
         throws: ['RemoteError when watching is unavailable or a directory is outside the workspace.'],
       },
@@ -7251,10 +7251,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceView',
     declaration: 'export interface WorkspaceView {\n    readonly workspaceId: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
-  },
-  {
-    name: 'WorkspaceWatchRequest',
-    declaration: 'export interface WorkspaceWatchRequest {\n    readonly path: string;\n    readonly kind: \'file\' | \'directory\';\n}',
   },
 ]
 

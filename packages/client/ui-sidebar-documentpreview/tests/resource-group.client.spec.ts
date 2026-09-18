@@ -26,10 +26,12 @@ function harness() {
 }
 
 describe('ResourceGroup', () => {
-  it('invalidates when initial metadata arrives after subscription', () => {
+  it('uses initial metadata as a baseline and invalidates only on later changes', () => {
     const h = harness()
     h.group.add('style.css')
     h.version('v2')
+    expect(h.changed).not.toHaveBeenCalled()
+    h.version('v3')
     expect(h.changed).toHaveBeenCalledOnce()
     h.group.close()
   })
@@ -39,6 +41,8 @@ describe('ResourceGroup', () => {
     h.group.add('style.css')
     h.version('v2')
     h.group.add('style.css')
+    expect(h.changed).not.toHaveBeenCalled()
+    h.version('v3')
     expect(h.changed).toHaveBeenCalledOnce()
     h.group.close()
   })
@@ -48,12 +52,12 @@ describe('ResourceGroup', () => {
     h.version('v1')
     h.group.add('style.css')
     h.version('v1')
-    expect(h.changed).toHaveBeenCalledOnce()
+    expect(h.changed).not.toHaveBeenCalled()
     h.version('v2')
-    expect(h.changed).toHaveBeenCalledTimes(2)
+    expect(h.changed).toHaveBeenCalledOnce()
     h.group.close()
     h.version('v3')
-    expect(h.changed).toHaveBeenCalledTimes(2)
+    expect(h.changed).toHaveBeenCalledOnce()
   })
 
   it('shares membership and releases members absent from the next document', () => {
@@ -77,10 +81,10 @@ describe('ResourceGroup', () => {
       failure: new RemoteError('workspace-file/not-found', 'File missing', { path: 'style.css' }),
     }
     h.state.set(failed)
-    expect(h.changed).toHaveBeenCalledTimes(2)
+    expect(h.changed).toHaveBeenCalledOnce()
     h.state.set({ ...failed })
-    expect(h.changed).toHaveBeenCalledTimes(2)
+    expect(h.changed).toHaveBeenCalledOnce()
     h.version('v1')
-    expect(h.changed).toHaveBeenCalledTimes(3)
+    expect(h.changed).toHaveBeenCalledTimes(2)
   })
 })

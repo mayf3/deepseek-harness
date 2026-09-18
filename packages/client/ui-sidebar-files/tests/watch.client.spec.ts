@@ -30,7 +30,7 @@ describe('createWatch', () => {
     const h = mount()
     const first = h.iterator.next()
     const watch = await h.remote.waitForChanges(0)
-    expect(watch).toMatchObject({ sessionId: SESSION, kind: 'directory', path: ROOT })
+    expect(watch).toMatchObject({ sessionId: SESSION, path: ROOT })
     expect(h.supervise.mock.calls[0]?.[0].name).toBe(`directory ${ROOT}`)
     watch.source.push({ kind: 'ready' })
     await expect(first).resolves.toEqual({ done: false, value: 'ready' })

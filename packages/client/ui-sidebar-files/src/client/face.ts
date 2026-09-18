@@ -1,7 +1,7 @@
 /**
  * The tree's asynchronous half: listing directories into the store.
  *
- * The component never awaits anything. It calls `start` / `load` / `toggle`, and
+ * The component never awaits anything. It calls `start` / `refresh` / `toggle`, and
  * this face performs the listing and writes the outcome through the store's own
  * actions — the Slot-standard `inject` shape, so the session id is resolved by
  * the framework and the write set stays the store's.
@@ -47,7 +47,7 @@ export function createWatch(remote: ClientRemote): WatchWorkspaceDirectory {
     if (aborted()) return
     const stream = remote.$stream<WorkspaceFileWatchFrame>({
       name: `directory ${path}`,
-      open: lifetime => remote.workspaceFiles.changes(sessionId, { kind: 'directory', path }, lifetime),
+      open: lifetime => remote.workspaceFiles.changes(sessionId, path, lifetime),
       ended: () => new Error(`Directory watch ended: ${path}`),
     })
     const abort = (): void => { void stream.dispose() }
@@ -114,7 +114,9 @@ export function childPath(parent: string, name: string): string {
 
 /** The tree's injected business face, as the body receives it. */
 export interface FilesInjected {
+  /** Refresh the open directory tree. @param tabId - owning tab. */
   readonly refresh: (tabId: TabId) => void
+  /** Control automatic rereads without closing watches. @param tabId - owning tab. @param enabled - automatic-refresh setting. */
   readonly setAutoRefresh: (tabId: TabId, enabled: boolean) => void
   /**
    * Seed this tab's tree and list its root.
@@ -133,11 +135,12 @@ export interface FilesInjected {
   /**
    * Open or collapse one directory, listing it the first time it opens.
    * @param tabId - the tab being drawn.
+   * @param parentPath - the listed parent directory's exact tree key.
    * @param path - absolute directory path.
    * @param expanded - current expansion preferences, including descendants to restore.
    * @param signal - the tab record's lifetime.
    */
-  readonly toggle: (tabId: TabId, path: string, expanded: readonly string[], signal: AbortSignal) => void
+  readonly toggle: (tabId: TabId, parentPath: string, path: string, expanded: readonly string[], signal: AbortSignal) => void
 }
 
 /**
@@ -195,14 +198,14 @@ export function filesFace(
           (path, lifetime) => load(tabId, path, lifetime),
           (path, lifetime) => watch(sessionId, path, lifetime),
           (path, error) => {
-            if (!signal.aborted) actions.failed(tabId, path, new RemoteError('gateway/internal', String(error), {}))
+            if (!signal.aborted) actions.failed(tabId, path, new RemoteError('gateway/internal', error instanceof Error ? error.message : String(error), {}))
           }, signal,
         ).open())
       },
       load: (tabId, path, signal) => { void load(tabId, path, signal) },
-      toggle(tabId, path, expanded, signal) {
+      toggle(tabId, parentPath, path, expanded, signal) {
         if (signal.aborted) return
-        const parent = roots.get(tabId)?.find(path.slice(0, path.lastIndexOf('/')))
+        const parent = roots.get(tabId)?.find(parentPath)
         if (parent === undefined) return
         if (expanded.includes(path)) void parent.collapse(path)
         else parent.expand(path, expanded)

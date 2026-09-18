@@ -2699,7 +2699,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Content and viewing inputs shared by document bodies and nested PDF presentation. */\nexport interface DocumentBodyOwner {\n  readonly addResource: (address: string) => void\n  readonly setResources: (addresses: readonly string[]) => void\n  /** Original file address, also readable through the standard useResource hook. */\n  readonly resourceAddress: string\n  /** Ordinary file content or a renderer-owned loading request; text accumulates until eof. */\n  readonly content: DocumentContent\n  /** The document toolbar\'s current wrapping preference. */\n  readonly wrap: boolean\n  /** Report a renderer-owned scrollport; passing `null` restores the shared body as the owner. */\n  readonly scrollportRef: RefCallback<HTMLElement>\n}',
+      '/** Content and viewing inputs shared by document bodies and nested PDF presentation. */\nexport interface DocumentBodyOwner {\n  /** Observe a file read by this renderer. @param address - complete file resource address. */\n  readonly addResource: (address: string) => void\n  /** Replace this renderer\'s dependencies. @param addresses - complete file resource addresses. */\n  readonly setResources: (addresses: readonly string[]) => void\n  /** Original file address, also readable through the standard useResource hook. */\n  readonly resourceAddress: string\n  /** Ordinary file content or a renderer-owned loading request; text accumulates until eof. */\n  readonly content: DocumentContent\n  /** The document toolbar\'s current wrapping preference. */\n  readonly wrap: boolean\n  /** Report a renderer-owned scrollport; passing `null` restores the shared body as the owner. */\n  readonly scrollportRef: RefCallback<HTMLElement>\n}',
     ],
     ownerPropsReferences: [
       'DocumentContent',
@@ -2736,7 +2736,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:47',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:51',
   },
   {
     key: 'sidebar.right.tab.document.action',
@@ -2753,7 +2753,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/**\n * Ordinary file contents, or a request for the selected renderer to load its content.\n * Byte arrays are transient UI input, never persisted layout or Session data.\n */\nexport type DocumentContent =\n  | { readonly kind: \'text\'; readonly text: string; readonly pages: readonly DocumentTextPage[]; readonly eof: boolean }\n  | { readonly kind: \'bytes\'; readonly data: Uint8Array<ArrayBuffer> }\n  | {\n    readonly kind: \'renderer\'\n    /** Changes on reload or implementation replacement; retained contents belong to one revision. */\n    readonly revision: number\n    /** Report the displayed source version; stale revisions cannot update the owner. @param version - loaded source version. */\n    readonly loaded: (version: string) => void\n    /** Cancel the current load and start a new revision. */\n    readonly reload: () => void\n  }',
+      '/**\n * Ordinary file contents, or a request for the selected renderer to load its content.\n * Byte arrays are transient UI input, never persisted layout or Session data.\n */\nexport type DocumentContent =\n  | { readonly kind: \'text\'; readonly text: string; readonly pages: readonly DocumentTextPage[]; readonly eof: boolean }\n  | { readonly kind: \'bytes\'; readonly data: Uint8Array<ArrayBuffer> }\n  | {\n    readonly kind: \'renderer\'\n    /** Changes on reload or implementation replacement; retained contents belong to one revision. */\n    readonly revision: number\n    /** Report the displayed source version; stale revisions cannot update the owner. @param version - loaded source version. */\n    readonly loaded: (version: string) => void\n    /** End a failed load; a later file change can start another revision. */\n    readonly failed: () => void\n    /** Cancel the current load and start a new revision. */\n    readonly reload: () => void\n  }',
     ],
     ownerPropsReferences: [
       'DocumentTextPage',
@@ -2784,7 +2784,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document.action\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document.action\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:83',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:87',
   },
   {
     key: 'sidebar.right.tab.document.actions',
@@ -2840,7 +2840,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document.actions\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document.actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:62',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:66',
   },
   {
     key: 'sidebar.right.tab.document.office.pdf',
@@ -2857,7 +2857,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Content and viewing inputs shared by document bodies and nested PDF presentation. */\nexport interface DocumentBodyOwner {\n  readonly addResource: (address: string) => void\n  readonly setResources: (addresses: readonly string[]) => void\n  /** Original file address, also readable through the standard useResource hook. */\n  readonly resourceAddress: string\n  /** Ordinary file content or a renderer-owned loading request; text accumulates until eof. */\n  readonly content: DocumentContent\n  /** The document toolbar\'s current wrapping preference. */\n  readonly wrap: boolean\n  /** Report a renderer-owned scrollport; passing `null` restores the shared body as the owner. */\n  readonly scrollportRef: RefCallback<HTMLElement>\n}',
+      '/** Content and viewing inputs shared by document bodies and nested PDF presentation. */\nexport interface DocumentBodyOwner {\n  /** Observe a file read by this renderer. @param address - complete file resource address. */\n  readonly addResource: (address: string) => void\n  /** Replace this renderer\'s dependencies. @param addresses - complete file resource addresses. */\n  readonly setResources: (addresses: readonly string[]) => void\n  /** Original file address, also readable through the standard useResource hook. */\n  readonly resourceAddress: string\n  /** Ordinary file content or a renderer-owned loading request; text accumulates until eof. */\n  readonly content: DocumentContent\n  /** The document toolbar\'s current wrapping preference. */\n  readonly wrap: boolean\n  /** Report a renderer-owned scrollport; passing `null` restores the shared body as the owner. */\n  readonly scrollportRef: RefCallback<HTMLElement>\n}',
     ],
     ownerPropsReferences: [
       'DocumentContent',
@@ -2944,7 +2944,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document.unpreviewable\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document.unpreviewable\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:74',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:78',
   },
   {
     key: 'sidebar.right.tab.guide',

@@ -68,8 +68,16 @@ describe('HtmlBody', () => {
     })
     const root = createSnapshotStore(metadata('root-v1'))
     const dependency = createSnapshotStore(metadata('asset-v1'))
+    const release = vi.fn()
+    const dependencySource = {
+      getSnapshot: () => dependency.getSnapshot(),
+      subscribe: (listener: () => void) => {
+        const off = dependency.subscribe(listener)
+        return () => { off(); release() }
+      },
+    }
     const resources: Resources = {
-      source: address => address === ADDRESS ? root : dependency,
+      source: address => address === ADDRESS ? root : dependencySource,
       register: () => () => {}, pin: () => {},
     }
     const face = textFace(h.read, h.bytes, resources)(SESSION, h.instance.actions)
@@ -82,10 +90,12 @@ describe('HtmlBody', () => {
       data: btoa(extension === 'css' ? 'body { color: red }' : 'window.loaded = true'),
     } })
     const definition = { ...htmlBodyDefinition(() => 'HTML'), extensions: ['md'] }
-    const view = render(<TextPreview {...previewProps} {...face}
+    let interactive = true
+    const preview = () => <TextPreview {...previewProps} {...face}
       useDocumentPreviews={select => select([definition])}
       renderSlot={documentSlots((_key, owner) => <HtmlBody {...htmlProps} {...owner as unknown as DocumentBodyOwner}
-        useTabInfo={previewProps.useTabInfo} readRelated={readRelated} />)} />)
+        useTabInfo={previewProps.useTabInfo} useInteractivePreview={select => select(interactive)} readRelated={readRelated} />)} />
+    const view = render(preview())
     await waitFor(() => {
       expect(screen.getByTitle(en.frame)).toBeDefined()
       expect(h.instance.getSnapshot().byTab[TAB_ID]).toMatchObject({ loading: false, resourcesDirty: false })
@@ -93,6 +103,9 @@ describe('HtmlBody', () => {
     const previous = screen.getByTitle(en.frame)
     const reads = h.bytes.mock.calls.length
     const relatedReads = readRelated.mock.calls.length
+    expect(reads).toBe(1)
+    expect(relatedReads).toBe(1)
+    expect(create).toHaveBeenCalledOnce()
     readRelated.mockResolvedValueOnce({ ok: true, value: {
       absolutePath: `/workspace/asset.${extension}`, version: 'asset-v2', offset: 0, eof: true,
       data: btoa(extension === 'css' ? 'body { color: blue }' : 'window.loaded = false'),
@@ -103,6 +116,18 @@ describe('HtmlBody', () => {
     expect(readRelated).toHaveBeenCalledTimes(relatedReads + 1)
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.version).toBe('root-v1')
     expect(h.read).not.toHaveBeenCalled()
+    interactive = false
+    view.rerender(preview())
+    const staticFrame = screen.getByTitle(en.frame)
+    expect(staticFrame.getAttribute('sandbox')).toBe('')
+    expect(release).toHaveBeenCalledOnce()
+    act(() => { dependency.set(metadata('asset-v3')) })
+    expect(screen.getByTitle(en.frame)).toBe(staticFrame)
+    expect(h.bytes).toHaveBeenCalledTimes(reads + 1)
+    expect(readRelated).toHaveBeenCalledTimes(relatedReads + 1)
+    act(() => { root.set(metadata('root-v2')) })
+    await waitFor(() => { expect(h.bytes).toHaveBeenCalledTimes(reads + 2) })
+    expect(readRelated).toHaveBeenCalledTimes(relatedReads + 1)
     view.unmount()
   })
 

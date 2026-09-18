@@ -7,8 +7,7 @@
  * file opens through the owner's `tabActions` for a `file:` viewer to claim, and
  * anything else is shown but refuses to open. The header row is the text
  * preview's: the root's path, directories greyed and the last segment in full
- * ink, then the one control at its end, reload, which drops every listed level
- * and asks again for the expanded ones.
+ * ink, then reload, which refreshes the expanded directories in place.
  */
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { ReactNode, RefObject } from 'react'
@@ -104,7 +103,7 @@ function usePathClipped(
 /** What every level shares: the tab's tree and the two gestures. */
 interface TreeContext {
   readonly state: FilesTabState
-  readonly onToggle: (path: string) => void
+  readonly onToggle: (parent: string, path: string) => void
   readonly onOpen: (path: string) => void
   readonly t: TranslateNS<'sidebarFiles'>
 }
@@ -116,7 +115,7 @@ function Entry({ parent, entry, tree }: { parent: string; entry: WorkspaceDirect
     const expanded = tree.state.expanded.includes(path)
     return (
       <li className={css.item} data-files-entry="directory" data-files-path={path}>
-        <button type="button" className={css.row} aria-expanded={expanded} onClick={() => { tree.onToggle(path) }}>
+        <button type="button" className={css.row} aria-expanded={expanded} onClick={() => { tree.onToggle(parent, path) }}>
           {expanded ? <IconFolderOpenRegular className={css.icon} /> : <IconFolderCloseRegular className={css.icon} />}
           <span className={css.name}>{entry.name}</span>
         </button>
@@ -215,13 +214,11 @@ export function FilesBody({
   if (state === undefined) return null
   const tree: TreeContext = {
     state,
-    onToggle: (path) => { toggle(tab.id, path, state.expanded, signal) },
+    onToggle: (parent, path) => { toggle(tab.id, parent, path, state.expanded, signal) },
     // Every row is under the tree's root, so its address is session-relative.
     onOpen: (path) => { tabActions.openResource(fileAddressFor(sessionId, state.root, path)) },
     t,
   }
-  // Reload drops every level and asks again for the expanded ones; a collapsed
-  // level is fetched again the next time it opens.
   const reload = (): void => {
     refresh(tab.id)
   }

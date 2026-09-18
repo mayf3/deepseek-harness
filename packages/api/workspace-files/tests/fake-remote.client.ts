@@ -6,7 +6,7 @@
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkspaceFileWatchFrame, WorkspaceFileStat, WorkspaceWatchRequest } from '../src/types.ts'
+import type { WorkspaceFileWatchFrame, WorkspaceFileStat } from '../src/types.ts'
 import type { SupervisedStream, SupervisedStreamOptions, WorkspaceFilesRemote } from '../src/client/remote.ts'
 
 /** One scripted Host `changes` generation: frames pushed by the spec, ended by abort. */
@@ -87,7 +87,6 @@ export interface PendingStat {
 interface OpenedWatch {
   readonly sessionId: SessionId
   readonly path: string
-  readonly kind: WorkspaceWatchRequest['kind']
   readonly source: Source<WorkspaceFileWatchFrame>
 }
 
@@ -226,11 +225,11 @@ export class FakeRemote implements WorkspaceFilesRemote {
         this.statWaiters.delete(index)
         if (this.closed) resolve(this.closedStat())
       }),
-    changes: (sessionId: SessionId, request: WorkspaceWatchRequest, signal?: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame> => {
+    changes: (sessionId: SessionId, path: string, signal?: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame> => {
       this.calls.push('changes')
       if (signal === undefined) throw new Error('the feed must hand its signal to the Host stream')
       const source = new Source<WorkspaceFileWatchFrame>(signal)
-      const watch = { sessionId, path: request.path, kind: request.kind, source }
+      const watch = { sessionId, path, source }
       const index = this.opened.length
       this.opened.push(watch)
       for (const waiter of this.watchWaiters.get(index) ?? []) waiter(watch)

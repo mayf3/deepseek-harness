@@ -3,9 +3,8 @@
  *
  * Two sources meet here. The standard `useResource` hook gives the file's
  * metadata — its version — and this type's
- * own store holds the content it read through its face. A Host-reported change is
- * announced, not applied: reloading under a reader would lose their place, so
- * the bar waits for a click. A failed metadata frame — the file gone, its
+ * own store holds the content it read through its face. Metadata changes reload
+ * the current preview while automatic refresh is enabled. A failed metadata frame — the file gone, its
  * workspace unknown — takes the same bar's place over the pages already loaded,
  * with the same reload. The type's controls, viewer choice, wrap and reload, sit at the end of
  * the path row; the Sidebar's strip carries none of them.
@@ -224,6 +223,7 @@ export function TextPreview({
       if (current === undefined) return undefined
       const revision = current.loadRevision
       return { kind: 'renderer', revision, reload: rendererReload,
+        failed: () => { actions.rendererFailed(tab.id, revision) },
         loaded: (version) => { actions.rendered(tab.id, revision, version) } }
     }
     if (mode === 'bytes-complete') {

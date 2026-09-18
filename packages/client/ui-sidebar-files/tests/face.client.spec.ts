@@ -30,6 +30,19 @@ function mount() {
 }
 
 describe('filesFace', () => {
+  it.each(['/', 'C:/', 'C:\\', '/work/app/'])('expands a child of the exact root key %s', async (root) => {
+    const h = mount()
+    const child = childPath(root, 'src')
+    h.face.start(TAB, root, h.controller.signal)
+    await h.watches.ready(root)
+    await h.settle({ ok: true, value: LEVEL })
+    h.face.toggle(TAB, root, child, [root], h.controller.signal)
+    const stream = await h.watches.ready(child)
+    expect(h.snapshot()?.expanded).toEqual([root, child])
+    expect(h.list).toHaveBeenLastCalledWith(SESSION, child, stream.signal)
+    await h.settle({ ok: true, value: { entries: [], truncated: false } })
+  })
+
   it('subscribes to the root before listing it and waits for ready', async () => {
     const { face, list, watches, settle, snapshot, controller } = mount()
     face.start(TAB, ROOT, controller.signal)
@@ -61,19 +74,19 @@ describe('filesFace', () => {
     face.start(TAB, ROOT, signal)
     const rootStream = await watches.ready(ROOT)
     await settle({ ok: true, value: LEVEL })
-    face.toggle(TAB, child, [ROOT], signal)
+    face.toggle(TAB, ROOT, child, [ROOT], signal)
     expect(snapshot()!.expanded).toEqual([ROOT, child])
     expect(list).toHaveBeenCalledTimes(1)
     const childStream = await watches.ready(child)
     expect(list).toHaveBeenLastCalledWith(SESSION, child, childStream.signal)
     await settle({ ok: true, value: LEVEL })
-    face.toggle(TAB, child, [ROOT, child], signal)
+    face.toggle(TAB, ROOT, child, [ROOT, child], signal)
     expect(childStream.signal.aborted).toBe(true)
     await childStream.released.promise
     expect(rootStream.signal.aborted).toBe(false)
     expect(snapshot()!.expanded).toEqual([ROOT])
     expect(list).toHaveBeenCalledTimes(2)
-    face.toggle(TAB, child, [ROOT], signal)
+    face.toggle(TAB, ROOT, child, [ROOT], signal)
     expect(snapshot()!.levels[child]).toEqual({ kind: 'ready', level: LEVEL })
     expect(list).toHaveBeenCalledTimes(2)
     const reopened = await watches.ready(child, 1)
@@ -121,18 +134,18 @@ describe('filesFace', () => {
     const stream = await h.watches.ready(ROOT)
     await h.settle({ ok: true, value: LEVEL })
     const before = h.snapshot()
-    h.face.toggle(TAB, `${ROOT}/src/nested`, [ROOT], h.controller.signal)
+    h.face.toggle(TAB, `${ROOT}/src`, `${ROOT}/src/nested`, [ROOT], h.controller.signal)
     expect(h.snapshot()).toBe(before)
     expect(h.watches.opened.map(watch => watch.path)).toEqual([ROOT])
     h.controller.abort()
     await stream.released.promise
-    h.face.toggle(TAB, `${ROOT}/src`, [ROOT], h.controller.signal)
+    h.face.toggle(TAB, ROOT, `${ROOT}/src`, [ROOT], h.controller.signal)
     expect(h.snapshot()).toBeUndefined()
     expect(h.list).toHaveBeenCalledTimes(1)
     expect(h.watches.opened).toHaveLength(1)
   })
 
-  it('records a watch failure beside the fallback directory listing', async () => {
+  it.each([new Error('watch disconnected'), 'watch disconnected'])('records a watch failure without an Error prefix: %s', async (failure) => {
     const h = mount()
     const reported = Promise.withResolvers<undefined>()
     const unsubscribe = h.instance.subscribe(() => {
@@ -142,13 +155,13 @@ describe('filesFace', () => {
     onTestFinished(unsubscribe)
     h.face.start(TAB, ROOT, h.controller.signal)
     const stream = await h.watches.forPath(ROOT)
-    stream.fail(new Error('watch disconnected'))
+    stream.fail(failure)
     expect((await h.waitForList(0)).path).toBe(ROOT)
     await h.settle({ ok: true, value: LEVEL })
     await reported.promise
     expect(h.snapshot()!.levels[ROOT]).toMatchObject({
       kind: 'ready', level: LEVEL,
-      failure: { code: 'gateway/internal', message: 'Error: watch disconnected' },
+      failure: { code: 'gateway/internal', message: 'watch disconnected' },
     })
     await stream.released.promise
   })
@@ -197,7 +210,7 @@ describe('filesFace', () => {
     face.start(TAB, ROOT, controller.signal)
     await watches.ready(ROOT)
     await settle({ ok: true, value: LEVEL })
-    face.toggle(TAB, child, snapshot()!.expanded, controller.signal)
+    face.toggle(TAB, ROOT, child, snapshot()!.expanded, controller.signal)
     await watches.ready(child)
     await settle({ ok: true, value: LEVEL })
     actions.loaded(TAB, collapsed, LEVEL)
