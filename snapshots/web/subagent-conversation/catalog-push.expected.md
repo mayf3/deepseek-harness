@@ -1,3 +1,1 @@
-- button "2 subagents":
-  - text: 2 subagents
-  - img
+- button "2 subagents"
