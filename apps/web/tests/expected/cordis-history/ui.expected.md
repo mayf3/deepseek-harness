@@ -16,7 +16,7 @@
 - button "3 tool calls" [expanded]
 - button "Context injection @deepseek-ai/dsh-system-prompt"
 - button "Think I will inspect the current Session's dynamic Cordis Plugins before defining the snapshot Package."
-- 'button "Tool call cordis_inspect_self · {}"'
+- button "Inspect plugins 0 dynamic plugins"
 - button "Think No dynamic Plugins are present, so I will define the requested Host and Client Package."
 - button "Register Cordis Plugin snapshot noop does nothing, for the snapshot Ready" [expanded]
 - tablist "Plugin source":

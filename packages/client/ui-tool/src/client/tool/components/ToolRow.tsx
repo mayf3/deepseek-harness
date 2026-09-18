@@ -24,6 +24,7 @@ import {
 } from '../models/tool-call-model.ts'
 import type { WebCardModelProps } from '../models/web-card-model.ts'
 import { AskQuestionCard } from './AskQuestionCard.tsx'
+import { ToolDetails, type ToolDetailsModel } from './ToolDetails.tsx'
 import css from './ToolRow.module.css'
 
 export interface ToolRowProps {
@@ -71,6 +72,8 @@ export interface ToolRowProps {
   loadImage?: MessageImageLoader | undefined
   search?: SearchCardModel | null | undefined
   web?: WebCardModelProps | null | undefined
+  /** Read-only fields/list card derived from a successful recorded result. */
+  details?: ToolDetailsModel | null | undefined
   state: ToolRowState
   /**
    * Filesystem path from tool args; when set with onOpenFile, the summary
@@ -118,6 +121,7 @@ export function ToolRow({
   loadImage,
   search,
   web,
+  details,
   state,
   filePath,
   filePathLine,
@@ -141,9 +145,10 @@ export function ToolRow({
   const searchBody = search ?? null
   const webBody = web ?? null
   const askQuestionBody = askQuestion ?? null
+  const detailsBody = details ?? null
   const inputRaw = bodyRaw ?? null
   const outputText = output ?? null
-  const card = askQuestionBody ?? terminalBody ?? diffBody ?? readBody ?? imageBody ?? searchBody ?? webBody
+  const card = askQuestionBody ?? terminalBody ?? diffBody ?? readBody ?? imageBody ?? searchBody ?? webBody ?? detailsBody
   const expandable = inputRaw !== null || outputText !== null || card !== null
   const open = expanded && expandable
   const bodyText = useMemo(
@@ -151,7 +156,7 @@ export function ToolRow({
     [card, inputRaw, open, variant],
   )
   const status = stateStatus(state, t)
-  const normalSummary = terminalBody?.description ?? summary
+  const normalSummary = terminalBody?.description ?? (open ? detailsBody?.expandedSummary ?? summary : summary)
   // A failure keeps its first result line when available and otherwise turns
   // the ordinary summary red. An interruption turns the tool-owned summary
   // amber while retaining the business icon and hidden state announcement.
@@ -233,7 +238,7 @@ export function ToolRow({
           </>
         )}
       >
-        <div className={css.bodyWrap}>
+        <div className={clsx(css.bodyWrap, detailsBody !== null && css.detailsBodyWrap)}>
           {askQuestionBody !== null
             ? <AskQuestionCard card={askQuestionBody} />
             : terminalBody !== null
@@ -287,36 +292,38 @@ export function ToolRow({
                       )
                       : webBody !== null
                         ? <WebBlock {...webBody} labels={webLabels} className={css.webBody} />
-                        : (
-                          <>
-                            {variant === 'code' && bodyText !== null && (
-                              <div className={css.bodyScroll}>
-                                <CodeBlock code={bodyText} lang="typescript" copyLabel={t('copy')} copiedLabel={t('copied')} className={css.codeBody} />
-                              </div>
-                            )}
-                            {(cardBody !== null || outputText !== null) && (
-                              <div className={css.ioCard}>
-                                {cardBody !== null && (
-                                  <div className={css.ioSection}>
-                                    <span className={css.ioLabel}>{t('row.input')}</span>
-                                    <span className={css.ioText}>{cardBody}</span>
-                                  </div>
-                                )}
-                                {cardBody !== null && outputText !== null && (
-                                  <span className={css.ioDivider} aria-hidden />
-                                )}
-                                {outputText !== null && (
-                                  <div className={css.ioSection}>
-                                    <span className={css.ioLabel}>{t('row.output')}</span>
-                                    <span className={css.ioText} data-error={state === 'error' || undefined}>
-                                      {outputText}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </>
-                        )}
+                        : detailsBody !== null
+                          ? <ToolDetails model={detailsBody} hasInspect={inspect !== undefined} t={t} onOpenFile={onOpenFile} />
+                          : (
+                            <>
+                              {variant === 'code' && bodyText !== null && (
+                                <div className={css.bodyScroll}>
+                                  <CodeBlock code={bodyText} lang="typescript" copyLabel={t('copy')} copiedLabel={t('copied')} className={css.codeBody} />
+                                </div>
+                              )}
+                              {(cardBody !== null || outputText !== null) && (
+                                <div className={css.ioCard}>
+                                  {cardBody !== null && (
+                                    <div className={css.ioSection}>
+                                      <span className={css.ioLabel}>{t('row.input')}</span>
+                                      <span className={css.ioText}>{cardBody}</span>
+                                    </div>
+                                  )}
+                                  {cardBody !== null && outputText !== null && (
+                                    <span className={css.ioDivider} aria-hidden />
+                                  )}
+                                  {outputText !== null && (
+                                    <div className={css.ioSection}>
+                                      <span className={css.ioLabel}>{t('row.output')}</span>
+                                      <span className={css.ioText} data-error={state === 'error' || undefined}>
+                                        {outputText}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          )}
           {inspect !== undefined && (
             <button
               type="button"

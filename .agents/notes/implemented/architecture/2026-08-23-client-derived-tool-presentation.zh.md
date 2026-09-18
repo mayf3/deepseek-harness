@@ -22,7 +22,7 @@ Host presenter 与 Client keyed renderer 分担展示会形成对同一事件的
 
 ## Decision
 
-下述展示对等要求不包含已独立批准的[嵌套 terminal 卡片修复](../bug-fix/2026-09-05-nested-terminal-cards.zh.md)；其他展示与所有权约束全部保留。
+下述展示对等要求不包含已独立批准的[嵌套 terminal 卡片修复](../bug-fix/2026-09-05-nested-terminal-cards.zh.md)和[紧凑工具详情](2026-09-10-compact-tool-details.zh.md)；其他展示与所有权约束全部保留。
 
 Session Remote journal 只下发原始、已验证、可持久化的 Session event。`session.page` 和 `session.follow` 不解析工具参数，不查询 Tools registry，不恢复 presenter scope，不执行 `presentCall`／`presentResult`，也不构造或克隆任何 tool view。
 
@@ -51,7 +51,7 @@ Host 的 `ToolDefinition.presentCall`、`ToolDefinition.presentResult`、`ToolCa
 | 保留 | Session 日志格式、Remote journal 生命周期与 Conversation identity/topology |
 | 保留 | 现有 keyed slot、Generic fallback、Chat、Details 与 Trajectory 结构 |
 | 禁止 | 新 Client presenter service、平行 registry 或 wire renderer id |
-| 禁止 | 新卡片、视觉改版、交互改版或 PTC dispatch rich-card 增强，[嵌套 terminal 卡片例外](../bug-fix/2026-09-05-nested-terminal-cards.zh.md)除外 |
+| 禁止 | 新卡片、视觉改版、交互改版或 PTC dispatch rich-card 增强，[嵌套 terminal 卡片例外](../bug-fix/2026-09-05-nested-terminal-cards.zh.md)和[紧凑工具详情](2026-09-10-compact-tool-details.zh.md)除外 |
 | 禁止 | 为兼容保留双写、版本协商或旧 `view` 字段 |
 
 ## 术语

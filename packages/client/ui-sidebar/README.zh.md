@@ -45,7 +45,7 @@ dsh Web 客户端的侧边栏让用户识别当前构建、启动新会话、将
 
 ### macOS 桌面
 
-在 `html[data-platform='darwin']`（仅由桌面 preload 设置）下，展开的侧边栏列顶部有一条 52px 的顶部条：避开 hiddenInset 红绿灯、承载收起按钮，并作为窗口拖拽区；收起时整列隐藏而非保留轨道。本包向会话头部的 `conversation.session.header.leading` 座注册 `HeaderLeadingControls`——打开侧边栏与 New Session 两个控件，纯由 CSS 依据 AppFrame 发布的 `data-sidebar-collapsed` 属性仅在列隐藏时显示。设计依据与窗口集成约定见 [macOS 隐藏标题栏 Agent Note](../../../.agents/notes/implemented/feature/2026-09-13-macos-hidden-titlebar-vibrancy.zh.md)。
+在 `html[data-platform='darwin']`（仅由桌面 preload 设置）下，展开的侧边栏列顶部有一条 52px 的顶部条：避开 hiddenInset 红绿灯、承载收起按钮，并作为窗口拖拽区；收起时整列隐藏而非保留轨道。未选中会话时，常驻头部仍保持挂载。本包向会话头部的根作用域 `conversation.header.leading` 座注册 `HeaderLeadingControls`——打开侧边栏与 New Session 两个控件，纯由 CSS 依据 AppFrame 发布的 `data-sidebar-collapsed` 属性仅在列隐藏时显示。设计依据与窗口集成约定见 [macOS 隐藏标题栏 Agent Note](../../../.agents/notes/implemented/feature/2026-09-13-macos-hidden-titlebar-vibrancy.zh.md)。
 
 ### 滚动条
 
