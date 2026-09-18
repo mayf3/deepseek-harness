@@ -529,7 +529,8 @@ export function scrubModelRequestBulk(rawLog: string): string {
 /**
  * Project a persisted session log while tokenizing prompt text and schema
  * bulk. Each non-empty line is parsed at most once; the session header stays
- * byte-identical. Body records omit their persistence-only envelopes.
+ * byte-identical. Body records omit their persistence-only envelopes and expand
+ * source-event ranges without changing reference order.
  *
  * @param rawLog - persisted or already-projected session JSONL.
  * @returns committed snapshot JSONL with prompt text and tool schemas tokenized.
@@ -545,6 +546,9 @@ export function scrubSessionSnapshot(rawLog: string): string {
       return line
     }
     omitFixtureEnvelope(record)
+    if (Object.hasOwn(record, 'sourceEventSeqs')) {
+      record.sourceEventSeqs = decodeSeqRanges(record.sourceEventSeqs)
+    }
     normalizeFeedbackClocks(record)
     return JSON.stringify(record)
   }).join('\n')
