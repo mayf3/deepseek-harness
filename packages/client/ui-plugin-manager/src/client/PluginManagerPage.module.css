@@ -660,13 +660,6 @@ label.registryOption {
   accent-color: var(--dsw-alias-brand-primary);
 }
 
-.registryMain {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
 .registryTitle {
   display: flex;
   flex-wrap: wrap;
@@ -711,15 +704,6 @@ label.registryOption {
 .registryOption > .inputError,
 .registryOption > .registryHint {
   margin-left: 26px;
-}
-
-.registryNote {
-  margin: 4px 0 0;
-  padding: 8px 10px 0;
-  border-top: 0.5px solid var(--dsw-alias-border-l4);
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-secondary);
 }
 
 /* What the check refused, under the field. */

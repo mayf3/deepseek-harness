@@ -18,32 +18,27 @@ const BUILTIN_COPY = new Map<string, { title: PluginManagerLocaleKey; descriptio
   }],
 ])
 
-/** The registries with copy of their own, by host: a name and the line under it. */
-const REGISTRY_COPY = new Map<string, { title: PluginManagerLocaleKey; hint: PluginManagerLocaleKey }>([
-  ['registry.npmmirror.com', { title: 'registryNpmmirror', hint: 'registryNpmmirrorHint' }],
+/** The registries with a name of their own, by host. */
+const REGISTRY_COPY = new Map<string, PluginManagerLocaleKey>([
+  ['registry.npmmirror.com', 'registryNpmmirror'],
 ])
 
 /** npm's own registry, which pnpm names without any configuration. */
 const OFFICIAL_NPM_HOST = 'registry.npmjs.org'
 
 /**
- * What a registry reads as: pnpm's own as the official registry while that is what it names, else by the host it
- * names; a known mirror by its name; any other registry by its host.
+ * What a registry reads as: pnpm's own as the default registry with the host it names; a known mirror by its name;
+ * any other registry by its host.
  * @param registry - the registry, null for the one pnpm's own configuration names.
  * @param t - the manager's translate seat.
- * @param resolved - the URL pnpm's own configuration names, null while unknown.
- * @returns the title and the line under it.
+ * @param resolved - the URL pnpm's own configuration names, null while unknown, when it reads as npm's own.
+ * @returns the title.
  */
-export function registryText(registry: Registry, t: Translate, resolved: string | null): { title: string; hint: string } {
-  if (registry === null) {
-    // Unknown, or npm's own: the official registry. Anything else pnpm names reads by its host.
-    if (resolved === null || registryHost(resolved) === OFFICIAL_NPM_HOST) return { title: t('registryOfficial'), hint: t('registryOfficialHint') }
-    return { title: registryHost(resolved), hint: t('registryOwnHint', { url: resolved }) }
-  }
+export function registryText(registry: Registry, t: Translate, resolved: string | null): string {
+  if (registry === null) return t('registryDefault', { host: resolved === null ? OFFICIAL_NPM_HOST : registryHost(resolved) })
   const host = registryHost(registry)
-  const keys = REGISTRY_COPY.get(host)
-  if (keys === undefined) return { title: host, hint: registry }
-  return { title: t(keys.title), hint: t(keys.hint) }
+  const key = REGISTRY_COPY.get(host)
+  return key === undefined ? host : t(key)
 }
 
 /** The host of a registry URL; the URL as written when it does not parse. */

@@ -11,8 +11,7 @@
 
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { PluginInstallFailureKind, PluginRegistries, Registry } from '@deepseek-ai/dsh-api-remotes/client'
-import { normalizeRegistry, registryPlan } from '@deepseek-ai/dsh-plugin-manager/registry'
+import type { PluginInstallFailureKind, Registry } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   Button, IconChevronDownOutlineRegular, IconChevronLeftOutlineRegular,
   IconChevronRightOutlineRegular, IconCloseOutlineRegular, IconCordisPluginOutlineRegular,
@@ -568,20 +567,7 @@ const SUBJECT_KIND_KEYS = {
 
 /** The registries asked, as a person reads them, in the dictionary's list form. */
 function registryList(registries: readonly Registry[], t: Translate, resolved: string | null): string {
-  return registries.map(registry => registryText(registry, t, resolved).title).join(t('registryListSeparator'))
-}
-
-/**
- * The registries the Host asks after the chosen one, in order, by the Host's own plan; nothing while the Host has
- * not said what it configured, and nothing for a typed address that is not a URL yet.
- */
-function registriesAfter(choice: RegistryChoice, registries: PluginRegistries | null): Registry[] {
-  if (registries === null) return []
-  try {
-    return registryPlan(choice.kind === 'offered' ? choice.registry : normalizeRegistry(choice.url.trim()), registries).slice(1)
-  } catch {
-    return [] // a registry that is no URL, typed or remembered: the Host would refuse it before planning
-  }
+  return registries.map(registry => registryText(registry, t, resolved)).join(t('registryListSeparator'))
 }
 
 /**
@@ -677,12 +663,7 @@ function InstallDialog({
     const empty = install.spec.trim() === ''
     const choice = install.registry
     const resolved = install.registries?.resolved ?? null
-    // The registry the Host asks first carries the default tag, wherever it is listed.
-    const hostFirst = install.registries?.registry
-    const titleOf = (registry: Registry): string =>
-      registryText(registry, t, resolved).title + (install.registries !== null && registry === hostFirst ? t('registryDefaultTag') : '')
-    const chosenTitle = choice.kind === 'custom' ? t('registryCustom') : titleOf(choice.registry)
-    const after = registriesAfter(choice, install.registries)
+    const chosenTitle = choice.kind === 'custom' ? t('registryCustom') : registryText(choice.registry, t, resolved)
     const inputProblem = install.inputError
     // A check no registry answered names every registry asked; any other refusal reads by its problem.
     const askedByCheck = inputProblem?.registries ?? []
@@ -798,17 +779,11 @@ function InstallDialog({
                 aria-label={t('registryLegend')}
               >
                 {offeredRegistries(install.registries).map((registry) => {
-                  const text = registryText(registry, t, resolved)
                   const checked = choice.kind === 'offered' && choice.registry === registry
                   return (
                     <label key={registry ?? ''} className={css.registryOption} data-checked={checked}>
                       <input type="radio" name={registryId} checked={checked} onChange={() => { onChooseRegistry({ kind: 'offered', registry }) }} />
-                      <span className={css.registryMain}>
-                        <span className={css.registryTitle}>
-                          <span>{titleOf(registry)}</span>
-                        </span>
-                        <span className={css.registryHint}>{text.hint}</span>
-                      </span>
+                      <span className={css.registryTitle}><span>{registryText(registry, t, resolved)}</span></span>
                     </label>
                   )
                 })}
@@ -839,9 +814,6 @@ function InstallDialog({
                     : null}
                   <span className={css.registryHint}>{t('registryCustomHint')}</span>
                 </div>
-                <p className={css.registryNote}>
-                  {after.length === 0 ? t('registryNoFallbackNote') : t('registryFallbackNote', { order: registryList(after, t, resolved) })}
-                </p>
               </fieldset>,
               document.body,
             )
@@ -865,7 +837,7 @@ function InstallDialog({
   const resolved = install.registries?.resolved ?? null
   const attemptLine = pending && asked !== null && current !== undefined && previous !== undefined
     ? t('installAttempt', {
-      previous: registryText(previous, t, resolved).title, registry: registryText(current, t, resolved).title,
+      previous: registryText(previous, t, resolved), registry: registryText(current, t, resolved),
       index: String(asked.registries.length), total: String(asked.total),
     })
     : null
@@ -958,7 +930,7 @@ function InstallDialog({
                     <div key={run.jobId} className={css.run}>
                       {registry === undefined
                         ? null
-                        : <p className={css.attemptBadge}>{t('installAttemptBadge', { index: String(index + 1), registry: registryText(registry, t, resolved).title })}</p>}
+                        : <p className={css.attemptBadge}>{t('installAttemptBadge', { index: String(index + 1), registry: registryText(registry, t, resolved) })}</p>}
                       <TerminalBlock
                         command={run.command}
                         output={run.output}
