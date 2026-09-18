@@ -244,7 +244,8 @@ export class ChangeFeed {
    * so the Host subscription is active, then bind each stat's absolute path. Until binding,
    * any session write can trigger a retry; after binding, only matching queued
    * and live changes pass.
-   * @param sessionId - the session whose workspace holds the file.
+   * @param sessionId - the Session providing the file's read authority.
+   * @param path - requested file path; followers share a stream only for the same Session and path.
    * @param signal - ends the follow.
    * @returns a single-consumer subscription with Host-path binding and explicit disposal.
    */

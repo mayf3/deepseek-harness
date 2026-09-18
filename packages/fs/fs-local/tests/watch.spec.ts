@@ -89,7 +89,7 @@ describe('local filesystem watch', () => {
     const error = new Error('watch failed')
     h.watcher.emit('error', error)
     // EventEmitter callbacks can receive non-Error values from the external watcher.
-    Reflect.apply(h.watcher.emit, h.watcher, ['error', 'watch unavailable'])
+    h.watcher.emit('error', 'watch unavailable')
     expect(h.changed.mock.calls).toEqual([[error], [new Error('watch unavailable')]])
     await close()
     expect(h.watcher.closed).toBe(true)

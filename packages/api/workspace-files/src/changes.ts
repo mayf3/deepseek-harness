@@ -1,10 +1,7 @@
 /**
- * Producer of the `changes` stream: every `fs/observed` emission whose target
- * lies inside a generation's workspace root becomes one frame of that
- * generation. Instrumented filesystem operations emit these observations; the
- * operating system is not watched.
- * Each generation acknowledges its observation queue and resolved workspace
- * root with `ready` before emitting any queued or live changes.
+ * Target-scoped filesystem watches and `fs/observed` invalidations for `changes`.
+ * Each generation sends `ready` after watcher initialization, then reads current
+ * target metadata for matching queued and live invalidations.
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -34,11 +31,11 @@ export class WorkspaceChangeFeed {
   }
 
   /**
-   * Open one generation reporting observations inside `workspaceRoot`.
+   * Open one target watch; directory targets remain inside `workspaceRoot`.
    * @param workspaceRoot - the session's workspace root path.
+   * @param request - file or directory target, resolved relative to the workspace root.
    * @param signal - generation cancellation.
-   * @returns `ready` after observation is active and the root resolves, then
-   *   observations made after the generation was first pulled, in emission order.
+   * @returns `ready` after watching starts, then current metadata for target invalidations.
    */
   async *follow(workspaceRoot: string, request: WorkspaceWatchRequest, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame> {
     signal.throwIfAborted()
@@ -46,6 +43,7 @@ export class WorkspaceChangeFeed {
     // missed; the root only filters at drain time.
     const follower = new ChangeFollower()
     signal = AbortSignal.any([signal, follower.controller.signal])
+    const aborted = (): boolean => signal.aborted
     this.followers.add(follower)
     let unwatch: (() => Promise<void>) | undefined
     try {
@@ -53,15 +51,15 @@ export class WorkspaceChangeFeed {
       // backend releases the follower now rather than when the resolve settles;
       // a rejection the abort caused is the quiet end every other abort takes here.
       const root = await this.ctx.fs.resolve(workspaceRoot, { signal }).catch((error: unknown) => {
-        if (signal.aborted) return undefined
+        if (aborted()) return undefined
         throw error
       })
-      if (root === undefined || signal.aborted || follower.isClosed) return
+      if (root === undefined || aborted() || follower.isClosed) return
       const target = await this.ctx.fs.resolve(request.path, { cwd: workspaceRoot, signal }).catch((error: unknown) => {
-        if (signal.aborted) return undefined
+        if (aborted()) return undefined
         throw error
       })
-      if (target === undefined || signal.aborted) return
+      if (target === undefined || aborted()) return
       if (request.kind === 'directory' && !this.ctx.fs.contains(root, target)) {
         throw new RemoteError('workspace-file/outside-workspace', 'Directory is outside the workspace', { path: request.path })
       }
@@ -72,20 +70,20 @@ export class WorkspaceChangeFeed {
         }, signal)
         if (follower.error !== undefined) throw follower.error
       } catch (error) {
-        if (signal.aborted && follower.error === undefined) return
+        if (aborted() && follower.error === undefined) return
         const failure = follower.error ?? error
         throw new RemoteError('workspace-file/watch-unsupported',
           failure instanceof Error ? failure.message : String(failure), { path: request.path })
       }
-      if (signal.aborted) return
+      if (aborted()) return
       yield { kind: 'ready' }
       for await (const [observed] of follower.read(signal)) {
         if (observed.targetKey !== target.targetKey) continue
         const info = await this.ctx.fs.stat(target, signal).catch((error: unknown) => {
-          if (signal.aborted) return undefined
+          if (aborted()) return undefined
           throw error
         })
-        if (signal.aborted) return
+        if (aborted()) return
         const absolutePath = this.ctx.fs.processPath(target)
         yield {
           kind: 'change',

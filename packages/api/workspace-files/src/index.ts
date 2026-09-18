@@ -353,13 +353,13 @@ export class WorkspaceFiles extends TypertRemoteService {
   }
 
   /**
-   * Stream every `fs/observed` observation of a file inside the Session's
-   * workspace. Only instrumented filesystem operations report here; the OS is
-   * not watched.
+   * Watch one file or a directory's direct entries in the Session's filesystem.
+   * Files use the backend's read authority; directories remain workspace-scoped.
    * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+   * @param request - target path and file or directory watch intent.
    * @param signal - generation cancellation.
-   * @returns `ready` once the Host observation queue is active and the workspace
-   *   root is resolved, then queued and live observations in emission order.
+   * @returns `ready` once the target watch is active, then current metadata for queued and live invalidations.
+   * @throws RemoteError when watching is unavailable or a directory is outside the workspace.
    */
   @Remote({ mode: 'stream' })
   changes(

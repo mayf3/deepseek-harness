@@ -8,7 +8,7 @@ function harness() {
   const state = createSnapshotStore<ResourceSnapshot<WorkspaceFileStat>>({ status: 'loading', value: undefined, failure: undefined })
   const release = vi.fn()
   const source = {
-    getSnapshot: state.getSnapshot,
+    getSnapshot: () => state.getSnapshot(),
     subscribe: (listener: () => void) => {
       const off = state.subscribe(listener)
       return () => { off(); release() }
@@ -18,9 +18,9 @@ function harness() {
   const changed = vi.fn()
   const group = new ResourceGroup(resources, changed)
   onTestFinished(() => { group.close() })
-  const version = (version: string) => state.set({
-    status: 'live', value: { absolutePath: '/style.css', version }, failure: undefined,
-  })
+  const version = (version: string): void => {
+    state.set({ status: 'live', value: { absolutePath: '/style.css', version }, failure: undefined })
+  }
   return { group, changed, version, release }
 }
 

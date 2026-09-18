@@ -20,6 +20,7 @@ export type ReadHtmlRelated = (address: string, relativePath: string, signal: Ab
  * @param readRelated - Remote reader using the Session in the root HTML address.
  * @param address - root HTML file address.
  * @param lifetime - tab lifetime.
+ * @param addResource - subscribes to each dependency before its bytes are read.
  * @returns a reader that strips URL query/fragment, decodes one path, and preserves Host failures.
  */
 export function createReadHtmlRelative(

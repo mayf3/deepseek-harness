@@ -27,11 +27,24 @@ import type { WorkspaceFileWatchFrame } from '@deepseek-ai/dsh-api-workspace-fil
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { DirectoryNode } from './directory-node.ts'
 
+/**
+ * Observe one directory without recursively watching its descendants.
+ * @param sessionId - Session owning the directory tree.
+ * @param path - absolute directory path.
+ * @param signal - node lifetime.
+ * @returns readiness and invalidation notifications.
+ */
 export type WatchWorkspaceDirectory = (sessionId: SessionId, path: string, signal: AbortSignal) => AsyncIterable<'ready' | 'change'>
 
+/**
+ * Bind directory observation to the Remote stream supervisor.
+ * @param remote - Client Remote with workspace file streams.
+ * @returns a watcher that awaits stream disposal when its node ends.
+ */
 export function createWatch(remote: ClientRemote): WatchWorkspaceDirectory {
   return async function* (sessionId, path, signal) {
-    if (signal.aborted) return
+    const aborted = (): boolean => signal.aborted
+    if (aborted()) return
     const stream = remote.$stream<WorkspaceFileWatchFrame>({
       name: `directory ${path}`,
       open: lifetime => remote.workspaceFiles.changes(sessionId, { kind: 'directory', path }, lifetime),
@@ -41,7 +54,7 @@ export function createWatch(remote: ClientRemote): WatchWorkspaceDirectory {
     signal.addEventListener('abort', abort, { once: true })
     try {
       for await (const item of stream) {
-        if (signal.aborted) return
+        if (aborted()) return
         if (item.value.kind === 'ready') item.accept()
         yield item.value.kind
       }
@@ -121,7 +134,7 @@ export interface FilesInjected {
    * Open or collapse one directory, listing it the first time it opens.
    * @param tabId - the tab being drawn.
    * @param path - absolute directory path.
-   * @param loaded - whether this level already has state.
+   * @param expanded - current expansion preferences, including descendants to restore.
    * @param signal - the tab record's lifetime.
    */
   readonly toggle: (tabId: TabId, path: string, expanded: readonly string[], signal: AbortSignal) => void
@@ -130,6 +143,7 @@ export interface FilesInjected {
 /**
  * Bind the tree's face to one directory listing.
  * @param list - the bound `workspaceFiles.list` call.
+ * @param watch - target-scoped directory observation.
  * @returns the Slot `inject` factory: session and bound actions in, face out.
  */
 export function filesFace(
@@ -185,7 +199,7 @@ export function filesFace(
           }, signal,
         ).open())
       },
-      load,
+      load: (tabId, path, signal) => { void load(tabId, path, signal) },
       toggle(tabId, path, expanded, signal) {
         if (signal.aborted) return
         const parent = roots.get(tabId)?.find(path.slice(0, path.lastIndexOf('/')))

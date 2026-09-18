@@ -142,6 +142,7 @@ export type WorkspaceFileWatchFrame =
   | { readonly kind: 'ready' }
   | { readonly kind: 'change'; readonly change: WorkspaceFileChange }
 
+/** One watch target; directory intent restricts observation to the Workspace and direct entries. */
 export interface WorkspaceWatchRequest {
   readonly path: string
   readonly kind: 'file' | 'directory'
