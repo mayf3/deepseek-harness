@@ -22,7 +22,7 @@ Status: implemented
 
 共享 Web 插件管理器负责安装、激活、错误和重启要求。Electron 不提供独立插件管理渲染器、preload、shell 资源路由、插件 IPC 或包变更执行器。打包明确选择主入口和应用 preload，避免旧构建产物重新带入已删除的桥接。
 
-共享 `initProfile` 创建缺失的 profile 文件并保留现有内容。Host 的 `healIsolatedProfileModuleFallback` 是安装包与 bundle 投影的唯一归属方；包操作在 pnpm 前通过共享 `unlinkProfileModuleFallback` 仅分离它自己拥有的链接。pnpm 管理的目录保持优先。Desktop 不维护第二套运行时状态、锁文件哈希或链接协调机制。`desktop-runtime-state.json` 的一次性清理仅移除与记录匹配的链接，并清除该元数据。
+共享 `initProfile` 创建缺失的 profile 文件并保留现有内容。Host 通过 `createProfileResolutionGeneration` 计算安装包与 bundle 的 generation，并通过 `PluginPackages` 安装它，不写入 fallback 链接。pnpm 管理的目录保持优先。Desktop 不维护第二套运行时状态、锁文件哈希或链接协调机制。`desktop-runtime-state.json` 的一次性清理仅移除与记录匹配的链接，并清除该元数据。
 
 本记录部分取代[打包决策](2026-08-25-electron-desktop-packaging-and-updates.zh.md)中的私有组合与无端口传输。该设计避免监听端口，并使用分帧字节管道避免 Base64 膨胀与跨版本 V8 序列化。共享 HTTP 放弃无端口保证，将服务与认证交给已有 Web 实现。发布身份、签名、进程归属及原生壳功能仍是有效决策。
 

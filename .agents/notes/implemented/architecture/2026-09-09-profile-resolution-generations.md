@@ -104,7 +104,7 @@ Replacing, upgrading, or removing an already loaded package requires process res
 
 ### Filesystem and runtime carriers
 
-The resolver does not create, update, or remove fallback symlinks and proxy packages. Existing disk entries have no dedicated recognition, bypass, or cleanup path; entries encountered by ordinary native lookup are treated as ordinary packages. Writable profile state and package-manager transactions remain outside the resolver.
+The resolver does not create, update, or remove fallback symlinks and proxy packages. Runtime lookup skips the shared fallback position under `$DSH_HOME/profiles/node_modules` and ignores profile-owned projections into `.dsh-module-fallback`. Those projections are also excluded from profile-local package metadata and bundle dependency discovery; ordinary pnpm-installed packages retain native precedence. Writable profile state and package-manager transactions remain outside the resolver.
 
 Runtime resolution requires a supported Node Internal loader interface. The Electron Host runs through the Electron executable with `ELECTRON_RUN_AS_NODE=1`; packaged builds read the dsh tree from ASAR and map executable ASAR entries to electron-builder's unpacked tree. Pkg and Electron use the same runtime-generation mechanism as ordinary Node launches.
 

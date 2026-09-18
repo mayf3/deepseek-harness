@@ -27,7 +27,7 @@ wheel 包会安装 `dsh` 控制台命令和 `deepseek_harness_runtime` Python �
 
 ## 打包后的 profile 解析
 
-`dsh` 在显式指定的主目录下初始化随附 profile、组合其 bundle patch，并从可执行程序的虚拟文件系统加载内置插件。操作系统符号链接无法进入该文件系统，因此打包运行会在 `$DSH_HOME/profiles/node_modules` 下维护小型真实 ESM 代理包。每个代理复现运行时的显式导出项、记录原包身份，并重新导出虚拟模块 URL。因此，内置配置项与外部插件 peer 会共享同一个 Cordis／模块实例。原生共享库与 Windows ConPTY addon 会同其他原生 addon 一起打包；ripgrep 与 macOS PTY helper 仍是可执行伴随程序。
+`dsh` 在显式指定的主目录下初始化随附 profile、组合其 bundle patch，并从可执行程序的虚拟文件系统加载内置插件。运行时解析使用内存中的 generation，不创建磁盘符号链接或代理包。fallback 导入使用记录的声明包路径，包括可执行程序虚拟文件系统内的路径，因此内置配置项与外部插件 peer 共享内置的 Cordis／模块实例。原生共享库与 Windows ConPTY addon 会同其他原生 addon 一起打包；ripgrep 与 macOS PTY helper 仍是可执行伴随程序。
 
 Python bootstrap 从相邻目录解析 Office kit，让原生辅助程序与 URL Worker 使用真实文件系统路径。kit 负责引擎选择与校验；Python bootstrap 不增加运行时下载或编译。
 
