@@ -42,7 +42,7 @@ jobs:
   node-24:
     if: github.event_name == 'pull_request'
     runs-on: >-
-      ${{ vars.DSH_CI_FAILOVER_LINUX == 'blacksmith' && 'blacksmith-16vcpu-ubuntu-2404'
+      ${{ vars.DSH_CI_FAILOVER_LINUX == 'blacksmith' && 'blacksmith-8vcpu-ubuntu-2404'
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
@@ -497,8 +497,8 @@ jobs:
   # per-job process count stays lower. Observational checks are non-blocking.
   # Dependabot PRs are excluded from the self-hosted pool and stay queued for
   # the hosted runner.
-  # Blacksmith uses 2 vCPU for file-serial native tests; builds, coverage,
-  # and observational gates retain 16 for their concurrent work.
+  # Blacksmith uses 2 vCPU for file-serial native tests, 8 for observational
+  # gates, and 16 for blocking builds and coverage.
   windows-build:
     if: github.event_name == 'pull_request'
     runs-on: >-
@@ -675,7 +675,7 @@ jobs:
     if: github.event_name == 'pull_request'
     continue-on-error: true
     runs-on: >-
-      ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'blacksmith' && 'blacksmith-16vcpu-windows-2025'
+      ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'blacksmith' && 'blacksmith-8vcpu-windows-2025'
           || vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
