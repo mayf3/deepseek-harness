@@ -108,7 +108,7 @@ Desktop checks configured model API-key references after the Host starts and bef
 
 The welcome window reads the shared `locale.preference` before it appears. An explicit English or Chinese choice wins; otherwise Desktop picks the first supported OS language and falls back to English. The main UI reads the same preference and OS language order through its isolated preload before mounting. Language changes in Settings update the shell’s current dictionary and menu; automatic selection writes no preference. The welcome window has no language selector.
 
-The browser-login waiting page offers a copy-link action for the current pending authorization, a loading indicator, and cancellation. Clipboard failures leave the copy action available for retry.
+The browser-login waiting page offers a copy-link action for the current pending authorization, a loading indicator, and cancellation. Clipboard failures leave the copy action available for retry. Welcome uses the system font without bundled fonts: introductory copy is 24px and the emphasized product name is 26px. Login action buttons are 240px wide with 14px labels. Authorization status headings use 20px regular-weight text. The API-key page uses a 20px heading and a 14px back action, with 84px between the secondary button’s bottom edge and the window bottom.
 
 ### Welcome window appearance
 
