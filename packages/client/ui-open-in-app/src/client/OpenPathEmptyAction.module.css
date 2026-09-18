@@ -21,7 +21,6 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* Pending disables clicks without a restyle; only hover feedback pauses. */
 .open:disabled {
   cursor: default;
 }

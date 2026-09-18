@@ -18,6 +18,7 @@ import { en, NS, zh } from '../src/client/locales.ts'
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.clearAllMocks()
 })
 
 /** The Session Remote slice the path controls call; answers a desktop and acknowledges every gesture. */

@@ -2,7 +2,6 @@
 import type { PropsRuntime, SlotHookFactory } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UseSidebarRightTabInfo } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { RefCallback } from 'react'
-import type { SessionFile } from '../rpc.ts'
 
 /** One loaded text window, retaining source line positions. */
 export interface DocumentTextPage {
@@ -62,9 +61,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       kind: 'list'
       scope: 'session'
       owner: {
-        /** The previewed file: the Session the read runs under and the path handed to the Host. */
-        readonly file: SessionFile
-        /** The file's absolute path on the Host, from its metadata. */
+        /** Absolute path in the file's execution environment; native actions must verify a Host mapping. */
         readonly absolutePath: string
       }
     }
@@ -76,9 +73,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       kind: 'list'
       scope: 'session'
       owner: {
-        /** The previewed file: the Session the read runs under and the path handed to the Host. */
-        readonly file: SessionFile
-        /** The file's absolute path on the Host, from its metadata. */
+        /** Absolute path in the file's execution environment; native actions must verify a Host mapping. */
         readonly absolutePath: string
       }
     }

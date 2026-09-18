@@ -280,7 +280,6 @@ describe('TextPreview — pages', () => {
     expect(view.container.textContent).toContain('error.notText')
     expect(view.container.querySelector('[data-textpreview-retry]')).toBeNull()
     const seat = failed?.querySelector('[data-slot="sidebar.right.tab.document.unpreviewable"]')
-    expect(seat?.getAttribute('data-slot-file')).toBe(PATH)
     expect(seat?.getAttribute('data-slot-path')).toBe(ABSOLUTE_PATH)
     // The header's own handoff seat receives the same file.
     const actions = view.container.querySelector('[data-slot="sidebar.right.tab.document.actions"]')
@@ -303,6 +302,11 @@ describe('TextPreview — pages', () => {
     await settle()
     expect(view.container.querySelector('[data-textpreview-failed]')).not.toBeNull()
     expect(view.container.querySelector('[data-slot]')).toBeNull()
+    h.script(1, page(1, ['reloaded'], true))
+    click(view.container, '[data-textpreview-tool="reload"]')
+    await settle()
+    expect(h.read).toHaveBeenCalledTimes(2)
+    expect(view.container.querySelector('[data-textpreview-failed]')).toBeNull()
   })
 
   it('says why a later page failed on a line under the pages already read', async () => {

@@ -8,7 +8,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { OpenPathAction, type OpenPathActionProps } from '../src/client/OpenPathAction.tsx'
 import { OpenPathEmptyAction, type OpenPathEmptyActionProps } from '../src/client/OpenPathEmptyAction.tsx'
 import type { OpenInAppPathAction, OpenInAppPathFailure } from '../src/client/open-path.ts'
@@ -21,7 +20,6 @@ afterEach(() => {
 })
 
 const t = makeTranslate(zh)
-const FILE = { sessionId: 's-1' as SessionId, path: 'work/clip.mp4' }
 const ABSOLUTE_PATH = '/host/project/work/clip.mp4'
 
 interface Bench {
@@ -39,7 +37,6 @@ function bench(over: { desktop?: boolean | null; openPath?: Bench['openPath'] } 
     return select => select(source.getSnapshot())
   }
   const props = {
-    file: FILE,
     absolutePath: ABSOLUTE_PATH,
     useOpenInAppDesktop: useSelector(desktop),
     loadDesktop,
@@ -129,4 +126,17 @@ describe('OpenPathEmptyAction', () => {
     act(() => { vi.advanceTimersByTime(4_000) })
     expect(screen.queryByRole('alert')).toBeNull()
   })
+})
+
+it('dismisses a failure on schedule even when its owner rerenders', async () => {
+  vi.useFakeTimers()
+  const b = bench({ openPath: vi.fn(async () => 'openError' as const) })
+  const view = render(<OpenPathEmptyAction {...b.props} />)
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.unpreviewable'] })) })
+  act(() => { vi.advanceTimersByTime(2_000) })
+  view.rerender(<OpenPathEmptyAction {...b.props} />)
+  act(() => { vi.advanceTimersByTime(1_999) })
+  expect(screen.getByRole('alert')).toBeTruthy()
+  act(() => { vi.advanceTimersByTime(1) })
+  expect(screen.queryByRole('alert')).toBeNull()
 })

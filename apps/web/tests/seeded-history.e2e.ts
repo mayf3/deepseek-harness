@@ -213,9 +213,10 @@ describe('web e2e: seeded history renders through cold resume', () => {
     // and the SSH marker keeps the application catalog empty so the
     // Session-header split button stays out of every golden.
     scaffold = await launchWebScaffold({
-      extraOverlayPath: fileURLToPath(new URL(process.platform === 'win32'
-        ? './fixtures/native-open-on.patch.yml'
-        : './seeded-history.overlay.yml', import.meta.url)),
+      extraOverlayPath: [
+        ...process.platform === 'win32' ? [] : [fileURLToPath(new URL('./fixtures/sidebar-terminal.patch.yml', import.meta.url))],
+        fileURLToPath(new URL('./fixtures/native-open-on.patch.yml', import.meta.url)),
+      ],
       openInAppEnvironment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { SSH_CONNECTION: '10.0.0.2 55000 10.0.0.9 22' } }]),
     })
     // Composer recording uses a child workspace; seedSession owns the scaffold root.

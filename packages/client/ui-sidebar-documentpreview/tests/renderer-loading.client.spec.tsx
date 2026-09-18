@@ -46,7 +46,7 @@ it('lets a non-Office renderer load content, report its version, and reload thro
     useEffect(() => { if (displayed !== undefined) request?.loaded(displayed.version) }, [displayed, request?.loaded])
     return <p>{displayed?.text ?? 'Loading custom content'}</p>
   }
-  const renderSlot: TextPreviewProps['renderSlot'] = (name, input) => {
+  const renderSlot: TextPreviewProps['renderSlot'] = (name: string, input: unknown) => {
     if (name !== 'sidebar.right.tab.document') return null
     const owner = input as unknown as OwnerOf<'sidebar.right.tab.document'>
     return <CustomBody content={owner.content} />
@@ -101,9 +101,9 @@ function setup() {
   }
   const describeFailure: OfficeBodyProps['describeFailure'] = error => error.message
   let request: Extract<DocumentContent, { kind: 'renderer' }> | undefined
-  const slots: TextPreviewProps['renderSlot'] = (key, input, options) => {
+  const slots: TextPreviewProps['renderSlot'] = (key: string, input: unknown, options?: { hookContext?: unknown }) => {
     if (key === 'sidebar.right.tab.document.action') {
-      return <OfficeFontAction {...{ ...input, useTabInfo: options.hookContext, useStore: useOffice,
+      return <OfficeFontAction {...{ ...input, useTabInfo: options?.hookContext, useStore: useOffice,
         actions: office.actions, t: makeTranslate(en) } as unknown as OfficeFontActionProps} />
     }
     if (key !== 'sidebar.right.tab.document') return null
@@ -111,7 +111,7 @@ function setup() {
     if (owner.content.kind !== 'renderer') return <p>Raw bytes</p>
     request = owner.content
     // The component fixture supplies the standard seats used by Office; the real slot binding is exercised by the browser scenario.
-    const props = { ...h.props(), ...owner, useTabInfo: options.hookContext, useStore: useOffice,
+    const props = { ...h.props(), ...owner, useTabInfo: options?.hookContext, useStore: useOffice,
       actions: office.actions, read, retainTab, describeFailure,
       t: makeTranslate(en), renderSlot: (_name: string, child: { content: DocumentContent }) => (
         <p data-test-pdf>{child.content.kind === 'bytes' ? new TextDecoder().decode(child.content.data) : ''}</p>

@@ -1,6 +1,7 @@
 /** Keyless document-preview smoke through a real Session, Files tab, shipped renderers, and the default-application controls. */
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { nativeFileManager } from '@deepseek-ai/dsh-native-command'
 import { delimiter, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Locator, Page } from 'playwright'
@@ -20,8 +21,8 @@ const PAGE_LINES = 64
 const SHOT_DIR = fileURLToPath(new URL('../../../.artifacts/screenshots/0908-document-preview', import.meta.url))
 const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 const MODE = webSnapshotMode()
-/** The stubbed opener runs as a POSIX script; Windows keeps its real file associations out of the lane. */
-const STUB_OPENER = process.platform !== 'win32'
+/** The stubbed opener runs as a POSIX script; Windows and WSL keep their real file associations out of the lane. */
+const STUB_OPENER = nativeFileManager() !== 'explorer'
 const TINY_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
@@ -99,7 +100,7 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       openLog = join(nativeRoot, 'opened.jsonl')
       await writeFile(openLog, '')
       const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
-      await writeFile(join(nativeRoot, command), `#!${process.execPath}
+      await writeFile(join(nativeRoot, command), `#!/usr/bin/env node
 const fs = require('node:fs');
 const path = process.argv[2] === '-R' ? process.argv[3] : process.argv[2];
 const action = process.argv[2] === '-R' || fs.statSync(path).isDirectory() ? 'reveal' : 'open';
@@ -111,7 +112,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     // keeps the host's application catalog empty, so the Session-header split
     // button stays off every platform while the pinned desktop serves the file controls.
     scaffold = await launchWebScaffold({
-      developerTools: false, replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false, extraOverlayPath: PAGING_PATCH,
+      developerTools: false, replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false, extraOverlayPath: [PAGING_PATCH, fileURLToPath(new URL('./fixtures/native-open-on.patch.yml', import.meta.url))],
       openInAppEnvironment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { SSH_CONNECTION: '10.0.0.2 55000 10.0.0.9 22' } }]),
     })
     browser = await chromium.launch()

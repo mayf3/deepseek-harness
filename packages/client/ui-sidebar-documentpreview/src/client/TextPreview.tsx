@@ -124,7 +124,7 @@ export function TextPreview({
   const absolutePath = meta.value?.absolutePath ?? current?.complete?.absolutePath
   const displayPath = absolutePath ?? file.path
   // Contributions that hand the file to the Host wait for its Host path.
-  const fileOwner = absolutePath === undefined ? undefined : { file, absolutePath }
+  const fileOwner = absolutePath === undefined ? undefined : { absolutePath }
   usePathClipped(pathRef, pathTextRef, displayPath, state !== undefined)
   // Every tab of this type is a `file` resource address, so its params are the
   // `file` type's; the union is narrowed on the one field read, not validated.

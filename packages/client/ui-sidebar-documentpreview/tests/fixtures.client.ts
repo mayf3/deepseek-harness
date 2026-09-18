@@ -19,7 +19,7 @@ import type { WorkspaceFileStat, WorkspaceFileText } from '@deepseek-ai/dsh-api-
 import type { TextPreviewProps } from '../src/client/TextPreview.tsx'
 import { textFace } from '../src/client/face.ts'
 import type { TextInjected } from '../src/client/face.ts'
-import type { ReadDocumentBytes, ReadWorkspaceFilePage, SessionFile } from '../src/client/rpc.ts'
+import type { ReadDocumentBytes, ReadWorkspaceFilePage } from '../src/client/rpc.ts'
 import { createTextStore } from '../src/client/store.ts'
 import type { TextStore } from '../src/client/store.ts'
 import type { DocumentPreviewProps } from '../src/client/document/contract.ts'
@@ -31,7 +31,7 @@ type BodySlot = PropsRenderSlots<'sidebar.right.tab.document'>['renderSlot']
 
 /** Preserve the body-slot callback used by component fixtures. */
 export function documentSlots(body: BodySlot): TextPreviewProps['renderSlot'] {
-  return (name, owner, options) => name === 'sidebar.right.tab.document'
+  return (name: string, owner: unknown, options?: unknown) => name === 'sidebar.right.tab.document'
     ? body(name, owner as unknown as Parameters<BodySlot>[1], options as Parameters<BodySlot>[2])
     : null
 }
@@ -141,7 +141,6 @@ export function harness(script: Record<number, RemoteResult<WorkspaceFileText>> 
       } as unknown as DocumentPreviewProps)
       : key === 'sidebar.right.tab.document.action' ? null : createElement('div', {
         'data-slot': key,
-        'data-slot-file': (owner as { file: SessionFile }).file.path,
         'data-slot-path': (owner as { absolutePath: string }).absolutePath,
       })
   const props = (navigation: { params?: unknown; revision: number } = { revision: 1 }) => ({

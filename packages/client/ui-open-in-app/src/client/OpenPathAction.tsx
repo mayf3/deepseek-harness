@@ -94,7 +94,7 @@ export function OpenPathAction(props: OpenPathActionProps): ReactNode {
         align="end"
         onClose={() => { setMenuOpen(false) }}
         items={[
-          { id: 'open', icon: <IconRightUpOutlineRegular size={16} className={css.menuIcon} />, label: t('path.defaultApp') },
+          { id: 'open', icon: <IconRightUpOutlineRegular />, label: t('path.defaultApp') },
           { id: 'reveal', icon: <IconFolderOpenOutlineRegular />, label: t('path.reveal') },
         ]}
         onSelect={(id) => { run(id === 'reveal' ? 'reveal' : 'open') }}
