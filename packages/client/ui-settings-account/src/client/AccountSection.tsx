@@ -1,10 +1,11 @@
 /** Account settings renders safe Host state and explicit login actions. */
 import { useEffect, useState } from 'react'
-import { Button, IconUserOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountDetails, AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { PropsRuntime, PropsLocale, InjectFace, HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { PlatformOverlay, type PlatformBridge } from './PlatformOverlay.tsx'
 import { formatBalance } from './formatBalance.ts'
+import { AccountAvatar } from './AccountAvatar.tsx'
 import css from './AccountSection.module.css'
 
 /** Safe account snapshot shared by the settings page and launcher. */
@@ -92,7 +93,7 @@ export function AccountSection({ t, useAccount, start, cancel, refresh, platform
         loadingLabel={t('loading')} failureLabel={t('failed')} onClose={() => { setPlatformPage(undefined) }} />}
       <div className={css.card}>
         <div className={css.identity}>
-          <span className={css.avatar}><IconUserOutlineMedium size={16} /></span>
+          <span className={css.avatar}><AccountAvatar url={signedIn ? profile?.avatarUrl : null} /></span>
           <div className={css.identityCopy}>
             <span className={css.name}>{signedIn ? profile?.name ?? t('signedIn') : t('signedOut')}</span>
             <span className={css.status} role="status">{status}</span>

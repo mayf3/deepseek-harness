@@ -5,6 +5,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { AccountSectionInjected } from './AccountSection.tsx'
 import { SignInDialog } from './SignInDialog.tsx'
 import { LogoutIcon } from './LogoutIcon.tsx'
+import { AccountAvatar } from './AccountAvatar.tsx'
 import css from './AccountMenu.module.css'
 
 /** Account launcher composed by the settings shell. */
@@ -36,7 +37,7 @@ export function AccountMenu({
     <Menu open={open} side="top" portal autoFocus className={css.anchor}
       anchor={<button type="button" className={css.trigger} aria-label={t('menu')}
         aria-haspopup="menu" aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
-        <span className={css.avatar}><IconUserOutlineMedium size={16} /></span>
+        <span className={css.avatar}><AccountAvatar url={signedIn && profile?.status === 'ready' ? profile.value.avatarUrl : null} /></span>
         {wide && <span className={css.label}>{signedIn ? label : t('signedOut')}</span>}
       </button>}
       items={[

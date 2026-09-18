@@ -20,6 +20,8 @@ The Account settings section displays DeepSeek login state and offers browser si
 <a id="use-this-package"></a>
 ## Use this package
 
+The sidebar and Account settings display the profile avatar as a circular image, with the account icon as fallback when the URL is absent or the image fails to load.
+
 The section registers through settings.section and uses the account Remote namespace. The stream survives carrier reconnects through the shared Remote supervisor. The page renders feature-owned English and Chinese copy and keeps API keys separate from account state.
 
 Balances use Platform Web currency formatting: two decimal places and digit grouping, positive amounts truncated to cents, positive sub-cent amounts shown as <0.01, and negative amounts rounded with a minimum displayed magnitude of 0.01. Raw Host balance strings remain unchanged.

@@ -173,3 +173,36 @@ it.each([
     wide openSettings={() => {}} openOnboarding={() => {}} t={key => en[key as AccountKey]} />)
   expect(screen.getByRole('button', { name: en.menu }).textContent).toBe(expected)
 })
+
+it('shows the profile image in settings and the sidebar, with independent load-error fallbacks', async () => {
+  const operations = mount({ status: 'credential-stored', attempt: null }, en, {
+    profile: { status: 'ready', value: { id: null, name: 'User', contact: null, avatarUrl: 'https://example.test/avatar.png' } },
+  })
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations}
+    useAccount={selector => selector(operations.hooks.account.getSnapshot())}
+    wide openSettings={() => {}} openOnboarding={() => {}} t={key => en[key as AccountKey]} />)
+  const images = document.querySelectorAll('img')
+  expect(images).toHaveLength(2)
+  for (const image of images) {
+    expect(image.getAttribute('src')).toBe('https://example.test/avatar.png')
+    const parent = image.parentElement!
+    fireEvent.error(image)
+    expect(parent.querySelector('img')).toBeNull()
+    expect(parent.querySelector('svg')).not.toBeNull()
+  }
+})
+
+it('retries a changed avatar URL after an image fails', async () => {
+  const { AccountAvatar } = await import('../src/client/AccountAvatar.tsx')
+  const view = render(<AccountAvatar />)
+  expect(view.container.querySelector('img')).toBeNull()
+  expect(view.container.querySelector('svg')).not.toBeNull()
+  view.rerender(<AccountAvatar url="https://example.test/old.png" />)
+  fireEvent.error(view.container.querySelector('img')!)
+  expect(view.container.querySelector('svg')).not.toBeNull()
+  view.rerender(<AccountAvatar url="https://example.test/new.png" />)
+  expect(view.container.querySelector('img')!.getAttribute('src')).toBe('https://example.test/new.png')
+  view.rerender(<AccountAvatar url={null} />)
+  expect(view.container.querySelector('img')).toBeNull()
+})

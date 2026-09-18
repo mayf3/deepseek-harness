@@ -20,6 +20,8 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
+侧边栏和账号设置以圆形图片显示账号头像；头像 URL 缺失或图片加载失败时使用账号图标兜底。
+
 该页面通过 settings.section 注册，并使用 account Remote 命名空间。共享 Remote 管理器负责连接恢复后的流重连。页面使用功能自有的中英文文案，将 API Key 与账号状态分开。
 
 余额沿用 Platform Web 的金额格式：两位小数和千分位分组，正金额截断至分，小于一分的正金额显示为 <0.01，负金额按舍入规则处理且显示绝对值至少为 0.01。Host 返回的原始余额字符串保持不变。

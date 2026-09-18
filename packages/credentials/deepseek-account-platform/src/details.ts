@@ -6,7 +6,7 @@ import { PlatformAuthError, requestAccount } from './protocol.ts'
 const user = z.object({
   id: z.string().nullish(),
   email: z.string(), mobile: z.string().optional(), mobile_number: z.string().optional(),
-  id_profile: z.object({ name: z.string().nullable() }).nullish(),
+  id_profile: z.object({ name: z.string().nullable(), picture: z.string().nullish() }).nullish(),
 })
 const summary = z.object({ normal_wallets: z.array(z.object({
   currency: z.enum(['CNY', 'USD']), balance: z.string().regex(/^-?\d+(?:\.\d+)?$/),
@@ -22,6 +22,7 @@ export function profile(value: unknown): AccountProfile {
   const { email, mobile, mobile_number: mobileNumber, id_profile: identity } = parsed.data
   return {
     id: parsed.data.id == null ? null : parsed.data.id as AccountUserId,
+    avatarUrl: identity?.picture || null,
     name: identity?.name || null, contact: mobile || mobileNumber || email || null,
   }
 }

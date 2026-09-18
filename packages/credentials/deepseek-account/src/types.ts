@@ -32,6 +32,8 @@ export interface AccountProfile {
   readonly id: AccountUserId | null
   readonly name: string | null
   readonly contact: string | null
+  /** Profile image URL supplied by Platform, absent when no picture is configured. */
+  readonly avatarUrl?: string | null
 }
 /** Platform recharge-wallet balance; decimal strings retain server precision. */
 export interface AccountWallet {

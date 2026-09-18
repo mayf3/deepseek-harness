@@ -24,6 +24,8 @@ Account consumers read stored login state, start or cancel a browser login, and 
 <a id="use-this-package"></a>
 ## Use this package
 
+`AccountProfile.avatarUrl` is an optional profile image URL; null or absence means no avatar.
+
 The service defines account operations and reconnectable state snapshots. The platform provider owns the protocol and stored grant. Credentials are Host-only; the API controller exports state and commands without resolveToken.
 
 <a id="understand-the-implementation"></a>

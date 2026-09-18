@@ -298,7 +298,7 @@ it('queries Platform Web endpoints with the stored grant and projects only maske
   expect(await readDetails(f.account)).toBeNull()
   await storeAccount(f)
   expect(await readDetails(f.account)).toEqual({
-    profile: { status: 'ready', value: { id: 'test-user', name: 'Test Account', contact: '138****5678' } },
+    profile: { status: 'ready', value: { id: 'test-user', name: 'Test Account', avatarUrl: null, contact: '138****5678' } },
     balance: { status: 'ready', value: [{ currency: 'CNY', balance: '123.45' }, { currency: 'USD', balance: '6.78' }] },
   })
   expect(f.detailRequests).toEqual(expect.arrayContaining([
@@ -353,7 +353,7 @@ it.each([
   const f = await fixture(input)
   await storeAccount(f)
   expect((await readDetails(f.account))?.profile).toEqual({
-    status: 'ready', value: { id: 'test-user', name: 'Test Account', contact: expected },
+    status: 'ready', value: { id: 'test-user', name: 'Test Account', avatarUrl: null, contact: expected },
   })
 })
 
@@ -589,6 +589,7 @@ it('uses exchange user for the first profile read and fetches current on refresh
     {
       "status": "ready",
       "value": {
+        "avatarUrl": null,
         "contact": "e***@example.invalid",
         "id": "exchange-user",
         "name": "Exchange User",

@@ -4059,7 +4059,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AccountProfile',
-    declaration: 'export interface AccountProfile {\n    readonly id: AccountUserId | null;\n    readonly name: string | null;\n    readonly contact: string | null;\n}',
+    declaration: 'export interface AccountProfile {\n    readonly id: AccountUserId | null;\n    readonly name: string | null;\n    readonly contact: string | null;\n    readonly avatarUrl?: string | null;\n}',
   },
   {
     name: 'AccountUserId',

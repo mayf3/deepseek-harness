@@ -26,7 +26,9 @@ Sign in through the system browser and keep the account credential in the existi
 <a id="use-this-package"></a>
 ## Use this package
 
-getProfile / getBalance sends the stored grant in the x-dsh-auth-token header to GET /auth-api/v0/users/current and GET /api/v0/users/get_user_summary on platformOrigin. The grant issuer must match that origin. Host projects only the account UID, profile name, phone or email exactly as masked by Platform, and normal_wallets currency/balance strings; response tokens and other fields are discarded. Bonus wallets remain separate from recharge balances. Credential changes and disposal invalidate in-flight queries.
+The profile projection maps `id_profile.picture` to `avatarUrl`, using null when no picture is configured.
+
+getProfile / getBalance sends the stored grant in the x-dsh-auth-token header to GET /auth-api/v0/users/current and GET /api/v0/users/get_user_summary on platformOrigin. The grant issuer must match that origin. Host projects only the account UID, profile name, avatar URL, phone or email exactly as masked by Platform, and normal_wallets currency/balance strings; response tokens and other fields are discarded. Bonus wallets remain separate from recharge balances. Credential changes and disposal invalidate in-flight queries.
 
 Configure platformOrigin, allowLoopbackHttp, requestTimeoutMs, and attemptTimeoutMs in the plugin row. HTTP is accepted only for explicitly enabled loopback development. The provider registers /oauth/callback on the existing Host webServer before auth_init, validates state, exchanges an S256 PKCE code once, and commits a grant before redirecting to auth_exchange.biz_data.authorized_url. Browser destinations default to the configured platform origin and always require the fixed /dsh/authorize or /dsh/authorized path. The completion URL sets `client_type` to the initiating client (`web` or `desktop`) and preserves other Platform-supplied query parameters. Device identity is a separate random UUID record shared by processes using the same credential store; device_model reports OS and architecture.
 

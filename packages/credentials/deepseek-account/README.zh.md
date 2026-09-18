@@ -24,6 +24,8 @@ getPlatformSession 为原生 Platform 内嵌提供仅限 Host 的 origin/token �
 <a id="use-this-package"></a>
 ## 使用此包
 
+`AccountProfile.avatarUrl` 是可选的账号头像 URL；为空或缺失时表示没有头像。
+
 该服务定义账号操作和可重连的状态快照。平台提供者负责协议和授权记录。凭证仅限 Host；API 控制器只导出状态与操作，不导出 resolveToken。
 
 <a id="understand-the-implementation"></a>
