@@ -1,4 +1,4 @@
-/** Platform Web profile and recharge-wallet queries projected for account UI consumers. */
+/** Platform Web profile and wallet queries projected for account UI consumers. */
 import { z } from 'zod'
 import type { AccountDetails, AccountProfile, AccountUserId } from '@deepseek-ai/dsh-deepseek-account/types'
 import { PlatformAuthError, requestAccount } from './protocol.ts'
@@ -8,9 +8,10 @@ const user = z.object({
   email: z.string(), mobile: z.string().optional(), mobile_number: z.string().optional(),
   id_profile: z.object({ name: z.string().nullable(), picture: z.string().nullish() }).nullish(),
 })
-const summary = z.object({ normal_wallets: z.array(z.object({
+const wallet = z.object({
   currency: z.enum(['CNY', 'USD']), balance: z.string().regex(/^-?\d+(?:\.\d+)?$/),
-})) })
+})
+const summary = z.object({ normal_wallets: z.array(wallet), bonus_wallets: z.array(wallet) })
 
 /** Project Platform user data without retaining credentials or unneeded fields.
  * @param value - current or exchange user response.
@@ -35,13 +36,13 @@ const queries: { [K in keyof AccountDetails]: {
   balance: { path: '/api/v0/users/get_user_summary', parse: (value) => {
     const parsed = summary.safeParse(value)
     if (!parsed.success) throw new PlatformAuthError('protocol')
-    return { status: 'ready', value: parsed.data.normal_wallets }
+    return { status: 'ready', value: parsed.data.normal_wallets, bonusWallets: parsed.data.bonus_wallets }
   } },
 }
 
 /**
  * Read one Platform account field without waiting for the other query.
- * @param field - profile or recharge-wallet balance.
+ * @param field - profile or recharge and bonus wallet balances.
  * @param origin - configured origin matching the stored grant issuer.
  * @param token - stored authorization token; response tokens are discarded.
  * @param signal - request and credential lifetime.

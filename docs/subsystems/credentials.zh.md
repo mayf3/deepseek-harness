@@ -57,6 +57,8 @@ interface CredentialInfo {
 
 PlatformSession 是 getPlatformSession 返回的仅限 Host 快照：origin 指定所配置的 Platform 签发来源，token 包含其已存账号凭证。退登账号返回 null；签发来源不匹配时失败。原生使用方负责在凭证变化时使文档失效。账号控制器 RPC、AccountView 和 AccountDetails 均不包含此快照。
 
+AccountDetails.balance 将充值钱包投影为 value、赠送钱包投影为 bonusWallets，分别保留币种和十进制余额字符串。查询失败不包含钱包数组。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -277,7 +279,7 @@ abstract getState(): Promise<AccountView>
 abstract getProfile(): Promise<AccountDetails['profile'] | null>
 
 /**
- * Query Platform recharge-wallet balances independently of profile data.
+ * Query Platform recharge and bonus wallet balances independently of profile data.
  * @returns balance outcome, or null if signed out or the grant changed during the query.
  */
 abstract getBalance(): Promise<AccountDetails['balance'] | null>

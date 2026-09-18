@@ -38,6 +38,8 @@ getPlatformSession 为原生 Platform 内嵌提供仅限 Host 的 origin/token �
 
 [凭证子系统](../../../docs/subsystems/credentials.zh.md)定义存储接口；[架构](../../../docs/architecture.zh.md)说明应用组合。
 
+AccountDetails.balance 就绪时，value 保存充值钱包，bonusWallets 保存赠送钱包；两个数组均保留十进制金额字符串和币种。查询失败不提供金额。
+
 <a id="model-experience"></a>
 ## 模型体验
 

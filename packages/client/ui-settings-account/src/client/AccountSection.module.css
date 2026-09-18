@@ -179,3 +179,17 @@
   line-height: 22px;
   font-weight: 500;
 }
+
+.amount {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  font-size: 18px;
+  line-height: 28px;
+  font-weight: 510;
+}
+
+.amount > span + span::before {
+  content: ' + ';
+  white-space: pre;
+}

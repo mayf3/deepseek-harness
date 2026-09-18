@@ -1,4 +1,5 @@
 /** Account settings renders safe Host state and explicit login actions. */
+import { Big } from 'big.js'
 import { useEffect, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountDetails, AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
@@ -58,6 +59,8 @@ export function AccountSection({ t, useAccount, start, cancel, refresh, platform
   useEffect(() => { void refresh() }, [refresh])
   const profile = details?.profile?.status === 'ready' ? details.profile.value : undefined
   const wallets = details?.balance?.status === 'ready' ? details.balance.value : undefined
+  const bonusWallets = details?.balance?.status === 'ready'
+    ? details.balance.bonusWallets.filter(wallet => new Big(wallet.balance).gt(0)) : []
   const attempt = state?.attempt
   const active = attempt !== null && attempt !== undefined
     && ['initializing', 'waiting-browser', 'exchanging', 'committing'].includes(attempt.phase)
@@ -112,12 +115,21 @@ export function AccountSection({ t, useAccount, start, cancel, refresh, platform
         <div className={css.row}>
           <span>{t('balance')}</span>
           {signedIn && wallets !== undefined && wallets.length > 0
-            ? <span className={css.links}>{wallets.map(wallet => <span key={wallet.currency}>
+            ? <span className={css.amount}>{wallets.map(wallet => <span key={wallet.currency}>
               {formatBalance(wallet.balance, wallet.currency === 'CNY' ? '¥' : '$')}
             </span>)}</span>
             : <span className={css.unavailable}>{t(!signedIn ? 'balanceSignedOut'
               : details?.balance === undefined ? 'loading' : 'balanceUnavailable')}</span>}
         </div>
+        {signedIn && bonusWallets.length > 0 && <>
+          <div className={css.divider} />
+          <div className={css.row}>
+            <span>{t('bonusBalance')}</span>
+            <span className={css.amount}>{bonusWallets.map(wallet => <span key={wallet.currency}>
+              {formatBalance(wallet.balance, wallet.currency === 'CNY' ? '¥' : '$')}
+            </span>)}</span>
+          </div>
+        </>}
         <div className={css.divider} />
         <div className={css.row}>
           <span className={css.secondary}>{t('more')}</span>

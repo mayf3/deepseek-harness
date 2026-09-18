@@ -51,6 +51,7 @@ async function fixture(
   let logoutHold = false
   let logoutCount = 0
   const logoutHeaders: Array<string | undefined> = []
+  let bonusWallets: unknown = [{ currency: 'CNY', balance: '10.00' }]
   let invalidSummary = false
   const detailsStarted = Promise.withResolvers<undefined>()
   const detailRequests: Array<{ path: string; authorization: string | undefined }> = []
@@ -81,7 +82,7 @@ async function fixture(
           id_profile: { name: 'Test Account', picture: null } }
         : { normal_wallets: [{ currency: 'CNY', balance: invalidSummary ? 'not-a-decimal' : '123.45', token_estimation: '0' },
           { currency: 'USD', balance: '6.78', token_estimation: '0' }],
-        bonus_wallets: [{ currency: 'CNY', balance: '10.00' }] }
+        bonus_wallets: bonusWallets }
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ code: 0, data: {
         biz_code: (profileFailed && req.url === '/auth-api/v0/users/current')
@@ -157,6 +158,7 @@ async function fixture(
     redirect: () => { redirect = true },
     hold: () => { hold = true },
     initResponse: (value: Record<string, unknown>) => { initOverride = value },
+    bonusWallets: (value: unknown) => { bonusWallets = value },
     exchangeResponse: (value: Record<string, unknown>) => { exchangeOverride = value },
     fail: (value: number) => { businessCode = value },
     init: () => init, count: () => count, callback: (state = init.state) => `${init.redirect_uri}?code=test&state=${state}` }
@@ -293,13 +295,13 @@ async function storeAccount(f: Awaited<ReturnType<typeof fixture>>) {
   }))
 }
 
-it('queries Platform Web endpoints with the stored grant and projects only masked profile and recharge balances', async () => {
+it('queries Platform Web endpoints with the stored grant and projects only masked profile and separate recharge and bonus balances', async () => {
   const f = await fixture()
   expect(await readDetails(f.account)).toBeNull()
   await storeAccount(f)
   expect(await readDetails(f.account)).toEqual({
     profile: { status: 'ready', value: { id: 'test-user', name: 'Test Account', avatarUrl: null, contact: '138****5678' } },
-    balance: { status: 'ready', value: [{ currency: 'CNY', balance: '123.45' }, { currency: 'USD', balance: '6.78' }] },
+    balance: { status: 'ready', bonusWallets: [{ currency: 'CNY', balance: '10.00' }], value: [{ currency: 'CNY', balance: '123.45' }, { currency: 'USD', balance: '6.78' }] },
   })
   expect(f.detailRequests).toEqual(expect.arrayContaining([
     { path: '/auth-api/v0/users/current', authorization: 'test-platform-grant' },
@@ -761,3 +763,19 @@ it('retains successful profile data on current failure only for the same credent
   await f.account.signOut()
   expect(await f.account.getProfile()).toBeNull()
 })
+
+it.each([[], [{ currency: 'CNY', balance: '0.00' }]].map(wallets => ({ wallets })))('preserves empty or zero bonus wallets', async ({ wallets }) => {
+  const f = await fixture()
+  await storeAccount(f)
+  f.bonusWallets(wallets)
+  expect(await f.account.getBalance()).toMatchObject({ status: 'ready', bonusWallets: wallets })
+})
+
+it.each([undefined, [{ currency: 'EUR', balance: '1' }], [{ currency: 'CNY', balance: 'invalid' }]].map(wallets => ({ wallets })))(
+  'rejects malformed bonus wallets without reporting zero credit', async ({ wallets }) => {
+    const f = await fixture()
+    await storeAccount(f)
+    f.bonusWallets(wallets)
+    expect(await f.account.getBalance()).toEqual({ status: 'failed' })
+  },
+)

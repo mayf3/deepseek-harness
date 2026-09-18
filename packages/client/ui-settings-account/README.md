@@ -44,6 +44,8 @@ The [credentials subsystem](../../../docs/subsystems/credentials.md) owns storag
 
 Account login uses a dismissible dialog before the model onboarding credential editor. The dialog uses a compact, right-aligned action row with the primary action last. The sidebar displays the profile name, falling back to the server-masked phone number or email when the name is absent; it stays blank while the profile is loading. Dialog copy and the sidebar account label are not text-selectable; the copy-link button remains available and restores its label two seconds after each successful copy. Waiting shows a copyable authorization link and a loading indicator; timeout and failure require an explicit retry. Closing a waiting dialog cancels its Host attempt. The sidebar can reopen the same API-key editor through the settings coordinator. Browser login preopens a tab on the click and navigates it only when that attempt receives its authorization URL; blocked popups retain the copy-link route. The original tab retains the authorization window handle and closes it on failure, timeout, or cancellation. Login feedback stays in the original tab; callbacks never navigate to a second Web UI.
 
+The balance card shows recharge funds and positive bonus credit in separate rows. Empty or nonpositive bonus wallets hide the bonus row and its divider; currencies retain their own amounts.
+
 <a id="model-experience"></a>
 ## Model Experience
 

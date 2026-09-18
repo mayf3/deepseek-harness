@@ -35,7 +35,7 @@ export interface AccountProfile {
   /** Profile image URL supplied by Platform, absent when no picture is configured. */
   readonly avatarUrl?: string | null
 }
-/** Platform recharge-wallet balance; decimal strings retain server precision. */
+/** Platform recharge or bonus wallet balance; decimal strings retain server precision. */
 export interface AccountWallet {
   readonly currency: 'CNY' | 'USD'
   readonly balance: string
@@ -43,5 +43,5 @@ export interface AccountWallet {
 /** Independent query outcomes allow profile and balance failures to render separately. */
 export interface AccountDetails {
   readonly profile: { readonly status: 'ready'; readonly value: AccountProfile } | { readonly status: 'failed' }
-  readonly balance: { readonly status: 'ready'; readonly value: readonly AccountWallet[] } | { readonly status: 'failed' }
+  readonly balance: { readonly status: 'ready'; readonly value: readonly AccountWallet[]; readonly bonusWallets: readonly AccountWallet[] } | { readonly status: 'failed' }
 }

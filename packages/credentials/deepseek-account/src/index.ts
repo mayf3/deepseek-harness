@@ -34,7 +34,7 @@ export abstract class DeepSeekAccount extends Service {
    */
   abstract getProfile(): Promise<AccountDetails['profile'] | null>
   /**
-   * Query Platform recharge-wallet balances independently of profile data.
+   * Query Platform recharge and bonus wallet balances independently of profile data.
    * @returns balance outcome, or null if signed out or the grant changed during the query.
    */
   abstract getBalance(): Promise<AccountDetails['balance'] | null>

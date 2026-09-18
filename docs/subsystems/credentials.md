@@ -57,6 +57,8 @@ interface CredentialInfo {
 
 PlatformSession is a Host-only snapshot from getPlatformSession: origin names the configured Platform issuer and token contains its stored account credential. Signed-out accounts return null; a mismatched issuer fails. Native consumers own document invalidation when credentials change. This snapshot is excluded from account-controller RPC, AccountView, and AccountDetails.
 
+AccountDetails.balance projects recharge wallets in value and promotional wallets in bonusWallets, with independent currency and decimal balance strings. Failed queries contain no wallet arrays.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -277,7 +279,7 @@ abstract getState(): Promise<AccountView>
 abstract getProfile(): Promise<AccountDetails['profile'] | null>
 
 /**
- * Query Platform recharge-wallet balances independently of profile data.
+ * Query Platform recharge and bonus wallet balances independently of profile data.
  * @returns balance outcome, or null if signed out or the grant changed during the query.
  */
 abstract getBalance(): Promise<AccountDetails['balance'] | null>

@@ -77,7 +77,7 @@ it.each([en, zh])('opens settings and signs out from the sidebar account menu', 
 it.each([en, zh])('renders Platform profile and recharge wallet balances', async (copy) => {
   mount({ status: 'credential-stored', attempt: null }, copy, {
     profile: { status: 'ready', value: { id: null, name: 'Harness Mock (TEST ONLY)', contact: '138****0000' } },
-    balance: { status: 'ready', value: [{ currency: 'CNY', balance: '1234.56000000' }, { currency: 'USD', balance: '0.00000100' }] },
+    balance: { status: 'ready', bonusWallets: [], value: [{ currency: 'CNY', balance: '1234.56000000' }, { currency: 'USD', balance: '0.00000100' }] },
   })
   expect(screen.getByText('Harness Mock (TEST ONLY)')).toBeTruthy()
   expect(screen.getByText('138****0000')).toBeTruthy()
@@ -206,3 +206,24 @@ it('retries a changed avatar URL after an image fails', async () => {
   view.rerender(<AccountAvatar url={null} />)
   expect(view.container.querySelector('img')).toBeNull()
 })
+
+it.each([en, zh])('renders positive bonus wallets separately from recharge balances', async (copy) => {
+  mount({ status: 'credential-stored', attempt: null }, copy, {
+    balance: { status: 'ready', value: [{ currency: 'CNY', balance: '209.00' }, { currency: 'USD', balance: '20.07' }],
+      bonusWallets: [{ currency: 'CNY', balance: '5.00' }, { currency: 'USD', balance: '0.000001' }] },
+  })
+  expect(screen.getByText(copy.balance).parentElement!.textContent).toBe(`${copy.balance}¥209.00$20.07`)
+  expect(screen.getByText(copy.bonusBalance).parentElement!.textContent).toBe(`${copy.bonusBalance}¥5.00<$0.01`)
+  await expect(`${screen.getByRole('region').textContent}\n`)
+    .toMatchFileSnapshot(`./expected/bonus-${copy === en ? 'en' : 'zh'}.txt`)
+})
+
+it.each([[], [{ currency: 'CNY' as const, balance: '0.00' }, { currency: 'USD' as const, balance: '-1.00' }]].map(bonusWallets => ({ bonusWallets })))(
+  'hides bonus wallets without positive credit', ({ bonusWallets }) => {
+    mount({ status: 'credential-stored', attempt: null }, en, {
+      balance: { status: 'ready', value: [{ currency: 'CNY', balance: '0' }], bonusWallets },
+    })
+    expect(screen.queryByText(en.bonusBalance)).toBeNull()
+    expect(screen.getByText('¥0.00')).toBeTruthy()
+  },
+)
