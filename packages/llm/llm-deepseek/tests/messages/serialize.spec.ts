@@ -65,6 +65,39 @@ describe('Messages request conversion', () => {
     expect(() => nativeBody([user(), assistant([call(), call('b')]), update, result()])).toThrow(/immediate results/)
   })
 
+  it.each([[], [{ type: 'reasoning', text: 'child reasoning' }], [call('child-call')]] satisfies ContentBlock[][])(
+    'rejects native system updates when their user input is omitted %#', (...content) => {
+      const empty = createMessage({ role: 'user', source: { kind: 'user' }, content })
+      const history = [user(), assistant([{ type: 'text', text: 'answer' }]), createSystemMessage('updated', 'test'), empty]
+      const saved = JSON.stringify(history)
+      for (const messages of [history, [...history, assistant([{ type: 'text', text: 'next answer' }])]]) {
+        expect(() => nativeBody(messages)).toThrow(expect.objectContaining({
+          code: 'UNSUPPORTED_CONTENT',
+          message: 'DeepSeek Messages cannot represent system update without a preceding user or tool-result turn',
+        }))
+      }
+      expect(JSON.stringify(history)).toBe(saved)
+    },
+  )
+
+  it('keeps native system updates after retained text or tool results beside omitted user input', () => {
+    const reasoning: ContentBlock = { type: 'reasoning', text: 'child reasoning' }
+    const empty = createMessage({ role: 'user', source: { kind: 'user' }, content: [reasoning] })
+    const update = createSystemMessage('updated', 'test')
+    for (const [previous, retained, expected] of [
+      [assistant([{ type: 'text', text: 'answer' }]), user('continue'), [{ type: 'text', text: 'continue' }]],
+      [assistant([call()]), result('a', [reasoning]), [{ type: 'tool_result', tool_use_id: 'a', content: [], is_error: false }]],
+    ] as const) {
+      const history = [user(), previous, update, empty, retained, assistant([{ type: 'text', text: 'done' }])]
+      const saved = JSON.stringify(history)
+      const request = nativeBody(history)
+      expect(request.messages.map(message => message.role)).toEqual(['user', 'assistant', 'user', 'system', 'assistant'])
+      expect(request.messages[2]?.content).toEqual(expected)
+      expect(request.messages[3]?.content).toEqual([{ type: 'text', text: 'updated' }])
+      expect(JSON.stringify(history)).toBe(saved)
+    }
+  })
+
   it('groups parallel results before ordinary text and keeps tool failure content', () => {
     const messages = [user(), assistant([call(), call('b')]), user('follow-up'), result(), createToolResultMessage({ callId: ToolCallId('b'), content: [{ type: 'text', text: 'permission denied' }], isError: true })]
     expect(body(messages).messages).toEqual([
