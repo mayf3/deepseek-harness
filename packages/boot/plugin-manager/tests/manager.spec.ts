@@ -7,7 +7,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import {
-  boot, composeEntries, initProfile, readProfilePatches, readProfileManifest, reconcileProfilePatches, OPTIONAL_BUNDLES,
+  boot, composeEntries, initProfile, loadProfileDirectory, readProfilePatches, readProfileManifest,
+  reconcileProfilePatches, OPTIONAL_BUNDLES,
   type ProfileContext,
 } from '@deepseek-ai/dsh-app-boot'
 import PluginManager, { type Config, type PluginChange, type PluginInstallLogChunk, type PluginInstallProgress, type PluginInstallRequestId } from '../src/index.ts'
@@ -18,7 +19,7 @@ import { Group } from '@deepseek-ai/cordis-plugin-loader'
 import * as operations from '../src/operations.ts'
 import { parse, parseDocument } from 'yaml'
 
-async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, prepare?: (ctx: Context) => void, config: Config = {}, packageManager?: ProfileContext['packageManager']) {
+async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, prepare?: (ctx: Context) => void, config: Config = {}, packageManager?: ProfileContext['packageManager'], prepareFiles?: (dir: string) => void) {
   // pnpm resolves workspace roots through native realpath, including Windows 8.3 aliases.
   const home = await realpath(mkdtempSync(join(tmpdir(), 'plugin-manager-')))
   const dir = join(home, 'profiles', 'test')
@@ -38,11 +39,12 @@ async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, pre
   manifest.dependencies = { extra: '1.0.0' }
   writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
   writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+  prepareFiles?.(dir)
   const overlays: PatchOptions[] = overlay ? [{ id: 'managed', disabled: true }] : []
   const profile: ProfileContext = {
     name: 'test',
     ...(packageManager === undefined ? {} : { packageManager }),
-    startedBundles: ['core', 'extra'],
+    startedBundles: loadProfileDirectory('test', dir, anchor).layers.map(layer => layer.packageName),
     dir, patchPath: join(dir, 'cordis.patch.yml'), installAnchor: anchor, cwd: home, home,
     overlays, telemetryDisabledEnv: undefined,
   }
@@ -65,6 +67,66 @@ async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, pre
   }
   return { ctx, dir, manager: ctx.pluginManager, bundle, profile, stopHmr, overlays }
 }
+
+it.each(['missing package', 'invalid manifest', 'not a bundle', 'missing patch', 'invalid patch'])(
+  'boots with %s, lists its error, and permits deselection without enabling the broken bundle', async (failure) => {
+    const { manager, dir, ctx } = await fixture('live', false, undefined, {}, undefined, (dir) => {
+      const path = join(dir, 'node_modules', 'extra')
+      if (failure === 'missing package') rmSync(path, { recursive: true })
+      if (failure === 'invalid manifest') writeFileSync(join(path, 'package.json'), '{')
+      if (failure === 'not a bundle') writeFileSync(join(path, 'package.json'), '{}')
+      if (failure === 'missing patch') rmSync(join(path, 'cordis.patch.yml'))
+      if (failure === 'invalid patch') writeFileSync(join(path, 'cordis.patch.yml'), '[invalid')
+    })
+    expect([...ctx.loader.entries()].some(entry => entry.id === 'include:managed')).toBe(false)
+    expect((await manager.listBundles()).find(row => row.name === 'extra')).toMatchObject({
+      enabled: true, error: { code: failure === 'not a bundle' ? 'not-bundle' : 'operation-error' }, rows: [],
+    })
+    expect(await manager.setBundleEnabled('extra', false)).toMatchObject({ changed: true, application: 'applied' })
+    expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['core'])
+    expect(await manager.setBundleEnabled('extra', true)).toMatchObject({ changed: false, application: 'failed' })
+  },
+)
+
+it.each(['missing files', 'missing declaration'])('keeps a running management bundle protected with %s', async (failure) => {
+  const { manager, dir } = await fixture()
+  if (failure === 'missing files') rmSync(join(dir, 'node_modules', 'core'), { recursive: true })
+  else writeFileSync(join(dir, 'node_modules', 'core', 'package.json'), '{}')
+  expect((await manager.listBundles()).find(row => row.name === 'core')).toMatchObject({
+    enabled: true, readOnlyReason: 'management-required', removable: false, error: { code: failure === 'missing files' ? 'operation-error' : 'not-bundle' },
+  })
+  expect(await manager.setBundleEnabled('core', false)).toMatchObject({
+    changed: false, application: 'failed', error: { code: 'management-required' },
+  })
+})
+
+it.each(['live', 'startup'] as const)('removes a bundle skipped at startup in a %s profile', async (mode) => {
+  const { manager, dir } = await fixture(mode, false, undefined, {}, undefined, (dir) => {
+    rmSync(join(dir, 'node_modules', 'extra'), { recursive: true })
+  })
+  const remove = vi.spyOn(operations, 'runProfilePnpm').mockImplementation(async () => {
+    const manifest = readProfileManifest('test', dir)
+    expect(manifest.dsh?.profile?.bundles).toEqual(['core'])
+    delete manifest.dependencies?.extra
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+    return { exitCode: 0, output: 'removed', truncated: false, logPath: join(dir, 'pnpm.log') }
+  })
+  onTestFinished(() => { remove.mockRestore() })
+  expect(await manager.removeBundle('extra')).toMatchObject({ changed: true, application: mode === 'live' ? 'applied' : 'restart-required' })
+  expect((await manager.listBundles()).some(row => row.name === 'extra')).toBe(false)
+})
+
+it('recomposes the remaining layers while another bundle is broken and mounts it after repair', async () => {
+  const { manager, dir, bundle, ctx } = await fixture()
+  writeFileSync(join(dir, 'node_modules', 'extra', 'cordis.patch.yml'), '[invalid')
+  bundle('another', [])
+  expect(await manager.setBundleEnabled('another', true)).toMatchObject({ application: 'applied' })
+  expect([...ctx.loader.entries()].some(entry => entry.id === 'include:managed')).toBe(false)
+  bundle('extra', [{ id: 'managed', name: './plugin.mjs' }])
+  expect(await manager.setBundleEnabled('another', false)).toMatchObject({ application: 'applied' })
+  expect([...ctx.loader.entries()].find(entry => entry.id === 'include:managed')?.fiber?.state).toBe(2)
+  expect((await manager.listBundles()).find(row => row.name === 'extra')?.error).toBeUndefined()
+})
 
 it('lists bundle versions and current-profile plugin targets', async () => {
   const { manager, dir } = await fixture()

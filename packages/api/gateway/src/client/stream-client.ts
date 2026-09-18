@@ -10,8 +10,6 @@ import {
 import { Deque } from '@deepseek-ai/dsh-deque'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 
-const INTERNAL_BASE = 'http://dsh.internal'
-
 /** Physical Remote stream socket failure that may be retried by a domain transport. */
 export class RemoteStreamCarrierError extends Error {
   /**
@@ -30,7 +28,11 @@ interface SocketWaiter {
   reject(error: unknown): void
 }
 
-/** Keep one physical WebSocket and share it among independently cancellable Remote streams. */
+/**
+ * Keep one physical WebSocket and share it among independently cancellable
+ * Remote streams. A carrier that supplies an in-process stream opener never
+ * starts one.
+ */
 export class RemoteStreamMuxClient {
   private socket: WebSocket | undefined
   private cancelCandidate: ((error: Error) => void) | undefined
@@ -302,10 +304,11 @@ class StreamInbox {
 }
 
 function remoteStreamUrl(): string {
-  const location = (globalThis as { location?: { origin?: string } }).location
-  const transport = (globalThis as { __DSH_TRANSPORT__?: { streamBaseUrl?: string } }).__DSH_TRANSPORT__
-  const base = transport?.streamBaseUrl ?? (location?.origin !== undefined && location.origin !== 'null' ? location.origin : INTERNAL_BASE)
-  const url = new URL(REMOTE_STREAM_MUX_PATH, base)
+  // The mux route is registered absolute; a page resolves its document-relative
+  // form against its own document base. A shell-owned Host on another origin
+  // supplies that base through the transport.
+  const globals = globalThis as { __DSH_TRANSPORT__?: { streamBaseUrl?: string } }
+  const url = new URL(REMOTE_STREAM_MUX_PATH.slice(1), globals.__DSH_TRANSPORT__?.streamBaseUrl ?? document.baseURI)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return url.href
 }
