@@ -1,6 +1,15 @@
 import { writeFileSync } from 'node:fs'
 import { afterEach, expect, it, vi } from 'vitest'
 import { packageTarget, parseDesktopPackageInvocation } from '../scripts/package-target.ts'
+import { withWindowsSigningStage } from '../scripts/windows-signing-stage.mjs'
+
+vi.mock('../scripts/windows-signing-stage.mjs', () => ({
+  withWindowsSigningStage: vi.fn(async (_options: object, operation: () => Promise<void>) => operation()),
+}))
+vi.mock('../scripts/windows-signature-cache-directory.mjs', () => ({
+  prepareWindowsSignatureCacheDirectory: vi.fn(async () => {}),
+  resolveWindowsSignatureCacheDirectory: vi.fn(() => 'C:\\fixture-cache'),
+}))
 
 // Keep the real orchestration and manifest reads; this suite owns no release directories or subprocesses.
 vi.mock('node:fs', async importOriginal => ({
@@ -29,6 +38,8 @@ it('requires one signing preflight before building, then records only the comple
   await packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), environment, run)
   expect(stages.slice(0, 2)).toEqual(['preflight:windows-signing', 'run build:official'])
   expect(stages.filter(stage => stage === 'preflight:windows-signing')).toHaveLength(1)
+  expect(vi.mocked(withWindowsSigningStage).mock.calls.map(([options]) => options.stage))
+    .toEqual(['preflight', 'artifacts'])
   expect(run.run.mock.calls[0]![3]).toMatchObject({ env: { DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'fixture-pin' }, timeoutMs: 60_000 })
   expect(run.run.mock.calls[1]![3].env).not.toHaveProperty('DSH_DESKTOP_WINDOWS_TOKEN_PIN')
   expect(stages.indexOf('run sign:primary-runtime --dsh')).toBeGreaterThan(stages.indexOf('run prepare:dsh --defer-runtime-smoke'))
@@ -59,6 +70,7 @@ it.each(['--unsigned', '--prepare-only'])('keeps %s hardware-free and creates no
   expect(stages).not.toContain('preflight:windows-signing')
   expect(stages).not.toContain('run sign:primary-runtime')
   expect(stages).not.toContain('run sign:primary-runtime --dsh')
+  expect(withWindowsSigningStage).not.toHaveBeenCalled()
   for (const call of run.run.mock.calls) expect(call[3].env).not.toHaveProperty('DSH_DESKTOP_WINDOWS_TOKEN_PIN')
   expect(writeFileSync).not.toHaveBeenCalled()
 })
