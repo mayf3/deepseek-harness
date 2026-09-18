@@ -2,4 +2,6 @@
 - button "Line wrap" [pressed]:
   - img
 - button "Read the file again"
+- button "Open"
+- button "More ways to open"
 - text: alpha
