@@ -326,11 +326,12 @@ describe('TextPreview — pages', () => {
     expect(view.container.querySelector('[data-textpreview-failed]')).toBeNull()
   })
 
-  it('announces a change and, on request, re-reads the pages keeping the reader\'s place', async () => {
+  it('announces a change while automatic refresh is paused and reloads on request, keeping the reader\'s place', async () => {
     const h = harness({ 1: page(1, ['a', 'b'], true) })
     const view = render(<TextPreview {...h.props()} />)
     await settle()
     fireEvent.scroll(body(view.container), { target: { scrollTop: 50 } })
+    click(view.container, '[data-textpreview-tool="auto-refresh"]')
     h.setVersion('v2')
     view.rerender(<TextPreview {...h.props()} />)
     expect(view.container.querySelector('[data-textpreview-changed]')?.textContent).toContain('changed')
@@ -346,10 +347,40 @@ describe('TextPreview — pages', () => {
 })
 
 describe('TextPreview — the file\'s metadata', () => {
+  it('refreshes by default with the toggle hidden and catches up when automatic refresh resumes', async () => {
+    const h = harness({ 1: page(1, ['old'], true) })
+    const view = render(<TextPreview {...h.props()} />)
+    await settle()
+    const toggle = view.container.querySelector('[data-textpreview-tool="auto-refresh"]')!
+    expect(toggle.closest('[hidden]')).not.toBeNull()
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(view.queryByRole('button', { name: 'autoRefresh' })).toBeNull()
+    expect(view.getByRole('button', { name: 'reload' })).toBeTruthy()
+    fireEvent.scroll(body(view.container), { target: { scrollTop: 40 } })
+    h.script(1, page(1, ['updated'], true, 'v2'))
+    h.setVersion('v2')
+    view.rerender(<TextPreview {...h.props()} />)
+    await settle()
+    expect(lines(view.container)).toEqual(['updated\n'])
+    expect(body(view.container).scrollTop).toBe(40)
+    expect(h.read).toHaveBeenCalledTimes(2)
+    fireEvent.click(toggle)
+    h.script(1, page(1, ['latest'], true, 'v3'))
+    h.setVersion('v3')
+    view.rerender(<TextPreview {...h.props()} />)
+    expect(lines(view.container)).toEqual(['updated\n'])
+    expect(h.read).toHaveBeenCalledTimes(2)
+    fireEvent.click(toggle)
+    await settle()
+    expect(lines(view.container)).toEqual(['latest\n'])
+    expect(h.read).toHaveBeenCalledTimes(3)
+  })
+
   it('does not treat the observation present at read start as a later file change', async () => {
     const h = harness({ 1: page(1, ['newer read'], true, 'v2') })
     const view = render(<TextPreview {...h.props()} />)
     await settle()
+    click(view.container, '[data-textpreview-tool="auto-refresh"]')
     expect(h.instance.getSnapshot().byTab[TAB_ID]).toMatchObject({ version: 'v2', observedVersion: 'v1' })
     expect(view.container.querySelector('[data-textpreview-changed]')).toBeNull()
     h.setVersion('v3')
@@ -365,11 +396,12 @@ describe('TextPreview — the file\'s metadata', () => {
     expect(view.container.querySelector('[data-textpreview-changed]')).not.toBeNull()
   })
 
-  it('announces metadata that changes while the first content read is still pending', async () => {
+  it('announces metadata that changes during the first read while automatic refresh is paused', async () => {
     const h = harness()
     const pending = Promise.withResolvers<ReturnType<typeof page>>()
     h.read.mockReturnValueOnce(pending.promise)
     const view = render(<TextPreview {...h.props()} />)
+    click(view.container, '[data-textpreview-tool="auto-refresh"]')
     h.setVersion('v2')
     view.rerender(<TextPreview {...h.props()} />)
     await act(async () => { pending.resolve(page(1, ['read v1'], true)); await pending.promise })
@@ -387,6 +419,8 @@ describe('TextPreview — the file\'s metadata', () => {
     const first = render(<TextPreview {...firstProps} />)
     const second = render(<TextPreview {...secondProps} />)
     await settle()
+    click(first.container, '[data-textpreview-tool="auto-refresh"]')
+    click(second.container, '[data-textpreview-tool="auto-refresh"]')
     h.setVersion('v2')
     first.rerender(<TextPreview {...firstProps} />)
     second.rerender(<TextPreview {...secondProps} />)
