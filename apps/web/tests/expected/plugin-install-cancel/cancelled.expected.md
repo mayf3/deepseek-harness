@@ -6,4 +6,5 @@
     - /placeholder: 例如 @deepseek-ai/dsh-experimental-auto-review
     - text: slow-package
   - button "插件安装引导和示例"
+  - button "安装源 默认安装源"
   - button "安装"

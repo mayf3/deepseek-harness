@@ -84,6 +84,10 @@ List plugins or bundles in the current profile, enable or disable them, install 
         "type": "string"
       }
     },
+    "registry": {
+      "type": "string",
+      "description": "For install_bundle: the npm registry URL asked first, when the user names one; otherwise the configured registry is asked, and its configured fallbacks while a registry is unreachable."
+    },
     "offset": {
       "type": "number",
       "description": "Zero-based list offset; defaults to 0."
