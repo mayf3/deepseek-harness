@@ -56,15 +56,13 @@
   margin-left: auto;
 }
 
-/* macOS hiddenInset titlebar: the title row doubles as the window drag
-   region; interactive children opt out. */
-:global([data-platform='darwin']) .titleRow {
-  -webkit-app-region: drag;
-}
-
-:global([data-platform='darwin']) .titleRow button,
-:global([data-platform='darwin']) .titleRow a,
-:global([data-platform='darwin']) .headerLeading,
+/* macOS hiddenInset titlebar: window dragging comes from ui-layout's
+   .leadingBand (the frame's first child), never from this header. Electron
+   composes app-regions in document order ignoring stacking, so a drag rule
+   here would keep eating clicks through overlays mounted earlier in the DOM
+   (the settings modal lives in the sidebar column). The title-row clusters
+   overlap the band and subtract their whole boxes; individual controls are
+   covered by the base.css interactive-element rule. */
 :global([data-platform='darwin']) .headerActions,
 :global([data-platform='darwin']) .headerUtilities,
 :global([data-platform='darwin']) .headerCorner {
@@ -76,6 +74,11 @@
   align-items: center;
   gap: 0;
   min-height: 30px;
+  /* Clears the frame's window-chrome band (traffic lights + shell.leading
+     controls, ui-layout AppFrame) when it is published; the header already
+     pads 20px of it. Zero everywhere else (the fallback makes the max
+     negative). */
+  padding-inline-start: max(0px, calc(var(--dsh-frame-leading-clearance, 0px) - 20px));
 }
 
 .titleCluster {
@@ -84,21 +87,6 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
-}
-
-/* Leading seat before the breadcrumbs; laid out only while its occupant
-   renders something, and the occupant owns its own trailing gap (a CSS-hidden
-   occupant keeps the seat non-empty, so a seat-owned margin would push the
-   breadcrumbs while nothing shows). */
-.headerLeading {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-}
-
-.headerLeading:empty {
-  display: none;
 }
 
 .crumbs {

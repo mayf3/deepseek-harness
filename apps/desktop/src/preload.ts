@@ -2,7 +2,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron'
 import { DESKTOP_IPC, type DshDesktopApi, type DesktopUpdateState } from './ipc.ts'
-import { markDocumentPlatform } from './preload-platform.ts'
+import { markDocumentPlatform, syncWindowFullscreen } from './preload-platform.ts'
 
 const api: DshDesktopApi = {
   protocolVersion: 1,
@@ -26,4 +26,5 @@ const api: DshDesktopApi = {
 }
 
 markDocumentPlatform()
+syncWindowFullscreen()
 contextBridge.exposeInMainWorld('dshDesktop', api)

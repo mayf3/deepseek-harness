@@ -51,12 +51,6 @@
   inset: 0;
   z-index: 40;
   border: none;
-  /* Electron drag regions are window geometry, not stacking: the conversation
-     title row's and the sidebar top strip's drag bands underneath keep taking
-     the pointer through this overlay, making the first strip's tabs unclickable.
-     The panel appears after both in DOM order, so this subtracts its whole box;
-     the strip rule below restores dragging on the strip's blank run. */
-  -webkit-app-region: no-drag;
 }
 
 /* macOS fullscreen: the panel reaches the window's top-left corner, where the
@@ -74,14 +68,10 @@
   --dsh-dockkit-strip-inline-start: 10px;
 }
 
-/* Fullscreen keeps a window drag affordance on the tab strips' blank runs;
-   tabs and strip controls opt back out. */
-:global([data-platform='darwin']) .panel[data-sidebar-right-panel='fullscreen'] :global([data-dockkit-strip]) {
-  -webkit-app-region: drag;
-}
-
-:global([data-platform='darwin']) .panel[data-sidebar-right-panel='fullscreen'] :global([data-dockkit-strip]) > * {
-  -webkit-app-region: no-drag;
+/* Window fullscreen hides the traffic lights (html[data-fullscreen], desktop
+   preload); the first pane's strip keeps only the ordinary inset. */
+:global([data-platform='darwin'][data-fullscreen]) .panel[data-sidebar-right-panel='fullscreen'] .panelBody {
+  --dsh-dockkit-strip-inline-start: 10px;
 }
 
 @media (prefers-reduced-motion: reduce) {

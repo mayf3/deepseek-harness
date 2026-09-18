@@ -262,20 +262,44 @@ describe('Tooltip', () => {
     const onMouseLeave = vi.fn()
     const onFocus = vi.fn()
     const onBlur = vi.fn()
+    const onPointerDown = vi.fn()
     render(
       <Tooltip label="Chained">
-        <button type="button" onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onFocus={onFocus} onBlur={onBlur}>anchor</button>
+        <button type="button" onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onFocus={onFocus} onBlur={onBlur} onPointerDown={onPointerDown}>anchor</button>
       </Tooltip>,
     )
     const anchor = screen.getByText('anchor')
     fireEvent.mouseEnter(anchor)
     fireEvent.mouseLeave(anchor)
+    fireEvent.pointerDown(anchor)
     fireEvent.focus(anchor)
     fireEvent.blur(anchor)
     expect(onMouseEnter).toHaveBeenCalledOnce()
     expect(onMouseLeave).toHaveBeenCalledOnce()
     expect(onFocus).toHaveBeenCalledOnce()
     expect(onBlur).toHaveBeenCalledOnce()
+    expect(onPointerDown).toHaveBeenCalledOnce()
+  })
+
+  it('pointer-initiated focus never pins the bubble', () => {
+    render(
+      <Tooltip label="Open sidebar">
+        <button type="button">anchor</button>
+      </Tooltip>,
+    )
+    const anchor = screen.getByText('anchor')
+    // A click focuses the anchor; hiding the control later fires no blur, so
+    // click focus must not become a trigger. Hover still shows and clears.
+    fireEvent.mouseEnter(anchor)
+    fireEvent.pointerDown(anchor)
+    fireEvent.focus(anchor)
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+    fireEvent.mouseLeave(anchor)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    // The click consumed the pointer flag: a later keyboard focus shows again.
+    fireEvent.blur(anchor)
+    fireEvent.focus(anchor)
+    expect(screen.getByRole('tooltip')).toBeTruthy()
   })
 
   it('suppresses the bubble while disabled without remounting the anchor', () => {

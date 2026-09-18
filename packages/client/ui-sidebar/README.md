@@ -41,7 +41,7 @@ During a live collapse, the expanded content fades out at its current width, the
 
 ### macOS desktop
 
-Under `html[data-platform='darwin']` (set only by the desktop preload) the expanded column opens with a 52px top strip that clears the hiddenInset traffic lights, carries the collapse toggle, and acts as the window drag region; collapsing hides the column entirely instead of leaving the rail. The package registers `HeaderLeadingControls` into the conversation header's `conversation.session.header.leading` seat — the open-sidebar and New Session controls shown, purely via CSS against the AppFrame-published `data-sidebar-collapsed` attribute, only while the column is hidden. Rationale and the window-integration contract: the [macOS hidden-titlebar Agent Note](../../../.agents/notes/implemented/feature/2026-09-13-macos-hidden-titlebar-vibrancy.md).
+Under `html[data-platform='darwin']` (set only by the desktop preload) the expanded column opens with a 52px top strip that clears the hiddenInset traffic lights, carries the collapse toggle, and acts as the window drag region; collapsing hides the column entirely instead of leaving the rail. The package registers `HeaderLeadingControls` into the frame's `shell.leading` window-chrome seat (ui-layout), which mounts it — the open-sidebar and New Session controls beside the traffic lights — only while the column is hidden, over every main panel. Rationale and the window-integration contract: the [macOS hidden-titlebar Agent Note](../../../.agents/notes/implemented/feature/2026-09-13-macos-hidden-titlebar-vibrancy.md).
 
 ### Scrollbars
 

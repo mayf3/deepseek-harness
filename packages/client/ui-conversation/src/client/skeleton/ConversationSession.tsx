@@ -70,9 +70,6 @@ export function ConversationSessionHeader({
   return (
     <header className={clsx(css.header, hideChrome && css.headerBlank)}>
       <div className={css.titleRow}>
-        <div className={css.headerLeading} data-conversation-header-leading="">
-          {renderSlot('conversation.session.header.leading', {})}
-        </div>
         {!hideChrome && (
           <>
             <div className={css.titleCluster}>

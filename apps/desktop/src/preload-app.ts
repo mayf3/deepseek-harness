@@ -2,7 +2,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron'
 import { DESKTOP_IPC, SCHEME } from './ipc.ts'
-import { markDocumentPlatform } from './preload-platform.ts'
+import { markDocumentPlatform, syncWindowFullscreen } from './preload-platform.ts'
 import { syncNativeTheme } from './preload-theme.ts'
 
 if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
@@ -16,5 +16,6 @@ if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
 }
 
 markDocumentPlatform()
+syncWindowFullscreen()
 syncNativeTheme()
 contextBridge.exposeInMainWorld('dshDesktop', { protocolVersion: 1 })

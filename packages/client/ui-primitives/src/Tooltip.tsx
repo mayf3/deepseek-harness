@@ -2,7 +2,7 @@
 // bubble escape ancestor overflow clipping without a portal.
 
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { FocusEventHandler, MouseEventHandler, MutableRefObject, ReactElement, Ref } from 'react'
+import type { FocusEventHandler, MouseEventHandler, MutableRefObject, PointerEventHandler, ReactElement, Ref } from 'react'
 import css from './Tooltip.module.css'
 
 /** Bubble placement relative to the anchor. */
@@ -15,6 +15,7 @@ interface AnchorProps {
   onMouseLeave?: MouseEventHandler | undefined
   onFocus?: FocusEventHandler | undefined
   onBlur?: FocusEventHandler | undefined
+  onPointerDown?: PointerEventHandler | undefined
 }
 
 type TooltipLabel = string | (() => string)
@@ -92,6 +93,11 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
   // Hover and focus are independent triggers: the bubble hides only after
   // BOTH clear (hovering away from a focused anchor must not drop it).
   const triggers = useRef({ hover: false, focus: false })
+  // Only keyboard focus is a trigger. A click also focuses the anchor, and the
+  // anchor keeps that focus when a later state change moves or hides it — no
+  // blur ever fires, which would pin a stale bubble (e.g. the sidebar toggle
+  // after collapsing the sidebar).
+  const pointerFocus = useRef(false)
 
   // Disabling mid-hover (e.g. clicking a rail control expands the sidebar)
   // must drop an already-visible bubble: no mouseleave fires.
@@ -142,8 +148,18 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
         ref: mergedRef,
         onMouseEnter: (e) => { children.props.onMouseEnter?.(e); triggers.current.hover = true; showAfterHoverDelay() },
         onMouseLeave: (e) => { children.props.onMouseLeave?.(e); triggers.current.hover = false; cancelShow(); setPos(null) },
-        onFocus: (e) => { children.props.onFocus?.(e); triggers.current.focus = true; cancelShow(); show() },
-        onBlur: (e) => { children.props.onBlur?.(e); triggers.current.focus = false; hide() },
+        onPointerDown: (e) => { children.props.onPointerDown?.(e); pointerFocus.current = true },
+        onFocus: (e) => {
+          children.props.onFocus?.(e)
+          if (pointerFocus.current) {
+            pointerFocus.current = false
+            return
+          }
+          triggers.current.focus = true
+          cancelShow()
+          show()
+        },
+        onBlur: (e) => { children.props.onBlur?.(e); pointerFocus.current = false; triggers.current.focus = false; hide() },
       })}
       {pos !== null && (
         <span
