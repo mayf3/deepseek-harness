@@ -46,6 +46,16 @@
   transition: transform var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
+/* One-frame app-region pulse at each open/close edge (RightbarSeat): changing
+   this computed value is what makes Electron recollect the window's drag
+   rects, which the slide's transform/visibility flips alone never dirty
+   (electron#32341). While set, the whole panel is out of the drag band for
+   that frame, which is also the desired end state everywhere but the strip's
+   blank fill. */
+:global(html[data-platform='darwin']) .panel[data-sidebar-right-region-nudge] {
+  -webkit-app-region: no-drag;
+}
+
 .panel[data-sidebar-right-panel='fullscreen'] {
   position: fixed;
   inset: 0;

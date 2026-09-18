@@ -210,6 +210,34 @@ describe('RightbarSeat presentation', () => {
     expect(h.frame.closeRightbar).toHaveBeenCalled()
   })
 
+  it('pulses the app-region nudge at each open and close edge on macOS only', async () => {
+    const h = await mountSeat()
+    const panel = element(h.view.container, '[data-sidebar-right-panel]')
+    const marks = vi.spyOn(panel, 'setAttribute')
+    const nudges = () => marks.mock.calls.filter(([name]) => name === 'data-sidebar-right-region-nudge').length
+    // Web and Windows compose no app-regions: the slide needs no nudge.
+    act(() => { h.controller.toggleExpanded() })
+    act(() => { h.controller.toggleExpanded() })
+    expect(nudges()).toBe(0)
+    document.documentElement.dataset.platform = 'darwin'
+    try {
+      act(() => { h.controller.toggleExpanded() })
+      expect(nudges()).toBe(1)
+      expect(panel.hasAttribute('data-sidebar-right-region-nudge')).toBe(true)
+      // A frame later the mark lifts (the pulse itself is the recollection
+      // trigger), and the settle pulse re-marks after the 0.3s slide.
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 450)) })
+      expect(nudges()).toBe(2)
+      expect(panel.hasAttribute('data-sidebar-right-region-nudge')).toBe(false)
+      // The close edge pulses again so the hidden panel's stale rects drop.
+      act(() => { h.controller.toggleExpanded() })
+      expect(nudges()).toBe(3)
+      expect(panel.hasAttribute('data-sidebar-right-region-nudge')).toBe(true)
+    } finally {
+      delete document.documentElement.dataset.platform
+    }
+  })
+
   it('fills the viewport without replacing the content tree or releasing the wide track', async () => {
     const h = await mountSeat()
     const tab = h.open()
