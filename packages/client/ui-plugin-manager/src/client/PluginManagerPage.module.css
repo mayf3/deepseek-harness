@@ -117,8 +117,9 @@
 
 /* Center the status label geometrically: beside larger titles the capsule's line-box offset shows. */
 .statusTag {
-  height: 20px;
-  padding: 0 8px;
+  height: 18px;
+  padding: 0 7px;
+  font-size: 10px;
   line-height: 1;
 }
 
@@ -238,7 +239,10 @@
   border: 0;
   background: transparent;
   color: inherit;
+  /* font: inherit resets the size, so the card title's own size follows. */
   font: inherit;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
   text-align: left;
   cursor: pointer;
@@ -301,6 +305,15 @@
 .iconButton:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* The toolbar's Add plugin action, one step up from the 28px sm capsule. */
+.addButton {
+  height: 32px;
+  font-size: 13px;
+  line-height: 20px;
+  padding: 0 12px;
+  border-radius: 16px;
 }
 
 .iconWrap {
@@ -384,7 +397,7 @@
 /* Wider than the default dialog: pnpm's lines are long, and the terminal keeps them unwrapped. The card never
    outgrows the viewport; the running screens scroll inside it so the head's controls stay reachable. */
 .installDialog {
-  width: min(600px, 100%);
+  width: min(540px, 100%);
   max-height: calc(100vh - 48px);
 }
 

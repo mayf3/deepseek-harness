@@ -13,10 +13,12 @@ import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { PluginInstallFailureKind } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   Button, IconChevronDownOutlineRegular, IconChevronLeftOutlineRegular,
-  IconChevronRightOutlineRegular, IconCloseOutlineRegular, IconCordisPluginOutlineRegular,
-  IconPluginPinwheelOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
-  IconWarningOutlineRegular, Input, Modal, StateDot, Switch, Tag, TerminalBlock, Toast,
-  type StateDotState, type TerminalBlockLabels,
+  IconChevronRightOutlineRegular, IconCloseOutlineRegular,
+  IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
+  IconWarningOutlineRegular, Input, Modal,
+  PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTeam, PluginArtworkTerminal,
+  StateDot, Switch, Tag, TerminalBlock, Toast,
+  type IconProps, type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { rowConfigKey, type OfficialItem } from './config-ledger.ts'
@@ -112,6 +114,38 @@ interface RowConfigure {
 /** Rows beyond this count get a filter box above the list. */
 const ROW_FILTER_THRESHOLD = 10
 
+/** The size the 36-viewBox plugin artwork renders at inside a card's 48px frame. */
+const CARD_ARTWORK_SIZE = 36
+
+/** The size the artwork renders at inside a row's 40px frame. */
+const ROW_ARTWORK_SIZE = 30
+
+/** The artwork of the official plugins that registered their configuration, by registration id. */
+const ITEM_ARTWORK = new Map<string, (props: IconProps) => ReactNode>([
+  ['bash', PluginArtworkTerminal],
+  ['agent-loop', PluginArtworkLoop],
+  ['subagent', PluginArtworkSubagent],
+  ['web-search', PluginArtworkSearch],
+])
+
+/** The artwork of the official bundles with artwork of their own, by package name. */
+const PACKAGE_ARTWORK = new Map<string, (props: IconProps) => ReactNode>([
+  ['@deepseek-ai/dsh-experimental-agent-team-profile', PluginArtworkTeam],
+  ['@deepseek-ai/dsh-experimental-agent-team-web-profile', PluginArtworkTeam],
+])
+
+/** An official plugin's card and page artwork; plugins without their own get the default. */
+function itemArtwork(id: string): ReactNode {
+  const Artwork = ITEM_ARTWORK.get(id) ?? PluginArtworkDefault
+  return <Artwork size={CARD_ARTWORK_SIZE} />
+}
+
+/** A package's card and page artwork; packages without their own get the default. */
+function packageArtwork(name: string): ReactNode {
+  const Artwork = PACKAGE_ARTWORK.get(name) ?? PluginArtworkDefault
+  return <Artwork size={CARD_ARTWORK_SIZE} />
+}
+
 /** A row's switch: locked, saying why, when the Host refuses to address the row through the profile patch. */
 function RowSwitch({ row, t, busy, onChange }: {
   readonly row: PackageRow
@@ -190,7 +224,7 @@ function RowsSection({ rows, t, toggle, configure }: {
                 {...row.phase === 'failed' ? { 'data-state': 'failed' } : row.enabled ? {} : { 'data-state': 'off' }}
               >
                 <div className={css.rowLine}>
-                  <span className={css.rowIcon} aria-hidden="true"><IconCordisPluginOutlineRegular /></span>
+                  <span className={css.rowIcon} aria-hidden="true"><PluginArtworkSubagent size={ROW_ARTWORK_SIZE} /></span>
                   <div className={css.rowMain}>
                     {configure?.has(row) === true
                       ? (
@@ -246,18 +280,19 @@ function packageStatus(pkg: PackageView): 'running' | 'disabled' | 'problem' {
   return pkg.enabled ? 'running' : 'disabled'
 }
 
-/** The head every card shares: the pinwheel icon, the name that opens the page beside its tags, its one-liner, and what sits at the end. */
-function CardHead({ title, t, onOpen, tags, description, end }: {
+/** The head every card shares: the artwork, the name that opens the page beside its tags, its one-liner, and what sits at the end. */
+function CardHead({ title, t, onOpen, icon, tags, description, end }: {
   readonly title: string
   readonly t: Translate
   readonly onOpen: () => void
+  readonly icon: ReactNode
   readonly tags?: ReactNode
   readonly description: ReactNode
   readonly end?: ReactNode
 }): ReactNode {
   return (
     <div className={css.cardHead}>
-      <span className={css.cardIcon} aria-hidden="true"><IconPluginPinwheelOutlineRegular size={20} /></span>
+      <span className={css.cardIcon} aria-hidden="true">{icon}</span>
       <div className={css.cardMain}>
         <div className={css.titleRow}>
           <button type="button" className={`${css.cardTitle} ${css.cardOpen}`} aria-label={t('openDetail', { name: title })} onClick={onOpen}>{title}</button>
@@ -275,7 +310,7 @@ function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
   readonly crumbLabel: string
   readonly crumbText: string
   readonly onBack: () => void
-  readonly icon?: ReactNode
+  readonly icon: ReactNode
   readonly actions?: ReactNode
 }): ReactNode {
   return (
@@ -285,7 +320,7 @@ function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
         <span>{crumbText}</span>
       </button>
       <div className={css.detailHead}>
-        <span className={css.cardIcon} aria-hidden="true">{icon ?? <IconPluginPinwheelOutlineRegular size={20} />}</span>
+        <span className={css.cardIcon} aria-hidden="true">{icon}</span>
         {actions}
       </div>
     </>
@@ -314,6 +349,7 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
         title={title}
         t={t}
         onOpen={onOpen}
+        icon={packageArtwork(pkg.name)}
         tags={(
           <>
             {beta ? <Tag className={css.statusTag} tone="info">{t('statusBeta')}</Tag> : null}
@@ -339,7 +375,7 @@ function ItemCard({ item, t, onOpen, renderSlot }: {
 }): ReactNode {
   return (
     <li className={`${css.card} ${css.cardLink}`} data-plugin-item={item.id}>
-      <CardHead title={item.label} t={t} onOpen={onOpen} description={renderSlot('plugins.item', { view: 'summary' }, { only: item.id })} />
+      <CardHead title={item.label} t={t} onOpen={onOpen} icon={itemArtwork(item.id)} description={renderSlot('plugins.item', { view: 'summary' }, { only: item.id })} />
     </li>
   )
 }
@@ -353,7 +389,7 @@ function ItemDetail({ item, t, onBack, renderSlot }: {
 }): ReactNode {
   return (
     <div className={css.detail} data-plugin-item-detail={item.id}>
-      <DetailTop crumbLabel={t('backToList')} crumbText={t('crumbRoot')} onBack={onBack} />
+      <DetailTop crumbLabel={t('backToList')} crumbText={t('crumbRoot')} onBack={onBack} icon={itemArtwork(item.id)} />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{item.label}</h3>
@@ -382,7 +418,7 @@ function RowDetail({ pkg, row, t, onBack, renderSlot }: {
   const key = rowConfigKey(pkg.name, row.rowId)
   return (
     <div className={css.detail} data-plugin-row-detail={key}>
-      <DetailTop crumbLabel={t('backToPackage', { name: title })} crumbText={title} onBack={onBack} icon={<IconCordisPluginOutlineRegular size={20} />} />
+      <DetailTop crumbLabel={t('backToPackage', { name: title })} crumbText={title} onBack={onBack} icon={<PluginArtworkSubagent size={CARD_ARTWORK_SIZE} />} />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{row.rowId}</h3>
@@ -431,6 +467,7 @@ function PackageDetail({
         crumbLabel={t('backToList')}
         crumbText={t('crumbRoot')}
         onBack={onBack}
+        icon={packageArtwork(pkg.name)}
         actions={(
           <div className={css.detailActions}>
             {pkg.installed
@@ -918,31 +955,21 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
               <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
                 <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutlineRegular /></span>
               </button>
-              <Button variant="primary" size="sm" icon={<IconPlusOutlineRegular size={13} />} disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
+              <Button variant="primary" size="sm" className={css.addButton} icon={<IconPlusOutlineRegular size={13} />} disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
             </div>
           </header>
         )
         : null}
-      {state.status === 'loading' ? (
+      {showsCards && state.status === 'loading' ? (
         <p className={`${css.status} ${css.statusWithDot}`} role="status">
           <StateDot state="ongoing" />{t('loading')}
         </p>
       ) : null}
-      {state.status === 'unavailable' ? (
+      {showsCards && state.status === 'unavailable' ? (
         <p className={`${css.status} ${css.statusWithDot}`} role="status">
           <StateDot state="idle" />{t('unavailable')}
         </p>
       ) : null}
-      {state.status === 'error'
-        ? (
-          <div className={css.failure}>
-            <p className={css.statusWithDot} role="alert">
-              <StateDot state="error" />{t('error')}
-            </p>
-            <Button variant="outline" size="sm" onClick={props.refresh}>{t('retry')}</Button>
-          </div>
-        )
-        : null}
       {state.notice === null || noticeLine === null
         ? null
         : (
@@ -986,12 +1013,24 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         ? <ItemDetail item={openItem} t={t} renderSlot={renderSlot} onBack={() => { setView({ kind: 'list' }) }} />
         : null}
       {loaded && showsCards
-        ? officialCards.length === 0 && mine.length === 0
+        ? officialCards.length === 0 && mine.length === 0 && state.status !== 'error'
           ? <p className={css.empty}>{t('empty')}</p>
           : (
             <>
               {renderGroup('official', t('officialTitle'), officialCards)}
               {renderGroup('bundles', t('bundlesTitle'), mine.map(packageCard))}
+              {/* A failed package read trails the groups it left incomplete: right under Official on a
+                  first-load failure, and after the kept cards when a refresh fails over stale data. */}
+              {state.status === 'error'
+                ? (
+                  <div className={css.failure}>
+                    <p className={css.statusWithDot} role="alert">
+                      <StateDot state="error" />{t('error')}
+                    </p>
+                    <Button variant="outline" size="sm" onClick={props.refresh}>{t('retry')}</Button>
+                  </div>
+                )
+                : null}
             </>
           )
         : null}
