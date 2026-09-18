@@ -111,8 +111,8 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
 function createWindow(preload: string, show = false, primary = false): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
-    height: 840,
-    minWidth: 880,
+    height: 820,
+    minWidth: 480,
     minHeight: 600,
     show,
     ...(process.platform === 'win32' && primary ? {
