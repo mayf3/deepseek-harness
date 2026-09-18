@@ -42,7 +42,7 @@ jobs:
   node-24:
     if: github.event_name == 'pull_request'
     runs-on: >-
-      ${{ vars.DSH_CI_FAILOVER_LINUX == 'blacksmith' && 'blacksmith-16vcpu-ubuntu-2404'
+      ${{ vars.DSH_CI_FAILOVER_LINUX == 'blacksmith' && 'blacksmith-8vcpu-ubuntu-2404'
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
@@ -495,8 +495,8 @@ jobs:
   # Observational checks reuse the successful build and remain non-blocking.
   # Dependabot PRs are excluded from the self-hosted pool and stay queued for
   # the hosted runner.
-  # Blacksmith uses 2 vCPU for file-serial native tests; builds, coverage,
-  # and observational gates retain 16 for their concurrent work.
+  # Blacksmith uses 2 vCPU for file-serial native tests and 16 for coverage
+  # and the shared build/observational workspace.
   windows-build:
     if: github.event_name == 'pull_request'
     runs-on: >-
