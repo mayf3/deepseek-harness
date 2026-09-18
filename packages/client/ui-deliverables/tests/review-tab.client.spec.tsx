@@ -248,6 +248,14 @@ describe('ReviewTab', () => {
     expect([left!.scrollLeft, left!.scrollTop]).toEqual([15, 22])
     fireEvent.scroll(right!, { target: { scrollLeft: 15, scrollTop: 22 } })
     expect([left!.scrollLeft, left!.scrollTop]).toEqual([15, 22])
+    // A short peer clamps horizontal writes to zero, including the resulting scroll event.
+    Object.defineProperty(right, 'scrollLeft', { configurable: true, get: () => 0, set: () => {} })
+    fireEvent.scroll(left!, { target: { scrollLeft: 100 } })
+    fireEvent.scroll(right!)
+    expect(left!.scrollLeft).toBe(100)
+    fireEvent.scroll(left!, { target: { scrollTop: 44 } })
+    fireEvent.scroll(right!)
+    expect([left!.scrollLeft, right!.scrollTop]).toEqual([100, 44])
     expect(view.getByRole('button', { name: en['review.splitAria'] }).getAttribute('aria-pressed')).toBe('true')
     // Wrapped lines vary in height, so both sides share one row per pair.
     fireEvent.click(view.getByRole('button', { name: en['review.wrapAria'] }))

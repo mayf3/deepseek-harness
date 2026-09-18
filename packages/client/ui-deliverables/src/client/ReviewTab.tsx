@@ -280,11 +280,19 @@ function hunkHeader(hunk: WorkspaceDiffHunk): string {
 function SplitColumns({ hunks }: { hunks: readonly WorkspaceDiffHunk[] }): ReactNode {
   const paired = useMemo(() => hunks.map(hunk => ({ header: hunkHeader(hunk), rows: splitRows(hunk) })), [hunks])
   const columns = useRef<Record<'left' | 'right', HTMLDivElement | null>>({ left: null, right: null })
-  // Mirror one side's offsets onto the other; the mirrored side's own scroll event then finds nothing to change.
+  const offsets = useRef({ left: { scrollLeft: 0, scrollTop: 0 }, right: { scrollLeft: 0, scrollTop: 0 } })
   const follow = (side: 'left' | 'right') => (event: UIEvent<HTMLDivElement>): void => {
-    const other = columns.current[side === 'left' ? 'right' : 'left']
+    const peer = side === 'left' ? 'right' : 'left'
+    const other = columns.current[peer]
     for (const axis of ['scrollLeft', 'scrollTop'] as const) {
-      if (other !== null && other[axis] !== event.currentTarget[axis]) other[axis] = event.currentTarget[axis]
+      const value = event.currentTarget[axis]
+      if (offsets.current[side][axis] === value) continue
+      offsets.current[side][axis] = value
+      if (other !== null) {
+        other[axis] = value
+        // Record the browser-clamped offset so its scroll event cannot pull the source back.
+        offsets.current[peer][axis] = other[axis]
+      }
     }
   }
   return (
