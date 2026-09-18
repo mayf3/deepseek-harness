@@ -86,6 +86,53 @@ describe('Messages request conversion', () => {
     expect(body([assistant([call()]), minimal]).messages[1]?.content[0]).toEqual({ type: 'tool_result', tool_use_id: 'a', content: [] })
   })
 
+  it('omits assistant-only blocks from user input while preserving text and durable content', () => {
+    const history = [createMessage({ role: 'user', source: { kind: 'user' }, content: [
+      { type: 'text', text: 'Background subagent finished.\n' },
+      { type: 'reasoning', text: 'child reasoning' },
+      call('child-call'),
+      { type: 'text', text: '  child answer  ' },
+    ] })]
+    const saved = JSON.stringify(history)
+
+    expect(body(history).messages).toEqual([{ role: 'user', content: [
+      { type: 'text', text: 'Background subagent finished.\n' },
+      { type: 'text', text: '  child answer  ' },
+    ] }])
+    expect(JSON.stringify(history)).toBe(saved)
+  })
+
+  it('omits assistant-only blocks inside tool results while retaining calls, errors and empty results', () => {
+    const reasoning: ContentBlock = { type: 'reasoning', text: 'tool reasoning' }
+    const history = [assistant([reasoning, call(), call('b')]),
+      createToolResultMessage({ callId: ToolCallId('a'), content: [reasoning, call('nested-call'), { type: 'text', text: '  result\n' }], isError: true }),
+      result('b', [reasoning, call('another-nested-call')]),
+    ]
+    const saved = JSON.stringify(history)
+
+    expect(body(history).messages).toEqual([
+      { role: 'assistant', content: [
+        { type: 'thinking', thinking: 'tool reasoning' },
+        ...['a', 'b'].map(id => ({ type: 'tool_use', id, name: 'read', input: { path: 'a' } })),
+      ] },
+      { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: 'a', content: [{ type: 'text', text: '  result\n' }], is_error: true },
+        { type: 'tool_result', tool_use_id: 'b', content: [], is_error: false },
+      ] },
+    ])
+    expect(JSON.stringify(history)).toBe(saved)
+  })
+
+  it.each([
+    [], [{ type: 'reasoning', text: 'child reasoning' }], [call('child-call')],
+  ] satisfies ContentBlock[][])('omits empty user input after conversion %#', (...content) => {
+    const empty = createMessage({ role: 'user', source: { kind: 'user' }, content })
+    expect(body([empty, user(), assistant([{ type: 'text', text: 'answer' }]), empty]).messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'answer' }] },
+    ])
+  })
+
   it('collects leading system text and maps tools, stop sequences and explicit output cap', () => {
     const system = createMessage({ role: 'system', source: { kind: 'plugin', plugin: 'test' }, content: [{ type: 'text', text: 'instructions' }] })
     expect(body([system, user()], { system: 'top', maxTokens: 123, stop: ['END'], tools: [{ name: 'read', description: 'Read a file', parameters: { type: 'object' } }] })).toMatchObject({
@@ -313,7 +360,8 @@ describe('Messages images', () => {
     await expect(prepareImages([assistant([image])], connection, model, attachments, access, signal)).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
     expect(() => body([result('a', [image])])).toThrow(/image/)
     expect(() => body([assistant([image])])).toThrow(/assistant/)
-    expect(() => body([result('a', [{ type: 'reasoning', text: 'bad' }])])).toThrow(/user/)
+    expect(() => body([result('a', [{ type: 'tool-result', toolCallId: ToolCallId('nested'), content: [] }])]))
+      .toThrow(/user\/tool-result content tool-result/)
     expect(() => serialize(options({ model }), connection, [result('a', [image])], new Map([[ref.attachmentId, version]]), access, undefined, new Map()))
       .toThrow(/request file id is missing/)
   })
