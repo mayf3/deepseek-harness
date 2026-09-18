@@ -334,6 +334,8 @@ export interface LaunchOptions {
   profile?: {
     hmr?: boolean
     packages: { dir: string; enabled?: boolean }[]
+    /** Additional selected names, including bundles unavailable after an upgrade. */
+    bundles?: readonly string[]
   }
   /**
    * Replay fixture (session.jsonl) served by the inserted dsh-llm-replay row
@@ -455,7 +457,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   requireDist()
   const {
     auditStartupEntries, composeEntries, createProfileResolutionGeneration, healProfilesModuleFallback, initProfile,
-    mountRootInclude, readProfileManifest, readProfilePatches, loadOverlayPatches, PluginPackages,
+    mountRootInclude, readProfileManifest, readProfilePatches, loadProfileDirectory, loadOverlayPatches, PluginPackages,
   } = appBoot()
   const mode = webSnapshotMode()
   const replayFixture = options.replayFixture === undefined
@@ -731,7 +733,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       // A real profile: the shipped web bundles plus each fixture package,
       // installed the way `dsh plugin add` leaves them.
       const dependencies: Record<string, string> = {}
-      const bundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
+      const bundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', ...options.profile.bundles ?? []]
       for (const entry of options.profile.packages) {
         const manifest = JSON.parse(await readFile(join(entry.dir, 'package.json'), 'utf8')) as { name: string }
         dependencies[manifest.name] = `file:${entry.dir}`
@@ -746,7 +748,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       await writeFile(join(profileDir, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
       profileContext = {
         name: 'scaffold', dir: profileDir, patchPath: profile.patchPath, installAnchor: INSTALL_ANCHOR,
-        cwd: workspaceCwd, home: harnessHome, startedBundles: bundles,
+        cwd: workspaceCwd, home: harnessHome,
+        startedBundles: loadProfileDirectory('dsh', profileDir, INSTALL_ANCHOR).layers.map(layer => layer.packageName),
         overlays: overlayPatches, telemetryDisabledEnv: undefined,
       }
       // HMR gates file-driven reloads on application readiness, which the

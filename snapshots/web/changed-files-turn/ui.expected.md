@@ -76,7 +76,8 @@
     - button "查看 intro.md 的改动": intro.md +1 -1
   - listitem:
     - button "查看 notes.txt 的改动": notes.txt +1 -0
-- button "展开全部 4 个改动文件": 全部 4 个文件
+  - listitem:
+    - button "查看 src/util.ts 的改动": src/util.ts +3 -0
 - text: 此主机没有可用的桌面，无法使用外部程序打开文件或文件夹；文件仍可在侧边栏预览
 - button "在侧边栏预览 intro.md"
 - text: intro.md 标题已改为「项目说明」

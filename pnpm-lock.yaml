@@ -539,6 +539,9 @@ importers:
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:^
         version: link:../../packages/util/home-paths
+      '@deepseek-ai/node-addon-system':
+        specifier: workspace:^
+        version: link:../../native/system/packages/entry
       '@electron/get':
         specifier: ^5.1.0
         version: 5.1.0(supports-color@9.4.0)
@@ -9122,6 +9125,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-conversation':
         specifier: workspace:^
         version: link:../../client/ui-conversation
+      '@deepseek-ai/dsh-client-ui-message-feedback':
+        specifier: workspace:^
+        version: link:../../client/ui-message-feedback
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: workspace:^
         version: link:../../client/ui-primitives
