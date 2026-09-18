@@ -117,6 +117,18 @@ describe('PluginManagerPage', () => {
     expect(actions.openInstall).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the read failure and its retry visible while a detail page is open', () => {
+    const { actions, set } = renderTab({ packages: [pkg()] })
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    set({ status: 'error' })
+    expect(screen.getByRole('alert').querySelector('[data-state="error"]')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    expect(actions.refresh).toHaveBeenCalledTimes(1)
+    // The detail keeps showing the kept data behind the alert.
+    expect(document.querySelector('[data-plugin-detail]')).not.toBeNull()
+  })
+
   it('lists the installed bundles as cards, the installation\'s offered ones as official, and tags a problem the Host reports', () => {
     const { actions } = renderTab({
       packages: [
@@ -271,6 +283,13 @@ describe('PluginManagerPage', () => {
       expect(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Shell') })).toBeTruthy()
     })
 
+    it('gives an official plugin without artwork of its own the default artwork', () => {
+      renderTab({ packages: [] }, { items: [{ id: 'custom-tool', label: 'Custom' }] })
+      const card = document.querySelector('[data-plugin-item="custom-tool"]') as HTMLElement
+      const stops = [...card.querySelectorAll('stop')].map(stop => stop.getAttribute('stop-color'))
+      expect(stops).toEqual(['#54ECE7', '#658EFF'])
+    })
+
     it('renders a bundle\'s own configuration on its page, and no configure control on a row without one', () => {
       renderTab({ packages: [pkg({ rows: [row()] })] }, { bundles: new Set(['dsh-better-sidebar']) }, bodies)
       fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
@@ -308,17 +327,17 @@ describe('PluginManagerPage', () => {
 
   it('opens a guide under the field and drops an example into it', () => {
     const { actions } = renderTab({ install: { ...IDLE_INSTALL, open: true } })
-    expect(screen.queryByText(en.installGuideIntro)).toBeNull()
+    expect(screen.queryByText(en.installGuideIdHint)).toBeNull()
     const toggle = screen.getByRole('button', { name: en.installGuideToggle })
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(toggle)
     expect(screen.getByRole('button', { name: en.installGuideHide }).getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByText(en.installGuideIdNote)).toBeTruthy()
+    expect(screen.getByText(en.installGuideIdHint)).toBeTruthy()
     expect(screen.getByText(en.installGuideGitExample)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.installGuideFillAria.replace('{example}', en.installGuideIdExample) }))
     expect(actions.editInstallSpec).toHaveBeenCalledExactlyOnceWith(en.installGuideIdExample)
     fireEvent.click(screen.getByRole('button', { name: en.installGuideHide }))
-    expect(screen.queryByText(en.installGuideIntro)).toBeNull()
+    expect(screen.queryByText(en.installGuideIdHint)).toBeNull()
   })
 
   it('opens a bundle\'s page with its facts and rows, and uninstalls from it', () => {

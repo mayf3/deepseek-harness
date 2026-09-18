@@ -15,11 +15,12 @@ import type { ReactNode, RefObject } from 'react'
 import clsx from 'clsx'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import { FileTypeIcon, IconRefreshOutlineRegular, Menu, Tooltip, classifyFileType } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  FileTypeIcon, IconNowrapFillRegular, IconRefreshOutlineRegular, IconWrapFillRegular, Menu, Tooltip, classifyFileType,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { TextInjected } from './face.ts'
 import { emptyFailureRecourse, failureLine } from './failure-line.ts'
-import { IconNowrapFill16, IconWrapFill16 } from './icons.tsx'
 import { LoadingIndicator } from './LoadingIndicator.tsx'
 import { hostFileOf } from './rpc.ts'
 import type { TextStore } from './store.ts'
@@ -320,7 +321,7 @@ export function TextPreview({
               data-textpreview-tool="wrap"
               onClick={() => { actions.toggledWrap(tab.id) }}
             >
-              {state.wrap ? <IconNowrapFill16 /> : <IconWrapFill16 />}
+              {state.wrap ? <IconNowrapFillRegular /> : <IconWrapFillRegular />}
             </button>
           </Tooltip>
         )}
