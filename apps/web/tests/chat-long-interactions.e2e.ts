@@ -209,8 +209,6 @@ describe('web e2e: long Chat interaction contract', () => {
     await railScroller.hover()
     await page.mouse.wheel(0, -FIXTURE_TURNS * 10)
     await expect.poll(() => railScroller.evaluate(element => element.scrollTop)).toBe(0)
-    // Keyboard preview owns this assertion, not the mark under the wheel gesture's stationary pointer.
-    await page.mouse.move(0, 0)
     await firstTurnButton.focus()
     const preview = page.getByRole('tooltip')
     await preview.waitFor({ state: 'visible', timeout: 5_000 })
@@ -229,7 +227,6 @@ describe('web e2e: long Chat interaction contract', () => {
     await railScroller.hover()
     await page.mouse.wheel(0, -FIXTURE_TURNS * 10)
     await expect.poll(() => railScroller.evaluate(element => element.scrollTop)).toBe(0)
-    await page.mouse.move(0, 0)
     await firstTurnButton.waitFor({ state: 'visible' })
     expect(await markPitch()).toBe(10)
     // Activating the still-unloaded oldest mark pages the rest in and lands

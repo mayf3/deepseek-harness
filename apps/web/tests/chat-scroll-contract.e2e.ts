@@ -608,7 +608,6 @@ describe('web e2e: long Chat scroll contract', () => {
       await railScroller.hover()
       await world.page.mouse.wheel(0, -HISTORY_FIXTURE.turns * 10)
       await expect.poll(() => railScroller.evaluate(element => element.scrollTop)).toBe(0)
-      await world.page.mouse.move(0, 0)
       await firstUnloaded.waitFor({ state: 'visible' })
       expect((await scrollGeometry(world.page)).scrollTop).toBe(bodyBeforeRailScroll.scrollTop)
 
@@ -618,6 +617,19 @@ describe('web e2e: long Chat scroll contract', () => {
       await expect.poll(() => tooltip.count(), { timeout: 15_000 }).toBe(1)
       await expect.poll(() => tooltip.textContent(), { timeout: 5_000 }).toContain(HISTORY_FIXTURE.markers.user(1))
       expect(await tooltip.textContent()).toContain(HISTORY_FIXTURE.markers.assistant(1))
+      const previewId = await tooltip.getAttribute('id')
+      const hoveredMark = () => rail.evaluate(element => element.querySelector<HTMLButtonElement>('button:hover')?.dataset.index ?? null)
+      await expect.poll(hoveredMark).not.toBeNull()
+      const hoveredBefore = await hoveredMark()
+      await world.page.mouse.wheel(0, 80)
+      await expect.poll(() => railScroller.evaluate(element => element.scrollTop)).toBe(80)
+      await expect.poll(hoveredMark).toBe(String(Number(hoveredBefore) + 8))
+      await nextPaint(world.page)
+      expect(await firstUnloaded.evaluate(element => document.activeElement === element)).toBe(true)
+      expect(await firstUnloaded.getAttribute('aria-describedby')).toBe(previewId)
+      expect(await tooltip.textContent()).toContain(HISTORY_FIXTURE.markers.user(1))
+      await world.page.mouse.wheel(0, -80)
+      await expect.poll(() => railScroller.evaluate(element => element.scrollTop)).toBe(0)
       const transcriptLayers = await tooltip.evaluate((preview) => {
         const railSlot = preview.closest('nav')?.parentElement
         const codeBanner = document.querySelector<HTMLElement>('.md-code-block > :first-child')

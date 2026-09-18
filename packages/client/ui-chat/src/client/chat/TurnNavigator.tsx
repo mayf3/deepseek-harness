@@ -70,7 +70,7 @@ const TurnMark = memo(function TurnMark({
       aria-current={active ? 'true' : undefined}
       aria-busy={busy ? 'true' : undefined}
       aria-describedby={previewId}
-      onPointerEnter={() => { onPreview(item.turn) }}
+      onPointerMove={() => { onPreview(item.turn) }}
       onClick={() => { onNavigate(item) }}
       onFocus={() => { onFocusChange(item.turn) }}
       onBlur={() => { onFocusChange(null) }}
@@ -180,19 +180,18 @@ function TurnNavigatorRail(
   const virtualItems = virtualizer.getVirtualItems()
 
   const scrollToIndex = useCallback((
-    index: number, align: 'auto' | 'center', behavior: 'auto' | 'smooth' | 'instant' = preferredScrollBehavior(),
+    index: number, reveal: 'if-needed' | 'always', behavior: 'auto' | 'smooth' | 'instant' = preferredScrollBehavior(),
   ): void => {
     const item = virtualizer.measurementsCache[index]
     const height = virtualizer.scrollRect?.height ?? 0
     if (item === undefined || height <= 0) return
     const current = virtualizer.scrollOffset ?? 0
-    let target = item.start + (item.size - height) / 2
-    if (align === 'auto') {
+    const center = item.start + item.size / 2
+    if (reveal === 'if-needed') {
       const { scrollPaddingStart, scrollPaddingEnd } = virtualizer.options
-      if (item.end >= current + height - scrollPaddingEnd) target = item.end + scrollPaddingEnd - height
-      else if (item.start <= current + scrollPaddingStart) target = item.start - scrollPaddingStart
-      else return
+      if (center >= current + scrollPaddingStart && center <= current + height - scrollPaddingEnd) return
     }
+    const target = center - height / 2
     const max = Math.max(0, virtualizer.getTotalSize() - height)
     const delta = Math.max(0, Math.min(max, target)) - current
     if (delta !== 0) virtualizer.scrollBy(delta, { behavior })
@@ -206,7 +205,7 @@ function TurnNavigatorRail(
     },
     scrollToTurn(turn) {
       const index = turnIndexes.get(turn)
-      if (index !== undefined) scrollToIndex(index, 'center')
+      if (index !== undefined) scrollToIndex(index, 'always')
     },
   }), [items, turnIndexes, onNavigate, scrollToIndex])
 
@@ -222,7 +221,7 @@ function TurnNavigatorRail(
     const behavior = previous?.count === items.length && previous.height === viewHeight
       ? preferredScrollBehavior()
       : 'instant'
-    scrollToIndex(activeIndex, 'auto', behavior)
+    scrollToIndex(activeIndex, 'if-needed', behavior)
   }, [activeIndex, items.length, viewHeight, scrollToIndex])
 
   if (items.length < 2) return null
@@ -289,6 +288,8 @@ function TurnNavigatorRail(
  * Fixed-pitch rail of every known Turn — loaded marks scroll, unloaded marks
  * page history in first — with hover and focus previews. Overflow scrolls
  * inside the frame, gradient fades marking each scrollable end, and the
- * active mark keeps itself in view while the pointer is elsewhere.
+ * active mark centers only outside the fade-free band while the pointer is
+ * elsewhere. Previews follow pointer movement or focus, not scrolling under
+ * a stationary pointer.
  */
 export const TurnNavigator = memo(forwardRef(TurnNavigatorRail))

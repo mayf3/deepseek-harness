@@ -805,7 +805,7 @@ describe('ChatView', () => {
     fireEvent.scroll(scroller)
     expect(scroller.className).toContain('fadeTop')
     expect(scroller.className).toContain('fadeBottom')
-    fireEvent.pointerEnter(within(nav).getByRole('button', { name: '加载并跳转到第 25 轮' }))
+    fireEvent.pointerMove(within(nav).getByRole('button', { name: '加载并跳转到第 25 轮' }))
     expect(view.getByRole('tooltip').textContent).toContain('p25')
   })
 
