@@ -12,9 +12,16 @@ export async function mandatoryFrame(parent) {
 
 export async function mandatoryFrameDriver(parent) {
   const frame = await mandatoryFrame(parent)
+  if (!parent.webContents.debugger.isAttached()) parent.webContents.debugger.attach('1.3')
   const contents = new Proxy(parent.webContents, { get(target, key) {
     if (key === 'executeJavaScript') return frame.executeJavaScript.bind(frame)
-    if (key === 'sendInputEvent') return event => target.sendInputEvent(typeof event.y === 'number' ? { ...event, y: event.y + 40 } : event)
+    if (key === 'sendInputEvent') return event => {
+      if (typeof event.y !== 'number') return target.sendInputEvent(event)
+      return target.debugger.sendCommand('Input.dispatchMouseEvent', {
+        type: event.type === 'mouseDown' ? 'mousePressed' : event.type === 'mouseUp' ? 'mouseReleased' : 'mouseMoved',
+        x: event.x, y: event.y + 40, button: event.button ?? 'none', clickCount: event.clickCount ?? 0,
+      })
+    }
     const value = Reflect.get(target, key)
     return typeof value === 'function' ? value.bind(target) : value
   } })

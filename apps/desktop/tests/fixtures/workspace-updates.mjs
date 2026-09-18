@@ -150,13 +150,15 @@ async function press(window, expression) {
     if (!target.contains(document.elementFromPoint(point.x, point.y))) throw new Error('Click target is obscured');
     return point;
   })()`))
-  window.webContents.sendInputEvent({ type: 'mouseMove', ...point })
-  window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
-  window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
+  await window.webContents.sendInputEvent({ type: 'mouseMove', ...point })
+  await window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
+  await window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
 }
 async function clickText(window, label) {
+  const title = await window.webContents.executeJavaScript("document.getElementById('title').textContent")
   await press(window, `[...document.querySelectorAll('button')].find(button => button.textContent.trim() === ${JSON.stringify(label)})`)
-  await waitFor(() => window.isDestroyed(), `dialog response: ${label}`)
+  await waitFor(async () => window.isDestroyed()
+    || await window.webContents.executeJavaScript("document.getElementById('title').textContent") !== title, `dialog response: ${label}`)
 }
 async function dialogWith(message) {
   let found
@@ -191,7 +193,15 @@ async function qualify() {
     console.log('workspace qualification: startup API requests settled')
     const messages = resolveDesktopLocale(app.getLocale()).messages
     await screenshot(mainWindow, 'workspace.png')
-    const menu = Menu.getApplicationMenu().items[0].submenu.items
+    let menu
+    if (process.platform === 'win32') {
+      const popup = Menu.prototype.popup
+      try {
+        Menu.prototype.popup = function (options) { menu = this.items; options.callback?.() }
+        await mainWindow.webContents.executeJavaScript("document.querySelector('[data-windows-menu]').shadowRoot.querySelector('button').click()")
+        await waitFor(() => menu !== undefined, 'Windows application menu')
+      } finally { Menu.prototype.popup = popup }
+    } else menu = Menu.getApplicationMenu().items[0].submenu.items
     const checkMenu = menu.find(item => item.label === messages.checkUpdatesMenu)
     assert.ok(checkMenu)
     if (interactive) {
@@ -207,9 +217,8 @@ async function qualify() {
     const checking = await dialogWith(messages.updateChecking)
     await screenshot(checking, 'checking.png')
     server.release()
-    await waitFor(() => checking.isDestroyed(), 'checking dialog to close')
-    console.log('workspace qualification: checking dialog closed')
     const current = await dialogWith(messages.updateCurrent.replace('{version}', app.getVersion()))
+    assert.equal(current, checking)
     await clickText(current, messages.updateAcknowledge)
     assert.equal(server.requests.filter(path => path === '/payload.exe').length, 0)
     cases.push('native-menu-checking-and-current-without-download')
@@ -277,6 +286,7 @@ async function qualify() {
     console.log('workspace qualification: mandatory title rendered')
     assert.equal(await mandatory.webContents.executeJavaScript(`document.getElementById('title').children.length`), 0)
     assert.equal(mandatory.isModal(), false)
+    await waitFor(() => mainWindow.isEnabled(), 'ordinary modal releases the main window')
     assert.equal(mainWindow.isEnabled(), true)
     if (process.platform === 'win32') assert.equal(mainWindow.getChildWindows().length, 0)
     const originalBounds = mainWindow.getBounds()
@@ -337,7 +347,8 @@ async function qualify() {
 
     server.policy('force')
     checkMenu.click()
-    const forcedRecovery = await windowAt('dsh-app://shell/mandatory-update.html')
+    let forcedRecovery = await windowAt('dsh-app://shell/mandatory-update.html')
+    await waitFor(() => mainWindow.isEnabled(), 'ordinary modal releases the main window for recovery')
     await press(forcedRecovery, `document.getElementById('update')`)
     await documentReady(forcedRecovery, `document.getElementById('update')?.textContent === ${JSON.stringify(messages.installAndRestart)}`)
     assert.equal(BrowserWindow.getAllWindows().some(window => window.webContents.getURL() === 'dsh-app://shell/update-dialog.html'), false)
@@ -348,7 +359,11 @@ async function qualify() {
     await documentReady(forcedRecovery, `document.getElementById('error')?.textContent === ${JSON.stringify(messages.updateStopFailed)}`)
     await screenshot(forcedRecovery, 'mandatory-stop-failure.png')
     await waitFor(() => fixture.host !== forcedHost && fixture.readyHosts.has(fixture.host), 'mandatory replacement Host readiness')
-    assert.equal(mainWindow.isEnabled(), false)
+    if (process.platform === 'win32') {
+      await waitFor(() => forcedRecovery.isDestroyed(), 'recovery reload replaces the embedded document')
+      forcedRecovery = await mandatoryFrameDriver(mainWindow)
+    }
+    assert.equal(mainWindow.isEnabled(), true)
     assert.equal(fixture.installations.length, 0)
     await control('queue')
     await press(forcedRecovery, `document.getElementById('update')`)
@@ -357,7 +372,7 @@ async function qualify() {
     await press(forcedRecovery, `document.getElementById('later')`)
     await waitFor(() => fixture.coordinator.state.phase === 'ready', 'mandatory deferred retry readiness')
     assert.equal(forcedRecovery.isDestroyed(), false)
-    assert.equal(mainWindow.isEnabled(), false)
+    assert.equal(mainWindow.isEnabled(), true)
     assert.equal(fixture.installations.length, 0)
     server.policy('clear')
     checkMenu.click()
