@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/sidebar-right.md
-sidebar-right.md: a6478e10f19bc11f2a8bfa89d6213a85ffd76ffc
-sidebar-right.zh.md: af23b93945ce714cf4f0485752d8e07f155055c2
+sidebar-right.md: 663139313edb3b2341874c05030faa8c26998944
+sidebar-right.zh.md: bdab35cb88bb62c33e447b67592858c0c92f7a4c
