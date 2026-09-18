@@ -9,7 +9,7 @@ import {
   resolveBundleDir, resolveProfileDir, loadOverlayPatches, type ProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
-import type { PackageResult } from './types.ts'
+import type { PackageResult, Registry } from './types.ts'
 
 /** Profile and invocation locations supplied by the launcher. */
 export interface PackageOperationContext {
@@ -209,18 +209,35 @@ export interface PackageViewOptions {
   signal?: AbortSignal
   /** Bound on the lookup, in milliseconds. */
   timeoutMs: number
+  /** The registry asked; null asks the one pnpm's own configuration names. */
+  registry?: Registry
+}
+
+/**
+ * The argument that sends one pnpm command to a registry.
+ * @param registry - the registry, or null for the one pnpm's own configuration names.
+ * @returns `--registry=<url>` for a URL; nothing for null.
+ */
+export function registryArguments(registry: Registry): string[] {
+  return registry === null ? [] : [`--registry=${registry}`]
 }
 
 /**
  * Ask the registry what a spec names through `pnpm view`, run in the profile
- * directory so the registry, proxy, and authentication settings of an install apply.
+ * directory so the registry, proxy, and authentication settings of an install
+ * apply. The lookup makes one request without pnpm's own retries: a registry
+ * that does not answer is reported within `timeoutMs`, and the registries
+ * configured after it are the retry.
  * @param dir Profile directory.
  * @param spec One registry spec: a package name with an optional range.
- * @param options Cancellation and the time bound.
+ * @param options The registry, cancellation, and the time bound.
  * @returns pnpm's exit, output, and how the lookup ended.
  */
 export async function viewProfilePackage(dir: string, spec: string, options: PackageViewOptions): Promise<PackageViewResult> {
-  const result = await execa(options.command ?? 'pnpm', [...options.args ?? [], 'view', spec, 'name', 'version', 'description', 'dsh', '--json'], {
+  const result = await execa(options.command ?? 'pnpm', [
+    ...options.args ?? [], 'view', spec, 'name', 'version', 'description', 'dsh', '--json',
+    ...registryArguments(options.registry ?? null), '--config.fetch-retries=0',
+  ], {
     cwd: dir, env: { ...scrubbedParentEnv(), ...options.env }, extendEnv: false, reject: false, stdin: 'ignore',
     timeout: options.timeoutMs, ...options.signal === undefined ? {} : { cancelSignal: options.signal },
   })
