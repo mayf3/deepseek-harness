@@ -12,10 +12,28 @@ window.__ModuleLoader__.load({
       apply(ctx) {
         const counters = document.documentElement.dataset
         counters.liveMounts = String(Number(counters.liveMounts ?? 0) + 1)
-        ctx.effect(() => ctx.locale.register('fixtureLive', { zh: { active: '动态插件已启用' }, en: { active: 'Live plugin enabled' } }))
+        ctx.effect(() => ctx.locale.register('fixtureLive', {
+          zh: { active: '动态插件已启用', configSummary: '示例配置项', configForm: '动态插件配置', configField: '问候语', configSave: '保存' },
+          en: { active: 'Live plugin enabled', configSummary: 'An example setting', configForm: 'Live plugin configuration', configField: 'Greeting', configSave: 'Save' },
+        }))
         ctx.slots.inject('shell.overlay', () => ctx.slots.register({
           name: 'shell.overlay', id: 'fixture-live-client', locale: 'fixtureLive',
         }, ({ t }) => React.createElement('div', { 'data-live-client': '' }, t('active'))))
+        // The configuration of this bundle's one row, as the Plugins page renders it on the row's own page.
+        ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
+          name: 'plugins.row.config', key: '@fixture/live-client#fixture-live-client', locale: 'fixtureLive',
+        }, ({ t, view }) => view === 'summary'
+          ? t('configSummary')
+          : React.createElement('form', {
+            'data-live-config': '',
+            'aria-label': t('configForm'),
+            onSubmit: (event) => {
+              event.preventDefault()
+              counters.liveSaves = String(Number(counters.liveSaves ?? 0) + 1)
+            },
+          },
+          React.createElement('label', null, t('configField'), React.createElement('input', { name: 'greeting', defaultValue: 'hello' })),
+          React.createElement('button', { type: 'submit' }, t('configSave')))))
         ctx.effect(() => {
           const ping = () => { counters.liveHits = String(Number(counters.liveHits ?? 0) + 1) }
           window.addEventListener('dsh-fixture-ping', ping)

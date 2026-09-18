@@ -8,6 +8,7 @@
  * not the slot runtime.
  */
 import { onTestFinished, vi } from 'vitest'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { Mock } from 'vitest'
 import { act } from '@testing-library/react'
 import { createElement, useSyncExternalStore } from 'react'
@@ -25,6 +26,15 @@ import type { DocumentPreviewProps } from '../src/client/document/contract.ts'
 import { TextBody } from '../src/client/text/TextBody.tsx'
 import { textBodyDefinition } from '../src/client/text/index.ts'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
+
+type BodySlot = PropsRenderSlots<'sidebar.right.tab.document'>['renderSlot']
+
+/** Preserve the body-slot callback used by component fixtures. */
+export function documentSlots(body: BodySlot): TextPreviewProps['renderSlot'] {
+  return (name, owner, options) => name === 'sidebar.right.tab.document'
+    ? body(name, owner as unknown as Parameters<BodySlot>[1], options as Parameters<BodySlot>[2])
+    : null
+}
 
 export const TAB_ID = 'tab-1' as TabId
 export const SESSION = 's-1' as SessionId
@@ -129,7 +139,7 @@ export function harness(script: Record<number, RemoteResult<WorkspaceFileText>> 
       ? createElement(TextBody, {
         ...owner as object, useTabInfo: opts?.hookContext, sessionId: SESSION, useResource,
       } as unknown as DocumentPreviewProps)
-      : createElement('div', {
+      : key === 'sidebar.right.tab.document.action' ? null : createElement('div', {
         'data-slot': key,
         'data-slot-file': (owner as { file: SessionFile }).file.path,
         'data-slot-path': (owner as { absolutePath: string }).absolutePath,
@@ -151,7 +161,7 @@ export function harness(script: Record<number, RemoteResult<WorkspaceFileText>> 
     actions: instance.actions,
     loadPage: face.loadPage,
     reloadPages: face.reloadPages,
-    loadAll: face.loadAll,
+    prepareRenderer: face.prepareRenderer, loadAll: face.loadAll,
     reloadAll: face.reloadAll,
     useDocumentPreviews: () => definitions,
     renderSlot,

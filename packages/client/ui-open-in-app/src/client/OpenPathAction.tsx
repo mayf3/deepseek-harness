@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  IconChevronDownOutline14, IconFolderOpenOutline16, IconRightUpOutline16, Menu, Tooltip,
+  IconChevronDownOutlineRegular, IconFolderOpenOutlineRegular, IconRightUpOutlineRegular, Menu, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -94,8 +94,8 @@ export function OpenPathAction(props: OpenPathActionProps): ReactNode {
         align="end"
         onClose={() => { setMenuOpen(false) }}
         items={[
-          { id: 'open', icon: <IconRightUpOutline16 size={16} className={css.menuIcon} />, label: t('path.defaultApp') },
-          { id: 'reveal', icon: <IconFolderOpenOutline16 />, label: t('path.reveal') },
+          { id: 'open', icon: <IconRightUpOutlineRegular size={16} className={css.menuIcon} />, label: t('path.defaultApp') },
+          { id: 'reveal', icon: <IconFolderOpenOutlineRegular />, label: t('path.reveal') },
         ]}
         onSelect={(id) => { run(id === 'reveal' ? 'reveal' : 'open') }}
         anchor={(
@@ -121,7 +121,7 @@ export function OpenPathAction(props: OpenPathActionProps): ReactNode {
               data-open-path-more
               onClick={() => { setMenuOpen(value => !value) }}
             >
-              <IconChevronDownOutline14 size={11} />
+              <IconChevronDownOutlineRegular size={11} />
             </button>
           </div>
         )}

@@ -1,6 +1,6 @@
 /** Empty-state contribution: open a file the document preview cannot render in its default application. */
 import type { ReactNode } from 'react'
-import { IconRightUpOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconRightUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import type { NS } from './locales.ts'
@@ -32,7 +32,7 @@ export function OpenPathEmptyAction(props: OpenPathEmptyActionProps): ReactNode 
         onClick={() => { act('open') }}
       >
         {t('path.unpreviewable')}
-        <IconRightUpOutline16 size={14} />
+        <IconRightUpOutlineRegular size={14} />
       </button>
       {toast}
     </>

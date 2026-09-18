@@ -236,7 +236,9 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
           className={styles['input']}
           type="text"
           value={baseURL}
-          placeholder={t('customBaseUrlPlaceholder')}
+          placeholder={t(protocol === 'anthropic-messages'
+            ? 'customAnthropicBaseUrlPlaceholder'
+            : 'customBaseUrlPlaceholder')}
           aria-label={t('baseUrl')}
           aria-invalid={baseUrlInvalid}
           disabled={profileDisabled}

@@ -13,6 +13,9 @@
   ],
   "references": [
     {
+      "path": "../ui-settings"
+    },
+    {
       "path": "../../../vendor/cordis"
     },
     {

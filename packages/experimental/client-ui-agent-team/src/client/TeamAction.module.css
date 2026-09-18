@@ -55,6 +55,7 @@
   border: 0;
   border-radius: 12px;
   background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-elevation-prominent);
 }
@@ -157,7 +158,10 @@
   background: var(--dsw-alias-bg-base);
 }
 
-.taskTitle span {
+.taskState {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
   color: var(--dsw-alias-label-tertiary);
   font-size: 11px;
@@ -235,6 +239,9 @@
 
 .notice,
 .error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 9px;
   font-size: 12px;
 }

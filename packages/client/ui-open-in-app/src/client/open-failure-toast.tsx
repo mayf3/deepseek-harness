@@ -1,7 +1,7 @@
 /** Per-control failure banner for path gestures. */
 import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { IconWarningOutline16, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconWarningOutlineRegular, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /**
  * Transient failure banner owned by the control that initiated the gesture,
@@ -16,7 +16,7 @@ export function useOpenFailureToast(): { toast: ReactNode; show: (text: string) 
   return {
     toast: banner === null
       ? null
-      : <Toast key={banner.seq} text={banner.text} icon={<IconWarningOutline16 />} onDone={() => { setBanner(null) }} />,
+      : <Toast key={banner.seq} text={banner.text} icon={<IconWarningOutlineRegular />} onDone={() => { setBanner(null) }} />,
     show: (text) => {
       seq.current += 1
       setBanner({ seq: seq.current, text })
