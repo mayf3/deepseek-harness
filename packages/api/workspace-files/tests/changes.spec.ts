@@ -1,7 +1,7 @@
 /** Target-scoped Host changes, fresh filesystem metadata, and watcher ownership. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock, MockInstance } from 'vitest'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { FileSystem, FsObservation, FsTarget } from '@deepseek-ai/dsh-fs'
@@ -418,6 +418,26 @@ describe('workspaceFiles.changes — backends and access', () => {
     })
     expect(stat.mock.calls).toEqual([[target, signal], [target, signal]])
     expect(unwatch).toHaveBeenCalledTimes(1)
+    await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
+  })
+
+  it('observes creation of a missing outside file through the real local watcher', async () => {
+    watch.mockRestore()
+    const path = join(harness.outside, 'created.txt')
+    const staging = join(harness.outside, 'staged.txt')
+    // Publish complete bytes so an early watcher stat cannot observe a partial write.
+    await writeFile(staging, 'new file contents')
+    const service = harness.endpoint()
+    const stream = open(service, path)
+    await ready(stream)
+    const pending = stream.next()
+    await rename(staging, path)
+    const current = await service.stat(harness.scope, path, stream.controller.signal)
+    await expect(pending).resolves.toEqual({
+      done: false,
+      value: { kind: 'change', change: { absolutePath: current.absolutePath, version: current.version } },
+    })
+    await stream.close()
     await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
   })
 
