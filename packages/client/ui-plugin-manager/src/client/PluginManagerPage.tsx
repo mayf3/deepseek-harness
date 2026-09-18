@@ -740,8 +740,13 @@ function InstallDialog({
   const pending = isInstallPending(phase)
   const cancellable = phase === 'starting' || phase === 'running' || phase === 'unconfirmed'
   const stoppable = cancellable || phase === 'failed' || phase === 'unknown'
-  const uncertainty = install.failure?.uncertainty
-  const uncertaintyKey = uncertainty === undefined ? undefined : ({ result: 'installResultUnconfirmed', cancellation: phase === 'applying' ? 'installApplyingCancellationError' : 'installCancelUnconfirmed', acceptance: 'installAwaitingAcceptance' } as const)[uncertainty]
+  const failure = install.failure
+  const uncertainty = failure?.uncertainty
+  const uncertaintyText = failure?.uncertainty === undefined ? null : t(({
+    result: 'installResultUnconfirmed',
+    cancellation: phase === 'applying' ? 'installApplyingCancellationError' : 'installCancelUnconfirmed',
+    acceptance: 'installAwaitingAcceptance',
+  } as const)[failure.uncertainty], { reason: failure.reason })
   const pendingBuilds = phase === 'failed' ? install.failure?.pendingBuilds ?? [] : []
   const approvable = pendingBuilds.length > 0
   const firstRun = install.runs[0]
@@ -777,7 +782,7 @@ function InstallDialog({
             </span>
             <h2 className={css.wizardTitle} role={phase === 'failed' ? 'alert' : 'status'}>{heading}</h2>
             {phase === 'failed' ? <p className={css.wizardSub}>{failureText(install.failure, t)}</p> : null}
-            {uncertaintyKey === undefined ? null : <p className={css.wizardSub} role="alert">{t(uncertaintyKey, { reason: install.failure?.reason ?? '' })}</p>}
+            {uncertaintyText === null ? null : <p className={css.wizardSub} role="alert">{uncertaintyText}</p>}
             {phase === 'unknown' ? <p className={css.wizardSub}>{t('installUnknownDescription')}</p> : null}
           </div>
           {install.subject === null ? null : <SubjectCard subject={install.subject} t={t} />}
