@@ -55,10 +55,12 @@ export interface BundleInfo {
 /** A registry to install from: an http(s) URL, or null for the one pnpm's own configuration names. */
 export type Registry = string | null
 
-/** The registries the manager asks: the configured first one, then its fallbacks in order. */
+/** The registries the manager asks: the configured first one, its fallbacks in order, and what pnpm's own configuration names. */
 export interface PluginRegistries {
   readonly registry: Registry
   readonly fallbackRegistries: readonly string[]
+  /** The URL pnpm's own configuration names in the profile, read from pnpm; null when it could not be read. */
+  readonly resolved: string | null
 }
 
 /** How a pnpm run failed, read off how it ended and what it printed. */
@@ -105,6 +107,11 @@ export interface ChangeResult {
   approvedBuilds?: string[]
   /** The registries the installation asked, in order; `packageResult` is the last one's run. */
   registries?: Registry[]
+  /**
+   * What the last failed run could not reach or get an answer from: the registry it asked, or the host a git or
+   * tarball spec is fetched from, which no registry stands in for; absent for a failure neither explains.
+   */
+  failedAt?: 'registry' | 'spec-host'
 }
 
 /** Identifies one installation from its start to its settlement, including its log chunks and cancellation. */
@@ -220,9 +227,10 @@ declare module '@deepseek-ai/cordis' {
      */
     'plugin-manager/install-log'(chunk: PluginInstallLogChunk): void
     /**
-     * An installation moved between its Host phases.
+     * An installation moved between its Host phases. `installing` is announced once per registry the
+     * installation asks, with the attempt's registry and position; `cancelling` and `applying` once.
      * @mode emit
-     * @param progress - the installation's request id and phase.
+     * @param progress - the installation's request id and phase, with the attempt while installing.
      */
     'plugin-manager/install-state'(progress: PluginInstallProgress): void
   }

@@ -70,7 +70,8 @@ describe('classifyInstallFailure', () => {
     expect(classifyInstallFailure({ log: 'ECONNRESET' })).toBe('network')
     expect(classifyInstallFailure({ log: 'ERR_PNPM_FETCH_502  GET https://registry/x: Bad Gateway' })).toBe('network')
     expect(classifyInstallFailure({ log: 'fatal: unable to access https://github.com/a/b/: Could not resolve host' })).toBe('network')
-    expect(classifyInstallFailure({ log: 'ERR_PNPM_NO_OFFLINE_META  Failed to resolve x@1 in package mirror' })).toBe('network')
+    // An offline cache miss is no registry's failure, so it is not one another registry could change.
+    expect(classifyInstallFailure({ log: 'ERR_PNPM_NO_OFFLINE_META  Failed to resolve x@1 in package mirror' })).toBe('unknown')
     expect(classifyInstallFailure({ log: 'npm error code FETCH_ERROR\nnpm error errno FETCH_ERROR' })).toBe('network')
     expect(classifyInstallFailure({ log: 'exited with 1', cause: new Error('no code') })).toBe('unknown')
     expect(classifyInstallFailure({ log: '' })).toBe('unknown')

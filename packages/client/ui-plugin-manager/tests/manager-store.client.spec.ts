@@ -30,9 +30,11 @@ const PLUGINS: PluginInfo[] = [
 ]
 
 const MIRROR = 'https://registry.npmmirror.com/'
+const OFFICIAL = 'https://registry.npmjs.org/'
+const CORP = 'https://npm.corp.example/'
 
-/** The registries the Host asks: pnpm's own first, then the mirror. */
-const REGISTRIES = { registry: null, fallbackRegistries: [MIRROR] }
+/** The registries the Host asks: pnpm's own first, which names npm's own registry, then the mirror. */
+const REGISTRIES = { registry: null, fallbackRegistries: [MIRROR], resolved: OFFICIAL }
 
 /** What the check answers for a registry name. */
 const INSPECTED = { status: 'accepted' as const, kind: 'registry' as const, name: 'dsh-better-sidebar', version: '1.0.0', bundle: true, registry: null }
@@ -768,6 +770,7 @@ describe('PluginManagerController', () => {
     face.openInstall()
     expect(state().install).toMatchObject({ registries: null, registry: { kind: 'offered', registry: null }, registryOpen: false, registryError: false })
     await vi.waitFor(() => { expect(state().install.registries).toEqual(REGISTRIES) })
+    expect(state().install.registry).toEqual({ kind: 'offered', registry: null })
     face.toggleRegistryOptions()
     expect(state().install.registryOpen).toBe(true)
     // Changing the registry is for the failed screen; at the spec it does nothing.
@@ -791,6 +794,22 @@ describe('PluginManagerController', () => {
     gate.resolve(ok({ ...APPLIED, bundle: 'dsh-new', registries: [MIRROR, null] }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
     expect(state().install.attempts).toEqual({ registries: [MIRROR, null], total: 2 })
+  })
+
+  it('starts from the registry the Host configured first while nothing is remembered', async () => {
+    const corporate = { registry: CORP, fallbackRegistries: [MIRROR], resolved: OFFICIAL }
+    const { plugins, face, state } = bench({
+      registries: vi.fn(() => Promise.resolve(ok(corporate))),
+      inspect: vi.fn(() => Promise.resolve(ok({ ...INSPECTED, registry: CORP }))),
+    })
+    face.openInstall()
+    await vi.waitFor(() => { expect(state().install.registries).toEqual(corporate) })
+    expect(state().install.registry).toEqual({ kind: 'offered', registry: CORP })
+    face.editInstallSpec('dsh-new')
+    face.runInstall()
+    expect(plugins.inspect).toHaveBeenCalledWith('dsh-new', { registry: CORP }, expect.any(AbortSignal))
+    await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
+    expect(plugins.installBundle).toHaveBeenCalledWith('dsh-new', expect.objectContaining({ registry: CORP }))
   })
 
   it('refuses a custom registry that is not an http(s) URL before asking the Host, and remembers the registry last used', async () => {
@@ -850,14 +869,14 @@ describe('PluginManagerController', () => {
   it('goes back to the spec with the registries open from a failed run, keeping the registries the Host asked', async () => {
     const outcome = {
       ...failed({ code: 'operation-error', diagnostic: 'ETIMEDOUT' }, { exitCode: 1, output: '', truncated: false, logPath: '/l', kind: 'network' }),
-      registries: [null, MIRROR],
+      registries: [null, MIRROR], failedAt: 'registry' as const,
     }
     const { face, state } = bench({ installBundle: vi.fn(() => Promise.resolve(ok(outcome))) })
     face.openInstall()
     face.editInstallSpec('dsh-new')
     face.runInstall()
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
-    expect(state().install.failure).toMatchObject({ kind: 'network' })
+    expect(state().install.failure).toMatchObject({ kind: 'network', failedAt: 'registry' })
     expect(state().install.attempts).toEqual({ registries: [null, MIRROR], total: 2 })
     face.changeRegistry()
     expect(state().install).toMatchObject({ phase: 'idle', spec: 'dsh-new', registryOpen: true, runs: [], failure: null })

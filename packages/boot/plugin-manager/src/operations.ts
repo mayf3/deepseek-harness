@@ -214,6 +214,24 @@ export interface PackageViewOptions {
 }
 
 /**
+ * Read the registry pnpm's own configuration names in the profile: its `.npmrc` chain and workspace settings,
+ * as `pnpm config get registry` resolves them.
+ * @param dir Profile directory.
+ * @param options The pnpm executable and the time bound.
+ * @returns The registry URL as pnpm printed it, or null when pnpm did not answer with one.
+ */
+export async function readProfileRegistry(
+  dir: string, options: { command?: string; args?: readonly string[]; env?: Readonly<Record<string, string>>; timeoutMs: number },
+): Promise<string | null> {
+  const result = await execa(options.command ?? 'pnpm', [...options.args ?? [], 'config', 'get', 'registry'], {
+    cwd: dir, env: { ...scrubbedParentEnv(), ...options.env }, extendEnv: false, reject: false, stdin: 'ignore', timeout: options.timeoutMs,
+  })
+  // The registry is the last line: pnpm may print a notice before it.
+  const answer = result.exitCode === 0 ? result.stdout.trim().replace(/^[\s\S]*\n/, '').trim() : ''
+  return /^https?:\/\/\S+$/.test(answer) ? answer : null
+}
+
+/**
  * The argument that sends one pnpm command to a registry.
  * @param registry - the registry, or null for the one pnpm's own configuration names.
  * @returns `--registry=<url>` for a URL; nothing for null.

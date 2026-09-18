@@ -24,6 +24,7 @@ import type {
   ReadOnlyReason,
   Registry,
 } from '@deepseek-ai/dsh-api-remotes/client'
+import { REGISTRY_URL } from '@deepseek-ai/dsh-plugin-manager/registry'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConfigLedger } from './config-ledger.ts'
@@ -91,11 +92,8 @@ export type RegistryChoice =
   | { readonly kind: 'offered'; readonly registry: Registry }
   | { readonly kind: 'custom'; readonly url: string }
 
-/** The registry asked before any was remembered: the one pnpm's own configuration names. */
+/** The choice shown until the Host has said which registry it asks first: the one pnpm's own configuration names. */
 const OFFICIAL_REGISTRY: RegistryChoice = { kind: 'offered', registry: null }
-
-/** An http(s) URL, as pnpm's `--registry` takes it; what the dialog requires of a typed registry. */
-const REGISTRY_URL = /^https?:\/\/\S+$/
 
 /**
  * The registries the dialog offers: the Host's first, its fallbacks, and pnpm's own, each once.
@@ -180,6 +178,8 @@ export interface InstallState {
     readonly reason: string
     readonly code?: ManagementError['code']
     readonly kind?: PluginInstallFailureKind
+    /** What the last failed run could not reach, as the Host attributed it: the registry, or the spec's own host. */
+    readonly failedAt?: 'registry' | 'spec-host'
     readonly pendingBuilds?: readonly string[]
     readonly cancelUnconfirmed?: true
   } | null
@@ -283,11 +283,13 @@ class RemoteAnswerError extends Error {
 /** The dialog's reading of a failed change: the Host's code and diagnostic, and the run's classified failure. */
 function failureOf(
   error: ManagementError | undefined, kind: PluginInstallFailureKind | undefined, pendingBuilds?: readonly string[],
+  failedAt?: ChangeResult['failedAt'],
 ): NonNullable<InstallState['failure']> {
   return {
     reason: error?.diagnostic ?? '',
     ...error === undefined ? {} : { code: error.code },
     ...kind === undefined ? {} : { kind },
+    ...failedAt === undefined ? {} : { failedAt },
     ...pendingBuilds === undefined || pendingBuilds.length === 0 ? {} : { pendingBuilds },
   }
 }
@@ -365,11 +367,15 @@ function specAgain(install: InstallState): InstallState {
   return { ...IDLE_INSTALL, open, spec, registries, registry }
 }
 
-/** The choice as the dialog can show it: a remembered registry the Host no longer offers is kept as a typed one. */
-function reconciled(choice: RegistryChoice, registries: PluginRegistries): RegistryChoice {
-  return choice.kind === 'offered' && choice.registry !== null && !offeredRegistries(registries).includes(choice.registry)
-    ? { kind: 'custom', url: choice.registry }
-    : choice
+/**
+ * The choice as the dialog can show it once the Host has answered: nothing remembered starts from the registry the
+ * Host asks first; a remembered registry the Host no longer offers is kept as a typed one.
+ */
+function reconciled(remembered: RegistryChoice | null, registries: PluginRegistries): RegistryChoice {
+  if (remembered === null) return { kind: 'offered', registry: registries.registry }
+  return remembered.kind === 'offered' && remembered.registry !== null && !offeredRegistries(registries).includes(remembered.registry)
+    ? { kind: 'custom', url: remembered.registry }
+    : remembered
 }
 
 /** Reads and mutates the profile's plugins through the `pluginManager` Remote. */
@@ -383,8 +389,8 @@ export class PluginManagerController {
   /** Cancels the check the dialog has in flight. */
   private inspectAbort: AbortController | undefined
   private noticeSeq = 0
-  /** The registry last used from this browser, kept across dialogs and page loads. */
-  private readonly registryMemory: SnapshotStore<RegistryChoice> = createSnapshotStore<RegistryChoice>(OFFICIAL_REGISTRY, {
+  /** The registry last used from this browser, kept across dialogs and page loads; null until one was used. */
+  private readonly registryMemory: SnapshotStore<RegistryChoice | null> = createSnapshotStore<RegistryChoice | null>(null, {
     persist: { name: 'dsh.plugin-manager.install-registry' },
   })
 
@@ -426,7 +432,7 @@ export class PluginManagerController {
       refresh: () => { void this.load() },
       openInstall: () => {
         if (isInstallPending(this.getSnapshot().install.phase)) return
-        this.patch({ install: { ...IDLE_INSTALL, open: true, registry: this.registryMemory.getSnapshot() } })
+        this.patch({ install: { ...IDLE_INSTALL, open: true, registry: this.registryMemory.getSnapshot() ?? OFFICIAL_REGISTRY } })
         void this.readRegistries()
       },
       closeInstall: () => {
@@ -500,7 +506,7 @@ export class PluginManagerController {
     const answer = await this.ctx.remote.pluginManager.registries()
     const install = this.getSnapshot().install
     if (this.disposed || !install.open || !answer.ok) return
-    this.patchInstall({ registries: answer.value, registry: reconciled(install.registry, answer.value) })
+    this.patchInstall({ registries: answer.value, registry: reconciled(this.registryMemory.getSnapshot(), answer.value) })
   }
 
   /**
@@ -671,7 +677,7 @@ export class PluginManagerController {
       this.patchInstall({
         phase: 'failed',
         runs: settledRuns(runs, packages?.exitCode ?? null),
-        failure: failureOf(result.value.error, packages?.kind, result.value.pendingBuilds),
+        failure: failureOf(result.value.error, packages?.kind, result.value.pendingBuilds, result.value.failedAt),
         ...asked(result.value.registries),
       })
     } else {

@@ -14,9 +14,9 @@ The [boot package group](../../packages/boot/README.md) owns launcher-provided p
 
 `InstallBundleOptions.enabled` defaults to true. False installs without selecting the bundle layer. `approvedBuilds` grants persistent script permission to the supplied pending package names before installation. `registry` names the registry asked first; absent, the configured one.
 
-`PluginRegistries` carries the configured first registry, `null` for the one pnpm's own configuration names, and the fallbacks asked after it. `InspectOptions.registry` names the registry a lookup asks first.
+`PluginRegistries` carries the configured first registry, `null` for the one pnpm's own configuration names, the fallbacks asked after it, and `resolved`, the URL pnpm's own configuration names or `null` while unread. `InspectOptions.registry` names the registry a lookup asks first.
 
-`ChangeResult.changed` reports a disk edit independently of `application`: `applied`, `restart-required`, `overridden` or `failed`. Optional `error` carries a localizable code and external diagnostic. `packageResult` records the pnpm exit code, bounded output, truncation flag and complete diagnostic log path. `pendingBuilds` lists undecided packages across the profile; `approvedBuilds` records the names granted permission by this operation; `registries` lists the registries an installation asked, in order.
+`ChangeResult.changed` reports a disk edit independently of `application`: `applied`, `restart-required`, `overridden` or `failed`. Optional `error` carries a localizable code and external diagnostic. `packageResult` records the pnpm exit code, bounded output, truncation flag and complete diagnostic log path. `pendingBuilds` lists undecided packages across the profile; `approvedBuilds` records the names granted permission by this operation; `registries` lists the registries an installation asked, in order; `failedAt` says whether the last failed run could not reach the registry it asked or the host a git or tarball spec is fetched from.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -74,10 +74,10 @@ Manage profile files and apply their declared reload lifecycle.
  */
 @Remote listBundles(): Promise<BundleInfo[]>
 
-/** Read the registries this manager asks: the configured first one, then its fallbacks in order.
- * @returns The registries in pnpm's comparison form; null is the one pnpm's own configuration names.
+/** Read the registries this manager asks: the configured first one, its fallbacks in order, and what pnpm's own configuration names.
+ * @returns The registries in pnpm's comparison form; null is the one pnpm's own configuration names, `resolved` as pnpm reads it now.
  */
-@Remote registries(): Promise<PluginRegistries>
+@Remote async registries(): Promise<PluginRegistries>
 
 /** Read what a spec names before installing it.
  * @param spec One package spec: a registry name, an absolute path, a git address, or a tarball.
@@ -216,13 +216,14 @@ Source: [`packages/boot/plugin-manager/src/types.ts`](../../packages/boot/plugin
 
 #### `plugin-manager/install-state` — emit
 
-An installation moved between its Host phases.
+An installation moved between its Host phases. `installing` is announced once per registry the installation asks, with the attempt's registry and position; `cancelling` and `applying` once.
 
 ```ts cordis-catalog
 /**
- * An installation moved between its Host phases.
+ * An installation moved between its Host phases. `installing` is announced once per registry the
+ * installation asks, with the attempt's registry and position; `cancelling` and `applying` once.
  * @mode emit
- * @param progress - the installation's request id and phase.
+ * @param progress - the installation's request id and phase, with the attempt while installing.
  */
 'plugin-manager/install-state'(progress: PluginInstallProgress): void
 ```

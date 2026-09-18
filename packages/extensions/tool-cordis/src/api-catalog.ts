@@ -1523,10 +1523,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Package versions, one-liners, rows, activation selections, whether the installation offers the bundle, and removal availability.',
       },
       {
-        signature: '@Remote registries(): Promise<PluginRegistries>',
-        description: 'Read the registries this manager asks: the configured first one, then its fallbacks in order.',
+        signature: '@Remote async registries(): Promise<PluginRegistries>',
+        description: 'Read the registries this manager asks: the configured first one, its fallbacks in order, and what pnpm\'s own configuration names.',
         parameters: [],
-        returns: 'The registries in pnpm\'s comparison form; null is the one pnpm\'s own configuration names.',
+        returns: 'The registries in pnpm\'s comparison form; null is the one pnpm\'s own configuration names, `resolved` as pnpm reads it now.',
       },
       {
         signature: '@Remote async inspect(spec: string, options?: InspectOptions, signal?: AbortSignal): Promise<PluginSpecInspection>',
@@ -3763,8 +3763,8 @@ export const EVENT_API: readonly EventApiEntry[] = [
     mode: 'emit',
     signature: '\'plugin-manager/install-state\'(progress: PluginInstallProgress): void',
     summary: 'An installation moved between its Host phases.',
-    description: 'An installation moved between its Host phases.',
-    parameters: [{ name: 'progress', description: 'the installation\'s request id and phase.' }],
+    description: 'An installation moved between its Host phases. `installing` is announced once per registry the installation asks, with the attempt\'s registry and position; `cancelling` and `applying` once.',
+    parameters: [{ name: 'progress', description: 'the installation\'s request id and phase, with the attempt while installing.' }],
   },
   {
     name: 'session-telemetry/record',
@@ -4252,7 +4252,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ChangeResult',
-    declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\' | \'cancelled\';\n    stage: \'install\' | \'enable\' | \'remove\';\n    target: string;\n    enabled?: boolean;\n    error?: ManagementError;\n    warnings?: string[];\n    packageResult?: PackageResult;\n    bundle?: string;\n    pendingBuilds?: string[];\n    approvedBuilds?: string[];\n    registries?: Registry[];\n}',
+    declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\' | \'cancelled\';\n    stage: \'install\' | \'enable\' | \'remove\';\n    target: string;\n    enabled?: boolean;\n    error?: ManagementError;\n    warnings?: string[];\n    packageResult?: PackageResult;\n    bundle?: string;\n    pendingBuilds?: string[];\n    approvedBuilds?: string[];\n    registries?: Registry[];\n    failedAt?: \'registry\' | \'spec-host\';\n}',
   },
   {
     name: 'ClientArtifactBaseline',
@@ -5328,7 +5328,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginRegistries',
-    declaration: 'export interface PluginRegistries {\n    readonly registry: Registry;\n    readonly fallbackRegistries: readonly string[];\n}',
+    declaration: 'export interface PluginRegistries {\n    readonly registry: Registry;\n    readonly fallbackRegistries: readonly string[];\n    readonly resolved: string | null;\n}',
   },
   {
     name: 'PluginSpecInspection',

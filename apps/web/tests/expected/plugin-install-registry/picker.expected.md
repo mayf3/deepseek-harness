@@ -19,5 +19,5 @@
     - textbox "自定义地址" [disabled]:
       - /placeholder: https://npm.example.com/
     - text: 公司内网或私有 npm 源；需要登录的源，把凭据放在本机的 ~/.npmrc 里
-    - paragraph: 选中的源连接失败时，会依次改用：官方源（默认）。GitHub 地址和 .tgz 直链本身不经过安装源，但它们的依赖仍从这里下载。
+    - paragraph: 选中的源连接失败时，会依次改用：官方源。GitHub 地址和 .tgz 直链本身不经过安装源，但它们的依赖仍从这里下载。
   - button "安装"

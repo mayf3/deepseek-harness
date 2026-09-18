@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { PassThrough } from 'node:stream'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { initProfile, readProfileManifest } from '@deepseek-ai/dsh-app-boot'
-import { anchorPathSpec, runPluginCommand, runProfilePnpm, viewProfilePackage } from '../src/operations.ts'
+import { anchorPathSpec, readProfileRegistry, runPluginCommand, runProfilePnpm, viewProfilePackage } from '../src/operations.ts'
 
 const command = vi.hoisted(() => ({ run: vi.fn<(...args: unknown[]) => ReturnType<typeof result>>() }))
 vi.mock('execa', () => ({ execa: (...args: unknown[]) => command.run(...args) }))
@@ -210,6 +210,24 @@ it('settles inherited CLI descriptors without requiring captured streams', async
     Promise.resolve({ exitCode: 0, failed: false }), { stdout: null, stderr: null },
   ) as unknown as ReturnType<typeof result>)
   expect(await runPluginCommand(context, ['approve-builds'], { execution: 'cli', outputBytes: 100 })).toMatchObject({ exitCode: 0, output: '' })
+})
+
+it('reads the registry pnpm\'s own configuration names in the profile, and answers null for anything but a URL', async () => {
+  const { dir } = fixture()
+  const answer = (value: object) => command.run.mockResolvedValueOnce(value as never)
+  answer({ exitCode: 0, stdout: 'https://registry.npmmirror.com/\n', stderr: '' })
+  expect(await readProfileRegistry(dir, { timeoutMs: 5 })).toBe('https://registry.npmmirror.com/')
+  expect(command.run).toHaveBeenLastCalledWith('pnpm', ['config', 'get', 'registry'], expect.objectContaining({ cwd: dir, timeout: 5, reject: false, stdin: 'ignore' }))
+  // Output pnpm prefixes with a notice keeps its last line; a failed or empty answer, or one that is no URL, reads as unknown.
+  answer({ exitCode: 0, stdout: 'WARN  something\nhttps://npm.corp.example/', stderr: '' })
+  expect(await readProfileRegistry(dir, { command: '/app/pnpm', args: ['--x'], timeoutMs: 5 })).toBe('https://npm.corp.example/')
+  expect((command.run.mock.lastCall as unknown[]).slice(0, 2)).toEqual(['/app/pnpm', ['--x', 'config', 'get', 'registry']])
+  answer({ exitCode: 1, stdout: '', stderr: 'ERR' })
+  expect(await readProfileRegistry(dir, { timeoutMs: 5 })).toBeNull()
+  answer({ exitCode: 0, stdout: 'undefined\n', stderr: '' })
+  expect(await readProfileRegistry(dir, { timeoutMs: 5 })).toBeNull()
+  answer({ exitCode: 0, stdout: '', stderr: '' })
+  expect(await readProfileRegistry(dir, { timeoutMs: 5 })).toBeNull()
 })
 
 it('asks the registry through pnpm view in the profile directory, without pnpm\'s own retries, and reports how the lookup ended', async () => {

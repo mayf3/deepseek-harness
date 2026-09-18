@@ -11,6 +11,7 @@
 
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { PluginInstallFailureKind, PluginRegistries, Registry } from '@deepseek-ai/dsh-api-remotes/client'
+import { normalizeRegistry, registryPlan } from '@deepseek-ai/dsh-plugin-manager/registry'
 import {
   Button, IconChevronDownOutlineRegular, IconChevronLeftOutlineRegular,
   IconChevronRightOutlineRegular, IconCloseOutlineRegular, IconCordisPluginOutlineRegular,
@@ -564,39 +565,39 @@ const SUBJECT_KIND_KEYS = {
   tarball: 'installSubjectTarball',
 } satisfies Record<InstallSubject['kind'], PluginManagerLocaleKey | undefined>
 
-/** The failures after which another registry is worth trying, from the failed screen. */
-const REGISTRY_FAILURE_KINDS: ReadonlySet<PluginInstallFailureKind> = new Set(['network', 'timeout', 'not-found', 'no-matching-version'])
-
 /** The registries asked, as a person reads them, in the dictionary's list form. */
-function registryList(registries: readonly Registry[], t: Translate): string {
-  return registries.map(registry => registryText(registry, t).title).join(t('registryListSeparator'))
+function registryList(registries: readonly Registry[], t: Translate, resolved: string | null): string {
+  return registries.map(registry => registryText(registry, t, resolved).title).join(t('registryListSeparator'))
 }
 
 /**
- * The registries the Host asks after the chosen one, in order: the rest of its configured set when the
- * choice is one of them, none otherwise. Mirrors the Host's `registryPlan`.
+ * The registries the Host asks after the chosen one, in order, by the Host's own plan; nothing while the Host has
+ * not said what it configured, and nothing for a typed address that is not a URL yet.
  */
 function registriesAfter(choice: RegistryChoice, registries: PluginRegistries | null): Registry[] {
-  if (choice.kind === 'custom' || registries === null) return []
-  const known = [registries.registry, ...registries.fallbackRegistries]
-  return known.includes(choice.registry) ? known.filter(registry => registry !== choice.registry) : []
+  if (registries === null) return []
+  try {
+    return registryPlan(choice.kind === 'offered' ? choice.registry : normalizeRegistry(choice.url.trim()), registries).slice(1)
+  } catch {
+    return [] // a registry that is no URL, typed or remembered: the Host would refuse it before planning
+  }
 }
 
 /**
  * The failed screen's one line: a pnpm failure by its kind, a refusal by its
  * code, any other failure in the Host's words; the run's output stays behind the details.
- * A network failure names every registry asked when there were several, and the
- * host a git or tarball spec is fetched from when that is what could not be reached.
+ * A run the Host laid at the spec's own host says so; one it laid at a registry
+ * names every registry asked when there were several.
  */
-function failureText(failure: InstallState['failure'], t: Translate, install?: Pick<InstallState, 'attempts' | 'subject'>): string {
+function failureText(failure: InstallState['failure'], t: Translate, install?: Pick<InstallState, 'attempts' | 'subject' | 'registries'>): string {
   if (failure === null) return t('installFailureGeneric')
   // Blocked scripts the Host could not name leave the person to allow them in the profile's pnpm settings by hand.
   if (failure.kind === 'build-blocked' && !failure.pendingBuilds?.length) return t('installFailureBuildBlockedManual')
-  if (failure.kind === 'network' || failure.kind === 'timeout') {
-    const asked = install?.attempts?.registries ?? []
-    if (asked.length > 1) return t('installFailureNetworkAll', { registries: registryList(asked, t) })
-    const host = install?.subject?.host
-    if (host !== undefined) return t('installFailureNetworkHost', { host })
+  const host = install?.subject?.host
+  if (failure.failedAt === 'spec-host' && host !== undefined) return t('installFailureNetworkHost', { host })
+  const asked = install?.attempts?.registries ?? []
+  if (failure.failedAt === 'registry' && (failure.kind === 'network' || failure.kind === 'timeout') && asked.length > 1) {
+    return t('installFailureNetworkAll', { registries: registryList(asked, t, install?.registries?.resolved ?? null) })
   }
   if (failure.kind !== undefined) return t(FAILURE_KIND_KEYS[failure.kind])
   if (failure.code !== undefined) return managementText({ code: failure.code, diagnostic: failure.reason }, t)
@@ -653,7 +654,12 @@ function InstallDialog({
     const checking = phase === 'checking'
     const empty = install.spec.trim() === ''
     const choice = install.registry
-    const chosenTitle = choice.kind === 'custom' ? t('registryCustom') : registryText(choice.registry, t).title
+    const resolved = install.registries?.resolved ?? null
+    // The registry the Host asks first carries the default tag, wherever it is listed.
+    const hostFirst = install.registries?.registry
+    const titleOf = (registry: Registry): string =>
+      registryText(registry, t, resolved).title + (install.registries !== null && registry === hostFirst ? t('registryDefaultTag') : '')
+    const chosenTitle = choice.kind === 'custom' ? t('registryCustom') : titleOf(choice.registry)
     const after = registriesAfter(choice, install.registries)
     const inputProblem = install.inputError
     // A check no registry answered names every registry asked; any other refusal reads by its problem.
@@ -661,7 +667,7 @@ function InstallDialog({
     const inputSentence = inputProblem === null
       ? null
       : inputProblem.problem === 'network' && askedByCheck.length > 1
-        ? t('installProblemNetworkAll', { registries: registryList(askedByCheck, t) })
+        ? t('installProblemNetworkAll', { registries: registryList(askedByCheck, t, resolved) })
         : t(INPUT_PROBLEM_KEYS[inputProblem.problem], { reason: inputProblem.reason })
     return (
       <Modal
@@ -761,14 +767,14 @@ function InstallDialog({
               <fieldset id={registryId} className={css.registry} data-install-registry disabled={checking}>
                 <legend className={css.registryLegend}>{t('registryLegend')}</legend>
                 {offeredRegistries(install.registries).map((registry) => {
-                  const text = registryText(registry, t)
+                  const text = registryText(registry, t, resolved)
                   const checked = choice.kind === 'offered' && choice.registry === registry
                   return (
                     <label key={registry ?? ''} className={css.registryOption} data-checked={checked}>
                       <input type="radio" name={registryId} checked={checked} onChange={() => { onChooseRegistry({ kind: 'offered', registry }) }} />
                       <span className={css.registryMain}>
                         <span className={css.registryTitle}>
-                          <span>{text.title}</span>
+                          <span>{titleOf(registry)}</span>
                           {text.badge === undefined ? null : <span className={css.registryBadge}>{text.badge}</span>}
                         </span>
                         <span className={css.registryHint}>{text.hint}</span>
@@ -804,7 +810,7 @@ function InstallDialog({
                   <span className={css.registryHint}>{t('registryCustomHint')}</span>
                 </div>
                 <p className={css.registryNote}>
-                  {after.length === 0 ? t('registryNoFallbackNote') : t('registryFallbackNote', { order: registryList(after, t) })}
+                  {after.length === 0 ? t('registryNoFallbackNote') : t('registryFallbackNote', { order: registryList(after, t, resolved) })}
                 </p>
               </fieldset>
             )
@@ -825,13 +831,15 @@ function InstallDialog({
   const asked = install.attempts !== null && install.attempts.registries.length > 1 ? install.attempts : null
   const current = asked === null ? undefined : asked.registries.at(-1)
   const previous = asked === null ? undefined : asked.registries.at(-2)
+  const resolved = install.registries?.resolved ?? null
   const attemptLine = pending && asked !== null && current !== undefined && previous !== undefined
     ? t('installAttempt', {
-      previous: registryText(previous, t).title, registry: registryText(current, t).title,
+      previous: registryText(previous, t, resolved).title, registry: registryText(current, t, resolved).title,
       index: String(asked.registries.length), total: String(asked.total),
     })
     : null
-  const changeable = phase === 'failed' && !approvable && install.failure?.kind !== undefined && REGISTRY_FAILURE_KINDS.has(install.failure.kind)
+  // Another registry is worth offering only for a failure the Host laid at the one it asked.
+  const changeable = phase === 'failed' && !approvable && install.failure?.failedAt === 'registry'
   return (
     <Modal open={install.open} onClose={onClose} title={heading} headless className={css.installDialog as string}>
       <div className={css.wizard} data-install-phase={phase}>
@@ -919,7 +927,7 @@ function InstallDialog({
                     <div key={run.jobId} className={css.run}>
                       {registry === undefined
                         ? null
-                        : <p className={css.attemptBadge}>{t('installAttemptBadge', { index: String(index + 1), registry: registryText(registry, t).title })}</p>}
+                        : <p className={css.attemptBadge}>{t('installAttemptBadge', { index: String(index + 1), registry: registryText(registry, t, resolved).title })}</p>}
                       <TerminalBlock
                         command={run.command}
                         output={run.output}

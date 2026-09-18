@@ -15,10 +15,10 @@ import {
 } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-hmr'
 import type { ProfileContext, ProfileManifest } from '@deepseek-ai/dsh-app-boot'
-import { bundleManifest, registryArguments, runProfilePnpm, saveManifest, viewProfilePackage } from './operations.ts'
+import { bundleManifest, readProfileRegistry, registryArguments, runProfilePnpm, saveManifest, viewProfilePackage } from './operations.ts'
 import { classifyInstallFailure } from './install-failure.ts'
 import { InvalidInstallSpecError, parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts'
-import { askNextRegistry, normalizeRegistry, registryPlan } from './registry.ts'
+import { attributeFailure, normalizeRegistry, registryPlan } from './registry.ts'
 import { writePluginEnabled } from './patch.ts'
 import { ManagementFailure } from './failure.ts'
 import { approveBuilds, readPendingBuilds } from './build-approval.ts'
@@ -30,7 +30,6 @@ import type {
 export type * from './types.ts'
 export { classifyInstallFailure, type InstallFailureFacts } from './install-failure.ts'
 export { InvalidInstallSpecError, parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts'
-export { askNextRegistry, normalizeRegistry, registryPlan } from './registry.ts'
 
 /** The pnpm executable, the registries asked, and the limits for package diagnostics and registry lookups. */
 export interface Config {
@@ -46,7 +45,8 @@ export interface Config {
   registry?: string
   /**
    * Registries asked in turn, as http(s) URLs, while the one before is unreachable or holds no copy of the package.
-   * A registry outside this set and `registry` is asked alone.
+   * A registry outside this set and `registry` is asked alone, and so is the one pnpm's own configuration names
+   * unless that is npm's own registry or one of these.
    */
   fallbackRegistries?: string[]
 }
@@ -133,6 +133,17 @@ function refused(problem: PluginInspectProblem, reason: string): PluginSpecInspe
   return { status: 'refused', problem, reason }
 }
 
+/** The refusal `pnpm view --json` prints on stdout, `{ error: { code, message } }`, as one log line; empty for anything else. */
+function printedError(printed: string): string {
+  let parsed: unknown
+  try { parsed = JSON.parse(printed || 'null') }
+  catch { return '' /* not JSON: nothing pnpm printed as a refusal */ }
+  const error = typeof parsed === 'object' && parsed !== null ? (parsed as { error?: unknown }).error : undefined
+  if (typeof error !== 'object' || error === null) return ''
+  const { code, message } = error as { code?: unknown; message?: unknown }
+  return [code, message].filter((part): part is string => typeof part === 'string').join('  ')
+}
+
 /** The spec's form, for deciding whether a failed attempt was the registry's; a form the parser refuses has no host of its own. */
 function parsedForRegistry(spec: string): ParsedInstallSpec {
   try {
@@ -169,7 +180,7 @@ export class PluginManager extends TypertRemoteService {
   private readonly lockWaitMs: number
   private readonly inspectTimeoutMs: number
   private readonly pnpmCommand: string
-  private readonly configuredRegistries: PluginRegistries
+  private readonly configuredRegistries: Omit<PluginRegistries, 'resolved'>
   private readonly ownerContext: Context
   private readonly abort = new AbortController()
   /** Installations by request id, from their call until it settles. */
@@ -255,12 +266,17 @@ export class PluginManager extends TypertRemoteService {
     return Promise.resolve(bundles)
   }
 
-  /** Read the registries this manager asks: the configured first one, then its fallbacks in order.
-   * @returns The registries in pnpm's comparison form; null is the one pnpm's own configuration names.
+  /** Read the registries this manager asks: the configured first one, its fallbacks in order, and what pnpm's own configuration names.
+   * @returns The registries in pnpm's comparison form; null is the one pnpm's own configuration names, `resolved` as pnpm reads it now.
    */
   @Remote
-  registries(): Promise<PluginRegistries> {
-    return Promise.resolve({ ...this.configuredRegistries, fallbackRegistries: [...this.configuredRegistries.fallbackRegistries] })
+  async registries(): Promise<PluginRegistries> {
+    return {
+      ...this.configuredRegistries, fallbackRegistries: [...this.configuredRegistries.fallbackRegistries],
+      resolved: await readProfileRegistry(this.profile.dir, {
+        ...this.profile.packageManager ?? { command: this.pnpmCommand }, timeoutMs: this.inspectTimeoutMs,
+      }),
+    }
   }
 
   /** Read what a spec names before installing it.
@@ -284,7 +300,7 @@ export class PluginManager extends TypertRemoteService {
     const known = new Set([
       ...manifest.dsh?.profile?.bundles ?? [], ...Object.keys(manifest.dependencies ?? {}), ...Object.keys(installation.dependencies ?? {}),
     ])
-    const plan = registryPlan(options?.registry, this.configuredRegistries)
+    const plan = registryPlan(options?.registry, await this.registries())
     const registry = plan[0] as Registry
     switch (parsed.kind) {
       case 'git': return { status: 'accepted', kind: 'git', bundle: null, registry, host: parsed.host }
@@ -316,19 +332,21 @@ export class PluginManager extends TypertRemoteService {
             ...this.profile.packageManager ?? { command: this.pnpmCommand },
             timeoutMs: this.inspectTimeoutMs, ...signal === undefined ? {} : { signal }, registry: current,
           })
-          const log = `${view.stderr}${view.cause === undefined ? '' : `${messageOf(view.cause)}\n`}`.trim()
+          const printed = view.stdout.replace(ANSI_SEQUENCE, '').trim()
           if (view.exitCode !== 0 || view.cause !== undefined || view.timedOut) {
+            // pnpm prints a refusal as `{ error: { code, message } }` on stdout, with nothing on stderr.
+            const log = [view.stderr.trim(), printedError(printed), view.cause === undefined ? '' : messageOf(view.cause)].filter(Boolean).join('\n')
             const kind = classifyInstallFailure({ log, timedOut: view.timedOut, ...view.cause === undefined ? {} : { cause: view.cause } })
             // A lookup the caller dropped is not carried to the next registry.
-            if (registries.length < plan.length && signal?.aborted !== true && askNextRegistry(kind, log, parsed)) continue
-            const reason = log || view.stdout.trim() || `pnpm view exited with ${String(view.exitCode)}`
+            if (registries.length < plan.length && signal?.aborted !== true && attributeFailure(kind, log, parsed) === 'registry') continue
+            const reason = view.timedOut ? `pnpm view timed out after ${String(this.inspectTimeoutMs)}ms` : log || printed || `pnpm view exited with ${String(view.exitCode)}`
             if (kind === 'not-found' || kind === 'no-matching-version') return refusedBy('not-found', reason)
-            if (kind === 'network') return refusedBy('network', reason)
-            return refusedBy('unknown', view.timedOut ? `pnpm view timed out after ${String(this.inspectTimeoutMs)}ms` : reason)
+            if (kind === 'network' || kind === 'timeout') return refusedBy('network', reason)
+            return refusedBy('unknown', reason)
           }
           let answer: unknown
           try {
-            answer = JSON.parse(view.stdout.replace(ANSI_SEQUENCE, '').trim() || 'null')
+            answer = JSON.parse(printed || 'null')
           } catch (error) {
             return refusedBy('unknown', `unreadable pnpm view output: ${messageOf(error)}`)
           }
@@ -404,7 +422,7 @@ export class PluginManager extends TypertRemoteService {
       }
       const files = await this.readRestoredFiles()
       const before = readProfileManifest('dsh', this.profile.dir).dependencies ?? {}
-      const plan = registryPlan(options?.registry, this.configuredRegistries)
+      const plan = registryPlan(options?.registry, await this.registries())
       let name: string
       try {
         // The last run is the result's; the registries asked stay listed whatever the outcome.
@@ -412,17 +430,24 @@ export class PluginManager extends TypertRemoteService {
         result.registries = []
         for (const [index, registry] of plan.entries()) {
           if (index > 0) await this.restoreFiles(files)
+          // A stop that landed while the files went back, or before the first run, starts no run with a dead signal.
+          if (stopped()) throw new InstallCancelledError()
           result.registries.push(registry)
           announce('installing', { registry, index: index + 1, total: plan.length })
           run = await this.runPnpm(['add', spec, ...registryArguments(registry)], control.abort.signal, requestId)
           result.packageResult = run
           if (stopped()) throw new InstallCancelledError()
           /* v8 ignore next 2 -- runPnpm classifies every failed run, so kind is never absent here */
-          if (run.exitCode === 0 || index === plan.length - 1 || run.kind === undefined) break
-          if (!askNextRegistry(run.kind, run.output, parsedForRegistry(spec))) break
+          if (run.exitCode === 0 || run.kind === undefined) break
+          const failedAt = attributeFailure(run.kind, run.output, parsedForRegistry(spec))
+          // What the last failed run could not reach; a later run that succeeds leaves nothing to say.
+          delete result.failedAt
+          if (failedAt !== 'other') result.failedAt = failedAt
+          if (failedAt !== 'registry' || index === plan.length - 1) break
         }
         /* v8 ignore next -- the plan is never empty, so a run always settled */
         if (run === undefined) throw new Error('no registry was asked')
+        if (run.exitCode === 0) delete result.failedAt
         if (run.exitCode !== 0) {
           // pnpm-workspace.yaml is not restored, so the names pnpm left undecided there can be offered for approval.
           try { result.pendingBuilds = await readPendingBuilds(this.profile.dir) }

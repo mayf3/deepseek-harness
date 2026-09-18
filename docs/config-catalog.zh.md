@@ -1899,13 +1899,14 @@ export interface Config {
   registry?: string
   /**
    * Registries asked in turn, as http(s) URLs, while the one before is unreachable or holds no copy of the package.
-   * A registry outside this set and `registry` is asked alone.
+   * A registry outside this set and `registry` is asked alone, and so is the one pnpm's own configuration names
+   * unless that is npm's own registry or one of these.
    */
   fallbackRegistries?: string[]
 }
 ```
 
-来源： [`packages/boot/plugin-manager/src/index.ts:36`](../packages/boot/plugin-manager/src/index.ts)
+来源： [`packages/boot/plugin-manager/src/index.ts:35`](../packages/boot/plugin-manager/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 

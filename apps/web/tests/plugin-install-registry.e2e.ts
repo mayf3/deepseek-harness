@@ -23,12 +23,14 @@ it('offers the registries, remembers the one picked, and moves an install on to 
     try {
       const profile = join(scaffold.harnessHome, 'profiles', 'scaffold')
       const manifestPath = join(profile, 'package.json')
-      // Node stands in for pnpm. `view` answers only when asked at the mirror: pnpm's own registry times out,
-      // the way an unreachable registry.npmjs.org does. `add` fails its first run wherever it is asked, naming
-      // the registry, and installs the package on the next; the Host moves it on to the next registry.
+      // Node stands in for pnpm. `config` names npm's own registry as pnpm's own, so the mirror is a fallback for it.
+      // `view` answers only when asked at the mirror: pnpm's own registry times out, the way an unreachable
+      // registry.npmjs.org does, and pnpm prints the refusal as JSON on stdout. `add` fails its first run wherever
+      // it is asked, naming the registry, and installs the package on the next; the Host moves it on to the next registry.
+      await writeFile(join(profile, 'config'), 'console.log("https://registry.npmjs.org/")\n')
       await writeFile(join(profile, 'view'), `
         if (!process.argv.includes('--registry=${MIRROR}')) {
-          console.error('ERR_PNPM_META_FETCH_FAIL  GET https://registry.npmjs.org/mirrored-package: request timed out (ETIMEDOUT)');
+          console.log(JSON.stringify({ error: { code: 'ERR_PNPM_META_FETCH_FAIL', message: 'GET https://registry.npmjs.org/mirrored-package: request timed out (ETIMEDOUT)' } }));
           process.exitCode = 1;
         } else {
           console.log(JSON.stringify({ name: 'mirrored-package', version: '2.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } } }));
@@ -80,7 +82,7 @@ it('offers the registries, remembers the one picked, and moves an install on to 
       await dialog.getByRole('button', { name: '查看安装详情', exact: true }).click()
       await dialog.getByText('Installed from the registry pnpm names', { exact: true }).waitFor()
       await dialog.getByText('第 1 次 · npmmirror', { exact: true }).waitFor()
-      await dialog.getByText('第 2 次 · 官方源（默认）', { exact: true }).waitFor()
+      await dialog.getByText('第 2 次 · 官方源', { exact: true }).waitFor()
       expect(JSON.parse(await readFile(manifestPath, 'utf8'))).toMatchObject({ dependencies: { 'mirrored-package': '2.0.0' } })
       const installed = (await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd))
         .split(process.execPath).join('{{node}}')
