@@ -131,7 +131,6 @@ const ITEM_ARTWORK = new Map<string, (props: IconProps) => ReactNode>([
 /** The artwork of the official bundles with artwork of their own, by package name. */
 const PACKAGE_ARTWORK = new Map<string, (props: IconProps) => ReactNode>([
   ['@deepseek-ai/dsh-experimental-agent-team-profile', PluginArtworkTeam],
-  ['@deepseek-ai/dsh-experimental-agent-team-web-profile', PluginArtworkTeam],
 ])
 
 /** An official plugin's card and page artwork; plugins without their own get the default. */
@@ -983,6 +982,16 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
             onDone={props.dismissNotice}
           />
         )}
+      {!showsCards && state.status === 'error'
+        ? (
+          <div className={css.failure}>
+            <p className={css.statusWithDot} role="alert">
+              <StateDot state="error" />{t('error')}
+            </p>
+            <Button variant="outline" size="sm" onClick={props.refresh}>{t('retry')}</Button>
+          </div>
+        )
+        : null}
       {loaded && openPkg !== undefined && openRow !== undefined
         ? (
           <RowDetail

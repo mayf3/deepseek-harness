@@ -117,6 +117,18 @@ describe('PluginManagerPage', () => {
     expect(actions.openInstall).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the read failure and its retry visible while a detail page is open', () => {
+    const { actions, set } = renderTab({ packages: [pkg()] })
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    set({ status: 'error' })
+    expect(screen.getByRole('alert').querySelector('[data-state="error"]')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    expect(actions.refresh).toHaveBeenCalledTimes(1)
+    // The detail keeps showing the kept data behind the alert.
+    expect(document.querySelector('[data-plugin-detail]')).not.toBeNull()
+  })
+
   it('lists the installed bundles as cards, the installation\'s offered ones as official, and tags a problem the Host reports', () => {
     const { actions } = renderTab({
       packages: [
@@ -269,6 +281,13 @@ describe('PluginManagerPage', () => {
       renderTab({ packages: [] }, { items: [{ id: 'bash', label: 'Shell' }] }, bodies)
       expect(screen.queryByText(en.empty)).toBeNull()
       expect(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Shell') })).toBeTruthy()
+    })
+
+    it('gives an official plugin without artwork of its own the default artwork', () => {
+      renderTab({ packages: [] }, { items: [{ id: 'custom-tool', label: 'Custom' }] })
+      const card = document.querySelector('[data-plugin-item="custom-tool"]') as HTMLElement
+      const stops = [...card.querySelectorAll('stop')].map(stop => stop.getAttribute('stop-color'))
+      expect(stops).toEqual(['#54ECE7', '#658EFF'])
     })
 
     it('renders a bundle\'s own configuration on its page, and no configure control on a row without one', () => {
