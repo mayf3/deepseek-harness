@@ -118,8 +118,8 @@ export function TextPreview({
   const mode = selected?.loading
   const contentRendererId = mode === 'renderer' ? selected?.id : undefined
   const current = (state?.mode ?? 'text-pages') === mode && state?.contentRendererId === contentRendererId ? state : undefined
-  const add = useCallback((address: string, version?: string) => {
-    addResource(tab.id, address, signal, version)
+  const add = useCallback((address: string) => {
+    addResource(tab.id, address, signal)
   }, [addResource, tab.id, signal])
   const set = useCallback((addresses: readonly string[]) => {
     setResources(tab.id, [tab.contentId, ...addresses], signal)

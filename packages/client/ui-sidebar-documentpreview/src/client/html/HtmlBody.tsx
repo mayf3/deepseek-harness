@@ -37,9 +37,9 @@ function HtmlFrame({ data, resourceAddress, readRelated, addResource, setResourc
   useEffect(() => {
     const controller = new AbortController()
     const resources = new Set<string>()
-    const readRelative = createReadHtmlRelative(readRelated, resourceAddress, signal, (address, version) => {
+    const readRelative = createReadHtmlRelative(readRelated, resourceAddress, signal, (address) => {
       resources.add(address)
-      addResource(address, version)
+      addResource(address)
     })
     let url: string | undefined
     void (async () => {

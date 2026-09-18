@@ -1,16 +1,5 @@
-/**
- * The tree's asynchronous half against a scripted listing, and the Remote
- * adapter under it.
- *
- * The face's contract is what reaches the store and when: a level is `loading`
- * before the listing settles, `ready` or `failed` after, never written once the
- * owner's signal aborted or a newer listing of the level was asked for, and a
- * tab whose record is gone leaves no bucket behind. The adapter's is what it
- * keeps and what it drops: entries and the
- * truncation flag reach the store, the endpoint's workspace-relative path does
- * not, and a failure passes through untouched.
- */
-import { describe, expect, it, vi } from 'vitest'
+/** Directory subscriptions and read settlements through the face's real store actions. */
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceDirectoryListing } from '@deepseek-ai/dsh-api-workspace-files/types'
@@ -31,81 +20,146 @@ function mount() {
   const instance = createFilesStore().create()
   const script = scriptedList()
   const face = filesFace(script.list, script.watch)(SESSION, instance.actions)
-  return { ...script, face, snapshot: () => instance.getSnapshot().byTab[TAB] }
+  const controller = new AbortController()
+  onTestFinished(async () => {
+    controller.abort()
+    await script.dispose()
+  })
+  return { ...script, face, controller, actions: instance.actions, snapshot: () => instance.getSnapshot().byTab[TAB] }
 }
 
 describe('filesFace', () => {
-  it('start seeds the tab and lists the root with the session and the absolute root path', async () => {
-    const { face, list, settle, snapshot } = mount()
-    const controller = new AbortController()
+  it('subscribes to the root before listing it and waits for ready', async () => {
+    const { face, list, watches, settle, snapshot, controller } = mount()
     face.start(TAB, ROOT, controller.signal)
-    expect(list).toHaveBeenCalledWith(SESSION, ROOT, controller.signal)
+    const stream = await watches.forPath(ROOT)
+    expect(stream.sessionId).toBe(SESSION)
+    expect(stream.signal.aborted).toBe(false)
+    expect(list).not.toHaveBeenCalled()
+    expect(snapshot()).toEqual({ root: ROOT, expanded: [ROOT], levels: {}, scrollTop: 0, autoRefresh: true })
+    await stream.deliver('ready')
+    expect(list).toHaveBeenCalledWith(SESSION, ROOT, stream.signal)
     expect(snapshot()!.levels[ROOT]).toEqual({ kind: 'loading' })
     await settle({ ok: true, value: LEVEL })
     expect(snapshot()!.levels[ROOT]).toEqual({ kind: 'ready', level: LEVEL })
   })
 
   it('records a failed listing under its level', async () => {
-    const { face, settle, snapshot } = mount()
-    face.start(TAB, ROOT, new AbortController().signal)
+    const { face, watches, settle, snapshot, controller } = mount()
+    face.start(TAB, ROOT, controller.signal)
+    await watches.ready(ROOT)
     const error = new RemoteError('workspace-file/not-directory', 'not a directory', { path: ROOT, kind: 'file' })
     await settle({ ok: false, error })
     expect(snapshot()!.levels[ROOT]).toEqual({ kind: 'failed', failure: error })
   })
 
-  it('toggle expands and lists a directory the first time, and only toggles afterwards', async () => {
-    const { face, list, settle, snapshot } = mount()
-    const signal = new AbortController().signal
+  it('subscribes on expansion, releases on collapse, and rereads a reopened directory after ready', async () => {
+    const { face, list, watches, settle, snapshot, controller } = mount()
+    const { signal } = controller
     const child = `${ROOT}/src`
     face.start(TAB, ROOT, signal)
+    const rootStream = await watches.ready(ROOT)
     await settle({ ok: true, value: LEVEL })
     face.toggle(TAB, child, [ROOT], signal)
-    expect(list).toHaveBeenLastCalledWith(SESSION, child, signal)
     expect(snapshot()!.expanded).toEqual([ROOT, child])
+    expect(list).toHaveBeenCalledTimes(1)
+    const childStream = await watches.ready(child)
+    expect(list).toHaveBeenLastCalledWith(SESSION, child, childStream.signal)
     await settle({ ok: true, value: LEVEL })
     face.toggle(TAB, child, [ROOT, child], signal)
+    expect(childStream.signal.aborted).toBe(true)
+    await childStream.released.promise
+    expect(rootStream.signal.aborted).toBe(false)
     expect(snapshot()!.expanded).toEqual([ROOT])
     expect(list).toHaveBeenCalledTimes(2)
+    face.toggle(TAB, child, [ROOT], signal)
+    expect(snapshot()!.levels[child]).toEqual({ kind: 'ready', level: LEVEL })
+    expect(list).toHaveBeenCalledTimes(2)
+    const reopened = await watches.ready(child, 1)
+    expect(reopened.signal).not.toBe(childStream.signal)
+    expect(reopened.signal.aborted).toBe(false)
+    expect(list).toHaveBeenLastCalledWith(SESSION, child, reopened.signal)
+    const current: DirLevel = { entries: [{ name: 'new.ts', type: 'file' }], truncated: false }
+    await settle({ ok: true, value: current })
+    expect(snapshot()!.levels[child]).toEqual({ kind: 'ready', level: current })
   })
 
   it('abort forgets the bucket and a late settlement writes nothing', async () => {
-    const { face, settle, snapshot } = mount()
-    const controller = new AbortController()
+    const { face, watches, settle, snapshot, controller } = mount()
     face.start(TAB, ROOT, controller.signal)
+    const stream = await watches.ready(ROOT)
     controller.abort()
+    expect(stream.signal.aborted).toBe(true)
     expect(snapshot()).toBeUndefined()
     await settle({ ok: true, value: LEVEL })
+    await stream.released.promise
+    expect(snapshot()).toBeUndefined()
+  })
+
+  it('abort before ready closes the subscription without starting a listing', async () => {
+    const { face, list, watches, snapshot, controller } = mount()
+    face.start(TAB, ROOT, controller.signal)
+    const stream = await watches.forPath(ROOT)
+    controller.abort()
+    await stream.released.promise
+    expect(stream.signal.aborted).toBe(true)
+    expect(list).not.toHaveBeenCalled()
     expect(snapshot()).toBeUndefined()
   })
 
   it('makes no request for a record that already ended', () => {
-    const { face, list } = mount()
-    const controller = new AbortController()
+    const { face, list, controller } = mount()
     controller.abort()
     face.load(TAB, ROOT, controller.signal)
     expect(list).not.toHaveBeenCalled()
   })
 
   it('lets the latest listing of a level win, whichever settles first', async () => {
-    const { face, list, settle, settleLatest, snapshot, outstanding } = mount()
-    const signal = new AbortController().signal
+    const { face, list, watches, settle, settleLatest, snapshot, outstanding, controller } = mount()
+    const { signal } = controller
     const older: DirLevel = { entries: [{ name: 'old.txt', type: 'file' }], truncated: false }
     face.start(TAB, ROOT, signal)
-    // The reload gesture asks for the root again while the first listing is still out.
+    await watches.ready(ROOT)
     face.load(TAB, ROOT, signal)
     expect(list).toHaveBeenCalledTimes(2)
     expect(outstanding()).toEqual([ROOT, ROOT])
     await settleLatest({ ok: true, value: LEVEL })
     expect(snapshot()!.levels[ROOT]).toEqual({ kind: 'ready', level: LEVEL })
-    // The retired listing lands afterwards and changes nothing.
     await settle({ ok: true, value: older })
     expect(snapshot()!.levels[ROOT]).toEqual({ kind: 'ready', level: LEVEL })
-    // A retired failure is dropped the same way.
     face.load(TAB, ROOT, signal)
     face.load(TAB, ROOT, signal)
     await settleLatest({ ok: true, value: LEVEL })
     await settle({ ok: false, error: new RemoteError('workspace-file/not-found', 'gone', { path: ROOT }) })
     expect(snapshot()!.levels[ROOT]).toEqual({ kind: 'ready', level: LEVEL })
+  })
+
+  it('manually refreshes expanded nodes while preserving cached levels, scroll, and the automatic setting', async () => {
+    const { face, watches, settle, waitForList, snapshot, controller, actions } = mount()
+    const child = `${ROOT}/src`
+    const collapsed = `${ROOT}/docs`
+    face.start(TAB, ROOT, controller.signal)
+    await watches.ready(ROOT)
+    await settle({ ok: true, value: LEVEL })
+    face.toggle(TAB, child, snapshot()!.expanded, controller.signal)
+    await watches.ready(child)
+    await settle({ ok: true, value: LEVEL })
+    actions.loaded(TAB, collapsed, LEVEL)
+    actions.scrolled(TAB, 120)
+    face.setAutoRefresh(TAB, false)
+    const cached = snapshot()!
+
+    face.refresh(TAB)
+    expect((await waitForList(2)).path).toBe(ROOT)
+    expect(snapshot()!.levels).toEqual(cached.levels)
+    await settle({ ok: true, value: LEVEL })
+    expect((await waitForList(3)).path).toBe(child)
+    expect(snapshot()!.levels[child]).toEqual(cached.levels[child])
+    await settle({ ok: true, value: { entries: [], truncated: false } })
+    expect(snapshot()!.levels[collapsed]).toEqual(cached.levels[collapsed])
+    expect(snapshot()).toMatchObject({ expanded: [ROOT, child], scrollTop: 120, autoRefresh: false })
+    expect(watches.opened.map(stream => stream.path)).toEqual([ROOT, child])
+    expect(watches.opened.every(stream => !stream.signal.aborted)).toBe(true)
   })
 })
 

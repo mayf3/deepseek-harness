@@ -57,23 +57,35 @@ export class WorkspaceChangeFeed {
         throw error
       })
       if (root === undefined || signal.aborted || follower.isClosed) return
-      const target = await this.ctx.fs.resolve(request.path, { cwd: workspaceRoot, signal })
+      const target = await this.ctx.fs.resolve(request.path, { cwd: workspaceRoot, signal }).catch((error: unknown) => {
+        if (signal.aborted) return undefined
+        throw error
+      })
+      if (target === undefined || signal.aborted) return
       if (request.kind === 'directory' && !this.ctx.fs.contains(root, target)) {
         throw new RemoteError('workspace-file/outside-workspace', 'Directory is outside the workspace', { path: request.path })
       }
-      const watching = this.ctx.fs.watch(target, (error) => {
-        if (error !== undefined) follower.fail(error)
-        else if (!follower.isClosed) follower.push([target])
-      }, signal)
-      if (watching === undefined) {
-        throw new RemoteError('workspace-file/watch-unsupported', 'Filesystem watching is unavailable', { path: request.path })
+      try {
+        unwatch = await this.ctx.fs.watch(target, (error) => {
+          if (error !== undefined) follower.fail(error)
+          else if (!follower.isClosed) follower.push([target])
+        }, signal)
+        if (follower.error !== undefined) throw follower.error
+      } catch (error) {
+        if (signal.aborted && follower.error === undefined) return
+        const failure = follower.error ?? error
+        throw new RemoteError('workspace-file/watch-unsupported',
+          failure instanceof Error ? failure.message : String(failure), { path: request.path })
       }
-      unwatch = await watching
       if (signal.aborted) return
       yield { kind: 'ready' }
       for await (const [observed] of follower.read(signal)) {
         if (observed.targetKey !== target.targetKey) continue
-        const info = await this.ctx.fs.stat(target, signal)
+        const info = await this.ctx.fs.stat(target, signal).catch((error: unknown) => {
+          if (signal.aborted) return undefined
+          throw error
+        })
+        if (signal.aborted) return
         const absolutePath = this.ctx.fs.processPath(target)
         yield {
           kind: 'change',
@@ -98,7 +110,7 @@ export class WorkspaceChangeFeed {
 class ChangeFollower {
   readonly controller = new AbortController()
   readonly done = Promise.withResolvers<void>()
-  private error: Error | undefined
+  error: Error | undefined
   private readonly queue = new Deque<Observed>()
   private wake: (() => void) | undefined
   private closed = false

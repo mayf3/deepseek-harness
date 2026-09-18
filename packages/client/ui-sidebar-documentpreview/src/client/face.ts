@@ -27,7 +27,7 @@ import { ResourceGroup } from './document/resource-group.ts'
 
 /** The preview's injected business face, as the body receives it. */
 export interface TextInjected {
-  readonly addResource: (tabId: TabId, address: string, signal: AbortSignal, version?: string) => void
+  readonly addResource: (tabId: TabId, address: string, signal: AbortSignal) => void
   readonly setResources: (tabId: TabId, addresses: readonly string[], signal: AbortSignal) => void
   /**
    * Read one page into the store. A page of a newer file version than the pages
@@ -201,8 +201,8 @@ export function textFace(
       else loadAll(tabId, file, signal, observedVersion)
     }
     return {
-      addResource: (tabId, address, signal, version) => {
-        if (!signal.aborted) readsOf(tabId, signal).group.add(address, version)
+      addResource: (tabId, address, signal) => {
+        if (!signal.aborted) readsOf(tabId, signal).group.add(address)
       },
       setResources: (tabId, addresses, signal) => {
         if (!signal.aborted) readsOf(tabId, signal).group.set(addresses)

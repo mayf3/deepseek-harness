@@ -67,7 +67,9 @@ export function createFileResourceProvider(
       let current: WorkspaceFileStat | undefined
       try {
         if (!await notices.ready) {
-          if (!aborted()) yield await stat()
+          if (aborted()) return
+          const result = await stat()
+          if (!aborted()) yield result
           return
         }
         if (aborted()) return
@@ -81,6 +83,7 @@ export function createFileResourceProvider(
           yield first
         }
         for await (const notice of notices) {
+          if (aborted()) return
           if (current === undefined) {
             // Still gone: nothing new to report.
             if (notice.kind === 'absent') continue

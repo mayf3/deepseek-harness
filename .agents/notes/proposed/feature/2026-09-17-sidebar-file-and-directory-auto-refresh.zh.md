@@ -2,6 +2,8 @@
 
 Status: proposed
 
+[English](2026-09-17-sidebar-file-and-directory-auto-refresh.md) | 中文
+
 ## 问题
 
 Sidebar 的 Document Preview 和 Files 面板都需要反映磁盘上的最新状态。变化来源包括 Harness 文件工具、Shell 命令、用户编辑器，以及其他进程；只监听 Harness 自己的文件操作不够。
@@ -28,7 +30,7 @@ Sidebar 的 Document Preview 和 Files 面板都需要反映磁盘上的最新�
 - 使用本地 Chokidar 系统监听，不定时轮询整个 Workspace，不默认递归扫描所有后代。
 - 保留两个面板的手动刷新入口和自动刷新开关功能，但暂时隐藏开关的 icon 按钮。开关状态及切换逻辑不变，新 Tab 默认开启；隐藏入口不关闭监控或自动刷新。
 
-这是待实现方案。下面明确区分已有类型和拟新增对象；方法名是建议名称，实施时可随局部 API 命名调整。
+本次只增加变化通知触发现有 reload／list，不增加刷新失败后保留旧预览内容的行为。下面按已有类型和新增对象说明职责、数据流及验收范围；未通过的验收项不视为已完成。
 
 ## 类与文件改动
 
@@ -36,11 +38,11 @@ Sidebar 的 Document Preview 和 Files 面板都需要反映磁盘上的最新�
 
 | 类或类型 | 所在文件 | 拟改动 |
 |---|---|---|
-| `FileSystem` | [fs/src/index.ts](../../../../packages/fs/fs/src/index.ts) | 增加可选的单目标 `watch(target, changed, signal)` 能力；文件观察自身，目录观察直接子项；就绪后返回异步关闭函数，不支持的提供方返回 `undefined` |
+| `FileSystem` | [fs/src/index.ts](../../../../packages/fs/fs/src/index.ts) | 声明抽象的单目标 `watch(target, changed, signal)` 方法；文件观察自身，目录观察直接子项；就绪后返回异步关闭函数，不支持的提供方显式抛异常，不新增 FS 错误码 |
 | `FsTarget` | [fs/src/types.ts](../../../../packages/fs/fs/src/types.ts) | 沿用现有目标类型，不单独增加 FS 监听事件体系，也不让上层解析 `targetKey` |
 | `LocalFileSystem` | [fs-local/src/index.ts](../../../../packages/fs/fs-local/src/index.ts) | 实现 Chokidar 适配；把本机事件归一化为 FS 监听通知，并在结束时等待 watcher 关闭；依赖声明在 `fs-local` |
 | `SandboxedFileSystem` | [fs-sandbox/src/index.ts](../../../../packages/fs/fs-sandbox/src/index.ts) | 继承本地只读监听能力，不复制 watcher 实现；保留自身对写入、编辑的策略检查 |
-| `SshFileSystem` | [fs-ssh/src/index.ts](../../../../packages/ssh/fs-ssh/src/index.ts) | 明确远端监听能力的支持状态；不把远端 `processPath()` 传给本机 Chokidar。远端系统监听不作为这次本地实现的附带工程 |
+| `SshFileSystem` | [fs-ssh/src/index.ts](../../../../packages/ssh/fs-ssh/src/index.ts) | `watch()` 显式抛出普通异常；Host 转成 `workspace-file/watch-unsupported` 的 `RemoteError`，不跨包导入或判断 `FsError` 实体，也不把远端 `processPath()` 传给本机 Chokidar |
 | `WorkspaceFiles` | [workspace-files/src/index.ts](../../../../packages/api/workspace-files/src/index.ts) | 将 `changes(scope, signal)` 改为目标明确的监听请求；文件请求沿用 Session 文件解析与访问规则，目录请求沿用 `list()` 的 Workspace 限制 |
 | `WorkspaceChangeFeed` | [workspace-files/src/changes.ts](../../../../packages/api/workspace-files/src/changes.ts) | 在现有 follow 中建立目标 watch，发送就绪和变化；保留原队列与操作观察入口，出流前过滤目标，不重写整套分发逻辑 |
 | `ChangeFollower` | [workspace-files/src/changes.ts](../../../../packages/api/workspace-files/src/changes.ts) | 接收原有操作观察及新增系统 watch 通知，补充监听错误与关闭完成的处理 |
@@ -53,7 +55,7 @@ Sidebar 的 Document Preview 和 Files 面板都需要反映磁盘上的最新�
 | `ChangeFeed`、`SessionFeed`、`Follower` | [workspace-files/src/client/change-feed.ts](../../../../packages/api/workspace-files/src/client/change-feed.ts) | 将流的键改为 Session 加目标路径，继续复用既有就绪、路径绑定、取消和重连逻辑；此版不为了命名重排类结构 |
 | `createFileResourceProvider` | [workspace-files/src/client/provider.ts](../../../../packages/api/workspace-files/src/client/provider.ts) | 将文件地址中的 Session 与路径传给目标流；首次读取及后续通知都发布完整元数据，不能只换 `version` 而继续沿用旧 `bytes` |
 | `ResourceRegistry`、`ResourceProvider`、`UseResource` | [Resource 定义](../../../../packages/client/resources/src/client/contract.ts)、[ResourceRegistry](../../../../packages/client/resources/src/client/resources.ts) | 保持现有流、持有计数和订阅模型；不新增第二套 `onChange`，不为此增加通用正文 reload API |
-| `TextPreview` | [TextPreview.tsx](../../../../packages/client/ui-sidebar-documentpreview/src/client/TextPreview.tsx) | Resource 或 group 变化且开关开启时自动触发现有 reload；保留错误状态与手动刷新，增加独立的自动刷新按钮 |
+| `TextPreview` | [TextPreview.tsx](../../../../packages/client/ui-sidebar-documentpreview/src/client/TextPreview.tsx) | Resource 或 group 变化且开关开启时自动触发现有 reload；保留错误状态与手动刷新，独立自动刷新按钮暂时隐藏 |
 | `textFace`、`TabReads`、`createTextStore` | [预览 face](../../../../packages/client/ui-sidebar-documentpreview/src/client/face.ts)、[预览存储](../../../../packages/client/ui-sidebar-documentpreview/src/client/store.ts) | 每个 Tab 持有一个 group，补充默认开启的 `autoRefresh` 和表示待刷新的 `resourcesDirty`；复用正文读取代次与 `loadRevision` |
 | 新增的包内 `ResourceGroup` | [resource-group.ts](../../../../packages/client/ui-sidebar-documentpreview/src/client/document/resource-group.ts) | 通过现有 `resources.source(address)` 观察成员；`add` 加入资源，`set` 更新完整成员列表，`close` 释放全部成员，不改变通用 Resource 服务 |
 | `DocumentBodyOwner`、`HtmlBody`、`createReadHtmlRelative` | [渲染器输入](../../../../packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts)、[HTML body](../../../../packages/client/ui-sidebar-documentpreview/src/client/html/HtmlBody.tsx)、[关联文件读取](../../../../packages/client/ui-sidebar-documentpreview/src/client/html/read-relative.ts) | 渲染器通过 `addResource` 声明读取到的成员，通过 `setResources` 提交本次依赖列表；HTML 在读取 CSS／JS 前加入资源，解析结束后释放不再引用的成员 |
@@ -81,11 +83,11 @@ Host 方法仍通过 `WorkspaceFileScope` 接收解析后的 Session 上下文�
 
 | 通知 | 内容 | 消费方动作 |
 |---|---|---|
-| 就绪 | 当前一代监听已经建立 | 执行首次或重连后的 `stat()`／`list()`，接收读取期间排队的变化 |
+| 就绪 | 当前一代目标监听已经建立 | 执行首次或重连后的 `stat()`／`list()`，接收读取期间排队的变化 |
 | 文件存在或更新 | 沿用路径和版本通知；Client 收到后重新 stat | 用完整结果更新 Resource 的路径、版本和大小；自动刷新开启时重新读取正文 |
 | 文件缺失 | 目标路径和缺失状态 | Resource 报告不可用，预览保留已加载内容并显示错误 |
 | 目录失效 | 目录目标流中的 `change` 帧 | 只重新调用这个目录的 `list()`，不按目录版本去重，也不刷新整棵树 |
-| 监听失败 | 明确的错误或不支持状态 | 不伪装成文件删除；保留可读内容和手动刷新能力 |
+| 监听失败 | 初始化失败报告 `workspace-file/watch-unsupported`；运行期错误结束监听 | 客户端在监听接入处处理失败，普通读取与手动刷新仍可用；不伪装成文件删除 |
 
 不用把文件正文、完整目录列表或每个变化的补丁塞进通知。文件名由路径表达；文件大小来自当前 stat；修改时间若只为判断变化，继续由后端版本 token 表达，不要求 UI 解析 token 或另外引入时间戳比较。
 
@@ -104,28 +106,28 @@ Resource 发布的路径、版本和大小来自同一次 stat。先沿用现有
 ## 文件预览的完整数据流
 
 ```text
-用户在 Files 中点击文件，或从消息中打开文件链接
-  → Sidebar 创建／复用预览 Tab
-  → TabDomain 为文件地址 pin Resource
-  → ResourceRegistry 打开 createFileResourceProvider 的元数据流
-  → 文件提供方提交 changes(sessionId, { kind: 'file', path })
-  → WorkspaceFiles 解析目标及访问上下文
-  → WorkspaceChangeFeed 获取对应 FileSystem.watch
-  → LocalFileSystem 建立 Chokidar 监听
-  → ready 到达 Client，文件提供方 stat 并发布初始元数据
+Files.openResource / file.link
+  → Sidebar.openTab
+  → TabDomain → Resource.pin
+  → ResourceRegistry → createFileResourceProvider.open
+  → changes(sessionId, { kind: 'file', path })
+  → WorkspaceFiles → FsTarget
+  → WorkspaceChangeFeed → FileSystem.watch
+  → LocalFileSystem → Chokidar
+  → ready → Client.stat → ResourceSnapshot
 
-编辑器／Shell／文件工具修改磁盘文件
-  → Chokidar 通知 LocalFileSystem
-  → WorkspaceChangeFeed 读取当前文件元数据
-  → Remote 流发送文件变化
-  → 文件提供方发布 ResourceSnapshot
-  → TextPreview 的 useResource 读到新版本
-  → 调用所选加载模式的现有 reload
-  → 新正文或新 renderer revision 交给文档渲染器
-  → 页面显示最新内容
+Editor / Shell / file tool → disk
+  → Chokidar → LocalFileSystem
+  → WorkspaceChangeFeed → FileSystem.stat
+  → Remote.change
+  → Client.stat → ResourceSnapshot
+  → TextPreview.useResource
+  → reloadPages / reloadAll / prepareRenderer
+  → DocumentContent / renderer revision
+  → renderer
 ```
 
-现有预览正文可以与元数据初始化并行读取，不必为了 watch 重排所有加载逻辑。自动刷新依据“读取开始时观察到的版本”和“实际读到的版本”判断，避免较晚到达的初始 stat 被当作一次新修改。
+现有预览正文可以与元数据初始化并行读取，不必为了 watch 重排所有加载逻辑。预览保留原有正文版本比较；ResourceGroup 只转发成员元数据变化，不另做读前、读后版本对账。
 
 | 加载模式 | 已有刷新入口 | 刷新结果 |
 |---|---|---|
@@ -141,20 +143,20 @@ Resource 发布的路径、版本和大小来自同一次 stat。先沿用现有
 
 ```text
 index.html Resource ─┐
-theme.css Resource ──┼→ ResourceGroup 变化 → resourcesDirty → 自动刷新开关 → HTML reload
+theme.css Resource ──┼→ ResourceGroup → resourcesDirty → autoRefresh → HTML reload
 page.js Resource ───┘
 ```
 
-- `addResource(address, version?)` 在读取依赖时将它加入 group，已有成员不会重复订阅。
+- `addResource(address)` 在读取前将依赖加入 group；已有成员不重复订阅，不传递或保存正文读取版本。
 - `setResources(addresses)` 提交本次解析出的依赖列表；预览拥有者始终保留根文件，其余未再出现的成员释放订阅。
 - CSS／JS 的引用由原来的 HTML 相对文件读取逻辑解析，继续使用 HTML 所属 Session，不按浏览器页面地址猜测本机路径。
 - HTML 本身没有改变，但 CSS 或 JS 改变时，也重新加载整个 HTML，生成新的 iframe 内容。
 - 依赖缺失和恢复同样属于成员变化；解析失败时仍保留已经发现的依赖，后续恢复可以再次触发加载。
-- 新成员的初始元数据不是一次修改，不应让 HTML 因为自己的首次依赖读取而无限 reload。
+- 新成员的首次元数据到达也触发失效，接受首次加载依赖时可能额外刷新；后续相同元数据版本不重复触发，不增加首读版本对账逻辑。
 - group 变化只把 `resourcesDirty` 置为 `true`；开始刷新时清除，读取期间再次变化则重新置位。不累计次数，也不增加另一套读取代次。
 - 关闭预览 Tab 时释放整个 group。关闭自动刷新仅停止自动重读，group 继续观察并记录陈旧状态。
 
-此版覆盖打包器现有支持的直接 stylesheet 链接和普通 JS 脚本，不顺手增加 CSS `@import`、ES module 图或运行时网络请求的依赖发现。
+此版覆盖交互式 HTML 打包器现有支持的直接 stylesheet 链接和普通 JS 脚本，不顺手增加 CSS `@import`、ES module 图或运行时网络请求的依赖发现。静态安全预览不读取关联文件，因此只观察根文件。
 
 ## 自动刷新开关
 
@@ -173,27 +175,27 @@ Document Preview 和 Files 各自保留原 reload 按钮。独立自动刷新开
 ## Files 面板的完整数据流
 
 ```text
-用户打开 Files 面板
-  → FilesBody 获得 Session 根目录和 Tab 状态
-  → filesFace 打开根 DirectoryNode
-  → 根节点打开 changes(sessionId, { kind: 'directory', path })
-  → Host 建立该目录的非递归监听并发送 ready
-  → 根节点调用 list(sessionId, path)
-  → createFilesStore 保存这一层的目录项
-  → Level／Entry 展示目录和文件
+Files.open
+  → FilesBody → Session.cwd + Tab
+  → filesFace.start → DirectoryNode.open
+  → changes(sessionId, { kind: 'directory', path })
+  → Host.watch(depth: 0) → ready
+  → DirectoryNode → list(sessionId, path)
+  → createFilesStore.levels[path]
+  → Level / Entry
 
-用户展开子目录
-  → Entry 将展开动作交给 filesFace
-  → 父 DirectoryNode 创建并打开指定的子 DirectoryNode
-  → 子节点建立自己的监听，ready 后读取自己的直接子项
-  → 存储更新展开状态与这一层的展示数据
+Entry.expand
+  → filesFace.toggle
+  → DirectoryNode.expand → child.open
+  → child.watch → ready → child.list
+  → createFilesStore.expanded + levels[path]
 
-外部进程在已监听目录中新增／删除／重命名直接子项
-  → Host 发出对应目录的失效通知
-  → 对应 DirectoryNode 只重新 list 自己
-  → 存储替换这一层目录项，保留其他层和视图偏好
-  → 该节点与新列表核对自己已打开的子节点
-  → 移除已消失或变为文件的子节点，并递归释放其子树
+Process → create / remove / rename
+  → Host.change(directory)
+  → DirectoryNode.refresh → list(path)
+  → createFilesStore.levels[path]
+  → DirectoryNode.children ↔ list.entries
+  → DirectoryNode.collapse → child.close
 ```
 
 文件预览和目录树是两条独立的消费路径。预览文件可以在 Files 面板没有打开时自动刷新；Files 也可以在没有任何文件预览时自动更新目录项。无需把整棵目录树包装为一个 Resource，也不为此新增目录 Resource 协议。
@@ -209,25 +211,25 @@ Files 的运行时对象本身就是一棵按需打开的目录树，不先建�
 | 本目录身份 | 持有该目录路径和所属 Session／Tab，目录列表只是它的直接子项 |
 | 本目录监听 | 一个打开的节点持有一个目标变化流；收到通知只使本节点列表失效 |
 | 本目录读取 | 持有有效 list 请求的代次与待补读状态，结果通过存储 actions 发布 |
-| 已打开子目录 | 按直接子目录名称持有子 `DirectoryNode`；未展开目录只是列表中的目录项，不创建活动子节点 |
-| 展开 | 确认直接子项仍为目录，创建或复用对应子节点，再由子节点建立自己的监听与读取 |
+| 已打开子目录 | 按直接子目录路径持有子 `DirectoryNode`；未展开目录只是列表中的目录项，不创建活动子节点 |
+| 展开 | 目录行触发展开时创建或复用对应子节点，再由子节点建立自己的监听与读取；恢复展开偏好时只打开列表中仍存在的目录 |
 | 折叠 | 关闭并移除对应活动子节点；子节点递归关闭后代，然后释放自己的监听和请求 |
 | 列表更新 | 保留仍存在的已打开子节点，关闭已删除、重命名或变为文件的分支；不重新打开所有节点 |
 | 整树关闭 | 对根节点执行关闭，自然递归释放整棵活动子树，不另遍历全局监听注册表 |
 
-`createFilesStore.expanded` 可以继续保存用户的展开偏好，但不是另一份监听注册表。父目录关闭后，即使存储保留了后代展开偏好，也不能继续持有这些后代的活动节点。重新打开时先读取父目录，再对仍存在且需要恢复的子目录逐层建立节点。
+`createFilesStore.expanded` 可以继续保存用户的展开偏好，但不是另一份监听注册表。父目录关闭后，即使存储保留了后代展开偏好，也不能继续持有这些后代的活动节点。重新打开时先读取父目录，再对仍存在且需要恢复的子目录逐层建立节点；补读期间用户再次折叠后代时，同步删除待恢复项，旧请求不能把它重新打开。
 
 ```text
-workspace/                 监听
-├── src/        已展开      监听
-│   ├── components/ 已展开  监听
-│   └── internal/   已折叠  不监听内部
-└── assets/     已折叠      不监听内部
+workspace/                  watch
+├── src/          open      watch
+│   ├── components/ open    watch
+│   └── internal/ closed    -
+└── assets/       closed    -
 
-折叠 src/ 后：
-workspace/                 继续监听
-├── src/                   停止 src/ 与 components/ 的监听
-└── assets/                不监听内部
+collapse(src/):
+workspace/                  watch
+├── src/                    close(src/, components/)
+└── assets/                 -
 ```
 
 父目录的监听仍能发现折叠目录自身被删除、重命名或替换，但不负责发现其深层内容变化。再次展开时重新 list，补上未监听期间的变化。
@@ -268,8 +270,8 @@ Files 监听跟随 Tab 生命周期；折叠关闭对应子树，关闭 Tab 则�
 
 - 文件删除后，已有预览内容保留并显示不可用提示；原路径重建后自动恢复读取。重命名视为旧路径消失和新路径出现，不根据 inode 自动改写预览地址。
 - 目录删除或重命名后，父目录刷新移除旧行，并释放旧子树监听。新目录按新名称显示，不擅自转移旧路径的展开偏好。
-- 自动读取失败时保留已有可读内容或目录列表，并展示错误与重试入口；没有旧结果时显示现有空态或失败态。
-- 后端不支持 watch 时，初始读取和手动刷新仍可用，但不能把自动刷新标成正常运行。SSH 等提供方不因本地 watch 实现而被宣称支持远端监听。
+- 自动刷新和手动刷新调用同一套已有 reload，沿用清空旧结果、加载及错误展示行为；不增加保留旧字节或旧 iframe 的分支。目录刷新保留现有列表缓存，避免重建活动子树。
+- 后端不支持 watch 时，Host 把初始化异常转成 `workspace-file/watch-unsupported` 的 `RemoteError`；客户端结束监听，继续普通读取与手动刷新，不增加轮询。SSH 的外部磁盘变化不会自动更新预览。
 
 ## 就绪、竞态与刷新合并
 
@@ -325,7 +327,7 @@ Files 监听跟随 Tab 生命周期；折叠关闭对应子树，关闭 Tab 则�
 | 关闭 Tab、卸载插件、取消初始化 | 所属监听完全关闭；晚到通知和读取不再写入状态 |
 | 不支持监听的提供方、越界目录请求 | 明确报告支持状态或访问错误，不观察错误执行世界或扩大目录权限 |
 
-验证应包含可控事件源下的就绪与取消测试、真实临时目录上的本地 watch 集成测试，以及从真实 Web 组合进入的文件预览和目录树动线。真实文件测试等待 watcher 就绪后再操作，通过观察到的状态结束，不靠固定 sleep 猜测事件时机。用户可见自动刷新应更新对应的无密钥回放或拥有者本地预期输出，并录制实际产品动线供实现审阅；这些都是后续实现的验收要求，不是本文已经执行的结果。
+验证应包含可控事件源下的就绪与取消测试、真实临时目录上的本地 watch 集成测试，以及从真实 Web 组合进入的文件预览和目录树动线。真实文件测试等待 watcher 就绪后再操作，通过观察到的状态结束，不靠固定 sleep 猜测事件时机。用户可见自动刷新应更新对应的无密钥回放或拥有者本地预期输出，不制作 GIF；这里列出验收范围，执行结果记录在 PR 中。
 
 ## 风险与后续范围
 

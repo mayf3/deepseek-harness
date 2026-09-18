@@ -8,7 +8,7 @@
 import { useSyncExternalStore } from 'react'
 import { render } from '@testing-library/react'
 import type { RenderResult } from '@testing-library/react'
-import { vi } from 'vitest'
+import { onTestFinished, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -63,6 +63,10 @@ function harness(cwd: string | null) {
   const script = scriptedList()
   const face = filesFace(script.list, script.watch)(SESSION, instance.actions)
   const controller = new AbortController()
+  onTestFinished(async () => {
+    controller.abort()
+    await script.dispose()
+  })
   const tabActions: MockedTabActions = {
     openResource: vi.fn<SidebarRightTabActions['openResource']>(),
     openTab: vi.fn<SidebarRightTabActions['openTab']>(),

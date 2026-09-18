@@ -29,7 +29,7 @@ export type DocumentContent =
 
 /** Content and viewing inputs shared by document bodies and nested PDF presentation. */
 export interface DocumentBodyOwner {
-  readonly addResource: (address: string, version?: string) => void
+  readonly addResource: (address: string) => void
   readonly setResources: (addresses: readonly string[]) => void
   /** Original file address, also readable through the standard useResource hook. */
   readonly resourceAddress: string

@@ -26,7 +26,7 @@ export function createReadHtmlRelative(
   readRelated: ReadHtmlRelated,
   address: string,
   lifetime: AbortSignal,
-  addResource: (address: string, version?: string) => void,
+  addResource: (address: string) => void,
 ): ReadHtmlRelative {
   return async (reference, signal) => {
     const suffix = reference.search(/[?#]/u)
@@ -43,7 +43,6 @@ export function createReadHtmlRelative(
     const result = await readRelated(address, path, combined)
     combined.throwIfAborted()
     if (!result.ok) throw new Error(result.error.message)
-    addResource(dependency, result.value.version)
     return documentFileBytes(result.value)
   }
 }

@@ -41,6 +41,8 @@ function props(text = '<p>hello</p>'): HtmlBodyProps {
     sessionId: 'html' as SessionId,
     useTabInfo: () => ({ tab: { signal } }),
     readRelated: vi.fn(),
+    addResource: vi.fn(),
+    setResources: vi.fn(),
     useResource: () => ({ value: undefined }),
     t: key => translations.get(key) ?? key,
   } as HtmlBodyProps

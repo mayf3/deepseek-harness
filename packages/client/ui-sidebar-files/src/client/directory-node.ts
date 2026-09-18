@@ -47,6 +47,7 @@ export class DirectoryNode {
   }
 
   async collapse(path: string): Promise<void> {
+    this.restore = this.restore.filter(value => value !== path && !value.startsWith(`${path}/`))
     const child = this.children.get(path)
     this.children.delete(path)
     await child?.close()
@@ -84,7 +85,9 @@ export class DirectoryNode {
     } catch (error) {
       if (!this.signal.aborted) {
         if (!this.initialized) await this.refresh()
-        this.failed(this.path, error)
+        if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'workspace-file/watch-unsupported')) {
+          this.failed(this.path, error)
+        }
       }
     }
   }

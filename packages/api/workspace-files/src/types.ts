@@ -149,6 +149,7 @@ export interface WorkspaceWatchRequest {
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
+    /** The filesystem provider cannot initialize a watch for this target. */
     'workspace-file/watch-unsupported': { readonly path: string }
     /** No entry exists at that path inside the workspace. */
     'workspace-file/not-found': { readonly path: string }
