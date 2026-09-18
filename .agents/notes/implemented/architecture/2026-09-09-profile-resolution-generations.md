@@ -8,27 +8,65 @@ English | [中文](2026-09-09-profile-resolution-generations.zh.md)
 
 A profile loads plugin rows from its own package project, while Harness packages and packages carried by selected bundles can live outside that project's ordinary dependency tree. Bridging the trees through shared symlinks, profile-owned links, or packaged-executable proxy packages persists package selections across processes and installations. Those files require reconciliation and locking, expose generated proxy manifests to metadata readers, and cannot represent a process-local change atomically.
 
-The runtime design preserves the existing selection rules rather than introducing a second package policy. It covers imports performed by plugin modules as well as Loader row imports and works in the main thread and Harness-owned Workers. Generation replacement accepts only additive package sets and never mutates a live table entry by entry.
+The runtime design keeps installation-first, ordered-bundle, and local-before-fallback precedence. It covers imports performed by plugin modules as well as Loader row imports and works in the main thread and Harness-owned Workers. Generation replacement accepts only additive package sets and never mutates a live table entry by entry.
 
 ## Decision
 
-Profile startup computes one immutable `ResolutionGeneration` from the same dependency traversal that supplies the disk module fallback. The launcher defaults to runtime mode, which installs the generation into Node's ESM and CommonJS resolvers without materializing fallback links. Plain Node callers and tests can explicitly select link mode to materialize the generation or dual mode to materialize and verify it. `PluginPackages.replace()` publishes a complete additive successor with one reference replacement.
+Profile startup computes one immutable `ProfileResolutionGeneration` and installs it into Node's ESM and CommonJS resolvers. Runtime is the only resolution backend; there is no mode selector or disk materializer. `PluginPackages.replace()` publishes a complete additive successor with one reference replacement.
 
 ### One selection algorithm
 
-The package traversal remains in `@deepseek-ai/dsh-app-boot` beside profile loading. The disk materializer and the runtime resolver consume one pure plan; neither owns a copy of the precedence algorithm. Ordinary Node callers can select link, dual, or runtime mode, while an omitted mode selects runtime. Packaged executables and the Electron Host select runtime mode because their dependency trees may live in a virtual filesystem; dual remains an internal comparison path.
+The package traversal belongs to `@deepseek-ai/dsh-app-boot` beside profile loading. Ordinary Node, source launches, packaged executables, and the Electron Host consume the same generation and runtime resolver.
 
-The installation manifest is the first root. Its graph traverses `dependencies` followed by `peerDependencies` breadth-first, resolving each edge from the manifest that declares it. The first installed package reached under a name owns that name. Selected bundle roots then run in profile order, with each earlier root's complete graph taking precedence over every later root. Names supplied by the installation are reserved, and bundle package roots themselves do not become plugin fallbacks. Missing declared packages are skipped as before.
+The installation manifest is the first root. Its graph traverses `dependencies` followed by `peerDependencies` breadth-first, resolving each edge from the manifest that declares it. The first installed package reached under a name owns that name. Selected bundle roots then run in profile order, with each earlier root's complete graph taking precedence over every later root. Names supplied by the installation are reserved, and bundle package roots themselves do not become plugin fallbacks. Missing declared packages are skipped.
 
-Profile-local and plugin-private `node_modules` entries stay outside the fallback entries, and Node checks them before the virtual fallback position. The generation records only installed direct profile package names for a no-I/O native fast path. Each fallback entry records the package name, version, selected lookup directory, declaring manifest anchor, and scope needed to rerun Node's native resolution from the selected package and validate that a successor preserves existing mappings.
+During dependency expansion, every installation root, selected bundle root, and recursive dependency manifest uses its package's real directory as the lookup anchor. Ancestor `node_modules` searches therefore follow the location from which Node normally executes the package, not the location of a symlink pointing to it. The same declaring anchor is recorded for runtime delegation. This can change the selected version or remove an otherwise discoverable dependency when logical and real ancestors differ; it is not merely a spelling change to stored paths.
 
-The existing `healProfilesModuleFallback()` remains as the disk materializer for the same computed result, which permits direct comparison without rewriting the selection rules. Named profile launches use it only in explicit link or dual mode. Runtime mode computes the generation without materializing it, while dual mode materializes and installs that generation for comparison.
+Profile-local and plugin-private `node_modules` entries take precedence over fallback entries. The generation records installed direct profile package names for a no-I/O native fast path. Each fallback entry records the package name, version, selected lookup directory, declaring manifest anchor, and scope needed for native resolution and successor validation.
+
+The selected-bundle module fallback remains necessary for dependencies that the profile cannot find through its own ancestor directories. It expands installed manifest dependencies into the active profile's shared fallback table, not a separate graph for each plugin. It neither downloads packages nor scans source imports. Runtime hooks consume that table after native local candidates have been considered.
+
+### Ordinary and linked package examples
+
+In both layouts below, the profile selects `my-bundle`, whose manifest declares `bridge`; only `bridge` declares `leaf`. Neither the installation nor the profile's direct packages supplies `leaf`, and `bridge` has no private `node_modules/leaf`. The paths illustrate the two layouts exercised by the [shared CLI profile tests](../../../../apps/cli/tests/profiles/headless/tests/profile-resolution.ts).
+
+With ordinary installed directories, `bridge` searches its containing bundle's `node_modules` and finds version 1.0.0. The unrelated version 2.0.0 is not on that search path:
+
+```text
+/case/home/profiles/headless/node_modules/my-bundle/
+  node_modules/bridge/
+  node_modules/leaf/                                  # 1.0.0
+/case/dependencies/node_modules/leaf/                 # 2.0.0
+```
+
+With an npm-link-style bundle and a linked transitive dependency, the bundle expands from `/case/work/my-bundle`, and the next dependency expansion starts at `/case/dependencies/bridge`. That expansion finds version 2.0.0 beside the real package:
+
+```text
+/case/home/profiles/headless/node_modules/my-bundle -> /case/npm-global/node_modules/my-bundle
+/case/npm-global/node_modules/my-bundle -> /case/work/my-bundle
+/case/work/my-bundle/node_modules/bridge -> /case/dependencies/bridge
+/case/work/my-bundle/node_modules/leaf/                # 1.0.0
+/case/dependencies/node_modules/leaf/                 # 2.0.0
+```
+
+| Profile package layout | Declaring directory used to resolve `leaf` | `tsx/esm` source launch | Plain Node `lib` launch |
+|---|---|---|---|
+| Ordinary directories | `/case/home/profiles/headless/node_modules/my-bundle/node_modules/bridge` | 1.0.0 | 1.0.0 |
+| Linked bundle and bridge | `/case/dependencies/bridge` | 2.0.0 | 2.0.0 |
+
+ESM `import` and CommonJS `require` select these versions. Within each module format, importing `leaf` through profile fallback and importing it inside `bridge` reaches the same module instance. A higher-priority native profile package or an installation-reserved fallback name still wins according to the selection rules; the fallback does not force every importer to use version 2.0.0.
+
+### Source and built module identity
+
+The [source launcher](2026-07-29-dsh-source-launch-tsx-esm.md) uses tsx's ESM-only hook. tsx skips tsconfig `paths` for an importer URL containing `/node_modules/`. A logical workspace symlink used as a fallback declaring anchor can therefore select built `lib/` exports, while imports from the resulting real workspace files select `src/` through the paths map. Real declaring anchors let workspace imports follow the source map consistently; packages without a matching workspace mapping keep ordinary package-export resolution.
+
+For example, `@deepseek-ai/dsh-tools` creates its scheduler key with `Symbol()`. A Tools instance loaded from `lib/` cannot expose that scheduler through a key imported from the separate `src/` module instance. Source launches keep Tools and AgentLoop in `src/`; plain Node launches keep them in `lib/`. The scheduler retains its local Symbol; correct imports share one module instance.
 
 ### Immutable generations
 
 A resolver registration holds one `current` generation. Each synchronous resolution captures that reference once. Generation construction reads every required manifest before publication; an error leaves the current generation unchanged. Successful publication replaces one reference, and in-flight calls may finish against the generation they captured.
 
-Selection and package-metadata caches belong to a generation. Publishing a successor invalidates them by making the old generation unreachable after its callers finish; update code does not mutate or clear individual entries. A generation hit and a successful native selection can be cached, but a generation miss is rescanned so a profile-local package installed after the miss becomes visible as it does in link mode. Calls with explicit CommonJS paths or non-default conditions never reuse a default-resolution cache entry.
+Selection and package-metadata caches belong to a generation. Publishing a successor invalidates them by making the old generation unreachable after its callers finish; update code does not mutate or clear individual entries. A generation hit and a successful native selection can be cached, but a generation miss is rescanned so a profile-local package installed after the miss becomes visible through native lookup. Calls with explicit CommonJS paths or non-default conditions never reuse a default-resolution cache entry.
 
 The launcher constructs one startup generation. The service accepts an additive successor, but no package-manager transaction invokes replacement in this implementation.
 
@@ -48,7 +86,7 @@ The resolution generation lists available fallback packages; Loader entries form
 
 The resolver does not expose `imported(entry)` and does not observe ModuleJobs, wrap Entry methods, associate fibers with import calls, replace registry or tree methods, or adapt HMR transactions. A repeated query uses the same generation and therefore cannot drift from the route used for the import. Non-Node importers that need package metadata must explicitly implement the same deterministic resolver interface.
 
-The implementation lives under `app-boot/src/profile-resolution/`. `service.ts` provides the long-lived `ctx.pluginPackages` and owns the main-thread resolver and Worker-generation lifetimes; `resolver.ts` implements generation lookup and the Node Internal adapters; `worker-bootstrap.ts` installs an inherited generation in one thread. Existing profile selection and disk materialization remain in `profile.ts`. Workers reference the bootstrap only through the public `@deepseek-ai/dsh-app-boot/worker/profile-resolution-bootstrap` export.
+The implementation lives under `app-boot/src/profile-resolution/`. `service.ts` provides the long-lived `ctx.pluginPackages` and owns the main-thread resolver and Worker-generation lifetimes; `resolver.ts` implements generation lookup and the Node Internal adapters; `worker-bootstrap.ts` installs an inherited generation in one thread. Profile selection and generation construction remain in `profile.ts`. Workers reference the bootstrap only through the public `@deepseek-ai/dsh-app-boot/worker/profile-resolution-bootstrap` export.
 
 The service definition and provider remain together in `app-boot` because profile boot owns the resolver lifetime. Extracting a separate capability seam becomes warranted when a launcher-independent provider or independently evolving consumers require it.
 
@@ -64,21 +102,11 @@ A caller adding a package completes its pnpm transaction before constructing a s
 
 Replacing, upgrading, or removing an already loaded package requires process restart because Node's ESM Module Map, CommonJS cache, existing object references, and running Workers can retain the old module identity. Generation replacement does not claim to unload modules.
 
-### Disk migration
+### Filesystem and runtime carriers
 
-Runtime-only launch paths do not create, update, or retire symlinks and proxy packages. The resolver treats the legacy shared fallback and `.dsh-module-fallback` projections as virtual insertion positions: a generation hit uses the table target, while a miss skips those old positions before continuing native ancestor lookup. During a dual phase, the launcher materializes and installs the same generation; tests disable each backend in turn and compare their targets.
+The resolver does not create, update, or remove fallback symlinks and proxy packages. Existing disk entries have no dedicated recognition, bypass, or cleanup path; entries encountered by ordinary native lookup are treated as ordinary packages. Writable profile state and package-manager transactions remain outside the resolver.
 
-Legacy disk state remains available to link-only launches, old processes, and rollback without participating in runtime-only selection. Removing that state is a separate maintenance operation outside this change.
-
-### Mode behavior
-
-Link, dual, and runtime modes use the same generation schema and dependency-selection policy. Link mode persists the computed result, runtime mode installs it only in the process, and dual mode requires Node's materialized result to equal the generation route.
-
-The `dsh` launcher selects runtime mode when an ordinary Node caller omits `resolutionMode`. A pkg executable always selects runtime mode, and the Electron Host explicitly selects runtime mode in both development and packaged builds before any profile row mounts. Plain Node tests and low-level embedders can explicitly select link, dual, or runtime.
-
-Runtime mode requires a supported Node Internal loader interface and does not create, update, or retire fallback links. Dual mode retains link writes and fails when Node's disk result differs from the generation. Writable profile state and package-manager transactions remain outside the resolver.
-
-Pkg and Electron carriers force runtime resolution. The Electron Host runs through the Electron executable with `ELECTRON_RUN_AS_NODE=1`; packaged builds read the dsh tree from ASAR and map executable ASAR entries to electron-builder's unpacked tree. Their runtime resolvers do not create, update, or remove legacy resolution links.
+Runtime resolution requires a supported Node Internal loader interface. The Electron Host runs through the Electron executable with `ELECTRON_RUN_AS_NODE=1`; packaged builds read the dsh tree from ASAR and map executable ASAR entries to electron-builder's unpacked tree. Pkg and Electron use the same runtime-generation mechanism as ordinary Node launches.
 
 ### Performance and verification
 
@@ -86,11 +114,13 @@ Generation construction is startup or update work, not resolve work, and its abs
 
 One-off local measurements taken during implementation ran built JavaScript under plain Node in fresh processes and compared it with a process that installed no hook. The measurement script and results are not committed, and these figures are not a benchmark or CI budget. Seven alternating rounds covered outside, profile-local, and fallback imports through dynamic import, `import.meta.resolve`, require, and `require.resolve`. Across Node 22.19, 24.18, and 26.8, the largest positive hot-path median was 4.5%. On Node 24.18, a 256-package cold workload regressed by at most 11.2% and generation construction took 16.027 ms median; the 32-package local `require.resolve` case added 1.033 ms across the batch (+34.7%) from fixed startup cost.
 
-Behavior tests compare the runtime generation with the disk materializer over the same package trees, then exercise root order, transitive and peer dependencies, local and external precedence, exports and subpath errors, conditions, and explicit CommonJS options. The Node compatibility matrix runs the resolver, service, and bootstrap specifications across the supported internal-loader variants. Worker tests verify environment-data publication and bootstrap installation with mocked thread and native-loader interfaces; they do not launch a built Worker. Generation tests prove failed construction does not publish partial state and successful replacement is atomic.
+Behavior tests exercise root order, transitive and peer dependencies, local and external precedence, exports and subpath errors, conditions, and explicit CommonJS options. The Node compatibility matrix runs the resolver, service, and bootstrap specifications across the supported internal-loader variants. Worker tests verify environment-data publication and bootstrap installation with mocked thread and native-loader interfaces; they do not launch a built Worker. Generation tests prove failed construction does not publish partial state and successful replacement is atomic.
 
 ## Alternatives considered
 
-**Keep disk projections permanently.** This preserves native lookup without process hooks, but retains cross-process mutation, stale generations, proxy manifests, writer locks, and packaged-runtime divergence. A bounded dual migration remains useful because both backends consume the same generation.
+**Keep disk projections permanently.** This preserves native lookup without process hooks, but retains cross-process mutation, stale generations, proxy manifests, writer locks, and packaged-runtime divergence. Retaining link and dual as comparison modes would also keep the materializer and its lifecycle without a supported launcher that needs them.
+
+**Preserve logical symlink anchors.** This keeps lookup under the symlink's ancestors, but can select a different dependency from the one imported by the real package and can suppress tsx's workspace paths map. Canonical anchors keep eager dependency discovery and runtime delegation aligned with the package's execution location.
 
 **Expand the dependency graph lazily during resolve.** This spreads manifest reads and errors across first-use calls, changes timing from the disk implementation, complicates Worker startup, and makes the hot path depend on graph size. Complete generation construction is easier to compare and replace atomically.
 
@@ -104,15 +134,15 @@ Behavior tests compare the runtime generation with the disk materializer over th
 
 ## Verification
 
-- One eager computation supplies the retained disk materializer and runtime generation.
-- Link-only, dual, and runtime-only tests consume the same generation; runtime startup neither writes nor retires module-resolution data.
+- One eager computation supplies the runtime generation; startup neither writes nor retires module-resolution data.
+- [Generation tests](../../../../packages/boot/app-boot/tests/profile-resolution.spec.ts) cover installation and selected-bundle graphs with ordinary directories and recursive symlinks, including different dependency versions beside logical and real anchors.
+- [Source-launch tests](../../../../apps/cli/tests/source-launch.compat.spec.ts) and [built-bin tests](../../../../apps/cli/tests/built-bin.e2e.ts) run both profile layouts through the real CLI. They assert ESM/CJS versions, loaded paths, per-format dependency identity, and consistent Tools/AgentLoop module instances with an accessible scheduler key.
 - Pkg and Electron carriers select runtime resolution; Electron executes its Host in Node mode from the ASAR-backed dsh tree while native executable entries remain unpacked.
 - ESM and CommonJS adapters share one router and delegate final resolution to Node without `module.registerHooks` or `_findPath` replacement.
 - Production metadata lookup does not record Loader import results or wrap Entry, registry, tree, or HMR methods.
 - The Node compatibility matrix runs main-thread resolver specifications across supported loader interfaces; service and bootstrap specifications cover Worker environment-data and installation interfaces without launching a built Worker.
 - One-off built plain-Node measurements produced the hot and cold observations above against no-hook Node; the script and results are not committed evidence.
-- Package READMEs, architecture references, generated catalogs, and the bilingual pair describe the shipped implementation.
 
 ## Consequences
 
-Runtime startup avoids disk mutation and proxy manifests while preserving the existing package-selection algorithm. It accepts the maintenance cost of Node Internal compatibility tests and an early, self-contained bootstrap in each owned Worker. Runtime is the ordinary Node launcher default, link and dual remain explicit comparison options, and pkg plus Electron carriers force runtime resolution without the resolver retiring old links. Generation replacement remains additive until the product owns module-cache invalidation and Worker restart.
+Runtime startup avoids disk mutation and proxy manifests while retaining package-precedence rules. Real-directory anchors align dependency discovery with default Node loading and tsx workspace mapping, including cases where a logical symlink path would select another version. The implementation accepts the maintenance cost of Node Internal compatibility tests and an early, self-contained bootstrap in each owned Worker; it provides no disk-only backend or dual comparison mode. Generation replacement remains additive until the product owns module-cache invalidation and Worker restart.
