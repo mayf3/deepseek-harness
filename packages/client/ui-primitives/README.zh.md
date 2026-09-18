@@ -58,6 +58,7 @@ kind: "package-library"
 | `icons/*`、`FishLogo`、`BrandWordmark`、`ReferenceIconRegular`/`ReferenceIconMedium`、`LinkIconRegular`/`LinkIconMedium` | 字形与品牌标识。`LinkIconMedium` 用于 14px 的可点击链接分类及已知站点标记。 |
 | `PermissionIconReadOnlyRegular`/`Medium`、`PermissionIconWorkspaceWriteRegular`/`Medium`、`PermissionIconFullAccessRegular`/`Medium` | 只读、工作区写入与完全访问选项使用的权限模式图形。 |
 | `FileTypeIcon`、`classifyFileType`、`fileExtension` | 按类别着色的 28px 文件或文件夹图形，以及它背后共享的不区分大小写文件名映射。代码与配置文件使用细分的全彩技术图形；链接前置图形使用 `LinkIconMedium`，图片内容使用图片预览。 |
+| `languageForPath`、`CODE_HIGHLIGHT_EXTENSIONS`、`useCodeHighlighter` | 代码预览与 diff review 共用的文件名 grammar 选择和惰性逐行 token 高亮。 |
 
 有三组容易混淆：
 
@@ -107,6 +108,7 @@ kind: "package-library"
 | [`src/ReadBlock.tsx`](src/ReadBlock.tsx) / [`src/DiffBlock.tsx`](src/DiffBlock.tsx) | 读取与差异卡片 |
 | [`src/SearchBlock.tsx`](src/SearchBlock.tsx) / [`src/WebBlock.tsx`](src/WebBlock.tsx) | 搜索与网页检索卡片 |
 | [`src/icons/`](src/icons/) | 与尺寸无关的 `Regular` 和 `Medium` 产品图标组件 |
+| [`src/code-highlighting.ts`](src/code-highlighting.ts) | 共享的文件名 grammar 选择与惰性逐行高亮 |
 | [`src/useAnchoredPosition.ts`](src/useAnchoredPosition.ts) / [`src/useAnchoredMaxHeight.ts`](src/useAnchoredMaxHeight.ts) | 浮动面板与浮层几何钩子 |
 
 ### 流式 Markdown

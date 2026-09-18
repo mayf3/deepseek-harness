@@ -21,4 +21,5 @@ describe('deliverables layout', () => {
     expect(deliveries).toMatch(/\.open\s*\{[^}]*padding:\s*4px 8px;[^}]*font-size:\s*12px;[^}]*line-height:\s*18px/s)
     expect(deliveries).toMatch(/\.presented\s*\{[^}]*gap:\s*10px/s)
   })
+
 })
