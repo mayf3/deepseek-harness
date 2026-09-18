@@ -92,7 +92,7 @@ export function noticeText(notice: ManagerNotice, t: Translate): string {
     case 'cancelled': return t('installCancelled')
     case 'install': return t(({
       done: 'installBackgroundDone', failed: 'installBackgroundFailed',
-      unconfirmed: 'installBackgroundUnconfirmed', applying: 'installBackgroundApplying',
+      unconfirmed: 'installBackgroundUnconfirmed', applying: 'installBackgroundApplying', unknown: 'installBackgroundUnknown',
     } as const)[notice.outcome])
     case 'failed': {
       const reason = notice.code === undefined ? notice.reason : managementText({ code: notice.code, diagnostic: notice.reason }, t)

@@ -19,6 +19,7 @@ it('cancels installation through the UI, restores files, and offers the spec aga
     const browser = await chromium.launch()
     const delivery = Promise.withResolvers<undefined>()
     const cancellationReply = Promise.withResolvers<undefined>()
+    const loseActiveReply = Promise.withResolvers<undefined>()
     try {
       const profile = join(scaffold.harnessHome, 'profiles', 'scaffold')
       const manifestPath = join(profile, 'package.json')
@@ -27,7 +28,7 @@ it('cancels installation through the UI, restores files, and offers the spec aga
       await writeFile(lockPath, 'original lockfile\n')
       // Node stands in for the pnpm executable: `view` answers the check that precedes the run,
       // and the same installer owns and stops the real `add` child.
-      await writeFile(join(profile, 'view'), 'console.log(JSON.stringify({ name: "slow-package", version: "1.0.0", dsh: { bundle: { patch: "./cordis.patch.yml" } } }))\n')
+      await writeFile(join(profile, 'view'), 'console.log(JSON.stringify({ name: process.argv[2], version: "1.0.0", dsh: { bundle: { patch: "./cordis.patch.yml" } } }))\n')
       await writeFile(join(profile, 'add'), `
         import('node:fs').then(fs => {
         fs.writeFileSync('package.json', JSON.stringify({ ...JSON.parse(fs.readFileSync('package.json', 'utf8')), dependencies: { partial: '1.0.0' } }));
@@ -72,7 +73,7 @@ it('cancels installation through the UI, restores files, and offers the spec aga
       await page.keyboard.press('Escape')
       await dialog.waitFor({ state: 'hidden' })
       cancellationReply.resolve(undefined)
-      await page.getByText('尚未确认安装已停止，可查看安装任务并重试取消。', { exact: true }).waitFor()
+      await page.getByText('安装状态暂未确认，请查看安装任务了解详情。', { exact: true }).waitFor()
       await panel.getByRole('button', { name: '查看安装任务', exact: true }).click()
       await dialog.getByText('安装状态尚未确认', { exact: true }).waitFor()
       await compareOrRefreshGolden(fileURLToPath(new URL('./expected/plugin-install-cancel/unconfirmed.expected.md', import.meta.url)),
@@ -84,6 +85,18 @@ it('cancels installation through the UI, restores files, and offers the spec aga
       expect(await readFile(manifestPath, 'utf8')).toBe(manifest)
       expect(await readFile(lockPath, 'utf8')).toBe('original lockfile\n')
       await page.unrouteAll({ behavior: 'wait' })
+      // Drop the browser's response while the real Host still owns the child process.
+      const activeReplySettled = Promise.withResolvers<undefined>()
+      await page.route('**/api/pluginManager/installBundle', async (route) => {
+        const response = route.fetch().then(() => undefined, (error: unknown) => error)
+        try {
+          await loseActiveReply.promise
+          await route.abort('failed')
+          expect(await response).toBeUndefined()
+        } finally {
+          activeReplySettled.resolve(undefined)
+        }
+      })
       await panel.getByRole('button', { name: '添加插件', exact: true }).click()
       await dialog.getByRole('textbox').fill('slow-package')
       await dialog.getByRole('button', { name: '安装', exact: true }).click()
@@ -91,6 +104,8 @@ it('cancels installation through the UI, restores files, and offers the spec aga
       await dialog.getByText('版本 1.0.0', { exact: true }).waitFor()
       await dialog.getByRole('button', { name: '查看安装详情', exact: true }).click()
       await dialog.getByText('Waiting for package download', { exact: true }).waitFor()
+      loseActiveReply.resolve(undefined)
+      await dialog.getByRole('button', { name: '核对安装状态', exact: true }).waitFor()
       await dialog.getByRole('button', { name: '取消安装', exact: true }).click()
       // The Host's confirmation returns the dialog to the spec and says so in a toast.
       await dialog.getByRole('textbox').waitFor()
@@ -98,17 +113,20 @@ it('cancels installation through the UI, restores files, and offers the spec aga
       expect(await readFile(manifestPath, 'utf8')).toBe(manifest)
       expect(await readFile(lockPath, 'utf8')).toBe('original lockfile\n')
       expect(await dialog.getByRole('textbox').inputValue()).toBe('slow-package')
+      await activeReplySettled.promise
+      await page.unrouteAll({ behavior: 'wait' })
       const snapshot = (await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd))
         .split(process.execPath).join('{{node}}')
         .split(scaffold.harnessHome).join('{{harnessHome}}')
       await compareOrRefreshGolden(fileURLToPath(new URL('./expected/plugin-install-cancel/cancelled.expected.md', import.meta.url)), snapshot, webSnapshotMode())
-      // The second run installs a bundle the way pnpm leaves one: the dependency in the manifest and the package under node_modules.
+      // Successful runs leave the dependency in the manifest and the bundle under node_modules.
       await writeFile(join(profile, 'add'), `
         import('node:fs').then(fs => {
-        fs.mkdirSync('node_modules/slow-package', { recursive: true });
-        fs.writeFileSync('node_modules/slow-package/package.json', JSON.stringify({ name: 'slow-package', version: '1.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } } }));
-        fs.writeFileSync('node_modules/slow-package/cordis.patch.yml', '[]\\n');
-        fs.writeFileSync('package.json', JSON.stringify({ ...JSON.parse(fs.readFileSync('package.json', 'utf8')), dependencies: { 'slow-package': '1.0.0' } }));
+        const name = process.argv[2];
+        fs.mkdirSync('node_modules/' + name, { recursive: true });
+        fs.writeFileSync('node_modules/' + name + '/package.json', JSON.stringify({ name, version: '1.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } } }));
+        fs.writeFileSync('node_modules/' + name + '/cordis.patch.yml', '[]\\n');
+        fs.writeFileSync('package.json', JSON.stringify({ ...JSON.parse(fs.readFileSync('package.json', 'utf8')), dependencies: { ...JSON.parse(fs.readFileSync('package.json', 'utf8')).dependencies, [name]: '1.0.0' } }));
         console.log('Retry completed');
         });
       `)
@@ -117,10 +135,26 @@ it('cancels installation through the UI, restores files, and offers the spec aga
       await dialog.getByRole('button', { name: '查看安装详情', exact: true }).click()
       await dialog.getByText('Retry completed', { exact: true }).waitFor()
       expect(JSON.parse(await readFile(manifestPath, 'utf8'))).toMatchObject({ dependencies: { 'slow-package': '1.0.0' } })
+      await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+      await panel.getByRole('button', { name: '添加插件', exact: true }).click()
+      await dialog.getByRole('textbox').fill('recovered-package')
+      await page.route('**/api/pluginManager/installBundle', async (route) => {
+        await route.fetch()
+        await route.abort('failed')
+      })
+      await dialog.getByRole('button', { name: '安装', exact: true }).click()
+      await dialog.getByText('未能获取安装结果', { exact: true }).waitFor()
+      await compareOrRefreshGolden(fileURLToPath(new URL('./expected/plugin-install-cancel/unknown.expected.md', import.meta.url)),
+        await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd), webSnapshotMode())
+      expect(JSON.parse(await readFile(manifestPath, 'utf8'))).toMatchObject({ dependencies: { 'recovered-package': '1.0.0' } })
+      await dialog.getByRole('button', { name: '返回编辑', exact: true }).click()
+      await dialog.getByRole('textbox').fill('another-package')
+      expect(await dialog.getByRole('button', { name: '安装', exact: true }).isEnabled()).toBe(true)
       expect(tripwire.pageErrors).toEqual([])
     } finally {
       delivery.resolve(undefined)
       cancellationReply.resolve(undefined)
+      loseActiveReply.resolve(undefined)
       await browser.close()
     }
   } finally {

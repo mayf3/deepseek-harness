@@ -553,6 +553,7 @@ const SCREEN_TITLE_KEYS = {
   cancelling: 'installCancelling',
   applying: 'installApplying',
   unconfirmed: 'installUnconfirmedTitle',
+  unknown: 'installUnknownTitle',
   done: 'installedTitle',
   failed: 'installFailedTitle',
 } satisfies Record<Exclude<InstallState['phase'], 'idle' | 'checking'>, PluginManagerLocaleKey>
@@ -598,7 +599,7 @@ function SubjectCard({ subject, t }: { readonly subject: InstallSubject; readonl
  * install scripts undecided shows them for approval in place of plain retry.
  */
 function InstallDialog({
-  install, t, onClose, onEditSpec, onRun, onCancel, onToggleDetails, onEnableNow, onApproveBuilds,
+  install, t, onClose, onEditSpec, onRun, onCancel, onReconcile, onToggleDetails, onEnableNow, onApproveBuilds,
 }: {
   readonly install: InstallState
   readonly t: Translate
@@ -606,6 +607,7 @@ function InstallDialog({
   readonly onEditSpec: (text: string) => void
   readonly onRun: () => void
   readonly onCancel: () => void
+  readonly onReconcile: () => void
   readonly onToggleDetails: () => void
   readonly onEnableNow: () => void
   readonly onApproveBuilds: () => void
@@ -703,8 +705,9 @@ function InstallDialog({
   const heading = t(SCREEN_TITLE_KEYS[phase])
   const pending = isInstallPending(phase)
   const cancellable = phase === 'starting' || phase === 'running' || phase === 'unconfirmed'
-  const stoppable = cancellable || phase === 'failed'
-  const unconfirmed = install.failure?.cancelUnconfirmed === true ? install.failure.reason : undefined
+  const stoppable = cancellable || phase === 'failed' || phase === 'unknown'
+  const uncertainty = install.failure?.uncertainty
+  const uncertaintyKey = uncertainty === undefined ? undefined : ({ result: 'installResultUnconfirmed', cancellation: phase === 'applying' ? 'installApplyingCancellationError' : 'installCancelUnconfirmed', acceptance: 'installAwaitingAcceptance' } as const)[uncertainty]
   const pendingBuilds = phase === 'failed' ? install.failure?.pendingBuilds ?? [] : []
   const approvable = pendingBuilds.length > 0
   const firstRun = install.runs[0]
@@ -715,9 +718,9 @@ function InstallDialog({
           {phase === 'done'
             ? <span />
             : (
-              <button type="button" className={css.wizardBack} aria-label={t('installEditAria')} disabled={!stoppable} onClick={onCancel}>
+              <button type="button" className={css.wizardBack} aria-label={t(pending ? 'installCancelAndEdit' : 'installEditAria')} disabled={!stoppable} onClick={onCancel}>
                 <IconChevronLeftOutlineRegular aria-hidden="true" />
-                <span>{t('installEdit')}</span>
+                <span>{t(pending ? 'installCancelAndEdit' : 'installEdit')}</span>
               </button>
             )}
           <button
@@ -736,7 +739,8 @@ function InstallDialog({
             </span>
             <h2 className={css.wizardTitle} role={phase === 'failed' ? 'alert' : 'status'}>{heading}</h2>
             {phase === 'failed' ? <p className={css.wizardSub}>{failureText(install.failure, t)}</p> : null}
-            {unconfirmed === undefined ? null : <p className={css.wizardSub} role="alert">{t('installCancelUnconfirmed', { reason: unconfirmed })}</p>}
+            {uncertaintyKey === undefined ? null : <p className={css.wizardSub} role="alert">{t(uncertaintyKey, { reason: install.failure?.reason ?? '' })}</p>}
+            {phase === 'unknown' ? <p className={css.wizardSub}>{t('installUnknownDescription')}</p> : null}
           </div>
           {install.subject === null ? null : <SubjectCard subject={install.subject} t={t} />}
           {approvable
@@ -767,6 +771,7 @@ function InstallDialog({
               <span>{t(install.detailsOpen ? 'installDetailsHide' : 'installDetailsShow')}</span>
               <IconChevronDownOutlineRegular className={css.detailsChevron} aria-hidden="true" />
             </button>
+            {uncertainty === 'result' ? <Button variant="outline" size="sm" onClick={onReconcile}>{t('installReconcile')}</Button> : null}
             {pending
               ? (
                 <Button variant="outline" size="sm" disabled={!cancellable} onClick={onCancel}>
@@ -1002,6 +1007,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         onEditSpec={props.editInstallSpec}
         onRun={props.runInstall}
         onCancel={props.cancelInstall}
+        onReconcile={props.reconcileInstall}
         onToggleDetails={props.toggleInstallDetails}
         onEnableNow={props.enableInstalled}
         onApproveBuilds={props.approveBuildsAndRetry}

@@ -70,6 +70,7 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
     listPlugins: vi.fn(() => Promise.resolve(ok(PLUGINS))),
     inspect: vi.fn(() => Promise.resolve(ok(INSPECTED))),
     installBundle: vi.fn(() => Promise.resolve(ok({ ...APPLIED, bundle: 'dsh-new' }))),
+    waitForInstall: vi.fn(() => Promise.resolve(refused('gateway/internal', 'offline'))),
     cancelInstall: vi.fn(() => Promise.resolve(ok({ status: 'cancelled' }))),
     removeBundle: vi.fn(() => Promise.resolve(ok(APPLIED))),
     setBundleEnabled: vi.fn(() => Promise.resolve(ok(APPLIED))),
@@ -153,7 +154,7 @@ describe('PluginManagerController', () => {
     if (order === 'before') controller.installProgress({ requestId, phase: 'installing' })
     firstCancel.resolve(ok({ status: 'not-running' }))
     if (order === 'after') {
-      await vi.waitFor(() => { expect(state().install.failure?.cancelUnconfirmed).toBe(true) })
+      await vi.waitFor(() => { expect(state().install.failure?.uncertainty).toBe('acceptance') })
       controller.installProgress({ requestId, phase: 'installing' })
     }
     await vi.waitFor(() => { expect(plugins.cancelInstall).toHaveBeenCalledTimes(2) })
@@ -485,7 +486,7 @@ describe('PluginManagerController', () => {
     expect(plugins.cancelInstall).toHaveBeenCalledOnce()
     // A stop the Host did not confirm says so over the running screen, with the transport's words when it has them.
     expect(state().install.failure).toEqual(
-      status === 'too-late' ? null : { reason: status === 'offline' ? 'offline' : '', cancelUnconfirmed: true },
+      status === 'too-late' ? null : { reason: status === 'offline' ? 'offline' : '', uncertainty: 'cancellation' },
     )
     // The Host's own word that it stopped the run still ends it.
     pending.resolve(ok({ ...failed(), application: 'cancelled' }))
@@ -555,7 +556,7 @@ describe('PluginManagerController', () => {
     face.runInstall()
     const requestId = await started()
     face.closeInstall()
-    await vi.waitFor(() => { expect(state().install.failure?.cancelUnconfirmed).toBe(true) })
+    await vi.waitFor(() => { expect(state().install.failure?.uncertainty).toBe('acceptance') })
     controller.appendLog({ requestId, jobId: 'j1', argv: ['pnpm', 'add', 'slow'], cwd: '/p', stream: 'stdout', text: 'Waiting for download' })
     expect(plugins.cancelInstall).toHaveBeenCalledTimes(2)
     expect(state().install).toMatchObject({ open: false, phase: 'cancelling', runs: [{ output: 'Waiting for download' }] })
@@ -607,6 +608,129 @@ describe('PluginManagerController', () => {
     expect(state().install.open).toBe(true)
   })
 
+  it.each(['not-running', 'too-late'] as const)('recovers a lost install reply after cancellation answers %s', async (status) => {
+    const original = deferred<ReturnType<typeof refused>>()
+    const recovery = deferred<ReturnType<typeof ok<ChangeResult | null>>>()
+    const { face, state, plugins, started } = bench({
+      installBundle: vi.fn().mockReturnValueOnce(original.promise).mockResolvedValue(ok(APPLIED)),
+      cancelInstall: vi.fn().mockResolvedValue(ok({ status })),
+      waitForInstall: vi.fn().mockResolvedValueOnce(refused('gateway/internal', 'offline')).mockReturnValue(recovery.promise),
+    })
+    face.openInstall()
+    face.editInstallSpec('git+https://example.test/plugin')
+    face.runInstall()
+    const requestId = await started()
+    original.resolve(refused('gateway/internal', 'lost reply'))
+    await vi.waitFor(() => { expect(state().install.failure?.reason).toBe('offline') })
+    face.closeInstall()
+    await vi.waitFor(() => { expect(plugins.waitForInstall).toHaveBeenCalledTimes(2) })
+    expect(plugins.waitForInstall).toHaveBeenLastCalledWith(requestId)
+    expect(state().install.phase).toBe(status === 'too-late' ? 'applying' : 'unconfirmed')
+    recovery.resolve(ok(status === 'too-late' ? { ...APPLIED, bundle: 'recovered' } : null))
+    const phase = status === 'too-late' ? 'done' : 'unknown'
+    await vi.waitFor(() => { expect(state().install.phase).toBe(phase) })
+    expect(state().install.open).toBe(false)
+    expect(state().notice).toMatchObject({ kind: 'install', outcome: phase })
+    await vi.waitFor(() => { expect(plugins.listBundles).toHaveBeenCalled() })
+    face.openInstall()
+    expect(state().install.phase).toBe(phase)
+    if (status === 'not-running') {
+      face.cancelInstall()
+      expect(state().install).toMatchObject({ phase: 'idle', spec: 'git+https://example.test/plugin' })
+    }
+    face.editInstallSpec('another')
+    face.runInstall()
+    await vi.waitFor(() => { expect(plugins.installBundle).toHaveBeenCalledTimes(2) })
+  })
+
+  it('keeps Host acceptance across cancellation retries', async () => {
+    const original = deferred<ReturnType<typeof ok<ChangeResult>>>()
+    const { face, state, controller, plugins, started } = bench({
+      installBundle: vi.fn().mockReturnValue(original.promise),
+      cancelInstall: vi.fn().mockResolvedValueOnce(refused('gateway/internal', 'offline')).mockResolvedValue(ok({ status: 'not-running' })),
+    })
+    face.openInstall()
+    face.editInstallSpec('slow')
+    face.runInstall()
+    const requestId = await started()
+    controller.installProgress({ requestId, phase: 'installing' })
+    face.cancelInstall()
+    await vi.waitFor(() => { expect(state().install.failure?.reason).toBe('offline') })
+    face.cancelInstall()
+    await vi.waitFor(() => { expect(state().install.failure).toEqual({ reason: '', uncertainty: 'cancellation' }) })
+    controller.installProgress({ requestId, phase: 'installing' })
+    expect(plugins.cancelInstall).toHaveBeenCalledTimes(2)
+    original.resolve(ok(APPLIED))
+    await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
+  })
+
+  it.each(['offline', 'not-running'] as const)('preserves applying when a late cancellation answers %s', async (status) => {
+    const original = deferred<ReturnType<typeof refused>>()
+    const cancellation = deferred<ReturnType<typeof refused> | ReturnType<typeof ok<{ status: 'not-running' }>>>()
+    const { face, state, controller, started } = bench({
+      installBundle: vi.fn().mockReturnValue(original.promise),
+      cancelInstall: vi.fn().mockReturnValue(cancellation.promise),
+    })
+    face.openInstall()
+    face.editInstallSpec('slow')
+    face.runInstall()
+    const requestId = await started()
+    face.cancelInstall()
+    controller.installProgress({ requestId, phase: 'applying' })
+    cancellation.resolve(status === 'offline' ? refused('gateway/internal', 'offline') : ok({ status }))
+    await vi.waitFor(() => { expect(state().install.failure?.uncertainty).toBe('cancellation') })
+    expect(state().install.phase).toBe('applying')
+    controller.installProgress({ requestId, phase: 'installing' })
+    expect(state().install.phase).toBe('applying')
+    original.resolve(refused('gateway/internal', 'offline'))
+    await vi.waitFor(() => { expect(state().install.failure?.uncertainty).toBe('result') })
+    expect(state().install.phase).toBe('applying')
+    controller.dispose()
+  })
+
+  it('can retry recovery after both installation and cancellation replies are lost', async () => {
+    const original = deferred<ReturnType<typeof refused>>()
+    const cancellation = deferred<ReturnType<typeof refused>>()
+    const { face, state, plugins, controller, started } = bench({
+      installBundle: vi.fn().mockReturnValue(original.promise),
+      cancelInstall: vi.fn().mockReturnValue(cancellation.promise),
+      waitForInstall: vi.fn().mockResolvedValueOnce(refused('gateway/internal', 'offline')).mockResolvedValue(ok(null)),
+    })
+    face.openInstall()
+    face.editInstallSpec('slow')
+    face.runInstall()
+    const requestId = await started()
+    controller.installProgress({ requestId, phase: 'installing' })
+    face.cancelInstall()
+    original.resolve(refused('gateway/internal', 'lost install reply'))
+    await vi.waitFor(() => { expect(state().install.failure?.reason).toBe('offline') })
+    cancellation.resolve(refused('gateway/internal', 'lost cancellation reply'))
+    await vi.waitFor(() => { expect(state().install.failure).toEqual({ reason: 'lost cancellation reply', uncertainty: 'result' }) })
+    face.reconcileInstall()
+    await vi.waitFor(() => { expect(state().install.phase).toBe('unknown') })
+    expect(plugins.waitForInstall).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['failed', 'cancelled', 'disposed'] as const)('deduplicates recovery and handles its %s outcome', async (outcome) => {
+    const recovery = deferred<ReturnType<typeof ok<ChangeResult>>>()
+    const { face, state, controller, plugins } = bench({
+      installBundle: vi.fn().mockResolvedValue(refused('gateway/internal', 'offline')),
+      waitForInstall: vi.fn().mockReturnValue(recovery.promise),
+    })
+    face.openInstall()
+    face.editInstallSpec('slow')
+    face.runInstall()
+    await vi.waitFor(() => { expect(plugins.waitForInstall).toHaveBeenCalledOnce() })
+    face.reconcileInstall()
+    await controller.load()
+    expect(plugins.waitForInstall).toHaveBeenCalledOnce()
+    if (outcome === 'disposed') controller.dispose()
+    recovery.resolve(ok({ ...failed(), application: outcome === 'cancelled' ? 'cancelled' : 'failed' }))
+    await recovery.promise
+    await Promise.resolve()
+    expect(state().install.phase).toBe(outcome === 'disposed' ? 'unconfirmed' : outcome === 'cancelled' ? 'idle' : 'failed')
+  })
+
   it.each([false, true])('drops a stop the Host confirms once the run settled, or after disposal (%s)', async (dispose) => {
     const answer = deferred<ReturnType<typeof ok<ChangeResult>>>()
     const cancellation = deferred<ReturnType<typeof ok<{ status: 'cancelled' }>>>()
@@ -621,7 +745,10 @@ describe('PluginManagerController', () => {
     controller.installProgress({ requestId: await started(), phase: 'installing' })
     face.cancelInstall()
     expect(state().install.phase).toBe('cancelling')
-    if (dispose) controller.dispose()
+    if (dispose) {
+      controller.dispose()
+      controller.installProgress({ requestId: state().install.requestId!, phase: 'applying' })
+    }
     answer.resolve(ok({ ...APPLIED, bundle: 'slow' }))
     if (!dispose) await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
     cancellation.resolve(ok({ status: 'cancelled' }))
@@ -785,7 +912,7 @@ describe('PluginManagerController', () => {
     await installing()
     controller.appendLog({ requestId, jobId: 'j', argv, cwd: '/p', stream: 'stderr', text: 'streamed' })
     answer(refused('gateway/internal', 'offline'))
-    await vi.waitFor(() => { expect(state().install).toMatchObject({ phase: 'unconfirmed', failure: { reason: 'offline', cancelUnconfirmed: true } }) })
+    await vi.waitFor(() => { expect(state().install).toMatchObject({ phase: 'unconfirmed', failure: { reason: 'offline', uncertainty: 'result' } }) })
     expect(state().install.runs).toEqual([{ jobId: 'j', command: 'pnpm add x', cwd: '/p', output: 'streamed' }])
     face.runInstall()
     expect(plugins.installBundle).toHaveBeenCalledTimes(2)

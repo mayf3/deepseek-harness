@@ -531,10 +531,14 @@ it('stops a run on request, restores the files, and answers not-running or too-l
   const before = readFileSync(join(dir, 'package.json'), 'utf8')
   const run = manager.installBundle('slow', { requestId })
   await started.promise
+  const recoveredCancellation = manager.waitForInstall(requestId)
+  expect(await manager.waitForInstall('missing' as PluginInstallRequestId)).toBeNull()
   expect(await manager.cancelInstall('00000000-0000-4000-8000-000000000000' as PluginInstallRequestId)).toEqual({ status: 'not-running' })
   expect(await manager.cancelInstall(requestId)).toEqual({ status: 'cancelled' })
   expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(before)
   const cancelled = await run
+  expect(await recoveredCancellation).toEqual(cancelled)
+  expect(await manager.waitForInstall(requestId)).toBeNull()
   expect(cancelled).toMatchObject({ application: 'cancelled', changed: false, stage: 'install', packageResult: { exitCode: 1 } })
   expect(cancelled.error).toBeUndefined()
   expect(phases).toEqual([{ requestId, phase: 'installing' }, { requestId, phase: 'cancelling' }])
@@ -549,9 +553,15 @@ it('stops a run on request, restores the files, and answers not-running or too-l
     return { exitCode: 0, output: 'installed', truncated: false, logPath: join(dir, 'pnpm.log') }
   })
   let tooLate: Promise<unknown> | undefined
-  ctx.on('plugin-manager/install-state', (progress) => { if (progress.phase === 'applying') tooLate = manager.cancelInstall(progress.requestId) })
+  let recoveredApplication: Promise<unknown> | undefined
+  ctx.on('plugin-manager/install-state', (progress) => {
+    if (progress.phase !== 'applying') return
+    tooLate = manager.cancelInstall(progress.requestId)
+    recoveredApplication = manager.waitForInstall(progress.requestId)
+  })
   expect(await manager.installBundle('late', { requestId })).toMatchObject({ application: 'applied', bundle: 'late' })
   expect(await tooLate).toEqual({ status: 'too-late' })
+  expect(await recoveredApplication).toMatchObject({ application: 'applied', bundle: 'late' })
   // A request aborted before its turn under the lock never starts pnpm.
   const early = manager.installBundle('never', { requestId })
   const queued = manager.installBundle('after', { requestId: '11111111-1111-4111-8111-111111111111' as PluginInstallRequestId })
