@@ -396,6 +396,7 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
   return render(
     <>
       <ConversationSessionHeader
+        hideChrome={false}
         {...standardProps}
         SessionProvider={({ children }) => children}
         useStore={bindSnapshotSelector(conversation)}

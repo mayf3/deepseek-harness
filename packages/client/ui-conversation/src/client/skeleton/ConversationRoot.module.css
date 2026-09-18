@@ -13,6 +13,8 @@
    title row, the tab strip's 10px margin, a 16px tab line, and its 9px bottom
    inset — so no row below may grow past its figure. */
 .header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   flex: none;
   box-sizing: border-box;
   min-height: 76px;
@@ -20,7 +22,7 @@
   border-bottom: 0.5px solid var(--dsw-alias-border-l3);
 }
 
-.headerCompact {
+.header:where(:not(:has(.tabs))) {
   min-height: 0;
   padding-bottom: 10px;
 }
@@ -34,6 +36,15 @@
 
 .headerBlank .headerCorner {
   margin-left: auto;
+}
+
+/* Only the macOS titlebar needs reserved drag space before a Session exists. */
+:global(html:not([data-platform='darwin'])) .headerSessionless {
+  padding-top: 0;
+}
+
+:global(html:not([data-platform='darwin'])) .headerSessionless .titleRow {
+  min-height: 0;
 }
 
 /* macOS hiddenInset titlebar: the title row doubles as the window drag
@@ -52,6 +63,7 @@
 }
 
 .titleRow {
+  grid-column: 2;
   display: flex;
   align-items: center;
   gap: 0;
@@ -66,19 +78,15 @@
   min-width: 0;
 }
 
-/* Leading seat before the breadcrumbs; laid out only while its occupant
-   renders something, and the occupant owns its own trailing gap (a CSS-hidden
-   occupant keeps the seat non-empty, so a seat-owned margin would push the
-   breadcrumbs while nothing shows). */
+/* The auto grid column collapses with an empty or CSS-hidden occupant.
+   The occupant owns its trailing gap so hidden controls reserve no space. */
 .headerLeading {
+  grid-column: 1;
+  grid-row: 1;
   display: flex;
   flex: none;
   align-items: center;
   gap: 8px;
-}
-
-.headerLeading:empty {
-  display: none;
 }
 
 .crumbs {
@@ -172,6 +180,7 @@
 /* figma Tab_Group 34:11441: 35px strip, gap 36, pad-left 8, tabs bottom-aligned.
    Positioned above the header's own paint, so the active bar covers the rule. */
 .tabs {
+  grid-column: 1 / -1;
   position: relative;
   z-index: 1;
   display: flex;

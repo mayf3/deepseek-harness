@@ -42,7 +42,7 @@ async function bench(declare = true) {
       { name: 'root', children: {
         'sidebar': { kind: 'single', scope: 'root' },
         'main': { kind: 'keyed', scope: 'root' },
-        'conversation.session.header.leading': { kind: 'single', scope: 'session' },
+        'conversation.header.leading': { kind: 'single', scope: 'root' },
       } },
       SidebarFrame,
     )
@@ -72,7 +72,7 @@ describe('ui-sidebar apply', () => {
     // Copy rides the standard locale seat, not the inject face.
     expect(b.slots.entries('sidebar')[0]!.locale).toBe('sidebar')
     // The header leading occupant reuses the shell's inject face and locale.
-    const leading = b.slots.entries('conversation.session.header.leading')
+    const leading = b.slots.entries('conversation.header.leading')
     expect(leading).toHaveLength(1)
     expect(leading[0]!.component).toBe(HeaderLeadingControls)
     expect(leading[0]!.locale).toBe('sidebar')
@@ -145,7 +145,7 @@ describe('ui-sidebar apply', () => {
     await fiber.await()
     await fiber.dispose()
     expect(b.slots.entries('sidebar')).toHaveLength(0)
-    expect(b.slots.entries('conversation.session.header.leading')).toHaveLength(0)
+    expect(b.slots.entries('conversation.header.leading')).toHaveLength(0)
     expect(b.slots.spec('sidebar.brand.mark')).toBeUndefined()
     expect(b.slots.spec('sidebar.brand.name')).toBeUndefined()
     expect(b.slots.spec('sidebar.workspaces')).toBeUndefined()
