@@ -83,22 +83,74 @@ Each registration declares a **directory-flow child hole** (`single` kind: `conv
 
 ### Session menu actions
 
-An external client plugin injects `sidebar.workspaces.session.menu.action`, registers a fresh `id` and `order`, and renders the shared `MenuAction` primitive. Each action receives the target's `sessionId`, its row `displayTitle` (persisted title, project basename, then Session id), and `dismiss()`. Plugin services remain in the registration's inject closure, and action text comes from the plugin's locale dictionary. Built-in actions stay first in their fixed order. Plugin actions sort by lower priority, lower `order`, then registration sequence. The dynamic browser-half facade assigns every registration a distinct decreasing priority, so newer dynamic registrations precede older ones regardless of `order`; packaged registrations at the same priority use `order`. The secondary group has a semantic separator and is hidden from both presentation and accessibility APIs when empty.
+An external client plugin contributes to `sidebar.workspaces.session.menu.action`. Built-in actions stay first in their fixed order; contributed actions form a secondary group after a semantic separator. The group is absent from presentation and accessibility APIs when it has no rendered menu-item button.
+
+Each contribution receives the target `sessionId` and row `displayTitle` (persisted title, project basename, then Session id). Render the contribution with the shared `MenuAction` primitive; it owns the menu's styling, keyboard behavior, dismissal, and focus restoration. Use a fresh, package-namespaced `id`. Lower `order` values render first. Equal-order packaged registrations keep registration sequence; equal-order dynamic registrations use the facade's decreasing shadowing priority, so the newer entry comes first. `priority` otherwise selects the active registration when two entries deliberately reuse one `id`; it does not move a distinct id across `order` groups.
+
+#### Packaged client plugin
+
+Declare `ui-workspace`, `ui-slots`, `ui-renderer`, `client-locale`, and `ui-primitives` as browser/type development dependencies according to the Client dependency policy. The type-only `ui-workspace/client` import loads this package's `SlotMap` declaration; without it, an independently compiled plugin does not know the slot key. Keep the Component at module scope, project business operations through the registration's `inject` face, and own visible copy in the contributing package's locale namespace.
 
 ```tsx
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { MenuAction } from '@deepseek-ai/dsh-client-ui-primitives'
+import type {
+  InjectFace, LocaleDictOf, PropsLocale, PropsRuntime,
+} from '@deepseek-ai/dsh-client-ui-slots'
+import { exportSession } from './export-session.ts'
 
-ctx.slots.inject('sidebar.workspaces.session.menu.action', () => ctx.slots.register(
-  { name: 'sidebar.workspaces.session.menu.action', id: 'export-session', order: 100 },
-  ({ sessionId, displayTitle }) => (
+const NS = 'acme.sessionActions'
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    'acme.sessionActions': 'export'
+  }
+}
+
+const en: LocaleDictOf<typeof NS> = { export: 'Export {title}' }
+const zh: LocaleDictOf<typeof NS> = { export: '导出 {title}' }
+
+interface ExportActionInjected {
+  exportSession: (sessionId: SessionId) => void
+}
+
+type ExportActionProps =
+  PropsRuntime<'sidebar.workspaces.session.menu.action'>
+  & PropsLocale<typeof NS>
+  & InjectFace<ExportActionInjected>
+
+function ExportAction({ sessionId, displayTitle, exportSession, t }: ExportActionProps) {
+  return (
     <MenuAction onSelect={() => { exportSession(sessionId) }}>
-      {t('session.export', { title: displayTitle })}
+      {t('export', { title: displayTitle })}
     </MenuAction>
-  ),
-))
+  )
+}
+
+export const inject = ['slots', 'locale']
+
+export function apply(ctx: Context): void {
+  ctx.effect(() => ctx.locale.register(NS, { en, zh }), 'acme-session-actions: dictionaries')
+
+  ctx.slots.inject('sidebar.workspaces.session.menu.action', () => ctx.slots.register({
+    name: 'sidebar.workspaces.session.menu.action',
+    id: 'acme.export-session',
+    order: 100,
+    locale: NS,
+    inject: (): ExportActionInjected => ({ exportSession }),
+  }, ExportAction))
+}
 ```
 
-Import-free dynamic client packages render a native `<button type="button" role="menuitem">` with `React.createElement` and call the supplied `dismiss()` after acting. That exact button contract joins the menu's keyboard walk; `dismiss()` closes the menu and restores trigger focus unless the action moved focus elsewhere.
+`ctx.slots.inject()` is required even if the owner is normally present: it waits for the declaration, removes the contribution when that declaration collapses, and registers it again after restoration. The registration's `inject` factory may close over the plugin's declared Cordis services; the Component receives only the projected data and callbacks.
+
+#### Dynamic client package
+
+A dynamically loaded browser half follows the same component contract. Declare `@deepseek-ai/dsh-client-ui-primitives` as a runtime dependency, resolve its shared `MenuAction` export through the loader's `require`, and render it with `React.createElement`. Do not bundle a second copy of React or the primitive: `MenuAction` must share the host menu context. The real Loader/Web fixture and generated Client Slot catalog contain runnable examples.
 
 ### View state
 

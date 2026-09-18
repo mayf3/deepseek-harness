@@ -83,22 +83,74 @@ Session 行渲染运行时的实时 `pendingInteraction` 分类：审批显示**
 
 ### Session 菜单 action
 
-外部客户端插件注入 `sidebar.workspaces.session.menu.action`，注册新的 `id` 与 `order`，并渲染共享 `MenuAction` primitive。每个 action 接收目标的 `sessionId`、行 `displayTitle`（依次回退到持久化标题、项目目录名、Session id）与 `dismiss()`；插件服务仍留在注册项的 inject 闭包中，action 文案来自插件自己的 locale 字典。内置 action 按固定顺序保持在前。插件 action 依次按较低的 priority、较低的 `order`、注册顺序排列。动态 browser-half facade 为每次注册分配不同且递减的 priority，因此较新的动态注册无视 `order` 排在较旧注册之前；相同 priority 的打包注册才使用 `order`。次级分组带有语义分隔线；没有 action 时，它在视觉与无障碍 API 中都隐藏。
+外部客户端插件向 `sidebar.workspaces.session.menu.action` 贡献 action。内置 action 以固定顺序保持在前；贡献 action 位于语义分隔线后的次级分组中。没有渲染菜单按钮时，该分组不会出现在视觉与无障碍 API 中。
+
+每个贡献项接收目标 `sessionId` 与行 `displayTitle`（依次回退到持久化标题、项目目录名、Session id）。贡献项必须使用共享的 `MenuAction` primitive 渲染；菜单样式、键盘行为、关闭与焦点恢复均由它统一负责。请使用带包命名空间的新 `id`。较小的 `order` 先渲染；`order` 相同的打包注册保持注册顺序，动态注册则使用 facade 分配的递减 shadowing priority，因此较新的注册在前。除此之外，`priority` 只在两个注册有意复用同一 `id` 时选择活动项，不会让不同 id 跨越 `order` 分组。
+
+#### 打包客户端插件
+
+按照 Client 依赖规则，将 `ui-workspace`、`ui-slots`、`ui-renderer`、`client-locale` 与 `ui-primitives` 声明为浏览器／类型开发依赖。纯类型的 `ui-workspace/client` import 会加载本包的 `SlotMap` 声明；缺少该 import 时，独立编译的插件不会知道这个 slot key。Component 保持模块级稳定身份；业务操作通过注册项的 `inject` face 投影；用户可见文案由贡献包自己的 locale namespace 持有。
 
 ```tsx
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { MenuAction } from '@deepseek-ai/dsh-client-ui-primitives'
+import type {
+  InjectFace, LocaleDictOf, PropsLocale, PropsRuntime,
+} from '@deepseek-ai/dsh-client-ui-slots'
+import { exportSession } from './export-session.ts'
 
-ctx.slots.inject('sidebar.workspaces.session.menu.action', () => ctx.slots.register(
-  { name: 'sidebar.workspaces.session.menu.action', id: 'export-session', order: 100 },
-  ({ sessionId, displayTitle }) => (
+const NS = 'acme.sessionActions'
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    'acme.sessionActions': 'export'
+  }
+}
+
+const en: LocaleDictOf<typeof NS> = { export: 'Export {title}' }
+const zh: LocaleDictOf<typeof NS> = { export: '导出 {title}' }
+
+interface ExportActionInjected {
+  exportSession: (sessionId: SessionId) => void
+}
+
+type ExportActionProps =
+  PropsRuntime<'sidebar.workspaces.session.menu.action'>
+  & PropsLocale<typeof NS>
+  & InjectFace<ExportActionInjected>
+
+function ExportAction({ sessionId, displayTitle, exportSession, t }: ExportActionProps) {
+  return (
     <MenuAction onSelect={() => { exportSession(sessionId) }}>
-      {t('session.export', { title: displayTitle })}
+      {t('export', { title: displayTitle })}
     </MenuAction>
-  ),
-))
+  )
+}
+
+export const inject = ['slots', 'locale']
+
+export function apply(ctx: Context): void {
+  ctx.effect(() => ctx.locale.register(NS, { en, zh }), 'acme-session-actions: dictionaries')
+
+  ctx.slots.inject('sidebar.workspaces.session.menu.action', () => ctx.slots.register({
+    name: 'sidebar.workspaces.session.menu.action',
+    id: 'acme.export-session',
+    order: 100,
+    locale: NS,
+    inject: (): ExportActionInjected => ({ exportSession }),
+  }, ExportAction))
+}
 ```
 
-无法导入 `MenuAction` 的动态客户端包通过 `React.createElement` 渲染原生 `<button type="button" role="menuitem">`，并在执行操作后调用传入的 `dismiss()`。只有这一精确的 button contract 会进入菜单的键盘遍历；`dismiss()` 会关闭菜单，并在 action 未自行移动焦点时把焦点还给触发按钮。
+即使 owner 通常已经存在，也必须使用 `ctx.slots.inject()`：它等待声明，在声明折叠时移除贡献项，并在声明恢复后重新注册。注册项的 `inject` factory 可以闭包使用插件已声明的 Cordis service；Component 只接收投影后的数据和 callback。
+
+#### 动态客户端包
+
+动态加载的 browser half 采用同一套组件协议。将 `@deepseek-ai/dsh-client-ui-primitives` 声明为运行时依赖，通过 loader 的 `require` 解析共享的 `MenuAction` export，再用 `React.createElement` 渲染。不要打包第二份 React 或 primitive：`MenuAction` 必须与宿主菜单共享 context。真实 Loader/Web fixture 与生成的 Client Slot catalog 都包含可运行示例。
 
 ### 视图状态
 

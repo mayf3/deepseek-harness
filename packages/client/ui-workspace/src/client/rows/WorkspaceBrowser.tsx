@@ -233,7 +233,7 @@ type SessionTreeProps = Pick<
   WorkspaceBrowserProps,
   'useSessionStatus' | 'startSession' | 'open' | 'forkSession'
   | 'insertWorkspaceBefore' | 't' | 'usePanelInfo'
-> & {
+> & PropsRenderSlots<'sidebar.workspaces.session.menu.action'> & {
   /** Always-mounted Session list snapshot. */
   list: SessionListState
   /** Host account home for POSIX hover-path abbreviation. */
@@ -268,8 +268,6 @@ type SessionTreeProps = Pick<
   onSessionUnarchive: (sessionId: SessionNode['id']) => void
   /** Pin or unpin a session (row menu action; `pin` false unpins). */
   onSessionPin: (sessionId: SessionNode['id'], pin: boolean) => void
-  /** Render ordered plugin actions in each Session row menu. */
-  renderSlot: PropsRenderSlots<'sidebar.workspaces.session.menu.action'>['renderSlot']
   /** One Session chosen from search that must be exposed and scrolled into view. */
   revealSessionId?: SessionId | undefined
   /** Acknowledge that the chosen Session row has been revealed. */

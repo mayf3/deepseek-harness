@@ -75,23 +75,18 @@ describe('session rename through the assembled browser', () => {
       SidebarFrame as never,
     )
     await runtime.mount({ inject: [...inject], apply })
-    const registerAction = (id: string, order: number, label: string, dynamic = false) => {
+    const registerAction = (id: string, order: number, priority: number, label: string) => {
       runtime.slots.register(
-        { name: 'sidebar.workspaces.session.menu.action', id, order },
-        ({ sessionId, displayTitle, dismiss }: SessionMenuActionOwnerProps) => dynamic
-          ? (
-            <button type="button" role="menuitem" onClick={() => {
-              selected(id, sessionId, displayTitle)
-              dismiss()
-            }}>{label}</button>
-          )
-          : (
-            <MenuAction onSelect={() => { selected(id, sessionId, displayTitle) }}>{label}</MenuAction>
-          ),
+        { name: 'sidebar.workspaces.session.menu.action', id, order, priority },
+        ({ sessionId, displayTitle }: SessionMenuActionOwnerProps) => (
+          <MenuAction onSelect={() => { selected(id, sessionId, displayTitle) }}>{label}</MenuAction>
+        ),
       )
     }
-    registerAction('later', 20, 'Later action')
-    registerAction('earlier', 10, 'Earlier action', true)
+    // List display order stays primary even when the later registration has
+    // the lower shadowing priority assigned to dynamic browser packages.
+    registerAction('earlier', 10, -1, 'Earlier action')
+    registerAction('later', 20, -2, 'Later action')
     const view = runtime.renderRoot()
 
     const row = (await view.findByText('Session title')).closest('[role="treeitem"]')!

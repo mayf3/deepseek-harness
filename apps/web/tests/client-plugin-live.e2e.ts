@@ -5,11 +5,17 @@ import { tmpdir } from 'node:os'
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { chromium, type Page } from 'playwright'
 import { expect, it, onTestFailed, onTestFinished } from 'vitest'
-import { launchWebScaffold, watchConsole, captureStableAria, compareOrRefreshGolden, webSnapshotMode } from './scaffold.ts'
-import { saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
+import {
+  assertFixtureInventory, captureStableAria, compareOrRefreshGolden, launchWebScaffold,
+  seedSession, watchConsole, webSnapshotMode,
+} from './scaffold.ts'
+import { newEnglishPage, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
 
 const FIXTURE = fileURLToPath(new URL('./fixtures/plugins/fixture-live-client', import.meta.url))
 const EXPECTED = fileURLToPath(new URL('./expected/client-plugin-live', import.meta.url))
+const SESSION_ACTION_EXPECTED = join(EXPECTED, 'session-actions.expected.md')
+const SESSION_SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url))
+const SESSION_TITLE = 'Session action extension'
 
 async function openInventory(page: Page, url: string) {
   await page.goto(url, { waitUntil: 'load' })
@@ -19,6 +25,67 @@ async function openInventory(page: Page, url: string) {
   await dialog.getByRole('searchbox', { name: '搜索插件' }).waitFor()
   return dialog
 }
+
+it('loads ordered Session actions through the real plugin graph and removes them with their fiber', async () => {
+  const scaffold = await launchWebScaffold({ extraInstallAnchors: [join(FIXTURE, 'package.json')] })
+  const workspace = await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd)
+  const sessionId = await seedSession(scaffold, await readFile(SESSION_SEED, 'utf8'), 'session-menu-actions-web-e2e')
+  await workspace.attachSession(sessionId)
+  await scaffold.ctx.sessionController.rename({ sessionId, title: SESSION_TITLE })
+  const entryId = await scaffold.ctx.loader.create({ name: '@fixture/live-client' })
+  const browser = await chromium.launch()
+  try {
+    const page = await newEnglishPage(browser)
+    const console = watchConsole(page)
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-session-menu-actions'))
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+    const row = page.getByRole('treeitem').filter({ has: page.getByText(SESSION_TITLE, { exact: true }) })
+    await row.waitFor({ timeout: 20_000 })
+    const trigger = row.getByRole('button', { name: `Session actions for ${SESSION_TITLE}` })
+
+    await row.hover()
+    await trigger.focus()
+    await trigger.click()
+    const menu = page.getByRole('menu')
+    await menu.waitFor()
+    expect(await menu.getByRole('menuitem').allTextContents()).toEqual([
+      'Rename', 'Fork session', 'Archive session', 'Export session', 'Copy session ID',
+    ])
+    await compareOrRefreshGolden(
+      SESSION_ACTION_EXPECTED,
+      await captureStableAria(page, '[role="menu"]', scaffold.workspaceCwd),
+      webSnapshotMode(),
+    )
+
+    await menu.getByRole('menuitem', { name: 'Export session' }).click()
+    await expect.poll(() => menu.count()).toBe(0)
+    expect(await page.evaluate(() => ({
+      action: document.documentElement.dataset.sessionAction,
+      id: document.documentElement.dataset.sessionActionId,
+      title: document.documentElement.dataset.sessionActionTitle,
+    }))).toEqual({ action: 'fixture.export-session', id: sessionId, title: SESSION_TITLE })
+
+    scaffold.ctx.loader.remove(entryId)
+    await expect.poll(() => page.evaluate(
+      () => document.documentElement.dataset.liveDisposals,
+    )).toBe('1')
+    await row.hover()
+    await trigger.click()
+    await menu.waitFor()
+    expect(await menu.getByRole('menuitem').allTextContents()).toEqual([
+      'Rename', 'Fork session', 'Archive session',
+    ])
+    expect(await menu.getByRole('separator').count()).toBe(0)
+    expect(console.pageErrors).toEqual([])
+    await assertFixtureInventory(EXPECTED, [
+      'bootstrap-rebuild.expected.md', 'enabled.expected.md', 'recovered.expected.md',
+      'session-actions.expected.md',
+    ])
+  } finally {
+    await browser.close()
+    await scaffold.close()
+  }
+}, 120_000)
 
 it('synchronizes two pages, disposes effects and restores an offline page from the latest graph without navigation', async () => {
   const scaffold = await launchWebScaffold({

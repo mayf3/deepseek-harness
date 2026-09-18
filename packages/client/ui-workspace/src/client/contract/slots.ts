@@ -58,13 +58,6 @@ export interface SessionMenuActionOwnerProps {
   sessionId: SessionId
   /** Row display title: persisted title, project basename, or Session id. */
   displayTitle: string
-  /**
-   * Close the menu and restore trigger focus when the action leaves focus behind.
-   *
-   * An acting item not rendered with `MenuAction` MUST call this after its
-   * operation. `MenuAction` performs the same close-and-refocus behavior.
-   */
-  dismiss: () => void
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -75,26 +68,26 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'sidebar.workspaces.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
     /**
      * Ordered third-party actions below the built-in Session row-menu actions.
-     * Registrations use a fresh id and sort by lower priority, lower order, then
-     * registration sequence. Dynamic browser halves receive distinct decreasing
-     * priorities, so newer dynamic registrations precede older ones regardless
-     * of order. Packaged plugins render `MenuAction`; import-free dynamic markup
-     * renders a `button[role="menuitem"]` and calls the owner `dismiss()` after
-     * acting. An empty list has no visible or accessible secondary group.
+     * Registrations use a fresh id and sort by lower order. Equal-order packaged
+     * registrations keep registration sequence; equal-order dynamic registrations
+     * use the facade's decreasing shadowing priority, so the newer entry comes
+     * first. Priority selects the active registration for one reused id; it does
+     * not override order across distinct ids. Contributions render `MenuAction`
+     * so the shared primitive owns styling, keyboard behavior, dismissal, and
+     * focus restoration. An empty list has no visible or accessible secondary group.
      * @example
+     * const React = require('react')
+     * const { MenuAction } = require('@deepseek-ai/dsh-client-ui-primitives')
+     *
      * return {
      *   inject: ['slots'],
      *   apply(ctx) {
      *     const copyLabel = 'Copy Session ID' // Localize in the contributing package.
      *     ctx.slots.inject('sidebar.workspaces.session.menu.action', () => ctx.slots.register(
      *       { name: 'sidebar.workspaces.session.menu.action', id: 'copy-session-id', order: 100 },
-     *       ({ sessionId, dismiss }) => React.createElement(
-     *         'button',
-     *         {
-     *           type: 'button',
-     *           role: 'menuitem',
-     *           onClick: () => { navigator.clipboard.writeText(sessionId).then(dismiss, dismiss) },
-     *         },
+     *       ({ sessionId }) => React.createElement(
+     *         MenuAction,
+     *         { onSelect: () => { void navigator.clipboard.writeText(sessionId) } },
      *         copyLabel,
      *       ),
      *     ))

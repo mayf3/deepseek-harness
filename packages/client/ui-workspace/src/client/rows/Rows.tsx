@@ -488,8 +488,6 @@ export function SessionNodeItem({
   onUnarchive: (id: SessionNode['id']) => void
   /** Pin or unpin this session (row menu action; `pin` false unpins). */
   onPin: (id: SessionNode['id'], pin: boolean) => void
-  /** Render ordered plugin actions after the built-in row-menu actions. */
-  renderSlot?: PropsRenderSlots<'sidebar.workspaces.session.menu.action'>['renderSlot'] | undefined
   /** Scroll this row into view after search navigation, then acknowledge it. */
   onReveal?: (() => void) | undefined
   /** Present on reorderable-list rows so every row can remain a drop target. */
@@ -497,7 +495,7 @@ export function SessionNodeItem({
   /** The row is rendered without a parent Workspace header. */
   flat?: boolean | undefined
   t: RowTranslate
-}) {
+} & PropsRenderSlots<'sidebar.workspaces.session.menu.action'>) {
   const row = node
   const title = displayTitle(node, t)
   const selected = node.id === currentId
@@ -511,7 +509,6 @@ export function SessionNodeItem({
   const [menuOpen, setMenuOpen] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLSpanElement>(null)
-  const menuTriggerRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (onReveal === undefined) return
     rowRef.current?.scrollIntoView({ block: 'nearest' })
@@ -536,13 +533,6 @@ export function SessionNodeItem({
       { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutlineRegular /> },
       { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutlineRegular size={14} /> },
     ]
-  const dismissSessionMenu = (): void => {
-    setMenuOpen(false)
-    queueMicrotask(() => {
-      const active = document.activeElement
-      if (active === null || active === document.body) menuTriggerRef.current?.focus()
-    })
-  }
   // Figma session cell: pad 8, status slot 16, then a 4px title gap.
   const ownRow = (
     <div
@@ -639,7 +629,6 @@ export function SessionNodeItem({
             closeOnPointerLeave
             anchor={(
               <button
-                ref={menuTriggerRef}
                 type="button"
                 className={css.iconButton}
                 aria-label={t('actions.session.aria', { name: title })}
@@ -649,10 +638,9 @@ export function SessionNodeItem({
               </button>
             )}
           >
-            {renderSlot?.('sidebar.workspaces.session.menu.action', {
+            {renderSlot('sidebar.workspaces.session.menu.action', {
               sessionId: node.id,
               displayTitle: row.title,
-              dismiss: dismissSessionMenu,
             })}
           </Menu>
           <Tooltip label={row.archived ? t('actions.unarchive') : t('actions.archive')} side="bottom" align="end" delayMs={500}>

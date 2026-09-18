@@ -696,7 +696,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.hero.workspace.directoryFlow\', () => ctx.slots.register(\n      { name: \'conversation.hero.workspace.directoryFlow\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-workspace/src/client/contract/slots.ts:73',
+    source: 'packages/client/ui-workspace/src/client/contract/slots.ts:66',
   },
   {
     key: 'conversation.input.attachments',
@@ -3236,14 +3236,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces.directoryFlow\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces.directoryFlow\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-workspace/src/client/contract/slots.ts:75',
+    source: 'packages/client/ui-workspace/src/client/contract/slots.ts:68',
   },
   {
     key: 'sidebar.workspaces.session.menu.action',
     kind: 'list',
     scope: 'root',
     summary: 'Ordered third-party actions below the built-in Session row-menu actions.',
-    doc: 'Ordered third-party actions below the built-in Session row-menu actions.\nRegistrations use a fresh id and sort by lower priority, lower order, then\nregistration sequence. Dynamic browser halves receive distinct decreasing\npriorities, so newer dynamic registrations precede older ones regardless\nof order. Packaged plugins render `MenuAction`; import-free dynamic markup\nrenders a `button[role="menuitem"]` and calls the owner `dismiss()` after\nacting. An empty list has no visible or accessible secondary group.',
+    doc: 'Ordered third-party actions below the built-in Session row-menu actions.\nRegistrations use a fresh id and sort by lower order. Equal-order packaged\nregistrations keep registration sequence; equal-order dynamic registrations\nuse the facade\'s decreasing shadowing priority, so the newer entry comes\nfirst. Priority selects the active registration for one reused id; it does\nnot override order across distinct ids. Contributions render `MenuAction`\nso the shared primitive owns styling, keyboard behavior, dismissal, and\nfocus restoration. An empty list has no visible or accessible secondary group.',
     registerOptions: [
       {
         name: 'id',
@@ -3265,7 +3265,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Point-in-time Session row information supplied to each menu action. */\nexport interface SessionMenuActionOwnerProps {\n  /** Session targeted by the open row menu. */\n  sessionId: SessionId\n  /** Row display title: persisted title, project basename, or Session id. */\n  displayTitle: string\n  /**\n   * Close the menu and restore trigger focus when the action leaves focus behind.\n   *\n   * An acting item not rendered with `MenuAction` MUST call this after its\n   * operation. `MenuAction` performs the same close-and-refocus behavior.\n   */\n  dismiss: () => void\n}',
+      '/** Point-in-time Session row information supplied to each menu action. */\nexport interface SessionMenuActionOwnerProps {\n  /** Session targeted by the open row menu. */\n  sessionId: SessionId\n  /** Row display title: persisted title, project basename, or Session id. */\n  displayTitle: string\n}',
     ],
     ownerPropsReferences: [
       'SessionId',
@@ -3285,8 +3285,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'sidebar.workspaces\' (client-ui-workspace), so it exists while that entry is mounted',
     occupants: [],
     replaceRisk: 'none',
-    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    const copyLabel = \'Copy Session ID\' // Localize in the contributing package.\n    ctx.slots.inject(\'sidebar.workspaces.session.menu.action\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces.session.menu.action\', id: \'copy-session-id\', order: 100 },\n      ({ sessionId, dismiss }) => React.createElement(\n        \'button\',\n        {\n          type: \'button\',\n          role: \'menuitem\',\n          onClick: () => { navigator.clipboard.writeText(sessionId).then(dismiss, dismiss) },\n        },\n        copyLabel,\n      ),\n    ))\n  },\n}',
-    source: 'packages/client/ui-workspace/src/client/contract/slots.ts:104',
+    example: 'const React = require(\'react\')\nconst { MenuAction } = require(\'@deepseek-ai/dsh-client-ui-primitives\')\n\nreturn {\n  inject: [\'slots\'],\n  apply(ctx) {\n    const copyLabel = \'Copy Session ID\' // Localize in the contributing package.\n    ctx.slots.inject(\'sidebar.workspaces.session.menu.action\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces.session.menu.action\', id: \'copy-session-id\', order: 100 },\n      ({ sessionId }) => React.createElement(\n        MenuAction,\n        { onSelect: () => { void navigator.clipboard.writeText(sessionId) } },\n        copyLabel,\n      ),\n    ))\n  },\n}',
+    source: 'packages/client/ui-workspace/src/client/contract/slots.ts:97',
   },
   {
     key: 'tool.call.images',
