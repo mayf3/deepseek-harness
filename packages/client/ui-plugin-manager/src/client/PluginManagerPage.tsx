@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useId, useState, type ReactNode } from 'react'
-import type { PluginInstallFailureKind } from '@deepseek-ai/dsh-api-remotes/client'
+import type { PluginInstallFailureKind, PluginRegistries, Registry } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   Button, IconChevronDownOutlineRegular, IconChevronLeftOutlineRegular,
   IconChevronRightOutlineRegular, IconCloseOutlineRegular, IconCordisPluginOutlineRegular,
@@ -22,11 +22,11 @@ import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@d
 import { rowConfigKey, type OfficialItem } from './config-ledger.ts'
 import type { PluginManagerLocaleKey } from './locales.ts'
 import {
-  isInstallPending, rowKey,
+  isInstallPending, offeredRegistries, rowKey,
   type ConfirmState, type InstallInputError, type InstallState, type InstallSubject, type PackageRow, type PackageView,
-  type PluginManagerFace,
+  type PluginManagerFace, type RegistryChoice,
 } from './manager-store.ts'
-import { managementText, noticeText, packageText, type Translate } from './presentation.ts'
+import { managementText, noticeText, packageText, registryText, type Translate } from './presentation.ts'
 import type {} from './slot-contract.ts'
 import css from './PluginManagerPage.module.css'
 
@@ -564,14 +564,40 @@ const SUBJECT_KIND_KEYS = {
   tarball: 'installSubjectTarball',
 } satisfies Record<InstallSubject['kind'], PluginManagerLocaleKey | undefined>
 
+/** The failures after which another registry is worth trying, from the failed screen. */
+const REGISTRY_FAILURE_KINDS: ReadonlySet<PluginInstallFailureKind> = new Set(['network', 'timeout', 'not-found', 'no-matching-version'])
+
+/** The registries asked, as a person reads them, in the dictionary's list form. */
+function registryList(registries: readonly Registry[], t: Translate): string {
+  return registries.map(registry => registryText(registry, t).title).join(t('registryListSeparator'))
+}
+
+/**
+ * The registries the Host asks after the chosen one, in order: the rest of its configured set when the
+ * choice is one of them, none otherwise. Mirrors the Host's `registryPlan`.
+ */
+function registriesAfter(choice: RegistryChoice, registries: PluginRegistries | null): Registry[] {
+  if (choice.kind === 'custom' || registries === null) return []
+  const known = [registries.registry, ...registries.fallbackRegistries]
+  return known.includes(choice.registry) ? known.filter(registry => registry !== choice.registry) : []
+}
+
 /**
  * The failed screen's one line: a pnpm failure by its kind, a refusal by its
  * code, any other failure in the Host's words; the run's output stays behind the details.
+ * A network failure names every registry asked when there were several, and the
+ * host a git or tarball spec is fetched from when that is what could not be reached.
  */
-function failureText(failure: InstallState['failure'], t: Translate): string {
+function failureText(failure: InstallState['failure'], t: Translate, install?: Pick<InstallState, 'attempts' | 'subject'>): string {
   if (failure === null) return t('installFailureGeneric')
   // Blocked scripts the Host could not name leave the person to allow them in the profile's pnpm settings by hand.
   if (failure.kind === 'build-blocked' && !failure.pendingBuilds?.length) return t('installFailureBuildBlockedManual')
+  if (failure.kind === 'network' || failure.kind === 'timeout') {
+    const asked = install?.attempts?.registries ?? []
+    if (asked.length > 1) return t('installFailureNetworkAll', { registries: registryList(asked, t) })
+    const host = install?.subject?.host
+    if (host !== undefined) return t('installFailureNetworkHost', { host })
+  }
   if (failure.kind !== undefined) return t(FAILURE_KIND_KEYS[failure.kind])
   if (failure.code !== undefined) return managementText({ code: failure.code, diagnostic: failure.reason }, t)
   return failure.reason === '' ? t('installFailureGeneric') : failure.reason
@@ -598,6 +624,7 @@ function SubjectCard({ subject, t }: { readonly subject: InstallSubject; readonl
  */
 function InstallDialog({
   install, t, onClose, onEditSpec, onRun, onCancel, onCancelAndClose, onToggleDetails, onEnableNow, onApproveBuilds,
+  onToggleRegistry, onChooseRegistry, onChangeRegistry,
 }: {
   readonly install: InstallState
   readonly t: Translate
@@ -610,15 +637,32 @@ function InstallDialog({
   readonly onToggleDetails: () => void
   readonly onEnableNow: () => void
   readonly onApproveBuilds: () => void
+  readonly onToggleRegistry: () => void
+  readonly onChooseRegistry: (choice: RegistryChoice) => void
+  /** From the failed screen: back to the spec with the registry options unfolded. */
+  readonly onChangeRegistry: () => void
 }): ReactNode {
   const errorId = useId()
   const guideId = useId()
   const approvalId = useId()
+  const registryId = useId()
+  const registryErrorId = useId()
   const [guideOpen, setGuideOpen] = useState(false)
   const { phase } = install
   if (phase === 'idle' || phase === 'checking') {
     const checking = phase === 'checking'
     const empty = install.spec.trim() === ''
+    const choice = install.registry
+    const chosenTitle = choice.kind === 'custom' ? t('registryCustom') : registryText(choice.registry, t).title
+    const after = registriesAfter(choice, install.registries)
+    const inputProblem = install.inputError
+    // A check no registry answered names every registry asked; any other refusal reads by its problem.
+    const askedByCheck = inputProblem?.registries ?? []
+    const inputSentence = inputProblem === null
+      ? null
+      : inputProblem.problem === 'network' && askedByCheck.length > 1
+        ? t('installProblemNetworkAll', { registries: registryList(askedByCheck, t) })
+        : t(INPUT_PROBLEM_KEYS[inputProblem.problem], { reason: inputProblem.reason })
     return (
       <Modal
         open={install.open}
@@ -648,19 +692,34 @@ function InstallDialog({
               onKeyDown={(event) => { if (event.key === 'Enter' && !empty && !checking) onRun() }}
             />
           </label>
-          {install.inputError === null
+          {inputSentence === null
             ? null
-            : <p id={errorId} className={css.inputError} role="alert">{t(INPUT_PROBLEM_KEYS[install.inputError.problem], { reason: install.inputError.reason })}</p>}
-          <button
-            type="button"
-            className={css.guideToggle}
-            aria-expanded={guideOpen}
-            aria-controls={guideId}
-            onClick={() => { setGuideOpen(open => !open) }}
-          >
-            <IconChevronDownOutlineRegular className={css.guideChevron} aria-hidden="true" />
-            <span>{t(guideOpen ? 'installGuideHide' : 'installGuideToggle')}</span>
-          </button>
+            : <p id={errorId} className={css.inputError} role="alert">{inputSentence}</p>}
+          <div className={css.optionsRow}>
+            <button
+              type="button"
+              className={css.guideToggle}
+              aria-expanded={guideOpen}
+              aria-controls={guideId}
+              onClick={() => { setGuideOpen(open => !open) }}
+            >
+              <IconChevronDownOutlineRegular className={css.guideChevron} aria-hidden="true" />
+              <span>{t(guideOpen ? 'installGuideHide' : 'installGuideToggle')}</span>
+            </button>
+            <button
+              type="button"
+              className={css.registryToggle}
+              aria-expanded={install.registryOpen}
+              aria-controls={registryId}
+              disabled={checking}
+              onClick={onToggleRegistry}
+            >
+              <span>{t('registryToggle')}</span>
+              {' '}
+              <span className={css.registryChosen}>{chosenTitle}</span>
+              <IconChevronDownOutlineRegular className={css.guideChevron} aria-hidden="true" />
+            </button>
+          </div>
           {guideOpen
             ? (
               <div id={guideId} className={css.guide} data-install-guide>
@@ -697,6 +756,59 @@ function InstallDialog({
               </div>
             )
             : null}
+          {install.registryOpen
+            ? (
+              <fieldset id={registryId} className={css.registry} data-install-registry disabled={checking}>
+                <legend className={css.registryLegend}>{t('registryLegend')}</legend>
+                {offeredRegistries(install.registries).map((registry) => {
+                  const text = registryText(registry, t)
+                  const checked = choice.kind === 'offered' && choice.registry === registry
+                  return (
+                    <label key={registry ?? ''} className={css.registryOption} data-checked={checked}>
+                      <input type="radio" name={registryId} checked={checked} onChange={() => { onChooseRegistry({ kind: 'offered', registry }) }} />
+                      <span className={css.registryMain}>
+                        <span className={css.registryTitle}>
+                          <span>{text.title}</span>
+                          {text.badge === undefined ? null : <span className={css.registryBadge}>{text.badge}</span>}
+                        </span>
+                        <span className={css.registryHint}>{text.hint}</span>
+                      </span>
+                    </label>
+                  )
+                })}
+                <div className={css.registryOption} data-checked={choice.kind === 'custom'}>
+                  <label className={css.registryCustomPick}>
+                    <input
+                      type="radio"
+                      name={registryId}
+                      checked={choice.kind === 'custom'}
+                      onChange={() => { onChooseRegistry({ kind: 'custom', url: '' }) }}
+                    />
+                    <span className={css.registryTitle}><span>{t('registryCustom')}</span></span>
+                  </label>
+                  <input
+                    type="text"
+                    className={css.registryCustomField}
+                    aria-label={t('registryCustom')}
+                    placeholder={t('registryCustomPlaceholder')}
+                    value={choice.kind === 'custom' ? choice.url : ''}
+                    disabled={choice.kind !== 'custom'}
+                    aria-invalid={install.registryError}
+                    aria-describedby={install.registryError ? registryErrorId : undefined}
+                    onChange={(event) => { onChooseRegistry({ kind: 'custom', url: event.currentTarget.value }) }}
+                    onKeyDown={(event) => { if (event.key === 'Enter' && !empty) onRun() }}
+                  />
+                  {install.registryError
+                    ? <p id={registryErrorId} className={css.inputError} role="alert">{t('registryCustomInvalid')}</p>
+                    : null}
+                  <span className={css.registryHint}>{t('registryCustomHint')}</span>
+                </div>
+                <p className={css.registryNote}>
+                  {after.length === 0 ? t('registryNoFallbackNote') : t('registryFallbackNote', { order: registryList(after, t) })}
+                </p>
+              </fieldset>
+            )
+            : null}
         </div>
       </Modal>
     )
@@ -709,6 +821,17 @@ function InstallDialog({
   const pendingBuilds = phase === 'failed' ? install.failure?.pendingBuilds ?? [] : []
   const approvable = pendingBuilds.length > 0
   const firstRun = install.runs[0]
+  // The registries the Host asked, once there is more than one: the attempt under way while it runs, a badge on each run.
+  const asked = install.attempts !== null && install.attempts.registries.length > 1 ? install.attempts : null
+  const current = asked === null ? undefined : asked.registries.at(-1)
+  const previous = asked === null ? undefined : asked.registries.at(-2)
+  const attemptLine = pending && asked !== null && current !== undefined && previous !== undefined
+    ? t('installAttempt', {
+      previous: registryText(previous, t).title, registry: registryText(current, t).title,
+      index: String(asked.registries.length), total: String(asked.total),
+    })
+    : null
+  const changeable = phase === 'failed' && !approvable && install.failure?.kind !== undefined && REGISTRY_FAILURE_KINDS.has(install.failure.kind)
   return (
     <Modal open={install.open} onClose={onClose} title={heading} headless className={css.installDialog as string}>
       <div className={css.wizard} data-install-phase={phase}>
@@ -737,7 +860,8 @@ function InstallDialog({
               <StateDot state={pending ? 'ongoing' : phase === 'done' ? 'done' : 'error'} />
             </span>
             <h2 className={css.wizardTitle} role={phase === 'failed' ? 'alert' : 'status'}>{heading}</h2>
-            {phase === 'failed' ? <p className={css.wizardSub}>{failureText(install.failure, t)}</p> : null}
+            {phase === 'failed' ? <p className={css.wizardSub}>{failureText(install.failure, t, install)}</p> : null}
+            {attemptLine === null ? null : <p className={css.wizardSub}>{attemptLine}</p>}
             {unconfirmed === undefined ? null : <p className={css.wizardSub} role="alert">{t('installCancelUnconfirmed', { reason: unconfirmed })}</p>}
           </div>
           {install.subject === null ? null : <SubjectCard subject={install.subject} t={t} />}
@@ -776,24 +900,38 @@ function InstallDialog({
                 </Button>
               )
               : null}
-            {phase === 'failed' && !approvable ? <Button variant="primary" size="sm" onClick={onRun}>{t('installRetry')}</Button> : null}
+            {phase === 'failed' && !approvable
+              ? (
+                <span className={css.wizardActions}>
+                  {changeable ? <Button variant="outline" size="sm" onClick={onChangeRegistry}>{t('installChangeRegistry')}</Button> : null}
+                  <Button variant="primary" size="sm" onClick={onRun}>{t('installRetry')}</Button>
+                </span>
+              )
+              : null}
           </div>
           {install.detailsOpen
             ? (
               <div className={css.detailsBody}>
                 <p className={css.installLocation}>{firstRun === undefined ? t('terminalNoOutput') : t('installLocation', { dir: firstRun.cwd })}</p>
-                {install.runs.map(run => (
-                  <TerminalBlock
-                    key={run.jobId}
-                    command={run.command}
-                    output={run.output}
-                    running={run.exitCode === undefined}
-                    exitCode={run.exitCode}
-                    maxLines={INSTALL_TERMINAL_LINES}
-                    labels={{ ...terminalLabels(t), ...phase === 'cancelling' ? { failed: t('installCancelledShort') } : {} }}
-                    className={css.terminal}
-                  />
-                ))}
+                {install.runs.map((run, index) => {
+                  const registry = asked?.registries[index]
+                  return (
+                    <div key={run.jobId} className={css.run}>
+                      {registry === undefined
+                        ? null
+                        : <p className={css.attemptBadge}>{t('installAttemptBadge', { index: String(index + 1), registry: registryText(registry, t).title })}</p>}
+                      <TerminalBlock
+                        command={run.command}
+                        output={run.output}
+                        running={run.exitCode === undefined}
+                        exitCode={run.exitCode}
+                        maxLines={INSTALL_TERMINAL_LINES}
+                        labels={{ ...terminalLabels(t), ...phase === 'cancelling' ? { failed: t('installCancelledShort') } : {} }}
+                        className={css.terminal}
+                      />
+                    </div>
+                  )
+                })}
               </div>
             )
             : null}
@@ -1006,6 +1144,9 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         onToggleDetails={props.toggleInstallDetails}
         onEnableNow={props.enableInstalled}
         onApproveBuilds={props.approveBuildsAndRetry}
+        onToggleRegistry={props.toggleRegistryOptions}
+        onChooseRegistry={props.chooseRegistry}
+        onChangeRegistry={props.changeRegistry}
       />
       {state.confirm === null
         ? null

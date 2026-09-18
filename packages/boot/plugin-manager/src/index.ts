@@ -287,10 +287,10 @@ export class PluginManager extends TypertRemoteService {
     const plan = registryPlan(options?.registry, this.configuredRegistries)
     const registry = plan[0] as Registry
     switch (parsed.kind) {
-      case 'git': return { status: 'accepted', kind: 'git', bundle: null, registry }
+      case 'git': return { status: 'accepted', kind: 'git', bundle: null, registry, host: parsed.host }
       case 'tarball':
         if (parsed.path !== undefined && !existsSync(parsed.path)) return refused('not-a-package', 'the tarball does not exist')
-        return { status: 'accepted', kind: 'tarball', bundle: null, registry }
+        return { status: 'accepted', kind: 'tarball', bundle: null, registry, ...parsed.host === undefined ? {} : { host: parsed.host } }
       case 'path': {
         if (!existsSync(parsed.path)) return refused('not-a-package', 'the path does not exist')
         let read: object
@@ -309,7 +309,7 @@ export class PluginManager extends TypertRemoteService {
         if (known.has(parsed.name)) return refused('already-installed', `${parsed.name} is already installed`)
         const registries: Registry[] = []
         const refusedBy = (problem: PluginInspectProblem, reason: string): PluginSpecInspection =>
-          ({ ...refused(problem, reason), registries })
+          ({ status: 'refused', problem, reason, registries })
         for (const current of plan) {
           registries.push(current)
           const view = await viewProfilePackage(this.profile.dir, spec.trim(), {
@@ -407,25 +407,29 @@ export class PluginManager extends TypertRemoteService {
       const plan = registryPlan(options?.registry, this.configuredRegistries)
       let name: string
       try {
+        // The last run is the result's; the registries asked stay listed whatever the outcome.
+        let run: PackageResult | undefined
         result.registries = []
         for (const [index, registry] of plan.entries()) {
           if (index > 0) await this.restoreFiles(files)
           result.registries.push(registry)
           announce('installing', { registry, index: index + 1, total: plan.length })
-          result.packageResult = await this.runPnpm(['add', spec, ...registryArguments(registry)], control.abort.signal, requestId)
+          run = await this.runPnpm(['add', spec, ...registryArguments(registry)], control.abort.signal, requestId)
+          result.packageResult = run
           if (stopped()) throw new InstallCancelledError()
-          const { exitCode, kind, output } = result.packageResult
           /* v8 ignore next 2 -- runPnpm classifies every failed run, so kind is never absent here */
-          if (exitCode === 0 || index === plan.length - 1 || kind === undefined) break
-          if (!askNextRegistry(kind, output, parsedForRegistry(spec))) break
+          if (run.exitCode === 0 || index === plan.length - 1 || run.kind === undefined) break
+          if (!askNextRegistry(run.kind, run.output, parsedForRegistry(spec))) break
         }
-        if (result.packageResult.exitCode !== 0) {
+        /* v8 ignore next -- the plan is never empty, so a run always settled */
+        if (run === undefined) throw new Error('no registry was asked')
+        if (run.exitCode !== 0) {
           // pnpm-workspace.yaml is not restored, so the names pnpm left undecided there can be offered for approval.
           try { result.pendingBuilds = await readPendingBuilds(this.profile.dir) }
           catch (error) {
             this.ownerContext.logger.warn('Could not read pending build approvals after pnpm failed', error)
           }
-          throw new Error(result.packageResult.output)
+          throw new Error(run.output)
         }
         const after = readProfileManifest('dsh', this.profile.dir).dependencies ?? {}
         const installed = Object.keys(after).filter(name => before[name] !== after[name])

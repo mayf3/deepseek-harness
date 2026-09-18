@@ -156,6 +156,8 @@ export type PluginSpecInspection =
     readonly bundle: boolean | null
     /** The registry that answered for a name, and for the other forms the one an install of the spec asks first. */
     readonly registry: Registry
+    /** The host a git spec or a tarball URL is fetched from, which no registry stands in for. */
+    readonly host?: string
   }
   | {
     readonly status: 'refused'

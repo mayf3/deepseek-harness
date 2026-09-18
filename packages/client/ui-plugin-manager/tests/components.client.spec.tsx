@@ -37,8 +37,14 @@ function row(overrides: Partial<PackageRow> = {}): PackageRow {
   return { entryId: 'include:sidebar' as PluginEntryId, rowId: 'sidebar', moduleName: 'dsh-better-sidebar', enabled: true, phase: 'active', ...overrides }
 }
 
+const MIRROR = 'https://registry.npmmirror.com/'
+
+/** The registries the Host asks: pnpm's own first, then the mirror. */
+const REGISTRIES = { registry: null, fallbackRegistries: [MIRROR] }
+
 const IDLE_INSTALL: InstallState = {
-  open: false, spec: '', phase: 'idle', inputError: null, subject: null, runs: [], detailsOpen: false,
+  open: false, spec: '', registries: null, registry: { kind: 'offered', registry: null }, registryOpen: false, registryError: false, attempts: null,
+  phase: 'idle', inputError: null, subject: null, runs: [], detailsOpen: false,
   installed: null, restartRequired: false, failure: null, approvedBuilds: [], enabling: false,
 }
 
@@ -70,6 +76,9 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     cancelInstall: vi.fn(),
     cancelInstallAndClose: vi.fn(),
     toggleInstallDetails: vi.fn(),
+    toggleRegistryOptions: vi.fn(),
+    chooseRegistry: vi.fn(),
+    changeRegistry: vi.fn(),
     approveBuildsAndRetry: vi.fn(),
     enableInstalled: vi.fn(),
     clearHighlight: vi.fn(),
@@ -462,12 +471,15 @@ describe('PluginManagerPage', () => {
       expect(screen.getByRole('alert').textContent).toBe(sentence)
       expect(screen.getByRole('textbox', { name: en.installSpecLabel }).getAttribute('aria-invalid')).toBe('true')
     }
+    // A check no registry answered names them all.
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', inputError: { problem: 'network', reason: 'r', registries: [null, MIRROR] } } })
+    expect(screen.getByRole('alert').textContent).toBe(en.installProblemNetworkAll.replace('{registries}', `${en.registryOfficial}, ${en.registryNpmmirror}`))
     fireEvent.click(screen.getByRole('button', { name: en.close }))
     expect(actions.closeInstall).toHaveBeenCalledTimes(1)
   })
 
   it('shows the subject while installing, folds the pnpm output behind the details, and stops through the Host', () => {
-    const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', bundle: true } as const
+    const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', bundle: true, registry: null } as const
     const run = { jobId: 'j1', command: 'pnpm add dsh-x', cwd: '/home/u/.dsh/profiles/web', output: 'Progress: resolved \x1b[96m1\x1b[39m\n' }
     const { actions, set } = renderTab({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'running', subject, runs: [run] } })
     expect(screen.getByRole('status').textContent).toBe(en.installingTitle)
@@ -511,7 +523,7 @@ describe('PluginManagerPage', () => {
   })
 
   it('waits with the Host through starting, stopping, and applying, and words an unconfirmed stop', () => {
-    const subject = { spec: 'slow', status: 'accepted', kind: 'registry', name: 'slow', bundle: true } as const
+    const subject = { spec: 'slow', status: 'accepted', kind: 'registry', name: 'slow', bundle: true, registry: null } as const
     const { actions, set } = renderTab({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'starting', subject } })
     // Before the Host acknowledges the run there is nothing to stop: cancel, back, and close all wait.
     expect(screen.getByRole('status').textContent).toBe(en.installStarting)
@@ -542,7 +554,7 @@ describe('PluginManagerPage', () => {
   })
 
   it('offers to enable what a finished install added, and says when it waits for a restart', () => {
-    const subject = { spec: '/plugins/dsh-x', status: 'accepted', kind: 'path', name: 'dsh-x', bundle: true } as const
+    const subject = { spec: '/plugins/dsh-x', status: 'accepted', kind: 'path', name: 'dsh-x', bundle: true, registry: null } as const
     const { actions, set } = renderTab({
       install: {
         ...IDLE_INSTALL,
@@ -569,7 +581,7 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText(en.installDoneRestart)).toBeTruthy()
 
     // A run that named no bundle leaves only Done.
-    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'done', subject: { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', bundle: true } } })
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'done', subject: { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', bundle: true, registry: null } } })
     expect(screen.getByText(en.installDoneNothing)).toBeTruthy()
     expect(screen.queryByRole('button', { name: en.installEnableNow })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.installClose }))
@@ -577,7 +589,7 @@ describe('PluginManagerPage', () => {
   })
 
   it('asks to allow the scripts a blocked install left pending, retries with them, and says what was allowed', () => {
-    const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', bundle: true } as const
+    const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', bundle: true, registry: null } as const
     const { actions, set } = renderTab({
       install: {
         ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', subject,
@@ -604,7 +616,7 @@ describe('PluginManagerPage', () => {
   })
 
   it('words a failed install by its kind, else in the Host\'s words, and retries it', () => {
-    const subject = { spec: 'github:a/b', status: 'accepted', kind: 'git', bundle: null } as const
+    const subject = { spec: 'github:a/b', status: 'accepted', kind: 'git', bundle: null, registry: null, host: 'github.com' } as const
     const { actions, set } = renderTab({
       install: {
         ...IDLE_INSTALL,
@@ -618,7 +630,8 @@ describe('PluginManagerPage', () => {
       },
     })
     expect(screen.getByRole('alert').textContent).toBe(en.installFailedTitle)
-    expect(screen.getByText(en.installFailureNetwork)).toBeTruthy()
+    // A git spec that could not be reached reads by its own host: no registry stands in for it.
+    expect(screen.getByText(en.installFailureNetworkHost.replace('{host}', 'github.com'))).toBeTruthy()
     // A git spec without a manifest reads by its address and kind.
     expect(screen.getByText('github:a/b')).toBeTruthy()
     expect(screen.getByText(en.installSubjectGit)).toBeTruthy()
@@ -650,8 +663,96 @@ describe('PluginManagerPage', () => {
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: null } })
     expect(screen.getByText(en.installFailureGeneric)).toBeTruthy()
     // A tarball spec reads by its kind too.
-    set({ install: { ...IDLE_INSTALL, open: true, spec: '/p/x.tgz', phase: 'failed', subject: { spec: '/p/x.tgz', status: 'accepted', kind: 'tarball', bundle: null }, failure: null } })
+    set({ install: { ...IDLE_INSTALL, open: true, spec: '/p/x.tgz', phase: 'failed', subject: { spec: '/p/x.tgz', status: 'accepted', kind: 'tarball', bundle: null, registry: null }, failure: null } })
     expect(screen.getByText(en.installSubjectTarball)).toBeTruthy()
+  })
+
+  it('offers the registries under the spec, folded by default, and picks or types one', () => {
+    const open = { ...IDLE_INSTALL, open: true, registries: REGISTRIES }
+    const { actions, set } = renderTab({ install: open })
+    // Folded, the toggle names the registry the install asks first.
+    const toggle = screen.getByRole('button', { name: `${en.registryToggle} ${en.registryOfficial}` })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('radio')).toBeNull()
+    fireEvent.click(toggle)
+    expect(actions.toggleRegistryOptions).toHaveBeenCalledTimes(1)
+    set({ install: { ...open, registryOpen: true } })
+    expect(screen.getByRole('button', { name: `${en.registryToggle} ${en.registryOfficial}` }).getAttribute('aria-expanded')).toBe('true')
+    const radios = screen.getAllByRole('radio')
+    expect(radios).toHaveLength(3)
+    expect(radios[0]).toHaveProperty('checked', true)
+    expect(screen.getByText(en.registryOfficialHint)).toBeTruthy()
+    expect(screen.getByText(en.registryNpmmirrorBadge)).toBeTruthy()
+    // The note names the registries asked after the chosen one, in order.
+    expect(screen.getByText(en.registryFallbackNote.replace('{order}', en.registryNpmmirror))).toBeTruthy()
+    fireEvent.click(screen.getByRole('radio', { name: new RegExp(en.registryNpmmirror) }))
+    expect(actions.chooseRegistry).toHaveBeenLastCalledWith({ kind: 'offered', registry: MIRROR })
+    set({ install: { ...open, registryOpen: true, registry: { kind: 'offered', registry: MIRROR } } })
+    expect(screen.getByRole('button', { name: `${en.registryToggle} ${en.registryNpmmirror}` })).toBeTruthy()
+    expect(screen.getByText(en.registryFallbackNote.replace('{order}', en.registryOfficial))).toBeTruthy()
+    // A typed registry: the radio picks it, the field carries it, and it is asked alone.
+    fireEvent.click(screen.getByRole('radio', { name: new RegExp(en.registryCustom) }))
+    expect(actions.chooseRegistry).toHaveBeenLastCalledWith({ kind: 'custom', url: '' })
+    set({ install: { ...open, registryOpen: true, registry: { kind: 'custom', url: 'npm.corp' }, registryError: true } })
+    const field = screen.getByRole('textbox', { name: en.registryCustom })
+    expect(field).toHaveProperty('value', 'npm.corp')
+    expect(field.getAttribute('aria-invalid')).toBe('true')
+    expect(screen.getByRole('alert').textContent).toBe(en.registryCustomInvalid)
+    expect(screen.getByText(en.registryNoFallbackNote)).toBeTruthy()
+    fireEvent.change(field, { target: { value: 'https://npm.corp/' } })
+    expect(actions.chooseRegistry).toHaveBeenLastCalledWith({ kind: 'custom', url: 'https://npm.corp/' })
+    expect(screen.getByRole('button', { name: `${en.registryToggle} ${en.registryCustom}` })).toBeTruthy()
+    // Enter in the field installs, once there is a spec.
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect(actions.runInstall).not.toHaveBeenCalled()
+    set({ install: { ...open, spec: 'dsh-x', registryOpen: true, registry: { kind: 'custom', url: 'https://npm.corp/' } } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: en.registryCustom }), { key: 'Enter' })
+    expect(actions.runInstall).toHaveBeenCalledTimes(1)
+    // A remembered registry that does not parse as a URL reads as written.
+    set({ install: { ...open, registry: { kind: 'offered', registry: 'garbage' } } })
+    expect(screen.getByRole('button', { name: `${en.registryToggle} garbage` })).toBeTruthy()
+    // A registry the Host configured that the dictionary does not know reads by its host; before the Host answers,
+    // only pnpm's own is offered.
+    set({ install: { ...open, registryOpen: true, registries: { registry: 'https://npm.corp.example/', fallbackRegistries: [] } } })
+    expect(screen.getAllByRole('radio')).toHaveLength(3)
+    expect(screen.getByRole('radio', { name: /npm\.corp\.example/ })).toBeTruthy()
+    set({ install: { ...open, registryOpen: true, registries: null } })
+    expect(screen.getAllByRole('radio')).toHaveLength(2)
+  })
+
+  it('names the registry each attempt asks while installing, badges each run, and says when every registry failed', () => {
+    const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', bundle: true, registry: null } as const
+    const runs = [
+      { jobId: 'j1', command: 'pnpm add dsh-x', cwd: '/p', output: 'ERR\n', exitCode: 1 },
+      { jobId: 'j2', command: `pnpm add dsh-x --registry=${MIRROR}`, cwd: '/p', output: 'Progress\n' },
+    ]
+    const { actions, set } = renderTab({
+      install: {
+        ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'running', subject, runs, detailsOpen: true, attempts: { registries: [null, MIRROR], total: 2 },
+      },
+    })
+    expect(screen.getByRole('status').textContent).toBe(en.installingTitle)
+    expect(screen.getByText(en.installAttempt
+      .replace('{previous}', en.registryOfficial).replace('{registry}', en.registryNpmmirror).replace('{index}', '2').replace('{total}', '2'))).toBeTruthy()
+    expect(screen.getByText(en.installAttemptBadge.replace('{index}', '1').replace('{registry}', en.registryOfficial))).toBeTruthy()
+    expect(screen.getByText(en.installAttemptBadge.replace('{index}', '2').replace('{registry}', en.registryNpmmirror))).toBeTruthy()
+    // The first attempt says nothing about a registry before it; a single run carries no badge.
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'running', subject, runs: [runs[0] as never], detailsOpen: true, attempts: { registries: [null], total: 2 } } })
+    expect(screen.queryByText(en.installAttemptBadge.replace('{index}', '1').replace('{registry}', en.registryOfficial))).toBeNull()
+    expect(screen.getByRole('status').parentElement?.textContent).toBe(en.installingTitle)
+    // Every registry failed: the failure names them all, and the registries can be changed from here.
+    set({
+      install: {
+        ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', subject, runs,
+        attempts: { registries: [null, MIRROR], total: 2 }, failure: { reason: 'ERR', kind: 'network' },
+      },
+    })
+    expect(screen.getByText(en.installFailureNetworkAll.replace('{registries}', `${en.registryOfficial}, ${en.registryNpmmirror}`))).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.installChangeRegistry }))
+    expect(actions.changeRegistry).toHaveBeenCalledTimes(1)
+    // One registry that failed reads as the plain network failure.
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', subject, attempts: { registries: [null], total: 1 }, failure: { reason: 'ERR', kind: 'network' } } })
+    expect(screen.getByText(en.installFailureNetwork)).toBeTruthy()
   })
 
   it('scrolls to and marks the package an install enabled, then lets the mark go', () => {

@@ -603,12 +603,12 @@ it('reads what a spec names before installing it', async () => {
   // What is installed, or supplied by the installation, is refused before the registry is asked.
   expect(await manager.inspect('extra')).toEqual({ status: 'refused', problem: 'already-installed', reason: 'extra is already installed' })
   expect(await manager.inspect('./relative')).toEqual({ status: 'refused', problem: 'invalid-spec', reason: 'a local path must be absolute' })
-  expect(await manager.inspect('github:acme/dsh-remote')).toEqual({ status: 'accepted', kind: 'git', bundle: null, registry: null })
+  expect(await manager.inspect('github:acme/dsh-remote')).toEqual({ status: 'accepted', kind: 'git', bundle: null, registry: null, host: 'github.com' })
   const tarball = join(profile.home, 'pack.tgz')
   expect(await manager.inspect(tarball)).toEqual({ status: 'refused', problem: 'not-a-package', reason: 'the tarball does not exist' })
   writeFileSync(tarball, '')
   expect(await manager.inspect(tarball)).toEqual({ status: 'accepted', kind: 'tarball', bundle: null, registry: null })
-  expect(await manager.inspect('https://cdn.example.com/x/y/z/dsh-x-1.0.0.tgz')).toEqual({ status: 'accepted', kind: 'tarball', bundle: null, registry: null })
+  expect(await manager.inspect('https://cdn.example.com/x/y/z/dsh-x-1.0.0.tgz')).toEqual({ status: 'accepted', kind: 'tarball', bundle: null, registry: null, host: 'cdn.example.com' })
   // A directory answers from its own manifest.
   const local = join(profile.home, 'dev', 'dsh-local')
   mkdirSync(local, { recursive: true })
@@ -804,8 +804,8 @@ it('asks the registries in turn while one is unreachable or stale, and names the
   expect(await manager.inspect('dsh-x', {}, controller.signal)).toMatchObject({ status: 'refused', problem: 'network', registries: [null] })
   expect(asked(6)).toEqual([null])
   // The other forms ask no registry and carry the one the install starts with.
-  expect(await manager.inspect('github:acme/dsh-remote', { registry: MIRROR })).toEqual({ status: 'accepted', kind: 'git', bundle: null, registry: MIRROR })
-  expect(await manager.inspect('github:acme/dsh-remote')).toEqual({ status: 'accepted', kind: 'git', bundle: null, registry: null })
+  expect(await manager.inspect('github:acme/dsh-remote', { registry: MIRROR })).toEqual({ status: 'accepted', kind: 'git', bundle: null, registry: MIRROR, host: 'github.com' })
+  expect(await manager.inspect('github:acme/dsh-remote')).toEqual({ status: 'accepted', kind: 'git', bundle: null, registry: null, host: 'github.com' })
   expect(view).toHaveBeenCalledTimes(7)
 })
 
