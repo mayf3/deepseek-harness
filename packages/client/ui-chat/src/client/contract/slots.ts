@@ -9,7 +9,7 @@ import type {
   InjectFace, KeyedSnapshotSelectorHook, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
   SlotHookFactory, SnapshotSelectorHook,
 } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { createChatStore } from '../stores.ts'
@@ -19,7 +19,7 @@ import type {
   ChatNodeProcessSource, ChatNodeSource, ChatSnapshot, ChatTurnProcessPresentation,
 } from './snapshot.ts'
 import type { TurnProcessSpec } from './turn-process.ts'
-import type { TranscriptViewMode } from '../../chat-settings.ts'
+import type { PerformanceUsageMode, TranscriptViewMode } from '../../chat-settings.ts'
 
 /** Selector hook over the current Conversation binding's Chat target. */
 export type UseChat = SnapshotSelectorHook<ChatSnapshot>
@@ -82,7 +82,7 @@ export interface ChatNodeOwnerProps {
   /** Open the current source file of a skill referenced by a sent message. */
   openSkill: (name: string) => void
   openFile: (path: string, options?: OpenFileOptions) => void
-  inspectCall: (callId: ToolCallId) => void
+  inspectCall: ((callId: ToolCallId) => void) | undefined
   forkAt: (seq: number) => void
   /**
    * Session-authorized image loader, down-threaded from the Chat view so a
@@ -126,6 +126,14 @@ export interface ChatScrollPosition {
   readonly anchorKey: string
   readonly anchorTop: number
   readonly scrollTop: number
+}
+
+/** Shared settings source for the performance row, composer, and turn tail. */
+export interface PerformanceUsageInjected {
+  hooks: {
+    /** Accepted performance and usage detail preference. */
+    performanceUsage: ObservableSnapshot<PerformanceUsageMode>
+  }
 }
 
 /** Business callbacks injected into the Chat view. */

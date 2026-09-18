@@ -33,6 +33,8 @@ describe('localPathMediaUrl', () => {
   it('keeps non-HTTP transports inert', () => {
     expect(localPathMediaUrl('about:blank', '/tmp/graph.png')).toBeUndefined()
     expect(localPathMediaUrl('dsh-app://app/', '/tmp/graph.png')).toBeUndefined()
+    expect(localPathMediaUrl('file:///app', '/tmp/graph.png')).toBeUndefined()
+    expect(localPathMediaUrl('ws://127.0.0.1:3080/', '/tmp/graph.png')).toBeUndefined()
   })
 
   it('keeps destinations that cannot be Host-served local files inert', () => {

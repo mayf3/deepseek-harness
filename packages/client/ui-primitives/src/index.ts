@@ -30,9 +30,14 @@ export type { ConnectionIndicatorState } from './ConnectionIndicator.tsx'
 export { FishLogo, FISH_LOGO_PATH, FISH_LOGO_VIEWBOX } from './FishLogo.tsx'
 export { BrandWordmark } from './BrandWordmark.tsx'
 export type { BrandWordmarkProps } from './BrandWordmark.tsx'
-export { ReferenceIcon } from './ReferenceIcon.tsx'
+export {
+  PermissionIconFullAccessMedium, PermissionIconFullAccessRegular,
+  PermissionIconReadOnlyMedium, PermissionIconReadOnlyRegular,
+  PermissionIconWorkspaceWriteMedium, PermissionIconWorkspaceWriteRegular,
+} from './PermissionIcon.tsx'
+export { ReferenceIconMedium, ReferenceIconRegular } from './ReferenceIcon.tsx'
 export type { ReferenceIconKind, ReferenceIconProps } from './ReferenceIcon.tsx'
-export { LinkIcon, classifyLinkPath } from './LinkIcon.tsx'
+export { LinkIconMedium, LinkIconRegular, classifyLinkPath } from './LinkIcon.tsx'
 export type { LinkIconKind, LinkIconProps } from './LinkIcon.tsx'
 export { FileTypeIcon, classifyFileType, fileExtension } from './FileTypeIcon.tsx'
 export type {
@@ -44,6 +49,8 @@ export type { TooltipSide } from './Tooltip.tsx'
 export { Toast } from './Toast.tsx'
 export { fileSizeText } from './file-size.ts'
 export { writeClipboard } from './clipboard.ts'
+export { CODE_HIGHLIGHT_EXTENSIONS, languageForPath, useCodeHighlighter } from './code-highlighting.ts'
+export type { CodeHighlighter, HighlightSpan } from './code-highlighting.ts'
 export { relativeTime } from './relative-time.ts'
 export { rankByName } from './rank-by-name.ts'
 export { isDarwinDesktop } from './darwin-desktop.ts'
@@ -75,3 +82,6 @@ export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, Markdown
 export { extractMarkdownPlainText } from './markdown/plain-text.ts'
 export type { MarkdownPlainTextMode, MarkdownPlainTextOptions } from './markdown/plain-text.ts'
 export * from './icons/index.tsx'
+export {
+  PluginArtworkTeam, PluginArtworkTerminal, PluginArtworkLoop, PluginArtworkSubagent, PluginArtworkSearch, PluginArtworkDefault,
+} from './plugin-artwork.tsx'

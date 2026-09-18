@@ -219,9 +219,9 @@
 
 .time {
   flex: none;
-  font-size: 12px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-caption);
 }
 
 .scheduleIndicator {

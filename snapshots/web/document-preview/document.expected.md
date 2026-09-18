@@ -14,6 +14,14 @@
 - Viewers: Markdown -> Code -> Plain text
 - Same tab: true
 
+## Basic HTML
+
+- Developer tools: off by default on Web and desktop
+- Sandbox: no permissions
+- Inline script: pending
+- Local script: pending
+- Network requests: 0
+
 ## HTML
 
 - Viewer: HTML
@@ -72,3 +80,5 @@
 
 - State: unsupported
 - Line: Preview is not available for this file type yet.
+- Header control: Open
+- Empty-state control: Open in default app

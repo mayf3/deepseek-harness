@@ -24,3 +24,34 @@ export function preserveWindowsRuntimeSignature(path: string, options: {
   runDirectory: string
   inspect?: typeof inspectWindowsRuntimeSignature
 }): Promise<boolean>
+
+/** Supervised signing dependencies shared by all Windows release trees. */
+export interface WindowsCodeSigningOptions {
+  thumbprint: string
+  sign: ReturnType<typeof import('./windows-sign.mjs').createWindowsTokenSigner>
+  inspect?: typeof inspectWindowsRuntimeSignature
+  record: (event: object) => void
+}
+
+/**
+ * Enumerate PE files by content without following links.
+ * @param root Materialized directory to scan.
+ * @returns Sorted PE paths; rejects malformed Windows executables and links.
+ */
+export function windowsRuntimeCode(root: string): Promise<string[]>
+
+/**
+ * Preserve valid signatures and sign unsigned PE files with a supervised signer.
+ * @param root Materialized directory to sign.
+ * @param options Signer, certificate identity and audit sink.
+ * @returns Resolves after verified sequential signing; rejects without retries.
+ */
+export function signWindowsCode(root: string, options: WindowsCodeSigningOptions): Promise<void>
+
+/**
+ * Reject unsigned or invalid PE files in a completed directory.
+ * @param root Materialized artifact directory.
+ * @param inspect Public-key verifier.
+ * @returns Resolves after all PE signatures are valid.
+ */
+export function verifyWindowsCode(root: string, inspect?: typeof inspectWindowsRuntimeSignature): Promise<void>
