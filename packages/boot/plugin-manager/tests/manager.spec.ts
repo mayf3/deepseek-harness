@@ -972,21 +972,21 @@ it('stops at a failure no registry changes, at a host the spec itself is fetched
   expect(install).toHaveBeenCalledTimes(5)
 })
 
-it('reports a stop that lands between two attempts as cancelled', async () => {
-  const { manager, dir } = await fixture()
+it('reports a stop that lands before a run starts, while the registries are read, as cancelled', async () => {
+  const { manager } = await fixture()
   const requestId = 'f2340b6d-40bb-46b7-8b94-217bdf5010bd' as PluginInstallRequestId
-  const install = vi.spyOn(operations, 'runProfilePnpm').mockImplementationOnce(async () => {
-    // The first attempt fails; the stop lands while its files go back, before the next registry is asked.
-    setTimeout(() => { void manager.cancelInstall(requestId) }, 0)
-    writeFileSync(join(dir, 'pnpm-lock.yaml'), 'partial lockfile\n')
-    return { exitCode: 1, output: 'ERR_PNPM_META_FETCH_FAIL  GET https://registry/x: ETIMEDOUT', truncated: false, logPath: join(dir, 'pnpm.log') }
+  // The stop lands while the plan is being read: the run after it must not start on a dead signal.
+  const read = vi.spyOn(operations, 'readProfileRegistry').mockImplementation(async () => {
+    void manager.cancelInstall(requestId)
+    await Promise.resolve()
+    return OFFICIAL
   })
-  onTestFinished(() => { install.mockRestore() })
+  const install = vi.spyOn(operations, 'runProfilePnpm')
+  onTestFinished(() => { read.mockRestore(); install.mockRestore() })
   const result = await manager.installBundle('dsh-x', { requestId })
-  expect(result).toMatchObject({ application: 'cancelled', registries: [null] })
+  expect(result).toMatchObject({ application: 'cancelled', registries: [] })
   expect(result.error).toBeUndefined()
-  expect(install).toHaveBeenCalledTimes(1)
-  expect(existsSync(join(dir, 'pnpm-lock.yaml'))).toBe(false)
+  expect(install).not.toHaveBeenCalled()
 })
 
 it('answers the configured registries in pnpm\'s comparison form with what pnpm names, and refuses one that is not an http(s) URL at load', async () => {
