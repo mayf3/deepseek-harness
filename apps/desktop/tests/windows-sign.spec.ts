@@ -164,6 +164,7 @@ describe('Windows token signing', () => {
         DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
         DSH_DESKTOP_WINDOWS_CER_FILE: certificateFile, DSH_DESKTOP_WINDOWS_SIGNTOOL: signTool,
         DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'fixture-pin', DSH_DESKTOP_WINDOWS_KEY_CONTAINER: 'fixture-container',
+        DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_DIR: 'C:\\fixture\\signature-cache',
       }, { platform: 'win32', arch: 'x64' })
       expect(execFile).not.toHaveBeenCalled()
       vi.mocked(execFile).mockImplementationOnce((...args: unknown[]) => {

@@ -10,6 +10,8 @@ Status: implemented
 
 ## 决定
 
+[性能与用量偏好](2026-09-16-performance-usage-preference.zh.md)管理统计可见性，并移除已完成轮次的耗时操作。
+
 `StatsPills`（packages/client/ui-chat/src/client/chat/StatsPills.tsx）在同一 `conversation.composer.dock` 插槽上取代 `StatsLine`；落选变体已删除，其共享工具函数（`deriveStats`、`formatDuration`、`cacheHitPercent`、`billedInputTokens`）并入新模块，废弃的 `stats.llm`、`stats.toolCall`、`stats.ttftAverage`、`stats.tokensPerSecond`、`stats.tokens` 文案键一并移除。
 
 - **两个图标 pill、两个弹层。** 仪表盘 pill（新增 `IconGaugeOutlineRegular`，因下开口圆弧视觉偏高而把表盘中心光学下移到 y=8.75）展示 `{turns} 轮 {steps} 步` 加输出 TPS，点击打开「会话统计」弹层（模型用时、工具调用用时、首 token 平均、输出速度）；日志里没有任何计时数字时弹层会是空的，此时该 pill 渲染为静态读数而非按钮。数据库 pill（`IconDatabaseOutlineRegular`）展示紧凑计费总量加缓存命中率，点击打开「Token 用量」弹层（缓存命中、未缓存输入、缓存读取、输出，以及非零时的缓存写入——精确计数）。两个弹层共用为这两处消费者抽出的 `stat-dialog` 模块（portal 面板、锚定定位、点击外部关闭、可选的外部持有开合状态）；pill 行持有唯一的互斥开合槽位，打开任一弹层即关闭另一个，且每个按钮携带显式 `aria-label`，用 ` · ` 分隔 aria-hidden 分隔符在视觉上连接的两段文本。[StatsPills](../../../../packages/client/ui-chat/src/client/chat/StatsPills.tsx)负责缓存写入为零时省略该行的规则。

@@ -12,6 +12,8 @@ import { desktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import { packageMacOSArtifacts, type DesktopPrepackagedArtifact } from './package-macos.ts'
 import { loadDesktopPackageEnvironment, validateDesktopPackageEnvironment } from './desktop-package-environment.mjs'
 import { createPackagingRun, recordPackagingEvent } from './packaging-run.mjs'
+import { withWindowsSigningStage } from './windows-signing-stage.mjs'
+import { prepareWindowsSignatureCacheDirectory, resolveWindowsSignatureCacheDirectory } from './windows-signature-cache-directory.mjs'
 import { withMacOSSigningKeychain } from './macos-signing-keychain.mjs'
 import { macOSDownloadEnvironment, resolveMacOSPackageSettings } from './macos-package-settings.mjs'
 import { packagingStep } from './packaging-step.mjs'
@@ -27,6 +29,7 @@ const WINDOWS_SIGNING_ENV_NAMES = [
   'DSH_DESKTOP_WINDOWS_KEY_CONTAINER',
   'DSH_DESKTOP_WINDOWS_SIGNTOOL',
   'DSH_DESKTOP_WINDOWS_TOKEN_PIN',
+  'DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_DIR',
 ] as const
 const DESKTOP_UPLOAD_CREDENTIAL_ENV_NAMES = new Set([
   'DOWNLOAD_TEST_COS_SECRET_ID',
@@ -360,11 +363,33 @@ export async function packageTarget(
     if (!invocation.unsigned && environment[name] !== undefined) electronBuilderEnv[name] = environment[name]
   }
   const signPrimaryRuntime = target.platform === 'win32' && !invocation.unsigned && !invocation.prepareOnly
+  const signedStage = async (stage: string, operation: () => Promise<void>): Promise<void> => {
+    if (!signPrimaryRuntime) return operation()
+    if (run === undefined) throw new Error('desktop package: signed Windows packaging requires a supervised run')
+    const controller = new AbortController()
+    const interrupted = (): void => controller.abort()
+    const detach = (): void => {
+      process.removeListener('SIGINT', interrupted)
+      process.removeListener('SIGTERM', interrupted)
+    }
+    process.once('SIGINT', interrupted)
+    process.once('SIGTERM', interrupted)
+    try {
+      const options = { stage, signal: controller.signal, record: (event: object): void => recordPackagingEvent(run.directory, event) }
+      await withWindowsSigningStage(options, async () => {
+        detach()
+        await operation()
+      })
+    } finally { detach() }
+  }
   if (signPrimaryRuntime) {
     if (run === undefined) throw new Error('desktop package: signed Windows packaging requires a supervised run')
-    await run.run('preflight:windows-signing', process.execPath,
-      ['--import', 'tsx/esm', join(APP_ROOT, 'scripts/windows-signing-preflight.ts')],
-      { cwd: APP_ROOT, env: electronBuilderEnv, timeoutMs: 60_000 })
+    await signedStage('preflight', async () => {
+      await prepareWindowsSignatureCacheDirectory(resolveWindowsSignatureCacheDirectory(environment))
+      await run.run('preflight:windows-signing', process.execPath,
+        ['--import', 'tsx/esm', join(APP_ROOT, 'scripts/windows-signing-preflight.ts')],
+        { cwd: APP_ROOT, env: electronBuilderEnv, timeoutMs: 60_000 })
+    })
   }
   await execute(['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
   await execute(['run', 'release:pack', '--family', 'dsh', '--out', buildPaths.packedDsh, ...packArguments], buildEnv, REPOSITORY_ROOT)
@@ -409,7 +434,7 @@ export async function packageTarget(
     await withMacOSNotarizationProxy(mac?.notarizationProxy,
       () => notarizeMacOS({ appPath, ...resolveMacOSNotarizationEnvironment(environment) }), undefined, undefined, proxyEvent)
   } else {
-    await execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv)
+    await signedStage('artifacts', () => execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv))
   }
   if (signPrimaryRuntime) await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts'], targetEnv)
   if (!invocation.directory && !invocation.unsigned) writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
