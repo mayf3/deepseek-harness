@@ -621,7 +621,7 @@ describe('profile resolution generation', { concurrent: false }, () => {
       imports: { '#local': 'local-import', '#ancestor': 'ancestor-import' },
     }))
     const local = join(f.profile.dir, 'node_modules', 'local-import')
-    const ancestor = join(f.root, 'profiles', 'node_modules', 'ancestor-import')
+    const ancestor = join(f.root, 'node_modules', 'ancestor-import')
     pkg(local, 'local-import', 4)
     pkg(ancestor, 'ancestor-import', 5)
     const require = createRequire(join(f.profile.dir, 'entry.cjs'))
@@ -983,6 +983,84 @@ describe('profile resolution generation', { concurrent: false }, () => {
     })).toBe(alternativeSubpath)
   })
 
+  it('skips stale shared and profile-owned fallback entries when the generation misses', async () => {
+    const f = fixture()
+    pkg(join(f.root, 'profiles', 'node_modules', 'stale-shared'), 'stale-shared', 9)
+    pkg(join(f.root, 'node_modules', 'stale-shared'), 'stale-shared', 3)
+    const target = join(f.root, 'stale-private-target')
+    const owned = join(f.profile.dir, '.dsh-module-fallback', 'node_modules', 'stale-private')
+    const projected = join(f.profile.dir, 'node_modules', 'stale-private')
+    pkg(target, 'stale-private', 9)
+    mkdirSync(dirname(owned), { recursive: true })
+    symlinkSync(target, owned, process.platform === 'win32' ? 'junction' : 'dir')
+    mkdirSync(dirname(projected), { recursive: true })
+    symlinkSync(owned, projected, process.platform === 'win32' ? 'junction' : 'dir')
+    pkg(join(f.root, 'node_modules', 'stale-private'), 'stale-private', 3)
+    const registration = installProfileResolution(await generationOf(f))
+    registrations.push(registration)
+    const require = createRequire(join(f.profile.dir, 'entry.cjs'))
+    for (const name of ['stale-shared', 'stale-private']) {
+      expect(require(name)).toEqual({ marker: 3 })
+      expect(require.resolve(name, { paths: [f.profile.dir] })).toBe(join(f.root, 'node_modules', name, 'index.cjs'))
+      expect(await importFrom(name, pathToFileURL(join(f.profile.dir, `${name}.mjs`)).href))
+        .toMatchObject({ marker: 3 })
+    }
+  })
+
+  it('skips stale shared and declared profile projections when the generation supplies the package', async () => {
+    const f = fixture()
+    file(join(f.profile.dir, 'package.json'), JSON.stringify({
+      name: 'test-profile', private: true, dependencies: { 'resolution-lib': '*' },
+      imports: { '#library': 'resolution-lib' },
+    }))
+    const target = join(f.root, 'stale-target')
+    pkg(target, 'resolution-lib', 9)
+    const owned = join(f.profile.dir, '.dsh-module-fallback', 'node_modules', 'resolution-lib')
+    const projected = join(f.profile.dir, 'node_modules', 'resolution-lib')
+    const shared = join(f.root, 'profiles', 'node_modules', 'resolution-lib')
+    mkdirSync(dirname(owned), { recursive: true })
+    mkdirSync(dirname(projected), { recursive: true })
+    mkdirSync(dirname(shared), { recursive: true })
+    symlinkSync(target, owned, process.platform === 'win32' ? 'junction' : 'dir')
+    symlinkSync(owned, projected, process.platform === 'win32' ? 'junction' : 'dir')
+    symlinkSync(target, shared, process.platform === 'win32' ? 'junction' : 'dir')
+    const generation = await generationOf(f)
+    expect(generation.localPackageNames).toEqual([])
+    const registration = installProfileResolution(generation)
+    registrations.push(registration)
+    const require = createRequire(join(f.profile.dir, 'entry.cjs'))
+    for (const name of ['resolution-lib', '#library']) {
+      expect(require(name)).toEqual({ marker: 1 })
+      expect(await importFrom(name, pathToFileURL(join(f.profile.dir, 'entry.mjs')).href))
+        .toMatchObject({ marker: 1 })
+    }
+    expect(realpathSync(projected)).toBe(target)
+    expect(realpathSync(shared)).toBe(target)
+  })
+
+  it('excludes profile-owned projections from selected bundle dependency traversal', async () => {
+    const f = fixture()
+    const bundle = join(f.profile.dir, 'node_modules', 'selected-bundle')
+    pkg(bundle, 'selected-bundle', 1, { 'bundle-leaf': '*' })
+    f.profile.layers.push({
+      packageName: 'selected-bundle', packageDir: bundle,
+      patchPath: join(bundle, 'cordis.patch.yml'), patches: [],
+    })
+    const target = join(f.root, 'stale-leaf')
+    const owned = join(f.profile.dir, '.dsh-module-fallback', 'node_modules', 'bundle-leaf')
+    const projected = join(f.profile.dir, 'node_modules', 'bundle-leaf')
+    pkg(target, 'bundle-leaf', 9)
+    mkdirSync(dirname(owned), { recursive: true })
+    symlinkSync(target, owned, process.platform === 'win32' ? 'junction' : 'dir')
+    symlinkSync(owned, projected, process.platform === 'win32' ? 'junction' : 'dir')
+    const ancestor = join(f.root, 'node_modules', 'bundle-leaf')
+    pkg(ancestor, 'bundle-leaf', 3)
+    const generation = await generationOf(f)
+    expect(generation.entries.find(entry => entry.name === 'bundle-leaf'))
+      .toMatchObject({ packageDir: ancestor, version: '3.0.0', scope: 'profile' })
+    expect(realpathSync(projected)).toBe(target)
+  })
+
   it('continues after a canonicalized profiles directory from the matching parent tree', async () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-profile-generation-symlink-')))
     roots.push(root)
@@ -993,10 +1071,10 @@ describe('profile resolution generation', { concurrent: false }, () => {
     mkdirSync(realProfileDir, { recursive: true })
     mkdirSync(dirname(profilesDir), { recursive: true })
     symlinkSync(realProfilesDir, profilesDir, process.platform === 'win32' ? 'junction' : 'dir')
-    const parentPackage = join(realProfilesDir, 'node_modules', 'parent-lib')
-    pkg(parentPackage, 'parent-lib', 9)
-    pkg(join(carrier, 'node_modules', 'ancestor-lib'), 'ancestor-lib', 3)
-    pkg(join(root, 'home', 'node_modules', 'ancestor-lib'), 'ancestor-lib', 4)
+    pkg(join(realProfilesDir, 'node_modules', 'stale-only'), 'stale-only', 9)
+    const ancestor = join(carrier, 'node_modules', 'stale-only')
+    pkg(ancestor, 'stale-only', 3)
+    pkg(join(root, 'home', 'node_modules', 'stale-only'), 'stale-only', 4)
     const registration = installProfileResolution({
       profilesDir,
       profileDir: join(profilesDir, 'test'),
@@ -1005,11 +1083,10 @@ describe('profile resolution generation', { concurrent: false }, () => {
     })
     registrations.push(registration)
     const require = createRequire(join(realProfileDir, 'entry.cjs'))
-    expect(require('parent-lib')).toEqual({ marker: 9 })
-    expect(require('ancestor-lib')).toEqual({ marker: 3 })
+    expect(require('stale-only')).toEqual({ marker: 3 })
     const parent = pathToFileURL(join(realProfileDir, 'entry.mjs')).href
-    expect(await importFrom('parent-lib', parent)).toMatchObject({ marker: 9 })
-    expect(registration.packageDir('parent-lib', parent)).toBe(parentPackage)
+    expect(await importFrom('stale-only', parent)).toMatchObject({ marker: 3 })
+    expect(registration.packageDir('stale-only', parent)).toBe(ancestor)
   })
 
   it('leaves conditional exports to Node', async () => {

@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { getEnvironmentData, setEnvironmentData } from 'node:worker_threads'
 import type { ModuleLoaderV1, ModuleLoaderV2, ResolveResult } from '@deepseek-ai/cordis-plugin-loader'
 import { imports as resolvePackageImports, type Package as ResolvePackageManifest } from 'resolve.exports'
+import { isProfileModuleFallbackLink } from './legacy-links.ts'
 import type { ProfileResolutionEntry, ProfileResolutionGeneration } from '../profile.ts'
 
 const WORKER_RESOLUTION_KEY = '@deepseek-ai/dsh-app-boot/profile-resolution'
@@ -167,14 +168,14 @@ function nativePackageDir(parent: string, name: string): string | undefined {
 
 function localPackageCandidate(
   searchPath: string, name: string, flavor: 'esm' | 'cjs',
-): { packageDir: string } | undefined {
+): { packageDir: string; canBeManagedLink: boolean } | undefined {
   const candidate = join(searchPath, name)
   const stat = statSync(candidate, { throwIfNoEntry: false })
   const found = flavor === 'esm'
     ? stat?.isDirectory() === true
     : stat !== undefined
       || ['.js', '.json', '.node'].some(extension => existsSync(candidate + extension))
-  return found ? { packageDir: candidate } : undefined
+  return found ? { packageDir: candidate, canBeManagedLink: stat !== undefined } : undefined
 }
 
 function selfReferenceName(parent: string): string | false | null {
@@ -339,13 +340,19 @@ class ResolutionRouter {
     }
 
     const target = generation.entries.get(name)
-    const candidates: Array<{ packageDir: string }> = []
+    const candidates: Array<{ packageDir: string; canBeManagedLink: boolean }> = []
     const localSearchPaths: string[] = []
     for (const searchPath of createRequire(parent).resolve.paths(name) as string[]) {
       if (generation.shared.has(resolve(searchPath))) break
       localSearchPaths.push(searchPath)
       const candidate = localPackageCandidate(searchPath, name, flavor)
-      if (candidate !== undefined) candidates.push(candidate)
+      if (candidate !== undefined) {
+        const legacy = candidate.canBeManagedLink && generation.profile.some(prefix => (
+          candidate.packageDir === join(prefix, 'node_modules', name)
+          && isProfileModuleFallbackLink(prefix.slice(0, -1), name)
+        ))
+        if (!legacy) candidates.push(candidate)
+      }
     }
     if (candidates.length > 0) {
       if (flavor === 'cjs' && nativeResolve !== undefined) {
@@ -379,7 +386,7 @@ class ResolutionRouter {
 
     const eligible = target?.scope === 'installation'
       || (target?.scope === 'profile' && parentRoutes.activeProfile)
-    const after = join(profilesDir, 'package.json')
+    const after = join(dirname(profilesDir), 'package.json')
     const route: ResolutionRoute = eligible
       ? { kind: 'fallback', entry: target, after }
       : { kind: 'after-fallback', parent: after }
