@@ -133,7 +133,7 @@ describe('parent-owned cold child catalog snapshot', () => {
 
         // THE model-visible fact: the parent catalog supplies discovery even
         // though consulting the descriptor-less child would classify it corrupt.
-        expect(parent).toContain(`${childId} [ready] — descriptorless child`)
+        expect(parent).toContain(`${childId} [inactive] — descriptorless child`)
         expect(parent).not.toContain('[diagnostic: corrupt]')
 
         const context: NormalizeContext = { sessionIds: [parentId, childId], cwd }
