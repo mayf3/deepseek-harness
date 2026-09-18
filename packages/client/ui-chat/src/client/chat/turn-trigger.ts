@@ -25,7 +25,6 @@ export function turnTriggerDetails(node: ContextMessageNode): {
   const source = record(node.source)
   const kind = field(source, 'kind')
   const plugin = field(source, 'plugin')
-  const text = node.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
   let title: ChatKey = 'message.trigger.request'
   let icon: TurnTriggerIcon = 'request'
   switch (kind) {
@@ -45,12 +44,6 @@ export function turnTriggerDetails(node: ContextMessageNode): {
     case 'subagent-settled': {
       title = 'message.trigger.subagent'
       icon = 'subagent'
-      const id = field(source, 'senderSessionId')
-      const prefix = `Background subagent ${id} `
-      const ending = text.startsWith(prefix) ? text.slice(prefix.length).split('\n')[0] : ''
-      if (ending === 'finished and will do no further work unless you send it more.') title = 'message.trigger.subagentDone'
-      if (ending === 'was stopped before it finished.') title = 'message.trigger.subagentStopped'
-      if (ending === 'failed before it finished.') title = 'message.trigger.subagentFailed'
       break
     }
     case 'webhook': {
@@ -66,28 +59,9 @@ export function turnTriggerDetails(node: ContextMessageNode): {
       } else if (plugin === 'tool-jobs') {
         title = 'message.trigger.job'
         icon = 'job'
-        const job = /^background job (\S+) \(([^:]+): (.*?)\) finished \[status: ([\w-]+)(?:, ([^\]\n]*))?\]/.exec(text)
-        const status = job?.[4]
-        if (status === 'completed') title = 'message.trigger.jobDone'
-        if (status === 'failed') title = 'message.trigger.jobFailed'
-        if (status === 'stopped' || status === 'aborted' || status === 'killed') title = 'message.trigger.jobStopped'
       } else if (plugin === 'cordis-host-runner') {
         title = 'message.trigger.plugin'
         icon = 'plugin'
-        const success = /^Cordis (run|update) (.+?) completed successfully\./.exec(text)
-        const rejected = /^The user rejected Cordis (run|update) (.+?)\./.exec(text)
-        const failed = /^Cordis (run|update) (.+?) failed after cordis_run/.exec(text)
-        const runtime = /^Cordis (?:Client UI|Host handler) (.+?) failed /.exec(text)
-          ?? /^Cordis (?:Host|Client) guard rejected runtime code in (.+?)\.\n/.exec(text + '\n')
-        if (success !== null) {
-          title = success[1] === 'update' ? 'message.trigger.pluginUpdated' : 'message.trigger.pluginDone'
-        } else if (rejected !== null) {
-          title = 'message.trigger.pluginRejected'
-        } else if (failed !== null) {
-          title = 'message.trigger.pluginFailed'
-        } else if (runtime !== null) {
-          title = 'message.trigger.pluginError'
-        }
       }
       break
     default:

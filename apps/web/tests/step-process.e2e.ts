@@ -254,7 +254,7 @@ it('keeps a waking notice above and independent of the turn disclosure', async (
       const outer = page.locator('[data-turn-process="1"]')
       await notice.waitFor()
       expect(await button.getAttribute('aria-expanded')).toBe('false')
-      expect(await button.textContent()).toContain('Background task completed')
+      expect(await button.textContent()).toContain('Background task updated')
       const noticeBox = await notice.boundingBox()
       const outerBox = await outer.boundingBox()
       expect(noticeBox!.y + noticeBox!.height).toBeLessThan(outerBox!.y)

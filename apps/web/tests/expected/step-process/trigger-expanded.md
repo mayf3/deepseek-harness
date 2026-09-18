@@ -1,5 +1,5 @@
-- button "Background task completed HH:mm" [expanded]:
-  - text: Background task completed
+- button "Background task updated HH:mm" [expanded]:
+  - text: Background task updated
   - time: HH:mm
 - paragraph: This notification triggered this response.
 - text: "background job bash-39 (bash: PR merge check) finished [status: completed, exit code 0]. Read its output with job_output."

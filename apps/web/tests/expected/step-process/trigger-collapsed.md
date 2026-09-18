@@ -1,3 +1,3 @@
-- button "Background task completed HH:mm":
-  - text: Background task completed
+- button "Background task updated HH:mm":
+  - text: Background task updated
   - time: HH:mm

@@ -8,12 +8,10 @@ function details(source: unknown, text: string) {
     content: [{ type: 'text', text }], producer: contextProducer(source), form: contextForm(source) })
 }
 
-it.each([
-  ['completed', 'jobDone'], ['failed', 'jobFailed'], ['killed', 'jobStopped'], ['future', 'job'],
-])('uses recorded job status %s', (status, key) => {
+it.each(['completed', 'failed', 'killed', 'future'])('uses the durable job source for status %s', (status) => {
   expect(details({ kind: 'plugin', plugin: 'tool-jobs' },
     `background job bash-39 (bash: PR merge check) finished [status: ${status}, exit code 0].`))
-    .toEqual({ title: `message.trigger.${key}`, icon: 'job' })
+    .toEqual({ title: 'message.trigger.job', icon: 'job' })
 })
 
 it('classifies schedule and goal triggers', () => {
@@ -24,12 +22,17 @@ it('classifies schedule and goal triggers', () => {
 })
 
 it.each([
-  ['Cordis run plug/pkg (r1) completed successfully.', 'pluginDone'],
-  ['The user rejected Cordis run plug/pkg (r1).', 'pluginRejected'],
-  ['Cordis update plug/pkg (r1) failed after cordis_run returned starting: broken', 'pluginFailed'],
-  ['Cordis Client guard rejected runtime code in plug/pkg (r1).', 'pluginError'],
-])('recognizes runner outcome %s', (text, key) => {
-  expect(details({ kind: 'plugin', plugin: 'cordis-host-runner' }, text).title).toBe(`message.trigger.${key}`)
+  'Cordis run plug/pkg (r1) completed successfully.',
+  'The user rejected Cordis run plug/pkg (r1).',
+  'Cordis update plug/pkg (r1) failed after cordis_run returned starting: broken',
+  'Cordis Client guard rejected runtime code in plug/pkg (r1).',
+])('uses the durable Cordis source independently of producer text %s', (text) => {
+  expect(details({ kind: 'plugin', plugin: 'cordis-host-runner' }, text).title).toBe('message.trigger.plugin')
+})
+
+it('uses the durable subagent source independently of settlement wording', () => {
+  expect(details({ kind: 'subagent-settled', senderSessionId: 'child-1' }, 'future settlement wording'))
+    .toEqual({ title: 'message.trigger.subagent', icon: 'subagent' })
 })
 
 it('keeps unknown sources and unrecognized status neutral', () => {

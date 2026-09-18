@@ -39,8 +39,8 @@
 - button "Bad response"
 - button "Branch into a new conversation"
 - text: 9/1 {{clock}}
-- button "Plugin started 9/1 {{clock}}":
-  - text: Plugin started
+- button "Plugin status updated 9/1 {{clock}}":
+  - text: Plugin status updated
   - time: 9/1 {{clock}}
 - status: Worked
 - button "Took {{duration}}" [disabled]
