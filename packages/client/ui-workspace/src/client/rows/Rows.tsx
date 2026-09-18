@@ -28,6 +28,37 @@ function displayTitle(node: SessionNode, t: RowTranslate): string {
   return node.blank ? t('session.new') : node.title
 }
 
+/* Overflow this small hides no meaningful tail; scrolling for it reads as an
+   accidental jitter, so the title stays put. */
+const MIN_TITLE_REVEAL_PX = 8
+
+/**
+ * Reveal a title wider than its one-line cell while its row is hovered: the
+ * title clips its own text, so the far edge (a fork's incremented title, for
+ * example) is reachable by scrolling the element to its end. Overflow of at
+ * most {@link MIN_TITLE_REVEAL_PX} stays put — a barely-clipped title moving a
+ * few pixels reads as jitter, not a reveal. Leaving returns the title to the
+ * start in one step, because the resting ellipsis and the narrowed cell would
+ * otherwise meet the text while it travelled back. The stylesheet decides
+ * whether either move glides or jumps.
+ * @param title - the row's clipping title element.
+ * @param revealed - whether the pointer is on the row.
+ */
+function revealClippedTitle(title: HTMLSpanElement | null, revealed: boolean): void {
+  /* v8 ignore next -- defensive: the title span renders unconditionally. */
+  if (title === null) return
+  if (revealed) {
+    const range = title.scrollWidth - title.clientWidth
+    if (range <= MIN_TITLE_REVEAL_PX) return
+    title.scrollLeft = range
+    return
+  }
+  // jsdom implements no scrollTo; the lane's direct assignment is instant there
+  // anyway, so both paths land on the same resting position.
+  if (typeof title.scrollTo === 'function') title.scrollTo({ left: 0, behavior: 'instant' })
+  else title.scrollLeft = 0
+}
+
 /** Localized compact relative time ("刚刚"/"5分钟" in zh, "now"/"5min" in en). */
 function timeLabel(updatedAt: number, now: number, t: RowTranslate): string {
   const { unit, n } = relativeTime(updatedAt, now)
@@ -472,6 +503,7 @@ export function SessionNodeItem({
   const draggable = drag !== undefined && !row.blank && !row.archived
   const [menuOpen, setMenuOpen] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
+  const titleRef = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     if (onReveal === undefined) return
     rowRef.current?.scrollIntoView({ block: 'nearest' })
@@ -509,6 +541,8 @@ export function SessionNodeItem({
       role="treeitem"
       aria-selected={selected}
       onClick={() => { onOpen(node.id) }}
+      onPointerEnter={() => { revealClippedTitle(titleRef.current, true) }}
+      onPointerLeave={() => { revealClippedTitle(titleRef.current, false) }}
       draggable={draggable}
       onDragStart={!draggable
         ? undefined
@@ -545,6 +579,7 @@ export function SessionNodeItem({
         </span>
       )}
       <span
+        ref={titleRef}
         className={css.title}
         onDoubleClick={row.blank
           ? undefined

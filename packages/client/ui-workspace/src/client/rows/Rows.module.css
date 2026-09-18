@@ -184,8 +184,13 @@
   outline: none;
 }
 
+/* Hovering a session row reveals a title wider than its cell: Rows.tsx scrolls
+   it to its end while the pointer rests on the row — smoothly, through the
+   scroll-behavior here — and returns it to the start in one step when the
+   pointer leaves. */
 .sessionRow .title {
   flex: 1;
+  scroll-behavior: smooth;
 }
 
 .meta {
@@ -248,12 +253,13 @@
 }
 
 /* Trailing action buttons surface on hover only (figma 27:4668 / 27:4656):
-   bare 16px glyphs, gap 12, tertiary grey. */
+   bare 16px glyphs, tertiary grey; the figma gap 12 reads too airy beside
+   the 16px glyphs, so the buttons sit at 10. */
 .rowActions {
   flex: none;
   display: none;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .projectRow:hover .rowActions,
@@ -282,15 +288,15 @@
   display: none;
 }
 
-/* Hover truncation fades the title's own alpha out instead of clipping to
-   "…": an overlay gradient would need the sidebar's fill, which macOS
-   vibrancy makes translucent, while a mask works over any backdrop. Short
-   titles never reach the faded band, so only overflow is affected. */
-.sessionRow:hover .title,
-.sessionRow.menuOpen .title {
-  text-overflow: clip;
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+/* The unclipped hover state drops the ellipsis, which would otherwise cover
+   the characters the scroll reveal reached. Guarded because a touch tap
+   latches `:hover` on the row after the title has already returned: an
+   unguarded rule would strand that row without its ellipsis. */
+@media (hover: hover) {
+  .sessionRow:hover .title,
+  .sessionRow.menuOpen .title {
+    text-overflow: clip;
+  }
 }
 
 /* An open row menu pins the hover affordances (figma: the row keeps its
@@ -413,5 +419,10 @@
   .arrow {
     animation: none;
     transition: none;
+  }
+
+  /* The title reveal jumps to the far edge instead of gliding there. */
+  .sessionRow .title {
+    scroll-behavior: auto;
   }
 }
