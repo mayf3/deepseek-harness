@@ -45,6 +45,12 @@ describe('navigation without a selected Session', () => {
       if (platform === 'darwin') {
         expect(await page.locator('[data-conversation-header-leading]').getByRole('button', { name: 'New session', exact: true }).isVisible()).toBe(true)
       }
+      // The open label precedes both the column slide and the rail's mount animation.
+      // Reverse the pointer action only after the rendered sidebar has settled.
+      const sidebarSettled = () => page.locator('[data-sidebar-collapsed]').evaluate((frame: HTMLElement) =>
+        Number.parseFloat(getComputedStyle(frame).gridTemplateColumns) === Number.parseFloat(frame.style.gridTemplateColumns)
+        && frame.getAnimations({ subtree: true }).every(animation => animation.playState === 'finished' || animation.playState === 'idle'))
+      await expect.poll(sidebarSettled, { timeout: 30_000 }).toBe(true)
       await reopen.click()
       await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).waitFor({ state: 'visible' })
       expect(await sessionHeader.count()).toBe(0)

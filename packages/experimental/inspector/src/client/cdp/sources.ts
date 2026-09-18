@@ -181,7 +181,7 @@ export function discoverInspectorClientSourceCatalog(): ClientSourceCatalog | un
     return Reflect.get(value, 'id') === PACKAGE_ID
   }) as Record<string, unknown> | undefined
   if (row === undefined || typeof row.url !== 'string' || typeof row.rev !== 'string') return undefined
-  const base = browserLocation()
+  const base = documentBase()
   if (base === undefined) return undefined
   const sourceUrl = new URL(row.url, base)
   const sourceMapUrl = new URL(sourceUrl.href)
@@ -203,7 +203,16 @@ async function fetchText(url: string): Promise<string> {
   return response.text()
 }
 
-function browserLocation(): string | undefined {
+/**
+ * Base every app-owned route reference resolves against: the document's
+ * `baseURI`, else the location URL, else undefined outside a browser.
+ */
+function documentBase(): string | undefined {
+  const document = Reflect.get(globalThis, 'document') as unknown
+  if (typeof document === 'object' && document !== null) {
+    const baseURI = Reflect.get(document, 'baseURI') as unknown
+    if (typeof baseURI === 'string' && baseURI !== '') return baseURI
+  }
   const location = Reflect.get(globalThis, 'location') as unknown
   if (typeof location !== 'object' || location === null) return undefined
   const href = Reflect.get(location, 'href') as unknown
@@ -224,7 +233,7 @@ function renderError(error: unknown): string {
 
 function normalizedUrl(value: string): string {
   try {
-    const url = new URL(value, browserLocation())
+    const url = new URL(value, documentBase())
     url.hash = ''
     return url.href
   } catch {

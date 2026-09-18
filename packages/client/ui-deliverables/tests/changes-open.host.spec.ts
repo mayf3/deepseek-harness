@@ -77,7 +77,7 @@ async function fixture() {
 describe('change summary route', () => {
   it('serves the Host-held summary without its working directory, and 404 once it is gone', async () => {
     const { read, data, summary } = await fixture()
-    expect(changesSummaryUrl(SessionId('owner'), 9)).toBe(`${CHANGED_FILES_PATH}?sessionId=owner&seq=9`)
+    expect(changesSummaryUrl(SessionId('owner'), 9)).toBe('api/changes.summary?sessionId=owner&seq=9')
     const response = await read()
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
@@ -95,7 +95,7 @@ describe('change summary route', () => {
 describe('change comparison route', () => {
   it('serves the Host-computed comparison, 404 once it is gone, and 500 when the read fails', async () => {
     const { compare, comparison, diff } = await fixture()
-    expect(changesDiffUrl(SessionId('owner'), 9, 0)).toBe(`${CHANGES_DIFF_PATH}?sessionId=owner&seq=9&index=0`)
+    expect(changesDiffUrl(SessionId('owner'), 9, 0)).toBe('api/changes.diff?sessionId=owner&seq=9&index=0')
     const response = await compare()
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
@@ -132,7 +132,7 @@ describe('change comparison route', () => {
 describe('changed files native open route', () => {
   it('opens a listed file inside or outside the workspace with its verified Host path', async () => {
     const { cwd, open, opener, outside } = await fixture()
-    expect(changedFileUrl(SessionId('owner'), 9, 0)).toBe(`${CHANGES_OPEN_PATH}?sessionId=owner&seq=9&index=0`)
+    expect(changedFileUrl(SessionId('owner'), 9, 0)).toBe('api/changes.open?sessionId=owner&seq=9&index=0')
     const response = await open()
     expect(response.status).toBe(204)
     expect(response.headers.get('cache-control')).toBe('no-store')

@@ -2,7 +2,7 @@
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { changedFileUrl } from '../changes.ts'
-import { presentedFileUrl, PRESENT_HOST_PATH, isPresentedHost, type PresentedAction, type PresentedHost } from '../presented.ts'
+import { presentedFileUrl, PRESENT_HOST_ROUTE, isPresentedHost, type PresentedAction, type PresentedHost } from '../presented.ts'
 
 /** State of the latest explicit open gesture for one saved file. */
 export type PresentedOpenPhase = 'opening' | 'opened' | 'revealing' | 'revealed' | 'error' | 'revealError' | 'nativeUnavailable'
@@ -86,7 +86,7 @@ export class PresentedOpenController {
   private async readHost(signal: AbortSignal): Promise<void> {
     let host: PresentedHost | 'error' = 'error'
     try {
-      const response = await fetch(PRESENT_HOST_PATH, { signal })
+      const response = await fetch(PRESENT_HOST_ROUTE, { signal })
       if (response.ok) {
         const value: unknown = await response.json()
         if (isPresentedHost(value)) host = value

@@ -277,6 +277,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   PluginChange: 'boot.md',
   PluginInstallLogChunk: 'boot.md',
   PluginInstallProgress: 'boot.md',
+  PluginRegistries: 'boot.md',
+  InspectOptions: 'boot.md',
   BrowserUseProviderName: 'browser-use.md',
   ComputerUseProviderName: 'computer-use.md',
   RenderedDocumentBytes: 'office-to-pdf.md',
