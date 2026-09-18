@@ -21,6 +21,7 @@
     "verify:mac-signature": "node scripts/verify-macos-signature.mjs",
     "package": "tsx scripts/package-target.ts",
     "check:package": "tsx scripts/package-target.ts --check",
+    "restore:mac-proxy": "tsx scripts/macos-notarization-proxy.ts",
     "package:dir": "tsx scripts/package-target.ts --dir",
     "package:mac:arm64": "tsx scripts/package-target.ts mac-arm64",
     "package:mac:arm64:dir": "tsx scripts/package-target.ts mac-arm64 --dir",

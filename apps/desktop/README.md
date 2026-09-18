@@ -186,7 +186,21 @@ The macOS configuration uses the required release environment instead of accepti
 
 macOS signing visits real files without following Framework symlink aliases. PAK resources retain all shipped languages and are sealed by the enclosing Framework or application signature instead of receiving individual signatures. The [release policy](../../.agents/notes/implemented/architecture/2026-08-25-electron-desktop-packaging-and-updates.md) owns the dependency patch and verification requirements.
 
-Company proxies can accelerate uploads to Apple's notarization service. See the company internal documentation for configuration.
+Mac package commands print `DESKTOP_PACKAGING_RECORD` with a unique directory under `apps/desktop/.desktop-build/packaging-runs/`. After reading local configuration, each run retains `run.json` (version, Git commit, dirty-worktree flag, target and Node version), `events.jsonl` (timestamped phases, durations, parallel output attribution and proxy restoration), redacted child `stdout.log` / `stderr.log`, and `result.json` (overall outcome, stage results and artifact directory). Events also record pack concurrency and whether each proxy is configured. Logs survive failures and later builds; no automatic deletion runs. Missing `result.json` means completion is unconfirmed. Known credential values are redacted; environments and notarytool authentication arguments are not recorded. Nested phase durations overlap and must not be added together.
+
+App and DMG notarization each record a submission ID and separate `notarytool:upload:*` and `notarytool:wait:*` durations. Upload uses `submit --no-wait` and includes authentication, local validation, transfer and server acceptance; it is not pure transfer time. Waiting starts after that command returns and includes polling and remaining Apple processing; Apple can start processing before upload submission returns. Apple status and diagnostic logs are retained, including rejection; signature checks, acceptance checks and stapling remain owned by `@electron/notarize`. Directory-only package commands use this same measured App notarization path. Individual subprocess output remains live in the terminal, while phase failures and nested errors are retained in the journal. The configuration-only `check:package` command creates no run log.
+
+Mac packaging reads three tuning fields from `.env.macos`:
+
+| Setting | Default | Scope |
+|---|---|---|
+| `DSH_DESKTOP_MACOS_PACK_CONCURRENCY` | `4` | Workers for first-party and vendor workspace tarballs; requires a positive integer. |
+| `DSH_DESKTOP_MACOS_DOWNLOAD_PROXY` | Empty | HTTP/HTTPS proxy origin for Electron, runtime assets, pnpm installation and builder downloads. |
+| `DSH_DESKTOP_MACOS_NOTARIZATION_PROXY` | Empty | HTTP proxy origin for Apple tools through temporary system proxy settings. |
+
+The proxy fields are independent and reject URL credentials, paths, queries and fragments. Empty values preserve inherited networking. An explicit download proxy replaces child-process proxy variables and bypasses local hosts only; it does not change system settings. Windows and standalone `release:pack` retain their existing concurrency defaults. Company proxy addresses belong in the ignored local file; see internal documentation for addresses.
+
+Apple tooling uses the active macOS network service's HTTP/HTTPS proxies. Configured notarization routing checks proxy reachability, saves that service's settings, enables the proxy around both artifact lanes, and restores the saved values after both lanes settle. Directory-only builds apply it to App notarization after the signed directory build. This temporarily affects other applications and requires permission to change system proxies; PAC, auto-discovery, SOCKS and authenticated proxy configurations must be disabled first. One per-user lock prevents overlapping proxy transactions across checkouts; other users and network-setting tools must not change these settings concurrently. SIGINT/SIGTERM wait for active work before restoration. After forced termination or a restoration error, stop any remaining notarization processes and run `pnpm --dir apps/desktop run restore:mac-proxy`; the saved record remains until restoration succeeds. Configuration checks validate URL syntax without changing system settings or contacting the proxy.
 
 ### Unsigned Windows test installer
 

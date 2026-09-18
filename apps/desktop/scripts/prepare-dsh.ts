@@ -1,5 +1,6 @@
 /** Materialize the complete production runtime before publishing Desktop resources. */
 
+import { packagingStep } from './packaging-step.mjs'
 import { spawn } from 'node:child_process'
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -115,12 +116,12 @@ async function main(): Promise<void> {
     copyFileSync(join(PACKAGE_SET_ROOT, DESKTOP_PACKAGE_SET_FILE), join(BUILD_ROOT, DESKTOP_PACKAGE_SET_FILE))
     cpSync(join(PACKAGE_SET_ROOT, DESKTOP_PACKAGES_DIR), join(BUILD_ROOT, DESKTOP_PACKAGES_DIR), { recursive: true })
     createRuntimeProjectMetadata(BUILD_ROOT, release)
-    await runPnpm(['install', '--lockfile-only'])
+    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:lockfile', () => runPnpm(['install', '--lockfile-only']))
     verifyDesktopCoreLockfile(
       readFileSync(join(BUILD_ROOT, 'pnpm-lock.yaml'), 'utf8'),
       readDesktopCorePackageSet(BUILD_ROOT, release.version),
     )
-    await runPnpm(['install', '--prod', '--frozen-lockfile', '--trust-lockfile'])
+    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:install', () => runPnpm(['install', '--prod', '--frozen-lockfile', '--trust-lockfile']))
     const packageSet = readDesktopCorePackageSet(BUILD_ROOT, release.version)
     const targetName = resolveDesktopBuildTarget()
     const target = { platform: process.platform, arch: targetName.endsWith('arm64') ? 'arm64' : 'x64' }
@@ -145,15 +146,15 @@ async function main(): Promise<void> {
       throw new Error(`desktop runtime: missing required LibreOffice engine ${officeEngine}`)
     }
     if (process.platform === 'darwin') {
-      await signMacOSRuntime(DSH_OUTPUT_ROOT, resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env))
-      await signMacOSRuntime(join(RUNTIME_ROOT, 'primary-runtime'), resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env))
+      await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'sign:dsh-native', () => signMacOSRuntime(DSH_OUTPUT_ROOT, resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env)))
+      await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'sign:primary-native', () => signMacOSRuntime(join(RUNTIME_ROOT, 'primary-runtime'), resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env)))
     }
     await prepareRuntimeManifests(DSH_OUTPUT_ROOT)
     smokePrimaryRuntime(join(RUNTIME_ROOT, 'primary-runtime'))
     writeDesktopRuntime(DSH_OUTPUT_ROOT, release, packageSet.packages.map(entry => entry.name), target)
     const descriptor = await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
     if (!process.argv.includes('--defer-runtime-smoke')) {
-      await smokePreparedRuntime(DSH_OUTPUT_ROOT, NODE, RUNTIME_ROOT, descriptor)
+      await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:smoke', () => smokePreparedRuntime(DSH_OUTPUT_ROOT, NODE, RUNTIME_ROOT, descriptor))
       await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
     }
   } catch (error) {

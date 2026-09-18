@@ -134,3 +134,14 @@ describe('Desktop local packaging configuration', () => {
     })
   })
 })
+
+it('owns macOS tuning in the local file and validates it before signing credentials', async () => {
+  await withDirectory(async (directory) => {
+    await writeFile(join(directory, '.env.macos'), 'DSH_DESKTOP_MACOS_PACK_CONCURRENCY=2\nDSH_DESKTOP_MACOS_DOWNLOAD_PROXY=http://proxy.example:8080\nDSH_DESKTOP_MACOS_NOTARIZATION_PROXY=\n')
+    const env = loadDesktopPackageEnvironment('darwin', { DSH_DESKTOP_MACOS_PACK_CONCURRENCY: '99' }, directory)
+    expect(env.DSH_DESKTOP_MACOS_PACK_CONCURRENCY).toBe('2')
+    expect(env.DSH_DESKTOP_MACOS_NOTARIZATION_PROXY).toBe('')
+    expect(() =>{  validateDesktopPackageEnvironment({ ...RELEASE, DSH_DESKTOP_MACOS_PACK_CONCURRENCY: '' }, MACOS) }).toThrow('PACK_CONCURRENCY')
+    expect(() =>{  validateDesktopPackageEnvironment({ ...RELEASE, DSH_DESKTOP_MACOS_NOTARIZATION_PROXY: 'socks5://localhost:8080' }, MACOS) }).toThrow('NOTARIZATION_PROXY')
+  })
+})
