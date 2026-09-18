@@ -45,6 +45,7 @@ async function fixture(
   let origin = ''
   let detailsHold = false
   let balanceHold = false
+  let profileFailed = false
   let summaryFailed = false
   let logoutFailed = false
   let logoutHold = false
@@ -83,7 +84,8 @@ async function fixture(
         bonus_wallets: [{ currency: 'CNY', balance: '10.00' }] }
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ code: 0, data: {
-        biz_code: summaryFailed && req.url === '/api/v0/users/get_user_summary' ? 17 : 0, biz_data: value,
+        biz_code: (profileFailed && req.url === '/auth-api/v0/users/current')
+          || (summaryFailed && req.url === '/api/v0/users/get_user_summary') ? 17 : 0, biz_data: value,
       } }))
       return
     }
@@ -148,6 +150,7 @@ async function fixture(
     ctx, account, home, origin, callbackOrigin, wait, receivedHeaders, logoutHeaders, logoutCount: () => logoutCount,
     holdLogout: () => { logoutHold = true },
     failLogout: (failed: boolean) => { logoutFailed = failed }, detailRequests, detailsStarted,
+    failProfile: (failed: boolean) => { profileFailed = failed },
     holdBalance: () => { balanceHold = true },
     holdDetails: () => { detailsHold = true }, failSummary: () => { summaryFailed = true },
     invalidateSummary: () => { invalidSummary = true }, dispose: () => provider.dispose(), exchanged, release,
@@ -716,4 +719,28 @@ it.each([
 it('rejects unsupported native desktop platforms in configuration', () => {
   // @ts-expect-error Configuration files can name unsupported operating systems.
   expect(() => Config({ desktopPlatform: 'linux' })).toThrow()
+})
+
+it('retains successful profile data on current failure only for the same credential', async () => {
+  const f = await fixture()
+  f.exchangeResponse({ user: { email: 'e***@example.invalid', id_profile: { name: 'Exchange User' } } })
+  await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
+  await f.wait('waiting-browser')
+  await fetch(f.callback(), { redirect: 'manual' })
+  const initial = await f.account.getProfile()
+  expect(initial).toMatchObject({ status: 'ready', value: { name: 'Exchange User' } })
+  f.failProfile(true)
+  expect(await f.account.getProfile()).toEqual(initial)
+  f.failProfile(false)
+  const refreshed = await f.account.getProfile()
+  expect(refreshed).toMatchObject({ status: 'ready', value: { name: 'Test Account' } })
+  f.failProfile(true)
+  expect(await f.account.getProfile()).toEqual(refreshed)
+  const key = credentialKey('deepseek-account-platform', 'default')
+  await f.ctx.credentials.modifyRecord(key, () => Promise.resolve({
+    kind: 'grant', payload: { version: 1, issuer: f.origin, token: 'replacement-token' },
+  }))
+  expect(await f.account.getProfile()).toEqual({ status: 'failed' })
+  await f.account.signOut()
+  expect(await f.account.getProfile()).toBeNull()
 })

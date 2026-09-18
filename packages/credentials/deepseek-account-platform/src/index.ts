@@ -94,6 +94,7 @@ export class PlatformAccount extends DeepSeekAccount {
   private readonly revocations = new Set<Promise<void>>()
   private attempt: Attempt | undefined
   private readonly listeners = new Set<() => void>()
+  private lastProfile: Extract<AccountDetails['profile'], { status: 'ready' }> | undefined
   private detailsLifetime = new AbortController()
   private closed = false
   private removing: Promise<AccountView> | undefined
@@ -174,7 +175,13 @@ export class PlatformAccount extends DeepSeekAccount {
     }
   }
 
-  override getProfile(): Promise<AccountDetails['profile'] | null> { return this.getDetail('profile') }
+  override async getProfile(): Promise<AccountDetails['profile'] | null> {
+    const lifetime = this.detailsLifetime
+    const result = await this.getDetail('profile')
+    if (this.detailsLifetime !== lifetime) return null
+    if (result?.status === 'ready') this.lastProfile = result
+    return result?.status === 'failed' ? this.lastProfile ?? result : result
+  }
 
   override getBalance(): Promise<AccountDetails['balance'] | null> { return this.getDetail('balance') }
 
@@ -334,6 +341,7 @@ export class PlatformAccount extends DeepSeekAccount {
   }
 
   private invalidateDetails(): void {
+    this.lastProfile = undefined
     this.detailsLifetime.abort()
     this.detailsLifetime = new AbortController()
   }

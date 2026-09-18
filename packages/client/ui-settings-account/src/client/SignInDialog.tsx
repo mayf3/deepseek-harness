@@ -17,9 +17,14 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
 }) {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copyCount, setCopyCount] = useState(0)
   const attempt = account.view?.attempt
-  useEffect(() => { setCopied(false) }, [attempt?.id, attempt?.authorizeUrl])
+  useEffect(() => { setCopyCount(0) }, [attempt?.id, attempt?.authorizeUrl])
+  useEffect(() => {
+    if (copyCount === 0) return
+    const timer = setTimeout(() => { setCopyCount(0) }, 2000)
+    return () => { clearTimeout(timer) }
+  }, [copyCount])
   const phase = attempt?.phase
   const active = busy || phase === 'initializing' || phase === 'waiting-browser' || phase === 'exchanging' || phase === 'committing'
   const expired = phase === 'expired'
@@ -49,9 +54,9 @@ export function SignInDialog({ account, start, cancel, close, useApiKey, t }: {
         {t('browserPrompt')}<button type="button" className={css.link} disabled={!attempt?.authorizeUrl}
           onClick={() => {
             if (attempt?.authorizeUrl) void navigator.clipboard.writeText(attempt.authorizeUrl)
-              .then(() => { setCopied(true) }, () => { setFailed(true) })
+              .then(() => { setCopyCount(count => count + 1) }, () => { setFailed(true) })
           }}>
-          {t(copied ? 'copiedLink' : 'copyLink')}
+          {t(copyCount > 0 ? 'copiedLink' : 'copyLink')}
         </button>{t('browserDescription')}
       </p> : <p className={css.description}>
         {expired ? t('timeoutDescription') : error ? t('failed') : t('loginDescription')}

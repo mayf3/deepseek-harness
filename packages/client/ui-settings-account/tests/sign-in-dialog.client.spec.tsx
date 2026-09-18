@@ -47,3 +47,29 @@ it('keeps an admitted credential commit open on Escape and close', () => {
   expect(props.close).not.toHaveBeenCalled()
   expect(props.cancel).not.toHaveBeenCalled()
 })
+
+it.each([en, zh])('restores the copy label two seconds after the latest successful copy', async (copy) => {
+  const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+  const writeText = vi.fn(async () => {})
+  vi.useFakeTimers()
+  try {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const authorizeUrl = 'https://platform.deepseek.com/dsh/authorize?state=example'
+    mount({ id, phase: 'waiting-browser', authorizeUrl }, copy)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.copyLink })) })
+    expect(writeText).toHaveBeenLastCalledWith(authorizeUrl)
+    act(() => { vi.advanceTimersByTime(1000) })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.copiedLink })) })
+    expect(writeText).toHaveBeenCalledTimes(2)
+    act(() => { vi.advanceTimersByTime(1999) })
+    expect(screen.getByRole('button', { name: copy.copiedLink })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(1) })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.copyLink })) })
+    expect(writeText).toHaveBeenCalledTimes(3)
+  } finally {
+    cleanup()
+    vi.useRealTimers()
+    if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard)
+    else Reflect.deleteProperty(navigator, 'clipboard')
+  }
+})
