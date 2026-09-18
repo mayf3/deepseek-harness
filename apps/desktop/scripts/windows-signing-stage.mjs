@@ -30,7 +30,8 @@ export async function withWindowsSigningStage(options, operation) {
   const root = options.stateDirectory ?? join(homedir(), '.dsh-desktop-signing')
   await mkdir(root, { recursive: true })
   const stat = await lstat(root)
-  if (!stat.isDirectory() || stat.isSymbolicLink() || await realpath(root) !== resolve(root)) {
+  const normalize = value => toNamespacedPath(resolve(value)).toLowerCase()
+  if (!stat.isDirectory() || stat.isSymbolicLink() || normalize(await realpath(root)) !== normalize(root)) {
     throw new Error('Windows signing stage requires an unlinked local state directory')
   }
   const path = join(root, 'stage.lock')

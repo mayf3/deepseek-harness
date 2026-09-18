@@ -3,7 +3,7 @@ import { mkdtemp, rm, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { promisify } from 'node:util'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { prepareWindowsSignatureCacheDirectory, resolveWindowsSignatureCacheDirectory } from '../scripts/windows-signature-cache-directory.mjs'
 
 it.skipIf(process.platform !== 'win32')('resolves an account cache independently of checkout and LocalAppData virtualization', () => {
@@ -14,6 +14,15 @@ it.skipIf(process.platform !== 'win32')('resolves an account cache independently
 it('accepts an explicit local cache directory', () => {
   expect(resolveWindowsSignatureCacheDirectory({ DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_DIR: 'D:/private-cache' }))
     .toBe('D:\\private-cache')
+})
+
+it.skipIf(process.platform !== 'win32')('prepares storage when the inherited process execution policy is Restricted', async (t) => {
+  const root = await mkdtemp(join(import.meta.dirname, 'directory-test-'))
+  t.onTestFinished(() => rm(root, { recursive: true, force: true }))
+  vi.stubEnv('PSExecutionPolicyPreference', 'Restricted')
+  t.onTestFinished(() => { vi.unstubAllEnvs() })
+  await prepareWindowsSignatureCacheDirectory(join(root, 'private'))
+  expect(process.env.PSExecutionPolicyPreference).toBe('Restricted')
 })
 
 it.each(['', 'cache', 'C:cache', '\\cache', '\\\\server\\share', '\\\\?\\C:\\cache', 'C:\\cache:stream'])

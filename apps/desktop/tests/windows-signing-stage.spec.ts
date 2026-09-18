@@ -94,6 +94,15 @@ test('a failed stage releases its handle before another process enters', async (
   expect(await next.closed).toEqual({ code: 0, signal: null })
 })
 
+test('accepts a state directory whose spelling differs only in Windows path case', async (t) => {
+  const f = await fixture(t)
+  let entered = false
+  await withWindowsSigningStage({ stateDirectory: join(f.root, 'state').toUpperCase(), stage: 'case', record: () => {} }, async () => {
+    entered = true
+  })
+  expect(entered).toBe(true)
+})
+
 test('a cancelled waiter never enters and does not release another process lock', async (t) => {
   const f = await fixture(t)
   const holder = f.child(f.first)

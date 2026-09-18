@@ -18,7 +18,7 @@ export interface WindowsSignatureCacheOptions {
  */
 export function signatureCacheIdentity(files: readonly string[]): Promise<string>
 
-/** Counters include failed attempts; restore time includes trust verification and staging cleanup. */
+/** Counters include failed attempts; verification covers both restored and newly signed files, while restore time includes its verification and staging cleanup. */
 export interface WindowsSignatureCacheSummary {
   root: string
   identity: string

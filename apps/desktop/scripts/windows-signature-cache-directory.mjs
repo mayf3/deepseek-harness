@@ -28,7 +28,7 @@ export function resolveWindowsSignatureCacheDirectory(environment) {
  */
 export async function prepareWindowsSignatureCacheDirectory(path, existingSource = false) {
   if (process.platform !== 'win32') throw new Error('Windows signature cache directory validation requires Windows')
-  await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-File',
+  await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
     join(import.meta.dirname, 'windows-signature-cache-directory.ps1'), '-CachePath', resolve(path),
     ...(existingSource ? ['-ExistingSource'] : []),
   ], { env: scrubWindowsSigningEnvironment(process.env), windowsHide: true, timeout: 60_000 })

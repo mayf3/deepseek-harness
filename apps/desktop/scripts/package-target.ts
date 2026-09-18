@@ -356,10 +356,12 @@ export async function packageTarget(
   }
   if (signPrimaryRuntime) {
     if (run === undefined) throw new Error('desktop package: signed Windows packaging requires a supervised run')
-    await prepareWindowsSignatureCacheDirectory(resolveWindowsSignatureCacheDirectory(environment))
-    await signedStage('preflight', () => run.run('preflight:windows-signing', process.execPath,
-      ['--import', 'tsx/esm', join(APP_ROOT, 'scripts/windows-signing-preflight.ts')],
-      { cwd: APP_ROOT, env: electronBuilderEnv, timeoutMs: 60_000 }))
+    await signedStage('preflight', async () => {
+      await prepareWindowsSignatureCacheDirectory(resolveWindowsSignatureCacheDirectory(environment))
+      await run.run('preflight:windows-signing', process.execPath,
+        ['--import', 'tsx/esm', join(APP_ROOT, 'scripts/windows-signing-preflight.ts')],
+        { cwd: APP_ROOT, env: electronBuilderEnv, timeoutMs: 60_000 })
+    })
   }
   await execute(['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
   await execute(['run', 'release:pack', '--family', 'dsh', '--out', buildPaths.packedDsh], buildEnv, REPOSITORY_ROOT)

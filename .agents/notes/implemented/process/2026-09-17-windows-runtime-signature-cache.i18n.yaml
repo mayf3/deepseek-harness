@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-17-windows-runtime-signature-cache.md
-2026-09-17-windows-runtime-signature-cache.md: 3182f46680fd862e123a54a7703b0b0dcad8fd79
-2026-09-17-windows-runtime-signature-cache.zh.md: 72b3599b28244d390a00ac5aa1eea0f5f8834c86
+2026-09-17-windows-runtime-signature-cache.md: 911e0277199bac55165fbc4adebb22e2599043b9
+2026-09-17-windows-runtime-signature-cache.zh.md: bb8cdd6bdca445c94e8e77cddb68008d7b27f7ad

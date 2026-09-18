@@ -2,6 +2,7 @@ import { writeFileSync } from 'node:fs'
 import { afterEach, expect, it, vi } from 'vitest'
 import { packageTarget, parseDesktopPackageInvocation } from '../scripts/package-target.ts'
 import { withWindowsSigningStage } from '../scripts/windows-signing-stage.mjs'
+import { prepareWindowsSignatureCacheDirectory } from '../scripts/windows-signature-cache-directory.mjs'
 
 vi.mock('../scripts/windows-signing-stage.mjs', () => ({
   withWindowsSigningStage: vi.fn(async (_options: object, operation: () => Promise<void>) => operation()),
@@ -50,6 +51,16 @@ it('requires one signing preflight before building, then records only the comple
     }
   }
   expect(writeFileSync).toHaveBeenCalledOnce()
+})
+
+it('initializes shared storage only after acquiring the preflight stage lock', async () => {
+  const { run } = supervisor()
+  vi.mocked(withWindowsSigningStage).mockImplementationOnce(async (_options, operation) => {
+    expect(prepareWindowsSignatureCacheDirectory).not.toHaveBeenCalled()
+    await operation()
+    expect(prepareWindowsSignatureCacheDirectory).toHaveBeenCalledOnce()
+  })
+  await packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), environment, run)
 })
 
 it.each(['preflight:windows-signing', 'run build:official', 'run sign:primary-runtime', 'run prepare:dsh --defer-runtime-smoke', 'run sign:primary-runtime --dsh',

@@ -38,7 +38,7 @@ The [primary-runtime decision](../feature/2026-09-14-desktop-primary-runtime.md)
 
 Repeated builds with unchanged native inputs avoid hardware calls for cached files while retaining preflight and final artifact signing. Changed content or signing policy misses the cache. Corrupt, incomplete, untrusted or incorrectly timestamped entries fail without replacing the target or retrying hardware. Concurrent publication and interrupted processes cannot expose incomplete entries or damage another build's files.
 
-Six complete signed Windows x64 builds cover an empty signature cache, repeated inputs, application changes and one controlled native-file content change. Warm builds reduce hardware calls from 379 to 17 and elapsed time from 37:38 to 12:36–12:42 on the measured host, while final runtime checks pass. Download caches remain populated; the controlled file change tests invalidation, not a dependency-version upgrade. Installer execution and update qualification remain separate.
+Complete signed Windows x64 builds on one host measure an empty shared cache and reuse from a separate fresh worktree: hardware calls fall from 379 to 17, elapsed time from 37:03 to 13:45, and all 362 runtime entries hit. Cache restoration takes 132 seconds, including 130 seconds of current trust verification. Both builds pass final runtime smoke and signed-artifact checks. Downloads are prepared before timing; each scenario is one complete run. A separate controlled native-file change produces miss/hit/miss with two hardware calls; it tests invalidation, not a dependency-version upgrade. Installer execution and update qualification remain separate.
 
 ## Risks
 
