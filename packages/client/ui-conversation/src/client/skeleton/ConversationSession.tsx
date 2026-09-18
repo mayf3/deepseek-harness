@@ -6,7 +6,6 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   ConversationSessionHeaderSlotProps, ConversationSessionSlotProps,
 } from '../contract/slots.ts'
-import { conversationPhase } from '../contract/snapshot.ts'
 import { resolveActiveView } from '../view-selection.ts'
 import { DefaultConversationViews } from './DefaultConversationViews.tsx'
 import css from './ConversationRoot.module.css'
@@ -57,16 +56,13 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
  * @returns Session navigation controls, with title and tabs after conversation starts.
  */
 export function ConversationSessionHeader({
-  sessionId, useSession, useSessions, useConversation, useConversationViews, useStore,
+  sessionId, hideChrome, useSessions, useConversationViews, useStore,
   renderSlot, open, selectView, t,
 }: ConversationSessionHeaderProps) {
   const tabs = useConversationViews(value => value)
   const selectedId = useStore(s => s.view)
   const active = resolveActiveView(tabs, selectedId)
   const ancestry = useSessions(s => deriveAncestry(s, sessionId), equalBreadcrumbs)
-  const session = useSession(s => s)
-  const conversation = useConversation(s => s)
-  const hideChrome = session.blank && conversationPhase(session, conversation) === 'blank'
   return (
     <>
       <div className={css.titleRow}>

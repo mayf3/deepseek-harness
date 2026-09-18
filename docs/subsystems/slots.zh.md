@@ -145,7 +145,7 @@ root
 │     │     ├─ conversation.message.images
 │     │     └─ conversation.trajectory.images
 │     ├─ conversation.header
-│     │  ├─ conversation.header.leading (root)
+│     │  ├─ conversation.header.leading
 │     │  └─ conversation.session.header
 │     │     ├─ conversation.session.header.lineage
 │     │     ├─ conversation.session.header.actions

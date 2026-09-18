@@ -312,7 +312,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     },
   }, ConversationHeader)
 
-  const registerConversationHeader = () => slots.register({
+  const registerSessionHeader = () => slots.register({
     name: 'conversation.session.header',
     locale: NS,
     children: {
@@ -428,7 +428,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     yield registerConversationContent()
     yield registerConversationSession()
     yield registerHeader()
-    yield registerConversationHeader()
+    yield registerSessionHeader()
     yield registerComposerBar()
   })
 

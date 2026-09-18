@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
+import type { GlobalStandardProps, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createContext, useContext, type ReactNode } from 'react'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
@@ -31,7 +31,7 @@ import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import type {
   ComposerBarOwnerProps, ConversationContentInputProps, ConversationContentProps,
-  ConversationHeaderLineageOwnerProps, ConversationSessionSlotProps, ConversationSlotProps,
+  ConversationHeaderLineageOwnerProps, ConversationSessionHeaderSlotProps, ConversationSessionSlotProps, ConversationSlotProps,
   ConversationViewsProps,
 } from '../src/client/contract/slots.ts'
 import type { ViewTab } from '../src/client/contract/views.ts'
@@ -123,6 +123,8 @@ function mount(
   workspaceRows: WorkspaceView[] = [{ ...workspace('one'), sessionIds: [SID] }],
   retargetWorkspace = vi.fn(async (_workspaceId: WorkspaceId) => {}),
   options: {
+    /** Explicit undefined exercises the shell before a Session is selected. */
+    sessionId?: SessionId | undefined
     /** When true, mimic overlay:true chain siblings (hidden fallback + takeover). */
     overlayTakeover?: boolean
     /** The session list summary's `blank` flag — independent of the snapshot's. */
@@ -139,6 +141,7 @@ function mount(
     viewTabs?: ViewTab[]
   } = {},
 ) {
+  const sessionId = 'sessionId' in options ? options.sessionId : SID
   const root = sid('root')
   const parent = sid('parent')
   const rootRow = { id: root, displayTitle: 'Root', running: false, retainedBy: {}, blank: false, updatedAt: 1 }
@@ -199,11 +202,12 @@ function mount(
       return opts?.fallback ?? null
     }
     if (key === 'conversation.header') {
-      return <ConversationHeader {...props} __renders={undefined} renderSlot={renderSlot as never} />
+      return <ConversationHeader {...runtimeProps} renderSlot={renderSlot as never} />
     }
     if (key === 'conversation.session.header') {
       return (
         <ConversationSessionHeader
+          hideChrome={(owner as Pick<ConversationSessionHeaderSlotProps, 'hideChrome'>).hideChrome}
           sessionId={SID}
           SessionProvider={({ children }) => children}
           useSession={useSession}
@@ -344,16 +348,16 @@ function mount(
     )) as ConversationContentProps['useFactorySlot']
     return (
       <FactoryViewsTestContext.Provider value={common}>
-        <ConversationContent {...({ ...common, ...input, useFactorySlot })} />
+        <ConversationContent {...({ ...common, ...runtimeProps, ...input, useFactorySlot })} />
       </FactoryViewsTestContext.Provider>
     )
   }) as ConversationSlotProps['renderFactorySlot']
-  const props: ConversationSlotProps = {
+  const runtimeProps: PropsRuntime<'main.conversation'> & Pick<ConversationSlotProps, 'SessionProvider'> = {
     usePanelInfo: selector => selector({ activePanelId: null }),
-    sessionId: SID,
+    sessionId,
     SessionProvider,
-    useSession,
-    useConversation,
+    useSession: sessionId === undefined ? () => undefined : useSession,
+    useConversation: sessionId === undefined ? () => undefined : useConversation,
     useSessions: bindSnapshotSelector(sessions),
     useSessionStatus,
     useSessionRetainInfo: () => undefined,
@@ -362,12 +366,11 @@ function mount(
     useProjection: (() => undefined),
     useInput,
     inputActions,
-    renderSlot,
-    renderFactorySlot,
   }
+  const props: ConversationSlotProps = { ...runtimeProps, renderSlot, renderFactorySlot }
   const view = render(<ConversationMainPanel {...props} />)
   return {
-    view, props, store, wiring, sink, retargetWorkspace, session, conversation, slotCalls, lineageOwners, seatOwners, open,
+    view, store, wiring, sink, retargetWorkspace, session, conversation, slotCalls, lineageOwners, seatOwners, open,
     pickerOwner: () => pickerOwner,
     rerender: () => { view.rerender(<ConversationMainPanel {...props} />) },
   }
@@ -393,18 +396,12 @@ describe('Hero chrome', () => {
 
 describe('ConversationRoot resident composer', () => {
   it('keeps global header navigation without selecting a Session', () => {
-    const b = mount(sessionSnapshotOf())
-    b.slotCalls.length = 0
-    b.props.sessionId = undefined
-    b.props.useSession = () => undefined
-    b.props.useConversation = () => undefined
-    b.view.unmount()
-    const view = render(<ConversationMainPanel {...b.props} />)
-    expect(view.container.querySelector('header')).not.toBeNull()
-    expect(view.getByTestId('view-conversation.header.leading')).toBeTruthy()
+    const b = mount(sessionSnapshotOf(), [], undefined, { sessionId: undefined })
+    expect(b.view.container.querySelector('header')).not.toBeNull()
+    expect(b.view.getByTestId('view-conversation.header.leading')).toBeTruthy()
     expect(b.slotCalls).not.toContain('conversation.session.header')
-    expect(view.queryByRole('tablist')).toBeNull()
-    expect(view.queryByTestId('view-conversation.session.header.corner')).toBeNull()
+    expect(b.view.queryByRole('tablist')).toBeNull()
+    expect(b.view.queryByTestId('view-conversation.session.header.corner')).toBeNull()
   })
 
   it('does not redispatch composer child slots for an unrelated Session publication', () => {

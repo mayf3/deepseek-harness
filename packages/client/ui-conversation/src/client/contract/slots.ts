@@ -134,7 +134,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Resident navigation container, including when no Session is selected. */
     'conversation.header': { kind: 'single'; scope: 'session-maybe' }
     /** Strict per-Session title, actions, and View navigation. */
-    'conversation.session.header': { kind: 'single'; scope: 'session' }
+    'conversation.session.header': {
+      kind: 'single'
+      scope: 'session'
+      owner: {
+        /** Parent-owned visibility shared with the header container styling. */
+        hideChrome: boolean
+      }
+    }
     /** Optional replacement for one Session breadcrumb title. */
     'conversation.session.header.lineage': {
       kind: 'single'
