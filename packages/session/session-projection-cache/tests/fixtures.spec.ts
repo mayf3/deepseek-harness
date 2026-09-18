@@ -9,7 +9,8 @@
  * through the real storage stack without becoming a fold shortcut for the
  * current Session format, then accept a current checkpoint rewrite. A record
  * that fails schema validation is backed up and skipped instead of failing the
- * boot.
+ * boot. The V7 opaque-state fixture was captured through the real storage
+ * domain before replacing the checkpoint state's cloning JSON validator.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -31,7 +32,7 @@ import {
   apply as storageDomainApply, Config as storageDomainConfig, inject as storageDomainInject, name as storageDomainName,
 } from '@deepseek-ai/dsh-storage-domain'
 import SessionProjectionCache from '../src/index.ts'
-import { projectionCacheDomainSpec } from '../src/spec.ts'
+import { checkpointRow, projectionCacheDomainSpec } from '../src/spec.ts'
 
 // Declarations must match the shipped title unit's exactly (the repo-wide
 // compile face sees both).
@@ -95,13 +96,18 @@ function headerFor(id: SessionId, identity: FixtureDoc['record']['identity']): S
 const contexts: Context[] = []
 const roots: string[] = []
 
-async function harness(root: string) {
-  roots.push(root)
+async function storageHarness(root: string) {
+  if (!roots.includes(root)) roots.push(root)
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(Storage)
   await ctx.plugin({ name: storageJsonName, inject: storageJsonInject, apply: storageJsonApply, Config: storageJsonConfig }, { root })
   await ctx.plugin({ name: storageDomainName, inject: storageDomainInject, apply: storageDomainApply, Config: storageDomainConfig }, { backend: 'json' })
+  return ctx
+}
+
+async function harness(root: string) {
+  const ctx = await storageHarness(root)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
   ctx.sessionProjections.register(titleUnit)
@@ -145,6 +151,48 @@ afterEach(async () => {
 })
 
 describe('archived version recovery', () => {
+  it('preserves every opaque key through an archived V7 read, current rewrite, and StorageDomain reopen', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-opaque-'))
+    const id = SessionId('opaque-fixture')
+    const archived = await placeDoc(root, id, 'v7-opaque-session-doc.json')
+    expect(archived.version).toBe(7)
+    const ctx = await storageHarness(root)
+    const domain = await ctx.storageDomain.open(projectionCacheDomainSpec)
+    const record = domain.table('sessions').get(id)!
+    expect(JSON.stringify(record.rows)).toBe(JSON.stringify(archived.record.rows))
+    const rewritten = { ...record, identity: { ...record.identity, formatVersion: SESSION_FORMAT_VERSION } }
+    await domain.table('sessions').put(id, rewritten)
+    await ctx.fiber.dispose()
+    contexts.splice(contexts.indexOf(ctx), 1)
+
+    const reopenedCtx = await storageHarness(root)
+    const reopened = await reopenedCtx.storageDomain.open(projectionCacheDomainSpec)
+    const restored = reopened.table('sessions').get(id)!
+    expect(JSON.stringify(restored)).toBe(JSON.stringify(rewritten))
+    expect(JSON.stringify(restored.rows)).toBe(JSON.stringify(archived.record.rows))
+    const onDisk = JSON.parse(await readFile(join(root, projectionCacheDomainSpec.name, 'sessions', `${id}.json`), 'utf8')) as FixtureDoc
+    expect(onDisk.version).toBe(7)
+    expect(JSON.stringify(onDisk.record.rows)).toBe(JSON.stringify(archived.record.rows))
+  })
+
+  it.each([
+    ['undefined', undefined], ['function', () => {}], ['symbol', Symbol('opaque')], ['bigint', 1n],
+    ['nonfinite number', Number.NaN], ['infinity', Number.POSITIVE_INFINITY],
+    ['class instance', new Date(0)], ['map', new Map([['saved', true]])],
+  ])('rejects non-JSON checkpoint state: %s', (_name, val) => {
+    expect(checkpointRow.safeParse({ ver: 1, seq: 0, val }).success).toBe(false)
+  })
+
+  it('rejects cycles and JSON-lossy nested values without changing valid state objects', () => {
+    const cyclic: { self?: unknown } = {}
+    cyclic.self = cyclic
+    for (const val of [cyclic, { nested: { value: undefined } }, [undefined], [, 'hole'], { negativeZero: -0 }]) {
+      expect(() => checkpointRow.parse({ ver: 1, seq: 0, val })).toThrow()
+    }
+    const val = JSON.parse('{"__proto__":{"saved":true},"constructor":{"saved":false},"nested":{"__proto__":[null,true,4,"text"]}}') as Record<string, unknown>
+    expect(checkpointRow.parse({ ver: 1, seq: 0, val }).val).toBe(val)
+  })
+
   it('recovers the v3 whole-unit archive through the legacy bootstrap', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-fx-'))
     await cp(join(FIXTURES, 'v3-single-unit.json'), join(root, `${projectionCacheDomainSpec.name}.json`))
