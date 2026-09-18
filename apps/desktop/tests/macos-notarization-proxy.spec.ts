@@ -94,9 +94,11 @@ it('excludes both operations across processes and releases ownership after force
     control.failSet = 5
     await expect(withMacOSNotarizationProxy('http://localhost:8888', async () => {}, lock, ops)).rejects.toThrow('restoration failed')
     const saved = readFileSync(join(lock, 'original.json'), 'utf8')
+    // Coverage builds the addon, but does not emit the package's JavaScript entry.
+    const flockSource = new URL('../../../native/system/packages/entry/src/flock.ts', import.meta.url).href
     const child = spawn(process.execPath, ['--input-type=module', '-e', `
       import { openSync } from 'node:fs';
-      import { tryLockExclusive } from ${JSON.stringify(import.meta.resolve('@deepseek-ai/node-addon-system/flock'))};
+      import { tryLockExclusive } from ${JSON.stringify(flockSource)};
       const fd = openSync(process.argv[1], 'a', 0o600);
       await tryLockExclusive(fd);
       process.send('locked');
@@ -104,10 +106,12 @@ it('excludes both operations across processes and releases ownership after force
     `, `${lock}.flock`], { stdio: ['pipe', 'ignore', 'pipe', 'ipc'], env: { PATH: process.env.PATH } })
     const exited = once(child, 'exit')
     const closed = once(child, 'close')
+    let stderr = ''
+    child.stderr!.setEncoding('utf8').on('data', (chunk: string) => { stderr = (stderr + chunk).slice(-8192) })
     try {
       await Promise.race([
         once(child, 'message').then(([message]) => { expect(message).toBe('locked') }),
-        exited.then(([code, signal]) => { throw new Error(`lock holder exited before readiness: ${code}/${signal}`) }),
+        closed.then(([code, signal]) => { throw new Error(`lock holder exited before readiness: ${code}/${signal}\n${stderr}`) }),
       ])
       ops.command.mockClear()
       ops.ownerAlive.mockClear()
