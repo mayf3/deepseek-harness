@@ -43,6 +43,10 @@ describe.skipIf(MODE === 'record')('web e2e: cancelled Bash row disclosure', () 
     const sessionRow = page.locator('[role="treeitem"]').nth(1)
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
+    await page.locator('[data-step-process] > button').first().waitFor()
+    for (const toggle of await page.locator('[data-step-process] > button[aria-expanded="false"]').all()) {
+      await toggle.click()
+    }
     await page.locator('[data-sample="bash"]').nth(1).waitFor({ timeout: 15_000 })
   }, 120_000)
 

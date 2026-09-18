@@ -302,7 +302,7 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
-  /** The scaffold enables developer tools unless false preserves the shipped default. */
+  /** Explicit developer-tool preference; omitted keeps the saved value or product default. */
   developerTools?: boolean
   /** Profile resolver backend used by this test Host; defaults to runtime coverage. */
   profileResolutionMode?: Extract<ProfileResolutionMode, 'dual' | 'runtime'>
@@ -824,8 +824,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     }
     await ctx.loader.await()
     await auditStartupEntries(ctx, 'web e2e scaffold')
-    if (options.developerTools !== false) {
-      await ctx.settings.update('ui-developer-tools', { enabled: true })
+    if (options.developerTools !== undefined) {
+      await ctx.settings.update('ui-developer-tools', { enabled: options.developerTools })
     }
     if (options.welcomeNoticePending !== true) {
       await ctx.settings.mutate(WELCOME_NOTICE_SETTINGS_NAMESPACE, [{
@@ -1621,7 +1621,8 @@ export async function captureExpandedTurnProcessAria(
   const opened: number[] = []
   for (let index = 0; index < count; index++) {
     const control = controls.nth(index)
-    if (!await control.isVisible() || await control.getAttribute('aria-expanded') === 'true') continue
+    if (!await control.isVisible() || await control.isDisabled()
+      || await control.getAttribute('aria-expanded') === 'true') continue
     await control.click()
     opened.push(index)
   }

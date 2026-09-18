@@ -37,7 +37,7 @@ describe('ReasoningRow', () => {
     expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('follows the latest streaming line, then restores the settled first line', () => {
+  it('holds the first line of the current streaming paragraph, then hides settled reasoning in Compact mode', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
@@ -48,7 +48,7 @@ describe('ReasoningRow', () => {
     )
     expect(view.getByText('运行中')).toBeTruthy()
     expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('false')
-    expect(view.getByText('Newest reasoning tokens').parentElement?.getAttribute('data-follow-end'))
+    expect(view.getByText('Inspect the session').parentElement?.getAttribute('data-streaming'))
       .toBe('true')
 
     view.rerender(
@@ -59,24 +59,63 @@ describe('ReasoningRow', () => {
         renderMessageImages={renderMessageImages}
       />,
     )
-    expect(view.getByText('Newest reasoning tokens keep arriving').parentElement
-      ?.getAttribute('data-follow-end')).toBe('true')
+    expect(view.getByText('Inspect the session')).toBeTruthy()
+    expect(view.queryByText('Newest reasoning tokens keep arriving')).toBeNull()
 
     view.rerender(
       <AssistantMarkdown
         t={t}
-        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving\n' }]}
+        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving\n \nCompare the persisted events' }]}
+        streaming
+        renderMessageImages={renderMessageImages}
+      />,
+    )
+    expect(view.getByText('Inspect the session')).toBeTruthy()
+    expect(view.queryByText('Compare the persisted events')).toBeNull()
+
+    view.rerender(
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving\n \nCompare the persisted events\nwithout replacing the summary\n' }]}
+        streaming
+        renderMessageImages={renderMessageImages}
+      />,
+    )
+    expect(view.getByText('Compare the persisted events')).toBeTruthy()
+    expect(view.queryByText('without replacing the summary')).toBeNull()
+
+    view.rerender(
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving\n \nCompare the persisted events\nwithout replacing the summary\n' }]}
         streaming={false}
         renderMessageImages={renderMessageImages}
       />,
     )
-    const settledSummary = view.getByText('Inspect the session')
-    expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('false')
+    expect(view.getByRole('button').textContent).toBe('思考')
+    expect(view.queryByText('Inspect the session')).toBeNull()
     expect(view.queryByText('运行中')).toBeNull()
-    expect(settledSummary.parentElement?.hasAttribute('data-follow-end')).toBe(false)
+
   })
 
-  it('expands from either Think or the reasoning summary', () => {
+  it.each(['\n', '\r\n'])('holds completed paragraph previews across streamed %j line endings', (newline) => {
+    const renderText = (text: string) => (
+      <AssistantMarkdown t={t} blocks={[{ kind: 'reasoning', text }]} streaming renderMessageImages={renderMessageImages} />
+    )
+    const view = render(renderText(`First paragraph${newline}${newline}Pending`))
+    expect(view.getByText('First paragraph')).toBeTruthy()
+    expect(view.queryByText('Pending')).toBeNull()
+
+    view.rerender(renderText(`First paragraph${newline}${newline}Second paragraph${newline} ${newline}Third`))
+    expect(view.getByText('Second paragraph')).toBeTruthy()
+    expect(view.queryByText('Third')).toBeNull()
+
+    view.rerender(renderText(`First paragraph${newline}${newline}Second paragraph${newline} ${newline}Third${newline}More tokens`))
+    expect(view.getByText('Third')).toBeTruthy()
+    expect(view.queryByText('More tokens')).toBeNull()
+  })
+
+  it('expands completed reasoning from the Think title', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
@@ -87,7 +126,7 @@ describe('ReasoningRow', () => {
     )
     const row = view.getByRole('button')
 
-    fireEvent.click(view.getByText('Inspect the session'))
+    fireEvent.click(view.getByText('思考'))
     expect(row.getAttribute('aria-expanded')).toBe('true')
     expect(view.getByText(/Check persistence/)).toBeTruthy()
 
@@ -103,7 +142,7 @@ describe('ReasoningRow', () => {
     },
     {
       label: 'streaming',
-      text: 'Inspect the session\n**Comparing checkout and merge bases**',
+      text: 'Inspect the session\n\n**Comparing checkout and merge bases**\nKeep **reviewing**',
       streaming: true,
     },
   ])('strips double-asterisk markers from the $label summary and renders body emphasis', ({ text, streaming }) => {
@@ -116,7 +155,8 @@ describe('ReasoningRow', () => {
       />,
     )
 
-    expect(view.getByText('Comparing checkout and merge bases')).toBeTruthy()
+    if (streaming) expect(view.getByText('Comparing checkout and merge bases')).toBeTruthy()
+    else expect(view.getByRole('button').textContent).toBe('思考')
     expect(view.queryByText('**Comparing checkout and merge bases**')).toBeNull()
 
     fireEvent.click(view.getByText('思考'))
@@ -124,7 +164,7 @@ describe('ReasoningRow', () => {
     expect(view.container.querySelector('[class*="thinkBody"]')?.textContent).not.toContain('**')
   })
 
-  it('keeps heading syntax in the collapsed summary and renders compact headings when expanded', () => {
+  it('renders compact headings only while expanded', () => {
     const text = Array.from({ length: 6 }, (_, index) => `${'#'.repeat(index + 1)} Section ${index + 1}`)
       .join('\n\n') + '\n\nReasoning body.'
     const view = render(
@@ -135,18 +175,17 @@ describe('ReasoningRow', () => {
         renderMessageImages={renderMessageImages}
       />,
     )
-    const summary = view.getByText('# Section 1')
-    expect(summary.tagName).toBe('SPAN')
+    expect(view.getByRole('button').textContent).toBe('思考')
     expect(view.queryByRole('heading')).toBeNull()
 
-    fireEvent.click(summary)
+    fireEvent.click(view.getByText('思考'))
     const compact = view.container.querySelector('[data-markdown-variant="compact"]')
     expect(compact).not.toBeNull()
     expect(compact?.querySelectorAll('h1, h2, h3, h4, h5, h6')).toHaveLength(6)
     expect(compact?.querySelector('p')?.textContent).toBe('Reasoning body.')
 
     fireEvent.click(view.getByText('思考'))
-    expect(view.getByText('# Section 1').tagName).toBe('SPAN')
+    expect(view.queryByText('# Section 1')).toBeNull()
     expect(view.queryByRole('heading')).toBeNull()
   })
 

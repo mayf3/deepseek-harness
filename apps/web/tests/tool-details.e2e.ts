@@ -69,6 +69,7 @@ describe.skipIf(MODE === 'record')('web e2e: compact Tool details', () => {
       captureStableAria(page, `[data-chat-call-id="details-call-${index + 1}"] [data-tool]`, scaffold.workspaceCwd)))
     const snapshot = snapshots.join('\n')
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
+    await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
     await page.setViewportSize({ width: 360, height: 800 })
     const card = page.locator('[data-tool="schedule_create"]')
     expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)

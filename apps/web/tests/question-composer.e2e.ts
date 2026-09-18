@@ -7,6 +7,7 @@
 // chunks, the composer wait is real, and the answer click is the test's own
 // gesture (the ONE place a drive step legitimately reacts to model content:
 // the turn cannot complete without it, in record and replay alike).
+import { expandOwningTurnProcess } from './support.ts'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -299,6 +300,7 @@ describe('web e2e: resident question composer round trip', () => {
     // Keep the ask_user_question card's readable answer in the expanded golden
     // even though Compact mode hides the process by default.
     await expandTurnProcesses(page)
+    await expandOwningTurnProcess(page, page.locator('[data-tool="ask_user_question"]').first())
     const answeredRow = page.getByRole('button', { name: 'Ask question 1/1 answered', exact: true })
     await answeredRow.click()
     await page.getByText('Which color do you prefer?', { exact: true }).waitFor({ timeout: 10_000 })
@@ -389,6 +391,7 @@ describe.skipIf(MODE === 'record')('web e2e: cancelled question transcript', () 
   it('expands to the cancellation verdict and original questions', async () => {
     onTestFailed(() => saveFailureShot(cancelledPage, 'web-e2e-question-cancelled-row'))
     const row = cancelledPage.getByRole('button', { name: 'Ask question cancelled', exact: true })
+    await expandOwningTurnProcess(cancelledPage, cancelledPage.locator('[data-tool="ask_user_question"]'))
     await row.waitFor({ timeout: 15_000 })
     await row.click()
 

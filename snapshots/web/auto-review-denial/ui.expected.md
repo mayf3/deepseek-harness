@@ -10,6 +10,9 @@
     - tab "Trajectory"
 - text: Inspect the protected operation, but do not run it unless authorized. {{clock}}
 - button "Copy"
+- status: Worked
+- button "Took {{duration}}" [expanded]
+- button "Called tools, ran code, ran commands" [expanded]
 - text: Failed
 - button "Tool call Rejected by Auto review"
 - button "Code Catch an Auto-denied inner call"
@@ -36,6 +39,9 @@
     - tab "Trajectory"
 - text: Inspect the protected operation, but do not run it unless authorized. {{clock}}
 - button "Copy"
+- status: Worked
+- button "Took {{duration}}" [expanded]
+- button "Called tools, ran code, ran commands" [expanded]
 - text: Failed
 - button "Tool call Rejected by Auto review" [expanded]
 - text: "OUT Tool was not executed. Reason: raw reason"

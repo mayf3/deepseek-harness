@@ -16,9 +16,9 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
 }: TurnTailNodeViewProps) {
   const detailed = usePerformanceUsage(mode => mode) === 'detailed'
   const data = node.data
-  const hasLaterChatNode = useChat(snapshot =>
-    snapshot.locations.getTurn(data.turn).at(-1) !== node.key)
-  const isLatestTurn = useChat(snapshot => snapshot.timeline.turnOrder.at(-1) === data.turn)
+  const hasLaterChatNode = useChat(snapshot => snapshot.stepProcesses.footer(data.turn)?.hasLaterChatNode ?? false)
+  const endsWithResponse = useChat(snapshot => snapshot.timeline.turnOrder.at(-1) === data.turn
+    && (snapshot.stepProcesses.footer(data.turn)?.endsWithResponse ?? false))
   const turn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
     : undefined
@@ -37,7 +37,7 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
     <div
       className={css.root}
       data-turn-tail={data.turn}
-      data-actions-reveal={isLatestTurn ? 'always' : 'hover'}
+      data-actions-reveal={endsWithResponse ? 'always' : 'hover'}
     >
       {tail}
       <MessageIconActions

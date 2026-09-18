@@ -76,7 +76,7 @@ describe('Tool presentation tails', () => {
     }
     const view = render(<BashRow {...bashProps(settled)} />)
     const row = view.container.querySelector('[data-sample="bash"]')!
-    expect(row.textContent).toContain('Bash')
+    expect(row.textContent).toContain('运行命令')
     expect(row.textContent).toContain('Build')
     expect(row.getAttribute('data-clickable')).toBeNull()
   })
@@ -99,7 +99,8 @@ describe('Tool presentation tails', () => {
 
     const runningView = render(<BashRow {...bashProps(running)} />)
     expect(runningView.container.querySelector('[data-state="running"]')).not.toBeNull()
-    expect(runningView.getByText('Bash')).toBeTruthy()
+    expect(runningView.container.querySelectorAll('[data-text-shimmer]')).toHaveLength(2)
+    expect(runningView.getByText('运行命令')).toBeTruthy()
     expect(runningView.getByText('List')).toBeTruthy()
     runningView.unmount()
 
@@ -107,14 +108,15 @@ describe('Tool presentation tails', () => {
     expect(errorView.container.querySelector('[data-sample="bash"]')).not.toBeNull()
     expect(errorView.container.querySelector('[data-state="error"]')).not.toBeNull()
     expect(errorView.container.querySelector('[data-state="error"] svg')).not.toBeNull()
-    expect(errorView.getByText('Bash')).toBeTruthy()
+    expect(errorView.container.querySelector('[data-text-shimmer]')).toBeNull()
+    expect(errorView.getByText('运行命令')).toBeTruthy()
+    expect(errorView.getByText('失败')).toBeTruthy()
     expect(errorView.container.querySelector('[class*="_errorSummary_"]')).not.toBeNull()
     errorView.unmount()
 
     const stoppedView = render(<BashRow {...bashProps(stoppedResult)} />)
     expect(stoppedView.container.querySelector('[data-state="stopped"]')).not.toBeNull()
     expect(stoppedView.container.querySelector('[data-state="stopped"] svg')).not.toBeNull()
-    const stoppedSummary = stoppedView.getByText('已停止')
-    expect(stoppedSummary.className).toContain('stoppedSummary')
+    expect(stoppedView.container.querySelector('[class*="_stoppedSummary_"]')?.textContent).toBe('已停止')
   })
 })

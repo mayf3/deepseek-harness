@@ -1,0 +1,5 @@
+- button "Copy"
+- button "Good response"
+- button "Bad response"
+- button "Branch into a new conversation" [disabled]
+- text: Available only on the last message of a completed turn HH:mm

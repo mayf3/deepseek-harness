@@ -7,10 +7,10 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - text: Use the ask_user_question tool to ask me exactly one question with id "checkpoint", question "Ready to continue?", header "Checkpoint", and options labeled "Yes" and "No". After I answer, reply with one short sentence acknowledging my answer and stop. {{clock}}
 - button "Copy"
-- button "1 tool call"
+- status: Worked
+- button "Took {{duration}}"
 - text: "Interjection: include the word BANANA in your final reply. {{clock}}"
 - button "Copy"
 - text: "Interjection: include the word ORANGE in your final reply. {{clock}}"

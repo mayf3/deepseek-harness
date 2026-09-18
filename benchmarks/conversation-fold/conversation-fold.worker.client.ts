@@ -18,7 +18,7 @@ import { chatViewDefinition } from '../../packages/client/ui-chat/src/client/con
 import { commandDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/command.ts'
 import { compactionDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/compaction.ts'
 import { unknownFallbackDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/fallback.ts'
-import { nextStepInboxDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/inbox.ts'
+import { nextStepInboxDefinition, nextTurnInboxDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/inbox.ts'
 import { messageDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/message.ts'
 import { requestPromptDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/request-prompt.ts'
 import { retryDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/retry.ts'
@@ -45,6 +45,7 @@ export interface ConversationFoldWorkerReport {
 class BenchEventDefinitions {
   readonly definitions: readonly ConversationNodeDefinition[] = [
     nextStepInboxDefinition,
+    nextTurnInboxDefinition,
     messageDefinition,
     requestPromptDefinition(inspectRequestPrompt),
     assistantDefinition,

@@ -20,7 +20,7 @@ export interface TurnProcessSpec {
 const TURN_PROCESS_INDEPENDENT_KIND_LIST = [
   'system-prompt',
   'user',
-  'steering',
+  'steering', 'turn-trigger',
   'turn-process',
   'turn-error',
   'turn-max-tokens',
@@ -58,4 +58,16 @@ export function sameTurnProcessSpec(left: TurnProcessSpec, right: TurnProcessSpe
  */
 export function isSubagentDelegationTool(name: string): boolean {
   return name === 'subagent' || name.startsWith('subagent_')
+}
+
+/**
+ * Whether a Turn must keep its process visible.
+ * @param node - node carrying the owning Turn location.
+ * @returns true during execution and after cancellation or failure.
+ */
+export function turnProcessAlwaysOpen(node: ChatNode | undefined): boolean {
+  const location = node?.location
+  if (location?.kind !== 'turn' && location?.kind !== 'step') return false
+  const reason = location.turn.end?.data.reason.kind
+  return location.turn.status === 'open' || reason === 'aborted' || reason === 'error'
 }

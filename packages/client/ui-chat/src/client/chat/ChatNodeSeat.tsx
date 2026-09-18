@@ -1,14 +1,15 @@
-import { memo, useCallback, useMemo } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationLocationDataStore, ConversationTurnDataMap } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
-import { TURN_PROCESS_INDEPENDENT_KINDS } from '../contract/turn-process.ts'
+import { TURN_PROCESS_INDEPENDENT_KINDS, turnProcessAlwaysOpen } from '../contract/turn-process.ts'
 import { storedTurnProcessEntry } from '../stores.ts'
 import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './ChatView.module.css'
 
 interface ChatNodeSeatProps extends ChatNodeOwnerProps {
+  readonly assistantPart?: 'reasoning' | 'response'
   readonly nodeKey: string
   readonly useChatNode: ChatViewSlotProps['useChatNode']
   readonly useChatNodeProcess: ChatViewSlotProps['useChatNodeProcess']
@@ -36,11 +37,18 @@ function turnOf(node: ChatNode | undefined): number | undefined {
 
 /** Subscribe, apply Turn-process visibility, and dispatch one stable Context key. */
 export const ChatNodeSeat = memo(function ChatNodeSeat({
-  nodeKey, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
+  nodeKey, assistantPart, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
   cwd, openFile, openSkill, inspectCall, forkAt,
   loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t,
 }: ChatNodeSeatProps) {
-  const node = useChatNode(nodeKey)
+  const sourceNode = useChatNode(nodeKey)
+  const node = useMemo(() => {
+    const value = sourceNode as ChatNode | undefined
+    if (value?.kind !== 'assistant-step' || assistantPart === undefined) return sourceNode
+    return { ...value, data: { ...value.data, blocks: value.data.blocks.filter(block =>
+      assistantPart === 'reasoning' ? block.kind === 'reasoning' : block.kind !== 'reasoning'),
+    } }
+  }, [sourceNode, assistantPart])
   const routedNode = node as ChatNode | undefined
   const turn = turnOf(routedNode)
   const processPresentation = useChatNodeProcess(nodeKey)
@@ -49,45 +57,44 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     ? undefined
     : storedTurnProcessEntry(state, processSpec.turn))
   const processEntry = processSpec !== undefined
-    && processSpec.answerStep !== null
-    && storedEntry?.answerStep === processSpec.answerStep
+    && storedEntry?.answerStep === (processSpec.answerStep ?? 0)
     ? storedEntry
     : undefined
-  const processOpen = processEntry !== undefined
+  const liveProcess = processPresentation !== undefined && !processPresentation.turnClosed
+  const alwaysOpen = liveProcess || turnProcessAlwaysOpen(routedNode)
+  const processOpen = alwaysOpen || processEntry !== undefined
   const setOpen = useCallback((open: boolean) => {
-    if (processSpec !== undefined && processSpec.answerStep !== null) {
-      actions.setTurnProcessOpen(processSpec.turn, processSpec.answerStep, open)
+    if (processSpec !== undefined && !alwaysOpen) {
+      actions.setTurnProcessOpen(processSpec.turn, (processSpec.answerStep ?? 0), open)
     }
-  }, [actions, processSpec])
+  }, [actions, processSpec, alwaysOpen])
   const processWindowReady = processSpec !== undefined
     && processPresentation !== undefined
-    && compactTranscript
-    && processSpec.answerAnchorSeq !== null
     && processPresentation.turn === processSpec.turn
-    && processPresentation.turnClosed
-    && !historyIncomplete
+    && (!historyIncomplete || processPresentation.turnStarted)
   const processMember = routedNode !== undefined
     && processWindowReady
     && !TURN_PROCESS_INDEPENDENT_KINDS.has(routedNode.kind)
     && routedNode.anchorSeq >= processSpec.processStartSeq
-    && routedNode.anchorSeq < processSpec.answerAnchorSeq
+    && (liveProcess || processSpec.answerAnchorSeq === null || routedNode.anchorSeq < processSpec.answerAnchorSeq)
   const processAnswer = routedNode !== undefined
     && processWindowReady
+    && !liveProcess
     && routedNode.kind === 'assistant-step'
     && routedNode.data.step === processSpec.answerStep
   const ownsDisclosure = routedNode?.kind === 'turn-process' || processAnswer
   const foldable = processWindowReady
-    && (processMember || (ownsDisclosure
-      && (processPresentation.hasExternalProcess || processSpec.inlineReasoning)))
+    && (liveProcess || processMember || ownsDisclosure)
   const turnProcess = useMemo(() => processSpec === undefined
     ? undefined
     : {
       spec: processSpec,
       foldable,
+      hasContent: processPresentation?.hasExternalProcess === true || processSpec.inlineReasoning,
       open: processOpen,
       setOpen,
     }, [
-    foldable, processOpen, processSpec, setOpen,
+    foldable, processOpen, processSpec, processPresentation?.hasExternalProcess, setOpen,
   ])
   const controllerInactive = routedNode?.kind === 'turn-process'
     && !foldable
@@ -100,6 +107,12 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     if (processMember) setOpen(true)
   }, [processMember, setOpen])
   const wrapperRef = useSearchableHidden(processHidden, revealProcess)
+  const [disclosureReset, setDisclosureReset] = useState(0)
+  useEffect(() => {
+    if (processMember && processHidden && wrapperRef.current?.hasAttribute('hidden')) {
+      setDisclosureReset(value => value + 1)
+    }
+  }, [processMember, processHidden, wrapperRef])
   const owner = useMemo<ChatNodeOwnerProps | null>(() => node === undefined
     ? null
     : {
@@ -112,9 +125,10 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       renderMessageImages,
       fileMentions,
       turnProcess,
+      compactTranscript,
     }, [
     node, cwd, openFile, openSkill, inspectCall, forkAt,
-    loadImage, renderMessageImages, fileMentions, turnProcess,
+    loadImage, renderMessageImages, fileMentions, turnProcess, compactTranscript,
   ])
   if (routedNode === undefined || owner === null) return null
   const turnData = turnDataOf(routedNode)
@@ -126,7 +140,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     <div
       ref={wrapperRef}
       className={css.flowItem}
-      data-chat-anchor-key={routedNode.key}
+      data-chat-anchor-key={assistantPart === 'reasoning' ? `${routedNode.key}:reasoning` : routedNode.key}
       data-chat-flow-key={routedNode.key}
       data-chat-flow-kind={routedNode.kind}
       data-chat-turn={turn}
@@ -134,17 +148,19 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       data-turn-process-hidden={processHidden || undefined}
       data-turn-process-answer={compactAnswer || undefined}
     >
-      {renderSlot('conversation.chat.node', routedOwner, {
-        entryKey: routedNode.kind,
-        hookContext: turnData,
-        fallback: (
-          <JsonBlock
-            label={t('message.unknownSurface', { type: routedNode.kind })}
-            payload={routedNode.data}
-            truncatedLabel={total => t('json.truncated', { total })}
-          />
-        ),
-      })}
+      <Fragment key={disclosureReset}>
+        {renderSlot('conversation.chat.node', routedOwner, {
+          entryKey: routedNode.kind,
+          hookContext: turnData,
+          fallback: (
+            <JsonBlock
+              label={t('message.unknownSurface', { type: routedNode.kind })}
+              payload={routedNode.data}
+              truncatedLabel={total => t('json.truncated', { total })}
+            />
+          ),
+        })}
+      </Fragment>
     </div>
   )
 })

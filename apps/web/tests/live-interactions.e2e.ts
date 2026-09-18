@@ -156,10 +156,12 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     // The marker IS the synchronization: the stream is provably parked in the
     // hang (prefix chunks delivered to the loop) before the stop click.
     await expect.poll(() => existsSync(marker), { timeout: 15_000 }).toBe(true)
-    await expect.poll(
-      () => page.getByRole('status').filter({ hasText: 'Deep diving...' }).isVisible(),
-      { timeout: 10_000 },
-    ).toBe(true)
+    const liveControl = page.locator('[data-turn-process]')
+    expect(await liveControl.isDisabled()).toBe(true)
+    const liveLabel = await liveControl.textContent()
+    expect(liveLabel).toMatch(/^Deep diving for /)
+    await expect.poll(() => liveControl.textContent(), { timeout: 10_000 }).not.toBe(liveLabel)
+    expect(await page.getByRole('status').filter({ hasText: 'Deep diving...' }).count()).toBe(1)
     await page.locator('[data-streaming="true"]')
       .getByText('partial', { exact: true })
       .waitFor({ timeout: 30_000 })
@@ -190,6 +192,8 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     await stopButton.click()
     await settled
     expect(turnEndReasons(sessionEvents).at(-1)).toBe('aborted')
+    await expect.poll(() => liveControl.textContent()).toBe('Stopped')
+    expect(await liveControl.isDisabled()).toBe(true)
     // Composer recovered; no streaming node lingers. The host settled first
     // (awaited above), but the abort frame reaches the browser over SSE — the
     // frozen-partial swap is eventually consistent, so poll rather than count.
@@ -295,6 +299,9 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
       scaffold!.workspaceCwd,
     )
     await compareOrRefreshGolden(RETRY_EXPANDED_EXPECTED, expanded, MODE)
+    await page.locator('[data-turn-process]').click()
+    await page.getByRole('status').filter({ hasText: 'Retried model request' }).waitFor()
+    expect(await page.locator('[data-step-process]').getByRole('status').count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 120_000)

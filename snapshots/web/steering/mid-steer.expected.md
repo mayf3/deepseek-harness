@@ -7,13 +7,11 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- button "System prompt"
 - text: Use the ask_user_question tool to ask me exactly one question with id "checkpoint", question "Ready to continue?", header "Checkpoint", and options labeled "Yes" and "No". After I answer, reply with one short sentence acknowledging my answer and stop. {{clock}}
 - button "Copy"
-- button "Context injection @deepseek-ai/dsh-system-prompt"
-- text: Running
-- button "Ask question waiting"
 - status: Deep diving...
+- button "Deep diving for {{duration}}" [disabled] [expanded]
+- button "Waiting for your action"
 - text: "Interjection: include the word BANANA in your final reply."
 - button "Copy"
 - region "Ready to continue?":

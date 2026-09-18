@@ -3,7 +3,10 @@
 /** Tool call identity as carried by Chat nodes. */
 export type ToolCallId = string
 
-/** One manually expanded Turn answer generation. */
+/**
+ * Manual disclosure override for an expanded completed answer.
+ * Zero represents completion without an answer.
+ */
 export interface TurnProcessViewEntry {
   readonly turn: number
   readonly answerStep: number

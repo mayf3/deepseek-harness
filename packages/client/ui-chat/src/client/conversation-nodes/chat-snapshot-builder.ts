@@ -14,6 +14,7 @@ import { TURN_PROCESS_INDEPENDENT_KINDS } from '../contract/turn-process.ts'
 import { sessionRecallLabels, skillInvocationName } from './event-projection.ts'
 import { sameTurnNavigationItem, turnNavigationItem } from './turn-navigation.ts'
 import { ChatTurnProcessProjector } from './turn-process-presentation.ts'
+import { ChatStepProcessProjector, processLayoutChanged } from './step-process-index.ts'
 
 const EMPTY_KEYS: readonly string[] = []
 const EMPTY_TURNS: readonly number[] = []
@@ -336,8 +337,9 @@ function turnProcessPresentations(
     const location = node.location
     if (location.kind !== 'turn' && location.kind !== 'step') continue
     const current: TurnProcessPresentation = presentations.get(location.turn.turn) ?? {}
-    if ((node.kind === 'user' || node.kind === 'steering')
-      && node.anchorSeq < (current.control?.data.controlAnchorSeq ?? Number.POSITIVE_INFINITY)) {
+    if ((node.kind === 'user' || node.kind === 'steering' || node.kind === 'turn-trigger')
+      && (current.control?.data.controlAnchorSeq === location.turn.start?.seq
+        || node.anchorSeq < (current.control?.data.controlAnchorSeq ?? Number.POSITIVE_INFINITY))) {
       presentations.set(location.turn.turn, {
         ...current,
         openingHumanAnchor: Math.min(current.openingHumanAnchor ?? node.anchorSeq, node.anchorSeq),
@@ -737,6 +739,7 @@ function legacyContribution(raw: ChatConversationViewNode): LegacyContribution {
     case 'user':
     case 'steering':
     case 'context':
+    case 'turn-trigger':
     case 'command':
     case 'compaction':
     case 'turn-error':
@@ -958,6 +961,7 @@ function partialContributionChanged(
 
 /** Incremental keyed Chat builder registered under the `chat` target. */
 export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversationViewNode, ChatSnapshot> {
+  private readonly stepProcesses = new ChatStepProcessProjector()
   private readonly store = new MutableChatNodeStore()
   private readonly locations = new MutableChatLocationIndex()
   private readonly navigation = new MutableTurnNavigationIndex()
@@ -984,6 +988,7 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
     this.store.replaceProcesses(this.order, this.locations)
     this.navigation.rebuild(input.timeline, this.locations, this.store)
     this.timeline = input.timeline
+    this.stepProcesses.replace({ order: this.order, nodes: this.store, timeline: input.timeline })
     const snapshot = this.snapshot(input.timeline, this.legacy.replace(nodes, input.timeline))
     this.store.publish()
     return snapshot
@@ -996,14 +1001,17 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
     const upserts = this.skillNames.apply(this.referenceLabels.apply(input.upserts, this.store), this.store)
     const processTurns = new Set<number>()
     let structural = false
+    let regroup = false
     const contentOnly: ChatConversationViewNode[] = []
     for (const node of upserts) {
       const previous = this.store.get(node.key)
+      regroup ||= processLayoutChanged(previous as ChatNode | undefined, node as ChatNode)
       const nodeStructural = previous === undefined
         || previous.kind !== node.kind
         || previous.anchorSeq !== node.anchorSeq
         || previous.visibility !== node.visibility
         || locationIdentity(previous.location) !== locationIdentity(node.location)
+      regroup ||= nodeStructural
       structural ||= nodeStructural
       if (!nodeStructural) contentOnly.push(node)
       if (processPresentationInputChanged(previous as ChatNode | undefined, node as ChatNode, nodeStructural)) {
@@ -1026,6 +1034,12 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
     } else {
       this.navigation.touch(turnsOf(contentOnly), this.locations, this.store)
     }
+    const lastTurn = input.timeline.turnOrder.at(-1)
+    regroup ||= lastTurn !== this.timeline?.turnOrder.at(-1)
+      || (lastTurn !== undefined && input.timeline.turns.get(lastTurn)?.status !== this.timeline?.turns.get(lastTurn)?.status)
+    const processInput = { order: this.order, nodes: this.store, timeline: input.timeline }
+    if (regroup) this.stepProcesses.replace(processInput)
+    else this.stepProcesses.update(processInput, upserts.map(node => node.key))
     this.timeline = input.timeline
     const snapshot = this.snapshot(input.timeline, this.legacy.apply(upserts, input.timeline))
     this.store.publish()
@@ -1038,6 +1052,7 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
   ): ChatSnapshot {
     return {
       order: this.order,
+      stepProcesses: this.stepProcesses,
       nodes: this.store,
       locations: this.locations,
       navigation: this.navigation,

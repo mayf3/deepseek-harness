@@ -78,6 +78,9 @@ export interface ChatNodeTurnDataInjected {
 
 /** Stable owner currency delivered to a keyed Chat renderer. */
 export interface ChatNodeOwnerProps {
+  /** Hide settled reasoning previews in Compact work details. */
+  readonly compactTranscript?: boolean
+
   cwd?: string | undefined
   /** Open the current source file of a skill referenced by a sent message. */
   openSkill: (name: string) => void
@@ -101,6 +104,8 @@ export interface ChatNodeOwnerProps {
 export interface TurnProcessOwnerProps {
   readonly spec: TurnProcessSpec
   readonly foldable: boolean
+  /** Whether the Turn contains process rows or inline reasoning to disclose. */
+  readonly hasContent: boolean
   readonly open: boolean
   setOpen(open: boolean): void
 }
