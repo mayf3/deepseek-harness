@@ -25,12 +25,13 @@ function page(name: string) {
 it.each(['en', 'zh-CN'])('keeps ordinary diagnostics folded, text-only, and keyboard-accessible: %s', async (language) => {
   const p = page('update-dialog')
   const locale = resolveDesktopLocale(language)
-  const state: UpdateDialogView = { locale: locale.id, title: locale.messages.updateFailedTitle,
+  const state: UpdateDialogView = { revision: 1, locale: locale.id, title: locale.messages.updateFailedTitle,
     message: locale.messages.updateStopFailed, detail: '', buttons: [locale.messages.updateAcknowledge], cancelId: 0,
     closeLabel: locale.messages.updateClose, technicalDetailsLabel: locale.messages.updateTechnicalDetails,
     technicalDetails: '<img src=x onerror="window.compromised=true">\nexit 0; shutdown acknowledged false' }
   const respond = vi.fn(async () => {})
-  const api: UpdateDialogApi = { status: async () => state, respond }
+  let publish!: (view: UpdateDialogView | null) => void
+  const api: UpdateDialogApi = { status: async () => state, respond, subscribe: (listener) => { publish = listener; return () => {} } }
   Object.defineProperty(p.dom.window, 'dshUpdateDialog', { value: api })
   p.run()
   await expect.poll(() => p.element('dialog').hidden).toBe(false)
@@ -54,7 +55,20 @@ it.each(['en', 'zh-CN'])('keeps ordinary diagnostics folded, text-only, and keyb
   expect(disclosure.open).toBe(false)
   expect(respond).not.toHaveBeenCalled()
   p.document.dispatchEvent(new p.dom.window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))
-  expect(respond).toHaveBeenCalledWith(0)
+  expect(respond).toHaveBeenCalledWith(1, 0)
+  const backdrop = p.document.body
+  const dialog = p.element('dialog')
+  publish({ ...state, revision: 2, message: locale.messages.updateChecking, technicalDetails: '', buttons: ['OK'] })
+  expect(p.document.body).toBe(backdrop)
+  expect(p.element('dialog')).toBe(dialog)
+  expect(backdrop.classList.contains('visible')).toBe(true)
+  expect(p.element('actions').childElementCount).toBe(1)
+  expect(disclosure.open).toBe(false)
+  expect(p.document.activeElement).toBe(dialog)
+  publish(state)
+  expect(p.element('title').textContent).toBe(locale.messages.updateChecking)
+  publish(null)
+  expect(backdrop.classList.contains('visible')).toBe(false)
 })
 
 it('keeps mandatory diagnostics expandable without clearing the block or authorizing installation', async () => {
