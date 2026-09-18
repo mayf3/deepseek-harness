@@ -74,6 +74,8 @@ A request selects the route with `provider: deepseek-official`; the model id pas
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-llm-deepseek) is the exhaustive source for every accepted field and its JSDoc.
 
+When [proactive compaction](../../compaction/compaction-basic/README.md#use-this-package) is enabled, `models[].contextWindow` (or `defaultContextWindow` when absent) must exceed the effective request `maxTokens` to leave a message budget. Requests without an explicit output cap use the model’s `maxTokens` or the adapter default. To compact earlier, lower the compaction policy’s `thresholdRatio` instead of shrinking the declared window below the output reservation.
+
 <a id="choose-a-protocol"></a>
 ### Choose a protocol
 

@@ -162,9 +162,9 @@ export function resolveCompactSpec(
   if (messageBudgetTokens <= 0) {
     throw new TargetPressureConfigError(
       targetKey,
-      `BasicCompactionConfig: ${targetKey} reserves ${reservedCompletionTokens} completion tokens `
-      + `of its ${contextWindow}-token context window, leaving no message budget; the routed `
-      + "request's output cap must be smaller than the declared context window",
+      `compaction-basic: ${targetKey} reserves ${reservedCompletionTokens} completion tokens `
+      + `of its ${contextWindow}-token context window, leaving no message budget; configure `
+      + "the adapter model's contextWindow above the effective request maxTokens",
     )
   }
   const thresholdTokens = Math.floor(messageBudgetTokens * policy.thresholdRatio)

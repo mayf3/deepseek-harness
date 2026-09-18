@@ -404,7 +404,7 @@ describe('compact configuration and defaults', () => {
     }), { provider: MODEL, model: MODEL })
 
     // 1_048_576 - 256_000 = 792_576 available to messages: a 256_000-token
-    // reserve must not leave the gate (800_000 on the whole window) above the
+    // reserve must not leave the gate (838_860 on the whole window) above the
     // point where the provider rejects the request.
     expect(resolveCompactSpec(policy, 1_048_576, 256_000)).toMatchObject({
       contextWindow: 1_048_576,
@@ -412,7 +412,7 @@ describe('compact configuration and defaults', () => {
       retainTokens: 126_812,
     })
 
-    // No declared reserve keeps the whole window available, as before.
+    // An undeclared reserve leaves the whole window available.
     expect(resolveCompactSpec(policy, 1_000)).toMatchObject({
       thresholdTokens: 800,
       retainTokens: 160,
@@ -606,7 +606,7 @@ describe('pressure measurement and retention', () => {
     const session = conversation(4)
     const measured = ctx.tokenMeter.measure(session).totalTokens
 
-    // Premise: the measured pressure clears 80% of the whole window, so the
+    // Premise: the measured pressure stays below 80% of the whole window, so the
     // gate the reserve-free deployment uses stays closed.
     expect(measured).toBeLessThan(800)
     await expect(compactIfNeeded(compact, session)).resolves.toBeNull()
@@ -1737,6 +1737,32 @@ describe('automatic listener and loader composition', () => {
     expect(warnings).toEqual([
       expect.stringContaining('retainTokens (500) must be less than threshold tokens 500'),
     ])
+  })
+
+  it.each([1_000, 1_500])('warns once and continues when the output reserve is %i for a 1,000-token window', async (maxTokens) => {
+    const ctx = createContext(1_000)
+    const warnings: string[] = []
+    ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
+    vi.spyOn(ctx.llm, 'resolveModelInfo').mockResolvedValue({
+      provider: MODEL,
+      id: MODEL,
+      name: MODEL,
+      context: { contextWindow: 1_000 },
+      defaultMaxTokens: maxTokens,
+    })
+    const compact = new TestCompactionEngine(ctx, {})
+    const session = conversation(4)
+    const before = session.snapshotEvents()
+
+    await expect(preStep(ctx, agent(session, MODEL))).resolves.toEqual({ kind: 'enter', messages: [] })
+    await expect(preStep(ctx, agent(session, MODEL))).resolves.toEqual({ kind: 'enter', messages: [] })
+
+    expect(warnings).toEqual([
+      expect.stringContaining(`reserves ${maxTokens} completion tokens`),
+    ])
+    expect(warnings[0]).toContain('configure the adapter model\'s contextWindow above the effective request maxTokens')
+    expect(session.snapshotEvents()).toEqual(before)
+    expect(compact.calls).toHaveLength(0)
   })
 
   it('force-compacts below normal pressure for canonical overflow and retries only after replacement', async () => {

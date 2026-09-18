@@ -74,6 +74,8 @@ kind: "package-reference"
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-llm-deepseek)是每个受支持字段及其 JSDoc 的穷尽式真源。
 
+启用[主动压缩](../../compaction/compaction-basic/README.zh.md#use-this-package)时，`models[].contextWindow`（未声明时使用 `defaultContextWindow`）必须大于生效请求的 `maxTokens`，才能留出消息预算。请求未覆盖输出上限时，使用模型的 `maxTokens` 或适配器默认值。要提早压缩，应降低压缩策略的 `thresholdRatio`，而不是把声明的窗口缩到输出预留以下。
+
 <a id="choose-a-protocol"></a>
 ### 选择协议
 
