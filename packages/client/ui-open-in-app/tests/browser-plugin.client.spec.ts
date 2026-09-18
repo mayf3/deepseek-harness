@@ -1,7 +1,7 @@
 /**
- * Browser-half lifecycle over the real SlotRegistry: the dictionary and
- * header-slot registrations with fiber teardown proving removal (HMR safety)
- * and the injected controller face.
+ * Browser-half lifecycle over the real SlotRegistry: the dictionary,
+ * header-slot, and document-preview path registrations with fiber teardown
+ * proving removal (HMR safety) and the injected controller faces.
  */
 
 import { Context } from '@deepseek-ai/cordis'
@@ -9,16 +9,27 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { apply, inject, type OpenInAppActionInjected } from '../src/client/index.ts'
+import { apply, inject, type OpenInAppActionInjected, type OpenPathInjected } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
 import { OpenInAppAction } from '../src/client/OpenInAppAction.tsx'
+import { OpenPathAction } from '../src/client/OpenPathAction.tsx'
+import { OpenPathEmptyAction } from '../src/client/OpenPathEmptyAction.tsx'
 import { en, NS, zh } from '../src/client/locales.ts'
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.clearAllMocks()
 })
 
-/** Boot the browser half over a real slot tree that declares the header list. */
+/** The Session Remote slice the path controls call; answers a desktop and acknowledges every gesture. */
+const remote = {
+  session: {
+    canOpenWorkspacePath: vi.fn(async () => ({ ok: true as const, value: true })),
+    openWorkspacePath: vi.fn(async () => ({ ok: true as const, value: { opened: true as const } })),
+  },
+}
+
+/** Boot the browser half over a real slot tree that declares the header list and the document-preview seats. */
 async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugin']> }> {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -26,10 +37,14 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
     name: 'root',
     children: {
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
+      'sidebar.right.tab.document.actions': { kind: 'list', scope: 'session' },
+      'sidebar.right.tab.document.unpreviewable': { kind: 'list', scope: 'session' },
     },
   } as never, () => null)
   ctx.provide('sessions', {})
   ctx.provide('locale', new LocaleRuntime(ctx))
+  ctx.provide('remote', remote as never)
+  ctx.provide('remote.session', remote.session as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   return { ctx, fiber }
@@ -41,7 +56,29 @@ function headerEntryIds(ctx: Context): (string | undefined)[] {
 
 describe('open-in-app browser half', () => {
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['sessions', 'slots', 'locale'])
+    expect(inject).toEqual(['sessions', 'slots', 'locale', 'remote', 'remote.session'])
+  })
+
+  it('registers both document-preview path controls behind one desktop answer, and fiber teardown removes them', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ apps: [] }), { status: 200 })))
+    const { ctx, fiber } = await bench()
+    const header = ctx.slots.entries('sidebar.right.tab.document.actions')[0]
+    const empty = ctx.slots.entries('sidebar.right.tab.document.unpreviewable')[0]
+    expect(header?.component).toBe(OpenPathAction)
+    expect(empty?.component).toBe(OpenPathEmptyAction)
+    expect(header?.options).toMatchObject({ id: 'open-in-app' })
+    const face = (header?.inject as unknown as () => OpenPathInjected)()
+    const emptyFace = (empty?.inject as unknown as () => OpenPathInjected)()
+    expect(emptyFace.hooks.openInAppDesktop).toBe(face.hooks.openInAppDesktop)
+    expect(face.hooks.openInAppDesktop.getSnapshot()).toBeNull()
+    await Promise.all([face.loadDesktop(), emptyFace.loadDesktop()])
+    expect(remote.session.canOpenWorkspacePath).toHaveBeenCalledOnce()
+    expect(face.hooks.openInAppDesktop.getSnapshot()).toBe(true)
+    expect(await face.openPath('/w/clip.mp4', 'reveal')).toBeNull()
+    expect(remote.session.openWorkspacePath).toHaveBeenLastCalledWith({ path: '/w/clip.mp4', action: 'reveal' })
+    await fiber.dispose()
+    expect(ctx.slots.entries('sidebar.right.tab.document.actions').map(entry => entry.options.id)).not.toContain('open-in-app')
+    expect(ctx.slots.entries('sidebar.right.tab.document.unpreviewable').map(entry => entry.options.id)).not.toContain('open-in-app')
   })
 
   it('registers the header split button, and fiber teardown removes it (HMR safety)', async () => {
