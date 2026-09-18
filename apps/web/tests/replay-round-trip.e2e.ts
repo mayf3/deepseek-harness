@@ -29,6 +29,7 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/fresh-round-t
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/session.v3.jsonl', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/ui.expected.md', import.meta.url))
 const ECHO_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/submission-echo.expected.md', import.meta.url))
+const BLANK_EXPECTED = join(SNAPSHOT_DIR, 'blank-reload.expected.md')
 const UI_EXPANDED_EXPECTED = fileURLToPath(
   new URL('../../../snapshots/web/fresh-round-trip/ui-expanded.expected.md', import.meta.url),
 )
@@ -79,6 +80,17 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     if (MODE !== 'record') {
       // Drift guard: the committed fixture must carry exactly the drive prompt.
       expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT])
+    }
+    const beforeReload = await page.evaluate(() => localStorage.getItem('dsh.sessions.current'))
+    expect(beforeReload).not.toBeNull()
+    await page.reload({ waitUntil: 'load' })
+    await page.locator('[data-composer-input]').first().waitFor({ timeout: 15_000 })
+    await page.getByRole('button', { name: 'Standard mode', exact: true }).waitFor({ timeout: 15_000 })
+    await page.getByRole('button', { name: 'Select model, current DeepSeek-V4-Flash' }).waitFor({ timeout: 15_000 })
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('dsh.sessions.current'))).toBe(beforeReload)
+    if (MODE !== 'record') {
+      await compareOrRefreshGolden(BLANK_EXPECTED,
+        await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd), MODE)
     }
     const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
@@ -229,6 +241,7 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
+      'blank-reload.expected.md',
       'session.v3.jsonl',
       'submission-echo.expected.md',
       'system-prompt.expected.md',
