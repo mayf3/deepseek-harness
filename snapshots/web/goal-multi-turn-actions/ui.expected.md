@@ -28,7 +28,6 @@
 - button "Good response"
 - button "Bad response"
 - button "Branch into a new conversation"
-- button "Ran for {{duration}}"
 - text: {{clock}}
 - button "System prompt"
 - button "5 tool calls · 2 messages"
@@ -85,7 +84,6 @@
 - button "Bad response"
 - button "Branch into a new conversation"
 - tooltip "Branch into a new conversation"
-- button "Ran for {{duration}}"
 - text: {{clock}}
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"

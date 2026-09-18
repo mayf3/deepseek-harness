@@ -10,6 +10,7 @@ export {
   nativeFileManager,
   revealNativePath,
   openNativePath,
+  openNativeAssociatedPath,
   openNativeTextFile,
 } from './path-opener.ts'
 export type {

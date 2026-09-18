@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   ISessions, SessionListState, SessionReference, SessionSummary,
 } from '@deepseek-ai/dsh-api-session-controller/client'
+import { SessionCreateError } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type {
   IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
@@ -389,11 +390,12 @@ describe('UiWorkspaceService', () => {
         summary('stray', { blank: true, cwd: '/w/a' }),
         summary('blank', { blank: true, cwd: '/w/a' }),
         summary('archived', { blank: true, cwd: '/w/b' }),
-      ]),
+      ], 'pending'),
       workspaces: workspaceState([workspace('a', [sid('blank')]), workspace('b', [sid('archived')])], [sid('archived')]),
     })
     await expect(b.uiWorkspace.connectWorkspace(wid('a'))).resolves.toBe(sid('blank'))
-    expect(b.sessions.create).not.toHaveBeenCalled()
+    expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({ workspaceId: wid('a'), sessionId: sid('blank') })
+    b.sessions.create.mockClear()
     b.sessions.retain.mockClear()
     const created = Promise.withResolvers<SessionId>()
     b.sessions.create.mockReturnValue(created.promise)
@@ -485,6 +487,174 @@ describe('UiWorkspaceService', () => {
     })
   })
 
+  it('uses catalog order for Workspace connects without reading the saved selection', async () => {
+    persistSelection({ sessionId: sid('saved') })
+    const b = bench({
+      sessions: sessionState([
+        summary('first', { blank: true, cwd: '/w/a' }),
+        summary('saved', { blank: true, cwd: '/w/a' }),
+      ], 'pending'),
+      workspaces: workspaceState([workspace('a', [sid('first'), sid('saved')])]),
+    })
+    await expect(b.uiWorkspace.connectWorkspace(wid('a'))).resolves.toBe(sid('first'))
+  })
+
+  it.each([
+    { archived: true, cwd: '/w/a' },
+    { archived: false, cwd: '/other' },
+  ])('does not reclaim an ineligible saved blank: %j', async ({ archived, cwd }) => {
+    persistSelection({ sessionId: sid('saved') })
+    const b = bench({
+      sessions: sessionState([summary('saved', { blank: true, cwd })]),
+      workspaces: workspaceState([workspace('a', [sid('saved')])], archived ? [sid('saved')] : []),
+    })
+    await vi.waitFor(() => {
+      expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('created-a'), { source: 'mainView' })
+    })
+    expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({ workspaceId: wid('a') })
+  })
+
+  it('restores a saved ungrouped blank directly', () => {
+    persistSelection({ sessionId: sid('saved') })
+    const b = bench({
+      sessions: sessionState([summary('saved', { blank: true })]),
+      workspaces: workspaceState(),
+    })
+    expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('saved'), { source: 'mainView' })
+    expect(b.sessions.create).not.toHaveBeenCalled()
+  })
+
+  it('reclaims the saved blank before opening history, even when another blank is listed first', async () => {
+    persistSelection({ sessionId: sid('saved') })
+    const acquired = Promise.withResolvers<SessionId>()
+    const b = bench({
+      sessions: sessionState([
+        summary('other', { blank: true, cwd: '/w/a' }),
+        summary('saved', { blank: true, cwd: '/w/a' }),
+      ]),
+      workspaces: workspaceState([workspace('a', [sid('other'), sid('saved')])]),
+      configureSessions: (sessions) => { sessions.create.mockReturnValue(acquired.promise) },
+    })
+    expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({ workspaceId: wid('a'), sessionId: sid('saved') })
+    expect(b.sessions.retain).not.toHaveBeenCalled()
+    acquired.resolve(sid('saved'))
+    await vi.waitFor(() => {
+      expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('saved'), { source: 'mainView' })
+    })
+  })
+
+  it.each(['saved', 'workspace'])('creates after the selected %s blank is held without trying another blank', async (source) => {
+    if (source === 'saved') persistSelection({ sessionId: sid('held') })
+    const b = bench({
+      sessions: sessionState([
+        summary('held', { blank: true, cwd: '/w/a' }),
+        summary('free', { blank: true, cwd: '/w/a' }),
+      ], source === 'saved' ? 'ready' : 'pending'),
+      workspaces: workspaceState([workspace('a', [sid('held'), sid('free')])]),
+      configureSessions: (sessions) => {
+        sessions.create.mockRejectedValueOnce(new SessionCreateError(
+          new RemoteError('session/writer-held', 'held', { sessionId: sid('held') }), sid('held'),
+        ))
+      },
+    })
+    if (source === 'saved') {
+      await vi.waitFor(() => {
+        expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('created-a'), { source: 'mainView' })
+      })
+    } else {
+      await expect(b.uiWorkspace.connectWorkspace(wid('a'))).resolves.toBe(sid('created-a'))
+    }
+    expect(b.sessions.create.mock.calls).toEqual([
+      [{ workspaceId: wid('a'), sessionId: sid('held') }],
+      [{ workspaceId: wid('a') }],
+    ])
+  })
+
+  it.each(['workspace', 'panel'])('does not let saved blank restoration replace a later %s navigation', async (target) => {
+    persistSelection({ sessionId: sid('saved') })
+    const acquired = Promise.withResolvers<SessionId>()
+    const created = Promise.withResolvers<SessionId>()
+    const acquisitionDone = vi.fn()
+    const b = bench({
+      sessions: sessionState([summary('saved', { blank: true, cwd: '/w/a' })]),
+      workspaces: workspaceState([workspace('a', [sid('saved')]), workspace('b')]),
+      configureSessions: (sessions) => {
+        sessions.create.mockImplementation(options => options?.sessionId === sid('saved')
+          ? acquired.promise.then((id) => { acquisitionDone(); return id }) : created.promise)
+      },
+    })
+    const opening = target === 'workspace' ? b.uiWorkspace.openWorkspace(wid('b')) : undefined
+    if (target === 'panel') b.layout.selectPanel('other-panel' as MainPanelId)
+    acquired.resolve(sid('saved'))
+    await vi.waitFor(() => { expect(acquisitionDone).toHaveBeenCalledOnce() })
+    expect(b.sessions.retain).not.toHaveBeenCalled()
+    created.resolve(sid('created-b'))
+    await opening
+    expect(b.sessions.retain.mock.calls.map(([id]) => id)).toEqual(target === 'workspace' ? [sid('created-b')] : [])
+  })
+
+  it('coalesces overlapping blank acquisitions before starting history', async () => {
+    const acquired = Promise.withResolvers<SessionId>()
+    const b = bench({
+      sessions: sessionState([summary('blank', { blank: true, cwd: '/w/a' })], 'pending'),
+      workspaces: workspaceState([workspace('a', [sid('blank')])]),
+      configureSessions: (sessions) => { sessions.create.mockReturnValue(acquired.promise) },
+    })
+    const first = b.uiWorkspace.connectWorkspace(wid('a'))
+    const second = b.uiWorkspace.connectWorkspace(wid('a'))
+    expect(b.sessions.create).toHaveBeenCalledOnce()
+    acquired.resolve(sid('blank'))
+    await expect(Promise.all([first, second])).resolves.toEqual([sid('blank'), sid('blank')])
+  })
+
+  it.each([
+    new Error('filesystem denied'),
+    'failed transport',
+    new SessionCreateError(new RemoteError('gateway/internal', 'read failed', {}), sid('blank')),
+  ])('does not replace a blank after a non-contention failure: %s', async (error) => {
+    const b = bench({
+      sessions: sessionState([summary('blank', { blank: true, cwd: '/w/a' })], 'pending'),
+      workspaces: workspaceState([workspace('a', [sid('blank')])]),
+      configureSessions: (sessions) => { sessions.create.mockRejectedValue(error) },
+    })
+    await expect(b.uiWorkspace.connectWorkspace(wid('a'))).rejects.toBe(error)
+    expect(b.sessions.create).toHaveBeenCalledOnce()
+    expect(b.sessions.retain).not.toHaveBeenCalled()
+  })
+
+  it('waits for a new catalog before retrying failed startup blank acquisition', async () => {
+    persistSelection({ sessionId: sid('blank') })
+    const failure = new Error('read failed')
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const b = bench({
+      sessions: sessionState([summary('blank', { blank: true, cwd: '/w/a' })]),
+      workspaces: workspaceState([workspace('a', [sid('blank')])]),
+      configureSessions: (sessions) => { sessions.create.mockRejectedValueOnce(failure) },
+    })
+    await vi.waitFor(() => {
+      expect(warning).toHaveBeenCalledWith('initial Session restoration failed:', failure)
+    })
+    expect(b.sessions.retain).not.toHaveBeenCalled()
+    b.sessions.list.set(b.sessions.list.getSnapshot())
+    await vi.waitFor(() => {
+      expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('blank'), { source: 'mainView' })
+    })
+  })
+
+  it('settles empty startup without creating a Session on later catalog updates', () => {
+    const b = bench({ sessions: sessionState(), workspaces: workspaceState() })
+    b.workspaces.list.set(workspaceState([workspace('a')]))
+    expect(b.sessions.create).not.toHaveBeenCalled()
+  })
+
+  it('clears a selected blank archived by a catalog update without reconnecting', () => {
+    const b = bench()
+    b.uiWorkspace.openSession(sid('blank'))
+    b.workspaces.list.set(workspaceState([workspace('a', [sid('blank')])], [sid('blank')]))
+    expect(b.sessions.retained[0]!.release).toHaveBeenCalledOnce()
+    expect(b.sessions.create).not.toHaveBeenCalled()
+  })
+
   it('does not let a pending startup Workspace replace a manual Session selection', async () => {
     const created = Promise.withResolvers<SessionId>()
     const b = bench({
@@ -539,7 +709,7 @@ describe('UiWorkspaceService', () => {
     })
   })
 
-  it('reports and retries a failed persisted Session restoration', () => {
+  it('reports and retries a failed persisted Session restoration', async () => {
     const failure = new Error('restore failed')
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const sessions = sessionState([summary('saved')])
@@ -552,7 +722,9 @@ describe('UiWorkspaceService', () => {
       },
     })
 
-    expect(warning).toHaveBeenCalledWith('initial Session restoration failed:', failure)
+    await vi.waitFor(() => {
+      expect(warning).toHaveBeenCalledWith('initial Session restoration failed:', failure)
+    })
     b.sessions.list.set(sessions)
 
     expect(b.sessions.retain).toHaveBeenCalledTimes(2)

@@ -21,6 +21,8 @@
   - button "Decrease font size"
   - text: px Conversation display Controls process content in completed turns
   - button "Compact"
+  - text: Performance & usage Choose how much performance and usage information to show
+  - button "Detailed"
   - text: Developer tools Show tools and information for debugging and troubleshooting
   - switch "Developer tools"
   - text: Send behavior while busy What Enter and the Send button do while the agent is running; Cmd/Ctrl+Enter uses the other behavior

@@ -31,7 +31,7 @@ This package registers the `dsh-resource://subagentchat/session/<child>?parent=<
 
 ### Browsing the tree
 
-Rows display mode plus `running`/`inactive` activity and an optional log-backed title; running uses the shared ongoing loader, inactive uses the shared idle dot, and diagnostic rows use the shared error dot. The trailing column stacks total durable provider usage above active-turn duration. Keyboard navigation works with ArrowRight/ArrowLeft to expand and collapse branches and ArrowUp/ArrowDown, Home, End, and Escape to navigate or close the tree. An unlabeled one-shot row falls back to its session id; corrupt, unsupported, or unavailable rows remain readable but disabled.
+Rows display mode plus activity and an optional log-backed title; running uses the shared ongoing loader, an inactive child whose latest closed turn completed normally uses the shared success dot, other inactive children use the shared idle dot, and diagnostic rows use the shared error dot. Every row reserves the same 14px status column, centering smaller dots so titles align with the loader state. The compact header trigger vertically centers its activity glyph and count with a 4px gap. The trailing column stacks total durable provider usage above active-turn duration. Keyboard navigation works with ArrowRight/ArrowLeft to expand and collapse branches and ArrowUp/ArrowDown, Home, End, and Escape to navigate or close the tree. An unlabeled one-shot row falls back to its session id; corrupt, unsupported, or unavailable rows remain readable but disabled.
 
 ### Continuing a conversation
 
@@ -55,9 +55,9 @@ The catalog and composer behavior are specified by the [Web subagent conversatio
 
 The header lineage renderer reads `subagentsByParent` and session summaries through the standard `useSessions` hook. The compact tree remains direct-catalog authoritative: each healthy row's `hasChildren` hint determines disclosure before interaction, a catalog level reserves the disclosure column only when at least one healthy row is a branch, and expanding a branch immediately reserves one disabled loading row per known direct descendant before lazily replacing them with that child's authoritative catalog. Every visible branch is reported to the runtime so membership frames cause a debounced refresh only where the tree is being consumed.
 
-### Duration and tokens
+### Duration, completion, and tokens
 
-Token totals sum the four disjoint `tokenUsage` buckets. Duration sums completed `subagentTiming` turns, advances once per second only for an open turn on a running child, and freezes after the child becomes inactive; an interrupted open turn is bounded by its same-cut `active.through`, never by newer session metadata.
+Token totals sum the four disjoint `tokenUsage` buckets. The `subagentTiming` projection sums completed-turn duration and records whether the latest closed turn ended with `completed`; opening another turn clears that completion until its own `turn/end`. Duration advances once per second only for an open turn on a running child and freezes after the child becomes inactive; an interrupted open turn is bounded by its same-cut `active.through`, never by newer session metadata.
 
 ### Composer election
 
@@ -104,7 +104,7 @@ Append-only. This package never edits earlier request tokens.
 
 These limits define what the catalog can show and what `@` references mean; they are current package constraints.
 
-- **The catalog has no durable outcome** — activity and timing do not distinguish completion, failure, or cancellation, and the UI exposes no Activation identity; stopping is limited to the composer's current-turn Stop for a running continuable child.
+- **Non-completed inactive outcomes remain grouped** — the catalog distinguishes a latest normal completion from other inactive states, but does not distinguish failure, cancellation, refusal, token exhaustion, or a child with no closed turn; the UI exposes no Activation identity, and stopping is limited to the composer's current-turn Stop for a running continuable child.
 - **`@` references remain display-title text** — duplicate or renamed labels are ambiguous, so they intentionally do not acquire continuation semantics.
 
 <a id="dev-note"></a>

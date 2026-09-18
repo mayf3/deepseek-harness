@@ -6,9 +6,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, UIEvent } from 'react'
 import {
-  Button, IconChevronDownOutlineRegular, IconCodeOutlineRegular, IconPanelLeftOutlineRegular,
-  IconRightUpOutlineRegular, IconWrapLinesOutlineRegular, Menu, Tooltip,
+  Button, IconChevronDownOutlineRegular, IconCompareSplitOutlineRegular, IconInspectOutlineRegular,
+  IconNowrapFillRegular, IconRightUpOutlineRegular, IconWrapFillRegular, Menu, Tooltip,
+  languageForPath, useCodeHighlighter,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { CodeHighlighter, HighlightSpan } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
@@ -57,6 +59,36 @@ export interface DiffRow {
 export interface SplitRow {
   left?: { no: number; text: string; kind: 'del' | 'context' }
   right?: { no: number; text: string; kind: 'add' | 'context' }
+}
+
+interface HunkHighlights {
+  old: ReadonlyMap<number, readonly HighlightSpan[]> | undefined
+  new: ReadonlyMap<number, readonly HighlightSpan[]> | undefined
+}
+
+function highlightedSide(rows: readonly DiffRow[], side: 'old' | 'new', highlighter: CodeHighlighter): HunkHighlights['old'] {
+  const source = rows.flatMap((row) => {
+    const no = row[side]
+    return no === undefined ? [] : [{ no, text: row.text }]
+  })
+  if (source.length === 0) return new Map()
+  const highlighted = highlighter(source.map(line => line.text).join('\n'))
+  if (highlighted === undefined) return undefined
+  return new Map(source.map((line, index) => {
+    // Shiki omits one terminal empty token row; retain an aligned empty run for that source line.
+    return [line.no, highlighted[index] ?? []]
+  }))
+}
+
+function hunkHighlights(hunk: WorkspaceDiffHunk, highlighter: CodeHighlighter): HunkHighlights {
+  const rows = hunkRows(hunk)
+  return { old: highlightedSide(rows, 'old', highlighter), new: highlightedSide(rows, 'new', highlighter) }
+}
+
+function DiffText({ text, spans }: { text: string; spans: readonly HighlightSpan[] | undefined }): ReactNode {
+  return <span className={css.text} data-diff-code={spans === undefined ? undefined : ''}>
+    {spans === undefined ? text : spans.map((span, index) => <span key={index} style={span.style}>{span.text}</span>)}
+  </span>
 }
 
 /**
@@ -220,15 +252,19 @@ export function ReviewTab({
         <span className={css.tools}>
           <Tooltip label={t(split ? 'review.unified' : 'review.split')} side="bottom" delayMs={500}>
             <button type="button" className={css.tool} aria-pressed={split} aria-label={t('review.splitAria')} data-review-tool="split"
-              onClick={() => { actions.toggledSplit(tab.id) }}><IconPanelLeftOutlineRegular /></button>
+              onClick={() => { actions.toggledSplit(tab.id) }}>
+              <IconCompareSplitOutlineRegular className={css.compareIcon} />
+            </button>
           </Tooltip>
           <Tooltip label={t(wrap ? 'review.nowrap' : 'review.wrap')} side="bottom" delayMs={500}>
             <button type="button" className={css.tool} aria-pressed={wrap} aria-label={t('review.wrapAria')} data-review-tool="wrap"
-              onClick={() => { actions.toggledWrap(tab.id) }}><IconWrapLinesOutlineRegular /></button>
+              onClick={() => { actions.toggledWrap(tab.id) }}>
+              {wrap ? <IconNowrapFillRegular /> : <IconWrapFillRegular />}
+            </button>
           </Tooltip>
           {file !== undefined && <Tooltip label={t('review.openFile')} side="bottom" delayMs={500}>
             <button type="button" className={css.tool} aria-label={t('review.openFileAria', { name: file.display })} data-review-tool="open-file"
-              onClick={() => { tab.actions.openResource(fileAddressFor(sessionId, cwd, file.path)) }}><IconCodeOutlineRegular /></button>
+              onClick={() => { tab.actions.openResource(fileAddressFor(sessionId, cwd, file.path)) }}><IconInspectOutlineRegular /></button>
           </Tooltip>}
           {file !== undefined && native && <Tooltip label={t(phase === 'error' ? 'diff.openNativeError' : 'diff.openNative')} side="bottom" delayMs={500}>
             <button type="button" className={css.tool} disabled={phase === 'opening'} data-review-tool="open-native"
@@ -273,17 +309,27 @@ function hunkHeader(hunk: WorkspaceDiffHunk): string {
 
 /**
  * The side-by-side view without wrapping: two columns that clip their long
- * lines and scroll sideways together, so a long line on one side never runs
- * under the other and both sides show the same columns of text. Every line is
- * one fixed-height row, which keeps the sides aligned.
+ * lines and scroll together on both axes, so a long line on one side never
+ * runs under the other and both sides show the same rows and columns of text.
+ * Every line is one fixed-height row, which keeps the sides aligned.
  */
-function SplitColumns({ hunks }: { hunks: readonly WorkspaceDiffHunk[] }): ReactNode {
+function SplitColumns({ hunks, highlights }: { hunks: readonly WorkspaceDiffHunk[]; highlights: readonly HunkHighlights[] }): ReactNode {
   const paired = useMemo(() => hunks.map(hunk => ({ header: hunkHeader(hunk), rows: splitRows(hunk) })), [hunks])
   const columns = useRef<Record<'left' | 'right', HTMLDivElement | null>>({ left: null, right: null })
-  // Mirror one side's horizontal offset onto the other; the mirrored side's own scroll event then finds nothing to change.
+  const offsets = useRef({ left: { scrollLeft: 0, scrollTop: 0 }, right: { scrollLeft: 0, scrollTop: 0 } })
   const follow = (side: 'left' | 'right') => (event: UIEvent<HTMLDivElement>): void => {
-    const other = columns.current[side === 'left' ? 'right' : 'left']
-    if (other !== null && other.scrollLeft !== event.currentTarget.scrollLeft) other.scrollLeft = event.currentTarget.scrollLeft
+    const peer = side === 'left' ? 'right' : 'left'
+    const other = columns.current[peer]
+    /* v8 ignore next -- Both column refs are attached before browser scroll events can run. */
+    if (other === null) return
+    for (const axis of ['scrollLeft', 'scrollTop'] as const) {
+      const value = event.currentTarget[axis]
+      if (offsets.current[side][axis] === value) continue
+      offsets.current[side][axis] = value
+      other[axis] = value
+      // Record the browser-clamped offset so its scroll event cannot pull the source back.
+      offsets.current[peer][axis] = other[axis]
+    }
   }
   return (
     <div className={css.columns}>
@@ -295,10 +341,11 @@ function SplitColumns({ hunks }: { hunks: readonly WorkspaceDiffHunk[] }): React
               <div className={css.hunkHeader}>{hunk.header}</div>
               {hunk.rows.map((row, at) => {
                 const cell = row[side]
+                const spans = cell === undefined ? undefined : highlights[position]?.[side === 'left' ? 'old' : 'new']?.get(cell.no)
                 return (
                   <div key={at} className={`${css.sideLine} ${cell === undefined ? css.empty : css[cell.kind]}`} data-diff-line={splitRowKind(row)}>
                     <span className={css.number}>{cell?.no ?? ''}</span>
-                    <span className={css.text}>{cell?.text ?? ''}</span>
+                    <DiffText text={cell?.text ?? ''} spans={spans} />
                   </div>
                 )
               })}
@@ -314,23 +361,26 @@ function SplitColumns({ hunks }: { hunks: readonly WorkspaceDiffHunk[] }): React
 function TextDiff({ diff, split, wrap, t }: { diff: Extract<ChangesDiff, { kind: 'text' }>; split: boolean; wrap: boolean } & PropsLocale<typeof NS>): ReactNode {
   const note = noteOf(diff)
   const { hunks, truncated } = useMemo(() => renderedHunks(diff.hunks), [diff.hunks])
+  const highlighter = useCodeHighlighter(languageForPath(diff.path))
+  const highlights = useMemo(() => hunks.map(hunk => hunkHighlights(hunk, highlighter)), [hunks, highlighter])
   return (
     <div className={css.body} data-review-view={split ? 'split' : 'unified'} data-review-wrap={wrap || undefined}>
       {note !== undefined && <p className={css.note}>{t(note)}</p>}
       {diff.coarse && <p className={css.note} data-diff-coarse>{t('diff.coarse')}</p>}
       {truncated && <p className={css.note} data-diff-truncated>{t('diff.truncated', { count: String(MAX_RENDERED_LINES) })}</p>}
-      {split && !wrap ? <SplitColumns hunks={hunks} /> : hunks.map((hunk, position) => (
-        <section key={position} className={css.hunk}>
+      {split && !wrap ? <SplitColumns hunks={hunks} highlights={highlights} /> : hunks.map((hunk, position) => {
+        const highlighted = highlights[position]
+        return <section key={position} className={css.hunk}>
           <div className={css.hunkHeader}>{hunkHeader(hunk)}</div>
           {split ? splitRows(hunk).map((row, at) => (
             <div key={at} className={css.splitLine} data-diff-line={splitRowKind(row)}>
               <span className={`${css.cell} ${row.left === undefined ? css.empty : css[row.left.kind]}`}>
                 <span className={css.number}>{row.left?.no ?? ''}</span>
-                <span className={css.text}>{row.left?.text ?? ''}</span>
+                <DiffText text={row.left?.text ?? ''} spans={row.left === undefined ? undefined : highlighted?.old?.get(row.left.no)} />
               </span>
               <span className={`${css.cell} ${row.right === undefined ? css.empty : css[row.right.kind]}`}>
                 <span className={css.number}>{row.right?.no ?? ''}</span>
-                <span className={css.text}>{row.right?.text ?? ''}</span>
+                <DiffText text={row.right?.text ?? ''} spans={row.right === undefined ? undefined : highlighted?.new?.get(row.right.no)} />
               </span>
             </div>
           )) : hunkRows(hunk).map((row, at) => (
@@ -338,11 +388,11 @@ function TextDiff({ diff, split, wrap, t }: { diff: Extract<ChangesDiff, { kind:
               <span className={css.number}>{row.old ?? ''}</span>
               <span className={css.number}>{row.new ?? ''}</span>
               <span className={css.sign}>{row.kind === 'add' ? '+' : row.kind === 'del' ? '-' : ' '}</span>
-              <span className={css.text}>{row.text}</span>
+              <DiffText text={row.text} spans={row.kind === 'add' ? highlighted?.new?.get(row.new as number) : highlighted?.old?.get(row.old as number)} />
             </div>
           ))}
         </section>
-      ))}
+      })}
     </div>
   )
 }
