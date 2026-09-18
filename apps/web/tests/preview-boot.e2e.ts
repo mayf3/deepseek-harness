@@ -16,6 +16,7 @@
  * The site is served the way a static host serves it: bytes from `dist/` with
  * no rewrite rules, so a missing file is a 404 rather than the index page.
  */
+import { expandOwningTurnProcess } from './support.ts'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { once } from 'node:events'
@@ -418,6 +419,9 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
     await page.getByText(SHOWCASE_TAIL, { exact: true }).waitFor({ timeout: 30_000 })
 
     expect(await page.getByText(SHOWCASE_OLDEST, { exact: true }).count()).toBe(0)
+    for (const row of await page.locator('[data-chat-flow-kind="tool-call"]').all()) {
+      await expandOwningTurnProcess(page, row)
+    }
     await page.getByRole('button', { name: 'PREVIEW.md', exact: true }).waitFor()
     await page.getByRole('button', { name: 'src/preview.ts', exact: true }).waitFor()
     await page.getByText('Update to-do list', { exact: true }).waitFor()

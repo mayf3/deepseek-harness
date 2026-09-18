@@ -227,7 +227,7 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     await expect.poll(
       () => page.getByRole('button', { name: 'System prompt', exact: true }).count(),
       { timeout: 10_000 },
-    ).toBe(2)
+    ).toBe(0)
 
     // Focus-reveal the footers (hover:hover keeps them opacity-hidden until
     // hover/focus-within). Branch renders only under assistant answers — user

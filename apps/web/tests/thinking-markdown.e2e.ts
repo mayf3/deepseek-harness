@@ -16,7 +16,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { expandTurnProcesses, newEnglishPage, saveFailureShot } from './support.ts'
+import { expandOwningTurnProcess, expandTurnProcesses, newEnglishPage, saveFailureShot } from './support.ts'
 
 const EXPECTED_DIR = fileURLToPath(new URL('./expected/thinking-markdown', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('./expected/thinking-markdown/ui.expected.md', import.meta.url))
@@ -112,6 +112,7 @@ describe('web e2e: secondary Thinking Markdown', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
+    await scaffold.ctx.settings.update('ui-chat', { transcriptView: 'detailed' })
     await seedSession(scaffold, thinkingFixture(), SEED_ID)
     browser = await chromium.launch({ ignoreDefaultArgs: ['--hide-scrollbars'] })
     page = await newEnglishPage(browser)
@@ -138,6 +139,7 @@ describe('web e2e: secondary Thinking Markdown', () => {
   it.skipIf(MODE === 'record')('renders semantic blocks without promoting headings or overflowing the column', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-thinking-markdown'))
     const thinking = page.locator('[data-variant="think"]')
+    await expandOwningTurnProcess(page, thinking)
     const toggle = thinking.getByRole('button').first()
     const summary = thinking.locator('[class*="summaryText"]')
     const summaryStyle = await summary.evaluate((element) => {
@@ -226,13 +228,13 @@ describe('web e2e: secondary Thinking Markdown', () => {
       .evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize))
     expect(answerSize).toBeGreaterThan(Number.parseFloat(summaryStyle.fontSize))
     await page.setViewportSize({ width: 1680, height: 1000 })
-    await page.locator('[data-conversation-scroll]').evaluate((host) => {
+    await page.locator('[data-step-process-body]').evaluate((host) => {
       const row = host.querySelector('[data-variant="think"] tbody tr:nth-child(12)')
       if (row === null) throw new Error('tall Thinking table row missing')
       host.scrollTop += row.getBoundingClientRect().top - host.getBoundingClientRect().top
     })
     await expect.poll(() => toggle.evaluate((button) => {
-      const host = button.closest('[data-conversation-scroll]')
+      const host = button.closest('[data-step-process-body]')
       const table = button.closest('[data-variant="think"]')?.querySelector('table')
       if (host === null || table === null || table === undefined) throw new Error('Thinking scroll context missing')
       const buttonRect = button.getBoundingClientRect()

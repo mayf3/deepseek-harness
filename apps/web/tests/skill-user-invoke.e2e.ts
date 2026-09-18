@@ -3,7 +3,7 @@
 // skill.invoke: the real host forwards the gesture as an ordinary user
 // prompt, injects the rendered body as instructions context named after the
 // skill, and starts a turn answered by the replay adapter. The transcript shows
-// the gesture bubble, the collapsed context-injection row, and the reply.
+// the gesture bubble and reply; injected instructions remain in the Session log.
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { deriveEventMessage } from '@deepseek-ai/dsh-session'
 import type { ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
 import {
   assertFixtureInventory,
@@ -22,7 +23,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/skill-user-invoke', import.meta.url))
 const UI_EXPECTED = join(SNAPSHOT_DIR, 'ui.expected.md')
@@ -99,7 +100,7 @@ describe.skipIf(MODE === 'record')('web e2e: user-explicit skill invocation thro
     if (failures.length > 1) throw new AggregateError(failures, 'skill-user-invoke e2e cleanup failed')
   })
 
-  it('claims /name args into a gesture bubble, an injection row, and a replayed answer', async () => {
+  it('claims /name args into a gesture bubble, logged instructions, and a replayed answer', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-skill-user-invoke'))
     const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
     await composer.waitFor({ timeout: 15_000 })
@@ -122,31 +123,21 @@ describe.skipIf(MODE === 'record')('web e2e: user-explicit skill invocation thro
     await bubble.waitFor({ timeout: 15_000 })
     expect(await bubble.textContent()).toBe(`/${SKILL_NAME}`)
 
-    // The rendered body arrives as a context-injection row named after the
-    // skill. Context plus the final answer contributes no summary count, so
-    // the Turn uses the fallback title while the row's own disclosure remains usable.
-    const injectionFlow = page.locator('[data-chat-flow-kind="context"]').filter({ hasText: SKILL_NAME })
-    await injectionFlow.waitFor({ state: 'attached', timeout: 15_000 })
     await page.getByText('USER_INVOKE_REPLY', { exact: false }).first().waitFor({ timeout: 20_000 })
-    await settled
-    const process = page.getByRole('button', { name: 'Thought for a while', exact: true })
-    await process.waitFor({ state: 'visible', timeout: 10_000 })
-    // The chip derives from the step's logged injection, so it must survive
-    // every later Node rebuild of the Turn (process publication, turn close).
+    const sessionId = await settled
+    const agent = scaffold.ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('skill invocation did not attach an agent')
+    const instructions = agent.session.snapshotEvents().flatMap((event) => {
+      const message = deriveEventMessage(event)
+      return message?.role === 'user' && message.source.kind !== 'user'
+        ? message.content.flatMap(block => block.type === 'text' ? [block.text] : [])
+        : []
+    }).find(text => text.includes(`<skill_content name="${SKILL_NAME}">`))
+    expect(instructions).toContain('Reply with the fixture acknowledgement line.')
+    expect(instructions).not.toContain(ARGS_TEXT)
     expect(await bubble.count()).toBe(1)
     expect(await bubble.textContent()).toBe(`/${SKILL_NAME}`)
-    await expandOwningTurnProcess(page, injectionFlow)
-    const injectionRow = page.getByRole('button', { name: `Context injection ${SKILL_NAME}` })
-    await injectionRow.click()
-    const injectionBody = page
-      .locator('[data-context-injection-body]')
-      .filter({ hasText: `<skill_content name="${SKILL_NAME}">` })
-    await injectionBody.waitFor({ timeout: 10_000 })
-    const injected = await injectionBody.textContent()
-    expect(injected).toContain('Reply with the fixture acknowledgement line.')
-    expect(injected).not.toContain(ARGS_TEXT)
-    await injectionRow.click()
-    await process.click()
+    expect(await page.locator('[data-chat-flow-kind="context"]').count()).toBe(0)
 
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)

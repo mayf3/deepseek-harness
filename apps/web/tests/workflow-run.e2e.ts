@@ -15,7 +15,7 @@ import {
   type WebScaffold,
 } from './scaffold.ts'
 import {
-  connectFreshWorkspace, expandTurnProcesses, newEnglishPage, REPO_ROOT, saveFailureShot,
+  connectFreshWorkspace, expandOwningTurnProcess, expandTurnProcesses, newEnglishPage, REPO_ROOT, saveFailureShot,
 } from './support.ts'
 
 const MODE = webSnapshotMode()
@@ -90,6 +90,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     await input.press('Enter')
 
     const workflow = page.locator('[data-workflow-run][data-run-status="running"]')
+    await expandOwningTurnProcess(page, workflow)
     await workflow.waitFor({ timeout: 30_000 })
     const disclosures = workflow.locator('[data-disclosure-row]')
     await disclosures.nth(1).waitFor({ timeout: 15_000 })
@@ -178,6 +179,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     releaseChild.resolve(undefined)
     await settled
     await expandTurnProcesses(page)
+    await expandOwningTurnProcess(page, page.locator('[data-workflow-run][data-run-status="completed"]'))
     await page.locator('[data-workflow-run][data-run-status="completed"]').waitFor()
 
     expect(await page.locator('[data-chat-flow-kind="tool-call"]').count()).toBeGreaterThanOrEqual(1)
@@ -204,6 +206,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await expandTurnProcesses(page)
+    await expandOwningTurnProcess(page, page.locator('[data-workflow-run][data-run-status="completed"]'))
     const workflow = page.getByRole('button', { name: /^snapshot-flow/ })
     await workflow.waitFor({ timeout: 15_000 })
     expect(await workflow.getAttribute('aria-expanded')).toBe('false')
