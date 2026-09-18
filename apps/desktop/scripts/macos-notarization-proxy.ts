@@ -1,10 +1,11 @@
 /** Temporarily route Apple tools through the active macOS service; retain recovery data before mutation. */
 
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { tryLockExclusive } from '@deepseek-ai/node-addon-system/flock'
 
 interface ProxyState {
   readonly enabled: boolean
@@ -46,6 +47,20 @@ const operations: ProxyOperations = {
       throw error
     }
   },
+}
+
+async function withProxyLock<T>(lock: string, action: () => Promise<T>): Promise<T> {
+  mkdirSync(dirname(lock), { recursive: true, mode: 0o700 })
+  // Keep this inode across transactions: unlinking it would allow two independent locks.
+  const fd = openSync(`${lock}.flock`, 'a', 0o600)
+  try {
+    try { await tryLockExclusive(fd) } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code !== 'EAGAIN' && code !== 'EWOULDBLOCK') throw error
+      throw new Error('desktop package: another run or proxy recovery is active; wait for it to finish')
+    }
+    return await action()
+  } finally { closeSync(fd) }
 }
 
 function readProxy(service: string, secure: boolean, ops: ProxyOperations): ProxyState {
@@ -106,17 +121,15 @@ function readRecord(lock: string): ProxyRecord {
  * Restore an interrupted run only after its owner exits; active or incomplete records fail closed.
  * @param lock Per-user lock shared across checkouts; tests supply a private directory.
  * @param ops Host operations; tests supply isolated system settings.
- * @returns Nothing; retains the record when restoration fails.
+ * @returns Resolves after restoration under the shared file lock; retains the record on failure.
  */
-export function restoreMacOSNotarizationProxy(lock: string = LOCK, ops: ProxyOperations = operations): void {
-  const record = readRecord(lock)
-  if (ops.ownerAlive(record.pid)) throw new Error('desktop package: proxy owner is still running; wait for packaging to finish')
-  const recoveryLock = join(lock, 'recovering')
-  mkdirSync(recoveryLock, { mode: 0o700 })
-  try {
+export async function restoreMacOSNotarizationProxy(lock: string = LOCK, ops: ProxyOperations = operations): Promise<void> {
+  await withProxyLock(lock, async () => {
+    const record = readRecord(lock)
+    if (ops.ownerAlive(record.pid)) throw new Error('desktop package: proxy owner is still running; wait for packaging to finish')
     restore(record, ops)
     rmSync(lock, { recursive: true })
-  } finally { rmSync(recoveryLock, { recursive: true, force: true }) }
+  })
 }
 
 /**
@@ -138,65 +151,66 @@ export async function withMacOSNotarizationProxy<T>(
   if (proxyUrl === undefined) { report('not-used'); return action() }
   const url = new URL(proxyUrl)
   await ops.reachable(url)
-  mkdirSync(dirname(lock), { recursive: true, mode: 0o700 })
-  try { mkdirSync(lock, { mode: 0o700 }) } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-    throw new Error(`desktop package: another run or interrupted proxy record exists; after its owner exits, run ${RECOVERY}`)
-  }
-  let original: ProxyRecord | undefined
-  let saved = false
-  let workError: unknown
-  let signal: string | undefined
-  const interrupted = (received: string) => {
-    signal = received
-    process.stderr.write('desktop package: waiting for notarization work to stop before restoring the system proxy\n')
-  }
-  process.on('SIGINT', interrupted)
-  process.on('SIGTERM', interrupted)
-  try {
-    const service = activeService(ops)
-    // PAC, discovery and SOCKS can override explicit proxies; do not silently change those policies.
-    const pac = ops.command(NETWORKSETUP, ['-getautoproxyurl', service])
-    const discovery = ops.command(NETWORKSETUP, ['-getproxyautodiscovery', service])
-    const socks = ops.command(NETWORKSETUP, ['-getsocksfirewallproxy', service])
-    if (!/^Enabled: No$/mu.test(pac) || !/^Auto Proxy Discovery: Off$/mu.test(discovery) || !/^Enabled: No$/mu.test(socks)) {
-      throw new Error('desktop package: disable PAC, proxy discovery and SOCKS on the active service before configuring a notarization proxy')
+  return withProxyLock(lock, async () => {
+    try { mkdirSync(lock, { mode: 0o700 }) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      throw new Error(`desktop package: another run or interrupted proxy record exists; after its owner exits, run ${RECOVERY}`)
     }
-    original = { pid: process.pid, service, http: readProxy(service, false, ops), https: readProxy(service, true, ops) }
-    writeFileSync(join(lock, 'original.json'), `${JSON.stringify(original)}\n`, { flag: 'wx', mode: 0o600, flush: true })
-    saved = true
-    report('restoration-pending')
-    const state = { enabled: true, server: url.hostname.replace(/^\[|\]$/gu, ''), port: Number(url.port || '80') }
-    setProxy(service, false, state, ops)
-    setProxy(service, true, state, ops)
-    report('enabled')
-    const result = await action()
-    if (signal) throw new Error(`desktop package: interrupted by ${signal}`)
-    return result
-  } catch (error) {
-    workError = error
-    throw error
-  } finally {
+    let original: ProxyRecord | undefined
+    let saved = false
+    let workError: unknown
+    let signal: string | undefined
+    const interrupted = (received: string) => {
+      signal = received
+      process.stderr.write('desktop package: waiting for notarization work to stop before restoring the system proxy\n')
+    }
+    process.on('SIGINT', interrupted)
+    process.on('SIGTERM', interrupted)
     try {
-      if (saved && original) {
-        try { restore(original, ops) } catch (error) { report('restore-failed'); throw error }
-        report('restored')
+      const service = activeService(ops)
+      // PAC, discovery and SOCKS can override explicit proxies; do not silently change those policies.
+      const pac = ops.command(NETWORKSETUP, ['-getautoproxyurl', service])
+      const discovery = ops.command(NETWORKSETUP, ['-getproxyautodiscovery', service])
+      const socks = ops.command(NETWORKSETUP, ['-getsocksfirewallproxy', service])
+      if (!/^Enabled: No$/mu.test(pac) || !/^Auto Proxy Discovery: Off$/mu.test(discovery) || !/^Enabled: No$/mu.test(socks)) {
+        throw new Error('desktop package: disable PAC, proxy discovery and SOCKS on the active service before configuring a notarization proxy')
       }
-      rmSync(lock, { recursive: true })
+      original = { pid: process.pid, service, http: readProxy(service, false, ops), https: readProxy(service, true, ops) }
+      writeFileSync(join(lock, 'original.json'), `${JSON.stringify(original)}\n`, { flag: 'wx', mode: 0o600, flush: true })
+      saved = true
+      report('restoration-pending')
+      const state = { enabled: true, server: url.hostname.replace(/^\[|\]$/gu, ''), port: Number(url.port || '80') }
+      setProxy(service, false, state, ops)
+      setProxy(service, true, state, ops)
+      report('enabled')
+      const result = await action()
+      if (signal) throw new Error(`desktop package: interrupted by ${signal}`)
+      return result
     } catch (error) {
-      if (workError !== undefined) {
-        throw new AggregateError([workError, error], `desktop package: work and proxy cleanup failed; run ${RECOVERY}`)
-      }
+      workError = error
       throw error
     } finally {
-      process.off('SIGINT', interrupted)
-      process.off('SIGTERM', interrupted)
+      try {
+        if (saved && original) {
+          try { restore(original, ops) } catch (error) { report('restore-failed'); throw error }
+          report('restored')
+        }
+        rmSync(lock, { recursive: true })
+      } catch (error) {
+        if (workError !== undefined) {
+          throw new AggregateError([workError, error], `desktop package: work and proxy cleanup failed; run ${RECOVERY}`)
+        }
+        throw error
+      } finally {
+        process.off('SIGINT', interrupted)
+        process.off('SIGTERM', interrupted)
+      }
     }
-  }
+  })
 }
 
 if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) {
   if (process.platform !== 'darwin') throw new Error('desktop package: proxy recovery requires macOS')
-  restoreMacOSNotarizationProxy()
+  await restoreMacOSNotarizationProxy()
   console.log('desktop package: original system proxy restored')
 }

@@ -80,6 +80,7 @@ function snapshotWith(
 /** Test-owned AppFrame role: declares and renders the Chat view list. */
 type AppRootProps = PropsRenderSlots<'conversation.view'>
 const VIEW_OWNER: ConvViewOwnerProps = {
+  inspectCall: undefined,
   viewRequest: null,
   openView: () => {},
   completeViewRequest: () => {},
@@ -103,7 +104,7 @@ async function bench(snapshot: ChatSnapshot) {
   const chat = createSnapshotStore(snapshot)
   const events = new ConversationEventRegistry(ctx)
   const views = new ConversationViewRegistry(ctx)
-  ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
   ctx.provide('uiConversation', {
     events,
     views,
@@ -206,7 +207,7 @@ describe('run_code sub-calls through the real chat machinery', () => {
     expect(pre!.querySelectorAll('span[style]').length).toBeGreaterThan(3)
   })
 
-  it('an isError sub-call renders the error state dot exactly like a failed native row', async () => {
+  it('an isError sub-call renders the same error row state as a failed native row', async () => {
     const parent = 'call-64'
     const subCalls = [
       subCall(11, parent, 1, 'mystery', { n: 1 }, 'Error: boom', true),

@@ -99,7 +99,7 @@ it.each(['remote', 'render', 'files'] as const)('keeps Office registration and g
   expect(h.register).toHaveBeenCalledWith(expect.objectContaining({
     name: 'sidebar.right.tab.document', key: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', locale: 'sidebarOffice',
   }), OfficeBody)
-  expect(h.removeNotice).toHaveBeenCalledTimes(2)
+  expect(h.removeNotice).toHaveBeenCalledTimes(3)
 })
 
 it('requests a Host PDF with source identity and borrows the same binary cache result', async () => {

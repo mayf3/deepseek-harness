@@ -1,4 +1,4 @@
-import { IconChecklistOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChecklistOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
@@ -54,7 +54,7 @@ export function TodoRow({ toolName, block, inspect, t }: TodoRowProps) {
       t={t}
       variant={model.variant}
       toolName={toolName}
-      icon={<IconChecklistOutline14 />}
+      icon={<IconChecklistOutlineRegular />}
       title={t('todo.rowTitle')}
       summary={summary.text}
       summarySuffix={summary.extra > 0 ? `+${summary.extra}` : null}

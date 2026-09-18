@@ -44,6 +44,8 @@ Fork copies history through the selected completed turn, including its `turn/end
 
 A resume blocked by an existing write handle returns `session/writer-held` with the Session id; other resume failures retain `gateway/internal`.
 
+`loadThrough(seq)` retains older pages privately until its shared target is covered or loading ends, then publishes the successful pages as one ordered prepend. Live events remain visible while history loads. A later page failure retains the successful prefix; replacing the history window discards buffered pages from the replaced window. Ordinary `loadOlder()` still publishes its single page directly.
+
 <a id="client-references"></a>
 ## Client references
 

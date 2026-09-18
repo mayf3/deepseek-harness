@@ -436,8 +436,8 @@ describe('web e2e: clickable links gallery', () => {
     // globe in the same seat.
     const repoLink = markdown.locator(`a[href="${REPO_URL}"]`)
     expect(await repoLink.count()).toBe(1)
-    const repoMark = await repoLink.locator('svg path').getAttribute('d')
-    const globeMark = await guideLink.locator('svg path').getAttribute('d')
+    const repoMark = await repoLink.locator('svg path').first().getAttribute('d')
+    const globeMark = await guideLink.locator('svg path').first().getAttribute('d')
     expect(repoMark).not.toBe(globeMark)
     await guideLink.hover()
     expect(await styleOf(guideLink, 'text-decoration-line')).toBe('underline')

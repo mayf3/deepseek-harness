@@ -16,8 +16,8 @@ function bench() {
 }
 
 describe('settings domain base plugin', () => {
-  it('keeps the host Loader entry inert', () => {
-    expect(hostApply).not.toThrow()
+  it('can load before a Host settings provider arrives', () => {
+    expect(() => { hostApply(new Context()) }).not.toThrow()
   })
 
   it('mounts the scope service under settingsScope and reads once eagerly', async () => {

@@ -1,9 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, it, vi } from 'vitest'
+import { expect, it as test, vi } from 'vitest'
 import { restoreMacOSNotarizationProxy, withMacOSNotarizationProxy } from '../scripts/macos-notarization-proxy.ts'
+
+// System proxy transactions use POSIX flock, which is unavailable on Windows.
+const it = test.skipIf(process.platform === 'win32')
 
 async function fixture(action: (fixture: ReturnType<typeof fakeSystem>, lock: string) => Promise<void>): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'mac-proxy-test-'))
@@ -75,9 +80,52 @@ it('does not steal a live lock and holds the proxy until concurrent work drains'
     try {
       await entered.promise
       await expect(withMacOSNotarizationProxy('http://localhost:8889', async () => {}, lock, ops)).rejects.toThrow('another run')
+      await expect(restoreMacOSNotarizationProxy(lock, ops)).rejects.toThrow('another run')
+      expect(ops.ownerAlive).not.toHaveBeenCalled()
       expect(states.http.port).toBe(8888)
       expect(existsSync(lock)).toBe(true)
     } finally { finish.resolve(undefined); await running }
+    expect(states).toEqual(original)
+  })
+})
+
+it('excludes both operations across processes and releases ownership after forced exit', async () => {
+  await fixture(async ({ ops, states, original, control }, lock) => {
+    control.failSet = 5
+    await expect(withMacOSNotarizationProxy('http://localhost:8888', async () => {}, lock, ops)).rejects.toThrow('restoration failed')
+    const saved = readFileSync(join(lock, 'original.json'), 'utf8')
+    const child = spawn(process.execPath, ['--input-type=module', '-e', `
+      import { openSync } from 'node:fs';
+      import { tryLockExclusive } from ${JSON.stringify(import.meta.resolve('@deepseek-ai/node-addon-system/flock'))};
+      const fd = openSync(process.argv[1], 'a', 0o600);
+      await tryLockExclusive(fd);
+      process.send('locked');
+      process.stdin.resume();
+    `, `${lock}.flock`], { stdio: ['pipe', 'ignore', 'pipe', 'ipc'], env: { PATH: process.env.PATH } })
+    const exited = once(child, 'exit')
+    const closed = once(child, 'close')
+    try {
+      await Promise.race([
+        once(child, 'message').then(([message]) => { expect(message).toBe('locked') }),
+        exited.then(([code, signal]) => { throw new Error(`lock holder exited before readiness: ${code}/${signal}`) }),
+      ])
+      ops.command.mockClear()
+      ops.ownerAlive.mockClear()
+      await expect(restoreMacOSNotarizationProxy(lock, ops)).rejects.toThrow('another run')
+      await expect(withMacOSNotarizationProxy('http://localhost:8889', async () => {}, lock, ops)).rejects.toThrow('another run')
+      expect(ops.command).not.toHaveBeenCalled()
+      expect(ops.ownerAlive).not.toHaveBeenCalled()
+      expect(readFileSync(join(lock, 'original.json'), 'utf8')).toBe(saved)
+    } finally {
+      child.kill('SIGKILL')
+      await closed
+    }
+    expect(await exited).toEqual([null, 'SIGKILL'])
+    await restoreMacOSNotarizationProxy(lock, ops)
+    expect(states).toEqual(original)
+    expect(existsSync(lock)).toBe(false)
+    expect(existsSync(`${lock}.flock`)).toBe(true)
+    await withMacOSNotarizationProxy('http://localhost:8889', async () => {}, lock, ops)
     expect(states).toEqual(original)
   })
 })
@@ -119,8 +167,8 @@ it('retains recovery data after failed restoration, rejects live owners, then re
     await expect(withMacOSNotarizationProxy('http://localhost:8888', async () => {}, lock, ops)).rejects.toThrow('restoration failed')
     expect(existsSync(join(lock, 'original.json'))).toBe(true)
     ops.ownerAlive.mockReturnValueOnce(true)
-    expect(() =>{  restoreMacOSNotarizationProxy(lock, ops) }).toThrow('still running')
-    restoreMacOSNotarizationProxy(lock, ops)
+    await expect(restoreMacOSNotarizationProxy(lock, ops)).rejects.toThrow('still running')
+    await restoreMacOSNotarizationProxy(lock, ops)
     expect(states).toEqual(original)
     expect(existsSync(lock)).toBe(false)
   })
@@ -132,7 +180,7 @@ it('rejects malformed saved state without invoking host commands', async () => {
     await expect(withMacOSNotarizationProxy('http://localhost:8888', async () => {}, lock, ops)).rejects.toThrow('restoration failed')
     await writeFile(join(lock, 'original.json'), '{"pid":-1}')
     ops.command.mockClear()
-    expect(() =>{  restoreMacOSNotarizationProxy(lock, ops) }).toThrow('invalid proxy recovery record')
+    await expect(restoreMacOSNotarizationProxy(lock, ops)).rejects.toThrow('invalid proxy recovery record')
     expect(ops.command).not.toHaveBeenCalled()
   })
 })
@@ -165,6 +213,6 @@ it('retains both the Apple failure and restoration failure', async () => {
     const result = withMacOSNotarizationProxy('http://localhost:8888', async () => { throw appleError }, lock, ops)
     await expect(result).rejects.toMatchObject({ errors: [appleError, expect.any(AggregateError)] })
     expect(existsSync(join(lock, 'original.json'))).toBe(true)
-    restoreMacOSNotarizationProxy(lock, ops)
+    await restoreMacOSNotarizationProxy(lock, ops)
   })
 })
