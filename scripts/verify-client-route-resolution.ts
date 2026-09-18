@@ -256,11 +256,12 @@ export function findRouteResolutionViolations(
  *
  * A browser half belongs to `src/client`; a package that keeps its whole UI in
  * plain `src` is found through the project itself, which carries the Client
- * compiler shape (DOM libraries). A project the Host aggregate also compiles
- * has a host half rather than a browser-only surface, so only its `src/client`
- * tree is browser face. Every such face must contribute at least one source
- * file: a face that contributes none means the aggregate's layout moved out
- * from under this discovery, which must fail loud rather than scan less.
+ * compiler shape (DOM libraries). A config the Host aggregate also compiles has
+ * a host half rather than a browser-only surface, so its plain `src/` is
+ * scanned only when it has no `src/client` half; that half arrives below. Every
+ * such face must contribute at least one source file: a face that contributes
+ * none means the aggregate's layout moved out from under this discovery, which
+ * must fail loud rather than scan less.
  * @param projectRoot - repository root to discover from.
  * @returns sorted repository-relative source paths.
  */
@@ -274,12 +275,18 @@ export function browserFaceSources(projectRoot: string = root): string[] {
   const hostConfigs = faceConfigs(projectRoot, 'host').byPath
 
   for (const [configPath, parsed] of faceConfigs(projectRoot, 'client').byPath) {
-    if (parsed.options.lib?.includes('lib.dom.d.ts') !== true || hostConfigs.has(configPath)) continue
-    const sourceRoot = `${dirname(configPath).replaceAll('\\', '/')}/src/`
+    if (parsed.options.lib?.includes('lib.dom.d.ts') !== true) continue
+    const configRoot = dirname(configPath).replaceAll('\\', '/')
+    const sourceRoot = `${configRoot}/src/`
     // An aggregate or app shell (the root Client program) carries the compiler
     // shape but no `src/` tree of its own; its browser sources arrive through
     // the references and `src/client` discovery below.
     if (!existsSync(sourceRoot)) continue
+    // A package the Host aggregate also compiles has a host half; when its
+    // browser half is `src/client`, plain `src/` may hold the node half, and
+    // `src/client` alone is scanned below. Without that half, all of `src/` is
+    // the browser surface.
+    if (hostConfigs.has(configPath) && existsSync(`${configRoot}/src/client`)) continue
     const faceSources = parsed.fileNames.filter((file) => {
       const normalized = file.replaceAll('\\', '/')
       return normalized.startsWith(sourceRoot) && /\.tsx?$/.test(normalized)

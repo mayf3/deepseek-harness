@@ -157,15 +157,26 @@ function writeFaceAggregates(root: string, client: readonly string[], host: read
 }
 
 describe('browser face discovery', () => {
-  it('takes sources from the Client aggregate alone', () => {
+  it('takes every DOM client project, and only its src/client half when the Host aggregate also compiles it', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-route-face-'))
     try {
-      writeProject(root, 'browser-package', { lib: ['ES2024', 'DOM'], sources: ['src/view.ts', 'src/globals.d.ts'] })
-      writeProject(root, 'shared-package', { lib: ['ES2024', 'DOM'], sources: ['src/both-faces.ts'] })
-      writeProject(root, 'host-package', { lib: ['ES2024'], sources: ['src/host.ts'] })
-      writeFaceAggregates(root, ['browser-package', 'shared-package', 'host-package'], ['shared-package', 'host-package'])
+      writeProject(root, 'packages/client/browser-package', { lib: ['ES2024', 'DOM'], sources: ['src/view.ts', 'src/globals.d.ts'] })
+      // Compiles in both aggregates and keeps its browser code in plain `src`.
+      writeProject(root, 'packages/client/shared-package', { lib: ['ES2024', 'DOM'], sources: ['src/both-faces.ts'] })
+      // Compiles in both aggregates but has a `src/client` browser half, so its
+      // plain `src` (the node half) is out of scope.
+      writeProject(root, 'packages/client/dual-package', { lib: ['ES2024', 'DOM'], sources: ['src/client/View.tsx', 'src/node.ts'] })
+      writeProject(root, 'packages/client/host-package', { lib: ['ES2024'], sources: ['src/host.ts'] })
+      writeFaceAggregates(root, [
+        'packages/client/browser-package', 'packages/client/shared-package',
+        'packages/client/dual-package', 'packages/client/host-package',
+      ], ['packages/client/shared-package', 'packages/client/dual-package', 'packages/client/host-package'])
 
-      expect(browserFaceSources(root)).toEqual(['browser-package/src/view.ts'])
+      expect(browserFaceSources(root)).toEqual([
+        'packages/client/browser-package/src/view.ts',
+        'packages/client/dual-package/src/client/View.tsx',
+        'packages/client/shared-package/src/both-faces.ts',
+      ])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

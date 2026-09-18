@@ -28,4 +28,4 @@ The gate reads inline literal fragments only, so a composed reference (`comboRef
 
 ## Testing
 
-The gate's own spec pins a negative control per rule: interpolated targets (`${origin}/api/file`), protocol-relative and absolute forms, an unstripped shared key, a relative route resolved against a `location` read, and root-absolute producer fields. Each feature package's specs assert the relative route its browser half sends; `markdown-images.e2e.ts` keeps the local-image path covered end to end.
+The gate's own spec pins a negative control per rule: interpolated targets (`${origin}/api/file`), protocol-relative and absolute forms, an unstripped shared key, a relative route resolved against a `location` read, and root-absolute producer fields. Each feature package's specs assert the relative route its browser half sends; `markdown-images.e2e.ts` keeps the local-image path covered end to end. The discovery spec pins which client projects contribute browser sources: a DOM project the Host aggregate also compiles contributes its plain `src/` unless it has a `src/client` half.

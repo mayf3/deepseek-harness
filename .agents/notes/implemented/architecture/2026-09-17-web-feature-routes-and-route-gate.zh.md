@@ -28,4 +28,4 @@ Status: implemented
 
 ## 测试
 
-门禁自身的 spec 为每条规则固定了负向对照：插值目标（`${origin}/api/file`）、协议相对与绝对形式、未剥前导斜杠的共享键、相对路由相对 `location` 读取解析，以及生产者中根绝对的引用字段。各功能包的 spec 断言其浏览器半侧发出的相对路由；`markdown-images.e2e.ts` 端到端维持本地图片路径的覆盖。
+门禁自身的 spec 为每条规则固定了负向对照：插值目标（`${origin}/api/file`）、协议相对与绝对形式、未剥前导斜杠的共享键、相对路由相对 `location` 读取解析，以及生产者中根绝对的引用字段。各功能包的 spec 断言其浏览器半侧发出的相对路由；`markdown-images.e2e.ts` 端到端维持本地图片路径的覆盖。发现逻辑的 spec 固定了哪些 client 项目贡献浏览器源文件：同时被 Host 聚合编译的 DOM 项目，若没有 `src/client` 半边，则其整个 `src/` 都计入。
