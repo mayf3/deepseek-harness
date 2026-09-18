@@ -667,10 +667,11 @@ describe('ChatView', () => {
   })
 
   it.each([
-    ['bash', { command: 'git status', description: 'Inspect changes' }, '正在运行命令 git status'],
-    ['web_search', { queries: ['Cordis plugins', 'DSH tools'] }, '正在搜索网页 Cordis plugins, DSH tools'],
-    ['web_fetch', { url: 'https://example.com/docs' }, '正在访问网页 https://example.com/docs'],
-    ['read', { file_path: '/src/main.ts' }, '正在读取文件 /src/main.ts'],
+    ['bash', { command: 'git status', description: '检查当前改动' }, '正在运行命令 · 检查当前改动'],
+    ['web_search', { queries: ['Cordis plugins', 'DSH tools'] }, '正在搜索网页 · Cordis plugins, DSH tools'],
+    ['web_fetch', { url: 'https://example.com/docs' }, '正在访问网页 · https://example.com/docs'],
+    ['read', { file_path: '/src/main.ts' }, '正在读取文件 · /src/main.ts'],
+    ['custom_tool', {}, '正在调用工具 · custom_tool'],
   ])('shows live %s details only in Detailed secondary titles', (name, args, expected) => {
     vi.useFakeTimers()
     vi.setSystemTime(10_000)
@@ -698,7 +699,7 @@ describe('ChatView', () => {
       })
       expect(title()).toBe(expected)
       act(() => { vi.advanceTimersByTime(150) })
-      expect(title()).toBe('正在分析请求')
+      expect(title()).toBe('正在分析请求 · private reasoning')
     } finally {
       cleanup()
       vi.useRealTimers()
@@ -765,6 +766,8 @@ describe('ChatView', () => {
       expect(toggle.textContent).not.toMatch(/context|上下文|permission|系统提示/)
       fireEvent.click(toggle)
       expect(body.hasAttribute('hidden')).toBe(false)
+      expect(toggle.querySelector('[data-step-process-chevron] path')?.getAttribute('d'))
+        .toBe('M12 10L8.70711 6.70711C8.31658 6.31658 7.68342 6.31658 7.29289 6.70711L4 10')
       act(() => { h.setChat({
         nodes: [userInTurn(1, 'inspect', 2), context(2, 'private runtime context', 2), reasoningAssistant(2.5, 'initial reasoning', 2), toolResult(3, 'work')],
         runningCalls: [],
@@ -1758,6 +1761,7 @@ describe('ChatView', () => {
       const view = render(<h.ChatView {...h.props} />)
       const toggle = view.getByRole('button', { name: 'Deep diving for 1s' })
       expect(view.queryByRole('status')).toBeNull()
+      expect(toggle.querySelector('[data-text-shimmer]')).toBeNull()
       expect(toggle.getAttribute('aria-expanded')).toBeNull()
       act(() => { vi.advanceTimersByTime(2_000) })
       expect(toggle.textContent).toBe('Deep diving for 2s')
@@ -2229,9 +2233,10 @@ describe('ChatView', () => {
     expect(dialog.textContent).toContain('缓存命中49.4%')
     expect(dialog.textContent).toContain('未缓存输入5,060 tok')
     fireEvent.keyDown(document, { key: 'Escape' })
-    expect(view.queryByRole('button', { name: /用时/ })).toBeNull()
+    expect(turnProcessControl(view.container)?.textContent).toBe('用时 19秒')
     act(() => { h.setPerformanceUsage('compact') })
     expect(view.queryByRole('button', { name: /用量/ })).toBeNull()
+    expect(turnProcessControl(view.container)?.textContent).toBe('用时 19秒')
     act(() => { h.setPerformanceUsage('detailed') })
     expect(view.getByRole('button', { name: /用量/ })).toBeTruthy()
   })
@@ -2248,7 +2253,7 @@ describe('ChatView', () => {
       turnEnds: new Map([[1, 20]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.queryByRole('button', { name: /用时/ })).toBeNull()
+    expect(turnProcessControl(view.container)?.textContent).toBe('用时 19秒')
     expect(view.queryByRole('button', { name: /用量/ })).toBeNull()
   })
 

@@ -40,7 +40,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: opacity 100ms ease, transform 100ms ease;
+  transition: opacity 100ms ease;
 }
 
 .activityIcon {
@@ -59,19 +59,23 @@
   opacity: 1;
 }
 
+.title[aria-expanded="true"] .activityIcon {
+  opacity: 0;
+}
+
 .title[aria-expanded="true"] .chevron {
-  transform: rotate(180deg);
+  opacity: 1;
 }
 
 .title[aria-expanded="true"] {
-  padding-bottom: 12px;
+  padding-bottom: 16px;
 }
 
 .body {
   --dsh-chat-flow-gap: 8px;
   max-height: min(400px, 50vh);
   overflow-y: auto;
-  overscroll-behavior-y: contain;
+  overscroll-behavior-y: auto;
   scrollbar-gutter: stable;
 }
 

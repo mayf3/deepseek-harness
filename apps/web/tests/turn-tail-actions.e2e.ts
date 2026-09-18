@@ -244,14 +244,14 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
 
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Settings' })
-    await dialog.getByRole('button', { name: 'Compact', exact: true }).click()
-    await dialog.getByText('Work details', { exact: true }).waitFor()
+    const workDetailsRow = dialog.getByText('Work details', { exact: true }).locator('xpath=../..')
+    await workDetailsRow.getByRole('button', { name: 'Compact', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Detailed', exact: true }).click()
     await page.keyboard.press('Escape')
     await expect.poll(() => process.count(), { timeout: 10_000 }).toBe(1)
     expect(await tool.isVisible()).toBe(false)
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    await dialog.getByRole('button', { name: 'Detailed', exact: true }).click()
+    await workDetailsRow.getByRole('button', { name: 'Detailed', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Expanded', exact: true }).click()
     await page.keyboard.press('Escape')
 

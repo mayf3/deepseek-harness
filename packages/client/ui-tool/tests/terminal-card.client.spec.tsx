@@ -471,6 +471,8 @@ describe('BashRow terminal card', () => {
     fireEvent.click(row)
 
     expect(row.getAttribute('aria-expanded')).toBe('true')
+    expect(row.querySelector('svg path')?.getAttribute('d'))
+      .toBe('M12 10L8.70711 6.70711C8.31658 6.31658 7.68342 6.31658 7.29289 6.70711L4 10')
     expect(view.getByText('输入')).toBeTruthy()
     expect(view.getByText('输出')).toBeTruthy()
     expect(view.getByText(/"command": "ls -la"/)).toBeTruthy()

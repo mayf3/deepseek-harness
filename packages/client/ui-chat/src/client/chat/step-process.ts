@@ -88,32 +88,76 @@ function activity(name: string): ProcessActivity {
   return 'tools'
 }
 
-function liveToolDetail(argsRaw: string): string {
-  let args: unknown
-  try {
-    args = JSON.parse(argsRaw)
-  } catch {
-    // Partial argument JSON has no complete detail to preview.
-    return ''
+const LIVE_TOOL_DETAIL_MAX_CHARS = 160
+const LIVE_TOOL_DETAIL_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+const LIVE_TOOL_DETAIL_KEYS = [
+  'title', 'description', 'objective', 'task', 'task_name', 'name', 'question', 'questions', 'prompt', 'message',
+  'command', 'cmd', 'queries', 'query', 'pattern', 'url', 'uri', 'file_path', 'path', 'target', 'action', 'status',
+] as const
+
+function normalizeLiveToolDetail(value: unknown): string {
+  const text = typeof value === 'string'
+    ? value
+    : Array.isArray(value) && value.every(item => typeof item === 'string')
+      ? value.join(', ')
+      : ''
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  const chars = Array.from(LIVE_TOOL_DETAIL_SEGMENTER.segment(normalized), part => part.segment)
+  return chars.length <= LIVE_TOOL_DETAIL_MAX_CHARS
+    ? normalized
+    : `${chars.slice(0, LIVE_TOOL_DETAIL_MAX_CHARS - 1).join('').trimEnd()}…`
+}
+
+function questionDetail(value: unknown): string {
+  if (!Array.isArray(value)) return ''
+  for (const item of value) {
+    if (item === null || typeof item !== 'object') continue
+    const detail = normalizeLiveToolDetail(Reflect.get(item, 'question'))
+    if (detail !== '') return detail
   }
-  if (args === null || typeof args !== 'object') return ''
-  for (const key of ['command', 'cmd', 'queries', 'query', 'pattern', 'url', 'file_path', 'path', 'description']) {
-    if (key in args) {
-      const value: unknown = Reflect.get(args, key)
-      if (Array.isArray(value) && value.every(item => typeof item === 'string')) {
-        const detail = value.join(', ').replace(/\s+/g, ' ').trim()
+  return ''
+}
+
+function liveReasoningDetail(nodes: readonly ChatNode[]): string {
+  for (let nodeIndex = nodes.length - 1; nodeIndex >= 0; nodeIndex--) {
+    const node = nodes[nodeIndex]
+    if (node?.kind !== 'assistant-step' || node.data.status !== 'running') continue
+    for (let blockIndex = node.data.blocks.length - 1; blockIndex >= 0; blockIndex--) {
+      const block = node.data.blocks[blockIndex]
+      if (block?.kind !== 'reasoning') continue
+      const paragraphs = block.text.split(/\r?\n[\t ]*\r?\n/)
+      for (let paragraphIndex = paragraphs.length - 1; paragraphIndex >= 0; paragraphIndex--) {
+        const detail = normalizeLiveToolDetail(paragraphs[paragraphIndex]?.replaceAll('**', ''))
         if (detail !== '') return detail
       }
-      if (typeof value === 'string' && value.trim() !== '') return value.replace(/\s+/g, ' ').trim()
     }
   }
   return ''
 }
 
+function liveToolDetail(name: string, argsRaw: string): string {
+  let args: unknown
+  try {
+    args = JSON.parse(argsRaw)
+  } catch {
+    // Partial or free-form arguments have no safe one-line task detail.
+    return normalizeLiveToolDetail(name)
+  }
+  if (args === null || typeof args !== 'object') return normalizeLiveToolDetail(name)
+  for (const key of LIVE_TOOL_DETAIL_KEYS) {
+    if (key in args) {
+      const value: unknown = Reflect.get(args, key)
+      const detail = key === 'questions' ? questionDetail(value) : normalizeLiveToolDetail(value)
+      if (detail !== '') return detail
+    }
+  }
+  return normalizeLiveToolDetail(name)
+}
+
 /**
  * Rank categories by distinct call count, breaking ties by first appearance.
  * @param nodes - process members, including recursive tools.
- * @returns all ranked categories and the latest running tool category and argument preview.
+ * @returns all ranked categories and the latest running tool category and bounded task detail.
  */
 export function processActivity(nodes: readonly ChatNode[]): {
   counts: readonly { kind: ProcessActivity; count: number }[]
@@ -133,7 +177,7 @@ export function processActivity(nodes: readonly ChatNode[]): {
       const kind = activity(call.name)
       if (isRunningTool(tool) && tool.time >= runningTime) {
         running = kind
-        runningDetail = liveToolDetail(tool.argsRaw)
+        runningDetail = liveToolDetail(tool.name, tool.argsRaw)
         runningTime = tool.time
       }
       counts.set(kind, (counts.get(kind) ?? 0) + 1)
@@ -143,6 +187,7 @@ export function processActivity(nodes: readonly ChatNode[]): {
   for (const node of nodes) {
     if (node.kind === 'tool-call') visit(node.data.root)
   }
+  if (running === undefined) runningDetail = liveReasoningDetail(nodes)
   return {
     counts: [...counts].map(([kind, count]) => ({ kind, count })).sort((a, b) => b.count - a.count),
     running,

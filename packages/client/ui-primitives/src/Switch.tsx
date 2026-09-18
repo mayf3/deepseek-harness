@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import css from './Switch.module.css'
 
 /**
- * Render a toggle switch.
+ * Render a toggle switch with a white resting thumb and an active-track foreground thumb.
  * @param props.checked - the current state; the control is fully controlled.
  * @param props.onChange - called with the state the click asks for.
  * @param props.label - localized accessible name, owned by the render site.

@@ -42,7 +42,31 @@ describe('process activity summary', () => {
     const root = { ...call('code', 'run_code'), subCalls: [{ ...call('read', 'read'), time: 3, argsRaw: '{' }] }
     const summary = processActivity(nodes([root, { ...call('bash', 'bash'), time: 2 }]))
     expect(summary.running).toBe('read')
-    expect(summary.runningDetail).toBe('')
+    expect(summary.runningDetail).toBe('read')
+  })
+
+  it('prefers concise task fields, reads question arrays, caps long details, and falls back to the tool name', () => {
+    const detail = (name: string, args: unknown): string => processActivity(nodes([
+      { ...call('current', name), argsRaw: typeof args === 'string' ? args : JSON.stringify(args) },
+    ])).runningDetail
+    expect(detail('exec_command', { command: 'git status', description: 'Inspect current changes' }))
+      .toBe('Inspect current changes')
+    expect(detail('request_user_input', { questions: [{ question: 'Which layout should the card use?' }] }))
+      .toBe('Which layout should the card use?')
+    expect(detail('spawn_agent', { task_name: 'audit_ui', message: 'Inspect the complete UI implementation.' }))
+      .toBe('audit_ui')
+    expect(detail('custom_tool', {})).toBe('custom_tool')
+    expect(detail('freeform_tool', 'not-json')).toBe('freeform_tool')
+    expect(detail('custom_tool', { title: 'x'.repeat(200) })).toBe(`${'x'.repeat(159)}…`)
+  })
+
+  it('uses the latest live reasoning paragraph while no tool is running', () => {
+    const snapshot = chatSnapshotFixture({ partial: { turn: 1, step: 1, blocks: [
+      { kind: 'reasoning', text: '**Inspect the request**\ncarefully\n\nCompare the current tool output' },
+    ] } })
+    const summary = processActivity([...snapshot.nodes.values()] as ChatNode[])
+    expect(summary.running).toBeUndefined()
+    expect(summary.runningDetail).toBe('Compare the current tool output')
   })
 
   it.each([

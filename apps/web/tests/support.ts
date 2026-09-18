@@ -69,9 +69,9 @@ export async function expandTurnProcesses(page: Page): Promise<void> {
 }
 
 /**
- * Expand the Turn-process group containing one possibly hidden descendant.
+ * Expand the Turn and secondary process groups containing a possibly hidden descendant.
  * @param page - page containing the Chat view.
- * @param target - descendant whose owning Turn process should open.
+ * @param target - descendant whose owning process groups should open.
  */
 export async function expandOwningTurnProcess(page: Page, target: Locator): Promise<void> {
   const turn = await target.evaluate(element => element.closest<HTMLElement>('[data-chat-turn]')?.dataset.chatTurn)
@@ -79,6 +79,11 @@ export async function expandOwningTurnProcess(page: Page, target: Locator): Prom
   const control = page.locator(`[data-turn-process="${turn}"]`)
   await control.waitFor({ state: 'visible', timeout: 10_000 })
   if (await control.getAttribute('aria-expanded') !== 'true') await control.click()
+  if (await target.isVisible()) return
+  const group = target.locator('xpath=ancestor::*[@data-step-process][1]')
+  if (await group.count() === 0) return
+  const stepControl = group.locator(':scope > button').first()
+  if (await stepControl.getAttribute('aria-expanded') !== 'true') await stepControl.click()
 }
 
 /** Fail loud on a stale checkout instead of testing yesterday's bundle. */

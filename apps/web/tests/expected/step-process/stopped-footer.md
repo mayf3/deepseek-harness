@@ -1,13 +1,5 @@
-- button "Copy":
-  - img
-- button "Good response":
-  - img
-- button "Bad response":
-  - img
-- button "Branch into a new conversation" [disabled]:
-  - img
-- text: Available only on the last message of a completed turn
-- button "Ran for 0s":
-  - img
-  - text: Ran for 0s
-- text: HH:mm
+- button "Copy"
+- button "Good response"
+- button "Bad response"
+- button "Branch into a new conversation" [disabled]
+- text: Available only on the last message of a completed turn HH:mm

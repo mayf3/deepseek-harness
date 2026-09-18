@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render } from '@testing-library/react'
 import {
   IconAgentPresetOutlineRegular, IconAlarmClockOutlineRegular, IconBranchOutlineRegular,
   IconContextInjectionOutlineRegular, IconCordisPluginOutlineRegular, IconGoalOutlineRegular,
-  IconGlobeOutlineRegular, IconQueueOutlineRegular, IconSendOutlineRegular,
+  IconGlobeOutlineRegular, IconPaperPlaneOutlineRegular, IconQueueOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeViewProps } from '../src/client/contract/slots.ts'
 import { TurnTriggerNodeView } from '../src/client/chat/TurnTriggerNodeView.tsx'
@@ -43,7 +43,7 @@ function props(source: unknown, text = 'trigger content'): ChatNodeViewProps<'tu
 it.each([
   [{ kind: 'custom-extension' }, '', IconContextInjectionOutlineRegular],
   [{ kind: 'goal' }, '', IconGoalOutlineRegular],
-  [{ kind: 'agent-message' }, '', IconSendOutlineRegular],
+  [{ kind: 'agent-message' }, '', IconPaperPlaneOutlineRegular],
   [{ kind: 'team-message' }, '', IconAgentPresetOutlineRegular],
   [{ kind: 'subagent-settled' }, '', IconAgentPresetOutlineRegular],
   [{ kind: 'webhook', provider: 'github' }, '', IconBranchOutlineRegular],

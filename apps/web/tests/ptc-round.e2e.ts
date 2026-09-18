@@ -128,6 +128,8 @@ describe('web e2e: PTC mode round renders nested sub-calls', () => {
       await expect.poll(() => row.getAttribute('aria-expanded')).toBe('false')
       await row.click()
       await expect.poll(() => row.getAttribute('aria-expanded')).toBe('true')
+      expect(await row.locator('svg path').first().getAttribute('d'))
+        .toBe('M12 10L8.70711 6.70711C8.31658 6.31658 7.68342 6.31658 7.29289 6.70711L4 10')
       const terminal = row.locator('xpath=..').locator('[data-terminal]')
       await terminal.waitFor()
       await terminal.getByText('echo CODE_ROUND_OK', { exact: true }).waitFor()

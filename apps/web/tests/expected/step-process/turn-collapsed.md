@@ -1,3 +1,1 @@
-- button "Took 1s":
-  - text: Took 1s
-  - img
+- button "Took 1s"

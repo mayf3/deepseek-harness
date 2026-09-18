@@ -53,12 +53,12 @@
 
 .column > [data-step-process]:not([hidden])
   + [data-chat-flow-kind='assistant-step']:not([hidden]) {
-  --dsh-chat-flow-gap: 12px;
+  --dsh-chat-flow-gap: 16px;
 }
 
 .column > [data-chat-flow-kind='assistant-step']:not([hidden])
   + [data-step-process]:not([hidden]) {
-  --dsh-chat-flow-gap: 12px;
+  --dsh-chat-flow-gap: 16px;
 }
 
 /* Capped process scrollports retain the same row spacing without shrinking leaves. */

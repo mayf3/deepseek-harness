@@ -1,4 +1,3 @@
 - button "Background task completed HH:mm":
   - text: Background task completed
   - time: HH:mm
-  - img

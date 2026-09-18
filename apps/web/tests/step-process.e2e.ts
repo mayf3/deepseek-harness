@@ -68,13 +68,17 @@ it('keeps completed step work collapsed inside an expanded turn and bounds its s
       expect(await group.evaluate((element) => {
         const next = element.nextElementSibling
         return next === null ? null : next.getBoundingClientRect().top - element.getBoundingClientRect().bottom
-      })).toBe(12)
+      })).toBe(16)
       await compareOrRefreshGolden(fileURLToPath(new URL('./expected/step-process/collapsed.md', import.meta.url)),
         await group.ariaSnapshot(), webSnapshotMode())
       await toggle.click()
       const body = group.locator('[data-step-process-body]')
       expect(await body.getAttribute('hidden')).toBeNull()
-      expect(await toggle.evaluate(element => getComputedStyle(element).paddingBottom)).toBe('12px')
+      await expect.poll(() => activityIcon.evaluate(element => getComputedStyle(element).opacity)).toBe('0')
+      await expect.poll(() => chevron.evaluate(element => getComputedStyle(element).opacity)).toBe('1')
+      expect(await chevron.locator('path').getAttribute('d'))
+        .toBe('M12 10L8.70711 6.70711C8.31658 6.31658 7.68342 6.31658 7.29289 6.70711L4 10')
+      expect(await toggle.evaluate(element => getComputedStyle(element).paddingBottom)).toBe('16px')
       const leafSpacing = await body.evaluate((element) => {
         const rows = [...element.children].filter(row => !row.hasAttribute('hidden'))
         return rows.slice(1).map((row, index) => ({
@@ -85,6 +89,10 @@ it('keeps completed step work collapsed inside an expanded turn and bounds its s
       expect(leafSpacing).toEqual([{ gap: 8, shrink: '0' }, { gap: 8, shrink: '0' }])
       // Expand the individual tool cards so their output exceeds the process viewport.
       for (const row of await body.locator('[data-sample="bash"]').all()) await row.click()
+      await body.evaluate((element) => {
+        element.scrollTop = 0
+        element.dispatchEvent(new Event('scroll'))
+      })
       await expect.poll(() => body.getAttribute('data-scroll-up')).toBeNull()
       await expect.poll(() => body.getAttribute('data-scroll-down')).toBe('true')
       await page.screenshot({ path: '/tmp/dsh-step-process-expanded.png' })
@@ -115,6 +123,108 @@ it('keeps completed step work collapsed inside an expanded turn and bounds its s
       expect(resetGeometry.scroll).toBeLessThanOrEqual(resetGeometry.height)
       await toggle.click()
       expect(await toggle.getAttribute('aria-expanded')).toBe('false')
+    } finally {
+      await browser.close()
+    }
+  } finally {
+    await scaffold.close()
+  }
+})
+
+it('chains wheel scrolling from a secondary process range to the conversation', async () => {
+  const fixture = createChatScrollFixture({
+    markerPrefix: 'STEP_PROCESS_SCROLL', title: 'Step process scrolling', turns: 96,
+  })
+  const scaffold = await launchWebScaffold({})
+  try {
+    await seedSession(scaffold, fixture.log, 'step-process-scroll-e2e')
+    const browser = await chromium.launch()
+    try {
+      const page = await newEnglishPage(browser, 900)
+      await page.goto(scaffold.authenticatedUrl)
+      await page.getByText('Ungrouped', { exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Search sessions' }).click()
+      await page.getByRole('textbox', { name: 'Search sessions...', exact: true }).fill(fixture.markers.user(1))
+      const results = page.getByRole('tree', { name: 'Search results' }).getByRole('treeitem')
+      await expect.poll(() => results.count(), { timeout: 60_000 }).toBe(1)
+      await results.click()
+
+      const outer = page.locator('[data-turn-process="88"]')
+      await outer.click()
+      const group = page.locator('[data-step-process][data-chat-turn="88"]').first()
+      const toggle = group.getByRole('button', { name: 'Ran commands', exact: true })
+      await toggle.click()
+      const body = group.locator('[data-step-process-body]')
+      const host = page.locator('[data-conversation-scroll]')
+      const wheelBody = async (deltaY: number): Promise<void> => {
+        const box = await body.boundingBox()
+        if (box === null) throw new Error('step process body has no layout box')
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+        await page.mouse.wheel(0, deltaY)
+      }
+
+      const shortGeometry = await body.evaluate((element) => {
+        const scrollHost = element.closest<HTMLElement>('[data-conversation-scroll]')
+        if (scrollHost === null) throw new Error('step process body has no conversation scrollport')
+        return {
+          hostMax: scrollHost.scrollHeight - scrollHost.clientHeight,
+          hostTop: scrollHost.scrollTop,
+          scrollable: element.scrollHeight > element.clientHeight,
+        }
+      })
+      expect(shortGeometry.scrollable).toBe(false)
+      expect(shortGeometry.hostTop).toBeGreaterThan(120)
+      expect(shortGeometry.hostMax - shortGeometry.hostTop).toBeGreaterThan(120)
+      await wheelBody(-120)
+      await expect.poll(() => host.evaluate(element => element.scrollTop)).toBeLessThan(shortGeometry.hostTop)
+      const shortHostAfterUp = await host.evaluate(element => element.scrollTop)
+      await wheelBody(120)
+      await expect.poll(() => host.evaluate(element => element.scrollTop)).toBeGreaterThan(shortHostAfterUp)
+
+      for (const row of await body.locator('[data-sample="bash"]').all()) await row.click()
+      await body.hover()
+      const middle = await body.evaluate((element) => {
+        const scrollHost = element.closest<HTMLElement>('[data-conversation-scroll]')
+        if (scrollHost === null) throw new Error('step process body has no conversation scrollport')
+        element.scrollTop = (element.scrollHeight - element.clientHeight) / 2
+        element.dispatchEvent(new Event('scroll'))
+        return {
+          bodyTop: element.scrollTop,
+          hostTop: scrollHost.scrollTop,
+          scrollable: element.scrollHeight > element.clientHeight,
+        }
+      })
+      expect(middle.scrollable).toBe(true)
+      await wheelBody(80)
+      await expect.poll(() => body.evaluate(element => element.scrollTop)).toBeGreaterThan(middle.bodyTop)
+      expect(await host.evaluate(element => element.scrollTop)).toBe(middle.hostTop)
+
+      await body.evaluate((element) => {
+        element.scrollTop = 0
+        element.dispatchEvent(new Event('scroll'))
+      })
+      await body.hover()
+      const hostBeforeTopChain = await host.evaluate(element => element.scrollTop)
+      await wheelBody(-120)
+      await expect.poll(() => host.evaluate(element => element.scrollTop)).toBeLessThan(hostBeforeTopChain)
+      expect(await body.evaluate(element => element.scrollTop)).toBe(0)
+
+      await body.evaluate((element) => {
+        element.scrollTop = element.scrollHeight
+        element.dispatchEvent(new Event('scroll'))
+      })
+      await body.hover()
+      const bottomEdge = await body.evaluate((element) => {
+        const scrollHost = element.closest<HTMLElement>('[data-conversation-scroll]')
+        if (scrollHost === null) throw new Error('step process body has no conversation scrollport')
+        return {
+          hostTop: scrollHost.scrollTop,
+          maxBodyTop: element.scrollHeight - element.clientHeight,
+        }
+      })
+      await wheelBody(120)
+      await expect.poll(() => host.evaluate(element => element.scrollTop)).toBeGreaterThan(bottomEdge.hostTop)
+      expect(await body.evaluate(element => element.scrollTop)).toBe(bottomEdge.maxBodyTop)
     } finally {
       await browser.close()
     }

@@ -3,7 +3,7 @@ import { useId, useState, type ComponentType } from 'react'
 import {
   IconAgentPresetOutlineRegular, IconAlarmClockOutlineRegular, IconBranchOutlineRegular,
   IconChevronDownOutlineRegular, IconContextInjectionOutlineRegular, IconCordisPluginOutlineRegular,
-  IconGoalOutlineRegular, IconGlobeOutlineRegular, IconQueueOutlineRegular, IconSendOutlineRegular,
+  IconGoalOutlineRegular, IconGlobeOutlineRegular, IconPaperPlaneOutlineRegular, IconQueueOutlineRegular,
   type IconProps,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeViewProps } from '../contract/slots.ts'
@@ -14,7 +14,7 @@ import css from './TurnTriggerNodeView.module.css'
 const TRIGGER_ICONS: Record<TurnTriggerIcon, ComponentType<IconProps>> = {
   request: IconContextInjectionOutlineRegular,
   goal: IconGoalOutlineRegular,
-  agent: IconSendOutlineRegular,
+  agent: IconPaperPlaneOutlineRegular,
   team: IconAgentPresetOutlineRegular,
   subagent: IconAgentPresetOutlineRegular,
   github: IconBranchOutlineRegular,

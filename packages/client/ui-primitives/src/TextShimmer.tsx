@@ -10,13 +10,13 @@ export interface TextShimmerProps {
   as?: ElementType | undefined
   /** Additional class applied to the wrapper. */
   className?: string | undefined
-  /** One animation cycle in seconds. */
+  /** Complete animation cycle in seconds; defaults to 1.5 seconds. */
   duration?: number | undefined
-  /** Highlight width multiplier in pixels per character. */
+  /** Moving-band width multiplier in pixels per character; defaults to eight. */
   spread?: number | undefined
-  /** Base text color behind the moving highlight. */
+  /** Text color outside the moving band; defaults to the inherited color. */
   baseColor?: string | undefined
-  /** Moving highlight color. */
+  /** Moving band color; defaults to a translucent form of the inherited color. */
   shimmerColor?: string | undefined
   /** Additional inline styles. */
   style?: CSSProperties | undefined
@@ -26,8 +26,8 @@ function TextShimmerComponent({
   children,
   as: Component = 'span',
   className,
-  duration = 2,
-  spread = 3,
+  duration = 1.5,
+  spread = 8,
   baseColor,
   shimmerColor,
   style,
@@ -37,8 +37,8 @@ function TextShimmerComponent({
     ...style,
     '--dsh-text-shimmer-duration': `${duration}s`,
     '--dsh-text-shimmer-spread': `${dynamicSpread}px`,
-    '--dsh-text-shimmer-base-color': baseColor ?? 'color-mix(in oklab, currentColor 65%, transparent)',
-    '--dsh-text-shimmer-color': shimmerColor ?? 'currentColor',
+    '--dsh-text-shimmer-base-color': baseColor ?? 'currentColor',
+    '--dsh-text-shimmer-color': shimmerColor ?? 'color-mix(in oklab, currentColor 50%, transparent)',
   } as CSSProperties
   return (
     <Component className={clsx(css.root, className)} style={shimmerStyle} data-text-shimmer="">
@@ -47,5 +47,5 @@ function TextShimmerComponent({
   )
 }
 
-/** Memoized text shimmer with a duration and highlight width derived from its props. */
+/** Memoized text shimmer with a duration and band width derived from its props. */
 export const TextShimmer = memo(TextShimmerComponent)

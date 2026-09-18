@@ -4,6 +4,7 @@ import {
 } from 'react'
 import {
   IconAgentPresetOutlineRegular, IconApiOutlineRegular, IconBrowseOutlineRegular, IconChevronDownOutlineRegular,
+  IconChevronUpOutlineRegular,
   IconCodeOutlineRegular, IconEditOutlineRegular, IconGlobeOutlineRegular, IconPlanOutlineRegular,
   IconQuestionOutlineRegular, IconSearchOutlineRegular, IconSparkleRegular, IconThinkOutlineRegular, TextShimmer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -160,7 +161,7 @@ function StepProcess({ range, nodes, ...seatProps }: SeatProps & {
   const detail = !seatProps.compactTranscript && !range.closed
     ? liveTitle.detail
     : ''
-  const title = detail === '' ? label : `${label} ${detail}`
+  const title = detail === '' ? label : `${label}${t('message.turnProcess.separator')}${detail}`
   const activity = range.closed ? summary.counts[0]?.kind ?? 'thinking' : liveTitle.activity
   const bodyClasses = [css.body, flowCss.processBody]
   if (scrollEdges.canScrollUp) bodyClasses.push(css.fadeTop)
@@ -173,7 +174,9 @@ function StepProcess({ range, nodes, ...seatProps }: SeatProps & {
         onClick={(event) => { event.currentTarget.focus(); setOpen(!open) }}>
         <span className={css.leading} aria-hidden="true">
           <span className={css.activityIcon} data-step-process-icon>{PROCESS_ICONS[activity]}</span>
-          <span className={css.chevron} data-step-process-chevron><IconChevronDownOutlineRegular /></span>
+          <span className={css.chevron} data-step-process-chevron>
+            {open ? <IconChevronUpOutlineRegular /> : <IconChevronDownOutlineRegular />}
+          </span>
         </span>
         {range.closed
           ? <span className={css.label}>{title}</span>

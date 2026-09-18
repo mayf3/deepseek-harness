@@ -37,7 +37,7 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | Export | What it is |
 |---|---|
 | `Button` | Clickable action; `variant` selects `primary`, `ghost`, `outline`, or `toolbar`. |
-| `Switch` | Two-state toggle, 36×20. `label` is required, so the control cannot ship unnamed. |
+| `Switch` | Two-state toggle, 36×20. Its thumb is white while off and uses the active track's foreground color while on. `label` is required, so the control cannot ship unnamed. |
 | `Checkbox` | Labeled native checkbox with controlled state, keyboard interaction, and disabled styling; the caller supplies localized `label` text. |
 | `Input` | Single-line text entry for search boxes and inline forms. |
 | `Menu` | Dropdown of items, separators, and group labels, with nested submenus. While open, ↑/↓ (with Home and End) walk the list, Tab settles the focused row, and Escape or Shift+Tab close back to the anchor; selecting a row also returns the keyboard to the anchor unless the owner moved it itself. Only a keyboard on the anchor or inside the list is intercepted, and `autoFocus` decides solely whether opening focuses the first row. |
@@ -45,8 +45,8 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | `Tag` | Read-only capsule badge; `tone` selects one of eight palettes. |
 | `StateDot` | Solid green `done`, amber `warning`, red `error`, and neutral-grey `idle` marks in a 10px slot, plus a tertiary-grey 14px rotating `ongoing` loader. `aria-hidden`, so the render site owns the name. |
 | `ConnectionIndicator` | Inline connection-recovery control across outage, retry, and recovered states. |
-| `DisclosureRow` | 24px compact disclosure that lays title and content side by side. |
-| `TextShimmer` | Animated text highlight with configurable duration, character-relative spread, base color, and highlight color; reduced-motion mode keeps its static base. |
+| `DisclosureRow` | 24px compact disclosure that lays title and content side by side; collapsed rows preview a down chevron on hover, and expanded rows keep an up chevron visible. |
+| `TextShimmer` | Animated text shimmer whose default 1.5-second cycle moves a lighter band with ease-in-out timing for one second, then pauses for 500ms; cycle duration, character-relative spread, base color, and shimmer color are configurable, and reduced-motion mode keeps the static base. |
 | `Modal` | Centered dialog over a page mask. |
 | `RiskConfirmation` | Sensitive action gated behind an explicit checkbox. |
 | `OnboardingSurface` | First-run stage that holds the application root inert. |
