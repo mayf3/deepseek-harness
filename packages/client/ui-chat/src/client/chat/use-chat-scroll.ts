@@ -30,6 +30,7 @@ interface ChatScrollState extends ChatReadingState {
 
 /**
  * Coordinate scroll policy after Chat content commits.
+ * New submitted input supersedes pending reader sampling.
  * @param input - current Chat content, scroll memory, and history operations.
  * @returns element refs, visible reading state, and navigation callbacks.
  */
@@ -49,9 +50,12 @@ export function useChatScroll(input: ChatScrollInput): ChatScrollState {
   })
 
   const processContent = useCallback(() => {
-    if (reading.pending) return
     const current = content.current.input
     const previous = content.current.applied
+    const ownInput = (current.lastIsUser && current.lastKey !== previous?.lastKey)
+      || (current.steeringId !== null && current.steeringId !== previous?.steeringId)
+      || (current.submissionId !== null && current.submissionId !== previous?.submissionId)
+    if (reading.pending && !ownInput) return
     content.current.applied = current
     if (current.ready && !content.current.opened) {
       content.current.opened = true
@@ -63,9 +67,6 @@ export function useChatScroll(input: ChatScrollInput): ChatScrollState {
       navigation.reconcile()
       return
     }
-    const ownInput = (current.lastIsUser && current.lastKey !== previous?.lastKey)
-      || (current.steeringId !== null && current.steeringId !== previous?.steeringId)
-      || (current.submissionId !== null && current.submissionId !== previous?.submissionId)
     const tipChanged = previous === null || current.ready !== previous.ready
       || current.firstSeq !== previous.firstSeq || current.lastKey !== previous.lastKey
       || current.order.length !== previous.order.length || current.running !== previous.running

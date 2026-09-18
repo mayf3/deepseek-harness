@@ -2558,6 +2558,38 @@ describe('ChatView', () => {
     expect(scroller.scrollTop).toBe(680)
   })
 
+  it('follows a new submission immediately while an earlier scroll sample is pending', () => {
+    const nodes = [user(1, 'q'), assistant(2, 'a')]
+    const h = makeHarness({ nodes })
+    const view = render(<h.ChatView {...h.props} />)
+    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const metrics = installScrollMetrics(scroller, 1_000, 300)
+    readerScroll(scroller, 700)
+    scroller.scrollTop = 650
+    fireEvent.scroll(scroller)
+
+    metrics.setHeight(1_135)
+    act(() => {
+      h.setSession({
+        pendingSubmissions: [{
+          requestId: 'req-follow' as never, placement: 'transcript',
+          time: 5_000, text: 'new prompt', attachments: [],
+        }],
+      })
+    })
+    expect(scroller.scrollTop).toBe(835)
+
+    metrics.setHeight(1_200)
+    act(() => {
+      h.setChat({ nodes: [...nodes, user(3, 'new prompt'), assistant(4, 'reply')] })
+      h.setSession({ pendingSubmissions: [], running: true })
+    })
+    fireEvent(scroller, new Event('scrollend'))
+    expect(scroller.scrollTop).toBe(900)
+    expect(view.queryByLabelText('回到底部')).toBeNull()
+    expect(h.chatScroll.read()).toBeNull()
+  })
+
   it('clears an away sample when a back-to-bottom delivery restores pinned ownership', () => {
     const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
     const view = render(<h.ChatView {...h.props} />)
