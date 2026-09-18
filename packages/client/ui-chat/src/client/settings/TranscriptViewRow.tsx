@@ -22,11 +22,13 @@ export type TranscriptViewRowProps =
   & PropsLocale<'chat'>
   & InjectFace<TranscriptViewRowInjected>
 
-const OPTIONS: readonly { id: TranscriptViewMode; label: ChatKey }[] = [
-  { id: 'compact', label: 'settings.transcript.compact' },
-  { id: 'detailed', label: 'settings.transcript.detailed' },
-  { id: 'expanded', label: 'settings.transcript.expanded' },
-]
+const LABELS = {
+  compact: 'settings.transcript.compact',
+  detailed: 'settings.transcript.detailed',
+  expanded: 'settings.transcript.expanded',
+} as const satisfies Record<TranscriptViewMode, ChatKey>
+
+const OPTIONS: readonly TranscriptViewMode[] = ['compact', 'detailed', 'expanded']
 
 /**
  * Render the completed-Turn transcript mode selector.
@@ -35,14 +37,13 @@ const OPTIONS: readonly { id: TranscriptViewMode; label: ChatKey }[] = [
  */
 export function TranscriptViewRow({ useTranscriptView, setTranscriptView, t }: TranscriptViewRowProps) {
   const mode = useTranscriptView(value => value)
-  const selectedLabel = `settings.transcript.${mode}` as const
   return (
     <PreferenceRow
       title={t('settings.transcript.title')}
       description={t('settings.transcript.description')}
       value={mode}
-      selectedLabel={t(selectedLabel)}
-      options={OPTIONS.map(option => ({ id: option.id, label: t(option.label) }))}
+      selectedLabel={t(LABELS[mode])}
+      options={OPTIONS.map(id => ({ id, label: t(LABELS[id]) }))}
       onSelect={(value) => { setTranscriptView(value as TranscriptViewMode) }}
     />
   )
