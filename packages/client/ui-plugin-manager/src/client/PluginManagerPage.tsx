@@ -12,8 +12,8 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { PluginInstallFailureKind } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  Button, IconChevronDownOutlineRegular, IconChevronLeftOutlineRegular,
-  IconChevronRightOutlineRegular, IconCloseOutlineRegular,
+  Button, IconCheckCircleFillRegular, IconChevronDownOutlineRegular, IconChevronLeftOutlineMedium,
+  IconChevronRightOutlineRegular, IconCloseOutlineMedium,
   IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
   IconWarningOutlineRegular, Input, Modal,
   PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTeam, PluginArtworkTerminal,
@@ -672,19 +672,19 @@ function InstallDialog({
         )}
       >
         <div className={css.installBody}>
-          <label className={css.installField}>
-            <span>{t('installSpecLabel')}</span>
+          <div className={css.installField}>
             <input
               type="text"
               value={install.spec}
               placeholder={t('installSpecPlaceholder')}
               disabled={checking}
+              aria-label={t('installSpecLabel')}
               aria-invalid={install.inputError !== null}
               aria-describedby={install.inputError === null ? undefined : errorId}
               onChange={(event) => { onEditSpec(event.currentTarget.value) }}
               onKeyDown={(event) => { if (event.key === 'Enter' && !empty && !checking) onRun() }}
             />
-          </label>
+          </div>
           {install.inputError === null
             ? null
             : <p id={errorId} className={css.inputError} role="alert">{t(INPUT_PROBLEM_KEYS[install.inputError.problem], { reason: install.inputError.reason })}</p>}
@@ -701,19 +701,17 @@ function InstallDialog({
           {guideOpen
             ? (
               <div id={guideId} className={css.guide} data-install-guide>
-                <p className={css.guideIntro}>{t('installGuideIntro')}</p>
-                <p className={css.guideNote}>{t('installGuideIdNote')}</p>
                 <ol className={css.guideList}>
                   {GUIDE_EXAMPLES.map(({ key, titleKey, exampleKey, hintKey }, index) => (
                     <li key={key} className={css.guideItem}>
                       <span className={css.guideIndex} aria-hidden="true">{index + 1}</span>
                       <div className={css.guideMain}>
                         <span className={css.guideTitle}>{t(titleKey)}</span>
+                        <span className={css.guideHint}>{t(hintKey)}</span>
                         <span className={css.guideExample}>
                           <span className={css.guideExampleLabel}>{t('installGuideExampleLabel')}</span>
                           <code>{t(exampleKey)}</code>
                         </span>
-                        <span className={css.guideHint}>{t(hintKey)}</span>
                       </div>
                       <Button
                         variant="outline"
@@ -754,7 +752,7 @@ function InstallDialog({
             ? <span />
             : (
               <button type="button" className={css.wizardBack} aria-label={t('installEditAria')} disabled={!stoppable} onClick={onCancel}>
-                <IconChevronLeftOutlineRegular aria-hidden="true" />
+                <IconChevronLeftOutlineMedium aria-hidden="true" />
                 <span>{t('installEdit')}</span>
               </button>
             )}
@@ -765,13 +763,17 @@ function InstallDialog({
             disabled={pending && phase !== 'running'}
             onClick={phase === 'running' ? onCancelAndClose : onClose}
           >
-            <IconCloseOutlineRegular size={14} />
+            <IconCloseOutlineMedium size={14} />
           </button>
         </div>
         <div className={css.wizardScroll}>
           <div className={css.wizardHero}>
-            <span className={css.wizardIcon} aria-hidden="true">
-              <StateDot state={pending ? 'ongoing' : phase === 'done' ? 'done' : 'error'} />
+            <span className={css.wizardIcon} data-state={pending ? 'ongoing' : phase === 'done' ? 'done' : 'error'} aria-hidden="true">
+              {pending
+                ? <StateDot state="ongoing" size={28} />
+                : phase === 'done'
+                  ? <IconCheckCircleFillRegular size={28} />
+                  : <IconWarningOutlineRegular size={28} />}
             </span>
             <h2 className={css.wizardTitle} role={phase === 'failed' ? 'alert' : 'status'}>{heading}</h2>
             {phase === 'failed' ? <p className={css.wizardSub}>{failureText(install.failure, t)}</p> : null}
@@ -808,12 +810,12 @@ function InstallDialog({
             </button>
             {pending
               ? (
-                <Button variant="outline" size="sm" disabled={phase !== 'running'} onClick={onCancel}>
+                <Button variant="outline" size="sm" className={css.footAction} disabled={phase !== 'running'} onClick={onCancel}>
                   {t(phase === 'cancelling' ? 'installCancelling' : 'installCancel')}
                 </Button>
               )
               : null}
-            {phase === 'failed' && !approvable ? <Button variant="primary" size="sm" onClick={onRun}>{t('installRetry')}</Button> : null}
+            {phase === 'failed' && !approvable ? <Button variant="primary" size="sm" className={css.footAction} onClick={onRun}>{t('installRetry')}</Button> : null}
           </div>
           {install.detailsOpen
             ? (

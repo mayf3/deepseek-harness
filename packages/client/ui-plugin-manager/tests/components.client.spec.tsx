@@ -309,17 +309,17 @@ describe('PluginManagerPage', () => {
 
   it('opens a guide under the field and drops an example into it', () => {
     const { actions } = renderTab({ install: { ...IDLE_INSTALL, open: true } })
-    expect(screen.queryByText(en.installGuideIntro)).toBeNull()
+    expect(screen.queryByText(en.installGuideIdHint)).toBeNull()
     const toggle = screen.getByRole('button', { name: en.installGuideToggle })
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(toggle)
     expect(screen.getByRole('button', { name: en.installGuideHide }).getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByText(en.installGuideIdNote)).toBeTruthy()
+    expect(screen.getByText(en.installGuideIdHint)).toBeTruthy()
     expect(screen.getByText(en.installGuideGitExample)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.installGuideFillAria.replace('{example}', en.installGuideIdExample) }))
     expect(actions.editInstallSpec).toHaveBeenCalledExactlyOnceWith(en.installGuideIdExample)
     fireEvent.click(screen.getByRole('button', { name: en.installGuideHide }))
-    expect(screen.queryByText(en.installGuideIntro)).toBeNull()
+    expect(screen.queryByText(en.installGuideIdHint)).toBeNull()
   })
 
   it('opens a bundle\'s page with its facts and rows, and uninstalls from it', () => {
