@@ -48,6 +48,7 @@ it('lets a non-Office renderer load content, report its version, and reload thro
   }
   const renderSlot: TextPreviewProps['renderSlot'] = (name, input) => {
     if (name !== 'sidebar.right.tab.document') return null
+    if (key !== 'sidebar.right.tab.document') return null
     const owner = input as unknown as OwnerOf<'sidebar.right.tab.document'>
     return <CustomBody content={owner.content} />
   }
@@ -106,6 +107,7 @@ function setup() {
       return <OfficeFontAction {...{ ...input, useTabInfo: options.hookContext, useStore: useOffice,
         actions: office.actions, t: makeTranslate(en) } as unknown as OfficeFontActionProps} />
     }
+    if (key !== 'sidebar.right.tab.document') return null
     const owner = input as unknown as OwnerOf<'sidebar.right.tab.document'>
     if (owner.content.kind !== 'renderer') return <p>Raw bytes</p>
     request = owner.content
