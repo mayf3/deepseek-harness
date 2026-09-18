@@ -66,7 +66,7 @@ async function withProxyLock<T>(lock: string, action: () => Promise<T>): Promise
 function readProxy(service: string, secure: boolean, ops: ProxyOperations): ProxyState {
   const output = ops.command(NETWORKSETUP, [secure ? '-getsecurewebproxy' : '-getwebproxy', service])
   const enabled = /^Enabled: (Yes|No)$/mu.exec(output)?.[1]
-  const server = /^Server: (.*)$/mu.exec(output)?.[1]
+  const server = /^Server:[ \t]?(.*)$/mu.exec(output)?.[1]
   const port = /^Port: (\d+)$/mu.exec(output)?.[1]
   if (enabled === undefined || server === undefined || port === undefined
     || !/^Authenticated Proxy Enabled: 0$/mu.test(output) || Number(port) > 65535) {
@@ -95,7 +95,12 @@ function setProxy(service: string, secure: boolean, state: ProxyState, ops: Prox
 function restore(record: ProxyRecord, ops: ProxyOperations): void {
   const errors: unknown[] = []
   for (const [secure, state] of [[false, record.http], [true, record.https]] as const) {
-    try { setProxy(record.service, secure, state, ops) } catch (error) { errors.push(error) }
+    try {
+      if (!state.enabled && state.server === '' && state.port === 0) {
+        ops.command(NETWORKSETUP, [secure ? '-setsecurewebproxystate' : '-setwebproxystate', record.service, 'off'])
+        if (readProxy(record.service, secure, ops).enabled) throw new Error('desktop package: system proxy disable did not take effect')
+      } else setProxy(record.service, secure, state, ops)
+    } catch (error) { errors.push(error) }
   }
   if (errors.length) throw new AggregateError(errors, `desktop package: proxy restoration failed; retry ${RECOVERY}`)
 }
@@ -119,6 +124,7 @@ function readRecord(lock: string): ProxyRecord {
 
 /**
  * Restore an interrupted run only after its owner exits; active or incomplete records fail closed.
+ * Originally empty proxies are disabled; their temporary server and port may remain stored.
  * @param lock Per-user lock shared across checkouts; tests supply a private directory.
  * @param ops Host operations; tests supply isolated system settings.
  * @returns Resolves after restoration under the shared file lock; retains the record on failure.

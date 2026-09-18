@@ -8,3 +8,11 @@
  * @returns Action result; logging failures also reject the phase.
  */
 export function packagingStep<T>(directory: string | undefined, stage: string, action: () => Promise<T>, secrets?: readonly string[]): Promise<T>
+
+/**
+ * Format nested errors with credential values removed for journal and terminal output.
+ * @param error Failure including optional causes or aggregate errors.
+ * @param secrets Credential values removed from output.
+ * @returns Redacted diagnostic including nested recovery instructions.
+ */
+export function packagingErrorDetails(error: unknown, secrets: readonly string[]): string

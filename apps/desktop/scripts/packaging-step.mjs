@@ -20,19 +20,30 @@ export async function packagingStep(directory, stage, action, secrets = Object.e
     recordPackagingEvent(directory, { type: 'stage-end', stage, stageId, elapsedMs: performance.now() - started, success: true })
     return result
   } catch (error) {
-    const seen = new Set()
-    function details(value) {
-      if (!(value instanceof Error)) return String(value)
-      if (seen.has(value)) return '[circular error]'
-      seen.add(value)
-      return [value.stack ?? value.message, ...(value instanceof AggregateError ? value.errors.map(details) : []),
-        ...(value.cause === undefined ? [] : [details(value.cause)])].join('\n')
-    }
-    let message = ''
-    const redactor = packagingOutputRedactor(secrets, text => { message += text })
-    redactor.write(Buffer.from(details(error)))
-    redactor.end()
+    const message = packagingErrorDetails(error, secrets)
     recordPackagingEvent(directory, { type: 'stage-end', stage, stageId, elapsedMs: performance.now() - started, success: false, error: message })
     throw error
   }
+}
+
+/**
+ * Format nested errors with credential values removed for journal and terminal output.
+ * @param {unknown} error Failure including optional causes or aggregate errors.
+ * @param {readonly string[]} secrets Credential values removed from output.
+ * @returns {string} Redacted diagnostic including nested recovery instructions.
+ */
+export function packagingErrorDetails(error, secrets) {
+  const seen = new Set()
+  function details(value) {
+    if (!(value instanceof Error)) return String(value)
+    if (seen.has(value)) return '[circular error]'
+    seen.add(value)
+    return [value.stack ?? value.message, ...(value instanceof AggregateError ? value.errors.map(details) : []),
+      ...(value.cause === undefined ? [] : [details(value.cause)])].join('\n')
+  }
+  let message = ''
+  const redactor = packagingOutputRedactor(secrets, text => { message += text })
+  redactor.write(Buffer.from(details(error)))
+  redactor.end()
+  return message
 }

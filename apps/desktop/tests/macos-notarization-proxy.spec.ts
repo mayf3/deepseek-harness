@@ -21,7 +21,7 @@ function fakeSystem() {
     https: { enabled: true, server: 'old-https', port: 8080 },
   }
   const original = structuredClone(states)
-  const control = { failSet: 0, setCount: 0, pac: false, authenticated: false }
+  const control = { failSet: 0, setCount: 0, pac: false, authenticated: false, serverSpace: true, ignoreDisable: false }
   const ops = {
     reachable: vi.fn(async (_url: URL) => {}),
     ownerAlive: vi.fn((_pid: number) => false),
@@ -33,10 +33,12 @@ function fakeSystem() {
       if (args[0] === '-getproxyautodiscovery') return 'Auto Proxy Discovery: Off\n'
       if (args[0] === '-getsocksfirewallproxy') return 'Enabled: No\n'
       const state = args[0]!.includes('secure') ? states.https : states.http
-      if (args[0]!.startsWith('-get')) return `Enabled: ${state.enabled ? 'Yes' : 'No'}\nServer: ${state.server}\nPort: ${state.port}\nAuthenticated Proxy Enabled: ${control.authenticated ? '1' : '0'}\n`
+      if (args[0]!.startsWith('-get')) return `Enabled: ${state.enabled ? 'Yes' : 'No'}\nServer:${control.serverSpace ? ' ' : ''}${state.server}\nPort: ${state.port}\nAuthenticated Proxy Enabled: ${control.authenticated ? '1' : '0'}\n`
       control.setCount++
       if (control.setCount === control.failSet) throw new Error('system write failed')
-      if (args[0]!.endsWith('state')) state.enabled = args[2] === 'on'
+      if (args[0]!.endsWith('state')) {
+        if (!(control.ignoreDisable && args[2] === 'off')) state.enabled = args[2] === 'on'
+      }
       else { state.server = args[2]!; state.port = Number(args[3]); state.enabled = true }
       return ''
     }),
@@ -68,6 +70,55 @@ it.each([false, true])('restores both original proxies after settled work (failu
     else await expect(work).resolves.toBe(42)
     expect(statuses).toEqual(['restoration-pending', 'enabled', 'restored'])
     expect(states).toEqual(original)
+    expect(existsSync(lock)).toBe(false)
+  })
+})
+
+it.each([false, true])('disables originally empty proxies without writing empty endpoints (space=%s)', async (space) => {
+  await fixture(async ({ ops, states, control }, lock) => {
+    control.serverSpace = space
+    states.http = { enabled: false, server: '', port: 0 }
+    states.https = { enabled: false, server: '', port: 0 }
+    await expect(withMacOSNotarizationProxy('http://localhost:8888', async () => {
+      expect(states.http.enabled).toBe(true)
+      expect(states.https.enabled).toBe(true)
+      throw new Error('Apple refused')
+    }, lock, ops)).rejects.toThrow('Apple refused')
+    expect(states.http).toEqual({ enabled: false, server: 'localhost', port: 8888 })
+    expect(states.https).toEqual(states.http)
+    const setters = ops.command.mock.calls.filter(([, args]) => ['-setwebproxy', '-setsecurewebproxy'].includes(args[0]!))
+    expect(setters).toHaveLength(2)
+    expect(setters.every(([, args]) => args[2] === 'localhost')).toBe(true)
+    expect(existsSync(lock)).toBe(false)
+  })
+})
+
+it('retains an empty-proxy recovery record after failed disabling and retries it', async () => {
+  await fixture(async ({ ops, states, control }, lock) => {
+    states.http = { enabled: false, server: '', port: 0 }
+    states.https = { enabled: false, server: '', port: 0 }
+    control.failSet = 5
+    await expect(withMacOSNotarizationProxy('http://localhost:8888', async () => {}, lock, ops)).rejects.toThrow('restoration failed')
+    expect(existsSync(lock)).toBe(true)
+    expect(states.http.enabled).toBe(true)
+    expect(states.https.enabled).toBe(false)
+    await restoreMacOSNotarizationProxy(lock, ops)
+    expect(states.http.enabled).toBe(false)
+    expect(states.https.enabled).toBe(false)
+    expect(existsSync(lock)).toBe(false)
+  })
+})
+
+it('keeps the recovery record when disabling an originally empty proxy has no effect', async () => {
+  await fixture(async ({ ops, states, control }, lock) => {
+    states.http = { enabled: false, server: '', port: 0 }
+    control.ignoreDisable = true
+    await expect(withMacOSNotarizationProxy('http://localhost:8888', async () => {}, lock, ops)).rejects.toThrow('restoration failed')
+    expect(states.http.enabled).toBe(true)
+    expect(existsSync(lock)).toBe(true)
+    control.ignoreDisable = false
+    await restoreMacOSNotarizationProxy(lock, ops)
+    expect(states.http.enabled).toBe(false)
     expect(existsSync(lock)).toBe(false)
   })
 })
