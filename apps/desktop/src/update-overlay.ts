@@ -5,7 +5,7 @@ import { BrowserWindow } from 'electron'
  * @param parent - Product window whose content is blocked while the overlay is open.
  * @param preload - Isolated shell-only preload.
  * @param title - Localized window title.
- * @param nativeModal - Use a native modal; false keeps ordinary confirmations out of macOS sheets.
+ * @param nativeModal - Use a native modal; false keeps overlays out of macOS sheets.
  * @returns A transparent child that follows its parent's content bounds and releases its listeners on close.
  */
 export function createUpdateOverlay(parent: BrowserWindow, preload: string, title: string, nativeModal = true): BrowserWindow {
@@ -51,7 +51,7 @@ export function createUpdateOverlay(parent: BrowserWindow, preload: string, titl
 /** A native Windows modal retains its own title bar while the product window remains blocked. */
 export function createMandatoryUpdateWindow(parent: BrowserWindow, preload: string, title: string,
   platform: NodeJS.Platform = process.platform): BrowserWindow {
-  if (platform !== 'win32') return createUpdateOverlay(parent, preload, title)
+  if (platform !== 'win32') return createUpdateOverlay(parent, preload, title, false)
   const window = new BrowserWindow({
     parent, modal: true, show: false, title,
     width: 640, height: 560, minWidth: 480, minHeight: 360,
