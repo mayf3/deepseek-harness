@@ -16,6 +16,7 @@ export interface DesktopPolicyIdentity {
 export interface DesktopPolicyConfig {
   readonly origin: string
   readonly allowedPageOrigins: readonly string[]
+  readonly allowedAuthOrigins: readonly string[]
   readonly intervalMs: number
   readonly timeoutMs: number
   readonly maxBackoffMs: number
@@ -74,12 +75,20 @@ export function resolveDesktopPolicyConfig(input: unknown, allowLoopback = false
   if (authentication !== 'anonymous' && authentication !== 'feishu-test') {
     throw new Error('desktop policy: authentication must be anonymous or feishu-test')
   }
+  const authOrigins = value.allowedAuthOrigins
+  if (authentication === 'feishu-test' && (!Array.isArray(authOrigins) || authOrigins.length === 0)) {
+    throw new Error('desktop policy: test authentication requires nonempty allowedAuthOrigins')
+  }
+  if (authentication === 'anonymous' && authOrigins !== undefined) {
+    throw new Error('desktop policy: anonymous policy must not configure allowedAuthOrigins')
+  }
   if (typeof jitter !== 'number' || !Number.isFinite(jitter) || jitter < 0 || jitter > 1 || maxBackoffMs < intervalMs) {
     throw new Error('desktop policy: jitter must be in [0, 1] and maxBackoffMs must cover intervalMs')
   }
   return {
     origin: origin(value.origin, authentication === 'anonymous' && allowLoopback),
     allowedPageOrigins: value.allowedPageOrigins.map(item => origin(item, false)),
+    allowedAuthOrigins: authentication === 'feishu-test' ? (authOrigins as unknown[]).map(item => origin(item, false)) : [],
     intervalMs, timeoutMs: duration('timeoutMs', 15_000), maxBackoffMs, jitter, authentication,
   }
 }

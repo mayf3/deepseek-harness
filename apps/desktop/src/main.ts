@@ -728,7 +728,8 @@ async function main(): Promise<void> {
   const policyConfig = resolveDesktopPolicyConfig(policyInput, !app.isPackaged)
   if (policyConfig !== undefined) {
     if (policyConfig.authentication === 'feishu-test') {
-      policyAuth = new DesktopPolicyTestAuth(policyConfig.origin, locale, () => mandatoryUI?.confirmationWindow ?? mainWindow,
+      policyAuth = new DesktopPolicyTestAuth(policyConfig.origin, policyConfig.allowedAuthOrigins, locale,
+        () => mandatoryUI?.confirmationWindow ?? mainWindow,
         (event) => { console.info(`desktop policy authentication: ${event}`); updateJournal?.action(`policy-login-${event}`) })
     }
     const bundleId = app.isPackaged
