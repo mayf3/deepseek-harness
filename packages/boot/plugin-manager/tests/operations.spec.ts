@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { PassThrough } from 'node:stream'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { initProfile, readProfileManifest } from '@deepseek-ai/dsh-app-boot'
-import { anchorPathSpec, runPluginCommand, runProfilePnpm } from '../src/operations.ts'
+import { anchorPathSpec, runPluginCommand, runProfilePnpm, viewProfilePackage } from '../src/operations.ts'
 
 const command = vi.hoisted(() => ({ run: vi.fn<(...args: unknown[]) => ReturnType<typeof result>>() }))
 vi.mock('execa', () => ({ execa: (...args: unknown[]) => command.run(...args) }))
@@ -210,4 +210,40 @@ it('settles inherited CLI descriptors without requiring captured streams', async
     Promise.resolve({ exitCode: 0, failed: false }), { stdout: null, stderr: null },
   ) as unknown as ReturnType<typeof result>)
   expect(await runPluginCommand(context, ['approve-builds'], { execution: 'cli', outputBytes: 100 })).toMatchObject({ exitCode: 0, output: '' })
+})
+
+it('asks the registry through pnpm view in the profile directory and reports how the lookup ended', async () => {
+  const { dir } = fixture()
+  const answer = (value: object) => command.run.mockResolvedValueOnce(value as never)
+  answer({ exitCode: 0, stdout: '{"name":"x"}', stderr: '', timedOut: false, isCanceled: false })
+  expect(await viewProfilePackage(dir, 'x@^1', { timeoutMs: 5 })).toEqual({ exitCode: 0, stdout: '{"name":"x"}', stderr: '', timedOut: false })
+  expect(command.run).toHaveBeenLastCalledWith('pnpm', ['view', 'x@^1', 'name', 'version', 'description', 'dsh', '--json'], expect.objectContaining({
+    cwd: dir, timeout: 5, reject: false, stdin: 'ignore',
+  }))
+  expect((command.run.mock.lastCall as unknown[])[2]).not.toHaveProperty('cancelSignal')
+  const signal = AbortSignal.abort()
+  answer({ exitCode: undefined, stdout: '', stderr: '', timedOut: true, isCanceled: false })
+  expect(await viewProfilePackage(dir, 'x', { timeoutMs: 5, signal })).toEqual({ exitCode: null, stdout: '', stderr: '', timedOut: true })
+  expect((command.run.mock.lastCall as unknown[])[2]).toMatchObject({ cancelSignal: signal })
+  answer({ exitCode: undefined, stdout: '', stderr: '', timedOut: false, isCanceled: true })
+  expect(await viewProfilePackage(dir, 'x', { command: 'node', timeoutMs: 5 })).toEqual({ exitCode: null, stdout: '', stderr: '', timedOut: false })
+  expect((command.run.mock.lastCall as unknown[])[0]).toBe('node')
+  answer({ exitCode: undefined, stdout: '', stderr: '', timedOut: false, isCanceled: false, code: 'ENOENT', shortMessage: 'spawn pnpm ENOENT' })
+  const missing = await viewProfilePackage(dir, 'x', { timeoutMs: 5 })
+  expect(missing).toMatchObject({ exitCode: null, timedOut: false })
+  expect(missing.cause).toMatchObject({ message: 'spawn pnpm ENOENT', code: 'ENOENT' })
+})
+
+it('uses application-owned executable arguments and environment for package operations and inspection', async () => {
+  const { dir, context } = fixture()
+  const runtime = { command: '/app/electron', args: ['--expose-internals', '/app/pnpm.mjs'], env: { ELECTRON_RUN_AS_NODE: '1', PATH: '/app/bin' } }
+  command.run.mockImplementationOnce(() => result(0, ''))
+  await runProfilePnpm(context, ['add', './extra'], { ...runtime, execution: 'service', outputBytes: 100, activateNewBundles: false })
+  expect(command.run).toHaveBeenLastCalledWith(runtime.command, [...runtime.args, 'add', resolve(context.cwd, 'extra')],
+    expect.objectContaining({ env: expect.objectContaining(runtime.env) as unknown }))
+  command.run.mockResolvedValueOnce(Object.assign({ exitCode: 0, failed: false }, { stdout: '{}', stderr: '', timedOut: false }))
+  await viewProfilePackage(dir, 'example', { ...runtime, timeoutMs: 1000 })
+  expect(command.run).toHaveBeenLastCalledWith(runtime.command,
+    [...runtime.args, 'view', 'example', 'name', 'version', 'description', 'dsh', '--json'],
+    expect.objectContaining({ env: expect.objectContaining(runtime.env) as unknown }))
 })

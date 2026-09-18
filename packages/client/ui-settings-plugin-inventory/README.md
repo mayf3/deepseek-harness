@@ -1,5 +1,5 @@
 ---
-description: "Scope-grouped plugin inventory and current-profile management tab in Web Plugins settings for the dsh web client: agent-preset compositions first, the global plane behind a disclosure, search across both."
+description: "Scope-grouped read-only plugin inventory tab in Web Plugins settings for the dsh web client: agent-preset compositions first, the global plane behind a disclosure, search across both."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The **Plugin list** tab lets Web users inspect plugins without changing their configuration. It presents agent presets first and collapses the global inventory until needed. Cards retain the package name as the primary title, identify instances by stable entry id, and expose enablement, source details, runtime status, disabled conditions, and discovery failures; preset-provided global entries name their presets. Search covers both groups and points to matches in other presets. The tab handles loading, empty, no-match, failure, and retry states without exposing transport details, and still shows the global inventory without a preset roster.
+The **Plugin list** tab lets Web users inspect plugins without changing their configuration. It lists agent presets, then the global inventory; both start collapsed and open on demand or during a search. Cards retain the package name as the primary title, identify instances by stable entry id, and expose enablement, source details, runtime status, disabled conditions, and discovery failures; preset-provided global entries name their presets. Search covers both groups and points to matches in other presets. The tab handles loading, empty, no-match, failure, and retry states without exposing transport details, and still shows the global inventory without a preset roster.
 
 ## Table of Contents
 
@@ -31,7 +31,7 @@ A failed installation with pending pnpm build permissions offers **Allow these s
 
 ### Reading a card
 
-Each collapsed card uses the short module name as its primary title, shows the stable entry id underneath, and carries a small enablement tag; enabled entries also show a colored root-fiber status dot. A composition-generated subtitle omits its leading `include:` marker, while hover, search, the accessible name, and expanded details retain the complete id. Long entry ids truncate in the row and remain available on hover. Expanding one card reveals the declared entry id, the full module specifier, and the state facts: a preset row names the preset it comes from, its runtime status when the composition is live, and its disable condition when it carries one; a preset-provided global row explains that agent presets provide it per session, names the presets that enable it, and offers a jump into the preset group. Preset names resolve through the shared `presetDisplayText` fold (`dsh-agent-presets/display`) over [`ui-agent-preset`](../ui-agent-preset/README.md)'s dictionaries: shipped presets follow the active locale while user-authored ones keep their own metadata, so an English surface never echoes the preset files' Chinese names. Search filters both groups by module name and entry id.
+Each collapsed card uses the short module name as its primary title, shows the stable entry id underneath, and carries a small enablement tag; a colored root-fiber status dot marks only the phases the tag cannot state: `pending` maps to idle, while `loading` and `unloading` map to ongoing. An `active` or `failed` fiber shows its tag without a dot. A composition-generated subtitle omits its leading `include:` marker, while hover, search, the accessible name, and expanded details retain the complete id. Long entry ids truncate in the row and remain available on hover. Expanding one card reveals the declared entry id, the full module specifier, and the state facts: a preset row names the preset it comes from, its runtime status when the composition is live, and its disable condition when it carries one; a preset-provided global row explains that agent presets provide it per session, names the presets that enable it, and offers a jump into the preset group. Preset names resolve through the shared `presetDisplayText` fold (`dsh-agent-presets/display`) over [`ui-agent-preset`](../ui-agent-preset/README.md)'s dictionaries: shipped presets follow the active locale while user-authored ones keep their own metadata, so an English surface never echoes the preset files' Chinese names. Search filters both groups by module name and entry id.
 
 ### The preset switcher
 
@@ -39,7 +39,7 @@ The switcher is the same selector-pill-plus-menu control the General settings ro
 
 ### Retrying a failed read
 
-A failed read renders a generic failure state inside the tab; retrying re-runs the lazy `list()` call without exposing transport details.
+A failed read renders the shared error marker inside the tab; loading and current-page synchronization use the shared ongoing loader. Retrying re-runs the lazy `list()` call without exposing transport details.
 
 The Plugin list also shows synchronization failures on the current page. Its retry reapplies the latest client graph without changing Host enablement or refreshing the page.
 
@@ -51,15 +51,13 @@ The Plugin list also shows synchronization failures on the current page. Its ret
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The tab reads the Host inventory on first selection, without Remote calls during plugin activation. Hosts exposing [Plugin Manager](../../boot/plugin-manager/README.md) also provide bundle installation, removal and switches for uniquely addressable global entries. Operations refresh observed state and show failures, overrides and pending restarts; a successful inventory refresh preserves the last operation error; preset compositions remain read-only.
+The tab is a read-only projection of a Host-owned snapshot; it performs no Remote read during plugin activation and takes the snapshot on first selection.
 
 ### Registration
 
 The browser plugin registers one localized `settings.plugins.tab` contribution with id `all`; the Plugins section owns the navigation entry and tab chrome. Registration uses `ctx.slots.inject()`, so it follows late tab declaration, redeclaration, locale changes, and teardown without importing the section owner.
 
 ### Rendering
-
-Management error and read-only codes use the current locale dictionary. The page displays raw package and Loader diagnostics, cleanup results and leftover dependencies alongside localized status text. Invalid profile dependencies remain removable with their switches disabled.
 
 Row keys are scope-qualified (`global:`, `preset:<id>:<index>`), so one module appearing in both scopes keeps distinct disclosure state; a declared entry id appears in expanded details and supplies the collapsed subtitle after removal of a leading composition `include:` marker, while a row without one stays unlabeled. The preset-provided marking is derived client-side: a global entry carries it when it is disabled there while at least one preset row for the same module specifier is actually enabled, so a module every preset gates off (or declares only conditionally) stays plainly disabled rather than over-claiming provision.
 
@@ -95,8 +93,8 @@ None; this package neither assembles nor sends a provider request.
 
 These limits define the freshness and reach of the inventory view; they are current package constraints.
 
-- **Inventory refresh** — the tab does not subscribe to Loader changes or automatically refetch after reconnect; switching tabs preserves the current snapshot, while reopening Settings or completing a management operation obtains a new one.
-- **Preset compositions remain read-only**: global controls require the current-profile manager; Desktop retains its shell-owned package controls.
+- **One snapshot per Settings mount or retry** — the tab does not subscribe to Loader changes or automatically refetch after reconnect; switching tabs preserves the current snapshot, while reopening Settings obtains a new one.
+- **Read-only in both planes** — the tab shows global and preset enablement but mutates neither; enable/disable controls that write a custom preset's own composition file are deliberate follow-up work.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -108,4 +106,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This package renders Host-owned state and forwards mutations to Plugin Manager.
+**Runtime invariant:** No companion is published. This package owns a read-only Settings contribution.

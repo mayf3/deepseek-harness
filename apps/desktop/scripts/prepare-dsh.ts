@@ -1,6 +1,6 @@
 /** Materialize the complete production runtime before publishing Desktop resources. */
 
-import { spawn, execFile } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join, relative, resolve } from 'node:path'
@@ -17,7 +17,8 @@ import {
   verifyDesktopCoreLockfile,
 } from '../src/core-package-set.ts'
 import { smokePrimaryRuntime } from './prepare-primary-runtime.ts'
-import { smokeDesktopRuntime } from './smoke-runtime.ts'
+import { smokePreparedRuntime } from './smoke-prepared-runtime.ts'
+import { prepareRuntimeManifests } from './prepare-runtime-manifests.ts'
 import { writeDesktopRuntime, verifyDesktopRuntime } from '../src/runtime-tree.ts'
 import {
   resolveDesktopAppId,
@@ -28,6 +29,7 @@ import {
 } from './macos-runtime.ts'
 import { resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import { desktopRuntimeFileExclusion } from './runtime-file-policy.ts'
+import { selectOfficeEngine } from '../../../scripts/libreoffice-engine.ts'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const BUILD_PATHS = resolveDesktopTargetBuildPaths()
@@ -123,10 +125,12 @@ async function main(): Promise<void> {
     const targetName = resolveDesktopBuildTarget()
     const target = { platform: process.platform, arch: targetName.endsWith('arm64') ? 'arm64' : 'x64' }
     const modules = join(BUILD_ROOT, 'node_modules')
+    const officeManifest = JSON.parse(readFileSync(join(modules, '@deepseek-ai/libreoffice-kit/package.json'), 'utf8'))
+    const officeEngine = selectOfficeEngine(officeManifest, target)
     mkdirSync(DSH_OUTPUT_ROOT, { recursive: true })
     cpSync(modules, join(DSH_OUTPUT_ROOT, 'node_modules'), {
       recursive: true, dereference: true,
-      filter: source => desktopRuntimeFileExclusion(relative(modules, source), target) === undefined,
+      filter: source => desktopRuntimeFileExclusion(relative(modules, source), target, officeEngine) === undefined,
     })
     writeFileSync(join(DSH_OUTPUT_ROOT, 'package.json'), `${JSON.stringify({
       name: '@deepseek-ai/dsh-desktop-runtime', private: true, version: release.version, type: 'module',
@@ -137,22 +141,21 @@ async function main(): Promise<void> {
         throw new Error(`desktop runtime: missing private Host file ${file}`)
       }
     }
+    if (!existsSync(join(DSH_OUTPUT_ROOT, 'node_modules', '@deepseek-ai', `libreoffice-kit-${officeEngine}`, 'prebuilds.json'))) {
+      throw new Error(`desktop runtime: missing required LibreOffice engine ${officeEngine}`)
+    }
     if (process.platform === 'darwin') {
       await signMacOSRuntime(DSH_OUTPUT_ROOT, resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env))
       await signMacOSRuntime(join(RUNTIME_ROOT, 'primary-runtime'), resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env))
     }
+    await prepareRuntimeManifests(DSH_OUTPUT_ROOT)
     smokePrimaryRuntime(join(RUNTIME_ROOT, 'primary-runtime'))
     writeDesktopRuntime(DSH_OUTPUT_ROOT, release, packageSet.packages.map(entry => entry.name), target)
     const descriptor = await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
-    await new Promise<void>((accept, reject) => {
-      execFile(NODE, ['--expose-internals', join(APP_ROOT, 'tests/fixtures/runtime-payload-smoke.mjs'), DSH_OUTPUT_ROOT],
-        { timeout: 120_000, env: desktopNodeEnvironment(NODE, join(RUNTIME_ROOT, 'bin'), { ...process.env, NODE_OPTIONS: '' }) }, (error, stdout, stderr) => {
-          if (error !== null) reject(new Error(`desktop native payload smoke failed: ${stderr}`, { cause: error }))
-          else { process.stdout.write(stdout); accept() }
-        })
-    })
-    await smokeDesktopRuntime(DSH_OUTPUT_ROOT, NODE, descriptor)
-    await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
+    if (!process.argv.includes('--defer-runtime-smoke')) {
+      await smokePreparedRuntime(DSH_OUTPUT_ROOT, NODE, RUNTIME_ROOT, descriptor)
+      await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
+    }
   } catch (error) {
     rmSync(DSH_OUTPUT_ROOT, { recursive: true, force: true })
     throw error

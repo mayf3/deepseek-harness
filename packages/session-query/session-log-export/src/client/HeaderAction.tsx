@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { IconDownloadOutline16, IconEllipsisOutline16, IconPaperPlaneOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconDownloadOutlineRegular, IconEllipsisOutlineRegular, IconPaperPlaneOutlineRegular, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SessionLogDownloadDialog, type SessionLogDownloadDialogProps } from './Dialog.tsx'
 import type { SessionLogDownloadDialogInjected } from './Dialog.tsx'
 import css from './HeaderAction.module.css'
@@ -38,8 +38,8 @@ export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderPr
         dense
         onClose={() => { setOpen(false) }}
         items={[
-          { id: 'download', label: t('menu.download'), icon: <IconDownloadOutline16 />, disabled: busy },
-          ...feedbackAvailable ? [{ id: 'feedback', label: t('menu.feedback'), icon: <IconPaperPlaneOutline14 /> }] : [],
+          { id: 'download', label: t('menu.download'), icon: <IconDownloadOutlineRegular />, disabled: busy },
+          ...feedbackAvailable ? [{ id: 'feedback', label: t('menu.feedback'), icon: <IconPaperPlaneOutlineRegular /> }] : [],
         ]}
         onSelect={(id) => {
           setOpen(false)
@@ -56,7 +56,7 @@ export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderPr
             aria-busy={busy}
             onClick={() => { setOpen(value => !value) }}
           >
-            <IconEllipsisOutline16 />
+            <IconEllipsisOutlineRegular />
           </button>
         )}
       />

@@ -8,7 +8,6 @@ import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionControlFrame } from '@deepseek-ai/dsh-api-session-controller/types'
-import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import { ok, type RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import {
   createClientTest, type ClientTestFixtures, webApp,
@@ -43,12 +42,10 @@ function summary(sessionId: SessionId, over: SummaryOver = {}) {
 function makeManager(
   mock: RemoteMock,
   remote: ClientTestFixtures['remote'],
-  restoredSelection?: SessionId,
-  restoredAddress?: SubagentAddress,
 ): SessionManager {
   mock.load(sessionWorld)
   // Cases using this helper never open a Session, so they do not need the broader Client Remote's $stream member.
-  return new SessionManager(remote as unknown as SessionRemotes, restoredSelection, restoredAddress)
+  return new SessionManager(remote as unknown as SessionRemotes)
 }
 
 describe('SessionManager instances', () => {
@@ -63,7 +60,108 @@ describe('SessionManager instances', () => {
 
 })
 
+describe('SessionManager query lifetime', () => {
+  it.for(['list', 'catalog'] as const)('forwards an unexpected %s failure and still completes teardown', async (target, { mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    const failure = new Error('query implementation failed')
+    if (target === 'list') remote.session.list.mockRejectedValueOnce(failure)
+    else remote.subagents.list.mockRejectedValueOnce(failure)
+    try {
+      await expect(target === 'list' ? manager.refreshList() : manager.refreshSubagents(S1)).rejects.toBe(failure)
+    } finally {
+      await manager.dispose()
+    }
+  })
+
+  it('keeps a rejected Remote list failure in the observable state', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    const failure = new RemoteError('gateway/internal', 'list unavailable', {})
+    remote.session.list.mockRejectedValueOnce(failure)
+    try {
+      await manager.refreshList()
+      expect(manager.getListSnapshot()).toMatchObject({ state: 'error', error: failure })
+    } finally {
+      await manager.dispose()
+    }
+  })
+
+  it.for([false, true])('preserves a rejected Remote catalog failure with prior baseline %s', async (warm, { mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    const failure = new RemoteError('gateway/internal', 'catalog unavailable', {})
+    const entries = [{ kind: 'child' as const, id: S2, mode: 'one-shot' as const, activity: 'inactive' as const, hasChildren: false }]
+    try {
+      if (warm) {
+        remote.subagents.list.mockResolvedValueOnce(ok({ entries, parentAvailable: true }))
+        await manager.refreshSubagents(S1)
+        manager.handleSessionRemoved(S1)
+      }
+      remote.subagents.list.mockRejectedValueOnce(failure)
+      const refresh = manager.refreshSubagents(S1)
+      await refresh
+      expect(manager.getListSnapshot().subagentsByParent[S1]).toMatchObject({
+        state: 'error', error: failure, entries: warm ? entries : [],
+      })
+      expect(manager.getListSnapshot().subagentsByParent[S1]?.parentAvailable).toBe(warm ? false : undefined)
+    } finally {
+      await manager.dispose()
+    }
+  })
+
+  it('cancels a queued catalog membership refresh when its consumer closes', async ({ mock, remote }) => {
+    vi.useFakeTimers()
+    const manager = makeManager(mock, remote)
+    try {
+      manager.setSubagentCatalogOpen(S1, true)
+      await manager.refreshSubagents(S1)
+      manager.handleSessionAdded(summary(S2, { parentSessionId: S1 }))
+      manager.setSubagentCatalogOpen(S1, false)
+      await vi.runAllTimersAsync()
+      expect(remote.subagents.list).toHaveBeenCalledOnce()
+    } finally {
+      await manager.dispose()
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('list lifecycle', () => {
+  it('fills missing durable links without overwriting established rows and projects first-send engagement', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    remote.session.list.mockResolvedValueOnce(ok({ items: [
+      summary(S1, { blank: true }), summary(S2, { cwd: '/existing', blank: true }),
+    ] }))
+    try {
+      await manager.refreshList()
+      manager.handleSessionAdded(summary(S1, { cwd: '/filled', parentSessionId: S2, origin: 'subagent', blank: false }))
+      manager.handleSessionAdded(summary(S2, { cwd: '/ignored', blank: true }))
+      manager.handleSessionActivity(S1, 50)
+      manager.handleSessionActivity(S2, 200)
+      await manager.get(S2).prompt([{ type: 'text', text: 'first message' }], 'queue')
+      expect(manager.getListSnapshot().items).toEqual(expect.arrayContaining([
+        expect.objectContaining({ sessionId: S1, cwd: '/filled', parentSessionId: S2, origin: 'subagent', blank: false }),
+        expect.objectContaining({ sessionId: S2, cwd: '/existing', updatedAt: 200, blank: false }),
+      ]))
+    } finally {
+      await manager.dispose()
+    }
+  })
+
+  it('projects cold Session additions and an empty-cut control baseline before history exists', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    try {
+      manager.handleSessionAdded({
+        ...summary(S1), projections: { asOfSeq: -1, values: { title: 'before history' } },
+      })
+      manager.handleControlFrame({
+        type: 'baseline', value: { jobs: { [S1]: [] }, projections: { [S1]: { asOfSeq: -1, values: { title: 'cold baseline' } } } },
+      })
+      expect(manager.getListSnapshot().items[0]?.title).toBe('before history')
+      expect(manager.getListSnapshot().jobsBySession).toEqual({})
+    } finally {
+      await manager.dispose()
+    }
+  })
+
   it('single-flights refreshList and preserves the Host baseline order', async ({ mock, remote }) => {
     const gate = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.list>>>()
     remote.session.list.mockReturnValue(gate.promise)
@@ -262,7 +360,7 @@ describe('Host Remote event routing', () => {
 })
 
 describe('subagent catalogs', () => {
-  it('keeps a catalog-discovered child address across ordinary selection and status frames', async ({ mock, remote, start }) => {
+  it('keeps a catalog-discovered child address across identity resolution and status frames', async ({ mock, remote, start }) => {
     remote.session.list.mockResolvedValue(ok({ items: [
       summary(S1),
       summary(S2, { parentSessionId: S1, origin: 'subagent' }),
@@ -279,9 +377,9 @@ describe('subagent catalogs', () => {
     const manager = new SessionManager(client.ctx.remote)
     await manager.refreshList()
     await manager.refreshSubagents(S1)
-    manager.selectSubagent({ parentSessionId: S1, childSessionId: S2, mode: 'continuable' })
+    manager.resolveTarget({ parentSessionId: S1, childSessionId: S2, mode: 'continuable' })
 
-    expect(manager.getListSnapshot().currentAddress).toEqual({
+    expect(manager.subagentAddress(S2)).toEqual({
       parentSessionId: S1, childSessionId: S2, mode: 'continuable',
     })
     expect(manager.get(S2).getSnapshot().subagent).toEqual({
@@ -290,8 +388,8 @@ describe('subagent catalogs', () => {
     })
     // Clicking the same child through an ordinary list-selection path must not
     // erase the catalog-derived address and fall back to session.* transport.
-    manager.select(S2)
-    expect(manager.getListSnapshot().currentAddress).toEqual({
+    manager.resolveTarget(S2)
+    expect(manager.subagentAddress(S2)).toEqual({
       parentSessionId: S1, childSessionId: S2, mode: 'continuable',
     })
     expect(manager.get(S2).getSnapshot().subagent).toEqual({
@@ -497,7 +595,7 @@ describe('subagent catalogs', () => {
       const first = Promise.withResolvers<Awaited<ReturnType<typeof remote.subagents.list>>>()
       const second = Promise.withResolvers<Awaited<ReturnType<typeof remote.subagents.list>>>()
       remote.subagents.list.mockReturnValue(first.promise)
-      const manager = makeManager(mock, remote, root)
+      const manager = makeManager(mock, remote)
       const refresh = manager.refreshSubagents(root)
       manager.setSubagentCatalogOpen(root, true)
 
@@ -556,7 +654,7 @@ describe('subagent catalogs', () => {
     const refresh = manager.refreshSubagents(root)
     first.resolve(ok({ entries: [child()] as never[], parentAvailable: true }))
     await refresh
-    manager.selectSubagent({ parentSessionId: root, childSessionId: S2, mode: 'continuable' })
+    manager.resolveTarget({ parentSessionId: root, childSessionId: S2, mode: 'continuable' })
 
     // The removal lands while a second pull is in flight: the invalidation
     // must survive the pre-removal ok response, so one trailing pull runs.
@@ -596,7 +694,7 @@ describe('subagent catalogs', () => {
     }))
     const manager = makeManager(mock, remote)
     await manager.refreshSubagents(root)
-    manager.selectSubagent({ parentSessionId: root, childSessionId: S2, mode: 'continuable' })
+    manager.resolveTarget({ parentSessionId: root, childSessionId: S2, mode: 'continuable' })
     expect(manager.get(S2).getSnapshot().subagent).toMatchObject({ parentAvailable: true })
 
     manager.handleSessionRemoved(root)
@@ -712,34 +810,29 @@ describe('remaining branches', () => {
     expect(manager.getListSnapshot().items).toBe(after.items)
   })
 
-  it('reuses refreshed rows and evicts missing rows while retaining the selection candidate', async ({ mock, remote }) => {
-    const manager = makeManager(mock, remote, S2)
+  it('reuses refreshed rows and evicts missing rows independently of Client instances', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
     remote.session.list.mockResolvedValue(ok({ items: [summary(S1), summary(S2)] as never[] }))
     await manager.refreshList()
     const first = manager.getListSnapshot()
-    expect(first.current).toBe(S2)
 
     remote.session.list.mockResolvedValue(ok({ items: [summary(S1), summary(S2)] as never[] }))
     await manager.refreshList()
     expect(manager.getListSnapshot().items).toBe(first.items)
-    expect(manager.getListSnapshot().current).toBe(S2)
 
     remote.session.list.mockResolvedValue(ok({ items: [summary(S1)] as never[] }))
     await manager.refreshList()
     expect(manager.getListSnapshot().items).toEqual([first.items[0]])
     expect(manager.getListSnapshot().items[0]).toBe(first.items[0])
-    expect(manager.getListSnapshot().current).toBeUndefined()
 
     remote.session.list.mockResolvedValue(ok({ items: [summary(S1), summary(S2)] as never[] }))
     await manager.refreshList()
     expect(manager.getListSnapshot().items[0]).toBe(first.items[0])
     expect(manager.getListSnapshot().items[1]).not.toBe(first.items[1])
-    expect(manager.getListSnapshot().current).toBe(S2)
 
     remote.session.list.mockResolvedValue(ok({ items: [] as never[] }))
     await manager.refreshList()
     expect(manager.getListSnapshot().items).toEqual([])
-    expect(manager.getListSnapshot().current).toBeUndefined()
 
     remote.session.list.mockResolvedValue(ok({ items: [summary(S1)] as never[] }))
     await manager.refreshList()
@@ -749,7 +842,7 @@ describe('remaining branches', () => {
   it('bounds cached-row ID reads linearly during repeated list refreshes', async ({ mock, remote }) => {
     const count = 1_000
     const summaries = Array.from({ length: count }, (_, i) => summary(`list-${i}` as SessionId))
-    const manager = makeManager(mock, remote, summaries[count - 1]!.sessionId)
+    const manager = makeManager(mock, remote)
     remote.session.list.mockResolvedValue(ok({ items: summaries as never[] }))
     await manager.refreshList()
     const first = manager.getListSnapshot()
@@ -765,7 +858,6 @@ describe('remaining branches', () => {
       await manager.refreshList()
       const snapshot = manager.getListSnapshot()
       expect(snapshot.items).toBe(first.items)
-      expect(snapshot.current).toBe(summaries[count - 1]!.sessionId)
       expect(reads).toBeLessThanOrEqual(count * 3)
     }
   })
@@ -872,17 +964,25 @@ describe('connected generation', () => {
     expect(remote.session.page).toHaveBeenCalledTimes(historyCallsBefore)
   })
 
-  it('retains the durable parent address and refreshes its catalogs across reconnect', async ({ mock, remote }) => {
+  it('retains the durable parent address and refreshes that parent across reconnect', async ({ mock, remote }) => {
     const address = {
       parentSessionId: S1, childSessionId: S2, mode: 'continuable' as const,
     }
     const parent = Promise.withResolvers<Awaited<ReturnType<typeof remote.subagents.list>>>()
     const child = Promise.withResolvers<Awaited<ReturnType<typeof remote.subagents.list>>>()
     remote.subagents.list.mockImplementation(payload => (payload === S1 ? parent.promise : child.promise))
-    const manager = makeManager(mock, remote, S2, address)
+    const manager = makeManager(mock, remote)
+    remote.subagents.list.mockResolvedValueOnce(ok({
+      entries: [{ kind: 'child', id: S2, mode: 'continuable', label: 'worker', activity: 'inactive', hasChildren: false }],
+      parentAvailable: true,
+    }))
+    await manager.refreshSubagents(S1)
+    manager.resolveTarget(address)
+    manager.get(S2)
+    remote.subagents.list.mockClear()
 
     manager.handleConnected()
-    expect(manager.get(S2).getSnapshot().subagent).toEqual({ address })
+    expect(manager.get(S2).getSnapshot().subagent).toEqual({ address, parentAvailable: true })
     parent.resolve(ok({ entries: [], parentAvailable: true }))
     child.resolve(ok({ entries: [], parentAvailable: true }))
 
@@ -890,132 +990,30 @@ describe('connected generation', () => {
       expect(remote.session.list).toHaveBeenCalledOnce()
     })
     await vi.waitFor(() => {
-      expect(remote.subagents.list.mock.calls.map(([parentSessionId]) => parentSessionId)).toEqual([S1, S2])
+      expect(remote.subagents.list.mock.calls.map(([parentSessionId]) => parentSessionId)).toEqual([S1])
     })
     expect(manager.get(S2).getSnapshot().subagent).toEqual({
       address,
       parentAvailable: true,
     })
-    expect(manager.getListSnapshot().currentAddress).toEqual(address)
+    expect(manager.subagentAddress(S2)).toEqual(address)
   })
 })
 
-describe('completed reminder', () => {
-  const status = (manager: SessionManager, sessionId: SessionId, running: boolean): void => {
-    manager.handleSessionStatus(sessionId, running)
-  }
-  const added = (manager: SessionManager, sessionId: SessionId): void => {
-    manager.handleSessionAdded(summary(sessionId))
-  }
-  const entry = (manager: SessionManager, sessionId: SessionId) =>
-    manager.getListSnapshot().items.find(item => item.sessionId === sessionId)
-
-  it('arms on a running→idle flip of a non-selected session and clears on select', ({ mock, remote }) => {
+describe('running facts without UI reminders', () => {
+  it('replays running status during hydration without publishing a completion marker', async ({ mock, remote }) => {
+    const response = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.list>>>()
+    remote.session.list.mockReturnValueOnce(response.promise)
     const manager = makeManager(mock, remote)
-    added(manager, S1)
-    added(manager, S2)
-    manager.select(S1)
-    expect(entry(manager, S2)?.completed).toBe(false)
-    status(manager, S2, true)
-    status(manager, S2, false)
-    expect(entry(manager, S2)?.completed).toBe(true)
-    // Opening the session consumes the reminder.
-    manager.select(S2)
-    expect(entry(manager, S2)?.completed).toBe(false)
-  })
-
-  it('never arms for the session being watched and re-arms after a switch-away re-run', ({ mock, remote }) => {
-    const manager = makeManager(mock, remote)
-    added(manager, S1)
-    added(manager, S2)
-    manager.select(S2)
-    status(manager, S2, true)
-    status(manager, S2, false)
-    expect(entry(manager, S2)?.completed).toBe(false) // watched to completion: no reminder
-    // Switch away; a fresh run completing again arms the reminder.
-    manager.select(S1)
-    status(manager, S2, true)
-    status(manager, S2, false)
-    expect(entry(manager, S2)?.completed).toBe(true)
-  })
-
-  it('a re-run disarms the reminder while running and re-arms on its completion', ({ mock, remote }) => {
-    const manager = makeManager(mock, remote)
-    added(manager, S1)
-    added(manager, S2)
-    manager.select(S1)
-    status(manager, S2, true)
-    status(manager, S2, false)
-    expect(entry(manager, S2)?.completed).toBe(true)
-    // The user starts a new run without opening the session: running wins.
-    status(manager, S2, true)
-    expect(entry(manager, S2)?.completed).toBe(false)
-    status(manager, S2, false)
-    expect(entry(manager, S2)?.completed).toBe(true)
-  })
-
-  it('session-removed drops the reminder and a re-add starts clean', ({ mock, remote }) => {
-    const manager = makeManager(mock, remote)
-    added(manager, S1)
-    added(manager, S2)
-    manager.select(S1)
-    status(manager, S2, true)
-    status(manager, S2, false)
-    expect(entry(manager, S2)?.completed).toBe(true)
-    manager.handleSessionRemoved(S2)
-    expect(manager.getListSnapshot().items.find(item => item.sessionId === S2)).toBeUndefined()
-    added(manager, S2)
-    expect(entry(manager, S2)?.completed).toBe(false)
-  })
-
-  it('a list refresh carrying the running→idle transition arms the reminder', async ({ mock, remote }) => {
-    remote.session.list.mockResolvedValue(ok({ items: [summary(S1), summary(S2, { updatedAt: 200, running: true })] as never[] }))
-    const manager = makeManager(mock, remote)
-    await manager.refreshList()
-    manager.select(S1)
-    expect(entry(manager, S2)?.completed).toBe(false)
-    remote.session.list.mockResolvedValue(ok({ items: [summary(S1), summary(S2, { updatedAt: 200, running: false })] as never[] }))
-    await manager.refreshList()
-    expect(entry(manager, S2)?.completed).toBe(true)
-  })
-
-  it('never arms for sessions already idle at first observation', async ({ mock, remote }) => {
-    remote.session.list.mockResolvedValue(ok({ items: [summary(S1), summary(S2, { updatedAt: 200 })] as never[] }))
-    const manager = makeManager(mock, remote)
-    await manager.refreshList()
-    manager.select(S1)
-    expect(entry(manager, S2)?.completed).toBe(false)
-    remote.session.list.mockResolvedValue(ok({ items: [summary(S1), summary(S2, { updatedAt: 201 })] as never[] }))
-    await manager.refreshList()
-    expect(entry(manager, S2)?.completed).toBe(false)
-  })
-
-  it('arms a completion that happened during an in-flight first pull (baseline running, replayed idle)', async ({ mock, remote }) => {
-    const gate = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.list>>>()
-    remote.session.list.mockReturnValue(gate.promise)
-    const manager = makeManager(mock, remote)
-    const refresh = manager.refreshList()
-    // The session finishes while the first pull is still in flight; the pull
-    // response recorded it as running at pull time.
-    status(manager, S2, false)
-    gate.resolve(ok({ items: [summary(S1), summary(S2, { updatedAt: 200, running: true })] as never[] }))
-    await refresh
-    expect(entry(manager, S2)?.completed).toBe(true)
-  })
-
-  it('arms when a session ran and completed entirely between in-flight mutations (baseline idle)', async ({ mock, remote }) => {
-    const gate = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.list>>>()
-    remote.session.list.mockReturnValue(gate.promise)
-    const manager = makeManager(mock, remote)
-    const refresh = manager.refreshList()
-    // The unknown session starts and finishes while the first pull is in
-    // flight; the pull-time baseline recorded it idle, so the running→idle
-    // edge lives entirely inside the replayed mutations.
-    status(manager, S2, true)
-    status(manager, S2, false)
-    gate.resolve(ok({ items: [summary(S1), summary(S2, { updatedAt: 200 })] as never[] }))
-    await refresh
-    expect(entry(manager, S2)?.completed).toBe(true)
+    const refreshing = manager.refreshList()
+    manager.handleSessionStatus(S1, true)
+    manager.handleSessionStatus(S1, false)
+    response.resolve(ok({ items: [summary(S1)] }))
+    await refreshing
+    const entry = manager.getListSnapshot().items.find(item => item.sessionId === S1)
+    expect(entry).toMatchObject({ running: false })
+    expect(entry).not.toHaveProperty('completed')
+    expect(manager.getListSnapshot()).not.toHaveProperty('current')
   })
 })
 

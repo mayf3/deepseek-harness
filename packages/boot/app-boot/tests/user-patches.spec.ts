@@ -331,9 +331,21 @@ describe('Loader entry disabled interpolation', () => {
 })
 
 describe('profile reconciliation settlement', () => {
+  it('retains unchanged import diagnostics across profile reconciliation', async () => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+    const patches = [{ insert: [{ id: 'missing-plugin', name: './missing.mjs' }] }]
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'), patches)
+    onTestFinished(() => ctx.fiber.dispose())
+    expect(await reconcileProfilePatches(ctx, patches, NAME)).toEqual(['missing-plugin (./missing.mjs): failed to import'])
+  })
+
   it('rejects a context without the launcher root Include', async () => {
     const ctx = new Context()
     onTestFinished(() => ctx.fiber.dispose())
+    await expect(reconcileProfilePatches(ctx, [], NAME)).rejects.toThrow('profile reload requires the root Include entry')
+    // A Loader without the pinned root id is no better.
+    await ctx.plugin(Loader)
     await expect(reconcileProfilePatches(ctx, [], NAME)).rejects.toThrow('profile reload requires the root Include entry')
   })
 

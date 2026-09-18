@@ -189,7 +189,9 @@ describe('CI workflow', () => {
       expect(job['runs-on']).toContain('self-hosted')
       expect(job['runs-on']).toContain('dsh-win-ci')
       expect(job['runs-on']).toContain('dsh-windows-2025-16core')
-      expect(job['runs-on']).toContain('blacksmith-16vcpu-windows-2025')
+      const cores = jobName === 'windows-native-tests' ? 2 : jobName === 'windows-observational' ? 8 : 16
+      expect(evaluateRunsOn(job['runs-on'], { vars: { DSH_CI_FAILOVER_WINDOWS: 'blacksmith' } }))
+        .toBe(`blacksmith-${cores}vcpu-windows-2025`)
       expect(job.if).toBe("github.event_name == 'pull_request'")
     }
 
@@ -230,9 +232,8 @@ describe('CI workflow', () => {
       expect(install!.run).not.toContain('$cloneFlag')
     }
 
-    // windows-coverage uses the lower 4-partition profile.
     expect(windowsCoverage.name).toBe('windows node 24 / coverage')
-    expect(windowsCoverage.env).toMatchObject({ DSH_COVERAGE_PARTITIONS: '4' })
+    expect(windowsCoverage.env).toMatchObject({ DSH_COVERAGE_PARTITIONS: "${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '4' || '' }}" })
     const coverageSteps = windowsCoverage.steps as unknown[]
     const coverageCommands = coverageSteps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -329,7 +330,8 @@ describe('CI workflow', () => {
       expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
       expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
       expect(job['runs-on']).toContain('vm-backup')
-      expect(job['runs-on']).toContain('blacksmith-16vcpu-ubuntu-2404')
+      expect(evaluateRunsOn(job['runs-on'], { vars: { DSH_CI_FAILOVER_LINUX: 'blacksmith' } }))
+        .toBe(`blacksmith-${jobName === 'node-24' ? 8 : 16}vcpu-ubuntu-2404`)
     }
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
@@ -383,8 +385,7 @@ describe('CI workflow', () => {
     // The observational lane stays complete: it is continue-on-error by design
     // and exists to collect as much Windows-native evidence per run as
     // possible, so the first failure must not truncate the rest.
-    expect(windowsObservational.env).toBeDefined()
-    expect(windowsObservational.env).not.toMatchObject({ DSH_GATE_FAIL_FAST: '1' })
+    expect(windowsObservational.env ?? {}).not.toMatchObject({ DSH_GATE_FAIL_FAST: '1' })
   })
 
   it('gates standalone keyless blacksmith jobs and benchmark tiers on the failover variables', () => {
@@ -608,8 +609,8 @@ describe('Runtime and LLM e2e Blacksmith routing', () => {
     const workflow = loadWorkflow('.github/workflows/build-exe-for-python-sdk.yml')
     const build = workflowJob(workflow, 'build')
     for (const [target, runner, variable, blacksmith] of [
-      ['node24-linux-x64', 'ubuntu-latest', 'DSH_CI_FAILOVER_LINUX', 'blacksmith-16vcpu-ubuntu-2404'],
-      ['node24-win-x64', 'windows-2025', 'DSH_CI_FAILOVER_WINDOWS', 'blacksmith-16vcpu-windows-2025'],
+      ['node24-linux-x64', 'ubuntu-latest', 'DSH_CI_FAILOVER_LINUX', 'blacksmith-2vcpu-ubuntu-2404'],
+      ['node24-win-x64', 'windows-2025', 'DSH_CI_FAILOVER_WINDOWS', 'blacksmith-2vcpu-windows-2025'],
       ['node24-linux-arm64', 'ubuntu-24.04-arm', 'DSH_CI_FAILOVER_LINUX', 'ubuntu-24.04-arm'],
       ['node24-macos-arm64', 'macos-latest', 'DSH_CI_FAILOVER_LINUX', 'macos-latest'],
       ['node24-macos-x64', 'macos-15-intel', 'DSH_CI_FAILOVER_LINUX', 'macos-15-intel'],
@@ -916,7 +917,8 @@ describe('Weighted approval workflow', () => {
     const record = recordSteps.find(step => step.name === 'Record review event')
 
     expect(publisher.name).toBe('weighted-approval')
-    expect(Object.keys(publisher.on)).toEqual(['pull_request_target', 'workflow_run'])
+    expect(Object.keys(publisher.on)).toEqual(['pull_request_target', 'issue_comment', 'workflow_run'])
+    expect(workflowEvent(publisher, 'issue_comment').types).toEqual(['created', 'edited', 'deleted'])
     expect(pullRequest.types).toEqual(['opened', 'synchronize', 'reopened', 'ready_for_review', 'converted_to_draft', 'edited'])
     expect(workflowRun).toEqual({ workflows: ['weighted-approval-review-event'], types: ['completed'] })
     expect(reviewEvent.name).toBe('weighted-approval-review-event')
@@ -926,15 +928,18 @@ describe('Weighted approval workflow', () => {
     expect(reviewEvent.permissions).toEqual({})
     expect(publisher.permissions).toEqual({
       contents: 'read',
-      'pull-requests': 'read',
+      'pull-requests': 'write',
       statuses: 'write',
     })
     expect(publisher.concurrency).toEqual({
-      group: "weighted-approval-${{ github.event.pull_request.number && format('weighted-approval-review-event:{0}', github.event.pull_request.number) || github.event.workflow_run.display_title }}",
+      group: "weighted-approval-${{ (github.event.pull_request.number || github.event.issue.number) && format('weighted-approval-review-event:{0}', github.event.pull_request.number || github.event.issue.number) || github.event.workflow_run.display_title }}",
       'cancel-in-progress': false,
     })
     expect(job).toMatchObject({
-      if: "github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'",
+      if: "(github.event_name != 'pull_request_target' || github.event.pull_request.state == 'open') && "
+        + "(github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') && "
+        + "(github.event_name != 'issue_comment' || (github.event.issue.pull_request && github.event.issue.state == 'open' &&\n"
+        + "  (contains(github.event.comment.body, '/delegate') || contains(github.event.changes.body.from, '/delegate'))))",
       name: 'weighted approval publisher',
       'runs-on': 'ubuntu-latest',
       'timeout-minutes': 5,
@@ -947,13 +952,14 @@ describe('Weighted approval workflow', () => {
       },
     })
     const setupIndex = steps.findIndex(step => typeof step.uses === 'string' && step.uses.startsWith('actions/setup-python@'))
+    expect(steps[setupIndex]?.if).toBe("steps.revoke.outputs.active == 'true'")
     expect(steps[setupIndex]?.uses).toBe('actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1')
     const revokeIndex = steps.findIndex(step => step.id === 'revoke')
     expect(revokeIndex).toBeGreaterThan(steps.indexOf(checkout!))
     expect(revokeIndex).toBeLessThan(setupIndex)
     expect(steps[revokeIndex]?.run).toBe('node .github/review-ownership/check-approval.mjs pending')
     expect(steps.at(-1)).toMatchObject({
-      if: "failure() && steps.revoke.outcome == 'success'",
+      if: "failure() && steps.revoke.outputs.active == 'true'",
       run: 'node .github/review-ownership/check-approval.mjs error',
     })
     const pythonJob = workflowJob(loadWorkflow('.github/workflows/ci.yml'), 'python-sdk')
@@ -962,9 +968,11 @@ describe('Weighted approval workflow', () => {
       run: "uv run --python 3.10 --with-requirements .github/review-ownership/requirements.txt python -m unittest discover -s .github/review-ownership -p 'test_*.py'",
     })
     expect(steps.find(step => step.name === 'Install production lexer')).toMatchObject({
+      if: "steps.revoke.outputs.active == 'true'",
       run: 'python3 -m pip install -r .github/review-ownership/requirements.txt',
     })
     expect(publish).toMatchObject({
+      if: "steps.revoke.outputs.active == 'true'",
       env: {
         GITHUB_TOKEN: '${{ github.token }}',
         GITHUB_RUN_URL: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}',
@@ -972,6 +980,7 @@ describe('Weighted approval workflow', () => {
       run: 'node .github/review-ownership/check-approval.mjs',
     })
     expect(recordJob).toMatchObject({
+      if: "github.event.pull_request.state == 'open'",
       name: 'record weighted approval review event',
       'runs-on': 'ubuntu-latest',
       'timeout-minutes': 2,

@@ -128,7 +128,7 @@ describe('MenuView', () => {
     }))
     const options = screen.getAllByRole('option')
     expect(options.map(o => o.textContent)).toEqual(['计划plan进入或退出计划模式', 'File'])
-    expect(options[0]?.querySelector('[data-glyph="plan"]')?.getAttribute('width')).toBe('16')
+    expect(options[0]?.querySelector('[data-glyph="plan"]')?.getAttribute('width')).toBe('14')
     // A label that is the name in another letter case renders no alias.
     expect(options[1]?.querySelectorAll('span')).toHaveLength(1)
     expect(screen.getAllByText('添加')).toHaveLength(1)

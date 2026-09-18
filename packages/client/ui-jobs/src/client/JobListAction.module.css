@@ -51,12 +51,13 @@
   max-width: min(400px, calc(100vw - 32px));
   max-height: min(420px, calc(100vh - 140px));
   margin: 0;
-  padding: 4px;
+  padding: 3px;
   overflow: auto;
   list-style: none;
   border: 0;
-  border-radius: 20px;
+  border-radius: 16px;
   background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
@@ -66,15 +67,15 @@
 .row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   box-sizing: border-box;
   width: 100%;
-  min-height: 32px;
-  padding: 6px 8px;
-  border-radius: 8px;
+  min-height: 28px;
+  padding: 4px 7px;
+  border-radius: 7px;
   color: var(--dsw-alias-label-primary);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 12px;
+  line-height: 17px;
 }
 
 .rowSettled {
@@ -87,12 +88,12 @@
 
 .kind {
   flex: none;
-  padding: 0 6px;
-  border-radius: 5px;
+  padding: 0 5px;
+  border-radius: 4px;
   background: var(--dsw-alias-fill-l2);
   color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
-  line-height: 18px;
+  font-size: 10px;
+  line-height: 16px;
 }
 
 .label {
@@ -108,8 +109,8 @@
 .duration {
   flex: none;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 18px;
+  font-size: 10px;
+  line-height: 16px;
 }
 
 /* A failed job's detail is the producer's raw error text, so it has no bound;

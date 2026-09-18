@@ -7,7 +7,7 @@
 
 import { memo, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { IconDatabaseOutline16, IconGaugeOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconDatabaseOutlineRegular, IconGaugeOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: merges the sessionStats key into SessionProjectionMap for useProjection.
@@ -164,7 +164,7 @@ function TimePill({ stats, t, dialog }: {
     return (
       <span className={css.anchor}>
         <span className={css.pill}>
-          <IconGaugeOutline16 />
+          <IconGaugeOutlineRegular />
           {label}
         </span>
       </span>
@@ -180,7 +180,7 @@ function TimePill({ stats, t, dialog }: {
         aria-label={tps === null ? counts : `${counts} · ${tps}`}
         onClick={() => { setOpen(!open) }}
       >
-        <IconGaugeOutline16 />
+        <IconGaugeOutlineRegular />
         {label}
       </button>
       {open && createPortal(
@@ -193,7 +193,7 @@ function TimePill({ stats, t, dialog }: {
         >
           <div className={dialogCss.title}>
             <span className={dialogCss.titleLabel}>
-              <IconGaugeOutline16 />
+              <IconGaugeOutlineRegular />
               {t('stats.dialog.title')}
             </span>
           </div>
@@ -254,7 +254,7 @@ function UsagePill({ usage, t, dialog }: {
         aria-label={cacheHitText === null ? totalText : `${totalText} · ${cacheHitText}`}
         onClick={() => { setOpen(!open) }}
       >
-        <IconDatabaseOutline16 />
+        <IconDatabaseOutlineRegular />
         <span className={css.label}>
           {totalText}
           {cacheHitText !== null && (
@@ -275,7 +275,7 @@ function UsagePill({ usage, t, dialog }: {
         >
           <div className={dialogCss.title}>
             <span className={dialogCss.titleLabel}>
-              <IconDatabaseOutline16 />
+              <IconDatabaseOutlineRegular />
               {t('stats.dialog.usageTitle')}
             </span>
             <span className={dialogCss.titleValue}>{exactCount(total, t)}</span>
@@ -330,10 +330,8 @@ export const StatsPills = memo(function StatsPills({ useChat, useProjection, t }
   const hasTokens = usage !== undefined
     && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)
   if (stats.steps === 0 && !hasTokens) return null
-  // data-composer-stats: InputBar's `.root:has([data-composer-stats])` rule
-  // tightens the composer's bottom clearance only while this row renders.
   return (
-    <div className={css.root} data-composer-stats>
+    <div className={css.root}>
       {stats.steps > 0 && (
         <TimePill
           stats={stats}

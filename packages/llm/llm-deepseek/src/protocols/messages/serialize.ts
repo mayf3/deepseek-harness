@@ -5,20 +5,22 @@ import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Mess
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type { DeepSeekConnectionOptions as Connection } from '../../common/types.ts'
 import type { DeepSeekFileId } from '../../common/file-id.ts'
-import { object, readReplay } from './replay.ts'
+import { readReplay } from './replay.ts'
 import type { WireBlock, WireInput, WireMessage, WireRequest } from './types.ts'
 
 function unsupported(type: string): never {
   throw new LlmError(`DeepSeek Messages cannot represent ${type}`, 'UNSUPPORTED_CONTENT')
 }
 
-/** Parse tool input only when constructing an outgoing native tool_use block. */
+/** Historical arguments that Messages cannot represent use empty input; durable content stays unchanged. */
 function toolInput(raw: string): Record<string, unknown> {
   let value: unknown
   try { value = JSON.parse(raw) } catch (_invalidToolHistoryJson) {
-    throw new LlmError('DeepSeek Messages historical tool input is invalid JSON', 'INVALID_REQUEST')
+    return {}
   }
-  return object(value, 'INVALID_REQUEST')
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
 }
 
 function assistant(message: Message, model: string, onReplayDegrade?: (reason: string) => void): WireBlock[] {
@@ -37,6 +39,8 @@ function assistant(message: Message, model: string, onReplayDegrade?: (reason: s
 }
 
 /** Serialize one complete request using already prepared image bytes.
+ * User and tool-result content omits reasoning and tool-call blocks.
+ * Empty user messages are skipped; empty tool results retain their call ids.
  * @param options - provider-neutral request.
  * @param connection - validated defaults and thinking policy.
  * @param history - image-projected history with complete system snapshots; durable messages remain unchanged.
@@ -56,6 +60,7 @@ export function serialize(
   const inHistory = model?.systemPromptUpdate === 'in-history'
   const input = (blocks: readonly ContentBlock[]): WireInput[] => blocks.flatMap((block): WireInput[] => {
     if (block.type === 'text') return block.text ? [{ type: 'text', text: block.text }] : []
+    if (block.type === 'reasoning' || block.type === 'tool-call') return []
     if (block.type !== 'image') return unsupported(`user/tool-result content ${block.type}`)
     const version = images.get(block.attachment.attachmentId)
     if (version === undefined) throw new LlmError('DeepSeek Messages request image is missing', 'INVALID_REQUEST')
@@ -96,6 +101,7 @@ export function serialize(
       if (block.type !== 'tool-result') return input([block])
       return [{ type: 'tool_result', tool_use_id: block.toolCallId, content: input(block.content), ...block.isError === undefined ? {} : { is_error: block.isError } }]
     })
+    if (message.role === 'user' && content.length === 0) continue
     const previous = messages.at(-1)
     if (previous?.role === message.role) previous.content.push(...content)
     else messages.push({ role: message.role, content })

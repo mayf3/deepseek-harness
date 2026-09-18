@@ -1,16 +1,17 @@
 /**
  * Workspace browser tree row components (figma Cell set 14:3080): pure presentational —
  * all data and callbacks arrive via props. Hover swaps (folder->chevron,
- * time->ellipsis, action buttons) are CSS-only. Row ... menus are visual-only
- * except workspace Rename/Delete and session Rename/Fork/Archive; the session
- * and workspace hover cards are suppressed while a menu is open.
+ * time->ellipsis, action buttons) are CSS-only, and a session row's clipped
+ * title is scrolled programmatically while the row is hovered. Row ... menus are
+ * visual-only except workspace Rename/Delete and session Rename/Fork/Archive; the
+ * session and workspace hover cards are suppressed while a menu is open.
  */
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  HoverCard, IconAlarmClockOutline16, IconArchiveOutline20, IconBranchOutline16,
-  IconEditOutline16, IconEllipsisOutline16, IconFolderClose16, IconFolderOpen16,
-  IconPlusOutline16, IconTrashOutline16, IconTriangleRightFill14, Menu, relativeTime,
+  HoverCard, IconAlarmClockOutlineRegular, IconArchiveOutlineRegular, IconBranchOutlineRegular,
+  IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderCloseRegular, IconFolderOpenRegular,
+  IconPlusOutlineMedium, IconTrashOutlineRegular, IconTriangleRightFillRegular, Menu, relativeTime,
   StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -25,6 +26,30 @@ type RowTranslate = WorkspaceBrowserProps['t']
 /** Row display title: blank rows show the localized New Session label. */
 function displayTitle(node: SessionNode, t: RowTranslate): string {
   return node.blank ? t('session.new') : node.title
+}
+
+/**
+ * Reveal a title wider than its one-line cell while its row is hovered: the
+ * title clips its own text, so the far edge (a fork's incremented title, for
+ * example) is reachable by scrolling the element to its end. Leaving returns it
+ * to the start in one step, because the resting ellipsis and the narrowed cell
+ * would otherwise meet the text while it travelled back. A title that fits has
+ * no scroll range to move, and the stylesheet decides whether either move
+ * glides or jumps.
+ * @param title - the row's clipping title element.
+ * @param revealed - whether the pointer is on the row.
+ */
+function revealClippedTitle(title: HTMLSpanElement | null, revealed: boolean): void {
+  /* v8 ignore next -- defensive: the title span renders unconditionally. */
+  if (title === null) return
+  if (revealed) {
+    title.scrollLeft = title.scrollWidth - title.clientWidth
+    return
+  }
+  // jsdom implements no scrollTo; the lane's direct assignment is instant there
+  // anyway, so both paths land on the same resting position.
+  if (typeof title.scrollTo === 'function') title.scrollTo({ left: 0, behavior: 'instant' })
+  else title.scrollLeft = 0
 }
 
 /** Localized compact relative time ("刚刚"/"5分钟" in zh, "now"/"5min" in en). */
@@ -102,6 +127,7 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
  * Workspace shows its hover card (the ungrouped bucket has none).
  * `containsCurrent` arrives on the node (derivation fact, no renderer scan).
  * @param props.group - derived group node.
+ * @param props.containsCurrentDescendant - highlight an ancestor even when its subtree is collapsed.
  * @param props.onToggle - expand/collapse the group.
  * @param props.onCreate - start a frontend Session inside this Workspace.
  * @param props.drag - optional workspace-row drag wiring.
@@ -109,8 +135,9 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
  * @param props.t - the browser root's locale seat.
  * @returns the row element.
  */
-export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home, t }: {
+export function ProjectRowItem({ group, containsCurrentDescendant = false, onToggle, onCreate, actions, drag, home, t }: {
   group: GroupNode
+  containsCurrentDescendant?: boolean
   onToggle: () => void
   onCreate: () => void
   /** Real-Workspace actions; absent for the ungrouped bucket (no menu shown). */
@@ -124,11 +151,11 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
   const row = group
   // The ungrouped bucket has no workspace title: its label is dictionary copy.
   const label = row.workspaceId === undefined ? t('group.ungrouped') : row.label
-  const active = group.expanded && group.containsCurrent
+  const active = containsCurrentDescendant || (group.expanded && group.containsCurrent)
   const [menuOpen, setMenuOpen] = useState(false)
   const workspaceMenuItems = [
-    { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
-    { id: 'delete', label: t('delete.workspace'), icon: <IconTrashOutline16 />, danger: true },
+    { id: 'rename', label: t('rename'), icon: <IconEditOutlineRegular /> },
+    { id: 'delete', label: t('delete.workspace'), icon: <IconTrashOutlineRegular />, danger: true },
   ]
   const ownRow = (
     <div
@@ -147,10 +174,10 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
       onDragEnd={drag?.end}
     >
       <span className={clsx(css.slot, css.folder, active && css.folderActive)}>
-        {row.expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />}
+        {row.expanded ? <IconFolderOpenRegular /> : <IconFolderCloseRegular />}
       </span>
       <span className={clsx(css.slot, css.chevron)}>
-        <IconTriangleRightFill14 className={clsx(css.arrow, row.expanded && css.arrowOpen)} />
+        <IconTriangleRightFillRegular className={clsx(css.arrow, row.expanded && css.arrowOpen)} />
       </span>
       <span className={css.projectText}>
         <span className={css.title}>{label}</span>
@@ -179,7 +206,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
                 aria-label={t('actions.workspace.aria', { name: label })}
                 onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
               >
-                <IconEllipsisOutline16 />
+                <IconEllipsisOutlineRegular />
               </button>
             )}
           />
@@ -190,7 +217,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
           aria-label={t('actions.newSession.aria', { name: label })}
           onClick={(e) => { e.stopPropagation(); onCreate() }}
         >
-          <IconPlusOutline16 />
+          <IconPlusOutlineMedium />
         </button>
       </span>
     </div>
@@ -222,6 +249,8 @@ function assertNever(value: never): never {
 interface SessionStatus {
   state: StateDotState
   label: string
+  /** Compact text that replaces the Session row's update time. */
+  trailingLabel?: string
 }
 
 /**
@@ -246,13 +275,25 @@ function sessionStatuses(
   let pending: SessionStatus | undefined
   switch (node.pendingInteraction) {
     case 'approval':
-      pending = { state: 'warning', label: t('status.waitingApproval') }
+      pending = {
+        state: 'warning',
+        label: t('status.waitingApproval'),
+        trailingLabel: t('status.compact.approval'),
+      }
       break
     case 'plan-review':
-      pending = { state: 'warning', label: t('status.planReview') }
+      pending = {
+        state: 'warning',
+        label: t('status.planReview'),
+        trailingLabel: t('status.compact.planReview'),
+      }
       break
     case 'question':
-      pending = { state: 'warning', label: t('status.waitingAnswer') }
+      pending = {
+        state: 'warning',
+        label: t('status.waitingAnswer'),
+        trailingLabel: t('status.compact.answer'),
+      }
       break
     case undefined: break
     /* v8 ignore next -- closed PendingInteractionStatus union */
@@ -265,7 +306,7 @@ function sessionStatuses(
   }
   if (subagents !== undefined) return [subagents]
   if (node.completed) return [{ state: 'done', label: t('status.completed') }]
-  return [{ state: 'done', label: t('status.idle') }]
+  return [{ state: 'idle', label: t('status.idle') }]
 }
 
 /** Primary status dot plus every status's screen-reader label, shared by the search and session rows. */
@@ -290,7 +331,7 @@ function ActiveScheduleIndicator({ t, search = false }: { t: RowTranslate; searc
       aria-label={label}
       title={label}
     >
-      <IconAlarmClockOutline16 />
+      <IconAlarmClockOutlineRegular />
     </span>
   )
 }
@@ -343,7 +384,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
     >
       <span className={css.searchResultHeading}>
         <span className={css.slot}>
-          {(primaryStatus.state !== 'done' || result.completed) && (
+          {primaryStatus.state !== 'idle' && (
             <SessionStatusDots statuses={statuses} />
           )}
         </span>
@@ -362,7 +403,8 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
 
 /**
  * One top-level 34px session row: status dot (pending user interaction outranks
- * own or descendant activity), title, relative time, and the row actions menu.
+ * own or descendant activity), title, relative time or compact pending label,
+ * and the row actions menu.
  * @param props.node - derived session node.
  * @param props.currentId - selected session id (row highlight).
  * @param props.now - epoch ms for relative-time formatting.
@@ -402,10 +444,11 @@ export function SessionNodeItem({
   const selected = node.id === currentId
   const statuses = sessionStatuses(node, t)
   const primaryStatus = statuses[0]
-  const showStatus = primaryStatus.state !== 'done' || row.completed
+  const showStatus = primaryStatus.state !== 'idle'
   const draggable = drag !== undefined && !row.blank
   const [menuOpen, setMenuOpen] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
+  const titleRef = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     if (onReveal === undefined) return
     rowRef.current?.scrollIntoView({ block: 'nearest' })
@@ -415,10 +458,9 @@ export function SessionNodeItem({
   // touches the session log, so it is not styled as destructive and needs no
   // confirmation dialog.
   const sessionMenuItems = [
-    { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
-    { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
-    // 20-native glyph in the menu's 16px icon slot (Menu.module.css .itemIcon).
-    { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} /> },
+    { id: 'rename', label: t('rename'), icon: <IconEditOutlineRegular /> },
+    { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutlineRegular /> },
+    { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutlineRegular size={14} /> },
   ]
   // Figma session cell: pad 8, status slot 16, then a 4px title gap.
   const ownRow = (
@@ -432,6 +474,8 @@ export function SessionNodeItem({
       role="treeitem"
       aria-selected={selected}
       onClick={() => { onOpen(node.id) }}
+      onPointerEnter={() => { revealClippedTitle(titleRef.current, true) }}
+      onPointerLeave={() => { revealClippedTitle(titleRef.current, false) }}
       draggable={draggable}
       onDragStart={drag === undefined || row.blank
         ? undefined
@@ -465,13 +509,20 @@ export function SessionNodeItem({
           {showStatus && <SessionStatusDots statuses={statuses} />}
         </span>
       )}
-      <span className={css.title}>{title}</span>
+      <span ref={titleRef} className={css.title}>{title}</span>
       {row.hasActiveSchedule && <ActiveScheduleIndicator t={t} />}
       {/* A blank New Session row is a provisional placeholder: nothing has
           happened in it yet, so a "now" timestamp and the row verbs
           (rename/fork/archive) would all act on content that does not
           exist — both trailing cells stay off until the first prompt. */}
-      {!row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
+      {!row.blank && (
+        <span
+          className={css.time}
+          aria-hidden={primaryStatus.trailingLabel === undefined ? undefined : true}
+        >
+          {primaryStatus.trailingLabel ?? timeLabel(row.updatedAt, now, t)}
+        </span>
+      )}
       {!row.blank && (
         <span className={css.rowActions}>
           <Menu
@@ -493,7 +544,7 @@ export function SessionNodeItem({
                 aria-label={t('actions.session.aria', { name: title })}
                 onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
               >
-                <IconEllipsisOutline16 />
+                <IconEllipsisOutlineRegular />
               </button>
             )}
           />

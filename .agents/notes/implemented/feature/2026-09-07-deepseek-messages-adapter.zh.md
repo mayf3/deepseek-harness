@@ -14,7 +14,7 @@ Status: implemented
 
 适配器遵循 [DeepSeek 兼容文档](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api) 和 [Anthropic 流协议](https://platform.claude.com/docs/en/build-with-claude/streaming)。pi-ai 的 Anthropic 实现为相邻用户消息、累计用量、工具参数分片和可选思考签名的处理提供参考。DeepSeek 通过 `output_config.effort` 设置思考强度；Anthropic 思考 token 预算不控制 DeepSeek 思考强度。两种协议都转发显式 `temperature` 值；DeepSeek 在启用思考时接受该参数但忽略其值，因此调用方可以保留已有思考配置。
 
-助手内容块保留持久化的模型可见内容。带版本的 `ReplayEnvelope` 仅保存协议格式、模型标识、对齐的块类型以及内容块未包含的签名。同模型续接原样恢复签名，包括空签名；外部历史不生成虚构签名。不可用的元数据遵循现有[回放降级规则](../architecture/2026-07-14-provider-routed-llm-adapters.zh.md)：请求省略签名并记录警告，保留持久化内容；工具参数等内容校验仍会正常报错。提供者回放数据对循环保持不透明，同时能够随 Session 持久化和内容块裁剪保留。
+助手内容块保留持久化的模型可见内容。带版本的 `ReplayEnvelope` 仅保存协议格式、模型标识、对齐的块类型以及内容块未包含的签名。同模型续接原样恢复签名，包括空签名；外部历史不生成虚构签名。不可用的元数据遵循现有[回放降级规则](../architecture/2026-07-14-provider-routed-llm-adapters.zh.md)：请求省略签名并记录警告，保留持久化内容；Messages 无法表示历史工具参数时使用[空输入兜底](../bug-fix/2026-09-16-messages-historical-tool-input.zh.md)。提供者回放数据对循环保持不透明，同时能够随 Session 持久化和内容块裁剪保留。
 
 两种协议均优先为确定性请求图片使用 Files 引用，并共享上传缓存、刷新、配额恢复和附件卸载。Files 客户端保留所选协议与已配置端点：Messages 遵循[严格匹配 `/v1` 的根地址规则](../bug-fix/2026-09-15-messages-v1-base-url.zh.md)，Chat Completions 则追加 `/files`。Messages Files 请求携带必需的 beta 标头。缓存 id 按解析后的 Files 根地址和凭据限定作用域，因此等价的 `/v1` 与无版本 Messages 根地址可以复用上传。Messages 元数据不含过期时间，因此本地复用从原始上传时间起受限，但不宣称远端文件已删除。Files 解析失败会按独立的内联图片预算重建完整请求；调用方取消则停止请求。共享图片策略在请求与 token 计量中保留 128 MiB 的保留图片预算、20 MiB 的内联 base64 预算，以及最旧前缀卸载。
 
@@ -36,6 +36,6 @@ Web 始终显示 DeepSeek，不提供协议选择器。两个协议共用 `baseU
 
 ## 结果
 
-该包负责协议校验、停止原因映射、取消和错误分类，因此协议变化需要维护适配器。不支持的内容和不完整的流会明确报错。现有重试消费者负责重试；现有装配器在输出达到上限时丢弃未完成的工具调用。Messages 默认配置覆盖共享 base、Web 和独立的官方组合。协议变化保留 provider id 与已保存的模型选择，但显式端点覆盖必须支持所选协议。
+该包负责协议校验、停止原因映射、取消和错误分类，因此协议变化需要维护适配器。用户与工具结果输入遵循[已保存输入兼容规则](../bug-fix/2026-09-18-messages-input-history-compatibility.zh.md)；其他不支持的内容和不完整的流会明确报错。现有重试消费者负责重试；现有装配器在输出达到上限时丢弃未完成的工具调用。Messages 默认配置覆盖共享 base、Web 和独立的官方组合。协议变化保留 provider id 与已保存的模型选择，但显式端点覆盖必须支持所选协议。
 
 验证覆盖协议夹具、真实 Loader 组合、逐文件单元覆盖率、[已记录 Session 回放](../../../../snapshots/session/deepseek-messages-replay/snapshot.yml)与[未知回放版本](../../../../snapshots/session/deepseek-messages-degraded-replay/snapshot.yml)，Web Messages Session 回放，以及凭证控制的文本、思考、工具续接、图片和取消请求。真实网关检查证明与已配置网关的兼容性，不能证明与所有 Anthropic 代理兼容。

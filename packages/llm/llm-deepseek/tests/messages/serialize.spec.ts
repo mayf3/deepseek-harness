@@ -65,6 +65,39 @@ describe('Messages request conversion', () => {
     expect(() => nativeBody([user(), assistant([call(), call('b')]), update, result()])).toThrow(/immediate results/)
   })
 
+  it.each([[], [{ type: 'reasoning', text: 'child reasoning' }], [call('child-call')]] satisfies ContentBlock[][])(
+    'rejects native system updates when their user input is omitted %#', (...content) => {
+      const empty = createMessage({ role: 'user', source: { kind: 'user' }, content })
+      const history = [user(), assistant([{ type: 'text', text: 'answer' }]), createSystemMessage('updated', 'test'), empty]
+      const saved = JSON.stringify(history)
+      for (const messages of [history, [...history, assistant([{ type: 'text', text: 'next answer' }])]]) {
+        expect(() => nativeBody(messages)).toThrow(expect.objectContaining({
+          code: 'UNSUPPORTED_CONTENT',
+          message: 'DeepSeek Messages cannot represent system update without a preceding user or tool-result turn',
+        }))
+      }
+      expect(JSON.stringify(history)).toBe(saved)
+    },
+  )
+
+  it('keeps native system updates after retained text or tool results beside omitted user input', () => {
+    const reasoning: ContentBlock = { type: 'reasoning', text: 'child reasoning' }
+    const empty = createMessage({ role: 'user', source: { kind: 'user' }, content: [reasoning] })
+    const update = createSystemMessage('updated', 'test')
+    for (const [previous, retained, expected] of [
+      [assistant([{ type: 'text', text: 'answer' }]), user('continue'), [{ type: 'text', text: 'continue' }]],
+      [assistant([call()]), result('a', [reasoning]), [{ type: 'tool_result', tool_use_id: 'a', content: [], is_error: false }]],
+    ] as const) {
+      const history = [user(), previous, update, empty, retained, assistant([{ type: 'text', text: 'done' }])]
+      const saved = JSON.stringify(history)
+      const request = nativeBody(history)
+      expect(request.messages.map(message => message.role)).toEqual(['user', 'assistant', 'user', 'system', 'assistant'])
+      expect(request.messages[2]?.content).toEqual(expected)
+      expect(request.messages[3]?.content).toEqual([{ type: 'text', text: 'updated' }])
+      expect(JSON.stringify(history)).toBe(saved)
+    }
+  })
+
   it('groups parallel results before ordinary text and keeps tool failure content', () => {
     const messages = [user(), assistant([call(), call('b')]), user('follow-up'), result(), createToolResultMessage({ callId: ToolCallId('b'), content: [{ type: 'text', text: 'permission denied' }], isError: true })]
     expect(body(messages).messages).toEqual([
@@ -84,6 +117,53 @@ describe('Messages request conversion', () => {
     expect(response.messages[2]?.content[0]).toMatchObject({ content: [] })
     const minimal = createMessage({ role: 'user', source: { kind: 'user' }, content: [{ type: 'tool-result', toolCallId: ToolCallId('a'), content: [{ type: 'text', text: '' }] }] })
     expect(body([assistant([call()]), minimal]).messages[1]?.content[0]).toEqual({ type: 'tool_result', tool_use_id: 'a', content: [] })
+  })
+
+  it('omits assistant-only blocks from user input while preserving text and durable content', () => {
+    const history = [createMessage({ role: 'user', source: { kind: 'user' }, content: [
+      { type: 'text', text: 'Background subagent finished.\n' },
+      { type: 'reasoning', text: 'child reasoning' },
+      call('child-call'),
+      { type: 'text', text: '  child answer  ' },
+    ] })]
+    const saved = JSON.stringify(history)
+
+    expect(body(history).messages).toEqual([{ role: 'user', content: [
+      { type: 'text', text: 'Background subagent finished.\n' },
+      { type: 'text', text: '  child answer  ' },
+    ] }])
+    expect(JSON.stringify(history)).toBe(saved)
+  })
+
+  it('omits assistant-only blocks inside tool results while retaining calls, errors and empty results', () => {
+    const reasoning: ContentBlock = { type: 'reasoning', text: 'tool reasoning' }
+    const history = [assistant([reasoning, call(), call('b')]),
+      createToolResultMessage({ callId: ToolCallId('a'), content: [reasoning, call('nested-call'), { type: 'text', text: '  result\n' }], isError: true }),
+      result('b', [reasoning, call('another-nested-call')]),
+    ]
+    const saved = JSON.stringify(history)
+
+    expect(body(history).messages).toEqual([
+      { role: 'assistant', content: [
+        { type: 'thinking', thinking: 'tool reasoning' },
+        ...['a', 'b'].map(id => ({ type: 'tool_use', id, name: 'read', input: { path: 'a' } })),
+      ] },
+      { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: 'a', content: [{ type: 'text', text: '  result\n' }], is_error: true },
+        { type: 'tool_result', tool_use_id: 'b', content: [], is_error: false },
+      ] },
+    ])
+    expect(JSON.stringify(history)).toBe(saved)
+  })
+
+  it.each([
+    [], [{ type: 'reasoning', text: 'child reasoning' }], [call('child-call')],
+  ] satisfies ContentBlock[][])('omits empty user input after conversion %#', (...content) => {
+    const empty = createMessage({ role: 'user', source: { kind: 'user' }, content })
+    expect(body([empty, user(), assistant([{ type: 'text', text: 'answer' }]), empty]).messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'answer' }] },
+    ])
   })
 
   it('collects leading system text and maps tools, stop sequences and explicit output cap', () => {
@@ -149,8 +229,20 @@ describe('Messages request conversion', () => {
     expect(() => body(messages)).toThrow(/tool/)
   })
 
-  it.each(['{', '[]'])('rejects invalid historical tool input %s', (arguments_) => {
-    expect(() => body([assistant([{ type: 'tool-call', id: ToolCallId('a'), name: 'read', arguments: arguments_ }]), result()])).toThrow()
+  it.each(['{', '', '[]', 'null', '42', 'true', '"text"', '{"description":"最快，但"某个说法"没有证据。"}'])('uses empty input for malformed or non-object historical tool arguments %s', (arguments_) => {
+    const message = assistant([{ type: 'tool-call', id: ToolCallId('a'), name: 'read', arguments: arguments_ }])
+    const history = [user(), message, createToolResultMessage({ callId: ToolCallId('a'), content: [{ type: 'text', text: 'Invalid arguments' }], isError: true }), user('Continue')]
+    const saved = JSON.stringify(history)
+    const restored = JSON.parse(saved) as Message[]
+    expect(body(restored).messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'a', name: 'read', input: {} }] },
+      { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: 'a', content: [{ type: 'text', text: 'Invalid arguments' }], is_error: true },
+        { type: 'text', text: 'Continue' },
+      ] },
+    ])
+    expect(JSON.stringify(restored)).toBe(saved)
   })
 
   it('preserves own signed thinking, omits absent signatures and validates durable metadata', () => {
@@ -214,11 +306,16 @@ describe('Messages request conversion', () => {
     expect(() => readReplay(damaged, MODEL, () => { throw failure })).toThrow(failure)
   })
 
-  it('still rejects invalid tool JSON after discarding unusable replay metadata', () => {
+  it.each([1, 2])('uses empty historical tool input with replay version %s', (version) => {
     const message = createAssistantMessage({ content: [{ type: 'tool-call', id: ToolCallId('a'), name: 'read', arguments: '{' }], source: {
-      provider: 'deepseek-official', model: MODEL, replayState: { response: {}, blocks: [] },
+      provider: 'deepseek-official', model: MODEL, replayState: { response: { kind: 'deepseek-messages', version, model: MODEL }, blocks: [{ type: 'tool-call' }] },
     } })
-    expect(() => body([message, result()])).toThrow(/historical tool input is invalid JSON/)
+    const saved = JSON.stringify(message)
+    const onDegrade = vi.fn()
+    const request = serialize(options(), connection, [message, result()], new Map(), () => undefined, onDegrade)
+    expect(request.messages[0]?.content).toEqual([{ type: 'tool_use', id: 'a', name: 'read', input: {} }])
+    expect(onDegrade).toHaveBeenCalledTimes(version === 1 ? 0 : 1)
+    expect(JSON.stringify(message)).toBe(saved)
   })
 })
 
@@ -251,11 +348,11 @@ describe('Messages images', () => {
   const image: ImageBlock = { type: 'image', attachment: ref }
   const version: RequestImageAttachment = { attachment: ref, variantId: ImageVariantId(`sha256:${'b'.repeat(64)}`), mediaType: 'image/png', bytes: 3, data: Uint8Array.of(1, 2, 3), width: 1, height: 1, depth: 'uchar', space: 'srgb', hasAlpha: false }
   const access = () => ({ readonlyPath: '/workspace/image.png' })
-  const model = 'deepseek-v4-flash-vision-exp'
+  const model = 'deepseek-flash'
   // Only the read operation is consumed by image preparation; the transport is mocked, not durable content.
   const attachments = { readImageRequest: async () => version } as unknown as AttachmentStore
   const signal = new AbortController().signal
-  it.each(['deepseek-flash', model])('keeps image bytes inside tool results and deduplicates normalization for %s', async (model) => {
+  it('keeps image bytes inside tool results and deduplicates normalization', async () => {
     const history = [assistant([call()]), result('a', [image, image])]
     const prepared = await prepareImages(history, connection, model, attachments, access, signal)
     expect(prepared.versions.size).toBe(1)
@@ -296,7 +393,8 @@ describe('Messages images', () => {
     await expect(prepareImages([assistant([image])], connection, model, attachments, access, signal)).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
     expect(() => body([result('a', [image])])).toThrow(/image/)
     expect(() => body([assistant([image])])).toThrow(/assistant/)
-    expect(() => body([result('a', [{ type: 'reasoning', text: 'bad' }])])).toThrow(/user/)
+    expect(() => body([result('a', [{ type: 'tool-result', toolCallId: ToolCallId('nested'), content: [] }])]))
+      .toThrow(/user\/tool-result content tool-result/)
     expect(() => serialize(options({ model }), connection, [result('a', [image])], new Map([[ref.attachmentId, version]]), access, undefined, new Map()))
       .toThrow(/request file id is missing/)
   })

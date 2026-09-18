@@ -1,0 +1,30 @@
+- heading "插件" [level=1]
+- paragraph: 添加和管理插件
+- button "刷新"
+- button "添加插件"
+- heading "官方" [level=3]
+- text: "5"
+- list:
+  - listitem:
+    - button "查看 智能体团队": 智能体团队
+    - text: Beta 启用团队协作、团队工具、成员列表和共享任务看板。
+    - switch "启用 智能体团队"
+  - listitem:
+    - button "查看 终端": 终端
+    - text: 限制 agent 运行的每一条命令。
+  - listitem:
+    - button "查看 Agent 循环": Agent 循环
+    - text: Agent 如何派发工具调用。
+  - listitem:
+    - button "查看 Subagent": Subagent
+    - text: 设置 Subagent 的递归层级、数量和模型。
+  - listitem:
+    - button "查看 网页搜索": 网页搜索
+    - text: DeepSeek 搜索提供方。
+- heading "已安装" [level=3]
+- text: "1"
+- list:
+  - listitem:
+    - button "查看 bundle": bundle
+    - text: "Web e2e fixture: a bundle whose one row is an inert plugin."
+    - switch "启用 bundle" [checked]

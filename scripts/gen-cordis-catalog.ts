@@ -54,6 +54,7 @@ export { REGION_BEGIN, REGION_END }
  * errors, so the partition can never silently drift from the service API.
  */
 export const SERVICE_PAGE: Record<string, string> = {
+  connection: 'web-server.md',
   pluginManager: 'boot.md',
   profileContext: 'boot.md',
   hmr: 'boot.md',
@@ -63,6 +64,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   agentPresets: 'core.md',
   agents: 'core.md',
   approval: 'approval.md',
+  officeToPdf: 'office-to-pdf.md',
   attachments: 'attachment.md',
   shell: 'shell.md',
   shellEnv: 'shell.md',
@@ -131,6 +133,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   workspaceRegistry: 'workspace.md',
   workspaceController: 'workspace.md',
   workspaceFiles: 'workspace.md',
+  workspaceChanges: 'deliverables.md',
   terminalController: 'workspace.md',
   directoryPickerController: 'workspace.md',
 }
@@ -163,7 +166,6 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   dshHomePath: 'not a service: boot-provided root accessor function (typeof dshHomePath | undefined) for Loader !!js config expressions — packages/boot/app-boot/README.md owns the boot contract',
   launchEnvironment: 'not a service: launcher-provided root accessor value (LaunchEnvironmentSnapshot | undefined) — packages/util/launch-environment/README.md owns this launcher contract',
   pluginPackages: 'profile-boot-owned package resolver service used by optional consumers — packages/boot/app-boot/README.md owns this internal API',
-  connection: 'interface-typed (HostConnectionHandle); implementing class HostConnectionService is declared in rpc-host.ts — packages/client/connection/README.md owns the API',
   fileUpload: 'client-side browser upload service — packages/client/file-upload/README.md owns the API',
   uiRenderer: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
   uiSession: 'client-side Session source adapter — packages/client/ui-session/README.md owns the API',
@@ -201,12 +203,14 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
  */
 export const EVENT_SCOPE_PAGE: Record<string, string> = {
   hmr: 'boot.md',
+  'plugin-manager': 'boot.md',
   'agent': 'core.md',
   'agent-loop': 'core.md',
   'agent-preset': 'core.md',
   'api-session': 'session.md',
   'approval': 'approval.md',
   'commands': 'commands.md',
+  'connection': 'web-server.md',
   'compaction': 'compaction.md',
   'cordis': 'extensions.md',
   'authorization': 'credentials.md',
@@ -258,14 +262,28 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  * appear on more than one page.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
+  WorkspaceChangesSummary: 'deliverables.md',
+  WorkspaceFileDiff: 'deliverables.md',
   Reload: 'boot.md',
   PluginInfo: 'boot.md',
   BundleInfo: 'boot.md',
   ChangeResult: 'boot.md',
   InstallBundleOptions: 'boot.md',
   PluginEntryId: 'boot.md',
+  BundleRowInfo: 'boot.md',
+  PluginInstallCancellation: 'boot.md',
+  PluginInstallRequestId: 'boot.md',
+  PluginSpecInspection: 'boot.md',
+  PluginChange: 'boot.md',
+  PluginInstallLogChunk: 'boot.md',
+  PluginInstallProgress: 'boot.md',
   BrowserUseProviderName: 'browser-use.md',
   ComputerUseProviderName: 'computer-use.md',
+  RenderedDocumentBytes: 'office-to-pdf.md',
+  OfficeToPdfRequest: 'office-to-pdf.md',
+  OfficeToPdfResult: 'office-to-pdf.md',
+  OfficeToPdfPriority: 'office-to-pdf.md',
+  OfficeToPdfGeneration: 'office-to-pdf.md',
   Agent: 'core.md',
   AgentCancelCause: 'core.md',
   AgentFactory: 'core.md',
@@ -714,13 +732,21 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
   'ReadonlyMap',
   'Request',
   'Response',
+  'IncomingMessage',
+  'ServerResponse',
   'ReturnType',
   'Uint8Array',
 ])
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
+  ConnectionFetchHandler: 'shared Fetch dispatch is owned by packages/client/connection/src/rpc.ts',
+  ConnectionRequestRejection: 'transport rejection status is owned by packages/client/connection/src/rpc.ts',
+  ConnectionTrustRequest: 'transport authentication input is owned by packages/client/connection/src/rpc.ts',
+  ConnectionIndexRequest: 'frontend authentication request is owned by packages/client/connection/src/rpc.ts',
+  ConnectionIndexResponse: 'frontend authentication response is owned by packages/client/connection/src/rpc.ts',
   Profile: 'resolved profile layers are owned by packages/boot/app-boot/README.md',
+  PatchOptions: 'Include patch entries are owned by vendor/include (vendored upstream)',
   McpResourceProvider: 'scoped resource provider is owned by packages/mcp/mcp-resources/README.md',
   'z.ZodType': 'Zod response validation API is owned by https://zod.dev/packages/zod',
   Socket: 'Node.js byte stream API is owned by https://nodejs.org/api/net.html#class-netsocket',
