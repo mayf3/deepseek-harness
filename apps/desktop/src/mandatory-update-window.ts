@@ -49,6 +49,7 @@ const page = 'dsh-app://shell/mandatory-update.html'
 /** A modal child blocks the product window without cancelling work in the Host. */
 export class DesktopMandatoryUpdateWindow {
   private window: BrowserWindow | undefined
+  private closing: ReturnType<typeof setTimeout> | undefined
   private disposed = false
   private error: string | undefined
   private action: Promise<void> | undefined
@@ -142,11 +143,20 @@ export class DesktopMandatoryUpdateWindow {
       this.clearNavigation()
       this.restart = undefined
       this.deferred = false
-      this.window?.destroy()
-      this.window = undefined
+      if (this.window !== undefined && this.closing === undefined) {
+        const window = this.window
+        window.webContents.send(MANDATORY_IPC.state, this.view())
+        this.closing = setTimeout(() => {
+          this.closing = undefined
+          if (this.window === window) this.window = undefined
+          window.destroy()
+        }, 150)
+      }
       this.error = undefined
       return
     }
+    clearTimeout(this.closing)
+    this.closing = undefined
     if (this.navigationUrl !== this.options.policy().page) this.clearNavigation()
     if (this.options.update().phase === 'error') this.restart = undefined
     if (this.window === undefined) {
@@ -186,6 +196,8 @@ export class DesktopMandatoryUpdateWindow {
   /** Detach IPC and release the modal during application shutdown. */
   dispose(): void {
     this.disposed = true
+    clearTimeout(this.closing)
+    this.closing = undefined
     this.finishConfirmation(false)
     this.attention.reset()
     this.clearNavigation()

@@ -24,7 +24,7 @@ function fakeWindow() {
     loadURL: vi.fn(async () => {}), destroy: vi.fn(), isDestroyed: () => false,
     isFocused: () => true, isMinimized: () => false, focus: vi.fn(), show: vi.fn(), restore: vi.fn() })
 }
-afterEach(() => { ui?.dispose(); vi.clearAllMocks(); native.handlers.clear() })
+afterEach(() => { ui?.dispose(); vi.clearAllMocks(); native.handlers.clear(); vi.useRealTimers() })
 function setup() {
   window = fakeWindow()
   let policy: DesktopPolicyState = { blocking: true, checking: false, page: 'https://downloads.example.com/desktop' }
@@ -129,4 +129,26 @@ it('exits the application when the mandatory window is closed without clearing t
   expect(event.preventDefault).toHaveBeenCalledOnce()
   expect(native.quit).toHaveBeenCalledOnce()
   expect(f.view().policy.blocking).toBe(true)
+})
+
+it('fades on clearance, reuses a reblocked window, and cancels teardown on disposal', () => {
+  vi.useFakeTimers()
+  const f = setup()
+  f.policy({ blocking: false, checking: false })
+  expect(window.webContents.send).toHaveBeenLastCalledWith(MANDATORY_IPC.state,
+    f.view())
+  vi.advanceTimersByTime(100)
+  expect(window.destroy).not.toHaveBeenCalled()
+  f.policy({ blocking: true, checking: false })
+  vi.advanceTimersByTime(150)
+  expect(window.destroy).not.toHaveBeenCalled()
+  expect(window.loadURL).toHaveBeenCalledOnce()
+  f.policy({ blocking: false, checking: false })
+  vi.advanceTimersByTime(150)
+  expect(window.destroy).toHaveBeenCalledOnce()
+  expect(ui!.confirmationWindow).toBeUndefined()
+  f.policy({ blocking: true, checking: false })
+  f.policy({ blocking: false, checking: false })
+  ui!.dispose()
+  expect(vi.getTimerCount()).toBe(0)
 })
