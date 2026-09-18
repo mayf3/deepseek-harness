@@ -1,8 +1,8 @@
 /** The changed-files card, shown only while the Host serves the turn's summary, and explicitly declared files for a closing turn. */
 import { useEffect, useState } from 'react'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { Button, IconChevronDownOutline14, IconChevronUpOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { GlobalStandardProps, InjectFace, PropsLocale, SessionStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
+import { Button, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { GlobalStandardProps, InjectFace, PropsLocale, PropsRuntime, SessionStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { PresentedOpenController } from './present-open.ts'
 import type { ChangesSummaryStore } from './changes-summary.ts'
@@ -42,6 +42,16 @@ export function selectDeliverables(owner: TurnTailOwnerProps): DeliverablesMatch
   const changes = changesForClosing(owner)
   const presented = presentedForClosing(owner)
   return changes === null && presented.length === 0 ? null : { changes, presented }
+}
+
+/**
+ * Contribute file deliveries alongside other completed-Turn artifacts.
+ * @param props - closing Turn, file actions, and localized copy.
+ * @returns file rows, or null when the Turn declares none.
+ */
+export function DeliverablesTail(props: PropsRuntime<'conversation.chat.turnTail'> & PropsLocale<typeof NS> & InjectFace<DeliverablesInjected>) {
+  const matched = selectDeliverables(props)
+  return matched === null ? null : <Deliverables {...props} matched={matched} />
 }
 
 /**
@@ -100,7 +110,7 @@ export function Deliverables({
         aria-label={t(expanded ? 'presented.collapseAria' : 'presented.expandAria', { count: matched.presented.length })}
         onClick={() => { setExpanded(value => !value) }}>
         <span>{t(expanded ? 'presented.collapse' : 'presented.all', { count: matched.presented.length })}</span>
-        {expanded ? <IconChevronUpOutline14 /> : <IconChevronDownOutline14 />}
+        {expanded ? <IconChevronUpOutlineRegular /> : <IconChevronDownOutlineRegular />}
       </button>}
     </div>}
   </>

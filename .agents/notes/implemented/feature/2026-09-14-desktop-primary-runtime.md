@@ -18,6 +18,8 @@ Node downloads and hash-verifies the complete locked wheel set and unpacks libra
 
 macOS grants `com.apple.security.cs.allow-jit` only to the standalone Node executable. Hardened-runtime signing without that entitlement prevents V8 from allocating its code region. Interpreter and library smoke checks run after signing as well as after staging cleanup; a valid signature alone does not establish executable behavior.
 
+Windows signed packaging separates materialization from execution with supervised signing stages for the primary runtime and application production dependencies. PE inspection identifies content independently of extensions, excludes non-PE foreign-platform Node addons and refuses directory links. Public-key verification uses batches of 32 files with at most four processes and drains each batch before returning failure; hardware operations remain serial. Valid vendor signatures remain intact; only unsigned files receive the configured EV signature. Invalid existing signatures fail before hardware access, and each new signature is checked for validity, timestamp and certificate identity before the next file. Electron-builder's copy-time signing hook preserves runtime executables only after exact-byte and signature verification; the same serial queue rejects later tasks if preservation fails. The existing per-user interlock, serialized signer and redacted journal own hardware calls; hardware failures prohibit retries and later stages. Public timestamp attempts follow the [signature completion policy](../process/2026-09-17-windows-signature-completion.md). Runtime execution receives no signing credentials and follows complete verification. Development and unsigned preparation retain native smoke without automatic hardware access. Runtime inventories record signed bytes. Electron-builder unpacks detected dependency PE files and preserves signed copies. Final signature verification and ASAR payload and Host smoke use a private native cache before release completion.
+
 Desktop ZIP extraction pins `extract-zip` to `yauzl` 3.4.0 through a scoped dependency override. The 2.x reader can leave large deflate entries unfinished on Node 26 ([upstream issue](https://github.com/thejoshwolfe/yauzl/issues/176)); retaining the existing extractor preserves its path validation and wheel-entry checks. The development launcher uses top-level await so unfinished preparation cannot exit successfully. A large compressed wheel regression checks the complete extracted bytes.
 
 ## Alternatives considered
@@ -27,6 +29,12 @@ Desktop ZIP extraction pins `extract-zip` to `yauzl` 3.4.0 through a scoped depe
 **PATH injection and dedicated pnpm global directories.** They change command selection or require pnpm's global command directory to be on PATH. Absolute interpreter paths and native pnpm behavior satisfy the requested scope without those changes.
 
 **Independent updates and version-named directories.** Runtime releases are coupled to Desktop, and the requested installation location is stable.
+
+**Multi-file SignTool requests.** A software-certificate probe with a missing first file still signs the second file before returning an error. One process cannot guarantee stopping hardware operations at the first failure; token signing remains one file per supervised request.
+
+**Signing only the interpreter or bypassing native smoke.** Windows code integrity also evaluates DLLs and Python extensions. A signed launcher cannot make an unsigned extension load, and skipping execution would hide unusable installed dependencies. Preserving valid upstream signatures avoids unnecessary hardware operations and retains upstream attribution.
+
+Dependency manifests use electron-builder's own cleanup before inventory sealing. Its archive writer otherwise changes package metadata after signing; pre-applying that transformation keeps the final archive verifiable without replacing the sealed inventory after packaging.
 
 ## Consequences
 

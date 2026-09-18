@@ -12,7 +12,7 @@ The desktop app drew the stock macOS titlebar: an opaque bar above the web UI th
 
 The Electron main process opens the main window on darwin with `titleBarStyle: 'hiddenInset'`, `trafficLightPosition: { x: 16, y: 18 }`, `vibrancy: 'sidebar'`, `visualEffectState: 'active'`, and a transparent `backgroundColor`. `'active'` keeps the material stable behind an unfocused window; `'followWindow'` washed the sidebar out on blur.
 
-Every web-side adjustment keys off `html[data-platform]`, which only the desktop preloads set (`document.documentElement.dataset.platform = process.platform`). The plain web and non-darwin desktop render exactly as before.
+Every macOS web-side adjustment keys off `html[data-platform='darwin']`, which only the desktop preloads set (`document.documentElement.dataset.platform = process.platform`). These rules do not apply to plain Web or other desktop platforms. The [Windows caption decision](2026-09-16-windows-desktop-titlebar.md) owns its separate presentation.
 
 **Transparency chain.** Vibrancy shows only through transparent pixels: on darwin `html`/`body` (ui-web base.css) and the AppFrame are transparent, the center column paints `--dsw-alias-bg-base` opaque, and the sidebar column paints a translucent `color-mix` tint of the sidebar fill so the material reads through it. SidebarRoot's own opaque fill moves to the frame column for the same reason.
 

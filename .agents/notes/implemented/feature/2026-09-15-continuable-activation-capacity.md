@@ -16,7 +16,7 @@ The Activation registry reserves a unique slot before fresh or cold-resume recon
 
 Pool lookup, admission and release take amortized constant time. A weak root map does not retain dead root Agents; each pool holds only occupied tokens. No Session catalog scan, tree traversal, durable counter, or public capacity-query API is added.
 
-The Host registers the `subagent` settings section over its composition. Each reservation reads the current capacity, so lowering it never evicts resident children or rebuilds their registry. Delegation tools resolve an omitted depth from the same section at each attempt; explicit numeric and provider-managed tool policies retain priority. Keeping counts in the pool and policy in settings avoids a second live counter or a settings-triggered teardown.
+The Host registers the `subagent` settings section over its composition. Each reservation reads the current capacity, so lowering it never evicts resident children or rebuilds their registry. Delegation tools resolve an omitted depth from the same section at each attempt; explicit numeric and provider-managed tool policies retain priority. The GUI stages both numbers and resets each to composition through the existing revision-fenced settings path. Keeping counts in the pool and policy in settings avoids a second live counter or a settings-triggered teardown.
 
 ## Alternatives considered
 

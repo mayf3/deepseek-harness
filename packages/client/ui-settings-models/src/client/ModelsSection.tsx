@@ -14,7 +14,7 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, IconPlusOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPlusOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls this package's SlotMap merge (the two Models child slots).
 import type {} from './slot-contract.ts'
@@ -525,7 +525,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                       setEditing(targetOf(first))
                     }}
                   >
-                    <IconPlusOutline16 size={14} />
+                    <IconPlusOutlineRegular size={14} />
                     {t('add')}
                   </button>
                 )}
@@ -541,7 +541,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                       setDeclaring(true)
                     }}
                   >
-                    <IconPlusOutline16 size={14} />
+                    <IconPlusOutlineRegular size={14} />
                     {t('customAdd')}
                   </button>
                 )}

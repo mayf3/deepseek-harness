@@ -118,6 +118,7 @@ describe('TodoRow', () => {
   it('falls back to the generic summary on malformed args and marks the error state', () => {
     const view = render(<TodoRow {...rowProps(resultNode('not json', { isError: true }))} />)
     expect(view.container.querySelector('[data-state="error"]')).not.toBeNull()
+    expect(view.container.querySelector('[data-state="error"] svg')).not.toBeNull()
     expect(screen.getByText('todo_write · not json')).toBeTruthy()
   })
 

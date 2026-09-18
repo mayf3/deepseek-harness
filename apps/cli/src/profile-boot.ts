@@ -191,6 +191,7 @@ interface ComposedProfile {
  * then the telemetry switch.
  * @param name - the profile name.
  * @param patchFiles - `--patch` overlay paths, in argv order.
+ * @param resolutionMode - runtime lookup, disk links, or dual verification of both.
  * @param fromDefaultProfile - shipped template for a missing named profile.
  * @param resolvedProfile - application-owned profile and installation.
  * @returns the profile and its patch layers.
@@ -237,7 +238,7 @@ export interface RunProfileOptions {
   args: readonly string[]
   /** Application-owned package runtime, scoped to plugin package operations. */
   packageManager?: ProfileContext['packageManager']
-  /** Module fallback backend; pkg executables always use runtime resolution. */
+  /** Module fallback backend; defaults to runtime. Plain Node callers may override it; pkg executables always use runtime. */
   resolutionMode?: ProfileResolutionMode
 }
 
@@ -259,7 +260,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   )
 
   const packaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
-  const resolutionMode = packaged ? 'runtime' : options.resolutionMode ?? 'link'
+  const resolutionMode = packaged ? 'runtime' : options.resolutionMode ?? 'runtime'
   const app: { current?: Context } = {}
   let disposal: Promise<void> | undefined
   const dispose = (): Promise<void> => disposal ??= (async () => {

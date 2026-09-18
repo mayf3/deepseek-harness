@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { IconChevronDownOutline14, Menu, Tooltip, type MenuItem } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular, Menu, Tooltip, type MenuItem } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -83,12 +83,10 @@ function AppIcon({ id, url, size }: { id: string; url: string; size: number }): 
         height={size}
         viewBox="0 0 24 24"
         fill="none"
-        stroke="currentColor"
-        strokeWidth={1.8}
         className={css.icon}
         aria-hidden
       >
-        <rect x={3} y={3} width={18} height={18} rx={5} />
+        <path d="M16 3H8C5.23858 3 3 5.23858 3 8V16C3 18.7614 5.23858 21 8 21H16C18.7614 21 21 18.7614 21 16V8C21 5.23858 18.7614 3 16 3Z" fill="currentColor" fillOpacity="0.05" />
       </svg>
     )
   }
@@ -175,7 +173,7 @@ export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element 
   const items: MenuItem[] = apps.map(entry => ({
     id: entry.id,
     label: t(entry.labelKey),
-    icon: <AppIcon id={entry.id} url={props.iconUrl(entry.id)} size={18} />,
+    icon: <AppIcon id={entry.id} url={props.iconUrl(entry.id)} size={14} />,
   }))
 
   return (
@@ -207,7 +205,7 @@ export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element 
               aria-label={title}
               onClick={() => { launch(current) }}
             >
-              <AppIcon id={current} url={props.iconUrl(current)} size={15} />
+              <AppIcon id={current} url={props.iconUrl(current)} size={13} />
             </button>
           </Tooltip>
           <button
@@ -219,7 +217,7 @@ export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element 
             aria-label={t('menu.toggle')}
             onClick={() => { setOpen(value => !value) }}
           >
-            <IconChevronDownOutline14 size={11} />
+            <IconChevronDownOutlineRegular size={10} />
           </button>
         </div>
       )}

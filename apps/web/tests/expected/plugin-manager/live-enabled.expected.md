@@ -1,9 +1,7 @@
 - heading "插件" [level=1]
 - paragraph: 添加和管理插件
 - button "刷新"
-- button "添加插件":
-  - img
-  - text: 添加插件
+- button "添加插件"
 - heading "官方" [level=3]
 - text: "6"
 - list:
@@ -23,7 +21,7 @@
     - text: Agent 如何派发工具调用。
   - listitem:
     - button "查看 Subagent": Subagent
-    - text: 控制 Agent 为 Subagent 选择模型的权限。
+    - text: 设置 Subagent 的递归层级、数量和模型。
   - listitem:
     - button "查看 网页搜索": 网页搜索
     - text: DeepSeek 搜索提供方。
