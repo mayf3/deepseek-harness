@@ -48,6 +48,8 @@ In an existing profile’s `package.json`, keep `@deepseek-ai/dsh-experimental-a
 
 The layer adds the Agent Teams domain and its scoped creation, roster, messaging, interruption, waiting, and task-board tools. Direct delegation uses `spawn_teammate`, which supports fresh and fork context. The `subagent` and `subagent_fork` tools and overlapping global child controls are disabled. Workflow retains the base profile’s `spawn` provider, while the underlying Subagent services and both providers remain available to teammates and workflow.
 
+In Web and Desktop conversations, the [Team UI](../client-ui-agent-team/README.md) displays the member roster and shared task board and opens teammate sessions. The same bundle switch controls the tools and browser UI.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -62,7 +64,7 @@ The package's runtime content is [`cordis.patch.yml`](cordis.patch.yml). Applied
 |---|---|
 | [`cordis.patch.yml`](cordis.patch.yml) | Ordered patch over `dsh-base` |
 | [`src/index.ts`](src/index.ts) | Empty module entry; the patch is the runtime content |
-| — | No runtime invariant companion is published; the package carries only a static profile patch. The Team domain and tool packages own the mutable relationships it activates. |
+| — | No runtime invariant companion is published; the package carries only a static profile patch. The Team service and tools own their mutable relationships; the UI package owns its disposable slot registration. |
 
 </details>
 

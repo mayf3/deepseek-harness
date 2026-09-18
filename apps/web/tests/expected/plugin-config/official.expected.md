@@ -7,7 +7,7 @@
 - list:
   - listitem:
     - button "查看 智能体团队": 智能体团队
-    - text: Beta 启用团队协作、团队工具及成员与任务看板。
+    - text: Beta 启用团队协作、团队工具、成员列表和共享任务看板。
     - switch "启用 智能体团队"
   - listitem:
     - button "查看 终端": 终端

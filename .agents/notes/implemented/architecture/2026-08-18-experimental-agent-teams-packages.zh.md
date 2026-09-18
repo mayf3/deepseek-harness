@@ -18,7 +18,7 @@ dsh 打包与发布集合以及本地基线发布器包含这四个 Agent Teams 
 
 通用的调用方预留 continuable child 身份和精确 direct-child drain 仍属于稳定 Subagent 服务。它们负责 Subagent 身份与 Activation 生命周期，不 import 或命名 Agent Teams；实验性 Team 服务沿允许的方向消费这些能力。
 
-公开发布的 Agent Teams profile bundle 依赖 Team 服务、工具和 UI 包，并在 `dsh-base` 之后应用。它会插入 Team 配置行，并禁用模型可见名称与 Team 工具重叠的全局 continuable-child control。Web Client loader 加载 UI 及 Team package 生成的 Remote contribution；headless 仅运行 Host 插件。整个组合包作为一个[随附可选组合包](../process/2026-09-15-shipped-optional-bundles.zh.md)交付，默认组合不启用它。
+[单组合包决策](2026-09-18-agent-teams-single-bundle.zh.md)取代了独立 Host 与 Web 组合包的组合方式。本记录保留发布、依赖隔离与 promotion 的理由。当前 Team profile 仍须显式启用，并禁用模型可见名称与 Team 工具重叠的全局 continuable-child control；[可选组合包决策](../process/2026-09-15-shipped-optional-bundles.zh.md)负责其随安装交付的规则。
 
 profile 启动会先解析所选 bundle，再计算[不可变 profile resolution generation](2026-09-09-profile-resolution-generations.zh.md)。generation 保留安装优先顺序，按 profile 顺序完整遍历每个显式 bundle 根，并让 pnpm 管理的 profile 包保持优先。runtime 模式在内存中强制该结果；保留的 link 与 dual 模式把同一结果物化为共享和 profile 自有投影。因此，私有 profile 层可以携带实验性 plugin 配置行，而无需把这些 plugin 加入发布 app、要求 profile 用户直接安装传递依赖、破坏 packaged-runtime 的模块身份，或改变其他 profile 的解析结果。
 
