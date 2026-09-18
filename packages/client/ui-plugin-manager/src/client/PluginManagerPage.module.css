@@ -711,8 +711,9 @@ label.registryOption {
   border-color: var(--dsw-alias-state-error-primary);
 }
 
-.registryOption .inputError,
-.registryOption .registryHint {
+/* The typed address's field, refusal, and line sit under its title, past the radio and its gap. */
+.registryOption > .inputError,
+.registryOption > .registryHint {
   margin-left: 26px;
 }
 
