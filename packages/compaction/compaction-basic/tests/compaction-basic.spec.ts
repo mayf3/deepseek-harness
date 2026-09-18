@@ -366,11 +366,11 @@ describe('compact configuration and defaults', () => {
       model: 'shared-id',
     })
 
-    expect(resolveCompactSpec(small, 1_000)).toMatchObject({
+    expect(resolveCompactSpec(small, 1_000, 0)).toMatchObject({
       thresholdTokens: 400,
       retainTokens: 120,
     })
-    expect(resolveCompactSpec(otherProvider, 2_000)).toMatchObject({
+    expect(resolveCompactSpec(otherProvider, 2_000, 0)).toMatchObject({
       thresholdTokens: 1_600,
       retainTokens: 200,
     })
@@ -390,7 +390,7 @@ describe('compact configuration and defaults', () => {
         maxOverflowRetries: 3,
       }],
     }), { provider: 'ratio-provider', model: 'ratio-model' })
-    expect(resolveCompactSpec(ratioOverride, 2_000)).toMatchObject({
+    expect(resolveCompactSpec(ratioOverride, 2_000, 0)).toMatchObject({
       thresholdTokens: 1_200,
       retainTokens: 400,
       summarizationProvider: 'summary-provider',
@@ -415,11 +415,6 @@ describe('compact configuration and defaults', () => {
       thresholdTokens: threshold,
       retainTokens: retained,
     })
-  })
-
-  it('uses the window fraction when output is unspecified', () => {
-    const policy = resolveTargetPolicy(resolveConfig({}), { provider: MODEL, model: MODEL })
-    expect(resolveCompactSpec(policy, 1_000_000).thresholdTokens).toBe(800_000)
   })
 
   it.each([500, 501])('rejects headroom %i that exhausts the remaining capacity', (headroomTokens) => {
@@ -546,9 +541,9 @@ describe('compact configuration and defaults', () => {
       thresholdRatio: 0.5,
       retainTokens: 500,
     }), { provider: MODEL, model: MODEL })
-    expect(() => resolveCompactSpec(invalidPressure, 1_000)).toThrow(/less than threshold/)
-    expect(() => resolveCompactSpec(invalidPressure, 1.5)).toThrow(/positive integer/)
-    expect(() => resolveCompactSpec(invalidPressure, 0)).toThrow(/positive integer/)
+    expect(() => resolveCompactSpec(invalidPressure, 1_000, 0)).toThrow(/less than threshold/)
+    expect(() => resolveCompactSpec(invalidPressure, 1.5, 0)).toThrow(/positive integer/)
+    expect(() => resolveCompactSpec(invalidPressure, 0, 0)).toThrow(/positive integer/)
   })
 
 })

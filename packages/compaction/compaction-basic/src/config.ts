@@ -142,7 +142,7 @@ export function resolveTargetPolicy(
 export function resolveCompactSpec(
   policy: ResolvedTargetPolicy,
   contextWindow: number,
-  reservedCompletionTokens = 0,
+  reservedCompletionTokens: number,
 ): ResolvedCompactSpec {
   const targetKey = `${policy.target.provider}/${policy.target.model}`
   if (!Number.isInteger(contextWindow) || contextWindow <= 0) {
