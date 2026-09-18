@@ -94,7 +94,8 @@ function bench(sessionId = 'other-session' as SessionId) {
   // The store's own `forget`, counted: the record's end must forget a tab exactly once.
   const forget = vi.fn(instance.actions.forget)
   // Injected for another session on purpose: the address's session must win.
-  const face = textFace(read, bytes, createResources())(sessionId, { ...instance.actions, forget })
+  const resources = createResources()
+  const face = textFace(read, bytes, resources)(sessionId, { ...instance.actions, forget })
   /** Settle the oldest outstanding read, or the oldest one for `offset`. */
   const settle = async (result: RemoteResult<WorkspaceFileText>, offset?: number): Promise<void> => {
     const at = offset === undefined ? 0 : pending.findIndex(call => call.offset === offset)
@@ -104,7 +105,7 @@ function bench(sessionId = 'other-session' as SessionId) {
     await call.promise
   }
   return {
-    instance, read, face, forget, settle, bytes, controller,
+    instance, read, face, forget, settle, bytes, controller, resources,
     settleAll: whole.settle,
     outstandingAll: whole.outstanding,
     outstanding: () => pending.map(call => call.offset),
@@ -120,6 +121,19 @@ const settlements = [
 ] as const
 
 describe('textFace', () => {
+  it('subscribes to a dependency once and stops accepting members after the tab ends', () => {
+    const { face, resources, controller, forget } = bench()
+    const source = vi.spyOn(resources, 'source')
+    const address = sessionFileAddress(SESSION, 'style.css')
+    face.addResource(TAB_1, address, controller.signal)
+    face.addResource(TAB_1, address, controller.signal)
+    expect(source).toHaveBeenCalledExactlyOnceWith(address)
+    controller.abort()
+    expect(forget).toHaveBeenCalledExactlyOnceWith(TAB_1)
+    face.addResource(TAB_1, sessionFileAddress(SESSION, 'other.css'), controller.signal)
+    expect(source).toHaveBeenCalledTimes(1)
+  })
+
   it('marks the read in flight, then keeps the page', async () => {
     const { read, face, settle, tab } = bench()
     const controller = new AbortController()

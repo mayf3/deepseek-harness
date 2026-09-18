@@ -1,11 +1,19 @@
 // @vitest-environment jsdom
 /** HTML iframe ownership follows file identity and bytes, not locale or wrapping changes. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { Resources, ResourceSnapshot } from '@deepseek-ai/dsh-client-resources/client'
+import type { WorkspaceFileStat } from '@deepseek-ai/dsh-api-workspace-files/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { TextPreview } from '../src/client/TextPreview.tsx'
+import type { DocumentBodyOwner } from '../src/client/document/contract.ts'
+import { textFace } from '../src/client/face.ts'
 import { HtmlBody } from '../src/client/html/HtmlBody.tsx'
 import type { HtmlBodyProps } from '../src/client/html/HtmlBody.tsx'
+import { htmlBodyDefinition } from '../src/client/html/index.ts'
 import { en } from '../src/client/html/locales.ts'
+import { ADDRESS, ABSOLUTE_PATH, SESSION, TAB_ID, documentSlots, harness } from './fixtures.client.ts'
 
 const translations: ReadonlyMap<string, string> = new Map(Object.entries(en))
 let createDescriptor: PropertyDescriptor | undefined
@@ -51,6 +59,53 @@ function props(text = '<p>hello</p>'): HtmlBodyProps {
 const utf8 = (text: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(text)
 
 describe('HtmlBody', () => {
+  it.each(['css', 'js'] as const)('reloads the HTML when only its %s resource changes', async (extension) => {
+    const h = harness()
+    const previewProps = h.props()
+    const htmlProps = props()
+    const metadata = (version: string): ResourceSnapshot<WorkspaceFileStat> => ({
+      status: 'live', value: { absolutePath: ABSOLUTE_PATH, version }, failure: undefined,
+    })
+    const root = createSnapshotStore(metadata('root-v1'))
+    const dependency = createSnapshotStore(metadata('asset-v1'))
+    const resources: Resources = {
+      source: address => address === ADDRESS ? root : dependency,
+      register: () => () => {}, pin: () => {},
+    }
+    const face = textFace(h.read, h.bytes, resources)(SESSION, h.instance.actions)
+    const data = utf8(extension === 'css'
+      ? '<link rel="stylesheet" href="./asset.css"><p>HTML content</p>'
+      : '<p>HTML content</p><script src="./asset.js"></script>')
+    h.bytes.mockResolvedValue({ ok: true, value: { absolutePath: ABSOLUTE_PATH, version: 'root-v1', data, offset: 0, eof: true } })
+    const readRelated = vi.fn<HtmlBodyProps['readRelated']>().mockResolvedValue({ ok: true, value: {
+      absolutePath: `/workspace/asset.${extension}`, version: 'asset-v1', offset: 0, eof: true,
+      data: btoa(extension === 'css' ? 'body { color: red }' : 'window.loaded = true'),
+    } })
+    const definition = { ...htmlBodyDefinition(() => 'HTML'), extensions: ['md'] }
+    const view = render(<TextPreview {...previewProps} {...face}
+      useDocumentPreviews={select => select([definition])}
+      renderSlot={documentSlots((_key, owner) => <HtmlBody {...htmlProps} {...owner as unknown as DocumentBodyOwner}
+        useTabInfo={previewProps.useTabInfo} readRelated={readRelated} />)} />)
+    await waitFor(() => {
+      expect(screen.getByTitle(en.frame)).toBeDefined()
+      expect(h.instance.getSnapshot().byTab[TAB_ID]).toMatchObject({ loading: false, resourcesDirty: false })
+    })
+    const previous = screen.getByTitle(en.frame)
+    const reads = h.bytes.mock.calls.length
+    const relatedReads = readRelated.mock.calls.length
+    readRelated.mockResolvedValueOnce({ ok: true, value: {
+      absolutePath: `/workspace/asset.${extension}`, version: 'asset-v2', offset: 0, eof: true,
+      data: btoa(extension === 'css' ? 'body { color: blue }' : 'window.loaded = false'),
+    } })
+    act(() => { dependency.set(metadata('asset-v2')) })
+    await waitFor(() => { expect(screen.getByTitle(en.frame)).not.toBe(previous) })
+    expect(h.bytes).toHaveBeenCalledTimes(reads + 1)
+    expect(readRelated).toHaveBeenCalledTimes(relatedReads + 1)
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.version).toBe('root-v1')
+    expect(h.read).not.toHaveBeenCalled()
+    view.unmount()
+  })
+
   it('renders static HTML without reading related files, running scripts or retaining an advanced frame', async () => {
     const initial = props('<h1>Preview</h1><script src="./script.js"></script><p>Static content</p>')
     const basic = { ...initial, useInteractivePreview: ((select: (enabled: boolean) => unknown) => select(false)) as HtmlBodyProps['useInteractivePreview'] }

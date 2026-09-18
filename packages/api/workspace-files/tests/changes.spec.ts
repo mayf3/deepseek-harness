@@ -289,11 +289,14 @@ describe('workspaceFiles.changes — backends and access', () => {
   it.each([
     Object.assign(new Error('Watch permission denied'), { code: 'FS_PERMISSION_DENIED' }),
     new Error('Watch initialization failed'),
-  ])('reports watcher initialization failure as unavailable: $message', async (failure) => {
+    'Provider rejected watch initialization',
+  ])('reports watcher initialization failure as unavailable: %s', async (failure) => {
     watch.mockRejectedValueOnce(failure)
     const stream = open(harness.endpoint(), { kind: 'directory', path: harness.workspace })
     await expect(stream.next()).rejects.toMatchObject({
-      code: 'workspace-file/watch-unsupported', message: failure.message, details: { path: harness.workspace },
+      code: 'workspace-file/watch-unsupported',
+      message: typeof failure === 'string' ? failure : failure.message,
+      details: { path: harness.workspace },
     })
     expect(unwatch).not.toHaveBeenCalled()
     await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
@@ -331,6 +334,42 @@ describe('workspaceFiles.changes — backends and access', () => {
         code: 'workspace-file/watch-unsupported', message: failure.message, details: { path: harness.workspace },
       })
       expect(unwatch).not.toHaveBeenCalled()
+    } finally {
+      release.resolve(undefined)
+    }
+  })
+
+  it('awaits the acquired watcher close before reporting an initialization callback failure', async () => {
+    const failure = new Error('Watch failed before returning its close function')
+    watch.mockImplementationOnce(async (_target, changed) => {
+      changed(failure)
+      return unwatch
+    })
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    unwatch.mockImplementationOnce(async () => {
+      entered.resolve(undefined)
+      await release.promise
+    })
+    const stat = vi.spyOn(harness.ctx.fs, 'stat')
+    const stream = open(harness.endpoint(), { kind: 'directory', path: harness.workspace })
+    const settled = vi.fn()
+    const first = stream.next()
+    const settlement = first.then(settled, settled)
+    try {
+      await entered.promise
+      await Promise.resolve()
+      expect(settled).not.toHaveBeenCalled()
+      expect(stream.controller.signal.aborted).toBe(false)
+      expect(stat).not.toHaveBeenCalled()
+      release.resolve(undefined)
+      await expect(first).rejects.toMatchObject({
+        code: 'workspace-file/watch-unsupported', message: failure.message, details: { path: harness.workspace },
+      })
+      await settlement
+      expect(settled).toHaveBeenCalledTimes(1)
+      expect(unwatch).toHaveBeenCalledTimes(1)
+      await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
     } finally {
       release.resolve(undefined)
     }
@@ -587,12 +626,37 @@ describe('workspaceFiles.changes — cancellation and disposal', () => {
     },
   )
 
-  it('surfaces a root resolution failure unrelated to cancellation', async () => {
-    const failure = new Error('Root unavailable')
-    vi.spyOn(harness.ctx.fs, 'resolve').mockRejectedValueOnce(failure)
-    const stream = open(harness.endpoint(), { kind: 'directory', path: harness.workspace })
+  it.each(['root', 'target'] as const)('surfaces a %s resolution failure unrelated to cancellation', async (phase) => {
+    const failure = new Error('Path resolution failed')
+    const path = join(harness.workspace, 'unresolved.txt')
+    const failedPath = phase === 'root' ? harness.workspace : path
+    const resolve = harness.ctx.fs.resolve.bind(harness.ctx.fs)
+    vi.spyOn(harness.ctx.fs, 'resolve').mockImplementation(async (requested, options) => {
+      if (requested === failedPath) throw failure
+      return resolve(requested, options)
+    })
+    const stat = vi.spyOn(harness.ctx.fs, 'stat')
+    const stream = open(harness.endpoint(), { kind: 'file', path })
     await expect(stream.next()).rejects.toBe(failure)
+    expect(stream.controller.signal.aborted).toBe(false)
     expect(watch).not.toHaveBeenCalled()
+    expect(stat).not.toHaveBeenCalled()
+    await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
+  })
+
+  it('propagates a non-cancellation stat failure without publishing absence and closes the watcher', async () => {
+    const failure = new Error('Metadata read failed')
+    const stat = vi.spyOn(harness.ctx.fs, 'stat').mockRejectedValueOnce(failure)
+    const stream = open(harness.endpoint(), { kind: 'directory', path: harness.workspace })
+    await ready(stream)
+    const pending = stream.next()
+    const [target, changed, signal] = watch.mock.calls[0]!
+    changed()
+    await expect(pending).rejects.toBe(failure)
+    expect(stream.controller.signal.aborted).toBe(false)
+    expect(stat).toHaveBeenCalledExactlyOnceWith(target, signal)
+    expect(unwatch).toHaveBeenCalledTimes(1)
+    await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
   })
 
   it('awaits asynchronous watcher close when the consumer returns', async () => {

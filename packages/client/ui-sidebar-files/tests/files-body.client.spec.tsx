@@ -174,6 +174,24 @@ describe('FilesBody', () => {
     expect(failed?.textContent).toBe(zh['error.notFound'])
   })
 
+  it('shows a refresh failure beside the existing directory rows and clears it on retry', async () => {
+    const { view, script } = mountBody()
+    await act(() => script.watches.ready(ROOT))
+    await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
+    const rows = names(view.container)
+    const reload = view.getByRole('button', { name: zh.reload })
+    act(() => { fireEvent.click(reload) })
+    await act(() => script.settle({
+      ok: false, error: new RemoteError('workspace-file/not-found', 'gone', { path: ROOT }),
+    }))
+    expect(view.container.querySelector('[data-files-row="failed"]')?.textContent).toBe(zh['error.notFound'])
+    expect(names(view.container)).toEqual(rows)
+    act(() => { fireEvent.click(reload) })
+    await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
+    expect(view.container.querySelector('[data-files-row="failed"]')).toBeNull()
+    expect(names(view.container)).toEqual(rows)
+  })
+
   it('reload refreshes expanded nodes without clearing cached rows or the scroll position', async () => {
     const { view, script, instance } = mountBody()
     const child = `${ROOT}/src`

@@ -7,6 +7,7 @@ import { childPath, createList, filesFace } from '../src/client/face.ts'
 import type { WorkspaceFilesListRemote } from '../src/client/face.ts'
 import { createFilesStore } from '../src/client/store.ts'
 import type { DirLevel } from '../src/client/store.ts'
+import { DirectoryNode } from '../src/client/directory-node.ts'
 import { scriptedList } from './scripted-list.client.ts'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 
@@ -25,7 +26,7 @@ function mount() {
     controller.abort()
     await script.dispose()
   })
-  return { ...script, face, controller, actions: instance.actions, snapshot: () => instance.getSnapshot().byTab[TAB] }
+  return { ...script, face, controller, instance, actions: instance.actions, snapshot: () => instance.getSnapshot().byTab[TAB] }
 }
 
 describe('filesFace', () => {
@@ -112,6 +113,61 @@ describe('filesFace', () => {
     controller.abort()
     face.load(TAB, ROOT, controller.signal)
     expect(list).not.toHaveBeenCalled()
+  })
+
+  it('ignores expansion after cancellation or when its parent is not active', async () => {
+    const h = mount()
+    h.face.start(TAB, ROOT, h.controller.signal)
+    const stream = await h.watches.ready(ROOT)
+    await h.settle({ ok: true, value: LEVEL })
+    const before = h.snapshot()
+    h.face.toggle(TAB, `${ROOT}/src/nested`, [ROOT], h.controller.signal)
+    expect(h.snapshot()).toBe(before)
+    expect(h.watches.opened.map(watch => watch.path)).toEqual([ROOT])
+    h.controller.abort()
+    await stream.released.promise
+    h.face.toggle(TAB, `${ROOT}/src`, [ROOT], h.controller.signal)
+    expect(h.snapshot()).toBeUndefined()
+    expect(h.list).toHaveBeenCalledTimes(1)
+    expect(h.watches.opened).toHaveLength(1)
+  })
+
+  it('records a watch failure beside the fallback directory listing', async () => {
+    const h = mount()
+    const reported = Promise.withResolvers<undefined>()
+    const unsubscribe = h.instance.subscribe(() => {
+      const level = h.snapshot()?.levels[ROOT]
+      if (level?.kind === 'ready' && level.failure !== undefined) reported.resolve(undefined)
+    })
+    onTestFinished(unsubscribe)
+    h.face.start(TAB, ROOT, h.controller.signal)
+    const stream = await h.watches.forPath(ROOT)
+    stream.fail(new Error('watch disconnected'))
+    expect((await h.waitForList(0)).path).toBe(ROOT)
+    await h.settle({ ok: true, value: LEVEL })
+    await reported.promise
+    expect(h.snapshot()!.levels[ROOT]).toMatchObject({
+      kind: 'ready', level: LEVEL,
+      failure: { code: 'gateway/internal', message: 'Error: watch disconnected' },
+    })
+    await stream.released.promise
+  })
+
+  it('does not publish a watch failure when the tab closes during its fallback list', async () => {
+    const close = vi.spyOn(DirectoryNode.prototype, 'close')
+    onTestFinished(() => { close.mockRestore() })
+    const h = mount()
+    h.face.start(TAB, ROOT, h.controller.signal)
+    const stream = await h.watches.forPath(ROOT)
+    stream.fail(new Error('watch disconnected'))
+    await h.waitForList(0)
+    h.controller.abort()
+    const closing = close.mock.results[0]
+    if (closing?.type !== 'return') throw new Error('expected the tab to close its directory tree')
+    await h.settle({ ok: true, value: LEVEL })
+    await expect(closing.value).resolves.toBeUndefined()
+    expect(h.snapshot()).toBeUndefined()
+    expect(h.watches.opened).toHaveLength(1)
   })
 
   it('lets the latest listing of a level win, whichever settles first', async () => {

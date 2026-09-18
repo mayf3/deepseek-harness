@@ -235,6 +235,20 @@ describe('DirectoryNode', () => {
     await stream.released.promise
   })
 
+  it('does not report a stream error whose release completes after node cancellation', async () => {
+    const { node, script, failed } = mount()
+    const stream = await script.watches.forPath(ROOT)
+    const release = stream.holdRelease()
+    stream.fail(new Error('watch stopped during cancellation'))
+    await stream.releasing.promise
+    const closing = node.close()
+    expect(stream.signal.aborted).toBe(true)
+    release.resolve(undefined)
+    await closing
+    expect(failed).not.toHaveBeenCalled()
+    expect(script.list).not.toHaveBeenCalled()
+  })
+
   it('lists after watch-unsupported and keeps manual refresh available without reporting a failed directory', async () => {
     const { node, script, failed } = mount()
     const refresh = vi.spyOn(node, 'refresh')

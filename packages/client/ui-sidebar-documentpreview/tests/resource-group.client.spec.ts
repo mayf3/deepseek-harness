@@ -1,5 +1,6 @@
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { Resources, ResourceSnapshot } from '@deepseek-ai/dsh-client-resources/client'
 import type { WorkspaceFileStat } from '@deepseek-ai/dsh-api-workspace-files/types'
 import { ResourceGroup } from '../src/client/document/resource-group.ts'
@@ -21,7 +22,7 @@ function harness() {
   const version = (version: string): void => {
     state.set({ status: 'live', value: { absolutePath: '/style.css', version }, failure: undefined })
   }
-  return { group, changed, version, release }
+  return { group, changed, version, release, state }
 }
 
 describe('ResourceGroup', () => {
@@ -65,5 +66,21 @@ describe('ResourceGroup', () => {
     h.group.close()
     h.group.close()
     expect(h.release).toHaveBeenCalledTimes(2)
+  })
+
+  it('invalidates on failure and recovery without repeating an unchanged failure', () => {
+    const h = harness()
+    h.group.add('style.css')
+    h.version('v1')
+    const failed = {
+      ...h.state.getSnapshot(), status: 'failed' as const,
+      failure: new RemoteError('workspace-file/not-found', 'File missing', { path: 'style.css' }),
+    }
+    h.state.set(failed)
+    expect(h.changed).toHaveBeenCalledTimes(2)
+    h.state.set({ ...failed })
+    expect(h.changed).toHaveBeenCalledTimes(2)
+    h.version('v1')
+    expect(h.changed).toHaveBeenCalledTimes(3)
   })
 })

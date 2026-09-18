@@ -155,6 +155,25 @@ describe('file provider — the opening stat', () => {
     await expect(first).resolves.toEqual({ done: false, value: { ok: true, value: stat('v0', 3) } })
   })
 
+  it('does not stat or emit metadata when a ready observer cancels before the provider resumes', async () => {
+    const { remote, changes, it, controller } = opened()
+    const observer = changes.follow(S1, REL_PATH, controller.signal)
+    // Register this readiness reaction before the provider awaits the shared acknowledgement.
+    const cancelled = observer.ready.then((acknowledged) => {
+      if (acknowledged) controller.abort()
+      return acknowledged
+    })
+    const first = it.next()
+    const { source } = await remote.ready(0)
+    await expect(cancelled).resolves.toBe(true)
+    await expect(first).resolves.toEqual({ done: true, value: undefined })
+    await changes.settle()
+    expect(remote.calls).toEqual(['changes', 'accept'])
+    expect(remote.stats).toEqual([])
+    expect(remote.disposed).toEqual(['workspace file changes of s1'])
+    expect(source.aborted).toBe(true)
+  })
+
   it('omits bytes when the backend reports none', async () => {
     const { remote, it } = opened()
     const first = it.next()

@@ -271,7 +271,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     await openFile('smoke.md')
     await expect.poll(() => viewer.innerText()).toBe('Markdown')
     await preview.getByRole('heading', { name: 'Markdown smoke', exact: true }).waitFor({ timeout: 15_000 })
-    expect(await preview.getByText('Rendered from the workspace.', { exact: true }).isVisible()).toBe(true)
+    await preview.getByText('Rendered from the workspace.', { exact: true }).waitFor({ state: 'visible' })
     const heading = await preview.getByRole('heading', { name: 'Markdown smoke', exact: true }).innerText()
     const markdownTail = preview.getByRole('heading', { name: 'Markdown tail', exact: true })
     await expect.poll(() => preview.locator('[data-textpreview-more]').isEnabled()).toBe(true)
@@ -379,13 +379,22 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     const html = page.frameLocator('[data-html-preview]')
     await html.getByRole('heading', { name: 'HTML smoke', exact: true }).waitFor({ timeout: 15_000 })
     await expect.poll(() => html.locator('#result').innerText()).toBe('INLINE_OK')
-    await expect.poll(() => previewNetworkRequests).toBe(1)
+    await expect.poll(() => html.locator('img[src="https://preview.invalid/developer-tools.png"]')
+      .evaluate(node => (node as HTMLImageElement).naturalWidth)).toBe(1)
     await expect.poll(() => html.locator('#local-result').innerText()).toBe('LOCAL_JS_OK')
     await expect.poll(() => html.locator('#outside-result').innerText()).toBe('OUTSIDE_JS_OK')
     await expect.poll(() => html.locator('#local-result').evaluate(node => getComputedStyle(node).color)).toBe('rgb(12, 34, 56)')
     await expect.poll(() => html.locator('#parent-result').innerText()).toBe('parent-blocked')
     expect(await html.locator('#parent-result').getAttribute('data-error')).toBe('SecurityError')
     expect(await page.locator('html').getAttribute('data-document-preview-escape')).toBeNull()
+    const beforeStyleSave = await iframe.getAttribute('src')
+    await writeFile(join(cwd, 'local.css'), '#local-result { color: rgb(56, 34, 12); }')
+    await expect.poll(() => html.locator('#local-result').evaluate(node => getComputedStyle(node).color)).toBe('rgb(56, 34, 12)')
+    expect(await iframe.getAttribute('src')).not.toBe(beforeStyleSave)
+    const beforeScriptSave = await iframe.getAttribute('src')
+    await writeFile(join(cwd, 'local.js'), 'document.getElementById("local-result").textContent="LOCAL_JS_REFRESHED";')
+    await expect.poll(() => html.locator('#local-result').innerText()).toBe('LOCAL_JS_REFRESHED')
+    expect(await iframe.getAttribute('src')).not.toBe(beforeScriptSave)
     await page.getByRole('tab', { name: /Trajectory/ }).click()
     await scaffold.ctx.settings.update('ui-developer-tools', { enabled: false })
     await expect.poll(() => page.getByRole('tab', { name: /Trajectory/ }).count()).toBe(0)
@@ -400,9 +409,9 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       `- Viewer: ${await viewer.innerText()}`,
       `- Sandbox: ${await iframe.getAttribute('sandbox')}`,
       `- Inline script: ${await html.locator('#result').innerText()}`,
-      `- Local script: ${await html.locator('#local-result').innerText()}`,
+      `- Local script after save: ${await html.locator('#local-result').innerText()}`,
       `- Outside-workspace script: ${await html.locator('#outside-result').innerText()}`,
-      `- Local stylesheet: ${await html.locator('#local-result').evaluate(node => getComputedStyle(node).color)}`,
+      `- Local stylesheet after save: ${await html.locator('#local-result').evaluate(node => getComputedStyle(node).color)}`,
       `- Parent access: ${await html.locator('#parent-result').innerText()} (${await html.locator('#parent-result').getAttribute('data-error')})`,
       `- Parent unchanged: ${String(await page.locator('html').getAttribute('data-document-preview-escape') === null)}`,
     ].join('\n'))
@@ -594,11 +603,15 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       initialReading = await reading.isVisible()
       expect(initialReading).toBe(true)
       expect(await preview.locator('[data-code-preview]').count()).toBe(0)
-      const indicator = await reading.boundingBox()
-      const scroller = await body.boundingBox()
-      if (indicator === null || scroller === null) throw new Error('reading indicator or document body is not rendered')
-      expect(indicator.y).toBeGreaterThanOrEqual(scroller.y)
-      expect(indicator.y + indicator.height).toBeLessThanOrEqual(scroller.y + scroller.height)
+      const bounds = await reading.evaluate((node) => {
+        const body = node.closest('[data-textpreview-body]')
+        if (body === null) throw new Error('reading indicator has no document body')
+        const indicator = node.getBoundingClientRect()
+        const scroller = body.getBoundingClientRect()
+        return { top: indicator.top - scroller.top, bottom: scroller.bottom - indicator.bottom }
+      })
+      expect(bounds.top).toBeGreaterThanOrEqual(0)
+      expect(bounds.bottom).toBeGreaterThanOrEqual(0)
       await successShot(page, 'code-reading')
     } finally {
       releaseRead.resolve(undefined)
