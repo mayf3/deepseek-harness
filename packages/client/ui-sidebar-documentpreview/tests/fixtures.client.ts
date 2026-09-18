@@ -30,7 +30,11 @@ import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 type BodySlot = PropsRenderSlots<'sidebar.right.tab.document'>['renderSlot']
 
 /** Preserve the body-slot callback used by component fixtures. */
-export function documentSlots(body: BodySlot): TextPreviewProps['renderSlot'] { return body }
+export function documentSlots(body: BodySlot): TextPreviewProps['renderSlot'] {
+  return (name: string, owner: unknown, options?: unknown) => name === 'sidebar.right.tab.document'
+    ? body(name, owner as Parameters<BodySlot>[1], options as Parameters<BodySlot>[2])
+    : null
+}
 
 export const TAB_ID = 'tab-1' as TabId
 export const SESSION = 's-1' as SessionId
@@ -128,9 +132,17 @@ export function harness(script: Record<number, RemoteResult<WorkspaceFileText>> 
   onTestFinished(() => { controller.abort() })
   const tabActions = { openResource: vi.fn(), openTab: vi.fn(), close: vi.fn(), replace: vi.fn() }
   const definitions = [textBodyDefinition(() => t('viewer.text'))]
-  const renderSlot = documentSlots((_key, owner, opts) => createElement(TextBody, {
-    ...owner, useTabInfo: opts.hookContext, sessionId: SESSION, useResource,
-  } as unknown as DocumentPreviewProps))
+  // The document seat renders the plain body; the file-handoff seats render a
+  // marker carrying what the owner handed them.
+  const renderSlot: TextPreviewProps['renderSlot'] = (key: string, owner: unknown, opts?: { hookContext?: unknown }) =>
+    key === 'sidebar.right.tab.document'
+      ? createElement(TextBody, {
+        ...owner as object, useTabInfo: opts?.hookContext, sessionId: SESSION, useResource,
+      } as unknown as DocumentPreviewProps)
+      : key === 'sidebar.right.tab.document.action' ? null : createElement('div', {
+        'data-slot': key,
+        'data-slot-path': (owner as { absolutePath: string }).absolutePath,
+      })
   const props = (navigation: { params?: unknown; revision: number } = { revision: 1 }) => ({
     useTabInfo: () => ({
       sidebar: { expanded: true, fullscreen: false },

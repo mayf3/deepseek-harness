@@ -586,6 +586,23 @@ export const IconWarningOutlineMedium = (props: IconProps) => (
   <IconWarningOutlineArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
 )
 
+const IconWarningTriangleOutlineArtwork = ({ size = 16, className, strokeWidth }: WeightedIconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6.87 2.6a1.33 1.33 0 0 1 2.26 0l5.34 9.33A1.33 1.33 0 0 1 13.33 14H2.67a1.33 1.33 0 0 1-1.14-2.07Z" stroke="currentColor" />
+    <path d="M8 6v3m0 2.33h.01" stroke="currentColor" />
+  </svg>
+)
+
+/** Regular rounded warning triangle with an exclamation mark. */
+export const IconWarningTriangleOutlineRegular = (props: IconProps) => (
+  <IconWarningTriangleOutlineArtwork {...props} strokeWidth={ICON_REGULAR_STROKE} />
+)
+
+/** Medium rounded warning triangle with an exclamation mark. */
+export const IconWarningTriangleOutlineMedium = (props: IconProps) => (
+  <IconWarningTriangleOutlineArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
+)
+
 const IconUserOutlineArtwork = ({ size = 16, className, strokeWidth }: WeightedIconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={strokeWidth}>
     <path d="M8 8.5C9.65685 8.5 11 7.15685 11 5.5C11 3.84315 9.65685 2.5 8 2.5C6.34315 2.5 5 3.84315 5 5.5C5 7.15685 6.34315 8.5 8 8.5Z" stroke="currentColor" />

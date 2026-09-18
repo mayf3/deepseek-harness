@@ -273,17 +273,27 @@ function hunkHeader(hunk: WorkspaceDiffHunk): string {
 
 /**
  * The side-by-side view without wrapping: two columns that clip their long
- * lines and scroll sideways together, so a long line on one side never runs
- * under the other and both sides show the same columns of text. Every line is
- * one fixed-height row, which keeps the sides aligned.
+ * lines and scroll together on both axes, so a long line on one side never
+ * runs under the other and both sides show the same rows and columns of text.
+ * Every line is one fixed-height row, which keeps the sides aligned.
  */
 function SplitColumns({ hunks }: { hunks: readonly WorkspaceDiffHunk[] }): ReactNode {
   const paired = useMemo(() => hunks.map(hunk => ({ header: hunkHeader(hunk), rows: splitRows(hunk) })), [hunks])
   const columns = useRef<Record<'left' | 'right', HTMLDivElement | null>>({ left: null, right: null })
-  // Mirror one side's horizontal offset onto the other; the mirrored side's own scroll event then finds nothing to change.
+  const offsets = useRef({ left: { scrollLeft: 0, scrollTop: 0 }, right: { scrollLeft: 0, scrollTop: 0 } })
   const follow = (side: 'left' | 'right') => (event: UIEvent<HTMLDivElement>): void => {
-    const other = columns.current[side === 'left' ? 'right' : 'left']
-    if (other !== null && other.scrollLeft !== event.currentTarget.scrollLeft) other.scrollLeft = event.currentTarget.scrollLeft
+    const peer = side === 'left' ? 'right' : 'left'
+    const other = columns.current[peer]
+    /* v8 ignore next -- Both column refs are attached before browser scroll events can run. */
+    if (other === null) return
+    for (const axis of ['scrollLeft', 'scrollTop'] as const) {
+      const value = event.currentTarget[axis]
+      if (offsets.current[side][axis] === value) continue
+      offsets.current[side][axis] = value
+      other[axis] = value
+      // Record the browser-clamped offset so its scroll event cannot pull the source back.
+      offsets.current[peer][axis] = other[axis]
+    }
   }
   return (
     <div className={css.columns}>

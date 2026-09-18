@@ -9,6 +9,7 @@ import type { OfficeToPdfGeneration } from '@deepseek-ai/dsh-office-to-pdf/types
 import type { DocumentPreviewDefinition } from '../src/client/document/registry.ts'
 import type { DocumentContent } from '../src/client/document/contract.ts'
 import { TextPreview, type TextPreviewProps } from '../src/client/TextPreview.tsx'
+import { OfficeFontAction, type OfficeFontActionProps } from '../src/client/office/OfficeFontAction.tsx'
 import { OfficeBody, type OfficeBodyProps } from '../src/client/office/OfficeBody.tsx'
 import { createOfficeStore, type OfficeState } from '../src/client/office/store.ts'
 import type { ReadOfficeDocument } from '../src/client/office/cache.ts'
@@ -45,8 +46,9 @@ it('lets a non-Office renderer load content, report its version, and reload thro
     useEffect(() => { if (displayed !== undefined) request?.loaded(displayed.version) }, [displayed, request?.loaded])
     return <p>{displayed?.text ?? 'Loading custom content'}</p>
   }
-  const renderSlot: TextPreviewProps['renderSlot'] = (_name, input) => {
-    const owner = input as unknown as OwnerOf<'sidebar.right.tab.document'>
+  const renderSlot: TextPreviewProps['renderSlot'] = (name: string, input: unknown) => {
+    if (name !== 'sidebar.right.tab.document') return null
+    const owner = input as OwnerOf<'sidebar.right.tab.document'>
     return <CustomBody content={owner.content} />
   }
   const useDocumentPreviews: TextPreviewProps['useDocumentPreviews'] = selector => selector([custom])
@@ -72,9 +74,9 @@ const definition: DocumentPreviewDefinition = {
   id: 'office', extensions: ['md'], binaryExtensions: ['md'], title: () => 'Office', loading: 'renderer',
 }
 type Result = Awaited<ReturnType<ReadOfficeDocument>>
-const result = (version = 'v1'): Result => ({ ok: true, value: {
+const result = (version = 'v1', missingFonts: readonly string[] = []): Result => ({ ok: true, value: {
   absolutePath: ABSOLUTE_PATH, version, data: new TextEncoder().encode(`PDF ${version}`),
-  offset: 0, eof: true, missingFonts: [], generation: 'engine' as OfficeToPdfGeneration,
+  offset: 0, eof: true, missingFonts, generation: 'engine' as OfficeToPdfGeneration,
 } })
 
 function setup() {
@@ -99,12 +101,17 @@ function setup() {
   }
   const describeFailure: OfficeBodyProps['describeFailure'] = error => error.message
   let request: Extract<DocumentContent, { kind: 'renderer' }> | undefined
-  const slots: TextPreviewProps['renderSlot'] = (_key, input, options) => {
-    const owner = input as unknown as OwnerOf<'sidebar.right.tab.document'>
+  const slots: TextPreviewProps['renderSlot'] = (key: string, input: unknown, options?: { hookContext?: unknown }) => {
+    if (key === 'sidebar.right.tab.document.action') {
+      return <OfficeFontAction {...{ ...input as OwnerOf<'sidebar.right.tab.document.action'>, useTabInfo: options?.hookContext, useStore: useOffice,
+        actions: office.actions, t: makeTranslate(en) } as unknown as OfficeFontActionProps} />
+    }
+    if (key !== 'sidebar.right.tab.document') return null
+    const owner = input as OwnerOf<'sidebar.right.tab.document'>
     if (owner.content.kind !== 'renderer') return <p>Raw bytes</p>
     request = owner.content
     // The component fixture supplies the standard seats used by Office; the real slot binding is exercised by the browser scenario.
-    const props = { ...h.props(), ...owner, useTabInfo: options.hookContext, useStore: useOffice,
+    const props = { ...h.props(), ...owner, useTabInfo: options?.hookContext, useStore: useOffice,
       actions: office.actions, read, retainTab, describeFailure,
       t: makeTranslate(en), renderSlot: (_name: string, child: { content: DocumentContent }) => (
         <p data-test-pdf>{child.content.kind === 'bytes' ? new TextDecoder().decode(child.content.data) : ''}</p>
@@ -210,4 +217,27 @@ it('starts no conversion when a body receives ordinary shared content', () => {
   const view = render(<OfficeBody {...props} />)
   expect(view.container.childElementCount).toBe(0)
   expect(h.read).not.toHaveBeenCalled()
+})
+
+it('shows the current revision’s missing fonts in the toolbar and clears stale details during reload', async () => {
+  const h = setup()
+  const view = render(<h.View />)
+  expect(screen.queryByRole('button', { name: /Missing fonts:/ })).toBeNull()
+  await act(async () => { h.pending[0]!.deferred.resolve(result('v1', ['Missing Serif'])) })
+  const warning = screen.getByRole('button', { name: 'Missing fonts: 1. Click to view.' })
+  fireEvent.click(warning)
+  expect(screen.getByRole('dialog').textContent).toContain('Missing Serif')
+  fireEvent.click(screen.getByRole('button', { name: 'reload' }))
+  expect(screen.queryByRole('button', { name: /Missing fonts:/ })).toBeNull()
+  expect(screen.queryByRole('dialog')).toBeNull()
+  await act(async () => { h.pending[1]!.deferred.resolve(result('v2', ['Missing Sans'])) })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Missing fonts: 1. Click to view.' }))
+  expect(screen.getByRole('dialog').textContent).toContain('Missing Sans')
+  expect(screen.getByRole('dialog').textContent).not.toContain('Missing Serif')
+  h.h.bytes.mockResolvedValue({ ok: true, value: { absolutePath: ABSOLUTE_PATH, version: 'v1', offset: 0, eof: true, data: new Uint8Array() } })
+  view.rerender(<h.View renderer={false} />)
+  await settle()
+  expect(screen.queryByRole('button', { name: /Missing fonts:/ })).toBeNull()
+  expect(screen.queryByRole('dialog')).toBeNull()
 })

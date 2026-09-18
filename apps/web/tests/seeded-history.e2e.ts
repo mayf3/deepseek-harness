@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
 import { deriveEventMessage, SessionId } from '@deepseek-ai/dsh-session'
@@ -207,8 +208,16 @@ describe('web e2e: seeded history renders through cold resume', () => {
   let seededThroughSeq = -1
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold(process.platform === 'win32' ? {} : {
-      extraOverlayPath: fileURLToPath(new URL('./fixtures/sidebar-terminal.patch.yml', import.meta.url)),
+    // The POSIX terminal fixture stays off Windows; the pinned desktop applies
+    // everywhere. The Open In rows carry the document header's file controls,
+    // and the SSH marker keeps the application catalog empty so the
+    // Session-header split button stays out of every golden.
+    scaffold = await launchWebScaffold({
+      extraOverlayPath: [
+        ...process.platform === 'win32' ? [] : [fileURLToPath(new URL('./fixtures/sidebar-terminal.patch.yml', import.meta.url))],
+        fileURLToPath(new URL('./fixtures/native-open-on.patch.yml', import.meta.url)),
+      ],
+      openInAppEnvironment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { SSH_CONNECTION: '10.0.0.2 55000 10.0.0.9 22' } }]),
     })
     // Composer recording uses a child workspace; seedSession owns the scaffold root.
     const sessionCwd = MODE === 'record' ? join(scaffold.workspaceCwd, 'workspace') : scaffold.workspaceCwd
@@ -458,6 +467,23 @@ describe('web e2e: seeded history renders through cold resume', () => {
     await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('false')
   })
 
+  it.skipIf(MODE === 'record')('restores the active turn rail mark across Chat and Trajectory', async () => {
+    const rail = page.getByRole('navigation', { name: 'Turn navigation' })
+    const current = rail.locator('[aria-current="true"]')
+    await current.waitFor({ state: 'visible' })
+    const active = await current.getAttribute('aria-label')
+    const scroller = page.locator('[data-conversation-scroll]')
+    const top = await scroller.evaluate(element => element.scrollTop)
+
+    await page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
+    await page.getByLabel('Trajectory timeline', { exact: true }).waitFor({ state: 'visible' })
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click()
+
+    await expect.poll(() => current.getAttribute('aria-label')).toBe(active)
+    await expect.poll(async () => Math.abs(await scroller.evaluate(element => element.scrollTop) - top)).toBeLessThanOrEqual(2)
+    expect(tripwire.pageErrors).toEqual([])
+  })
+
   it.skipIf(MODE === 'record')('file-path tool rows rebuilt from the cold log open the right Sidebar', async () => {
     onTestFailed(async () => {
       await mkdir(fileURLToPath(new URL('../../../.artifacts/screenshots/0907-2205-sidebar', import.meta.url)), { recursive: true })
@@ -483,6 +509,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
       await expect.poll(() => path.textContent()).toBe(absolutePath)
       expect(await path.getAttribute('title')).toBe(absolutePath)
       await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
+      await column.locator('[data-open-path-open]').waitFor({ timeout: 5_000 })
       const preview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(FILE_PREVIEW_EXPECTED, preview, MODE)
     } finally {
@@ -777,12 +804,14 @@ describe('web e2e: seeded history renders through cold resume', () => {
     const column = page.locator('[data-rightbar-col]')
     await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
     const tabId = await column.locator('[data-dockkit-tab]').getAttribute('data-dockkit-tab')
+    await column.locator('[data-open-path-open]').waitFor({ timeout: 5_000 })
     const preview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
     expect(await column.locator('[data-dockkit-tab]').getAttribute('data-dockkit-tab')).toBe(tabId)
+    await column.locator('[data-open-path-open]').waitFor({ timeout: 5_000 })
     const restoredPreview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
     expect(restoredPreview).toBe(preview)
   })

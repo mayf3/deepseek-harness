@@ -1,11 +1,13 @@
-/** Keyless document-preview smoke through a real Session, Files tab, and shipped renderers. */
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+/** Keyless document-preview smoke through a real Session, Files tab, shipped renderers, and the default-application controls. */
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, relative } from 'node:path'
+import { nativeFileManager } from '@deepseek-ai/dsh-native-command'
+import { delimiter, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { realOfficeBytes } from './office-fixture.ts'
 import { pdfFixture, selectionPdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
@@ -19,6 +21,8 @@ const PAGE_LINES = 64
 const SHOT_DIR = fileURLToPath(new URL('../../../.artifacts/screenshots/0908-document-preview', import.meta.url))
 const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 const MODE = webSnapshotMode()
+/** The stubbed opener runs as a POSIX script; Windows and WSL keep their real file associations out of the lane. */
+const STUB_OPENER = nativeFileManager() !== 'explorer'
 const TINY_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
@@ -83,11 +87,33 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
   let outsideRoot: string | undefined
+  let nativeRoot: string | undefined
+  let openLog = ''
+  const opened = async (): Promise<Array<{ path: string; action: 'open' | 'reveal' }>> =>
+    (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; action: 'open' | 'reveal' })
 
   beforeAll(async () => {
     outsideRoot = await mkdtemp(join(tmpdir(), 'dsh-preview-outside-'))
+    if (STUB_OPENER) {
+      // Exercise the built Host through its actual OS command, replacing only the desktop application.
+      nativeRoot = await mkdtemp(join(tmpdir(), 'dsh-preview-native-'))
+      openLog = join(nativeRoot, 'opened.jsonl')
+      await writeFile(openLog, '')
+      const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
+      await writeFile(join(nativeRoot, command), `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = process.argv[2] === '-R' ? process.argv[3] : process.argv[2];
+const action = process.argv[2] === '-R' || fs.statSync(path).isDirectory() ? 'reveal' : 'open';
+fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) + '\\n');
+`, { mode: 0o700 })
+      vi.stubEnv('PATH', `${nativeRoot}${delimiter}${process.env.PATH ?? ''}`)
+    }
+    // The Open In rows carry the default-application controls; the SSH marker
+    // keeps the host's application catalog empty, so the Session-header split
+    // button stays off every platform while the pinned desktop serves the file controls.
     scaffold = await launchWebScaffold({
-      developerTools: false, replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false, extraOverlayPath: PAGING_PATCH,
+      developerTools: false, replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false, extraOverlayPath: [PAGING_PATCH, fileURLToPath(new URL('./fixtures/native-open-on.patch.yml', import.meta.url))],
+      openInAppEnvironment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { SSH_CONNECTION: '10.0.0.2 55000 10.0.0.9 22' } }]),
     })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -103,7 +129,9 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       try {
         await scaffold?.close()
       } finally {
+        vi.unstubAllEnvs()
         if (outsideRoot !== undefined) await rm(outsideRoot, { recursive: true, force: true })
+        if (nativeRoot !== undefined) await rm(nativeRoot, { recursive: true, force: true })
       }
     }
   })
@@ -669,13 +697,39 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
     await column.locator('[data-files-entry="file"]').getByRole('button', { name: 'clip.mp4', exact: true }).click()
     const unsupported = column.locator('[data-textpreview-state="unsupported"]')
     await unsupported.waitFor({ timeout: 15_000 })
-    const unsupportedLine = await unsupported.locator('[data-textpreview-unsupported]').innerText()
+    const unsupportedLine = await unsupported.locator('[data-textpreview-unsupported] p').innerText()
     expect(unsupportedLine).toContain('Preview is not available for this file type yet.')
     expect(await unsupported.locator('[data-textpreview-path]').innerText()).toContain('clip.mp4')
     expect(await unsupported.locator('[data-document-viewer-menu]').count()).toBe(0)
     expect(await unsupported.locator('[data-textpreview-tool="reload"]').count()).toBe(0)
+    // The default-application controls land once the Host answered the pinned desktop read.
+    const headerOpen = unsupported.locator('[data-open-path-open]')
+    await headerOpen.waitFor({ timeout: 15_000 })
+    const emptyOpen = unsupported.locator('[data-textpreview-unsupported] [data-open-path-unpreviewable]')
+    await emptyOpen.waitFor({ timeout: 15_000 })
     await successShot(page, 'unsupported')
-    sections.push(['## Unviewable binary', '', '- State: unsupported', `- Line: ${unsupportedLine.trim()}`].join('\n'))
+    sections.push([
+      '## Unviewable binary', '',
+      '- State: unsupported',
+      `- Line: ${unsupportedLine.trim()}`,
+      `- Header control: ${await headerOpen.innerText()}`,
+      `- Empty-state control: ${await emptyOpen.innerText()}`,
+    ].join('\n'))
+    if (STUB_OPENER) {
+      // Real Host gestures against the stubbed opener: default application from the empty state, reveal from the header menu.
+      const clip = join(cwd, 'clip.mp4')
+      await emptyOpen.click()
+      await expect.poll(async () => (await opened()).length, { timeout: 15_000 }).toBe(1)
+      await unsupported.locator('[data-open-path-more]').click()
+      await page.getByRole('menuitem', { name: 'Show file location', exact: true }).click()
+      await expect.poll(async () => (await opened()).length, { timeout: 15_000 }).toBe(2)
+      const gestures = await opened()
+      expect(gestures[0]).toEqual({ path: clip, action: 'open' })
+      expect(gestures[1]?.action).toBe('reveal')
+      expect([clip, cwd]).toContain(gestures[1]?.path)
+      // Gesture facts stay out of the golden: the stub does not run on Windows.
+      expect(await page.getByRole('alert').count()).toBe(0)
+    }
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await compareOrRefreshGolden(EXPECTED, sections.join('\n\n'), MODE)
@@ -752,44 +806,61 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       await preview.getByRole('button', { name: 'Read the file again', exact: true }).click()
       await canvas.waitFor({ state: 'visible' })
       expect(convert).toHaveBeenCalledTimes(1)
-      const notice = preview.locator('[data-office-font-notice]')
-      const more = notice.getByRole('button', { name: 'Show more', exact: true })
-      await more.waitFor({ state: 'visible' })
+      const warning = preview.locator('[data-office-font-warning]').getByRole('button')
+      await warning.waitFor({ state: 'visible' })
+      expect(await warning.getAttribute('aria-expanded')).toBe('false')
+      expect(await page.getByRole('dialog', { name: 'Missing fonts', exact: true }).count()).toBe(0)
+      const warningBox = (await warning.boundingBox())!
+      const reload = preview.getByRole('button', { name: 'Read the file again', exact: true })
+      const reloadBox = (await reload.boundingBox())!
+      expect(warningBox.x + warningBox.width).toBeLessThanOrEqual(reloadBox.x)
+      expect(Math.abs(warningBox.y + warningBox.height / 2 - reloadBox.y - reloadBox.height / 2)).toBeLessThan(1)
+      expect([warningBox.width, warningBox.height]).toEqual([reloadBox.width, reloadBox.height])
+      expect(await warning.evaluate(node => getComputedStyle(node).borderRadius))
+        .toBe(await reload.evaluate(node => getComputedStyle(node).borderRadius))
+      expect(await warning.locator('svg').evaluate(node => node.getBoundingClientRect().width))
+        .toBe(await reload.locator('svg').evaluate(node => node.getBoundingClientRect().width))
+      const warningColor = await warning.evaluate(node => getComputedStyle(node).color)
+      await warning.hover()
+      expect(await warning.evaluate(node => getComputedStyle(node).color)).toBe(warningColor)
+      await page.getByRole('tooltip', { name: /Missing fonts:/ }).waitFor({ state: 'visible' })
       const before = await canvas.evaluate(node => node.getBoundingClientRect().top)
-      await more.click()
+      await successShot(page, 'office-font-warning')
+      await warning.click()
       const details = page.getByRole('dialog', { name: 'Missing fonts', exact: true })
       await details.getByText('DSH Missing Preview Font', { exact: true }).waitFor({ state: 'visible' })
+      expect(await page.getByRole('tooltip', { name: /Missing fonts:/ }).count()).toBe(0)
       await successShot(page, 'office-font-details')
       await page.keyboard.press('Escape')
       await expect.poll(() => details.count()).toBe(0)
-      expect(await more.evaluate(node => node === document.activeElement)).toBe(true)
-      await more.click()
+      expect(await warning.evaluate(node => node === document.activeElement)).toBe(true)
+      await warning.click()
       await page.getByRole('button', { name: 'Close font details', exact: true }).click()
-      expect(await more.isVisible()).toBe(true)
-      await notice.getByRole('button', { name: 'Dismiss font notice', exact: true }).click()
-      await expect.poll(() => notice.evaluate(node => node.getBoundingClientRect().height)).toBe(0)
+      expect(await warning.isVisible()).toBe(true)
       const after = await canvas.evaluate(node => node.getBoundingClientRect().top)
-      expect(before - after).toBeGreaterThan(40)
+      expect(after).toBe(before)
       const topInset = await preview.evaluate((node) => {
         const body = node.querySelector('[data-textpreview-body]')!.getBoundingClientRect()
         const canvas = node.querySelector('canvas')!.getBoundingClientRect()
         return canvas.top - body.top
       })
       expect(topInset).toBe(0)
-      await successShot(page, 'office-font-dismissed')
       await compareOrRefreshGolden(fileURLToPath(new URL('./expected/office-font-notice.md', import.meta.url)), [
-        '# Office font notice', '',
+        '# Office font warning', '',
+        '- Warning precedes reload in the same toolbar: true',
+        '- Warning and reload share button geometry and icon size: true',
+        '- Details open only on request: true',
         '- Requested absent family is listed: true',
-        '- Escape restores focus to Show more: true',
-        '- Closing details preserves the notice: true',
-        '- Dismissing the notice collapses its occupied height: 0',
-        `- Document top inset after dismissal: ${topInset}px`,
+        '- Escape restores focus to the warning: true',
+        '- Closing details preserves the warning and document position: true',
+        `- Document top inset: ${topInset}px`,
       ].join('\n'), MODE)
       await successShot(page, 'office-docx')
       for (const extension of ['doc', 'xls', 'xlsx', 'ppt', 'pptx']) {
         await openPreviewFile(column, filesTab, preview, `chinese.${extension}`)
         await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible', timeout: 60_000 })
         await expect.poll(async () => (await preview.locator('[data-pdf-text]').allTextContents()).join(''), { timeout: 30_000 }).toContain('中文文档')
+        if (['doc', 'xls', 'ppt'].includes(extension)) expect(await warning.count()).toBe(0)
         await successShot(page, `office-${extension}`)
       }
       expect(convert).toHaveBeenCalledTimes(6)

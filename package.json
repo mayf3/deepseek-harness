@@ -87,7 +87,7 @@
     "check:windows-wine": "bash scripts/wine-windows-gates.sh",
     "check:ci:windows-blocking": "tsx scripts/run-gates.ts ci-windows-blocking",
     "check:ci:windows-complete": "tsx scripts/run-gates.ts ci-windows-complete",
-    "check:ci:windows-observational": "tsx scripts/run-gates.ts ci-windows-observational",
+    "check:ci:windows-observational-ready": "tsx scripts/run-gates.ts ci-windows-observational-ready",
     "check:node-compat": "tsx scripts/run-gates.ts node-compat",
     "publint": "tsx scripts/publint-all.ts",
     "doc-typecheck": "npm run build:lib:host && npm run doc-typecheck:contracts-ready",

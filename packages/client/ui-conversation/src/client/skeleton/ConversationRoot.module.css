@@ -13,6 +13,8 @@
    title row, the tab strip's 10px margin, a 16px tab line, and its 9px bottom
    inset — so no row below may grow past its figure. */
 .header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   flex: none;
   box-sizing: border-box;
   min-height: 76px;
@@ -20,7 +22,7 @@
   border-bottom: 0.5px solid var(--dsw-alias-border-l3);
 }
 
-.headerCompact {
+.header:where(:not(:has(.tabs))) {
   min-height: 0;
   padding-bottom: 10px;
 }
@@ -36,6 +38,15 @@
   margin-left: auto;
 }
 
+/* Only the macOS titlebar needs reserved drag space before a Session exists. */
+:global(html:not([data-platform='darwin'])) .headerSessionless {
+  padding-top: 0;
+}
+
+:global(html:not([data-platform='darwin'])) .headerSessionless .titleRow {
+  min-height: 0;
+}
+
 /* macOS hiddenInset titlebar: window dragging comes from ui-layout's
    .leadingBand (the frame's first child), never from this header. Electron
    composes app-regions in document order ignoring stacking, so a drag rule
@@ -43,6 +54,7 @@
    (the settings modal lives in the sidebar column). The title-row clusters
    overlap the band and subtract their whole boxes; individual controls are
    covered by the base.css interactive-element rule. */
+:global([data-platform='darwin']) .headerLeading,
 :global([data-platform='darwin']) .headerActions,
 :global([data-platform='darwin']) .headerUtilities,
 :global([data-platform='darwin']) .headerCorner {
@@ -50,6 +62,7 @@
 }
 
 .titleRow {
+  grid-column: 2;
   display: flex;
   align-items: center;
   gap: 0;
@@ -67,6 +80,17 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
+}
+
+/* The auto grid column collapses with an empty or CSS-hidden occupant.
+   The occupant owns its trailing gap so hidden controls reserve no space. */
+.headerLeading {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
 }
 
 .crumbs {
@@ -161,6 +185,7 @@ button.crumb:hover {
 /* figma Tab_Group 34:11441: 35px strip, gap 36, pad-left 8, tabs bottom-aligned.
    Positioned above the header's own paint, so the active bar covers the rule. */
 .tabs {
+  grid-column: 1 / -1;
   position: relative;
   z-index: 1;
   display: flex;

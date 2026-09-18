@@ -23,7 +23,8 @@ import {
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import {
-  connectFreshWorkspace, expandOwningTurnProcess, newEnglishPage, saveFailureShot, writeComposerDraft, ZH_BROWSER_LOCALE,
+  connectFreshWorkspace, connectFreshWorkspaceZh, expandOwningTurnProcess, newEnglishPage, saveFailureShot,
+  writeComposerDraft, ZH_BROWSER_LOCALE,
 } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome', import.meta.url))
@@ -34,6 +35,7 @@ const COMMAND_MENU_EXPECTED = join(SNAPSHOT_DIR, 'command-menu.expected.md')
 const COMMAND_MENU_ZH_EXPECTED = join(SNAPSHOT_DIR, 'command-menu-zh.expected.md')
 const FUZZY_COMMAND_MENU_EXPECTED = join(SNAPSHOT_DIR, 'command-menu-fuzzy.expected.md')
 const PLAN_ACTIVE_EXPECTED = join(SNAPSHOT_DIR, 'plan-active.expected.md')
+const PLAN_ACTIVE_ZH_EXPECTED = join(SNAPSHOT_DIR, 'plan-active-zh.expected.md')
 const CONNECTION_ERROR_EXPECTED = join(SNAPSHOT_DIR, 'connection-error.expected.md')
 // Post-reload golden: the same settled conversation rebuilt purely from
 // persistence + history — byte-equal rendering is exactly the recovery claim.
@@ -153,7 +155,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       await inputPage.keyboard.insertText('这是任务')
       await expect.poll(() => input.textContent()).toBe(`${token} 这是任务`)
       for (let i = 0; i < 5; i++) await input.press('Backspace')
-      const tokenText = () => input.locator('[data-lexical-text][style*="warn-label"]').textContent()
+      const tokenText = () => input.locator('[data-lexical-text][style*="business-primary"]').textContent()
       await expect.poll(() => input.textContent()).toBe(token)
       await expect.poll(() => input.getAttribute('data-phase')).toBe('claimed')
       await expect.poll(tokenText).toBe(token)
@@ -195,7 +197,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     }
   })
 
-  it.skipIf(MODE === 'record')('shows active Plan as the warn-state status action', async () => {
+  it.skipIf(MODE === 'record')('shows active Plan as the business-state status action', async () => {
     const activeScaffold = await launchWebScaffold()
     const activePage = await newEnglishPage(browser)
     const activeTripwire = watchConsole(activePage)
@@ -220,14 +222,15 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       await compareOrRefreshGolden(PLAN_ACTIVE_EXPECTED, planSnapshot, MODE)
       const planStyle = await planButton.evaluate((element) => {
         const probe = document.createElement('span')
-        probe.style.color = 'var(--dsw-alias-state-warn-label)'
-        probe.style.backgroundColor = 'var(--dsw-alias-state-warn-tertiary)'
+        probe.style.color = 'var(--dsw-alias-state-business-primary)'
+        probe.style.backgroundColor = 'var(--dsw-alias-state-business-tertiary)'
         document.body.append(probe)
         const actual = getComputedStyle(element)
         const reference = getComputedStyle(probe)
         const result = {
           color: actual.color,
           backgroundColor: actual.backgroundColor,
+          height: actual.height,
           borderRadius: actual.borderRadius,
           fontSize: actual.fontSize,
           referenceColor: reference.color,
@@ -238,6 +241,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       })
       expect(planStyle.color).toBe(planStyle.referenceColor)
       expect(planStyle.backgroundColor).toBe(planStyle.referenceBackgroundColor)
+      expect(planStyle.height).toBe('28px')
       expect(planStyle.borderRadius).toBe('999px')
       expect(planStyle.fontSize).toBe('13px')
       await planButton.click()
@@ -250,6 +254,39 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     } finally {
       await activePage.close()
       await activeScaffold.close()
+    }
+  })
+
+  it.skipIf(MODE === 'record')('shows the active Plan chip with the Chinese copy', async () => {
+    const zhScaffold = await launchWebScaffold()
+    const zhPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
+    const zhTripwire = watchConsole(zhPage)
+    try {
+      await zhPage.goto(zhScaffold.authenticatedUrl, { waitUntil: 'load' })
+      await zhPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      await connectFreshWorkspaceZh(zhPage, zhScaffold.workspaceCwd)
+      const input = zhPage.locator('[data-composer-input]').first()
+      await zhPage.getByRole('button', { name: '添加文件或调用指令' }).click()
+      const menu = zhPage.getByRole('listbox', { name: '触发候选建议' })
+      await menu.waitFor({ timeout: 10_000 })
+      await menu.getByRole('option', { name: '计划 plan 进入或退出计划模式', exact: true }).click()
+      await expect.poll(() => input.textContent()).toBe('/计划 ')
+      await input.press('Enter')
+      const planButton = zhPage.getByRole('button', { name: '计划模式已开启，按下关闭' })
+      await planButton.waitFor({ timeout: 10_000 })
+      await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
+      const planSnapshot = await captureStableAria(zhPage, '[class*="frame"]', zhScaffold.workspaceCwd)
+      await compareOrRefreshGolden(PLAN_ACTIVE_ZH_EXPECTED, planSnapshot, MODE)
+      await planButton.click()
+      await expect.poll(() => planButton.count()).toBe(0)
+      expect(zhTripwire.pageErrors).toEqual([])
+      expect(zhTripwire.warnings).toEqual([])
+    } catch (error) {
+      await saveFailureShot(zhPage, 'web-e2e-plan-active-zh').catch(() => undefined)
+      throw error
+    } finally {
+      await zhPage.close()
+      await zhScaffold.close()
     }
   })
 
@@ -564,7 +601,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'session.v3.jsonl', 'replay.override.json', 'command-menu.expected.md',
       'command-menu-fuzzy.expected.md', 'command-menu-zh.expected.md', 'connection-error.expected.md',
-      'hero.expected.md', 'plan-active.expected.md',
+      'hero.expected.md', 'plan-active.expected.md', 'plan-active-zh.expected.md',
       'reloaded.expected.md', 'reloaded-expanded.expected.md',
     ])
   })
