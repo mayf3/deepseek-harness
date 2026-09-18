@@ -44,6 +44,8 @@ pnpm --silent run persistence-review --before .artifacts/base.schema.json --afte
 <a id="acknowledge"></a>
 ## 1. 记录变更
 
+先检查[已接受基线](../session-format-status.zh.md#finalization-record)，保留其锁定记录。向后兼容的演进使用新的同版本确认记录；记录破坏性变更之前，先实现更高的写入器版本。
+
 编写包含 `en` 和 `zh` 的本地 JSON 文件，两者分别包含 `summary`、`compatibility` 和 `verification` 字符串。以下输入描述一个经过验证的钩子审计字段从必选改为可选的变更。用你所做变更的事实替换说明和测试证据；CLI（命令行界面）不会证明这些声明。
 
 将输入保存为 `.artifacts/persistence-change.prose.json`，必要时创建该被忽略的目录：
@@ -95,7 +97,7 @@ pnpm run doc-sync
 pnpm --silent run persistence-changes --update 2026-09-11-poc-optional --prose .artifacts/persistence-change.prose.json --json
 ```
 
-命令刷新机器声明、schema、目录和配对。没有 `--prose` 时，它保留已有说明。更新会拒绝初始基线和被其他记录依赖的记录。目录本身无法识别哪些记录已获审阅接受：保留已接受历史，并创建后继。
+命令刷新机器声明、schema、目录和配对。没有 `--prose` 时，它保留已有说明。更新会拒绝初始基线、其他记录所依赖的记录，以及已被定稿检查点锁定的记录。定稿检查点之外，目录不会推断审阅接受状态：保留已接受历史，并创建后继。
 
 集成产生竞争末端记录时，根据剩余历史更新尚未接受的记录，再重新评估最终差异。无关根的确认无需刷新。[机制决策](../../.agents/notes/implemented/process/2026-09-11-persistence-type-history.zh.md)解释为何保留完整快照和逐根前驱。
 

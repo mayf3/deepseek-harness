@@ -28,4 +28,4 @@ Installed Session adoption continues to own event envelopes, message roles and m
 
 ## Consequences
 
-The native restorer maintains one bounded state machine per read and rejects contradictions before successor publication. Frozen V0–V3 validators and committed Session generations remain unchanged. Public catalog regressions cover invalid relationships alongside partial tails, inherited cuts, immutable unknown attribution, and complete tool exchanges; these checks do not require a new Session version because V4 is unreleased.
+The native restorer maintains one bounded state machine per read and rejects contradictions before successor publication. Frozen V0–V3 validators and committed Session generations remain unchanged. Public catalog regressions cover invalid relationships alongside partial tails, inherited cuts, immutable unknown attribution, and complete tool exchanges; these checks define finalized V4 admission. Breaking changes require a successor; compatible additions use new acknowledgements, and implementation fixes preserve the declared meaning.

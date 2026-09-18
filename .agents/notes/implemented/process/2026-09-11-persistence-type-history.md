@@ -24,7 +24,11 @@ The [format references](../../../../docs/persistence-changes/historical-formats/
 
 Record commands generate the bilingual catalog and consistency records from repository-owned templates. Authors can supply the two languages' summary, compatibility reasoning, and actual verification evidence as structured input. Generation supplies identifiers, digests, and snapshots; it never invents a compatibility explanation or test result. Structured check output retains a nonzero failure exit status and reports stable change kinds independently of human-readable descriptions.
 
-Explicit update refreshes an unaccepted terminal record without deleting its authored prose. It recomputes the transition against the remaining history and rejects the baseline or any record with dependants. Review acceptance is not a fact available from the tree, so authors preserve accepted records and add successors.
+Explicit update refreshes an unaccepted terminal record without deleting its authored prose. It recomputes the transition against the remaining history and rejects the baseline, any record with dependants, or a finalized record. Review acceptance outside finalized checkpoints is not inferred from the tree, so authors preserve accepted records and add successors.
+
+### Finalized checkpoints
+
+Finalization records acceptance independently of publication. A terminal record must not reuse its original header increase to authorize another breaking change to already-written data. The [status record](../../../../docs/session-format-status.md#finalization-record) therefore requires a complete compatibility checkpoint: accepted record semantics remain locked, while compatible current-source changes proceed through new records and breaking changes require a higher writer. The existing classifier and unknown-event protocol are unchanged. This adds no runtime field and cannot detect behavior changes hidden behind unchanged declarations. Coordinated edits to the in-tree authority and checkpoint still require review.
 
 ## Alternatives considered
 

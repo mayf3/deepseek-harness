@@ -10,6 +10,7 @@ import type { CanonicalSchema, PersistenceRoot, PersistenceSchemaInventory, Sche
 import { extractPersistenceSchema } from './persistence-schema.ts'
 import { persistenceCatalogArtifacts } from './gen-persistence-catalog.ts'
 import { renderPersistencePair } from './persistence-artifacts.ts'
+import { loadPersistenceFinalization } from './persistence-finalization.ts'
 import type { PersistenceArtifact } from './persistence-artifacts.ts'
 
 const HISTORY_DIRECTORY = 'docs/persistence-changes'
@@ -640,6 +641,38 @@ function currentDifferences(history: PersistenceHistory, current: PersistenceSch
   return differences.sort()
 }
 
+function verifyFinalization(
+  root: string, entries: readonly PersistenceHistoryEntry[], current: PersistenceSchemaInventory, updateId?: string,
+): void {
+  const finalized = loadPersistenceFinalization(root, { entries })
+  if (finalized === undefined) return
+  if (updateId !== undefined && finalized.acceptedRecords.has(updateId)) {
+    throw new PersistenceChangeFailure(`cannot update finalized acknowledgement ${updateId}; create a successor record`, 'finalized-record-update')
+  }
+  const writer = headerVersion(current.roots.find(root => root.key === 'SessionHeader') ?? null)
+  if (writer === undefined || writer < finalized.version) {
+    throw new PersistenceChangeFailure(`Session writer must not precede finalized format ${finalized.version}`, 'finalized-version-order')
+  }
+  if (writer > finalized.version) return
+  const afterRoots = new Map(current.roots.map(root => [root.key, root]))
+  const changes: ReportedChange[] = []
+  const transitions: RootTransition[] = []
+  for (const key of [...new Set([...finalized.roots.keys(), ...afterRoots.keys()])].sort()) {
+    const before = finalized.roots.get(key) ?? null
+    const after = afterRoots.get(key) ?? null
+    const differences = classifyPersistenceChange(before, after)
+    if (differences.length === 0) continue
+    changes.push(...differences.map(change => ({ root: key, ...change })))
+    transitions.push(rootTransition(before, after))
+  }
+  if (changes.some(change => change.requiresVersionBump)) {
+    throw new PersistenceChangeFailure(
+      `Breaking changes relative to the accepted Session format ${writer} baseline require format ${writer + 1} or later`,
+      'finalized-format-changed', changes, transitions,
+    )
+  }
+}
+
 /** Verify current generated output and acknowledgement tips together.
  * @param root - checkout or isolated fixture root.
  * @param current - freshly extracted current-source inventory.
@@ -647,6 +680,7 @@ function currentDifferences(history: PersistenceHistory, current: PersistenceSch
  */
 export function verifyPersistenceChanges(root: string, current: PersistenceSchemaInventory): PersistenceHistory {
   const history = loadPersistenceHistory(root)
+  verifyFinalization(root, history.entries, current)
   const differences = reportedDifferences(history, current)
   const transitions = rootTransitions(history, current)
   const committedPath = join(root, CURRENT_SCHEMA)
@@ -775,6 +809,7 @@ function executeCommand(
     throw new Error('--decision must be same-version or version-bump')
   }
   const entries = baseline ? [] : readPersistenceEntries(root, update ? id : undefined)
+  verifyFinalization(root, entries, current, update ? id : undefined)
   const existing = update ? entries.find(entry => entry.record.id === id) : undefined
   if (update && existing === undefined) throw new Error(`${id}: cannot update a missing acknowledgement`)
   if (existing?.record.baseline === true) throw new Error('cannot update the persistence baseline')
