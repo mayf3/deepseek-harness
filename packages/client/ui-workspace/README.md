@@ -150,7 +150,7 @@ export function apply(ctx: Context): void {
 
 #### Dynamic client package
 
-A dynamically loaded browser half follows the same component contract. Declare `@deepseek-ai/dsh-client-ui-primitives` as a runtime dependency, resolve its shared `MenuAction` export through the loader's `require`, and render it with `React.createElement`. Do not bundle a second copy of React or the primitive: `MenuAction` must share the host menu context. The real Loader/Web fixture and generated Client Slot catalog contain runnable examples.
+A dynamically loaded browser half follows the same component contract. `@deepseek-ai/dsh-client-ui-primitives` is an implicit baseline external: resolve its shared `MenuAction` export directly through the loader's `require`, and render it with `React.createElement`. Do not list the primitive as a runtime dependency or bundle another copy; declare a development dependency only when source compilation needs its types. `MenuAction` must share the host menu context. The real Loader/Web fixture and generated Client Slot catalog contain runnable examples.
 
 ### View state
 

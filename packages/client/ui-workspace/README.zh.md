@@ -150,7 +150,7 @@ export function apply(ctx: Context): void {
 
 #### 动态客户端包
 
-动态加载的 browser half 采用同一套组件协议。将 `@deepseek-ai/dsh-client-ui-primitives` 声明为运行时依赖，通过 loader 的 `require` 解析共享的 `MenuAction` export，再用 `React.createElement` 渲染。不要打包第二份 React 或 primitive：`MenuAction` 必须与宿主菜单共享 context。真实 Loader/Web fixture 与生成的 Client Slot catalog 都包含可运行示例。
+动态加载的 browser half 采用同一套组件协议。`@deepseek-ai/dsh-client-ui-primitives` 是隐式 baseline external：直接通过 loader 的 `require` 解析共享的 `MenuAction` export，再用 `React.createElement` 渲染。不要把 primitive 列为运行时依赖或打包另一份副本；仅在源码编译需要其类型时声明开发依赖。`MenuAction` 必须与宿主菜单共享 context。真实 Loader/Web fixture 与生成的 Client Slot catalog 都包含可运行示例。
 
 ### 视图状态
 

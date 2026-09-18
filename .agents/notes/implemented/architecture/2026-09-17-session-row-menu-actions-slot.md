@@ -12,7 +12,7 @@ The Session row menu was a closed list of actions owned by `ui-workspace`. A thi
 
 `ui-workspace` declares the root-scoped ordered-list slot `sidebar.workspaces.session.menu.action` under its `sidebar.workspaces` registration. Each contribution receives the target `sessionId` and row `displayTitle` (persisted title, project basename, then Session id); the contributing plugin keeps its services and mutations in its own registration closure.
 
-The shared `MenuAction` primitive renders every contributed row inside `Menu`. It owns the same menu-item semantics, keyboard walk, submenu reset, dismissal, focus restoration, disabled state, icon position, and danger styling as owner-defined rows. Dynamic client packages declare `ui-primitives` as a runtime dependency and resolve the host's shared export through their loader `require`, avoiding a second component protocol.
+The shared `MenuAction` primitive renders every contributed row inside `Menu`. It owns the same menu-item semantics, keyboard walk, submenu reset, dismissal, focus restoration, disabled state, icon position, and danger styling as owner-defined rows. Dynamic client bundles resolve `ui-primitives` directly from the host's implicit baseline through their loader `require`; they do not declare a runtime dependency or carry a second component protocol.
 
 ### Ordering and disclosure
 

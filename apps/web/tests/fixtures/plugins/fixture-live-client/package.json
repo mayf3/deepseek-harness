@@ -8,8 +8,5 @@
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
     "client": { "platform": "web" }
-  },
-  "dependencies": {
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:*"
   }
 }

@@ -12,7 +12,7 @@ Session 行菜单原本是由 `ui-workspace` 持有的封闭 action 列表。第
 
 `ui-workspace` 在其 `sidebar.workspaces` 注册项下声明 root-scoped 有序列表 slot `sidebar.workspaces.session.menu.action`。每个贡献项接收目标 `sessionId` 与行 `displayTitle`（依次回退到持久化标题、项目目录名、Session id）；贡献插件将自身服务与 mutation 保留在自己的注册闭包中。
 
-共享 `MenuAction` primitive 在 `Menu` 内渲染所有贡献行。它让贡献行拥有与 owner 定义行相同的菜单项语义、键盘走位、子菜单重置、关闭行为、焦点恢复、禁用状态、图标位置与 danger 样式。动态客户端包将 `ui-primitives` 声明为运行时依赖，再通过 loader 的 `require` 解析宿主共享 export，避免引入第二套组件协议。
+共享 `MenuAction` primitive 在 `Menu` 内渲染所有贡献行。它让贡献行拥有与 owner 定义行相同的菜单项语义、键盘走位、子菜单重置、关闭行为、焦点恢复、禁用状态、图标位置与 danger 样式。动态客户端 bundle 直接通过 loader 的 `require` 从宿主隐式 baseline 解析 `ui-primitives`；它们不声明运行时依赖，也不携带第二套组件协议。
 
 ### 排序与渐进披露
 
