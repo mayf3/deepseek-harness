@@ -178,13 +178,18 @@
   font-weight: 600;
 }
 
-.cardIdentity {
-  display: block;
-  width: 100%;
-  color: var(--dsw-alias-label-tertiary);
+/* The Loader entry id keeps one size in the card subtitle and the row it expands into. */
+.cardIdentity,
+.entryValue {
   font-family: var(--ds-font-family-code);
   font-size: 12px;
   line-height: 18px;
+}
+
+.cardIdentity {
+  display: block;
+  width: 100%;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .cardTrailing {
@@ -383,9 +388,6 @@
   display: block;
   overflow-wrap: anywhere;
   color: var(--dsw-alias-label-primary);
-  font-family: var(--ds-font-family-code);
-  font-size: 12px;
-  line-height: 18px;
 }
 
 .details {
