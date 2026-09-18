@@ -32,6 +32,8 @@ export type ModelDiscoveryOutcome =
 
 /** The Host operations the Models page and its cards invoke. */
 export interface ModelsOperations {
+  /** @param provider - newly configured provider. @returns refusal text, or undefined after initialization. */
+  initializeModel(provider: string): Promise<string | undefined>
   /**
    * Read one credential reference's state.
    * @param ref - credential reference name.
@@ -81,6 +83,10 @@ export interface ModelsOperations {
  */
 export function createModelsOperations(ctx: ClientContext): ModelsOperations {
   return {
+    initializeModel: async (provider) => {
+      const response = await ctx.remote.session.initializeDefaultModel(provider)
+      return response.ok ? undefined : response.error.message
+    },
     describeCredential: async (ref) => {
       const response = await ctx.remote.credentials.describe([ref])
       return response.ok ? response.value[ref] : undefined

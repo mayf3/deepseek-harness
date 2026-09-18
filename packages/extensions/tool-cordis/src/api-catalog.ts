@@ -94,9 +94,15 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async saveSelection(next: ModelSelection): Promise<void>',
-        description: 'Save the complete default model selection. A deployment without a settings provider keeps its composition entry.',
+        description: 'Save the complete default model selection. A deployment without a settings provider retains the selection for this process.',
         parameters: [{ name: 'next', description: 'resolved selection accepted by an entry point.' }],
         returns: 'fulfillment after the optional settings write settles.',
+      },
+      {
+        signature: 'async initializeSelection(next: ModelSelection): Promise<void>',
+        description: 'Store the initial credential setup choice only before a user selection exists.',
+        parameters: [{ name: 'next', description: 'available model belonging to the provider the user initialized.' }],
+        returns: 'after the initial selection is saved, or immediately if already selected.',
       },
     ],
   },
@@ -1779,6 +1785,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select one Session-local model after explicitly resuming the Session.',
         parameters: [{ name: 'request', description: 'Session identity and requested model selection.' }],
         returns: 'the normalized selection installed for the Session.',
+      },
+      {
+        signature: '@Remote async initializeDefaultModel(provider: string): Promise<void>',
+        description: 'Initialize the default after the user first configures a provider credential.',
+        parameters: [{ name: 'provider', description: 'the provider whose credential was configured.' }],
+        returns: 'after saving the initial available model; existing user choices are retained.',
       },
       {
         signature: '@Remote(\'modelCatalog\') modelCatalog(): Promise<ModelCatalog>',

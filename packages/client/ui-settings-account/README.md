@@ -50,6 +50,9 @@ Account login uses a dismissible dialog before the model onboarding credential e
 
 The balance card shows recharge funds and positive bonus credit in separate rows. Empty or nonpositive bonus wallets hide the bonus row and its divider; currencies retain their own amounts.
 
+
+A successful first login initializes the default model from `deepseek-account` when no user choice has been saved. Later logins retain the saved choice, including an unavailable one.
+
 <a id="model-experience"></a>
 ## Model Experience
 

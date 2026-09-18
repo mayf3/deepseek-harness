@@ -54,7 +54,7 @@ const selection = ctx.agentDefaultModel.currentSelection()
 await ctx.agentDefaultModel.saveSelection({ provider, model, reasoningEffort: 'high' })
 ```
 
-Without a settings provider, `saveSelection()` is a no-op and the composition entry remains current. The service does not validate catalog membership: a provider route may serve an unadvertised model, and the consumer that opens a model request owns availability diagnostics.
+Without a settings provider, `saveSelection()` retains the choice in memory for later agents in this process. `initializeSelection()` saves the first setup choice only when no user choice exists; an unavailable saved choice remains intact. The service does not validate catalog membership: a provider route may serve an unadvertised model, and the consumer that opens a model request owns availability diagnostics.
 
 -----
 
@@ -79,7 +79,7 @@ The service is a composition entry with a settings-backed source. The plugin con
 
 ### Behavior notes
 
-Both public methods are thin reads and writes over that source: `currentSelection()` returns a fresh detached object so a caller can hold it without aliasing service state, and `saveSelection()` writes the whole selection through `ctx.settings` when present.
+Reads return detached values and writes are serialized: `currentSelection()` returns a fresh detached object so a caller can hold it without aliasing service state, and `saveSelection()` writes the whole selection through `ctx.settings` when present.
 
 </details>
 
@@ -114,7 +114,7 @@ Changing the default affects only agents that subsequently resolve from it. An e
 These limits define the service's scope. They are current package constraints, not a task backlog.
 
 - **One process-wide default** — the service owns a single default; per-session model selection remains the entry point's responsibility.
-- **No retention without a settings provider** — `saveSelection()` cannot keep a selection for a later agent when no settings provider is mounted.
+- **No persistence without a settings provider** — in-memory selections last only for this process.
 
 <a id="dev-note"></a>
 ### Dev Note

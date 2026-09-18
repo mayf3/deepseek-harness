@@ -819,6 +819,13 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspectio
 @Remote('selectModel') selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue>
 
 /**
+ * Initialize the default after the user first configures a provider credential.
+ * @param provider - the provider whose credential was configured.
+ * @returns after saving the initial available model; existing user choices are retained.
+ */
+@Remote async initializeDefaultModel(provider: string): Promise<void>
+
+/**
  * Describe every currently routable model for Host-generation selectors.
  * @returns provider-grouped models, the deployment default, and isolated provider failures.
  */

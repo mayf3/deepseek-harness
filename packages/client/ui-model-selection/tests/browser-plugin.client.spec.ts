@@ -83,7 +83,7 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
         value: {
           default: defaultSelection,
           routableProviders: routable ? ['deepseek-official'] : [],
-          groups: GROUPS,
+          groups: routable ? GROUPS : [],
           failures: [],
         },
       })
@@ -299,7 +299,7 @@ describe('ui-model-selection dual entry', () => {
     expect(b.calls.models).toBe(1)
   })
 
-  it('keeps the durable projected selection while the eager catalog reconnects', async () => {
+  it('hides the effective selection until the reconnected catalog validates it', async () => {
     const b = await bench()
     b.mint('s1')
     const face = b.seat().inject!(sid('s1'))
@@ -308,17 +308,17 @@ describe('ui-model-selection dual entry', () => {
 
     b.ctx.emit('connection/reset')
     expect(face.directory.getSnapshot()).toMatchObject({
-      current: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
-      status: 'ready',
+      current: null,
+      status: 'loading',
     })
     face.load()
     expect(face.directory.getSnapshot()).toMatchObject({
-      current: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
-      status: 'ready',
+      current: null,
+      status: 'loading',
     })
   })
 
-  it('keeps the last complete view while a refreshed catalog catches up with projection', async () => {
+  it('blocks until a refreshed catalog validates the projected selection', async () => {
     const b = await bench()
     b.mint('s1')
     const face = b.seat().inject!(sid('s1'))
@@ -331,8 +331,8 @@ describe('ui-model-selection dual entry', () => {
       next: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
     })
     expect(face.directory.getSnapshot()).toMatchObject({
-      current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
-      status: 'ready',
+      current: null,
+      status: 'loading',
     })
 
     await vi.waitFor(() => {
@@ -415,13 +415,11 @@ describe('ui-model-selection dual entry', () => {
     }
   })
 
-  it('blocks the composer only once the Host reports the route unservable', async () => {
+  it('blocks the composer when current catalog models disappear', async () => {
     const b = await bench()
     b.mint('s1')
     const face = b.seat().inject!(sid('s1'))
 
-    // Before the first load nothing is known. `null` is not `false`: a slow
-    // or unreachable Host must never lock a working composer.
     expect(b.blockOf('s1')).toBeUndefined()
     face.load()
     await Promise.resolve()
@@ -445,20 +443,16 @@ describe('ui-model-selection dual entry', () => {
     expect(b.calls.models).toBe(3)
   })
 
-  it('never blocks on catalog membership alone', async () => {
+  it('hides an unavailable durable selection without replacing or rewriting it', async () => {
     const b = await bench()
     b.mint('s1')
     const face = b.seat().inject!(sid('s1'))
-    // A model the route serves but no longer advertises: the seat prompts for
-    // a selection, the composer stays usable. Blocking here would break a
-    // supported configuration (a narrowed `models` list over a live route).
-    b.setHostCurrent({ provider: 'deepseek-official', model: 'unlisted' })
-    face.load()
-    await Promise.resolve()
-    await Promise.resolve()
-    const snapshot = face.directory.getSnapshot()
-    expect(snapshot.groups.flatMap(group => group.models.map(model => model.id))).not.toContain('unlisted')
-    expect(b.blockOf('s1')).toBeUndefined()
+    const intended = { provider: 'deepseek-official', model: 'unlisted' }
+    b.setProjected(sid('s1'), { lastUsed: intended, next: intended })
+    await vi.waitFor(() => { expect(face.directory.getSnapshot().status).toBe('ready') })
+    expect(face.directory.getSnapshot().current).toBeNull()
+    expect(b.blockOf('s1')?.reason).toBe(zh['blocked.composer'])
+    expect(b.calls.select).toBe(0)
   })
 
   it('clears its block when the session scope goes', async () => {

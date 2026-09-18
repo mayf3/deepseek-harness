@@ -15,15 +15,9 @@ import type { ModelCatalogDirectory } from './catalog.ts'
 
 /** Directory snapshot both entries render from. */
 export interface ModelDirectoryState {
-  /** Effective selection: durable next-request projection, then Host default. */
+  /** Available durable selection, or the available default for an unselected Session. */
   current: ModelSelection | null
-  /**
-   * Whether an adapter serves the current selection's provider, as the host reports
-   * it — null before the first load, which is NOT the same as blocked. Read
-   * this rather than "current matches no group": catalog membership is
-   * advisory, so a route serving a model it stopped advertising is missing
-   * from the groups yet perfectly usable.
-   */
+  /** Whether the current selection is present in the available catalog; null while unresolved. */
   routable: boolean | null
   /** Successfully loaded provider groups (last good load). */
   groups: readonly ModelProviderGroup[]
@@ -45,7 +39,6 @@ export class ModelDirectory {
   /** Latest selection operation wins; an older response never overwrites a newer one. */
   private generation = 0
   private disposed = false
-  private resolved = false
   private readonly unsubscribeCatalog: () => void
   private readonly unsubscribeSelection: () => void
 
@@ -69,7 +62,7 @@ export class ModelDirectory {
   }
 
   /**
-   * Ensure the Host generation's shared advisory catalog is loaded.
+   * Ensure the Host generation's shared available catalog is loaded.
    * @returns the fresh directory value.
    */
   async load(): Promise<ModelDirectoryState> {
@@ -144,15 +137,6 @@ export class ModelDirectory {
     const catalog = this.catalog.store.getSnapshot()
     const projected = modelSelectionProjection(this.projected.getSnapshot())
     if (catalog.status !== 'ready' || catalog.value === null || projected === undefined) {
-      if (this.resolved) {
-        if (catalog.status === 'error') {
-          this.store.update((state) => {
-            state.status = 'error'
-            state.error = catalog.error
-          })
-        }
-        return
-      }
       this.store.set({
         current: null,
         routable: null,
@@ -163,11 +147,12 @@ export class ModelDirectory {
       })
       return
     }
-    const current = projected.next ?? catalog.value.default
-    this.resolved = true
+    const intended = projected.next ?? catalog.value.default
+    const current = catalog.value.groups.some(group => group.id === intended.provider
+      && group.models.some(model => model.id === intended.model)) ? intended : null
     this.store.set({
       current,
-      routable: catalog.value.routableProviders.includes(current.provider),
+      routable: current !== null,
       groups: catalog.value.groups,
       failures: catalog.value.failures,
       status: this.store.getSnapshot().status === 'selecting'

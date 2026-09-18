@@ -59,9 +59,21 @@ export async function buildModelCatalog(
   }))
   return {
     default: { ...defaultSelection },
-    routableProviders: providers.map(provider => provider.id),
+    routableProviders: catalog.flatMap(item => item.kind === 'group' && item.group.models.length > 0 ? [item.group.id] : []),
     groups: catalog.flatMap(item => item.kind === 'group' ? [item.group] : [])
       .filter(group => group.models.length > 0),
     failures: catalog.flatMap(item => item.kind === 'failure' ? [item.failure] : []),
   }
+}
+
+/**
+ * Check a GUI selection against the current available provider catalog.
+ * @param ctx - Host LLM registry.
+ * @param selection - stored or explicitly requested selection.
+ * @returns whether the exact model is currently advertised as available.
+ */
+export async function modelAvailable(ctx: Context, selection: ModelSelection): Promise<boolean> {
+  if (!ctx.llm.listProviders().some(provider => provider.id === selection.provider)) return false
+  const models = await ctx.llm.listModels(selection.provider)
+  return models.some(model => model.id === selection.model)
 }

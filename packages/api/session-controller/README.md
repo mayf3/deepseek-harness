@@ -68,6 +68,8 @@ References keep local Session data, scoped Contexts, and history streams alive, 
 
 `SessionMediaReferences` mounts `GET|HEAD /api/file?path=<absolute path>` on the authenticated `connection.fetch` channel when `connection`, `fs`, and `attachments` are composed. It reads ordinary files through `ctx.fs`, including temporary paths outside registered workspaces and files in remote providers. Neither directory containment nor MIME categories restrict access; `mime-types` supplies the response type, with `application/octet-stream` for unknown extensions. GET reuses `readBytes` for preflight and ongoing byte limits; HEAD reads metadata only. All files use `ctx.attachments.imageLimits.maxImageBytes` (normally 20 MiB); exceeding this limit returns 413. Responses contain the complete file, ignore Range, and carry `private, no-store`, `nosniff`, and a sandbox CSP so directly opened HTML/SVG cannot execute with the API origin. The Client rewrite lives in `ui-chat` (`AssistantMarkdown`); audio/video responses are available, while Markdown audio/video player nodes remain separate work.
 
+GUI model selection and prompt admission require the exact provider/model pair in the current available catalog. An unavailable selection rejects with `session/model-unavailable` before delivery; admission checks again after attachment preparation. `initializeDefaultModel(provider)` saves the first available model of the explicitly configured provider only before any user choice exists. Availability never substitutes another model or rewrites a Session selection.
+
 -----
 
 <a id="configuration"></a>

@@ -57,6 +57,7 @@ export class ModelDirectoryResolver extends Service {
     })
     ctx.remote.$on('llm/adapters-updated', () => { this.catalog.refresh() })
     ctx.remote.$on('settings/document-updated', () => { this.catalog.refresh() })
+    ctx.remote.$on('credentials/record-updated', () => { this.catalog.refresh() })
     ctx.remote.$on('credentials/reference-updated', () => { this.catalog.refresh() })
   }
 
@@ -83,16 +84,11 @@ export class ModelDirectoryResolver extends Service {
       binding.session.projections.faceOf('modelSelection'),
     )
     live.directories.set(binding, directory)
-    // The composer cannot read this plugin (the dependency runs one way), so
-    // the block is pushed: the Host says whether an adapter serves the
-    // session's route, and only a definite `false` makes the input inert.
-    // `null` — before the first load, or after one failed — must not, or a
-    // slow or unreachable Host would lock a working composer.
     const conversation = this.ctx.get('conversation')
     if (conversation !== undefined) {
       const publish = (): void => {
         if (sessions.binding(sessionId) !== binding) return
-        conversation.blocks.set(sessionId, directory.store.getSnapshot().routable === false
+        conversation.blocks.set(sessionId, directory.store.getSnapshot().routable !== true
           ? { reason: this.blockReason() }
           : undefined)
       }

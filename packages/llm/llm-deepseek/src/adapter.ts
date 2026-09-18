@@ -1,6 +1,6 @@
 /** Select a DeepSeek wire implementation from one validated configuration generation. */
 import { assertNever } from '@deepseek-ai/dsh-util-values'
-import { LlmAdapter } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, PreparedAdapterCall, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { DeepSeekAdapterOptions } from './common/types.ts'
 import { ChatCompletionsAdapter } from './protocols/chat-completions/adapter.ts'
@@ -41,9 +41,16 @@ export class DeepSeekAdapter extends LlmAdapter {
     }
   }
 
-  override providerInfo(provider: string) { return { id: provider, name: provider === 'deepseek-account' ? 'DeepSeek (Account)' : 'DeepSeek (API Key)' } }
+  override providerInfo(provider: string) { return { id: provider, name: provider === 'deepseek-account' ? 'DeepSeek Account' : 'DeepSeek (API Key)' } }
   override providerRetryPolicy(provider: string) { return this.implementation().providerRetryPolicy(provider) }
-  override listModels(provider: string) { return this.implementation().listModels(provider) }
+  override async listModels(provider: string) {
+    try { await this.dependencies.resolveApiKey(this.dependencies.options()) }
+    catch (error) {
+      if (error instanceof LlmError && ['MISSING_CREDENTIAL', 'ACCOUNT_SIGN_IN_REQUIRED'].includes(error.code)) return []
+      throw error
+    }
+    return this.implementation().listModels(provider)
+  }
   override resolveModel(provider: string, model: string, signal?: AbortSignal) {
     return this.implementation().resolveModel(provider, model, signal)
   }

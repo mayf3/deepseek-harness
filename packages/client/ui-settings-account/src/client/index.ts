@@ -22,7 +22,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'settings.account': AccountKey }
 }
 /** Services required by account settings. */
-export const inject = ['slots', 'locale', 'remote', 'remote.account']
+export const inject = ['slots', 'locale', 'remote', 'remote.account', 'remote.session']
 /** @param ctx - browser plugin context. */
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register('settings.account', { en, zh }), 'account: dictionaries')
@@ -72,7 +72,17 @@ export function apply(ctx: Context): void {
     for await (const frame of stream) {
       revision++
       refreshing = undefined
-      publish({ ...snapshot, view: frame.value, details: undefined, failed: false })
+      let initializationFailed = false
+      if (frame.value.status === 'credential-stored' && frame.value.attempt?.phase === 'succeeded'
+        && snapshot.view?.attempt?.phase !== 'succeeded') {
+        try {
+          const initialized = await ctx.remote.session.initializeDefaultModel('deepseek-account')
+          initializationFailed = !initialized.ok
+        } catch (_error) {
+          initializationFailed = true
+        }
+      }
+      publish({ ...snapshot, view: frame.value, details: undefined, failed: initializationFailed })
       browser.update(frame.value)
       frame.accept()
       void refresh()

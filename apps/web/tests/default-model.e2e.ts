@@ -17,7 +17,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
+import { launchWebScaffold, watchConsole, captureStableAria, compareOrRefreshGolden, webSnapshotMode, type WebScaffold } from './scaffold.ts'
 import { ZH_BROWSER_LOCALE, connectFreshWorkspaceZh, saveFailureShot } from './support.ts'
 
 /** Points the shipped shared Agent default at this scenario's own route. */
@@ -135,10 +135,17 @@ describe('web e2e: the composer model switch is the default for later sessions',
     // default still names the route, and nothing serves it any more.
     // `replace`, not `update`: a merge patch of `{providers: {}}` leaves every
     // stored profile in place.
-    await scaffold.ctx.settings.replace('llm-pi-ai', { providers: {} })
+    await scaffold.ctx.settings.replace('llm-pi-ai', { providers: {
+      [START_ROUTE]: { displayName: 'Origin Gateway', api: 'openai-completions',
+        baseURL: 'https://gateway.origin.example/v1', models: [{ id: START_MODEL, name: 'Origin Large' }] },
+    } })
 
     await expect.poll(async () => box.isEnabled(), { timeout: 15_000 }).toBe(false)
-    expect(await box.getAttribute('data-placeholder')).toBe('当前模型不可用，请先选择模型')
+    const unset = page.getByRole('button', { name: '请选择模型', exact: true })
+    await unset.waitFor()
+    expect(await page.getByRole('button', { name: '发送消息', exact: true }).isEnabled()).toBe(false)
+    const aria = await captureStableAria(page, '[data-composer-card]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(fileURLToPath(new URL('./expected/default-model/unselected.expected.md', import.meta.url)), aria, webSnapshotMode())
 
     // The block is an affordance; the refusal is the Host's. A client that
     // never disabled anything still cannot start a turn on a dead route.
@@ -151,7 +158,7 @@ describe('web e2e: the composer model switch is the default for later sessions',
 
     // The way out stays open. Locking the model seat with everything else
     // would leave the composer asking for the one thing it prevents.
-    const seat = page.getByRole('button', { name: /^选择模型/ })
+    const seat = page.getByRole('button', { name: '请选择模型', exact: true })
     expect(await seat.isEnabled()).toBe(true)
     await seat.click()
     await page.getByRole('menuitem', { name: /模型/ }).click()

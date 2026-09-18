@@ -214,3 +214,20 @@ it('cancels an account child without stopping its API-key parent', async () => {
   parent.cancel({ kind: 'user' })
   await parent.whenIdle()
 })
+
+it('advertises account and API-key models only while their own credential is available', async () => {
+  vi.stubEnv('DEEPSEEK_API_KEY', '')
+  const ctx = await harness()
+  let token: string | undefined
+  ctx.provide('deepseekAccount', { resolveToken: async (url: string) => url === 'https://api.deepseek.com' ? token : undefined } as DeepSeekAccount)
+  expect(await ctx.llm.listModels('deepseek-account')).toEqual([])
+  expect(await ctx.llm.listModels('deepseek-official')).toEqual([])
+  token = 'fixture-account-token'
+  expect(await ctx.llm.listModels('deepseek-account')).not.toHaveLength(0)
+  expect(await ctx.llm.listModels('deepseek-official')).toEqual([])
+  vi.stubEnv('DEEPSEEK_API_KEY', 'fixture-key')
+  expect(await ctx.llm.listModels('deepseek-official')).not.toHaveLength(0)
+  token = undefined
+  expect(await ctx.llm.listModels('deepseek-account')).toEqual([])
+  expect(await ctx.llm.listModels('deepseek-official')).not.toHaveLength(0)
+})

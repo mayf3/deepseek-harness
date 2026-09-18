@@ -1,0 +1,8 @@
+- textbox "描述你想要构建的内容, / 调用指令, @ 文件或对话" [disabled]
+- button "添加文件或调用指令" [disabled]:
+  - img
+- button "访问模式，当前：工作区内修改" [disabled]: 工作区内修改
+- button "请选择模型":
+  - text: 请选择模型
+  - img
+- button "发送消息" [disabled]

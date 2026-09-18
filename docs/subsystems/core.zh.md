@@ -444,11 +444,18 @@ currentSelection(): ModelSelection
 
 /**
  * Save the complete default model selection. A deployment without a settings
- * provider keeps its composition entry.
+ * provider retains the selection for this process.
  * @param next - resolved selection accepted by an entry point.
  * @returns fulfillment after the optional settings write settles.
  */
 async saveSelection(next: ModelSelection): Promise<void>
+
+/**
+ * Store the initial credential setup choice only before a user selection exists.
+ * @param next - available model belonging to the provider the user initialized.
+ * @returns after the initial selection is saved, or immediately if already selected.
+ */
+async initializeSelection(next: ModelSelection): Promise<void>
 ```
 
 Source: [`packages/core/agent-default-model/src/index.ts`](../../packages/core/agent-default-model/src/index.ts)

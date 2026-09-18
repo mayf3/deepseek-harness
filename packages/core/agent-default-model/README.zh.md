@@ -54,7 +54,7 @@ const selection = ctx.agentDefaultModel.currentSelection()
 await ctx.agentDefaultModel.saveSelection({ provider, model, reasoningEffort: 'high' })
 ```
 
-未挂载设置提供方时，`saveSelection()` 不执行任何操作，组合配置项仍为当前值。该服务不校验目录成员关系：提供方路由可以服务未在目录中公布的模型；发起模型请求的消费方负责可用性诊断。
+未挂载设置提供方时，`saveSelection()` 在内存中保留选择，供本进程后续 agent 使用。`initializeSelection()` 仅在用户尚未选择时保存首次配置的模型；已保存的选择即使不可用也保持不变。该服务不校验目录成员关系：提供方路由可以服务未在目录中公布的模型；发起模型请求的消费方负责可用性诊断。
 
 -----
 
@@ -79,7 +79,7 @@ await ctx.agentDefaultModel.saveSelection({ provider, model, reasoningEffort: 'h
 
 ### 行为说明
 
-两个公开方法都只是对该数据源进行简单读写：`currentSelection()` 返回一个全新、独立的对象，因此调用方可以持有它，而不会与服务状态共享引用；`saveSelection()` 在存在 `ctx.settings` 时写入完整选择。
+读取返回独立值，写入按序执行：`currentSelection()` 返回一个全新、独立的对象，因此调用方可以持有它，而不会与服务状态共享引用；`saveSelection()` 在存在 `ctx.settings` 时写入完整选择。
 
 </details>
 
@@ -114,7 +114,7 @@ await ctx.agentDefaultModel.saveSelection({ provider, model, reasoningEffort: 'h
 这些限制界定该服务的范围。它们是当前包约束，不是任务积压。
 
 - **单一的进程级默认值**——该服务只拥有一个默认值；按会话的模型选择仍由入口负责。
-- **没有设置提供方时无法保留**——未挂载设置提供方时，`saveSelection()` 无法为后续 agent 保留选择。
+- **没有设置提供方时无法持久化**——内存中的选择仅在本进程内保留。
 
 <a id="dev-note"></a>
 ### 开发备注

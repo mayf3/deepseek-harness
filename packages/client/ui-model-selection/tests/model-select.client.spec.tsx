@@ -446,3 +446,12 @@ describe('ModelSelect keyboard walk', () => {
     expect(document.activeElement).toBe(rows[0])
   })
 })
+
+it('shows the unselected model control without a stale model or effort', async () => {
+  const directory = createSnapshotStore<ModelDirectoryState>(state({ current: null, routable: false }))
+  render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
+  const trigger = screen.getByRole('button', { name: '请选择模型' })
+  expect(trigger.hasAttribute('disabled')).toBe(false)
+  await expect(`${trigger.textContent}\n`).toMatchFileSnapshot('./expected/unselected-model.txt')
+  expect(trigger.textContent).not.toContain('High')
+})

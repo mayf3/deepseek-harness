@@ -4,7 +4,7 @@ import type { RpcResponse } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { settingsSchema } from './settings-schema.client.ts'
-import { joinProviderDirectory, ModelsSettingsStore } from '../src/client/store.ts'
+import { joinProviderDirectory, ModelsSettingsStore, providerUsable } from '../src/client/store.ts'
 
 it.each([false, true])('retains configuration diagnostics when the route is active: %s', (active) => {
   expect(joinProviderDirectory(active ? [{ id: 'openai', name: 'openai' }] : [], [{
@@ -64,6 +64,7 @@ const NAMESPACES = [
 ]
 
 function api(overrides: {
+  accountAvailable?: boolean
   providers?: () => Promise<RpcResponse<{ providers: typeof DIRECTORY }>>
   describeSettings?: () => Promise<RemoteAnswer<{ writable: boolean; hasDocument: boolean; namespaces: typeof NAMESPACES }>>
   describeCredentials?: (refs: readonly string[]) => Promise<RemoteAnswer<Record<string, unknown>>>
@@ -88,6 +89,8 @@ function api(overrides: {
       : remoteFail(response.result.error.message)
   }
   const face = {
+    session: { modelCatalog: async () => remoteOk({ groups: overrides.accountAvailable
+      ? [{ id: 'deepseek-account', models: [{ id: 'deepseek-flash' }] }] : [] }) },
     llm: {
       listProviders: () => mapProviderBatch(rows => rows
         .filter(row => row.active)
@@ -328,4 +331,17 @@ describe('edge joins', () => {
     // The stale empty directory never overwrote the newer join.
     expect(store.store.getSnapshot().rows).toHaveLength(4)
   })
+})
+
+
+it.each([false, true])('uses account availability without asking for an API key: %s', async (accountAvailable) => {
+  const { ctx, mirror, seenRefs } = api({ accountAvailable, providers: async () => ok({ providers: [{
+    provider: 'deepseek-account', displayName: 'DeepSeek Account', settingsNs: 'llm-deepseek', settingsPath: [], active: true,
+  }] }) })
+  const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+  await store.load()
+  const row = store.store.getSnapshot().rows[0]!
+  expect(row).toMatchObject({ accountAvailable, apiKeyEnv: undefined, credential: undefined })
+  expect(providerUsable(row)).toBe(accountAvailable)
+  expect(seenRefs).toEqual([])
 })

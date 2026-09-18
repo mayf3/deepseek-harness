@@ -68,6 +68,8 @@ export class AgentDefaultModelConfig extends Service {
   })
 
   private source: () => AgentDefaultModelSettings
+  private saved: ModelSelection | undefined
+  private writes: Promise<void> = Promise.resolve()
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'agentDefaultModel')
@@ -88,22 +90,45 @@ export class AgentDefaultModelConfig extends Service {
    * @returns a detached provider, model, and optional reasoning selection.
    */
   currentSelection(): ModelSelection {
-    return selection(this.source())
+    return this.ctx.get('settings') === undefined && this.saved !== undefined
+      ? { ...this.saved } : selection(this.source())
   }
 
   /**
    * Save the complete default model selection. A deployment without a settings
-   * provider keeps its composition entry.
+   * provider retains the selection for this process.
    * @param next - resolved selection accepted by an entry point.
    * @returns fulfillment after the optional settings write settles.
    */
   async saveSelection(next: ModelSelection): Promise<void> {
-    await this.ctx.get('settings')?.replace(AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE, {
-      provider: next.provider,
-      model: next.model,
-      ...next.reasoningEffort === undefined ? {} : { reasoningEffort: String(next.reasoningEffort) },
-    })
+    return this.writeSelection(next, false)
   }
+
+  /**
+   * Store the initial credential setup choice only before a user selection exists.
+   * @param next - available model belonging to the provider the user initialized.
+   * @returns after the initial selection is saved, or immediately if already selected.
+   */
+  async initializeSelection(next: ModelSelection): Promise<void> {
+    return this.writeSelection(next, true)
+  }
+
+  private writeSelection(next: ModelSelection, initialize: boolean): Promise<void> {
+    const operation = this.writes.then(async () => {
+      const user = this.ctx.get('settings')?.describe().find(entry => entry.ns === AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE)?.user
+      if (initialize && (this.saved !== undefined
+        || (typeof user === 'object' && user !== null && ('provider' in user || 'model' in user)))) return
+      await this.ctx.get('settings')?.replace(AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE, {
+        provider: next.provider,
+        model: next.model,
+        ...next.reasoningEffort === undefined ? {} : { reasoningEffort: String(next.reasoningEffort) },
+      })
+      this.saved = { ...next }
+    })
+    this.writes = operation.catch(() => { /* A refused write does not block the next user choice. */ })
+    return operation
+  }
+
 }
 
 export default AgentDefaultModelConfig

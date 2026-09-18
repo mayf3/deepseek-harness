@@ -178,7 +178,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       // and the retry above now goes straight back to this write.
       if (stored !== undefined) return stored
     }
-    return undefined
+    return operations.initializeModel(route.trim())
   }
 
   const create = async (): Promise<void> => {
