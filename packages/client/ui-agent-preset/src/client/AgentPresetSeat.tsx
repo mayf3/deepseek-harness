@@ -13,10 +13,10 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  IconAgentPresetOutline16, IconChevronDownOutline14, IconWarningOutline16, Menu, Toast,
+  IconAgentPresetOutlineRegular, IconChevronDownOutlineRegular, IconWarningOutlineRegular, Menu, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls the ui-conversation SlotMap merge (the hero seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -27,6 +27,8 @@ import css from './AgentPresetSeat.module.css'
 /** Registration-side business face for the hero chip. */
 export interface AgentPresetSeatInjected {
   hooks: {
+    /** Whether this entry offers preset selection. */
+    showPresetPicker: ObservableSnapshot<boolean>
     /** Seat snapshot bound by the renderer as useAgentPresetSeat. */
     agentPresetSeat: SnapshotStore<AgentPresetSeatState>
   }
@@ -83,8 +85,9 @@ export type AgentPresetSeatProps =
  * @returns the chip, or null when the deployment composes no presets.
  */
 export function AgentPresetSeat({
-  sessionId, useSessionRetainInfo, load, select, introduced, useAgentPresetSeat, t,
+  sessionId, useSessionRetainInfo, load, select, introduced, useAgentPresetSeat, useShowPresetPicker, t,
 }: AgentPresetSeatProps) {
+  const showPresetPicker = useShowPresetPicker(value => value)
   const state = useAgentPresetSeat(snapshot => snapshot)
   const main = useSessionRetainInfo(info => sessionId === undefined
     || (info?.retainedBy.mainView ?? 0) > 0)
@@ -93,8 +96,9 @@ export function AgentPresetSeat({
   // it rather than leaving the first one silently in place.
   const toastSeq = useRef(0)
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
-  const pickerVisible = useRef(state.showPicker)
-  pickerVisible.current = state.showPicker
+  const visible = showPresetPicker && state.showPicker
+  const pickerVisible = useRef(visible)
+  pickerVisible.current = visible
 
   useEffect(() => {
     void load()
@@ -104,10 +108,10 @@ export function AgentPresetSeat({
   // state explicitly; otherwise an external off/on edit can revive an old
   // menu or refusal banner.
   useEffect(() => {
-    if (state.showPicker) return
+    if (visible) return
     setOpen(false)
     setToast(null)
-  }, [state.showPicker])
+  }, [visible])
 
   const chosen = state.options.find(option => option.id === state.current)
   const chosenText = chosen === undefined ? undefined : presetDisplayText(chosen, t)
@@ -136,7 +140,7 @@ export function AgentPresetSeat({
 
   // Nothing to choose between: the deployment composes no presets and every
   // session shares the host composition.
-  if (!main || !state.showPicker || !ready) return null
+  if (!main || !visible || !ready) return null
 
   // One wrapper span: the chip is a flex row with a gap, so loose character
   // spans would each pick up the gap between them.
@@ -207,9 +211,9 @@ export function AgentPresetSeat({
             disabled={state.busy}
             onClick={() => { setOpen(value => !value) }}
           >
-            <IconAgentPresetOutline16 className={introducing ? `${css.seatIcon} ${css.introIcon}` : css.seatIcon} />
+            <IconAgentPresetOutlineRegular className={introducing ? `${css.seatIcon} ${css.introIcon}` : css.seatIcon} />
             <span className={css.seatLabel}>{shownLabel}</span>
-            <IconChevronDownOutline14 className={css.chevron} />
+            <IconChevronDownOutlineRegular className={css.chevron} />
           </button>
         )}
       />
@@ -217,7 +221,7 @@ export function AgentPresetSeat({
         <Toast
           key={toast.seq}
           text={toast.text}
-          icon={<IconWarningOutline16 />}
+          icon={<IconWarningOutlineRegular />}
           holdMs={REFUSAL_HOLD_MS}
           // The composer card, which is the content column this chip sits
           // above rather than inside — hence a page query, not `closest`.

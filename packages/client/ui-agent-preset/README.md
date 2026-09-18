@@ -25,6 +25,8 @@ Use this package to choose the agent preset for a new Web GUI session, see the a
 <a id="use-this-package"></a>
 ## Use this package
 
+The new-session picker additionally requires Developer tools to be enabled in General Settings. This presentation preference does not alter the selected preset, saved default, Host composition, or the management section’s independent picker policy.
+
 Mount this plugin alongside the settings and conversation packages; the management section then shows a visibility switch that is on by default. While it is off, the new-session chip is absent and the Host composes an unnamed session from the deployment default (`standard` in the shipped Web bundle). Turning it on restores the saved user default, or uses the deployment default when none has been saved, and carries that default to the current blank task; a chip pick itself is staged only once for the next blank session. Turning the picker off again returns the current blank task to the deployment default the same way and discards an unconsumed stage; started and historical sessions keep their labels, compositions, and recorded history.
 
 ### Managing the roster

@@ -14,7 +14,7 @@
  */
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
-import { IconChevronRightOutline14, ReferenceIcon, useAnchoredMaxHeight } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronRightOutlineRegular, ReferenceIconRegular, useAnchoredMaxHeight } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './MenuView.module.css'
 import type { MenuViewInjected } from './slots.ts'
@@ -99,7 +99,7 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
           <nav key={group.source} className={css.crumbs} aria-label={t('crumbs.aria')}>
             {trail.map((crumb, index) => (
               <Fragment key={`${String(index)}-${crumb.value}`}>
-                {index > 0 && <span className={css.crumbSeparator} aria-hidden><IconChevronRightOutline14 /></span>}
+                {index > 0 && <span className={css.crumbSeparator} aria-hidden><IconChevronRightOutlineRegular /></span>}
                 <button
                   type="button"
                   className={clsx(css.crumb, crumb.current === true && css.crumbCurrent)}
@@ -171,8 +171,8 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
                         {item.icon !== undefined && (
                           <span className={css.itemIcon} aria-hidden>
                             {typeof item.icon === 'string'
-                              ? <ReferenceIcon kind={item.icon} size={16} />
-                              : <item.icon size={16} />}
+                              ? <ReferenceIconRegular kind={item.icon} size={14} />
+                              : <item.icon size={14} />}
                           </span>
                         )}
                         <span className={css.itemName}>{item.label ?? item.name}</span>
@@ -198,7 +198,7 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
                                 onPick(group.source, index, 'drill')
                               }}
                             >
-                              <IconChevronRightOutline14 />
+                              <IconChevronRightOutlineRegular size={12} />
                             </span>
                           </span>
                         )}

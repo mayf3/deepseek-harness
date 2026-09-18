@@ -101,12 +101,12 @@ describe('PluginManagerPage', () => {
   it('asks the store once mounted and renders the loading, unavailable, error, and empty states', () => {
     const { actions, set } = renderTab({ status: 'loading' })
     expect(actions.ensure).toHaveBeenCalledTimes(1)
-    expect(screen.getByText(en.loading)).toBeTruthy()
+    expect(screen.getByText(en.loading).querySelector('[data-state="ongoing"]')).not.toBeNull()
     expect(screen.getByRole('button', { name: en.addPlugin })).toHaveProperty('disabled', true)
     set({ status: 'unavailable' })
-    expect(screen.getByRole('status').textContent).toBe(en.unavailable)
+    expect(screen.getByRole('status').querySelector('[data-state="idle"]')).not.toBeNull()
     set({ status: 'error' })
-    expect(screen.getByRole('alert').textContent).toBe(en.error)
+    expect(screen.getByRole('alert').querySelector('[data-state="error"]')).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.retry }))
     expect(actions.refresh).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: en.refresh }))
@@ -115,6 +115,18 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText(en.empty)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.addPlugin }))
     expect(actions.openInstall).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the read failure and its retry visible while a detail page is open', () => {
+    const { actions, set } = renderTab({ packages: [pkg()] })
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    set({ status: 'error' })
+    expect(screen.getByRole('alert').querySelector('[data-state="error"]')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    expect(actions.refresh).toHaveBeenCalledTimes(1)
+    // The detail keeps showing the kept data behind the alert.
+    expect(document.querySelector('[data-plugin-detail]')).not.toBeNull()
   })
 
   it('lists the installed bundles as cards, the installation\'s offered ones as official, and tags a problem the Host reports', () => {
@@ -202,7 +214,6 @@ describe('PluginManagerPage', () => {
 
   it.each([
     ['agent-team-profile', 'builtinAgentTeamTitle', 'builtinAgentTeamDescription'],
-    ['agent-team-web-profile', 'builtinAgentTeamWebTitle', 'builtinAgentTeamWebDescription'],
     ['auto-review', 'builtinAutoReviewTitle', 'builtinAutoReviewDescription'],
   ] as const)('localizes %s across cards, details, switches, and uninstall confirmation', (suffix, titleKey, descriptionKey) => {
     const name = `@deepseek-ai/dsh-experimental-${suffix}`
@@ -272,6 +283,13 @@ describe('PluginManagerPage', () => {
       expect(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Shell') })).toBeTruthy()
     })
 
+    it('gives an official plugin without artwork of its own the default artwork', () => {
+      renderTab({ packages: [] }, { items: [{ id: 'custom-tool', label: 'Custom' }] })
+      const card = document.querySelector('[data-plugin-item="custom-tool"]') as HTMLElement
+      const stops = [...card.querySelectorAll('stop')].map(stop => stop.getAttribute('stop-color'))
+      expect(stops).toEqual(['#54ECE7', '#658EFF'])
+    })
+
     it('renders a bundle\'s own configuration on its page, and no configure control on a row without one', () => {
       renderTab({ packages: [pkg({ rows: [row()] })] }, { bundles: new Set(['dsh-better-sidebar']) }, bodies)
       fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
@@ -309,17 +327,17 @@ describe('PluginManagerPage', () => {
 
   it('opens a guide under the field and drops an example into it', () => {
     const { actions } = renderTab({ install: { ...IDLE_INSTALL, open: true } })
-    expect(screen.queryByText(en.installGuideIntro)).toBeNull()
+    expect(screen.queryByText(en.installGuideIdHint)).toBeNull()
     const toggle = screen.getByRole('button', { name: en.installGuideToggle })
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(toggle)
     expect(screen.getByRole('button', { name: en.installGuideHide }).getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByText(en.installGuideIdNote)).toBeTruthy()
+    expect(screen.getByText(en.installGuideIdHint)).toBeTruthy()
     expect(screen.getByText(en.installGuideGitExample)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.installGuideFillAria.replace('{example}', en.installGuideIdExample) }))
     expect(actions.editInstallSpec).toHaveBeenCalledExactlyOnceWith(en.installGuideIdExample)
     fireEvent.click(screen.getByRole('button', { name: en.installGuideHide }))
-    expect(screen.queryByText(en.installGuideIntro)).toBeNull()
+    expect(screen.queryByText(en.installGuideIdHint)).toBeNull()
   })
 
   it('opens a bundle\'s page with its facts and rows, and uninstalls from it', () => {
@@ -380,6 +398,7 @@ describe('PluginManagerPage', () => {
         ...index === 1 ? { readOnlyReason: 'unaddressable' as const } : {},
         ...index === 3 ? { phase: 'failed' as const } : {},
         ...index === 4 ? { phase: 'loading' as const } : {},
+        ...index === 5 ? { phase: 'unloading' as const } : {},
       })
       if (index !== 2) return live
       // The third row has no live entry: nothing to switch.
@@ -389,7 +408,7 @@ describe('PluginManagerPage', () => {
     const { actions, set } = renderTab({ packages: [pkg({ rows })], busy: [rowKey('include:row-5')] })
     fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
     const detail = document.querySelector('[data-plugin-detail]') as HTMLElement
-    expect(within(detail).getByText(`${en.partsCountTotal.replace('{count}', '12')} · ${en.partsCountRunning.replace('{count}', '9')} · ${en.partsCountOff.replace('{count}', '1')} · ${en.partsCountFailed.replace('{count}', '1')}`)).toBeTruthy()
+    expect(within(detail).getByText(`${en.partsCountTotal.replace('{count}', '12')} · ${en.partsCountRunning.replace('{count}', '8')} · ${en.partsCountOff.replace('{count}', '1')} · ${en.partsCountFailed.replace('{count}', '1')}`)).toBeTruthy()
     fireEvent.click(within(detail).getByRole('switch', { name: en.partToggle.replace('{name}', 'row-0') }))
     expect(actions.setRowEnabled).toHaveBeenCalledWith('include:row-0', false)
     // A protected row, a row without a live entry, and a row with a write in flight cannot be switched.
@@ -402,7 +421,10 @@ describe('PluginManagerPage', () => {
     expect(within(detail).getByRole('switch', { name: en.partToggle.replace('{name}', 'row-5') })).toHaveProperty('disabled', true)
     expect(within(detail).getByText(en.rowPhaseFailed)).toBeTruthy()
     expect(within(detail).getByText(en.rowPhaseLoading)).toBeTruthy()
+    expect(within(detail).getByText(en.rowPhaseUnloading)).toBeTruthy()
     expect(document.querySelector('[data-plugin-row="include:row-3"]')?.getAttribute('data-state')).toBe('failed')
+    expect(document.querySelector('[data-plugin-row="include:row-4"] [data-state="ongoing"]')).not.toBeNull()
+    expect(document.querySelector('[data-plugin-row="include:row-5"] [data-state="ongoing"]')).not.toBeNull()
     // A long list gets a filter; nothing matching says so.
     const filter = within(detail).getByRole('searchbox', { name: en.partsFilter })
     fireEvent.change(filter, { target: { value: 'ROW-1' } })
@@ -439,6 +461,7 @@ describe('PluginManagerPage', () => {
     expect(screen.getByRole('textbox', { name: en.installSpecLabel })).toHaveProperty('disabled', true)
     const checking = screen.getByRole('button', { name: en.installChecking })
     expect(checking).toHaveProperty('disabled', true)
+    expect(checking.querySelector('[data-state="ongoing"]')).not.toBeNull()
     fireEvent.keyDown(screen.getByRole('textbox', { name: en.installSpecLabel }), { key: 'Enter' })
     expect(actions.runInstall).toHaveBeenCalledTimes(2)
 
@@ -466,6 +489,7 @@ describe('PluginManagerPage', () => {
     const run = { jobId: 'j1', command: 'pnpm add dsh-x', cwd: '/home/u/.dsh/profiles/web', output: 'Progress: resolved \x1b[96m1\x1b[39m\n' }
     const { actions, set } = renderTab({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'running', subject, runs: [run] } })
     expect(screen.getByRole('status').textContent).toBe(en.installingTitle)
+    expect(screen.getByRole('status').parentElement?.querySelector('[data-state="ongoing"]')).not.toBeNull()
     expect(screen.getByText('dsh-x')).toBeTruthy()
     expect(screen.getByText('A sidebar.')).toBeTruthy()
     expect(screen.getByText(en.installVersion.replace('{version}', '1.4.2'))).toBeTruthy()
@@ -549,6 +573,7 @@ describe('PluginManagerPage', () => {
       },
     })
     expect(screen.getByText(en.installedTitle)).toBeTruthy()
+    expect(screen.getByText(en.installedTitle).parentElement?.querySelector('[data-state="done"]')).not.toBeNull()
     // A path without a description reads by its kind.
     expect(screen.getByText('dsh-x')).toBeTruthy()
     expect(screen.getByText(en.installSubjectPath)).toBeTruthy()

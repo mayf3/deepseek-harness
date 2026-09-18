@@ -6,6 +6,7 @@
  * registrations' fiber-teardown removal (HMR safety) against the real
  * SlotRegistry.
  */
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Context } from '@deepseek-ai/cordis'
 import { cleanup, fireEvent, render, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -40,6 +41,7 @@ function openProps(controller = new PresentedOpenController(), summaries = new C
   controller.host.set({ name: 'desktop', available: true, fileManager: 'finder' })
   const sessions: SessionListState = { ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {} }
   return {
+    useShowCodeDiff: <T,>(select: (value: boolean) => T): T => select(true),
     useSessions: <T,>(select: (state: SessionListState) => T): T => select(sessions),
     reloadPresentedHost: vi.fn(() => controller.loadHost()),
     useChangesSummary: <T,>(select: (state: ReturnType<typeof summaries.state.getSnapshot>) => T): T =>
@@ -494,6 +496,19 @@ describe('ChangedFiles card', () => {
     return { props, openFile, view }
   }
 
+  it('hides changed files and avoids summary reads when developer tools are off', () => {
+    const props = openProps(new PresentedOpenController(), servedStore())
+    const base = { ...props, matched: { changes, presented: [] }, openFile: vi.fn(), sessionId: SessionId('child-session'), t: makeTranslate(en) }
+    const off = { useShowCodeDiff: <T,>(select: (enabled: boolean) => T): T => select(false) }
+    const view = render(<Deliverables {...base} {...off} />)
+    expect(view.container.querySelector('[data-changed-files]')).toBeNull()
+    expect(props.loadChangesSummary).not.toHaveBeenCalled()
+    view.rerender(<Deliverables {...base} />)
+    expect(view.container.querySelector('[data-changed-files]')).not.toBeNull()
+    view.rerender(<Deliverables {...base} {...off} />)
+    expect(view.container.querySelector('[data-changed-files]')).toBeNull()
+  })
+
   it('reads the announced summary once and renders nothing while it loads, when it is gone, or when it lists no file', async () => {
     const summaries = new ChangesSummaryStore()
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
@@ -567,17 +582,21 @@ describe('ChangedFiles card', () => {
     expect(summaries.state.getSnapshot()[changesSummaryUrl(SessionId('child-session'), 5)]).toBe('loading')
   })
 
-  it('summarizes the turn, folds after three rows, and opens the review from the header and each row', () => {
+  it('summarizes the turn, folds after four rows, and opens the review from the header and each row', () => {
     const { props, openFile, view } = renderCard()
     const card = view.container.querySelector('[data-changed-files]')
     if (!(card instanceof HTMLElement)) throw new Error('changed-files card missing')
     expect(within(card).getByText('Edited 11 files')).toBeTruthy()
     expect(within(card).getByText('+1,232')).toBeTruthy()
     expect(within(card).getByText('-326')).toBeTruthy()
-    expect(within(card).getAllByRole('listitem')).toHaveLength(3)
+    expect(within(card).getByText('Preview in sidebar')).toBeTruthy()
+    expect(within(card).getAllByRole('listitem')).toHaveLength(4)
     expect(within(card).getByText('config/design-token')).toBeTruthy()
     expect(within(card).getByText('+42')).toBeTruthy()
-    expect(within(card).queryByText('src/index.ts')).toBeNull()
+    expect(within(card).getByText('src/index.ts')).toBeTruthy()
+    expect(within(card).queryByText('~/.zshrc')).toBeNull()
+    expect(within(card).getByRole('button', { name: 'Review this turn’s changes in the sidebar' })
+      .querySelector('svg')?.getAttribute('width')).toBe('10')
     fireEvent.click(within(card).getByRole('button', { name: 'View changes to config/feature-flags.json' }))
     expect(props.openChangesReview).toHaveBeenLastCalledWith({ sessionId: 'child-session', seq: 5, turn: 1 }, 1)
     expect(props.openChanged).not.toHaveBeenCalled()
@@ -597,7 +616,7 @@ describe('ChangedFiles card', () => {
     expect(collapse.getAttribute('aria-expanded')).toBe('true')
     expect(card.lastElementChild).toBe(collapse)
     fireEvent.click(collapse)
-    expect(within(card).getAllByRole('listitem')).toHaveLength(3)
+    expect(within(card).getAllByRole('listitem')).toHaveLength(4)
   })
 
   it('opens the review the same way without a desktop', () => {
@@ -701,7 +720,7 @@ describe('plugin registration', () => {
       session,
     } as never)
     ctx.provide('remote.session', session as never)
-    ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+    ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
     await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
 
     const fiber = ctx.plugin({ inject: [...inject], apply })

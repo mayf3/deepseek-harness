@@ -1,7 +1,7 @@
-/** The changed-files card: a header and per-file rows that open the turn's review, and a three-row fold. */
+/** The changed-files card: a header and per-file rows that open the turn's review, and a four-row fold. */
 import { useState } from 'react'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
-import { IconChevronDownOutline14, IconChevronUpOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular, IconChevronUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChangesSummary } from '../changes.ts'
 import { IconCodeBracketsOutline16 } from './icons.tsx'
@@ -9,7 +9,7 @@ import type { NS } from './locales.ts'
 import css from './ChangedFiles.module.css'
 
 /** Rows shown before the fold; the design's summary height for a closing message. */
-const COLLAPSED_ROWS = 3
+const COLLAPSED_ROWS = 4
 
 const GROUPED = new Intl.NumberFormat('en-US')
 
@@ -39,10 +39,15 @@ export function ChangedFiles({ changes, cwd, openReview, t }: {
   const rows = foldable && !expanded ? changes.files.slice(0, COLLAPSED_ROWS) : changes.files
   return <div className={css.card} data-changed-files>
     <button type="button" className={css.header} aria-label={t('changes.openReview')} onClick={() => { openReview(0) }}>
-      <span className={css.tile}><IconCodeBracketsOutline16 size={18} /></span>
+      <span className={css.tile}>
+        <span className={css.tileMark}><IconCodeBracketsOutline16 size={10} /></span>
+      </span>
       <span className={css.titles}>
         <span className={css.title}>{t('changes.title', { count: String(changes.total) })}</span>
-        <span className={css.stat}><Counts t={t} added={changes.added} deleted={changes.deleted} /></span>
+        <span className={css.stat}>
+          <span className={css.statCounts}><Counts t={t} added={changes.added} deleted={changes.deleted} /></span>
+          <span className={css.previewHint}>{t('presented.preview')}</span>
+        </span>
       </span>
     </button>
     <ul className={css.list}>
@@ -66,7 +71,7 @@ export function ChangedFiles({ changes, cwd, openReview, t }: {
       aria-label={t(expanded ? 'changes.collapseAria' : 'changes.expandAria', { count: String(changes.files.length) })}
       onClick={() => { setExpanded(value => !value) }}>
       <span>{t(expanded ? 'changes.collapse' : 'changes.all', { count: String(changes.files.length) })}</span>
-      {expanded ? <IconChevronUpOutline14 /> : <IconChevronDownOutline14 />}
+      {expanded ? <IconChevronUpOutlineRegular /> : <IconChevronDownOutlineRegular />}
     </button>}
   </div>
 }

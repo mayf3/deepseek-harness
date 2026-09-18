@@ -1,18 +1,12 @@
-- button "Agent Team" [expanded]:
-  - img
-  - text: Agent Team
+- button "Agent Team" [expanded]
 - dialog "Agent Team":
   - strong: Agent Team
-  - button "Refresh Team":
-    - img
-  - button "Close":
-    - img
+  - button "Refresh Team"
+  - button "Close"
   - heading "Members" [level=3]
-  - 'button "lead Idle · Model: deepseek-v4-flash" [disabled]'
+  - 'button "lead Inactive · Model: deepseek-v4-flash" [disabled]'
   - heading "Shared tasks" [level=3]
-  - button "New task":
-    - img
-    - text: New task
+  - button "New task"
   - article:
     - strong: Browser task
     - text: Pending
@@ -21,9 +15,5 @@
     - combobox "Owner":
       - option "Unowned" [selected]
       - option "lead"
-    - button "Edit":
-      - img
-      - text: Edit
-    - button "Delete":
-      - img
-      - text: Delete
+    - button "Edit"
+    - button "Delete"

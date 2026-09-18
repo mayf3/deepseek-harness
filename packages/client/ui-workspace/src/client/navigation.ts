@@ -4,6 +4,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import type { ClientRemote, DirectoryListing, RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
   ISessions,
+  SessionCreateError,
   SessionReference,
   SessionTarget,
   SessionListState,
@@ -11,7 +12,7 @@ import type {
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type {
-  IWorkspaces, WorkspaceId, WorkspaceView,
+  IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -143,19 +144,33 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const inflight = this.connecting.get(workspaceId)
     if (inflight !== undefined) return inflight
 
+    const attempt = this.reuseOrCreateBlank(workspace)
+      .finally(() => { this.connecting.delete(workspaceId) })
+    this.connecting.set(workspaceId, attempt)
+    return attempt
+  }
+
+  private reuseOrCreateBlank(workspace: WorkspaceView): Promise<SessionId> {
     const archived = this.workspaces.list.getSnapshot().archivedSessionIds
     const sessions = this.sessions.list.getSnapshot()
     for (const id of sessions.ids) {
       const summary = sessions.byId[id]
-      if (summary !== undefined && summary.blank && summary.cwd === workspace.path
-        && workspace.sessionIds.includes(summary.id)
-        && !archived.includes(summary.id)) return summary.id
+      if (summary === undefined || !summary.blank || summary.cwd !== workspace.path
+        || !workspace.sessionIds.includes(id) || archived.includes(id)) continue
+      return this.reuseBlank(workspace.workspaceId, id)
     }
+    return this.sessions.create({ workspaceId: workspace.workspaceId })
+  }
 
-    const attempt = this.sessions.create({ workspaceId })
-      .finally(() => { this.connecting.delete(workspaceId) })
-    this.connecting.set(workspaceId, attempt)
-    return attempt
+  private async reuseBlank(workspaceId: WorkspaceId, sessionId: SessionId): Promise<SessionId> {
+    try {
+      return await this.sessions.create({ workspaceId, sessionId })
+    } catch (error: unknown) {
+      // Client plugin bundles do not share error-class identity.
+      if (!(error instanceof Error) || error.name !== 'SessionCreateError'
+        || (error as SessionCreateError).rpcError.code !== 'session/writer-held') throw error
+      return this.sessions.create({ workspaceId })
+    }
   }
 
   openSession(target: SessionTarget): void {
@@ -235,44 +250,17 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         initial = 'done'
         return
       }
-      const saved = this.selection.getSnapshot()
-      const savedTarget = saved.subagentAddress
-        ?? (saved.sessionId !== undefined && sessions.byId[saved.sessionId] !== undefined
-          ? saved.sessionId
-          : undefined)
-      if (savedTarget !== undefined) {
-        initial = 'connecting'
-        try {
-          if (saved.subagentAddress !== undefined) {
-            void this.sessions.refreshSubagents(saved.subagentAddress.parentSessionId)
-          }
-          this.openSession(savedTarget)
-          initial = 'done'
-        } catch (reason: unknown) {
-          initial = 'waiting'
-          console.warn('initial Session restoration failed:', reason)
-        }
-        return
-      }
-      const target = recentWorkspace(workspace.items, sessions.byId)
-      if (target === undefined) {
-        initial = 'done'
-        return
-      }
       initial = 'connecting'
-      void this.connectWorkspace(target).then(
-        (sessionId) => {
-          if (this.mainReference === undefined) this.openSession(sessionId)
-        },
-      ).then(
+      void this.restoreSelection(workspace, sessions).then(
         () => { initial = 'done' },
         (reason: unknown) => {
           if (this.lifetime.signal.aborted) return
           initial = 'waiting'
-          console.warn('initial workspace selection failed:', reason)
+          console.warn('initial Session restoration failed:', reason)
         },
       )
     }
+
     const disposeWorkspaces = this.workspaces.list.subscribe(reconcile)
     const disposeSessions = this.sessions.list.subscribe(reconcile)
     reconcile()
@@ -280,6 +268,33 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       this.lifetime.abort()
       disposeSessions()
       disposeWorkspaces()
+    }
+  }
+
+  private async restoreSelection(workspaces: WorkspaceSnapshot, sessions: SessionListState): Promise<void> {
+    const saved = this.selection.getSnapshot()
+    if (saved.subagentAddress !== undefined) {
+      void this.sessions.refreshSubagents(saved.subagentAddress.parentSessionId)
+      this.openSession(saved.subagentAddress)
+      return
+    }
+    const summary = saved.sessionId === undefined ? undefined : sessions.byId[saved.sessionId]
+    const workspace = summary === undefined ? undefined
+      : workspaces.items.find(item => item.sessionIds.includes(summary.id))
+    if (summary !== undefined && (!summary.blank || workspace === undefined)) {
+      this.openSession(summary.id)
+      return
+    }
+    const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
+    let sessionId: SessionId | undefined
+    if (summary !== undefined && workspace !== undefined && summary.cwd === workspace.path
+      && !workspaces.archivedSessionIds.includes(summary.id)) {
+      sessionId = await this.reuseBlank(workspace.workspaceId, summary.id)
+    }
+    const target = workspace?.workspaceId ?? recentWorkspace(workspaces.items, sessions.byId)
+    if (sessionId === undefined && target !== undefined) sessionId = await this.connectWorkspace(target)
+    if (sessionId !== undefined && !navigation.aborted) {
+      this.replaceMain(sessionId, navigation)
     }
   }
 

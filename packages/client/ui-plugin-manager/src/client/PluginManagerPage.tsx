@@ -12,10 +12,13 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { PluginInstallFailureKind } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  Button, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
-  IconCordisPluginOutline14, IconPluginPinwheelOutline16, IconPlusOutline16, IconRefreshOutline16, IconTrashOutline16,
-  IconWarningOutline16, Input, Modal, StateDot, Switch, Tag, TerminalBlock, Toast,
-  type StateDotState, type TerminalBlockLabels,
+  Button, IconCheckCircleFillRegular, IconChevronDownOutlineRegular, IconChevronLeftOutlineMedium,
+  IconChevronRightOutlineRegular, IconCloseOutlineMedium,
+  IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
+  IconWarningOutlineRegular, Input, Modal,
+  PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTeam, PluginArtworkTerminal,
+  StateDot, Switch, Tag, TerminalBlock, Toast,
+  type IconProps, type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { rowConfigKey, type OfficialItem } from './config-ledger.ts'
@@ -74,13 +77,13 @@ const PHASE_KEYS = {
   unloading: 'rowPhaseUnloading',
 } satisfies Record<RowPhase, PluginManagerLocaleKey>
 
-/** Status dot naming a live root-fiber phase: pending and unloading fibers do nothing; only loading is in progress. */
+/** Status dot naming a root-fiber phase; loading and unloading are live transitions. */
 const PHASE_STATES = {
   pending: 'idle',
   loading: 'ongoing',
   active: 'done',
   failed: 'error',
-  unloading: 'idle',
+  unloading: 'ongoing',
 } satisfies Record<RowPhase, StateDotState>
 
 /** The count line over a pack's components: the total, then only the states that occur. */
@@ -110,6 +113,37 @@ interface RowConfigure {
 
 /** Rows beyond this count get a filter box above the list. */
 const ROW_FILTER_THRESHOLD = 10
+
+/** The size the 36-viewBox plugin artwork renders at inside a card's 48px frame. */
+const CARD_ARTWORK_SIZE = 36
+
+/** The size the artwork renders at inside a row's 40px frame. */
+const ROW_ARTWORK_SIZE = 30
+
+/** The artwork of the official plugins that registered their configuration, by registration id. */
+const ITEM_ARTWORK = new Map<string, (props: IconProps) => ReactNode>([
+  ['bash', PluginArtworkTerminal],
+  ['agent-loop', PluginArtworkLoop],
+  ['subagent', PluginArtworkSubagent],
+  ['web-search', PluginArtworkSearch],
+])
+
+/** The artwork of the official bundles with artwork of their own, by package name. */
+const PACKAGE_ARTWORK = new Map<string, (props: IconProps) => ReactNode>([
+  ['@deepseek-ai/dsh-experimental-agent-team-profile', PluginArtworkTeam],
+])
+
+/** An official plugin's card and page artwork; plugins without their own get the default. */
+function itemArtwork(id: string): ReactNode {
+  const Artwork = ITEM_ARTWORK.get(id) ?? PluginArtworkDefault
+  return <Artwork size={CARD_ARTWORK_SIZE} />
+}
+
+/** A package's card and page artwork; packages without their own get the default. */
+function packageArtwork(name: string): ReactNode {
+  const Artwork = PACKAGE_ARTWORK.get(name) ?? PluginArtworkDefault
+  return <Artwork size={CARD_ARTWORK_SIZE} />
+}
 
 /** A row's switch: locked, saying why, when the Host refuses to address the row through the profile patch. */
 function RowSwitch({ row, t, busy, onChange }: {
@@ -189,20 +223,20 @@ function RowsSection({ rows, t, toggle, configure }: {
                 {...row.phase === 'failed' ? { 'data-state': 'failed' } : row.enabled ? {} : { 'data-state': 'off' }}
               >
                 <div className={css.rowLine}>
-                  <span className={css.rowIcon} aria-hidden="true"><IconCordisPluginOutline14 /></span>
+                  <span className={css.rowIcon} aria-hidden="true"><PluginArtworkSubagent size={ROW_ARTWORK_SIZE} /></span>
                   <div className={css.rowMain}>
                     {configure?.has(row) === true
                       ? (
                         <button type="button" className={css.rowOpen} aria-label={t('configureRow', { name: row.rowId })} onClick={() => { configure.open(row) }}>
                           <span className={css.rowId}>{row.rowId}</span>
-                          <IconChevronRightOutline14 className={css.rowOpenIcon} aria-hidden="true" />
+                          <IconChevronRightOutlineRegular className={css.rowOpenIcon} aria-hidden="true" />
                         </button>
                       )
                       : <span className={css.rowId}>{row.rowId}</span>}
                     <span className={css.rowModule}>{row.moduleName}</span>
                   </div>
                   <span className={css.rowState}>
-                    <StateDot state={rowDotState(row)} size={8} />
+                    <StateDot state={rowDotState(row)} />
                     {rowStateText(row, t)}
                   </span>
                   {toggle === undefined
@@ -245,18 +279,19 @@ function packageStatus(pkg: PackageView): 'running' | 'disabled' | 'problem' {
   return pkg.enabled ? 'running' : 'disabled'
 }
 
-/** The head every card shares: the pinwheel icon, the name that opens the page beside its tags, its one-liner, and what sits at the end. */
-function CardHead({ title, t, onOpen, tags, description, end }: {
+/** The head every card shares: the artwork, the name that opens the page beside its tags, its one-liner, and what sits at the end. */
+function CardHead({ title, t, onOpen, icon, tags, description, end }: {
   readonly title: string
   readonly t: Translate
   readonly onOpen: () => void
+  readonly icon: ReactNode
   readonly tags?: ReactNode
   readonly description: ReactNode
   readonly end?: ReactNode
 }): ReactNode {
   return (
     <div className={css.cardHead}>
-      <span className={css.cardIcon} aria-hidden="true"><IconPluginPinwheelOutline16 size={20} /></span>
+      <span className={css.cardIcon} aria-hidden="true">{icon}</span>
       <div className={css.cardMain}>
         <div className={css.titleRow}>
           <button type="button" className={`${css.cardTitle} ${css.cardOpen}`} aria-label={t('openDetail', { name: title })} onClick={onOpen}>{title}</button>
@@ -274,17 +309,17 @@ function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
   readonly crumbLabel: string
   readonly crumbText: string
   readonly onBack: () => void
-  readonly icon?: ReactNode
+  readonly icon: ReactNode
   readonly actions?: ReactNode
 }): ReactNode {
   return (
     <>
       <button type="button" className={css.crumb} aria-label={crumbLabel} onClick={onBack}>
-        <IconChevronDownOutline14 className={css.crumbIcon} aria-hidden="true" />
+        <IconChevronDownOutlineRegular className={css.crumbIcon} aria-hidden="true" />
         <span>{crumbText}</span>
       </button>
       <div className={css.detailHead}>
-        <span className={css.cardIcon} aria-hidden="true">{icon ?? <IconPluginPinwheelOutline16 size={20} />}</span>
+        <span className={css.cardIcon} aria-hidden="true">{icon}</span>
         {actions}
       </div>
     </>
@@ -313,6 +348,7 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
         title={title}
         t={t}
         onOpen={onOpen}
+        icon={packageArtwork(pkg.name)}
         tags={(
           <>
             {beta ? <Tag className={css.statusTag} tone="info">{t('statusBeta')}</Tag> : null}
@@ -338,7 +374,7 @@ function ItemCard({ item, t, onOpen, renderSlot }: {
 }): ReactNode {
   return (
     <li className={`${css.card} ${css.cardLink}`} data-plugin-item={item.id}>
-      <CardHead title={item.label} t={t} onOpen={onOpen} description={renderSlot('plugins.item', { view: 'summary' }, { only: item.id })} />
+      <CardHead title={item.label} t={t} onOpen={onOpen} icon={itemArtwork(item.id)} description={renderSlot('plugins.item', { view: 'summary' }, { only: item.id })} />
     </li>
   )
 }
@@ -352,7 +388,7 @@ function ItemDetail({ item, t, onBack, renderSlot }: {
 }): ReactNode {
   return (
     <div className={css.detail} data-plugin-item-detail={item.id}>
-      <DetailTop crumbLabel={t('backToList')} crumbText={t('crumbRoot')} onBack={onBack} />
+      <DetailTop crumbLabel={t('backToList')} crumbText={t('crumbRoot')} onBack={onBack} icon={itemArtwork(item.id)} />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{item.label}</h3>
@@ -381,7 +417,7 @@ function RowDetail({ pkg, row, t, onBack, renderSlot }: {
   const key = rowConfigKey(pkg.name, row.rowId)
   return (
     <div className={css.detail} data-plugin-row-detail={key}>
-      <DetailTop crumbLabel={t('backToPackage', { name: title })} crumbText={title} onBack={onBack} icon={<IconCordisPluginOutline14 size={20} />} />
+      <DetailTop crumbLabel={t('backToPackage', { name: title })} crumbText={title} onBack={onBack} icon={<PluginArtworkSubagent size={CARD_ARTWORK_SIZE} />} />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{row.rowId}</h3>
@@ -430,6 +466,7 @@ function PackageDetail({
         crumbLabel={t('backToList')}
         crumbText={t('crumbRoot')}
         onBack={onBack}
+        icon={packageArtwork(pkg.name)}
         actions={(
           <div className={css.detailActions}>
             {pkg.installed
@@ -438,7 +475,7 @@ function PackageDetail({
                   variant="outline"
                   size="sm"
                   className={css.danger}
-                  icon={<IconTrashOutline16 size={13} />}
+                  icon={<IconTrashOutlineRegular size={13} />}
                   aria-label={t('uninstallLabel', { name: title })}
                   disabled={busy || pkg.readOnlyReason !== undefined}
                   onClick={onUninstall}
@@ -628,25 +665,25 @@ function InstallDialog({
         className={css.installDialog as string}
         footer={(
           <Button variant="primary" className={css.wide} disabled={checking || empty} aria-busy={checking} onClick={onRun}>
-            {checking ? <span className={css.spinner} aria-hidden="true" /> : null}
+            {checking ? <StateDot state="ongoing" /> : null}
             {t(checking ? 'installChecking' : 'installRun')}
           </Button>
         )}
       >
         <div className={css.installBody}>
-          <label className={css.installField}>
-            <span>{t('installSpecLabel')}</span>
+          <div className={css.installField}>
             <input
               type="text"
               value={install.spec}
               placeholder={t('installSpecPlaceholder')}
               disabled={checking}
+              aria-label={t('installSpecLabel')}
               aria-invalid={install.inputError !== null}
               aria-describedby={install.inputError === null ? undefined : errorId}
               onChange={(event) => { onEditSpec(event.currentTarget.value) }}
               onKeyDown={(event) => { if (event.key === 'Enter' && !empty && !checking) onRun() }}
             />
-          </label>
+          </div>
           {install.inputError === null
             ? null
             : <p id={errorId} className={css.inputError} role="alert">{t(INPUT_PROBLEM_KEYS[install.inputError.problem], { reason: install.inputError.reason })}</p>}
@@ -657,25 +694,23 @@ function InstallDialog({
             aria-controls={guideId}
             onClick={() => { setGuideOpen(open => !open) }}
           >
-            <IconChevronDownOutline14 className={css.guideChevron} aria-hidden="true" />
+            <IconChevronDownOutlineRegular className={css.guideChevron} aria-hidden="true" />
             <span>{t(guideOpen ? 'installGuideHide' : 'installGuideToggle')}</span>
           </button>
           {guideOpen
             ? (
               <div id={guideId} className={css.guide} data-install-guide>
-                <p className={css.guideIntro}>{t('installGuideIntro')}</p>
-                <p className={css.guideNote}>{t('installGuideIdNote')}</p>
                 <ol className={css.guideList}>
                   {GUIDE_EXAMPLES.map(({ key, titleKey, exampleKey, hintKey }, index) => (
                     <li key={key} className={css.guideItem}>
                       <span className={css.guideIndex} aria-hidden="true">{index + 1}</span>
                       <div className={css.guideMain}>
                         <span className={css.guideTitle}>{t(titleKey)}</span>
+                        <span className={css.guideHint}>{t(hintKey)}</span>
                         <span className={css.guideExample}>
                           <span className={css.guideExampleLabel}>{t('installGuideExampleLabel')}</span>
                           <code>{t(exampleKey)}</code>
                         </span>
-                        <span className={css.guideHint}>{t(hintKey)}</span>
                       </div>
                       <Button
                         variant="outline"
@@ -690,7 +725,7 @@ function InstallDialog({
                   ))}
                 </ol>
                 <p className={css.guideSafety} role="note">
-                  <IconWarningOutline16 size={14} aria-hidden="true" />
+                  <IconWarningOutlineRegular size={14} aria-hidden="true" />
                   <span>{t('installGuideSafety')}</span>
                 </p>
               </div>
@@ -716,7 +751,7 @@ function InstallDialog({
             ? <span />
             : (
               <button type="button" className={css.wizardBack} aria-label={t('installEditAria')} disabled={!stoppable} onClick={onCancel}>
-                <IconChevronLeftOutline14 aria-hidden="true" />
+                <IconChevronLeftOutlineMedium aria-hidden="true" />
                 <span>{t('installEdit')}</span>
               </button>
             )}
@@ -727,15 +762,17 @@ function InstallDialog({
             disabled={pending && phase !== 'running'}
             onClick={phase === 'running' ? onCancelAndClose : onClose}
           >
-            <IconCloseOutline16 size={14} />
+            <IconCloseOutlineMedium size={14} />
           </button>
         </div>
         <div className={css.wizardScroll}>
           <div className={css.wizardHero}>
-            <span className={css.wizardIcon} data-tone={pending ? 'pending' : phase} aria-hidden="true">
+            <span className={css.wizardIcon} data-state={pending ? 'ongoing' : phase === 'done' ? 'done' : 'error'} aria-hidden="true">
               {pending
-                ? <span className={css.spinnerLarge} />
-                : phase === 'done' ? <IconCheckOutline16 size={28} /> : <IconWarningOutline16 size={28} />}
+                ? <StateDot state="ongoing" size={28} />
+                : phase === 'done'
+                  ? <IconCheckCircleFillRegular size={28} />
+                  : <IconWarningOutlineRegular size={28} />}
             </span>
             <h2 className={css.wizardTitle} role={phase === 'failed' ? 'alert' : 'status'}>{heading}</h2>
             {phase === 'failed' ? <p className={css.wizardSub}>{failureText(install.failure, t)}</p> : null}
@@ -768,16 +805,16 @@ function InstallDialog({
           <div className={css.wizardFoot}>
             <button type="button" className={css.detailsToggle} aria-expanded={install.detailsOpen} onClick={onToggleDetails}>
               <span>{t(install.detailsOpen ? 'installDetailsHide' : 'installDetailsShow')}</span>
-              <IconChevronDownOutline14 className={css.detailsChevron} aria-hidden="true" />
+              <IconChevronDownOutlineRegular className={css.detailsChevron} aria-hidden="true" />
             </button>
             {pending
               ? (
-                <Button variant="outline" size="sm" disabled={phase !== 'running'} onClick={onCancel}>
+                <Button variant="outline" size="sm" className={css.footAction} disabled={phase !== 'running'} onClick={onCancel}>
                   {t(phase === 'cancelling' ? 'installCancelling' : 'installCancel')}
                 </Button>
               )
               : null}
-            {phase === 'failed' && !approvable ? <Button variant="primary" size="sm" onClick={onRun}>{t('installRetry')}</Button> : null}
+            {phase === 'failed' && !approvable ? <Button variant="primary" size="sm" className={css.footAction} onClick={onRun}>{t('installRetry')}</Button> : null}
           </div>
           {install.detailsOpen
             ? (
@@ -917,34 +954,44 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
             </div>
             <div className={css.toolbar}>
               <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
-                <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutline16 /></span>
+                <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutlineRegular /></span>
               </button>
-              <Button variant="primary" size="sm" icon={<IconPlusOutline16 size={13} />} disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
+              <Button variant="primary" size="sm" className={css.addButton} icon={<IconPlusOutlineRegular size={13} />} disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
             </div>
           </header>
         )
         : null}
-      {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
-      {state.status === 'unavailable' ? <p className={css.status} role="status">{t('unavailable')}</p> : null}
-      {state.status === 'error'
-        ? (
-          <div className={css.failure}>
-            <p role="alert">{t('error')}</p>
-            <Button variant="outline" size="sm" onClick={props.refresh}>{t('retry')}</Button>
-          </div>
-        )
-        : null}
+      {showsCards && state.status === 'loading' ? (
+        <p className={`${css.status} ${css.statusWithDot}`} role="status">
+          <StateDot state="ongoing" />{t('loading')}
+        </p>
+      ) : null}
+      {showsCards && state.status === 'unavailable' ? (
+        <p className={`${css.status} ${css.statusWithDot}`} role="status">
+          <StateDot state="idle" />{t('unavailable')}
+        </p>
+      ) : null}
       {state.notice === null || noticeLine === null
         ? null
         : (
           <Toast
             key={state.notice.seq}
             text={noticeLine}
-            icon={<IconWarningOutline16 />}
+            icon={<IconWarningOutlineRegular />}
             holdMs={toastHoldMs(noticeLine)}
             onDone={props.dismissNotice}
           />
         )}
+      {!showsCards && state.status === 'error'
+        ? (
+          <div className={css.failure}>
+            <p className={css.statusWithDot} role="alert">
+              <StateDot state="error" />{t('error')}
+            </p>
+            <Button variant="outline" size="sm" onClick={props.refresh}>{t('retry')}</Button>
+          </div>
+        )
+        : null}
       {loaded && openPkg !== undefined && openRow !== undefined
         ? (
           <RowDetail
@@ -977,12 +1024,24 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         ? <ItemDetail item={openItem} t={t} renderSlot={renderSlot} onBack={() => { setView({ kind: 'list' }) }} />
         : null}
       {loaded && showsCards
-        ? officialCards.length === 0 && mine.length === 0
+        ? officialCards.length === 0 && mine.length === 0 && state.status !== 'error'
           ? <p className={css.empty}>{t('empty')}</p>
           : (
             <>
               {renderGroup('official', t('officialTitle'), officialCards)}
               {renderGroup('bundles', t('bundlesTitle'), mine.map(packageCard))}
+              {/* A failed package read trails the groups it left incomplete: right under Official on a
+                  first-load failure, and after the kept cards when a refresh fails over stale data. */}
+              {state.status === 'error'
+                ? (
+                  <div className={css.failure}>
+                    <p className={css.statusWithDot} role="alert">
+                      <StateDot state="error" />{t('error')}
+                    </p>
+                    <Button variant="outline" size="sm" onClick={props.refresh}>{t('retry')}</Button>
+                  </div>
+                )
+                : null}
             </>
           )
         : null}
