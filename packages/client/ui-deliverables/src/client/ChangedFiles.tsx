@@ -1,7 +1,7 @@
 /** The changed-files card: a header and per-file rows that open the turn's review, and a three-row fold. */
 import { useState } from 'react'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
-import { IconChevronDownOutline14, IconChevronUpOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular, IconChevronUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChangesSummary } from '../changes.ts'
 import { IconCodeBracketsOutline16 } from './icons.tsx'
@@ -66,7 +66,7 @@ export function ChangedFiles({ changes, cwd, openReview, t }: {
       aria-label={t(expanded ? 'changes.collapseAria' : 'changes.expandAria', { count: String(changes.files.length) })}
       onClick={() => { setExpanded(value => !value) }}>
       <span>{t(expanded ? 'changes.collapse' : 'changes.all', { count: String(changes.files.length) })}</span>
-      {expanded ? <IconChevronUpOutline14 /> : <IconChevronDownOutline14 />}
+      {expanded ? <IconChevronUpOutlineRegular /> : <IconChevronDownOutlineRegular />}
     </button>}
   </div>
 }

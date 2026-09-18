@@ -1,6 +1,6 @@
 /** PDF page presentation; binary content and tab information come from the document owner. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Button, IconLoadingOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { DocumentPreviewProps } from '../document/contract.ts'
@@ -70,7 +70,7 @@ export function PdfBody(props: PdfBodyProps): ReactNode {
   // spinner position covers everything until the first page block appears.
   if (load?.data !== data) return <span className={`${css.status} ${css.opening}`} role="status"
     aria-label={t('loading')} data-document-loading>
-    <span className={css.loadingIcon} aria-hidden="true"><IconLoadingOutline16 /></span>
+    <StateDot state="ongoing" />
   </span>
   if (load.kind === 'failed') {
     return <div className={css.status} role="alert">

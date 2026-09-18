@@ -32,4 +32,4 @@ Status: implemented
 
 包级用例在两个作用域钉住规则：`loading` 与 `pending`（全局）、`unloading`（预设）保留圆点，`active`、`failed` 与没有存活 fiber 的条目都不渲染。`apps/web/tests/settings-chrome.e2e.ts` 断言装配后的全局分组含有已启用条目，且没有名为 `运行中` 的 `role="img"` 元素。
 
-其余圆点的配色、光晕与动画，以及标签胶囊本身，仍由[共享客户端控件决策](../architecture/2026-09-05-shared-client-control-primitives.zh.md)拥有。
+其余圆点的配色与动画由 [StateDot 视觉语言决策](../feature/2026-09-17-state-dot-visual-language.zh.md)负责；标签胶囊仍由[共享客户端控件决策](../architecture/2026-09-05-shared-client-control-primitives.zh.md)负责。

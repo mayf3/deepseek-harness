@@ -16,6 +16,7 @@ File-mention providers receive the viewed Session ID with the closing-turn owner
 
 - [Reference previews](#reference-previews)
 - [System prompt row](#system-prompt-row)
+- [Command and failure rows](#command-and-failure-rows)
 - [Turn token usage](#turn-token-usage)
 - [Completed-turn footer](#completed-turn-footer)
 - [Turn Process Folding](#turn-process-folding)
@@ -37,6 +38,13 @@ HTTP(S) links in Assistant Markdown open a new right-Sidebar Browser tab on ordi
 ## System prompt row
 
 Each nonempty appended `system/message` owns a collapsed prompt row, including a complete prompt at the start of a headerless window; the same-step header does not duplicate it. Chat also shows a collapsed `System prompt` row for a non-empty initial request, explicit message-series start, or `system/message` surface node replacement whose text differs, reading the last nonempty surviving system node in surface order at the `request/header`; a non-initial request whose preceding header is outside the loaded history window also shows one. A resume repeats the row even when its system text is unchanged, including after pagination supplies the preceding header and system node; same-series config-only or tool-only changes, tool steps, and retries create no repetition, and a `system/message` event is never rendered as a transcript message. The row appears before that request's user messages, matching the provider envelope, and expands to the exact model-visible text with its original line breaks. A request whose system node is empty or outside the loaded window creates no row until the page holding the node arrives.
+
+<a id="command-and-failure-rows"></a>
+## Command and failure rows
+
+Generic command rows retain the ordinary command glyph in every lifecycle state; failure remains explicit through the row state and summary. A terminal Turn failure remains a separate red-dot notice; intermediate model retries do not create that notice, and an output-token limit uses the amber warning dot.
+
+-----
 
 <a id="turn-token-usage"></a>
 ## Turn token usage

@@ -12,9 +12,10 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { PluginInstallFailureKind } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  Button, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
-  IconCordisPluginOutline14, IconPluginPinwheelOutline16, IconPlusOutline16, IconRefreshOutline16, IconTrashOutline16,
-  IconWarningOutline16, Input, Modal, StateDot, Switch, Tag, TerminalBlock, Toast,
+  Button, IconChevronDownOutlineRegular, IconChevronLeftOutlineRegular,
+  IconChevronRightOutlineRegular, IconCloseOutlineRegular, IconCordisPluginOutlineRegular,
+  IconPluginPinwheelOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
+  IconWarningOutlineRegular, Input, Modal, StateDot, Switch, Tag, TerminalBlock, Toast,
   type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -74,13 +75,13 @@ const PHASE_KEYS = {
   unloading: 'rowPhaseUnloading',
 } satisfies Record<RowPhase, PluginManagerLocaleKey>
 
-/** Status dot naming a live root-fiber phase: pending and unloading fibers do nothing; only loading is in progress. */
+/** Status dot naming a root-fiber phase; loading and unloading are live transitions. */
 const PHASE_STATES = {
   pending: 'idle',
   loading: 'ongoing',
   active: 'done',
   failed: 'error',
-  unloading: 'idle',
+  unloading: 'ongoing',
 } satisfies Record<RowPhase, StateDotState>
 
 /** The count line over a pack's components: the total, then only the states that occur. */
@@ -189,20 +190,20 @@ function RowsSection({ rows, t, toggle, configure }: {
                 {...row.phase === 'failed' ? { 'data-state': 'failed' } : row.enabled ? {} : { 'data-state': 'off' }}
               >
                 <div className={css.rowLine}>
-                  <span className={css.rowIcon} aria-hidden="true"><IconCordisPluginOutline14 /></span>
+                  <span className={css.rowIcon} aria-hidden="true"><IconCordisPluginOutlineRegular /></span>
                   <div className={css.rowMain}>
                     {configure?.has(row) === true
                       ? (
                         <button type="button" className={css.rowOpen} aria-label={t('configureRow', { name: row.rowId })} onClick={() => { configure.open(row) }}>
                           <span className={css.rowId}>{row.rowId}</span>
-                          <IconChevronRightOutline14 className={css.rowOpenIcon} aria-hidden="true" />
+                          <IconChevronRightOutlineRegular className={css.rowOpenIcon} aria-hidden="true" />
                         </button>
                       )
                       : <span className={css.rowId}>{row.rowId}</span>}
                     <span className={css.rowModule}>{row.moduleName}</span>
                   </div>
                   <span className={css.rowState}>
-                    <StateDot state={rowDotState(row)} size={8} />
+                    <StateDot state={rowDotState(row)} />
                     {rowStateText(row, t)}
                   </span>
                   {toggle === undefined
@@ -256,7 +257,7 @@ function CardHead({ title, t, onOpen, tags, description, end }: {
 }): ReactNode {
   return (
     <div className={css.cardHead}>
-      <span className={css.cardIcon} aria-hidden="true"><IconPluginPinwheelOutline16 size={20} /></span>
+      <span className={css.cardIcon} aria-hidden="true"><IconPluginPinwheelOutlineRegular size={20} /></span>
       <div className={css.cardMain}>
         <div className={css.titleRow}>
           <button type="button" className={`${css.cardTitle} ${css.cardOpen}`} aria-label={t('openDetail', { name: title })} onClick={onOpen}>{title}</button>
@@ -280,11 +281,11 @@ function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
   return (
     <>
       <button type="button" className={css.crumb} aria-label={crumbLabel} onClick={onBack}>
-        <IconChevronDownOutline14 className={css.crumbIcon} aria-hidden="true" />
+        <IconChevronDownOutlineRegular className={css.crumbIcon} aria-hidden="true" />
         <span>{crumbText}</span>
       </button>
       <div className={css.detailHead}>
-        <span className={css.cardIcon} aria-hidden="true">{icon ?? <IconPluginPinwheelOutline16 size={20} />}</span>
+        <span className={css.cardIcon} aria-hidden="true">{icon ?? <IconPluginPinwheelOutlineRegular size={20} />}</span>
         {actions}
       </div>
     </>
@@ -381,7 +382,7 @@ function RowDetail({ pkg, row, t, onBack, renderSlot }: {
   const key = rowConfigKey(pkg.name, row.rowId)
   return (
     <div className={css.detail} data-plugin-row-detail={key}>
-      <DetailTop crumbLabel={t('backToPackage', { name: title })} crumbText={title} onBack={onBack} icon={<IconCordisPluginOutline14 size={20} />} />
+      <DetailTop crumbLabel={t('backToPackage', { name: title })} crumbText={title} onBack={onBack} icon={<IconCordisPluginOutlineRegular size={20} />} />
       <div className={css.detailMain}>
         <div className={css.titleRow}>
           <h3 className={css.detailTitle}>{row.rowId}</h3>
@@ -438,7 +439,7 @@ function PackageDetail({
                   variant="outline"
                   size="sm"
                   className={css.danger}
-                  icon={<IconTrashOutline16 size={13} />}
+                  icon={<IconTrashOutlineRegular size={13} />}
                   aria-label={t('uninstallLabel', { name: title })}
                   disabled={busy || pkg.readOnlyReason !== undefined}
                   onClick={onUninstall}
@@ -628,7 +629,7 @@ function InstallDialog({
         className={css.installDialog as string}
         footer={(
           <Button variant="primary" className={css.wide} disabled={checking || empty} aria-busy={checking} onClick={onRun}>
-            {checking ? <span className={css.spinner} aria-hidden="true" /> : null}
+            {checking ? <StateDot state="ongoing" /> : null}
             {t(checking ? 'installChecking' : 'installRun')}
           </Button>
         )}
@@ -657,7 +658,7 @@ function InstallDialog({
             aria-controls={guideId}
             onClick={() => { setGuideOpen(open => !open) }}
           >
-            <IconChevronDownOutline14 className={css.guideChevron} aria-hidden="true" />
+            <IconChevronDownOutlineRegular className={css.guideChevron} aria-hidden="true" />
             <span>{t(guideOpen ? 'installGuideHide' : 'installGuideToggle')}</span>
           </button>
           {guideOpen
@@ -690,7 +691,7 @@ function InstallDialog({
                   ))}
                 </ol>
                 <p className={css.guideSafety} role="note">
-                  <IconWarningOutline16 size={14} aria-hidden="true" />
+                  <IconWarningOutlineRegular size={14} aria-hidden="true" />
                   <span>{t('installGuideSafety')}</span>
                 </p>
               </div>
@@ -716,7 +717,7 @@ function InstallDialog({
             ? <span />
             : (
               <button type="button" className={css.wizardBack} aria-label={t('installEditAria')} disabled={!stoppable} onClick={onCancel}>
-                <IconChevronLeftOutline14 aria-hidden="true" />
+                <IconChevronLeftOutlineRegular aria-hidden="true" />
                 <span>{t('installEdit')}</span>
               </button>
             )}
@@ -727,15 +728,13 @@ function InstallDialog({
             disabled={pending && phase !== 'running'}
             onClick={phase === 'running' ? onCancelAndClose : onClose}
           >
-            <IconCloseOutline16 size={14} />
+            <IconCloseOutlineRegular size={14} />
           </button>
         </div>
         <div className={css.wizardScroll}>
           <div className={css.wizardHero}>
-            <span className={css.wizardIcon} data-tone={pending ? 'pending' : phase} aria-hidden="true">
-              {pending
-                ? <span className={css.spinnerLarge} />
-                : phase === 'done' ? <IconCheckOutline16 size={28} /> : <IconWarningOutline16 size={28} />}
+            <span className={css.wizardIcon} aria-hidden="true">
+              <StateDot state={pending ? 'ongoing' : phase === 'done' ? 'done' : 'error'} />
             </span>
             <h2 className={css.wizardTitle} role={phase === 'failed' ? 'alert' : 'status'}>{heading}</h2>
             {phase === 'failed' ? <p className={css.wizardSub}>{failureText(install.failure, t)}</p> : null}
@@ -768,7 +767,7 @@ function InstallDialog({
           <div className={css.wizardFoot}>
             <button type="button" className={css.detailsToggle} aria-expanded={install.detailsOpen} onClick={onToggleDetails}>
               <span>{t(install.detailsOpen ? 'installDetailsHide' : 'installDetailsShow')}</span>
-              <IconChevronDownOutline14 className={css.detailsChevron} aria-hidden="true" />
+              <IconChevronDownOutlineRegular className={css.detailsChevron} aria-hidden="true" />
             </button>
             {pending
               ? (
@@ -917,19 +916,29 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
             </div>
             <div className={css.toolbar}>
               <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
-                <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutline16 /></span>
+                <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutlineRegular /></span>
               </button>
-              <Button variant="primary" size="sm" icon={<IconPlusOutline16 size={13} />} disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
+              <Button variant="primary" size="sm" icon={<IconPlusOutlineRegular size={13} />} disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
             </div>
           </header>
         )
         : null}
-      {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
-      {state.status === 'unavailable' ? <p className={css.status} role="status">{t('unavailable')}</p> : null}
+      {state.status === 'loading' ? (
+        <p className={`${css.status} ${css.statusWithDot}`} role="status">
+          <StateDot state="ongoing" />{t('loading')}
+        </p>
+      ) : null}
+      {state.status === 'unavailable' ? (
+        <p className={`${css.status} ${css.statusWithDot}`} role="status">
+          <StateDot state="idle" />{t('unavailable')}
+        </p>
+      ) : null}
       {state.status === 'error'
         ? (
           <div className={css.failure}>
-            <p role="alert">{t('error')}</p>
+            <p className={css.statusWithDot} role="alert">
+              <StateDot state="error" />{t('error')}
+            </p>
             <Button variant="outline" size="sm" onClick={props.refresh}>{t('retry')}</Button>
           </div>
         )
@@ -940,7 +949,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
           <Toast
             key={state.notice.seq}
             text={noticeLine}
-            icon={<IconWarningOutline16 />}
+            icon={<IconWarningOutlineRegular />}
             holdMs={toastHoldMs(noticeLine)}
             onDone={props.dismissNotice}
           />

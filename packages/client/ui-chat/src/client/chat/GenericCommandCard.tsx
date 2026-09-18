@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import type { ChatViewSlotProps, CommandRowOwnerProps } from '../contract/slots.ts'
-import { DisclosureRow, IconApiOutline14, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconApiOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import a11yCss from './accessibility.module.css'
 import css from './GenericCommandCard.module.css'
 
@@ -10,10 +10,6 @@ type CommandRowState = 'running' | 'ok' | 'error'
 function stateOf(outcome: CommandRowOwnerProps['node']['outcome']): CommandRowState {
   if (outcome === null) return 'running'
   return outcome.kind === 'error' ? 'error' : 'ok'
-}
-
-function leadingFor(state: CommandRowState): ReactNode {
-  return state === 'error' ? <StateDot state="error" /> : <IconApiOutline14 size={14} />
 }
 
 /** Card props: the owner payload plus the render site's locale seat (plain prop). */
@@ -44,7 +40,7 @@ export function GenericCommandCard({ node, t, runningSummary }: GenericCommandCa
         leadingClassName={css.leading}
         titleClassName={css.title}
         chevronClassName={css.chevron}
-        icon={leadingFor(state)}
+        icon={<IconApiOutlineRegular size={14} />}
         title={title}
         open={open}
         expandable={body !== null}

@@ -142,6 +142,8 @@ const SURFACE_PROPERTIES = ['background', 'background-color']
  * carries a radius, a shadow, and a fixed size, so shape cannot separate them.
  */
 const SURFACE_TOKEN_PATTERN = /^--dsw-(?:alias-bg-|specific-)/
+/** Translucent elevated surfaces whose colors do not resolve to a palette rung. */
+const TRANSLUCENT_ELEVATED_SURFACES = new Set(['--dsw-specific-menu'])
 
 /**
  * The palette's own dark elevation ladder, resolved from `design-platform.css`:
@@ -178,7 +180,7 @@ function elevatedRungs(): Set<string> {
   return tokens
 }
 
-const elevatedSurfaces = elevatedRungs()
+const elevatedSurfaces = new Set([...elevatedRungs(), ...TRANSLUCENT_ELEVATED_SURFACES])
 
 for (const file of packageStylesheets()) {
   const rules = parseRules(readFileSync(file, 'utf8'))
@@ -471,15 +473,16 @@ describe('elevated surface rebinds', () => {
     }
   })
 
-  it('resolves the elevated surface set from the palette ladder', () => {
+  it('resolves opaque elevated surfaces from the palette ladder and includes translucent elevated surfaces', () => {
     // The set has to come from the palette, not from the sheets that happen to
     // rebind: derived from rebinds it can only confirm what someone already
     // remembered, and a surface nobody has rebound yet — the case the check
     // exists for — would define itself as unelevated. Anchoring it here means a
     // new palette token on an elevated rung is in scope the moment it is
     // defined. `--dsw-specific-tip` is the regression that proved the point: it
-    // resolves to the same dark rung as the menu surface, and the Todo panel
-    // scrolled on it unrebound while a rebind-derived set stayed green.
+    // resolves to the same dark rung as the input surface, and the Todo panel
+    // scrolled on it unrebound while a rebind-derived set stayed green. The
+    // translucent menu remains explicit because its alpha color has no rung.
     expect(elevatedSurfaces).toContain('--dsw-alias-bg-layer-2')
     expect(elevatedSurfaces).toContain('--dsw-alias-bg-layer-3')
     expect(elevatedSurfaces).toContain('--dsw-specific-menu')

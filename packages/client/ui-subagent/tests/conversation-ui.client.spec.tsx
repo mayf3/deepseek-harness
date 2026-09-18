@@ -524,8 +524,8 @@ describe('SubagentHeaderLineage', () => {
     }, summaries)
     view.rerender(<SubagentHeaderLineage {...ready} />)
     expect(screen.getByRole('group').getAttribute('aria-busy')).toBeNull()
-    expect(screen.getByRole('treeitem', { name: /indexer/ })).toBeTruthy()
-    expect(screen.getByRole('treeitem', { name: /critic/ })).toBeTruthy()
+    expect(screen.getByRole('treeitem', { name: /indexer/ }).querySelector('[data-state="idle"]')).not.toBeNull()
+    expect(screen.getByRole('treeitem', { name: /critic/ }).querySelector('[data-state="ongoing"]')).not.toBeNull()
     expect(screen.queryByRole('treeitem', { name: '正在加载子代理' })).toBeNull()
   })
 
