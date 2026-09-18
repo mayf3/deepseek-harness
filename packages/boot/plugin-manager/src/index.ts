@@ -85,8 +85,8 @@ interface InstallControl {
   readonly abort: AbortController
   /** `applying` once pnpm has exited and the bundle is being selected and loaded, which cannot be stopped. */
   phase: 'installing' | 'applying'
-  /** Settlement of the install call, whichever way it ended. */
-  settled: Promise<void>
+  /** The active install's result, shared with clients recovering a lost response. */
+  result: Promise<ChangeResult | null>
 }
 
 /** A manifest field that is a string, when the manifest carries one. */
@@ -342,7 +342,7 @@ export class PluginManager extends TypertRemoteService {
   @Remote
   installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult> {
     const requestId = options?.requestId
-    const control: InstallControl = { abort: new AbortController(), phase: 'installing', settled: Promise.resolve() }
+    const control: InstallControl = { abort: new AbortController(), phase: 'installing', result: Promise.resolve(null) }
     const stopped = (): boolean => control.abort.signal.aborted
     if (requestId !== undefined) this.installs.set(requestId, control)
     const announce = (phase: PluginInstallProgress['phase']): void => {
@@ -397,9 +397,18 @@ export class PluginManager extends TypertRemoteService {
         if (options?.enabled !== false) result.warnings = await this.reload()
       })
     }, { stage: 'install', target: spec, enabled: options?.enabled !== false }, 'install')
-    /* v8 ignore next -- change() folds every failure into its result; only a lock or disposal error rejects */
-    control.settled = result.then(() => undefined, () => undefined)
+    control.result = result
     return result.finally(() => { if (requestId !== undefined) this.installs.delete(requestId) })
+  }
+
+  /** Recover the result of an active installation without cancelling it.
+   * @param requestId The id supplied when installation started.
+   * @returns The installation's outcome after it settles, or null if no active request has that id.
+   * Completed results are not retained; null establishes neither success nor cancellation.
+   */
+  @Remote
+  async waitForInstall(requestId: PluginInstallRequestId): Promise<ChangeResult | null> {
+    return this.installs.get(requestId)?.result ?? null
   }
 
   /** Stop an installation this manager owns and wait until its files are back.
@@ -414,7 +423,8 @@ export class PluginManager extends TypertRemoteService {
     if (control.phase === 'applying') return { status: 'too-late' }
     this.ownerContext.emit('plugin-manager/install-state', { requestId, phase: 'cancelling' })
     control.abort.abort()
-    await control.settled
+    /* v8 ignore next -- change() folds every failure into its result; only a lock or disposal error rejects */
+    await control.result.then(() => undefined, () => undefined)
     return { status: 'cancelled' }
   }
 
