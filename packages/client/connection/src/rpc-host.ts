@@ -292,9 +292,65 @@ function errorResponse(rpcId: RpcIdType, error: ConnectionRpcFailure): Response 
   return fullResponse(rpcId, { ok: false, error })
 }
 
-function fullResponse(rpcId: RpcIdType, result: ConnectionRpcResult<unknown>): Response {
+function fullResponse(rpcId: RpcIdType, result: Awaited<ReturnType<ConnectionRpcHandler>>): Response {
   const body: ConnectionServerResponse = { type: 'server-response', rpcId, result }
-  return Response.json(body)
+  if (!result.ok) return Response.json(body)
+  const parts = new FormData()
+  const attachments: { path: (string | number)[]; codec: 'bytes'; part: string }[] = []
+  const path: (string | number)[] = []
+  const ancestors = new Set<object>()
+  const writeBytes = (value: Uint8Array, path: readonly (string | number)[]): null => {
+    const part = `bytes-${attachments.length}`
+    attachments.push({ path: [...path], codec: 'bytes', part })
+    // FileSystem bytes may have SharedArrayBuffer backing, which BlobPart excludes.
+    parts.set(part, new Blob([new Uint8Array(value)]))
+    return null
+  }
+  const extract = (input: unknown, key: string): unknown => {
+    // Capture accessors and toJSON once, before materializing the JSON metadata.
+    let value = input
+    if (input !== null && typeof input === 'object' && !(input instanceof Uint8Array)) {
+      const toJSON = Reflect.get(input, 'toJSON') as unknown
+      if (typeof toJSON === 'function') value = Reflect.apply(toJSON, input, [key]) as unknown
+    }
+    if (value instanceof Uint8Array) return writeBytes(value, path)
+    if (typeof value !== 'object' || value === null) return value
+    if (value instanceof Number || value instanceof String || value instanceof Boolean) return value
+    if (ancestors.has(value)) throw new TypeError('connection: circular RPC result')
+    ancestors.add(value)
+    let copy: object
+    if (Array.isArray(value)) {
+      const items: unknown[] = []
+      // JSON arrays include every index, even holes and non-enumerable elements.
+      for (let index = 0, length = value.length; index < length; index++) items.push(child(value[index], index))
+      copy = items
+    } else {
+      const fields: Record<string, unknown> = {}
+      for (const key of Object.keys(value)) {
+        const item = Reflect.get(value, key) as unknown
+        // A toJSON method on the projected object must not run a second time.
+        if (key === 'toJSON' && typeof item === 'function') continue
+        const extracted = child(item, key)
+        if (key === '__proto__') Object.defineProperty(fields, key, { value: extracted, enumerable: true })
+        else fields[key] = extracted
+      }
+      copy = fields
+    }
+    ancestors.delete(value)
+    return copy
+  }
+  const child = (value: unknown, key: string | number): unknown => {
+    if (typeof value !== 'object' || value === null) return value
+    path.push(key)
+    const extracted = extract(value, String(key))
+    path.pop()
+    return extracted
+  }
+  const value = result.encode === undefined ? extract(result.value, 'value') : result.encode(result.value, writeBytes)
+  const metadata = { ...body, result: { ok: true, value } }
+  if (attachments.length === 0) return Response.json(metadata)
+  parts.set('metadata', JSON.stringify({ ...metadata, attachments }))
+  return new Response(parts)
 }
 
 function assertChannel(channel: string): void {

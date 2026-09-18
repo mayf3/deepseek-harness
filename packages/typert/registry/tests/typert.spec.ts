@@ -99,6 +99,18 @@ function scopedInvocation(): InvocationDescriptor {
 }
 
 describe('TypertRegistry', () => {
+  it('retains generated result decoders until the contribution is disposed', async () => {
+    const ctx = await makeCtx()
+    const decode = (value: unknown) => value
+    const descriptor: InvocationDescriptor = {
+      ...invocation(), result: { mode: 'strict', typeSymbol: 'fixture#bytes', create: () => ({ parse: decode }), decode },
+    }
+    const dispose = ctx.typert.register({ ...toolsContribution(), invocations: [descriptor] })
+    expect(ctx.typert.local.get('goals/create')?.result).toBe(descriptor.result)
+    await dispose()
+    expect(ctx.typert.local.get('goals/create')).toBeUndefined()
+  })
+
   it('registers and queries generated schemas separately from package reflection', async () => {
     const ctx = await makeCtx()
     const contribution = toolsContribution()

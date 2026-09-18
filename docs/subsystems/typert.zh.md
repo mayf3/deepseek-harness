@@ -38,7 +38,7 @@ interface TypertLookupDefinition {
 
 ## 调用 descriptor
 
-`InvocationDescriptor` 是本地反射信息，不是 wire message。Host 与消费方构建会生成彼此对应的 descriptor；请求只发送 endpoint 与具名 `args`。strict codec 携带生成的 schema factory，SRC codec 则在不恢复结构类型的前提下强制要求 JSON 安全值。取消通过带外 carrier signal 表达：它在业务参数之后注入，绝不进入 `args`。
+`InvocationDescriptor` 是本地反射信息，不是 wire message。Host 与消费方构建会生成彼此对应的 descriptor；请求只发送 endpoint 与具名 `args`。strict codec 携带生成的 schema factory，SRC codec 则在不恢复结构类型的前提下强制要求输入为 JSON 安全值。一元结果 codec 可提供 `encode()` 处理含字节的子树，并通过 `decode()` 递归校验原生字节；Client 声明将每个 `Uint8Array` 限定为以 `ArrayBuffer` 为底层缓冲区。纯 JSON 结果无需字节识别或 Client 解码。取消通过带外 carrier signal 表达：它在业务参数之后注入，绝不进入 `args`。
 
 ```ts type-equiv
 /** Codec attached to one invocation parameter or result. */
@@ -48,6 +48,19 @@ type TypertCodec =
     readonly typeSymbol: string
     /** Materialize and return the process-realm schema on first boundary use. */
     readonly create: () => TypertSchema
+    /**
+     * Decode a unary result whose fields require type-specific handling.
+     * @param value - result reconstructed by the RPC carrier.
+     * @returns the validated result, retaining native byte views.
+     */
+    readonly decode?: (value: unknown) => unknown
+    /**
+     * Project typed binary fields into carrier-owned multipart attachments.
+     * @param value - native unary result.
+     * @param writeBytes - records a byte view at its result-relative path and returns its JSON placeholder.
+     * @returns JSON metadata with untouched JSON subtrees retained.
+     */
+    readonly encode?: (value: unknown, writeBytes: (bytes: Uint8Array, path: readonly (string | number)[]) => null) => unknown
   }
   | {
     readonly mode: 'src-json'

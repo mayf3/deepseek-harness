@@ -444,8 +444,12 @@ class ClientRemoteService extends Service implements ClientRemote {
     try {
       const result = await connection.rpc.call('/api', endpoint, { args: prepared.args }, prepared.signal)
       if (!mountActive(token)) return withdrawn(endpoint)
+      prepared.signal.throwIfAborted()
       if (!result.ok) return { ok: false, error: rebuiltFailure(result.error) }
-      return { ok: true, value: result.value }
+      const value = descriptor.result.mode === 'strict' && descriptor.result.decode !== undefined
+        ? descriptor.result.decode(result.value)
+        : result.value
+      return { ok: true, value }
     } catch (error) {
       // Carrier throws (offline or abort) are outcomes of the call, not assembly
       // faults, so they join the same error branch. A caller-aborted call is a

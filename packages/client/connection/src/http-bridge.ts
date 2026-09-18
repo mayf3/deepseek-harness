@@ -15,7 +15,7 @@ export const DEFAULT_MAX_REQUEST_BODY_BYTES = 300 * 1024 * 1024
 
 /**
  * Bridge one node:http request to the fetch-shaped handler (client close
- * aborts; response bodies stream out chunk by chunk).
+ * aborts; response writes respect backpressure and stop on disconnect).
  * @param req - incoming node:http request.
  * @param res - node:http response the bridge writes and owns to completion.
  * @param apiHandler - fetch-shaped API carrier the request is dispatched to.
@@ -90,11 +90,13 @@ export async function bridge(
     return
   }
   for await (const chunk of response.body) {
+    // Drain without writing after disconnect: cancelling Node multipart bodies
+    // can race their producer and reject with ERR_INVALID_STATE.
+    if (abort.signal.aborted) continue
     // Backpressure: a false return means the socket buffer is full — wait for drain
     // instead of buffering unboundedly (slow or suspended consumers). 'close' also
-    // resolves so a mid-wait disconnect can't park this loop forever; the close
-    // handler above aborts the handler stream, which then ends the iteration.
-    if (!res.write(chunk)) {
+    // resolves so a mid-wait disconnect cannot park this loop forever.
+    if (!res.write(chunk) && !res.destroyed) {
       await new Promise<void>((resolve) => {
         const done = (): void => {
           res.off('drain', done)

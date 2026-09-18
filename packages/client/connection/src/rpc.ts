@@ -27,6 +27,24 @@ export type ConnectionRpcResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: ConnectionRpcFailure }
 
+/** One binary value separated from a successful RPC result before transport framing. */
+export interface ConnectionRpcAttachment {
+  /** Result-relative path occupied by the attachment's `null` placeholder. */
+  readonly path: readonly (string | number)[]
+  /** Byte view carried outside the JSON response metadata. */
+  readonly bytes: Uint8Array
+}
+
+/** Successful or failed handler result ready for Connection transport framing. */
+export type ConnectionRpcHandlerResult =
+  | {
+    readonly ok: true
+    readonly value: unknown
+    /** Binary fields already projected by the handler that owns the result protocol. */
+    readonly attachments?: readonly ConnectionRpcAttachment[]
+  }
+  | { readonly ok: false; readonly error: ConnectionRpcFailure }
+
 /** Historical short name for a generic Connection result. */
 export type RpcResult<T> = ConnectionRpcResult<T>
 
@@ -111,7 +129,7 @@ export type ConnectionRpcHandler = (
   payload: unknown,
   signal: AbortSignal,
   peer: PeerScope,
-) => Promise<ConnectionRpcResult<unknown>>
+) => Promise<ConnectionRpcHandlerResult>
 
 /** Synchronous ownership test for one endpoint on a shared RPC channel. */
 export type ConnectionRpcEndpointMatcher = (endpoint: string) => boolean

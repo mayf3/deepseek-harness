@@ -90,7 +90,7 @@ describe('HtmlBody', () => {
     h.bytes.mockResolvedValue({ ok: true, value: { absolutePath: ABSOLUTE_PATH, version: 'root-v1', data, offset: 0, eof: true } })
     const readRelated = vi.fn<HtmlBodyProps['readRelated']>().mockResolvedValue({ ok: true, value: {
       absolutePath: `/workspace/asset.${extension}`, version: 'asset-v1', offset: 0, eof: true,
-      data: btoa(extension === 'css' ? 'body { color: red }' : 'window.loaded = true'),
+      data: utf8(extension === 'css' ? 'body { color: red }' : 'window.loaded = true'),
     } })
     const definition = { ...htmlBodyDefinition(() => 'HTML'), extensions: ['md'] }
     let interactive = true
@@ -111,7 +111,7 @@ describe('HtmlBody', () => {
     expect(create).toHaveBeenCalledOnce()
     readRelated.mockResolvedValueOnce({ ok: true, value: {
       absolutePath: `/workspace/asset.${extension}`, version: 'asset-v2', offset: 0, eof: true,
-      data: btoa(extension === 'css' ? 'body { color: blue }' : 'window.loaded = false'),
+      data: utf8(extension === 'css' ? 'body { color: blue }' : 'window.loaded = false'),
     } })
     act(() => { dependency.set(metadata('asset-v2')) })
     await waitFor(() => { expect(screen.getByTitle(en.frame)).not.toBe(previous) })
@@ -252,7 +252,7 @@ describe('HtmlBody', () => {
     const signal = new AbortController().signal
     const bytes = vi.fn().mockResolvedValue({
       ok: true,
-      value: { absolutePath: '/workspace/app.js', data: btoa('window.ready=true'), version: 'v1', offset: 0, eof: true },
+      value: { absolutePath: '/workspace/app.js', data: utf8('window.ready=true'), version: 'v1', offset: 0, eof: true },
     })
     const useResource = vi.fn().mockReturnValue({ value: undefined })
     const initial = {
@@ -275,7 +275,7 @@ describe('HtmlBody', () => {
     const signal = new AbortController().signal
     const bytes = vi.fn().mockResolvedValue({
       ok: true,
-      value: { absolutePath: '/workspace/app.js', version: 'v1', bytes: 16, offset: 0, data: btoa('window.ready=1'), eof: true },
+      value: { absolutePath: '/workspace/app.js', version: 'v1', bytes: 16, offset: 0, data: utf8('window.ready=1'), eof: true },
     })
     const useResource = vi.fn(() => ({ value: { version: 'v1' } }))
     const initial = {

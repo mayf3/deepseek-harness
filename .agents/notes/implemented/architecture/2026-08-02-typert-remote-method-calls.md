@@ -181,7 +181,7 @@ Consequently, `SessionId`, the Agent wire ID, the request, and the result all re
 
 Remote methods themselves use declaration-map navigation. Typert anchors `InvocationModel.location` to the decorated Host method-name token and emits a source-map segment on the corresponding property of the namespace interface. For an adapter-backed endpoint, after the TypeScript editor resolves `ctx.remote.models.list` to its generated declaration, `typert.remote-client.d.ts.map` takes it to the Host Service's `remoteExportList` entry point. That entry point explicitly calls the existing, unrenamed `list()` method; the map does not misidentify the decorator, class, or full signature as the method definition.
 
-Typert generates a wire Zod codec for the same symbol key. The Host Gateway uses parameter and identity codecs to validate input. Client Remote trusts its generated TypeScript arguments and successful Host results instead of executing invocation codecs. If a complex type cannot produce a strict codec, the LIB build fails instead of degrading to `unknown` or unchecked JSON.
+Typert generates a wire Zod codec for the same symbol key. The Host Gateway uses parameter and identity codecs to validate input. Client Remote trusts its generated TypeScript arguments and JSON success results. Binary success results use their generated codec after multipart decoding, as specified by [binary Remote transfer](2026-09-17-workspace-file-binary-transfer.md). If a complex type cannot produce a strict codec, the LIB build fails instead of degrading to `unknown` or unchecked JSON.
 
 Named business types referenced by Remote methods must be exported from public, type-only subpaths. If the only reachable entry also imports Host Services, Cordis `Context` merges, or Host-only implementations, the build fails and requires the business package to provide a safe type entry. Primitives, literals, and simple compositions explicitly supported by Typert need no additional names.
 
@@ -514,7 +514,7 @@ Canonical public types require business DTOs to have type-only entries, which ma
 
 Type imports and runtime contributions have different effects. `import type {}` extends only the static Remote surface. If a real calling environment omits the value contribution, the Client Remote Service must fail with an explicit "Remote not mounted" error.
 
-Generated Host and Client artifacts carry matching Zod factories, but Client Remote does not materialize invocation schemas. Canonical symbol keys, the same generated model, and Host wire validation keep the two sides aligned without comparing schema object identities across realms.
+Generated Host and Client artifacts carry matching Zod factories; Client Remote materializes only binary result schemas. Canonical symbol keys, the same generated model, and Host wire validation keep the two sides aligned without comparing schema object identities across realms.
 
 A consumer may import a Remote contract that is not currently mounted on the Host. The types mean "this protocol capability was selected by the consumer," not that a corresponding Service currently exists in the target process; an unavailable endpoint must fail explicitly at runtime.
 

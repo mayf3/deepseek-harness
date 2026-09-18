@@ -571,7 +571,19 @@ else process.exit(1);
     await successShot(page, 'pdf-drag-selection')
     sections.push('## PDF drag selection\n\n- Table selection: forward and backward drags exclude later sections\n- Line-break highlight: transparent')
 
+    const pngResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/workspaceFiles/readBytes'
+      && (response.request().postDataJSON() as { payload: { args: { path: string } } }).payload.args.path === 'tiny.png')
     await openFile('tiny.png')
+    const transferred = await pngResponse
+    expect(transferred.headers()['content-type']).toMatch(/^multipart\/form-data;/)
+    const transferredBody = await new Response(new Uint8Array(await transferred.body()), { headers: transferred.headers() }).formData()
+    const metadata = transferredBody.get('metadata')
+    if (typeof metadata !== 'string') throw new Error('missing PNG metadata')
+    const { attachments } = JSON.parse(metadata) as { attachments: { path: string[]; codec: string; part: string }[] }
+    expect(attachments).toEqual([{ path: ['data'], codec: 'bytes', part: expect.any(String) as unknown }])
+    const transferredFile = transferredBody.get(attachments[0]!.part)
+    if (transferredFile === null || typeof transferredFile === 'string') throw new Error('missing PNG payload')
+    expect(Buffer.from(await transferredFile.arrayBuffer())).toEqual(TINY_PNG)
     const tinyImage = preview.getByRole('img', { name: 'Image preview: tiny.png', exact: true })
     await tinyImage.waitFor({ state: 'visible', timeout: 15_000 })
     expect(await viewer.count()).toBe(0)
