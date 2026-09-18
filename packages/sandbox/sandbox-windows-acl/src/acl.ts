@@ -5,17 +5,14 @@
  * failure is reported with the API name, the exact Win32 code, the formatted
  * system text, and the affected path.
  *
- * Each grant is a PAIR of edits applied in ONE SetNamedSecurityInfoW call:
- * a Deny ACE removing the ambient parent-directory delete right
- * (`Everyone` / `FILE_DELETE_CHILD`) plus the capability-SID allow ACE in the
- * DACL, and a Low mandatory label with the no-write-up policy in the label
- * ACL ({@link buildLowLabelAcl}). The deny makes the capability ACE's DELETE
- * bit the only delete authority inside the granted roots — Windows otherwise
- * authorizes a delete from the parent directory's `FILE_DELETE_CHILD`, which
- * the token's write-restricted intersection does not reach, so one confined
- * child could delete files in another granted root. The label denies
- * write-class access to every object that is not labeled Low, and the kernel
- * applies that policy inside the access check itself.
+ * Each grant applies three edits in ONE SetNamedSecurityInfoW call: the
+ * capability-SID allow ACE, a Deny ACE that removes the ambient
+ * `FILE_DELETE_CHILD` right from the world SID, and a Low no-write-up
+ * mandatory label ({@link buildLowLabelAcl}). The deny is what keeps one
+ * granted root out of another's reach: Windows also authorizes a delete from
+ * the parent directory's `FILE_DELETE_CHILD` right, which the token's
+ * write-restricted intersection does not reach, and every granted root carries
+ * the Low label that clears the integrity check.
  *
  * Concurrency: grants are read-merge-write against the directory's CURRENT
  * DACL, and the whole get-merge-set sequence runs under a per-path exclusive
@@ -152,12 +149,10 @@ function readCurrentSecurity(
 /**
  * Build the Low mandatory label applied with every write grant: one
  * SYSTEM_MANDATORY_LABEL_ACE naming `lowLabelSidPtr` with the no-write-up
- * policy, inheriting to subcontainers and objects so files created later
- * inside the granted tree carry the same label automatically.
- *
- * The caller frees the returned ACL with LocalFree; SetNamedSecurityInfoW
- * copies it. Fail-closed: every Win32 call is checked and the half-built ACL
- * is released before the error is thrown.
+ * policy, inheriting to subcontainers and objects so later children carry the
+ * same label. The caller frees the returned ACL with LocalFree
+ * (SetNamedSecurityInfoW copies it); every Win32 call is checked and a
+ * half-built ACL is released before the error is thrown.
  * @param api - the binding table.
  * @param lowLabelSidPtr - the Low integrity SID (S-1-16-4096) the label names.
  * @returns the ACL carrying the single inheritable label ACE.
@@ -311,11 +306,10 @@ function hasExactGrant(oldAcl: NativePtr, sidPtr: NativePtr): boolean {
 }
 
 /**
- * True when the merge's ambient-delete deny is already present: the exact
- * Deny ACE for {@link abi.FILE_DELETE_CHILD} naming the world SID. Together
- * with {@link hasExactGrant} and the label check this gates the idempotent
- * skip, so a root granted by an earlier build receives the deny on its next
- * provision instead of keeping the parent-`FILE_DELETE_CHILD` route open.
+ * True when the explicit DACL already carries the EXACT ambient-delete deny:
+ * the Deny ACE for {@link abi.FILE_DELETE_CHILD} naming the world SID. It is
+ * part of the idempotent skip, so a root granted by an earlier build receives
+ * the deny on its next provision.
  * @param oldAcl - the current explicit DACL pointer (from {@link readCurrentSecurity}).
  * @param worldSidPtr - the Everyone SID the deny names.
  * @returns whether the exact deny ACE is already present.
@@ -326,29 +320,18 @@ function hasExactDeny(oldAcl: NativePtr, worldSidPtr: NativePtr): boolean {
 
 /**
  * Grant `GRANT_MASK` (Write+Delete, displays as "Modify") to the capability SID
- * on `path`, deny the ambient `FILE_DELETE_CHILD` right to the world SID, and
- * apply the Low mandatory label — all in one SetNamedSecurityInfoW call.
+ * on `path`, deny the world SID the ambient `FILE_DELETE_CHILD` right, and
+ * apply the Low mandatory label — one merge, inheriting to subcontainers and
+ * objects. The capability ACE's DELETE bit is then the only delete authority
+ * inside the root, so a file whose own DACL grants no DELETE is no longer
+ * deletable through its parent's rights.
  *
- * The deny closes the parent-directory delete route inside the granted roots:
- * Windows authorizes a delete from the object's own DELETE right OR from the
- * parent's `FILE_DELETE_CHILD`, and the token's write-restricted intersection
- * reaches only the first, so without the deny one confined child could delete
- * files in ANOTHER granted root (another workspace, a live sibling temp
- * directory) whose Low label clears the integrity check. With the deny in
- * place the capability ACE's DELETE bit is the only delete authority inside
- * the granted roots, for the confined child and the ambient user alike; a file
- * whose own DACL grants no DELETE is therefore no longer deletable by its
- * parent's default rights.
- *
- * Idempotent: when the directory's current explicit DACL already carries the
- * exact ACE and deny AND its label ACL the exact label (the per-workspace
- * grant surviving from a previous server lifetime), the SetNamedSecurityInfoW
- * apply is SKIPPED — it would otherwise re-propagate the identical security
- * descriptor across the whole tree (eager inheritance; minutes on large
- * workspaces). Otherwise read-merge-write: the entries merge into the
- * directory's CURRENT explicit DACL (same shape as {@link revokeWrite}), so
- * pre-existing explicit ACEs survive. Runs under the per-path lock. The
- * directory must be owned by the caller (owner implicit WRITE_DAC) — same
+ * Idempotent: the exact ACE, deny, and label together SKIP the
+ * SetNamedSecurityInfoW apply, which would otherwise re-propagate the
+ * identical descriptor across the whole tree (eager inheritance; minutes on
+ * large workspaces). Otherwise read-merge-write, so pre-existing explicit ACEs
+ * survive (same shape as {@link revokeWrite}). Runs under the per-path lock.
+ * The directory must be owned by the caller (owner implicit WRITE_DAC) — same
  * precondition as the POC.
  * @param api - the binding table.
  * @param path - the directory whose DACL and label gain the grant (the workspace or temp root).

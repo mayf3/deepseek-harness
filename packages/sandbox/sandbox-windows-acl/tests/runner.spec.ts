@@ -400,16 +400,11 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
   }, 30_000)
 
   it('delete-escape regression: deletes outside the granted roots are denied in BOTH modes, through every delete authority', () => {
-    // Windows authorizes a delete from EITHER the object's own DELETE right OR
-    // the parent directory's FILE_DELETE_CHILD right, and the
-    // WRITE_RESTRICTED pass-2 intersection only covers the first. Every
-    // ordinary directory the ambient user SIDs control (a project checkout,
-    // %TEMP%, the profile) grants FILE_DELETE_CHILD, so `cmd /c del` deleted
-    // files outside the workspace even though a plain write from the same
-    // child was denied. The Low mandatory label closes both routes because the
-    // kernel applies the integrity policy inside the access check, whichever
-    // right supplied the authority; the remaining delete paths below are the
-    // ones a confined child reaches for.
+    // Windows authorizes a delete from the object's own DELETE right OR the
+    // parent directory's FILE_DELETE_CHILD, and the write-restricted
+    // intersection only covers the first — so `cmd /c del` used to delete
+    // outside the workspace. The Low label plus the grant's deny close both
+    // routes; these are the deleters a confined child reaches for.
     for (const mode of ['read-only', 'workspace-write'] as const) {
       const victims = {
         cmd: join(scratchRoot, `delete-${mode}-cmd.txt`),
@@ -451,12 +446,11 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
   }, 60_000)
 
   it('cross-root delete regression: one session cannot delete inside ANOTHER granted root', () => {
-    // Both roots carry the Low label, so the integrity check alone would let a
-    // confined child delete in the other one: Windows authorizes a delete from
-    // the parent directory's FILE_DELETE_CHILD, which the write-restricted
-    // intersection does not reach. The grant therefore denies that right to the
-    // world SID, leaving the capability ACE's DELETE bit as the only delete
-    // authority inside a granted root.
+    // Both roots carry the Low label, so the integrity check alone would not
+    // stop this: Windows also authorizes a delete from the parent directory's
+    // FILE_DELETE_CHILD right, which the capability intersection never reaches.
+    // The grant denies that right, leaving the capability DELETE bit as the
+    // only delete authority inside a granted root.
     const otherWorkspace = join(scratchRoot, 'other-workspace')
     const otherTemp = join(scratchRoot, 'other-temp')
     mkdirSync(otherWorkspace)

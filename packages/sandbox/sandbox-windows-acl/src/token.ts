@@ -145,20 +145,10 @@ export function setTokenDefaultDaclGrant(api: Win32Bindings, token: NativePtr, s
 }
 
 /**
- * Lower the restricted token's integrity level to Low (S-1-16-4096).
- *
- * `WRITE_RESTRICTED` intersects only the write bits of the access mask it
- * evaluates against an object's DACL. Windows can also authorize a write or a
- * delete from the PARENT directory's FILE_DELETE_CHILD right, and that
- * authority is granted without the restricting-SID intersection — so a
- * confined child could still delete files anywhere its ambient user SIDs hold
- * Modify. The mandatory label closes that route: the kernel applies the
- * integrity policy inside the access check, wherever the authority came from,
- * so a Low child only writes where the object is labeled Low (see
- * `grantWrite`).
- *
- * Requires TOKEN_ADJUST_DEFAULT on the token (the caller opens it with the
- * right). Fails closed: a failure throws before any child is spawned.
+ * Lower the restricted token's integrity level to Low (S-1-16-4096), the level
+ * the mandatory labels `grantWrite` applies are matched against; a token left
+ * at Medium would ignore them. Requires TOKEN_ADJUST_DEFAULT on the token;
+ * fails closed before any child is spawned.
  * @param api - the binding table.
  * @param token - the restricted token to lower.
  * @param lowLabelSidPtr - the Low integrity SID (S-1-16-4096).

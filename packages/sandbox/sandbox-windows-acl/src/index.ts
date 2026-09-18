@@ -10,14 +10,10 @@
  * keep-alive group logon SID + Everyone; Authenticated Users, INTERACTIVE,
  * and LOCAL are absent from both lists — see the seam's dual-list contract
  * in `packages/sandbox/sandbox-local` and the package README's Modes section
- * for the complete boundary). The intersection covers only the write bits of
- * the object's OWN access check: Windows can also authorize a write or delete
- * from the parent directory's FILE_DELETE_CHILD right, which no restricting
- * SID has to co-sign. The token is therefore ALSO lowered to Low integrity
- * and every granted directory carries a Low no-write-up label, so the
- * kernel's mandatory-integrity check — evaluated inside the access check
- * regardless of which right supplied the authority — confines the child to
- * the labeled roots. The write SID is the per-WORKSPACE identity
+ * for the complete boundary). The intersection covers only the object's own
+ * access check, so the token is also lowered to Low integrity and every
+ * granted directory carries a Low no-write-up label and the ambient-delete
+ * deny the `acl` module documents. The write SID is the per-WORKSPACE identity
  * ({@link workspaceWriteSid}): deterministic from the canonical workspace
  * path, so the workspace-root ACE materializes once per workspace per
  * machine and every later provision hits the exact-ACE skip — the
@@ -263,9 +259,7 @@ export class AclSandbox {
       // provision would re-propagate the whole tree) and the temp ACE is
       // REVOCABLE (dispose() removes it before the private directory is
       // deleted; the ambient temp root is never granted).
-      // The Low integrity SID every granted directory is labeled with (and the
-      // confined token is lowered to) plus the world SID the grants deny the
-      // ambient parent-directory delete right to.
+      // The Low label SID and the world SID the grants deny and label with.
       const lowLabelSid = makeWellKnownSid(api, abi.WinLowLabelSid)
       const worldSid = makeWellKnownSid(api, abi.WinWorldSid)
       this.sidAllocations.push(lowLabelSid, worldSid)
@@ -292,12 +286,6 @@ export class AclSandbox {
         { world: worldSid },
         this.mode,
       )
-      // Lower the confined token to Low integrity. The write-SID intersection
-      // does not reach the parent directory's FILE_DELETE_CHILD authority, so
-      // without the matching label a confined child could delete anything its
-      // ambient user SIDs may delete; the label plus this level close that
-      // route, and the granted directories stay writable because
-      // grantWrite labels them Low too.
       restrictTokenIntegrity(api, restrictedToken, lowLabelSid)
       this.token = restrictedToken
       // The restricted token's default DACL still names only the user's
