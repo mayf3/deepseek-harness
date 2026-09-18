@@ -182,6 +182,17 @@
   -webkit-app-region: drag;
 }
 
+/* While the Conversation is the selected main panel AND its header shows the
+   view tab strip (data-conversation-tabs, ui-conversation), the band deepens
+   to the full 76px header block — title row plus tab strip, also the right
+   panel's strip-plus-toolbar header — so blank header space drags while its
+   controls stay clickable through the base.css no-drag rules. Without the
+   strip the header compacts to the title row, which the 52px band already
+   covers; entry pages keep the 52px strip too. */
+.frame[data-panel-conversation]:has([data-conversation-tabs]) .leadingBand {
+  height: 76px;
+}
+
 /* The seat itself: the two 28px controls centered on the conversation title
    row (10px header inset + 30px row → centre y 25) and level with the traffic
    lights (centre y ≈ 24). Sits above column content, below frame overlays

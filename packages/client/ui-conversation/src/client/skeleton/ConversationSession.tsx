@@ -136,7 +136,9 @@ export function ConversationSessionHeader({
         </div>
       </div>
       {!hideChrome && tabs.length > 1 && (
-        <div className={css.tabs} role="tablist">
+        // data-conversation-tabs: ui-layout's window drag band matches this
+        // marker (:has) to deepen only while the tab strip adds header height.
+        <div className={css.tabs} role="tablist" data-conversation-tabs="">
           {tabs.map(viewTab => (
             <button
               key={viewTab.id}

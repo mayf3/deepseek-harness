@@ -278,6 +278,8 @@ describe('AppFrame', () => {
       expect(slotCalls).toEqual([{ key: 'main', props: {}, options: { entryKey: panelId ?? 'conversation' } }])
       expect(getByTestId('main-content').getAttribute('data-entry-key')).toBe(panelId ?? 'conversation')
       expect(instance.getSnapshot().panelInfo).toEqual({ activePanelId: panelId })
+      // The deepened conversation drag band keys off this frame marker.
+      expect(frame.hasAttribute('data-panel-conversation')).toBe(panelId === null)
       expect(instance.getSnapshot().layoutInfo).toBe(layoutInfo)
       expect(tracks(frame)).toEqual([280, 0])
       expect(selectedSession).toBe(sessionId)
