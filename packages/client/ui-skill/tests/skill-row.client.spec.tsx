@@ -6,7 +6,7 @@ import type { RunningToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-ui
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { SkillRow } from '../src/client/SkillRow.tsx'
-import { en, zh } from '../src/client/locales.ts'
+import { zh } from '../src/client/locales.ts'
 
 type SkillRowProps = Parameters<typeof SkillRow>[0]
 
@@ -48,18 +48,10 @@ function props(block: SkillRowProps['block'], inspect?: () => void): SkillRowPro
 }
 
 describe('SkillRow', () => {
-  it('switches the title with the interface locale while preserving the skill name', () => {
-    const owner = props(settled())
-    const view = render(<SkillRow {...owner} />)
-    expect(view.getByRole('button', { name: '加载技能dsh-manage-issues' })).toBeTruthy()
-    view.rerender(<SkillRow {...owner} t={makeTranslate(en)} />)
-    expect(view.getByRole('button', { name: 'Skilldsh-manage-issues' })).toBeTruthy()
-  })
-
   it('renders a compact Bash-shaped summary and discloses the exact instructions', () => {
     const inspect = vi.fn()
     const view = render(<SkillRow {...props(settled(), inspect)} />)
-    const row = screen.getByRole('button', { name: '加载技能dsh-manage-issues' })
+    const row = screen.getByRole('button', { name: 'Skilldsh-manage-issues' })
     expect(row.getAttribute('aria-expanded')).toBe('false')
     expect(view.container.querySelector('[data-tool="skill"]')?.getAttribute('data-state')).toBe('ok')
     expect(view.container.querySelector('[data-tool="skill"] svg')?.getAttribute('width')).toBe('14')
@@ -103,7 +95,7 @@ describe('SkillRow', () => {
       isError: true,
       error: { name: 'SkillError', code: 'missing' },
     }))} />)
-    const row = screen.getByRole('button', { name: 'skill 加载失败加载技能SkillError: missing resource' })
+    const row = screen.getByRole('button', { name: 'skill 加载失败SkillSkillError: missing resource' })
     expect(view.container.querySelector('[data-tool="skill"]')?.getAttribute('data-state')).toBe('error')
     expect(view.container.querySelector('[data-tool="skill"] > div > span:first-child svg')).not.toBeNull()
     expect(view.container.querySelector('[data-tool="skill"] [data-state]')).toBeNull()
@@ -136,7 +128,7 @@ describe('SkillRow', () => {
       isError: true,
       error: { name: 'SkillError', code: 'missing' },
     }))} />)
-    const errorRow = screen.getByRole('button', { name: 'skill 加载失败加载技能SkillError: missing' })
+    const errorRow = screen.getByRole('button', { name: 'skill 加载失败SkillSkillError: missing' })
     fireEvent.click(errorRow)
     expect(screen.getAllByText('SkillError: missing')).toHaveLength(2)
   })

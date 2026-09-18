@@ -22,7 +22,7 @@ import {
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import {
-  connectFreshWorkspace, expandOwningTurnProcess, expandTurnProcesses, newEnglishPage, REPO_ROOT, saveFailureShot,
+  connectFreshWorkspace, expandTurnProcesses, newEnglishPage, REPO_ROOT, saveFailureShot,
 } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip', import.meta.url))
@@ -202,10 +202,24 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     await compareOrRefreshGolden(UI_EXPANDED_EXPECTED, expanded, MODE)
   })
 
-  it.skipIf(MODE === 'record')('keeps system prompt infrastructure out of expanded Chat', async () => {
+  it.skipIf(MODE === 'record')('renders the system prompt disclosure inside the expanded Turn process', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-round-trip-system-prompt'))
     await expandTurnProcesses(page)
-    expect(await page.locator('[data-chat-flow-kind="system-prompt"]').count()).toBe(0)
-    expect(await page.getByRole('button', { name: 'System prompt', exact: true }).count()).toBe(0)
+    const disclosure = page.getByRole('button', { name: 'System prompt', exact: true })
+    const body = page.locator('[data-system-prompt-body]')
+    await expect.poll(() => disclosure.count(), { timeout: 10_000 }).toBe(1)
+    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('false')
+    expect(await body.count()).toBe(0)
+
+    await disclosure.click()
+    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('true')
+    const opaque = body.locator('[data-context-text]')
+    await expect.poll(() => opaque.count(), { timeout: 5_000 }).toBe(1)
+    expect(await opaque.textContent()).toContain('You are an AI agent powered by DeepSeek Harness.')
+
+    await disclosure.click()
+    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('false')
+    await expect.poll(() => body.count()).toBe(0)
   })
 
   it.skipIf(MODE === 'record')('expands and collapses the reasoning fold from its click target', async () => {
@@ -215,9 +229,7 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     // follow-stream-fed state). Runs after the golden capture so the committed
     // aria surface stays the untouched settled state.
     await expandTurnProcesses(page)
-    const reasoning = page.locator('[data-variant="think"]').first()
-    await expandOwningTurnProcess(page, reasoning)
-    const think = reasoning.getByRole('button').first()
+    const think = page.getByRole('button', { name: /^Think/ }).first()
     expect(await think.getAttribute('aria-expanded')).toBe('false')
     await think.click()
     await expect.poll(() => think.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('true')

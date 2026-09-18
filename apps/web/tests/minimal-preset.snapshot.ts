@@ -19,7 +19,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
+import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/minimal-preset', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
@@ -154,8 +154,6 @@ describe('minimal agent preset', () => {
     await expect.poll(() => process.getAttribute('aria-expanded')).toBe('true')
 
     const row = page.locator('[data-sample="bash"]').first()
-    await expect.poll(() => row.isVisible()).toBe(false)
-    await expandOwningTurnProcess(page, row)
     await row.waitFor({ timeout: 15_000 })
     await expect.poll(() => row.getAttribute('aria-expanded')).toBe('false')
     await row.click()

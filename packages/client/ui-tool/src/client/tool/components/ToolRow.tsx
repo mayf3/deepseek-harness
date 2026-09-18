@@ -2,7 +2,8 @@ import { useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode 
 import clsx from 'clsx'
 import {
   CodeBlock, DiffBlock, DisclosureRow, IconInspectOutlineRegular, ReadBlock, SearchBlock,
-  TerminalBlock, TextShimmer, WebBlock, diffTotals,
+  TerminalBlock, WebBlock,
+  diffTotals,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderSlots, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { OpenFileOptions } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -90,9 +91,7 @@ export interface ToolRowProps {
   inspect?: (() => void) | undefined
 }
 
-/** Visually hidden run-state label: the business icon and animated text treatment
- * do not name the lifecycle state, so assistive technology needs this text to
- * identify running, failed, or interrupted rows. */
+/** Visually hidden run-state label for color-only running and settlement cues. */
 function stateStatus(state: ToolRowState, t: TranslateNS<'conversation'>): string | null {
   switch (state) {
     case 'running': return t('row.running')
@@ -100,10 +99,6 @@ function stateStatus(state: ToolRowState, t: TranslateNS<'conversation'>): strin
     case 'stopped': return t('row.stopped')
     default: return null
   }
-}
-
-function liveText(text: string, running: boolean): ReactNode {
-  return running ? <TextShimmer>{text}</TextShimmer> : text
 }
 
 export function ToolRow({
@@ -162,7 +157,6 @@ export function ToolRow({
   )
   const status = stateStatus(state, t)
   const normalSummary = terminalBody?.description ?? (open ? detailsBody?.expandedSummary ?? summary : summary)
-  const running = state === 'running'
   // A failure keeps its first result line when available and otherwise turns
   // the ordinary summary red. An interruption turns the tool-owned summary
   // amber while retaining the business icon and hidden state announcement.
@@ -207,7 +201,7 @@ export function ToolRow({
         titleClassName={css.title}
         chevronClassName={css.chevron}
         icon={icon}
-        title={liveText(title, running)}
+        title={title}
         open={open}
         expandable={expandable}
         expandOnRowClick
@@ -225,7 +219,7 @@ export function ToolRow({
                 onClick={openFile}
                 onKeyDown={fileLinkKeyDown}
               >
-                {liveText(summaryText, running)}
+                {summaryText}
               </button>
             ) : (
               <span
@@ -235,13 +229,11 @@ export function ToolRow({
                   state === 'stopped' && css.stoppedSummary,
                 )}
               >
-                {liveText(summaryText, running)}
+                {summaryText}
               </span>
             )}
             {suffix !== null && (
-              <span className={clsx(css.summarySuffix, suffix === diffStat && css.diffStat)}>
-                {liveText(suffix, running)}
-              </span>
+              <span className={clsx(css.summarySuffix, suffix === diffStat && css.diffStat)}>{suffix}</span>
             )}
           </>
         )}

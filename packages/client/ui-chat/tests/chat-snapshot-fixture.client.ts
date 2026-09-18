@@ -1,4 +1,3 @@
-import { ChatStepProcessProjector } from '../src/client/conversation-nodes/step-process-index.ts'
 import type {
   AssistantChatData, AssistantMessageNode, ChatConversationViewNode, ChatNode, ChatSnapshot, ConversationNode,
   ChatLocationNodeIndex, ChatNodeProcessSource, ChatNodeSource, ChatNodeStore,
@@ -305,7 +304,7 @@ export function chatSnapshotFixture(input: {
         type: 'turn/start', seq: Math.max(0, (endSeq ?? 1) - 1), time: timing.startTime, turn,
       } as never,
       end: timing?.endTime === undefined || endSeq === undefined ? undefined : {
-        type: 'turn/end', seq: endSeq, time: timing.endTime, data: { turn, reason: { kind: 'completed' } },
+        type: 'turn/end', seq: endSeq, time: timing.endTime, turn, reason: 'completed',
       } as never,
       status: endSeq === undefined ? 'open' : 'closed',
       steps: EMPTY,
@@ -402,15 +401,14 @@ export function chatSnapshotFixture(input: {
     const controlAnchor = inTurn.find(candidate => candidate.kind === 'assistant-step'
       || candidate.kind === 'tool-call'
       || candidate.kind === 'model-retry')
-    const startSeq = turns.get(turnNumber)?.start?.seq
-    if (controlAnchor === undefined && startSeq === undefined) continue
+    if (controlAnchor === undefined) continue
     const processStart = inTurn.find(candidate => !TURN_PROCESS_INDEPENDENT_KINDS.has(candidate.kind))
       ?? controlAnchor
     const inlineReasoning = answer?.blocks.some(block => block.kind === 'reasoning' && block.text.trim() !== '') === true
     const candidate: TurnProcessSpec = {
       turn: turnNumber,
-      controlAnchorSeq: controlAnchor?.anchorSeq ?? startSeq!,
-      processStartSeq: processStart?.anchorSeq ?? startSeq!,
+      controlAnchorSeq: controlAnchor.anchorSeq,
+      processStartSeq: processStart.anchorSeq,
       answerAnchorSeq: answer?.finalNode.seq ?? null,
       answerStep: answer?.step ?? null,
       inlineReasoning: answer !== undefined && inlineReasoning,
@@ -518,13 +516,9 @@ export function chatSnapshotFixture(input: {
     && derived.every((item, index) => sameTurnNavigationItem(kept[index], item))
     ? kept
     : derived
-  const stepProcesses = previous?.stepProcesses instanceof ChatStepProcessProjector
-    ? previous.stepProcesses : new ChatStepProcessProjector()
-  stepProcesses.replace({ order, nodes: store, timeline })
   for (const data of turnData.values()) data.publish()
   store.publish()
   return {
-    stepProcesses,
     order,
     nodes: store,
     locations,

@@ -9,19 +9,18 @@
 - navigation "Turn navigation":
   - button "Jump to turn 1"
   - button "Jump to turn 2"
+- button "System prompt"
 - text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. {{clock}}"
 - button "Copy"
-- status: Worked
-- button "Took {{duration}}" [expanded]
-- button "Read files" [expanded]
-- button "Think"
+- button "2 tool calls" [expanded]
+- button "Think The user wants me to read a.txt and b.txt, then reply with \"DONE\". Let me do both reads in parallel."
 - button "Read a.txt":
   - text: Read
   - button "a.txt"
 - button "Read b.txt":
   - text: Read
   - button "b.txt"
-- button "Think"
+- button "Think Both files have been read. a.txt contains \"alpha\" and b.txt contains \"beta\". I'll now reply with DONE as instructed."
 - paragraph: DONE
 - button "Copy"
 - button "Good response"
@@ -29,8 +28,8 @@
 - button "Branch into a new conversation"
 - text: {{clock}}
 - button "compact Compacted 5 history items (~{{tokens}} tokens)"
-- status: Worked
-- button "Took {{duration}}" [disabled]
+- button "Context injection AGENTS.md"
+- text: permission preset read-only
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"
 - 'button "Access mode, current: Read Only"': Read Only

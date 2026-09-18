@@ -33,9 +33,9 @@ function noPendingInteraction() {
 // The resource hook the resources plugin merges into GlobalStandardProps; this row reads no address.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as GlobalStandardProps['useResource']
 
-function mount(mode: 'expanded' | 'detailed' | 'compact' = 'compact', dictionary: typeof en | typeof zh = en) {
+function mount(mode: 'normal' | 'compact' = 'compact', dictionary: typeof en | typeof zh = en) {
   const source = createSnapshotStore(mode)
-  const setTranscriptView = vi.fn((next: 'expanded' | 'detailed' | 'compact') => { source.set(next) })
+  const setTranscriptView = vi.fn((next: 'normal' | 'compact') => { source.set(next) })
   const props: TranscriptViewRowProps = {
     usePanelInfo: selector => selector({ activePanelId: null }),
     useSessions: emptySessions(),
@@ -54,18 +54,17 @@ function mount(mode: 'expanded' | 'detailed' | 'compact' = 'compact', dictionary
 describe('TranscriptViewRow', () => {
   it('explains the preference and shows Compact by default', () => {
     mount()
-    expect(screen.getByText('Work details')).toBeDefined()
-    expect(screen.getByText('Controls how turns and steps expand by default')).toBeDefined()
+    expect(screen.getByText('Conversation display')).toBeDefined()
+    expect(screen.getByText('Controls process content in completed turns')).toBeDefined()
     expect(screen.getByRole('button', { name: /Compact/ }).getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('selects Expanded and follows the mirrored value', () => {
+  it('selects Normal and follows the mirrored value', () => {
     const b = mount()
     fireEvent.click(screen.getByRole('button', { name: /Compact/ }))
-    expect(screen.getByRole('menuitem', { name: 'Detailed' })).toBeDefined()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Expanded' }))
-    expect(b.setTranscriptView).toHaveBeenCalledWith('expanded')
-    const trigger = screen.getByRole('button', { name: /Expanded/ })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Normal' }))
+    expect(b.setTranscriptView).toHaveBeenCalledWith('normal')
+    const trigger = screen.getByRole('button', { name: /Normal/ })
     fireEvent.click(trigger)
     expect(screen.getByRole('menuitem', { name: 'Compact' })).toBeDefined()
     fireEvent.pointerDown(document.body)
@@ -74,9 +73,9 @@ describe('TranscriptViewRow', () => {
 
   it('shows the conversation-display values in Chinese', () => {
     mount('compact', zh)
-    fireEvent.click(screen.getByRole('button', { name: '简洁' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '完全展开' }))
-    expect(screen.getByRole('button', { name: '完全展开' })).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: '紧凑' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '标准' }))
+    expect(screen.getByRole('button', { name: '标准' })).toBeDefined()
   })
 })
 

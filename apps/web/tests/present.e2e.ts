@@ -1,5 +1,4 @@
 /** Recorded source-file delivery, edits, reload, deletion, and Session ZIP behavior. */
-import { expandOwningTurnProcess } from './support.ts'
 import { readFile, unlink, mkdir, mkdtemp, writeFile, rm, realpath } from 'node:fs/promises'
 import { join, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -182,8 +181,6 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       const delivered = page.locator('[data-tool="present"][data-state="ok"]')
       expect(await failed.count()).toBe(1)
       expect(await delivered.count()).toBe(1)
-      await expandOwningTurnProcess(page, failed)
-      await expandOwningTurnProcess(page, delivered)
       expect(await failed.innerText()).toContain('Delivery failed')
       expect(await delivered.innerText()).toContain('Delivered')
       await page.locator('[data-turn-process]').click()

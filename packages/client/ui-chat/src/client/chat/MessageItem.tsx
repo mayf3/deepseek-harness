@@ -6,6 +6,7 @@ import { fileExtension, FileTypeIcon, fileSizeText, JsonBlock, projectUserText, 
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { ModelRetryNode, TurnErrorNode, UserMessageNode } from '../contract/snapshot.ts'
 import { CompactionItem } from './CompactionItem.tsx'
+import { ContextInjectionRow } from './ContextInjectionRow.tsx'
 import { MessageIconActions } from './MessageIconActions.tsx'
 import css from './MessageItem.module.css'
 
@@ -332,6 +333,20 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
           t={t}
         />
       )}
+    />
+  )
+})
+
+/** Injected-context keyed Chat renderer. */
+export const ContextMessageNodeView = memo(function ContextMessageNodeView({ node, t }: ChatNodeViewProps<'context'>) {
+  const data = node.data
+  return (
+    <ContextInjectionRow
+      content={data.content}
+      source={data.source}
+      producer={data.producer}
+      form={data.form}
+      t={t}
     />
   )
 })

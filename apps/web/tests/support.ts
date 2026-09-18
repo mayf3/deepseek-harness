@@ -64,26 +64,21 @@ export async function expandTurnProcesses(page: Page): Promise<void> {
   const count = await controls.count()
   for (let index = 0; index < count; index++) {
     const control = controls.nth(index)
-    if (await control.isEnabled() && await control.getAttribute('aria-expanded') !== 'true') await control.click()
+    if (await control.getAttribute('aria-expanded') !== 'true') await control.click()
   }
 }
 
 /**
- * Expand the Turn and secondary process groups containing a possibly hidden descendant.
+ * Expand the Turn-process group containing one possibly hidden descendant.
  * @param page - page containing the Chat view.
- * @param target - DOM locator matching the descendant even while its process groups are hidden.
+ * @param target - descendant whose owning Turn process should open.
  */
 export async function expandOwningTurnProcess(page: Page, target: Locator): Promise<void> {
-  await target.waitFor({ state: 'attached', timeout: 10_000 })
   const turn = await target.evaluate(element => element.closest<HTMLElement>('[data-chat-turn]')?.dataset.chatTurn)
-  if (turn === undefined) return
+  if (turn === undefined || await target.isVisible()) return
   const control = page.locator(`[data-turn-process="${turn}"]`)
-  if (await control.count() > 0 && await control.isEnabled()
-    && await control.getAttribute('aria-expanded') !== 'true') await control.click()
-  const group = target.locator('xpath=ancestor::*[@data-step-process][1]')
-  if (await group.count() === 0) return
-  const stepControl = group.locator(':scope > button').first()
-  if (await stepControl.getAttribute('aria-expanded') !== 'true') await stepControl.click()
+  await control.waitFor({ state: 'visible', timeout: 10_000 })
+  if (await control.getAttribute('aria-expanded') !== 'true') await control.click()
 }
 
 /** Fail loud on a stale checkout instead of testing yesterday's bundle. */

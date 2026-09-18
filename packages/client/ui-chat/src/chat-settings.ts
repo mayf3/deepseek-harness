@@ -5,13 +5,13 @@ import z from '@deepseek-ai/schemastery'
 /** Settings namespace owned by the Chat target. */
 export const CHAT_SETTINGS_NAMESPACE = 'ui-chat'
 
-/** Field carrying the work details presentation mode. */
+/** Field carrying the completed-Turn transcript presentation mode. */
 export const TRANSCRIPT_VIEW_FIELD = 'transcriptView'
 
 /** Transcript presentation modes accepted at settings boundaries. */
-export const TRANSCRIPT_VIEW_MODES = ['compact', 'detailed', 'expanded'] as const
+export const TRANSCRIPT_VIEW_MODES = ['normal', 'compact'] as const
 
-/** Work details presentation. */
+/** Completed-Turn transcript presentation. */
 export type TranscriptViewMode = typeof TRANSCRIPT_VIEW_MODES[number]
 
 /** Default preserves the compact process disclosure introduced by Chat. */
@@ -28,8 +28,8 @@ export const DEFAULT_PERFORMANCE_USAGE: PerformanceUsageMode = 'detailed'
 
 /** Durable Chat section shared by the Host schema and browser scope. */
 export interface ChatSettings {
-  /** Work details preference; normal is accepted only for existing saved settings. */
-  transcriptView: TranscriptViewMode | 'normal'
+  /** Presentation mode for completed Turn process content. */
+  transcriptView: TranscriptViewMode
   /** Detail level for composer statistics and completed-Turn usage. */
   performanceUsage: PerformanceUsageMode
 }
@@ -37,5 +37,5 @@ export interface ChatSettings {
 /** Durable Chat schema; also the wire envelope the browser scope validates against. */
 export const ChatSettingsSchema: z<ChatSettings> = z.object({
   performanceUsage: z.union([...PERFORMANCE_USAGE_MODES]).default(DEFAULT_PERFORMANCE_USAGE),
-  [TRANSCRIPT_VIEW_FIELD]: z.union([...TRANSCRIPT_VIEW_MODES, 'normal']).default(DEFAULT_TRANSCRIPT_VIEW_MODE),
+  [TRANSCRIPT_VIEW_FIELD]: z.union([...TRANSCRIPT_VIEW_MODES]).default(DEFAULT_TRANSCRIPT_VIEW_MODE),
 })

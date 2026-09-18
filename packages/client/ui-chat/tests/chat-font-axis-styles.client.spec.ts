@@ -19,19 +19,6 @@ function declarationsFrom(source: string, selector: string): string[] {
 }
 
 describe('chat flow font-size axis', () => {
-  it('process titles follow their body and secondary font-size tiers', () => {
-    expect(declarationsFrom(read('StepProcessList.module.css'), '.title')).toContain(
-      'font-size: var(--dsh-content-font-size, 14px)',
-    )
-    expect(declarationsFrom(read('TurnProcessNodeView.module.css'), '.label')).toEqual(expect.arrayContaining([
-      'font-size: var(--dsh-content-font-size-secondary, 13px)',
-      'line-height: calc(24px + var(--dsh-content-font-delta, 0px))',
-    ]))
-    expect(declarationsFrom(read('TurnProcessNodeView.module.css'), '.root')).toContain(
-      'height: calc(33px + var(--dsh-content-font-delta, 0px))',
-    )
-  })
-
   it('think text reads the secondary tier (one step under the body size)', () => {
     const css = read('ReasoningRow.module.css')
     expect(declarationsFrom(css, '.summary')).toEqual(expect.arrayContaining([
@@ -45,24 +32,18 @@ describe('chat flow font-size axis', () => {
     ]))
   })
 
-  it('starts streaming think summaries at the left edge and fades their right edge', () => {
-    const css = read('ReasoningRow.module.css')
-    expect(declarationsFrom(css, '.summary[data-streaming]')).toContain(
-      'mask-image: linear-gradient(to right, black calc(100% - 48px), transparent)',
-    )
-    expect(declarationsFrom(css, '.summary[data-streaming] .summaryText')).toEqual(expect.arrayContaining([
-      'overflow: visible',
-      'text-overflow: clip',
-    ]))
-    expect(css).not.toContain('justify-content: flex-end')
-  })
-
-  it('command summaries read the secondary tier on the shared row line', () => {
+  it('command and context summaries read the secondary tier on the shared row line', () => {
     expect(declarationsFrom(read('GenericCommandCard.module.css'), '.summary')).toEqual(expect.arrayContaining([
       'font-size: var(--dsh-content-font-size-secondary, 13px)',
       'line-height: calc(24px + var(--dsh-content-font-delta, 0px))',
     ]))
-
+    const context = read('ContextInjectionRow.module.css')
+    for (const selector of ['.source', '.summary']) {
+      expect(declarationsFrom(context, selector)).toEqual(expect.arrayContaining([
+        'font-size: var(--dsh-content-font-size-secondary, 13px)',
+        'line-height: calc(24px + var(--dsh-content-font-delta, 0px))',
+      ]))
+    }
   })
 
   it('the message clock and action glyphs scale with the text they serve', () => {
@@ -103,6 +84,8 @@ describe('chat flow font-size axis', () => {
       .toEqual(expect.arrayContaining([`padding: 4px 0 4px ${indent}`]))
     expect(declarationsFrom(read('MessageItem.module.css'), '.compactionBody'))
       .toEqual(expect.arrayContaining([`padding: 4px 0 4px ${indent}`]))
+    expect(declarationsFrom(read('ContextInjectionRow.module.css'), '.body'))
+      .toEqual(expect.arrayContaining([`margin: 4px 0 0 ${indent}`]))
   })
 
   it('the usage-details trigger reads the secondary tier like its clock label', () => {
