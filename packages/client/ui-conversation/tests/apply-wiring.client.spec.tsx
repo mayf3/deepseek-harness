@@ -4,7 +4,7 @@ import {
   SlotTestRuntime, stubSettingsScope, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject, type ViewTab } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
@@ -14,13 +14,14 @@ const SID = 'session-1' as SessionId
 
 async function bench(options: { declareConversation?: boolean } = {}) {
   const runtime = await SlotTestRuntime.create()
+  const developerTools = createSnapshotStore(true)
   runtime.ctx.provide('uiWorkspace', {
     openWorkspace: vi.fn(async (_workspaceId: unknown, beforeOpen: (id: SessionId) => void) => {
       beforeOpen(SID)
     }),
     openSession: vi.fn(),
   } as never)
-  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  runtime.ctx.provide('settingsScope', { developerTools: { enabled: developerTools }, bind: () => stubSettingsScope().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
@@ -31,7 +32,8 @@ async function bench(options: { declareConversation?: boolean } = {}) {
     }, (_props: { renderSlot?: unknown }) => null)
   }
   const feature = await runtime.mount({ inject: [...inject], apply })
-  return { runtime, feature }
+  if (options.declareConversation !== false) runtime.renderRoot()
+  return { runtime, feature, developerTools }
 }
 
 function entry(
@@ -42,6 +44,20 @@ function entry(
 }
 
 describe('target-neutral Conversation apply wiring', () => {
+  it('offers only Chat while developer tools are disabled and restores registered views when enabled', async () => {
+    const b = await bench()
+    const header = b.runtime.slots.entries('conversation.session.header')[0]!
+    const source = (header.inject!() as { hooks: { conversationViews: ObservableSnapshot<readonly ViewTab[]> } }).hooks.conversationViews
+    for (const id of ['chat', 'trajectory']) {
+      b.runtime.slots.register({ name: 'conversation.view', id, label: id }, (() => null) as never)
+    }
+    await vi.waitFor(() => { expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat', 'trajectory']) })
+    b.developerTools.set(false)
+    expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat'])
+    b.developerTools.set(true)
+    expect(source.getSnapshot().map(tab => tab.id)).toEqual(['chat', 'trajectory'])
+    await b.runtime.dispose()
+  })
   it('waits for the layout-owned conversation declaration before registering its subtree', async () => {
     const b = await bench({ declareConversation: false })
     expect(b.runtime.slots.entries('main')).toHaveLength(0)
@@ -51,11 +67,13 @@ describe('target-neutral Conversation apply wiring', () => {
       'main': { kind: 'keyed', scope: 'root' },
       'settings.general.item': { kind: 'list', scope: 'root' },
     }, (_props: { renderSlot?: unknown }) => null)
-
+    b.runtime.renderRoot()
     expect(b.runtime.slots.entries('main').map(row => row.options.key)).toEqual(['conversation'])
     expect(b.runtime.slots.entries('main.conversation')).toHaveLength(1)
     expect(b.runtime.slots.spec('main.conversation'))
       .toEqual({ kind: 'single', scope: 'session-maybe' })
+    expect(b.runtime.factoryOf('conversation.content').slots)
+      .toMatchObject({ views: { scope: 'session' } })
     expect(b.runtime.slots.entries('conversation.session')).toHaveLength(1)
     expect(b.runtime.slots.entries('conversation.session.header')).toHaveLength(1)
     expect(b.runtime.slots.entries('conversation.composer.bar')).toHaveLength(1)
@@ -75,6 +93,7 @@ describe('target-neutral Conversation apply wiring', () => {
     const session = entry(b.runtime, 'conversation.session')
     const header = entry(b.runtime, 'conversation.session.header')
     expect(entry(b.runtime, 'main.conversation')?.store).toBeUndefined()
+    expect(b.runtime.factoryOf('conversation.content').store).toBeUndefined()
     expect(session?.store).toBeDefined()
     expect(header?.store).toBe(session?.store)
     expect(b.runtime.slots.spec('conversation.composer'))

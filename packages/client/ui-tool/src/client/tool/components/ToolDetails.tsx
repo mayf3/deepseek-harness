@@ -1,5 +1,7 @@
 /** Compact, read-only fields and lists for recorded Tool results. */
-import { CodeBlock, MarkdownText, IconCheckOutline14, IconChevronRightOutline14, IconPlayOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  CodeBlock, MarkdownText, IconCheckOutlineRegular, IconChevronRightOutlineRegular, IconPlayOutlineRegular,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { OpenFileOptions } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { markdownLabels } from '../models/primitive-labels.ts'
@@ -48,8 +50,8 @@ function DetailItem({ item, t, onOpenFile }: { item: ToolDetailItem } & DetailCo
             <span className={css.status} role="img" aria-label={item.change?.label ?? status.label}>
               {item.change?.value === 'added' ? '+'
                 : item.change?.value === 'removed' ? '−'
-                  : status.value === 'completed' ? <IconCheckOutline14 />
-                    : status.value === 'in_progress' ? <IconPlayOutline16 size={14} />
+                  : status.value === 'completed' ? <IconCheckOutlineRegular size={14} />
+                    : status.value === 'in_progress' ? <IconPlayOutlineRegular size={14} />
                       : <span className={css.pending} />}
             </span>
           )}
@@ -93,7 +95,7 @@ function DetailItem({ item, t, onOpenFile }: { item: ToolDetailItem } & DetailCo
       )}
       {item.groups?.map((group, index) => (
         <details key={index} className={css.group}>
-          <summary><IconChevronRightOutline14 /><span>{group.label}</span></summary>
+          <summary><IconChevronRightOutlineRegular /><span>{group.label}</span></summary>
           <ul className={css.list}>
             {group.items.map((child, childIndex) => <DetailItem key={childIndex} item={child} t={t} onOpenFile={onOpenFile} />)}
           </ul>
@@ -125,7 +127,7 @@ export function ToolDetails({ model, hasInspect = false, t, onOpenFile }: {
       )}
       {model.unchanged !== undefined && (
         <details className={css.unchanged}>
-          <summary><IconChevronRightOutline14 />{model.unchanged.label}</summary>
+          <summary><IconChevronRightOutlineRegular />{model.unchanged.label}</summary>
           <ul className={css.list}>
             {model.unchanged.items.map((item, index) => <DetailItem key={index} item={item} t={t} onOpenFile={onOpenFile} />)}
           </ul>

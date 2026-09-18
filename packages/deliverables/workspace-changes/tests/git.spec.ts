@@ -1,7 +1,7 @@
 /** Git command bounds, snapshot recovery, and diff failure reporting. */
 import { chmod, mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { GitRunner, blobText, diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree, treeBlob } from '../src/git.ts'
@@ -29,6 +29,22 @@ async function runner(limits = { timeoutMs: 30_000, outputMaxBytes: 1024 * 1024 
 const signal = new AbortController().signal
 
 describe('GitRunner', () => {
+  it('ignores ambient indexed Git configuration after the credential scrub', async () => {
+    const cwd = await scratchDir('dsh-git-env-', cleanups)
+    git(cwd, 'init', '-q', '-b', 'main')
+    const { git: command } = await runner()
+    vi.stubEnv('GIT_CONFIG_COUNT', '1')
+    vi.stubEnv('GIT_CONFIG_KEY_0', 'core.bare')
+    vi.stubEnv('GIT_CONFIG_VALUE_0', 'true')
+    try {
+      const result = await command.run(['rev-parse', '--is-bare-repository'], { cwd, signal })
+      expect(result.exitCode, result.stderr).toBe(0)
+      expect(result.stdout.trim()).toBe('false')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('reports timeouts and external aborts as failures', async () => {
     const cwd = await scratchDir('dsh-git-runner-', cleanups)
     const { git: slow } = await runner({ timeoutMs: 1, outputMaxBytes: 1024 })

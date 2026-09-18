@@ -229,13 +229,17 @@
       name: '@deepseek-ai/dsh-office-to-pdf'
 
     # The right Sidebar's document tab: bounded file reads with selectable
-    # Markdown, code, HTML, PDF, and plain-text renderers.
+    # Markdown, code, HTML, PDF, Office, and plain-text renderers.
     - id: ui-sidebar-documentpreview
       name: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview'
 
-    # The right Sidebar's workspace file tree tab type.
+    # Sandboxed HTTP(S) Browser tabs, including loopback targets.
+    - id: ui-sidebar-browser
+      name: '@deepseek-ai/dsh-client-ui-sidebar-browser'
+
     - id: ui-sidebar-terminal
       name: '@deepseek-ai/dsh-client-ui-sidebar-terminal'
+    # The right Sidebar's workspace file tree tab type.
     - id: ui-sidebar-files
       name: '@deepseek-ai/dsh-client-ui-sidebar-files'
 

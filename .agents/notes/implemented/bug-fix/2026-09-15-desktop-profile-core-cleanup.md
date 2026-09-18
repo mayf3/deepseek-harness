@@ -12,7 +12,7 @@ Old Desktop profiles contain installed core packages and local tarball dependenc
 
 Production Desktop cleans profile copies of packages named in the verified runtime descriptor or the old Desktop package-set record before starting the Host, under the existing profile lock. Cleanup removes matching dependency declarations and pnpm overrides, invalidates the lockfile when package state changes, and unlinks fallback links without deleting their targets. Other plugins, bundle selections, configuration, and session data remain. Development skips cleanup.
 
-The implementation and its temporary enable constant live in `apps/desktop/src/profile-core-cleanup.ts`, with one call in profile preparation. Cleanup runs on every production startup because development or package operations can recreate residue. This qualifies package retention in the [in-place profile decision](../architecture/2026-09-09-desktop-in-place-profile.md); direct writes and failure recovery remain unchanged.
+The implementation and its temporary enable constant live in `apps/desktop/src/profile-core-cleanup.ts`, with one call in profile preparation. Cleanup runs on every production startup because development or package operations can recreate residue. This qualifies package retention in the [bundled runtime decision](../architecture/2026-09-08-desktop-bundled-runtime-and-external-plugins.md); direct writes and failure recovery remain unchanged.
 
 ## Alternatives considered
 

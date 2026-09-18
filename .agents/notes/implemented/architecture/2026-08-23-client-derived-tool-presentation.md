@@ -64,7 +64,7 @@ The Host `ToolDefinition.presentCall`, `ToolDefinition.presentResult`, `ToolCall
 
 **Client card model** means the pure props data under `ui-tool/src/client/tool/models/` consumed directly by `TerminalBlock`, `DiffBlock`, `ReadBlock`, `SearchBlock`, `WebBlock`, or `ToolRow`.
 
-**Specialized card** means the structured terminal, diff, read, search, or web body. Titles, summaries, status dots, and ordinary IN/OUT text remain part of the generic tool row.
+**Specialized card** means the structured terminal, diff, read, search, or web body. Titles, summaries, lifecycle styling, business glyphs, and ordinary IN/OUT text remain part of the generic tool row.
 
 **Equivalent** means that the same supported input produces the user-visible result and interaction pinned by the existing component, assembly, and browser evidence. It does not require the same intermediate TypeScript types or internal calls.
 
@@ -301,7 +301,7 @@ The Client terminal model derives existing `TerminalBlock` props from the tool n
 | Input | Preserved result |
 |---|---|
 | running standard `bash`/`pwsh` foreground call | terminal prompt, description, cwd, and running state |
-| successful standard foreground call | terminal output, exit code/signal, and success or failure status dot |
+| successful standard foreground call | terminal output, exit code/signal, and settled state presentation |
 | `run_in_background:true` | Generic row and raw result |
 | tool execution error | Generic IN/OUT and error summary |
 | running persistent `bash`/`pwsh` | terminal prompt |

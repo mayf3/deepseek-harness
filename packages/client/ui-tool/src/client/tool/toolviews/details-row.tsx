@@ -2,8 +2,8 @@
 import { useMemo } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import {
-  IconAgentPresetOutline16, IconBranchOutline16, IconChecklistOutline14, IconClockOutline16,
-  IconCodeOutline16, IconCordisPluginOutline14, IconGoalOutline16, IconSearchOutline16,
+  IconAgentPresetOutlineRegular, IconBranchOutlineRegular, IconChecklistOutlineRegular, IconClockOutlineRegular,
+  IconCodeOutlineRegular, IconCordisPluginOutlineRegular, IconGoalOutlineRegular, IconSearchOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
@@ -60,14 +60,14 @@ const LSP_TITLE_KEYS = {
 } as const
 
 function detailIcon(toolName: string) {
-  if (toolName.startsWith('schedule_')) return <IconClockOutline16 size={14} />
-  if (toolName.endsWith('_goal')) return <IconGoalOutline16 size={14} />
-  if (toolName.startsWith('cordis_')) return <IconCordisPluginOutline14 />
-  if (toolName.startsWith('terminal_')) return <IconCodeOutline16 size={14} />
-  if (toolName.startsWith('session_') || toolName === 'lsp') return <IconSearchOutline16 size={14} />
-  if (toolName.startsWith('job_') || toolName.startsWith('team_task_')) return <IconChecklistOutline14 />
-  if (toolName === 'workflow' || toolName === 'ralph') return <IconBranchOutline16 size={14} />
-  return <IconAgentPresetOutline16 size={14} />
+  if (toolName.startsWith('schedule_')) return <IconClockOutlineRegular size={14} />
+  if (toolName.endsWith('_goal')) return <IconGoalOutlineRegular size={14} />
+  if (toolName.startsWith('cordis_')) return <IconCordisPluginOutlineRegular />
+  if (toolName.startsWith('terminal_')) return <IconCodeOutlineRegular size={14} />
+  if (toolName.startsWith('session_') || toolName === 'lsp') return <IconSearchOutlineRegular size={14} />
+  if (toolName.startsWith('job_') || toolName.startsWith('team_task_')) return <IconChecklistOutlineRegular />
+  if (toolName === 'workflow' || toolName === 'ralph') return <IconBranchOutlineRegular size={14} />
+  return <IconAgentPresetOutlineRegular size={14} />
 }
 
 /**

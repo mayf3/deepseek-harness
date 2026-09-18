@@ -14,7 +14,7 @@ import { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
 import { createScope, scopeOf } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
-import { IconGoalOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconGoalOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ClientSessionContext, ConsumeTokenRequest, InputTriggerPick, InputTriggerSource, SubmitAttachment } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { CommandContribution, CommandDecoration, PopupSelectSpec, SelectOption } from '../src/client/contract.ts'
 import type { CommandDescriptor } from '../src/client/directory.ts'
@@ -360,7 +360,7 @@ describe('candidates', () => {
         name: 'goal',
         label: 'command:label.goal',
         description: 'command:description.goal',
-        icon: IconGoalOutline16,
+        icon: IconGoalOutlineRegular,
         hint: '<objective>',
         section: 'command:section.add',
       })

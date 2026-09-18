@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { describe, expect, it, vi } from 'vitest'
 import { act, render } from '@testing-library/react'
 import {
@@ -38,12 +39,15 @@ async function bench() {
   const runtime = await SlotTestRuntime.create()
   const chatSettings = stubSettingsScope<ChatSettings>()
   runtime.ctx.provide('settingsScope', {
+    developerTools: { enabled: createSnapshotStore(true) },
     bind: ({ namespace }: { namespace: string }) => namespace === CHAT_SETTINGS_NAMESPACE
       ? chatSettings.scope
       : stubSettingsScope().scope,
   } as never)
   runtime.ctx.provide('layout', { openRightbar: vi.fn(), closeRightbar: vi.fn() } as never)
-  runtime.ctx.provide('sidebarRight', { openResource: vi.fn() } as never)
+  runtime.ctx.provide('sidebarRight', { openResource: vi.fn(), openTab: vi.fn() } as never)
+  runtime.ctx.provide('sidebarRightTabs', { register: vi.fn(() => () => {}) } as never)
+  runtime.ctx.provide('resources', { register: vi.fn(() => () => {}) } as never)
   const openSession = vi.fn<(id: SessionId) => void>()
   runtime.ctx.provide('uiWorkspace', {
     openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
