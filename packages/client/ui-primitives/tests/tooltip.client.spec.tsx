@@ -302,6 +302,28 @@ describe('Tooltip', () => {
     expect(screen.getByRole('tooltip')).toBeTruthy()
   })
 
+  it('a press that never focuses does not swallow the next keyboard focus', () => {
+    render(
+      <Tooltip label="Open sidebar">
+        <button type="button">anchor</button>
+      </Tooltip>,
+    )
+    const anchor = screen.getByText('anchor')
+    // preventDefault on pointerdown (or a press cancelled mid-gesture) fires
+    // no focus; the settled press must not leave the pointer flag armed.
+    fireEvent.pointerDown(anchor)
+    fireEvent.pointerUp(anchor)
+    fireEvent.focus(anchor)
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+    fireEvent.blur(anchor)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    // A cancelled gesture clears the flag the same way.
+    fireEvent.pointerDown(anchor)
+    fireEvent.pointerCancel(anchor)
+    fireEvent.focus(anchor)
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+  })
+
   it('suppresses the bubble while disabled without remounting the anchor', () => {
     const { rerender } = render(
       <Tooltip label="Rail" disabled>

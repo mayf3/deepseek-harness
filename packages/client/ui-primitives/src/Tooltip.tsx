@@ -174,7 +174,13 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
         ref: mergedRef,
         onMouseEnter: (e) => { children.props.onMouseEnter?.(e); triggers.current.hover = true; showAfterHoverDelay() },
         onMouseLeave: (e) => { children.props.onMouseLeave?.(e); triggers.current.hover = false; cancelShow(); withdraw() },
+        // pointerFocus survives only until the click settles: focus consumes
+        // it, and pointerup/pointercancel clear it when the press never moves
+        // focus (preventDefault, disabled target), so a later keyboard focus
+        // still shows the bubble.
         onPointerDown: (e) => { children.props.onPointerDown?.(e); pointerFocus.current = true },
+        onPointerUp: (e) => { children.props.onPointerUp?.(e); pointerFocus.current = false },
+        onPointerCancel: (e) => { children.props.onPointerCancel?.(e); pointerFocus.current = false },
         onFocus: (e) => {
           children.props.onFocus?.(e)
           if (pointerFocus.current) {

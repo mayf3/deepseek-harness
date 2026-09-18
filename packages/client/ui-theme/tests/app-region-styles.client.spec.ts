@@ -18,28 +18,49 @@ const DRAG_OWNERS = [
 ]
 
 /**
- * Selectors of rules declaring a window drag region.
+ * Selectors of rules declaring a window drag region. Matches the prefixed and
+ * unprefixed property and tolerates `!important`, so a creative spelling
+ * cannot slip a drag surface past the allowlist.
  * @param css - stylesheet text.
  * @returns the declaring selectors, in source order.
  */
 function dragSelectors(css: string): string[] {
   return parseRules(css)
     .filter(rule => rule.declarations
-      .some(([property, value]) => property === '-webkit-app-region' && value === 'drag'))
+      .some(([property, value]) => /^(-webkit-)?app-region$/.test(property) && /^drag(\s|!|$)/.test(value)))
     .map(rule => rule.selectors.join(', '))
+}
+
+/**
+ * Allowlist violations across a stylesheet set.
+ * @param files - stylesheet paths to scan.
+ * @param read - returns one stylesheet's text.
+ * @returns `path selectors` for each drag rule outside DRAG_OWNERS.
+ */
+function offenders(files: string[], read: (file: string) => string): string[] {
+  return files
+    .filter(file => !DRAG_OWNERS.some(owner => file.endsWith(`/${owner}`)))
+    .flatMap(file => dragSelectors(read(file)).map(selectors => `${file} ${selectors}`))
 }
 
 describe('window drag-region ownership', () => {
   it('rejects a drag declaration and passes no-drag', () => {
     expect(dragSelectors('.a { -webkit-app-region: drag; }')).toEqual(['.a'])
+    expect(dragSelectors('.a { -webkit-app-region: drag !important; }')).toEqual(['.a'])
+    expect(dragSelectors('.a { app-region: drag; }')).toEqual(['.a'])
     expect(dragSelectors('.a { -webkit-app-region: no-drag; }')).toEqual([])
+    expect(dragSelectors('.a { app-region: no-drag !important; }')).toEqual([])
+  })
+
+  it('reports a drag rule outside the allowlist and exempts the owners', () => {
+    const drag = '.evil { -webkit-app-region: drag; }'
+    expect(offenders(['/packages/client/ui-evil/src/client/Evil.module.css'], () => drag))
+      .toEqual(['/packages/client/ui-evil/src/client/Evil.module.css .evil'])
+    expect(offenders([`/packages/${DRAG_OWNERS[0]!}`], () => drag)).toEqual([])
   })
 
   it('keeps -webkit-app-region: drag inside the two chrome bands', () => {
-    const offenders = packageStylesheets()
-      .filter(file => !DRAG_OWNERS.some(owner => file.endsWith(`/${owner}`)))
-      .flatMap(file => dragSelectors(readFileSync(file, 'utf8')).map(selectors => `${file} ${selectors}`))
-    expect(offenders).toEqual([])
+    expect(offenders(packageStylesheets(), file => readFileSync(file, 'utf8'))).toEqual([])
   })
 
   it('still finds a drag band in every allowlisted owner', () => {
