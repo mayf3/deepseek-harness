@@ -1,4 +1,5 @@
-/* Active plan status follows Figma's warn-state pill. */
+/* Active plan status: a business accent pill at the control row's own height
+   (28px, like the + control and the sibling selects). */
 
 .wrap {
   display: inline-flex;
@@ -10,13 +11,14 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  height: 28px;
   min-width: 34px;
-  padding: 2px 8px;
+  padding: 0 8px;
   border: none;
   border-radius: 999px;
   corner-shape: round;
-  background: var(--dsw-alias-state-warn-tertiary);
-  color: var(--dsw-alias-state-warn-label);
+  background: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-state-business-primary);
   font-size: 13px;
   font-weight: 500;
   line-height: 20px;
@@ -24,11 +26,15 @@
 }
 
 .chip:hover:not(:disabled) {
-  color: var(--dsw-alias-state-warn-primary);
+  background: color-mix(
+    in srgb,
+    var(--dsw-alias-state-business-tertiary),
+    var(--dsw-alias-state-business-primary) 6%
+  );
 }
 
 .chip:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-warn-label);
+  outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 2px;
 }
 
