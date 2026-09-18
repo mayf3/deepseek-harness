@@ -44,6 +44,8 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 
 恢复会话时若已有写句柄占用，返回 `session/writer-held`，并携带会话 id；其他恢复失败仍返回 `gateway/internal`。
 
+`loadThrough(seq)` 在共享目标被覆盖或加载结束前私下保留较早页面，随后把成功取得的页面按顺序作为一次前插发布。历史加载期间实时事件仍然可见。后续页面失败时保留已成功取得的部分；历史窗口被替换时丢弃被替换窗口的暂存页面。普通 `loadOlder()` 仍直接发布其单页结果。
+
 <a id="client-references"></a>
 ## Client 引用
 
