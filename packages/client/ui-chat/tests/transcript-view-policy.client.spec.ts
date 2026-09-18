@@ -51,7 +51,7 @@ describe('TranscriptViewPolicy', () => {
     ['expanded', 'expanded'],
   ] as const)('reads saved %s as %s without rewriting settings', (saved, resolved) => {
     const host = stubSettingsScope<ChatSettings>()
-    host.publish({ status: 'ready', value: { transcriptView: saved }, revision: 1, writable: true })
+    host.publish({ status: 'ready', value: { transcriptView: saved, performanceUsage: 'detailed' }, revision: 1, writable: true })
     const policy = new TranscriptViewPolicy(host.scope)
     expect(policy.mode.getSnapshot()).toBe(resolved)
     expect(host.set).not.toHaveBeenCalled()
