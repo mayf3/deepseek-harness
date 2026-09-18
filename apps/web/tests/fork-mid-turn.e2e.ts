@@ -71,8 +71,7 @@ describe('web e2e: exact-boundary fork seeds branch closers and continues', () =
     scaffold = await launchWebScaffold({
       replayFixture: join(replayDir, 'override-only.jsonl'),
       replayOverride,
-      // Decode timing is part of the rendered turn tail; keep it non-zero and
-      // deterministic in both isolated and parallel replay/refresh lanes.
+      // Use paced chunks for the child continuation's live-stream assertions.
       paceMs: 5,
     })
     const fixture = await readFile(await selectedSessionFixture(SEED), 'utf8')
@@ -174,7 +173,11 @@ describe('web e2e: exact-boundary fork seeds branch closers and continues', () =
     onTestFailed(() => saveFailureShot(page, 'web-e2e-fork-mid-turn-aria'))
     await page.getByText(`${DONE_MARKER}.`, { exact: false }).last().waitFor({ timeout: 10_000 })
     const flow = page.locator('[data-chat-flow]')
-    await flow.getByText(/Ran for/).last().waitFor({ timeout: 10_000 })
+    const branchAction = flow.locator('[data-turn-tail="2"]').getByRole('button', {
+      name: 'Branch into a new conversation', exact: true,
+    })
+    await branchAction.waitFor({ timeout: 10_000 })
+    expect(await branchAction.isEnabled()).toBe(true)
     const snapshot = (await captureStableAria(page, '[data-chat-flow]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
