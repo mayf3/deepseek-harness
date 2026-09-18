@@ -268,6 +268,7 @@ describe('SearchRow keyed card', () => {
       isError: true,
     }), 'grep')} />)
     expect(errorView.container.querySelector('[data-variant="search"]')?.getAttribute('data-state')).toBe('error')
+    expect(errorView.container.querySelector('[data-variant="search"] svg')).not.toBeNull()
   })
 
   it('surfaces the result text through the Output section when an errored search has no card', () => {

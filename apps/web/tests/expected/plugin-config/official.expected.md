@@ -1,9 +1,7 @@
 - heading "插件" [level=1]
 - paragraph: 添加和管理插件
 - button "刷新"
-- button "添加插件":
-  - img
-  - text: 添加插件
+- button "添加插件"
 - heading "官方" [level=3]
 - text: "5"
 - list:

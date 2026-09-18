@@ -1,6 +1,6 @@
 /** Persistent transcript cards and pending-review sidebar navigation. */
 import { useEffect } from 'react'
-import { FileTypeIcon, IconChevronRightOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { FileTypeIcon, IconChevronRightOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { shallowEqual } from '@deepseek-ai/dsh-client-store'
 import type {} from './plan-definition.ts'
@@ -64,5 +64,5 @@ export function PlanReviewOpen({ review, requestKey, openReview, t, useStore, ac
     actions.markOpened(identity)
   }, [identity, opened, openReview, review, requestKey, actions])
   return <button type="button" className={css.reviewLink} title={t('preview.open')} aria-label={t('preview.open')}
-    onClick={() => { openReview(review, requestKey) }}>{t('preview.full')}<IconChevronRightOutline14 size={14} /></button>
+    onClick={() => { openReview(review, requestKey) }}>{t('preview.full')}<IconChevronRightOutlineRegular size={14} /></button>
 }

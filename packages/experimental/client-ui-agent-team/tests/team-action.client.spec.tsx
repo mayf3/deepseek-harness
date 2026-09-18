@@ -145,6 +145,7 @@ describe('TeamAction', () => {
 
     const refresh = screen.getByRole('button', { name: zh.refresh })
     fireEvent.click(refresh)
+    expect(screen.getByRole('status', { name: zh.loading })).toBeTruthy()
     fireEvent.click(refresh)
     newer.resolve({ ok: true, value: newestView })
     expect(await screen.findByText('Newest task')).toBeTruthy()
@@ -500,8 +501,15 @@ describe('TeamAction', () => {
     expect(await screen.findByText('provider failed')).toBeTruthy()
     expect(screen.getByText(zh.ready)).toBeTruthy()
     expect(screen.getByText(zh.blocked)).toBeTruthy()
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: /failed-worker/u }).disabled).toBe(true)
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: /provisioning-worker/u }).disabled).toBe(true)
+    const failedMember = screen.getByRole<HTMLButtonElement>('button', { name: /failed-worker/u })
+    const provisioningMember = screen.getByRole<HTMLButtonElement>('button', { name: /provisioning-worker/u })
+    expect(failedMember.disabled).toBe(true)
+    expect(failedMember.querySelector('[data-state="error"]')).not.toBeNull()
+    expect(provisioningMember.disabled).toBe(true)
+    expect(provisioningMember.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    const tasks = [...document.querySelectorAll('article')]
+    expect(tasks.map(card => card.querySelector('[data-state]')?.getAttribute('data-state')))
+      .toEqual(['idle', 'warning', 'done'])
 
     fireEvent.click(screen.getByRole('button', { name: /^worker运行中/u }))
     expect(await screen.findByText('Error: navigation failed')).toBeTruthy()
