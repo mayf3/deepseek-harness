@@ -14,14 +14,13 @@ export const IconNowrapFill16 = ({ size = 16, className }: IconProps) => (
     width={size}
     height={size}
     className={className}
-    viewBox="0 0 24 24"
+    viewBox="0 0 16 16"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
   >
-    <path
-      d="M1.5 2.5H3.5V21.5H1.5V2.5ZM20.5 2.5H22.5V21.5H20.5V2.5ZM14 9L19 12L14 15V13H5V11H14V9Z"
-      fill="currentColor"
-    />
+    <path d="M2 15H1V1H2V15Z" fill="currentColor" />
+    <path d="M12.3535 7.64645C12.5487 7.84171 12.5487 8.15829 12.3535 8.35355L9.85352 10.8535L9.14648 10.1465L10.793 8.5H3.5V7.5H10.793L9.14648 5.85352L9.85352 5.14648L12.3535 7.64645Z" fill="currentColor" />
+    <path d="M15 15H14V1H15V15Z" fill="currentColor" />
   </svg>
 )
 
@@ -31,13 +30,12 @@ export const IconWrapFill16 = ({ size = 16, className }: IconProps) => (
     width={size}
     height={size}
     className={className}
-    viewBox="0 0 24 24"
+    viewBox="0 0 16 16"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
   >
-    <path
-      d="M1.5 2.5H3.5V21.5H1.5V2.5ZM20.5 2.5H22.5V21.5H20.5V2.5ZM6.75 5H11.5A6 6 0 0 1 12 16.98V19L7 16L12 13V14.97A4 4 0 0 0 11.5 7H6.75V5Z"
-      fill="currentColor"
-    />
+    <path d="M10.9999 8C10.9999 6.89543 10.1046 6 9 6H4.5V5H9C10.6568 5 11.9999 6.34315 11.9999 8C11.9999 9.65685 10.6568 11 9 11H6.20703L6.85351 11.6465L6.14648 12.3535L4.64652 10.8536C4.45126 10.6583 4.45126 10.3417 4.64652 10.1464L6.14648 8.64648L6.85351 9.35352L6.20703 10H9C10.1046 10 10.9999 9.10457 10.9999 8Z" fill="currentColor" />
+    <path d="M2 15H1V1H2V15Z" fill="currentColor" />
+    <path d="M15 15H14V1H15V15Z" fill="currentColor" />
   </svg>
 )

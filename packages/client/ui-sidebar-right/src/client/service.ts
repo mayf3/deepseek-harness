@@ -115,6 +115,8 @@ export interface SidebarRightBinding {
 export interface SidebarRightPlacement {
   /** Land a new tab in this pane instead of the active docked one. */
   readonly paneId?: PaneId
+  /** Prefer a new pane for new content; use the target pane when splitting is unavailable. */
+  readonly preferNewPane?: boolean
   /** Take this tab's place — its pane and its strip slot — and close it in the same step. */
   readonly replaceTab?: TabId
   /**
@@ -378,15 +380,30 @@ export class SidebarRightController implements ISidebarRight {
     placement: SidebarRightPlacement,
     params: SidebarRightNavigationParams,
   ): void {
+    const surface = this.adopted.get(sessionId)?.store.getSnapshot().bySession[sessionId]
+      ?? (this.binding?.sessionId === sessionId ? this.binding.surfaces[sessionId] : undefined)
+    const targetPane = surface === undefined ? undefined : placement.paneId ?? activeDockPaneId(surface.layout)
+    const target = targetPane === undefined ? undefined : surface?.layout.nodes[targetPane]
+    const preferNewPane = placement.preferNewPane === true
+      && placement.replaceTab === undefined
+      && surface !== undefined
+      && target?.kind === 'pane'
+      && target.host === 'dock'
+      && target.tabs.length > 0
+      && canSplit(surface.layout)
+      && dockPaneIds(surface.layout).length < 2
+      && this.binding?.sessionId === sessionId
+      && this.binding.canSplitPane(target.id)
     const commit = (): void => { actions.openContent(sessionId, {
       kind: claim.kind,
       contentId: claim.contentId,
       title: claim.title,
       ...placement.paneId === undefined ? {} : { paneId: placement.paneId },
+      ...preferNewPane ? { preferNewPane: true } : {},
       ...placement.replaceTab === undefined ? {} : { replaceTab: placement.replaceTab },
       ...placement.revealIfOpened === undefined ? {} : { revealIfOpened: placement.revealIfOpened },
     }, (tabId) => { this.tabDomain.navigate(sessionId, tabId, { address, params }) }) }
-    const layout = this.adopted.get(sessionId)?.store.getSnapshot().bySession[sessionId]?.layout
+    const layout = surface?.layout
     const replaced = placement.replaceTab === undefined ? undefined : layout?.tabs[placement.replaceTab]
     const revealed = layout === undefined || placement.revealIfOpened === false
       ? undefined : findContentTab(layout, claim.contentId, claim.kind)

@@ -6,7 +6,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, UIEvent } from 'react'
 import {
-  Button, IconChevronDownOutline14, IconCodeOutline16, IconPanelLeftOutline16, IconRightUpOutline16, IconWrapLinesOutline16, Menu, Tooltip,
+  Button, IconChevronDownOutlineRegular, IconCodeOutlineRegular, IconPanelLeftOutlineRegular,
+  IconRightUpOutlineRegular, IconWrapLinesOutlineRegular, Menu, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -207,7 +208,7 @@ export function ReviewTab({
               aria-label={t('review.selectFile')} title={file.display} data-review-file={file.path}
               onClick={() => { setMenuOpen(value => !value) }}>
               <span className={css.selectorText}>{file.display}</span>
-              <IconChevronDownOutline14 size={12} />
+              <IconChevronDownOutlineRegular size={12} />
             </button>}
             items={files.map((entry, at) => ({ id: String(at), label: <span className={css.item}>
               <span className={css.itemPath}>{entry.display}</span>
@@ -219,20 +220,20 @@ export function ReviewTab({
         <span className={css.tools}>
           <Tooltip label={t(split ? 'review.unified' : 'review.split')} side="bottom" delayMs={500}>
             <button type="button" className={css.tool} aria-pressed={split} aria-label={t('review.splitAria')} data-review-tool="split"
-              onClick={() => { actions.toggledSplit(tab.id) }}><IconPanelLeftOutline16 /></button>
+              onClick={() => { actions.toggledSplit(tab.id) }}><IconPanelLeftOutlineRegular /></button>
           </Tooltip>
           <Tooltip label={t(wrap ? 'review.nowrap' : 'review.wrap')} side="bottom" delayMs={500}>
             <button type="button" className={css.tool} aria-pressed={wrap} aria-label={t('review.wrapAria')} data-review-tool="wrap"
-              onClick={() => { actions.toggledWrap(tab.id) }}><IconWrapLinesOutline16 /></button>
+              onClick={() => { actions.toggledWrap(tab.id) }}><IconWrapLinesOutlineRegular /></button>
           </Tooltip>
           {file !== undefined && <Tooltip label={t('review.openFile')} side="bottom" delayMs={500}>
             <button type="button" className={css.tool} aria-label={t('review.openFileAria', { name: file.display })} data-review-tool="open-file"
-              onClick={() => { tab.actions.openResource(fileAddressFor(sessionId, cwd, file.path)) }}><IconCodeOutline16 /></button>
+              onClick={() => { tab.actions.openResource(fileAddressFor(sessionId, cwd, file.path)) }}><IconCodeOutlineRegular /></button>
           </Tooltip>}
           {file !== undefined && native && <Tooltip label={t(phase === 'error' ? 'diff.openNativeError' : 'diff.openNative')} side="bottom" delayMs={500}>
             <button type="button" className={css.tool} disabled={phase === 'opening'} data-review-tool="open-native"
               aria-label={t('diff.openNativeAria', { name: file.display })} data-error={phase === 'error' || undefined}
-              onClick={() => { void openChanged(sessionId, seq, index) }}><IconRightUpOutline16 /></button>
+              onClick={() => { void openChanged(sessionId, seq, index) }}><IconRightUpOutlineRegular /></button>
           </Tooltip>}
         </span>
       </div>

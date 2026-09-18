@@ -2,7 +2,8 @@
 // in one settled keyless turn — the regression anchor for unifying link
 // styles. One fixture turn produces:
 // - prose: Markdown link, reference-style link, mailto link, inline-code URL,
-//   produced-file mention, plus inert contrasts (ambiguous basename, unwritten
+//   produced-file mention, a known-site link carrying that site's own leading
+//   mark, plus inert contrasts (ambiguous basename, unwritten
 //   file, command code, URL-with-flags code, javascript: destination,
 //   footnote superscript, remote image, fenced code block with its copy chrome)
 // - artifacts: seven produced files (chips overflow into the "+N" remainder
@@ -49,12 +50,16 @@ const DONE = 'LINK_GALLERY_DONE'
 const GALLERY_TIME = Date.UTC(2026, 0, 15, 12)
 
 const GUIDE_URL = 'https://docs.example.test/guide'
+const HTTP_URL = 'http://docs.example.test/plain'
 const API_URL = 'https://docs.example.test/api'
 const RELEASES_URL = 'https://docs.example.test/releases'
 const MAILTO_URL = 'mailto:owner@example.test'
 const SOURCE_URL = 'https://docs.example.test/links'
 const INERT_SOURCE_URL = 'ftp://mirror.example.test/spec'
 const FETCH_URL = 'https://docs.example.test/tokens'
+// A mapped host, so the prose pins that the leading glyph is the site's mark
+// rather than the globe the unmapped docs host keeps.
+const REPO_URL = 'https://github.com/example/link-gallery'
 
 /** One-part text content for a built message. */
 function text(value: string): { type: 'text'; text: string }[] {
@@ -256,6 +261,10 @@ function galleryFixture(imageUrl: string): string {
         `Docs: [style guide](${GUIDE_URL}) and \`${API_URL}\`; see [the release notes][rel], `
         + `contact [the maintainer](${MAILTO_URL}), and check the fine print[^1].`,
         '',
+        `Preview: [plain HTTP](${HTTP_URL}).`,
+        '',
+        `Upstream: [the repository](${REPO_URL}).`,
+        '',
         `Inert contrasts: \`curl ${API_URL}\`, \`javascript:alert(1)\`, and \`pnpm run build\`.`,
         '',
         'Wrote `report.html` plus two `style.css` copies; `notes.md` untouched.',
@@ -309,6 +318,10 @@ describe('web e2e: clickable links gallery', () => {
     await seedSession(scaffold, galleryFixture(imageUrl), SEED_ID, undefined, { createdAt: GALLERY_TIME })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
+    await page.route(/https?:\/\/docs\.example\.test\/.*/u, async route => route.fulfill({
+      contentType: 'text/html',
+      body: `<h1>${new URL(route.request().url()).pathname}</h1>`,
+    }))
     await page.clock.setFixedTime(GALLERY_TIME + 60_000)
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
@@ -336,6 +349,7 @@ describe('web e2e: clickable links gallery', () => {
     const markdown = page.locator('[class*="markdown"]')
     await expect.poll(() => markdown.locator(`a[href="${GUIDE_URL}"]`).count(), { timeout: 10_000 }).toBe(1)
     expect(await markdown.locator(`a[href="${RELEASES_URL}"]`).count()).toBe(1)
+    expect(await markdown.locator(`a[href="${HTTP_URL}"]`).count()).toBe(1)
     expect(await markdown.locator(`a[href="${MAILTO_URL}"]`).count()).toBe(1)
     const inlineCodeLink = markdown.locator(`code a[href="${API_URL}"]`)
     expect(await inlineCodeLink.count()).toBe(1)
@@ -418,6 +432,13 @@ describe('web e2e: clickable links gallery', () => {
       expect.soft(await styleOf(link, 'text-decoration-line'), `${name} at rest`).toBe('none')
       expect.soft(await link.locator('svg').count(), `${name} glyph`).toBe(1)
     }
+    // A mapped host leads with its own mark; the unmapped docs host keeps the
+    // globe in the same seat.
+    const repoLink = markdown.locator(`a[href="${REPO_URL}"]`)
+    expect(await repoLink.count()).toBe(1)
+    const repoMark = await repoLink.locator('svg path').first().getAttribute('d')
+    const globeMark = await guideLink.locator('svg path').first().getAttribute('d')
+    expect(repoMark).not.toBe(globeMark)
     await guideLink.hover()
     expect(await styleOf(guideLink, 'text-decoration-line')).toBe('underline')
     expect(await styleOf(guideLink, 'text-decoration-style')).toBe('dotted')
@@ -426,5 +447,12 @@ describe('web e2e: clickable links gallery', () => {
     expect(await styleOf(mentions.first(), 'text-decoration-style')).toBe('dotted')
     // The excluded grey affordance: tool-row file links keep their own color.
     expect(await styleOf(page.locator('button[class*="fileLink"]').first(), 'color')).not.toBe(LINK_BLUE)
+
+    // Ordinary message HTTP(S) links delegate to the right Sidebar Browser.
+    await guideLink.click()
+    const browserAddress = page.locator('[data-rightbar-col]').getByRole('textbox', { name: 'Enter an HTTP(S) address' })
+    await expect.poll(() => browserAddress.inputValue()).toBe(GUIDE_URL)
+    await markdown.locator(`a[href="${HTTP_URL}"]`).click()
+    await expect.poll(() => browserAddress.inputValue()).toBe(HTTP_URL)
   }, 90_000)
 })

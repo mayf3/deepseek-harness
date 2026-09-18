@@ -68,6 +68,9 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
+    const sessions = scaffold.ctx.sessions.list()
+    expect(sessions).toHaveLength(1)
+    scaffold.ctx.permissionPresets.set(sessions[0]!, 'danger-full-access')
   }, 120_000)
 
   afterAll(async () => {
@@ -184,7 +187,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     expect(await terminalWorkflow.getAttribute('aria-expanded')).toBe('false')
     expect(await terminalWorkflow.evaluate(element => getComputedStyle(element).cursor)).toBe('pointer')
     await terminalWorkflow.click()
-    const terminalPhase = page.getByRole('button', { name: /^Run/ })
+    const terminalPhase = page.locator('[data-workflow-run][data-run-status="completed"] [data-disclosure-row]').nth(1)
     await terminalPhase.waitFor()
     expect(await terminalPhase.getAttribute('aria-expanded')).toBe('false')
     expect(await terminalPhase.evaluate(element => getComputedStyle(element).cursor)).toBe('pointer')
@@ -207,7 +210,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     const snapshot = await captureStableAria(page, '[data-chat-flow]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
     await workflow.click()
-    const phase = page.getByRole('button', { name: /^Run/ })
+    const phase = page.locator('[data-workflow-run][data-run-status="completed"] [data-disclosure-row]').nth(1)
     await phase.waitFor()
     expect(await phase.getAttribute('aria-expanded')).toBe('false')
     await phase.click()

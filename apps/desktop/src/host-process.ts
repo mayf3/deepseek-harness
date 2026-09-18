@@ -15,7 +15,12 @@ interface FatalEvent {
   readonly message: string
 }
 
-type DesktopHostEvent = ReadyEvent | FatalEvent
+type DesktopHostEvent = ReadyEvent | FatalEvent | { readonly type: 'shutdown-complete' } | {
+  readonly type: 'update-tasks'
+  readonly requestId: number
+  readonly active: boolean
+  readonly error?: string
+}
 
 const MAX_HOST_DIAGNOSTIC_CHARS = 64 * 1024
 
@@ -23,10 +28,15 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
   if (typeof message !== 'object' || message === null || !('type' in message)) return false
   const candidate = message as Record<string, unknown>
   switch (candidate.type) {
+    case 'shutdown-complete':
+      return true
     case 'ready':
       return typeof candidate.url === 'string'
     case 'fatal':
       return typeof candidate.message === 'string'
+    case 'update-tasks':
+      return Number.isSafeInteger(candidate.requestId) && typeof candidate.active === 'boolean'
+        && (candidate.error === undefined || typeof candidate.error === 'string')
     default:
       return false
   }
@@ -51,6 +61,9 @@ export interface DesktopHostReady {
   readonly injections?: readonly unknown[] | undefined
 }
 
+/** The child has exited, but task teardown did not finish successfully. */
+export class DesktopHostUncleanExitError extends Error {}
+
 /** One Web backend running under the Electron executable in Node mode. */
 export class DesktopHostProcess {
   private child: ChildProcess | undefined
@@ -64,6 +77,9 @@ export class DesktopHostProcess {
   private stderr = ''
   private failureReported = false
   private stopping = false
+  private shutdownCompleted = false
+  private nextControlId = 1
+  private readonly taskQueries = new Map<number, { resolve: (active: boolean) => void; reject: (error: Error) => void }>()
 
   /**
    * @param node - Absolute Electron executable in Node mode.
@@ -121,7 +137,16 @@ export class DesktopHostProcess {
         return
       }
       if (message.type === 'ready') this.readyResolve({ url: message.url, injections: message.injections })
-      else this.fail(new Error(message.message))
+      else if (message.type === 'shutdown-complete') {
+        if (this.stopping) this.shutdownCompleted = true
+        else this.fail(new Error('dsh desktop host acknowledged an unrequested shutdown'))
+      }
+      else if (message.type === 'fatal') this.fail(new Error(message.message))
+      else {
+        const query = this.taskQueries.get(message.requestId)
+        if (message.error === undefined) query?.resolve(message.active)
+        else query?.reject(new Error(message.error))
+      }
     })
     child.once('error', (error) => { this.fail(error) })
     this.exitPromise = new Promise<void>((resolve) => {
@@ -135,14 +160,45 @@ export class DesktopHostProcess {
     return this.readyPromise
   }
 
-  /** Request graceful teardown and await exit, escalating termination when needed. */
-  async stop(): Promise<void> {
+  /**
+   * Inspect active work or lock request admission for update handoff.
+   * @param action - Read-only inspection, admission lock, or recovery unlock.
+   * @returns Whether live tasks would be affected. Locking drains admitted API requests before inspecting tasks;
+   * an unanswered drain fails at the control-request deadline without authorizing installation.
+   */
+  async updateTasks(action: 'inspect' | 'lock' | 'unlock'): Promise<boolean> {
+    const child = this.child
+    if (child === undefined || !child.connected || this.failureReported || this.stopping) {
+      throw new Error('desktop update: Host is unavailable')
+    }
+    const requestId = this.nextControlId++
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await new Promise<boolean>((resolve, reject) => {
+        this.taskQueries.set(requestId, { resolve, reject })
+        timer = setTimeout(() => { reject(new Error('desktop update: task inspection timed out')) }, 10_000)
+        child.send({ type: 'update-tasks', requestId, action }, (error) => { if (error !== null) reject(error) })
+      })
+    } finally {
+      clearTimeout(timer)
+      this.taskQueries.delete(requestId)
+    }
+  }
+
+  /**
+   * Request teardown and await child exit, escalating termination when needed.
+   * @param requireGraceful - Reject update handoff after forced termination or unsuccessful child exit.
+   * @returns Completion of owned process teardown. DesktopHostUncleanExitError confirms exit but refuses installation;
+   * other failures do not confirm exit.
+   */
+  async stop(requireGraceful = false): Promise<void> {
     const child = this.child
     if (child === undefined) return
     this.stopping = true
     if (child.connected) child.send({ type: 'shutdown' }, (error) => { if (error !== null) this.fail(error) })
     const exited = this.exitPromise ?? Promise.resolve()
-    if (!await exitsWithin(exited, 10_000)) child.kill('SIGTERM')
+    const graceful = await exitsWithin(exited, 10_000)
+    if (!graceful) child.kill('SIGTERM')
     if (!await exitsWithin(exited, 5_000)) {
       child.kill('SIGKILL')
       if (!await exitsWithin(exited, 5_000)) {
@@ -150,10 +206,16 @@ export class DesktopHostProcess {
       }
     }
     this.child = undefined
+    if (requireGraceful && (!graceful || child.exitCode !== 0 || !this.shutdownCompleted)) {
+      // This diagnostic reaches expandable UI; arbitrary plugin stderr can contain credentials.
+      throw new DesktopHostUncleanExitError(`desktop update: Host did not complete graceful task teardown (exit ${String(child.exitCode)}, signal ${String(child.signalCode)}, shutdown acknowledged ${String(this.shutdownCompleted)}, graceful deadline exceeded ${String(!graceful)})`)
+    }
   }
 
   private fail(error: Error): void {
     this.readyReject(error)
+    for (const query of this.taskQueries.values()) query.reject(error)
+    this.taskQueries.clear()
     if (!this.failureReported && !this.stopping) {
       this.failureReported = true
       try { this.onFailure?.(error) } catch (listenerError) {

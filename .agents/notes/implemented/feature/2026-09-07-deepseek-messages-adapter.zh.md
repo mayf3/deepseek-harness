@@ -36,6 +36,6 @@ Web 始终显示 DeepSeek，不提供协议选择器。两个协议共用 `baseU
 
 ## 结果
 
-该包负责协议校验、停止原因映射、取消和错误分类，因此协议变化需要维护适配器。不支持的内容和不完整的流会明确报错。现有重试消费者负责重试；现有装配器在输出达到上限时丢弃未完成的工具调用。Messages 默认配置覆盖共享 base、Web 和独立的官方组合。协议变化保留 provider id 与已保存的模型选择，但显式端点覆盖必须支持所选协议。
+该包负责协议校验、停止原因映射、取消和错误分类，因此协议变化需要维护适配器。用户与工具结果输入遵循[已保存输入兼容规则](../bug-fix/2026-09-18-messages-input-history-compatibility.zh.md)；其他不支持的内容和不完整的流会明确报错。现有重试消费者负责重试；现有装配器在输出达到上限时丢弃未完成的工具调用。Messages 默认配置覆盖共享 base、Web 和独立的官方组合。协议变化保留 provider id 与已保存的模型选择，但显式端点覆盖必须支持所选协议。
 
 验证覆盖协议夹具、真实 Loader 组合、逐文件单元覆盖率、[已记录 Session 回放](../../../../snapshots/session/deepseek-messages-replay/snapshot.yml)与[未知回放版本](../../../../snapshots/session/deepseek-messages-degraded-replay/snapshot.yml)，Web Messages Session 回放，以及凭证控制的文本、思考、工具续接、图片和取消请求。真实网关检查证明与已配置网关的兼容性，不能证明与所有 Anthropic 代理兼容。

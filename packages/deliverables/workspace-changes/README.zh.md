@@ -57,7 +57,7 @@ kind: "package-reference"
 
 每个 Session 一个 `TurnRecorder`，串行化其 git 工作。`turn/start` 排入基线：`rev-parse` 每个 Session 只定位一次仓库并创建 Session 的临时对象目录，然后以仓库 index 为种子在临时 index 上执行 `add --all --ignore-errors` 与 `write-tree` 得到 tree id；不可读的文件被跳过并以 git 的退出码 1 报告，快照接受这个退出码。每轮持有自己的状态对象，因此被中断的轮次仍在运行的记录会在下一轮开始后保留自己那一轮的文件。每条命令都带 `GIT_OBJECT_DIRECTORY` 指向临时目录、`GIT_ALTERNATE_OBJECT_DIRECTORIES` 指向仓库的 objects，因此已提交内容从仓库读取，新对象不会落进仓库。每次 `tools/pre-execute` 都等待该队列，因此没有修改能先于其基线发生；同一步骤还排入对 `write`、`edit` 或有修改作用的 `str_replace_editor` 调用所指路径的整文件捕获，因此副本先于编辑，`tool/result` 事件只标记本轮有结果需要记录。`agent/turn-stopping` 在轮内记录：第二次快照、两棵树之间的 `diff-tree -r -M --numstat`、对工作树内已捕获路径的 `check-ignore`、对每个未覆盖路径的第二次复制与逐行对比、追加事件，以及按事件序号保存摘要和每个所列文件两侧的内容来源，即快照树中的路径或一份副本。对比在被请求时计算：`ls-tree -l` 定位快照一侧并取其大小，`cat-file blob` 在 `maxFileBytes` 之内读出，副本从磁盘读取，两侧随后走同一个带超时的逐行对比。`turn/end` 仅在最后一次记录尝试之后仍有工具结果结束时再次记录，这覆盖了中止、失败和被转向的轮次，且不会重复一次失败的尝试；早先记录之后的空列表会取代它。仓库的 index 只读取。
 
-git 通过 `subprocess` 能力运行，使用净化后的环境、`GIT_TERMINAL_PROMPT=0`、`GIT_OPTIONAL_LOCKS=0`、配置的超时与有界输出。任何步骤失败都会放弃本轮记录并给出警告；下一轮重新开始。Session 释放与插件释放会中止排队的工作、忘记摘要并删除临时目录。
+git 通过 `subprocess` 能力运行，使用净化后的环境、`GIT_CONFIG_COUNT=0`（凭据清理会移除索引配置的键，因此不继承这些环境配置）、`GIT_TERMINAL_PROMPT=0`、`GIT_OPTIONAL_LOCKS=0`、配置的超时与有界输出。任何步骤失败都会放弃本轮记录并给出警告；下一轮重新开始。Session 释放与插件释放会中止排队的工作、忘记摘要并删除临时目录。
 
 **运行时不变式：** 不发布伴生入口。事件监听归 effect 所有，记录器在其 Session 存活期间同时拥有摘要、快照树与捕获的副本；没有独立观察会与它们分歧。
 

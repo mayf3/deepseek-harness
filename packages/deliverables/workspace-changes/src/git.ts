@@ -65,7 +65,8 @@ export class GitRunner {
       },
       graceMs: TERMINATE_GRACE_MS,
       signal,
-      env: { GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C', ...options.env },
+      // The subprocess credential scrub removes ambient GIT_CONFIG_KEY_n entries.
+      env: { GIT_CONFIG_COUNT: '0', GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C', ...options.env },
     })
     const outcome = await handle.done
     if (signal.aborted) {

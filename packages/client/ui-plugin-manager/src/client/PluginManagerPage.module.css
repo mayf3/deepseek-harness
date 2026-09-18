@@ -61,6 +61,12 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+.statusWithDot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .banner {
   margin: 0;
   padding: 8px 12px;
@@ -538,10 +544,17 @@
 }
 
 .guideExample {
-  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
   overflow-wrap: anywhere;
+}
+
+.guideExample code {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.guideExampleLabel {
+  color: var(--dsw-alias-label-tertiary);
 }
 
 /* What the check refused, under the field. */
@@ -638,14 +651,6 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-.wizardIcon[data-tone='done'] {
-  color: var(--dsw-alias-state-success-primary);
-}
-
-.wizardIcon[data-tone='failed'] {
-  color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary));
-}
-
 .wizardTitle {
   margin: 0;
   font-size: 18px;
@@ -724,39 +729,7 @@
   min-width: 0;
 }
 
-.spinnerLarge {
-  width: 28px;
-  height: 28px;
-  border: 3px solid color-mix(in srgb, var(--dsw-alias-label-primary) 18%, transparent);
-  border-top-color: var(--dsw-alias-label-primary);
-  border-radius: 50%;
-  corner-shape: round;
-  animation: spin 900ms linear infinite;
-}
-
-.spinner {
-  width: 14px;
-  height: 14px;
-  flex: none;
-  border: 2px solid color-mix(in srgb, var(--dsw-alias-label-primary) 18%, transparent);
-  border-top-color: var(--dsw-alias-label-primary);
-  border-radius: 50%;
-  corner-shape: round;
-  animation: spin 900ms linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .spinner,
-  .spinnerLarge {
-    animation: none;
-  }
-
   .detailsChevron {
     transition: none;
   }
@@ -910,12 +883,6 @@
 
 .versionTag {
   flex: none;
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1046,6 +1013,34 @@
   line-height: 16px;
   color: var(--dsw-alias-label-tertiary);
   overflow-wrap: anywhere;
+}
+
+/* A row with a configuration page: its name opens the page, the arrow says so. */
+.rowOpen {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rowOpen:hover .rowId {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.rowOpenIcon {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.rowOpen:hover .rowOpenIcon {
+  color: var(--dsw-alias-label-primary);
 }
 
 .rowState {

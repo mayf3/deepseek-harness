@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { SessionJob as JobView } from '@deepseek-ai/dsh-api-session-controller/types'
-import { IconChevronDownOutline14, StateDot, useDismissOnOutsidePointer, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular, StateDot, useDismissOnOutsidePointer, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -150,7 +150,7 @@ export function JobListAction({ sessionId, useSessions, t }: JobListActionProps)
       >
         {liveCount > 0 ? <StateDot state="ongoing" className={css.triggerDot} /> : null}
         <span className={css.count}>{countLabel}</span>
-        <IconChevronDownOutline14 className={open ? css.triggerOpen : undefined} />
+        <IconChevronDownOutlineRegular size={12} className={open ? css.triggerOpen : undefined} />
       </button>
       {open
         ? (

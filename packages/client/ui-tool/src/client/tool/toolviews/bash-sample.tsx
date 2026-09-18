@@ -2,7 +2,7 @@ import { useMemo, useState, type KeyboardEvent } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import clsx from 'clsx'
 import {
-  IconApiOutline14, IconChevronDownOutline14, IconInspectOutline12, StateDot, TerminalBlock,
+  IconApiOutlineRegular, IconChevronDownOutlineRegular, IconInspectOutlineRegular, TerminalBlock,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
@@ -20,21 +20,11 @@ import css from './bash-sample.module.css'
 
 type BashRowProps = ToolCallViewProps & PropsLocale<'conversation'>
 
-function leadingFor(state: ToolRowState) {
-  switch (state) {
-    case 'error': return <StateDot state="error" />
-    case 'stopped': return <StateDot state="warning" />
-    // Running keeps the icon — the row sweep carries the in-flight signal.
-    default: return <IconApiOutline14 size={14} />
-  }
-}
-
-/** Visually hidden status — StateDot is aria-hidden; AT needs a text label. */
+/** Visually hidden status for the color-only running sweep and error tone. */
 function stateStatus(state: ToolRowState, t: BashRowProps['t']): string | null {
   switch (state) {
     case 'running': return t('bash.running')
     case 'error': return t('bash.failed')
-    case 'stopped': return t('bash.stopped')
     default: return null
   }
 }
@@ -48,7 +38,7 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
   const terminalModel = terminalCardModel(block, cwd)
   const terminal = terminalModel === null ? null : localizeTerminalCardModel(terminalModel, t)
   // A failing exit status is the terminal card's own error signal (the call
-  // itself settles isError:false), surfaced as the row's red state dot.
+  // itself settles isError:false), surfaced through the row's error summary.
   const state = model.state === 'ok' && terminalModel !== null && terminalFailed(terminalModel)
     ? 'error'
     : model.state
@@ -67,7 +57,10 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
       : null,
     [genericBody, model.bodyRaw, model.variant, open],
   )
-  const failureLine = model.state === 'error' ? model.errorSummary : null
+  const normalSummary = terminal?.description ?? model.summary
+  const settlementLine = state === 'error'
+    ? model.errorSummary ?? normalSummary
+    : state === 'stopped' ? t('bash.stopped') : null
   const toggleExpand = () => {
     setExpanded(v => !v)
   }
@@ -76,16 +69,17 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
     event.preventDefault()
     toggleExpand()
   }
+  const businessIcon = <IconApiOutlineRegular size={14} />
   const leading = open
-    ? <IconChevronDownOutline14 className={css.chevron} />
+    ? <IconChevronDownOutlineRegular className={css.chevron} />
     : expandable
       ? (
         <>
-          <span className={css.iconIdle}>{leadingFor(state)}</span>
-          <IconChevronDownOutline14 className={clsx(css.chevron, css.chevronHover)} />
+          <span className={css.iconIdle}>{businessIcon}</span>
+          <IconChevronDownOutlineRegular className={clsx(css.chevron, css.chevronHover)} />
         </>
       )
-      : leadingFor(state)
+      : businessIcon
   return (
     <div className={css.card}>
       <div
@@ -104,8 +98,12 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
         {status !== null && <span className={css.visuallyHidden}>{status}</span>}
         <span className={css.title}>{t(model.titleKey)}</span>
         <span className={css.sep} aria-hidden />
-        <span className={clsx(css.summary, failureLine !== null && css.errorSummary)}>
-          {failureLine ?? terminal?.description ?? model.summary}
+        <span className={clsx(
+          css.summary,
+          state === 'error' && css.errorSummary,
+          state === 'stopped' && css.stoppedSummary,
+        )}>
+          {settlementLine ?? normalSummary}
         </span>
       </div>
       {open && (
@@ -142,7 +140,7 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
             )}
           {inspect !== undefined && (
             <button type="button" className={css.inspectButton} onClick={inspect}>
-              <IconInspectOutline12 />
+              <IconInspectOutlineRegular />
               {t('row.inspect')}
             </button>
           )}
