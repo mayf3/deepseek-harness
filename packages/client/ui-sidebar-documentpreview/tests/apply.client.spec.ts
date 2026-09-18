@@ -7,6 +7,7 @@
  * and face — and that every registration is gone after dispose, which is what
  * makes a reload safe.
  */
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { SidebarRightTabRegistry } from '@deepseek-ai/dsh-client-ui-sidebar-right/src/client/tab-registry.ts'
@@ -43,6 +44,7 @@ interface Recorded {
 
 async function boot() {
   const ctx = new Context()
+  ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) } } as never)
   const tabs = new SidebarRightTabRegistry(ctx)
   const registered: Recorded[] = []
   const slots = {

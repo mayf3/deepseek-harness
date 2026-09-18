@@ -36,6 +36,8 @@ The `present` tool row retains the delivery-document glyph while showing running
 
 ### The changed-files card
 
+Developer tools must be enabled to show this card or request its summary. Turning the preference off removes the card immediately while explicit delivery cards, inline file links, and recorded workspace changes remain available.
+
 The card renders the summary the Host serves for the turn's latest `workspace/changes` announcement, read once per announcement through the authenticated summary route; while the read is pending, once the Host answers that the summary is gone, or when it lists no file, there is no card. Its header names the complete changed-file count with the summed added and deleted lines, and each row shows one file's display path with its own counts, “binary” for a binary file, or “too large” for a file the Host did not capture. Rows appear in the recorded display order, so repository files above the working directory and files outside it sort first. Three rows show before a fold; a control below reveals every recorded file and, once expanded, collapses the list again from the bottom. Each row opens the turn's review in the right Sidebar on that file, and the header opens it on the first file. The first file section starts 20px below the closing prose, a following explicit-delivery section starts 16px below the card, and the action footer starts 20px below the last file section. Final file deliveries still require `present`.
 
 ### The review tab
