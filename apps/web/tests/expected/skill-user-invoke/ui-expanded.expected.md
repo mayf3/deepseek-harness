@@ -13,7 +13,7 @@
 - text: and confirm the fixture wiring {{clock}}
 - button "Copy"
 - button "Thought for a while" [expanded]
-- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Context injection runtime-context"
 - button "Context injection user-invoke-demo"
 - paragraph: USER_INVOKE_REPLY acknowledged; following the injected skill.
 - button "Copy"

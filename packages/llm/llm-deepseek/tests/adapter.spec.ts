@@ -22,11 +22,18 @@ import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-e
 import type { PreparedDeepSeekLlmApiExtensions } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import { httpErrorCode } from '../src/protocols/chat-completions/adapter.ts'
 import { resolveRequestImageTarget } from '../src/common/request-pricing.ts'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
 import type { Behavior } from './mock-server.ts'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'test': { kind: 'test' } & ContextFormed
+  }
+}
 
 const TEST_USER_ID = '00000000-0000-4000-8000-000000000001' as AnonymousUserId
 let testHome: string
@@ -694,7 +701,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     }, attachments)
     const messages = [createUserMessage({
       content: [{ type: 'image' as const, attachment: imageRef }],
-      source: { kind: 'plugin' as const, plugin: 'test' },
+      source: { kind: 'test' as const },
     })]
 
     await drain(adapter.stream({ provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', messages }))
@@ -832,7 +839,7 @@ describe('DeepSeekAdapter against a mock server', () => {
       model: 'deepseek-v4-flash-vision-exp',
       messages: [createUserMessage({
         content: [{ type: 'image' as const, attachment: imageRef }],
-        source: { kind: 'plugin' as const, plugin: 'test' },
+        source: { kind: 'test' as const },
       })],
     }
 

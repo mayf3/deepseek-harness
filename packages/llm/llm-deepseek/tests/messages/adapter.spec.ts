@@ -52,10 +52,16 @@ async function send(agent: Agent, text: string) {
   expect(agent.session.snapshotEvents().at(-1)).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'completed' } } })
 }
 
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'saved-notice': { kind: 'saved-notice' }
+  }
+}
+
 describe('direct Messages HTTP', () => {
   it('continues through Messages with assistant blocks in saved user history', async () => {
     const http = await endpoint()
-    const notice = createUserMessage({ source: { kind: 'plugin', plugin: 'saved-notice' }, content: [
+    const notice = createUserMessage({ source: { kind: 'saved-notice' }, content: [
       { type: 'text', text: 'Background subagent finished.' },
       { type: 'reasoning', text: 'child reasoning' },
       { type: 'tool-call', id: ToolCallId('child-call'), name: 'read', arguments: '{}' },
@@ -353,9 +359,9 @@ describe('Cordis provider composition', () => {
 
   it('maps multiple system snapshots on direct compaction calls to the latest prompt', async () => {
     const { ctx, http } = await boot()
-    const history = [createSystemMessage('old', 'test'), user(),
+    const history = [createSystemMessage('old'), user(),
       createAssistantMessage({ content: [{ type: 'text', text: 'OK' }], source: { provider: 'deepseek-official', model: MODEL } }),
-      createSystemMessage('current', 'test'), user('summarize')]
+      createSystemMessage('current'), user('summarize')]
     const saved = JSON.stringify(history)
     const response = await assemble(ctx.llm.stream(options({ messages: history, purpose: 'compaction' })))
     expect(response.assembler.finish.kind).toBe('stop')
