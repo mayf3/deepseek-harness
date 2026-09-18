@@ -64,7 +64,7 @@ Host 的 `ToolDefinition.presentCall`、`ToolDefinition.presentResult`、`ToolCa
 
 **Client card model**指 `ui-tool/src/client/tool/models/` 下直接供 `TerminalBlock`、`DiffBlock`、`ReadBlock`、`SearchBlock`、`WebBlock` 或 `ToolRow` 使用的纯 props 数据。
 
-**专用卡片**指 terminal、diff、read、search 与 web 的结构化正文；标题、摘要、状态点和普通 IN／OUT 文本仍属于通用工具行。
+**专用卡片**指 terminal、diff、read、search 与 web 的结构化正文；标题、摘要、生命周期样式、业务图形和普通 IN／OUT 文本仍属于通用工具行。
 
 **对等**指同一受支持输入产生由现有组件、组装与浏览器证据固定的用户可见结果和交互，不要求相同的中间 TypeScript 类型或内部函数调用。
 
@@ -301,7 +301,7 @@ Client terminal model 从工具名称、调用参数、结果 content、error �
 | 输入 | 保持的结果 |
 |---|---|
 | 标准 `bash`／`pwsh` 前台 running | terminal prompt、description、cwd、running 状态 |
-| 标准前台 success | terminal output、exit code/signal、成功或失败状态点 |
+| 标准前台 success | terminal output、exit code/signal 与结算状态呈现 |
 | `run_in_background:true` | Generic 行与原始结果 |
 | 工具执行 error | Generic IN／OUT 与错误摘要 |
 | persistent `bash`／`pwsh` running | terminal prompt |

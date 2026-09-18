@@ -43,7 +43,7 @@ kind: "package-library"
 | `Menu` | 由条目、分隔线与分组标题构成的下拉菜单，支持嵌套子菜单。打开期间 `↑`／`↓`（以及 Home、End）在列表中走位，Tab 选定聚焦行，Escape 或 Shift+Tab 关闭并把焦点还给锚点；选定一行同样把键盘还给锚点——除非拥有者自己移动了焦点。只拦截位于锚点或列表内的键盘，`autoFocus` 仅决定打开时是否聚焦首行。 |
 | `Pill` | 可选中的胶囊按钮，用于视图切换与筛选器；接受 `active` 与 `onClick`。 |
 | `Tag` | 只读胶囊徽章；`tone` 选择八种配色之一。 |
-| `StateDot` | 状态标记：`done`、`warning`、`ongoing`、`error` 或 `idle`。它是 `aria-hidden` 的，名称由渲染点提供。 |
+| `StateDot` | 10px 槽内的绿色 `done`、琥珀色 `warning`、红色 `error`、中性灰色 `idle` 圆点，以及 tertiary 灰色 14px 旋转 `ongoing` loading。它是 `aria-hidden` 的，名称由渲染点提供。 |
 | `ConnectionIndicator` | 行内连接恢复控件，覆盖断线、重试与已恢复三种状态。 |
 | `DisclosureRow` | 24px 紧凑折叠行，标题与内容左右排列。 |
 | `Modal` | 页面遮罩之上的居中对话框。 |
@@ -55,8 +55,9 @@ kind: "package-library"
 | `JsonTree`、`JsonBlock` | 只读 JSON 查看。 |
 | `MarkdownText`、`MarkdownDelegateProvider`、`CodeBlock` | 不可信 GFM 与 TeX 数学、owner 委托的 HTTP(S) 导航，以及高亮代码。`CodeBlock` 可通过 `lineNumbers` 开启行号；复制的源码不含行号栏，`contentRef` 则向需要把稳定源码包装节点用作滚动区的 owner 提供该节点。调用方提供自己的语言与复制工具栏时，设置 `showHeader={false}`。 |
 | `TerminalBlock`、`ReadBlock`、`DiffBlock`、`SearchBlock`、`WebBlock` | 与各类工具结果意图对应的 agent 输出卡片。 |
-| `icons/*`、`FishLogo`、`BrandWordmark`、`ReferenceIcon`、`LinkIcon` | 字形与品牌标识。`LinkIcon` 用于 14px 的可点击链接分类及已知站点标记。 |
-| `FileTypeIcon`、`classifyFileType`、`fileExtension` | 按类别着色的 28px 文件或文件夹图形，以及它背后共享的不区分大小写文件名映射。代码与配置文件使用细分的全彩技术图形；链接前置图形使用 `LinkIcon`，图片内容使用图片预览。 |
+| `icons/*`、`FishLogo`、`BrandWordmark`、`ReferenceIconRegular`/`ReferenceIconMedium`、`LinkIconRegular`/`LinkIconMedium` | 字形与品牌标识。`LinkIconMedium` 用于 14px 的可点击链接分类及已知站点标记。 |
+| `PermissionIconReadOnlyRegular`/`Medium`、`PermissionIconWorkspaceWriteRegular`/`Medium`、`PermissionIconFullAccessRegular`/`Medium` | 只读、工作区写入与完全访问选项使用的权限模式图形。 |
+| `FileTypeIcon`、`classifyFileType`、`fileExtension` | 按类别着色的 28px 文件或文件夹图形，以及它背后共享的不区分大小写文件名映射。代码与配置文件使用细分的全彩技术图形；链接前置图形使用 `LinkIconMedium`，图片内容使用图片预览。 |
 
 有三组容易混淆：
 
@@ -68,7 +69,7 @@ kind: "package-library"
 
 ### 控件与图标
 
-上面的目录说明每个导出的用途；本节讲 props 本身看不出来的行为。`ic_ds_*` 图标集与 `FishLogo`/`BrandWordmark` 标记填充品牌与行内图标 slot。`FileTypeIcon` 渲染传统的 28px Excel、folder、HTML、image、Markdown、generic、PDF、PPT、video 与 Word 图形，并为现有 48 个代码和配置类别使用导入的方形技术图形。该导入只替换图形：资源包中额外的类别不会扩展 `CodeFileType`。`classifyFileType` 按完整文件名、前缀、后缀、可选项目上下文、扩展名的顺序匹配；React 文件名优先于 TypeScript/JavaScript，Angular 后缀优先于基础扩展名，只有传入的项目文件包含带 `flutter:` 的 `pubspec.yaml` 时 Dart 文件才使用 Flutter。Markdown 与 SVG 仍分别使用传统 Markdown 与图片图形。办公文件映射包含 XLSM/Numbers 的表格图标、KEY 的幻灯片图标，以及 RTF/ODT/Pages 的文档图标。`fileExtension` 为相邻元数据 label 暴露同一套 basename 与最终点号解析。传统图形使用实色分类底板、白色标记和半透明白色折角；通用文件使用灰色底板与较深灰色折角。调用方可通过 `--dsh-file-type-icon-color` 覆盖底板颜色。全彩技术图形是明确例外，会保留其内嵌调色板。所有图形都是装饰性的，不自带 label。`LinkIcon` 仍是可点击产物链接较小的前置图形——地球、文件夹、代码、图片、文档或纸张，`url` 链接的 `href` 指向已知站点时则改用该站点自己的标记——转写内容常引用的开发者站点（GitHub、GitLab、npm、PyPI、Stack Overflow、MDN、Wikipedia、Hacker News、YouTube、X、Bilibili、知乎、掘金、CSDN），以及主流搜索、视频、社交、购物与参考资料站点（Google、百度、DuckDuckGo、TikTok、Netflix、Spotify、Facebook、Instagram、Reddit、Telegram、WhatsApp、微信、QQ、微博、淘宝、速卖通、eBay、Quora、V2EX、Apple）——`classifyLinkPath` 把共享文件类型折叠进原有六类词汇。`ConnectionIndicator` 可渲染警告色的断联操作（常驻重试图形指明重试动作，断联文案由持有方提供）、spinner 加一至三个点以独立于 retry 时序的 500ms 节奏推进的连接中状态，或成功色的恢复状态。点击任一警告状态都会请求立即重连；没有任何悬停交互会改变文案。药丸出现时淡入、卸载前淡出 150ms，宽度随当前 label 自适应。它的持有方提供可见性、恢复驻留时间、本地化 label 与立即重连回调；该原语不使用原生 title tooltip。`useAnchoredPosition` 与 `useAnchoredMaxHeight` 让浮动面板与底部锚定浮层始终钳制在视口内并跟随锚点。`HoverCard` 通过指针离开宽限期让采用 portal 的预览在跨过锚点间隙时仍可触及，并可通过 `copyText` prop 提供复制按钮。`Toast` 的停留时长由使用方通过 `holdMs` 指定，因为横幅该留多久取决于有多少内容要读；同一个值同时驱动它的卸载定时器与样式表的淡出延迟，两者不可能再错位。`rankByName` 是 `/` 菜单命令源与 skill（技能）源共享的候选排序器：查询必须是名字的不区分大小写的有序子序列；前缀命中排最前，其次按对齐分数，再按来源顺序。 `Menu.autoFocus` 聚焦首个启用项，支持上下方向键与 Home/End 导航，并在 Escape 时聚焦 anchor 内的第一个按钮；操作菜单可显式启用。
+上面的目录说明每个导出的用途；本节讲 props 本身看不出来的行为。产品图标名称不含画板尺寸，以 `Regular` 表示原始 1px 图形，以 `Medium` 表示同一几何的 1.3px 描边；`size` prop 控制渲染尺寸（[决定](../../../.agents/notes/implemented/architecture/2026-09-16-size-neutral-product-icon-weights.zh.md)）。每个产品、引用、链接与权限图形都会有意保留两种线重导出，即使当前产品只使用其中一种，也让调用方无需再次扩展 API 就能选择强调程度；仅填充的成对图形外观相同。`FishLogo` 与 `BrandWordmark` 填充品牌 slot。`FileTypeIcon` 渲染传统的 28px spreadsheet、folder、HTML、image、Markdown、generic、PDF、PPT、video 与 Word 图形，并为现有 48 个代码和配置类别使用导入的方形技术图形。该导入只替换图形：资源包中额外的类别不会扩展 `CodeFileType`。`classifyFileType` 按完整文件名、前缀、后缀、可选项目上下文、扩展名的顺序匹配；React 文件名优先于 TypeScript/JavaScript，Angular 后缀优先于基础扩展名，只有传入的项目文件包含带 `flutter:` 的 `pubspec.yaml` 时 Dart 文件才使用 Flutter。Markdown 与 SVG 仍分别使用传统 Markdown 与图片图形。表格映射包括 CSV、TSV、Excel 工作簿与模板、OpenDocument 表格和 Numbers；KEY 映射为幻灯片，RTF/ODT/Pages 映射为文档。`fileExtension` 为相邻元数据 label 暴露同一套 basename 与最终点号解析。传统图形使用实色分类底板、白色标记和半透明白色折角；通用文件使用灰色底板与较深灰色折角。调用方可通过 `--dsh-file-type-icon-color` 覆盖底板颜色。全彩技术图形是明确例外，会保留其内嵌调色板。所有图形都是装饰性的，不自带 label。`LinkIconMedium` 是可点击产物链接的前置图形——地球、文件夹、代码、图片、文档或纸张，`url` 链接的 `href` 指向已知站点时则改用该站点自己的标记——转写内容常引用的开发者站点（GitHub、GitLab、npm、PyPI、Stack Overflow、MDN、Wikipedia、Hacker News、YouTube、X、Bilibili、知乎、掘金、CSDN），以及主流搜索、视频、社交、购物与参考资料站点（Google、百度、DuckDuckGo、TikTok、Netflix、Spotify、Facebook、Instagram、Reddit、Telegram、WhatsApp、微信、QQ、微博、淘宝、速卖通、eBay、Quora、V2EX、Apple）——`classifyLinkPath` 把共享文件类型折叠进原有六类词汇。`ConnectionIndicator` 可渲染警告色的断联操作（常驻重试图形指明重试动作，断联文案由持有方提供）、共享 ongoing loading 加一至三个点以独立于 retry 时序的 500ms 节奏推进的连接中状态，或成功色的恢复状态。点击任一警告状态都会请求立即重连；没有任何悬停交互会改变文案。药丸出现时淡入、卸载前淡出 150ms，宽度随当前 label 自适应。它的持有方提供可见性、恢复驻留时间、本地化 label 与立即重连回调；该原语不使用原生 title tooltip。`useAnchoredPosition` 与 `useAnchoredMaxHeight` 让浮动面板与底部锚定浮层始终钳制在视口内并跟随锚点。`HoverCard` 通过指针离开宽限期让采用 portal 的预览在跨过锚点间隙时仍可触及，并可通过 `copyText` prop 提供复制按钮。`Toast` 的停留时长由使用方通过 `holdMs` 指定，因为横幅该留多久取决于有多少内容要读；同一个值同时驱动它的卸载定时器与样式表的淡出延迟，两者不可能再错位。`rankByName` 是 `/` 菜单命令源与 skill（技能）源共享的候选排序器：查询必须是名字的不区分大小写的有序子序列；前缀命中排最前，其次按对齐分数，再按来源顺序。 `Menu.autoFocus` 聚焦首个启用项，支持上下方向键与 Home/End 导航，并在 Escape 时聚焦 anchor 内的第一个按钮；操作菜单可显式启用。
 
 ### 渲染 agent 输出
 
@@ -105,7 +106,7 @@ kind: "package-library"
 | [`src/TerminalBlock.tsx`](src/TerminalBlock.tsx) | ANSI 转义解析（`anser`）与终端卡片渲染 |
 | [`src/ReadBlock.tsx`](src/ReadBlock.tsx) / [`src/DiffBlock.tsx`](src/DiffBlock.tsx) | 读取与差异卡片 |
 | [`src/SearchBlock.tsx`](src/SearchBlock.tsx) / [`src/WebBlock.tsx`](src/WebBlock.tsx) | 搜索与网页检索卡片 |
-| [`src/icons/`](src/icons/) | `ic_ds_*` 字形组件与品牌标记 |
+| [`src/icons/`](src/icons/) | 与尺寸无关的 `Regular` 和 `Medium` 产品图标组件 |
 | [`src/useAnchoredPosition.ts`](src/useAnchoredPosition.ts) / [`src/useAnchoredMaxHeight.ts`](src/useAnchoredMaxHeight.ts) | 浮动面板与浮层几何钩子 |
 
 ### 流式 Markdown
@@ -153,7 +154,7 @@ kind: "package-library"
 - **已知站点标记是固定列表**：只有列名的主机解析为自己的标记，其余外部主机仍使用地球；要识别任意站点需要通过网络抓取它的图标。
 - **流式期间跨边界引用解析被推迟**：定义落在增量冻结边界另一侧的引用式链接或脚注，在回复流式输出期间渲染为字面文本；定稿时的全量解析会将其解析。
 - **长高亮 fence 会保留完整 token DOM**：流式路径避免重新解析、重新 tokenize 和 reconcile 已完成前缀，但不会丢弃旧颜色或虚拟化 token span。因此最终 DOM 数量仍随 fence 的 token 数增长；嵌套／容器内 fence 与病态的单个超长行仍走通用尾部路径。
-- **字形级图标是重新绘制的近似版本**：鱼形标志与闪光标记来自字体字形，而本地设计数据无法导出其矢量几何；在获得精确导出路径前，使用手工重建版本代替。
+- **鱼形标志是重新绘制的近似版本**：它来自字体字形，而本地设计数据无法导出其矢量几何；在获得精确导出路径前，使用手工重建版本代替。
 - **`Pill` 与 `Input` 没有设计来源**：两个原子组件均自行定义；与其相似的侧边栏搜索字段和视图标签条由消费方组合，不是这些原子组件。
 - **`StateDot` 没有 `Active` 变体**：支持的状态为 done、warning、ongoing、error 和 idle。
 - **面向用户的文案必须由渲染点提供**：这些原子组件是 zero-Cordis 的，拿不到 `ctx.locale`；各功能必须通过原子组件的带类型 prop 提供完整本地化 label（见[决策](../../../.agents/notes/implemented/architecture/2026-08-23-locale-owned-client-ui-copy.zh.md)）。

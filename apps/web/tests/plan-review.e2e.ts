@@ -96,6 +96,8 @@ describe('web e2e: plan review takeover round trip', () => {
     const selectedRow = page.locator('[role="treeitem"][aria-selected="true"]')
     await expect.poll(() => selectedRow.locator('[data-state="warning"]').count(), { timeout: 10_000 }).toBe(1)
     await expect.poll(() => selectedRow.getByText('Plan awaiting review', { exact: true }).count(), { timeout: 10_000 }).toBe(1)
+    await expect.poll(() => selectedRow.getByText('Plan review', { exact: true }).count(), { timeout: 10_000 }).toBe(1)
+    expect(await selectedRow.getByText('now', { exact: true }).count()).toBe(0)
 
     if (MODE !== 'record') {
       const snapshot = await captureStableAria(page, '[data-plan-review-key]', scaffold.workspaceCwd)

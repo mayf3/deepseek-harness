@@ -400,6 +400,7 @@ function makeHarness(
     useTranscriptView: bindSnapshotSelector(transcriptView),
     renderSlot,
     SessionProvider: SessionProviderStub,
+    inspectCall: (callId: string) => { openView('trajectory', callId) },
     viewRequest: null,
     openView,
     completeViewRequest: () => {},
@@ -1320,12 +1321,20 @@ describe('ChatView', () => {
     expect(view.queryByText('本轮运行失败')).toBeNull()
   })
 
+  it('removes Inspect when trajectory is unavailable and restores it with the view', () => {
+    const h = makeHarness({ nodes: [toolResult(3, 'a')] })
+    const view = render(<h.ChatView {...h.props} inspectCall={undefined} />)
+    expect(h.toolOwners.at(-1)?.inspectCall).toBeUndefined()
+    view.rerender(<h.ChatView {...h.props} />)
+    expect(h.toolOwners.at(-1)?.inspectCall).toBeTypeOf('function')
+  })
+
   it('hands the trajectory callback to the Tool seat', () => {
     const h = makeHarness({
       nodes: [toolResult(3, 'a')],
     })
     render(<h.ChatView {...h.props} />)
-    h.toolOwners[0]?.inspectCall('a')
+    h.toolOwners[0]?.inspectCall?.('a')
     expect(h.openView).toHaveBeenCalledWith('trajectory', 'a')
   })
 
@@ -2233,7 +2242,7 @@ describe('ChatView', () => {
     expect(owner.openFile).not.toBe(h.openFile)
     owner.openFile('src/a.ts')
     expect(h.openFile).toHaveBeenCalledWith('src/a.ts')
-    owner.inspectCall('a')
+    owner.inspectCall?.('a')
     expect(h.openView).toHaveBeenCalledWith('trajectory', 'a')
   })
 
@@ -2836,6 +2845,7 @@ describe('ChatView', () => {
     })
     const fv = render(<failed.ChatView {...failed.props} />)
     expect(fv.container.querySelector('[data-state="error"]')).not.toBeNull()
+    expect(fv.container.querySelector('[data-state="error"] svg')).not.toBeNull()
     expect(fv.getByText('指令失败')).toBeTruthy()
     expect(fv.getByText('失败')).toBeTruthy()
 

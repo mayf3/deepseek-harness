@@ -3,8 +3,8 @@ import type { ClientEntryState } from '@deepseek-ai/dsh-client-modules/client'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { PluginInventorySnapshot } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  IconChevronDownOutline14,
-  IconSearchOutline16,
+  IconChevronDownOutlineRegular,
+  IconSearchOutlineRegular,
   Menu,
   StateDot,
   Tag,
@@ -128,7 +128,7 @@ function PluginCard({ rowKey, moduleName, entryId, trailing, ariaLabel, failed, 
           <strong className={css.cardTitle} title={moduleName}>{moduleShortName(moduleName)}</strong>
           <span className={css.cardTrailing}>
             {trailing}
-            <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+            <IconChevronDownOutlineRegular className={css.chevron} size={12} aria-hidden="true" />
           </span>
         </span>
         {entryId === null ? null : <code className={css.cardIdentity} title={entryId}>{entrySubtitle(entryId)}</code>}
@@ -393,25 +393,37 @@ export function PluginInventorySettingsTab(
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
-      {clientSync.syncing ? <p className={css.status} role="status">{t('clientSyncing')}</p> : null}
+      {clientSync.syncing ? (
+        <p className={`${css.status} ${css.statusWithDot}`} role="status">
+          <StateDot state="ongoing" />{t('clientSyncing')}
+        </p>
+      ) : null}
       {clientSync.failures.length === 0 ? null : (
         <div className={css.failure} data-client-sync-failure>
-          <p role="alert">{t('clientSyncFailed')}</p>
+          <p className={css.statusWithDot} role="alert">
+            <StateDot state="error" />{t('clientSyncFailed')}
+          </p>
           <ul>{clientSync.failures.map(failure => <li key={failure.id}>{failure.id}: {failure.message}</li>)}</ul>
           <button type="button" disabled={clientSync.syncing} onClick={retryClient}>{t('clientSyncRetry')}</button>
         </div>
       )}
-      {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
+      {state.status === 'loading' ? (
+        <p className={`${css.status} ${css.statusWithDot}`} role="status">
+          <StateDot state="ongoing" />{t('loading')}
+        </p>
+      ) : null}
       {state.status === 'error' ? (
         <div className={css.failure}>
-          <p role="alert">{t('error')}</p>
+          <p className={css.statusWithDot} role="alert">
+            <StateDot state="error" />{t('error')}
+          </p>
           <button type="button" onClick={retry}>{t('retry')}</button>
         </div>
       ) : null}
       {snapshot !== undefined ? (
         <div className={css.catalog}>
           <label className={css.search}>
-            <IconSearchOutline16 aria-hidden="true" />
+            <IconSearchOutlineRegular aria-hidden="true" />
             <span className={css.visuallyHidden}>{t('search')}</span>
             <input
               type="search"
@@ -434,7 +446,7 @@ export function PluginInventorySettingsTab(
                   aria-controls={`${sectionId}-preset`}
                   onClick={() => { setPresetOpen(!presetEffectiveOpen) }}
                 >
-                  <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+                  <IconChevronDownOutlineRegular className={css.chevron} size={12} aria-hidden="true" />
                   <span className={css.groupTitle}>{t('presetTitle')}</span>
                 </button>
                 <div className={css.headerEnd}>
@@ -459,7 +471,7 @@ export function PluginInventorySettingsTab(
                         onClick={() => { setSwitcherOpen(value => !value) }}
                       >
                         <span className={css.switcherLabel}>{presetLabel(selected, t, presetName)}</span>
-                        <IconChevronDownOutline14 className={css.chevron} aria-hidden="true" />
+                        <IconChevronDownOutlineRegular className={css.chevron} aria-hidden="true" />
                       </button>
                     )}
                   />
@@ -511,7 +523,7 @@ export function PluginInventorySettingsTab(
                   aria-controls={`${sectionId}-global`}
                   onClick={() => { setGlobalOpen(!globalEffectiveOpen) }}
                 >
-                  <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+                  <IconChevronDownOutlineRegular className={css.chevron} size={12} aria-hidden="true" />
                   <span className={css.groupTitle}>{t('globalTitle')}</span>
                 </button>
               </div>

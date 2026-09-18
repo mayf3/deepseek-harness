@@ -33,7 +33,7 @@ jobs:
   # vm-backup pool and re-running the failed jobs is the entire switch —
   # see .agents/notes/implemented/process/2026-07-26-ci-failover-runbook.md.
   # Setting the variable to 'blacksmith' instead routes the same jobs onto
-  # Blacksmith's hosted runners at the matching vCPU size (see
+  # Blacksmith's hosted runners sized per workload (see
   # .agents/notes/implemented/process/2026-09-09-blacksmith-failover-leg.md). The
   # in-house pool's readiness is re-proven on every master push by the
   # serial-linux-selfhosted standby lane in ci-master.yml. The Windows failover
@@ -497,6 +497,8 @@ jobs:
   # per-job process count stays lower. Observational checks are non-blocking.
   # Dependabot PRs are excluded from the self-hosted pool and stay queued for
   # the hosted runner.
+  # Blacksmith uses 2 vCPU for file-serial native tests; builds, coverage,
+  # and observational gates retain 16 for their concurrent work.
   windows-build:
     if: github.event_name == 'pull_request'
     runs-on: >-
@@ -622,7 +624,7 @@ jobs:
   windows-native-tests:
     if: github.event_name == 'pull_request'
     runs-on: >-
-      ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'blacksmith' && 'blacksmith-16vcpu-windows-2025'
+      ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'blacksmith' && 'blacksmith-2vcpu-windows-2025'
           || vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')

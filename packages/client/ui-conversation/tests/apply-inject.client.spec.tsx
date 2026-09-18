@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { CommandContribution, CommandUiContract } from '@deepseek-ai/dsh-client-ui-commands/client'
 import type { ISession, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -47,7 +48,14 @@ async function bench() {
     if (upload === undefined) throw new Error('test file upload has no Session fixture')
     return upload(...args)
   }
-  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  const developerTools = createSnapshotStore(true)
+  runtime.ctx.provide('settingsScope', {
+    developerTools: {
+      enabled: developerTools,
+      setEnabled: async (enabled: boolean) => { developerTools.set(enabled) },
+    },
+    bind: () => stubSettingsScope().scope,
+  } as never)
   const connectWorkspace = vi.fn(async () => ROOT)
   const references = new Map<SessionId, SessionReference>()
   const opened = vi.fn<(id: SessionId) => void>()
@@ -185,6 +193,45 @@ describe('Conversation inject API', () => {
     await b.runtime.dispose()
   })
 
+  it('offers Inspect only while a registered tool-call inspector is visible', async () => {
+    const b = await bench()
+    const body = b.conversationApi(ROOT)
+    const source = body.injected.hooks.inspectCall
+    const changed = vi.fn()
+    const unsubscribe = source.subscribe(changed)
+    expect(source.getSnapshot()).toBeUndefined()
+    const removeDefinition = b.runtime.ctx.uiConversation.views.register({
+      target: 'custom-inspector',
+      toolCallFocus: callId => `tool:${callId}`,
+      create: () => ({ empty: null, replace: () => null, apply: () => null }),
+    })
+    expect(source.getSnapshot()).toBeUndefined()
+    const removeView = b.slots.register(
+      { name: 'conversation.view', id: 'custom-inspector' }, (() => null) as never,
+    )
+    await b.runtime.flush()
+    const inspect = source.getSnapshot()!
+    expect(inspect).toBeTypeOf('function')
+    expect(source.getSnapshot()).toBe(inspect)
+    inspect('call-1')
+    expect(body.instance.store.getSnapshot().viewRequest).toEqual({ view: 'custom-inspector', focus: 'tool:call-1' })
+    await b.runtime.ctx.settingsScope.developerTools.setEnabled(false)
+    expect(source.getSnapshot()).toBeUndefined()
+    await b.runtime.ctx.settingsScope.developerTools.setEnabled(true)
+    expect(source.getSnapshot()).toBe(inspect)
+    removeView()
+    await b.runtime.flush()
+    expect(source.getSnapshot()).toBeUndefined()
+    inspect('stale-call')
+    expect(body.instance.store.getSnapshot().viewRequest?.focus).not.toBe('tool:stale-call')
+    expect(changed).toHaveBeenCalled()
+    unsubscribe()
+    changed.mockClear()
+    removeDefinition()
+    expect(changed).not.toHaveBeenCalled()
+    await b.runtime.dispose()
+  })
+
   it('activates a target before committing an explicit View selection', async () => {
     const b = await bench()
     const binding = b.runtime.ctx.uiConversation.binding(ROOT)
@@ -214,6 +261,11 @@ describe('Conversation inject API', () => {
     expect(header.instance.store.getSnapshot().view).toBe('chat')
 
     removeTrajectory()
+    await b.runtime.flush()
+    activate.mockClear()
+    body.injected.openView('trajectory', 'hidden-call')
+    expect(activate).not.toHaveBeenCalled()
+    expect(body.instance.store.getSnapshot().view).toBe('chat')
     removeChat()
     await b.runtime.dispose()
   })

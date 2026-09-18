@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-`LinkIcon` 接受可选的 `href`。对于 `url` 类别，目的地主机属于已知站点时改画该站点自己的标记；其余 `url` 目的地仍使用地球，文件类别忽略 `href`，因为它们的目的地是路径而不是站点。
+`LinkIconRegular` 与 `LinkIconMedium` 接受可选的 `href`。对于 `url` 类别，目的地主机属于已知站点时改画该站点自己的标记；其余 `url` 目的地仍使用地球，文件类别忽略 `href`，因为它们的目的地是路径而不是站点。
 
 ui-primitives 的 `SiteGlyph.tsx` 持有该映射：四十个主机后缀解析为三十四个标记。转写内容常引用的开发者站点：GitHub（`github.com`、`github.io`、`raw.githubusercontent.com`）、GitLab、npm、PyPI、Stack Overflow、MDN、Wikipedia、Hacker News（`news.ycombinator.com`）、YouTube（`youtube.com`、`youtu.be`）、X（`x.com`、`twitter.com`）、Bilibili、知乎、掘金与 CSDN。普通用户常访问的主流站点：搜索（Google、百度、DuckDuckGo）、视频与音频（TikTok、Netflix、Spotify）、社交与通讯（Facebook、Instagram、Reddit、Telegram 及 `t.me` 短链、WhatsApp 及 `wa.me`、`weixin.qq.com` 上的微信、QQ、微博）、购物（淘宝、速卖通、eBay）、参考资料与社区（Quora、V2EX）以及 Apple。主机等于某后缀或为其子域即匹配，且最长匹配后缀优先，因此 `gist.github.com` 与 `en.wikipedia.org` 无需单独登记，而 `weixin.qq.com` 得到微信标记而不是其 `qq.com` 后缀同样会选中的 QQ 标记。只有绝对 `http:` 与 `https:` 目的地能够匹配，其余一律回退到地球。
 

@@ -2,8 +2,8 @@
 import { useRef, useState } from 'react'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import {
-  Menu, FileTypeIcon, fileExtension, IconRightUpOutline16,
-  IconChevronDownOutline14, IconFolderOpenOutline16,
+  Menu, FileTypeIcon, fileExtension, IconRightUpOutlineRegular,
+  IconChevronDownOutlineRegular, IconFolderOpenOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PresentedAction, PresentedHost } from '../presented.ts'
@@ -70,12 +70,12 @@ export function PresentedFileCard({ file, cwd, phase, host, onPreview, onAction,
             aria-haspopup="menu" aria-expanded={menuOpen && !menuDisabled}
             aria-label={t('presented.more', { name: file.path })}
             onClick={() => { setMenuOpen(value => !value) }}>
-            <IconChevronDownOutline14 size={11} />
+            <IconChevronDownOutlineRegular size={11} />
           </button>}
           items={[
-            { id: 'open', icon: <IconRightUpOutline16 size={16} className={css.menuActionIcon} />,
+            { id: 'open', icon: <IconRightUpOutlineRegular size={16} className={css.menuActionIcon} />,
               label: t('presented.defaultApp') },
-            { id: 'reveal', icon: <IconFolderOpenOutline16 />,
+            { id: 'reveal', icon: <IconFolderOpenOutlineRegular />,
               label: t(`presented.${reveal}`) },
           ]}
           onSelect={(id) => { act(id === 'reveal' ? 'reveal' : 'open') }} />

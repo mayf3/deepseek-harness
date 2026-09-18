@@ -775,6 +775,7 @@ describe('SubagentModelSelectionCardController', () => {
         enabled: enabled?.op === 'set' ? enabled.value as boolean : false,
         allowedModels: allowedModels?.op === 'set' ? allowedModels.value as never[] : [],
       } })
+      return true
     })
     const controller = new SubagentModelSelectionCardController({ ...host.scope, mutate }, catalog.ctx)
     const face = controller.inject()
@@ -1100,6 +1101,7 @@ describe('shared Subagent card actions', () => {
     const set = vi.spyOn(limits.scope, 'set').mockImplementationOnce(async () => {
       await pending.promise
       limits.publish({ value: { maxDepth: 2, maxActiveSubagents: 8 }, user: { maxDepth: 2 } })
+      return true
     })
     face.editLimit('maxDepth', '2')
     face.toggleEnabled()
