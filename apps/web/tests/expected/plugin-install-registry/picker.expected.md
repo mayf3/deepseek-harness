@@ -12,8 +12,8 @@
     - text: 从哪个 npm 源下载插件
     - radio "官方源（默认） registry.npmjs.org，遵循你本机的 pnpm 与 .npmrc 配置"
     - text: 官方源（默认） registry.npmjs.org，遵循你本机的 pnpm 与 .npmrc 配置
-    - radio "npmmirror 中国大陆网络推荐 registry.npmmirror.com，官方源的完整镜像，新发布的包最多延迟几分钟同步" [checked]
-    - text: npmmirror 中国大陆网络推荐 registry.npmmirror.com，官方源的完整镜像，新发布的包最多延迟几分钟同步
+    - radio "npmmirror 中国大陆网络推荐 registry.npmmirror.com，官方源的完整镜像" [checked]
+    - text: npmmirror 中国大陆网络推荐 registry.npmmirror.com，官方源的完整镜像
     - radio "自定义地址"
     - text: 自定义地址
     - textbox "自定义地址" [disabled]:
