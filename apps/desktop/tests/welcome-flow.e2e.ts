@@ -153,7 +153,7 @@ describe.skipIf(!existsSync(builtHost))('built Desktop welcome flow', () => {
       await expect.poll(async () => (await backend!.account.state()).attempt?.phase).toBe('waiting-browser')
       const response = await fetch(platform.callback(), { redirect: 'manual' })
       expect(response.status).toBe(302)
-      expect(response.headers.get('location')).toBe(`${platform.origin}/dsh/authorized?result=test&locale=zh_CN`)
+      expect(response.headers.get('location')).toBe(`${platform.origin}/dsh/authorized?result=test&locale=zh_CN&client_type=desktop`)
       expect(await status()).toMatchObject({ hasApiKey: true, loggedIn: true })
       await restart()
       expect(await status()).toMatchObject({ hasApiKey: true, loggedIn: true })

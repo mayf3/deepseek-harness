@@ -435,7 +435,9 @@ export class PlatformAccount extends DeepSeekAccount {
         })
         throw new PlatformAuthError('protocol')
       }
-      attempt.completionUrl = browserUrl(result.data.authorized_url, this.origin, '/dsh/authorized', this.rewriteBrowserOrigin)
+      const completionUrl = new URL(browserUrl(result.data.authorized_url, this.origin, '/dsh/authorized', this.rewriteBrowserOrigin))
+      completionUrl.searchParams.set('client_type', attempt.client)
+      attempt.completionUrl = completionUrl.href
       signal.throwIfAborted()
       if (result.data.user != null) {
         try { attempt.initialProfile = { token: result.data.token, value: { status: 'ready', value: profile(result.data.user) } } }
