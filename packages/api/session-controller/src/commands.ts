@@ -520,6 +520,9 @@ export class SessionCommandController {
 
   private rejectCreation(sessionId: SessionId, error: unknown): never {
     if (remoteErrorOf(error) !== undefined) throw error
+    if (error instanceof Error && error.name === 'SessionAlreadyOwnedError') {
+      throw new RemoteError('session/writer-held', error.message, { sessionId })
+    }
     if (error instanceof ApiSessionPresetConflict) {
       throw new RemoteError('agent-preset/conflict', error.message, {
         sessionId: error.sessionId,

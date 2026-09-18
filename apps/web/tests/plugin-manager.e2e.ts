@@ -30,7 +30,7 @@ describe('web e2e: plugin manager', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
-      profile: { packages: [{ dir: join(FIXTURE_PLUGINS, 'fixture-bundle') }] },
+      profile: { packages: [{ dir: join(FIXTURE_PLUGINS, 'fixture-bundle') }], bundles: ['@fixture/missing-bundle'] },
     })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
@@ -65,6 +65,29 @@ describe('web e2e: plugin manager', () => {
   async function homeFile(...segments: string[]): Promise<string> {
     return readFile(join(scaffold.harnessHome, ...segments), 'utf8').catch(() => '')
   }
+
+  it('starts with an unavailable selected bundle and lets the user clear its error', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-missing-bundle'))
+    const panel = await openPluginsPanel()
+    await panel.getByRole('button', { name: '查看 missing-bundle', exact: true }).click()
+    const toggle = panel.getByRole('switch', { name: '启用 missing-bundle', exact: true })
+    expect(await toggle.getAttribute('aria-checked')).toBe('true')
+    expect(await toggle.isDisabled()).toBe(false)
+    await panel.getByText(/cannot resolve profile bundle/).waitFor({ timeout: 10_000 })
+    expect((await scaffold.ctx.pluginManager.listBundles()).find(row => row.name === '@fixture/missing-bundle'))
+      .toMatchObject({ enabled: true, error: { code: 'operation-error' }, rows: [] })
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'missing-bundle.expected.md'),
+      await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd, {
+        replacements: [[scaffold.harnessHome, '{{home}}']],
+      }), MODE)
+    await toggle.click()
+    await expect.poll(async () => (JSON.parse(await homeFile('profiles', 'scaffold', 'package.json')) as {
+      dsh: { profile: { bundles: string[] } }
+    }).dsh.profile.bundles, { timeout: 10_000 }).toEqual(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+    await expect.poll(() => panel.getByText(/cannot resolve profile bundle/).count(), { timeout: 10_000 }).toBe(0)
+    expect((await scaffold.ctx.pluginManager.listBundles()).some(row => row.name === '@fixture/missing-bundle')).toBe(false)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
 
   it('lists the installed bundles with their switches and leaves the installation\'s own to Settings', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-list'))
@@ -258,7 +281,7 @@ describe('web e2e: plugin manager', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['manager.expected.md', 'live-enabled.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['manager.expected.md', 'live-enabled.expected.md', 'missing-bundle.expected.md'])
   })
 })
 

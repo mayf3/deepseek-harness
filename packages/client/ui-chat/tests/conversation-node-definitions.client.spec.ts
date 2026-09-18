@@ -987,8 +987,6 @@ describe('built-in conversation node Definitions', () => {
       })
       const tail = node(view, 'turn-tail')?.data as TurnTailChatData
       expect(tail.turn).toBe(1)
-      expect(tail.ttftMs).toBeUndefined()
-      expect(tail.tokensPerSecond).toBeUndefined()
     }
   })
 

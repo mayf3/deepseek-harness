@@ -107,3 +107,29 @@ describe('packaging run records', () => {
     } finally { await rm(root, { recursive: true, force: true }) }
   })
 })
+
+it('allows parallel Mac stages, attributes their output, and refuses finish until both settle', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-parallel-log-'))
+  try {
+    const run = createPackagingRun(root, { target: 'mac-fixture' }, { parallel: true, secrets: ['removed-p12-password'] })
+    const script = "process.stdout.write(process.argv[1]+' removed-p12-password')"
+    const first = run.run('app', process.execPath, ['-e', script, 'app'], { cwd: root, env: environment })
+    const second = run.run('dmg', process.execPath, ['-e', script, 'dmg'], { cwd: root, env: environment })
+    const settled = Promise.allSettled([first, second])
+    try { expect(() => { run.finish(true) }).toThrow('active run') } finally { await settled }
+    const results = await settled
+    expect(results.map(result => result.status)).toEqual(['fulfilled', 'fulfilled'])
+    run.finish(true)
+    const log = await readFile(join(run.directory, 'events.jsonl'), 'utf8')
+    const events = log.trim().split('\n').map(line => JSON.parse(line) as { type: string; stage: string; text?: string })
+    expect(events.filter(event => event.type === 'stage-start' || event.type === 'stage-end').slice(0, 2).map(event => event.type))
+      .toEqual(['stage-start', 'stage-start'])
+    expect(events.filter(event => event.type === 'output').map(event => event.stage).sort()).toEqual(['app', 'dmg'])
+    expect(log).not.toContain('removed-p12-password')
+    expect(events.filter(event => event.type === 'output').every(event => event.text?.includes('[REDACTED]'))).toBe(true)
+    const summary = JSON.parse(await readFile(join(run.directory, 'result.json'), 'utf8')) as { stages: unknown[]; elapsedMs: number }
+    expect(summary).toMatchObject({ success: true, proxy: 'not-used' })
+    expect(typeof summary.elapsedMs).toBe('number')
+    expect(summary.stages).toHaveLength(2)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})

@@ -206,7 +206,7 @@ describe('gate graph validation', () => {
     'ci-consumers',
     'ci-windows-blocking',
     'ci-windows-complete',
-    'ci-windows-observational',
+    'ci-windows-observational-ready',
     'node-compat',
     'check-all',
     'hygiene',
@@ -413,8 +413,8 @@ describe('gate graph validation', () => {
 
   it('keeps native Windows coverage blocking and behind the complete build', () => {
     const complete = withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))
-    const observational = withPnpmEntrypoint(() => gatesForMode('ci-windows-observational'))
-      .filter(gate => gate.id !== 'build' && gate.id !== 'docs-site-build')
+    const observational = withPnpmEntrypoint(() => gatesForMode('ci-windows-observational-ready'))
+      .filter(gate => gate.id !== 'docs-site-build')
     const byId = new Map(complete.map(subject => [subject.id, subject]))
 
     expect(byId.get('coverage')?.allowFailure).not.toBe(true)
@@ -433,12 +433,12 @@ describe('gate graph validation', () => {
         'coverage',
         'coverage-exempt-heavy',
       ]))
-      expect(completeGate?.needs).toEqual(gate.needs)
+      expect((completeGate?.needs ?? []).filter(id => id !== 'build')).toEqual(gate.needs ?? [])
     }
   })
 
   it('runs the Windows built-bin smoke after other observational gates settle', () => {
-    const observational = withPnpmEntrypoint(() => gatesForMode('ci-windows-observational'))
+    const observational = withPnpmEntrypoint(() => gatesForMode('ci-windows-observational-ready'))
     const builtBin = observational.find(gate => gate.id === 'built-bin-smoke')
 
     expect(builtBin?.after).toEqual(
@@ -449,6 +449,48 @@ describe('gate graph validation', () => {
       .find(gate => gate.id === 'built-bin-smoke')
     expect(completeBuiltBin?.after).toContain('windows-site')
     expect(completeBuiltBin?.after).not.toContain('docs-site-build')
+  })
+
+  it('reuses the Windows build without dropping diagnostics or rebuilding the workspace', () => {
+    const ready = withPnpmEntrypoint(() => gatesForMode('ci-windows-observational-ready'))
+    const complete = withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))
+    const { scripts } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+
+    expect(scripts['check:ci:windows-observational-ready']).toBe('tsx scripts/run-gates.ts ci-windows-observational-ready')
+    expect(scripts).not.toHaveProperty('check:ci:windows-observational')
+    const completeOnly = new Set(['build', 'windows-site', 'native-system', 'coverage', 'coverage-exempt-heavy'])
+    const shared = complete.filter(gate => !completeOnly.has(gate.id))
+    expect(ready.map(gate => gate.id).sort()).toEqual([...shared.map(gate => gate.id), 'docs-site-build'].sort())
+    expect(ready.some(gate => gate.id === 'build')).toBe(false)
+    expect(ready.find(gate => gate.id === 'docs-site-build')?.displayCommand).toBe('pnpm run docs:build:mpa')
+    for (const diagnostic of shared) {
+      expect(ready.find(gate => gate.id === diagnostic.id)).toMatchObject({
+        command: diagnostic.command,
+        args: diagnostic.args,
+      })
+      expect(ready.find(gate => gate.id === diagnostic.id)?.env).toEqual(diagnostic.env)
+    }
+    expect(complete.find(gate => gate.id === 'build')).toBeDefined()
+    expect(complete.find(gate => gate.id === 'coverage')).toBeDefined()
+  })
+
+  it('runs built Windows smoke after failed diagnostics settle on an existing build', async () => {
+    const ready = withPnpmEntrypoint(() => gatesForMode('ci-windows-observational-ready'))
+    const settled = new Set<string>()
+    const results = await runGates(ready, 8, async (subject) => {
+      if (subject.id === 'built-bin-smoke') {
+        expect(settled.size).toBe(ready.length - 1)
+        expect(settled.has('doc-graphs')).toBe(true)
+      }
+      settled.add(subject.id)
+      return resultFor(subject, subject.id === 'doc-graphs' ? 'failed' : 'passed')
+    })
+
+    expect(results.filter(result => result.status === 'failed').map(result => result.gate.id)).toEqual(['doc-graphs'])
+    expect(results.find(result => result.gate.id === 'built-bin-smoke')?.status).toBe('passed')
+    expect(results.some(result => result.status === 'skipped')).toBe(false)
   })
 
   it('applies one configured test, polling, and hook timeout to both coverage gates', () => {

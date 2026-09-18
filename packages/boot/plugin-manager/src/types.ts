@@ -35,6 +35,7 @@ export interface BundleInfo {
   version?: string
   /** `description` of the package manifest. */
   description?: string
+  /** Selected in the profile manifest; a load error means its layer was skipped. */
   enabled: boolean
   /** Whether the profile's own dependencies hold the package; false for a bundle the dsh installation supplies. */
   installed: boolean
