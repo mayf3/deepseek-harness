@@ -593,18 +593,12 @@ importers:
       extract-zip:
         specifier: ^2.0.1
         version: 2.0.1(supports-color@9.4.0)
-      fflate:
-        specifier: ^0.8.2
-        version: 0.8.3
       js-yaml:
         specifier: ^4.2.0
         version: 4.3.1
       pnpm:
         specifier: 11.7.0
         version: 11.7.0
-      tar:
-        specifier: ^7.5.0
-        version: 7.5.22
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -10375,6 +10369,10 @@ importers:
         version: link:../../core/tools
 
   packages/skill/tool-workspace-dependencies:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

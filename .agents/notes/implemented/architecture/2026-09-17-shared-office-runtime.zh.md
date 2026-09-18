@@ -14,6 +14,8 @@ SDK 部署需要与 Desktop 相同的 Office 创作库，同时将解释器 payl
 
 [共享构建入口](../../../../scripts/primary-runtime/prepare.ts) 持有 Desktop 目标与 GNU/Linux x64 的下载锁、解压和本机冒烟检查。Desktop 提供输出路径和发布版本，要求包含 Node.js 与 pnpm，并应用签名专用子进程环境。其他载体选择自己的输出目录，也可构建 Python-only payload。现有 `desktopVersion` 清单字段保留名字并记录载体发布版本；`payloadDigest` 区分锁定输入与组件选择。
 
+[Desktop 第一方运行时决策](../feature/2026-09-14-desktop-primary-runtime.zh.md)继续持有 Desktop 安装与平台签名规则。本决策仅替代其中由 Desktop 独占构建器和查询实现的部分；两份记录均保持有效。
+
 ## 考虑过的替代方案
 
 **将实现保留在 Desktop。** SDK 和容器构建器只需要解释器、Office 资源和查询，却仍会依赖应用打包及签名代码。

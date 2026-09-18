@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -132,4 +133,16 @@ it('copies complete Office resources outside the application archive and removes
 
 it('gives Python-only payloads a distinct identity', () => {
   expect(primaryRuntimePayloadDigest('linux-x64', lock, undefined)).not.toBe(primaryRuntimePayloadDigest('linux-x64', lock, '11.7.0'))
+})
+
+it('keeps carrier pnpm versions aligned with the shared payload build', () => {
+  const root = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
+    packageManager: string
+    devDependencies: { pnpm: string }
+  }
+  const desktop = JSON.parse(readFileSync(new URL('../../apps/desktop/package.json', import.meta.url), 'utf8')) as {
+    devDependencies: { pnpm: string }
+  }
+  expect(desktop.devDependencies.pnpm).toBe(root.devDependencies.pnpm)
+  expect(root.packageManager).toBe(`pnpm@${root.devDependencies.pnpm}`)
 })

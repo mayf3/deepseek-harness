@@ -345,3 +345,18 @@ it('disposes an unused tool without preparing the payload', async () => {
 it.each([{ source: 'relative' }, { source: process.cwd(), root: 'relative' }])('rejects relative runtime configuration at plugin load: %j', async (config) => {
   await expect(tool(config)).rejects.toThrow('must be absolute paths')
 })
+
+it.each([{}, { source: '' }, { source: 1 }])('rejects invalid payload configuration with a named source error: %j', (config) => {
+  expect(() => workspaceDependencies.Config(config as unknown as workspaceDependencies.Config)).toThrow('source')
+})
+
+it('validates the previous directory even when a current installation exists', async () => {
+  const { source, root, directory } = await fixture()
+  await installPrimaryRuntime(source, root)
+  const outside = join(directory, 'outside-previous')
+  await mkdir(outside)
+  await writeFile(join(outside, 'keep'), 'untouched')
+  await symlink(outside, `${root}.previous`, process.platform === 'win32' ? 'junction' : 'dir')
+  await expect(installPrimaryRuntime(source, root)).rejects.toThrow('filesystem link')
+  expect(await readFile(join(outside, 'keep'), 'utf8')).toBe('untouched')
+})

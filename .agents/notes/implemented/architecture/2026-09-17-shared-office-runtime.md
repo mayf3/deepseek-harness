@@ -14,6 +14,8 @@ SDK deployments need the same Office authoring libraries as Desktop while keepin
 
 The [shared build entry](../../../../scripts/primary-runtime/prepare.ts) owns the download lock, extraction and native smoke checks for Desktop targets and GNU/Linux x64. Desktop supplies output paths and its release version, requires Node.js and pnpm, and applies its signing-specific subprocess environment. Other carriers choose their output directory and may build a Python-only payload. The existing `desktopVersion` manifest field retains its name and records the carrier release; `payloadDigest` distinguishes locked inputs and component selection.
 
+The [Desktop primary-runtime decision](../feature/2026-09-14-desktop-primary-runtime.md) continues to own Desktop installation and platform signing. This decision replaces only its Desktop-only builder and query placement; both records remain active.
+
 ## Alternatives considered
 
 **Keep implementation in Desktop.** This leaves SDK and container builders depending on application packaging and signing code despite needing only interpreters, Office resources and a query.

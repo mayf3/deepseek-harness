@@ -3,6 +3,7 @@
 import { cp, lstat, mkdir, mkdtemp, readFile, rename, rm, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 /** Cordis plugin identity. */
@@ -21,6 +22,12 @@ export interface Config {
    */
   readonly root?: string
 }
+
+/** Require a named payload source before the Loader activates the tool. */
+export const Config: z<Config> = z.object({
+  source: z.string().min(1).required(),
+  root: z.string().min(1),
+})
 
 /** Versions recorded by the payload build, independent of user-installed packages. */
 export interface PrimaryRuntimeManifest {
@@ -160,9 +167,9 @@ export async function installPrimaryRuntime(source: string, root: string): Promi
   const manifest = await compatibleManifest(source)
   await mkdir(dirname(root), { recursive: true })
   const previous = `${root}.previous`
-  await exists(previous)
-  await exists(root)
-  if (!await exists(root) && await exists(previous)) await rename(previous, root)
+  const previousExists = await exists(previous)
+  const rootExists = await exists(root)
+  if (!rootExists && previousExists) await rename(previous, root)
   if (await exists(join(root, 'runtime.json')) && JSON.stringify(await readPrimaryRuntime(root)) === JSON.stringify(manifest)) {
     const paths = workspaceDependencyPaths(root, manifest)
     for (const path of payloadEntries(paths)) await stat(path)
@@ -203,7 +210,7 @@ export function apply(ctx: Context, config: Config): void {
   })
   ctx.tools.register(defineTool({
     name: 'load_workspace_dependencies',
-    description: 'Get absolute paths to bundled Python, Node.js, pnpm, and library directories, plus bundled Python distribution versions. Python includes numpy, pandas, python-docx, python-pptx, openpyxl, Pillow, lxml, and XlsxWriter. Use these libraries for Office files unless the user or workspace instructions select another environment. Run pnpm with the returned Node executable and pnpm script path. This does not change PATH or package-manager settings.',
+    description: 'Get absolute paths to bundled Python and library directories, plus bundled Python distribution versions. Node.js and pnpm paths are included when the payload provides them. Python includes numpy, pandas, python-docx, python-pptx, openpyxl, Pillow, lxml, and XlsxWriter. Use these libraries for Office files unless the user or workspace instructions select another environment. When Node.js and pnpm paths are returned, run pnpm with that Node executable and pnpm script path. This does not change PATH or package-manager settings.',
     parameters: {},
     output: {
       schema: {

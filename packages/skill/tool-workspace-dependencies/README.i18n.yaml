@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/skill/tool-workspace-dependencies/README.md
-README.md: 1464e231980bc24559d5dfc2635d51e57bcfc116
-README.zh.md: 48520369dde7cb0a5fcfb8d53af687ce651c47d5
+README.md: 77020b8ca21224b9c2aeed440c7837a1fc610e7c
+README.zh.md: 62ca9c088a3c6b69343285699864b2cd3418d683

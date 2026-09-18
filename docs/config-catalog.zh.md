@@ -3484,7 +3484,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/skill/tool-workspace-dependencies/src/index.ts:14`](../packages/skill/tool-workspace-dependencies/src/index.ts)
+来源：[`packages/skill/tool-workspace-dependencies/src/index.ts:15`](../packages/skill/tool-workspace-dependencies/src/index.ts)
 
 <a id="deepseek-aidsh-tools"></a>
 

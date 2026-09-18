@@ -3482,7 +3482,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/skill/tool-workspace-dependencies/src/index.ts:14`](../packages/skill/tool-workspace-dependencies/src/index.ts)
+Source: [`packages/skill/tool-workspace-dependencies/src/index.ts:15`](../packages/skill/tool-workspace-dependencies/src/index.ts)
 
 <a id="deepseek-aidsh-tools"></a>
 
