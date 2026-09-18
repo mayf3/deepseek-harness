@@ -39,6 +39,7 @@ import type {
   WorkspaceFileStat,
   WorkspaceFileText,
   WorkspaceFileWatchFrame,
+  WorkspaceWatchRequest,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -361,8 +362,10 @@ export class WorkspaceFiles extends TypertRemoteService {
    *   root is resolved, then queued and live observations in emission order.
    */
   @Remote({ mode: 'stream' })
-  changes(workspaceFileScope: WorkspaceFileScope, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame> {
-    return this.feed.follow(workspaceFileScope.workspaceRoot, signal)
+  changes(
+    workspaceFileScope: WorkspaceFileScope, request: WorkspaceWatchRequest, signal: AbortSignal,
+  ): AsyncIterable<WorkspaceFileWatchFrame> {
+    return this.feed.follow(workspaceFileScope.workspaceRoot, request, signal)
   }
 
   /** Apply the page defaults and caps here, so the request never carries them implicitly. */

@@ -16,7 +16,7 @@ function harness() {
   const remote = new FakeRemote()
   const feed = new ChangeFeed(remote)
   const follow = (sessionId: SessionId, path: string, controller = new AbortController()) => {
-    const follower = feed.follow(sessionId, controller.signal)
+    const follower = feed.follow(sessionId, path, controller.signal)
     follower.bind(path)
     return { it: follower[Symbol.asyncIterator](), controller }
   }
@@ -27,10 +27,10 @@ describe('ChangeFeed — one Host stream per session', () => {
   it('starts a later follower from the existing session acknowledgement without opening another stream', async () => {
     const { remote, feed } = harness()
     const controller = new AbortController()
-    const first = feed.follow(S1, controller.signal)
+    const first = feed.follow(S1, '/w/second.txt', controller.signal)
     try {
       await expect(first.ready).resolves.toBe(true)
-      const second = feed.follow(S1, controller.signal)
+      const second = feed.follow(S1, '/w/second.txt', controller.signal)
       await expect(second.ready).resolves.toBe(true)
       expect(remote.calls).toEqual(['changes', 'accept'])
       expect(remote.opened).toHaveLength(1)
@@ -195,8 +195,8 @@ describe('ChangeFeed — a follower ends', () => {
   it('ends every follower and disposes the session stream for an unknown wire frame kind', async () => {
     const { remote, feed } = harness()
     const controller = new AbortController()
-    const first = feed.follow(S1, controller.signal)
-    const second = feed.follow(S1, controller.signal)
+    const first = feed.follow(S1, '/w/a.txt', controller.signal)
+    const second = feed.follow(S1, '/w/a.txt', controller.signal)
     const firstIterator = first[Symbol.asyncIterator]()
     const secondIterator = second[Symbol.asyncIterator]()
     try {
@@ -236,7 +236,7 @@ describe('ChangeFeed — a follower ends', () => {
     const { remote, feed } = harness()
     const controller = new AbortController()
     controller.abort()
-    const it = feed.follow(S1, controller.signal)[Symbol.asyncIterator]()
+    const it = feed.follow(S1, '/w/a.txt', controller.signal)[Symbol.asyncIterator]()
     await expect(it.next()).resolves.toEqual({ done: true, value: undefined })
     await settle()
     expect(remote.opened).toEqual([])

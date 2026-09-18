@@ -61,7 +61,7 @@ export interface Mounted {
 function harness(cwd: string | null) {
   const instance = createFilesStore().create()
   const script = scriptedList()
-  const face = filesFace(script.list)(SESSION, instance.actions)
+  const face = filesFace(script.list, script.watch)(SESSION, instance.actions)
   const controller = new AbortController()
   const tabActions: MockedTabActions = {
     openResource: vi.fn<SidebarRightTabActions['openResource']>(),

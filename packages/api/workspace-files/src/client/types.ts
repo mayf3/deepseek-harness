@@ -47,4 +47,4 @@ export type WorkspaceFileEdit =
   | { readonly kind: 'absent' }
 
 /** What one follower of a path receives: a Host write. */
-export type WorkspaceFileNotice = WorkspaceFileEdit
+export type WorkspaceFileNotice = WorkspaceFileEdit | { readonly kind: 'refresh' }

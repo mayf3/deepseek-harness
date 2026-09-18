@@ -83,7 +83,7 @@ class Follower implements AsyncIterable<WorkspaceFileNotice> {
       while (true) {
         const next = this.pending.shift()
         if (next !== undefined) {
-          if (this.hostKey === undefined || next.key === this.hostKey) yield next.notice
+          if (next.notice.kind === 'refresh' || this.hostKey === undefined || next.key === this.hostKey) yield next.notice
           continue
         }
         if (this.ended) return
@@ -102,6 +102,7 @@ class SessionFeed {
   private readonly stream: SupervisedStream<WorkspaceFileWatchFrame>
   private closed = false
   private started = false
+  private acknowledged = false
 
   /**
    * @param remote - the Remote face carrying `workspaceFiles.changes`.
@@ -112,6 +113,7 @@ class SessionFeed {
   constructor(
     remote: WorkspaceFilesRemote,
     sessionId: SessionId,
+    path: string,
     after: Promise<void> | undefined,
     private readonly onClose: (closed: Promise<void>) => void,
   ) {
@@ -121,7 +123,7 @@ class SessionFeed {
       // two Host streams open at once.
       open: (signal) => {
         this.started = false
-        return openAfter(after, () => remote.workspaceFiles.changes(sessionId, signal))
+        return openAfter(after, () => remote.workspaceFiles.changes(sessionId, { kind: 'file', path }, signal))
       },
       // A normal end means the Host closed the session's feed: the session is
       // gone or the Host is shutting down, so there is nothing to reopen.
@@ -156,7 +158,11 @@ class SessionFeed {
           case 'ready':
             item.accept()
             this.started = true
-            for (const follower of this.followers) follower.start()
+            for (const follower of this.followers) {
+              follower.start()
+              if (this.acknowledged) follower.push({ kind: 'refresh' }, '')
+            }
+            this.acknowledged = true
             break
           case 'change': {
             const key = keyOf(frame.change.absolutePath)
@@ -217,9 +223,9 @@ function assertNever(frame: never): never {
  */
 export class ChangeFeed {
   /** Live feeds only: a feed removes itself when its stream closes. */
-  private readonly sessions = new Map<SessionId, SessionFeed>()
+  private readonly sessions = new Map<string, SessionFeed>()
   /** Streams still closing, by session: the session's next feed opens after its predecessor has settled. */
-  private readonly closing = new Map<SessionId, Promise<void>>()
+  private readonly closing = new Map<string, Promise<void>>()
 
   /**
    * @param remote - the Remote face carrying `$stream` and `workspaceFiles.changes`.
@@ -242,8 +248,8 @@ export class ChangeFeed {
    * @param signal - ends the follow.
    * @returns a single-consumer subscription with Host-path binding and explicit disposal.
    */
-  follow(sessionId: SessionId, signal: AbortSignal): Follower {
-    const feed = signal.aborted ? undefined : this.feedOf(sessionId)
+  follow(sessionId: SessionId, path: string, signal: AbortSignal): Follower {
+    const feed = signal.aborted ? undefined : this.feedOf(sessionId, path)
     const leave = (): void => {
       signal.removeEventListener('abort', leave)
       follower.end()
@@ -268,18 +274,19 @@ export class ChangeFeed {
     await Promise.all(this.closing.values())
   }
 
-  private feedOf(sessionId: SessionId): SessionFeed {
-    const existing = this.sessions.get(sessionId)
+  private feedOf(sessionId: SessionId, path: string): SessionFeed {
+    const key = JSON.stringify([sessionId, path])
+    const existing = this.sessions.get(key)
     if (existing !== undefined) return existing
-    const feed = new SessionFeed(this.remote, sessionId, this.closing.get(sessionId), (closed) => {
-      this.sessions.delete(sessionId)
+    const feed = new SessionFeed(this.remote, sessionId, path, this.closing.get(key), (closed) => {
+      this.sessions.delete(key)
       // A dispose that rejects is still a settled close: nothing remains to wait for.
       const tracked: Promise<void> = closed.then(() => undefined, () => undefined).then(() => {
-        if (this.closing.get(sessionId) === tracked) this.closing.delete(sessionId)
+        if (this.closing.get(key) === tracked) this.closing.delete(key)
       })
-      this.closing.set(sessionId, tracked)
+      this.closing.set(key, tracked)
     })
-    this.sessions.set(sessionId, feed)
+    this.sessions.set(key, feed)
     return feed
   }
 }

@@ -38,7 +38,7 @@ function open(
   service: WorkspaceFiles,
   controller = new AbortController(),
 ): { next(): Promise<IteratorResult<WorkspaceFileWatchFrame>>; controller: AbortController } {
-  const iterator = service.changes(harness.scope, controller.signal)[Symbol.asyncIterator]()
+  const iterator = service.changes(harness.scope, { kind: 'directory', path: harness.workspace }, controller.signal)[Symbol.asyncIterator]()
   closeStreams.push(async () => {
     controller.abort()
     await iterator.return?.()
@@ -245,7 +245,7 @@ describe('workspaceFiles.changes — ending', () => {
   it('stops delivering to a generation the consumer returned from', async () => {
     const service = harness.endpoint()
     const controller = new AbortController()
-    const iterator = service.changes(harness.scope, controller.signal)[Symbol.asyncIterator]()
+    const iterator = service.changes(harness.scope, { kind: 'directory', path: harness.workspace }, controller.signal)[Symbol.asyncIterator]()
     closeStreams.push(async () => {
       controller.abort()
       await iterator.return?.()

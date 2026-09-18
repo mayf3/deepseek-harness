@@ -88,6 +88,10 @@ export abstract class FileSystem extends Service {
     super(ctx, 'fs')
   }
 
+  watch(_target: FsTarget, _changed: (error?: Error) => void, _signal: AbortSignal): Promise<() => Promise<void>> | undefined {
+    return undefined
+  }
+
   /**
    * The sandbox mode this backend enforces on mutations BY DEFAULT, or
    * `undefined` when it does not confine at all — the capability fact the tool

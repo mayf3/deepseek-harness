@@ -2,11 +2,12 @@
 import { vi } from 'vitest'
 import type { Mock } from 'vitest'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
-import type { ListWorkspaceDirectory } from '../src/client/face.ts'
+import type { ListWorkspaceDirectory, WatchWorkspaceDirectory } from '../src/client/face.ts'
 import type { DirLevel } from '../src/client/store.ts'
 
 /** The scripted listing: the mock the face receives, and the hand that settles it. */
 export interface ScriptedList {
+  readonly watch: WatchWorkspaceDirectory
   readonly list: Mock<ListWorkspaceDirectory>
   /**
    * Settle the oldest outstanding call and let its store write land.
@@ -43,6 +44,7 @@ export function scriptedList(): ScriptedList {
     await Promise.resolve()
   }
   return {
+    watch: async function* () { yield 'ready' },
     list,
     settle: result => land(pending.shift(), result),
     settleLatest: result => land(pending.pop(), result),

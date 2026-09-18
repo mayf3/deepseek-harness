@@ -12,7 +12,7 @@ describe('HTML relative file reader', () => {
     const readRelated = vi.fn<ReadHtmlRelated>().mockResolvedValue({ ok: true, value })
     const tab = new AbortController()
     const loading = new AbortController()
-    const read = createReadHtmlRelative(readRelated, ADDRESS, tab.signal)
+    const read = createReadHtmlRelative(readRelated, ADDRESS, tab.signal, vi.fn())
     await expect(read('../a%20b.js?v=1#fragment', loading.signal)).resolves.toEqual({ ...value, data: new Uint8Array([120]) })
     const signal = readRelated.mock.calls[0]?.[2]
     expect(readRelated).toHaveBeenCalledExactlyOnceWith(ADDRESS, '../a b.js', signal)
@@ -26,7 +26,7 @@ describe('HTML relative file reader', () => {
       ok: false, error: new RemoteError('workspace-file/outside-workspace', 'outside workspace', { path: '../x.js' }),
     })
     const signal = new AbortController().signal
-    const read = createReadHtmlRelative(readRelated, ADDRESS, signal)
+    const read = createReadHtmlRelative(readRelated, ADDRESS, signal, vi.fn())
     for (const path of ['', '/x.js', 'file:///x.js', '%2Fx.js', 'C:/x.js', '..\\x.js', '%00.js', '%ZZ.js']) {
       await expect(read(path, signal)).rejects.toThrow()
     }
@@ -38,7 +38,7 @@ describe('HTML relative file reader', () => {
     const controller = new AbortController()
     controller.abort()
     const readRelated = vi.fn<ReadHtmlRelated>()
-    const read = createReadHtmlRelative(readRelated, ADDRESS, controller.signal)
+    const read = createReadHtmlRelative(readRelated, ADDRESS, controller.signal, vi.fn())
     await expect(read('x.js', new AbortController().signal)).rejects.toMatchObject({ name: 'AbortError' })
     expect(readRelated).not.toHaveBeenCalled()
   })
@@ -47,7 +47,7 @@ describe('HTML relative file reader', () => {
     const pending = Promise.withResolvers<Awaited<ReturnType<ReadHtmlRelated>>>()
     const readRelated = vi.fn<ReadHtmlRelated>().mockReturnValue(pending.promise)
     const loading = new AbortController()
-    const read = createReadHtmlRelative(readRelated, ADDRESS, new AbortController().signal)
+    const read = createReadHtmlRelative(readRelated, ADDRESS, new AbortController().signal, vi.fn())
     const result = read('./late.js', loading.signal)
     const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' })
     loading.abort()

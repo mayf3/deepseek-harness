@@ -57,7 +57,7 @@ export function createFileResourceProvider(
       }
       const { sessionId, path } = resolved.value
       // Queue changes delivered to this Client while stat is pending.
-      const notices = changes.follow(sessionId, signal)
+      const notices = changes.follow(sessionId, path, signal)
       const stat = (): Promise<RemoteResult<WorkspaceFileStat>> => remote.workspaceFiles.stat(sessionId, path, signal)
       // Read through a call: a plain `signal.aborted` is narrowed to `false` by
       // the first check and would read as always-false after the later awaits.
@@ -66,7 +66,11 @@ export function createFileResourceProvider(
       // on the file, so a write can still bring the file live.
       let current: WorkspaceFileStat | undefined
       try {
-        if (!await notices.ready || aborted()) return
+        if (!await notices.ready) {
+          if (!aborted()) yield await stat()
+          return
+        }
+        if (aborted()) return
         const first = await stat()
         if (aborted()) return
         if (first.ok) {
@@ -84,9 +88,6 @@ export function createFileResourceProvider(
             // Frames report observations: holding this version already means the
             // consumer learns nothing new.
             if (notice.version === current.version) continue
-            current = { ...current, version: notice.version }
-            yield { ok: true, value: current }
-            continue
           }
           // A Host notice may mean stale content.
           const again = await stat()

@@ -3,6 +3,8 @@ import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { WorkspaceFileBytes } from '@deepseek-ai/dsh-api-workspace-files/types'
 import { documentFileBytes } from '../rpc.ts'
 import type { ReadHtmlRelative } from './pack.ts'
+import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
+import { hostFileOf } from '../rpc.ts'
 
 /**
  * Read one dependency relative to the addressed HTML file through the Host.
@@ -20,7 +22,12 @@ export type ReadHtmlRelated = (address: string, relativePath: string, signal: Ab
  * @param lifetime - tab lifetime.
  * @returns a reader that strips URL query/fragment, decodes one path, and preserves Host failures.
  */
-export function createReadHtmlRelative(readRelated: ReadHtmlRelated, address: string, lifetime: AbortSignal): ReadHtmlRelative {
+export function createReadHtmlRelative(
+  readRelated: ReadHtmlRelated,
+  address: string,
+  lifetime: AbortSignal,
+  addResource: (address: string, version?: string) => void,
+): ReadHtmlRelative {
   return async (reference, signal) => {
     const suffix = reference.search(/[?#]/u)
     const path = decodeURIComponent(suffix === -1 ? reference : reference.slice(0, suffix))
@@ -29,9 +36,14 @@ export function createReadHtmlRelative(readRelated: ReadHtmlRelated, address: st
     }
     const combined = AbortSignal.any([lifetime, signal])
     combined.throwIfAborted()
+    const file = hostFileOf(address)
+    const base = file.path.replaceAll('\\', '/')
+    const dependency = sessionFileAddress(file.sessionId, `${base.slice(0, base.lastIndexOf('/') + 1)}${path}`)
+    addResource(dependency)
     const result = await readRelated(address, path, combined)
     combined.throwIfAborted()
     if (!result.ok) throw new Error(result.error.message)
+    addResource(dependency, result.value.version)
     return documentFileBytes(result.value)
   }
 }

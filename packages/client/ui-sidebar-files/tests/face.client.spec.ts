@@ -30,7 +30,7 @@ const LEVEL: DirLevel = { entries: [{ name: 'src', type: 'directory' }], truncat
 function mount() {
   const instance = createFilesStore().create()
   const script = scriptedList()
-  const face = filesFace(script.list)(SESSION, instance.actions)
+  const face = filesFace(script.list, script.watch)(SESSION, instance.actions)
   return { ...script, face, snapshot: () => instance.getSnapshot().byTab[TAB] }
 }
 
@@ -59,11 +59,11 @@ describe('filesFace', () => {
     const child = `${ROOT}/src`
     face.start(TAB, ROOT, signal)
     await settle({ ok: true, value: LEVEL })
-    face.toggle(TAB, child, false, signal)
+    face.toggle(TAB, child, [ROOT], signal)
     expect(list).toHaveBeenLastCalledWith(SESSION, child, signal)
     expect(snapshot()!.expanded).toEqual([ROOT, child])
     await settle({ ok: true, value: LEVEL })
-    face.toggle(TAB, child, true, signal)
+    face.toggle(TAB, child, [ROOT, child], signal)
     expect(snapshot()!.expanded).toEqual([ROOT])
     expect(list).toHaveBeenCalledTimes(2)
   })

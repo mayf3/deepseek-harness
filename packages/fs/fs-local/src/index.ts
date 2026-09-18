@@ -6,6 +6,8 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { constants as bufferConstants } from 'node:buffer'
+import { once } from 'node:events'
+import { watch } from 'chokidar'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import z from '@deepseek-ai/schemastery'
@@ -64,6 +66,20 @@ const MAX_DIFF_BASIS_BYTES = Math.min(
  * containment with a stricter backend or a `tools/execute` permission plugin.
  */
 export class LocalFileSystem extends FileSystem {
+  override async watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>> {
+    signal.throwIfAborted()
+    const watcher = watch(this.processPath(target), { ignoreInitial: true, depth: 0 })
+    watcher.on('all', () => { changed() })
+    watcher.on('error', (error) => { changed(error instanceof Error ? error : new Error(String(error))) })
+    try {
+      await once(watcher, 'ready', { signal })
+      return () => watcher.close()
+    } catch (error) {
+      await watcher.close()
+      throw error
+    }
+  }
+
   static Config: z<Config> = z.object({
     cwd: z.string().default(process.cwd()),
     diffBasisMaxBytes: z.number().default(DEFAULT_DIFF_BASIS_MAX_BYTES),

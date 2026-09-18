@@ -142,8 +142,14 @@ export type WorkspaceFileWatchFrame =
   | { readonly kind: 'ready' }
   | { readonly kind: 'change'; readonly change: WorkspaceFileChange }
 
+export interface WorkspaceWatchRequest {
+  readonly path: string
+  readonly kind: 'file' | 'directory'
+}
+
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
+    'workspace-file/watch-unsupported': { readonly path: string }
     /** No entry exists at that path inside the workspace. */
     'workspace-file/not-found': { readonly path: string }
     /** The directory listing path resolves outside the session's workspace root. */
