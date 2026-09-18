@@ -35,7 +35,7 @@ export function AccountMenu({
   }
   return <div className={css.root}>
     <Menu open={open} side="top" portal autoFocus className={css.anchor}
-      anchor={<button type="button" className={css.trigger} aria-label={t('menu')}
+      anchor={<button type="button" className={css.trigger} data-collapsed={!wide} aria-label={t('menu')}
         aria-haspopup="menu" aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
         <span className={css.avatar}><AccountAvatar url={signedIn && profile?.status === 'ready' ? profile.value.avatarUrl : null} /></span>
         {wide && <span className={css.label}>{signedIn ? label : t('signedOut')}</span>}

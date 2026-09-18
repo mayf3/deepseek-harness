@@ -20,7 +20,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-侧边栏和账号设置以圆形图片显示账号头像；头像 URL 缺失或图片加载失败时使用账号图标兜底。
+侧边栏和账号设置以圆形图片显示账号头像；头像 URL 缺失或图片加载失败时使用账号图标兜底。折叠侧边栏将头像居中放置在 36 × 36 px 的按钮内。
 
 该页面通过 settings.section 注册，并使用 account Remote 命名空间。共享 Remote 管理器负责连接恢复后的流重连。页面使用功能自有的中英文文案，将 API Key 与账号状态分开。
 
