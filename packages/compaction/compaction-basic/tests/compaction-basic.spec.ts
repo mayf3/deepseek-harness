@@ -408,14 +408,12 @@ describe('compact configuration and defaults', () => {
     // point where the provider rejects the request.
     expect(resolveCompactSpec(policy, 1_048_576, 256_000)).toMatchObject({
       contextWindow: 1_048_576,
-      reservedCompletionTokens: 256_000,
       thresholdTokens: 634_060,
       retainTokens: 126_812,
     })
 
     // No declared reserve keeps the whole window available, as before.
     expect(resolveCompactSpec(policy, 1_000)).toMatchObject({
-      reservedCompletionTokens: 0,
       thresholdTokens: 800,
       retainTokens: 160,
     })

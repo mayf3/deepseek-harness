@@ -71,8 +71,6 @@ export type ResolvedTargetPolicy = ResolvedPolicyFields & ResolvedRetention & {
 /** One routed model's concrete pressure and retention budget. */
 export type ResolvedCompactSpec = Omit<ResolvedTargetPolicy, 'retainRatio' | 'retainTokens'> & {
   readonly contextWindow: number
-  /** Output tokens one routed request reserves, excluded from both budgets. */
-  readonly reservedCompletionTokens: number
   readonly thresholdTokens: number
   readonly retainTokens: number
 }

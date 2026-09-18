@@ -181,7 +181,6 @@ export function resolveCompactSpec(
   return deepFreeze({
     target: { ...policy.target },
     contextWindow,
-    reservedCompletionTokens,
     thresholdRatio: policy.thresholdRatio,
     thresholdTokens,
     retainTokens,
