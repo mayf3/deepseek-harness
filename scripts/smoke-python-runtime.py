@@ -808,7 +808,7 @@ def smoke_sdk_authoring(base_url: str, executable: Path, update_snapshots: bool)
     """Query the bundled Python and switch skills without replacing that environment."""
     from deepseek_harness import DeepSeekHarness
 
-    resources = executable.with_name(f"{executable.name.removesuffix('.exe')}-resources")
+    resources = executable.with_name(executable.name.removeprefix("deepseek-harness-sdk-runtime-").removesuffix(".exe"))
     manifest = json.loads((resources / "primary-runtime/runtime.json").read_text())
     for mode in ("default", "replacement", "disabled"):
         with tempfile.TemporaryDirectory(prefix="dsh-sdk-authoring-") as temporary:
@@ -871,7 +871,8 @@ def smoke_sdk_office(executable: Path) -> None:
         root = Path(temporary).resolve()
         relocated = root / executable.name
         stem = executable.name.removesuffix(".exe")
-        for source in executable.parent.glob(f"{stem}*"):
+        resources = executable.with_name(stem.removeprefix("deepseek-harness-sdk-runtime-"))
+        for source in [*executable.parent.glob(f"{stem}*"), resources]:
             destination = root / source.name
             if source.is_dir():
                 shutil.copytree(source, destination)

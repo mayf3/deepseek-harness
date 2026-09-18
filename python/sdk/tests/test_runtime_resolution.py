@@ -35,7 +35,7 @@ def _resource_sidecars(executable: Path, native_targets: tuple[str, ...] = ("dar
     adapter.write_text(json.dumps({"optionalDependencies": {
         f"@deepseek-ai/libreoffice-kit-{target}": "0.0.1" for target in (*native_targets, "wasm")
     }}), encoding="utf-8")
-    resources = executable.with_name(f"{executable.name.removesuffix('.exe')}-resources")
+    resources = executable.with_name(tag)
     manifest = resources / "primary-runtime/runtime.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text(json.dumps({"platform": native.rsplit("-", 1)[0], "arch": tag.rsplit("-", 1)[1],
@@ -63,7 +63,7 @@ def test_unknown_explicit_mode_fails_loud() -> None:
 def test_authoring_resources_validate_installed_and_wheel_payloads(tmp_path: Path, target: str, invalid: str | None) -> None:
     executable = tmp_path / f"deepseek-harness-sdk-runtime-{target}"
     _resource_sidecars(executable)
-    root = Path(f"{executable}-resources")
+    root = tmp_path / target
     python = root / "primary-runtime/dependencies/python" / ("python.exe" if target == "win-x64" else "bin/python3")
     if invalid == "mode" and target == "win-x64":
         pytest.skip("Windows executables do not require a POSIX executable bit")

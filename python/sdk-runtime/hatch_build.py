@@ -77,7 +77,7 @@ class RuntimeBuildHook(BuildHookInterface):
         target = next(name for name, value in _PLATFORMS.items() if value[0] == platform_tag)
         runtime_dir = Path(self.root) / "src" / "deepseek_harness_runtime" / "runtime"
         runtime_files = sorted(
-            runtime_dir.glob("deepseek-harness-sdk-runtime-*") if runtime_dir.is_dir() else []
+            (path for path in runtime_dir.iterdir() if path.name != "node") if runtime_dir.is_dir() else []
         )
         expected_files = (
             [expected_executable, f"{expected_executable.removesuffix('.exe')}-rg.exe"]
@@ -88,7 +88,7 @@ class RuntimeBuildHook(BuildHookInterface):
             expected_files.append(f"{expected_executable}-spawn-helper")
         office = runtime_dir / f"{expected_executable.removesuffix('.exe')}-office"
         expected_files.append(office.name)
-        resources = runtime_dir / f"{expected_executable.removesuffix('.exe')}-resources"
+        resources = runtime_dir / target
         expected_files.append(resources.name)
         expected_files.sort()
         found_files = [path.name for path in runtime_files]

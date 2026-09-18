@@ -108,6 +108,19 @@ def test_stage_sdk_keeps_distribution_module_and_runtime_pin_distinct(tmp_path: 
     assert (destination / "src" / "deepseek_harness" / "__init__.py").is_file()
 
 
+def test_copy_package_omits_generated_carriers_before_staging_one_target(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    module = source / "src/deepseek_harness_runtime"
+    for path in ("runtime/macos-arm64/primary-runtime/runtime.json", "runtime/node/package.json",
+                 "runtime/deepseek-harness-sdk-runtime-win-x64.exe", "__init__.py", "_resources.py"):
+        file = module / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.touch()
+    destination = tmp_path / "staged"
+    build_python_release.copy_package(source, destination)
+    assert sorted(path.name for path in (destination / "src/deepseek_harness_runtime").iterdir()) == ["__init__.py", "_resources.py"]
+
+
 @pytest.mark.parametrize(
     ("target", "with_helper"),
     [("linux-x64", False), ("macos-arm64", True), ("macos-x64", True), ("win-x64.exe", False)],
@@ -136,7 +149,7 @@ def test_stage_runtime_copies_platform_payload(
     office_asset = office / "node_modules" / "@deepseek-ai" / "libreoffice-kit-wasm" / "assets" / "soffice.data"
     office_asset.parent.mkdir(parents=True)
     office_asset.write_bytes(b"office data")
-    resources = executable.with_name(f"{executable.name.removesuffix('.exe')}-resources")
+    resources = executable.with_name(executable.name.removeprefix("deepseek-harness-sdk-runtime-").removesuffix(".exe"))
     resource = resources / "office-skills/scripts/check_office.py"
     resource.parent.mkdir(parents=True)
     resource.write_text("checker")

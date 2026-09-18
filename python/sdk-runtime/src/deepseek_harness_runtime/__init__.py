@@ -107,7 +107,7 @@ def bundled_runtime_path() -> Path:
             f"deepseek-harness-runtime-bin is missing the Office sidecar engine {engine} at {office}. "
             + _EXE_ACQUISITION_HINT
         )
-    validate_resources(path.with_name(f"{path.name.removesuffix('.exe')}-resources"), tag)
+    validate_resources(path.with_name(tag), tag)
     return path
 
 

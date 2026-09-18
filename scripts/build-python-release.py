@@ -149,18 +149,21 @@ def validate_release_tag(tag: str | None, version: str) -> None:
 
 
 def copy_package(source: Path, destination: Path) -> None:
+    generated_parent = source / "src" / "deepseek_harness_runtime"
+    ignore_files = shutil.ignore_patterns(
+        ".venv", ".pytest_cache", "__pycache__", "*.pyc", "dist", "node_modules",
+    )
+
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        ignored = ignore_files(directory, names)
+        if Path(directory) == generated_parent:
+            ignored.add("runtime")
+        return ignored
+
     shutil.copytree(
         source,
         destination,
-        ignore=shutil.ignore_patterns(
-            ".venv",
-            ".pytest_cache",
-            "__pycache__",
-            "*.pyc",
-            "dist",
-            "node_modules",
-            "deepseek-harness-sdk-runtime-*",
-        ),
+        ignore=ignore,
     )
 
 
@@ -228,7 +231,7 @@ def stage_runtime(destination: Path, version: str, executable: Path, executable_
         shutil.copy2(source_directory / filename, runtime_dir / filename)
     office = office_sidecar_name(executable_name)
     shutil.copytree(source_directory / office, runtime_dir / office)
-    resources = f"{executable_name.removesuffix('.exe')}-resources"
+    resources = executable_name.removeprefix("deepseek-harness-sdk-runtime-").removesuffix(".exe")
     shutil.copytree(source_directory / resources, runtime_dir / resources)
 
 
@@ -301,12 +304,12 @@ def verify_wheel(
                 f"{wheel} has license files {license_files}, expected {expected_license_files}"
             )
         runtime_payload = [
-            name for name in archive.namelist() if "/runtime/deepseek-harness-sdk-runtime-" in name
+            name for name in archive.namelist() if name.startswith("deepseek_harness_runtime/runtime/")
         ]
         if package == "runtime":
             assert platform is not None
             office = office_sidecar_name(platform[1])
-            resources = f"{platform[1].removesuffix('.exe')}-resources"
+            resources = platform[1].removeprefix("deepseek-harness-sdk-runtime-").removesuffix(".exe")
             expected_files = sorted((*runtime_filenames(platform[1]), office, resources))
             found_files = sorted({name.split("/runtime/", 1)[1].split("/", 1)[0] for name in runtime_payload})
             if found_files != expected_files:

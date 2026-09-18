@@ -18,7 +18,7 @@ SDK 部署需要与 Desktop 相同的 Office 创作库，同时将解释器 payl
 
 `runtime.json` 在顶层保存 Python、Node.js 和 pnpm 版本，并在 `pythonPackages` 中保存全部 Python 分发包版本。构建元数据不单独列出 numpy 或 pandas。共享解析器接受旧 `components` 文件而不改写它们，保留旧格式的一致性校验，并仅返回统一的扁平字段。混合格式会被拒绝。构建摘要包含组装格式，因此清单字节变化会使旧产物身份失效。
 
-Python runtime wheel 将目标平台的 CPython、Office 库和外部 skills 放在可执行文件同级的资源目录中。打包提供默认资源；skill 注册表仍允许项目、自定义目录和用户 skills 覆盖同名随包条目，profile patch 可在保留 Python 的同时禁用或替换 Office skills。这样既保留工作流配置能力，又省去单独安装环境的步骤。真实文件系统资源允许 Python 加载原生扩展，并让 skills 调用共用检查脚本，无需启动时解包。wheel 体积增加一个压缩 payload；发布流程仍执行公开索引的大小限制检查。
+Python runtime wheel 将目标平台的 CPython、Office 库和外部 skills 放在可执行文件同级的 `<platform>-<arch>/` 资源目录中。较短的平台目录名为 Windows 安装后的 Python 扩展与依赖 DLL 路径保留长度空间。打包提供默认资源；skill 注册表仍允许项目、自定义目录和用户 skills 覆盖同名随包条目，profile patch 可在保留 Python 的同时禁用或替换 Office skills。这样既保留工作流配置能力，又省去单独安装环境的步骤。真实文件系统资源允许 Python 加载原生扩展，并让 skills 调用共用检查脚本，无需启动时解包。wheel 体积增加一个压缩 payload；发布流程仍执行公开索引的大小限制检查。
 
 ## 考虑过的替代方案
 

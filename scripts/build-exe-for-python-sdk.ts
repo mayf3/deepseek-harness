@@ -450,7 +450,7 @@ class SingleExeBuild {
       console.log(`build-exe-for-python-sdk: copied ${packages.length} Office packages to ${office}`)
     }
     const ripgrep = await this.copyRipgrepSidecar(target, product)
-    const resources = `${productBase}-resources`
+    const resources = join(this.outDir, `${target.platform}-${target.arch}`)
     const runtimeTarget = `${target.platform === 'macos' ? 'mac' : target.platform}-${target.arch}` as PrimaryRuntimeTarget
     if (this.cli.dryRun) {
       console.log(`build-exe-for-python-sdk: [dry-run] prepare Python and Office skills for ${runtimeTarget} in ${resources}`)
