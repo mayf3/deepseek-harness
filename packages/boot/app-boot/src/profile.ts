@@ -15,7 +15,7 @@
  * Module resolution is two-anchor by construction: a bundle name resolves
  * first from the dsh installation (the launcher's own package), then from the
  * profile directory. Pnpm-managed entries in the profile's `node_modules`
- * resolve first. A runtime generation supplies packages carried by the
+ * resolve first. The runtime resolution supplies packages carried by the
  * installation and selected bundles to Node's ESM and CommonJS resolvers.
  * @module @deepseek-ai/dsh-app-boot/profile
  */
@@ -71,8 +71,8 @@ export interface Profile {
   patches: PatchOptions[]
 }
 
-/** One package the generation supplies at the interception layer. */
-export interface ProfileResolutionEntry {
+/** One package the runtime resolution supplies at the interception layer. */
+export interface RuntimeResolutionEntry {
   /** Bare package name. */
   readonly name: string
   /** Package directory selected by the existing dependency traversal. */
@@ -86,7 +86,7 @@ export interface ProfileResolutionEntry {
 }
 
 /** Complete immutable package table for one profile launch. */
-export interface ProfileResolutionGeneration {
+export interface RuntimeResolution {
   /** Directory containing every profile; its node_modules is the interception layer. */
   readonly profilesDir: string
   /** Active profile directory, when profile-scope entries were included. */
@@ -94,7 +94,7 @@ export interface ProfileResolutionGeneration {
   /** Profile-declared packages installed in the profile's own node_modules. */
   readonly localPackageNames: readonly string[]
   /** Installation-scope entries followed by profile-scope entries in precedence order. */
-  readonly entries: readonly ProfileResolutionEntry[]
+  readonly entries: readonly RuntimeResolutionEntry[]
 }
 
 /**
@@ -156,7 +156,7 @@ const PROFILE_PATCH_TEMPLATE = `# Your patch layer for this dsh profile, applied
 `
 
 // The hoisted linker gives out-of-tree plugins a flat node_modules whose
-// missing peers (cordis and friends) use the runtime generation, so every plugin shares the
+// missing peers (cordis and friends) use the runtime resolution, so every plugin shares the
 // installation's single cordis instance instead of a duplicate. pnpm ≥10
 // reads its settings from pnpm-workspace.yaml, not .npmrc.
 const PROFILE_PNPM_WORKSPACE = `packages:
@@ -274,7 +274,8 @@ function collectInstallationScopePackages(
   const versions = new Map<string, string | undefined>()
   /* v8 ignore next -- a real app manifest always declares its name */
   if (appManifest.name !== undefined) {
-    // Supported launches derive the installation anchor from import.meta.url, so this directory is already real.
+    // The CLI derives the installation anchor from import.meta.url (already real) and the Desktop Host from its
+    // runtime directory (not a symlink); the directory is kept as given rather than canonicalized here.
     links.set(appManifest.name, dirname(installAnchor))
     declarers.set(appManifest.name, canonicalAnchor)
     versions.set(appManifest.name, appManifest.version)
@@ -310,8 +311,8 @@ function collectInstallationScopePackages(
   return { packageNames: new Set(links.keys()), packageDirs: links, declarers, versions }
 }
 
-/** Inputs for {@link createProfileResolutionGeneration}. */
-export interface ProfileResolutionOptions {
+/** Inputs for {@link createRuntimeResolution}. */
+export interface RuntimeResolutionOptions {
   /** Absolute package.json path of the running dsh installation. */
   installAnchor: string
   /** Loaded profile whose selected bundles may carry profile-local plugins. */
@@ -321,13 +322,13 @@ export interface ProfileResolutionOptions {
 }
 
 /**
- * Compute a profile resolution generation without writing module-resolution files.
+ * Compute the runtime resolution without writing module-resolution files.
  * @param options - installation anchor, optional loaded profile, and Harness home.
- * @returns the complete immutable generation.
+ * @returns the complete immutable runtime resolution.
  */
-export async function createProfileResolutionGeneration(
-  options: ProfileResolutionOptions,
-): Promise<ProfileResolutionGeneration> {
+export async function createRuntimeResolution(
+  options: RuntimeResolutionOptions,
+): Promise<RuntimeResolution> {
   const { installAnchor, profile, home = resolveDshHome() } = options
   const profilesDir = join(home, PROFILES_DIR)
   const manifest = readOptionalProfileManifest(profile)

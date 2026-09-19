@@ -1,12 +1,12 @@
-/** Install an inherited profile resolution generation in one Harness-owned Worker. */
+/** Install the inherited runtime resolution in one Harness-owned Worker. */
 
 import { getEnvironmentData } from 'node:worker_threads'
-import { installProfileResolution } from './resolver.ts'
-import type { ProfileResolutionGeneration } from '../profile.ts'
+import { installRuntimeInterception } from './resolver.ts'
+import type { RuntimeResolution } from '../profile.ts'
 
 const registration = getEnvironmentData(
   '@deepseek-ai/dsh-app-boot/profile-resolution',
 ) as {
-  generation: ProfileResolutionGeneration
+  resolution: RuntimeResolution
 } | undefined
-if (registration !== undefined) installProfileResolution(registration.generation)
+if (registration !== undefined) installRuntimeInterception(registration.resolution)

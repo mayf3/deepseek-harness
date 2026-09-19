@@ -1,6 +1,12 @@
 /**
  * Source CLI tool execution with the native addon and generated typert contributors
  * prepared by the build-backed smoke lane; core workspace modules must stay in src.
+ *
+ * The assertion accepts a real tool result or an explicit SandboxUnavailableError: the
+ * subject is that a source-profile tool call reaches tool/result through one Tools instance,
+ * not that the host can confine the shell. keyless-smoke.e2e.ts in the same gate owns the
+ * confinement round trip and stays strict; on CI prepare-ci-bubblewrap.sh makes both paths
+ * succeed, so the error branch only runs on hosts whose sandbox probe fails.
  */
 
 import { existsSync } from 'node:fs'

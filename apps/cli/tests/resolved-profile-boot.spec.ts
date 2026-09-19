@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import {
-  boot, composeEntries, createProfileResolutionGeneration,
+  boot, composeEntries, createRuntimeResolution,
   PluginPackages, type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
@@ -18,7 +18,7 @@ vi.mock('@deepseek-ai/dsh-app-boot', async (importOriginal) => {
   return {
     ...actual,
     boot: vi.fn(),
-    createProfileResolutionGeneration: vi.fn(actual.createProfileResolutionGeneration),
+    createRuntimeResolution: vi.fn(actual.createRuntimeResolution),
     installFailLoud: vi.fn(),
   }
 })
@@ -59,7 +59,7 @@ describe('runProfile with an application-owned profile', () => {
       await setup?.(ctx)
       throw failure
     })
-    if (stage === 'composition') vi.mocked(createProfileResolutionGeneration).mockRejectedValueOnce(failure)
+    if (stage === 'composition') vi.mocked(createRuntimeResolution).mockRejectedValueOnce(failure)
     const profile: Profile = {
       name: 'desktop', dir: home, patchPath: join(home, 'cordis.patch.yml'),
       patches: [], layers: [],
@@ -140,10 +140,10 @@ describe('runProfile with an application-owned profile', () => {
         patchFiles: [overlay], args: ['--port', '0', '--no-open'],
       })
       expect(installProxyFromEnvironment).toHaveBeenCalledWith(environment, expect.any(Function))
-      const generation = vi.mocked(createProfileResolutionGeneration).mock.settledResults
+      const resolution = vi.mocked(createRuntimeResolution).mock.settledResults
         .find(result => result.type === 'fulfilled')?.value
-      expect(generation?.profileDir).toBe(home)
-      expect(plugin).toHaveBeenCalledWith(PluginPackages, { generation })
+      expect(resolution?.profileDir).toBe(home)
+      expect(plugin).toHaveBeenCalledWith(PluginPackages, { resolution })
       expect(lstatSync(localPackageDir).isDirectory()).toBe(true)
       expect(readFileSync(join(localPackageDir, 'package.json'), 'utf8')).toBe(localManifest)
       const requireFromProfile = createRequire(join(home, 'package.json'))

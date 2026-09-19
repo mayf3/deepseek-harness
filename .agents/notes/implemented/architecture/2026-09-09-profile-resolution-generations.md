@@ -12,19 +12,19 @@ The runtime design keeps installation-first, ordered-bundle, and local-before-fa
 
 ## Decision
 
-Profile startup computes one immutable `ProfileResolutionGeneration` and installs it into Node's ESM and CommonJS resolvers. Runtime is the only resolution backend; there is no mode selector or disk materializer. `PluginPackages.replace()` publishes a complete additive successor with one reference replacement.
+Profile startup computes one immutable `RuntimeResolution` and installs it into Node's ESM and CommonJS resolvers. Runtime is the only resolution backend; there is no mode selector or disk materializer. `PluginPackages.replace()` publishes a complete additive successor with one reference replacement.
 
 ### One selection algorithm
 
-The package traversal belongs to `@deepseek-ai/dsh-app-boot` beside profile loading. Ordinary Node, source launches, packaged executables, and the Electron Host consume the same generation and runtime resolver.
+The package traversal belongs to `@deepseek-ai/dsh-app-boot` beside profile loading. Ordinary Node, source launches, packaged executables, and the Electron Host consume the same runtime resolution and interception.
 
 The installation manifest is the first root. Its graph traverses `dependencies` followed by `peerDependencies` breadth-first, resolving each edge from the manifest that declares it. The first installed package reached under a name owns that name. Selected bundle roots then run in profile order, with each earlier root's complete graph taking precedence over every later root. Names supplied by the installation are reserved, and bundle package roots themselves do not become plugin fallbacks. Missing declared packages are skipped.
 
 During dependency expansion, every installation root, selected bundle root, and recursive dependency manifest uses its package's real directory as the lookup anchor. Ancestor `node_modules` searches therefore follow the location from which Node normally executes the package, not the location of a symlink pointing to it. The same declaring anchor is recorded for runtime delegation. This can change the selected version or remove an otherwise discoverable dependency when logical and real ancestors differ; it is not merely a spelling change to stored paths.
 
-Profile-local and plugin-private `node_modules` entries take precedence over fallback entries. The generation records installed direct profile package names for a no-I/O native fast path. Each fallback entry records the package name, version, selected lookup directory, declaring manifest anchor, and scope needed for native resolution and successor validation.
+Profile-local and plugin-private `node_modules` entries take precedence over runtime resolution entries. The runtime resolution records installed direct profile package names for a no-I/O native fast path. Each entry records the package name, version, selected lookup directory, declaring manifest anchor, and scope needed for native resolution and successor validation.
 
-The selected-bundle module fallback remains necessary for dependencies that the profile cannot find through its own ancestor directories. It expands installed manifest dependencies into the active profile's shared fallback table, not a separate graph for each plugin. It neither downloads packages nor scans source imports. Runtime hooks consume that table after native local candidates have been considered.
+The profile-scope entries of the runtime resolution remain necessary for dependencies that the profile cannot find through its own ancestor directories. They expand installed manifest dependencies into the active profile's runtime resolution, not a separate graph for each plugin. It neither downloads packages nor scans source imports. Runtime hooks consume that table after native local candidates have been considered.
 
 ### Ordinary and linked package examples
 
@@ -64,7 +64,7 @@ For example, `@deepseek-ai/dsh-tools` creates its scheduler key with `Symbol()`.
 
 ### Immutable generations
 
-A resolver registration holds one `current` generation. Each synchronous resolution captures that reference once. Generation construction reads every required manifest before publication; an error leaves the current generation unchanged. Successful publication replaces one reference, and in-flight calls may finish against the generation they captured.
+A runtime interception holds one `current` generation. Each synchronous resolution captures that reference once. Generation construction reads every required manifest before publication; an error leaves the current generation unchanged. Successful publication replaces one reference, and in-flight calls may finish against the generation they captured.
 
 Selection and package-metadata caches belong to a generation. Publishing a successor invalidates them by making the old generation unreachable after its callers finish; update code does not mutate or clear individual entries. A generation hit and a successful native selection can be cached, but a generation miss is rescanned so a profile-local package installed after the miss becomes visible through native lookup. Calls with explicit CommonJS paths or non-default conditions never reuse a default-resolution cache entry.
 
@@ -74,7 +74,7 @@ The launcher constructs one startup generation. The service accepts an additive 
 
 The resolver uses `node-addon-require-builtin` to read `internal/modules/esm/loader` and `internal/modules/cjs/loader`. The ESM adapter wraps the per-thread singleton `CascadedLoader` resolve methods. The CommonJS adapter wraps the internal builtin's `Module._resolveFilename`; that `Module` is the same object exported by `node:module`.
 
-Both adapters call one routing function. It ignores builtins, relative or absolute paths, URLs, parents outside the profile scope, and explicit calls outside the supported lookup. A `#imports` request uses Node's mapping from its owning manifest; an external bare target follows the same local, generation, and native-after-generation package order with the request's conditions, while Node retains exact target resolution. For a scoped bare request, a package self-reference keeps the original parent even when an npm alias gives its installed directory another name. A profile-local or plugin-private package also keeps the original parent when Node resolves the requested entry before the virtual shared-fallback position; a CommonJS package directory without `exports` does not suppress the fallback when only its requested subpath is absent. Otherwise the router uses a generation hit through that entry's declaring anchor or continues native lookup after the virtual fallback. Explicit CommonJS path lists apply the same insertion rule independently to each path in caller order.
+Both adapters call one routing function. It ignores builtins, relative or absolute paths, URLs, parents outside the profile scope, and explicit calls outside the supported lookup. A `#imports` request uses Node's mapping from its owning manifest; an external bare target follows the same local, interception, and native-after-interception package order with the request's conditions, while Node retains exact target resolution. For a scoped bare request, a package self-reference keeps the original parent even when an npm alias gives its installed directory another name. A profile-local or plugin-private package also keeps the original parent when Node resolves the requested entry before the virtual shared-fallback position; a CommonJS package directory without `exports` does not suppress the fallback when only its requested subpath is absent. Otherwise the router uses an interception hit through that entry's declaring anchor or continues native lookup after the virtual fallback. Explicit CommonJS path lists apply the same insertion rule independently to each path in caller order.
 
 The adapters call the captured native resolver after routing. Node remains responsible for exports, import and require conditions, main files, subpaths, extensions, native caches, and error codes. Routed ESM failures replace the internal lookup anchor in Node's diagnostic with the original importer. A selected package's invalid export or missing target does not trigger another same-name candidate. CommonJS does not replace `_findPath` or reproduce `_resolveFilename`.
 
@@ -82,11 +82,11 @@ The guarantee covers Node's default `import`, `import()`, `import.meta.resolve`,
 
 ### Active plugin list and package metadata
 
-The resolution generation lists available fallback packages; Loader entries form the active plugin list. Consumers keep using Loader's existing entry lifecycle and filter the entries relevant to their own scope. Consumers that need package metadata pass a specifier and owning tree base URL to a lightweight `app-boot` service without requiring a `./package.json` export. An installed generation is authoritative, including a miss; a service created without a generation retains native lookup for low-level embedders.
+The runtime resolution lists the packages it supplies; Loader entries form the active plugin list. Consumers keep using Loader's existing entry lifecycle and filter the entries relevant to their own scope. Consumers that need package metadata pass a specifier and owning tree base URL to a lightweight `app-boot` service without requiring a `./package.json` export. An installed runtime resolution is authoritative, including a miss; a service created without one retains native lookup for low-level embedders.
 
 The resolver does not expose `imported(entry)` and does not observe ModuleJobs, wrap Entry methods, associate fibers with import calls, replace registry or tree methods, or adapt HMR transactions. A repeated query uses the same generation and therefore cannot drift from the route used for the import. Non-Node importers that need package metadata must explicitly implement the same deterministic resolver interface.
 
-The implementation lives under `app-boot/src/profile-resolution/`. `service.ts` provides the long-lived `ctx.pluginPackages` and owns the main-thread resolver and Worker-generation lifetimes; `resolver.ts` implements generation lookup and the Node Internal adapters; `worker-bootstrap.ts` installs an inherited generation in one thread. Profile selection and generation construction remain in `profile.ts`. Workers reference the bootstrap only through the public `@deepseek-ai/dsh-app-boot/worker/profile-resolution-bootstrap` export.
+The implementation lives under `app-boot/src/profile-resolution/`. `service.ts` provides the long-lived `ctx.pluginPackages` and owns the main-thread interception and the Worker resolution lifetime; `resolver.ts` implements runtime resolution lookup and the Node Internal adapters; `worker-bootstrap.ts` installs the inherited runtime resolution in one thread. Profile selection and runtime resolution construction remain in `profile.ts`. Workers reference the bootstrap only through the public `@deepseek-ai/dsh-app-boot/worker/profile-resolution-bootstrap` export.
 
 The service definition and provider remain together in `app-boot` because profile boot owns the resolver lifetime. Extracting a separate capability seam becomes warranted when a launcher-independent provider or independently evolving consumers require it.
 
@@ -104,9 +104,9 @@ Replacing, upgrading, or removing an already loaded package requires process res
 
 ### Filesystem and runtime carriers
 
-The resolver does not create, update, or remove fallback symlinks and proxy packages. Generation entries occupy their package names at `$DSH_HOME/profiles/node_modules`; every other name sees that directory as an ordinary ancestor, and symlinks anywhere in the profile tree are ordinary filesystem content without dedicated recognition. Profile-local package metadata and bundle dependency discovery follow the same Node lookup; ordinary pnpm-installed packages retain native precedence. The [lookup-order Note](2026-09-19-profile-resolution-lookup-order.md) records the complete order. Writable profile state and package-manager transactions remain outside the resolver.
+The resolver does not create, update, or remove fallback symlinks and proxy packages. Runtime resolution entries occupy their package names at `$DSH_HOME/profiles/node_modules`; every other name sees that directory as an ordinary ancestor, and symlinks anywhere in the profile tree are ordinary filesystem content without dedicated recognition. Profile-local package metadata and bundle dependency discovery follow the same Node lookup; ordinary pnpm-installed packages retain native precedence. The [lookup-order Note](2026-09-19-profile-resolution-lookup-order.md) records the complete order. Writable profile state and package-manager transactions remain outside the resolver.
 
-Runtime resolution requires a supported Node Internal loader interface. The Electron Host runs through the Electron executable with `ELECTRON_RUN_AS_NODE=1`; packaged builds read the dsh tree from ASAR and map executable ASAR entries to electron-builder's unpacked tree. Pkg and Electron use the same runtime-generation mechanism as ordinary Node launches.
+Runtime resolution requires a supported Node Internal loader interface. The Electron Host runs through the Electron executable with `ELECTRON_RUN_AS_NODE=1`; packaged builds read the dsh tree from ASAR and map executable ASAR entries to electron-builder's unpacked tree. Pkg and Electron use the same runtime resolution mechanism as ordinary Node launches.
 
 ### Performance and verification
 
@@ -134,7 +134,7 @@ Behavior tests exercise root order, transitive and peer dependencies, local and 
 
 ## Verification
 
-- One eager computation supplies the runtime generation; startup neither writes nor retires module-resolution data.
+- One eager computation supplies the runtime resolution; startup neither writes nor retires module-resolution data.
 - [Generation tests](../../../../packages/boot/app-boot/tests/profile-resolution.spec.ts) cover installation and selected-bundle graphs with ordinary directories and recursive symlinks, including different dependency versions beside logical and real anchors.
 - [Source-launch tests](../../../../apps/cli/tests/source-launch.compat.spec.ts) and [built-bin tests](../../../../apps/cli/tests/built-bin.e2e.ts) run both profile layouts through the real CLI. They assert ESM/CJS versions, loaded paths, per-format dependency identity, and consistent Tools/AgentLoop module instances with an accessible scheduler key.
 - Pkg and Electron carriers select runtime resolution; Electron executes its Host in Node mode from the ASAR-backed dsh tree while native executable entries remain unpacked.

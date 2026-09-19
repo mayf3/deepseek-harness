@@ -1,4 +1,4 @@
-/** Package metadata queries share the active profile resolution generation. */
+/** Package metadata queries share the active runtime resolution. */
 
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -9,7 +9,7 @@ import { getEnvironmentData } from 'node:worker_threads'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PluginPackages } from '../src/profile-resolution/service.ts'
-import type { ProfileResolutionGeneration } from '../src/profile.ts'
+import type { RuntimeResolution } from '../src/profile.ts'
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -36,9 +36,9 @@ function pkg(dir: string, version: string, name = 'metadata-lib'): string {
   return join(dir, 'package.json')
 }
 
-function generation(
+function resolution(
   profilesDir: string, profileDir: string, packageDir: string, declarer: string, version: string,
-): ProfileResolutionGeneration {
+): RuntimeResolution {
   return {
     profilesDir,
     profileDir,
@@ -48,7 +48,7 @@ function generation(
 }
 
 describe('profile package metadata service', () => {
-  it('resolves module URLs and package metadata through the current generation', async () => {
+  it('resolves module URLs and package metadata through the current resolution', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-profile-package-service-'))
     roots.push(root)
     const profilesDir = join(root, 'profiles')
@@ -62,7 +62,7 @@ describe('profile package metadata service', () => {
     contexts.push(ctx)
     ctx.baseUrl = pathToFileURL(profileDir).href + '/'
     await ctx.plugin(PluginPackages, {
-      generation: generation(profilesDir, profileDir, first, firstAnchor, '1.0.0'),
+      resolution: resolution(profilesDir, profileDir, first, firstAnchor, '1.0.0'),
     })
 
     expect(ctx.pluginPackages.packageOf('metadata-lib/private', parentURL)).toMatchObject({
@@ -126,7 +126,7 @@ describe('profile package metadata service', () => {
     const ctx = new Context()
     contexts.push(ctx)
     await ctx.plugin(PluginPackages, {
-      generation: generation(profilesDir, profileDir, missing, join(root, 'owner.json'), '1.0.0'),
+      resolution: resolution(profilesDir, profileDir, missing, join(root, 'owner.json'), '1.0.0'),
     })
     expect(ctx.pluginPackages.packageOf(
       'metadata-lib', pathToFileURL(join(profileDir, 'entry.mjs')).href,
@@ -134,22 +134,22 @@ describe('profile package metadata service', () => {
   })
 
   it('publishes additive generations to the process and future Workers', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-package-service-generation-'))
+    const root = mkdtempSync(join(tmpdir(), 'dsh-package-service-resolution-'))
     roots.push(root)
     const profilesDir = join(root, 'profiles')
     const profileDir = join(profilesDir, 'test')
     const first = join(root, 'first')
     const firstAnchor = pkg(first, '1.0.0')
-    const initial = generation(profilesDir, profileDir, first, firstAnchor, '1.0.0')
+    const initial = resolution(profilesDir, profileDir, first, firstAnchor, '1.0.0')
     const key = '@deepseek-ai/dsh-app-boot/profile-resolution'
     const previous = getEnvironmentData(key)
     const ctx = new Context()
     contexts.push(ctx)
-    await ctx.plugin(PluginPackages, { generation: initial })
+    await ctx.plugin(PluginPackages, { resolution: initial })
     const initialWorkerData = getEnvironmentData(key) as {
-      generation: ProfileResolutionGeneration
+      resolution: RuntimeResolution
     }
-    expect(initialWorkerData).toEqual({ generation: initial })
+    expect(initialWorkerData).toEqual({ resolution: initial })
 
     const added = join(root, 'added')
     const addedAnchor = pkg(added, '2.0.0', 'added-metadata')
@@ -162,7 +162,7 @@ describe('profile package metadata service', () => {
     }
     ctx.pluginPackages.replace(next)
     expect(getEnvironmentData(key)).toEqual({
-      generation: next,
+      resolution: next,
     })
     expect(ctx.pluginPackages.packageOf(
       'added-metadata', pathToFileURL(join(profileDir, 'entry.mjs')).href,

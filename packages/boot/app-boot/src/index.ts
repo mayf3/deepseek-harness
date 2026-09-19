@@ -35,7 +35,7 @@ declare module '@deepseek-ai/cordis' {
 
 export {
   composeEntries,
-  createProfileResolutionGeneration,
+  createRuntimeResolution,
   DEFAULT_PROFILE_BUNDLES,
   OPTIONAL_BUNDLES,
   initProfile,
@@ -52,9 +52,9 @@ export {
   type Profile,
   type ProfileLayer,
   type ProfileManifest,
-  type ProfileResolutionOptions,
-  type ProfileResolutionEntry,
-  type ProfileResolutionGeneration,
+  type RuntimeResolutionOptions,
+  type RuntimeResolutionEntry,
+  type RuntimeResolution,
   type ProfileTemplate,
 } from './profile.ts'
 export {

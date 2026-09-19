@@ -228,7 +228,7 @@ function validateAppResolution(): string[] {
   const violations: string[] = []
   const bundleManifests = bundleManifestPaths()
   // App overlays (and any config left under apps/cli/config) resolve from the
-  // dsh app's own dependency surface — the profile module fallback mirrors it.
+  // dsh app's own dependency surface — the runtime resolution mirrors it.
   const appManifest = readManifest('apps/cli/package.json')
   const appDependencies = {
     ...appManifest.dependencies,
