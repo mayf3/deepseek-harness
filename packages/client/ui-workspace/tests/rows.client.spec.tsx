@@ -584,11 +584,11 @@ describe('workspace browser rows', () => {
     }
     const node: SessionNode = {
       id: sid('s1'), title: 'One', blank: false, running: false,
-      runningSubagentCount: 0, completed: false, hasActiveSchedule: false, updatedAt: 0,
+      runningSubagentCount: 0, completed: false, hasActiveSchedule: false, updatedAt: 0, pinned: false, archived: false,
     }
     render(<>
       <SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen}
-        onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()}
+        onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} onUnarchive={vi.fn()} onPin={vi.fn()}
         renderSlot={renderSlot} t={t} />
     </>)
 
@@ -596,7 +596,7 @@ describe('workspace browser rows', () => {
     trigger.focus()
     fireEvent.click(trigger)
     const actions = screen.getAllByRole('menuitem')
-    expect(actions.map(action => action.textContent)).toEqual(['重命名', '分叉会话', '归档会话', 'Export'])
+    expect(actions.map(action => action.textContent)).toEqual(['置顶会话', '重命名', '分叉会话', '归档会话', 'Export'])
     fireEvent.click(screen.getByRole('menuitem', { name: 'Export' }))
     await act(async () => { await Promise.resolve() })
     expect(rendered).toHaveBeenCalledWith('sidebar.workspaces.session.menu.action', expect.any(Object))

@@ -93,7 +93,7 @@ describe('session rename through the assembled browser', () => {
     const trigger = within(row as HTMLElement).getByLabelText('会话“Session title”的操作')
     fireEvent.click(trigger)
     expect(view.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      '重命名', '分叉会话', '归档会话', 'Earlier action', 'Later action',
+      '置顶会话', '重命名', '分叉会话', '归档会话', 'Earlier action', 'Later action',
     ])
     const later = view.getByRole('menuitem', { name: 'Later action' })
     const earlier = view.getByRole('menuitem', { name: 'Earlier action' })

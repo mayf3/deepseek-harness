@@ -49,7 +49,7 @@ it('loads ordered Session actions through the real plugin graph and removes them
     const menu = page.getByRole('menu')
     await menu.waitFor()
     expect(await menu.getByRole('menuitem').allTextContents()).toEqual([
-      'Rename', 'Fork session', 'Archive session', 'Export session', 'Copy session ID',
+      'Pin session', 'Rename', 'Fork session', 'Archive session', 'Export session', 'Copy session ID',
     ])
     await compareOrRefreshGolden(
       SESSION_ACTION_EXPECTED,
@@ -73,7 +73,7 @@ it('loads ordered Session actions through the real plugin graph and removes them
     await trigger.click()
     await menu.waitFor()
     expect(await menu.getByRole('menuitem').allTextContents()).toEqual([
-      'Rename', 'Fork session', 'Archive session',
+      'Pin session', 'Rename', 'Fork session', 'Archive session',
     ])
     expect(await menu.getByRole('separator').count()).toBe(0)
     expect(console.pageErrors).toEqual([])
