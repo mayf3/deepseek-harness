@@ -12,13 +12,15 @@ Status: implemented
 
 V3→V4 迁移只在恰好一个受支持的自身子 descriptor 提供发现字段时，追加缺失的父目录项。其他 descriptor 数量及不受支持的版本不贡献新的目录事实。已有父目录项和子事件保持完整。这只替代[相邻迁移决策](../architecture/2026-08-31-released-session-format-migrations.zh.md)中的证据缺失拒绝规则。
 
-已知子创建时间仍必须与已有父目录项一致。可获得且明确的 mode 和 label 字段也必须一致。已知 descriptor 字段无效、日志损坏、成员关系不可读、所选代际不受支持以及源修订变化仍保留原有失败行为。
+已知子创建时间仍必须与已有父目录项一致。只有恰好一个受支持的自身 descriptor 时，才校验其字段并比较 mode／label。该 descriptor 字段无效、日志损坏、成员关系不可读、所选代际不受支持以及源修订变化仍保留原有失败行为。
 
 ## Alternatives considered
 
 **拒绝整个父 Session。** 发现元数据不足以成为禁止读取有效父历史的理由。
 
-**选择一个 descriptor 或推断默认值。** 多个 descriptor 无法确定哪个身份已被准入。推断的 mode 或 label 会在没有证据的情况下成为持久目录事实。
+**选择首个或末个 descriptor。** [`foldSubagentDescriptor()`](../../../../packages/subagent/subagent/src/descriptor.ts) 依据建立提供方恰好写入一次的规则取首个；[身份投影](../../../../packages/subagent/subagent/src/projection.ts)取末个以覆盖继承身份。多个自身记录违反该规则。补填要求一个自身记录，而不在这两种消费者策略之间做选择。
+
+**推断缺失字段。** 推断的 mode 或 label 会在没有证据的情况下成为持久目录事实。
 
 ## Consequences
 

@@ -145,8 +145,8 @@ There is no recursive source search. Captured request text, assistant replay sta
 | One descriptor with version 1 | Require string provider and label; derive `mode: 'continuable'`. |
 | One descriptor with version 2 or 3 | Require string provider; use its mode and optional label under catalog rules. |
 | Zero descriptors, or an unsupported descriptor version | May retain an existing parent entry; cannot create a missing entry. |
-| More than one own descriptor | Preserve the child; no unambiguous discovery fact is available for backfill. |
-| Existing own parent entry | Retain it and its extensions; require matching child creation time and any available supported mode/label. |
+| More than one own descriptor | Retain an existing parent entry without mode/label comparison; do not create a missing entry. |
+| Existing own parent entry | Retain it and its extensions; require matching child creation time and mode/label from exactly one supported own descriptor, when available. |
 | Missing own parent entry with complete supported evidence | Append a version-0 catalog fact with child id, creation time, mode, and optional label. |
 | Missing own parent entry without complete evidence | Preserve the parent without inventing a catalog entry. |
 
@@ -334,6 +334,7 @@ The edge preserves the recorded request prefix. Provider cache availability and 
 - **Nested historical tool results** — migration refuses results containing another tool-result wrapper because flattening loses its call identity and error status. The original generation remains intact and no V4 successor is published; those histories need a preserving conversion before they can resume.
 - **Historical tool-result extensions** — outer message JSON properties remain own data properties, including `__proto__` and `constructor`. Unknown wrapper fields have no defined V4 destination and refuse migration. Existing outer `toolCallId` or `isError` fields must agree with the lifted result; conflicts refuse without publishing a successor.
 - **Retained child logs required** — a parent alone cannot recover unrecorded child ids, creation times, or descriptors. Deleted children cannot be reconstructed from tool arguments; existing parent catalog records remain.
+- **Missing historical catalog entries** — without exactly one supported own descriptor, an absent parent entry is not backfilled. The child log remains readable by id; current V4 reads do not rescan children to repair that omission.
 - **Storage scope** — facts cover recognizable children within the same persistence root. Cross-root import and corrupt-log repair are outside this migration.
 
 <a id="dev-note"></a>

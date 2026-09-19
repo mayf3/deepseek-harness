@@ -145,8 +145,8 @@ V3 未知内容标签变为 `plugin:<original-type>`，其他字段原样保留�
 | 一个 version 1 descriptor | 要求字符串 provider 与 label；导出 `mode: 'continuable'`。 |
 | 一个 version 2 或 3 descriptor | 要求字符串 provider；按目录规则使用其 mode 和可选 label。 |
 | 没有 descriptor，或 descriptor 版本不受支持 | 可以保留已有父目录项；不能创建缺失项。 |
-| 多个自身 descriptor | 保留子 Session；没有可用于补填的明确发现事实。 |
-| 已有自身父目录项 | 保留条目及其扩展；要求子创建时间以及可用且受支持的 mode／label 一致。 |
+| 多个自身 descriptor | 保留已有父目录项，不比较 mode／label；不创建缺失项。 |
+| 已有自身父目录项 | 保留条目及其扩展；要求子创建时间一致，并在恰好一个受支持的自身 descriptor 可用时比较其 mode／label。 |
 | 缺少自身父目录项，且受支持证据完整 | 追加带 child id、创建时间、mode 和可选 label 的 version-0 目录事实。 |
 | 缺少自身父目录项，且证据不完整 | 保留父 Session，不凭空创建目录项。 |
 
@@ -334,6 +334,7 @@ Fork 种子构造归核心 Session 所有，不属于此迁移。原生 V4 接�
 - **历史嵌套工具结果**——迁移会拒绝包含另一层 tool-result 包装的结果，因为展平会丢失其调用身份和错误状态。原始代际保持不变，也不会发布 V4 后继；这些历史需要能保留信息的转换才能继续运行。
 - **历史工具结果扩展**——外层消息的 JSON 属性仍保留为自有数据属性，包括 `__proto__` 和 `constructor`。未知 wrapper 字段没有已定义的 V4 存放位置，因此拒绝迁移。已有外层 `toolCallId` 或 `isError` 字段必须与提升后的结果一致；冲突时拒绝且不发布 successor。
 - **依赖保留的子日志**——仅凭父日志无法恢复未记录的子 id、创建时间或 descriptor。删除的子 Session 无法从工具参数恢复；已存在的父目录记录仍保留。
+- **历史目录项缺失**——没有恰好一个受支持的自身 descriptor 时，不补填父目录缺失项。子日志仍可按 id 读取；当前 V4 读取不会重新扫描子日志来补齐该条目。
 - **存储范围**——事实只覆盖同一持久化根目录内可识别的子 Session。跨根目录导入和损坏日志修复不属于此迁移。
 
 <a id="dev-note"></a>

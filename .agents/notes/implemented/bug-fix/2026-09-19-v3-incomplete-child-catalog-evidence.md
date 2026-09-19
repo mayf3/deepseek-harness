@@ -12,13 +12,15 @@ A valid V3 child log can have no own descriptor, an unsupported descriptor versi
 
 The V3→V4 migration appends a missing parent catalog entry only when exactly one supported own child descriptor supplies its discovery fields. Other descriptor counts and unsupported versions contribute no new catalog fact. Existing parent entries and child events remain intact. This replaces only the missing-evidence refusal in the [adjacent migration decision](../architecture/2026-08-31-released-session-format-migrations.md).
 
-Known child creation times must still match existing parent entries. Available unambiguous mode and label fields must also agree. Invalid known descriptor fields, corrupt logs, unreadable membership, unsupported selected generations, and changed source revisions retain their existing failures.
+Known child creation times must still match existing parent entries. Mode/label and descriptor fields are checked only for exactly one supported own descriptor. Invalid fields in that descriptor, corrupt logs, unreadable membership, unsupported selected generations, and changed source revisions retain their existing failures.
 
 ## Alternatives considered
 
 **Refuse the whole parent.** Discovery metadata is insufficient to justify making valid parent history unavailable.
 
-**Choose a descriptor or infer defaults.** Multiple descriptors do not establish which identity was admitted. Invented mode or label fields would become durable catalog facts without evidence.
+**Choose the first or last descriptor.** [`foldSubagentDescriptor()`](../../../../packages/subagent/subagent/src/descriptor.ts) takes the first under the establishing provider’s exactly-once rule; the [identity projection](../../../../packages/subagent/subagent/src/projection.ts) takes the last to override inherited identities. Multiple own records violate that rule. Backfill requires one own record rather than choosing between these consumer policies.
+
+**Infer missing fields.** Invented mode or label fields would become durable catalog facts without evidence.
 
 ## Consequences
 
