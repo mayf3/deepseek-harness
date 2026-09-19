@@ -68,6 +68,16 @@ export interface IWorkspaces {
    */
   unarchiveSession(sessionId: SessionId): Promise<void>
   /**
+   * Pin a Session ahead of unpinned Sessions on Workspace grouping surfaces.
+   * @param sessionId - Session to pin.
+   */
+  pinSession(sessionId: SessionId): Promise<void>
+  /**
+   * Remove a Session's pin without changing its saved Session order.
+   * @param sessionId - Session to unpin.
+   */
+  unpinSession(sessionId: SessionId): Promise<void>
+  /**
    * Move a Session within one Workspace account.
    * @param workspaceId - owning Workspace.
    * @param sessionId - Session to move.
@@ -124,6 +134,16 @@ export class WorkspaceController extends Service implements IWorkspaces {
   async unarchiveSession(sessionId: SessionId): Promise<void> {
     const result = await this.model.unarchiveSession(sessionId)
     if (!result.ok) throw commandError('session unarchive', result.error)
+  }
+
+  async pinSession(sessionId: SessionId): Promise<void> {
+    const result = await this.model.pinSession(sessionId)
+    if (!result.ok) throw commandError('session pin', result.error)
+  }
+
+  async unpinSession(sessionId: SessionId): Promise<void> {
+    const result = await this.model.unpinSession(sessionId)
+    if (!result.ok) throw commandError('session unpin', result.error)
   }
 
   async insertSessionBefore(

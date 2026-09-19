@@ -243,8 +243,9 @@ async function openSession(page: Page, title: string): Promise<void> {
   const row = page.getByRole('treeitem', { name: new RegExp(title) })
   await row.waitFor({ timeout: 15_000 })
   await row.click()
+  // The current crumb renders as plain text, not a button.
   await page.getByRole('navigation', { name: 'Session hierarchy' })
-    .getByRole('button', { name: title, exact: true })
+    .getByText(title, { exact: true })
     .waitFor({ timeout: 15_000 })
 }
 
@@ -681,7 +682,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     expect(await catalogRow.getByRole('img', { name: ACTIVE_SCHEDULE_LABEL }).count()).toBe(1)
 
     await page.getByRole('button', { name: 'Search sessions' }).click()
-    const search = page.getByPlaceholder('Search sessions', { exact: false })
+    const search = page.getByPlaceholder('Search session names', { exact: false })
     await search.fill(CATALOG_TITLE)
     const result = page.getByRole('tree', { name: 'Search results' })
       .getByRole('treeitem', { name: new RegExp(CATALOG_TITLE) })

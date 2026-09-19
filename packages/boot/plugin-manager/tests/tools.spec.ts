@@ -197,6 +197,8 @@ it('forwards all mutation actions and renders the returned outcome', async () =>
   expect(manager.installBundle).toHaveBeenLastCalledWith('bundle', { enabled: false })
   await call({ action: 'install_bundle', target: 'bundle', approvedBuilds: ['native'] })
   expect(manager.installBundle).toHaveBeenLastCalledWith('bundle', { approvedBuilds: ['native'] })
+  await call({ action: 'install_bundle', target: 'bundle', registry: 'https://registry.npmmirror.com/' })
+  expect(manager.installBundle).toHaveBeenLastCalledWith('bundle', { registry: 'https://registry.npmmirror.com/' })
   expect(resultText(await call({ action: 'remove_bundle', target: 'bundle' }))).toContain('"application":"failed"')
   expect(manager.removeBundle).toHaveBeenCalledWith('bundle')
 })

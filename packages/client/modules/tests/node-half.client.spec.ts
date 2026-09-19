@@ -17,12 +17,21 @@ import type { ClientModuleLoaderTarget, WebBootEntry, WebBootGraph } from '../sr
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 const UI_RENDERER_ID = '@deepseek-ai/dsh-client-ui-renderer'
 
-const comboUrl = (ids: readonly string[], rev: string): string =>
-  `/plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
+// Graph rows and batch descriptors carry app-directory-relative references;
+// a host request reaches the backend route once the document's directory
+// resolves them, which these origin-root fixtures reduce to a leading slash.
+const comboReference = (ids: readonly string[], rev: string): string =>
+  `plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
 const mapUrl = (url: string): string => url.replace(/\/client\.js(?=,|&rev=)/g, '/client.js.map')
-const chunkUrl = (id: string, fileName: string, rev: string): string => `/plugins/${id}/${fileName}?rev=${rev}`
-const BOOTSTRAP_URL = comboUrl([MODULES_ID], 'boot')
-const APPLICATION_URL = comboUrl([UI_RENDERER_ID], 'app')
+const mapReference = (url: string): string => mapUrl(url).replace(/^\/?plugins\//u, '')
+// A chunk script is served from its package's own directory, so its
+// source-map reference resolves against the chunk's own URL: the bare map
+// file name, not the route key the response table holds.
+const chunkMapReference = (fileName: string, rev: string): string => `${fileName}.map?rev=${rev}`
+const chunkReference = (id: string, fileName: string, rev: string): string =>
+  `plugins/${id}/${fileName}?rev=${rev}`
+const BOOTSTRAP_URL = comboReference([MODULES_ID], 'boot')
+const APPLICATION_URL = comboReference([UI_RENDERER_ID], 'app')
 
 let root: string | undefined
 const contexts: { ctx: Context; ready?: Promise<WebRoute> }[] = []
@@ -183,8 +192,8 @@ function injectedFacade(graph: WebBootGraph): { html: string; target: ClientModu
 const bootGraph = (): WebBootGraph => ({
   rev: 'graph',
   entries: [
-    { id: MODULES_ID, url: comboUrl([MODULES_ID], 'm'), rev: 'm' },
-    { id: UI_RENDERER_ID, url: comboUrl([UI_RENDERER_ID], 'r'), rev: 'r' },
+    { id: MODULES_ID, url: comboReference([MODULES_ID], 'm'), rev: 'm' },
+    { id: UI_RENDERER_ID, url: comboReference([UI_RENDERER_ID], 'r'), rev: 'r' },
   ],
   batches: [
     {
@@ -239,8 +248,8 @@ describe('HTML bootstrap facade', () => {
   it('preloads every application combo', () => {
     const graph = bootGraph()
     const secondId = '@fixture/second-application-combo'
-    const secondUrl = comboUrl([secondId], 'app-2')
-    graph.entries.push({ id: secondId, url: comboUrl([secondId], 'row-2'), rev: 'row-2' })
+    const secondUrl = comboReference([secondId], 'app-2')
+    graph.entries.push({ id: secondId, url: comboReference([secondId], 'row-2'), rev: 'row-2' })
     graph.batches.push({ phase: 'application', url: secondUrl, rev: 'app-2', entries: [secondId] })
     expect(bootInjections(graph).flatMap(row => row.kind === 'script-preload' ? [row.src] : []))
       .toEqual([APPLICATION_URL, secondUrl])
@@ -500,7 +509,7 @@ describe('client bundle activation', () => {
     const torn = constructWithRoute([packageName])
     const tornRow = torn.service.graph().entries[0]!
     expect((await routeRequest(torn.route, tornRow.url)).body.toString('utf8'))
-      .toContain(`sourceMappingURL=${mapUrl(tornRow.url)}`)
+      .toContain(`sourceMappingURL=${mapReference(tornRow.url)}`)
     const fallback = await routeRequest(torn.route, mapUrl(torn.service.graph().batches[0]!.url))
     expect(JSON.parse(fallback.body.toString('utf8'))).toMatchObject({
       sections: [{ map: { sources: [`/plugins/${packageName}/client.js`] } }],
@@ -579,7 +588,7 @@ describe('client bundle activation', () => {
     const stableChunkPath = join(dirname(stablePath), 'client.stable.js')
     writeFileSync(stableChunkPath, 'module.exports = { generation: 1 }\n')
     const stableRow = service.graph().entries.find(entry => entry.id === stablePackage)!
-    const stableChunkUrl = chunkUrl(stablePackage, 'client.stable.js', stableRow.rev)
+    const stableChunkUrl = chunkReference(stablePackage, 'client.stable.js', stableRow.rev)
     const firstChunk = await routeRequest(route, stableChunkUrl)
 
     writeFileSync(`${stablePath}.map`, JSON.stringify({
@@ -611,7 +620,7 @@ describe('client bundle activation', () => {
     const batch = service.graph().batches[0]!
     const script = (await routeRequest(route, batch.url)).body.toString('utf8')
     expect(script).not.toContain('//# sourceURL=')
-    expect(script).toContain(`//# sourceMappingURL=${mapUrl(batch.url)}`)
+    expect(script).toContain(`//# sourceMappingURL=${mapReference(batch.url)}`)
     const payload = JSON.parse((await routeRequest(route, mapUrl(batch.url))).body.toString('utf8')) as {
       sections: { map: { mappings: string; sources: string[]; sourcesContent: string[] } }[]
     }
@@ -716,7 +725,7 @@ describe('client bundle activation', () => {
     }
     for (let index = 0; index < batches.length - 1; index += 1) {
       const entries = [...batches[index]!.entries, batches[index + 1]!.entries[0]!]
-      expect(Buffer.byteLength(mapUrl(comboUrl(entries, '0'.repeat(12))))).toBeGreaterThan(3 * 1024)
+      expect(Buffer.byteLength(mapUrl(comboReference(entries, '0'.repeat(12))))).toBeGreaterThan(3 * 1024)
     }
   })
 
@@ -730,7 +739,7 @@ describe('client bundle activation', () => {
     const { service, route } = constructWithRoute([packageName])
     const row = service.graph().entries[0]!
     const singleScript = await routeRequest(route, row.url)
-    expect(singleScript.body.toString('utf8')).toContain(`sourceMappingURL=${mapUrl(row.url)}`)
+    expect(singleScript.body.toString('utf8')).toContain(`sourceMappingURL=${mapReference(row.url)}`)
     const singleMap = await routeRequest(route, mapUrl(row.url))
     expect(singleMap.status).toBe(200)
     expect(singleMap.headers).toEqual({
@@ -754,8 +763,8 @@ describe('client bundle activation', () => {
     const batchScript = await routeRequest(route, batch.url)
     expect(batchScript.status).toBe(200)
     expect(batchScript.headers?.['cache-control']).toBe('public, max-age=31536000, immutable')
-    expect(batchScript.body.toString('utf8')).toContain(`//# sourceMappingURL=${mapUrl(batch.url)}`)
-    const shellResponse = await service.fetchBundle(new Request(`dsh-app://app${batch.url}`))
+    expect(batchScript.body.toString('utf8')).toContain(`//# sourceMappingURL=${mapReference(batch.url)}`)
+    const shellResponse = await service.fetchBundle(new Request(`dsh-app://app/${batch.url}`))
     expect(shellResponse.status).toBe(200)
     expect(shellResponse.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
     expect(await shellResponse.text()).toBe(batchScript.body.toString('utf8'))
@@ -800,17 +809,17 @@ describe('client bundle activation', () => {
     const startup = await routeRequest(route, row.url)
     expect(startup.status).toBe(200)
     expect(startup.body.toString('utf8')).not.toContain('terminal loaded')
-    expect((await routeRequest(route, chunkUrl(packageName, 'client.terminal.js', row.rev))).status).toBe(404)
+    expect((await routeRequest(route, chunkReference(packageName, 'client.terminal.js', row.rev))).status).toBe(404)
 
     writeFileSync(chunkPath, 'module.exports = { marker: "terminal loaded" }\n')
-    const url = chunkUrl(packageName, 'client.terminal.js', row.rev)
+    const url = chunkReference(packageName, 'client.terminal.js', row.rev)
     const head = await routeRequest(route, url, 'HEAD')
     expect(head.status).toBe(200)
     expect(head.body).toHaveLength(0)
     const chunk = await routeRequest(route, url)
     expect(chunk.status).toBe(200)
     expect(chunk.body.toString('utf8')).toContain('terminal loaded')
-    expect(chunk.body.toString('utf8')).toContain(`sourceMappingURL=${url.replace('.js?', '.js.map?')}`)
+    expect(chunk.body.toString('utf8')).toContain(`sourceMappingURL=${chunkMapReference('client.terminal.js', row.rev)}`)
     expect((await routeRequest(route, url.replace('.js?', '.js.map?'))).status).toBe(200)
     expect((await routeRequest(route, url.replace(`rev=${row.rev}`, 'rev=stale'))).status).toBe(404)
   })
@@ -824,7 +833,7 @@ describe('client bundle activation', () => {
     writeFileSync(chunkPath, 'module.exports = { generation: 1 }\n')
     const { service, route } = constructWithRoute([packageName])
     const firstRow = service.graph().entries[0]!
-    const firstUrl = chunkUrl(packageName, 'client.terminal.js', firstRow.rev)
+    const firstUrl = chunkReference(packageName, 'client.terminal.js', firstRow.rev)
     expect((await routeRequest(route, firstUrl)).body.toString('utf8')).toContain('generation: 1')
 
     writeFileSync(chunkPath, 'module.exports = { generation: 2 }\n')
@@ -834,7 +843,7 @@ describe('client bundle activation', () => {
     const nextRev = service.rebuilt(packageName)!
     expect(nextRev).not.toBe(firstRow.rev)
     expect((await routeRequest(route, firstUrl)).status).toBe(404)
-    const nextUrl = chunkUrl(packageName, 'client.terminal.js', nextRev)
+    const nextUrl = chunkReference(packageName, 'client.terminal.js', nextRev)
     expect((await routeRequest(route, nextUrl)).body.toString('utf8')).toContain('generation: 2')
   })
 
@@ -933,12 +942,17 @@ describe('shared module declarations', () => {
   it('accepts external requests and carries them onto the graph row', () => {
     const packageName = '@fixture/shared-declared'
     writeBuiltPackage(packageName, { external: ['react'] })
-    expect(construct([packageName]).graph().entries).toEqual([{
+    const { service } = constructWithRoute([packageName])
+    const row = service.graph().entries[0]
+    if (row === undefined) throw new Error('shared-declared graph row missing')
+    // The browser resolves this reference against its own document; the
+    // response table still answers the absolute route it resolves to.
+    expect(row).toEqual({
       id: packageName,
-      url: expect.stringContaining(`/plugins/??${packageName}/client.js&rev=`) as unknown as string,
-      rev: expect.any(String) as unknown as string,
+      url: `plugins/??${packageName}/client.js&rev=${row.rev}`,
+      rev: expect.any(String) as unknown,
       external: ['react'],
-    }])
+    })
   })
 
   it('omits external when the package declares no requests', () => {
@@ -958,7 +972,7 @@ describe('shared module declarations', () => {
 
 describe('module graph order', () => {
   const entry = (id: string, fields: Partial<WebBootEntry> = {}): WebBootEntry =>
-    ({ id, url: comboUrl([id], '0'), rev: '0', ...fields })
+    ({ id, url: comboReference([id], '0'), rev: '0', ...fields })
   const ids = (entries: readonly WebBootEntry[]): string[] => entries.map(row => row.id)
 
   it('places every requested package row before its consumers along a chain', () => {

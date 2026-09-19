@@ -2339,11 +2339,11 @@ describe('Client Typert API', () => {
 
   it('multiplexes Remote streams without using the Connection RPC caller', async () => {
     const originalWebSocket = globalThis.WebSocket
-    const locationDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'location')
+    const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
     ;(globalThis as WebSocketGlobal).WebSocket = FakeWebSocket as unknown as typeof WebSocket
-    Object.defineProperty(globalThis, 'location', {
+    Object.defineProperty(globalThis, 'document', {
       configurable: true,
-      value: { origin: 'https://harness.example' },
+      value: { baseURI: 'https://harness.example/' },
     })
     FakeWebSocket.sockets.length = 0
     const call = vi.fn<ConnectionHandle['rpc']['call']>()
@@ -2412,8 +2412,8 @@ describe('Client Typert API', () => {
       FakeWebSocket.dispatchClose = true
       if (originalWebSocket === undefined) delete (globalThis as WebSocketGlobal).WebSocket
       else globalThis.WebSocket = originalWebSocket
-      if (locationDescriptor === undefined) Reflect.deleteProperty(globalThis, 'location')
-      else Object.defineProperty(globalThis, 'location', locationDescriptor)
+      if (documentDescriptor === undefined) Reflect.deleteProperty(globalThis, 'document')
+      else Object.defineProperty(globalThis, 'document', documentDescriptor)
     }
   })
 })
@@ -2568,8 +2568,8 @@ describe('Remote stream client carrier lifecycle', () => {
     })
   })
 
-  it('shares an in-flight connection and uses the internal ws URL without a browser origin', async () => {
-    await withFakeWebSocket(undefined, async () => {
+  it('shares an in-flight connection and resolves the mux route against the document base', async () => {
+    await withFakeWebSocket('https://harness.example/mounted/app/', async () => {
       FakeWebSocket.autoOpen = false
       const client = new RemoteStreamMuxClient()
       client.start()
@@ -2581,7 +2581,7 @@ describe('Remote stream client carrier lifecycle', () => {
       const secondPending = second.next()
       expect(FakeWebSocket.sockets).toHaveLength(1)
       const socket = FakeWebSocket.sockets[0]!
-      expect(socket.url).toBe('ws://dsh.internal/api/remote.mux')
+      expect(socket.url).toBe('wss://harness.example/mounted/app/api/remote.mux')
 
       socket.open()
       await vi.waitFor(() => { expect(socket.sent).toHaveLength(2) })
@@ -2595,7 +2595,7 @@ describe('Remote stream client carrier lifecycle', () => {
   })
 
   it('fails waiters with one socket attempt and lets the owner start the next attempt', async () => {
-    await withFakeWebSocket('null', async () => {
+    await withFakeWebSocket('http://harness.example/', async () => {
       FakeWebSocket.autoOpen = false
       const closedClient = new RemoteStreamMuxClient()
       closedClient.start()
@@ -2630,7 +2630,7 @@ describe('Remote stream client carrier lifecycle', () => {
       abort.abort('cancelled while connecting')
       await expect(aborted).rejects.toBe('cancelled while connecting')
       await abortedClient.close()
-      expect(FakeWebSocket.sockets[3]?.url).toBe('ws://dsh.internal/api/remote.mux')
+      expect(FakeWebSocket.sockets[3]?.url).toBe('ws://harness.example/api/remote.mux')
     })
   })
 
@@ -2708,14 +2708,18 @@ describe('Remote stream client carrier lifecycle', () => {
 })
 
 async function withFakeWebSocket(
-  origin: string | undefined,
+  baseURI: string,
   run: () => Promise<void>,
 ): Promise<void> {
   const originalWebSocket = globalThis.WebSocket
+  const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
   const locationDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'location')
   ;(globalThis as WebSocketGlobal).WebSocket = FakeWebSocket as unknown as typeof WebSocket
-  if (origin === undefined) Reflect.deleteProperty(globalThis, 'location')
-  else Object.defineProperty(globalThis, 'location', { configurable: true, value: { origin } })
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: { baseURI } })
+  Object.defineProperty(globalThis, 'location', {
+    configurable: true,
+    value: { origin: new URL(baseURI).origin },
+  })
   FakeWebSocket.sockets.length = 0
   FakeWebSocket.autoOpen = true
   FakeWebSocket.dispatchClose = true
@@ -2727,6 +2731,8 @@ async function withFakeWebSocket(
     FakeWebSocket.dispatchClose = true
     if (originalWebSocket === undefined) delete (globalThis as WebSocketGlobal).WebSocket
     else globalThis.WebSocket = originalWebSocket
+    if (documentDescriptor === undefined) Reflect.deleteProperty(globalThis, 'document')
+    else Object.defineProperty(globalThis, 'document', documentDescriptor)
     if (locationDescriptor === undefined) Reflect.deleteProperty(globalThis, 'location')
     else Object.defineProperty(globalThis, 'location', locationDescriptor)
   }

@@ -1,6 +1,5 @@
 - banner:
-  - navigation "会话层级":
-    - button "只回复 MESSAGES_WEB_READY，不调用" [disabled]
+  - navigation "会话层级": 只回复 MESSAGES_WEB_READY，不调用
   - text: 标准模式
   - button "更多操作"
   - button "打开右侧边栏"

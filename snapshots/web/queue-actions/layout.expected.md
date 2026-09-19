@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "workspace" [disabled]
+  - navigation "Session hierarchy": workspace
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
