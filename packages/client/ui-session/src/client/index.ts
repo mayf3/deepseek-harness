@@ -493,7 +493,7 @@ export class UiSession extends Service {
   private reconcileStatus(): void {
     const list = this.sessions.list.getSnapshot()
     const present = new Set(Object.keys(list.byId) as SessionId[])
-    // Rows from catalogs and retained Client bindings do not establish Host running state.
+    // Subagent catalog rows and retained subagent fallback rows do not establish Host running state.
     for (const id of list.ids) {
       const row = list.byId[id] as SessionSummary
       const previous = this.running.get(id)

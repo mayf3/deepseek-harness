@@ -1315,7 +1315,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-agent-preset AgentPresetLabel id \'agent-preset\'',
       'client-ui-jobs JobListAction id \'job-list\'',
       'client-ui-schedule ScheduleCatalogAction id \'schedule-catalog\'',
-      'client-ui-sidebar-terminal TerminalRecovery',
       'experimental-client-ui-agent-team TeamAction id \'agent-team\'',
     ],
     replaceRisk: 'none',
@@ -1671,7 +1670,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'plugins.bundle.config\', () => ctx.slots.register(\n      { name: \'plugins.bundle.config\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:38',
+    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:39',
   },
   {
     key: 'plugins.item',
@@ -1724,14 +1723,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'plugins.item\', () => ctx.slots.register(\n      { name: \'plugins.item\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:32',
+    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:33',
   },
   {
     key: 'plugins.row.config',
     kind: 'keyed',
     scope: 'root',
-    summary: 'The configuration of one row a bundle declares, keyed by `<package name>#<row id>` with the row id as the bundle\'s patch declares it: the row on the bundle\'s page gains a configure control that opens the entry\'s page, headed by the row id and the entry\'s summary.',
-    doc: 'The configuration of one row a bundle declares, keyed by\n`<package name>#<row id>` with the row id as the bundle\'s patch declares\nit: the row on the bundle\'s page gains a configure control that opens\nthe entry\'s page, headed by the row id and the entry\'s summary.',
+    summary: 'The configuration of one row a bundle declares, keyed by `<package name>#<row id>` with the row id as the bundle\'s patch declares it: the row on the bundle\'s page gains a configure control that opens the entry\'s page, headed by the plugin\'s display title and description.',
+    doc: 'The configuration of one row a bundle declares, keyed by\n`<package name>#<row id>` with the row id as the bundle\'s patch declares\nit: the row on the bundle\'s page gains a configure control that opens\nthe entry\'s page, headed by the plugin\'s display title and description.\nAn absent description falls back to the entry\'s `view: \'summary\'`.',
     registerOptions: [
       {
         name: 'key',
@@ -1760,7 +1759,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'plugins.row.config\', () => ctx.slots.register(\n      { name: \'plugins.row.config\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:45',
+    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:47',
   },
   {
     key: 'rightbar',
@@ -2373,9 +2372,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     hookContext: '',
     slotInject: '',
     declaredBy: 'an entry in \'root\' (client-ui-layout), so it exists while that entry is mounted',
-    occupants: [
-      'client-ui-sidebar-terminal TerminalCleanup',
-    ],
+    occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'shell.overlay\', () => ctx.slots.register(\n      { name: \'shell.overlay\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
     source: 'packages/client/ui-layout/src/client/index.ts:91',

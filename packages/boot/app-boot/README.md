@@ -66,6 +66,10 @@ Before mounting profile rows, the `dsh` launcher computes one immutable runtime 
 
 Before you boot, you can print the exact configuration the app will mount: the dump shows the composed entry list with `!!js` expressions verbatim, grouped under comments naming each source file and the patch layers that changed it, as one loadable YAML document. Patches that match no row are reported with their layer label; a missing, unparsable, or invalid config fails the dump.
 
+### Reading plugin display metadata
+
+Use `readPluginMeta(specifier, parentURL)` or `ctx.pluginPackages.metaOf(specifier, parentURL)` to read installed package display text without importing or activating the plugin. Lookup uses the complete package specifier and the caller's resolution base, respecting Node exports. File paths and file URLs return no metadata without resolving resources. Missing locale fields fall back to the accessible `package.json` at that address; malformed metadata returns an `error` diagnostic. Results retain translations for Client-side language selection. See [Plugin display metadata](../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) for the author format.
+
 <a id="startup-and-reload-failures"></a>
 ### Startup and reload failures
 

@@ -163,11 +163,12 @@ export function orderByRecency(
 
 /**
  * Reconcile a browser-local manual order with current account membership.
+ * New ordinary forks precede their sources without changing saved entries' relative order.
  * @param memberIds - authoritative account membership.
  * @param savedOrder - previously saved browser-local order.
- * @param summaries - current Session summaries used to append newly known members by recency.
+ * @param summaries - current Session metadata; unknown new members wait for their summaries.
  * @param rowState - global pin and archive membership; only account members can supplement the order.
- * @returns missing pins, retained saved slots, new ordinary members, then missing archives; unknown new members wait for their summaries.
+ * @returns saved relative positions plus missing members ordered by pin, fork source, recency, and archive status.
  */
 export function reconcileManualOrder(
   memberIds: readonly SessionId[],
@@ -198,7 +199,18 @@ export function reconcileManualOrder(
     if (archived.has(id)) archives.push(id)
     else ordinary.push(id)
   }
-  return [...pins, ...ordered, ...ordinary, ...archives]
+  const result = [...pins, ...ordered, ...ordinary, ...archives]
+  const pending = new Set(ordinary)
+  const placeFork = (id: SessionId): void => {
+    if (!pending.delete(id)) return
+    const parentId = summaries[id]?.parentId
+    if (parentId === undefined || parentId === id || !result.includes(parentId)) return
+    placeFork(parentId)
+    result.splice(result.indexOf(id), 1)
+    result.splice(result.indexOf(parentId), 0, id)
+  }
+  for (const id of [...ordinary].reverse()) placeFork(id)
+  return result
 }
 
 /**

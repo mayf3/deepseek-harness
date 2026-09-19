@@ -37,9 +37,9 @@ export interface UiWorkspace {
    */
   openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>
   /**
-   * Fork a Session and open the child unless a later navigation supersedes it.
+   * Fork a Session without changing the current selection.
    * @param sessionId - source Session.
-   * @returns completion; a superseded request leaves its child available without selecting it.
+   * @returns completion after child creation and inherited-title increment.
    */
   forkSession(sessionId: SessionId): Promise<void>
   /**
@@ -185,9 +185,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   async forkSession(sessionId: SessionId): Promise<void> {
-    const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
-    const childId = await this.sessions.fork({ sessionId, increaseTitle: true })
-    if (!navigation.aborted) this.replaceMain(childId, navigation, 'reveal')
+    await this.sessions.fork({ sessionId, increaseTitle: true })
   }
 
   startSession(workspaceId?: WorkspaceId): void {
