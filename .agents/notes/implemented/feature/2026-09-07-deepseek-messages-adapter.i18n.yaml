@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-07-deepseek-messages-adapter.md
-2026-09-07-deepseek-messages-adapter.md: 9cdb13cd15fb352f767103e3fc3e6e50e0ffa8ee
-2026-09-07-deepseek-messages-adapter.zh.md: 2f947dc76279889b49f11452a17ceb88e4eff394
+2026-09-07-deepseek-messages-adapter.md: b79c2526461843a9534d6a997029281a584e0bed
+2026-09-07-deepseek-messages-adapter.zh.md: 49a967828e22803296ae3d4c8eef943b9ec8e3c5
