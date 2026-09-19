@@ -75,6 +75,7 @@ describe('real Loader composition', () => {
       '      - provider: mock',
       '        model: small',
       '        headroomTokens: 0',
+      '        maxTokens: 32',
       '    retainRatio: 0.125',
       '    auto: false',
     ])
@@ -88,7 +89,7 @@ describe('real Loader composition', () => {
     expect((loaded.compaction as unknown as BasicCompactionEngine).config).toMatchObject({
       thresholdRatio: 0.5,
       headroomTokens: 4000,
-      modelPolicies: [{ provider: 'mock', model: 'small', headroomTokens: 0 }],
+      modelPolicies: [{ provider: 'mock', model: 'small', headroomTokens: 0, maxTokens: 32 }],
       retainRatio: 0.125,
       auto: false,
     })

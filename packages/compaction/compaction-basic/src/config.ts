@@ -72,11 +72,22 @@ export function resolveConfig(config: BasicCompactionConfig = {}): ResolvedConfi
     throw new Error('BasicCompactionConfig: auto must be a boolean')
   }
 
+  const headroomTokens = config.headroomTokens ?? 65_536
+  const maxTokens = config.maxTokens ?? headroomTokens
+  assertPositiveInteger('BasicCompactionConfig.maxTokens (explicit or from headroomTokens)', maxTokens)
   const thresholdRatio = config.thresholdRatio ?? DEFAULT_THRESHOLD_RATIO
   const retention = resolveRetention(config, { retainRatio: DEFAULT_RETAIN_RATIO })
   validateRatioRetention(thresholdRatio, retention, 'BasicCompactionConfig')
   const modelPolicies = resolveModelPolicies(config.modelPolicies)
   for (const [index, policy] of modelPolicies.entries()) {
+    if (policy.maxTokens === undefined && config.maxTokens === undefined
+      && policy.headroomTokens !== undefined) {
+      policy.maxTokens = policy.headroomTokens
+    }
+    assertPositiveInteger(
+      `BasicCompactionConfig: modelPolicies[${index}].maxTokens (explicit or from headroomTokens)`,
+      policy.maxTokens ?? maxTokens,
+    )
     validateRatioRetention(
       policy.thresholdRatio ?? thresholdRatio,
       resolveRetention(policy, retention),
@@ -86,11 +97,11 @@ export function resolveConfig(config: BasicCompactionConfig = {}): ResolvedConfi
 
   return deepFreeze({
     thresholdRatio,
-    headroomTokens: config.headroomTokens ?? 65_536,
+    headroomTokens,
     ...retention,
     summarizationProvider: config.summarizationProvider ?? '',
     summarizationModel: config.summarizationModel ?? '',
-    maxTokens: config.maxTokens ?? 8192,
+    maxTokens,
     compactionRetries: config.compactionRetries ?? 1,
     maxOverflowRetries: config.maxOverflowRetries ?? 1,
     modelPolicies,
