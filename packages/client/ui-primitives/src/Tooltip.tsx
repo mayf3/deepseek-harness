@@ -2,7 +2,7 @@
 // bubble escape ancestor overflow clipping without a portal.
 
 import { cloneElement, createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { FocusEventHandler, MouseEventHandler, MutableRefObject, PointerEventHandler, ReactElement, Ref } from 'react'
+import type { FocusEventHandler, MouseEventHandler, MutableRefObject, ReactElement, Ref } from 'react'
 import css from './Tooltip.module.css'
 
 /** Bubble placement relative to the anchor. */
@@ -22,9 +22,6 @@ interface AnchorProps {
   onMouseLeave?: MouseEventHandler | undefined
   onFocus?: FocusEventHandler | undefined
   onBlur?: FocusEventHandler | undefined
-  onPointerDown?: PointerEventHandler | undefined
-  onPointerUp?: PointerEventHandler | undefined
-  onPointerCancel?: PointerEventHandler | undefined
 }
 
 type TooltipLabel = string | (() => string)
@@ -102,11 +99,6 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
   // Hover and focus are independent triggers: the bubble hides only after
   // BOTH clear (hovering away from a focused anchor must not drop it).
   const triggers = useRef({ hover: false, focus: false })
-  // Only keyboard focus is a trigger. A click also focuses the anchor, and the
-  // anchor keeps that focus when a later state change moves or hides it — no
-  // blur ever fires, which would pin a stale bubble (e.g. the sidebar toggle
-  // after collapsing the sidebar).
-  const pointerFocus = useRef(false)
 
   // A nested tooltip's bubble owns the pointer position, so this tooltip
   // withdraws its own while a descendant shows one; the state below is set by
@@ -176,24 +168,8 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
         ref: mergedRef,
         onMouseEnter: (e) => { children.props.onMouseEnter?.(e); triggers.current.hover = true; showAfterHoverDelay() },
         onMouseLeave: (e) => { children.props.onMouseLeave?.(e); triggers.current.hover = false; cancelShow(); withdraw() },
-        // pointerFocus survives only until the click settles: focus consumes
-        // it, and pointerup/pointercancel clear it when the press never moves
-        // focus (preventDefault, disabled target), so a later keyboard focus
-        // still shows the bubble.
-        onPointerDown: (e) => { children.props.onPointerDown?.(e); pointerFocus.current = true },
-        onPointerUp: (e) => { children.props.onPointerUp?.(e); pointerFocus.current = false },
-        onPointerCancel: (e) => { children.props.onPointerCancel?.(e); pointerFocus.current = false },
-        onFocus: (e) => {
-          children.props.onFocus?.(e)
-          if (pointerFocus.current) {
-            pointerFocus.current = false
-            return
-          }
-          triggers.current.focus = true
-          cancelShow()
-          show()
-        },
-        onBlur: (e) => { children.props.onBlur?.(e); pointerFocus.current = false; triggers.current.focus = false; hide() },
+        onFocus: (e) => { children.props.onFocus?.(e); triggers.current.focus = true; cancelShow(); show() },
+        onBlur: (e) => { children.props.onBlur?.(e); triggers.current.focus = false; hide() },
       })}
       {visible && !suppressed && (
         <span
