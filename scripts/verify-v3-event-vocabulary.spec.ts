@@ -17,11 +17,13 @@ function write(root: string, path: string, content: string): void {
   writeFileSync(target, content)
 }
 
-function git(root: string, args: readonly string[]): string {
+function git(root: string, args: readonly string[], environment: NodeJS.ProcessEnv = process.env): string {
+  const env = Object.fromEntries(Object.entries(environment).filter(([key]) =>
+    !['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE'].includes(key.toUpperCase())))
   return execFileSync('git', [
     '-c', 'user.name=V3 vocabulary fixture', '-c', 'user.email=v3-fixture@example.invalid',
     '-c', 'commit.gpgsign=false', '-c', `core.hooksPath=${join(root, 'empty-hooks')}`, ...args,
-  ], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  ], { cwd: root, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
 
 function fixture(options: { writer?: string; events?: string } = {}): { root: string; sourceRef: string } {
@@ -40,6 +42,26 @@ afterEach(() => {
 })
 
 describe('explicit V3 source vocabulary verification', () => {
+  it('keeps fixture writes inside their own repository despite inherited Git location variables', () => {
+    const target = fixture()
+    const foreign = fixture()
+    write(target.root, 'target-only.txt', 'target')
+    write(foreign.root, 'foreign-only.txt', 'foreign')
+    const before = git(foreign.root, ['status', '--porcelain'])
+    const environment = {
+      ...process.env,
+      GIT_DIR: join(foreign.root, '.git'),
+      GIT_WORK_TREE: foreign.root,
+      GIT_INDEX_FILE: join(foreign.root, '.git', 'foreign-index'),
+    }
+    git(target.root, ['add', '--all'], environment)
+    git(target.root, ['commit', '--quiet', '-m', 'Target fixture update'], environment)
+    expect(git(foreign.root, ['rev-parse', 'HEAD'])).toBe(foreign.sourceRef)
+    expect(git(foreign.root, ['status', '--porcelain'])).toBe(before)
+    expect(git(target.root, ['show', 'HEAD:target-only.txt'])).toBe('target')
+    expect(environment.GIT_DIR).toBe(join(foreign.root, '.git'))
+  })
+
   it('checks a pinned V3 writer independently of later V4 commits', () => {
     const { root, sourceRef } = fixture()
     write(root, writerPath, 'export const SESSION_FORMAT_VERSION = 4 as const\n')
