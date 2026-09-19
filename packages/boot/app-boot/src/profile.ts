@@ -71,7 +71,7 @@ export interface Profile {
   patches: PatchOptions[]
 }
 
-/** One package selected by the profile module-fallback rules. */
+/** One package the generation supplies at the interception layer. */
 export interface ProfileResolutionEntry {
   /** Bare package name. */
   readonly name: string
@@ -81,19 +81,19 @@ export interface ProfileResolutionEntry {
   readonly version: string | undefined
   /** Manifest whose dependency edge selected this package. */
   readonly declarer: string
-  /** Whether every profile or only the active profile receives this fallback. */
+  /** Whether every profile or only the active profile receives this entry. */
   readonly scope: 'installation' | 'profile'
 }
 
-/** Complete immutable fallback table for one profile launch. */
+/** Complete immutable package table for one profile launch. */
 export interface ProfileResolutionGeneration {
-  /** Directory containing every profile and the shared fallback position. */
+  /** Directory containing every profile; its node_modules is the interception layer. */
   readonly profilesDir: string
-  /** Active profile directory, when bundle-only fallbacks were included. */
+  /** Active profile directory, when profile-scope entries were included. */
   readonly profileDir: string | undefined
-  /** Profile-declared packages already installed before the fallback position. */
+  /** Profile-declared packages installed in the profile's own node_modules. */
   readonly localPackageNames: readonly string[]
-  /** Installation entries followed by bundle-only entries in precedence order. */
+  /** Installation-scope entries followed by profile-scope entries in precedence order. */
   readonly entries: readonly ProfileResolutionEntry[]
 }
 
@@ -194,8 +194,8 @@ export function initProfile(
   if (!existsSync(workspacePath)) writeFileSync(workspacePath, PROFILE_PNPM_WORKSPACE)
 }
 
-/** Read one package manifest used while traversing a module-fallback dependency graph. */
-function readModuleFallbackManifest(anchor: string): ProfileManifest {
+/** Read one package manifest while traversing a dependency graph. */
+function readPackageManifest(anchor: string): ProfileManifest {
   return JSON.parse(readFileSync(anchor, 'utf8')) as ProfileManifest
 }
 
@@ -205,7 +205,7 @@ function profileDependencyNames(manifest: ProfileManifest): string[] {
 }
 
 /** Resolve the installation packages that the runtime resolver supplies to every profile. */
-function resolveModuleFallbackEntries(
+function collectInstallationScopePackages(
   installAnchor: string, skippedBundles: ReadonlySet<string>,
 ): {
   packageNames: ReadonlySet<string>
@@ -215,7 +215,7 @@ function resolveModuleFallbackEntries(
 } {
   // Real declaring paths keep workspace symlinks under node_modules from disabling tsx path mappings.
   const canonicalAnchor = join(realModuleDirectory(dirname(installAnchor)), basename(installAnchor))
-  const appManifest = readModuleFallbackManifest(canonicalAnchor)
+  const appManifest = readPackageManifest(canonicalAnchor)
   const links = new Map<string, string>()
   const declarers = new Map<string, string>()
   const versions = new Map<string, string | undefined>()
@@ -243,7 +243,7 @@ function resolveModuleFallbackEntries(
       const manifestPath = join(realModuleDirectory(dir), 'package.json')
       let manifest: ProfileManifest
       try {
-        manifest = skippedBundles.has(dep) ? readProfileManifest('dsh', dir) : readModuleFallbackManifest(manifestPath)
+        manifest = skippedBundles.has(dep) ? readProfileManifest('dsh', dir) : readPackageManifest(manifestPath)
       } catch (error) {
         if (!skippedBundles.has(dep)) throw error
         continue
@@ -278,7 +278,7 @@ export async function createProfileResolutionGeneration(
   const { installAnchor, profile, home = resolveDshHome() } = options
   const profilesDir = join(home, PROFILES_DIR)
   const manifest = readOptionalProfileManifest(profile)
-  const { packageNames, packageDirs, declarers, versions } = resolveModuleFallbackEntries(
+  const { packageNames, packageDirs, declarers, versions } = collectInstallationScopePackages(
     installAnchor, skippedProfileBundles(profile, manifest),
   )
   const profileDeclarers = new Map<string, string>()
@@ -286,7 +286,7 @@ export async function createProfileResolutionGeneration(
   const localPackageNames = profile === undefined ? [] : installedProfilePackageNames(profile, manifest)
   const profilePackages: ReadonlyMap<string, string> = profile === undefined
     ? new Map<string, string>()
-    : resolveProfileModuleFallback(profile, packageNames, profileDeclarers, profileVersions)
+    : collectProfileScopePackages(profile, packageNames, profileDeclarers, profileVersions)
   // The Promise return type is the pre-stable API; construction has no asynchronous step.
   return await Promise.resolve(Object.freeze({
     profilesDir,
@@ -309,7 +309,7 @@ export async function createProfileResolutionGeneration(
 function readOptionalProfileManifest(profile: Profile | undefined): ProfileManifest | undefined {
   if (profile === undefined) return undefined
   try {
-    return readModuleFallbackManifest(join(profile.dir, 'package.json'))
+    return readPackageManifest(join(profile.dir, 'package.json'))
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
     throw error
@@ -340,7 +340,7 @@ function dependencyClosure(
   const visited = new Set(reserved)
   for (const anchor of anchors) {
     const canonicalAnchor = join(realModuleDirectory(dirname(anchor)), basename(anchor))
-    const manifest = readModuleFallbackManifest(canonicalAnchor)
+    const manifest = readPackageManifest(canonicalAnchor)
     /* v8 ignore next -- an installable package manifest always declares its name */
     if (manifest.name === undefined) continue
     if (!visited.has(manifest.name)) {
@@ -362,7 +362,7 @@ function dependencyClosure(
         links.set(dep, dir)
         declarers?.set(dep, next.anchor)
         const manifestPath = join(realModuleDirectory(dir), 'package.json')
-        const dependencyManifest = readModuleFallbackManifest(manifestPath)
+        const dependencyManifest = readPackageManifest(manifestPath)
         versions?.set(dep, dependencyManifest.version)
         queue.push({ anchor: manifestPath, manifest: dependencyManifest })
       }
@@ -371,8 +371,8 @@ function dependencyClosure(
   return links
 }
 
-/** Resolve packages carried only by selected bundles for one profile. */
-function resolveProfileModuleFallback(
+/** Collect packages carried by the profile's selected bundles that the installation does not supply. */
+function collectProfileScopePackages(
   profile: Profile, installationPackageNames: ReadonlySet<string>,
   declarers?: Map<string, string>,
   versions?: Map<string, string | undefined>,

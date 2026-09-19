@@ -669,7 +669,7 @@ describe('profile resolution generation', { concurrent: false }, () => {
     expect(thrownMessage(() => resolveFrom('#missing-relative', parent))).toBe(esmMessage)
   })
 
-  it('keeps local and after-fallback package imports targets in native order', async () => {
+  it('keeps local and native-after-generation package imports targets in native order', async () => {
     const f = fixture()
     file(join(f.profile.dir, 'package.json'), JSON.stringify({
       name: 'dsh-profile-web',
@@ -969,8 +969,8 @@ describe('profile resolution generation', { concurrent: false }, () => {
       .toThrow(/Cannot find module/u)
     expect(() => createRequire(other).resolve('missing-explicit', { paths: [dirname(other)] }))
       .toThrow(/Cannot find module/u)
-    file(join(f.root, 'node_modules', 'invalid-after-fallback', 'package.json'), '{')
-    expect(() => createRequire(other).resolve('invalid-after-fallback', {
+    file(join(f.root, 'node_modules', 'invalid-after-generation', 'package.json'), '{')
+    expect(() => createRequire(other).resolve('invalid-after-generation', {
       paths: [dirname(other), f.profile.dir],
     })).toThrow(/Invalid package config/u)
     file(join(f.root, 'node_modules', 'invalid-explicit', 'package.json'), '{')

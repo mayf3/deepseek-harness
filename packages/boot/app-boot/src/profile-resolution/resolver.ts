@@ -48,14 +48,15 @@ type EsmResolve = (
 ) => ResolveResult | Promise<ResolveResult>
 
 /**
- * Where a scoped bare request resolves. A `fallback` entry occupies the package
- * directory at the interception layer; `after` anchors the ancestors above that
- * layer for a CommonJS subpath the entry lacks. An `after-fallback` route anchors
- * the interception layer itself for a name the generation does not carry.
+ * Where Node continues a scoped bare request. `native` keeps the importer's own lookup: the chain is
+ * answered below the interception layer. `generation` answers at the interception layer from the
+ * entry's declaring manifest; `after` anchors Node's chain above the layer for a CommonJS subpath the
+ * entry lacks. `native-after-generation` has no entry: Node's chain resumes at the interception layer,
+ * anchored by `parent`.
  */
 type ResolutionRoute =
-  | { readonly kind: 'fallback'; readonly entry: ProfileResolutionEntry; readonly after: string }
-  | { readonly kind: 'after-fallback'; readonly parent: string }
+  | { readonly kind: 'generation'; readonly entry: ProfileResolutionEntry; readonly after: string }
+  | { readonly kind: 'native-after-generation'; readonly parent: string }
   | { readonly kind: 'native'; readonly packageDir?: string }
 
 interface ResolutionRouteState {
@@ -257,7 +258,7 @@ function packageSearchPaths(
   entry: ProfileResolutionEntry, request: string, cjs: CommonJsModule,
 ): string[] {
   const name = barePackageName(request)
-  /* v8 ignore next -- fallback routes are created only for bare package requests */
+  /* v8 ignore next -- generation routes are created only for bare package requests */
   if (name === undefined) return cjs._nodeModulePaths(dirname(entry.declarer))
   const suffix = sep + name.split('/').join(sep)
   return entry.packageDir.endsWith(suffix)
@@ -393,16 +394,16 @@ class ResolutionRouter {
       }
     }
 
-    // The interception layer is `<profileParent>/node_modules`: a fallback entry occupies its name
+    // The interception layer is `<profileParent>/node_modules`: a generation entry occupies its name
     // there, so its subpath misses continue above it; a name without an entry continues at it.
     const profileParent = dirname(localRoot)
     const eligible = target?.scope === 'installation'
       || (target?.scope === 'profile' && parentRoutes.activeProfile)
     const route: ResolutionRoute = eligible
-      ? { kind: 'fallback', entry: target, after: join(dirname(profileParent), 'package.json') }
-      : { kind: 'after-fallback', parent: join(profileParent, 'package.json') }
+      ? { kind: 'generation', entry: target, after: join(dirname(profileParent), 'package.json') }
+      : { kind: 'native-after-generation', parent: join(profileParent, 'package.json') }
     const state: ResolutionRouteState = { route }
-    if (route.kind === 'fallback') requests.set(request, state)
+    if (route.kind === 'generation') requests.set(request, state)
     return state
   }
 
@@ -498,11 +499,11 @@ class ResolutionRouter {
     const name = barePackageName(specifier)
     if (name === undefined) return undefined
     const state = this.routeUrl(specifier, parentURL)
-    if (state?.route.kind === 'fallback') return state.route.entry.packageDir
+    if (state?.route.kind === 'generation') return state.route.entry.packageDir
     if (state?.packageDir !== undefined) return state.packageDir
     let parent: string
     try {
-      parent = state?.route.kind === 'after-fallback' ? state.route.parent : fileURLToPath(parentURL)
+      parent = state?.route.kind === 'native-after-generation' ? state.route.parent : fileURLToPath(parentURL)
     } catch {
       return undefined
     }
@@ -655,7 +656,7 @@ export function installProfileResolution(
         if (cacheable && !(result instanceof Promise)) state.esm = result
         return result
       }
-      const routedParent = pathToFileURL(route.kind === 'fallback' ? route.entry.declarer : route.parent).href
+      const routedParent = pathToFileURL(route.kind === 'generation' ? route.entry.declarer : route.parent).href
       const previous = delegatedEsm
       delegatedEsm = { parent: routedParent, request }
       const restoreImporter = (error: unknown): never => throwWithImporter(error, routedParent, parent)
@@ -723,12 +724,12 @@ export function installProfileResolution(
     request: string, routed: Exclude<ResolutionRoute, { kind: 'native' }>,
     parent: CommonJsParent, main: boolean, options?: CommonJsOptions,
   ): string => {
-    const anchor = routed.kind === 'fallback' ? routed.entry.declarer : routed.parent
+    const anchor = routed.kind === 'generation' ? routed.entry.declarer : routed.parent
     const synthetic = new cjs(anchor)
     // Late parent assignment preserves Node's require stack without publishing this routing anchor in parent.children.
     synthetic.parent = parent
     synthetic.filename = anchor
-    synthetic.paths = routed.kind === 'fallback'
+    synthetic.paths = routed.kind === 'generation'
       ? packageSearchPaths(routed.entry, request, cjs)
       : cjs._nodeModulePaths(dirname(anchor))
     try {
@@ -759,7 +760,7 @@ export function installProfileResolution(
     if (state === undefined) return resolveFrom(target.parentURL)
     if (state.route.kind === 'native') return resolveFrom(target.parentURL)
     const route = state.route
-    if (route.kind === 'after-fallback') return resolveFrom(pathToFileURL(route.parent).href)
+    if (route.kind === 'native-after-generation') return resolveFrom(pathToFileURL(route.parent).href)
     return resolveFrom(pathToFileURL(route.entry.declarer).href)
   }
   const wrappedFilename: CommonJsModule['_resolveFilename'] = (request, parent, main, options) => {
@@ -810,7 +811,7 @@ export function installProfileResolution(
       if (cacheable) state.cjs = result
       return result
     }
-    if (route.kind === 'after-fallback' && explicit !== undefined && explicitPaths !== undefined) {
+    if (route.kind === 'native-after-generation' && explicit !== undefined && explicitPaths !== undefined) {
       try {
         return originalFilename.call(cjs, request, parent, main, {
           ...options,
@@ -830,10 +831,10 @@ export function installProfileResolution(
       try {
         expected = resolveRoutedCjs(request, route, parent, main, routedOptions)
       } catch (error) {
-        if (route.kind !== 'fallback' || !isUnselectedPackageMiss(error)) throw error
+        if (route.kind !== 'generation' || !isUnselectedPackageMiss(error)) throw error
         try {
           expected = resolveRoutedCjs(
-            request, { kind: 'after-fallback', parent: route.after }, parent, main, routedOptions,
+            request, { kind: 'native-after-generation', parent: route.after }, parent, main, routedOptions,
           )
         } catch (afterError) {
           const remaining = explicit === undefined || explicitPaths === undefined
