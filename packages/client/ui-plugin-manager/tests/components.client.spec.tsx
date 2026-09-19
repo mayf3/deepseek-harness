@@ -101,15 +101,27 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     setRowEnabled: vi.fn(),
     dismissNotice: vi.fn(),
   }
-  const props = {
+  const unusedHook = () => { throw new Error('unused standard hook') }
+  const renderSlot: PluginManagerPageProps['renderSlot'] = (name, owner, opts) => {
+    if (!('view' in owner) || (owner.view !== 'summary' && owner.view !== 'page')) {
+      throw new Error('configuration fixture requires a summary or page view')
+    }
+    return bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]?.(owner.view) ?? null
+  }
+  const props: PluginManagerPageProps = {
+    usePanelInfo: unusedHook,
+    useSessions: unusedHook,
+    useSessionStatus: unusedHook,
+    useSessionRetainInfo: unusedHook,
+    useResource: unusedHook,
+    useWorkspaces: unusedHook,
     t,
     resolveText,
     ...actions,
     usePluginManager: bindSnapshotSelector(store),
     useConfigLedger: bindSnapshotSelector(ledger),
-    renderSlot: (name: string, owner: { view: 'summary' | 'page' }, opts: { only?: string; entryKey?: string }) =>
-      bodies[`${name}:${opts.only ?? opts.entryKey ?? ''}`]?.(owner.view) ?? null,
-  } as unknown as PluginManagerPageProps
+    renderSlot,
+  }
   const { rerender } = render(<PluginManagerPage {...props} />)
   return {
     store,

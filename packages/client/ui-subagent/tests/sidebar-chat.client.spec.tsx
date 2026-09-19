@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react'
 import { cleanup, render } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
 import type {
-  ISessions, SessionListState, SessionReference, SessionSnapshot,
+  SessionListState, SessionReference, SessionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ResourceProvider } from '@deepseek-ai/dsh-client-resources/client'
 import { sessionSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
@@ -85,19 +85,22 @@ describe('Sidebar chat registration', () => {
     let provider: ResourceProvider<'subagentchat'> | undefined
     let definition: SidebarRightTabDefinition | undefined
     const registrations: { options: Record<string, unknown>; component: unknown }[] = []
-    const ctx = {
-      sessions: { retain, refresh, list } as unknown as ISessions,
-      resources: { register: (value: ResourceProvider<'subagentchat'>) => { provider = value; return () => {} } },
-      sidebarRightTabs: { register: (value: SidebarRightTabDefinition) => { definition = value; return () => {} } },
-      slots: {
-        inject: (_name: string, install: () => () => void) => install(),
-        register: (options: Record<string, unknown>, component: unknown) => {
-          registrations.push({ options, component })
-          return () => {}
-        },
+    const ctx = new Context()
+    onTestFinished(async () => { await ctx.fiber.dispose() })
+    ctx.provide('sessions', { retain, refresh, list })
+    ctx.provide('resources', {
+      register: (value: ResourceProvider<'subagentchat'>) => { provider = value; return () => {} },
+    })
+    ctx.provide('sidebarRightTabs', {
+      register: (value: SidebarRightTabDefinition) => { definition = value; return () => {} },
+    })
+    ctx.provide('slots', {
+      inject: (_name: string, install: () => () => void) => install(),
+      register: (options: Record<string, unknown>, component: unknown) => {
+        registrations.push({ options, component })
+        return () => {}
       },
-      effect: (install: () => unknown) => { install(); return () => {} },
-    } as unknown as Context
+    })
 
     registerSidebarChat(ctx, (key: string) => key === 'sidebar.chat' ? 'Chat' : key)
 

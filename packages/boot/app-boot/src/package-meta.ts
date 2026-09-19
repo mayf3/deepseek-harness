@@ -58,7 +58,7 @@ function textOf(value: unknown, path: string): string | undefined {
 function readObject(file: string): Record<string, unknown> {
   let contents: unknown
   try {
-    contents = JSON.parse(readFileSync(file, 'utf8')) as unknown
+    contents = JSON.parse(readFileSync(file, 'utf8'))
   } catch (error) {
     throw new Error(`${file}: ${String(error)}`)
   }

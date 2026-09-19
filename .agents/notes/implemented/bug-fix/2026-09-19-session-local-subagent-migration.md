@@ -30,4 +30,6 @@ This partially supersedes runtime catalog prerequisites and corpus revisions in 
 
 Explicit direct-child discovery now enumerates N headers in addition to materializing D catalog facts. It avoids all child-body decoding, while ordinary parent migration has no corpus-dependent preparation. Historical rows may initially show an id instead of a label and cannot promise resumability. Headers that cannot be decoded cannot contribute a navigation row, but do not block opening another known Session.
 
+The V2 parent/child regression needs two independently stored historical roles to exercise deferred migration and unchanged predecessors. Its additional child raises the retained corpus budget from ten to eleven roles; the gate still rejects a twelfth role.
+
 Raw and compressed persistence regressions cover V0–V3, child corruption and future formats, independent publication, unchanged predecessors, and stable parent revisions across child mutations. Service tests verify only the parent is observed. Client and Host tests verify unresolved addresses, selected-child decoding, mode resolution, and ownership rejection. The shipped Web preset-migration snapshot round-trips parent and child generations with a corrupt sibling and checks that only explicitly opened Sessions migrate.
