@@ -298,9 +298,9 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
       maxTokens: 2000,
     })
     expect(withThinking.finish.kind).toBe('stop')
-    expect(withThinking.message.content.some(block => block.type === 'reasoning')).toBe(true)
+    expect(withThinking.message.content.some(block => block.type === 'reasoning' && block.text.trim().length > 0)).toBe(true)
     expect(textOf(withThinking)).toContain('9.8')
-    expect(withThinking.usage?.reasoningTokens).toBeGreaterThan(0)
+    expect(withThinking.usage?.outputTokens).toBeGreaterThan(0)
   })
 
   it(

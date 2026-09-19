@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, LoggerLevel } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -151,7 +152,8 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () 
     })
     await ctx.loader.create({ name: '@deepseek-ai/dsh-plugin-package-inventory-deepseek' })
     await ctx.loader.await()
-    const packageIdentity = JSON.parse(await readFile(new URL('../../../plugin-package-inventory-deepseek/package.json', import.meta.url), 'utf8')) as { name: string; version: string }
+    const packagePath = createRequire(import.meta.url).resolve('@deepseek-ai/dsh-plugin-package-inventory-deepseek/package.json')
+    const packageIdentity = JSON.parse(await readFile(packagePath, 'utf8')) as { name: string; version: string }
     const session = ctx.sessions.create(SessionId(`real-messages-extensions-${randomUUID()}`))
     session.append('turn/start', { turn: 1 })
     const fetchImpl = globalThis.fetch
