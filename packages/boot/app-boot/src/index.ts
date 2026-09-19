@@ -38,10 +38,8 @@ export {
   createProfileResolutionGeneration,
   DEFAULT_PROFILE_BUNDLES,
   OPTIONAL_BUNDLES,
-  healProfilesModuleFallback,
-  healIsolatedProfileModuleFallback,
-  unlinkProfileModuleFallback,
   initProfile,
+  removeLinkProjections,
   loadProfile,
   loadProfileDirectory,
   PROFILE_PATCH_FILENAME,
@@ -54,10 +52,9 @@ export {
   type Profile,
   type ProfileLayer,
   type ProfileManifest,
-  type ProfileModuleFallbackOptions,
+  type ProfileResolutionOptions,
   type ProfileResolutionEntry,
   type ProfileResolutionGeneration,
-  type ProfileResolutionMode,
   type ProfileTemplate,
 } from './profile.ts'
 export {

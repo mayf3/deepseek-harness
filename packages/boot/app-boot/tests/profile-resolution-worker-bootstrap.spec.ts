@@ -6,7 +6,6 @@ import type { ProfileResolutionGeneration } from '../src/profile.ts'
 const harness = vi.hoisted(() => ({
   data: undefined as {
     generation: ProfileResolutionGeneration
-    behavior: 'enforce' | 'verify'
   } | undefined,
   install: vi.fn(),
 }))
@@ -30,14 +29,14 @@ it('does nothing without inherited profile resolution data', async () => {
   expect(harness.install).not.toHaveBeenCalled()
 })
 
-it('installs the inherited generation and behavior', async () => {
+it('installs the inherited generation', async () => {
   const generation: ProfileResolutionGeneration = {
     profilesDir: '/profiles',
     profileDir: '/profiles/test',
     localPackageNames: [],
     entries: [],
   }
-  harness.data = { generation, behavior: 'verify' }
+  harness.data = { generation }
   await import('../src/profile-resolution/worker-bootstrap.ts')
-  expect(harness.install).toHaveBeenCalledWith(generation, 'verify')
+  expect(harness.install).toHaveBeenCalledWith(generation)
 })

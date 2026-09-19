@@ -232,9 +232,9 @@ function validateAppResolution(): string[] {
   const appManifest = readManifest('apps/cli/package.json')
   const appDependencies = {
     ...appManifest.dependencies,
-    // The fallback also links every in-box bundle's own dependencies
-    // (healProfilesModuleFallback). Optional Profile bundles stay outside the
-    // app installation until that Profile installs them.
+    // Runtime resolution includes every in-box bundle's own dependencies.
+    // Optional Profile bundles stay outside the app installation until that
+    // Profile installs them.
     ...Object.fromEntries(globSync('packages/bundle/*/package.json', { cwd: root })
       .flatMap(file => Object.entries(readManifest(file).dependencies ?? {}))),
   }

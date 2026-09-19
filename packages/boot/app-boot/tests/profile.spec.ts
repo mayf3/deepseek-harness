@@ -1,36 +1,35 @@
 /**
  * Profile machinery of `dsh-app-boot`: directory resolution and init,
  * manifest round-trips, two-anchor bundle resolution, patch-layer loading,
- * empty-root composition, and the installation module-fallback healing.
+ * empty-root composition, and runtime package resolution.
  */
 
 import {
-  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync,
-  unlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
-import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
+import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import {
   composeEntries,
   createProfileResolutionGeneration,
-  healProfilesModuleFallback,
-  healIsolatedProfileModuleFallback,
   initProfile,
-  unlinkProfileModuleFallback,
   loadProfile,
   loadProfileDirectory,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   readProfileManifest,
   readProfilePatches,
+  removeLinkProjections,
   resolveBundleDir,
   resolveProfileDir,
   writeProfileManifest,
   type Profile,
+  type ProfileResolutionGeneration,
 } from '../src/index.ts'
+import { installProfileResolution } from '../src/profile-resolution/resolver.ts'
 
 const tempRoots: string[] = []
 afterAll(() => {
@@ -38,7 +37,7 @@ afterAll(() => {
 })
 
 const tmp = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-profile-'))
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-profile-')))
   tempRoots.push(dir)
   return dir
 }
@@ -93,13 +92,29 @@ function stageProfile(home: string, name: string, bundleAnchor: string): Profile
   }
 }
 
-describe('healIsolatedProfileModuleFallback', () => {
-  it.each([false, true])('resolves peers from each installation without sharing profile state (Web fallback: %s)', async (webFallback) => {
+async function importFromGeneration(
+  generation: ProfileResolutionGeneration, specifier: string,
+): Promise<Record<string, unknown>> {
+  const addon = createRequire(import.meta.url)('node-addon-require-builtin') as {
+    requireBuiltin(id: string): unknown
+  }
+  const loader = addon.requireBuiltin('internal/modules/esm/loader') as {
+    getOrInitializeCascadedLoader(): {
+      import(specifier: string, parent: string, attributes: ImportAttributes): Promise<Record<string, unknown>>
+    }
+  }
+  const registration = installProfileResolution(generation)
+  try {
+    const parent = pathToFileURL(join(generation.profilesDir, 'entry.mjs')).href
+    return await loader.getOrInitializeCascadedLoader().import(specifier, parent, {})
+  } finally {
+    registration.dispose()
+  }
+}
+
+describe('isolated profile resolution', () => {
+  it('resolves peers from each installation without sharing profile state', async () => {
     const home = tmp()
-    const webAnchor = stageInstallation({ commander: {} })
-    if (webFallback) await healProfilesModuleFallback({ installAnchor: webAnchor, home })
-    const sharedCommander = join(home, 'profiles', 'node_modules', 'commander')
-    const sharedTarget = webFallback ? readlinkSync(sharedCommander) : undefined
     const bundleAnchor = stageInstallation({ 'bundle-only': {} }, 'external-bundle')
     const anchorA = stageInstallation({ commander: {}, 'pnpm-owned': {} })
     const anchorB = stageInstallation({ commander: {}, 'pnpm-owned': {} })
@@ -119,53 +134,36 @@ describe('healIsolatedProfileModuleFallback', () => {
     writeFileSync(join(installed, 'package.json'), JSON.stringify({ name: 'pnpm-owned', main: 'index.js' }))
     writeFileSync(join(installed, 'index.js'), 'module.exports = "profile-installed"\n')
 
-    healIsolatedProfileModuleFallback({ installAnchor: anchorA, profile: profileA })
-    healIsolatedProfileModuleFallback({ installAnchor: anchorB, profile: profileB })
-    healIsolatedProfileModuleFallback({ installAnchor: anchorA, profile: profileA })
+    const generationA = await createProfileResolutionGeneration({ installAnchor: anchorA, profile: profileA, home })
+    const generationB = await createProfileResolutionGeneration({ installAnchor: anchorB, profile: profileB, home })
+    let registration = installProfileResolution(generationA)
+    try {
+      expect(realpathSync.native(createRequire(consumerA).resolve('commander')))
+        .toBe(realpathSync.native(join(anchorA, '..', 'node_modules', 'commander', 'index.js')))
+      registration.dispose()
+      registration = installProfileResolution(generationB)
+      expect(realpathSync.native(createRequire(consumerB).resolve('commander')))
+        .toBe(realpathSync.native(join(anchorB, '..', 'node_modules', 'commander', 'index.js')))
+      registration.dispose()
+      registration = installProfileResolution(generationA)
+      expect(realpathSync.native(createRequire(consumerA).resolve('pnpm-owned'))).toBe(realpathSync.native(join(installed, 'index.js')))
+      expect(readFileSync(join(installed, 'index.js'), 'utf8')).toContain('profile-installed')
+      expect(realpathSync.native(createRequire(consumerA).resolve('bundle-only')))
+        .toBe(realpathSync.native(join(bundleAnchor, '..', 'node_modules', 'bundle-only', 'index.js')))
+      expect(existsSync(join(home, 'profiles', 'node_modules'))).toBe(false)
 
-    expect(realpathSync.native(createRequire(consumerA).resolve('commander')))
-      .toBe(realpathSync.native(join(anchorA, '..', 'node_modules', 'commander', 'index.js')))
-    expect(realpathSync.native(createRequire(consumerB).resolve('commander')))
-      .toBe(realpathSync.native(join(anchorB, '..', 'node_modules', 'commander', 'index.js')))
-    expect(realpathSync.native(createRequire(consumerA).resolve('pnpm-owned'))).toBe(realpathSync.native(join(installed, 'index.js')))
-    expect(readFileSync(join(installed, 'index.js'), 'utf8')).toContain('profile-installed')
-    expect(realpathSync.native(createRequire(consumerA).resolve('bundle-only')))
-      .toBe(realpathSync.native(join(bundleAnchor, '..', 'node_modules', 'bundle-only', 'index.js')))
-    expect(existsSync(join(home, 'profiles', 'node_modules'))).toBe(webFallback)
-    if (webFallback) expect(readlinkSync(sharedCommander)).toBe(sharedTarget)
-
-    healIsolatedProfileModuleFallback({ installAnchor: anchorA, profile: { ...profileA, layers: [] } })
-    expect(existsSync(join(profileA.dir, 'node_modules', 'bundle-only'))).toBe(false)
-    expect(existsSync(join(profileB.dir, 'node_modules', 'bundle-only'))).toBe(true)
-    expect(realpathSync.native(createRequire(consumerA).resolve('commander')))
-      .toBe(realpathSync.native(join(anchorA, '..', 'node_modules', 'commander', 'index.js')))
-  })
-})
-
-describe('unlinkProfileModuleFallback', () => {
-  it('detaches only this profile projections and restores missing packages from a relocated installation', () => {
-    const home = tmp()
-    const anchor = stageInstallation({ fallback: {}, '@scope/peer': {}, replaced: {} })
-    const nextAnchor = stageInstallation({ fallback: {}, '@scope/peer': {}, replaced: {} })
-    const bundleAnchor = stageInstallation({}, 'selected-bundle')
-    const profile = stageProfile(home, 'desktop', bundleAnchor)
-    const other = stageProfile(home, 'other', bundleAnchor)
-    unlinkProfileModuleFallback(profile.dir)
-    healIsolatedProfileModuleFallback({ installAnchor: anchor, profile })
-    healIsolatedProfileModuleFallback({ installAnchor: anchor, profile: other })
-    const modules = join(profile.dir, 'node_modules')
-    unlinkSync(join(modules, 'replaced'))
-    mkdirSync(join(modules, 'replaced'))
-    writeFileSync(join(modules, 'replaced', 'sentinel'), 'pnpm')
-    unlinkProfileModuleFallback(profile.dir)
-    unlinkProfileModuleFallback(profile.dir)
-    expect(existsSync(join(modules, 'fallback'))).toBe(false)
-    expect(existsSync(join(modules, '@scope/peer'))).toBe(false)
-    expect(readFileSync(join(modules, 'replaced', 'sentinel'), 'utf8')).toBe('pnpm')
-    expect(existsSync(join(other.dir, 'node_modules', 'fallback'))).toBe(true)
-    healIsolatedProfileModuleFallback({ installAnchor: nextAnchor, profile })
-    expect(realpathSync(join(modules, 'fallback'))).toBe(realpathSync(join(nextAnchor, '..', 'node_modules', 'fallback')))
-    expect(readFileSync(join(modules, 'replaced', 'sentinel'), 'utf8')).toBe('pnpm')
+      registration.dispose()
+      registration = installProfileResolution(await createProfileResolutionGeneration({
+        installAnchor: anchorA, profile: { ...profileA, layers: [] }, home,
+      }))
+      expect(() => createRequire(consumerA).resolve('bundle-only')).toThrow(/Cannot find module/u)
+      expect(generationB.entries.find(entry => entry.name === 'bundle-only')?.packageDir)
+        .toBe(realpathSync.native(join(bundleAnchor, '..', 'node_modules', 'bundle-only')))
+      expect(realpathSync.native(createRequire(consumerA).resolve('commander')))
+        .toBe(realpathSync.native(join(anchorA, '..', 'node_modules', 'commander', 'index.js')))
+    } finally {
+      registration.dispose()
+    }
   })
 })
 
@@ -387,8 +385,6 @@ describe('loadProfile', () => {
       const unavailable = failure === 'missing package' || failure === 'invalid manifest'
       expect(generation.entries.map(entry => entry.name))
         .toEqual(['dsh-app', 'before', ...unavailable ? [] : ['broken'], 'after'])
-      healIsolatedProfileModuleFallback({ installAnchor: anchor, profile })
-      expect(existsSync(join(dir, 'node_modules', 'broken'))).toBe(!unavailable)
       mkdirSync(bundleDir, { recursive: true })
       writeFileSync(manifestPath, original)
       writeFileSync(patchPath, '[]\n')
@@ -423,8 +419,8 @@ describe('composeEntries', () => {
   })
 })
 
-describe('healProfilesModuleFallback', () => {
-  it('links the app and bundle dependency surface flat under profiles/node_modules', async () => {
+describe('createProfileResolutionGeneration', () => {
+  it('collects the app and bundle dependencies without writing profile packages', async () => {
     const anchor = stageInstallation({
       'bundle-a': { patch: '[]\n', deps: { 'dep-of-a': '0.0.0', 'ghost-dep': '0.0.0' } },
       'plain-lib': {},
@@ -438,29 +434,11 @@ describe('healProfilesModuleFallback', () => {
     mkdirSync(join(modules, 'dep-of-a'), { recursive: true })
     writeFileSync(join(modules, 'dep-of-a', 'package.json'), JSON.stringify({ name: 'dep-of-a', version: '0.0.0' }))
     const home = tmp()
-    await healProfilesModuleFallback({ installAnchor: anchor, home })
-    const fallback = join(home, 'profiles', 'node_modules')
-    // App deps, the bundle's own deps, and the bundle itself are linked; the
-    // plain library is linked as an app dep (harmless), the app itself too.
-    for (const name of ['bundle-a', 'plain-lib', 'dep-of-a', 'dsh-app']) {
-      expect(lstatSync(join(fallback, name)).isSymbolicLink(), name).toBe(true)
-    }
-    // Idempotent, and a moved target is re-pointed.
-    await healProfilesModuleFallback({ installAnchor: anchor, home })
-    const before = readlinkSync(join(fallback, 'dep-of-a'))
-    expect(before).toContain('dep-of-a')
-  })
-
-  it('throws when a fallback entry is a foreign file or directory', async () => {
-    const anchor = stageInstallation({})
-    for (const kind of ['file', 'directory']) {
-      const home = tmp()
-      const entry = join(home, 'profiles', 'node_modules', 'dsh-app')
-      mkdirSync(join(entry, '..'), { recursive: true })
-      if (kind === 'directory') mkdirSync(entry)
-      else writeFileSync(entry, '')
-      await expect(healProfilesModuleFallback({ installAnchor: anchor, home })).rejects.toThrow('is not a symlink')
-    }
+    const generation = await createProfileResolutionGeneration({ installAnchor: anchor, home })
+    expect(generation.entries.map(entry => entry.name)).toEqual(['dsh-app', 'bundle-a', 'plain-lib', 'dep-of-a'])
+    expect(generation.entries.find(entry => entry.name === 'dep-of-a')?.packageDir).toBe(join(modules, 'dep-of-a'))
+    expect(existsSync(join(home, 'profiles', 'node_modules'))).toBe(false)
+    await expect(createProfileResolutionGeneration({ installAnchor: anchor, home })).resolves.toEqual(generation)
   })
 
   it('keeps selected bundle closures profile-local without overriding installation packages', async () => {
@@ -470,51 +448,37 @@ describe('healProfilesModuleFallback', () => {
     const home = tmp()
     const profileA = stageProfile(home, 'a', bundleA)
     const profileB = stageProfile(home, 'b', bundleB)
-    await healProfilesModuleFallback({ installAnchor: installationAnchor, profile: profileA, home })
-    await healProfilesModuleFallback({ installAnchor: installationAnchor, profile: profileA, home })
-    await healProfilesModuleFallback({ installAnchor: installationAnchor, profile: profileB, home })
-    const sharedFallback = join(home, 'profiles', 'node_modules')
-    const ownedA = join(profileA.dir, '.dsh-module-fallback', 'node_modules', '@scope', 'bundle-only')
-    const ownedB = join(profileB.dir, '.dsh-module-fallback', 'node_modules', '@scope', 'bundle-only')
+    const generationA = await createProfileResolutionGeneration({ installAnchor: installationAnchor, profile: profileA, home })
+    await expect(createProfileResolutionGeneration({ installAnchor: installationAnchor, profile: profileA, home }))
+      .resolves.toEqual(generationA)
+    const generationB = await createProfileResolutionGeneration({ installAnchor: installationAnchor, profile: profileB, home })
 
-    expect(realpathSync.native(readlinkSync(join(sharedFallback, 'shared'))))
-      .toBe(realpathSync.native(join(installationAnchor, '..', 'node_modules', 'shared')))
-    expect(existsSync(join(sharedFallback, '@scope', 'bundle-only'))).toBe(false)
+    for (const generation of [generationA, generationB]) {
+      expect(generation.entries.find(entry => entry.name === 'shared')).toMatchObject({
+        packageDir: join(installationAnchor, '..', 'node_modules', 'shared'), scope: 'installation',
+      })
+    }
+    expect(existsSync(join(home, 'profiles', 'node_modules'))).toBe(false)
     expect(existsSync(join(profileA.dir, 'node_modules', 'shared'))).toBe(false)
     expect(existsSync(join(profileB.dir, 'node_modules', 'shared'))).toBe(false)
-    expect(readlinkSync(join(profileA.dir, 'node_modules', '@scope', 'bundle-only'))).toBe(ownedA)
-    expect(readlinkSync(ownedA))
-      .toBe(realpathSync.native(join(bundleA, '..', 'node_modules', '@scope', 'bundle-only')))
-    expect(readlinkSync(join(profileB.dir, 'node_modules', '@scope', 'bundle-only'))).toBe(ownedB)
-    expect(readlinkSync(ownedB))
-      .toBe(realpathSync.native(join(bundleB, '..', 'node_modules', '@scope', 'bundle-only')))
+    expect(generationA.entries.find(entry => entry.name === '@scope/bundle-only')).toMatchObject({
+      packageDir: realpathSync.native(join(bundleA, '..', 'node_modules', '@scope', 'bundle-only')), scope: 'profile',
+    })
+    expect(generationB.entries.find(entry => entry.name === '@scope/bundle-only')).toMatchObject({
+      packageDir: realpathSync.native(join(bundleB, '..', 'node_modules', '@scope', 'bundle-only')), scope: 'profile',
+    })
 
-    await healProfilesModuleFallback({
+    const withoutBundles = await createProfileResolutionGeneration({
       installAnchor: installationAnchor,
       profile: { ...profileA, layers: [] },
       home,
     })
-    expect(existsSync(join(profileA.dir, 'node_modules', '@scope', 'bundle-only'))).toBe(false)
-    expect(existsSync(ownedA)).toBe(false)
-    expect(existsSync(join(profileB.dir, 'node_modules', '@scope', 'bundle-only'))).toBe(true)
+    expect(withoutBundles.entries.some(entry => entry.name === '@scope/bundle-only')).toBe(false)
+    expect(generationB.entries.find(entry => entry.name === '@scope/bundle-only')?.packageDir)
+      .toBe(realpathSync.native(join(bundleB, '..', 'node_modules', '@scope', 'bundle-only')))
   })
 
-  it('combines packaged installation proxies with profile-local bundle links', async () => {
-    const installationAnchor = stageInstallation({ shared: {} })
-    const bundleAnchor = stageInstallation({ shared: {}, 'bundle-only': {} }, 'selected-bundle')
-    const home = tmp()
-    const profile = stageProfile(home, 'packaged', bundleAnchor)
-    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
-    try {
-      await healProfilesModuleFallback({ installAnchor: installationAnchor, profile, home })
-      expect(lstatSync(join(home, 'profiles', 'node_modules', 'shared')).isDirectory()).toBe(true)
-      expect(lstatSync(join(profile.dir, 'node_modules', 'bundle-only')).isSymbolicLink()).toBe(true)
-    } finally {
-      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
-    }
-  })
-
-  it('discovers dependencies beside a symlinked bundle real path', async () => {
+  it.each([false, true])('discovers dependencies beside a symlinked bundle real path (packaged: %s)', async (packaged) => {
     const installationAnchor = stageInstallation({})
     const home = tmp()
     const dir = resolveProfileDir('symlinked', home)
@@ -545,10 +509,16 @@ describe('healProfilesModuleFallback', () => {
       patches: [],
     }
 
-    await healProfilesModuleFallback({ installAnchor: installationAnchor, profile, home })
-
-    expect(readlinkSync(join(dir, '.dsh-module-fallback', 'node_modules', 'bundle-only')))
-      .toBe(realpathSync.native(realDependency))
+    const previous = Object.getOwnPropertyDescriptor(process, 'pkg')
+    Object.defineProperty(process, 'pkg', { configurable: true, value: packaged ? {} : undefined })
+    try {
+      const generation = await createProfileResolutionGeneration({ installAnchor: installationAnchor, profile, home })
+      expect(generation.entries.find(entry => entry.name === 'bundle-only')?.packageDir)
+        .toBe(realpathSync.native(realDependency))
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(process, 'pkg')
+      else Object.defineProperty(process, 'pkg', previous)
+    }
   })
 
   it('traverses every explicit bundle root even when a nested package has the same name', async () => {
@@ -589,226 +559,10 @@ describe('healProfilesModuleFallback', () => {
       patches: [],
     }
 
-    await healProfilesModuleFallback({ installAnchor: installationAnchor, profile, home })
+    const generation = await createProfileResolutionGeneration({ installAnchor: installationAnchor, profile, home })
 
-    const ownedModules = join(dir, '.dsh-module-fallback', 'node_modules')
-    expect(readlinkSync(join(ownedModules, 'nested-only'))).toBe(realpathSync.native(nestedOnly))
-    expect(readlinkSync(join(ownedModules, 'explicit-only'))).toBe(realpathSync.native(explicitOnly))
-  })
-
-  it('ignores owned projections while recomputing an ordered bundle closure', async () => {
-    const installationAnchor = stageInstallation({})
-    const home = tmp()
-    const dir = resolveProfileDir('ordered', home)
-    const profileModules = join(dir, 'node_modules')
-    const bundleA = join(profileModules, 'bundle-a')
-    const bundleB = join(profileModules, 'bundle-b')
-    const nested = join(bundleB, 'node_modules', 'bundle-only')
-    mkdirSync(bundleA, { recursive: true })
-    mkdirSync(nested, { recursive: true })
-    writeFileSync(join(bundleA, 'package.json'), JSON.stringify({
-      name: 'bundle-a',
-      peerDependencies: { 'bundle-only': '0.0.0' },
-    }))
-    writeFileSync(join(bundleB, 'package.json'), JSON.stringify({
-      name: 'bundle-b',
-      dependencies: { 'bundle-only': '0.0.0' },
-    }))
-    writeFileSync(join(nested, 'package.json'), JSON.stringify({ name: 'bundle-only' }))
-    const profile: Profile = {
-      name: 'ordered',
-      dir,
-      layers: ([['bundle-a', bundleA], ['bundle-b', bundleB]] as const).map(([packageName, packageDir]) => ({
-        packageDir,
-        packageName,
-        patchPath: join(packageDir, 'cordis.patch.yml'),
-        patches: [],
-      })),
-      patchPath: join(dir, PROFILE_PATCH_FILENAME),
-      patches: [],
-    }
-
-    await healProfilesModuleFallback({ installAnchor: installationAnchor, profile, home })
-    await healProfilesModuleFallback({ installAnchor: installationAnchor, profile, home })
-
-    const owned = join(dir, '.dsh-module-fallback', 'node_modules', 'bundle-only')
-    expect(readlinkSync(owned)).toBe(realpathSync.native(nested))
-    expect(JSON.parse(readFileSync(join(profileModules, 'bundle-only', 'package.json'), 'utf8')))
-      .toMatchObject({ name: 'bundle-only' })
-  })
-
-  it('cleans owned projections without removing profile-managed entries', async () => {
-    const installationAnchor = stageInstallation({})
-    const bundleAnchor = stageInstallation({ fallback: {}, 'managed-dir': {}, 'managed-link': {} }, 'selected-bundle')
-    const home = tmp()
-    const profile = stageProfile(home, 'managed', bundleAnchor)
-    await healProfilesModuleFallback({ installAnchor: installationAnchor, profile, home })
-    const ownedModules = join(profile.dir, '.dsh-module-fallback', 'node_modules')
-    const profileModules = join(profile.dir, 'node_modules')
-    const foreignTarget = tmp()
-    unlinkSync(join(profileModules, 'managed-dir'))
-    mkdirSync(join(profileModules, 'managed-dir'))
-    unlinkSync(join(profileModules, 'managed-link'))
-    symlinkSync(foreignTarget, join(profileModules, 'managed-link'), 'junction')
-    mkdirSync(join(ownedModules, 'foreign-directory'))
-    mkdirSync(join(ownedModules, '@foreign', 'directory'), { recursive: true })
-
-    await healProfilesModuleFallback({
-      installAnchor: installationAnchor,
-      profile: { ...profile, layers: [] },
-      home,
-    })
-
-    expect(existsSync(join(profileModules, 'fallback'))).toBe(false)
-    expect(lstatSync(join(profileModules, 'managed-dir')).isDirectory()).toBe(true)
-    expect(readlinkSync(join(profileModules, 'managed-link'))).toBe(foreignTarget)
-    expect(existsSync(join(ownedModules, 'fallback'))).toBe(false)
-    expect(existsSync(join(ownedModules, 'managed-dir'))).toBe(false)
-    expect(existsSync(join(ownedModules, 'managed-link'))).toBe(false)
-  })
-
-  it('cleans owned projections whose junction target uses a canonical parent path', async () => {
-    const installationAnchor = stageInstallation({})
-    const realHome = tmp()
-    const aliasRoot = tmp()
-    const home = join(aliasRoot, 'home')
-    symlinkSync(realHome, home, 'junction')
-    const bundleAnchor = stageInstallation({ fallback: {} }, 'selected-bundle')
-    const profile = stageProfile(home, 'canonical', bundleAnchor)
-    await healProfilesModuleFallback({ installAnchor: installationAnchor, profile, home })
-    const profileLink = join(profile.dir, 'node_modules', 'fallback')
-    const ownedModules = join(profile.dir, '.dsh-module-fallback', 'node_modules')
-    unlinkSync(profileLink)
-    symlinkSync(join(realpathSync(ownedModules), 'fallback'), profileLink, 'junction')
-
-    await healProfilesModuleFallback({
-      installAnchor: installationAnchor,
-      profile: { ...profile, layers: [] },
-      home,
-    })
-
-    expect(existsSync(profileLink)).toBe(false)
-    expect(existsSync(join(ownedModules, 'fallback'))).toBe(false)
-  })
-
-  it('replaces a wrong symlink', async () => {
-    const anchor = stageInstallation({})
-    const home = tmp()
-    const fallback = join(home, 'profiles', 'node_modules')
-    mkdirSync(fallback, { recursive: true })
-    symlinkSync(tmp(), join(fallback, 'dsh-app'), 'junction')
-    await healProfilesModuleFallback({ installAnchor: anchor, home })
-    expect(readlinkSync(join(fallback, 'dsh-app'))).toContain('app')
-  })
-
-  it('retains current links while repairing a missing sibling', async () => {
-    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
-    const home = tmp()
-    const fallback = join(home, 'profiles', 'node_modules')
-    await healProfilesModuleFallback({ installAnchor: anchor, home })
-    const appTarget = readlinkSync(join(fallback, 'dsh-app'))
-    unlinkSync(join(fallback, 'bundle-a'))
-
-    await healProfilesModuleFallback({ installAnchor: anchor, home })
-
-    expect(readlinkSync(join(fallback, 'dsh-app'))).toBe(appTarget)
-    expect(lstatSync(join(fallback, 'bundle-a')).isSymbolicLink()).toBe(true)
-  })
-
-  it('serializes concurrent healers and retains the identical link', async () => {
-    const anchor = stageInstallation({})
-    const home = tmp()
-    await Promise.all([
-      healProfilesModuleFallback({ installAnchor: anchor, home }),
-      healProfilesModuleFallback({ installAnchor: anchor, home }),
-    ])
-    const fallback = join(home, 'profiles', 'node_modules')
-    expect(lstatSync(join(fallback, 'dsh-app')).isSymbolicLink()).toBe(true)
-  })
-
-  it('does not acquire the writer lock for a complete generation', async () => {
-    const anchor = stageInstallation({})
-    const home = tmp()
-    const modules = join(home, 'profiles', 'node_modules')
-    await healProfilesModuleFallback({ installAnchor: anchor, home })
-    let releaseLock: (() => void) | undefined
-    let reportLock: (() => void) | undefined
-    const lockHeld = new Promise<void>((resolve) => { reportLock = resolve })
-    const release = new Promise<void>((resolve) => { releaseLock = resolve })
-    const holder = withFileLock(modules, async () => {
-      reportLock?.()
-      await release
-    })
-    await lockHeld
-
-    const healer = healProfilesModuleFallback({ installAnchor: anchor, home })
-    const outcome = await Promise.race([
-      healer.then(() => 'complete' as const),
-      new Promise<'blocked'>(resolve => setTimeout(() => { resolve('blocked') }, 100)),
-    ])
-    releaseLock?.()
-    await Promise.all([holder, healer])
-    expect(outcome).toBe('complete')
-  })
-
-  it('waits for the module-fallback writer lock before publishing entries', async () => {
-    const anchor = stageInstallation({})
-    const home = tmp()
-    const modules = join(home, 'profiles', 'node_modules')
-    mkdirSync(modules, { recursive: true })
-    let releaseLock: (() => void) | undefined
-    let reportLock: (() => void) | undefined
-    const lockHeld = new Promise<void>((resolve) => { reportLock = resolve })
-    const release = new Promise<void>((resolve) => { releaseLock = resolve })
-    const holder = withFileLock(modules, async () => {
-      reportLock?.()
-      await release
-    })
-    await lockHeld
-
-    const healer = healProfilesModuleFallback({ installAnchor: anchor, home })
-    await new Promise(resolve => setTimeout(resolve, 20))
-    expect(existsSync(join(modules, 'dsh-app'))).toBe(false)
-    releaseLock?.()
-    await Promise.all([holder, healer])
-    expect(lstatSync(join(modules, 'dsh-app')).isSymbolicLink()).toBe(true)
-  })
-
-  it('writes real ESM proxies for a packaged executable', async () => {
-    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
-    const bundleDir = join(anchor, '..', 'node_modules', 'bundle-a')
-    const bundleManifest = JSON.parse(readFileSync(join(bundleDir, 'package.json'), 'utf8')) as Record<string, unknown>
-    bundleManifest.exports = {
-      '.': './index.js',
-      './feature': './feature.js',
-      './legacy/': './legacy/',
-      './types': { types: './feature.d.ts' },
-    }
-    writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(bundleManifest))
-    writeFileSync(join(bundleDir, 'feature.js'), 'export const feature = "proxied"\n')
-    const home = tmp()
-    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
-    try {
-      await healProfilesModuleFallback({ installAnchor: anchor, home })
-      const fallback = join(home, 'profiles', 'node_modules')
-      const proxy = join(fallback, 'bundle-a')
-      expect(lstatSync(proxy).isDirectory()).toBe(true)
-      const proxyManifest = JSON.parse(readFileSync(join(proxy, 'package.json'), 'utf8')) as {
-        version: unknown
-        exports: unknown
-        dsh: { moduleFallback: { targets: Record<string, unknown> } }
-      }
-      expect(proxyManifest).toMatchObject({
-        version: '0.0.0',
-        exports: { '.': './entry-0.js', './feature': './entry-1.js' },
-      })
-      expect(proxyManifest.dsh.moduleFallback.targets['.']).toEqual(expect.stringContaining('/bundle-a/index.js'))
-      await expect(import(join(proxy, 'entry-0.js'))).resolves.toMatchObject({ packageName: 'bundle-a' })
-      await expect(import(join(proxy, 'entry-1.js'))).resolves.toMatchObject({ feature: 'proxied' })
-      await healProfilesModuleFallback({ installAnchor: anchor, home })
-    } finally {
-      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
-    }
+    expect(generation.entries.find(entry => entry.name === 'nested-only')?.packageDir).toBe(realpathSync.native(nestedOnly))
+    expect(generation.entries.find(entry => entry.name === 'explicit-only')?.packageDir).toBe(realpathSync.native(explicitOnly))
   })
 
   it('resolves import-only exports from each package installation', async () => {
@@ -827,20 +581,14 @@ describe('healProfilesModuleFallback', () => {
       type: 'module',
       exports: { import: './index.js' },
     }))
-    writeFileSync(join(nestedDir, 'index.js'), 'export const nested = "proxied"\n')
+    writeFileSync(join(nestedDir, 'index.js'), 'export const nested = "selected"\n')
     const home = tmp()
-    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
-    try {
-      await healProfilesModuleFallback({ installAnchor: anchor, home })
-      const fallback = join(home, 'profiles', 'node_modules')
-      await expect(import(join(fallback, 'bundle-a', 'entry-0.js'))).resolves.toMatchObject({ packageName: 'bundle-a' })
-      await expect(import(join(fallback, 'nested-esm', 'entry-0.js'))).resolves.toMatchObject({ nested: 'proxied' })
-    } finally {
-      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
-    }
+    const generation = await createProfileResolutionGeneration({ installAnchor: anchor, home })
+    await expect(importFromGeneration(generation, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
+    await expect(importFromGeneration(generation, 'nested-esm')).resolves.toMatchObject({ nested: 'selected' })
   })
 
-  it('resolves explicit condition targets without filesystem package lookup', async () => {
+  it('resolves conditional subpath exports through Node', async () => {
     const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
     const bundleDir = join(anchor, '..', 'node_modules', 'bundle-a')
     const manifest = JSON.parse(readFileSync(join(bundleDir, 'package.json'), 'utf8')) as Record<string, unknown>
@@ -854,45 +602,10 @@ describe('healProfilesModuleFallback', () => {
     writeFileSync(join(bundleDir, 'mini', 'index.js'), 'export const mini = true\n')
     mkdirSync(join(bundleDir, 'dist', 'web'), { recursive: true })
     writeFileSync(join(bundleDir, 'dist', 'web', 'index.mjs'), 'export const web = true\n')
-    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
-    try {
-      const home = tmp()
-      await healProfilesModuleFallback({ installAnchor: anchor, home })
-      const proxy = join(home, 'profiles', 'node_modules', 'bundle-a')
-      await expect(import(join(proxy, 'entry-1.js'))).resolves.toMatchObject({ mini: true })
-      await expect(import(join(proxy, 'entry-2.js'))).resolves.toMatchObject({ web: true })
-    } finally {
-      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
-    }
-  })
-
-  it('preserves the installation path while resolving packaged exports', async () => {
-    const anchor = stageInstallation({})
-    const appDir = join(anchor, '..')
-    const physical = tmp()
-    writeFileSync(join(physical, 'package.json'), JSON.stringify({
-      name: 'linked-esm',
-      version: '0.0.0',
-      type: 'module',
-      exports: { import: './index.js' },
-    }))
-    writeFileSync(join(physical, 'index.js'), 'export const linked = true\n')
-    symlinkSync(physical, join(appDir, 'node_modules', 'linked-esm'), 'junction')
-    const appManifest = JSON.parse(readFileSync(anchor, 'utf8')) as { dependencies: Record<string, string> }
-    appManifest.dependencies['linked-esm'] = '0.0.0'
-    writeFileSync(anchor, JSON.stringify(appManifest))
-    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
-    try {
-      const home = tmp()
-      await healProfilesModuleFallback({ installAnchor: anchor, home })
-      const proxyManifest = JSON.parse(readFileSync(
-        join(home, 'profiles', 'node_modules', 'linked-esm', 'package.json'),
-        'utf8',
-      )) as { dsh: { moduleFallback: { targets: Record<string, string> } } }
-      expect(proxyManifest.dsh.moduleFallback.targets['.']).toContain('/app/node_modules/linked-esm/index.js')
-    } finally {
-      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
-    }
+    const home = tmp()
+    const generation = await createProfileResolutionGeneration({ installAnchor: anchor, home })
+    await expect(importFromGeneration(generation, 'bundle-a/mini')).resolves.toMatchObject({ mini: true })
+    await expect(importFromGeneration(generation, 'bundle-a/web')).resolves.toMatchObject({ web: true })
   })
 
   it('uses the legacy index fallback when a package has no exports or main', async () => {
@@ -901,15 +614,9 @@ describe('healProfilesModuleFallback', () => {
     const manifest = JSON.parse(readFileSync(join(bundleDir, 'package.json'), 'utf8')) as Record<string, unknown>
     delete manifest.main
     writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
-    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
-    try {
-      const home = tmp()
-      await healProfilesModuleFallback({ installAnchor: anchor, home })
-      await expect(import(join(home, 'profiles', 'node_modules', 'bundle-a', 'entry-0.js')))
-        .resolves.toMatchObject({ packageName: 'bundle-a' })
-    } finally {
-      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
-    }
+    const home = tmp()
+    const generation = await createProfileResolutionGeneration({ installAnchor: anchor, home })
+    await expect(importFromGeneration(generation, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
   })
 
   it('uses Node legacy resolution for an extensionless main entry', async () => {
@@ -918,37 +625,9 @@ describe('healProfilesModuleFallback', () => {
     const manifest = JSON.parse(readFileSync(join(bundleDir, 'package.json'), 'utf8')) as Record<string, unknown>
     manifest.main = './index'
     writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
-    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
-    try {
-      const home = tmp()
-      await healProfilesModuleFallback({ installAnchor: anchor, home })
-      await expect(import(join(home, 'profiles', 'node_modules', 'bundle-a', 'entry-0.js')))
-        .resolves.toMatchObject({ packageName: 'bundle-a' })
-    } finally {
-      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
-    }
-  })
-
-  it('skips executable-only and declaration-only packages without import entries', async () => {
-    for (const marker of ['bin', 'types', 'typings']) {
-      const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
-      const manifest = JSON.parse(readFileSync(anchor, 'utf8')) as Record<string, unknown>
-      delete manifest.main
-      manifest[marker] = marker === 'bin' ? { dsh: './lib/bin.js' } : './index.d.ts'
-      if (marker === 'types') manifest.main = ''
-      writeFileSync(anchor, JSON.stringify(manifest))
-      rmSync(join(anchor, '..', 'index.js'))
-      Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
-      try {
-        const home = tmp()
-        await healProfilesModuleFallback({ installAnchor: anchor, home })
-        const fallback = join(home, 'profiles', 'node_modules')
-        expect(existsSync(join(fallback, 'dsh-app'))).toBe(false)
-        expect(existsSync(join(fallback, 'bundle-a', 'entry-0.js'))).toBe(true)
-      } finally {
-        delete (process as NodeJS.Process & { pkg?: unknown }).pkg
-      }
-    }
+    const home = tmp()
+    const generation = await createProfileResolutionGeneration({ installAnchor: anchor, home })
+    await expect(importFromGeneration(generation, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
   })
 
   it('fails loud on a missing legacy main entry', async () => {
@@ -958,15 +637,11 @@ describe('healProfilesModuleFallback', () => {
     delete manifest.main
     writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
     rmSync(join(bundleDir, 'index.js'))
-    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
-    try {
-      await expect(healProfilesModuleFallback({ installAnchor: anchor, home: tmp() })).rejects.toThrow('main entry is missing')
-    } finally {
-      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
-    }
+    const generation = await createProfileResolutionGeneration({ installAnchor: anchor, home: tmp() })
+    await expect(importFromGeneration(generation, 'bundle-a')).rejects.toMatchObject({ code: 'ERR_MODULE_NOT_FOUND' })
   })
 
-  it('omits unavailable ESM exports and rejects malformed export targets', async () => {
+  it('preserves native ESM export errors and null-map legacy resolution', async () => {
     for (const mode of ['missing', 'directory', 'absent-map', 'invalid', 'escape', 'null', 'null-subpath']) {
       const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
       const bundleDir = join(anchor, '..', 'node_modules', 'bundle-a')
@@ -980,97 +655,84 @@ describe('healProfilesModuleFallback', () => {
           : { '.': mode === 'null' ? null : { import: target } }
       writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
       if (mode === 'directory') mkdirSync(join(bundleDir, 'mini'))
-      Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
-      try {
-        const home = tmp()
-        if (mode === 'missing' || mode === 'directory' || mode === 'absent-map') {
-          await healProfilesModuleFallback({ installAnchor: anchor, home })
-          expect(existsSync(join(home, 'profiles', 'node_modules', 'bundle-a'))).toBe(false)
-        } else {
-          await expect(healProfilesModuleFallback({ installAnchor: anchor, home })).rejects.toThrow(
-            mode === 'null' || mode === 'null-subpath'
-              ? 'cannot resolve ESM export bundle-a'
-              : 'resolves outside its package',
-          )
-        }
-      } finally {
-        delete (process as NodeJS.Process & { pkg?: unknown }).pkg
+      const home = tmp()
+      const generation = await createProfileResolutionGeneration({ installAnchor: anchor, home })
+      if (mode === 'absent-map') {
+        await expect(importFromGeneration(generation, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
+      } else {
+        const specifier = mode === 'null-subpath' ? 'bundle-a/bad' : 'bundle-a'
+        const code = mode === 'missing' ? 'ERR_MODULE_NOT_FOUND'
+          : mode === 'directory' ? 'ERR_UNSUPPORTED_DIR_IMPORT'
+            : mode === 'null' || mode === 'null-subpath' ? 'ERR_PACKAGE_PATH_NOT_EXPORTED'
+              : 'ERR_INVALID_PACKAGE_TARGET'
+        await expect(importFromGeneration(generation, specifier)).rejects.toMatchObject({ code })
       }
     }
   })
+})
 
-  it('requires a package version before writing a packaged proxy', async () => {
-    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
-    const bundleDir = join(anchor, '..', 'node_modules', 'bundle-a')
-    const manifest = JSON.parse(readFileSync(join(bundleDir, 'package.json'), 'utf8')) as Record<string, unknown>
-    manifest.version = ''
-    writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
-    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
-    try {
-      await expect(healProfilesModuleFallback({ installAnchor: anchor, home: tmp() })).rejects.toThrow(
-        'installed package bundle-a must declare a non-empty version',
-      )
-    } finally {
-      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
-    }
-  })
+describe('removeLinkProjections', () => {
+  const link = (target: string, path: string): void => {
+    mkdirSync(dirname(path), { recursive: true })
+    symlinkSync(target, path, process.platform === 'win32' ? 'junction' : 'dir')
+  }
+  const packageAt = (dir: string, name: string, version: string): void => {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version }))
+  }
 
-  it('replaces plain-node links and stale managed proxies in packaged mode', async () => {
-    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+  it('removes only the symlinks that point into .dsh-module-fallback and the directory itself', () => {
     const home = tmp()
-    await healProfilesModuleFallback({ installAnchor: anchor, home })
-    const proxy = join(home, 'profiles', 'node_modules', 'bundle-a')
-    expect(lstatSync(proxy).isSymbolicLink()).toBe(true)
+    const profile = join(home, 'profiles', 'web')
+    const modules = join(profile, 'node_modules')
+    const owned = join(profile, '.dsh-module-fallback', 'node_modules')
+    packageAt(join(modules, 'my-bundle'), 'my-bundle', '1.0.0')
+    packageAt(join(modules, 'my-bundle', 'node_modules', 'bridge'), 'bridge', '1.0.0')
+    packageAt(join(modules, '@scope', 'helper'), '@scope/helper', '1.0.0')
+    const outside = join(home, 'workspace', 'linked-plugin')
+    packageAt(outside, 'linked-plugin', '1.0.0')
+    link(outside, join(modules, 'linked-plugin'))
+    link(join(modules, 'my-bundle', 'node_modules', 'bridge'), join(owned, 'bridge'))
+    link(join(owned, 'bridge'), join(modules, 'bridge'))
+    link(join(modules, '@scope', 'helper'), join(owned, '@scope', 'tool'))
+    link(join(owned, '@scope', 'tool'), join(modules, '@scope', 'tool'))
+    link(join(home, 'missing-target'), join(modules, 'dangling'))
 
-    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
-    try {
-      await healProfilesModuleFallback({ installAnchor: anchor, home })
-      expect(lstatSync(proxy).isDirectory()).toBe(true)
-      const stale = JSON.parse(readFileSync(join(proxy, 'package.json'), 'utf8')) as {
-        version: string
-      }
-      stale.version = 'stale'
-      writeFileSync(join(proxy, 'package.json'), JSON.stringify(stale))
-      await healProfilesModuleFallback({ installAnchor: anchor, home })
-      expect(JSON.parse(readFileSync(join(proxy, 'package.json'), 'utf8'))).toMatchObject({
-        version: '0.0.0',
-      })
-    } finally {
-      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
-    }
+    removeLinkProjections(profile)
+
+    expect(existsSync(join(profile, '.dsh-module-fallback'))).toBe(false)
+    expect(lstatSync(join(modules, 'bridge'), { throwIfNoEntry: false })).toBeUndefined()
+    expect(lstatSync(join(modules, '@scope', 'tool'), { throwIfNoEntry: false })).toBeUndefined()
+    expect(lstatSync(join(modules, 'my-bundle')).isDirectory()).toBe(true)
+    expect(existsSync(join(modules, 'my-bundle', 'node_modules', 'bridge', 'package.json'))).toBe(true)
+    expect(lstatSync(join(modules, '@scope', 'helper')).isDirectory()).toBe(true)
+    expect(lstatSync(join(modules, 'linked-plugin')).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(join(modules, 'linked-plugin'))).toBe(outside)
+    expect(lstatSync(join(modules, 'dangling')).isSymbolicLink()).toBe(true)
+    expect(() => { removeLinkProjections(profile) }).not.toThrow()
   })
 
-  it('replaces a managed packaged proxy with a plain-node symlink', async () => {
-    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+  it('removes the directory when the profile has no node_modules and keeps links whose target parent is gone', () => {
     const home = tmp()
-    const fallback = join(home, 'profiles', 'node_modules', 'bundle-a')
-    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
-    try {
-      await healProfilesModuleFallback({ installAnchor: anchor, home })
-      expect(lstatSync(fallback).isDirectory()).toBe(true)
-    } finally {
-      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
-    }
+    const profile = join(home, 'profiles', 'web')
+    mkdirSync(join(profile, '.dsh-module-fallback', 'node_modules'), { recursive: true })
+    removeLinkProjections(profile)
+    expect(existsSync(join(profile, '.dsh-module-fallback'))).toBe(false)
 
-    await healProfilesModuleFallback({ installAnchor: anchor, home })
-    expect(lstatSync(fallback).isSymbolicLink()).toBe(true)
+    const other = join(home, 'profiles', 'other')
+    mkdirSync(join(other, '.dsh-module-fallback', 'node_modules'), { recursive: true })
+    link(join(home, 'missing-parent', 'pkg'), join(other, 'node_modules', 'orphan'))
+    removeLinkProjections(other)
+    expect(existsSync(join(other, '.dsh-module-fallback'))).toBe(false)
+    expect(lstatSync(join(other, 'node_modules', 'orphan')).isSymbolicLink()).toBe(true)
   })
 
-  it('rejects foreign packaged fallback directories with valid or invalid metadata', async () => {
-    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
-    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
-    try {
-      for (const metadata of ['{}', '{']) {
-        const home = tmp()
-        const proxy = join(home, 'profiles', 'node_modules', 'bundle-a')
-        mkdirSync(proxy, { recursive: true })
-        writeFileSync(join(proxy, 'package.json'), metadata)
-        await expect(healProfilesModuleFallback({ installAnchor: anchor, home })).rejects.toThrow(
-          'exists and is not a dsh-managed module proxy',
-        )
-      }
-    } finally {
-      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
-    }
+  it('leaves a profile without the directory untouched', () => {
+    const home = tmp()
+    const profile = join(home, 'profiles', 'web')
+    packageAt(join(profile, 'node_modules', 'my-plugin'), 'my-plugin', '1.0.0')
+    removeLinkProjections(profile)
+    removeLinkProjections(join(home, 'profiles', 'absent'))
+    expect(existsSync(join(profile, 'node_modules', 'my-plugin', 'package.json'))).toBe(true)
   })
 })

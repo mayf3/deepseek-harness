@@ -8,7 +8,6 @@ import {
   barePackageName,
   installProfileResolution,
   registerWorkerResolution,
-  type ProfileResolutionBehavior,
   type ProfileResolutionRegistration,
 } from './resolver.ts'
 import type { ProfileResolutionGeneration } from '../profile.ts'
@@ -38,8 +37,6 @@ export interface PluginPackage {
 export interface PluginPackagesConfig {
   /** Complete package table; omit it to expose native package lookup only. */
   generation?: ProfileResolutionGeneration
-  /** Enforce the table or compare it with a materialized fallback. */
-  behavior?: ProfileResolutionBehavior
 }
 
 function readPackage(dir: string, fallbackName: string): PluginPackage | undefined {
@@ -61,15 +58,13 @@ function readPackage(dir: string, fallbackName: string): PluginPackage | undefin
 export class PluginPackages extends Service {
   private packages = new Map<string, PluginPackage | undefined>()
   private readonly resolver: ProfileResolutionRegistration | undefined
-  private readonly behavior: ProfileResolutionBehavior
   private disposeWorkerResolution: (() => void) | undefined
 
   constructor(ctx: Context, config: PluginPackagesConfig = {}) {
     super(ctx, 'pluginPackages')
-    this.behavior = config.behavior ?? 'enforce'
     if (config.generation === undefined) return
-    const resolver = installProfileResolution(config.generation, this.behavior)
-    this.disposeWorkerResolution = registerWorkerResolution(config.generation, this.behavior)
+    const resolver = installProfileResolution(config.generation)
+    this.disposeWorkerResolution = registerWorkerResolution(config.generation)
     this.resolver = resolver
     ctx.effect(() => () => {
       this.disposeWorkerResolution?.()
@@ -86,7 +81,7 @@ export class PluginPackages extends Service {
     this.resolver.replace(generation)
     this.packages = new Map()
     this.disposeWorkerResolution?.()
-    this.disposeWorkerResolution = registerWorkerResolution(generation, this.behavior)
+    this.disposeWorkerResolution = registerWorkerResolution(generation)
   }
 
   /**

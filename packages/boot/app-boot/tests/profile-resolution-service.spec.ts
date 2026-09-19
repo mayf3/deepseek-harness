@@ -1,6 +1,6 @@
 /** Package metadata queries share the active profile resolution generation. */
 
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -133,23 +133,6 @@ describe('profile package metadata service', () => {
     )).toBeUndefined()
   })
 
-  it('does not revive a stale disk fallback after the runtime generation misses', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-stale-package-service-'))
-    roots.push(root)
-    const profilesDir = join(root, 'profiles')
-    const profileDir = join(profilesDir, 'test')
-    pkg(join(profilesDir, 'node_modules', 'stale-metadata'), '0.9.0', 'stale-metadata')
-    const ctx = new Context()
-    contexts.push(ctx)
-    await ctx.plugin(PluginPackages, {
-      generation: { profilesDir, profileDir, localPackageNames: [], entries: [] },
-    })
-
-    expect(ctx.pluginPackages.packageOf(
-      'stale-metadata', pathToFileURL(join(profileDir, 'entry.mjs')).href,
-    )).toBeUndefined()
-  })
-
   it('publishes additive generations to the process and future Workers', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-package-service-generation-'))
     roots.push(root)
@@ -158,30 +141,18 @@ describe('profile package metadata service', () => {
     const first = join(root, 'first')
     const firstAnchor = pkg(first, '1.0.0')
     const initial = generation(profilesDir, profileDir, first, firstAnchor, '1.0.0')
-    mkdirSync(join(profilesDir, 'node_modules'), { recursive: true })
-    symlinkSync(
-      first,
-      join(profilesDir, 'node_modules', 'metadata-lib'),
-      process.platform === 'win32' ? 'junction' : 'dir',
-    )
     const key = '@deepseek-ai/dsh-app-boot/profile-resolution'
     const previous = getEnvironmentData(key)
     const ctx = new Context()
     contexts.push(ctx)
-    await ctx.plugin(PluginPackages, { generation: initial, behavior: 'verify' })
+    await ctx.plugin(PluginPackages, { generation: initial })
     const initialWorkerData = getEnvironmentData(key) as {
       generation: ProfileResolutionGeneration
-      behavior: string
     }
-    expect(initialWorkerData).toEqual({ generation: initial, behavior: 'verify' })
+    expect(initialWorkerData).toEqual({ generation: initial })
 
     const added = join(root, 'added')
     const addedAnchor = pkg(added, '2.0.0', 'added-metadata')
-    symlinkSync(
-      added,
-      join(profilesDir, 'node_modules', 'added-metadata'),
-      process.platform === 'win32' ? 'junction' : 'dir',
-    )
     const next = {
       ...initial,
       entries: [...initial.entries, {
@@ -192,7 +163,6 @@ describe('profile package metadata service', () => {
     ctx.pluginPackages.replace(next)
     expect(getEnvironmentData(key)).toEqual({
       generation: next,
-      behavior: 'verify',
     })
     expect(ctx.pluginPackages.packageOf(
       'added-metadata', pathToFileURL(join(profileDir, 'entry.mjs')).href,
