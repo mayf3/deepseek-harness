@@ -289,7 +289,7 @@ if (process.argv[1] !== undefined && realpathSync(process.argv[1]) === realpathS
     if (values.help) console.log(usage)
     else {
       const jobs = values.jobs === undefined ? Math.min(availableParallelism(), 16) : Number(values.jobs)
-      if (!Number.isSafeInteger(jobs) || jobs < 1 || (values.jobs !== undefined && !/^[1-9]\d*$/u.test(values.jobs))) {
+      if (!Number.isSafeInteger(jobs) || jobs < 1) {
         throw new Error('--jobs must be a positive safe integer')
       }
       process.exitCode = await migrate(resolve(values['sessions-dir'] ?? join(homedir(), '.dsh', 'sessions')), jobs)

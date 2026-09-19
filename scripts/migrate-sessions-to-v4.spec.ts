@@ -365,10 +365,10 @@ describe('one-time V4 migration command', () => {
     })
   })
 
-  it('accepts an explicit job count above the default cap', async () => {
-    const result = await run('--sessions-dir', temporaryRoot(), '--jobs', '32')
+  it.each(['32', '1e2', '+1', '01', ' 1'])('accepts positive safe-integer --jobs %s', async (jobs) => {
+    const result = await run('--sessions-dir', temporaryRoot(), '--jobs', jobs)
     expect(result.status, result.stdout + result.stderr).toBe(0)
-    expect(result.stdout).toContain('Session jobs: 32')
+    expect(result.stdout).toContain(`Session jobs: ${Number(jobs)}`)
     expect(result.stdout).toContain('converted=0, already-V4=0, failed=0, skipped=0')
     expect(result.summary).toMatchObject({
       inputCount: 0,
