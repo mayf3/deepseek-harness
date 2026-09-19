@@ -24,7 +24,7 @@ profile 启动生成一个不可变 `RuntimeResolution`，并将其安装到 Nod
 
 profile 本地和插件私有 `node_modules` 条目优先于 fallback 条目。generation 记录已安装的 profile 直接包名，用于无 I/O 的原生快速分流。每个 fallback 条目记录包名、版本、选定的查找目录、声明该边的 manifest 锚点和作用域，供原生解析与后继 generation 校验使用。
 
-对于 profile 无法通过自身祖先目录找到的依赖，所选 bundle 的 module fallback 仍然必要。它将已安装 manifest 中的依赖展开到当前 profile 共享的 fallback 表，而不是为每个插件建立独立依赖图。它既不下载包，也不扫描源码 import。运行时钩子在考虑原生本地候选后使用这张表。
+对于 profile 无法通过自身祖先目录找到的依赖，runtime resolution 的 profile 作用域条目仍然必要。它们将已安装 manifest 中的依赖展开到当前 profile 的 runtime resolution，而不是为每个插件建立独立依赖图。它既不下载包，也不扫描源码 import。运行时钩子在考虑原生本地候选后使用这张表。
 
 ### 普通安装与软链接示例
 

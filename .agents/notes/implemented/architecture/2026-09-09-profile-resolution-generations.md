@@ -24,7 +24,7 @@ During dependency expansion, every installation root, selected bundle root, and 
 
 Profile-local and plugin-private `node_modules` entries take precedence over fallback entries. The generation records installed direct profile package names for a no-I/O native fast path. Each fallback entry records the package name, version, selected lookup directory, declaring manifest anchor, and scope needed for native resolution and successor validation.
 
-The selected-bundle module fallback remains necessary for dependencies that the profile cannot find through its own ancestor directories. It expands installed manifest dependencies into the active profile's shared fallback table, not a separate graph for each plugin. It neither downloads packages nor scans source imports. Runtime hooks consume that table after native local candidates have been considered.
+The profile-scope entries of the runtime resolution remain necessary for dependencies that the profile cannot find through its own ancestor directories. They expand installed manifest dependencies into the active profile's runtime resolution, not a separate graph for each plugin. It neither downloads packages nor scans source imports. Runtime hooks consume that table after native local candidates have been considered.
 
 ### Ordinary and linked package examples
 
