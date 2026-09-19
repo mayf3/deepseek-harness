@@ -246,7 +246,7 @@ describe('one-time V4 migration command', () => {
         ))
         current.push(decoded)
       }
-      expect(current[0]!.toString().trim().split('\n').slice(1).map(line => JSON.parse(line) as unknown)).toMatchObject([
+      expect(current[0]!.toString().trim().split('\n').slice(1).map((line): unknown => JSON.parse(line))).toMatchObject([
         { type: 'subagent/catalog', data: { childId: 'z-child', childCreatedAt: 2, mode: 'continuable', label: 'saved child' } },
       ])
       outputs.push(current)
