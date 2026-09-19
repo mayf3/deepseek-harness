@@ -32,6 +32,7 @@ async function bench() {
     pluginManager: {
       listBundles: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
       listPlugins: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
+      registries: vi.fn(() => Promise.resolve({ ok: true as const, value: { registry: null, fallbackRegistries: [], resolved: null } })),
     },
   })
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, remote }

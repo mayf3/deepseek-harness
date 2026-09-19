@@ -1,18 +1,20 @@
 // Web e2e scenario: the plugin manager page behind the sidebar's Plugins entry over a
 // managed scaffold profile: installed bundles, their rows, and bundle enablement. Zero
-// model calls: everything is client state plus the profile files and the settings
+// model calls: everything is client state, seeded Session state, profile files, and the settings
 // document, so there is no fixture and a stray stream would fail loud on the open llm seam.
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
+import { FiberState } from '@deepseek-ai/cordis'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { join } from 'node:path'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
+import { ZH_BROWSER_LOCALE, connectFreshWorkspaceZh, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/plugin-manager', import.meta.url))
 const MANAGER_EXPECTED = join(SNAPSHOT_DIR, 'manager.expected.md')
@@ -28,7 +30,7 @@ describe('web e2e: plugin manager', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
-      profile: { packages: [{ dir: join(FIXTURE_PLUGINS, 'fixture-bundle') }] },
+      profile: { packages: [{ dir: join(FIXTURE_PLUGINS, 'fixture-bundle') }], bundles: ['@fixture/missing-bundle'] },
     })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
@@ -64,6 +66,29 @@ describe('web e2e: plugin manager', () => {
     return readFile(join(scaffold.harnessHome, ...segments), 'utf8').catch(() => '')
   }
 
+  it('starts with an unavailable selected bundle and lets the user clear its error', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-missing-bundle'))
+    const panel = await openPluginsPanel()
+    await panel.getByRole('button', { name: '查看 missing-bundle', exact: true }).click()
+    const toggle = panel.getByRole('switch', { name: '启用 missing-bundle', exact: true })
+    expect(await toggle.getAttribute('aria-checked')).toBe('true')
+    expect(await toggle.isDisabled()).toBe(false)
+    await panel.getByText(/cannot resolve profile bundle/).waitFor({ timeout: 10_000 })
+    expect((await scaffold.ctx.pluginManager.listBundles()).find(row => row.name === '@fixture/missing-bundle'))
+      .toMatchObject({ enabled: true, error: { code: 'operation-error' }, rows: [] })
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'missing-bundle.expected.md'),
+      await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd, {
+        replacements: [[scaffold.harnessHome, '{{home}}']],
+      }), MODE)
+    await toggle.click()
+    await expect.poll(async () => (JSON.parse(await homeFile('profiles', 'scaffold', 'package.json')) as {
+      dsh: { profile: { bundles: string[] } }
+    }).dsh.profile.bundles, { timeout: 10_000 }).toEqual(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+    await expect.poll(() => panel.getByText(/cannot resolve profile bundle/).count(), { timeout: 10_000 }).toBe(0)
+    expect((await scaffold.ctx.pluginManager.listBundles()).some(row => row.name === '@fixture/missing-bundle')).toBe(false)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
   it('lists the installed bundles with their switches and leaves the installation\'s own to Settings', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-list'))
     const panel = await openPluginsPanel()
@@ -75,9 +100,9 @@ describe('web e2e: plugin manager', () => {
     // group, followed by the official plugins that registered their configuration, and its other bundles
     // stay off the page.
     expect(await panel.locator('[data-plugin-group="bundles"] [data-plugin-package]').count()).toBe(1)
-    expect(await panel.locator('[data-plugin-group="official"] [data-plugin-package]').count()).toBe(2)
+    expect(await panel.locator('[data-plugin-group="official"] [data-plugin-package]').count()).toBe(1)
     expect(await panel.locator('[data-plugin-group="official"] [data-plugin-item]').count()).toBe(4)
-    expect(await panel.getByText('Beta', { exact: true }).count()).toBe(2)
+    expect(await panel.getByText('Beta', { exact: true }).count()).toBe(1)
     // A bundle that is off still shows the rows its patch declares, without switches.
     await panel.getByRole('button', { name: '查看 bundle' }).click()
     await panel.locator('[data-plugin-row]', { hasText: 'fixture-row' }).waitFor({ timeout: 10_000 })
@@ -97,7 +122,7 @@ describe('web e2e: plugin manager', () => {
     await panel.getByRole('button', { name: '查看 智能体团队', exact: true }).click()
     const packageName = panel.locator('[data-plugin-name]')
     expect(await packageName.textContent()).toBe('@deepseek-ai/dsh-experimental-agent-team-profile')
-    expect(await panel.getByText('启用智能体团队协作与团队工具。').count()).toBe(1)
+    expect(await panel.getByText('启用团队协作、团队工具、成员列表和共享任务看板。').count()).toBe(1)
     try {
       await page.getByRole('button', { name: '设置', exact: true }).click()
       await page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '中文' }).click()
@@ -106,13 +131,10 @@ describe('web e2e: plugin manager', () => {
       await page.keyboard.press('Escape')
       await panel.getByRole('heading', { name: 'Agent Teams', exact: true }).waitFor()
       expect(await packageName.textContent()).toBe('@deepseek-ai/dsh-experimental-agent-team-profile')
-      expect(await panel.getByText('Enable agent team collaboration and team tools.').count()).toBe(1)
+      expect(await panel.getByText('Enable team collaboration, team tools, the member roster, and the shared task board.').count()).toBe(1)
       await panel.getByRole('button', { name: 'Back to plugins' }).click()
-      for (const title of ['Agent Teams', 'Agent Teams Web UI']) {
-        await panel.getByRole('button', { name: `View ${title}`, exact: true }).waitFor()
-        expect(await panel.getByRole('switch', { name: `Enable ${title}`, exact: true }).count()).toBe(1)
-      }
-      expect(await panel.getByText('View team members, the task board, and teammate sessions in the browser.').count()).toBe(1)
+      await panel.getByRole('button', { name: 'View Agent Teams', exact: true }).waitFor()
+      expect(await panel.getByRole('switch', { name: 'Enable Agent Teams', exact: true }).count()).toBe(1)
       // The official configuration pages follow the language too, from their own dictionary.
       for (const title of ['Shell', 'Agent loop', 'Subagent', 'Web search']) {
         await panel.getByRole('button', { name: `View ${title}`, exact: true }).waitFor()
@@ -129,6 +151,63 @@ describe('web e2e: plugin manager', () => {
       await closeSettings()
     }
     await panel.getByRole('button', { name: '查看 智能体团队', exact: true }).waitFor()
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
+  it('enables the Team tools and browser plugin with one bundle switch', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-team'))
+    const panel = await openPluginsPanel()
+    const toggle = panel.getByRole('switch', { name: '启用 智能体团队', exact: true })
+    const teamRows = () => [...scaffold.ctx.loader.entries()]
+      .filter(entry => ['agent-team', 'tool-agent-team', 'ui-agent-team'].includes(entry.options.id))
+    const teamPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
+    const teamTripwire = watchConsole(teamPage)
+    try {
+      await teamPage.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await connectFreshWorkspaceZh(teamPage, scaffold.workspaceCwd)
+      const agent = scaffold.ctx.agents.list()[0]
+      if (agent === undefined) throw new Error('connected Team workspace did not create an Agent')
+      // Session actions render only after the conversation leaves its blank state.
+      agent.session.append('turn/start', { turn: 1 })
+      agent.session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: 'Team UI lifecycle' }], source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
+      agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+      await scaffold.ctx.sessions.flush(agent.session)
+      await teamPage.getByRole('button', { name: 'Team UI lifecycle', exact: true }).waitFor()
+      const action = teamPage.locator('[data-team-action]')
+      expect(await action.count()).toBe(0)
+      await toggle.click()
+      try {
+        await expect.poll(() => teamRows().filter(entry => entry.fiber?.state === FiberState.ACTIVE).length, { timeout: 20_000 }).toBe(3)
+        await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('true')
+        await action.waitFor({ timeout: 20_000 })
+        await action.getByRole('button', { name: /Agent Team/iu }).click()
+        await action.getByText('还没有共享任务').waitFor()
+        await action.getByText('lead', { exact: true }).waitFor()
+        const manifest = JSON.parse(await homeFile('profiles', 'scaffold', 'package.json')) as {
+          dsh: { profile: { bundles: string[] } }
+        }
+        expect(manifest.dsh.profile.bundles).toEqual([
+          '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-experimental-agent-team-profile',
+        ])
+        await panel.getByRole('button', { name: '查看 智能体团队', exact: true }).click()
+        for (const id of ['agent-team', 'tool-agent-team', 'ui-agent-team']) {
+          await panel.locator('[data-plugin-row]', { hasText: id }).first().waitFor()
+        }
+        await panel.getByRole('button', { name: '返回插件列表' }).click()
+      } finally {
+        const back = panel.getByRole('button', { name: '返回插件列表' })
+        if (await back.count() > 0) await back.click()
+        if (await toggle.getAttribute('aria-checked') === 'true') await toggle.click()
+        await expect.poll(() => teamRows().filter(entry => entry.fiber?.state === FiberState.ACTIVE).length, { timeout: 20_000 }).toBe(0)
+        await expect.poll(() => action.count(), { timeout: 20_000 }).toBe(0)
+      }
+      expect(teamTripwire.pageErrors).toEqual([])
+      expect(teamTripwire.warnings).toEqual([])
+    } finally {
+      await teamPage.close()
+    }
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
@@ -202,7 +281,7 @@ describe('web e2e: plugin manager', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['manager.expected.md', 'live-enabled.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['manager.expected.md', 'live-enabled.expected.md', 'missing-bundle.expected.md'])
   })
 })
 

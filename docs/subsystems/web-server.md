@@ -92,8 +92,8 @@ authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexRespons
 
 /**
  * Add the fresh process token to an ordinary Web application URL.
- * @param baseUrl - clean canonical browser origin.
- * @returns root URL accepted by {@link authorizeIndex} for initial login.
+ * @param baseUrl - clean application URL whose authority and mount are preserved.
+ * @returns tokenized URL for initial login; a mount proxy strips its prefix before {@link authorizeIndex}.
  */
 authenticatedUrl(baseUrl: string): string
 ```

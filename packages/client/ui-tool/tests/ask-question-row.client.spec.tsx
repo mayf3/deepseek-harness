@@ -211,6 +211,7 @@ describe('AskQuestionRow', () => {
     const view = render(<AskQuestionRow {...rowProps(resultNode(ARGS, null,
       { isError: true, error: { name: 'Interrupted', code: 'interrupted' } }))} />)
     expect(view.container.querySelector('[data-state="stopped"]')).not.toBeNull()
+    expect(view.container.querySelector('[data-state="stopped"] svg')).not.toBeNull()
     expect(screen.queryByText('已取消')).toBeNull()
     expect(screen.getByText(`ask_user_question · ${ARGS}`)).toBeTruthy()
   })
@@ -218,6 +219,7 @@ describe('AskQuestionRow', () => {
   it('other tool errors keep the generic summary with the error state', () => {
     const view = render(<AskQuestionRow {...rowProps(resultNode(ARGS, null, { isError: true }))} />)
     expect(view.container.querySelector('[data-state="error"]')).not.toBeNull()
+    expect(view.container.querySelector('[data-state="error"] svg')).not.toBeNull()
     expect(screen.getByText(`ask_user_question · ${ARGS}`)).toBeTruthy()
   })
 

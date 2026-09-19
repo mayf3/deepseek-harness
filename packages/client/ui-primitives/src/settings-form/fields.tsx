@@ -7,7 +7,7 @@
  */
 
 import { useState, type ReactNode } from 'react'
-import { IconInfoOutline14 } from '../icons/index.tsx'
+import { IconInfoOutlineRegular } from '../icons/index.tsx'
 import { Tag } from '../Tag.tsx'
 import css from './fields.module.css'
 
@@ -71,7 +71,7 @@ export function SettingsValueField(props: Omit<SettingsFieldProps, 'hint'> & {
               <button type="button" className={css.helpButton}
                 aria-label={props.help.label} aria-expanded={helpOpen} aria-controls={helpId}
                 onClick={() => { setHelpOpen(!helpOpen) }}>
-                <IconInfoOutline14 size={12} />
+                <IconInfoOutlineRegular size={12} />
               </button>
             )
             : null}

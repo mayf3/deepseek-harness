@@ -12,16 +12,16 @@ import {
 /** A scripted scope: what it holds, and the writes it records without applying. */
 interface StubScope<T> {
   scope: SettingsFormScope<T>
-  set: ReturnType<typeof vi.fn<(field: string, value: unknown) => Promise<void>>>
-  unset: ReturnType<typeof vi.fn<(field: string) => Promise<void>>>
+  set: ReturnType<typeof vi.fn<(field: string, value: unknown) => Promise<boolean>>>
+  unset: ReturnType<typeof vi.fn<(field: string) => Promise<boolean>>>
   publish: (next: Partial<SettingsFormScopeSnapshot<T>>) => void
 }
 
 function stubScope<T>(): StubScope<T> {
   let snapshot: SettingsFormScopeSnapshot<T> = { status: 'loading', value: undefined, base: undefined, user: undefined, writable: false }
   const listeners = new Set<() => void>()
-  const set = vi.fn<(field: string, value: unknown) => Promise<void>>(() => Promise.resolve())
-  const unset = vi.fn<(field: string) => Promise<void>>(() => Promise.resolve())
+  const set = vi.fn<(field: string, value: unknown) => Promise<boolean>>(() => Promise.resolve(true))
+  const unset = vi.fn<(field: string) => Promise<boolean>>(() => Promise.resolve(true))
   return {
     scope: {
       getSnapshot: () => snapshot,
@@ -47,13 +47,13 @@ function acceptWrites<T>(host: StubScope<T>): void {
   const layer = (): Record<string, unknown> => ({ ...host.scope.getSnapshot().user as object })
   host.set.mockImplementation((field: string, value: unknown) => {
     host.publish({ value: { ...section(), [field]: value } as T, user: { ...layer(), [field]: value } })
-    return Promise.resolve()
+    return Promise.resolve(true)
   })
   host.unset.mockImplementation((field: string) => {
     const user = Object.fromEntries(Object.entries(layer()).filter(([key]) => key !== field))
     const base = host.scope.getSnapshot().base as Record<string, unknown> | undefined
     host.publish({ value: { ...section(), [field]: base?.[field] } as T, user })
-    return Promise.resolve()
+    return Promise.resolve(true)
   })
 }
 

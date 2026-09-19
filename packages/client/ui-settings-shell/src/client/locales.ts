@@ -12,7 +12,7 @@ export type ShellSettingsLocaleKey =
 /** English copy. */
 export const en: Record<ShellSettingsLocaleKey, string> = {
   title: 'Shell',
-  description: 'Limits every command the agent runs.',
+  description: 'Limit how long each command may run and how much it may output.',
   timeoutMs: 'Command timeout (ms)',
   timeoutMsHint: 'How long one command may run before it is terminated.',
   maxOutputBytes: 'Output cap per stream (bytes)',
@@ -30,7 +30,7 @@ export const en: Record<ShellSettingsLocaleKey, string> = {
 /** Simplified Chinese copy. */
 export const zh: Record<ShellSettingsLocaleKey, string> = {
   title: '终端',
-  description: '限制 agent 运行的每一条命令。',
+  description: '限制每条命令最多能跑多久、最多输出多少内容。',
   timeoutMs: '命令超时（毫秒）',
   timeoutMsHint: '单条命令允许运行多久，超时即终止。',
   maxOutputBytes: '单流输出上限（字节）',

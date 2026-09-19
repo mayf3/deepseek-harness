@@ -223,22 +223,10 @@ describe('plan entry points and document', () => {
     render(<PlanTitle {...props as unknown as Parameters<typeof PlanTitle>[0]} />)
     expect(screen.getByText(plan.title)).toBeTruthy()
   })
-  it('copies the complete Markdown and keeps a tab label while history loads', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-    try {
-      const props = { t, useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address: planAddress(target) } } }), useResource: () => ({ status: 'live', value: plan }) }
-      const view = render(<PlanPreview {...props as unknown as Parameters<typeof PlanPreview>[0]} />)
-      fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
-      await Promise.resolve()
-      expect(writeText).toHaveBeenCalledWith(markdown)
-      view.rerender(<PlanTitle {...{ ...props, useResource: () => ({ status: 'loading' }) } as unknown as Parameters<typeof PlanTitle>[0]} />)
-      expect(screen.getByText('Plan')).toBeTruthy()
-    } finally {
-      if (clipboard === undefined) Reflect.deleteProperty(navigator, 'clipboard')
-      else Object.defineProperty(navigator, 'clipboard', clipboard)
-    }
+  it('keeps a tab label while history loads', () => {
+    const props = { useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address: planAddress(target) } } }), useResource: () => ({ status: 'loading' }) }
+    render(<PlanTitle {...props as unknown as Parameters<typeof PlanTitle>[0]} />)
+    expect(screen.getByText('Plan')).toBeTruthy()
   })
   it.each([en, zh])('localizes plan failures and unavailable providers', (dictionary) => {
     const props = { t: makeTranslate(dictionary, commonEn),

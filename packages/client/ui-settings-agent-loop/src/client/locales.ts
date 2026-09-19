@@ -11,7 +11,7 @@ export type AgentLoopSettingsLocaleKey =
 /** English copy. */
 export const en: Record<AgentLoopSettingsLocaleKey, string> = {
   title: 'Agent loop',
-  description: 'How the agent dispatches tool calls.',
+  description: 'Control how the Agent dispatches tool calls.',
   maxParallel: 'Parallel tool calls',
   maxParallelHint: 'Upper bound on parallel-safe calls running at once within one step.',
   overridden: 'Overridden',
@@ -27,7 +27,7 @@ export const en: Record<AgentLoopSettingsLocaleKey, string> = {
 /** Simplified Chinese copy. */
 export const zh: Record<AgentLoopSettingsLocaleKey, string> = {
   title: 'Agent 循环',
-  description: 'Agent 如何派发工具调用。',
+  description: '控制 Agent 派发工具调用的方式。',
   maxParallel: '并行工具调用数',
   maxParallelHint: '同一步内最多同时运行多少个可并行的调用。',
   overridden: '已覆盖',

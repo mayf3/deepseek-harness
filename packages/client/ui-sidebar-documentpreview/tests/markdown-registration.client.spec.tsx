@@ -61,6 +61,7 @@ describe('Markdown implementation registration', () => {
           content: { kind: 'text', text: '# Notes\n\n```ts\nconst value = 1\n```', pages: [], eof: true },
           wrap: false,
           scrollportRef: vi.fn(),
+          addResource: vi.fn(), setResources: vi.fn(),
         }, {
           entryKey: MARKDOWN_BODY_ID,
           hookContext: useTabInfo,

@@ -47,15 +47,15 @@ export interface SettingsFormScope<T> {
    * Queue one field write.
    * @param field - scalar field inside the namespace section.
    * @param value - JSON-shaped value selected by the user.
-   * @returns settlement after the write and any recovery read.
+   * @returns true for Host acceptance, false for refusal or skipped writes, after any recovery read.
    */
-  set(field: string, value: unknown): Promise<void>
+  set(field: string, value: unknown): Promise<boolean>
   /**
    * Queue one field clear, so the field re-inherits the composition layer.
    * @param field - scalar field inside the namespace section.
-   * @returns settlement after the clear and any recovery read.
+   * @returns true for Host acceptance, false for refusal or skipped writes, after any recovery read.
    */
-  unset(field: string): Promise<void>
+  unset(field: string): Promise<boolean>
 }
 
 /** The write one field's staged text performs when the form is saved. */

@@ -6,7 +6,7 @@ import { PresentedOpenController } from '../src/client/present-open.ts'
 afterEach(() => { vi.unstubAllGlobals() })
 
 const id = SessionId('fork')
-const url = '/api/present.open?sessionId=fork&seq=2&index=1'
+const url = 'api/present.open?sessionId=fork&seq=2&index=1'
 
 it('coalesces concurrent card and mention gestures, then allows another open', async () => {
   const reply = Promise.withResolvers<Response>()
@@ -31,11 +31,11 @@ it('opens changed files through their own coordinates', async () => {
   vi.stubGlobal('fetch', fetcher)
   const controller = new PresentedOpenController()
   await controller.openChanged(id, 9, 1)
-  expect(fetcher.mock.calls.map(call => call[0])).toEqual(['/api/changes.open?sessionId=fork&seq=9&index=1'])
-  expect(controller.state.getSnapshot()['/api/changes.open?sessionId=fork&seq=9&index=1']).toBe('opened')
+  expect(fetcher.mock.calls.map(call => call[0])).toEqual(['api/changes.open?sessionId=fork&seq=9&index=1'])
+  expect(controller.state.getSnapshot()['api/changes.open?sessionId=fork&seq=9&index=1']).toBe('opened')
   fetcher.mockResolvedValueOnce(new Response(null, { status: 422 }))
   await controller.openChanged(id, 9, 1)
-  expect(controller.state.getSnapshot()['/api/changes.open?sessionId=fork&seq=9&index=1']).toBe('nativeUnavailable')
+  expect(controller.state.getSnapshot()['api/changes.open?sessionId=fork&seq=9&index=1']).toBe('nativeUnavailable')
   await controller.dispose()
 })
 

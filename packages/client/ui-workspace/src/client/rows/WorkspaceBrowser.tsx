@@ -12,8 +12,8 @@
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconCloseFill14, IconPersonalizationOutline16,
-  IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Tooltip,
+  Button, IconCloseFillRegular, IconPersonalizationOutlineRegular,
+  IconProjectAddOutlineRegular, IconSearchOutlineRegular, Menu, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   SessionListState, SessionSearchResultItem,
@@ -138,7 +138,7 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
             aria-label={t('viewOptions.label')}
             onClick={() => { setOpen(v => !v) }}
           >
-            <IconPersonalizationOutline16 />
+            <IconPersonalizationOutlineRegular />
           </button>
         </Tooltip>
       )}
@@ -1139,7 +1139,7 @@ export function WorkspaceBrowser({
                     setSearchExpanded(true)
                   }}
                 >
-                  <IconSearchOutline16 size={searchExpanded ? 11 : 14} />
+                  <IconSearchOutlineRegular size={searchExpanded ? 11 : 14} />
                 </button>
               </Tooltip>
               <input
@@ -1168,7 +1168,7 @@ export function WorkspaceBrowser({
                     setSearchExpanded(false)
                   }}
                 >
-                  <IconCloseFill14 />
+                  <IconCloseFillRegular />
                 </button>
               )}
             </div>
@@ -1198,7 +1198,7 @@ export function WorkspaceBrowser({
                   setWsPickerOpen(v => !v)
                 }}
               >
-                <IconProjectAddOutline16 size={wide ? 16 : 18} />
+                <IconProjectAddOutlineRegular size={wide ? 16 : 18} />
               </button>
             </Tooltip>
           )}
@@ -1235,7 +1235,7 @@ export function WorkspaceBrowser({
               expandSidebar()
             }}
           >
-            <IconSearchOutline16 size={18} />
+            <IconSearchOutlineRegular size={18} />
           </button>
         </Tooltip>
       </div>}

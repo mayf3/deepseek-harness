@@ -31,6 +31,7 @@ async function writeFlatSkill(root: string, name: string, description: string, b
 }
 
 class TestFileSystem extends FileSystem {
+  override watch(): never { throw new Error('Fixture does not support watching') }
   listDirCalls = 0
   failResolvePaths = new Set<string>()
   failStatPaths = new Set<string>()

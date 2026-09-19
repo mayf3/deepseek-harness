@@ -234,6 +234,7 @@ function standaloneProps(
     useInput: bindSnapshotSelector(input),
     inputActions,
     useProjection,
+    inspectCall: undefined,
     viewRequest: null,
     openView: () => {},
     completeViewRequest: () => {},
@@ -272,6 +273,7 @@ async function bench(snapshot = historySnapshot(NODES)) {
   const targetSources: ConversationTargetSources = {
     chat: createSnapshotStore<ChatSnapshot | undefined>(undefined),
     trajectory: trajectoryStore,
+    'tool-todo-history': createSnapshotStore<ConversationViewSnapshotMap['tool-todo-history'] | undefined>(undefined),
   }
   const binding: ConversationBinding = {
     snapshot: conversationStore,
@@ -290,7 +292,7 @@ async function bench(snapshot = historySnapshot(NODES)) {
   // The locale plugin backs the locale-aware view tab label ('locale' in
   // inject); its settings scope needs a connection handle.
   ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
-  ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
   await runtime.mount({ inject: [...localeInject], apply: localeApply })
   const provide = vi.spyOn(ctx.uiSession, 'provide')
   const feature = await runtime.mount({ inject: [...inject], apply })
@@ -308,10 +310,10 @@ function tabsOf(slots: SlotRegistry): ViewTab[] {
     .map(e => ({ id: e.options.id!, label: resolveSlotLabel(e.options.label) ?? e.options.id! }))
 }
 
-type ConvViewOwner = Pick<ConvViewProps, 'viewRequest' | 'openView' | 'completeViewRequest'>
+type ConvViewOwner = Pick<ConvViewProps, 'inspectCall' | 'viewRequest' | 'openView' | 'completeViewRequest'>
 
 function isConvViewOwner(owner: object): owner is ConvViewOwner {
-  return 'viewRequest' in owner
+  return 'inspectCall' in owner && 'viewRequest' in owner
     && 'openView' in owner && typeof owner.openView === 'function'
     && 'completeViewRequest' in owner && typeof owner.completeViewRequest === 'function'
 }
@@ -394,6 +396,7 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
   return render(
     <>
       <ConversationSessionHeader
+        hideChrome={false}
         {...standardProps}
         SessionProvider={({ children }) => children}
         useStore={bindSnapshotSelector(conversation)}
@@ -411,6 +414,7 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
         renderSlot={renderSlot}
         bindDraftMirror={() => () => {}}
         openView={conversation.actions.openView}
+        useInspectCall={selector => selector(undefined)}
       />
     </>,
   )

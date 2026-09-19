@@ -49,17 +49,19 @@ Session 行内的 Rename 操作打开一个以该行显示标题预填的对话�
 
 ### 待处理交互
 
-Session 行渲染运行时的实时 `pendingInteraction` 分类：审批显示**等待审批**，计划审阅显示**计划待审**，普通问题显示**等待回答**。每个待处理交互都使用一枚琥珀色警告点，优先级高于运行指示器。
+Session 行渲染运行时的实时 `pendingInteraction` 分类：审批显示**等待审批**，计划审阅显示**计划待审**，普通问题显示**等待回答**。交互待处理期间，该行使用共享 warning 橙点，并以**待批准**、**计划待审**或**待回答**替换尾部更新时间；悬停详情仍保留完整状态和相对时间。待处理交互的优先级高于共享 ongoing loading；已完成但未查看的 Session 使用 done，idle 在行内不显示点，在悬停详情中使用共享 idle 灰点。
 
 ### 活动 Schedule 标识
 
-分组与平铺 Session 行以及搜索结果会在 `SessionSummary.projectionValues.schedule` 为非空数组时显示一枚轮廓闹钟。标识位于标题之后；普通行的更新时间仍位于标识之后，搜索结果则没有更新时间。它不是按钮，没有独立 pointer 行为或 Tab stop，点击所在区域仍会打开整行。本地化 tooltip 与文本相同的读屏标签均为**有活动定时任务**。
+分组与平铺 Session 行以及搜索结果会在 `SessionSummary.projectionValues.schedule` 为非空数组时显示一枚轮廓闹钟。标识位于标题之后；普通行的更新时间或紧凑待处理文案仍位于标识之后，搜索结果则不显示尾部信息。它不是按钮，没有独立 pointer 行为或 Tab stop，点击所在区域仍会打开整行。本地化 tooltip 与文本相同的读屏标签均为**有活动定时任务**。
 
 对于 cold Session，该值有意采用尽力而为语义。身份匹配且可用的 projection-cache 行可以在不打开 Session 的情况下预热闹钟；cache 缺失或陈旧可能造成短暂漏显或残留。标识只表示当前列表值包含尚未 dispatch 或 delete 的 Schedule 记录，不表示 Schedule 运行时当前 live 或能够唤醒该 Session。
 
 -----
 
 `ctx.uiWorkspace.openSession(target)` 会同步替换其拥有的 `mainView` reference，并让主区域返回 Conversation，而不等待 `reference.ready`，因此历史加载会显示在已经选中的 Session 视图内。目标可以是已知 Session id，也可以是持久的直接父子 subagent 地址；显式地址不要求预先加载 parent catalog。`openWorkspace(id, beforeOpen?)` 和 `forkSession(id)` 仅在请求未被后续导航替代时打开结果；新会话使用 `openWorkspace`。可选的同步准备回调在目标被 retain 后执行，并且仅对仍有效的 Workspace 请求执行，因此过期请求不会搬移 composer 草稿。后续导航或 owner 释放会阻止晚到的 UI 提交，但不取消底层 Session 创建。归档主 Session 会释放其 reference 并清除主选择。选择失败时保留当前全局面板。Session 行读取 `usePanelInfo`，在全局面板活跃时不显示 Session 选中样式；仅把焦点移到搜索框或目录选择器不会离开该面板。
+
+新建会话尝试获取列表中第一个符合条件的空白会话；启动恢复尝试已保存的空白会话。若该写锁被占用，导航直接新建 Session，不再尝试其他空白会话。其他获取错误会中止请求，目前只报告到控制台。已释放的空白会话被复用时保留 slash 命令状态。后续导航会取消尚未完成的启动选择。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
@@ -75,7 +77,7 @@ Session 行渲染运行时的实时 `pendingInteraction` 分类：审批显示**
 
 ### 视图状态
 
-Workspace 列表基线就绪后，浏览器持久化的展开状态和手动 Session 顺序记录只保留当前 Workspace id、Ungrouped 和单列表记账。`WorkspaceView.sessionIds` 提供真实 Workspace 的成员关系，而不提供 Session 显示顺序。视图操作要求显式传入当前各记账的顺序。单列表的成员筛选和排序使用 Session id，行渲染只计算一次状态指示。进入手动排序会从当前显示结果一次性记录每个有效记账；对账会保留仍属于该记账的已保存成员、移除已经离开的成员，并按最近更新时间追加新发现的成员。尚无 Session 摘要的新成员会等摘要到达后再加入，而已经保存的位置在摘要暂时缺失时仍会保留。Workspace 重连期间，手动排序会将已观察到的空白 Session 记录到已保存的单列表及已知分组顺序首位，不移除其他已保存成员；完整成员对账等待 Workspace 基线到齐。即使侧边栏收成窄栏或搜索替代列表主体，这项对账也保持挂载。最近更新直接从每份当前列表快照派生，不读取或写入已保存位置；时间相同时按 Session id 稳定排序。共享侧边栏投影会隐藏持久化 Session 摘要中带有 `origin: 'subagent'` 的行；每个可见普通行都会在经不间断的 subagent 谱系可达的任一后代运行时继承蓝色活动指示器。同一项纯派生逻辑还会为分组、平铺与搜索节点读取列表 projection value 中的 Schedule key；本包只使用纯类型依赖 `@deepseek-ai/dsh-schedule/client`，不会导入 Schedule 运行时或 `ui-schedule`。
+Workspace 列表基线就绪后，浏览器持久化的展开状态和手动 Session 顺序记录只保留当前 Workspace id、Ungrouped 和单列表记账。`WorkspaceView.sessionIds` 提供真实 Workspace 的成员关系，而不提供 Session 显示顺序。视图操作要求显式传入当前各记账的顺序。单列表的成员筛选和排序使用 Session id，行渲染只计算一次状态指示。进入手动排序会从当前显示结果一次性记录每个有效记账；对账会保留仍属于该记账的已保存成员、移除已经离开的成员，并按最近更新时间追加新发现的成员。尚无 Session 摘要的新成员会等摘要到达后再加入，而已经保存的位置在摘要暂时缺失时仍会保留。Workspace 重连期间，手动排序会将已观察到的空白 Session 记录到已保存的单列表及已知分组顺序首位，不移除其他已保存成员；完整成员对账等待 Workspace 基线到齐。即使侧边栏收成窄栏或搜索替代列表主体，这项对账也保持挂载。最近更新直接从每份当前列表快照派生，不读取或写入已保存位置；时间相同时按 Session id 稳定排序。共享侧边栏投影会隐藏持久化 Session 摘要中带有 `origin: 'subagent'` 的行；每个可见普通行都会在经不间断的 subagent 谱系可达的任一后代运行时继承共享 ongoing loading。同一项纯派生逻辑还会为分组、平铺与搜索节点读取列表 projection value 中的 Schedule key；本包只使用纯类型依赖 `@deepseek-ai/dsh-schedule/client`，不会导入 Schedule 运行时或 `ui-schedule`。
 
 ### 悬浮卡片
 

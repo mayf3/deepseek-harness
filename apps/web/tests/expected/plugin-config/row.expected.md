@@ -1,6 +1,4 @@
-- button "返回 live-client":
-  - img
-  - text: live-client
+- button "返回 live-client": live-client
 - button "夹具操作"
 - heading "fixture-live-client" [level=3]
 - text: 夹具标签

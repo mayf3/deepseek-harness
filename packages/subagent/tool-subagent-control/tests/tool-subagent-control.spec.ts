@@ -49,12 +49,17 @@ class GatedAdapter extends LlmAdapter {
 const testToolSignal = new AbortController().signal
 
 const roots: string[] = []
-afterEach(() => {
+const contexts = new Set<Context>()
+afterEach(async () => {
+  vi.restoreAllMocks()
+  for (const ctx of contexts) await ctx.fiber.dispose()
+  contexts.clear()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 async function setupWith(adapter: MockAdapter | GatedAdapter, park = true) {
   const ctx = new Context()
+  contexts.add(ctx)
   await mountAgentLoopTestDependencies(ctx)
   const root = mkdtempSync(join(tmpdir(), 'dsh-tool-subagent-control-'))
   roots.push(root)
@@ -329,6 +334,7 @@ describe('dsh-tool-subagent-control', () => {
 
   it('unregisters with its plugin fiber (HMR safety)', async () => {
     const ctx = new Context()
+    contexts.add(ctx)
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
     await ctx.plugin(SubagentRuntime)

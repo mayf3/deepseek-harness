@@ -145,6 +145,7 @@ const harness = await vi.hoisted(async () => {
     set publishUpdate(value: (state: DesktopUpdateState) => DesktopUpdateState) { publishUpdate = value },
     dialog: { showOpenDialog: vi.fn(), showErrorBox: vi.fn(), showMessageBox: vi.fn() },
     openExternal: vi.fn(),
+    protocolHandle: vi.fn<(scheme: string, handler: (request: Request) => Response | Promise<Response>) => void>(),
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
     disableAllPlugins: vi.fn(async () => {
       pluginsEnabled = false
@@ -207,7 +208,7 @@ vi.mock('electron', () => ({
   },
   Menu: { setApplicationMenu: harness.menu.setApplicationMenu, buildFromTemplate: harness.menu },
   session: { defaultSession: { webRequest: { onBeforeSendHeaders: harness.socketHeaders } } },
-  protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
+  protocol: { registerSchemesAsPrivileged: vi.fn(), handle: harness.protocolHandle },
   powerMonitor: harness.powerMonitor,
 }))
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -288,7 +289,7 @@ beforeEach(() => {
   vi.spyOn(console, 'info').mockImplementation(() => {})
   vi.stubEnv('DSH_DESKTOP_PNPM_ENTRY', 'test-pnpm')
   vi.stubEnv('DSH_DESKTOP_DSH_DIR', 'test-runtime')
-  vi.stubGlobal('process', { ...process, platform: 'win32', resourcesPath: 'desktop-test-resources' })
+  vi.stubGlobal('process', { ...process, platform: 'win32', arch: 'x64', resourcesPath: 'desktop-test-resources' })
   vi.stubEnv('DSH_DESKTOP_HOST_INSPECT_PORT', undefined)
   vi.stubEnv('DSH_DESKTOP_MANDATORY_UPDATE_CONFIG', undefined)
   vi.stubEnv('DSH_DESKTOP_UPDATE_JOURNAL_DIR', undefined)
@@ -307,6 +308,19 @@ afterEach(async () => {
 })
 
 describe('desktop main startup', () => {
+  it('serves shell dialogs and their assets without forwarding them to the Host', async () => {
+    await readyForUpdate()
+    const { serveWebDocument, forwardWebRequest } = await import('../src/web-document.ts')
+    const handler = harness.protocolHandle.mock.calls[0]![1]
+    for (const file of ['update-dialog.html', 'update-dialog.js', 'update-dialog.css', 'update-close.svg', 'mandatory-update.html']) {
+      const request = new Request(`dsh-app://shell/${file}`)
+      await handler(request)
+      expect(serveWebDocument).toHaveBeenLastCalledWith(request, join('desktop-test-app', 'renderer'))
+    }
+    expect(forwardWebRequest).not.toHaveBeenCalled()
+    expect((await handler(new Request('dsh-app://unknown/update-dialog.html'))).status).toBe(404)
+  })
+
   it.each([
     ['darwin', true, 'en-US'],
     ['darwin', false, 'zh-CN'],
@@ -326,7 +340,7 @@ describe('desktop main startup', () => {
   })
 
   it('shows one explained startup login before Host readiness and joins concurrent checks without reopening it', async () => {
-    harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test',
+    harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test', allowedAuthOrigins: ['https://login.example.com'],
       allowedPageOrigins: ['https://downloads.example.com'], intervalMs: 1000, jitter: 0 }
     vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(async () =>
       Response.json({ error: { code: 'UNAUTHENTICATED' } }, { status: 401 })))
@@ -369,7 +383,7 @@ describe('desktop main startup', () => {
   })
 
   it.each(['returned', 'cancelled', 'failed'] as const)('requires explicit test login and handles %s without downloading', async (outcome) => {
-    harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test',
+    harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test', allowedAuthOrigins: ['https://login.example.com'],
       allowedPageOrigins: ['https://downloads.example.com'], intervalMs: 10_000, jitter: 0 }
     const request = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ error: { code: 'UNAUTHENTICATED' } }, { status: 401 }))
     vi.stubGlobal('fetch', request)
@@ -396,7 +410,7 @@ describe('desktop main startup', () => {
   })
 
   it('does not open Feishu when the user declines test login', async () => {
-    harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test',
+    harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test', allowedAuthOrigins: ['https://login.example.com'],
       allowedPageOrigins: ['https://downloads.example.com'] }
     vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ error: { code: 'UNAUTHENTICATED' } }, { status: 401 })))
     await readyForUpdate()
@@ -406,7 +420,7 @@ describe('desktop main startup', () => {
   })
 
   it('does not require gateway login to download an already available ordinary update', async () => {
-    harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test',
+    harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test', allowedAuthOrigins: ['https://login.example.com'],
       allowedPageOrigins: ['https://downloads.example.com'] }
     vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(async () =>
       Response.json({ error: { code: 'UNAUTHENTICATED' } }, { status: 401 })))
@@ -419,7 +433,7 @@ describe('desktop main startup', () => {
   })
 
   it('retains the same blocking window and running Host after expired test login is cancelled', async () => {
-    harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test',
+    harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test', allowedAuthOrigins: ['https://login.example.com'],
       allowedPageOrigins: ['https://downloads.example.com'], intervalMs: 1000, jitter: 0 }
     const request = vi.fn<typeof fetch>().mockImplementation(async () =>
       Response.json({ error: { code: 'UNAUTHENTICATED' } }, { status: 401 }))
@@ -717,6 +731,19 @@ describe('desktop main startup', () => {
     await harness.quitCompleted.promise
   })
 
+  it('finishes quitting when the native window is destroyed before its closed listener clears ownership', async () => {
+    const host = await readyForUpdate()
+    const window = harness.windows[0]!
+    window.destroyed = true
+    window.hide.mockImplementation(() => { throw new TypeError('Object has been destroyed') })
+    expect(() => { harness.app.quit() }).not.toThrow()
+    expect(window.hide).not.toHaveBeenCalled()
+    await host.stopping.promise
+    window.emit('closed')
+    host.exited.resolve()
+    await harness.quitCompleted.promise
+  })
+
   it('shares the failed-check deadline across focus and resume, while explicit checks reset polling', async () => {
     vi.stubEnv('DSH_DESKTOP_UPDATE_CHECK_INTERVAL_MS', '1000')
     vi.stubEnv('DSH_DESKTOP_UPDATE_CHECK_MAX_BACKOFF_MS', '4000')
@@ -785,6 +812,8 @@ describe('desktop main startup', () => {
     expect(host.stop).not.toHaveBeenCalled()
     request.mockImplementationOnce(async () => Response.json({ code: 0, data: { biz_code: 0, biz_data: null } }))
     await vi.advanceTimersByTimeAsync(20_000)
+    expect(modal.isDestroyed()).toBe(false)
+    await vi.advanceTimersByTimeAsync(150)
     expect(modal.isDestroyed()).toBe(true)
     expect(host.stop).not.toHaveBeenCalled()
     expect(request.mock.calls[0]![1]!.headers).toMatchObject({ 'x-client-bundle-id': 'com.deepseek.dsh', 'x-client-version': '1.0.0' })
@@ -799,7 +828,10 @@ describe('desktop main startup', () => {
     harness.dialog.showMessageBox.mockImplementationOnce(({ signal }: { signal: AbortSignal }) => {
       checking.resolve(signal)
       return new Promise((resolve) => { signal.addEventListener('abort', () => { resolve({ response: 0 }) }, { once: true }) })
-    }).mockResolvedValueOnce({ response: 0 })
+    }).mockImplementationOnce(() => {
+      expect((harness.dialog.showMessageBox.mock.calls[0]![0] as { signal: AbortSignal }).signal.aborted).toBe(false)
+      return Promise.resolve({ response: 0 })
+    })
     const submenu = applicationMenuItems()
     const action = submenu.find(item => item.label === 'Check for Updates…')
     expect(action?.click).toBeTypeOf('function')
@@ -905,7 +937,7 @@ describe('desktop main startup', () => {
   })
 
   it('queues policy authentication until the ordinary result dialog closes', async () => {
-    harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test',
+    harness.embeddedPolicy = { origin: 'https://policy.example.com', authentication: 'feishu-test', allowedAuthOrigins: ['https://login.example.com'],
       allowedPageOrigins: ['https://downloads.example.com'], intervalMs: 10_000, jitter: 0 }
     const request = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json({ code: 0, data: { biz_code: 0, biz_data: null } }))

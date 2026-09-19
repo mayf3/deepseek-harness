@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { PluginEntryId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { PluginEntryId, PluginInstallRequestId } from '@deepseek-ai/dsh-api-remotes/client'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ReactNode } from 'react'
@@ -38,8 +38,19 @@ function row(overrides: Partial<PackageRow> = {}): PackageRow {
   return { entryId: 'include:sidebar' as PluginEntryId, rowId: 'sidebar', moduleName: 'dsh-better-sidebar', enabled: true, phase: 'active', ...overrides }
 }
 
+const MIRROR = 'https://registry.npmmirror.com/'
+const OFFICIAL = 'https://registry.npmjs.org/'
+
+/** The registries the Host asks: pnpm's own first, which names npm's own registry, then the mirror. */
+const REGISTRIES = { registry: null, fallbackRegistries: [MIRROR], resolved: OFFICIAL }
+
+/** pnpm's own registry as the options label it while it names npm's own; the control and the messages use the name alone. */
+const OFFICIAL_OPTION = en.registryWithHost.replace('{name}', en.registryDefault).replace('{host}', 'registry.npmjs.org')
+const MIRROR_OPTION = en.registryWithHost.replace('{name}', en.registryNpmmirror).replace('{host}', 'registry.npmmirror.com')
+
 const IDLE_INSTALL: InstallState = {
-  open: false, spec: '', phase: 'idle', inputError: null, subject: null, runs: [], detailsOpen: false,
+  open: false, spec: '', registries: null, registry: { kind: 'offered', registry: null }, registryOpen: false, registryError: false, attempts: null,
+  phase: 'idle', inputError: null, subject: null, runs: [], detailsOpen: false,
   installed: null, restartRequired: false, failure: null, approvedBuilds: [], enabling: false,
 }
 
@@ -78,8 +89,11 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     editInstallSpec: vi.fn(),
     runInstall: vi.fn(),
     cancelInstall: vi.fn(),
-    cancelInstallAndClose: vi.fn(),
+    reconcileInstall: vi.fn(),
     toggleInstallDetails: vi.fn(),
+    toggleRegistryOptions: vi.fn(),
+    chooseRegistry: vi.fn(),
+    changeRegistry: vi.fn(),
     approveBuildsAndRetry: vi.fn(),
     enableInstalled: vi.fn(),
     clearHighlight: vi.fn(),
@@ -111,12 +125,12 @@ describe('PluginManagerPage', () => {
   it('asks the store once mounted and renders the loading, unavailable, error, and empty states', () => {
     const { actions, set } = renderTab({ status: 'loading' })
     expect(actions.ensure).toHaveBeenCalledTimes(1)
-    expect(screen.getByText(en.loading)).toBeTruthy()
+    expect(screen.getByText(en.loading).querySelector('[data-state="ongoing"]')).not.toBeNull()
     expect(screen.getByRole('button', { name: en.addPlugin })).toHaveProperty('disabled', true)
     set({ status: 'unavailable' })
-    expect(screen.getByRole('status').textContent).toBe(en.unavailable)
+    expect(screen.getByRole('status').querySelector('[data-state="idle"]')).not.toBeNull()
     set({ status: 'error' })
-    expect(screen.getByRole('alert').textContent).toBe(en.error)
+    expect(screen.getByRole('alert').querySelector('[data-state="error"]')).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.retry }))
     expect(actions.refresh).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: en.refresh }))
@@ -125,6 +139,18 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText(en.empty)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.addPlugin }))
     expect(actions.openInstall).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the read failure and its retry visible while a detail page is open', () => {
+    const { actions, set } = renderTab({ packages: [pkg()] })
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    set({ status: 'error' })
+    expect(screen.getByRole('alert').querySelector('[data-state="error"]')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    expect(actions.refresh).toHaveBeenCalledTimes(1)
+    // The detail keeps showing the kept data behind the alert.
+    expect(document.querySelector('[data-plugin-detail]')).not.toBeNull()
   })
 
   it('lists the installed bundles as cards, the installation\'s offered ones as official, and tags a problem the Host reports', () => {
@@ -212,7 +238,6 @@ describe('PluginManagerPage', () => {
 
   it.each([
     ['agent-team-profile', 'builtinAgentTeamTitle', 'builtinAgentTeamDescription'],
-    ['agent-team-web-profile', 'builtinAgentTeamWebTitle', 'builtinAgentTeamWebDescription'],
     ['auto-review', 'builtinAutoReviewTitle', 'builtinAutoReviewDescription'],
   ] as const)('localizes %s across cards, details, switches, and uninstall confirmation', (suffix, titleKey, descriptionKey) => {
     const name = `@deepseek-ai/dsh-experimental-${suffix}`
@@ -280,6 +305,13 @@ describe('PluginManagerPage', () => {
       renderTab({ packages: [] }, { items: [{ id: 'bash', label: 'Shell' }] }, bodies)
       expect(screen.queryByText(en.empty)).toBeNull()
       expect(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Shell') })).toBeTruthy()
+    })
+
+    it('gives an official plugin without artwork of its own the default artwork', () => {
+      renderTab({ packages: [] }, { items: [{ id: 'custom-tool', label: 'Custom' }] })
+      const card = document.querySelector('[data-plugin-item="custom-tool"]') as HTMLElement
+      const stops = [...card.querySelectorAll('stop')].map(stop => stop.getAttribute('stop-color'))
+      expect(stops).toEqual(['#54ECE7', '#658EFF'])
     })
 
     it('renders a bundle\'s own configuration on its page, and no configure control on a row without one', () => {
@@ -387,17 +419,17 @@ describe('PluginManagerPage', () => {
 
   it('opens a guide under the field and drops an example into it', () => {
     const { actions } = renderTab({ install: { ...IDLE_INSTALL, open: true } })
-    expect(screen.queryByText(en.installGuideIntro)).toBeNull()
+    expect(screen.queryByText(en.installGuideIdHint)).toBeNull()
     const toggle = screen.getByRole('button', { name: en.installGuideToggle })
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(toggle)
     expect(screen.getByRole('button', { name: en.installGuideHide }).getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByText(en.installGuideIdNote)).toBeTruthy()
+    expect(screen.getByText(en.installGuideIdHint)).toBeTruthy()
     expect(screen.getByText(en.installGuideGitExample)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.installGuideFillAria.replace('{example}', en.installGuideIdExample) }))
     expect(actions.editInstallSpec).toHaveBeenCalledExactlyOnceWith(en.installGuideIdExample)
     fireEvent.click(screen.getByRole('button', { name: en.installGuideHide }))
-    expect(screen.queryByText(en.installGuideIntro)).toBeNull()
+    expect(screen.queryByText(en.installGuideIdHint)).toBeNull()
   })
 
   it('opens a bundle\'s page with its facts and rows, and uninstalls from it', () => {
@@ -458,6 +490,7 @@ describe('PluginManagerPage', () => {
         ...index === 1 ? { readOnlyReason: 'unaddressable' as const } : {},
         ...index === 3 ? { phase: 'failed' as const } : {},
         ...index === 4 ? { phase: 'loading' as const } : {},
+        ...index === 5 ? { phase: 'unloading' as const } : {},
       })
       if (index !== 2) return live
       // The third row has no live entry: nothing to switch.
@@ -467,7 +500,7 @@ describe('PluginManagerPage', () => {
     const { actions, set } = renderTab({ packages: [pkg({ rows })], busy: [rowKey('include:row-5')] })
     fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'better-sidebar') }))
     const detail = document.querySelector('[data-plugin-detail]') as HTMLElement
-    expect(within(detail).getByText(`${en.partsCountTotal.replace('{count}', '12')} · ${en.partsCountRunning.replace('{count}', '9')} · ${en.partsCountOff.replace('{count}', '1')} · ${en.partsCountFailed.replace('{count}', '1')}`)).toBeTruthy()
+    expect(within(detail).getByText(`${en.partsCountTotal.replace('{count}', '12')} · ${en.partsCountRunning.replace('{count}', '8')} · ${en.partsCountOff.replace('{count}', '1')} · ${en.partsCountFailed.replace('{count}', '1')}`)).toBeTruthy()
     fireEvent.click(within(detail).getByRole('switch', { name: en.partToggle.replace('{name}', 'row-0') }))
     expect(actions.setRowEnabled).toHaveBeenCalledWith('include:row-0', false)
     // A protected row, a row without a live entry, and a row with a write in flight cannot be switched.
@@ -480,7 +513,10 @@ describe('PluginManagerPage', () => {
     expect(within(detail).getByRole('switch', { name: en.partToggle.replace('{name}', 'row-5') })).toHaveProperty('disabled', true)
     expect(within(detail).getByText(en.rowPhaseFailed)).toBeTruthy()
     expect(within(detail).getByText(en.rowPhaseLoading)).toBeTruthy()
+    expect(within(detail).getByText(en.rowPhaseUnloading)).toBeTruthy()
     expect(document.querySelector('[data-plugin-row="include:row-3"]')?.getAttribute('data-state')).toBe('failed')
+    expect(document.querySelector('[data-plugin-row="include:row-4"] [data-state="ongoing"]')).not.toBeNull()
+    expect(document.querySelector('[data-plugin-row="include:row-5"] [data-state="ongoing"]')).not.toBeNull()
     // A long list gets a filter; nothing matching says so.
     const filter = within(detail).getByRole('searchbox', { name: en.partsFilter })
     fireEvent.change(filter, { target: { value: 'ROW-1' } })
@@ -517,6 +553,7 @@ describe('PluginManagerPage', () => {
     expect(screen.getByRole('textbox', { name: en.installSpecLabel })).toHaveProperty('disabled', true)
     const checking = screen.getByRole('button', { name: en.installChecking })
     expect(checking).toHaveProperty('disabled', true)
+    expect(checking.querySelector('[data-state="ongoing"]')).not.toBeNull()
     fireEvent.keyDown(screen.getByRole('textbox', { name: en.installSpecLabel }), { key: 'Enter' })
     expect(actions.runInstall).toHaveBeenCalledTimes(2)
 
@@ -535,15 +572,19 @@ describe('PluginManagerPage', () => {
       expect(screen.getByRole('alert').textContent).toBe(sentence)
       expect(screen.getByRole('textbox', { name: en.installSpecLabel }).getAttribute('aria-invalid')).toBe('true')
     }
+    // A check no registry answered names them all.
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', inputError: { problem: 'network', reason: 'r', registries: [null, MIRROR] } } })
+    expect(screen.getByRole('alert').textContent).toBe(en.installProblemNetworkAll.replace('{registries}', `${en.registryDefault}, ${en.registryNpmmirror}`))
     fireEvent.click(screen.getByRole('button', { name: en.close }))
     expect(actions.closeInstall).toHaveBeenCalledTimes(1)
   })
 
   it('shows the subject while installing, folds the pnpm output behind the details, and stops through the Host', () => {
-    const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', bundle: true } as const
+    const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', bundle: true, registry: null } as const
     const run = { jobId: 'j1', command: 'pnpm add dsh-x', cwd: '/home/u/.dsh/profiles/web', output: 'Progress: resolved \x1b[96m1\x1b[39m\n' }
     const { actions, set } = renderTab({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'running', subject, runs: [run] } })
     expect(screen.getByRole('status').textContent).toBe(en.installingTitle)
+    expect(screen.getByRole('status').parentElement?.querySelector('[data-state="ongoing"]')).not.toBeNull()
     expect(screen.getByText('dsh-x')).toBeTruthy()
     expect(screen.getByText('A sidebar.')).toBeTruthy()
     expect(screen.getByText(en.installVersion.replace('{version}', '1.4.2'))).toBeTruthy()
@@ -574,25 +615,24 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText(en.terminalNoOutput)).toBeTruthy()
     // Cancel and the back control each ask the Host to stop the run; the close control asks too, and closes once the Host confirms.
     fireEvent.click(screen.getByRole('button', { name: en.installCancel }))
-    fireEvent.click(screen.getByRole('button', { name: en.installEditAria }))
+    fireEvent.click(screen.getByRole('button', { name: en.installCancelAndEdit }))
     expect(actions.cancelInstall).toHaveBeenCalledTimes(2)
     expect(screen.queryByRole('button', { name: en.close })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.installCloseCancels }))
-    expect(actions.cancelInstallAndClose).toHaveBeenCalledOnce()
-    expect(actions.closeInstall).not.toHaveBeenCalled()
+    expect(actions.closeInstall).toHaveBeenCalledOnce()
   })
 
   it('waits with the Host through starting, stopping, and applying, and words an unconfirmed stop', () => {
-    const subject = { spec: 'slow', status: 'accepted', kind: 'registry', name: 'slow', bundle: true } as const
+    const subject = { spec: 'slow', status: 'accepted', kind: 'registry', name: 'slow', bundle: true, registry: null } as const
     const { actions, set } = renderTab({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'starting', subject } })
-    // Before the Host acknowledges the run there is nothing to stop: cancel, back, and close all wait.
     expect(screen.getByRole('status').textContent).toBe(en.installStarting)
-    expect(screen.getByRole('button', { name: en.installCancel })).toHaveProperty('disabled', true)
-    expect(screen.getByRole('button', { name: en.installEditAria })).toHaveProperty('disabled', true)
-    expect(screen.getByRole('button', { name: en.close })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: en.installCancel })).toHaveProperty('disabled', false)
+    expect(screen.getByRole('button', { name: en.installCancelAndEdit })).toHaveProperty('disabled', false)
+    fireEvent.click(screen.getByRole('button', { name: en.installCloseCancels }))
+    expect(actions.closeInstall).toHaveBeenCalledOnce()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'running', subject } })
     fireEvent.click(screen.getByRole('button', { name: en.installCancel }))
-    fireEvent.click(screen.getByRole('button', { name: en.installEditAria }))
+    fireEvent.click(screen.getByRole('button', { name: en.installCancelAndEdit }))
     expect(actions.cancelInstall).toHaveBeenCalledTimes(2)
     // While the Host stops the run the terminal reads as cancelled rather than failed.
     set({
@@ -603,18 +643,20 @@ describe('PluginManagerPage', () => {
     })
     expect(screen.getByRole('status').textContent).toBe(en.installCancelling)
     expect(screen.getByRole('button', { name: en.installCancelling })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: en.close })).toHaveProperty('disabled', false)
     expect(within(document.querySelector('[data-terminal]') as HTMLElement).getByText(en.installCancelledShort)).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'applying', subject } })
     expect(screen.getByRole('status').textContent).toBe(en.installApplying)
     expect(screen.getByRole('button', { name: en.installCancel })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: en.close })).toHaveProperty('disabled', false)
     // A stop the Host could not confirm says so over the running screen.
-    set({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'running', subject, failure: { reason: 'offline', cancelUnconfirmed: true } } })
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'running', subject, failure: { reason: 'offline', uncertainty: 'cancellation' } } })
     expect(screen.getByRole('alert').textContent).toContain('offline')
     expect(screen.getByRole('button', { name: en.installCancel })).toHaveProperty('disabled', false)
   })
 
   it('offers to enable what a finished install added, and says when it waits for a restart', () => {
-    const subject = { spec: '/plugins/dsh-x', status: 'accepted', kind: 'path', name: 'dsh-x', bundle: true } as const
+    const subject = { spec: '/plugins/dsh-x', status: 'accepted', kind: 'path', name: 'dsh-x', bundle: true, registry: null } as const
     const { actions, set } = renderTab({
       install: {
         ...IDLE_INSTALL,
@@ -627,6 +669,7 @@ describe('PluginManagerPage', () => {
       },
     })
     expect(screen.getByText(en.installedTitle)).toBeTruthy()
+    expect(screen.getByText(en.installedTitle).parentElement?.querySelector('[data-state="done"]')).not.toBeNull()
     // A path without a description reads by its kind.
     expect(screen.getByText('dsh-x')).toBeTruthy()
     expect(screen.getByText(en.installSubjectPath)).toBeTruthy()
@@ -640,7 +683,7 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText(en.installDoneRestart)).toBeTruthy()
 
     // A run that named no bundle leaves only Done.
-    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'done', subject: { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', bundle: true } } })
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'done', subject: { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', bundle: true, registry: null } } })
     expect(screen.getByText(en.installDoneNothing)).toBeTruthy()
     expect(screen.queryByRole('button', { name: en.installEnableNow })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.installClose }))
@@ -648,7 +691,7 @@ describe('PluginManagerPage', () => {
   })
 
   it('asks to allow the scripts a blocked install left pending, retries with them, and says what was allowed', () => {
-    const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', bundle: true } as const
+    const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', bundle: true, registry: null } as const
     const { actions, set } = renderTab({
       install: {
         ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', subject,
@@ -675,7 +718,7 @@ describe('PluginManagerPage', () => {
   })
 
   it('words a failed install by its kind, else in the Host\'s words, and retries it', () => {
-    const subject = { spec: 'github:a/b', status: 'accepted', kind: 'git', bundle: null } as const
+    const subject = { spec: 'github:a/b', status: 'accepted', kind: 'git', bundle: null, registry: null, host: 'github.com' } as const
     const { actions, set } = renderTab({
       install: {
         ...IDLE_INSTALL,
@@ -685,11 +728,13 @@ describe('PluginManagerPage', () => {
         subject,
         detailsOpen: true,
         runs: [{ jobId: 'j1', command: 'pnpm add github:a/b', cwd: '/p', output: 'ERR\n', exitCode: 1 }],
-        failure: { reason: 'ERR\n', kind: 'network' },
+        failure: { reason: 'ERR\n', kind: 'network', failedAt: 'spec-host' },
       },
     })
     expect(screen.getByRole('alert').textContent).toBe(en.installFailedTitle)
-    expect(screen.getByText(en.installFailureNetwork)).toBeTruthy()
+    // A git spec the Host could not reach reads by its own host: no registry stands in for it, so none is offered.
+    expect(screen.getByText(en.installFailureNetworkHost.replace('{host}', 'github.com'))).toBeTruthy()
+    expect(screen.queryByRole('button', { name: en.installChangeRegistry })).toBeNull()
     // A git spec without a manifest reads by its address and kind.
     expect(screen.getByText('github:a/b')).toBeTruthy()
     expect(screen.getByText(en.installSubjectGit)).toBeTruthy()
@@ -721,8 +766,112 @@ describe('PluginManagerPage', () => {
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: null } })
     expect(screen.getByText(en.installFailureGeneric)).toBeTruthy()
     // A tarball spec reads by its kind too.
-    set({ install: { ...IDLE_INSTALL, open: true, spec: '/p/x.tgz', phase: 'failed', subject: { spec: '/p/x.tgz', status: 'accepted', kind: 'tarball', bundle: null }, failure: null } })
+    set({ install: { ...IDLE_INSTALL, open: true, spec: '/p/x.tgz', phase: 'failed', subject: { spec: '/p/x.tgz', status: 'accepted', kind: 'tarball', bundle: null, registry: null }, failure: null } })
     expect(screen.getByText(en.installSubjectTarball)).toBeTruthy()
+  })
+
+  it('offers the registries under the spec, folded by default, and picks or types one', () => {
+    const open = { ...IDLE_INSTALL, open: true, registries: REGISTRIES }
+    const { actions, set } = renderTab({ install: open })
+    // Folded, the toggle names the registry the install asks first, by name alone.
+    const toggle = screen.getByRole('button', { name: `${en.registryToggle} ${en.registryDefault}` })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('radio')).toBeNull()
+    fireEvent.click(toggle)
+    expect(actions.toggleRegistryOptions).toHaveBeenCalledTimes(1)
+    set({ install: { ...open, registryOpen: true } })
+    expect(screen.getByRole('button', { name: `${en.registryToggle} ${en.registryDefault}` }).getAttribute('aria-expanded')).toBe('true')
+    const radios = screen.getAllByRole('radio')
+    expect(radios).toHaveLength(3)
+    expect(radios[0]).toHaveProperty('checked', true)
+    // The options carry the host each names; the control does not.
+    expect(radios.map(radio => radio.parentElement?.textContent)).toEqual([OFFICIAL_OPTION, MIRROR_OPTION, en.registryCustom])
+    // The options float from the toggle, so the dialog card itself does not grow.
+    expect(screen.getByRole('dialog').contains(screen.getByRole('group', { name: en.registryLegend }))).toBe(false)
+    // Escape folds the options without reaching the dialog; a pointer outside them folds them too.
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(actions.toggleRegistryOptions).toHaveBeenCalledTimes(2)
+    expect(actions.closeInstall).not.toHaveBeenCalled()
+    fireEvent.pointerDown(document.body)
+    expect(actions.toggleRegistryOptions).toHaveBeenCalledTimes(3)
+    fireEvent.pointerDown(screen.getByRole('group', { name: en.registryLegend }))
+    expect(actions.toggleRegistryOptions).toHaveBeenCalledTimes(3)
+    fireEvent.click(screen.getByRole('radio', { name: MIRROR_OPTION }))
+    expect(actions.chooseRegistry).toHaveBeenLastCalledWith({ kind: 'offered', registry: MIRROR })
+    set({ install: { ...open, registryOpen: true, registry: { kind: 'offered', registry: MIRROR } } })
+    expect(screen.getByRole('button', { name: `${en.registryToggle} ${en.registryNpmmirror}` })).toBeTruthy()
+    // A typed registry: the radio picks it, the field carries it, and it is asked alone.
+    fireEvent.click(screen.getByRole('radio', { name: new RegExp(en.registryCustom) }))
+    expect(actions.chooseRegistry).toHaveBeenLastCalledWith({ kind: 'custom', url: '' })
+    set({ install: { ...open, registryOpen: true, registry: { kind: 'custom', url: 'npm.corp' }, registryError: true } })
+    const field = screen.getByRole('textbox', { name: en.registryCustom })
+    expect(field).toHaveProperty('value', 'npm.corp')
+    expect(field.getAttribute('aria-invalid')).toBe('true')
+    expect(screen.getByRole('alert').textContent).toBe(en.registryCustomInvalid)
+    fireEvent.change(field, { target: { value: 'https://npm.corp/' } })
+    expect(actions.chooseRegistry).toHaveBeenLastCalledWith({ kind: 'custom', url: 'https://npm.corp/' })
+    expect(screen.getByRole('button', { name: `${en.registryToggle} ${en.registryCustom}` })).toBeTruthy()
+    // Enter in the field installs, once there is a spec.
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect(actions.runInstall).not.toHaveBeenCalled()
+    set({ install: { ...open, spec: 'dsh-x', registryOpen: true, registry: { kind: 'custom', url: 'https://npm.corp/' } } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: en.registryCustom }), { key: 'Enter' })
+    expect(actions.runInstall).toHaveBeenCalledTimes(1)
+    // A remembered registry that does not parse as a URL reads as written.
+    set({ install: { ...open, registry: { kind: 'offered', registry: 'garbage' } } })
+    expect(screen.getByRole('button', { name: `${en.registryToggle} garbage` })).toBeTruthy()
+    // A registry the Host configured that the dictionary does not know reads by its host, listed first.
+    const corporate = { registry: 'https://npm.corp.example/', fallbackRegistries: [], resolved: OFFICIAL }
+    set({ install: { ...open, registryOpen: true, registries: corporate, registry: { kind: 'offered', registry: 'https://npm.corp.example/' } } })
+    expect(screen.getAllByRole('radio').map(radio => radio.parentElement?.textContent)).toEqual(['npm.corp.example', OFFICIAL_OPTION, en.registryCustom])
+    // pnpm's own configuration naming another registry reads as the default registry with that host.
+    set({ install: { ...open, registryOpen: true, registries: { ...REGISTRIES, resolved: 'https://npm.corp.example/' } } })
+    expect(screen.getByRole('radio', { name: en.registryWithHost.replace('{name}', en.registryDefault).replace('{host}', 'npm.corp.example') })).toBeTruthy()
+    // Before the Host answers, only pnpm's own is offered, read as npm's own.
+    set({ install: { ...open, registryOpen: true, registries: null } })
+    expect(screen.getAllByRole('radio')).toHaveLength(2)
+    expect(screen.getByRole('radio', { name: OFFICIAL_OPTION })).toBeTruthy()
+  })
+
+  it('names the registry each attempt asks while installing, badges each run, and says when every registry failed', () => {
+    const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', bundle: true, registry: null } as const
+    const runs = [
+      { jobId: 'j1', command: 'pnpm add dsh-x', cwd: '/p', output: 'ERR\n', exitCode: 1 },
+      { jobId: 'j2', command: `pnpm add dsh-x --registry=${MIRROR}`, cwd: '/p', output: 'Progress\n' },
+    ]
+    const { actions, set } = renderTab({
+      install: {
+        ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'running', subject, runs, detailsOpen: true, attempts: { registries: [null, MIRROR], total: 2 },
+      },
+    })
+    expect(screen.getByRole('status').textContent).toBe(en.installingTitle)
+    expect(screen.getByText(en.installAttempt
+      .replace('{previous}', en.registryDefault).replace('{registry}', en.registryNpmmirror).replace('{index}', '2').replace('{total}', '2'))).toBeTruthy()
+    expect(screen.getByText(en.installAttemptBadge.replace('{index}', '1').replace('{registry}', en.registryDefault))).toBeTruthy()
+    expect(screen.getByText(en.installAttemptBadge.replace('{index}', '2').replace('{registry}', en.registryNpmmirror))).toBeTruthy()
+    // The first attempt says nothing about a registry before it; a single run carries no badge.
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'running', subject, runs: [runs[0] as never], detailsOpen: true, attempts: { registries: [null], total: 2 } } })
+    expect(screen.queryByText(en.installAttemptBadge.replace('{index}', '1').replace('{registry}', en.registryDefault))).toBeNull()
+    expect(screen.getByRole('status').parentElement?.textContent).toBe(en.installingTitle)
+    // Every registry failed: the failure names them all, and the registries can be changed from here.
+    set({
+      install: {
+        ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', subject, runs,
+        attempts: { registries: [null, MIRROR], total: 2 }, failure: { reason: 'ERR', kind: 'network', failedAt: 'registry' },
+      },
+    })
+    expect(screen.getByText(en.installFailureNetworkAll.replace('{registries}', `${en.registryDefault}, ${en.registryNpmmirror}`))).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.installChangeRegistry }))
+    expect(actions.changeRegistry).toHaveBeenCalledTimes(1)
+    // One registry that failed reads as the plain network failure; a stale copy on it still offers another registry.
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', subject, attempts: { registries: [null], total: 1 }, failure: { reason: 'ERR', kind: 'network', failedAt: 'registry' } } })
+    expect(screen.getByText(en.installFailureNetwork)).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.installChangeRegistry })).toBeTruthy()
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', subject, attempts: { registries: [null], total: 1 }, failure: { reason: 'ERR', kind: 'not-found', failedAt: 'registry' } } })
+    expect(screen.getByRole('button', { name: en.installChangeRegistry })).toBeTruthy()
+    // A failure the Host laid at neither offers no other registry.
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', subject, attempts: { registries: [null], total: 1 }, failure: { reason: 'ERR', kind: 'disk-full' } } })
+    expect(screen.queryByRole('button', { name: en.installChangeRegistry })).toBeNull()
   })
 
   it('scrolls to and marks the package an install enabled, then lets the mark go', () => {
@@ -800,6 +949,11 @@ describe('PluginManagerPage', () => {
       expect(screen.getByRole('alert').textContent).toContain(en.failedDisable.replace('{reason}', en.reasonOperationError))
       set({ notice: { kind: 'failed', action: 'rowEnable', reason: 'x', packageName: 'pkg-1', seq: 8 } })
       expect(screen.getByRole('alert').textContent).toContain(en.failedRowEnable.replace('{reason}', 'x'))
+      for (const [index, outcome] of (['done', 'failed', 'unconfirmed', 'applying', 'unknown'] as const).entries()) {
+        set({ notice: { kind: 'install', outcome, seq: 9 + index } })
+        const key = ({ done: 'installBackgroundDone', failed: 'installBackgroundFailed', unconfirmed: 'installBackgroundUnconfirmed', applying: 'installBackgroundApplying', unknown: 'installBackgroundUnknown' } as const)[outcome]
+        expect(screen.getByRole('alert').textContent).toContain(en[key])
+      }
       // No button to press: the toast retires on its own and the store forgets it.
       expect(screen.queryByRole('button', { name: /got it/i })).toBeNull()
       expect(actions.dismissNotice).not.toHaveBeenCalled()
@@ -809,5 +963,43 @@ describe('PluginManagerPage', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('distinguishes lost results, pending acceptance, and unknown outcomes in both languages', () => {
+    const { actions, set, setLanguage } = renderTab()
+    for (const dict of [en, zh]) {
+      setLanguage(dict)
+      set({ install: { ...IDLE_INSTALL, open: true, phase: 'unconfirmed', failure: { reason: 'offline', uncertainty: 'result' } } })
+      expect(screen.getByRole('alert').textContent).toBe(dict.installResultUnconfirmed.replace('{reason}', 'offline'))
+      fireEvent.click(screen.getByRole('button', { name: dict.installReconcile }))
+      expect(screen.getByRole('button', { name: dict.installCancelAndEdit }).textContent).toBe(dict.installCancelAndEdit)
+      set({ install: { ...IDLE_INSTALL, open: true, phase: 'unconfirmed', failure: { reason: '', uncertainty: 'acceptance' } } })
+      expect(screen.getByRole('alert').textContent).toBe(dict.installAwaitingAcceptance)
+      expect(screen.queryByRole('button', { name: dict.installReconcile })).toBeNull()
+      set({ install: { ...IDLE_INSTALL, open: true, phase: 'applying', failure: { reason: 'offline', uncertainty: 'cancellation' } } })
+      expect(screen.getByRole('alert').textContent).toBe(dict.installApplyingCancellationError.replace('{reason}', 'offline'))
+      expect(screen.getByRole('button', { name: dict.installCancel })).toHaveProperty('disabled', true)
+      set({ install: { ...IDLE_INSTALL, open: true, phase: 'unknown' } })
+      expect(screen.getByRole('status').textContent).toBe(dict.installUnknownTitle)
+      expect(screen.getByText(dict.installUnknownDescription)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: dict.installCancel })).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: dict.installEditAria }))
+    }
+    expect(actions.reconcileInstall).toHaveBeenCalledTimes(2)
+    expect(actions.cancelInstall).toHaveBeenCalledTimes(2)
+  })
+
+  it('offers the retained installation and keeps its uncertain state cancellable', () => {
+    const { actions } = renderTab({ install: {
+      ...IDLE_INSTALL, open: true, phase: 'unconfirmed', requestId: 'pending-install' as PluginInstallRequestId,
+      failure: { reason: 'offline', uncertainty: 'cancellation' },
+    } })
+    fireEvent.click(screen.getByRole('button', { name: en.installViewTask }))
+    expect(actions.openInstall).toHaveBeenCalledOnce()
+    expect(screen.getByRole('status').textContent).toBe(en.installUnconfirmedTitle)
+    fireEvent.click(screen.getByRole('button', { name: en.installCancel }))
+    expect(actions.cancelInstall).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: en.installCloseCancels }))
+    expect(actions.closeInstall).toHaveBeenCalledOnce()
   })
 })
