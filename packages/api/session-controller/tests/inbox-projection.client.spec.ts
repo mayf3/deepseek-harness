@@ -64,7 +64,8 @@ describe('Inbox projection intake', () => {
       const stale = { ...empty, 'next-turn': [message('removed', 'already removed')] }
       const result = ok({ items: [{
         sessionId: SID, updatedAt: 1, running: false, blank: false, agentAvailable: false,
-        projections: { asOfSeq: 21, values: { inbox: empty } },
+        // The Session is attached: the Host's live registry served the block.
+        projections: { kind: 'sequenced' as const, asOfSeq: 21, values: { inbox: empty } },
       }] })
       let refreshed: Promise<void> | undefined
 
@@ -109,9 +110,9 @@ describe('Inbox projection intake', () => {
       const baseline = { type: 'baseline', value: { jobs: {}, projections: {} } } as const
       const result = ok({ items: [
         { sessionId: SID, updatedAt: 1, running: false, blank: false, agentAvailable: false,
-          projections: { asOfSeq: 1, values: { inbox: empty } } },
+          projections: { kind: 'cached' as const, asOfSeq: 1, values: { inbox: empty } } },
         { sessionId: hiddenSessionId, updatedAt: 1, running: false, blank: false, agentAvailable: false,
-          projections: { asOfSeq: 1, values: { inbox: restored } } },
+          projections: { kind: 'cached' as const, asOfSeq: 1, values: { inbox: restored } } },
       ] })
       let refreshed: Promise<void> | undefined
 

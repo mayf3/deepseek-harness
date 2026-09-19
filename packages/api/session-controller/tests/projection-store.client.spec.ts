@@ -249,13 +249,14 @@ describe('manager frame routing', () => {
     expect(manager.getListSnapshot().items[0]?.title).toBe('Projected title')
   })
 
-  it('caches a list block: a Session baseline at any cut replaces it and a list refresh cannot restore it', async ({ mock, remote }) => {
+  it('routes a cached list block below every sequenced write: a Session baseline at any cut replaces it and a list refresh cannot restore it', async ({ mock, remote }) => {
     const manager = makeManager(mock, remote)
     remote.session.list.mockResolvedValue(ok({
       items: [{ agentAvailable: false,
         sessionId: sid('s1'), updatedAt: 1, running: false, blank: false,
-        // A stale record whose watermark outruns the connected Session's cut.
-        projections: { asOfSeq: 40, values: { title: 'Cached title', 'test/marks': { marks: ['cached'] } } },
+        // A cold row viewed from a stale record whose own watermark outruns
+        // the connected Session's cut.
+        projections: { kind: 'cached', asOfSeq: 40, values: { title: 'Cached title', 'test/marks': { marks: ['cached'] } } },
       }],
     }))
     await manager.refreshList()
@@ -281,12 +282,46 @@ describe('manager frame routing', () => {
     expect(manager.get(sid('s1')).projections.get('test/marks')).toEqual({ marks: ['cached'] })
   })
 
+  it('merges a sequenced list block under higher-seq-wins: a lower-cut baseline neither overwrites nor clears it', async ({ mock, remote }) => {
+    const manager = makeManager(mock, remote)
+    remote.session.list.mockResolvedValue(ok({
+      items: [{ agentAvailable: true,
+        sessionId: sid('s1'), updatedAt: 1, running: false, blank: false,
+        // The Host's live registry served the block: its watermark shares the connection's seq space.
+        projections: { kind: 'sequenced', asOfSeq: 40, values: { title: 'Live title', 'test/marks': { marks: ['live'] } } },
+      }],
+    }))
+    await manager.refreshList()
+    expect(manager.getListSnapshot().items[0]?.title).toBe('Live title')
+
+    // A delayed baseline at a lower cut is stale against the block: it can
+    // neither overwrite the carried key nor clear the omitted one.
+    manager.handleControlFrame({
+      type: 'baseline',
+      value: {
+        jobs: {},
+        projections: { [sid('s1')]: { asOfSeq: 2, values: { title: 'Delayed baseline' } } },
+      },
+    })
+    await Promise.resolve()
+    expect(manager.getListSnapshot().items[0]?.title).toBe('Live title')
+    expect(manager.get(sid('s1')).projections.get('test/marks')).toEqual({ marks: ['live'] })
+
+    // A frame past the block's watermark still advances it.
+    manager.handleControlFrame({
+      type: 'projection', sessionId: sid('s1'), key: 'title', value: 'Frame title', seq: 41,
+    })
+    await Promise.resolve()
+    expect(manager.getListSnapshot().items[0]?.title).toBe('Frame title')
+  })
+
   it('projects every retained value into list rows with stable snapshot identity', async ({ mock, remote }) => {
     const manager = makeManager(mock, remote)
     remote.session.list.mockResolvedValue(ok({
       items: [{ agentAvailable: true,
         sessionId: sid('s1'), updatedAt: 1, running: false, blank: false,
         projections: {
+          kind: 'sequenced',
           asOfSeq: 2,
           values: { 'test/marks': { marks: ['baseline'] } },
         },

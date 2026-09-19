@@ -1,10 +1,14 @@
 /**
  * Generic per-session projection value store (push model; see the
  * session-projection subsystem page, docs/subsystems/session-projection.md):
- * the host is the only computation site; the client holds finished
- * whole values per key — `key → { value, seq }` — seeded by a follow opening
- * baseline and updated by Session Controller `projection` frames,
- * under the single rule **higher seq wins**. No client-side domain folding
+ * the host is the only computation site; the client holds finished whole
+ * values per key in one of two row kinds. A `sequenced` row
+ * (`{ value, seq }`) comes from the connected Host — a follow opening
+ * baseline, a Session Controller `projection` frame, a list block the Host
+ * computed for an attached Session — and merges under **higher seq wins**
+ * against other sequenced rows. A `cached` row (`{ value }`) comes from the
+ * session list's view of the persisted checkpoint, carries no comparable
+ * seq, and yields to every sequenced write. No client-side domain folding
  * exists: a domain ships projection support with zero client code. Per-key
  * bare observable faces feed `useProjection` (ui-renderer binds them).
  */
@@ -152,10 +156,11 @@ export class ProjectionValueStore {
   }
 
   /**
-   * Fill keys from the session list's zero-I/O cached block. A cached value
-   * lands only where no sequenced row exists: a connected Session has already
-   * answered for such a key, and the list's view of the persisted checkpoint
-   * cannot be newer than it.
+   * Fill keys from a session-list block the Host labeled `cached`: a zero-I/O
+   * view of the persisted checkpoint. A cached value lands only where no
+   * sequenced row exists: a connected Session has already answered for such
+   * a key, and the list's view of the persisted checkpoint cannot be newer
+   * than it.
    * @param values - whole values by key viewed from the persisted checkpoint.
    */
   applyCached(values: Readonly<Record<string, unknown>>): void {
@@ -188,6 +193,8 @@ export class ProjectionValueStore {
     for (const key of Object.keys(values)) this.apply(key, values[key], baseline.asOfSeq)
     for (const [key, row] of this.rows) {
       if (Object.hasOwn(values, key)) continue
+      // Every cached row was deleted above; the kind test only narrows the
+      // type so `row.seq` is readable.
       if (row.kind === 'sequenced' && row.seq > baseline.asOfSeq) continue
       this.rows.delete(key)
       this.changed(key)

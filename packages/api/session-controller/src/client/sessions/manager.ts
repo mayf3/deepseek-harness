@@ -7,12 +7,14 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type {
   SessionControlBaseline,
   SessionControlFrame,
+  SessionProjectionHints,
   SessionRenameValue,
   SessionSummary,
   SessionJob as JobView,
 } from '../../types.ts'
 import { mergeOrderedBaseline } from '../ordered-baseline.ts'
 import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
+import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionListEntry, TitledSessionSummary } from './lineage.ts'
 import { flattenLineage } from './lineage.ts'
@@ -376,16 +378,12 @@ export class SessionManager {
             session.handleBlank(s.blank)
             session.handleRunning(s.running)
           }
-          // Fill each row's cached projection block into the per-session value
-          // store (cold titles surface without opening the session). Cached,
-          // not seeded: the list block is a partial view of the persisted
-          // checkpoint — only version-matching keys, no comparable seq — so an
-          // absent key must not clear, and any sequenced value (a push frame,
-          // a tail baseline) outranks it.
+          // Land each row's projection block in the per-session value store
+          // (cold titles surface without opening the session). A list block is
+          // partial — only the keys its source holds — so an absent key never
+          // clears; how the present keys merge depends on the block's kind.
           for (const s of result.value.items) {
-            const block = s.projections
-            if (block === undefined) continue
-            this.projectionStore(s.sessionId).applyCached(block.values)
+            if (s.projections !== undefined) this.applyListBlock(s.sessionId, s.projections)
           }
         } else {
           this.listState = 'error'
@@ -602,11 +600,30 @@ export class SessionManager {
   handleSessionAdded(summary: SessionSummary): void {
     this.mergeSummary(summary)
     this.sessions.get(summary.sessionId)?.handleBlank(summary.blank)
-    // A list-surface block is cached like the list response itself: the
-    // Session's own baseline replaces it once the client opens the Session.
-    const projections = summary.projections
-    if (projections !== undefined) {
-      this.projectionStore(summary.sessionId).applyCached(projections.values)
+    if (summary.projections !== undefined) this.applyListBlock(summary.sessionId, summary.projections)
+  }
+
+  /**
+   * Merge one list-surface projection block by the sequence space it declares.
+   * A `sequenced` block came from the Host's live registry for an attached
+   * Session, so each key lands under higher-seq-wins against that Session's
+   * baselines and frames. A `cached` block was viewed from the persisted
+   * checkpoint by a header-only listing: its watermark is not comparable with
+   * this connection's seqs, so it only fills keys no sequenced row holds.
+   */
+  private applyListBlock(sessionId: SessionId, block: SessionProjectionHints): void {
+    const store = this.projectionStore(sessionId)
+    switch (block.kind) {
+      case 'sequenced': {
+        const seq = sessionSeqCursor(block.asOfSeq)
+        for (const [key, value] of Object.entries(block.values)) store.apply(key, value, seq)
+        return
+      }
+      case 'cached':
+        store.applyCached(block.values)
+        return
+      default:
+        assertNever(block.kind, 'session list projection block kind')
     }
   }
 

@@ -173,7 +173,7 @@ describe('list lifecycle', () => {
   it('keeps an opened conversation out of blank-session reuse after a stale list refresh', async ({ mock, remote }) => {
     const stale = {
       ...summary(S1, { blank: true, cwd: '/workspace' }),
-      projections: { asOfSeq: 2, values: {
+      projections: { kind: 'cached' as const, asOfSeq: 2, values: {
         sessionListMetadata: { blank: true, lastPromptAt: null },
       } },
     }
@@ -207,7 +207,7 @@ describe('list lifecycle', () => {
     const manager = makeManager(mock, remote)
     try {
       manager.handleSessionAdded({
-        ...summary(S1), projections: { asOfSeq: -1, values: { title: 'before history' } },
+        ...summary(S1), projections: { kind: 'cached', asOfSeq: -1, values: { title: 'before history' } },
       })
       expect(manager.getListSnapshot().items[0]?.title).toBe('before history')
       // The control baseline is the connected Session's own value: it replaces
@@ -328,15 +328,15 @@ describe('list lifecycle', () => {
     })
     remote.session.list.mockResolvedValue(ok({
       items: [
-        { ...summary(S1), projections: { asOfSeq: 4, values: { title: 'Cold cached' } } },
-        { ...summary(S2, { updatedAt: 200 }), projections: { asOfSeq: 50, values: { title: 'List stale' } } },
+        { ...summary(S1), projections: { kind: 'cached', asOfSeq: 4, values: { title: 'Cold cached' } } },
+        { ...summary(S2, { updatedAt: 200 }), projections: { kind: 'cached', asOfSeq: 50, values: { title: 'List stale' } } },
       ] as never[],
     }))
     await manager.refreshList()
     const items = manager.getListSnapshot().items
     // Cold row: title surfaces straight from the list block — no open, no history.
     expect(items.find(item => item.sessionId === S1)?.title).toBe('Cold cached')
-    // A list block never displaces a sequenced value, whatever watermark it claims.
+    // A cached list block never displaces a sequenced value, whatever watermark its record holds.
     expect(items.find(item => item.sessionId === S2)?.title).toBe('Pushed')
   })
 
@@ -885,10 +885,10 @@ describe('connected generation', () => {
       remote.session.list.mockImplementation(() => calls++ === 0 ? oldList.promise : newList.promise)
       const manager = makeManager(mock, remote)
       const oldResult = ok({ items: [{ ...summary(S1), projections: {
-        asOfSeq: 20, values: { title: 'Unpersisted title' },
+        kind: 'cached', asOfSeq: 20, values: { title: 'Unpersisted title' },
       } }] as never[] })
       const newResult = ok({ items: [{ ...summary(S1), projections: {
-        asOfSeq: 1, values: { title: 'Durable title' },
+        kind: 'cached', asOfSeq: 1, values: { title: 'Durable title' },
       } }] as never[] })
       const oldPull = manager.refreshList()
       let newPull: Promise<void> | undefined
