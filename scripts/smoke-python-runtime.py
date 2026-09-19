@@ -2559,7 +2559,7 @@ def normalize_snapshot_value(
                 if isinstance(dt, list):
                     member["dt"] = [0] * len(dt)
     if isinstance(normalized.get("id"), str) and normalized.get("role") in ("assistant", "system", "user", "tool", "developer"):
-        # Released artifact validation binds unstarted-result ids to their call and event sequence.
+        # Replay fixtures retain deterministic repair ids with the call id and original event sequence.
         source = normalized.get("source")
         call_id = normalized.get("toolCallId") if normalized.get("role") == "tool" else (
             source.get("callId") if isinstance(source, dict) and source.get("kind") == "tool" else None

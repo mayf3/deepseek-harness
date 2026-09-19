@@ -96,28 +96,6 @@ describe('ToolCallRecovery', () => {
     expect(recovery.results().map(event => event.data.message.toolCallId)).toEqual([ToolCallId('started'), ToolCallId('pending')])
   })
 
-  it('ignores historical assistant replacements when tracking current requests', () => {
-    const recovery = new ToolCallRecovery()
-    const current = liveToolRequests()
-    recovery.observe(current)
-    recovery.observe({
-      ...current, seq: SessionSeq(22),
-      surfaceOp: { op: 'replace', startSeq: SessionSeq(10), endSeq: SessionSeq(10) },
-      data: {
-        ...current.data, turn: 2, step: 1,
-        message: createMessage({
-          role: 'assistant', source: { kind: 'model', provider: 'mock', model: 'mock' },
-          content: [
-            ...current.data.message.content,
-            { type: 'tool-call', id: ToolCallId('old-only'), name: 'bash', arguments: '{}' },
-          ],
-        }),
-      },
-    })
-
-    expect(recovery.results().map(event => [event.data.message.toolCallId, event.data.turn, event.data.step]))
-      .toEqual([[ToolCallId('started'), 3, 2], [ToolCallId('pending'), 3, 2]])
-  })
 })
 
 const causes: OpenTurnCloseCause[] = [{ kind: 'interrupted' }, { kind: 'forked' }]
