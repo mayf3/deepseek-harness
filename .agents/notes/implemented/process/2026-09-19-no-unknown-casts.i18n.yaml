@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-19-no-unknown-casts.md
-2026-09-19-no-unknown-casts.md: 7315f1d8a2620ce44c1ee4854686a1703a498dbb
-2026-09-19-no-unknown-casts.zh.md: 240ade338424e54e00475f9a7e26f31f530f4a65
+2026-09-19-no-unknown-casts.md: 2f90422d0980fddc2569951ef7f8dba34b488ce4
+2026-09-19-no-unknown-casts.zh.md: 3b66236e586a60a61cdcc1f93b1c0c14ce27eb15

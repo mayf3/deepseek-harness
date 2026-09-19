@@ -23,22 +23,27 @@ export interface UnknownCast {
 }
 
 function syntaxFingerprint(node: ts.Node, source: ts.SourceFile): string {
-  const tokens: [number, string][] = []
+  const tokens: string[] = []
   const visit = (child: ts.Node): void => {
     if (ts.isJSDoc(child)) return
-    const children = child.getChildren(source)
-    if (children.length === 0) tokens.push([child.kind, child.getText(source)])
-    else children.forEach(visit)
+    if (ts.isToken(child)) tokens.push(child.getText(source))
+    else child.getChildren(source).forEach(visit)
   }
   visit(node)
   return createHash('sha256').update(JSON.stringify(tokens)).digest('hex')
 }
 
+function assertsUnknown(type: ts.TypeNode): boolean {
+  if (ts.isParenthesizedTypeNode(type)) return assertsUnknown(type.type)
+  return type.kind === ts.SyntaxKind.UnknownKeyword
+    || (ts.isUnionTypeNode(type) && type.types.some(assertsUnknown))
+}
+
 /**
- * Find direct assertions to unknown, including angle assertions and parenthesized types.
+ * Find assertions to unknown, including angle syntax and unknown members of asserted unions.
  * @param file - repository-relative source path; its extension selects TS or TSX parsing.
  * @param text - source contents.
- * @returns assertions in source order; comments, strings, aliases and unknown containers do not match.
+ * @returns assertions in AST traversal order; comments, strings, aliases and unknown containers do not match.
  */
 export function findUnknownCasts(file: string, text: string): UnknownCast[] {
   const normalized = file.replaceAll('\\', '/')
@@ -46,9 +51,7 @@ export function findUnknownCasts(file: string, text: string): UnknownCast[] {
   const casts: UnknownCast[] = []
   const visit = (node: ts.Node): void => {
     if (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) {
-      let type = node.type
-      while (ts.isParenthesizedTypeNode(type)) type = type.type
-      if (type.kind === ts.SyntaxKind.UnknownKeyword) {
+      if (assertsUnknown(node.type)) {
         casts.push({
           file: normalized,
           line: source.getLineAndCharacterOfPosition(node.type.getStart(source)).line + 1,

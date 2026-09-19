@@ -52,6 +52,12 @@ describe('unknown assertion syntax', () => {
     ['parenthesized type', 'input.ts', 'value as ((unknown))', 1],
     ['angle assertion', 'input.ts', '<unknown>value', 1],
     ['parenthesized angle type', 'input.ts', '<(unknown)>value', 1],
+    ['union', 'input.ts', 'value as unknown | string', 1],
+    ['union with trailing unknown', 'input.ts', 'value as string | unknown', 1],
+    ['parenthesized union', 'input.ts', 'value as (unknown | never)', 1],
+    ['nested union', 'input.ts', 'value as string | (unknown | number)', 1],
+    ['angle union assertion', 'input.ts', '<unknown | string>value', 1],
+    ['escaped keyword', 'input.ts', String.raw`value as \u0075nknown`, 1],
     ['TSX expression', 'input.tsx', '<View value={input as unknown} />', 1],
     ['template interpolation', 'input.ts', '`text ${value as unknown}`', 1],
   ])('finds %s', (_name, file, text, count) => {
@@ -64,9 +70,13 @@ describe('unknown assertion syntax', () => {
     'const text = `value as unknown`',
     'const result = value as unknown[]',
     'const result = value as Record<string, unknown>',
+    'const result = value as unknown[] | string',
+    'const result = value as unknown & { id: string }',
+    'const result = value as string | (unknown & { id: string })',
     'const result = <unknown[]>value',
     'const result: unknown = value',
     'type Input = unknown; const result = value as Input',
+    'type Input = unknown; const result = value as Input | string',
   ])('accepts source without a direct assertion: %s', (text) => {
     expect(findUnknownCasts('input.ts', text)).toEqual([])
   })
@@ -74,6 +84,10 @@ describe('unknown assertion syntax', () => {
   it('accepts JSX text without ignoring assertions in expressions', () => {
     expect(findUnknownCasts('input.tsx', '<View>as unknown</View>')).toEqual([])
     expect(findUnknownCasts('input.tsx', '<View>{value as unknown}</View>')).toHaveLength(1)
+  })
+
+  it('excludes JavaScript JSDoc assertions', () => {
+    expect(findUnknownCasts('input.js', 'const result = /** @type {unknown} */ (value)')).toEqual([])
   })
 
   it('reports normalized paths and the asserted type line', () => {
@@ -89,6 +103,13 @@ describe('unknown assertion syntax', () => {
     expect(formatted.map(cast => cast.fingerprint)).toEqual(original.map(cast => cast.fingerprint))
     expect(findUnknownCasts('input.ts', 'call(value, "other") as unknown').map(cast => cast.fingerprint))
       .not.toEqual(original.map(cast => cast.fingerprint))
+  })
+
+  it.each([
+    ['value as unknown', '6fe9024d30e0d4757a348b83d246925b3f5aeaf2e79a0eff4bf12f3c9fb5826b'],
+    ['call() as unknown', '49f7ac9934e1a7fc08876cdf6f900bd05c74d7d25801b6ec2d4eed02c3221f8d'],
+  ])('preserves the recorded fingerprint for %s', (text, fingerprint) => {
+    expect(findUnknownCasts('input.ts', text)[0]?.fingerprint).toBe(fingerprint)
   })
 })
 
@@ -107,6 +128,7 @@ describe('unknown assertion inventory', () => {
     ['additional assertion', `${assertion}const other = input as unknown\n`],
     ['duplicate assertion', `${assertion}${assertion}`],
     ['replacement assertion', 'const result = other as unknown\n'],
+    ['union assertion', 'const result = value as unknown | string\n'],
   ])('rejects an %s without changing the baseline', (_name, text) => {
     const root = fixture()
     write(root, sourcePath, assertion)
@@ -117,9 +139,14 @@ describe('unknown assertion inventory', () => {
     expect(readFileSync(join(root, baselinePath), 'utf8')).toBe(baseline)
   })
 
-  it('rejects a new assertion when the inventory is empty', () => {
+  it.each([
+    assertion,
+    'const result = value as (unknown | never)\n',
+    'const result = value as string | (unknown | number)\n',
+    String.raw`const result = value as \u0075nknown`,
+  ])('rejects a new assertion when the inventory is empty: %s', (text) => {
     const root = fixture()
-    write(root, sourcePath, assertion)
+    write(root, sourcePath, text)
     expect(() => verifyNoUnknownCasts(root)).toThrow(`${sourcePath}:1`)
   })
 
