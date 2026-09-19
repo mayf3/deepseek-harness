@@ -16,13 +16,13 @@ profile 启动生成一个不可变 `RuntimeResolution`，并将其安装到 Nod
 
 ### 唯一选包算法
 
-包遍历属于 `@deepseek-ai/dsh-app-boot`，与 profile 加载代码放在一起。普通 Node、源码启动、打包可执行文件和 Electron Host 消费相同的 generation 与运行时解析器。
+包遍历属于 `@deepseek-ai/dsh-app-boot`，与 profile 加载代码放在一起。普通 Node、源码启动、打包可执行文件和 Electron Host 消费相同的 runtime resolution 与拦截。
 
 安装 manifest 是第一个根。它按 BFS 依次遍历 `dependencies` 和 `peerDependencies`，每条边从声明它的 manifest 解析，同名包由第一次找到的已安装包占有。所选 bundle 随后按 profile 顺序逐根遍历；每个较早根的完整依赖图优先于所有较晚根。安装闭包中的名称被保留，bundle 包根本身不成为插件 fallback。已声明但未安装的包会被跳过。
 
 依赖展开时，每个安装根、所选 bundle 根和递归依赖 manifest 都以所属包的真实目录作为查找锚点。因此，祖先 `node_modules` 查找沿 Node 通常执行该包的位置进行，而不是沿指向该包的软链接位置进行。同一声明锚点会被记录下来，供运行时委托解析使用。逻辑路径与真实路径的祖先不同时，这可能改变所选版本，也可能使原本能发现的依赖不再被收录；它不只是对已存路径换一种写法。
 
-profile 本地和插件私有 `node_modules` 条目优先于 fallback 条目。generation 记录已安装的 profile 直接包名，用于无 I/O 的原生快速分流。每个 fallback 条目记录包名、版本、选定的查找目录、声明该边的 manifest 锚点和作用域，供原生解析与后继 generation 校验使用。
+profile 本地和插件私有 `node_modules` 条目优先于 runtime resolution 条目。runtime resolution 记录已安装的 profile 直接包名，用于无 I/O 的原生快速分流。每个条目记录包名、版本、选定的查找目录、声明该边的 manifest 锚点和作用域，供原生解析与后继 generation 校验使用。
 
 对于 profile 无法通过自身祖先目录找到的依赖，runtime resolution 的 profile 作用域条目仍然必要。它们将已安装 manifest 中的依赖展开到当前 profile 的 runtime resolution，而不是为每个插件建立独立依赖图。它既不下载包，也不扫描源码 import。运行时钩子在考虑原生本地候选后使用这张表。
 
@@ -64,7 +64,7 @@ ESM `import` 和 CommonJS `require` 都选中这些版本。在每种模块格�
 
 ### 不可变 generation
 
-一个解析器 registration 持有一个 `current` generation。每个同步 resolve 在入口只捕获一次该引用，完整调用只读该引用。generation 构造在发布前读取所有必需 manifest；失败时当前 generation 不变。发布成功只替换一个引用，执行中的调用可以继续使用它已捕获的 generation。
+一个 runtime interception 持有一个 `current` generation。每个同步 resolve 在入口只捕获一次该引用，完整调用只读该引用。generation 构造在发布前读取所有必需 manifest；失败时当前 generation 不变。发布成功只替换一个引用，执行中的调用可以继续使用它已捕获的 generation。
 
 选包缓存和包元数据缓存归 generation 所有。发布下一代后，旧 generation 在调用方退出后自然不可达，不逐项清理缓存。generation 命中和原生解析成功结果可以缓存，但 generation 未命中会重新扫描，因此未命中后安装的 profile 本地包会通过原生查找变为可见。显式 CommonJS paths 或非默认 conditions 不得复用默认解析缓存。
 
@@ -74,7 +74,7 @@ launcher 只构造启动 generation。服务接受新增型后继 generation，�
 
 resolver 使用 `node-addon-require-builtin` 读取 `internal/modules/esm/loader` 和 `internal/modules/cjs/loader`。ESM 适配器包装每线程单例 `CascadedLoader` 的 resolve 方法。CommonJS 适配器包装内部 builtin 导出的 `Module._resolveFilename`；该 `Module` 与 `node:module` 导出的对象相同。
 
-两个适配器调用同一个路由函数。builtin、相对或绝对路径、URL、profile 作用域外 parent 和支持的查找以外的显式调用都直接委托原生实现。`#imports` 请求使用所属 manifest 中的 Node 映射；外部 bare target 按相同 conditions 遵循本地包、generation 和 native-after-generation 的选包顺序，精确 target 解析仍由 Node 负责。对于作用域内的 bare request，package self-reference 保留原 parent，即使 npm alias 使安装目录使用另一个名称。Node 能在虚拟共享 fallback 之前从 profile 本地包或插件私有包解析到所请求入口时，也保留原 parent；没有 `exports` 的 CommonJS 包目录仅缺少所请求 subpath 时，不会压过 fallback。其他请求在 generation 命中时通过该条目的声明锚点解析，未命中时从虚拟 fallback 之后继续原生查找。显式 CommonJS path 列表按调用方顺序，对每个 path 独立应用相同的插入规则。
+两个适配器调用同一个路由函数。builtin、相对或绝对路径、URL、profile 作用域外 parent 和支持的查找以外的显式调用都直接委托原生实现。`#imports` 请求使用所属 manifest 中的 Node 映射；外部 bare target 按相同 conditions 遵循本地包、interception 和 native-after-interception 的选包顺序，精确 target 解析仍由 Node 负责。对于作用域内的 bare request，package self-reference 保留原 parent，即使 npm alias 使安装目录使用另一个名称。Node 能在虚拟共享 fallback 之前从 profile 本地包或插件私有包解析到所请求入口时，也保留原 parent；没有 `exports` 的 CommonJS 包目录仅缺少所请求 subpath 时，不会压过 fallback。其他请求在 interception 命中时通过该条目的声明锚点解析，未命中时从虚拟 fallback 之后继续原生查找。显式 CommonJS path 列表按调用方顺序，对每个 path 独立应用相同的插入规则。
 
 适配器完成路由后调用捕获的原生 resolver。exports、import/require conditions、main、subpath、扩展名、原生缓存和错误码仍归 Node 处理。路由后的 ESM 失败会把 Node 诊断中的内部查找锚点替换为原始 importer。选中包的无效 export 或缺失目标不会触发另一个同名候选。CommonJS 不替换 `_findPath`，也不复制 `_resolveFilename`。
 
@@ -82,11 +82,11 @@ resolver 使用 `node-addon-require-builtin` 读取 `internal/modules/esm/loader
 
 ### 活动插件列表与包元数据
 
-resolution generation 列出可用 fallback 包；Loader entries 组成活动插件列表，两者不能合并。消费方继续使用 Loader 原有 entry 生命周期，并按自身 scope 过滤相关 entries。需要 package metadata 的消费方将 specifier 和所属树的 base URL 交给 app-boot 中的轻量服务，无需 package 导出 `./package.json`。安装 generation 后，即使查询未命中也以 generation 为准；底层嵌入方只安装服务而不提供 generation 时，服务保留 Node 原生查找。
+runtime resolution 列出它提供的包；Loader entries 组成活动插件列表，两者不能合并。消费方继续使用 Loader 原有 entry 生命周期，并按自身 scope 过滤相关 entries。需要 package metadata 的消费方将 specifier 和所属树的 base URL 交给 app-boot 中的轻量服务，无需 package 导出 `./package.json`。安装 runtime resolution 后，即使查询未命中也以它为准；底层嵌入方只安装服务而不提供 runtime resolution 时，服务保留 Node 原生查找。
 
 解析器不提供 `imported(entry)`，不观察 ModuleJob，不包装 Entry 方法，不把 fiber 与 import 调用关联，也不替换 registry、tree 或 HMR 方法。重复查询读取同一个 generation，因此不会偏离 import 使用的路线。需要包元数据的非 Node importer 必须显式实现同一个确定性 resolver 接口，不能把调用来源推断重新引入 Node 主路径。
 
-实现集中在 `app-boot/src/profile-resolution/`。`service.ts` 提供长期存在的 `ctx.pluginPackages`，并拥有主线程解析器与 Worker generation 的生命周期；`resolver.ts` 实现 generation 查询和 Node Internal 适配器；`worker-bootstrap.ts` 在线程内安装继承的 generation。profile 选包和 generation 构造留在 `profile.ts`。Worker 只通过 `@deepseek-ai/dsh-app-boot/worker/profile-resolution-bootstrap` 公开入口引用 bootstrap。
+实现集中在 `app-boot/src/profile-resolution/`。`service.ts` 提供长期存在的 `ctx.pluginPackages`，并拥有主线程拦截与 Worker runtime resolution 的生命周期；`resolver.ts` 实现 runtime resolution 查询和 Node Internal 适配器；`worker-bootstrap.ts` 在线程内安装继承的 runtime resolution。profile 选包和 runtime resolution 构造留在 `profile.ts`。Worker 只通过 `@deepseek-ai/dsh-app-boot/worker/profile-resolution-bootstrap` 公开入口引用 bootstrap。
 
 服务定义与提供方继续放在 `app-boot`，因为 profile boot 拥有 resolver 生命周期。出现与 launcher 无关的提供方或需要独立演进的消费方时，再抽出单独的能力 seam。
 
@@ -106,7 +106,7 @@ resolution generation 列出可用 fallback 包；Loader entries 组成活动插
 
 解析器不创建、更新或删除 fallback 软链接与代理包。runtime resolution 条目占据 `$DSH_HOME/profiles/node_modules` 上各自的包名位置；其余包名把该目录当作普通祖先，profile 树内任何位置的软链接都是普通文件系统内容，没有专门识别。profile 本地包元数据与 bundle 依赖展开遵循同一套 Node 查找；正常由 pnpm 安装的包保留原生优先级。完整顺序见[查找顺序 Note](2026-09-19-profile-resolution-lookup-order.zh.md)。可写 profile 状态和包管理器事务不属于解析器。
 
-运行时解析要求受支持的 Node Internal loader 接口。Electron Host 通过设置 `ELECTRON_RUN_AS_NODE=1` 的 Electron 可执行文件运行；打包构建从 ASAR 读取 dsh 依赖树，并把 ASAR 中的可执行条目映射到 electron-builder 的 unpacked 目录。pkg 与 Electron 使用和普通 Node 启动相同的 runtime generation 机制。
+运行时解析要求受支持的 Node Internal loader 接口。Electron Host 通过设置 `ELECTRON_RUN_AS_NODE=1` 的 Electron 可执行文件运行；打包构建从 ASAR 读取 dsh 依赖树，并把 ASAR 中的可执行条目映射到 electron-builder 的 unpacked 目录。pkg 与 Electron 使用和普通 Node 启动相同的 runtime resolution 机制。
 
 ### 性能与验证
 
@@ -134,7 +134,7 @@ generation 构造发生在启动或显式更新阶段，不属于单次 resolve�
 
 ## Verification
 
-- 一次 eager 计算供应运行时 generation；启动既不写入也不退休模块解析数据。
+- 一次 eager 计算供应 runtime resolution；启动既不写入也不退休模块解析数据。
 - [Generation 测试](../../../../packages/boot/app-boot/tests/profile-resolution.spec.ts)覆盖普通目录和递归软链接下的安装图与所选 bundle 图，包括逻辑锚点和真实锚点旁存在不同依赖版本的情况。
 - [源码启动测试](../../../../apps/cli/tests/source-launch.compat.spec.ts)与[构建入口测试](../../../../apps/cli/tests/built-bin.e2e.ts)通过真实 CLI 运行两种 profile 布局，断言 ESM/CJS 版本、加载路径、各模块格式内的依赖身份，以及一致的 Tools/AgentLoop 模块实例和可访问的 scheduler 键。
 - pkg 与 Electron 载体选择 runtime 解析；Electron 以 Node 模式从 ASAR 承载的 dsh 依赖树执行 Host，原生可执行条目保持 unpacked。

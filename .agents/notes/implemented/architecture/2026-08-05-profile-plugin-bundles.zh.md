@@ -14,7 +14,7 @@ Status: implemented
 
 默认 Profile 模板为 `web`、`headless`、`sdk` 与 `acp` 使用 `@deepseek-ai/dsh-base` 作为共享核心，并在其上叠加一个模式组合包。[独立 `sdk-minimal` profile](../../../../packages/bundle/sdk-minimal/README.zh.md)则只列出一个拥有完整显式配置树的组合包。通用的 `dsh --profile <name>` 把剩余参数交给该 profile 的命令行启动行：Web 持有自己的 flag 家族，headless 持有任务位置参数，协议 profile 不接受应用选项。patch overlay 使用启动器持有的 `--patch`。新的非内置目标可以使用 `--from-default-profile <template>`，在启动或配置 dump 之前复制一个默认模板的 bundle 列表与 patch 重载策略。这会创建依赖为空、用户 patch 为空的独立 profile：它既不读取与模板同名的本地 profile，也不记录继承关系。launcher 会以独占方式领取完整的目标目录，因此既有状态和并发创建者都会在不作修改的情况下失败。`dsh plugin --profile <name> <args...>` 是一层薄薄的 pnpm 转发器，负责初始化一个以 base 为基础的 profile，并依据已安装包的组合包声明调和 `dsh.profile.bundles`；没有组合包声明的包保持为普通依赖。[Headless 作为直接 core 入口](../../archived/architecture/2026-08-09-headless-direct-core-entry-point.md)负责 headless 组合约定。
 
-解析在构造上就是双锚点的：`dsh.profile.bundles` 中的名称先从 dsh 安装目录解析，再从 profile 目录解析，因此内置组合包始终来自与运行中 `dsh` 相同的安装，pnpm 从不管理它们。patch 行中的裸插件名称使用[不可变 profile resolution generation](2026-09-09-profile-resolution-generations.zh.md)，在内存中应用安装优先与有序 bundle 规则，并从包的真实目录展开依赖。
+解析在构造上就是双锚点的：`dsh.profile.bundles` 中的名称先从 dsh 安装目录解析，再从 profile 目录解析，因此内置组合包始终来自与运行中 `dsh` 相同的安装，pnpm 从不管理它们。patch 行中的裸插件名称使用[不可变 runtime resolution](2026-09-09-profile-resolution-generations.zh.md)，在内存中应用安装优先与有序 bundle 规则，并从包的真实目录展开依赖。
 
 两项配套重构：webserver 内置的静态 dist 服务改为单一所有者的**回退席位**（`registerFallback`／`applyIndexTaps`），SPA 服务器提取到 `@deepseek-ai/dsh-host-frontend-static`，使 web 组合包以组合的方式持有自己的 dist，而不是靠启动器代码；[dsh CLI 个人配置决策](../../archived/feature/2026-07-20-dsh-cli-personal-config.md)的个人 overlay 机制（`loadPersonalPatches`、`$DSH_HOME/config.yaml`）改为面向逐 profile 与 home 级的 `cordis.patch.yml` 层（`loadOptionalPatches`、接受文件名的 `watchUserPatches`），取代该笔记的各入口模式与文件位置，同时保留其 Harness home 根目录、patch 语义与响亮失败的解析。
 

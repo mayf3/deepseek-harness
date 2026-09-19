@@ -45,7 +45,7 @@ Set `expectedExitCode` when the scenario pins a designed failure surface — a o
 
 ### Testing a shipped profile
 
-Profile integration drivers use the repository-only `tests/fixtures/production-profile.ts` helper. It loads the named shipped profile and its bundle patches through `loadProfile`, computes a runtime resolution generation, installs it through `PluginPackages`, and passes the bundle patches followed by the test's `*.patch.yml` files to the root `cordis:include` mounted by `boot`. Those patches should contain only the test provider or model, isolated persistence paths, and subject-specific changes. Package-level unit tests that need an agent loop without profile integration mount `dsh-agent-loop-testkit` locally instead.
+Profile integration drivers use the repository-only `tests/fixtures/production-profile.ts` helper. It loads the named shipped profile and its bundle patches through `loadProfile`, computes the runtime resolution, installs it through `PluginPackages`, and passes the bundle patches followed by the test's `*.patch.yml` files to the root `cordis:include` mounted by `boot`. Those patches should contain only the test provider or model, isolated persistence paths, and subject-specific changes. Package-level unit tests that need an agent loop without profile integration mount `dsh-agent-loop-testkit` locally instead.
 
 ### Driving a fixture turn
 
