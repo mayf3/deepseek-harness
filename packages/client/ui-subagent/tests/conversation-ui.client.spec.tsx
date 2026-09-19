@@ -6,7 +6,7 @@ import type {
   SessionListState, SessionSummary, SessionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SubagentAddress, SubagentCatalogRow } from '@deepseek-ai/dsh-subagent/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import {
   SubagentHeaderLineage, type SubagentHeaderLineageProps,
@@ -583,7 +583,7 @@ describe('SubagentHeaderLineage', () => {
     const input = props(undefined, {}, {
       [CHILD]: {
         ...summary(CHILD, 1), parentId: PARENT, origin: 'subagent',
-        projectionValues: { subagent: { mode: 'one-shot', label: 'restored', seq: 0 } },
+        projectionValues: { subagent: { mode: 'one-shot', label: 'restored', seq: SessionSeq(0) } },
       },
     })
     render(<SubagentHeaderLineage {...input} />)
