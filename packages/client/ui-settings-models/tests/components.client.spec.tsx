@@ -1578,7 +1578,7 @@ describe('ModelsSection', () => {
     // The draft's provider gets configured elsewhere: its row must arrive closed.
     const withAnthropic = (layer: unknown): JsonValue => ({
       providers: { ...(layer as { providers: object }).providers, anthropic: { apiKeyEnv: 'ANTHROPIC_API_KEY' } },
-    }) as JsonValue
+    })
     face.settings.describe.mockResolvedValue(remoteOk({
       writable: true, hasDocument: false,
       namespaces: wireNamespaces().map(view => view.ns === 'llm-pi-ai'
