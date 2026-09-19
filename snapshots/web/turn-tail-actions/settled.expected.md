@@ -13,7 +13,6 @@
 - paragraph: partial
 - text: Stopped
 - button "Copy"
-- tooltip "Copy"
 - button "Good response"
 - button "Bad response"
 - button "Branch into a new conversation"

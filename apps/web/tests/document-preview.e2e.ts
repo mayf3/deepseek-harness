@@ -169,7 +169,11 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       '# Markdown smoke', '', 'Rendered from the workspace.', '',
       ...Array.from({ length: (PAGE_LINES - 4) / 2 }, (_, index) => [`Paragraph ${index + 1}: ${'visible prefix '.repeat(20)}`, '']).flat(),
       '# Markdown tail',
+      '', '![relative image](preview-images/local%20image.png)',
+      '', `![absolute image](<${join(cwd, 'tiny.png').replaceAll('\\', '/')}>)`,
+      '', '![reference image][local-image]', '', '[local-image]: preview-images/local%20image.png',
     ].join('\n')
+    await mkdir(join(cwd, 'preview-images'))
     const codeLines = [
       ...Array.from({ length: PAGE_LINES }, (_, index) => index === 0 ? 'const prefix = "CODE_PREFIX";' : `// prefix line ${index + 1}`),
       'const tail = "CODE_TAIL";',
@@ -204,6 +208,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       writeFile(join(cwd, 'local.css'), '#local-result { color: rgb(12, 34, 56); }'),
       writeFile(outsideScript, 'document.getElementById("outside-result").textContent="OUTSIDE_JS_OK";'),
       writeFile(join(cwd, 'tiny.png'), TINY_PNG),
+      writeFile(join(cwd, 'preview-images', 'local image.png'), TINY_PNG),
       writeFile(join(cwd, 'large.svg'), [
         '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600">',
         '<script>parent.document.documentElement.setAttribute("data-image-preview-escape","true")</script>',
@@ -282,6 +287,15 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
     expect(await preview.getByRole('heading', { name: heading, exact: true }).count()).toBe(1)
     expect(await preview.getByText('Rendered from the workspace.', { exact: true }).count()).toBe(1)
     const tailHeading = await markdownTail.innerText()
+    const markdownImages: string[] = []
+    for (const alt of ['relative image', 'absolute image', 'reference image']) {
+      const image = preview.getByRole('img', { name: alt, exact: true })
+      await image.scrollIntoViewIfNeeded()
+      await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.complete && node.naturalWidth > 0)).toBe(true)
+      const source = new URL(await image.getAttribute('src') ?? '')
+      expect(source.pathname).toBe('/api/file')
+      markdownImages.push(alt)
+    }
     await preview.getByRole('heading', { name: heading, exact: true }).scrollIntoViewIfNeeded()
     await successShot(page, 'markdown')
     const markdownTab = column.locator('[data-dockkit-tab]').filter({ has: page.getByText('smoke.md', { exact: true }) })
@@ -314,6 +328,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action }) +
       '## Markdown', '',
       `- Heading: ${heading}`,
       `- Tail loaded by scrolling: ${tailHeading}`,
+      `- Loaded images: ${markdownImages.join(' | ')}`,
       `- Viewers: ${markdownViewers.join(' -> ')}`,
       `- Same tab: ${String(await markdownTab.getAttribute('data-dockkit-tab') === markdownTabId)}`,
     ].join('\n'))

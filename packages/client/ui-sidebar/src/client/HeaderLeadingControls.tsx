@@ -1,6 +1,6 @@
 /** Window-chrome controls for the fully hidden sidebar (frame shell.leading seat). */
 import {
-  IconNewChatOutlineMedium, IconPanelLeftOutlineRegular, Tooltip,
+  IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the frame's shell.leading slot declaration.
@@ -43,7 +43,7 @@ export function HeaderLeadingControls({ toggleSidebar, startSession, t }: Header
           aria-label={t('session.new.label')}
           onClick={() => { startSession() }}
         >
-          <IconNewChatOutlineMedium size={16} />
+          <IconNewChatOutlineRegular size={16} />
         </button>
       </Tooltip>
     </div>
