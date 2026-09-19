@@ -1,5 +1,5 @@
 /**
- * Shared declarations for the package.json fields used by DSH plugin authors.
+ * Shared declarations for package.json fields and plugin display metadata.
  * Each reader owns JSON validation and resolved defaults.
  * @module @deepseek-ai/dsh-package-manifest/types
  */
@@ -34,6 +34,19 @@ export interface DshManifest {
   profile?: DshProfileManifest
   /** Client module loading and build metadata. */
   client?: DshClientManifest
+}
+
+/** Literal text or translations indexed by lowercase language id, with a required English fallback. */
+export type LocalizedText = string | { readonly en: string; readonly [locale: string]: string }
+
+/** Validated plugin display fields or a diagnostic from reading exported locale files. */
+export interface PackageMeta {
+  /** Display title; omission preserves the consumer's technical-name fallback. */
+  readonly title?: LocalizedText
+  /** Display introduction after locale and package-field fallback. */
+  readonly description?: LocalizedText
+  /** Unmodified local metadata diagnostic; the plugin remains manageable. */
+  readonly error?: string
 }
 
 /** Runtime version requirements under `package.json.engines`. */

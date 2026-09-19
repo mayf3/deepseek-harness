@@ -29,7 +29,11 @@ function pkg(dir: string, version: string, name = 'metadata-lib'): string {
     name,
     version,
     type: 'module',
-    exports: { import: './index.js', require: './index.cjs' },
+    exports: {
+      '.': { import: './index.js', require: './index.cjs' },
+      './feature': './index.js',
+      './feature/locale/*.json': './feature-locale/*.json',
+    },
   }))
   file(join(dir, 'index.js'), `export const version = ${JSON.stringify(version)}\n`)
   file(join(dir, 'index.cjs'), `exports.version = ${JSON.stringify(version)}\n`)
@@ -48,6 +52,27 @@ function resolution(
 }
 
 describe('profile package metadata service', () => {
+  it('reads translated metadata from the selected local package without importing its entry', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-localized-package-service-'))
+    roots.push(root)
+    const packageDir = join(root, 'node_modules', 'localized')
+    file(join(packageDir, 'package.json'), JSON.stringify({
+      name: 'localized', exports: { './private': './index.js', './private/locale/*.json': './locale/*.json' },
+    }))
+    file(join(packageDir, 'index.js'), 'throw new Error("must not execute")\n')
+    file(join(packageDir, 'locale', 'en.json'), '{"meta":{"title":"Local plugin"}}')
+    file(join(packageDir, 'locale', 'zh.json'), '{"meta":{"title":"本地插件"}}')
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(PluginPackages)
+    const parent = pathToFileURL(join(root, 'entry.mjs')).href
+    expect(ctx.pluginPackages.metaOf('localized/private', parent)).toEqual({ title: { en: 'Local plugin', zh: '本地插件' } })
+    expect(ctx.pluginPackages.metaOf('localized', parent)).toBeUndefined()
+    expect(ctx.pluginPackages.metaOf('node:fs', parent)).toBeUndefined()
+    file(join(root, 'node_modules', 'invalid', 'package.json'), '{')
+    expect(ctx.pluginPackages.metaOf('invalid', parent)?.error).toContain('invalid')
+  })
+
   it('resolves module URLs and package metadata through the current resolution', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-profile-package-service-'))
     roots.push(root)
@@ -55,6 +80,7 @@ describe('profile package metadata service', () => {
     const profileDir = join(profilesDir, 'test')
     const first = join(root, 'first')
     const firstAnchor = pkg(first, '1.0.0')
+    file(join(first, 'feature-locale', 'en.json'), '{"meta":{"title":"Profile feature"}}')
     file(join(profileDir, 'entry.mjs'), '')
     const parentURL = pathToFileURL(join(profileDir, 'entry.mjs')).href
 
@@ -72,6 +98,7 @@ describe('profile package metadata service', () => {
     })
     const require = createRequire(join(profileDir, 'entry.cjs'))
     expect(require.resolve('metadata-lib')).toBe(realpathSync(join(first, 'index.cjs')))
+    expect(ctx.pluginPackages.metaOf('metadata-lib/feature', parentURL)).toEqual({ title: { en: 'Profile feature' } })
     expect(ctx.pluginPackages.packageOf('node:fs', parentURL)).toBeUndefined()
     expect(ctx.pluginPackages.packageOf('./local.js', parentURL)).toBeUndefined()
 

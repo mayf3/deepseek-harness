@@ -86,6 +86,7 @@
     }
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-package-manifest": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@deepseek-ai/dsh-host-plugin-inventory": "workspace:^",

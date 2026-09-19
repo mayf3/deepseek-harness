@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
+import type { PackageMeta } from '@deepseek-ai/dsh-package-manifest'
 import {
   barePackageName,
   installRuntimeInterception,
@@ -11,6 +12,7 @@ import {
   type RuntimeInterception,
 } from './resolver.ts'
 import type { RuntimeResolution } from '../profile.ts'
+import { readPluginMeta } from '../package-meta.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -100,6 +102,16 @@ export class PluginPackages extends Service {
     const key = JSON.stringify({ dir, name })
     if (!this.packages.has(key)) this.packages.set(key, readPackage(dir, name))
     return this.packages.get(key)
+  }
+
+  /**
+   * Read display metadata without loading or activating the target plugin.
+   * @param specifier - configured package module, including package subpaths.
+   * @param parentURL - owning Loader tree's resolution base.
+   * @returns local display metadata or its diagnostic; undefined for non-package requests or absent metadata.
+   */
+  metaOf(specifier: string, parentURL: string): PackageMeta | undefined {
+    return readPluginMeta(specifier, parentURL)
   }
 }
 
