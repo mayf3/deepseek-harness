@@ -2428,6 +2428,7 @@ describe('ChatView', () => {
     readerScroll(scroller, 100) // far from bottom
     const backButton = view.getByLabelText('回到底部')
     expect(backButton).toBeTruthy()
+    expect(view.container.querySelector('[data-chat-following-tail]')).toBeNull()
     // Streaming growth must NOT drag a scrolled-away reader down.
     act(() => {
       h.setChat({ partial: { turn: 1, step: 1, blocks: [{ kind: 'text', text: 'grow' }] } })
@@ -2435,6 +2436,7 @@ describe('ChatView', () => {
     expect(scroller.scrollTop).toBe(100)
     fireEvent.click(backButton)
     expect(scroller.scrollTop).toBe(700)
+    expect(view.container.querySelector('[data-chat-following-tail]')).not.toBeNull()
     // At the bottom again: follow re-arms and the button unmounts.
     expect(view.queryByLabelText('回到底部')).toBeNull()
   })
@@ -2551,6 +2553,25 @@ describe('ChatView', () => {
     metrics.setHeight(1_040)
     act(() => { notify?.() })
     expect(scroller.scrollTop).toBe(680)
+  })
+
+  it('keeps following when reader input reaches the floor before growth and scrollend', () => {
+    const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
+    const view = render(<h.ChatView {...h.props} />)
+    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const metrics = installScrollMetrics(scroller, 1_000, 300)
+    readerScroll(scroller, 100)
+    expect(view.getByLabelText('回到底部')).toBeTruthy()
+
+    scroller.scrollTop = 700
+    fireEvent.scroll(scroller)
+    metrics.setHeight(1_030)
+    act(() => { h.setSession({ running: true }) })
+    fireEvent(scroller, new Event('scrollend'))
+
+    expect(scroller.scrollTop).toBe(730)
+    expect(view.queryByLabelText('回到底部')).toBeNull()
+    expect(h.chatScroll.read()).toBeNull()
   })
 
   it('follows a new submission immediately while an earlier scroll sample is pending', () => {

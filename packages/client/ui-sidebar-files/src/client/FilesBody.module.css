@@ -201,6 +201,11 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+.tool[aria-pressed='true'] {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
 /* The folder sheet before the chip's text; the chip's title row centres it
    on the text's line and spaces it. */
 .titleIcon {

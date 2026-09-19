@@ -31,6 +31,13 @@ async function setup() {
 }
 
 describe('SSH filesystem provider', () => {
+  it('declares watching unsupported without sending a remote request', async () => {
+    const { fs, dispatch } = await setup()
+    expect(() => fs.watch(target, vi.fn(), new AbortController().signal))
+      .toThrow('SSH filesystem watching is not supported')
+    expect(dispatch).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['literal%20name.ts', 'literal%2520name.ts'],
     ['back\\slash.ts', 'back%5Cslash.ts'],

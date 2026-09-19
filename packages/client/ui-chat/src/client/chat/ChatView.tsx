@@ -207,7 +207,7 @@ export function ChatView({
   })
 
   return (
-    <div className={css.root}>
+    <div className={css.root} data-chat-following-tail={scroll.followingTail ? '' : undefined}>
       <div ref={scroll.listRef} className={css.scroll}>
         {scroll.initialized && (
           <TurnNavigator

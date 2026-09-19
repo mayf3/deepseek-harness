@@ -976,6 +976,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Abstract filesystem provider. Targets must preserve identity across aliases; reads expose regular UTF-8 text or typed errors, listings are stable and content-free, and mutations are atomic. Optional guards add stale protection without changing the unguarded provider contract.',
     methods: [
       {
+        signature: 'abstract watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>>',
+        description: 'Observe one file or a directory\'s direct entries in this provider\'s execution world.',
+        parameters: [{ name: 'target', description: 'resolved file or directory, including an absent path to observe for creation.' }, { name: 'changed', description: 'invalidation callback; errors can be reported during or after initialization.' }, { name: 'signal', description: 'cancels watcher initialization; the caller closes an initialized watcher.' }],
+        returns: 'a promise resolving once observation is active, with an asynchronous close function.',
+        throws: ['when the provider does not support watching or cannot initialize the watcher.'],
+      },
+      {
         signature: 'abstract resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget>',
         description: 'Resolve a model/plugin-supplied path into a stable FsTarget. May perform I/O (a remote/sandboxed backend may need a round-trip to map a path to a stable identity), hence async even though the local backend only normalizes + realpaths.',
         parameters: [{ name: 'path', description: 'the path to resolve; relative paths resolve against `opts.cwd`.' }, { name: 'opts', description: 'optional cwd override and cancellation signal.' }],
@@ -3330,10 +3337,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the directory\'s children in the backend\'s stable name order, bounded by the entry cap.',
       },
       {
-        signature: '@Remote({ mode: \'stream\' }) changes(workspaceFileScope: WorkspaceFileScope, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>',
-        description: 'Stream every `fs/observed` observation of a file inside the Session\'s workspace. Only instrumented filesystem operations report here; the OS is not watched.',
-        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'signal', description: 'generation cancellation.' }],
-        returns: '`ready` once the Host observation queue is active and the workspace root is resolved, then queued and live observations in emission order.',
+        signature: '@Remote({ mode: \'stream\' }) changes(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>',
+        description: 'Watch one file or a directory\'s direct entries in the Session\'s filesystem. Files use the backend\'s read authority; directories remain workspace-scoped.',
+        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'target path; the Host determines its type and confines directories to the workspace.' }, { name: 'signal', description: 'generation cancellation.' }],
+        returns: '`ready` once the target watch is active, then current metadata for queued and live invalidations.',
+        throws: ['RemoteError when watching is unavailable or a directory is outside the workspace.'],
       },
     ],
   },

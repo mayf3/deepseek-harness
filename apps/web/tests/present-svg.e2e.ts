@@ -27,6 +27,7 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
   let tripwire: ReturnType<typeof watchConsole>
   let cwd: string
   let replayRoot: string | undefined
+  const connectionDiagnostics: string[] = []
 
   beforeAll(async () => {
     let replayOverride: string | undefined
@@ -48,6 +49,18 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
       viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE, timezoneId: 'Asia/Shanghai',
     })
     tripwire = watchConsole(page)
+    page.on('console', (message) => {
+      if (message.text().startsWith('[connection]')) connectionDiagnostics.push(message.text())
+    })
+    page.on('websocket', (socket) => {
+      const openedAt = Date.now()
+      let received = 0
+      socket.on('framereceived', () => { received++ })
+      socket.on('socketerror', (error) => { connectionDiagnostics.push(error) })
+      socket.on('close', () => {
+        connectionDiagnostics.push(`WebSocket closed after ${Date.now() - openedAt}ms and ${received} received frames`)
+      })
+    })
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]')
     await connectFreshWorkspaceZh(page, scaffold.workspaceCwd)
@@ -110,7 +123,7 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
     // The scaffold workspace is not a git repository, so the changed-files card lists the written SVG from the write call alone.
     expect(await page.locator('[data-changed-files]').count()).toBe(1)
     expect(tripwire.pageErrors).toEqual([])
-    expect(tripwire.warnings).toEqual([])
+    expect(tripwire.warnings, connectionDiagnostics.join('\n')).toEqual([])
   })
 
   it.skipIf(MODE === 'record')('replays the delivered file and Chinese conversation', async () => {
