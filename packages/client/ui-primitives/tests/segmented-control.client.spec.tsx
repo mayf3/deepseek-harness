@@ -17,17 +17,18 @@ const OPTIONS: ReadonlyArray<{ value: Mode; label: string; disabled?: boolean; t
 function mount(value: Mode, extra: {
   options?: typeof OPTIONS
   className?: string
-  fullWidth?: boolean
+  disabled?: boolean
 } = {}) {
   const onChange = vi.fn<(next: Mode) => void>()
   const view = render(
     <SegmentedControl
+      id="add"
       label="Add mode"
       value={value}
       options={extra.options ?? OPTIONS}
       onChange={onChange}
       {...extra.className === undefined ? {} : { className: extra.className }}
-      {...extra.fullWidth === undefined ? {} : { fullWidth: extra.fullWidth }}
+      {...extra.disabled === undefined ? {} : { disabled: extra.disabled }}
     />,
   )
   return { view, onChange }
@@ -123,7 +124,7 @@ describe('SegmentedControl', () => {
     tab('Catalog').focus()
     fireEvent.keyDown(tab('Catalog'), { key: 'ArrowRight' })
     view.rerender(
-      <SegmentedControl label="Add mode" value="custom" options={OPTIONS} onChange={onChange} />,
+      <SegmentedControl id="add" label="Add mode" value="custom" options={OPTIONS} onChange={onChange} />,
     )
     expect(document.activeElement).toBe(tab('Custom'))
   })
@@ -142,19 +143,35 @@ describe('SegmentedControl', () => {
     expect(list.style.getPropertyValue('--dsh-segment-index')).toBe('2')
   })
 
-  it('keeps a caller class alongside its own and takes the full-width layout on request', () => {
-    mount('catalog', { className: 'placed', fullWidth: true })
+  it('keeps a caller class alongside its own so a render site can place it', () => {
+    mount('catalog', { className: 'placed' })
     const list = screen.getByRole('tablist')
     expect(list.classList.contains('placed')).toBe(true)
     expect(list.classList.length).toBeGreaterThan(1)
-    expect(list.getAttribute('data-full-width')).toBe('true')
+  })
+
+  it('names each tab and the panel it controls from the owner id, so panels can point back', () => {
+    mount('catalog')
+    const catalog = tab('Catalog')
+    expect(catalog.id).toBe('add-catalog')
+    expect(catalog.getAttribute('aria-controls')).toBe('add-catalog-panel')
+    expect(tab('Import').getAttribute('aria-controls')).toBe('add-import-panel')
+  })
+
+  it('locks every segment while the owner reports the control disabled', () => {
+    // A disabled button is unfocusable, so the walk keys cannot originate on
+    // one; the click path is what a pointer can still reach.
+    const { onChange } = mount('catalog', { disabled: true })
+    for (const name of ['Catalog', 'Custom', 'Import']) expect(tab(name).disabled).toBe(true)
+    fireEvent.click(tab('Custom'))
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('never submits a surrounding form', () => {
     const onSubmit = vi.fn((event: { preventDefault: () => void }) => { event.preventDefault() })
     render(
       <form onSubmit={onSubmit}>
-        <SegmentedControl label="Add mode" value="catalog" options={OPTIONS} onChange={() => {}} />
+        <SegmentedControl id="add" label="Add mode" value="catalog" options={OPTIONS} onChange={() => {}} />
       </form>,
     )
     fireEvent.click(tab('Custom'))

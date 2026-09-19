@@ -2,6 +2,9 @@
 // sliding indicator, for switching a card or panel between a few modes. The
 // owner holds the selection; `label` is required so the tablist never ships
 // without an accessible name, and every segment label is owner-localized.
+// Each tab is `<id>-<value>` and controls the panel `<id>-<value>-panel`, the
+// element the owner renders for that mode and points back at the tab with
+// `aria-labelledby`.
 
 import { useEffect, useRef } from 'react'
 import type { CSSProperties, KeyboardEvent } from 'react'
@@ -52,24 +55,27 @@ function walk<Value extends string>(
 
 /**
  * Render a segmented control.
+ * @param props.id - the owner's base id: each tab is `<id>-<value>` and names
+ * `<id>-<value>-panel` as the panel it controls.
  * @param props.value - the selected option's value; the control is fully controlled.
  * @param props.options - the segments in display order; at least two.
  * @param props.onChange - called with the value a click or a walk key asks for,
  * never with the value already selected.
  * @param props.label - localized accessible name of the tablist.
- * @param props.fullWidth - stretch across the container instead of hugging the
- * segment labels; the segments stay equal-width either way.
+ * @param props.disabled - lock every segment, typically while the shown panel
+ * has a write or a fetch in flight that switching would orphan.
  * @param props.className - extra class for layout placement.
  * @returns the tablist element.
  */
 export function SegmentedControl<Value extends string>({
-  value, options, onChange, label, fullWidth = false, className,
+  id, value, options, onChange, label, disabled = false, className,
 }: {
+  id: string
   value: Value
   options: readonly SegmentedControlOption<Value>[]
   onChange: (next: Value) => void
   label: string
-  fullWidth?: boolean
+  disabled?: boolean
   // `| undefined` so a caller can forward an optional class straight through
   // under exactOptionalPropertyTypes (a CSS-module lookup is string|undefined).
   className?: string | undefined
@@ -104,7 +110,6 @@ export function SegmentedControl<Value extends string>({
       ref={list}
       role="tablist"
       aria-label={label}
-      data-full-width={fullWidth}
       className={clsx(css.control, className)}
       style={indicator}
     >
@@ -114,11 +119,13 @@ export function SegmentedControl<Value extends string>({
         return (
           <button
             key={option.value}
+            id={`${id}-${option.value}`}
             type="button"
             role="tab"
             aria-selected={active}
+            aria-controls={`${id}-${option.value}-panel`}
             tabIndex={active ? 0 : -1}
-            disabled={option.disabled === true}
+            disabled={disabled || option.disabled === true}
             title={option.title}
             className={css.tab}
             onClick={() => { if (!active) onChange(option.value) }}

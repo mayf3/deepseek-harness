@@ -4,8 +4,7 @@
  * the soft elevation shadow (border: 0), the way every elevated surface draws
  * its edge, so the elevation gate keeps it off the alias-border set.
  *
- * Segments are equal-width grid tracks — sized to the widest label when the
- * control hugs its content, sharing the container when it spans it — which is
+ * Segments are equal-width grid tracks sized to the widest label, which is
  * what lets one indicator be placed arithmetically: the tablist carries the
  * segment count and the selected index as custom properties, and the indicator
  * derives its width and offset from them instead of measuring the DOM. */
@@ -18,10 +17,6 @@
   padding: 3px;
   border-radius: 9px;
   background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.control[data-full-width='true'] {
-  display: grid;
 }
 
 .indicator {

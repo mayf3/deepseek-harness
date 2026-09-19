@@ -38,7 +38,7 @@ kind: "package-library"
 |---|---|
 | `Button` | 可点击操作；`variant` 选择 `primary`、`ghost`、`outline` 或 `toolbar`。 |
 | `Switch` | 36×20 的双态开关。`label` 必填，控件不可能在没有名称的情况下发布。 |
-| `SegmentedControl` | 两段或更多等宽分段加一个滑动指示块的 tablist，用于在几种模式间切换一张卡片或面板；选中项由调用方持有，`label` 为列表命名，分段可 `disabled` 并带 `title`。 |
+| `SegmentedControl` | 两段或更多等宽分段加一个滑动指示块的 tablist，用于在几种模式间切换一张卡片或面板；选中项由调用方持有，`label` 为列表命名。`id` 派生每个 tab 的 id（`<id>-<value>`）及其控制的面板 id（`<id>-<value>-panel`），面板由调用方渲染并用 `aria-labelledby` 指回 tab；分段可 `disabled` 并带 `title`，控件级 `disabled` 在当前面板有进行中的操作时锁住全部分段。 |
 | `Checkbox` | 带标签的原生复选框，支持受控状态、键盘交互和禁用样式；调用方提供本地化的 `label` 文本。 |
 | `Input` | 单行文本输入，用于搜索框与行内表单。 |
 | `Menu` | 由条目、分隔线与分组标题构成的下拉菜单，支持嵌套子菜单。打开期间 `↑`／`↓`（以及 Home、End）在列表中走位，Tab 选定聚焦行，Escape 或 Shift+Tab 关闭并把焦点还给锚点；选定一行同样把键盘还给锚点——除非拥有者自己移动了焦点。只拦截位于锚点或列表内的键盘，`autoFocus` 仅决定打开时是否聚焦首行。 |

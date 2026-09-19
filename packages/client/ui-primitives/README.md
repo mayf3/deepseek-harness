@@ -38,7 +38,7 @@ Check this table before writing a control in a feature package. A plugin cannot 
 |---|---|
 | `Button` | Clickable action; `variant` selects `primary`, `ghost`, `outline`, or `toolbar`. |
 | `Switch` | Two-state toggle, 36×20. `label` is required, so the control cannot ship unnamed. |
-| `SegmentedControl` | Tablist of two or more equal-width segments with one sliding indicator, for switching a card or panel between a few modes; the owner holds the selection, `label` names the list, and a segment may be `disabled` with a `title`. |
+| `SegmentedControl` | Tablist of two or more equal-width segments with one sliding indicator, for switching a card or panel between a few modes; the owner holds the selection and `label` names the list. `id` seeds each tab's id (`<id>-<value>`) and the panel it controls (`<id>-<value>-panel`), which the owner renders and points back at the tab with `aria-labelledby`; a segment may be `disabled` with a `title`, and `disabled` on the control locks every segment while the shown panel has work in flight. |
 | `Checkbox` | Labeled native checkbox with controlled state, keyboard interaction, and disabled styling; the caller supplies localized `label` text. |
 | `Input` | Single-line text entry for search boxes and inline forms. |
 | `Menu` | Dropdown of items, separators, and group labels, with nested submenus. While open, ↑/↓ (with Home and End) walk the list, Tab settles the focused row, and Escape or Shift+Tab close back to the anchor; selecting a row also returns the keyboard to the anchor unless the owner moved it itself. Only a keyboard on the anchor or inside the list is intercepted, and `autoFocus` decides solely whether opening focuses the first row. |
