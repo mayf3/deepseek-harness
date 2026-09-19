@@ -40,7 +40,7 @@ export interface DshManifest {
 export type LocalizedText = string | { readonly en: string; readonly [locale: string]: string }
 
 /** Validated plugin display fields or a diagnostic from reading exported locale files. */
-export interface PackageMeta {
+export interface PluginLocalizedMeta {
   /** Display title; omission preserves the consumer's technical-name fallback. */
   readonly title?: LocalizedText
   /** Display introduction after locale and package-field fallback. */

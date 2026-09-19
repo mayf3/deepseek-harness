@@ -4281,11 +4281,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BundleInfo',
-    declaration: 'export interface BundleInfo {\n    name: string;\n    version?: string;\n    meta?: PackageMeta;\n    description?: string;\n    enabled: boolean;\n    installed: boolean;\n    optional: boolean;\n    removable: boolean;\n    readOnlyReason?: ReadOnlyReason;\n    error?: ManagementError;\n    rows: BundleRowInfo[];\n    overrides: string[];\n}',
+    declaration: 'export interface BundleInfo {\n    name: string;\n    version?: string;\n    meta?: PluginLocalizedMeta;\n    description?: string;\n    enabled: boolean;\n    installed: boolean;\n    optional: boolean;\n    removable: boolean;\n    readOnlyReason?: ReadOnlyReason;\n    error?: ManagementError;\n    rows: BundleRowInfo[];\n    overrides: string[];\n}',
   },
   {
     name: 'BundleRowInfo',
-    declaration: 'export interface BundleRowInfo {\n    rowId: string;\n    moduleName: string;\n    meta?: PackageMeta;\n    entryId?: PluginEntryId;\n}',
+    declaration: 'export interface BundleRowInfo {\n    rowId: string;\n    moduleName: string;\n    meta?: PluginLocalizedMeta;\n    entryId?: PluginEntryId;\n}',
   },
   {
     name: 'ChangeResult',
@@ -5312,10 +5312,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type OptionalSessionSeq = SessionSeq | null;',
   },
   {
-    name: 'PackageMeta',
-    declaration: 'export interface PackageMeta {\n    readonly title?: LocalizedText;\n    readonly description?: LocalizedText;\n    readonly error?: string;\n}',
-  },
-  {
     name: 'PackageResult',
     declaration: 'export interface PackageResult {\n    exitCode: number;\n    output: string;\n    truncated: boolean;\n    logPath: string;\n    kind?: PluginInstallFailureKind;\n}',
   },
@@ -5365,7 +5361,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginInventoryEntry',
-    declaration: 'export interface PluginInventoryEntry {\n    readonly entryId: PluginEntryId;\n    readonly moduleName: string;\n    readonly meta?: PackageMeta;\n    readonly enabled: boolean;\n    readonly fiberPhase: PluginFiberPhase;\n}',
+    declaration: 'export interface PluginInventoryEntry {\n    readonly entryId: PluginEntryId;\n    readonly moduleName: string;\n    readonly meta?: PluginLocalizedMeta;\n    readonly enabled: boolean;\n    readonly fiberPhase: PluginFiberPhase;\n}',
+  },
+  {
+    name: 'PluginLocalizedMeta',
+    declaration: 'export interface PluginLocalizedMeta {\n    readonly title?: LocalizedText;\n    readonly description?: LocalizedText;\n    readonly error?: string;\n}',
   },
   {
     name: 'PluginRegistries',

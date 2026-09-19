@@ -27,7 +27,7 @@ import type {
 import { REGISTRY_URL } from '@deepseek-ai/dsh-plugin-manager/registry'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
-import type { LocalizedText, PackageMeta } from '@deepseek-ai/dsh-package-manifest'
+import type { LocalizedText, PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
 import type { ConfigLedger } from './config-ledger.ts'
 import { shortName } from './presentation.ts'
 
@@ -61,7 +61,7 @@ export interface PackageRow {
   /** The module the row names. */
   readonly moduleName: string
   /** Local package display text and metadata diagnostics supplied by the Host. */
-  readonly meta?: PackageMeta
+  readonly meta?: PluginLocalizedMeta
   /** Whether the entry runs; false for a row without a live entry. */
   readonly enabled: boolean
   /** The entry's fiber phase, null without a live fiber. */
@@ -76,7 +76,7 @@ export interface PackageView {
   readonly version?: string
   readonly description?: string
   /** Local package display text and metadata diagnostics supplied by the Host. */
-  readonly meta?: PackageMeta
+  readonly meta?: PluginLocalizedMeta
   /** Whether the profile's own dependencies hold the package; false for a bundle the installation supplies. */
   readonly installed: boolean
   /** Whether the installation ships the bundle for the person to switch on: official, off until selected, never removable. */

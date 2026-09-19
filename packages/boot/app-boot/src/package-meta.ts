@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ModuleLoader } from '@deepseek-ai/cordis-plugin-loader'
-import type { LocalizedText, PackageMeta } from '@deepseek-ai/dsh-package-manifest'
+import type { LocalizedText, PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
 import { barePackageName } from './profile-resolution/resolver.ts'
 
 const LANGUAGE_ID = /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/u
@@ -114,7 +114,7 @@ function localizedText(
  * @param parentURL - owning Loader tree's module-resolution base.
  * @returns translated or fallback fields, a diagnostic, or undefined for non-package specifiers or absent display text.
  */
-export function readPluginMeta(specifier: string, parentURL: string): PackageMeta | undefined {
+export function readPluginMeta(specifier: string, parentURL: string): PluginLocalizedMeta | undefined {
   if (barePackageName(specifier) === undefined) return undefined
   try {
     const englishPath = optionalResourcePath(`${specifier}/locale/en.json`, parentURL)

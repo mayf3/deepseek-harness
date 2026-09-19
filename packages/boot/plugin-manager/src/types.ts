@@ -1,6 +1,6 @@
 /** Public plugin management records shared with clients. */
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { PackageMeta } from '@deepseek-ai/dsh-package-manifest'
+import type { PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
 import type { PluginInventoryEntry } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 export type { PluginEntryId } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 import type { PluginEntryId } from '@deepseek-ai/dsh-host-plugin-inventory/types'
@@ -27,7 +27,7 @@ export interface BundleRowInfo {
   /** The module the row names. */
   moduleName: string
   /** Local package display metadata, including rows whose bundle is disabled. */
-  meta?: PackageMeta
+  meta?: PluginLocalizedMeta
   /** The Loader entry carrying this row, when exactly one live entry has its id. */
   entryId?: PluginEntryId
 }
@@ -37,7 +37,7 @@ export interface BundleInfo {
   name: string
   version?: string
   /** Local display text with available translations or literal fallbacks, or a metadata diagnostic. */
-  meta?: PackageMeta
+  meta?: PluginLocalizedMeta
   /** Untranslated `description` of this bundle's package manifest. */
   description?: string
   /** Selected in the profile manifest; a load error means its layer was skipped. */

@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
-import type { PackageMeta } from '@deepseek-ai/dsh-package-manifest'
+import type { PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
 import {
   barePackageName,
   installRuntimeInterception,
@@ -110,7 +110,7 @@ export class PluginPackages extends Service {
    * @param parentURL - owning Loader tree's resolution base.
    * @returns local display metadata or its diagnostic; undefined for non-package requests or absent metadata.
    */
-  metaOf(specifier: string, parentURL: string): PackageMeta | undefined {
+  metaOf(specifier: string, parentURL: string): PluginLocalizedMeta | undefined {
     return readPluginMeta(specifier, parentURL)
   }
 }

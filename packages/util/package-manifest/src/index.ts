@@ -11,5 +11,5 @@ export type {
   DshPackageManifest,
   DshProfileManifest,
   LocalizedText,
-  PackageMeta,
+  PluginLocalizedMeta,
 } from './types.ts'
