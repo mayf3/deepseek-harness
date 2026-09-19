@@ -1,4 +1,4 @@
-/** Package metadata resolved through one profile resolution registration. */
+/** Package metadata resolved through one runtime interception. */
 
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -6,12 +6,11 @@ import { join } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import {
   barePackageName,
-  installProfileResolution,
+  installRuntimeInterception,
   registerWorkerResolution,
-  type ProfileResolutionBehavior,
-  type ProfileResolutionRegistration,
+  type RuntimeInterception,
 } from './resolver.ts'
-import type { ProfileResolutionGeneration } from '../profile.ts'
+import type { RuntimeResolution } from '../profile.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -34,12 +33,10 @@ export interface PluginPackage {
   manifest: Record<string, unknown>
 }
 
-/** Optional runtime resolver installed and owned by {@link PluginPackages}. */
+/** Optional runtime interception installed and owned by {@link PluginPackages}. */
 export interface PluginPackagesConfig {
   /** Complete package table; omit it to expose native package lookup only. */
-  generation?: ProfileResolutionGeneration
-  /** Enforce the table or compare it with a materialized fallback. */
-  behavior?: ProfileResolutionBehavior
+  resolution?: RuntimeResolution
 }
 
 function readPackage(dir: string, fallbackName: string): PluginPackage | undefined {
@@ -60,33 +57,31 @@ function readPackage(dir: string, fallbackName: string): PluginPackage | undefin
 /** Package lookup shared by metadata consumers in one profile process. */
 export class PluginPackages extends Service {
   private packages = new Map<string, PluginPackage | undefined>()
-  private readonly resolver: ProfileResolutionRegistration | undefined
-  private readonly behavior: ProfileResolutionBehavior
+  private readonly interception: RuntimeInterception | undefined
   private disposeWorkerResolution: (() => void) | undefined
 
   constructor(ctx: Context, config: PluginPackagesConfig = {}) {
     super(ctx, 'pluginPackages')
-    this.behavior = config.behavior ?? 'enforce'
-    if (config.generation === undefined) return
-    const resolver = installProfileResolution(config.generation, this.behavior)
-    this.disposeWorkerResolution = registerWorkerResolution(config.generation, this.behavior)
-    this.resolver = resolver
+    if (config.resolution === undefined) return
+    const interception = installRuntimeInterception(config.resolution)
+    this.disposeWorkerResolution = registerWorkerResolution(config.resolution)
+    this.interception = interception
     ctx.effect(() => () => {
       this.disposeWorkerResolution?.()
-      resolver.dispose()
+      interception.dispose()
     }, 'profile package resolution')
   }
 
   /**
-   * Publish an additive generation for this process and subsequently created Workers.
-   * @param generation - fully constructed successor generation.
+   * Publish an additive successor generation for this process and subsequently created Workers.
+   * @param successor - fully constructed successor generation.
    */
-  replace(generation: ProfileResolutionGeneration): void {
-    if (this.resolver === undefined) throw new Error('plugin-packages: runtime resolution is not installed')
-    this.resolver.replace(generation)
+  replace(successor: RuntimeResolution): void {
+    if (this.interception === undefined) throw new Error('plugin-packages: runtime resolution is not installed')
+    this.interception.replace(successor)
     this.packages = new Map()
     this.disposeWorkerResolution?.()
-    this.disposeWorkerResolution = registerWorkerResolution(generation, this.behavior)
+    this.disposeWorkerResolution = registerWorkerResolution(successor)
   }
 
   /**
@@ -98,9 +93,9 @@ export class PluginPackages extends Service {
   packageOf(specifier: string, parentURL: string): PluginPackage | undefined {
     const name = barePackageName(specifier)
     if (name === undefined) return undefined
-    const dir = this.resolver === undefined
+    const dir = this.interception === undefined
       ? packageDirFromParent(name, parentURL)
-      : this.resolver.packageDir(name, parentURL)
+      : this.interception.packageDir(name, parentURL)
     if (dir === undefined) return undefined
     const key = JSON.stringify({ dir, name })
     if (!this.packages.has(key)) this.packages.set(key, readPackage(dir, name))

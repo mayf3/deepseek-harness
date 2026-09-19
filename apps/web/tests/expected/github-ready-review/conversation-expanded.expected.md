@@ -9,8 +9,7 @@
 ---
 
 - banner:
-  - navigation "Session hierarchy":
-    - button "Review deepseek-ai/deepseek-harness#314" [disabled]
+  - navigation "Session hierarchy": Review deepseek-ai/deepseek-harness#314
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"

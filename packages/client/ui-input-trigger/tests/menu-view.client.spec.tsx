@@ -241,10 +241,10 @@ describe('MenuView', () => {
     expect(menuShell().style.maxHeight).toBe('400px')
   })
 
-  it('clamps the list height to the space above the composer minus the safe margin', () => {
+  it('clamps the list height to the space above the composer minus the header-clearing margin', () => {
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ bottom: 200 } as DOMRect)
     mount(openState())
-    expect(menuShell().style.maxHeight).toBe('188px')
+    expect(menuShell().style.maxHeight).toBe('116px')
   })
 
   it('re-fits the height when the window resizes', () => {
@@ -254,7 +254,7 @@ describe('MenuView', () => {
     expect(menuShell().style.maxHeight).toBe('400px')
     rect.mockReturnValue({ bottom: 100 } as DOMRect)
     act(() => { window.dispatchEvent(new Event('resize')) })
-    expect(menuShell().style.maxHeight).toBe('88px')
+    expect(menuShell().style.maxHeight).toBe('16px')
   })
 
   it('shows the bottom overflow hint until the list reaches its final row', () => {

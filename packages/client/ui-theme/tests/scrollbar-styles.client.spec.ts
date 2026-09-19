@@ -15,6 +15,10 @@ import { atRuleBlock, type CssRule, packageStylesheets, parseRules, varReference
 
 const STYLES = new URL('../src/styles/', import.meta.url)
 const read = (name: string): string => readFileSync(fileURLToPath(new URL(name, STYLES)), 'utf8')
+/* packageStylesheets() paths are /-separated on every platform; match them
+   with the same separator or the exclusion silently stops applying on
+   Windows. */
+const SCROLLBAR_SHEET = fileURLToPath(new URL('scrollbar.css', STYLES)).replaceAll('\\', '/')
 
 const platformCss = read('design-platform.css')
 const scrollbarCss = read('scrollbar.css')
@@ -190,7 +194,7 @@ for (const file of packageStylesheets()) {
     let rebindsElevation = false
     const ruleSurfaces: string[] = []
     for (const [property, value] of rule.declarations) {
-      if (COLOUR_INDIRECTIONS.has(property) && file !== fileURLToPath(new URL('scrollbar.css', STYLES))) {
+      if (COLOUR_INDIRECTIONS.has(property) && file !== SCROLLBAR_SHEET) {
         rebinds = true
         if (value !== HIDDEN_THUMB) rebindsElevation = true
       }
@@ -314,7 +318,7 @@ describe('scrollbar.css geometry variables', () => {
     expect(defined).toContain(WIDTH_VARIABLE)
     const readers: string[] = []
     for (const file of packageStylesheets()) {
-      if (file === fileURLToPath(new URL('scrollbar.css', STYLES))) continue
+      if (file === SCROLLBAR_SHEET) continue
       for (const rule of parseRules(readFileSync(file, 'utf8'))) {
         for (const [property, value] of rule.declarations) {
           for (const name of varReferences(value)) {

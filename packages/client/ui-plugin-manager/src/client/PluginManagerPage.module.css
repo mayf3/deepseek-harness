@@ -22,6 +22,13 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  box-sizing: border-box;
+}
+
+/* macOS hiddenInset titlebar: the frame's top clearance keeps the head below
+   the window's top strip in both sidebar states so it never jumps. */
+:global([data-platform='darwin']) .pageHead {
+  padding-top: var(--dsh-frame-top-clearance, 0px);
 }
 
 .pageTitle {
@@ -395,10 +402,11 @@
 }
 
 /* Wider than the default dialog: pnpm's lines are long, and the terminal keeps them unwrapped. The card never
-   outgrows the viewport; the running screens scroll inside it so the head's controls stay reachable. */
+   outgrows the Modal's padding box and shares the settings panel's 800px height cap; the running screens
+   scroll inside it so the head's controls stay reachable. */
 .installDialog {
   width: min(560px, 100%);
-  max-height: calc(100vh - 48px);
+  max-height: min(800px, 100%);
 }
 
 /* The spec screen's content scrolls inside the card when the guide is open on a short viewport; the footer stays put. */
@@ -1033,6 +1041,12 @@ label.registryOption {
 .detail {
   display: flex;
   flex-direction: column;
+}
+
+/* Same top clearance as .pageHead: the crumb is the detail views' leading
+   content and otherwise lands under the traffic lights. */
+:global([data-platform='darwin']) .detail {
+  padding-top: var(--dsh-frame-top-clearance, 0px);
 }
 
 .crumb {

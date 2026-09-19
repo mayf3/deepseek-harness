@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Markdown image policy" [disabled]
+  - navigation "Session hierarchy": Markdown image policy
   - button "More actions"
   - button "Open right sidebar"
   - tablist:

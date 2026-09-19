@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Use only Cordis tools. First" [disabled]
+  - navigation "Session hierarchy": Use only Cordis tools. First
   - button "More actions"
   - button "Open right sidebar"
   - tablist:

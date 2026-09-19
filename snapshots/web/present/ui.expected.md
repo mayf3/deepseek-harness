@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Use one run_code program to" [disabled]
+  - navigation "Session hierarchy": Use one run_code program to
   - text: PTC mode
   - button "More actions"
   - button "Open right sidebar"
