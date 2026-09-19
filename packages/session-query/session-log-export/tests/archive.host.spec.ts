@@ -12,13 +12,19 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { unzipSync, strFromU8 } from 'fflate'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionHeader, SessionId, ToolResultMessage, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionLineageNode } from '@deepseek-ai/dsh-session-query'
 import { SessionPersistenceNotFoundError } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionAccess, SessionHandle } from '@deepseek-ai/dsh-session-persistence'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth.ts'
 import * as SessionLogExport from '../src/index.ts'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface ContentBlockMap {
+    'plugin:vendor': { type: 'plugin:vendor'; data: { content: readonly unknown[] }; content: readonly unknown[] }
+  }
+}
 
 const sid = (id: string): SessionId => id as SessionId
 const exportLogName = SessionLogExport.SESSION_LOG_FILENAME
@@ -816,7 +822,7 @@ describe('session.export download endpoint', () => {
       ? { role: 'tool', toolCallId: 'declared-call', source: { kind: 'tool', callId: 'declared-call' }, content }
       : { content }
     const data = field === 'message' ? { message } : { [field]: content }
-    const stored = log('session-root', undefined, [{ type, seq: SessionSeq(1), time: 1000, data } as unknown as SessionEvent])
+    const stored = log('session-root', undefined, [{ type, seq: SessionSeq(1), time: 1000, data } as SessionEvent])
     const api = await buildApi({ 'session-root': stored })
     const response = await toFetchHandler(api).fetch(new Request('http://host/api/session.export?sessionId=session-root'))
     const files = unzipSync(await responseBytes(response))
@@ -840,11 +846,12 @@ describe('session.export download endpoint', () => {
 
   it('keeps unrelated event fields and content-block extension fields out of attachment collection', async () => {
     const content = [{ type: 'image', attachment: { attachmentId: 'not-an-occurrence', mediaType: 'image/png', bytes: 4, width: 2, height: 2 } }]
-    const event = { type: 'user/message', seq: SessionSeq(1), time: 1000, data: {
+    const event = { type: 'user/message', seq: SessionSeq(1), time: 1000, surfaceOp: 'append', data: {
+      id: 'metadata' as UserMessage['id'], role: 'user', source: { kind: 'user' },
       content: [{ type: 'text', text: 'no image', content }, { type: 'plugin:vendor', data: { content }, content }],
       message: { content }, inserted: [{ content }],
       stream: [{ type: 'chunk', chunk: { type: 'block-end', block: content[0] } }],
-    } } as unknown as SessionEvent
+    } } as SessionEvent
     const stored = log('session-root', undefined, [event])
     const readImage = vi.fn((ref: ImageAttachmentRef) => Promise.resolve(storedImage(String(ref.attachmentId), ref.mediaType)))
     const api = await buildApi({ 'session-root': stored }, [], { attachments: readImage })
@@ -862,7 +869,7 @@ describe('session.export download endpoint', () => {
     const opaque = { type, seq: SessionSeq(1), time: 1000, ignorable: true, data: {
       content, message: { content }, inserted: [{ content }], messages: [{ content }],
       stream: [{ type: 'chunk', time: 1000, chunk: { type: 'block-end', index: 0, block: content[0] } }],
-    } } as unknown as SessionEvent
+    } } as SessionEvent
     const stored = log('session-root', undefined, [opaque])
     const readImage = vi.fn((ref: ImageAttachmentRef) => Promise.resolve(storedImage(String(ref.attachmentId), ref.mediaType)))
     const readFileStream = vi.fn(async function* (_ref: FileAttachmentRef) { yield new Uint8Array([1]) })
@@ -876,12 +883,14 @@ describe('session.export download endpoint', () => {
   })
 
   it('collects media referenced by a flat tool-role result', async () => {
-    const result = {
-      type: 'tool/result', seq: SessionSeq(2), time: 2000,
-      data: { message: { role: 'tool', toolCallId: 'call', source: { kind: 'tool', callId: 'call' },
-        content: [{ type: 'image', attachment: { attachmentId: 'tool-image', mediaType: 'image/webp', bytes: 4, width: 2, height: 2 } }],
+    const callId = 'call' as ToolResultMessage['toolCallId']
+    const result: SessionEvent<'tool/result'> = {
+      type: 'tool/result', seq: SessionSeq(2), time: 2000, surfaceOp: 'append',
+      data: { turn: 1, step: 1, message: {
+        id: 'tool-result-message' as ToolResultMessage['id'], role: 'tool', toolCallId: callId, source: { kind: 'tool', callId },
+        content: [{ type: 'image', attachment: storedImage('tool-image', 'image/webp').ref }],
       } },
-    } as unknown as SessionEvent
+    }
     const api = await buildApi({ 'session-root': log('session-root', undefined, [result]) })
     const response = await toFetchHandler(api).fetch(
       new Request('http://host/api/session.export?sessionId=session-root'),
@@ -899,8 +908,10 @@ describe('session.export download endpoint', () => {
     } as unknown as SessionEvent
     const inserted = {
       type: 'agent/inbox/spliced', seq: SessionSeq(3), time: 3000,
-      data: { inserted: [null, 1, [], { content: [] }, { content: [block('inserted-1', 'image/gif')] }] },
-    } as unknown as SessionEvent
+      data: { target: 'next-turn', start: 0, inserted: [null, 1, [], { content: [] }, {
+        id: 'inserted-message' as UserMessage['id'], role: 'user', source: { kind: 'user' }, content: [block('inserted-1', 'image/gif')],
+      }] },
+    } as SessionEvent
     const attempt = {
       type: 'assistant/attempt', seq: SessionSeq(4), time: 4000,
       data: {
