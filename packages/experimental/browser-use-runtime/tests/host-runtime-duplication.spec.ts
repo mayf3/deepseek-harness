@@ -17,22 +17,15 @@
  *
  * Run: `pnpm vitest run packages/experimental/browser-use-runtime/tests/host-runtime-duplication.spec.ts`
  */
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
-import Include from '@deepseek-ai/cordis-plugin-include'
+import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import BrowserUse from '@deepseek-ai/dsh-browser-use'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import Tools from '@deepseek-ai/dsh-tools'
-import Llm from '@deepseek-ai/dsh-llm'
-import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
-import Agents from '@deepseek-ai/dsh-agent'
-import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import Projections from '@deepseek-ai/dsh-session-projection'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mountSessionMcp } from '../src/mcp.ts'
 
@@ -50,44 +43,12 @@ afterEach(async () => {
 async function load(): Promise<{ ctx: Context; root: string }> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-browser-duplication-'))
   roots.push(root)
-  const modules = new Map<string, unknown>([
-    ['browserUse', BrowserUse], ['prompt', SystemPrompt], ['tools', Tools], ['llm', Llm],
-    ['sessions', Sessions], ['agents', Agents], ['loop', AgentLoop], ['projections', Projections],
-  ])
-  const configPath = join(root, 'cordis.yml')
-  await writeFile(configPath, JSON.stringify([...modules.keys()].map(name => ({
-    id: name, name, config: name === 'loop' ? { agents: [] } : {},
-  }))))
   const ctx = new Context()
   contexts.push(ctx)
-  ctx.baseUrl = pathToFileURL(root).href + '/'
-  await ctx.plugin(Loader)
-  ctx.loader.builtins.include = Include
-  ctx.loader.internal = {
-    version: 'v2',
-    async import(specifier: string) {
-      if (!modules.has(specifier)) throw new Error(`Unexpected fixture module ${specifier}`)
-      return modules.get(specifier)
-    },
-  } as unknown as NonNullable<typeof ctx.loader.internal>
-  await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
-  await ctx.loader.await()
+  await mountAgentLoopTestDependencies(ctx)
+  await mountAgentLoopTestHarness(ctx)
+  await ctx.plugin(BrowserUse)
   return { ctx, root }
-}
-
-/** One MCP client per Agent under a caller-supplied scope context factory. */
-function mountPerAgent(
-  ctx: Context,
-  root: string,
-  scopeFor: (agent: Agent) => Context,
-  client: typeof import('@deepseek-ai/dsh-mcp-client'),
-): void {
-  ctx.on('agent/created', async ({ agent }) => {
-    await scopeFor(agent).plugin(client, client.Config({
-      transport: 'stdio', serverName: 'browser-fixture', command: process.execPath, args: [FIXTURE, root],
-      failOnStartupError: true, reconnect: { enabled: false },
-    }))
-  }, { prepend: true })
 }
 
 const toolNames = (ctx: Context, agent?: Agent): string[] =>
@@ -100,7 +61,12 @@ it('reproduces the second-Agent failure a profile install causes', async () => {
   vi.resetModules()
   const profileScope = await import('@deepseek-ai/dsh-scope')
   const profileMcpClient = await import('@deepseek-ai/dsh-mcp-client')
-  mountPerAgent(ctx, root, agent => profileScope.createScope(ctx, agent).ctx, profileMcpClient)
+  ctx.on('agent/created', async ({ agent }) => {
+    await profileScope.createScope(ctx, agent).ctx.plugin(profileMcpClient, profileMcpClient.Config({
+      transport: 'stdio', serverName: 'browser-fixture', command: process.execPath, args: [FIXTURE, root],
+      failOnStartupError: true, reconnect: { enabled: false },
+    }))
+  }, { prepend: true })
 
   await ctx.agents.create({ sessionId: SessionId('first'), meta: { cwd: root } })
   expect(toolNames(ctx)).toContain(TOOL)

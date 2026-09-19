@@ -9,6 +9,7 @@ import type {
   ImageAttachmentLimits,
 } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionProjectionsValue } from '../src/types.ts'
 import {
   SessionPersistenceNotFoundError,
   SessionPersistenceRevision,
@@ -57,6 +58,7 @@ import type {
   SessionSearchValue,
   SessionSelectModelRequest,
   SessionSelectModelValue,
+  SessionProjectionsRequest,
   SessionUpdateQueueRequest,
   SessionUpdateQueueValue,
 } from '../src/types.ts'
@@ -80,6 +82,7 @@ export interface TestSessionRemote {
     signal?: AbortSignal,
   ): Promise<RemoteResult<SessionOpenWorkspacePathValue>>
   page(request: SessionPageRequest, signal?: AbortSignal): Promise<RemoteResult<SessionPage>>
+  projections(request: SessionProjectionsRequest, signal?: AbortSignal): Promise<RemoteResult<SessionProjectionsValue>>
   follow(request: SessionFollowRequest, signal?: AbortSignal): AsyncIterable<SessionFollowFrame>
   control(signal?: AbortSignal): AsyncIterable<SessionControlFrame>
 }
@@ -358,6 +361,10 @@ export function createSessionTestRemote(
     ),
     page: (request, signal = new AbortController().signal) => remoteResult(
       () => direct.page(request, signal),
+      signal,
+    ),
+    projections: (request, signal = new AbortController().signal) => remoteResult(
+      () => direct.projections(request, signal),
       signal,
     ),
     follow: (request, signal = new AbortController().signal) => direct.follow(request, signal),

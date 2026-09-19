@@ -86,15 +86,14 @@ describe.skipIf(!existsSync(join(repoRoot, 'apps/cli/lib/bin.js')))('dsh SOURCE 
       const results = evidence.events.filter(event => event.type === 'tool/result')
       expect(results).toHaveLength(1)
       const toolResult = results[0]!.data
-      expect(toolResult.message.content).toHaveLength(1)
-      const block = toolResult.message.content[0]
-      expect(block).toMatchObject({ type: 'tool-result', toolCallId: 'cli-smoke-call' })
+      const message = toolResult.message
+      expect(message).toMatchObject({ role: 'tool', toolCallId: 'cli-smoke-call' })
       if (toolResult.error !== undefined) {
         expect(toolResult.error).toMatchObject({ name: 'SandboxUnavailableError', code: 'SANDBOX_UNAVAILABLE' })
-        expect(block.isError).toBe(true)
+        expect(message.isError).toBe(true)
       } else {
-        expect(block.isError).not.toBe(true)
-        expect(block.content.filter(part => part.type === 'text').map(part => part.text).join(''))
+        expect(message.isError).not.toBe(true)
+        expect(message.content.filter(part => part.type === 'text').map(part => part.text).join(''))
           .toContain('CLI_TOOL_ROUND_TRIP')
       }
       expect(evidence.events.filter(event => event.type === 'turn/end').map(event => event.data.reason))

@@ -144,7 +144,7 @@ function hasAssistantText(events: readonly SessionEvent[], text: string): boolea
 
 /** Caller-supplied user message texts in log order (runtime-context snapshots excluded). */
 function userTexts(events: readonly SessionEvent[]): string[] {
-  return events.flatMap(event => event.type === 'user/message' && event.data.source.kind !== 'plugin'
+  return events.flatMap(event => event.type === 'user/message' && event.data.source.kind !== 'runtime-context'
     ? event.data.content.flatMap(block => block.type === 'text'
       && !block.text.startsWith('Your parent agent id is ')
       ? [block.text]
@@ -1827,7 +1827,7 @@ describe('continuable durability and teardown', () => {
 
   it('rejects selected-child teardown through a stale parent identity', async () => {
     const { ctx, parent } = await setup([])
-    const stale = { ...parent, id: parent.id } as unknown as Agent
+    const stale = { ...parent, id: parent.id } as Agent
 
     await expect(ctx.subagents.drainContinuableChildren(stale, []))
       .rejects.toMatchObject({ code: 'UNAUTHORIZED' })
@@ -1905,7 +1905,7 @@ describe('continuable durability and teardown', () => {
 
   it('ignores a stale scoped root without disabling its live same-id Agent', async () => {
     const { ctx, parent } = await setup([textResponse('done')])
-    const stale = { ...parent, id: parent.id } as unknown as Agent
+    const stale = { ...parent, id: parent.id } as Agent
 
     await ctx.subagents.drainContinuableDescendants([stale])
     const started = await ctx.subagents.startContinuable(startSpec(parent))
@@ -2421,7 +2421,7 @@ describe('continuable review regressions', () => {
   })
 
   it.each([
-    { label: 'plugin', source: { kind: 'plugin' as const, plugin: 'tool-jobs' } },
+    { label: 'plugin', source: { kind: 'tool-jobs' as const } },
     { label: 'non-plugin', source: { kind: 'team-message', teamId: 't-1' } as never },
   ])('keeps an idle child resident while its Inbox holds $label injected context', async ({ source }) => {
     const release = Promise.withResolvers<undefined>()
@@ -2455,7 +2455,7 @@ describe('continuable review regressions', () => {
     // a driver, so residency must survive until that turn claims the message.
     const steered = createUserMessage({
       content: message('Cordis Host handler failed'),
-      source: { kind: 'plugin', plugin: 'cordis-host-runner' },
+      source: { kind: 'cordis-host-runner' },
     })
     child.steer(steered)
     ctx.subagents.interrupt(started.childId, { kind: 'user', parentSessionId: parent.id })
@@ -2605,7 +2605,7 @@ function settlementNotices(agent: Agent): { sender: string; text: string; summar
 describe('continuable adjacent-Agent delivery', () => {
   it('rejects a stale sender before resolving either adjacent target', async () => {
     const { ctx, parent } = await setup([])
-    const stale = { ...parent, id: parent.id } as unknown as Agent
+    const stale = { ...parent, id: parent.id } as Agent
 
     await expect(ctx.subagents.sendMessage(stale, SessionId('target'), message('stale'), {
       signal: testSignal,
@@ -3349,7 +3349,7 @@ describe('continuable errors', () => {
       return found!
     })
     // A stale parent reference: same id, not the exact live entry.
-    const stale = { ...parent, id: parent.id } as unknown as Agent
+    const stale = { ...parent, id: parent.id } as Agent
 
     await expect(queuePrompt(ctx, stale, started.childId, message('stale')))
       .rejects.toMatchObject({ code: 'UNAUTHORIZED' })
@@ -3732,7 +3732,7 @@ describe('SubagentRuntime.interrupt', () => {
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
     const sibling = ctx.agents.get(siblingStart.childId)!
     const stranger = await ctx.agentLoop.create(SessionId('stranger'), { provider: 'mock', model: 'mock' })
-    const stale = { ...parent, id: parent.id } as unknown as Agent
+    const stale = { ...parent, id: parent.id } as Agent
     const cancelSpy = vi.spyOn(target, 'cancel')
 
     expect(() => { ctx.subagents.interrupt(targetStart.childId, { kind: 'ancestor', agent: target }) })

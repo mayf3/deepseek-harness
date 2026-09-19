@@ -249,7 +249,7 @@ export class DeepSeekFilesClient {
     if (options.limit !== undefined) query.set('limit', String(options.limit))
     if (options.order !== undefined && this.protocol === 'chat-completions') query.set('order', options.order)
     const response = await this.request(`${this.path}?${query.toString()}`, { method: 'GET' }, options.signal)
-    const value = await response.json() as unknown
+    const value: unknown = await response.json()
     if (value === null || typeof value !== 'object' || Array.isArray(value)) throw invalidResponse('list')
     const wire = value as { object?: unknown; data?: unknown; first_id?: unknown; last_id?: unknown; has_more?: unknown }
     const firstId = this.protocol === 'messages' ? wire.first_id ?? undefined : wire.first_id
@@ -285,7 +285,7 @@ export class DeepSeekFilesClient {
    */
   async delete(fileId: DeepSeekFileIdType, signal?: AbortSignal): Promise<void> {
     const response = await this.request(`${this.path}/${encodeURIComponent(fileId)}`, { method: 'DELETE' }, signal)
-    const value = await response.json() as unknown
+    const value: unknown = await response.json()
     if (value === null || typeof value !== 'object' || Array.isArray(value)) throw invalidResponse('delete')
     const wire = value as { id?: unknown; object?: unknown; deleted?: unknown; type?: unknown }
     if (wire.id !== fileId || (this.protocol === 'messages'

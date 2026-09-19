@@ -2,6 +2,7 @@
 
 import { hostname } from 'node:os'
 import { resolve } from 'node:path'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-fs'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -10,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-client-file-upload'
 import { canOpenNativePath, nativeFileManager, openNativeAssociatedPath, revealNativePath } from '@deepseek-ai/dsh-native-command'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
-import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
+import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
   ApiSessionAgentController,
@@ -53,6 +54,9 @@ import type {
   SessionSearchValue,
   SessionSelectModelRequest,
   SessionSelectModelValue,
+  SessionProjectionsRequest,
+  SessionProjectionsValue,
+  SessionProjectionValues,
   SessionUpdateQueueRequest,
   SessionUpdateQueueValue,
 } from './types.ts'
@@ -152,6 +156,13 @@ export class SessionController extends TypertRemoteService {
     ctx.on('session/disposed', (session) => {
       ctx.emit('api-session/removed', session.id)
     })
+    const publishAgentAvailability = ({ agent }: { agent: Agent }): undefined => {
+      if (ctx.sessions.get(agent.id) === agent.session) {
+        ctx.emit('api-session/added', this.listState.summaryFor(agent.session))
+      }
+    }
+    ctx.on('agent/created', publishAgentAvailability)
+    ctx.on('agent/disposed', publishAgentAvailability)
     ctx.on('agent/status', ({ agent, status }) => {
       ctx.emit('api-session/status', agent.id, status === 'running')
     })
@@ -338,8 +349,10 @@ export class SessionController extends TypertRemoteService {
   }
 
   /**
-   * Fork one cold-readable completed-turn prefix into a new Session.
-   * @param request - source Session and optional event anchor.
+   * Fork one cold-readable exact event prefix into a new Session. An omitted
+   * boundary selects the latest completed-turn prefix; an open cut receives
+   * synthetic fork closers.
+   * @param request - source Session and optional exact inclusive event boundary.
    * @returns the new Session identity.
    */
   @Remote('fork')
@@ -410,6 +423,36 @@ export class SessionController extends TypertRemoteService {
   @Remote({ mode: 'stream' })
   follow(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame> {
     return this.history.follow(request, signal)
+  }
+
+  /**
+   * Read all registered projections without activating an Agent.
+   * @param request - Session whose current values are required.
+   * @param signal - cancellation for the Session observation.
+   * @returns complete baseline, or null when the Session does not exist.
+   */
+  @Remote('projections')
+  async projections(request: SessionProjectionsRequest, signal: AbortSignal): Promise<SessionProjectionsValue> {
+    const { sessionId } = request
+    if (sessionId.length === 0) {
+      throw new RemoteError('gateway/bad-request', 'sessionId must not be empty', {})
+    }
+    try {
+      using observation = await this.ctx.sessionQuery.observeSession(sessionId, { signal })
+      const projections = observation.projections
+      if (projections === undefined) {
+        throw new RemoteError('session/projections-unavailable', 'Session projections are unavailable', {})
+      }
+      return { asOfSeq: projections.asOfSeq, values: projections.values as SessionProjectionValues }
+    } catch (error: unknown) {
+      if (error instanceof SessionQueryError && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') return null
+      if (signal.aborted
+        || (error instanceof SessionQueryError && error.code === 'SESSION_QUERY_ABORTED')) {
+        throw new RemoteError('gateway/cancelled', 'Session projection read was cancelled', {}, { cause: error })
+      }
+      if (error instanceof RemoteError) throw error
+      throw new RemoteError('gateway/internal', 'Session projection read failed', {}, { cause: error })
+    }
   }
 
   /**

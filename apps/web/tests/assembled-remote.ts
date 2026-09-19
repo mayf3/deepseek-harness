@@ -158,7 +158,6 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
       'settings/canOpenAgentPresetDirectory': ok(true),
       'settings/openSettingsDocument': ok({ opened: true }),
       'settings/openAgentPresetDirectory': ok({ opened: true }),
-      'subagents/list': ok({ entries: [], parentAvailable: true }),
       'terminal/list': ok([]),
       'skills/list': ok({ skills: [] }),
       'session/canOpenWorkspacePath': ok(true),
@@ -224,6 +223,11 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
     return ok(undefined)
   })
   mock.unary('session/list', () => ok({ items: structuredClone(sessions) }))
+  mock.unary('session/projections', (request: unknown) => {
+    const sessionId = recordString(recordValue(request, 'request'), 'sessionId')
+    const summary = sessions.find(candidate => candidate.sessionId === sessionId)
+    return ok(structuredClone(summary?.projections ?? fixture.control.value.projections[sessionId] ?? null))
+  })
   mock.unary('workspace/create', (request: unknown) => {
     const path = recordString(recordValue(request, 'request'), 'path')
     const existing = workspaces.find(workspace => workspace.path === path)

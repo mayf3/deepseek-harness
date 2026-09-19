@@ -839,7 +839,7 @@ describe('execute payload', () => {
     const after = vi.fn()
     const warn = vi.spyOn(b.ctx.logger, 'warn').mockImplementation(() => undefined)
     b.ctx.on('command/executed', () => { throw syncFailure })
-    const rejectingListener = (() => Promise.reject(asyncFailure)) as unknown as () => void
+    const rejectingListener = (() => Promise.reject(asyncFailure)) as () => void
     b.ctx.on('command/executed', rejectingListener)
     b.ctx.on('command/executed', after)
 

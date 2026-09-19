@@ -120,7 +120,7 @@ const harness = await vi.hoisted(async () => {
     whenReady: () => Promise.resolve(),
     getLocale: (): string => 'en-US',
     getVersion: () => '1.0.0',
-    getAppPath: () => 'desktop-test-app',
+    getAppPath: (): string => 'desktop-test-app',
     setAboutPanelOptions: vi.fn<(options: Electron.AboutPanelOptionsOptions) => void>(),
     requestSingleInstanceLock: () => true,
     exit: vi.fn(),
@@ -310,6 +310,40 @@ afterEach(async () => {
 })
 
 describe('desktop main startup', () => {
+  it('routes shell update documents and assets through the registered main protocol handler', async () => {
+    const root = join(import.meta.dirname, '..')
+    vi.spyOn(harness.app, 'getAppPath').mockReturnValue(root)
+    const web = await import('../src/web-document.ts')
+    const actual = await vi.importActual<typeof import('../src/web-document.ts')>('../src/web-document.ts')
+    vi.mocked(web.serveWebDocument).mockImplementation(actual.serveWebDocument)
+    try {
+      await readyForUpdate()
+      const { protocol } = await import('electron')
+      const handler = vi.mocked(protocol).handle.mock.calls.at(-1)?.[1]
+      if (handler === undefined) throw new Error('main did not register its protocol handler')
+      for (const [name, mime] of [
+        ['update-dialog.html', 'text/html'], ['update-dialog.css', 'text/css'], ['update-dialog.js', 'text/javascript'],
+        ['mandatory-update.html', 'text/html'], ['mandatory-update.css', 'text/css'], ['mandatory-update.js', 'text/javascript'],
+        ['update-close.svg', 'image/svg+xml'],
+      ] as const) {
+        const response = await handler(new Request(`dsh-app://shell/${name}`))
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-type')).toContain(mime)
+        expect(await response.text()).toBe(readFileSync(join(root, 'renderer', name), 'utf8'))
+      }
+      const head = await handler(new Request('dsh-app://shell/update-dialog.html', { method: 'HEAD' }))
+      expect(head.status).toBe(200)
+      expect(await head.text()).toBe('')
+      expect((await handler(new Request('dsh-app://shell/update-dialog.html', { method: 'POST' }))).status).toBe(405)
+      expect((await handler(new Request('dsh-app://shell/%'))).status).toBe(400)
+      expect((await handler(new Request('dsh-app://shell/%2e%2e%2fpackage.json'))).status).toBe(403)
+      expect((await handler(new Request('dsh-app://shell/missing.html'))).status).toBe(404)
+      expect((await handler(new Request('dsh-app://other/update-dialog.html'))).status).toBe(404)
+    } finally {
+      vi.mocked(web.serveWebDocument).mockReset()
+    }
+  })
+
   it('serves shell dialogs and their assets without forwarding them to the Host', async () => {
     await readyForUpdate()
     const { serveWebDocument, forwardWebRequest } = await import('../src/web-document.ts')
@@ -1241,7 +1275,7 @@ describe('desktop main startup', () => {
     const window = harness.windows[0]!
     const frame = { url: 'dsh-app://app/' }
     Object.assign(window.webContents, { mainFrame: frame })
-    const handler = harness.handlers.get(DESKTOP_IPC.bootFailed)! as unknown as (event: unknown, message: unknown) => void
+    const handler = harness.handlers.get(DESKTOP_IPC.bootFailed)! as (event: unknown, message: unknown) => void
     const event = { sender: window.webContents, senderFrame: frame }
     expect(() => { handler({ ...event, senderFrame: { url: 'https://other.example/' } }, 'untrusted') }).toThrow('unowned renderer')
     expect(() => { handler({ ...event, senderFrame: { ...frame } }, 'subframe') }).toThrow('non-primary frame')

@@ -180,7 +180,7 @@ function systemMessage(text: string) {
     id: `system-${text}`,
     role: 'system',
     content: text === '' ? [] : [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' },
+    source: { kind: 'system-prompt' },
   }
 }
 
@@ -208,18 +208,22 @@ function assistantMessage(id: string, text: string) {
 function toolResult(callId: string, text: string, isError = false) {
   return {
     id: `result-${callId}`,
-    role: 'user',
+    role: 'tool',
+    toolCallId: callId,
     source: { kind: 'tool', callId },
-    content: [{
-      type: 'tool-result',
-      toolCallId: callId,
-      content: [{ type: 'text', text }],
-      isError,
-    }],
+    content: [{ type: 'text', text }],
+    isError,
   }
 }
 
 describe('built-in conversation node Definitions', () => {
+  it('rejects developer history until presentation is implemented', () => {
+    expect(() => assembler([at(0, 'developer/message', { turn: 1, step: 1, message: {
+      id: 'developer', role: 'developer', source: { kind: 'tool-registry' },
+      content: [{ type: 'tool-addition', toolName: 'search' }],
+    } }, { surfaceOp: 'append' })])).toThrow('developer messages are not supported yet')
+  })
+
   it('rejects an unrelated event passed directly to the request-prompt start', () => {
     const input = at(1, 'turn/start', { turn: 1 })
     const invalidStart = {
@@ -323,7 +327,7 @@ describe('built-in conversation node Definitions', () => {
         ...textMessage('context-1', 'workspace context'),
         turn: 1,
         step: 1,
-        source: { kind: 'plugin', plugin: 'context' },
+        source: { kind: 'context' },
       }, { surfaceOp: 'append' }),
       at(4, 'assistant/live-chunk', {
         turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'thinking' },
@@ -456,7 +460,7 @@ describe('built-in conversation node Definitions', () => {
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'user/message', {
         ...textMessage('context-1', 'runtime context'),
-        source: { kind: 'plugin', plugin: 'context' },
+        source: { kind: 'context' },
       }, { surfaceOp: 'append' }),
       at(3, 'user/message', textMessage('user-1', 'question'), { surfaceOp: 'append' }),
       at(4, 'step/start', { turn: 1, step: 1 }),
@@ -622,7 +626,7 @@ describe('built-in conversation node Definitions', () => {
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'user/message', {
         ...textMessage('context-1', 'runtime context'),
-        source: { kind: 'plugin', plugin: 'context' },
+        source: { kind: 'context' },
       }, { surfaceOp: 'append' }),
       at(3, 'step/start', { turn: 1, step: 1 }),
       at(4, 'assistant/live-chunk', {
@@ -1612,7 +1616,7 @@ describe('built-in conversation node Definitions', () => {
       at(4, 'user/message', textMessage('direct-user', 'prompt'), { surfaceOp: 'append' }),
       at(5, 'user/message', {
         ...textMessage('runtime-context', 'runtime facts'),
-        source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt', form: 'snapshot' },
+        source: { kind: 'runtime-context', form: 'snapshot' },
       }, { surfaceOp: 'append' }),
       at(6, 'request/header', {
         reason: 'initial',
@@ -1647,7 +1651,7 @@ describe('built-in conversation node Definitions', () => {
       at(11, 'step/start', { turn: 1, step: 3 }),
       at(12, 'user/message', {
         turn: 1, step: 3, id: 'summary', role: 'user',
-        content: [{ type: 'text', text: 'summary' }], source: { kind: 'plugin', plugin: 'compaction' },
+        content: [{ type: 'text', text: 'summary' }], source: { kind: 'compact-checkpoint', compactionId: 'compaction-1' },
       }, { surfaceOp: { op: 'replace', startSeq: 5, endSeq: 9 }, sourceEventSeqs: [5, 8, 9] }),
       at(13, 'request/header', {
         reason: 'series', header: { config: { provider: 'test', model: 'test' }, tools: [] },
@@ -1791,7 +1795,7 @@ describe('built-in conversation node Definitions', () => {
       at(4, 'user/message', textMessage('direct-user', 'prompt'), { surfaceOp: 'append' }),
       at(5, 'user/message', {
         ...textMessage('runtime-context', 'runtime facts'),
-        source: { kind: 'plugin', plugin: 'context' },
+        source: { kind: 'context' },
       }, { surfaceOp: 'append' }),
       at(6, 'request/header', {
         reason: 'initial',
@@ -1910,7 +1914,7 @@ describe('built-in conversation node Definitions', () => {
       }),
       at(6, 'user/message', {
         ...textMessage('compacted', 'summary'),
-        source: { kind: 'plugin', plugin: 'compact' },
+        source: { kind: 'compact-checkpoint', compactionId: 'chat-compaction-1' },
       }, { surfaceOp: { op: 'replace', startSeq: 4, endSeq: 4 } }),
       at(7, 'request/header', {
         reason: 'series',
@@ -2091,7 +2095,7 @@ describe('built-in conversation node Definitions', () => {
       at(2, 'step/start', { turn: 1, step: 1 }),
       at(3, 'user/message', {
         ...textMessage('replacement-user', 'model-only context'),
-        source: { kind: 'plugin', plugin: 'foreign' },
+        source: { kind: 'foreign' },
       }, { surfaceOp: { op: 'replace', startSeq: 1, endSeq: 1 } }),
       at(4, 'assistant/message', {
         turn: 1,
@@ -2179,8 +2183,7 @@ describe('built-in conversation node Definitions', () => {
       at(13, 'user/message', {
         ...textMessage('manual-checkpoint', 'checkpoint'),
         source: {
-          kind: 'plugin',
-          plugin: 'compact',
+          kind: 'compact-checkpoint',
           compactionId: 'manual-1',
           sourceCommandId: 'command-1',
         },
@@ -2204,7 +2207,7 @@ describe('built-in conversation node Definitions', () => {
       }),
       at(22, 'user/message', {
         ...textMessage('automatic-checkpoint', 'checkpoint'),
-        source: { kind: 'plugin', plugin: 'compact', compactionId: 'automatic-1' },
+        source: { kind: 'compact-checkpoint', compactionId: 'automatic-1' },
       }, { surfaceOp: { op: 'replace', startSeq: 3, endSeq: 4 } }),
       at(23, 'compaction/end', { compactionId: 'automatic-1', turn: null }),
     ])
@@ -2223,7 +2226,7 @@ describe('built-in conversation node Definitions', () => {
     const value = assembler([
       at(13, 'user/message', {
         ...textMessage('checkpoint', 'checkpoint'),
-        source: { kind: 'plugin', plugin: 'compact', compactionId: 'compact-1' },
+        source: { kind: 'compact-checkpoint', compactionId: 'compact-1' },
       }, { surfaceOp: { op: 'replace', startSeq: 1, endSeq: 8 } }),
     ], true)
     const before = node(snapshot(value), 'compaction')
@@ -2264,7 +2267,7 @@ describe('built-in conversation node Definitions', () => {
       }),
       at(11, 'user/message', {
         ...textMessage('checkpoint-windowed', 'checkpoint'),
-        source: { kind: 'plugin', plugin: 'compact', compactionId: 'compact-windowed' },
+        source: { kind: 'compact-checkpoint', compactionId: 'compact-windowed' },
       }, { surfaceOp: { op: 'replace', startSeq: 1, endSeq: 3 } }),
     ], true)
 
@@ -2288,7 +2291,7 @@ describe('built-in conversation node Definitions', () => {
       }),
       at(22, 'user/message', {
         ...textMessage('legacy-checkpoint', 'checkpoint'),
-        source: { kind: 'plugin', plugin: 'compact' },
+        source: { kind: 'compact-checkpoint' },
       }, { surfaceOp: { op: 'replace', startSeq: 1, endSeq: 3 } }),
       at(23, 'compaction/end', { turn: null }),
     ], true)
@@ -2494,8 +2497,7 @@ describe('built-in conversation node Definitions', () => {
       at(21, 'user/message', {
         ...textMessage('manual-checkpoint', 'checkpoint'),
         source: {
-          kind: 'plugin',
-          plugin: 'compact',
+          kind: 'compact-checkpoint',
           compactionId: 'manual-1',
           sourceCommandId: 'command-1',
         },

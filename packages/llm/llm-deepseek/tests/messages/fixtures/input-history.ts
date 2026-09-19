@@ -6,6 +6,12 @@ import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { resolveAdapterOptions } from '../../../src/config.ts'
 import { serialize } from '../../../src/protocols/messages/serialize.ts'
 
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'plugin:messages-input-history-snapshot': { kind: 'plugin:messages-input-history-snapshot' }
+  }
+}
+
 export const name = 'messages-input-history-snapshot'
 export const inject = ['llm']
 
@@ -14,7 +20,7 @@ export function apply(ctx: Context): void {
   ctx.on('agent/pre-step', async (_input, next) => {
     const decision = await next()
     if (decision.kind !== 'enter') return decision
-    const source = { kind: 'plugin' as const, plugin: name }
+    const source = { kind: `plugin:${name}` } as const
     return { ...decision, messages: [
       ...decision.messages,
       createUserMessage({ source, content: [

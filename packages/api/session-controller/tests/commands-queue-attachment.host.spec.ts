@@ -5,6 +5,7 @@ import type { Agent, Inbox, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createAssistantMessage, createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import SessionStore, {
   SESSION_FORMAT_VERSION, Session, SessionId, SessionLogOffset, SessionSeq,
 } from '@deepseek-ai/dsh-session'
@@ -16,6 +17,12 @@ import { ApiSessionAgentController } from '../src/agent.ts'
 import { SessionCommandController } from '../src/commands.ts'
 import { createInboxStub } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'test': { kind: 'test' } & ContextFormed
+  }
+}
 
 async function commandHarness(
   childMode?: 'continuable' | 'seeded-continuable' | 'seed-only' | 'one-shot' | 'unknown' | 'corrupt',
@@ -146,6 +153,7 @@ describe('Session queue commands', () => {
       action: {
         kind: 'edit',
         content: [{
+          // @ts-expect-error -- remote edit payloads can carry unsupported image blocks.
           type: 'image',
           attachment: {
             attachmentId: AttachmentId('att-edit'), mediaType: 'image/png', bytes: 1, width: 1, height: 1,
@@ -229,7 +237,7 @@ describe('Session queue commands', () => {
         content: [{ type: 'text', text: 'queued' }], source: { kind: 'user' },
       })
       const context = createUserMessage({
-        content: [{ type: 'text', text: 'context' }], source: { kind: 'plugin', plugin: 'test' },
+        content: [{ type: 'text', text: 'context' }], source: { kind: 'test' },
       })
       inbox.append('next-turn', queued)
       inbox.append('next-step', context)

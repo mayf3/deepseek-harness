@@ -981,7 +981,7 @@ describe('Client Typert API', () => {
     await vi.waitFor(() => { expect(ctx.typert.remotes.list()).toEqual([]) })
     const retry = await ctx.remote.$mount({ package: '@fixture/retry-batch', descriptors: [first, second] })
     expect(ctx.remote.probe.create).toBeTypeOf('function')
-    expect((ctx.remote.probe as unknown as Record<string, unknown>).archive).toBeTypeOf('function')
+    expect((ctx.remote.probe as Record<string, unknown>).archive).toBeTypeOf('function')
     await retry()
   })
 

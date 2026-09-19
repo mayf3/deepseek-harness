@@ -622,7 +622,7 @@ describe('FileSystemSkillProvider', () => {
       started.resolve(undefined)
       return await new Promise<string>((_resolve, reject) => {
         signal.addEventListener('abort', () => {
-          const abortReason = signal.reason as unknown
+          const abortReason: unknown = signal.reason
           reject(abortReason instanceof Error ? abortReason : new Error(String(abortReason)))
         }, { once: true })
       })
