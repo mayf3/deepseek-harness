@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-部署可以通过 Anthropic Messages 网关或 chat-completions 调用 DeepSeek。Messages 对思考、签名、工具调用、工具结果和累计用量的表示不同。仅替换端点或压平助手历史会丢失后续工具轮次需要的信息。
+Messages 以原生协议字段表示思考、签名、工具调用、工具结果和累计用量。仅替换端点或压平助手历史会丢失后续工具轮次需要的信息。
 
 ## 决策
 

@@ -628,7 +628,7 @@ function chooseRandomBehavior(
 /**
  * Start a local Messages server that consumes one configured behavior
  * per accepted request. Only a `POST` path ending in `/v1/messages` consumes the script;
- * invalid routes, methods, authorization, and JSON receive ordinary 4xx
+ * invalid routes, methods, API keys, and JSON receive ordinary 4xx
  * responses. Closing the handle terminates stalled connections.
  *
  * @param options - listener, script, response content, timing, and telemetry options.

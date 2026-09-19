@@ -47,7 +47,6 @@ export type { DeepSeekFileId as DeepSeekFileIdType } from './file-id.ts'
 export { DeepSeekUploadIndex, deepSeekFileScope } from './upload-index.ts'
 export type { DeepSeekUploadRecord } from './upload-index.ts'
 export type { RequestDefaults } from './types.ts'
-export type * from './wire-types.ts'
 
 export const name = 'llm-deepseek'
 export const inject = ['llm']

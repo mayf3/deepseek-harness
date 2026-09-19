@@ -34,7 +34,7 @@ import { assemble, type AssembledResult } from './assemble.ts'
  * and a max-effort tool round trip with reasoning passback. The suite skips
  * entirely without $DEEPSEEK_API_KEY; the pre-release vision smoke additionally
  * requires $DEEPSEEK_VISION_E2E=1, and the Flash image/system-update smoke
- * requires $DEEPSEEK_FLASH_E2E=1 (see vitest.e2e.config.ts).
+ * requires $DEEPSEEK_FLASH_E2E=1.
  */
 
 const FLASH = 'deepseek-v4-flash'

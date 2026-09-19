@@ -312,6 +312,28 @@ describe('request-level dynamic configuration', () => {
     expect(good.headers[0]?.['x-api-key']).toBe('good-key')
   })
 
+  it.each(['messages', 'chat-completions'])('rejects a persisted protocol=%s section and recovers after removing the field', async (protocol) => {
+    const dir = await home()
+    const composition = await mockServer([{ kind: 'sse', events: textEvents }])
+    const repaired = await mockServer([{ kind: 'sse', events: textEvents }])
+    vi.stubEnv('DEEPSEEK_API_KEY', 'composition-key')
+    vi.stubEnv('REPAIRED_DEEPSEEK_KEY', 'repaired-key')
+    const section = { baseURL: repaired.url, apiKeyEnv: 'REPAIRED_DEEPSEEK_KEY' }
+    await writeFile(join(dir, 'settings.yaml'), JSON.stringify({ [NS]: { ...section, protocol } }))
+    const { ctx } = await boot(dir, { baseURL: composition.url })
+
+    await prompt(ctx)
+    expect(composition.requests).toHaveLength(1)
+    expect(composition.headers[0]?.['x-api-key']).toBe('composition-key')
+    expect(repaired.requests).toHaveLength(0)
+
+    await ctx.settings.replace(NS, section)
+    await prompt(ctx)
+    expect(repaired.requests).toHaveLength(1)
+    expect(repaired.headers[0]?.['x-api-key']).toBe('repaired-key')
+    expect(ctx.settings.get(NS)).not.toHaveProperty('protocol')
+  })
+
   it('falls back to the composition entry when settings detach', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const dir = await home()

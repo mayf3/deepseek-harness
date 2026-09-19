@@ -6,7 +6,7 @@ English | [中文](2026-09-07-deepseek-messages-adapter.zh.md)
 
 ## Problem
 
-Deployments expose DeepSeek through Anthropic Messages gateways as well as chat-completions. Messages represents thinking, signatures, tool calls, tool results, and cumulative usage differently. Translating only the endpoint or flattening assistant history loses information needed by subsequent tool turns.
+Messages represents thinking, signatures, tool calls, tool results, and cumulative usage as native protocol fields. Translating only the endpoint or flattening assistant history loses information needed by subsequent tool turns.
 
 ## Decision
 
@@ -24,7 +24,7 @@ System updates use the existing [route capability](2026-09-02-in-history-system-
 
 Web displays DeepSeek with an endpoint and credential reference. Without an endpoint override, resolution uses `https://api.deepseek.com/anthropic`. Overrides must support Messages. The adapter follows the exact `/v1` root rule rather than inferring compatibility from other version-like suffixes. One model catalog advertises the capabilities declared by its entries.
 
-The adapter uses the existing [request-extension registry](../architecture/2026-08-21-deepseek-llm-api-request-extensions.md) after native serialization and accept captured contributions after HTTP 2xx, before reading the stream. Session-log delivery and plugin inventory retain their owners and remain outside model input. The auxiliary [web-search provider](../../../../packages/web/web-search-deepseek/README.md) retains its separate endpoint, request, and settings.
+The adapter uses the existing [request-extension registry](../architecture/2026-08-21-deepseek-llm-api-request-extensions.md) after native serialization and accepts captured contributions after HTTP 2xx, before reading the stream. Session-log delivery and plugin inventory retain their owners and remain outside model input. The auxiliary [web-search provider](../../../../packages/web/web-search-deepseek/README.md) retains its separate endpoint, request, and settings.
 
 ## Alternatives considered
 
