@@ -222,7 +222,7 @@ describe('JobListAction rows', () => {
       job({ id: 'bash-1' as JobView['id'], label: 'first', status: 'completed', startedAt: 1_700_000_000_000, finishedAt: 1_700_000_000_000 + 100 }),
     ])} />)
     openList()
-    expect(within(screen.getByRole('list')).getAllByRole('listitem').map(row => row.querySelector('[title]')?.getAttribute('title')))
+    expect(within(screen.getByRole('list')).getAllByRole('listitem').map(row => row.querySelector('[title]')?.getAttribute('title')).filter(title => title !== undefined))
       .toEqual(['first', 'second'])
   })
 
@@ -231,10 +231,10 @@ describe('JobListAction rows', () => {
       job({ status: 'killed', detail: 'signal: SIGTERM', finishedAt: 1_700_000_000_000 + 2_000 }),
     ])} />)
     openList()
-    expect(within(screen.getByRole('list')).getAllByRole('listitem')[0]?.textContent).toContain('signal: SIGTERM')
+    expect(within(screen.getByRole('list')).getByText('signal: SIGTERM')).toBeDefined()
   })
 
-  it('renders every status word, including the stopping transition', () => {
+  it('renders settled status words and every lifecycle indicator', () => {
     render(<JobListAction {...props([
       job({ id: 'bash-1' as JobView['id'], label: 'a', status: 'running' }),
       job({ id: 'bash-2' as JobView['id'], label: 'b', status: 'stopping' }),
@@ -243,7 +243,8 @@ describe('JobListAction rows', () => {
       job({ id: 'bash-5' as JobView['id'], label: 'e', status: 'failed', finishedAt: 1_700_000_000_000 }),
     ])} />)
     openList()
-    for (const word of ['运行中', '正在停止', '已完成', '已取消', '已失败']) {
+    fireEvent.click(screen.getByRole('button', { name: zh['section.settledCount'].replace('{count}', '3') }))
+    for (const word of ['已完成', '已取消', '已失败']) {
       expect(within(screen.getByRole('list')).getByText(word)).toBeDefined()
     }
     expect([...screen.getByRole('list').querySelectorAll('li [data-state]')].map(node => node.getAttribute('data-state')))
