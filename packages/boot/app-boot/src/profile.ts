@@ -204,7 +204,7 @@ function profileDependencyNames(manifest: ProfileManifest): string[] {
   return [...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.peerDependencies ?? {})]
 }
 
-/** Resolve the installation generation that every profile must find through the fallback directory. */
+/** Resolve the installation packages that the runtime resolver supplies to every profile. */
 function resolveModuleFallbackEntries(
   installAnchor: string, skippedBundles: ReadonlySet<string>,
 ): {

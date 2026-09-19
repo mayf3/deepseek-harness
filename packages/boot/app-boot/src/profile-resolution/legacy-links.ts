@@ -6,7 +6,7 @@ import { realpathSync } from 'node:fs'
  * Return whether the process reads application modules from pkg's virtual filesystem.
  * @returns whether pkg owns the module filesystem.
  */
-export function isPackagedExecutable(): boolean {
+function isPackagedExecutable(): boolean {
   return (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
 }
 
