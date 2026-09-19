@@ -698,6 +698,51 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
 
   afterEach(async () => { await ctx.fiber.dispose() })
 
+  it.each([3, SESSION_FORMAT_VERSION])('shares deeply frozen opaque JSON from format v%s', async (version) => {
+    type NestedValue = {
+      values: [null, boolean, number, string, unknown[]]
+      __proto__: { leaf: number }
+      constructor: { leaf: number }
+    }
+    const data = JSON.parse('{"nested":[[{"values":[null,true,7,"text",[]],"__proto__":{"leaf":1},"constructor":{"leaf":2}}]]}') as { nested: [[NestedValue]] }
+    const header = meta(`frozen-json-v${version}`, '/work')
+    const path = generationLogPath(root, header.cwd, header.id, version, 'none')
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, [
+      { ...toHeaderLine(header), version },
+      { type: 'external/frozen-json', seq: 0, time: 1, ignorable: true, data },
+    ].map(row => JSON.stringify(row) + '\n').join(''))
+
+    const handle = await ctx.sessionPersistence.open(header.id, 'read')
+    try {
+      const read = await handle.read()
+      expect(read.eventState).toBe('shared-frozen')
+      expect(read.events).toHaveLength(1)
+      const event = read.events[0] as SessionEvent
+      const actual = event.data as unknown as typeof data
+      const nested = actual.nested[0][0]
+      expect(actual).toEqual(data)
+      expect(Object.getPrototypeOf(nested)).toBe(Object.prototype)
+      expect(Object.hasOwn(nested, '__proto__')).toBe(true)
+      expect(Object.hasOwn(nested, 'constructor')).toBe(true)
+      expect([
+        event, actual, actual.nested, actual.nested[0], nested, nested.values,
+        nested.values[4], nested.__proto__, nested.constructor,
+      ].every(Object.isFrozen)).toBe(true)
+      expect(Reflect.set(nested.__proto__, 'leaf', 9)).toBe(false)
+      expect(Reflect.set(nested.constructor, 'leaf', 9)).toBe(false)
+      expect(() => nested.values[4].push('changed')).toThrow(TypeError)
+
+      const reread = await handle.read()
+      expect(reread.events).not.toBe(read.events)
+      expect(reread.events[0]).toBe(event)
+      expect(reread.events[0]?.data).toBe(actual)
+      expect(actual).toEqual(data)
+    } finally {
+      await handle.close()
+    }
+  })
+
   it('projects a released v0 header through stat and list without reading or mutating its body', async () => {
     const header = meta('released-v0-metadata', '/work')
     const sourcePath = historicalLogPath(root, header.cwd, header.id)
