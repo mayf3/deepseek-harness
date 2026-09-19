@@ -21,16 +21,14 @@
  */
 
 import { createRequire } from 'node:module'
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { DshPackageManifest } from '@deepseek-ai/dsh-package-manifest'
 import { loadOverlayPatches } from './index.ts'
-import {
-  canonicalLinkPath, isProfileModuleFallbackLink, PROFILE_MODULE_FALLBACK_DIR, realModuleDirectory, symlinkPointsTo,
-} from './profile-resolution/legacy-links.ts'
+import { realModuleDirectory } from './profile-resolution/legacy-links.ts'
 
 /** Directory under the Harness home holding every profile. */
 export const PROFILES_DIR = 'profiles'
@@ -326,17 +324,13 @@ function skippedProfileBundles(profile: Profile | undefined, manifest: ProfileMa
 /** Return installed direct dependencies that Node resolves before profile fallback. */
 function installedProfilePackageNames(profile: Profile, manifest: ProfileManifest | undefined): string[] {
   if (manifest === undefined) return []
-  return profileDependencyNames(manifest).filter((name) => {
-    const candidate = join(profile.dir, 'node_modules', name)
-    if (!existsSync(join(candidate, 'package.json'))) return false
-    return !isProfileModuleFallbackLink(profile.dir, name)
-  })
+  return profileDependencyNames(manifest)
+    .filter(name => existsSync(join(profile.dir, 'node_modules', name, 'package.json')))
 }
 
 /** Collect the first resolvable package directory for each dependency name. */
 function dependencyClosure(
   anchors: readonly string[], reserved: ReadonlySet<string>,
-  exclude: (candidate: string, packageName: string) => boolean,
   declarers?: Map<string, string>,
   versions?: Map<string, string | undefined>,
 ): Map<string, string> {
@@ -359,7 +353,7 @@ function dependencyClosure(
       /* v8 ignore next -- an installable package manifest always declares dependencies or peers */
       for (const dep of profileDependencyNames(next.manifest)) {
         if (visited.has(dep)) continue
-        const dir = packageDirFromAnchor(next.anchor, dep, exclude)
+        const dir = packageDirFromAnchor(next.anchor, dep)
         // A declared-but-uninstalled dependency cannot be loader-visible.
         if (dir === undefined) continue
         visited.add(dep)
@@ -381,25 +375,10 @@ function resolveProfileModuleFallback(
   declarers?: Map<string, string>,
   versions?: Map<string, string | undefined>,
 ): Map<string, string> {
-  const profileModulesDir = join(profile.dir, 'node_modules')
-  const ownedModulesDir = join(profile.dir, PROFILE_MODULE_FALLBACK_DIR, 'node_modules')
   const bundleAnchors = profile.layers
     .filter(layer => !installationPackageNames.has(layer.packageName))
     .map(layer => join(layer.packageDir, 'package.json'))
-  const bundleLinks = dependencyClosure(bundleAnchors, installationPackageNames, (candidate, packageName) => {
-    const profileLink = join(profileModulesDir, packageName)
-    if (canonicalLinkPath(candidate) !== canonicalLinkPath(profileLink)) return false
-    try {
-      return lstatSync(profileLink).isSymbolicLink()
-        && symlinkPointsTo(profileLink, join(ownedModulesDir, packageName))
-    } catch (error) {
-      // A concurrent cleanup may remove the projection after package discovery.
-      /* v8 ignore next 2 -- a non-ENOENT lstat failure requires a host filesystem fault */
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true
-      /* v8 ignore next -- see the host-filesystem exception above */
-      throw error
-    }
-  }, declarers, versions)
+  const bundleLinks = dependencyClosure(bundleAnchors, installationPackageNames, declarers, versions)
   for (const layer of profile.layers) bundleLinks.delete(layer.packageName)
   return bundleLinks
 }
@@ -473,15 +452,12 @@ function normalizeShippedProfile(name: string, dir: string, manifest: ProfileMan
  * matches what the Loader would import from the same anchor, and
  * `existsSync` follows the symlinks pnpm's isolated layout uses.
  */
-function packageDirFromAnchor(
-  anchor: string, packageName: string,
-  exclude: (candidate: string, packageName: string) => boolean = () => false,
-): string | undefined {
+function packageDirFromAnchor(anchor: string, packageName: string): string | undefined {
   // resolve.paths returns null only for builtins, which no bundle name is.
   /* v8 ignore next */
   for (const searchPath of createRequire(anchor).resolve.paths(packageName) ?? []) {
     const candidate = join(searchPath, packageName)
-    if (existsSync(join(candidate, 'package.json')) && !exclude(candidate, packageName)) return candidate
+    if (existsSync(join(candidate, 'package.json'))) return candidate
   }
   return undefined
 }
