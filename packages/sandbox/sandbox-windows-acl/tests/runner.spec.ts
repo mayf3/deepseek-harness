@@ -507,11 +507,13 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
 
   it('NUL writes stay ambient under the Low token in BOTH modes', () => {
     // The device DACL grants Everyone write and carries no higher label, so
-    // the documented `> NUL` redirection must survive the lowered token.
+    // the documented `> NUL` redirection must survive the lowered token. The
+    // redirection stays inside cmd's own command line: PowerShell's `>nul`
+    // opens a file named nul instead, which is a different probe.
     const cmd = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32\\cmd.exe')
     const probe = [
       "$ErrorActionPreference='SilentlyContinue';",
-      `& '${cmd}' /c echo ok>nul 2>&1; 'CMD-NUL: exit=' + $LASTEXITCODE;`,
+      `& '${cmd}' /c 'echo ok>NUL&&echo CMD-NUL: OK';`,
       `& "${process.execPath}" -e "try{require('node:fs').writeFileSync(process.argv[1],'x');console.log('NODE-NUL: OK')}catch(e){console.log('NODE-NUL: DENIED '+e.code)}" '\\\\.\\NUL'`,
     ].join('')
     for (const mode of ['read-only', 'workspace-write'] as const) {
@@ -520,7 +522,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
         '--', 'pwsh', '/NoLogo', '/NonInteractive', '/NoProfile', '/Command', probe,
       ])
       expect(result.status, `mode: ${mode}\nstderr: ${result.stderr}`).toBe(0)
-      expect(result.stdout, `mode: ${mode}`).toContain('CMD-NUL: exit=0')
+      expect(result.stdout, `mode: ${mode}`).toContain('CMD-NUL: OK')
       expect(result.stdout, `mode: ${mode}`).toContain('NODE-NUL: OK')
     }
   }, 30_000)
