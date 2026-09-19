@@ -157,7 +157,7 @@ describe('V4 tool-role view and lift', () => {
     expect(() => liftToolResult(row)).toThrow(/tool-result isError must be boolean/)
   })
 
-  it('passes non-tool rows through both transforms', () => {
+  it('passes non-tool rows through the wrapper conversion', () => {
     const row = event(0, 'user/message', { content: [], source: { kind: 'user' }, role: 'user', id: 'u' })
     expect(liftToolResult(row)).toBe(row)
   })
