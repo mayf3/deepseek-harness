@@ -36,7 +36,7 @@ describe('DeepSeekFilesClient', () => {
   describe.each(['messages', 'chat-completions'] as const)('%s successful response JSON', (protocol) => {
     it.each((['upload', 'list', 'retrieve', 'delete'] as const).flatMap(operation =>
       ['', '{"id":'].map(body => ({ operation, body })),
-    ))('rejects malformed $operation JSON with the operation and HTTP status ($body)', async ({ operation, body }) => {
+    ))('rejects malformed JSON with operation and HTTP status: %j', async ({ operation, body }) => {
       const fetchImpl = vi.fn<typeof fetch>(async () => new Response(body, { status: 200 }))
       const client = new DeepSeekFilesClient({ protocol, baseURL: 'https://files.example', apiKey: 'test-key', fetch: fetchImpl })
       const operations = {
