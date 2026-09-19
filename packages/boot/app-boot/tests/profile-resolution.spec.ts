@@ -23,6 +23,7 @@ import {
 } from '../src/profile-resolution/resolver.ts'
 import {
   createProfileResolutionGeneration,
+  loadProfile,
   type Profile,
   type ProfileResolutionGeneration,
 } from '../src/profile.ts'
@@ -1187,6 +1188,44 @@ describe('profile resolution generation', { concurrent: false }, () => {
     expect(realpathSync(shared)).toBe(selected)
     expect(existsSync(join(pluginDir, 'package.json'))).toBe(true)
     expect(existsSync(join(leafDir, 'package.json'))).toBe(true)
+  })
+
+  it('loads the selected bundle plugin after a link-backend projection of a deselected bundle is removed', async () => {
+    const f = fixture()
+    const profileDir = join(f.root, 'profiles', 'web')
+    const modules = join(profileDir, 'node_modules')
+    const plugin = 'shared-plugin'
+    for (const [bundle, marker] of [['bundle-a', 1], ['bundle-b', 2]] as const) {
+      file(join(modules, bundle, 'package.json'), JSON.stringify({
+        name: bundle, version: '1.0.0', dependencies: { [plugin]: '*' }, dsh: { bundle: { patch: './cordis.patch.yml' } },
+      }))
+      file(join(modules, bundle, 'cordis.patch.yml'), '[]\n')
+      pkg(join(modules, bundle, 'node_modules', plugin), plugin, marker)
+    }
+    // A link-backend launch projected bundle-a's plugin while bundle-a was selected.
+    const owned = join(profileDir, '.dsh-module-fallback', 'node_modules', plugin)
+    mkdirSync(dirname(owned), { recursive: true })
+    symlinkSync(join(modules, 'bundle-a', 'node_modules', plugin), owned, process.platform === 'win32' ? 'junction' : 'dir')
+    symlinkSync(owned, join(modules, plugin), process.platform === 'win32' ? 'junction' : 'dir')
+    file(join(profileDir, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web', private: true,
+      dependencies: { 'bundle-a': '*', 'bundle-b': '*' },
+      dsh: { profile: { bundles: ['bundle-b'] } },
+    }))
+
+    const profile = loadProfile('dsh', 'web', f.installAnchor, f.root)
+    expect(profile.layers.map(layer => layer.packageName)).toEqual(['bundle-b'])
+    expect(existsSync(join(profileDir, '.dsh-module-fallback'))).toBe(false)
+    expect(existsSync(join(modules, plugin))).toBe(false)
+    const generation = await createProfileResolutionGeneration({ installAnchor: f.installAnchor, profile, home: f.root })
+    expect(generation.entries.find(entry => entry.name === plugin)).toMatchObject({
+      packageDir: join(modules, 'bundle-b', 'node_modules', plugin), version: '2.0.0', scope: 'profile',
+    })
+    const registration = installProfileResolution(generation)
+    registrations.push(registration)
+    expect(createRequire(join(profileDir, 'entry.cjs'))(plugin)).toEqual({ marker: 2 })
+    expect(await importFrom(plugin, pathToFileURL(join(profileDir, 'entry.mjs')).href)).toMatchObject({ marker: 2 })
+    expect(existsSync(join(modules, 'bundle-a', 'node_modules', plugin, 'package.json'))).toBe(true)
   })
 
   it('follows profile node_modules symlinks during selected bundle dependency traversal', async () => {

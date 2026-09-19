@@ -21,8 +21,8 @@
  */
 
 import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -192,6 +192,57 @@ export function initProfile(
   if (!existsSync(patchPath)) writeFileSync(patchPath, PROFILE_PATCH_TEMPLATE)
   const workspacePath = join(dir, 'pnpm-workspace.yaml')
   if (!existsSync(workspacePath)) writeFileSync(workspacePath, PROFILE_PNPM_WORKSPACE)
+}
+
+/** Directory where the link backend of the dsh 0.1.5 releases projected bundle-carried packages into a profile. */
+const LINK_PROJECTION_DIR = '.dsh-module-fallback'
+
+/**
+ * Remove the package projections a link-backend launch left in a profile.
+ * Only symlinks under the profile's `node_modules` whose target lies inside
+ * `<profile>/.dsh-module-fallback/node_modules` are unlinked, then that directory is removed;
+ * pnpm-installed packages and every other symlink stay. A profile without the directory is untouched.
+ * @param dir - the profile directory.
+ */
+export function removeLinkProjections(dir: string): void {
+  const owned = join(dir, LINK_PROJECTION_DIR)
+  if (!existsSync(owned)) return
+  const ownedModules = join(owned, 'node_modules')
+  for (const link of symlinksUnder(join(dir, 'node_modules'))) {
+    if (pointsInto(link, ownedModules)) unlinkSync(link)
+  }
+  rmSync(owned, { recursive: true, force: true })
+}
+
+/** Top-level and scoped entries under a node_modules directory that are symlinks or junctions. */
+function symlinksUnder(modules: string): string[] {
+  const links: string[] = []
+  if (!existsSync(modules)) return links
+  for (const entry of readdirSync(modules, { withFileTypes: true })) {
+    const path = join(modules, entry.name)
+    if (entry.isSymbolicLink()) {
+      links.push(path)
+    } else if (entry.name.startsWith('@') && entry.isDirectory()) {
+      for (const child of readdirSync(path, { withFileTypes: true })) {
+        if (child.isSymbolicLink()) links.push(join(path, child.name))
+      }
+    }
+  }
+  return links
+}
+
+/** Whether a symlink's target directory is `root` or lies below it. */
+function pointsInto(link: string, root: string): boolean {
+  try {
+    const target = resolve(dirname(link), readlinkSync(link))
+    const parent = realpathSync.native(dirname(target))
+    const rootPath = realpathSync.native(root)
+    return parent === rootPath || parent.startsWith(rootPath + sep)
+  } catch (error) {
+    // A target whose parent no longer exists cannot be one of the projections this launch owns.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
 }
 
 /** Read one package manifest while traversing a dependency graph. */
@@ -557,6 +608,7 @@ export function loadProfile(
     }
     initProfile(dir, template.bundles)
   }
+  removeLinkProjections(dir)
   normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
   return loadProfileDirectory(binName, dir, installAnchor, options)
 }

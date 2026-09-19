@@ -39,6 +39,7 @@ export {
   DEFAULT_PROFILE_BUNDLES,
   OPTIONAL_BUNDLES,
   initProfile,
+  removeLinkProjections,
   loadProfile,
   loadProfileDirectory,
   PROFILE_PATCH_FILENAME,

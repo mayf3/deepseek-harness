@@ -5,11 +5,11 @@
  */
 
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import {
@@ -22,6 +22,7 @@ import {
   PROFILE_TEMPLATES,
   readProfileManifest,
   readProfilePatches,
+  removeLinkProjections,
   resolveBundleDir,
   resolveProfileDir,
   writeProfileManifest,
@@ -667,5 +668,56 @@ describe('createProfileResolutionGeneration', () => {
         await expect(importFromGeneration(generation, specifier)).rejects.toMatchObject({ code })
       }
     }
+  })
+})
+
+describe('removeLinkProjections', () => {
+  const link = (target: string, path: string): void => {
+    mkdirSync(dirname(path), { recursive: true })
+    symlinkSync(target, path, process.platform === 'win32' ? 'junction' : 'dir')
+  }
+  const packageAt = (dir: string, name: string, version: string): void => {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version }))
+  }
+
+  it('removes only the symlinks that point into .dsh-module-fallback and the directory itself', () => {
+    const home = tmp()
+    const profile = join(home, 'profiles', 'web')
+    const modules = join(profile, 'node_modules')
+    const owned = join(profile, '.dsh-module-fallback', 'node_modules')
+    packageAt(join(modules, 'my-bundle'), 'my-bundle', '1.0.0')
+    packageAt(join(modules, 'my-bundle', 'node_modules', 'bridge'), 'bridge', '1.0.0')
+    packageAt(join(modules, '@scope', 'helper'), '@scope/helper', '1.0.0')
+    const outside = join(home, 'workspace', 'linked-plugin')
+    packageAt(outside, 'linked-plugin', '1.0.0')
+    link(outside, join(modules, 'linked-plugin'))
+    link(join(modules, 'my-bundle', 'node_modules', 'bridge'), join(owned, 'bridge'))
+    link(join(owned, 'bridge'), join(modules, 'bridge'))
+    link(join(modules, '@scope', 'helper'), join(owned, '@scope', 'tool'))
+    link(join(owned, '@scope', 'tool'), join(modules, '@scope', 'tool'))
+    link(join(home, 'missing-target'), join(modules, 'dangling'))
+
+    removeLinkProjections(profile)
+
+    expect(existsSync(join(profile, '.dsh-module-fallback'))).toBe(false)
+    expect(lstatSync(join(modules, 'bridge'), { throwIfNoEntry: false })).toBeUndefined()
+    expect(lstatSync(join(modules, '@scope', 'tool'), { throwIfNoEntry: false })).toBeUndefined()
+    expect(lstatSync(join(modules, 'my-bundle')).isDirectory()).toBe(true)
+    expect(existsSync(join(modules, 'my-bundle', 'node_modules', 'bridge', 'package.json'))).toBe(true)
+    expect(lstatSync(join(modules, '@scope', 'helper')).isDirectory()).toBe(true)
+    expect(lstatSync(join(modules, 'linked-plugin')).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(join(modules, 'linked-plugin'))).toBe(outside)
+    expect(lstatSync(join(modules, 'dangling')).isSymbolicLink()).toBe(true)
+    expect(() => { removeLinkProjections(profile) }).not.toThrow()
+  })
+
+  it('leaves a profile without the directory untouched', () => {
+    const home = tmp()
+    const profile = join(home, 'profiles', 'web')
+    packageAt(join(profile, 'node_modules', 'my-plugin'), 'my-plugin', '1.0.0')
+    removeLinkProjections(profile)
+    removeLinkProjections(join(home, 'profiles', 'absent'))
+    expect(existsSync(join(profile, 'node_modules', 'my-plugin', 'package.json'))).toBe(true)
   })
 })
