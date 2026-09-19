@@ -348,9 +348,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'forkSession(sessionId: SessionId): Promise<void>',
-        description: 'Fork a Session and open the child unless a later navigation supersedes it.',
+        description: 'Fork a Session without changing the current selection.',
         parameters: [{ name: 'sessionId', description: 'source Session.' }],
-        returns: 'completion; a superseded request leaves its child available without selecting it.',
+        returns: 'completion after child creation and inherited-title increment.',
       },
       {
         signature: 'connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>',
