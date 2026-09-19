@@ -5,22 +5,25 @@ import type { CSSProperties, ReactNode } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   CodeBlock,
-  IconCheckOutline16,
-  IconChevronRightOutline14,
-  IconCodeOutline16,
-  IconWrapLinesOutline16,
-  IconCopyOutline16,
-  IconSettingsOutline16,
-  IconSparkle16,
-  IconUserOutline16,
+  FileTypeIcon,
+  fileExtension,
+  fileSizeText,
+  IconCheckOutlineRegular,
+  IconChevronRightOutlineRegular,
+  IconCodeOutlineRegular,
+  IconWrapLinesOutlineRegular,
+  IconCopyOutlineRegular,
+  IconSettingsOutlineRegular,
+  IconSparkleRegular,
+  IconUserOutlineRegular,
   JsonTree,
   MarkdownText,
+  StateDot,
   Tooltip,
   writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { JsonTreeLabels, JsonTreeProps, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { structuredPatch } from 'diff'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {
   AssistantRequestConfig, ConversationPromptSnapshot, RenderMessageImages,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -118,11 +121,11 @@ function CompactedIcon(): ReactNode {
 }
 
 const KIND_ICON: Record<TrajectoryCellKind, ReactNode> = {
-  system: <IconSettingsOutline16 size={13} />,
-  user: <IconUserOutline16 size={13} />,
+  system: <IconSettingsOutlineRegular size={13} />,
+  user: <IconUserOutlineRegular size={13} />,
   context: <InformationIcon />,
   compacted: <CompactedIcon />,
-  message: <IconSparkle16 size={13} />,
+  message: <IconSparkleRegular size={13} />,
   tool: <ToolWrenchIcon />,
   subtool: <ToolWrenchIcon />,
 }
@@ -1114,7 +1117,7 @@ function RecordListText({
   return (
     <>
       <span className={css.toolCallNameTypeface}>
-        {toolCallText.program && <IconCodeOutline16 className={css.programIcon} size={12} />}
+        {toolCallText.program && <IconCodeOutlineRegular className={css.programIcon} size={12} />}
         {toolCallText.name || '—'}
       </span>
       {toolCallText.args !== undefined && (
@@ -1157,75 +1160,120 @@ function MarkdownFragment({
 function SourceBlocks({
   blocks,
   onOpenCall,
-  renderImages,
   t,
 }: {
   blocks: readonly TrajectorySourceBlock[]
   onOpenCall: (callId: string) => void
-  renderImages: RenderMessageImages
   t: TrajectoryTranslate
 }) {
+  const attachments = new Map(recordAttachments(blocks, t).map(entry => [entry.index, entry]))
   return (
     <div className={css.sourceBlocks}>
-      {blocks.map((block, index) => (
-        <section className={css.sourceBlock} key={index}>
-          {block.callId !== undefined
-            ? (
-              <button
-                type="button"
-                className={css.sourceBlockJumpTarget}
-                aria-label={t('block.openSummary', { index: index + 1 })}
-                title={t('block.openSummaryTitle')}
-                onClick={() => {
-                  if (block.callId !== undefined) onOpenCall(block.callId)
-                }}
-              >
-                <span className={css.sourceBlockLabel}>
-                  {t('block.label', { index: index + 1, type: block.type })}
-                </span>
-                <IconChevronRightOutline14 className={css.sourceBlockJumpIcon} size={12} />
-              </button>
-            )
-            : (
-              <div className={css.sourceBlockHeader}>
-                <span className={css.sourceBlockLabel}>
-                  {t('block.label', { index: index + 1, type: block.type })}
-                </span>
-              </div>
-            )}
-          {/* The Raw view keeps model block order and granularity: one
-              gallery per image block, unlike the aggregated record gallery. */}
-          {block.attachment !== undefined
-            ? renderImages({ images: [{ attachment: block.attachment }], align: 'start' })
-            : <pre className={css.sourceBlockContent}>{block.content}</pre>}
-        </section>
-      ))}
+      {blocks.map((block, index) => {
+        const attachment = attachments.get(index)
+        return attachment !== undefined ? (
+          <details className={css.attachmentDisclosure} key={index}>
+            <summary>
+              <span className={css.sourceBlockLabel}>
+                {t('block.label', { index: index + 1, type: block.type })}
+              </span>
+              <span className={css.attachmentName} title={attachment.name}>
+                {attachment.name}
+              </span>
+            </summary>
+            <pre className={css.sourceBlockContent}>{block.content}</pre>
+          </details>
+        )
+          : (
+            <section className={css.sourceBlock} key={index}>
+              {block.callId !== undefined
+                ? (
+                  <button
+                    type="button"
+                    className={css.sourceBlockJumpTarget}
+                    aria-label={t('block.openSummary', { index: index + 1 })}
+                    title={t('block.openSummaryTitle')}
+                    onClick={() => {
+                      if (block.callId !== undefined) onOpenCall(block.callId)
+                    }}
+                  >
+                    <span className={css.sourceBlockLabel}>
+                      {t('block.label', { index: index + 1, type: block.type })}
+                    </span>
+                    <IconChevronRightOutlineRegular className={css.sourceBlockJumpIcon} size={12} />
+                  </button>
+                )
+                : (
+                  <div className={css.sourceBlockHeader}>
+                    <span className={css.sourceBlockLabel}>
+                      {t('block.label', { index: index + 1, type: block.type })}
+                    </span>
+                  </div>
+                )}
+              <pre className={css.sourceBlockContent}>{block.content}</pre>
+            </section>
+          )
+      })}
     </div>
   )
 }
 
-function recordImages(
+function recordAttachments(
   blocks: readonly TrajectorySourceBlock[] | undefined,
-): { readonly attachment: ImageAttachmentRef }[] {
-  return (blocks ?? []).flatMap(block =>
-    block.attachment !== undefined ? [{ attachment: block.attachment }] : [])
+  t: TrajectoryTranslate,
+) {
+  let imageIndex = 0
+  return (blocks ?? []).flatMap((block, index) => {
+    const ref = block.attachment ?? block.file
+    if (ref === undefined) return []
+    if (block.attachment !== undefined) imageIndex += 1
+    return [{
+      block,
+      index,
+      name: ref.name ?? t('attachment.imageName', { index: imageIndex }),
+      metadata: [
+        block.attachment?.mediaType ?? fileExtension(ref.name ?? '').toUpperCase(),
+        fileSizeText(ref.bytes),
+        ...(block.attachment === undefined ? [] : [`${block.attachment.width} × ${block.attachment.height}`]),
+      ].filter(Boolean).join(' · '),
+    }]
+  })
 }
 
-function MessageImages({
+function RecordAttachments({
   blocks,
   preview,
   renderImages,
+  t,
 }: {
   blocks: readonly TrajectorySourceBlock[] | undefined
   preview: boolean
   renderImages: RenderMessageImages
+  t: TrajectoryTranslate
 }) {
-  const images = recordImages(blocks)
-  if (images.length === 0) return null
+  const attachments = recordAttachments(blocks, t)
+  if (attachments.length === 0) return null
   return (
-    <div className={preview ? `${css.messageImages} ${css.messageImagesPreview}` : css.messageImages}>
-      {renderImages({ images, align: 'start' })}
-    </div>
+    <ul
+      className={preview ? `${css.attachments} ${css.attachmentsPreview}` : css.attachments}
+      aria-label={t('attachment.list')}
+    >
+      {attachments.map(({ block, index, name, metadata }) => (
+        <li className={css.attachmentRow} key={index}>
+          {block.attachment !== undefined
+            ? renderImages({
+              images: [{ attachment: block.attachment, label: name }],
+              align: 'start',
+              thumbnail: true,
+            })
+            : <span className={css.attachmentIcon}><FileTypeIcon path={name} /></span>}
+          <div className={css.attachmentInfo}>
+            <span className={css.attachmentName} title={name}>{name}</span>
+            <span className={css.attachmentMetadata}>{metadata}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -1324,7 +1372,7 @@ function ToolCatalog({
       {tools.map((tool, index) => (
         <details className={css.toolCatalogItem} key={`${tool.name}:${index}`}>
           <summary className={css.toolCatalogSummary}>
-            <IconChevronRightOutline14 className={css.toolCatalogChevron} size={12} />
+            <IconChevronRightOutlineRegular className={css.toolCatalogChevron} size={12} />
             <ToolGlyph />
             <span className={css.toolCatalogName}>{tool.name}</span>
             <span className={css.toolCatalogDescription}>{tool.description}</span>
@@ -1488,7 +1536,6 @@ function MarkdownRecordContent({
       <SourceBlocks
         blocks={record.cell.sourceBlocks}
         onOpenCall={onOpenCall}
-        renderImages={renderImages}
         t={t}
       />
     )
@@ -1516,7 +1563,7 @@ function MarkdownRecordContent({
             onClick={() => { onThinkingExpandedChange(!thinkingExpanded) }}
           >
             {t('record.thinking')}
-            <IconChevronRightOutline14 className={css.thinkingChevron} size={12} />
+            <IconChevronRightOutlineRegular className={css.thinkingChevron} size={12} />
           </button>
           {thinkingExpanded && (
             <MarkdownFragment
@@ -1544,25 +1591,26 @@ function MarkdownRecordContent({
           onOpenCall={onOpenCall}
           t={t}
         />
-        <MessageImages
+        <RecordAttachments
           blocks={record.cell.sourceBlocks}
           preview={preview}
           renderImages={renderImages}
+          t={t}
         />
       </div>
     )
   }
   const source = markdownSource(record)
-  const hasImages = record.cell.sourceBlocks?.some(block => block.attachment !== undefined) === true
+  const hasAttachments = record.cell.sourceBlocks?.some(block => block.attachment !== undefined || block.file !== undefined) === true
   const hasToolCalls = record.cell.kind === 'message'
     && record.cell.sourceBlocks?.some(block => block.type === 'tool-call') === true
-  if (!source && !hasImages && !hasToolCalls) {
+  if (!source && !hasAttachments && !hasToolCalls) {
     const emptyLabel = isToolCallOnly(record.cell, t)
       ? t('record.toolCallOnly')
       : record.cell.text || t('record.noContent')
     return <p className={css.noPayload}>{emptyLabel}</p>
   }
-  if (!rendered || (!hasImages && !hasToolCalls)) {
+  if (!rendered || (!hasAttachments && !hasToolCalls)) {
     return <MarkdownFragment text={source ?? ''} rendered={rendered} preview={preview} t={t} />
   }
   return (
@@ -1576,7 +1624,7 @@ function MarkdownRecordContent({
           t={t}
         />
       )}
-      <MessageImages blocks={record.cell.sourceBlocks} preview={preview} renderImages={renderImages} />
+      <RecordAttachments blocks={record.cell.sourceBlocks} preview={preview} renderImages={renderImages} t={t} />
     </div>
   )
 }
@@ -1841,7 +1889,7 @@ function InspectorCopyButton({ text, label, t }: {
       title={title}
       onClick={() => { void writeClipboard(text).then((ok) => { setState(ok ? 'copied' : 'failed') }) }}
     >
-      {state === 'copied' ? <IconCheckOutline16 size={12} /> : <IconCopyOutline16 size={12} />}
+      {state === 'copied' ? <IconCheckOutlineRegular size={12} /> : <IconCopyOutlineRegular size={12} />}
     </button>
   )
 }
@@ -1875,7 +1923,7 @@ function ProgramInput({ program, initialWrapped, stringWrapping, onOpen, t }: {
             stringWrapping?.setDefault(next)
           }}
         >
-          <IconWrapLinesOutline16 size={12} />
+          <IconWrapLinesOutlineRegular size={12} />
         </button>
       )}
       {onOpen === undefined && (
@@ -1997,7 +2045,7 @@ function OverviewSection({
           onClick={onOpen}
         >
           <span>{label}</span>
-          <IconChevronRightOutline14 className={css.overviewTitleIcon} size={12} />
+          <IconChevronRightOutlineRegular className={css.overviewTitleIcon} size={12} />
         </button>
         {actions}
       </h3>
@@ -2556,7 +2604,7 @@ export function TrajectoryTable({
         {showInitialLoading && (
           <div className={css.historyLoading} role="status" aria-live="polite">
             <span className={css.historyLoadingBar}>
-              <span className={css.historyLoadingSpinner} aria-hidden="true" />
+              <StateDot state="ongoing" />
               {t('history.loadingTrajectory')}
             </span>
           </div>
@@ -2591,7 +2639,7 @@ export function TrajectoryTable({
                     }}
                   >
                     {olderBusy && (
-                      <span className={css.historyLoadingSpinner} aria-hidden="true" />
+                      <StateDot state="ongoing" />
                     )}
                     <span aria-hidden="true">
                       {olderBusy ? t('history.loadingEarlier') : t('history.loadEarlier')}
@@ -3140,7 +3188,7 @@ export function TrajectoryTable({
                               ? t('details.compacted')
                               : t('details.assistantMessage')}
                           </span>
-                          <IconChevronRightOutline14
+                          <IconChevronRightOutlineRegular
                             className={css.overviewHierarchyJumpIconTight}
                             size={11}
                           />
@@ -3274,7 +3322,7 @@ export function TrajectoryTable({
                           onClick={() => { activateTab('source') }}
                         >
                           <span>{messageSourceLabel(selected.cell.messageSource, t)}</span>
-                          <IconChevronRightOutline14
+                          <IconChevronRightOutlineRegular
                             className={css.overviewHierarchyJumpIconTight}
                             size={11}
                           />
@@ -3299,7 +3347,7 @@ export function TrajectoryTable({
                             }}
                           >
                             <span>{t('request.label', { request: selectedAssistantRequest ?? '—' })}</span>
-                            <IconChevronRightOutline14
+                            <IconChevronRightOutlineRegular
                               className={css.overviewHierarchyJumpIconTight}
                               size={11}
                             />
@@ -3312,7 +3360,7 @@ export function TrajectoryTable({
                             onClick={() => { openRecordSummary(selectedParentMessage) }}
                           >
                             <span>{t('details.assistantMessage')}</span>
-                            <IconChevronRightOutline14
+                            <IconChevronRightOutlineRegular
                               className={css.overviewHierarchyJumpIconTight}
                               size={11}
                             />
@@ -3325,7 +3373,7 @@ export function TrajectoryTable({
                             onClick={() => { openRecordSummary(selectedParentTool) }}
                           >
                             <span>{t('details.toolCall')}</span>
-                            <IconChevronRightOutline14
+                            <IconChevronRightOutlineRegular
                               className={css.overviewHierarchyJumpIconTight}
                               size={11}
                             />

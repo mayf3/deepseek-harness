@@ -17,7 +17,7 @@ import {
   launchWebScaffold, readPersistedEvents, selectedSessionFixture, watchConsole,
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft } from './support.ts'
 
 const BASE_FIXTURE = fileURLToPath(new URL('../../../snapshots/web/live-interactions/session.v3.jsonl', import.meta.url))
 const AVAILABLE_CHILD_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-conversation/ui.expected.md', import.meta.url))
@@ -28,12 +28,14 @@ const TREE_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-con
 const BRANCHLESS_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-conversation/branchless.expected.md', import.meta.url))
 const STALE_CATALOG_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-conversation/stale-catalog.expected.md', import.meta.url))
 const SIDEBAR_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-conversation/sidebar.expected.md', import.meta.url))
+const SIDEBAR_CHAT_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-conversation/sidebar-chat.expected.md', import.meta.url))
 const UNAVAILABLE_GRANDCHILD_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-conversation/nested.expected.md', import.meta.url))
 const FORK_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/subagent-conversation/fork.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const LABEL = 'event-sourcing researcher'
 const ONE_SHOT_LABEL = 'event-sourcing reviewer'
 const NESTED_LABEL = 'example editor'
+const CHILD_TITLE = 'Explain event sourcing in one'
 const PARENT_PROMPT = 'Ask a research subagent to explain event sourcing.'
 const INITIAL_PROMPT = 'Explain event sourcing in one sentence.'
 /** The grandchild's own first message; its arrival is what says its history finished loading. */
@@ -97,6 +99,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
   let childId: SessionId
   let oneShotId: SessionId
   let grandchildId: SessionId
+  let liveReferenceOptions: string[]
   let tripwire: ReturnType<typeof watchConsole>
   const apiCalls: string[] = []
 
@@ -145,6 +148,13 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     })
     childId = started.childId
     await waitForAgentToSettle(scaffold, childId)
+    const liveInput = page.locator('[data-composer-input][contenteditable="true"]').first()
+    const liveMenu = page.getByRole('listbox', { name: 'Trigger suggestions' })
+    await writeComposerDraft(page, liveInput, '@')
+    await liveMenu.getByText('Subagents', { exact: true }).waitFor({ timeout: 15_000 })
+    liveReferenceOptions = await liveMenu.getByRole('option').allTextContents()
+    await page.keyboard.press('Escape')
+    await writeComposerDraft(page, liveInput, '')
     oneShotId = sessionId('recorded-one-shot')
     const oneShotDurationMs = 192 * 24 * 60 * 60 * 1_000
     const oneShotAt = Date.now() - oneShotDurationMs
@@ -295,6 +305,20 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     if (failures.length > 1) throw new AggregateError(failures, 'subagent Web teardown failed')
   })
 
+  it('lists direct subagents by label in the reference menu', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-reference-title'))
+    expect(liveReferenceOptions.some(text => text.includes(LABEL))).toBe(true)
+    expect(liveReferenceOptions.some(text => text.includes(CHILD_TITLE))).toBe(false)
+    const input = page.locator('[data-composer-input][contenteditable="true"]').first()
+    const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
+    await writeComposerDraft(page, input, '@')
+    await menu.getByText('Subagents', { exact: true }).waitFor({ timeout: 15_000 })
+    await menu.getByRole('option', { name: new RegExp(LABEL) }).waitFor({ timeout: 15_000 })
+    expect(await menu.getByRole('option', { name: new RegExp(CHILD_TITLE) }).count()).toBe(0)
+    await page.keyboard.press('Escape')
+    await writeComposerDraft(page, input, '')
+  })
+
   it('keeps known descendants reachable across a stale empty catalog response', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-stale-catalog'))
     const pattern = '**/api/subagents/list'
@@ -361,6 +385,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       name: `Expand ${ONE_SHOT_LABEL} descendants`,
     }).count()).toBe(0)
     const oneShotRow = page.getByRole('treeitem', { name: new RegExp(ONE_SHOT_LABEL) })
+    expect(await oneShotRow.locator('[data-state="done"]').count()).toBe(1)
     expect(await oneShotRow.getByText('~6mo 12d', { exact: true }).count()).toBe(1)
     expect(await oneShotRow.getAttribute('aria-label')).toContain('192d 00h 00m 00s')
     await page.getByRole('button', { name: `Expand ${LABEL} descendants` }).click()
@@ -378,6 +403,29 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     )
     await compareOrRefreshGolden(TREE_EXPECTED, snapshot, MODE)
     await page.getByRole('tree', { name: 'Subagent sessions' }).press('Escape')
+  })
+
+  it('opens child history in the right Sidebar and releases it when closed', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-sidebar-chat'))
+    await page.getByRole('button', { name: '3 subagents' }).hover()
+    await page.getByRole('button', { name: `Open ${LABEL} in sidebar` }).click()
+    const sidebarChat = page.locator('[data-sidebar-chat]')
+    await sidebarChat.getByText(/^Explain event sourcing in one sentence\.Your parent agent id is /).waitFor({ timeout: 15_000 })
+    await compareOrRefreshGolden(
+      SIDEBAR_CHAT_EXPECTED,
+      await captureStableAria(page, '[data-sidebar-chat]', scaffold.workspaceCwd),
+      MODE,
+    )
+    await page.locator('[data-sidebar-right-panel] [data-dockkit-tab-close]').click()
+    await sidebarChat.waitFor({ state: 'detached' })
+
+    await page.getByRole('button', { name: '3 subagents' }).hover()
+    await page.getByRole('button', { name: `Open ${ONE_SHOT_LABEL} in sidebar` }).click()
+    await page.locator('[data-sidebar-chat]').getByText(
+      'One-shot tasks do not accept follow-ups; review the full execution record here.',
+    ).waitFor({ timeout: 15_000 })
+    await page.locator('[data-sidebar-right-panel] [data-dockkit-tab-close]').click()
+    await page.locator('[data-sidebar-chat]').waitFor({ state: 'detached' })
   })
 
   it('opens the completed child from persistence without activating it', async () => {
@@ -492,8 +540,8 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     expect([
       Math.round(clickAreaBox!.x - treeBox!.x),
       Math.round(treeBox!.x + treeBox!.width - clickAreaBox!.x - clickAreaBox!.width),
-    // Menu padding alone insets the rows now that the border is gone.
-    ]).toEqual([4, 4])
+    // Compact menu padding alone insets the rows now that the border is gone.
+    ]).toEqual([3, 3])
     await compareOrRefreshGolden(
       BRANCHLESS_EXPECTED,
       await captureStableAria(page, '[role="tree"][aria-label="Subagent sessions"]', scaffold.workspaceCwd),

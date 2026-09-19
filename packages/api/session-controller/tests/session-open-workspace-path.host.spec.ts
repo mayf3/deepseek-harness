@@ -2,6 +2,8 @@ import * as nativeCommand from '@deepseek-ai/dsh-native-command'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import SessionStore from '@deepseek-ai/dsh-session'
+import FsLocal from '@deepseek-ai/dsh-fs-local'
+import { onTestFinished } from 'vitest'
 import { describe, expect, it, vi } from 'vitest'
 import {
   createSessionTestController,
@@ -12,6 +14,8 @@ async function context(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(AgentRegistry)
+  await ctx.plugin(FsLocal)
+  onTestFinished(() => ctx.fiber.dispose())
   return ctx
 }
 
@@ -74,9 +78,9 @@ describe('session/openWorkspacePath', () => {
       openPath,
     })
 
-    await remote.openWorkspacePath({ path: '/tmp/result.html' })
+    await remote.openWorkspacePath({ path: '/workspace/result.html' })
     await remote.openWorkspacePath({ path: 'result.html' })
-    expect(openPath.mock.calls.map(call => call[0])).toEqual(['/tmp/result.html', 'result.html'])
+    expect(openPath.mock.calls.map(call => call[0])).toEqual(['/workspace/result.html', 'result.html'])
   })
 
   it('rejects empty paths before opening anything', async () => {
@@ -169,4 +173,45 @@ it('uses the native reveal adapter without a test override and respects unsuppor
     await controller.openWorkspacePath({ path: '/report.txt', action: 'reveal' }, new AbortController().signal)
     expect(reveal).toHaveBeenCalledOnce()
   } finally { manager.mockRestore(); reveal.mockRestore(); await ctx.fiber.dispose() }
+})
+
+
+it.each(['open', 'reveal'] as const)('rejects an unmapped remote path before native %s', async (action) => {
+  const ctx = await context()
+  const mapping = vi.spyOn(ctx.fs, 'processPathFromHostPath').mockReturnValue(undefined)
+  onTestFinished(() => { mapping.mockRestore() })
+  const openPath = vi.fn(async () => {})
+  const revealPath = vi.fn(async () => {})
+  const controller = createSessionTestController(ctx, {
+    defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', openPath, revealPath,
+  })
+  await expect(controller.openWorkspacePath({ path: '/remote/report.html', ...(action === 'reveal' ? { action } : {}) }, new AbortController().signal))
+    .rejects.toMatchObject({ code: 'gateway/internal', message: 'path open failed: Path has no verified Host path' })
+  expect(openPath).not.toHaveBeenCalled()
+  expect(revealPath).not.toHaveBeenCalled()
+})
+
+it('rejects a filesystem mapping that resolves to another process path', async () => {
+  const ctx = await context()
+  const mapping = vi.spyOn(ctx.fs, 'processPath').mockReturnValue('/different/report.html')
+  onTestFinished(() => { mapping.mockRestore() })
+  const openPath = vi.fn(async () => {})
+  const controller = createSessionTestController(ctx, {
+    defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', openPath,
+  })
+  await expect(controller.openWorkspacePath({ path: '/report.html' }, new AbortController().signal))
+    .rejects.toMatchObject({ code: 'gateway/internal', message: 'path open failed: Path has no verified Host path' })
+  expect(openPath).not.toHaveBeenCalled()
+})
+
+it('dispatches default-app opening to the association adapter', async () => {
+  const ctx = await context()
+  const open = vi.spyOn(nativeCommand, 'openNativeAssociatedPath').mockResolvedValue(undefined)
+  onTestFinished(() => { open.mockRestore() })
+  const controller = createSessionTestController(ctx, {
+    defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/default', nativeOpen: true,
+  })
+  const signal = new AbortController().signal
+  await controller.openWorkspacePath({ path: '/report.html' }, signal)
+  expect(open).toHaveBeenCalledWith('/report.html', signal)
 })

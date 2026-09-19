@@ -166,7 +166,6 @@ export const DEFAULT_PROFILE_BUNDLES: readonly string[] = ['@deepseek-ai/dsh-bas
  */
 export const OPTIONAL_BUNDLES: readonly string[] = [
   '@deepseek-ai/dsh-experimental-agent-team-profile',
-  '@deepseek-ai/dsh-experimental-agent-team-web-profile',
 ]
 
 const PROFILE_PATCH_TEMPLATE = `# Your patch layer for this dsh profile, applied after every bundle layer:
@@ -468,7 +467,7 @@ function profileDependencyNames(manifest: ProfileManifest): string[] {
 
 /** Resolve the installation generation that every profile must find through the fallback directory. */
 function resolveModuleFallbackEntries(
-  installAnchor: string, materialize = true,
+  installAnchor: string, materialize = true, skippedBundles: ReadonlySet<string> = new Set(),
 ): {
   entries: ModuleFallbackEntry[]
   packageNames: ReadonlySet<string>
@@ -500,10 +499,16 @@ function resolveModuleFallbackEntries(
       // A declared-but-uninstalled dependency cannot be a loader-visible
       // plugin; skip it rather than fail the whole boot.
       if (dir === undefined) continue
+      const manifestPath = join(dir, 'package.json')
+      let manifest: ProfileManifest
+      try {
+        manifest = skippedBundles.has(dep) ? readProfileManifest('dsh', dir) : readModuleFallbackManifest(manifestPath)
+      } catch (error) {
+        if (!skippedBundles.has(dep)) throw error
+        continue
+      }
       links.set(dep, dir)
       declarers.set(dep, next.anchor)
-      const manifestPath = join(dir, 'package.json')
-      const manifest = readModuleFallbackManifest(manifestPath)
       versions.set(dep, manifest.version)
       queue.push({ anchor: manifestPath, manifest })
     }
@@ -575,7 +580,10 @@ export async function healProfilesModuleFallback(
   const profilesDir = join(home, PROFILES_DIR)
   const modulesDir = join(profilesDir, 'node_modules')
   if (materialize) mkdirSync(modulesDir, { recursive: true })
-  const { entries, packageNames, packageDirs, declarers, versions } = resolveModuleFallbackEntries(installAnchor, materialize)
+  const manifest = readOptionalProfileManifest(profile)
+  const { entries, packageNames, packageDirs, declarers, versions } = resolveModuleFallbackEntries(
+    installAnchor, materialize, skippedProfileBundles(profile, manifest),
+  )
   if (materialize && !moduleFallbackCurrent(modulesDir, entries)) {
     await withFileLock(modulesDir, () => {
       if (!moduleFallbackCurrent(modulesDir, entries)) healProfilesModuleFallbackLocked(entries, modulesDir)
@@ -584,7 +592,7 @@ export async function healProfilesModuleFallback(
   }
   const profileDeclarers = new Map<string, string>()
   const profileVersions = new Map<string, string | undefined>()
-  const localPackageNames = profile === undefined ? [] : installedProfilePackageNames(profile)
+  const localPackageNames = profile === undefined ? [] : installedProfilePackageNames(profile, manifest)
   const profilePackages: ReadonlyMap<string, string> = profile === undefined
     ? new Map<string, string>()
     : healProfileModuleFallback(profile, packageNames, materialize, profileDeclarers, profileVersions)
@@ -605,16 +613,27 @@ export async function healProfilesModuleFallback(
   })
 }
 
-/** Return installed direct dependencies that Node resolves before profile fallback. */
-function installedProfilePackageNames(profile: Profile): string[] {
-  let manifest: ProfileManifest
+/** Synthetic profiles used by direct callers may have no on-disk manifest. */
+function readOptionalProfileManifest(profile: Profile | undefined): ProfileManifest | undefined {
+  if (profile === undefined) return undefined
   try {
-    manifest = readModuleFallbackManifest(join(profile.dir, 'package.json'))
+    return readModuleFallbackManifest(join(profile.dir, 'package.json'))
   } catch (error) {
-    // Direct helper callers can supply a synthetic Profile without its on-disk manifest.
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
     throw error
   }
+}
+
+/** Broken selected manifests must not fail again during installation dependency traversal. */
+function skippedProfileBundles(profile: Profile | undefined, manifest: ProfileManifest | undefined): ReadonlySet<string> {
+  const selected = manifest?.dsh?.profile?.bundles ?? []
+  const loaded = new Set(profile?.layers.map(layer => layer.packageName))
+  return new Set(selected.filter(name => !loaded.has(name)))
+}
+
+/** Return installed direct dependencies that Node resolves before profile fallback. */
+function installedProfilePackageNames(profile: Profile, manifest: ProfileManifest | undefined): string[] {
+  if (manifest === undefined) return []
   return profileDependencyNames(manifest).filter((name) => {
     const candidate = join(profile.dir, 'node_modules', name)
     if (!existsSync(join(candidate, 'package.json'))) return false
@@ -640,7 +659,9 @@ export function createProfileResolutionGeneration(
  * @param options - owning installation package.json and the loaded application profile.
  */
 export function healIsolatedProfileModuleFallback(options: { installAnchor: string; profile: Profile }): void {
-  const installationLinks = resolveModuleFallbackEntries(options.installAnchor, false).packageDirs
+  const installationLinks = resolveModuleFallbackEntries(
+    options.installAnchor, false, skippedProfileBundles(options.profile, readOptionalProfileManifest(options.profile)),
+  ).packageDirs
   healProfileModuleFallback(options.profile, new Set(installationLinks.keys()), true, undefined, undefined, installationLinks)
 }
 
@@ -870,11 +891,12 @@ export function resolveBundleDir(
  * Load an already initialized profile directory without resolving it through
  * the shared Harness home. This is used by application-owned profiles whose
  * package project and lifecycle belong to that application.
+ * Unreadable bundles are reported on stderr and skipped without changing the manifest.
  * @param binName - the diagnostic prefix on thrown errors.
  * @param dir - absolute profile package directory.
  * @param installAnchor - absolute path of the owning dsh app's package.json.
  * @param options - `userLayer: false` skips reading `cordis.patch.yml`.
- * @returns the resolved bundle layers and optional user patch layer.
+ * @returns the successfully loaded bundle layers and optional user patch layer.
  */
 export function loadProfileDirectory(
   binName: string,
@@ -884,16 +906,21 @@ export function loadProfileDirectory(
 ): Profile {
   const manifest = readProfileManifest(binName, dir)
   const bundles = manifest.dsh?.profile?.bundles ?? []
-  const layers = bundles.map((packageName): ProfileLayer => {
-    const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
-    const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
-    const declared = bundleManifest.dsh?.bundle?.patch
-    if (declared === undefined) {
-      throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
+  const layers: ProfileLayer[] = []
+  for (const packageName of bundles) {
+    try {
+      const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
+      const bundleManifest = readProfileManifest(binName, packageDir)
+      const declared = bundleManifest.dsh?.bundle?.patch
+      if (declared === undefined) {
+        throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
+      }
+      const patchPath = join(packageDir, declared)
+      layers.push({ packageName, packageDir, patchPath, patches: loadOverlayPatches(binName, patchPath) })
+    } catch (error) {
+      process.stderr.write(`${binName}: skipping profile bundle ${JSON.stringify(packageName)}: ${String(error)}\n`)
     }
-    const patchPath = join(packageDir, declared)
-    return { packageName, packageDir, patchPath, patches: loadOverlayPatches(binName, patchPath) }
-  })
+  }
   const patchPath = join(dir, PROFILE_PATCH_FILENAME)
   const patches = options.userLayer !== false && existsSync(patchPath)
     ? loadOverlayPatches(binName, patchPath)
@@ -903,9 +930,8 @@ export function loadProfileDirectory(
 
 /**
  * Load a profile: resolve every `dsh.profile.bundles` entry to its patch
- * layer and parse the profile's own patch file. A listed bundle without a
- * `dsh.bundle` manifest fails loud — naming a bundle-less package as a layer
- * is a misconfiguration, not "no patches".
+ * layer and parse the profile's own patch file. Unreadable bundles are reported
+ * on stderr and skipped; profile manifest and user patch errors still throw.
  * @param binName - the diagnostic prefix on thrown errors.
  * @param name - the profile name.
  * @param installAnchor - absolute path of the dsh app's package.json (first resolution anchor).

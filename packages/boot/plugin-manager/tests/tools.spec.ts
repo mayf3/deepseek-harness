@@ -51,6 +51,33 @@ it.each(['read-only', 'workspace-write'] as const)('denies every management acti
   for (const method of Object.values(manager)) expect(method).not.toHaveBeenCalled()
 })
 
+it('preserves selected bundle load errors in the agent list result', async () => {
+  const { manager, call } = await fixture()
+  const bundles = [{
+    name: 'bundle', enabled: true,
+    error: { code: 'operation-error', diagnostic: 'bundle patch is unreadable' }, rows: [], overrides: [],
+  }]
+  manager.listBundles.mockResolvedValue(bundles)
+  expect(JSON.parse(resultText(await call({ action: 'list_bundles' })))).toMatchInlineSnapshot(`
+    {
+      "entries": [
+        {
+          "enabled": true,
+          "error": {
+            "code": "operation-error",
+            "diagnostic": "bundle patch is unreadable",
+          },
+          "name": "bundle",
+          "overrides": [],
+          "rows": [],
+        },
+      ],
+      "nextOffset": null,
+      "total": 1,
+    }
+  `)
+})
+
 it('checks the calling session on each execution, including after permission is revoked', async () => {
   const { call, manager } = await fixture()
   const id = SessionId('manager-permissions')
@@ -170,6 +197,8 @@ it('forwards all mutation actions and renders the returned outcome', async () =>
   expect(manager.installBundle).toHaveBeenLastCalledWith('bundle', { enabled: false })
   await call({ action: 'install_bundle', target: 'bundle', approvedBuilds: ['native'] })
   expect(manager.installBundle).toHaveBeenLastCalledWith('bundle', { approvedBuilds: ['native'] })
+  await call({ action: 'install_bundle', target: 'bundle', registry: 'https://registry.npmmirror.com/' })
+  expect(manager.installBundle).toHaveBeenLastCalledWith('bundle', { registry: 'https://registry.npmmirror.com/' })
   expect(resultText(await call({ action: 'remove_bundle', target: 'bundle' }))).toContain('"application":"failed"')
   expect(manager.removeBundle).toHaveBeenCalledWith('bundle')
 })

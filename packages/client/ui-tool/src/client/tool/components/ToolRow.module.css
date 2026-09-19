@@ -155,6 +155,11 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+/* Interrupted rows retain their business glyph and replace the summary with a visible warning. */
+.stoppedSummary {
+  color: var(--dsw-alias-state-warn-label);
+}
+
 /* Expanded body + Inspect pill wrapper (sibling of .row: clicks never toggle). */
 .bodyWrap {
   display: flex;
@@ -189,6 +194,17 @@
 .root:hover .inspectButton,
 .inspectButton:focus-visible {
   opacity: 1;
+}
+
+.detailsBodyWrap {
+  position: relative;
+}
+
+.detailsBodyWrap .inspectButton {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  margin: 0;
 }
 
 /* Solid hover fill (a translucent token would let content bleed through). */
@@ -344,9 +360,8 @@
   border: 0.5px solid var(--dsw-alias-border-l1);
 }
 
-/* Visually hidden run-state label for assistive technology: the StateDot and
-   the running sweep are aria-hidden / colour-only, so the text carries the
-   running/failed/interrupted state to a screen reader. */
+/* Visually hidden run-state label for assistive technology: the running sweep
+   and settlement summary tones are color-only. */
 .visuallyHidden {
   position: absolute;
   width: 1px;

@@ -2,6 +2,7 @@
 
 import type { SubagentAddress, SubagentCatalog } from '@deepseek-ai/dsh-subagent/client'
 import { SessionSeq, type SessionId, type SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
+import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type {
   SessionControlBaseline,
@@ -223,6 +224,7 @@ export class SessionManager {
   /**
    * Lazy build: return the existing instance or construct one (no auto-open —
    * the reference allocator opens history after binding the scope).
+   * New instances reconcile retained metadata before returning.
    * @param sessionId - the session to get.
    * @returns the resident instance.
    */
@@ -246,6 +248,9 @@ export class SessionManager {
           // durable history, even though child rows do not carry `blank`.
           session.handleBlank(false)
           session.handleRunning(child.activity === 'running')
+        } else {
+          // Retained metadata may have notified before this Session existed.
+          session.handleBlank(true)
         }
       }
     }
@@ -276,9 +281,14 @@ export class SessionManager {
     let store = this.projectionStores.get(sessionId)
     if (store === undefined) {
       store = new ProjectionValueStore()
-      // List rows project off store keys (title); any-key changes re-enter
-      // the manager's own batched rebuild channel.
-      store.subscribeAny(() => { this.notifier.markDirty() })
+      const projections = store
+      store.subscribeAny(() => {
+        // Newer history or control metadata corrects a resident Session's stale list hint.
+        if (projections.values().sessionListMetadata?.blank === false) {
+          this.sessions.get(sessionId)?.handleBlank(false)
+        }
+        this.notifier.markDirty()
+      })
       this.projectionStores.set(sessionId, store)
     }
     return store
@@ -405,7 +415,7 @@ export class SessionManager {
           this.summaries = mutations.reduce(applyMutation, baseline)
           this.listState = 'idle'
           this.listPhase = 'ready'
-          // Push running/blank bits down to instantiated Sessions (the list is the authoritative summary source).
+          // Sessions reconcile list blank hints with their current metadata projection.
           for (const s of this.summaries) {
             const session = this.sessions.get(s.sessionId)
             if (session === undefined) continue
@@ -573,6 +583,15 @@ export class SessionManager {
   getListSnapshot(): SessionListSnapshot {
     this.notifier.ensureFresh()
     return this.listSnapshotCache
+  }
+
+  /**
+   * Read cached projection values for a Session that may exist only in a loaded subagent catalog.
+   * @param sessionId - Session whose control or history baseline supplied projections.
+   * @returns current values, or undefined before any projection store exists.
+   */
+  projectionValues(sessionId: SessionId): Readonly<Partial<SessionProjectionMap>> | undefined {
+    return this.projectionStores.get(sessionId)?.values()
   }
 
   // ---- Live control and Host-event sinks ----
@@ -785,8 +804,12 @@ export class SessionManager {
       const projectionStore = this.projectionStores.get(summary.sessionId)
       const title = projectionStore?.get('title')
       const projectionValues = projectionStore?.values()
+      const metadata = projectionValues?.sessionListMetadata
       return {
         ...summary,
+        // Cached list hints can precede a history opening or control update.
+        blank: summary.blank && metadata?.blank !== false,
+        updatedAt: Math.max(summary.updatedAt, metadata?.lastPromptAt ?? 0),
         ...(typeof title === 'string' && title !== '' ? { title } : {}),
         ...(projectionValues === undefined ? {} : { projectionValues }),
       }

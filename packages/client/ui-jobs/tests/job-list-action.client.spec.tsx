@@ -179,6 +179,40 @@ describe('JobListAction rows', () => {
     ])
     expect(screen.getAllByText(zh['status.completed']).length).toBeGreaterThan(0)
   })
+
+  it('breaks a settled tie on start order so map iteration never decides it', () => {
+    render(<JobListAction {...props([
+      job({ id: 'bash-2' as JobView['id'], label: 'second', status: 'completed', startedAt: 1_700_000_000_000 + 10, finishedAt: 1_700_000_000_000 + 100 }),
+      job({ id: 'bash-1' as JobView['id'], label: 'first', status: 'completed', startedAt: 1_700_000_000_000, finishedAt: 1_700_000_000_000 + 100 }),
+    ])} />)
+    openList()
+    expect(within(screen.getByRole('list')).getAllByRole('listitem').map(row => row.querySelector('[title]')?.getAttribute('title')))
+      .toEqual(['first', 'second'])
+  })
+
+  it('prefers the producer detail over the generic status word', () => {
+    render(<JobListAction {...props([
+      job({ status: 'killed', detail: 'signal: SIGTERM', finishedAt: 1_700_000_000_000 + 2_000 }),
+    ])} />)
+    openList()
+    expect(within(screen.getByRole('list')).getAllByRole('listitem')[0]?.textContent).toContain('signal: SIGTERM')
+  })
+
+  it('renders every status word, including the stopping transition', () => {
+    render(<JobListAction {...props([
+      job({ id: 'bash-1' as JobView['id'], label: 'a', status: 'running' }),
+      job({ id: 'bash-2' as JobView['id'], label: 'b', status: 'stopping' }),
+      job({ id: 'bash-3' as JobView['id'], label: 'c', status: 'completed', finishedAt: 1_700_000_000_000 }),
+      job({ id: 'bash-4' as JobView['id'], label: 'd', status: 'killed', finishedAt: 1_700_000_000_000 }),
+      job({ id: 'bash-5' as JobView['id'], label: 'e', status: 'failed', finishedAt: 1_700_000_000_000 }),
+    ])} />)
+    openList()
+    for (const word of ['运行中', '正在停止', '已完成', '已取消', '已失败']) {
+      expect(within(screen.getByRole('list')).getByText(word)).toBeDefined()
+    }
+    expect([...screen.getByRole('list').querySelectorAll('li [data-state]')].map(node => node.getAttribute('data-state')))
+      .toEqual(['ongoing', 'warning', 'done', 'warning', 'error'])
+  })
 })
 
 describe('JobListAction observation', () => {

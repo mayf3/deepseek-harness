@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import type { JobsSnapshot, JobView, ObservedJob } from '@deepseek-ai/dsh-api-job-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  IconChevronDownOutline14, StateDot, TerminalBlock, useDismissOnOutsidePointer,
+  IconChevronDownOutlineRegular, StateDot, TerminalBlock, useDismissOnOutsidePointer,
   type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -193,7 +193,7 @@ function JobItem({ job, view, expanded, now, onToggle, t }: {
           </span>
         </span>
         {/* A live row is always observable: its output may still arrive. */}
-        <IconChevronDownOutline14 className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
+        <IconChevronDownOutlineRegular size={14} className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
       </>
     )
     : (
@@ -203,7 +203,7 @@ function JobItem({ job, view, expanded, now, onToggle, t }: {
         <span className={css.label} title={job.label}>{job.label}</span>
         <span className={css.status} title={detail ?? status}>{detail ?? status}</span>
         {durationCell}
-        {observable ? <IconChevronDownOutline14 className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} /> : null}
+        {observable ? <IconChevronDownOutlineRegular size={14} className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} /> : null}
       </>
     )
   return (
@@ -390,7 +390,7 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, t }: Job
       >
         {liveRows.length > 0 ? <StateDot state="ongoing" className={css.triggerDot} /> : null}
         <span className={css.count}>{countLabel}</span>
-        <IconChevronDownOutline14 className={open ? css.triggerOpen : undefined} />
+        <IconChevronDownOutlineRegular size={12} className={open ? css.triggerOpen : undefined} />
       </button>
       {open
         ? (

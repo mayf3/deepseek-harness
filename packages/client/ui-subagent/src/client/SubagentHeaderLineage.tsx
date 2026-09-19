@@ -9,7 +9,7 @@ import {
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  IconChevronDownOutline14, IconChevronRightOutline14, IconRefreshOutline14, StateDot,
+  IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconRefreshOutlineRegular, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
@@ -24,6 +24,7 @@ type Catalogs = SessionListState['subagentsByParent']
 /** Business actions supplied by the slot registration. */
 export interface SubagentCatalogInjected {
   openChild: (address: SubagentAddress) => void
+  openChildAside: (address: SubagentAddress) => void
   refresh: (parentSessionId: SessionId) => void
   setCatalogOpen: (parentSessionId: SessionId, open: boolean) => void
 }
@@ -42,6 +43,7 @@ interface CatalogRowsProps {
   level: number
   now: number
   openChild: (address: SubagentAddress) => void
+  openChildAside: (address: SubagentAddress) => void
   refresh: (parentSessionId: SessionId) => void
   toggleBranch: (childSessionId: SessionId) => void
   closeCatalog: () => void
@@ -226,7 +228,9 @@ function CatalogLoadingRows({
         className={`${css.row} ${css.disabled} ${css.loadingRow}`}
       >
         <span className={css.disclosureSpace} />
-        <StateDot state={summary.running ? 'ongoing' : 'done'} />
+        <span className={css.rowActivitySlot}>
+          <StateDot state="ongoing" />
+        </span>
         <span className={css.content}>
           <span className={css.label}>{t('loading.label')}</span>
         </span>
@@ -238,7 +242,7 @@ function CatalogLoadingRows({
 /** Render one catalog level and recurse only through explicitly expanded rows. */
 function CatalogRows({
   parentSessionId, currentSessionId, catalog, catalogs, summaries, expanded, level, now,
-  openChild, refresh, toggleBranch, closeCatalog, t,
+  openChild, openChildAside, refresh, toggleBranch, closeCatalog, t,
 }: CatalogRowsProps & { t: TranslateNS<typeof NS> }) {
   const emptyLoading = catalog.state === 'loading' && catalog.entries.length === 0
   const reserveDisclosure = catalog.entries.some(
@@ -262,7 +266,7 @@ function CatalogRows({
             className={css.refresh}
             onClick={() => { refresh(parentSessionId) }}
           >
-            <IconRefreshOutline14 />
+            <IconRefreshOutlineRegular size={14} />
             {t('retry')}
           </button>
         </div>
@@ -281,7 +285,9 @@ function CatalogRows({
                 title={reason}
               >
                 {reserveDisclosure && <span className={css.disclosureSpace} />}
-                <StateDot state="error" />
+                <span className={css.rowActivitySlot}>
+                  <StateDot state="error" />
+                </span>
                 <span className={css.content}>
                   <span className={css.label}>{entry.id}</span>
                   <span className={css.summary}>{reason}</span>
@@ -300,7 +306,13 @@ function CatalogRows({
         const summary = summaries[entry.id]
         const label = entry.label ?? entry.id
         const mode = entry.mode === 'one-shot' ? t('mode.oneShot') : t('mode.continuable')
-        const activity = entry.activity === 'running' ? t('activity.running') : t('activity.inactive')
+        const completed = entry.activity === 'inactive'
+          && summary?.projectionValues?.subagentTiming?.lastTurnCompleted === true
+        const activity = entry.activity === 'running'
+          ? t('activity.running')
+          : completed
+            ? t('activity.completed')
+            : t('activity.inactive')
         const secondary = [summary?.title, mode, activity]
           .filter(value => value !== undefined)
           .join(' · ')
@@ -325,6 +337,12 @@ function CatalogRows({
 
         const open = (): void => {
           openChild({ parentSessionId, childSessionId: entry.id, mode: entry.mode })
+          closeCatalog()
+        }
+        const openAside = (event: MouseEvent<HTMLButtonElement>): void => {
+          event.preventDefault()
+          event.stopPropagation()
+          openChildAside({ parentSessionId, childSessionId: entry.id, mode: entry.mode })
           closeCatalog()
         }
         const handleKey = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -370,11 +388,13 @@ function CatalogRows({
                     aria-label={t(isExpanded ? 'branch.collapse' : 'branch.expand', { label })}
                     onClick={toggle}
                   >
-                    <IconChevronRightOutline14 />
+                    <IconChevronRightOutlineRegular />
                   </button>
                 )}
               <div className={css.clickarea}>
-                <StateDot state={entry.activity === 'running' ? 'ongoing' : 'done'} />
+                <span className={css.rowActivitySlot}>
+                  <StateDot state={entry.activity === 'running' ? 'ongoing' : completed ? 'done' : 'idle'} />
+                </span>
                 <span className={css.content}>
                   <span className={`${css.label} ${isCurrent ? css.currentLabel : ''}`}>{label}</span>
                   <span className={css.summary}>{secondary}</span>
@@ -391,6 +411,18 @@ function CatalogRows({
                       </span>
                     )}
                   </span>
+                )}
+                {!isCurrent && (
+                  <button
+                    type="button"
+                    className={css.sidebarButton}
+                    aria-label={t('open.sidebar', { label })}
+                    title={t('open.sidebar', { label })}
+                    onClick={openAside}
+                    onKeyDown={(event) => { event.stopPropagation() }}
+                  >
+                    <IconChevronRightOutlineRegular />
+                  </button>
                 )}
               </div>
             </div>
@@ -420,6 +452,7 @@ function CatalogRows({
                       level={level + 1}
                       now={now}
                       openChild={openChild}
+                      openChildAside={openChildAside}
                       refresh={refresh}
                       toggleBranch={toggleBranch}
                       closeCatalog={closeCatalog}
@@ -480,7 +513,7 @@ function catalogMenuPosition(trigger: HTMLButtonElement): CSSProperties {
 /** One trigger-plus-tree dropdown over the catalog rooted at `rootSessionId`. */
 function CatalogDropdown({
   rootSessionId, currentSessionId, displayTitle, openTitle, variant,
-  useSessions, openChild, refresh, setCatalogOpen, t,
+  useSessions, openChild, openChildAside, refresh, setCatalogOpen, t,
 }: CatalogDropdownProps) {
   const ancestorSwitcher = variant === 'switcher' && openTitle !== undefined
   const catalogs = useSessions(state => state.subagentsByParent)
@@ -759,7 +792,7 @@ function CatalogDropdown({
           )}
         {variant === 'switcher'
           ? <SubagentSwitcherIcon />
-          : <IconChevronDownOutline14 className={open ? css.triggerOpen : undefined} />}
+          : <IconChevronDownOutlineRegular className={open ? css.triggerOpen : undefined} />}
       </button>
       {open && createPortal((
         <div
@@ -781,6 +814,7 @@ function CatalogDropdown({
             level={1}
             now={now}
             openChild={openChild}
+            openChildAside={openChildAside}
             refresh={refresh}
             toggleBranch={toggleBranch}
             closeCatalog={() => { changeOpen(false) }}
@@ -805,7 +839,7 @@ export type SubagentCatalogActionProps =
  * @returns The count dropdown, or null on a child session.
  */
 export function SubagentCatalogAction({
-  sessionId, useSessions, openChild, refresh, setCatalogOpen, t,
+  sessionId, useSessions, openChild, openChildAside, refresh, setCatalogOpen, t,
 }: SubagentCatalogActionProps) {
   const isChild = useSessions(state => state.byId[sessionId]?.origin === 'subagent')
   if (isChild) return null
@@ -816,6 +850,7 @@ export function SubagentCatalogAction({
       variant="count"
       useSessions={useSessions}
       openChild={openChild}
+      openChildAside={openChildAside}
       refresh={refresh}
       setCatalogOpen={setCatalogOpen}
       t={t}
@@ -830,13 +865,13 @@ export function SubagentCatalogAction({
  */
 export function SubagentHeaderLineage({
   lineageSessionId, displayTitle, openTitle,
-  useSessions, openChild, refresh, setCatalogOpen, t,
+  useSessions, openChild, openChildAside, refresh, setCatalogOpen, t,
 }: SubagentHeaderLineageProps) {
   const parentId = useSessions((state) => {
     const summary = state.byId[lineageSessionId]
     return summary?.origin === 'subagent' ? summary.parentId : undefined
   })
-  const shared = { useSessions, openChild, refresh, setCatalogOpen, t }
+  const shared = { useSessions, openChild, openChildAside, refresh, setCatalogOpen, t }
   // Root sessions carry no breadcrumb; their descendant count lives in the
   // header actions band (SubagentCatalogAction), after the task list.
   if (parentId === undefined) return null

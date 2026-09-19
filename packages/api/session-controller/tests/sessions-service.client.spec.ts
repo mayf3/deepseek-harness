@@ -703,6 +703,9 @@ describe('borrow-only bindings', () => {
 describe('catalog-addressed navigation', () => {
   it('opens an explicit catalog without retaining it and keeps one-shot labels optional', async ({ bench }) => {
     const b = bench()
+    b.svc.handleControlFrame({
+      type: 'projection', sessionId: sid('one-shot'), key: 'title', value: 'Investigate startup', seq: 2,
+    })
     b.mock.remote.subagents.list.mockResolvedValue(ok({
       entries: [
         { kind: 'child', id: sid('one-shot'), mode: 'one-shot', activity: 'inactive', hasChildren: false },
@@ -714,13 +717,17 @@ describe('catalog-addressed navigation', () => {
     await b.svc.refreshSubagents(sid('root'))
     b.svc.setSubagentCatalogOpen(sid('root'), false)
 
-    expect(b.svc.list.getSnapshot().byId[sid('one-shot')]?.displayTitle).toBe('one-shot')
+    expect(b.svc.list.getSnapshot().byId[sid('one-shot')]).toMatchObject({
+      title: 'Investigate startup',
+      displayTitle: 'Investigate startup',
+      projectionValues: { title: 'Investigate startup' },
+    })
     expect(b.svc.list.getSnapshot().byId[sid('missing')]).toBeUndefined()
     expect(b.svc.binding(sid('one-shot'))).toBeUndefined()
     expect(b.mock.remote.subagents.list).toHaveBeenCalledOnce()
   })
 
-  it('uses catalog labels for a listed addressed route', async ({ bench }) => {
+  it('keeps projected titles in standard list rows for an addressed route', async ({ bench }) => {
     const b = bench()
     b.mock.remote.subagents.list.mockImplementation((payload) => {
       const parentSessionId = payload
@@ -746,7 +753,10 @@ describe('catalog-addressed navigation', () => {
     })
     await feedList(b, [
       { id: 'root' },
-      { id: 'child', cwd: '/summary-child', parentId: 'root', origin: 'subagent' },
+      {
+        id: 'child', cwd: '/summary-child', parentId: 'root', origin: 'subagent',
+        projections: { title: 'Child session title' },
+      },
       { id: 'grandchild', cwd: '/summary-grandchild', parentId: 'child', origin: 'subagent' },
     ])
     await b.svc.refreshSubagents(sid('root'))
@@ -756,7 +766,11 @@ describe('catalog-addressed navigation', () => {
     }, { source: 'controllerOperation' })
     await _reference.ready
 
-    expect(b.svc.list.getSnapshot().byId[sid('child')]?.displayTitle).toBe('Child')
+    expect(b.svc.list.getSnapshot().byId[sid('child')]).toMatchObject({
+      title: 'Child session title',
+      displayTitle: 'Child session title',
+      projectionValues: { title: 'Child session title' },
+    })
     expect(b.svc.list.getSnapshot().byId[sid('grandchild')]?.displayTitle).toBe('Grandchild')
   })
 

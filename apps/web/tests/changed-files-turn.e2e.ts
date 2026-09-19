@@ -51,6 +51,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       await writeFile(replayOverride, JSON.stringify(script).replaceAll('{{cwd}}', JSON.stringify(cwdToken).slice(1, -1)))
     }
     scaffold = await launchWebScaffold({
+      developerTools: false,
       compareReplaySession: true,
       extraOverlayPath: fileURLToPath(new URL('./changed-files-turn.overlay.yml', import.meta.url)),
       ...(replayOverride === undefined ? {} : { replayFixture: FIXTURE, replayOverride }),
@@ -106,13 +107,75 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     expect(await readFile(join(cwd, 'notes.txt'), 'utf8')).toBe('start\ndone\n')
 
     const card = page.locator('[data-changed-files]')
+    expect(await card.count()).toBe(0)
+    const header = page.locator('header').filter({ has: page.locator('[data-conversation-header-leading]') })
+    expect(await header.getByRole('tablist').count()).toBe(0)
+    const compactHeight = await header.evaluate(element => element.getBoundingClientRect().height)
+    expect(compactHeight).toBeLessThan(60)
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const settings = page.getByRole('dialog', { name: '设置' })
+    await settings.getByRole('switch', { name: '开发者工具' }).click()
+    await expect.poll(() => settings.getByRole('switch', { name: '开发者工具' }).getAttribute('aria-checked')).toBe('true')
+    await settings.getByRole('button', { name: '关闭', exact: true }).click()
+    await header.getByRole('tablist').waitFor({ state: 'visible' })
+    expect(await header.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThan(compactHeight)
     await card.waitFor({ state: 'visible' })
     expect(await card.getByText('已编辑 4 个文件', { exact: true }).count()).toBe(1)
-    expect(await card.getByRole('listitem').count()).toBe(3)
-    expect(await card.getByRole('button', { name: '展开全部 4 个改动文件' }).count()).toBe(1)
+    expect(await card.getByRole('listitem').count()).toBe(4)
+    expect(await card.getByRole('button', { name: '展开全部 4 个改动文件' }).count()).toBe(0)
     // The header and every row open the turn's review in the Sidebar, with or without a Host desktop.
     expect(await card.getByRole('button', { name: '在侧边栏查看本轮改动' }).count()).toBe(1)
     expect(await card.getByRole('button', { name: '查看 notes.txt 的改动' }).count()).toBe(1)
+    const geometry = await card.evaluate((element) => {
+      const requiredElement = <T extends Element>(value: T | null | undefined, name: string): T => {
+        if (value === null || value === undefined) throw new Error(`changed-files layout is missing ${name}`)
+        return value
+      }
+      const header = requiredElement(element.children[0] as HTMLElement | undefined, 'header')
+      const tile = requiredElement(header.children[0] as HTMLElement | undefined, 'tile')
+      const tileMark = requiredElement(tile.children[0] as HTMLElement | undefined, 'tile mark')
+      const icon = requiredElement(tileMark.querySelector('svg'), 'icon')
+      const titles = requiredElement(header.children[1] as HTMLElement | undefined, 'titles')
+      const title = requiredElement(titles.children[0] as HTMLElement | undefined, 'title')
+      const stat = requiredElement(titles.children[1] as HTMLElement | undefined, 'stat')
+      const list = requiredElement(element.querySelector('ul'), 'list')
+      const row = requiredElement(list.querySelector('button'), 'row')
+      const path = requiredElement(row.children[0] as HTMLElement | undefined, 'path')
+      return {
+        radius: getComputedStyle(element).borderRadius,
+        headerHeight: header.getBoundingClientRect().height,
+        headerPadding: getComputedStyle(header).padding,
+        tileSize: `${tile.getBoundingClientRect().width}x${tile.getBoundingClientRect().height}`,
+        tileBorder: getComputedStyle(tile).borderTopWidth,
+        tileMarkSize: `${tileMark.getBoundingClientRect().width}x${tileMark.getBoundingClientRect().height}`,
+        tileMarkRadius: getComputedStyle(tileMark).borderRadius,
+        iconWidth: icon.getAttribute('width'),
+        titleFontSize: getComputedStyle(title).fontSize,
+        statFontSize: getComputedStyle(stat).fontSize,
+        listPadding: getComputedStyle(list).padding,
+        rowHeight: row.getBoundingClientRect().height,
+        rowPadding: getComputedStyle(row).padding,
+        rowFontSize: getComputedStyle(row).fontSize,
+        pathFontSize: getComputedStyle(path).fontSize,
+      }
+    })
+    expect(geometry).toEqual({
+      radius: '18px',
+      headerHeight: 60,
+      headerPadding: '8px 10px',
+      tileSize: '40x40',
+      tileBorder: '1px',
+      tileMarkSize: '20x20',
+      tileMarkRadius: '8px',
+      iconWidth: '10',
+      titleFontSize: '13px',
+      statFontSize: '10px',
+      listPadding: '0px',
+      rowHeight: 32,
+      rowPadding: '7px 18px 7px 14px',
+      rowFontSize: '11px',
+      pathFontSize: '12px',
+    })
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })
@@ -129,24 +192,161 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     await card.getByRole('button', { name: '查看 notes.txt 的改动' }).click()
     await review.locator('[data-review-file="notes.txt"]').waitFor({ state: 'visible' })
     expect(await column.locator('[data-dockkit-tab]').filter({ hasText: '第 1 轮改动' }).count()).toBe(1)
-    await expect.poll(() => drawn(review)).toEqual(['context:11 start', 'add:2+done'])
+    await review.locator('[data-review-view="split"]').waitFor({ state: 'visible' })
+    const compareTool = review.locator('[data-review-tool="split"]')
+    const wrapTool = review.locator('[data-review-tool="wrap"]')
+    expect(await compareTool.evaluate(button => getComputedStyle(button).backgroundColor)).toBe('rgba(0, 0, 0, 0)')
+    expect(await wrapTool.evaluate(button => getComputedStyle(button).backgroundColor)).toBe('rgba(0, 0, 0, 0)')
+    expect(await compareTool.locator('svg').evaluate(icon => getComputedStyle(icon).transform)).toBe('matrix(0, 1, -1, 0, 0, 0)')
+    await expect.poll(() => drawn(review.locator('[data-diff-side="left"]'))).toEqual(['context:1start', 'add:'])
+    expect(await drawn(review.locator('[data-diff-side="right"]'))).toEqual(['context:1start', 'add:2done'])
+    const headerAlignment = await review.locator('[data-review-file="notes.txt"]').evaluate((button) => {
+      const center = (element: Element) => {
+        const rect = element.getBoundingClientRect()
+        return rect.top + rect.height / 2
+      }
+      const text = button.querySelector('span')
+      const caret = button.querySelector('svg')
+      const counts = button.parentElement?.nextElementSibling
+      if (text === null || caret === null || counts === null || counts === undefined) {
+        throw new Error('review selector alignment elements are missing')
+      }
+      const buttonCenter = center(button)
+      return [center(text), center(caret), center(counts)].map(value => Math.abs(value - buttonCenter))
+    })
+    for (const offset of headerAlignment) expect(offset).toBeLessThanOrEqual(0.5)
+    const addedLine = review.locator('[data-diff-side="right"] [data-diff-line="add"]')
+    const rightContextLine = review.locator('[data-diff-side="right"] [data-diff-line="context"]')
+    const addedRule = await addedLine.evaluate((line) => {
+      const number = line.children[0]
+      const text = line.querySelector<HTMLElement>('span:last-child')
+      if (number === undefined || text === null) throw new Error('added diff line is incomplete')
+      const left = line.getBoundingClientRect().left
+      return {
+        shadow: getComputedStyle(line).boxShadow,
+        textColour: getComputedStyle(text).color,
+        numberLeft: number.getBoundingClientRect().left - left,
+        textLeft: text.getBoundingClientRect().left - left,
+      }
+    })
+    const rightContextRule = await rightContextLine.evaluate((line) => {
+      const number = line.children[0]
+      const text = line.children[1]
+      if (number === undefined || text === undefined) throw new Error('context diff line is incomplete')
+      const left = line.getBoundingClientRect().left
+      return {
+        numberLeft: number.getBoundingClientRect().left - left,
+        textLeft: text.getBoundingClientRect().left - left,
+      }
+    })
+    expect(addedRule.shadow).toContain(addedRule.textColour)
+    expect(addedRule.numberLeft).toBeCloseTo(rightContextRule.numberLeft, 1)
+    expect(addedRule.textLeft).toBeCloseTo(rightContextRule.textLeft, 1)
     // The ignored file has no snapshot; its comparison comes from the copies captured around the write call.
     await review.getByRole('button', { name: '选择要查看的文件' }).click()
+    const selectedAlignment = await page.getByRole('menuitem').filter({ hasText: 'notes.txt' }).evaluate((row) => {
+      const center = (element: Element) => {
+        const rect = element.getBoundingClientRect()
+        return rect.top + rect.height / 2
+      }
+      const content = row.querySelector<HTMLElement>('span > span')
+      const path = content?.children[0]
+      const counts = content?.children[1]
+      const check = row.querySelector(':scope > svg')
+      if (path === undefined || counts === undefined || check === null) throw new Error('review menu alignment elements are missing')
+      const rowCenter = center(row)
+      return [center(path), center(counts), center(check)].map(value => Math.abs(value - rowCenter))
+    })
+    for (const offset of selectedAlignment) expect(offset).toBeLessThanOrEqual(0.5)
     await page.getByRole('menuitem').filter({ hasText: 'app.local' }).click()
     await review.locator('[data-review-file="app.local"]').waitFor({ state: 'visible' })
-    await expect.poll(() => drawn(review)).toEqual(['add:1+mode=demo'])
+    await expect.poll(() => drawn(review.locator('[data-diff-side="right"]'))).toEqual(['add:1mode=demo'])
     expect(await review.getByText('本轮新建的文件').count()).toBe(1)
-    // A card row opens the same tab on another file; the split and wrap choices switch the drawing.
+    // A card row opens the same tab on another file; split is the initial view and wrap changes its drawing.
     await card.getByRole('button', { name: '查看 intro.md 的改动' }).click()
     await review.locator('[data-review-file="intro.md"]').waitFor({ state: 'visible' })
     expect(await column.locator('[data-dockkit-tab]').filter({ hasText: '第 1 轮改动' }).count()).toBe(1)
-    await review.getByRole('button', { name: '左右对比' }).click()
+    const deletedLine = review.locator('[data-diff-side="left"] [data-diff-line="del"]').first()
+    await expect.poll(() => deletedLine.evaluate(line => line.querySelector('[data-diff-code] span[style]') !== null)).toBe(true)
+    const deletedRule = await deletedLine.evaluate((line) => {
+      const number = line.children[0]
+      const text = line.querySelector<HTMLElement>('span:last-child')
+      if (number === undefined || text === null) throw new Error('deleted diff line is incomplete')
+      const left = line.getBoundingClientRect().left
+      return {
+        shadow: getComputedStyle(line).boxShadow,
+        textColour: getComputedStyle(text).color,
+        numberLeft: number.getBoundingClientRect().left - left,
+        textLeft: text.getBoundingClientRect().left - left,
+      }
+    })
+    const leftContextRule = await review.locator('[data-diff-side="left"] [data-diff-line="context"]').first().evaluate((line) => {
+      const number = line.children[0]
+      const text = line.children[1]
+      if (number === undefined || text === undefined) throw new Error('context diff line is incomplete')
+      const left = line.getBoundingClientRect().left
+      return {
+        numberLeft: number.getBoundingClientRect().left - left,
+        textLeft: text.getBoundingClientRect().left - left,
+      }
+    })
+    expect(deletedRule.shadow).toContain(deletedRule.textColour)
+    expect(deletedRule.numberLeft).toBeCloseTo(leftContextRule.numberLeft, 1)
+    expect(deletedRule.textLeft).toBeCloseTo(leftContextRule.textLeft, 1)
+    await compareTool.click()
+    await review.locator('[data-review-view="unified"]').waitFor({ state: 'visible' })
+    expect(await compareTool.locator('svg').evaluate(icon => getComputedStyle(icon).transform)).toBe('none')
+    await compareTool.click()
     await review.locator('[data-review-view="split"]').waitFor({ state: 'visible' })
     await expect.poll(() => drawn(review.locator('[data-diff-side="left"]'))).toEqual(['del:1# 示例项目', 'context:2', 'context:3一个用于演示的仓库。'])
     expect(await drawn(review.locator('[data-diff-side="right"]'))).toEqual(['del:1# 项目说明', 'context:2', 'context:3一个用于演示的仓库。'])
+    // Constrain the recorded three-row diff to exercise unequal horizontal ranges and classic scrollbars.
+    const scrollLayout = await page.addStyleTag({ content: `
+      [data-changes-review] { height: 120px !important; }
+      [data-diff-side] { scrollbar-width: auto; }
+      [data-diff-side]::-webkit-scrollbar { width: 16px; height: 16px; }
+      [data-diff-side="left"] { width: 65px; }
+    ` })
+    try {
+      const left = review.locator('[data-diff-side="left"]')
+      const right = review.locator('[data-diff-side="right"]')
+      const metrics = (side: typeof left) => side.evaluate(element => ({
+        x: element.scrollLeft, y: element.scrollTop,
+        maxX: element.scrollWidth - element.clientWidth,
+        maxY: element.scrollHeight - element.clientHeight,
+        bottom: element.lastElementChild!.getBoundingClientRect().bottom,
+      }))
+      const initialLeft = await metrics(left)
+      const initialRight = await metrics(right)
+      expect(initialLeft.maxX).toBeGreaterThan(0)
+      expect(initialRight.maxX).toBe(0)
+      expect(initialLeft.maxY).toBeGreaterThan(0)
+      expect(initialLeft.maxY).toBe(initialRight.maxY)
+      await left.evaluate((element) => { element.scrollLeft = element.scrollWidth })
+      await expect.poll(async () => (await metrics(left)).x).toBe(initialLeft.maxX)
+      await left.evaluate((element) => { element.scrollTop = element.scrollHeight })
+      await expect.poll(async () => (await metrics(right)).y).toBe(initialLeft.maxY)
+      // Two frames allow the browser-generated peer event to run before checking the source.
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => { resolve() }))))
+      expect((await metrics(left)).x).toBe(initialLeft.maxX)
+      expect((await metrics(left)).y).toBe(initialLeft.maxY)
+      expect((await metrics(left)).bottom).toBeCloseTo((await metrics(right)).bottom, 1)
+      await right.evaluate((element) => { element.scrollTop = 0 })
+      await expect.poll(async () => (await metrics(left)).y).toBe(0)
+      expect((await metrics(left)).x).toBe(initialLeft.maxX)
+    } finally {
+      await scrollLayout.evaluate(element => element.parentNode!.removeChild(element))
+    }
     await review.getByRole('button', { name: '自动换行' }).click()
     await review.locator('[data-review-view][data-review-wrap]').waitFor({ state: 'visible' })
     await expect.poll(() => drawn(review)).toEqual(['del:1# 示例项目1# 项目说明', 'context:22', 'context:3一个用于演示的仓库。3一个用于演示的仓库。'])
+    const wrappedAddition = review.locator('[data-diff-line="del"] > span').nth(1)
+    const wrappedAdditionRule = await wrappedAddition.evaluate((cell) => {
+      const text = cell.querySelector<HTMLElement>('[data-diff-code]')
+      if (text === null) throw new Error('wrapped addition has no text')
+      return { shadow: getComputedStyle(cell).boxShadow, textColour: getComputedStyle(text).color }
+    })
+    expect(wrappedAdditionRule.shadow).toContain(wrappedAdditionRule.textColour)
     // No desktop, so the tools offer the sidebar file but no native open.
     expect(await review.locator('[data-review-tool="open-file"]').count()).toBe(1)
     expect(await review.locator('[data-review-tool="open-native"]').count()).toBe(0)

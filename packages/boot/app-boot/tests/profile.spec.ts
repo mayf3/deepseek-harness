@@ -12,9 +12,10 @@ import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import {
   composeEntries,
+  createProfileResolutionGeneration,
   healProfilesModuleFallback,
   healIsolatedProfileModuleFallback,
   initProfile,
@@ -308,9 +309,6 @@ describe('loadProfile', () => {
     const home = tmp()
     expect(() => loadProfile('t', 'custom', anchor, home))
       .toThrow('profile "custom" does not exist')
-    // The web template auto-initializes on first load. Bundle resolution
-    // cannot be asserted to fail here: the source-plane test runner resolves
-    // @deepseek-ai/* through tsconfig paths regardless of the staged anchor.
     expect(PROFILE_TEMPLATES.web?.bundles).toContain('@deepseek-ai/dsh-base')
     expect(PROFILE_TEMPLATES.acp).toEqual({
       bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-acp-app'],
@@ -321,11 +319,7 @@ describe('loadProfile', () => {
     expect(PROFILE_TEMPLATES['sdk-minimal']).toEqual({
       bundles: ['@deepseek-ai/dsh-sdk-minimal'],
     })
-    try {
-      loadProfile('t', 'web', anchor, home)
-    } catch {
-      // Resolution failure is the plain-Node outcome for this empty anchor.
-    }
+    loadProfile('t', 'web', anchor, home)
     expect(readProfileManifest('t', resolveProfileDir('web', home)).dsh?.profile?.bundles)
       .toEqual([...PROFILE_TEMPLATES.web?.bundles ?? []])
   })
@@ -360,12 +354,58 @@ describe('loadProfile', () => {
     ])
   })
 
-  it('fails loud when a listed bundle declares no dsh.bundle', () => {
-    const anchor = stageInstallation({ 'not-a-bundle': {} })
-    const home = tmp()
-    const dir = resolveProfileDir('demo', home)
-    initProfile(dir, ['not-a-bundle'])
-    expect(() => loadProfile('t', 'demo', anchor, home)).toThrow('declares no dsh.bundle')
+  it.each(['missing package', 'invalid manifest', 'not a bundle', 'missing patch', 'invalid patch'])(
+    'skips a bundle with %s, retains selections, and retries it on reread', async (failure) => {
+      const anchor = stageInstallation({
+        before: { patch: '- insert: [{ id: a, name: pkg-a }]\n' },
+        broken: { patch: '[]\n' },
+        after: { patch: '- id: a\n  config: { value: after }\n' },
+      })
+      const home = tmp()
+      const dir = resolveProfileDir('demo', home)
+      initProfile(dir, ['before', 'broken', 'after'])
+      const bundleDir = join(anchor, '..', 'node_modules', 'broken')
+      const manifestPath = join(bundleDir, 'package.json')
+      const patchPath = join(bundleDir, 'cordis.patch.yml')
+      const original = readFileSync(manifestPath, 'utf8')
+      if (failure === 'missing package') rmSync(bundleDir, { recursive: true })
+      if (failure === 'invalid manifest') writeFileSync(manifestPath, '{')
+      if (failure === 'not a bundle') writeFileSync(manifestPath, '{}')
+      if (failure === 'missing patch') rmSync(patchPath)
+      if (failure === 'invalid patch') writeFileSync(patchPath, '[invalid')
+      const saved = readFileSync(join(dir, 'package.json'), 'utf8')
+      const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+      onTestFinished(() => { warn.mockRestore() })
+
+      const profile = loadProfile('t', 'demo', anchor, home)
+      expect(profile.layers.map(layer => layer.packageName)).toEqual(['before', 'after'])
+      expect(composeEntries(profile.layers.map(layer => layer.patches)))
+        .toEqual([{ id: 'a', name: 'pkg-a', config: { value: 'after' } }])
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('skipping profile bundle "broken":'))
+      expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(saved)
+      const generation = await createProfileResolutionGeneration({ installAnchor: anchor, profile, home })
+      const unavailable = failure === 'missing package' || failure === 'invalid manifest'
+      expect(generation.entries.map(entry => entry.name))
+        .toEqual(['dsh-app', 'before', ...unavailable ? [] : ['broken'], 'after'])
+      healIsolatedProfileModuleFallback({ installAnchor: anchor, profile })
+      expect(existsSync(join(dir, 'node_modules', 'broken'))).toBe(!unavailable)
+      mkdirSync(bundleDir, { recursive: true })
+      writeFileSync(manifestPath, original)
+      writeFileSync(patchPath, '[]\n')
+      expect(loadProfileDirectory('t', dir, anchor).layers.map(layer => layer.packageName))
+        .toEqual(['before', 'broken', 'after'])
+    },
+  )
+
+  it('still rejects invalid profile manifests and user patches', () => {
+    const anchor = stageInstallation({})
+    const dir = tmp()
+    initProfile(dir, [])
+    writeFileSync(join(dir, PROFILE_PATCH_FILENAME), '[invalid')
+    expect(() => loadProfileDirectory('t', dir, anchor)).toThrow()
+    expect(loadProfileDirectory('t', dir, anchor, { userLayer: false }).layers).toEqual([])
+    writeFileSync(join(dir, 'package.json'), '{')
+    expect(() => loadProfileDirectory('t', dir, anchor)).toThrow()
   })
 })
 

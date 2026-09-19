@@ -1,11 +1,13 @@
 /** Session Remote owner: cold reads, explicit Agent commands, and live control state. */
 
 import { hostname } from 'node:os'
+import { resolve } from 'node:path'
+import type {} from '@deepseek-ai/dsh-fs'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
-import { canOpenNativePath, nativeFileManager, openNativePath, revealNativePath } from '@deepseek-ai/dsh-native-command'
+import { canOpenNativePath, nativeFileManager, openNativeAssociatedPath, revealNativePath } from '@deepseek-ai/dsh-native-command'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
@@ -90,6 +92,7 @@ export class SessionController extends TypertRemoteService {
     'agents',
     'attachments',
     'fileUploads',
+    'fs',
     'llm',
     'sessions',
     'sessionProjections',
@@ -135,7 +138,7 @@ export class SessionController extends TypertRemoteService {
     }, 'session-controller.promotions')
     this.history = new SessionHistoryController(ctx, (observation) => { this.promote(observation) })
     this.listState = new ApiSessionList(ctx)
-    this.openPath = internals.openPath ?? openNativePath
+    this.openPath = internals.openPath ?? openNativeAssociatedPath
     this.revealPath = internals.revealPath ?? revealNativePath
     this.canOpenPath = internals.canOpenPath
       ?? (() => config.nativeOpen ?? (internals.openPath !== undefined || canOpenNativePath()))
@@ -284,11 +287,11 @@ export class SessionController extends TypertRemoteService {
   }
 
   /**
-   * Open one path prepared by a Session-aware caller on the Host desktop.
+   * Verify one path through the composed filesystem and open it on the Host desktop.
    * @param request - path after best-effort Session workspace resolution.
    * @param signal - caller lifetime; abort terminates the native command.
    * @returns confirmation after the native opener accepts the path.
-   * @throws RemoteError when the request is invalid, cancelled, or the opener fails.
+   * @throws RemoteError when the request is invalid, has no verified Host mapping, is cancelled, or the opener fails.
    */
   @Remote('openWorkspacePath')
   async openWorkspacePath(
@@ -304,6 +307,13 @@ export class SessionController extends TypertRemoteService {
     }
     signal.throwIfAborted()
     try {
+      const hostPath = resolve(request.path)
+      const { fs } = this.ctx
+      const mapped = fs.processPathFromHostPath(hostPath)
+      if (mapped === undefined || fs.processPath(await fs.resolve(mapped, { signal })) !== hostPath) {
+        throw new Error('Path has no verified Host path')
+      }
+      signal.throwIfAborted()
       if (request.action === 'reveal') await this.revealPath(request.path, signal)
       else await this.openPath(request.path, signal)
       return { opened: true }
