@@ -50,7 +50,7 @@ The interception layer reads, writes, and deletes no disk links. Leftover histor
 
 The runtime resolution is computed once at profile startup and consists of three parts.
 
-- Installation closure: starting from the `package.json` of the currently running dsh package, a breadth-first traversal follows `dependencies` and `peerDependencies`; each edge resolves from the manifest that declares it per Node rules, and the first installed package found owns a package name. The current source tree measures 539 entries, of which 258 are in the `@deepseek-ai/` scope and 281 are third-party libraries. These entries apply to every profile.
+- Installation closure: starting from the `package.json` of the currently running dsh package, a breadth-first traversal follows `dependencies` and `peerDependencies`; each edge resolves from the manifest that declares it per Node rules, and the first installed package found owns a package name. The closure holds several hundred entries, roughly half in the `@deepseek-ai/` scope and half third-party libraries. These entries apply to every profile.
 - Bundle-only entries: for a bundle selected by the profile that is not part of the closure, the same traversal starts from its manifest, and package names the closure already owns are not overridden. These entries apply only to profiles that select that bundle; they let the Loader import the bundle's embedded plugins by bare name from the profile root.
 - Local package names: package names among the profile's direct dependencies that are already installed in `$DSH_HOME/profiles/<name>/node_modules`. They already sit at ② on the ancestor chain; recording them only saves one directory probe.
 
