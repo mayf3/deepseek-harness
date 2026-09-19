@@ -25,12 +25,14 @@ Symlinks are followed to their real path per Node's default behavior. Once a mod
 The chain below defines the numbering that every table in this Note references. The importer is `$DSH_HOME/profiles/web/node_modules/my-plugin/index.js`:
 
 ```text
-① $DSH_HOME/profiles/web/node_modules/my-plugin/node_modules   插件私有依赖
-② $DSH_HOME/profiles/web/node_modules                          profile 安装的包
-③ $DSH_HOME/profiles/node_modules                              拦截层：runtime resolution 占据其中有条目的包目录
+① $DSH_HOME/profiles/web/node_modules/my-plugin/node_modules
+② $DSH_HOME/profiles/web/node_modules
+③ $DSH_HOME/profiles/node_modules
 ④ $DSH_HOME/node_modules
-⑤ /node_modules，随后是 NODE_PATH 与全局目录
+⑤ /node_modules
 ```
+
+① holds the plugin's private dependencies, ② the packages the profile installed, ③ the interception layer where the runtime resolution occupies the package directories it has entries for, ④ the Harness home, and ⑤ the filesystem root followed by `NODE_PATH` and the global directories.
 
 #### 2. The interception layer: the runtime resolution occupies `$DSH_HOME/profiles/node_modules/<package>`
 

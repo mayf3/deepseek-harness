@@ -25,12 +25,14 @@ importer 指发起 `import` 或 `require` 的那个模块文件。Node 从 impor
 下面这条链是全文表格引用的编号。importer 为 `$DSH_HOME/profiles/web/node_modules/my-plugin/index.js`：
 
 ```text
-① $DSH_HOME/profiles/web/node_modules/my-plugin/node_modules   插件私有依赖
-② $DSH_HOME/profiles/web/node_modules                          profile 安装的包
-③ $DSH_HOME/profiles/node_modules                              拦截层：runtime resolution 占据其中有条目的包目录
+① $DSH_HOME/profiles/web/node_modules/my-plugin/node_modules
+② $DSH_HOME/profiles/web/node_modules
+③ $DSH_HOME/profiles/node_modules
 ④ $DSH_HOME/node_modules
-⑤ /node_modules，随后是 NODE_PATH 与全局目录
+⑤ /node_modules
 ```
+
+① 是插件私有依赖，② 是 profile 安装的包，③ 是拦截层，runtime resolution 占据其中有条目的包目录，④ 是 Harness home，⑤ 是文件系统根，随后是 `NODE_PATH` 与全局目录。
 
 #### 2. 拦截层：runtime resolution 占据 `$DSH_HOME/profiles/node_modules/<包名>`
 
