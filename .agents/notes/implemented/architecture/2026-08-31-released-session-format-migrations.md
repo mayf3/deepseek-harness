@@ -105,6 +105,8 @@ Preparation forwards cancellation through source reads and observes it at the ex
 
 The Stage pipeline ends at one prepared current artifact. [Historical Session read preparation](2026-09-05-read-only-session-migration-preparation.md) defines how read open consumes that artifact immediately while write open performs encode, verification, and publication before returning append access.
 
+The bulk V4 migration command shares one JSONL persistence Context across a bounded job queue, retaining the backend’s two-Worker verification limit and cache for reusing recently decoded logs. A child’s concurrent publication can change its parent’s selected child generation; the ordinary revision check refuses that attempt. The command defers only this source-change error for one sequential retry after the initial queue drains, collecting fresh evidence without relaxing publication checks or retrying unrelated failures.
+
 ### Durable format and publication rules
 
 Canonical filenames encode physical format generation: v0 is `session.jsonl[.zstd]` and positive generations use `session.vN.jsonl[.zstd]`. Migration never moves, replaces, or deletes a committed generation and writes only the final current target; intermediate versions exist only as stage state.
