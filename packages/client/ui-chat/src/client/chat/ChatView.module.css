@@ -20,6 +20,11 @@
   container-type: inline-size;
 }
 
+.root[data-chat-following-tail] .scroll,
+:global([data-conversation-scroll]):has(.root[data-chat-following-tail]) {
+  overflow-anchor: none;
+}
+
 :global([data-conversation-scroll]) .root {
   flex: 0 0 auto;
   min-height: auto;

@@ -32,7 +32,7 @@ import { en, zh } from '../src/client/locales.ts'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { textFace } from '../src/client/face.ts'
 import type { TextStore } from '../src/client/store.ts'
-import { FILE, SESSION, TAB_ID, page } from './fixtures.client.ts'
+import { FILE, SESSION, TAB_ID, createResources, page } from './fixtures.client.ts'
 
 interface Recorded {
   name: string
@@ -45,6 +45,7 @@ interface Recorded {
 
 async function boot() {
   const ctx = new Context()
+  ctx.provide('resources', createResources())
   ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) } } as never)
   const tabs = new SidebarRightTabRegistry(ctx)
   const registered: Recorded[] = []
@@ -114,7 +115,7 @@ describe('ui-sidebar-documentpreview apply', () => {
     expect(dictionaries.size).toBe(0)
   })
 
-  it('injects ordinary Remote reads without requiring a Resource service', async () => {
+  it('injects ordinary Remote reads independently of resource metadata', async () => {
     const { registered, workspaceFiles } = await boot()
     const registration = registered.find(entry => entry.component === TextPreview)
     if (registration === undefined) throw new Error('missing preview registration')

@@ -756,6 +756,41 @@ describe('fixture session face', () => {
 })
 
 describe('workspaces action face', () => {
+  it('records pin and unpin actions, updates the ordered set, and honors stubs', async () => {
+    const runtime = await SlotTestRuntime.create()
+    try {
+      const ws = runtime.workspaces
+      const first = 'first' as SessionId
+      const second = 'second' as SessionId
+      await ws.pinSession(first)
+      await ws.pinSession(second)
+      await ws.pinSession(first)
+      expect(ws.list.getSnapshot().pinnedSessionIds).toEqual([first, second])
+      await ws.unpinSession(first)
+      expect(ws.list.getSnapshot().pinnedSessionIds).toEqual([second])
+
+      const pin = vi.fn(async () => {})
+      const unpin = vi.fn(async () => {})
+      ws.stub('pinSession', pin)
+      ws.stub('unpinSession', unpin)
+      await ws.pinSession(first)
+      await ws.unpinSession(second)
+      expect(pin).toHaveBeenCalledWith(first)
+      expect(unpin).toHaveBeenCalledWith(second)
+      expect(ws.list.getSnapshot().pinnedSessionIds).toEqual([second])
+      expect(ws.calls).toEqual([
+        { method: 'pinSession', args: [first] },
+        { method: 'pinSession', args: [second] },
+        { method: 'pinSession', args: [first] },
+        { method: 'unpinSession', args: [first] },
+        { method: 'pinSession', args: [first] },
+        { method: 'unpinSession', args: [second] },
+      ])
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
   it('records every IWorkspaces verb with inert defaults and honors stubs', async () => {
     const runtime = await SlotTestRuntime.create()
     const ws = runtime.workspaces

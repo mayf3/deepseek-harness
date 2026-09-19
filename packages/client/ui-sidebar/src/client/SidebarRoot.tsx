@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  FishLogo, IconNewChatOutlineMedium, IconPanelLeftOutlineRegular, isDarwinDesktop, Tooltip,
+  FishLogo, IconNewChatOutlineMedium, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, isDarwinDesktop, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
@@ -245,7 +245,11 @@ export function SidebarRoot({
           aria-label={t('session.new.label')}
           onClick={() => { startSession() }}
         >
-          <IconNewChatOutlineMedium size={wide ? 14 : windowsTitlebar ? 16 : 18} />
+          {/* The rail draws Regular: Medium's 1.3px stroke scaled to the rail's
+              larger glyph reads visibly heavier than the neighboring 1px icons. */}
+          {wide
+            ? <IconNewChatOutlineMedium size={14} />
+            : <IconNewChatOutlineRegular size={windowsTitlebar ? 16 : 18} />}
           {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
         </button>
       </Tooltip>
