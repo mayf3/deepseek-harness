@@ -71,7 +71,7 @@ function renderFixture(headerLine: string, events: readonly SessionEvent[]): str
   return [
     headerLine,
     ...events.map((event) => {
-      const record = { ...event } as unknown as Record<string, unknown>
+      const record: Record<string, unknown> = { ...event }
       delete record.seq
       delete record.time
       return JSON.stringify(record)
@@ -91,7 +91,7 @@ function projectedRowCardinality(record: Readonly<Record<string, unknown>>): num
 function parseFixtureObjectLine(line: string, lineNumber: number): Record<string, unknown> {
   let value: unknown
   try {
-    value = JSON.parse(line) as unknown
+    value = JSON.parse(line)
   } catch (error) {
     throw new Error(`session snapshot line ${lineNumber} contains invalid JSON`, { cause: error })
   }
@@ -224,7 +224,7 @@ export function canonicalSessionFixture(content: string, label = '<session-fixtu
 
   let headerValue: unknown
   try {
-    headerValue = JSON.parse(headerLine) as unknown
+    headerValue = JSON.parse(headerLine)
   } catch {
     return undefined
   }

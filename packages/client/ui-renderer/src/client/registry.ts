@@ -487,7 +487,7 @@ export class SlotRegistry extends Service {
     // Core write first: all load-time validation (undeclared target,
     // duplicate declaration, kind conflicts, cross-scope handle) throws
     // there before this layer commits anything.
-    const dispose = (this._core as unknown as ErasedCore).register(erased, component)
+    const dispose = (this._core as ErasedCore).register(erased, component)
     if (store !== undefined) {
       const scope = (this._core.specDynamic(options.name) as SlotSpec<SlotEntryDef>).scope
       this._acquire(store, scope)
@@ -507,7 +507,7 @@ export class SlotRegistry extends Service {
       ...options,
       ...(registrant === undefined ? {} : { registrant }),
     }
-    const dispose = (this._core as unknown as ErasedFactoryCore).registerFactory(erased, component)
+    const dispose = (this._core as ErasedFactoryCore).registerFactory(erased, component)
     const definition = this._core.factory(options.name)
     if (definition === undefined) throw new Error(`slot factory "${options.name}" disappeared during registration`)
     if (definition.store !== undefined && typeof definition.store !== 'function') {
@@ -551,7 +551,7 @@ export class SlotRegistry extends Service {
       storeOf: (entry, scopeBinding) =>
         entry.store === undefined
           ? undefined
-          : this.resolveStore(entry.store as unknown as EngineStoreHandle, scopeBinding),
+          : this.resolveStore(entry.store as EngineStoreHandle, scopeBinding),
       factoryStoreOf: (definition, scopeBinding, occurrence) =>
         this.resolveFactoryStore(definition, scopeBinding, occurrence),
       retainFactoryOccurrence: (definition, occurrence) =>

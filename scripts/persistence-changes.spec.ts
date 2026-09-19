@@ -566,7 +566,7 @@ describe('persistence history verification', () => {
 
   it('rejects malformed references, unknown schema variants, digest tampering, and extra snapshot roots', () => {
     const schema = inventory()
-    const malformed = structuredClone(schema) as unknown as { roots: Array<{ schema: { nodes: unknown[] }; digest: string }> }
+    const malformed: { roots: readonly { schema: { nodes: readonly unknown[] }; digest: string }[] } = structuredClone(schema)
     malformed.roots[0]!.schema.nodes = [{ kind: 'array', element: 99 }]
     expect(() => parsePersistenceSnapshot(malformed)).toThrow('unknown schema node')
     malformed.roots[0]!.schema.nodes = [{ kind: 'future' }]
@@ -783,14 +783,16 @@ describe('persistence changes current-tree commands', () => {
     expect(authored.error).toBeUndefined()
     expect(authored.signal).toBeNull()
     expect(authored.status, String(authored.stderr)).toBe(0)
-    expect(JSON.parse(String(authored.stdout)) as unknown).toMatchObject({ ok: true, operation: 'record' })
+    const authoredResult: unknown = JSON.parse(String(authored.stdout))
+    expect(authoredResult).toMatchObject({ ok: true, operation: 'record' })
     const beforeUpdate = readFileSync(join(root, `docs/persistence-changes/${NEXT_ID}.md`), 'utf8')
     writeFileSync(join(session, 'types.ts'), optional.replace('label?: string', 'label?: string; extra?: number'))
     const updated = cli('--update', NEXT_ID, '--json')
     expect(updated.error).toBeUndefined()
     expect(updated.signal).toBeNull()
     expect(updated.status, String(updated.stderr)).toBe(0)
-    expect(JSON.parse(String(updated.stdout)) as unknown).toMatchObject({ ok: true, operation: 'update' })
+    const updatedResult: unknown = JSON.parse(String(updated.stdout))
+    expect(updatedResult).toMatchObject({ ok: true, operation: 'update' })
     expect(readFileSync(join(root, `docs/persistence-changes/${NEXT_ID}.md`), 'utf8').replace(/```yaml persistence-change[\s\S]*?```/u, ''))
       .toBe(beforeUpdate.replace(/```yaml persistence-change[\s\S]*?```/u, ''))
     const generated = extractPersistenceSchema(root)
@@ -807,7 +809,8 @@ describe('persistence changes current-tree commands', () => {
     expect(structured.error).toBeUndefined()
     expect(structured.signal).toBeNull()
     expect(structured.status).toBe(1)
-    expect(JSON.parse(String(structured.stdout)) as unknown).toMatchObject({
+    const structuredResult: unknown = JSON.parse(String(structured.stdout))
+    expect(structuredResult).toMatchObject({
       ok: false, code: 'unacknowledged-changes', changes: [expect.objectContaining({ kind: 'type-changed', requiresVersionBump: true })],
     })
   })

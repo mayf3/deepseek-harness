@@ -80,7 +80,7 @@ function compactSource(event: Parameters<ConversationNodeDefinition['match']>[0]
   sourceCommandId?: CommandId
 } | undefined {
   if (event.type !== 'user/message' || !isReplacementSurfaceEvent(event)) return undefined
-  const source = event.data.source as unknown as {
+  const source = event.data.source as {
     kind?: unknown
     compactionId?: unknown
     sourceCommandId?: CommandId

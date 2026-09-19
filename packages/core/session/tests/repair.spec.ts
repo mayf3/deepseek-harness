@@ -14,7 +14,7 @@ interface SessionEvent {
 
 function interruptedTurnClosers(events: readonly SessionEvent[]): LogicalSessionEvent[] {
   for (const event of events) SessionSeq(event.seq)
-  return repairInterruptedTurn(events as unknown as readonly LogicalSessionEvent[])
+  return repairInterruptedTurn(events as readonly LogicalSessionEvent[])
 }
 
 function openTurnClosers(events: readonly SessionEvent[], cause: OpenTurnCloseCause): LogicalSessionEvent[] {

@@ -1275,7 +1275,7 @@ describe('desktop main startup', () => {
     const window = harness.windows[0]!
     const frame = { url: 'dsh-app://app/' }
     Object.assign(window.webContents, { mainFrame: frame })
-    const handler = harness.handlers.get(DESKTOP_IPC.bootFailed)! as unknown as (event: unknown, message: unknown) => void
+    const handler = harness.handlers.get(DESKTOP_IPC.bootFailed)! as (event: unknown, message: unknown) => void
     const event = { sender: window.webContents, senderFrame: frame }
     expect(() => { handler({ ...event, senderFrame: { url: 'https://other.example/' } }, 'untrusted') }).toThrow('unowned renderer')
     expect(() => { handler({ ...event, senderFrame: { ...frame } }, 'subframe') }).toThrow('non-primary frame')

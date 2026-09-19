@@ -575,11 +575,11 @@ export function defineTool<const S extends ParameterSchemaSpec, const O extends 
     output: {
       schema: outputSchema,
       render(args: unknown, value: JsonValue): ContentBlock[] {
-        return userRender(args as InferArgs<S>, value as unknown as InferValue<NoInfer<O>>)
+        return userRender(args as InferArgs<S>, value as InferValue<NoInfer<O>>)
       },
       ...userPresentationMeta !== undefined ? {
         presentationMeta(args: unknown, value: JsonValue): JsonValue {
-          return userPresentationMeta(args as InferArgs<S>, value as unknown as InferValue<NoInfer<O>>)
+          return userPresentationMeta(args as InferArgs<S>, value as InferValue<NoInfer<O>>)
         },
       } : {},
     },

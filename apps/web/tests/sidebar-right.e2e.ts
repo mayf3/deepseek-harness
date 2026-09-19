@@ -682,7 +682,7 @@ describe('web e2e: shipped right Sidebar', () => {
     }, 60_000)
 
     it('CONTROL: the host endpoint answers when called directly, bypassing the wire', async () => {
-      const files = (scaffold.ctx as unknown as {
+      const files = (scaffold.ctx as {
         get(name: string): {
           read(
             scope: { sessionId: string; workspaceRoot: string },

@@ -97,7 +97,7 @@ function createGzipMiddleware(config: ResolvedConfig): NodeMiddleware {
       if (typeof contentType === 'string' && contentType.toLowerCase().startsWith('text/event-stream')) return false
       return compressionMiddleware.filter(request, response)
     },
-  }) as unknown as NodeMiddleware
+  }) as NodeMiddleware
 
   return (req, res, next) => {
     // The Web Worker tunnel has no socket and transfers identity bytes.

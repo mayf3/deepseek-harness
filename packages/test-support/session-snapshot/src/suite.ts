@@ -763,7 +763,7 @@ export function stabilizeFixtureMessageIds(logs: readonly string[], fixtures: re
 /** One packed row's member times, or `undefined` for an ordinary record. */
 function packedTimes(record: Record<string, unknown>): number[] | undefined {
   if (!PACKED_CHUNK_ROW_TYPES.has(record.type as string)) return undefined
-  const row = record as unknown as { time0?: number; data: { dt: number[] } }
+  const row = record as { time0?: number; data: { dt: number[] } }
   const times = [row.time0 ?? 0]
   for (const gap of row.data.dt) times.push((times[times.length - 1] as number) + gap)
   return times
@@ -891,7 +891,7 @@ function preservePackedMemberTimes(
   existingMembers: Record<string, unknown>[],
 ): void {
   if (!PACKED_CHUNK_ROW_TYPES.has(record.type as string)) return
-  const row = record as unknown as { time0: number; data: { dt: number[] } }
+  const row = record as { time0: number; data: { dt: number[] } }
   const firstTime = existingMembers[0]?.time
   if (!Number.isSafeInteger(firstTime)) return
   row.time0 = firstTime as number

@@ -31,7 +31,7 @@ export function callbackify<A extends unknown[], R>(
 ): (...args: [...A, (error: unknown, value?: R) => void]) => void {
   return (...args) => {
     const callback = args.at(-1) as (error: unknown, value?: R) => void
-    const rest = args.slice(0, -1) as unknown as A
+    const rest = args.slice(0, -1) as A
     fn(...rest).then((value) => { callback(null, value) }, (error: unknown) => { callback(error) })
   }
 }

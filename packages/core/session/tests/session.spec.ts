@@ -270,14 +270,14 @@ describe('Session', () => {
       data: { header: { config: { provider: 'mock', model: 'model' } }, reason: 'initial' },
     } as const
     for (const reason of ['fallback', 'unknown', null]) {
-      const invalid = structuredClone(base) as unknown as SessionEvent
+      const invalid = structuredClone(base) as SessionEvent
       if (invalid.type !== 'request/header') throw new Error('test fixture must be a request header')
       invalid.data.reason = reason as never
       expect(() => Session.create(SessionId('invalid-header-reason'), [invalid]))
         .toThrow('seed request/header at index 0 has an invalid reason')
     }
     for (const startsSeries of [false, 1, 'true']) {
-      const invalid = structuredClone(base) as unknown as SessionEvent
+      const invalid = structuredClone(base) as SessionEvent
       if (invalid.type !== 'request/header') throw new Error('test fixture must be a request header')
       invalid.data.startsSeries = startsSeries as never
       expect(() => Session.create(SessionId('invalid-series-marker'), [invalid]))
@@ -543,7 +543,7 @@ describe('Session', () => {
       .toEqual(valid)
 
     for (const reasoningEffort of ['', 1]) {
-      const invalid = structuredClone(valid) as unknown as SessionEvent
+      const invalid = structuredClone(valid) as SessionEvent
       if (invalid.type !== 'request/header') throw new Error('test fixture must be a request header')
       const config = invalid.data.header.config as unknown as Record<string, unknown>
       config.reasoningEffort = reasoningEffort
@@ -578,7 +578,7 @@ describe('Session', () => {
       { maxTokens: false },
       { reasoningEffort: true },
     ]) {
-      const invalid = structuredClone(valid) as unknown as SessionEvent
+      const invalid = structuredClone(valid) as SessionEvent
       if (invalid.type !== 'request/header') throw new Error('test fixture must be a request header')
       invalid.data.header.adapterDefaults = adapterDefaults as never
       expect(() => Session.create(SessionId('invalid-adapter-defaults'), [invalid]))

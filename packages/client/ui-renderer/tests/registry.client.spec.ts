@@ -50,7 +50,7 @@ async function boot(): Promise<Bench> {
   // Service accessor (ctx.get reads the reflect store, which Service-class
   // plugins do not write; the accessor is the product path).
   const svc = ctx.slots
-  return { ctx, svc, erased: svc as unknown as ErasedService }
+  return { ctx, svc, erased: svc }
 }
 
 /** Engine-shaped instance stub (bare-source form: subscribe/getSnapshot + baked actions + clearPersisted). */
@@ -910,7 +910,7 @@ describe('entry-unload cascade', () => {
       name: 'occupant',
       inject: ['slots'],
       apply: (pluginCtx: Context) => {
-        ;(pluginCtx.slots as unknown as ErasedService).register({ name: 't.host' }, C)
+        ;(pluginCtx.slots as ErasedService).register({ name: 't.host' }, C)
       },
     })
     await fiber.await()

@@ -723,12 +723,13 @@ describe('ui-session apply', () => {
     apply(ctx)
 
     expect(ctx.uiSession).toBeInstanceOf(UiSession)
+    const retainInfoMatcher: unknown = expect.any(Function)
     expect(slots.provideRoot).toHaveBeenCalledWith({
       hooks: {
         sessions: bench.sessions.list,
         sessionStatus: ctx.uiSession.sessionStatus,
       },
-      keyedHooks: { sessionRetainInfo: expect.any(Function) as unknown },
+      keyedHooks: { sessionRetainInfo: retainInfoMatcher },
     })
     expect(slots.installScope).toHaveBeenCalledWith('session', ctx.uiSession.adapter)
     const root = slots.provideRoot.mock.calls[0]![0] as RootStandardSourceContribution

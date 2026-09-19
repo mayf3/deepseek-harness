@@ -319,6 +319,7 @@ describe('gate graph validation', () => {
       'rescope-vendor', 'publint', 'constraints', 'default-product-isolation', 'package-dependencies', 'application-entrypoints',
       'dsh-package-licenses', 'package-invariants', 'built-package-invariants', 'node-next-types',
       'optional-dependency-imports', 'client-packages', 'client-ui-i18n', 'client-route-resolution', 'no-bare-dispatcher',
+      'no-unknown-casts',
       'cordis-config', 'runtime-closure',
     ])
   })
@@ -357,6 +358,16 @@ describe('gate graph validation', () => {
       const ids = withPnpmEntrypoint(() => gatesForMode(mode).map(subject => subject.id))
 
       expect(ids).toContain('dsh-package-licenses')
+    },
+  )
+
+  it.each(['ci-primary', 'ci-static', 'check-all', 'hygiene'] as const)(
+    'rejects new unknown casts in %s',
+    (mode) => {
+      const gate = withPnpmEntrypoint(() => gatesForMode(mode).find(subject => subject.id === 'no-unknown-casts'))
+
+      expect(gate?.args).toContain('verify-no-unknown-casts')
+      expect(gate?.allowFailure).not.toBe(true)
     },
   )
 
