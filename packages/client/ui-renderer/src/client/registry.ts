@@ -352,16 +352,17 @@ export class SlotRegistry extends Service {
   }
 
   /**
-   * Bind scoped Store instances to one owner Context lifetime. Cleanup drops
-   * only materialized in-memory instances; persisted state belongs to the
-   * durable scope key. Rebinding the same key transfers cleanup ownership to
-   * the newest Context generation.
+   * Bind scoped Store instances to one Context generation. Rebinding the key
+   * drops the previous generation's memory instances before the new owner can
+   * resolve them. Cleanup never clears persisted state, which belongs to the
+   * durable scope key, or drops a replacement generation's instances.
    *
    * @param binding - materialized scope identity and its owning Context.
    */
   bindStoreScope(binding: Pick<ScopedStandardSourceBinding, 'key' | 'ctx'>): void {
     const current = this._storeScopeOwners.get(binding.key)
     if (current === binding.ctx) return
+    if (current !== undefined) this.releaseStoreScope(binding.key)
     this._storeScopeOwners.set(binding.key, binding.ctx)
     binding.ctx.effect(() => () => {
       if (this._storeScopeOwners.get(binding.key) !== binding.ctx) return

@@ -174,20 +174,20 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   openSession(target: SessionTarget): void {
-    this.replaceMain(target, this.lifetime.signal)
+    this.replaceMain(target, this.lifetime.signal, 'reveal')
   }
 
   async openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void> {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
     const sessionId = await this.connectWorkspace(workspaceId)
     if (navigation.aborted) return
-    this.replaceMain(sessionId, navigation, beforeOpen)
+    this.replaceMain(sessionId, navigation, 'reveal', beforeOpen)
   }
 
   async forkSession(sessionId: SessionId): Promise<void> {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
     const childId = await this.sessions.fork({ sessionId, increaseTitle: true })
-    if (!navigation.aborted) this.replaceMain(childId, navigation)
+    if (!navigation.aborted) this.replaceMain(childId, navigation, 'reveal')
   }
 
   startSession(workspaceId?: WorkspaceId): void {
@@ -274,15 +274,15 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   private async restoreSelection(workspaces: WorkspaceSnapshot, sessions: SessionListState): Promise<void> {
     const saved = this.selection.getSnapshot()
     if (saved.subagentAddress !== undefined) {
-      void this.sessions.refreshSubagents(saved.subagentAddress.parentSessionId)
-      this.openSession(saved.subagentAddress)
+      void this.sessions.refreshProjections(saved.subagentAddress.parentSessionId)
+      this.replaceMain(saved.subagentAddress, this.lifetime.signal, 'preserve')
       return
     }
     const summary = saved.sessionId === undefined ? undefined : sessions.byId[saved.sessionId]
     const workspace = summary === undefined ? undefined
       : workspaces.items.find(item => item.sessionIds.includes(summary.id))
     if (summary !== undefined && (!summary.blank || workspace === undefined)) {
-      this.openSession(summary.id)
+      this.replaceMain(summary.id, this.lifetime.signal, 'preserve')
       return
     }
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
@@ -294,7 +294,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const target = workspace?.workspaceId ?? recentWorkspace(workspaces.items, sessions.byId)
     if (sessionId === undefined && target !== undefined) sessionId = await this.connectWorkspace(target)
     if (sessionId !== undefined && !navigation.aborted) {
-      this.replaceMain(sessionId, navigation)
+      this.replaceMain(sessionId, navigation, 'preserve')
     }
   }
 
@@ -318,6 +318,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   private replaceMain(
     target: SessionTarget,
     signal: AbortSignal,
+    panel: 'reveal' | 'preserve',
     beforeOpen?: (sessionId: SessionId) => void,
   ): void {
     signal.throwIfAborted()
@@ -343,8 +344,8 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const previous = this.mainReference
     this.mainReference = reference
     previous?.release()
-    void this.sessions.refreshSubagents(reference.sessionId)
-    this.ctx.layout.selectPanel(null)
+    void this.sessions.refreshProjections(reference.sessionId)
+    if (panel === 'reveal') this.ctx.layout.selectPanel(null)
   }
 
 }

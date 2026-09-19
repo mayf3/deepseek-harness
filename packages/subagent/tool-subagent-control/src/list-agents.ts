@@ -11,7 +11,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { SubagentDescendantListEntry, SubagentListEntry } from '@deepseek-ai/dsh-subagent'
+import type {
+  SubagentCatalogEntry, SubagentDescendantListEntry, SubagentListEntry,
+} from '@deepseek-ai/dsh-subagent'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 
 export const name = 'tool-subagent-list-agents'
@@ -57,11 +59,11 @@ function statusOf(agents: { get(id: SessionId): Agent | undefined }, id: Session
 /** Project one service row into the model-facing entry, or omit a one-shot child. */
 function project(
   agents: { get(id: SessionId): Agent | undefined },
-  entry: SubagentListEntry,
+  entry: SubagentCatalogEntry | SubagentListEntry,
   position?: Pick<SubagentDescendantListEntry, 'parentId' | 'depth'>,
 ): ListAgentsEntry | undefined {
   const at = position === undefined ? {} : { parent: position.parentId, depth: position.depth }
-  if (entry.kind === 'diagnostic') {
+  if ('kind' in entry && entry.kind === 'diagnostic') {
     return { kind: 'diagnostic', id: entry.id, reason: entry.reason, ...at }
   }
   // One-shot children cannot be continued by send_message, so the model
@@ -92,7 +94,7 @@ export function apply(ctx: Context): void {
       + 'or starts or resumes a turn for an inactive child, and a direct child remains a `send_message` '
       + 'candidate in every status. The snapshot is not a delivery '
       + 'promise — `send_message` performs the authoritative check and may still fail. Children that could '
-      + 'not be read are reported as diagnostics instead of being silently dropped. Scope `descendants` '
+      + 'not be read are reported as diagnostics only in `descendants` scope. Scope `descendants` '
       + 'walks the whole tree below you in stable pre-order, annotating each entry with its durable direct-parent '
       + 'session id and depth. You may use `send_message` only for depth-1 entries; deeper entries are '
       + 'candidates for `interrupt_agent` only.',
@@ -161,8 +163,6 @@ export function apply(ctx: Context): void {
         throw new Error('list_agents requires a calling agent (exec.agent was undefined)')
       }
       const request = resolveListAgentsRequest(args)
-      // The registry drains started tool bodies, so the scan must observe the
-      // call's signal rather than finish a slow catalog after cancellation.
       switch (request.scope) {
         case 'children': {
           const entries = await ctx.subagents.listChildren(parent.id, exec.signal)
@@ -171,6 +171,7 @@ export function apply(ctx: Context): void {
             .filter(entry => entry !== undefined)
         }
         case 'descendants': {
+          // Complete-corpus reads can await storage, so they observe tool cancellation.
           const entries = await ctx.subagents.listDescendants(parent.id, exec.signal)
           return entries
             .map(entry => project(ctx.agents, entry, entry))

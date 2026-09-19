@@ -206,7 +206,7 @@ const compaction = (over: Partial<CompactionSummaryNode> = {}): CompactionSummar
 /** Empty sessions-list hook for the global standard-kit seat. */
 function emptySessions() {
   const store = createSnapshotStore<SessionListState>(
-    { ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {} })
+    { ids: [], byId: {}, phase: 'ready', projectionsBySession: {}, jobsBySession: {} })
   return bindSnapshotSelector(store)
 }
 
@@ -1086,7 +1086,9 @@ describe('ChatView', () => {
     expect(branchButtons).toHaveLength(1)
     expect(branchButtons[0]!.getAttribute('aria-disabled')).toBeNull()
     fireEvent.click(branchButtons[0]!)
-    expect(h.forkAt).toHaveBeenCalledWith(1)
+    // The branch action sends the real turn/end seq (the exact inclusive
+    // Host boundary), not the assistant node seq.
+    expect(h.forkAt).toHaveBeenCalledWith(3)
   })
 
   it('keeps a later pending occurrence visible when it reuses a durable MessageId', () => {
@@ -2045,7 +2047,7 @@ describe('ChatView', () => {
     expect(buttons).toHaveLength(1)
     expect(buttons[0]!.getAttribute('aria-disabled')).toBeNull()
     fireEvent.click(buttons[0]!)
-    expect(h.forkAt.mock.calls).toEqual([[2]])
+    expect(h.forkAt.mock.calls).toEqual([[3]])
   })
 
   it('disables fork when the indexed Turn has a later steering Node', () => {

@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest'
-import { SESSION_FORMAT_VERSION, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import { describe, expect, it, onTestFinished } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionEventMap, SessionEventType } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { teamProjectionDefinition } from '../src/projection.ts'
 import type { TeamProjectionState, TeamState } from '../src/projection.ts'
 import { TeamId, TeamMessageId, TeamTaskId } from '../src/types.ts'
@@ -82,6 +84,28 @@ function message(overrides: Partial<TeamMessageSnapshot> = {}): TeamMessageSnaps
 }
 
 describe('Agent Teams projection events', () => {
+  it('rejects retired tool-result content when restoring a native V4 Team checkpoint', async () => {
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    ctx.effect(() => ctx.sessionProjections.register(teamProjectionDefinition))
+    const session = ctx.sessions.create(ROOT)
+    const restore = (val: unknown) => ctx.sessionProjections.restore({
+      agentTeam: { ver: teamProjectionDefinition.stateVersion, seq: -1, val },
+    }, [], SessionLogOffset(0), session.header, SessionLogOffset(0))
+    const valid = { ...project(ROOT, []), messages: [message()] }
+    expect(restore(JSON.parse(JSON.stringify(valid))).checkpoint['agentTeam']?.val).toEqual(valid)
+    const retiredMessage = message({ content: [{
+      type: 'tool-result', toolCallId: 'retired', content: [{ type: 'text', text: 'old result' }],
+    }] as unknown as TeamMessageSnapshot['content'] })
+    const retired = { ...valid, messages: [retiredMessage] }
+    expect(() => restore(JSON.parse(JSON.stringify(retired)))).toThrow()
+    expect(() => projectTeam(ROOT, [event('team/message/queued', {
+      version: 2, teamId: TEAM, message: retiredMessage,
+    }, SessionSeq(0))])).toThrow(/team\/message\/queued payload is invalid/)
+  })
+
   it('projects current-team records independently from inherited records', () => {
     const records: SessionEvent[] = [
       event('team/member', { version: 2, teamId: TeamId('ancestor'), member: member() }, SessionSeq(0)),

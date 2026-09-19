@@ -14,6 +14,7 @@ import {
   ReasoningEffortId, assistantStreamChunks, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
+import { buildForkSeed } from '@deepseek-ai/dsh-session/fork'
 import { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
@@ -64,6 +65,22 @@ type PromptContentCandidate =
 
 function hasPromptContent(content: readonly PromptContentCandidate[]): boolean {
   return content.some(part => part.type !== 'text' || part.text.trim().length > 0)
+}
+
+/**
+ * Resolve the omitted-`atSeq` default to the latest completed-turn prefix,
+ * including standalone events before the next turn begins.
+ */
+function latestCompletedPrefixBoundary(events: readonly SessionEvent[]): SessionSeq | undefined {
+  const lastTurnEnd = events.findLast(event => event.type === 'turn/end')
+  if (lastTurnEnd === undefined) return undefined
+  let boundary = lastTurnEnd.seq
+  for (const next of events.slice(boundary + 1)) {
+    if (next.type === 'turn/start' || (next.type === 'user/message' && next.surfaceOp === 'append')
+      || next.type === 'agent/inbox/spliced') break
+    boundary = next.seq
+  }
+  return boundary
 }
 
 /** Implements Session business commands delegated by the Session Controller Remote service. */
@@ -195,8 +212,10 @@ export class SessionCommandController {
   }
 
   /**
-   * Create a new ordinary Session from one completed-turn prefix.
-   * @param request - source Session and optional event anchor.
+   * Create a new ordinary Session from an exact event prefix. An explicit
+   * `atSeq` is the inclusive cut; an omitted value selects the latest
+   * completed-turn prefix. An open cut receives synthetic fork closers.
+   * @param request - source Session and optional exact event boundary.
    * @returns the new Session identity.
    */
   async fork(request: SessionForkRequest): Promise<SessionForkValue> {
@@ -223,24 +242,17 @@ export class SessionCommandController {
       )
     }
     using source = observed
-    const lastSeq = source.events.at(-1)?.seq ?? -1
-    const anchoredBoundary = atSeq === undefined
-      ? undefined
-      : source.events.find(event => event.type === 'turn/end' && event.seq >= atSeq)
-    const boundary = anchoredBoundary
-      ?? (atSeq === undefined || atSeq > lastSeq
-        ? source.events.findLast(event => event.type === 'turn/end')
-        : undefined)
-    if (boundary === undefined) {
+    const boundary = atSeq ?? latestCompletedPrefixBoundary(source.events)
+    if (boundary === undefined || source.events[boundary]?.seq !== boundary) {
       throw new RemoteError(
         'session/fork-unavailable',
-        atSeq !== undefined && atSeq <= lastSeq
-          ? `session "${request.sessionId}" has not completed the turn containing event ${String(atSeq)}`
-          : `session "${request.sessionId}" has no completed turn to fork from`,
+        request.atSeq === undefined
+          ? `session "${request.sessionId}" has no completed turn to fork from`
+          : `event ${String(request.atSeq)} does not exist in session "${request.sessionId}" (last seq: ${String(source.events.at(-1)?.seq ?? 'none')})`,
         { sessionId: request.sessionId },
       )
     }
-    const cut = SessionLogOffset(boundary.seq + 1)
+    const seed = buildForkSeed(source.events, boundary)
     let workspace: Workspace | undefined
     try {
       workspace = await this.forkWorkspace(source.header)
@@ -257,8 +269,8 @@ export class SessionCommandController {
       const { provider, model } = this.ctx.agentDefaultModel.currentSelection()
       await this.ctx.agents.create({
         sessionId: childId,
-        seed: source.events.slice(0, cut),
-        inheritedEventCount: cut,
+        seed,
+        inheritedEventCount: SessionLogOffset(boundary + 1),
         meta: {
           ...(source.header.cwd === undefined ? {} : { cwd: source.header.cwd }),
           parentSession: source.header.id,
@@ -420,6 +432,7 @@ export class SessionCommandController {
    */
   async updateQueue(request: SessionUpdateQueueRequest): Promise<SessionUpdateQueueValue> {
     if (request.action.kind === 'edit') {
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- Remote callers can submit untyped JSON.
       if (request.action.content.some(block => block.type !== 'text')) {
         throw new RemoteError(
           'session/attachment-invalid',

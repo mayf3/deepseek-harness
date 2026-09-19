@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import { composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { ToolCallId, createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   ScheduleId,
@@ -34,6 +34,12 @@ import {
   conversationContextKey,
   saveFailureShot,
 } from './support.ts'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'schedule-web-e2e': { kind: 'schedule-web-e2e' } & ContextFormed
+  }
+}
 
 const MODE = webSnapshotMode()
 const OVERLAY = fileURLToPath(new URL('../../cli/config/examples/schedule/cordis.yml', import.meta.url))
@@ -190,7 +196,7 @@ function requestText(options: GenerateOptions): string {
 /** Require one assembled request to preserve the reminder-content trust boundary. */
 function expectReminderFraming(options: GenerateOptions): void {
   const reminder = options.messages.find(message => (
-    message.source.kind === 'plugin' && message.source.plugin === 'schedule'
+    message.role === 'user' && message.source?.kind === 'schedule'
   ))
   expect(reminder?.role).toBe('user')
   const text = reminder?.content.find(block => block.type === 'text')?.text
@@ -389,7 +395,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     })
     atHandle.agent.followup(createUserMessage({
       content: [{ type: 'text', text: 'Prepare the reminder test session.' }],
-      source: { kind: 'plugin', plugin: 'schedule-web-e2e' },
+      source: { kind: 'schedule-web-e2e' },
     }))
     await atHandle.agent.whenIdle()
     expect(atAdapter.requests).toHaveLength(1)
@@ -473,8 +479,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
 
     const batch = everyHandle.agent.session.snapshotEvents().find(event => (
       event.type === 'user/message'
-      && event.data.source.kind === 'plugin'
-      && event.data.source.plugin === 'schedule'
+      && event.data.source.kind === 'schedule'
       && event.data.content.some(block => block.type === 'text'
         && block.text.startsWith('[SCHEDULE REMINDER BATCH]'))
     ))

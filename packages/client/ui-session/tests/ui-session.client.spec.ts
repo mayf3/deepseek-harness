@@ -53,7 +53,7 @@ function createSessionsBench(ctx: Context): SessionsBench {
     ids: [],
     byId: {},
     phase: 'ready',
-    subagentsByParent: {},
+    projectionsBySession: {},
     jobsBySession: {},
   })
   const bindings = new Map<SessionId, SessionBinding>()
@@ -522,6 +522,27 @@ describe('UiSession bindings', () => {
 })
 
 describe('UiSession status', () => {
+  it('keeps synthetic-row status unknown until an event or Host baseline establishes it', () => {
+    const ctx = new Context()
+    const bench = createSessionsBench(ctx)
+    const id = sessionId('catalog-only')
+    bench.list.update((draft) => {
+      draft.byId[id] = { id, displayTitle: id, running: false, retainedBy: {}, blank: false, updatedAt: 0 }
+    })
+    const service = createUiSession(ctx, bench)
+    expect(service.sessionStatus.getSnapshot().get(id)?.running).toBeUndefined()
+    expect(service.sessionStatus.getSnapshot().get(id)?.completionUnread).toBe(false)
+
+    bench.emitStatus(id, true)
+    bench.list.update((draft) => { draft.byId[id]!.displayTitle = 'Renamed child' })
+    expect(service.sessionStatus.getSnapshot().get(id)?.running).toBe(true)
+    expect(service.sessionStatus.getSnapshot().get(id)?.completionUnread).toBe(false)
+
+    bench.list.update((draft) => { draft.ids.push(id) })
+    expect(service.sessionStatus.getSnapshot().get(id)?.running).toBe(false)
+    expect(service.sessionStatus.getSnapshot().get(id)?.completionUnread).toBe(true)
+  })
+
   it('records non-main completions and lets main-view activity acknowledge them', () => {
     const ctx = new Context()
     const bench = createSessionsBench(ctx)

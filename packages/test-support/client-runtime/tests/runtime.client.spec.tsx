@@ -177,6 +177,27 @@ describe('sessions', () => {
     await runtime.dispose()
   })
 
+  it('resolves loaded parent projection addresses without retaining a session', async () => {
+    const runtime = await runtimeWithFrame()
+    try {
+      const parent = 'parent' as SessionId
+      const child = 'child' as SessionId
+      runtime.sessions.list.update((draft) => {
+        draft.projectionsBySession = {
+          [parent]: { state: 'ready', error: null, values: { subagentCatalog: [{ createdAt: 1, id: child, mode: 'continuable', label: 'worker' }] } },
+        }
+      })
+      expect(runtime.sessions.subagentAddress(child)).toEqual({
+        parentSessionId: parent, childSessionId: child, mode: 'continuable',
+      })
+      expect(runtime.sessions.subagentAddress(parent)).toBeUndefined()
+      expect(runtime.sessions.binding(child)).toBeUndefined()
+      expect(runtime.sessions.binding(parent)).toBeUndefined()
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
   it('accepts explicit addresses without a catalog and keeps them independent of references', async () => {
     const runtime = await runtimeWithFrame()
     await runtime.sessions.add({ id: 's1' })
@@ -192,8 +213,7 @@ describe('sessions', () => {
     await runtime.sessions.updateSummary('s1', { displayTitle: 'renamed', running: true })
     expect(runtime.sessions.list.getSnapshot().byId['s1' as SessionId])
       .toMatchObject({ displayTitle: 'renamed', running: true })
-    runtime.sessions.setSubagentCatalogOpen('s2' as SessionId, true)
-    await runtime.sessions.refreshSubagents('s2' as SessionId)
+    await runtime.sessions.refreshProjections('s2' as SessionId)
     reference.release()
     expect(runtime.sessions.binding('s1')).toBeUndefined()
     expect(runtime.sessions.subagentAddress('s1' as SessionId)).toEqual(address)
@@ -201,8 +221,7 @@ describe('sessions', () => {
       sessionId: 's1' as SessionId, atSeq: 7, increaseTitle: true,
     })).resolves.toBe('s1')
     expect(runtime.sessions.calls).toEqual([
-      { method: 'setSubagentCatalogOpen', args: ['s2', true] },
-      { method: 'refreshSubagents', args: ['s2'] },
+      { method: 'refreshProjections', args: ['s2'] },
       { method: 'fork', args: [{ sessionId: 's1', atSeq: 7, increaseTitle: true }] },
     ])
     await runtime.dispose()
@@ -213,13 +232,13 @@ describe('sessions', () => {
     const parentId = 'parent' as SessionId
     await runtime.sessions.add({ id: 'child' })
     runtime.sessions.list.update((draft) => {
-      draft.subagentsByParent = {
+      draft.projectionsBySession = {
         [parentId]: {
-          state: 'ready', error: null, parentAvailable: true,
-          entries: [
-            { kind: 'child', id: 'other' as SessionId, mode: 'one-shot', activity: 'inactive', hasChildren: false },
-            { kind: 'child', id: 'child' as SessionId, mode: 'continuable', label: 'Child', activity: 'inactive', hasChildren: false },
-          ],
+          state: 'ready', error: null,
+          values: { subagentCatalog: [
+            { createdAt: 1, id: 'other' as SessionId, mode: 'one-shot' },
+            { createdAt: 2, id: 'child' as SessionId, mode: 'continuable', label: 'Child' },
+          ] },
         },
       }
     })
@@ -228,6 +247,8 @@ describe('sessions', () => {
       parentSessionId: parentId, childSessionId: 'child', mode: 'continuable',
     })
     expect(runtime.sessions.subagentAddress('missing' as SessionId)).toBeUndefined()
+    expect(runtime.sessions.binding(parentId)).toBeUndefined()
+    expect(runtime.sessions.binding('child')).toBeUndefined()
     await runtime.dispose()
   })
 

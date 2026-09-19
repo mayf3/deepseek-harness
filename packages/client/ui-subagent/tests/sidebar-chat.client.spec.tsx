@@ -64,7 +64,7 @@ describe('Sidebar chat registration', () => {
       [Symbol.dispose]: release,
     } as unknown as SessionReference
     const retain = vi.fn(() => reference)
-    const refreshSubagents = vi.fn(() => Promise.resolve())
+    const refreshProjections = vi.fn(() => Promise.resolve())
     const list = {
       getSnapshot: () => ({
         ids: [],
@@ -75,7 +75,7 @@ describe('Sidebar chat registration', () => {
           },
         },
         phase: 'ready',
-        subagentsByParent: {},
+        projectionsBySession: {},
         jobsBySession: {},
       } as unknown as SessionListState),
       subscribe: () => () => {},
@@ -84,7 +84,7 @@ describe('Sidebar chat registration', () => {
     let definition: SidebarRightTabDefinition | undefined
     const registrations: { options: Record<string, unknown>; component: unknown }[] = []
     const ctx = {
-      sessions: { retain, refreshSubagents, list } as unknown as ISessions,
+      sessions: { retain, refreshProjections, list } as unknown as ISessions,
       resources: { register: (value: ResourceProvider<'subagentchat'>) => { provider = value; return () => {} } },
       sidebarRightTabs: { register: (value: SidebarRightTabDefinition) => { definition = value; return () => {} } },
       slots: {
@@ -114,7 +114,7 @@ describe('Sidebar chat registration', () => {
     const controller = new AbortController()
     const stream = provider!.open(subagentChatAddress(ADDRESS), { signal: controller.signal })[Symbol.asyncIterator]()
     expect(await stream.next()).toEqual({ done: false, value: { ok: true, value: { address: ADDRESS, reference } } })
-    expect(refreshSubagents).toHaveBeenCalledWith(PARENT)
+    expect(refreshProjections).toHaveBeenCalledWith(PARENT)
     expect(retain).toHaveBeenCalledWith(ADDRESS, { source: 'sidebarChat', signal: controller.signal })
     const completion = stream.next()
     await Promise.resolve()
@@ -130,7 +130,7 @@ describe('Sidebar chat registration', () => {
     expect(release).toHaveBeenCalledTimes(2)
 
     let finishRefresh: (() => void) | undefined
-    refreshSubagents.mockImplementationOnce(() => new Promise<void>((resolve) => { finishRefresh = resolve }))
+    refreshProjections.mockImplementationOnce(() => new Promise<void>((resolve) => { finishRefresh = resolve }))
     const abortedDuringRefresh = new AbortController()
     const pending = provider!.open(
       subagentChatAddress(ADDRESS), { signal: abortedDuringRefresh.signal },
@@ -218,7 +218,7 @@ describe('Sidebar chat components', () => {
       useSession: (select: (value: SessionSnapshot) => unknown) => select(snapshot),
       useConversation: (select: (value: { activeTargets: ReadonlySet<string> }) => unknown) => select({ activeTargets: new Set() }),
       useSessions: (select: (value: SessionListState) => unknown) => select({
-        ids: [], byId: { [CHILD]: { blank: summaryBlank } }, phase: 'ready', subagentsByParent: {}, jobsBySession: {},
+        ids: [], byId: { [CHILD]: { blank: summaryBlank } }, phase: 'ready', projectionsBySession: {}, jobsBySession: {},
       } as unknown as SessionListState),
       renderFactorySlot,
     } as unknown as Parameters<typeof ConversationSlotPanel>[0])} />)

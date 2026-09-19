@@ -14,6 +14,7 @@ import {
 } from '@deepseek-ai/dsh-compaction-basic/src/config.ts'
 import type { CompactionResult } from '@deepseek-ai/dsh-compaction'
 import LlmRuntime, { createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, createSystemMessage, createToolResultMessage, LlmAdapter , createMessage } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -28,6 +29,12 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import { agentEvents, type Agent, type RequestErrorAction } from '@deepseek-ai/dsh-agent'
 import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'test': { kind: 'test' } & ContextFormed
+  }
+}
 
 const SIGNAL = new AbortController().signal
 const MODEL = 'test-model'
@@ -89,25 +96,20 @@ function agent(session: Session, model?: string): Agent {
   } as Agent
 }
 
-/** Flatten every text fragment the summarizer received, recursing tool-result blocks. */
+/** Flatten every text fragment the summarizer received across all messages. */
 function summarizedText(input: SummarizationInput): string {
-  const collect = (blocks: readonly ContentBlock[]): string =>
-    blocks.map(block =>
-      block.type === 'text' ? block.text
-        : block.type === 'tool-result' ? collect(block.content)
-          : '').join('\n')
-  return input.messages.map(message => collect(message.content)).join('\n')
+  return input.messages.flatMap(message => message.content)
+    .map(block => block.type === 'text' ? block.text : '')
+    .join('\n')
 }
 
 /** A minimal replayed prefix carrying one user message of the given text. */
 function promptInput(text: string): SummarizationInput {
   return { messages: [createUserMessage({
     content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: 'test' },
+    source: { kind: 'test' },
   })] }
 }
-
-const SYSTEM_PROMPT_PLUGIN = '@deepseek-ai/dsh-system-prompt'
 
 /**
  * Closed two-message turns followed by one open turn for durable compaction events.
@@ -121,7 +123,7 @@ function conversation(turns = 4, text = 'fixture '.repeat(40).trim(), system?: s
       session.append('system/message', {
         turn,
         step: 1,
-        message: createSystemMessage(system, SYSTEM_PROMPT_PLUGIN),
+        message: createSystemMessage(system),
       }, { surfaceOp: 'append' })
     }
     session.append('user/message', createUserMessage({
@@ -774,8 +776,8 @@ describe('pressure measurement and retention', () => {
     for (const message of messages) {
       for (const block of message.content) {
         if (block.type === 'tool-call') calls.add(block.id)
-        if (block.type === 'tool-result') expect(calls.has(block.toolCallId)).toBe(true)
       }
+      if (message.role === 'tool') expect(calls.has(message.toolCallId)).toBe(true)
     }
   })
 
@@ -890,7 +892,7 @@ describe('optional model-free tool-result pruning', () => {
     expect(await compactIfNeeded(compact, session)).not.toBeNull()
     expect(compact.calls).toHaveLength(1)
     const original = session.snapshotEvents().find(event => event.type === 'tool/result')
-    expect(original?.type === 'tool/result' && original.data.message.content[0].content[0])
+    expect(original?.type === 'tool/result' && original.data.message.content[0])
       .toEqual({ type: 'text', text: 'X'.repeat(3_000) })
     expect(session.snapshotEvents().filter(event =>
       event.type === 'tool/result' && event.surfaceOp !== 'append')).toHaveLength(0)
@@ -1135,7 +1137,7 @@ describe('compaction region transaction', () => {
     compact.mutateDuringSummary = () => {
       session.append('user/message', createUserMessage({
         content: [{ type: 'text', text: 'concurrent surface mutation' }],
-        source: { kind: 'plugin', plugin: 'test' },
+        source: { kind: 'test' },
       }), { surfaceOp: 'append' })
     }
     const nodes = session.surface.nodes
@@ -1275,7 +1277,12 @@ describe('default one-shot summarizer', () => {
     expect(adapter.lastOptions).not.toHaveProperty('system')
     expect(adapter.lastOptions?.tools).toEqual(tools)
     expect(adapter.lastOptions?.messages.slice(0, -1)).toEqual(prefix)
-    expect(adapter.lastOptions?.messages.at(-1)).toMatchObject({ role: 'user' })
+    const instruction = adapter.lastOptions?.messages.at(-1)
+    expect(instruction).toMatchObject({ role: 'user' })
+    expect(instruction).not.toHaveProperty('id')
+    expect(instruction).not.toHaveProperty('source')
+    expect(Object.isFrozen(instruction)).toBe(true)
+    expect(Object.isFrozen(instruction?.content[0])).toBe(true)
     expect(result.shadowedSeqs).toEqual(nodes.slice(start, start + 2))
     if (system !== undefined) expect(session.surface.nodes[0]).toBe(nodes[0])
   })
@@ -1346,9 +1353,9 @@ describe('default one-shot summarizer', () => {
           },
         },
       ],
-      source: { kind: 'plugin', plugin: 'test' },
+      source: { kind: 'test' },
     })
-    const system = createSystemMessage('REPLAYED SYSTEM', SYSTEM_PROMPT_PLUGIN)
+    const system = createSystemMessage('REPLAYED SYSTEM')
     await compact.runSummarize({
       tools,
       messages: [system, prefix],
@@ -1386,10 +1393,10 @@ describe('default one-shot summarizer', () => {
     ctx.llm.registerAdapter(['policy-summary'], policyAdapter)
     const prefix: Message = createUserMessage({
       content: [{ type: 'text', text: 'warm prefix' }],
-      source: { kind: 'plugin', plugin: 'test' },
+      source: { kind: 'test' },
     })
 
-    const system = createSystemMessage('WARM SYSTEM', SYSTEM_PROMPT_PLUGIN)
+    const system = createSystemMessage('WARM SYSTEM')
     const output = await compact.runSummarize({
       messages: [system, prefix],
     }, agent(conversation(1), 'fallback'))
@@ -1525,20 +1532,16 @@ describe('default one-shot summarizer', () => {
       .rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
   })
 
-  it('rejects image summary output nested in a tool result', async () => {
+  it('rejects image summary output', async () => {
     const { compact } = await summarizerHarness([{
-      type: 'tool-result',
-      toolCallId: ToolCallId('summary-tool'),
-      content: [{
-        type: 'image',
-        attachment: {
-          attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`),
-          mediaType: 'image/png',
-          bytes: 1,
-          width: 1,
-          height: 1,
-        },
-      }],
+      type: 'image',
+      attachment: {
+        attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`),
+        mediaType: 'image/png',
+        bytes: 1,
+        width: 1,
+        height: 1,
+      },
     }])
     await expect(compact.runSummarize(promptInput('history'), agent(conversation(1), MODEL)))
       .rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
@@ -2098,7 +2101,7 @@ describe('route-priced image pressure', () => {
     }]
     const framed = ctx.tokenMeter.estimateMessage(createUserMessage({
       content: frameSummary(compact.summary),
-      source: { kind: 'plugin', plugin: 'test' },
+      source: { kind: 'test' },
     }))
     expect(framed).toBeGreaterThan(imageNode.heuristicTokens)
     expect(framed).toBeLessThan(imageNode.tokens)

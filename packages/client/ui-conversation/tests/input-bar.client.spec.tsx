@@ -175,7 +175,7 @@ function bench(over?: BenchOptions) {
     useResource,
     useSessions: bindSnapshotSelector(createSnapshotStore<SessionListState>({
       ids: [], byId: {}, phase: 'ready',
-      subagentsByParent: {}, jobsBySession: {},
+      projectionsBySession: {}, jobsBySession: {},
     })),
     useWorkspaces: bindSnapshotSelector(createSnapshotStore({
       items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,

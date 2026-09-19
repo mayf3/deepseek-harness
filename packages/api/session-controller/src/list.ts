@@ -111,6 +111,7 @@ export class ApiSessionList {
     return {
       sessionId: session.id,
       updatedAt: updatedAt(session.header, metadata),
+      agentAvailable: this.ctx.agents.get(session.id)?.session === session,
       running: this.ctx.agents.get(session.id)?.status === 'running',
       blank: metadata?.blank ?? session.seq === 0,
       ...listFields(session.header),
@@ -149,6 +150,7 @@ export class ApiSessionList {
     return {
       sessionId: header.id,
       updatedAt: updatedAt(header, metadata),
+      agentAvailable: false,
       running: false,
       // A large, metadata-less, or inaccessible cache miss remains unknown and visible.
       blank: metadata?.blank ?? false,

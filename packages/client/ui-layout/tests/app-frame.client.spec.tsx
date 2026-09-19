@@ -77,7 +77,7 @@ function mountFrame(windowWidth = frameWidth) {
       },
     },
     phase: 'ready',
-    subagentsByParent: {},
+    projectionsBySession: {},
     jobsBySession: {},
   })
   const workspaceState: WorkspaceSnapshot = {
