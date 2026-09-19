@@ -105,6 +105,8 @@ Preparation 会把 cancellation 传给 source read，并在现有的约 500 ms D
 
 Stage pipeline 终止于一份 prepared current artifact。[历史 Session 只读迁移准备](2026-09-05-read-only-session-migration-preparation.zh.md)定义 read open 如何立即消费该 artifact，以及 write open 如何在返回 append 权限前完成 encode、verification 与 publication。
 
+批量 V4 迁移命令在有界任务队列中共享一个 persistence Context，保留 provider 现有的双 Worker 校验上限和小型解码日志缓存。子 Session 并发发布可能改变父 Session 选中的子代际；普通修订检查会拒绝这次尝试。命令只把这种源变化错误延后到初始队列清空后串行重试一次，重新收集证据，不放宽发布检查，也不重试无关失败。
+
 ### Durable format 与 publication 规则
 
 规范文件名编码 physical format generation：v0 使用 `session.jsonl[.zstd]`，正 generation 使用 `session.vN.jsonl[.zstd]`。Migration 不会移动、覆盖或删除任何 committed generation，并且只写最终 current target；中间版本只存在于 stage state。

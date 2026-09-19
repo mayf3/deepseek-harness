@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/cookbook/adding-a-session-format-version.md
-adding-a-session-format-version.md: 92efbefa943d6ea3c7d97ddeedb4a630e64edbf7
-adding-a-session-format-version.zh.md: 3cb1090b7ff259b7c7664261b3d7a2b3eaee6c13
+adding-a-session-format-version.md: 8ba899cc699a1962bb3084dd17798f1679e943ec
+adding-a-session-format-version.zh.md: 76a551533420c40b40b0982860bb76a8f262def7

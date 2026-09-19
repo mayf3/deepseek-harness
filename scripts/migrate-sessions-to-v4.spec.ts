@@ -1,13 +1,14 @@
 /** The contributor command uses real persistence on private temporary corpora. */
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
-import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises'
+import { availableParallelism, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { execa } from 'execa'
 import type { SessionFormatJsonObject } from '@deepseek-ai/dsh-session-format'
 import { encodeSegment, generationLogFilename, type JsonlCompression } from '../packages/session/session-persistence-jsonl/src/format.ts'
 import { compressZstdFrame, decompressZstdFrame, scanZstdFrames } from '../packages/session/session-persistence-jsonl/src/zstd.ts'
+import { runMigrationJobs } from './migrate-sessions-to-v4.ts'
 
 const repository = resolve(import.meta.dirname, '..')
 const script = join(repository, 'scripts/migrate-sessions-to-v4.ts')
@@ -20,8 +21,8 @@ function temporaryRoot(): string {
   return directory
 }
 
-async function run(...args: string[]) {
-  const child = execa(process.execPath, ['--import', 'tsx', script, ...args], {
+async function runAt(entrypoint: string, ...args: string[]) {
+  const child = execa(process.execPath, ['--import', 'tsx', entrypoint, ...args], {
     cwd: repository, reject: false,
   })
   stopProcesses.push(async () => { child.kill('SIGKILL'); await child })
@@ -31,6 +32,10 @@ async function run(...args: string[]) {
   expect(result.timedOut, result.stderr).toBe(false)
   expect(result.signal, result.stderr).toBeUndefined()
   return { stdout: result.stdout, stderr: result.stderr, status: result.exitCode, logPath }
+}
+
+function run(...args: string[]) {
+  return runAt(script, ...args)
 }
 
 afterEach(async () => {
@@ -58,11 +63,13 @@ const toolTurn: readonly SessionFormatJsonObject[] = [
 
 async function fixture(
   root: string, id: string, version: number, compression: JsonlCompression, events: readonly SessionFormatJsonObject[] = [],
+  headerFields: SessionFormatJsonObject = {},
 ) {
   const directory = join(root, '_no-cwd', encodeSegment(id))
   await mkdir(directory, { recursive: true })
   const header = JSON.stringify({ type: 'session', version, id, createdAt: 1, delegationDepth: 0,
     ...version >= 2 ? { isSeeded: false } : {},
+    ...headerFields,
   }) + '\n'
   const body = events.map((event, seq) => JSON.stringify({ ...event, seq, time: seq + 2 }) + '\n').join('')
   const bytes = compression === 'none' ? Buffer.from(header + body) : Buffer.concat([
@@ -74,6 +81,79 @@ async function fixture(
 }
 
 describe('one-time V4 migration command', () => {
+  it('bounds active jobs and retries changed-source inputs only after the initial pass drains', async () => {
+    const entered = Array.from({ length: 4 }, () => Promise.withResolvers<undefined>())
+    const release = Array.from({ length: 4 }, () => Promise.withResolvers<undefined>())
+    const initial: number[] = []
+    const retries: number[] = []
+    let active = 0
+    let peak = 0
+    const task = runMigrationJobs(4, 2, async (index, retry) => {
+      if (retry) {
+        expect(active).toBe(0)
+        expect(initial.toSorted()).toEqual([0, 1, 2, 3])
+        retries.push(index)
+        return false
+      }
+      active += 1
+      peak = Math.max(peak, active)
+      entered[index]!.resolve(undefined)
+      await release[index]!.promise
+      active -= 1
+      initial.push(index)
+      return index === 0
+    })
+    try {
+      await Promise.all([entered[0]!.promise, entered[1]!.promise])
+      expect(active).toBe(2)
+      release[1]!.resolve(undefined)
+      await entered[2]!.promise
+      expect(active).toBe(2)
+      release[0]!.resolve(undefined)
+      await entered[3]!.promise
+      expect(active).toBe(2)
+      expect(retries).toEqual([])
+      release[2]!.resolve(undefined)
+      release[3]!.resolve(undefined)
+      await task
+      expect(peak).toBe(2)
+      expect(retries).toEqual([0])
+    } finally {
+      for (const barrier of release) barrier.resolve(undefined)
+      await task
+    }
+  })
+
+  it('runs each input to completion before starting the next with one job', async () => {
+    const order: string[] = []
+    await runMigrationJobs(3, 1, async (index, retry) => {
+      expect(retry).toBe(false)
+      order.push(`start ${index}`)
+      await Promise.resolve()
+      order.push(`end ${index}`)
+      return false
+    })
+    expect(order).toEqual(['start 0', 'end 0', 'start 1', 'end 1', 'start 2', 'end 2'])
+  })
+
+  it('drains ten thousand immediate inputs without exceeding the worker limit', async () => {
+    const visits = new Uint8Array(10_000)
+    let active = 0
+    let peak = 0
+    await runMigrationJobs(visits.length, 16, async (index, retry) => {
+      expect(retry).toBe(false)
+      visits[index]! += 1
+      active += 1
+      peak = Math.max(peak, active)
+      await Promise.resolve()
+      active -= 1
+      return false
+    })
+    expect(visits.every(count => count === 1)).toBe(true)
+    expect(peak).toBe(16)
+    expect(active).toBe(0)
+  })
+
   it.each(['none', 'zstd'] as const)('publishes %s successors, preserves sources and current bytes on rerun', async (compression) => {
     const root = temporaryRoot()
     const old = await fixture(root, 'old', 0, compression)
@@ -83,6 +163,7 @@ describe('one-time V4 migration command', () => {
     await mkdir(join(root, '_no-cwd', 'empty'))
     const first = await run('--sessions-dir', root)
     expect(first.status, first.stdout + first.stderr).toBe(0)
+    expect(first.stdout).toContain(`Session jobs: ${Math.min(availableParallelism(), 16)}`)
     expect(first.stdout).toContain('converted=2, already-V4=1, failed=0, skipped=1')
     expect(first.stdout).toContain('START session.v3.jsonl')
     expect(first.stdout).toContain('V3 -> V4: session.v4.jsonl')
@@ -107,6 +188,35 @@ describe('one-time V4 migration command', () => {
     if (process.platform !== 'win32') expect(statSync(first.logPath!).mode & 0o777).toBe(0o600)
   })
 
+  it.each(['none', 'zstd'] as const)('preserves %s parent/child history and catalog with serial or parallel jobs', async (compression) => {
+    const outputs: Buffer[][] = []
+    for (const jobs of [1, 2]) {
+      const root = temporaryRoot()
+      const parent = await fixture(root, 'a-parent', 3, compression)
+      const child = await fixture(root, 'z-child', 3, compression, [
+        { type: 'subagent/descriptor', data: { version: 3, mode: 'continuable', provider: 'spawn', label: 'saved child' } },
+      ], { origin: 'subagent', parentSession: 'a-parent', createdAt: 2, delegationDepth: 1 })
+      const result = await run('--sessions-dir', root, '--jobs', String(jobs))
+      expect(result.status, result.stdout + result.stderr).toBe(0)
+      expect(result.stdout).toContain('converted=2, already-V4=0, failed=0, skipped=0')
+      expect(result.stdout).toContain('completed=2/2')
+      const current: Buffer[] = []
+      for (const original of [parent, child]) {
+        expect(await readFile(original.path)).toEqual(original.bytes)
+        const bytes = await readFile(join(original.directory, generationLogFilename(4, compression)))
+        const decoded = compression === 'none' ? bytes : Buffer.concat(await Promise.all(
+          scanZstdFrames(bytes).frames.map(frame => decompressZstdFrame(bytes.subarray(frame.start, frame.end))),
+        ))
+        current.push(decoded)
+      }
+      expect(current[0]!.toString().trim().split('\n').slice(1).map(line => JSON.parse(line) as unknown)).toMatchObject([
+        { type: 'subagent/catalog', data: { childId: 'z-child', childCreatedAt: 2, mode: 'continuable', label: 'saved child' } },
+      ])
+      outputs.push(current)
+    }
+    expect(outputs[1]).toEqual(outputs[0])
+  })
+
   it('reports a bad Session and still migrates a later good Session', async () => {
     const root = temporaryRoot()
     const bad = await fixture(root, 'a-bad', 3, 'none', [{ type: 'unrecognized/required', data: {} }])
@@ -114,7 +224,10 @@ describe('one-time V4 migration command', () => {
     const result = await run('--sessions-dir', root)
     expect(result.status, result.stdout + result.stderr).toBe(1)
     expect(result.stdout, readFileSync(result.logPath!, 'utf8')).toContain('converted=1, already-V4=0, failed=1, skipped=0')
-    expect(result.stdout).toMatch(/\[1\/2\][\s\S]*FAILED[\s\S]*\[2\/2\][\s\S]*V3 -> V4/u)
+    expect(result.stdout).toMatch(/\[1\/2\].*FAILED/u)
+    expect(result.stdout).toMatch(/\[2\/2\].*V3 -> V4/u)
+    expect(result.stdout).not.toContain('DEFERRED')
+    expect(result.stdout).not.toContain('RETRY')
     expect(result.stdout).toContain('Failures (full stacks and causes are in the log):')
     expect(result.stdout).toContain(bad.path)
     expect(readFileSync(result.logPath!, 'utf8')).toContain('unrecognized/required')
@@ -148,11 +261,40 @@ describe('one-time V4 migration command', () => {
   })
 
   it('shows help, rejects unknown arguments, and logs a missing root failure', async () => {
-    expect((await run('--help')).stdout).toContain('Defaults to ~/.dsh/sessions')
+    const help = await run('--help')
+    expect(help.stdout).toContain('Defaults to ~/.dsh/sessions')
+    expect(help.stdout).toContain('CPU count capped at 16')
     expect((await run('--unknown')).status).toBe(1)
     const result = await run('--sessions-dir', join(temporaryRoot(), 'missing'))
     expect(result.status).toBe(1)
     expect(result.stdout).toContain('converted=0, already-V4=0, failed=1, skipped=0')
     expect(result.logPath).toBeDefined()
+  })
+
+  it('accepts an explicit job count above the default cap', async () => {
+    const result = await run('--sessions-dir', temporaryRoot(), '--jobs', '32')
+    expect(result.status, result.stdout + result.stderr).toBe(0)
+    expect(result.stdout).toContain('Session jobs: 32')
+    expect(result.stdout).toContain('converted=0, already-V4=0, failed=0, skipped=0')
+  })
+
+  it('runs the entrypoint through a symbolic link to the checkout', async () => {
+    const checkout = join(temporaryRoot(), 'checkout')
+    await symlink(repository, checkout, process.platform === 'win32' ? 'junction' : 'dir')
+    try {
+      const result = await runAt(join(checkout, 'scripts/migrate-sessions-to-v4.ts'), '--help')
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stdout).toContain('Usage: pnpm run migrate:sessions-to-v4')
+    } finally {
+      await unlink(checkout)
+    }
+  })
+
+  it.each(['0', '-1', '1.5', 'NaN', '9007199254740992'])('rejects invalid --jobs %s before opening a corpus', async (jobs) => {
+    const result = await run('--sessions-dir', join(temporaryRoot(), 'missing'), `--jobs=${jobs}`)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('--jobs must be a positive safe integer')
+    expect(result.stdout).not.toContain('Session migration')
+    expect(result.logPath).toBeUndefined()
   })
 })

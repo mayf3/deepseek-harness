@@ -125,9 +125,11 @@ Use the one-time [migration script](../../scripts/migrate-sessions-to-v4.ts) fro
 pnpm run migrate:sessions-to-v4
 ```
 
-The default root is `~/.dsh/sessions`. Use `--sessions-dir /path/to/sessions-copy` for another corpus, or `--help` for usage. Each historical Session goes through the normal locked, validated publication path to create a V4 successor beside its unchanged source files. Existing V4 Sessions are opened read-only; rerunning does not reconvert them. The script makes no model requests and does not change conversion or refusal rules.
+The default root is `~/.dsh/sessions`. Use `--sessions-dir /path/to/sessions-copy` for another corpus, or `--help` for usage. Concurrent jobs default to the available CPU count capped at 16; `--jobs N` accepts any positive safe integer, including larger expert overrides, and `--jobs 1` runs serially. A bounded queue opens only that many Sessions at once, regardless of corpus size. Each historical Session goes through the normal locked, validated publication path to create a V4 successor beside its unchanged source files. Existing V4 Sessions are opened read-only; rerunning does not reconvert them. The script makes no model requests and does not change conversion or refusal rules.
 
 The terminal reports each Session's selected file, version, progress, outcome, and elapsed time. Individual errors do not stop later Sessions. The final summary lists every failure and the full diagnostic log under the system temporary directory; any failure returns a nonzero exit status. Include that log and the printed checkout commit when reporting a migration problem. The report distinguishes Sessions converted during this run from those already at V4.
+
+Concurrent conversion can invalidate a parent’s child evidence when the child publishes V4. Only that source-change error receives one sequential retry after all initial jobs finish; corruption, unsupported formats, and held locks are reported immediately. Completion lines keep the original input index and a separate completed count, so out-of-order results remain readable.
 
 <a id="final-v3-vocabulary"></a>
 ### Final V3 event vocabulary before V4 publication
