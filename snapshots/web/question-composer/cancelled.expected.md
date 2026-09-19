@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Use the ask_user_question tool to" [disabled]
+  - navigation "Session hierarchy": Use the ask_user_question tool to
   - button "More actions"
   - button "Open right sidebar"
   - tablist:

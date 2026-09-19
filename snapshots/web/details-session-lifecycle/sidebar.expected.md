@@ -13,7 +13,7 @@
     644,
     756
   ],
-  "columnTransition": "grid-template-columns",
+  "columnTransition": "all",
   "expanded": true,
   "mode": "push",
   "panelContentWidth": 756,
@@ -157,7 +157,7 @@
     1400,
     0
   ],
-  "columnTransition": "all",
+  "columnTransition": "grid-template-columns",
   "expanded": false,
   "mode": "push",
   "panelContentWidth": 0,

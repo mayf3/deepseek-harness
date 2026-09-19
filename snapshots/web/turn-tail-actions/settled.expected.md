@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Begin your reply with the" [disabled]
+  - navigation "Session hierarchy": Begin your reply with the
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"

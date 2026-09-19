@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Use the bash tool to" [disabled]
+  - navigation "Session hierarchy": Use the bash tool to
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
