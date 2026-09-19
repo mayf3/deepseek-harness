@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs'
 import { mkdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises'
 import { availableParallelism, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { execa } from 'execa'
 import type { SessionFormatJsonObject } from '@deepseek-ai/dsh-session-format'
@@ -321,6 +322,46 @@ describe('one-time V4 migration command', () => {
       bySourceVersion: { '2': { converted: 0, alreadyV4: 0, failed: 2, skipped: 0 } },
       failureGroups: [{ sourceVersion: 2, reason: 'sequence_gap', count: 2, items }],
     })
+  })
+
+  it('reports a source-change deferral and retries after the other input completes', async () => {
+    const root = temporaryRoot()
+    const parent = await fixture(root, 'a-parent', 3, 'none')
+    const child = await fixture(root, 'b-child', 3, 'none', [{
+      type: 'subagent/descriptor', data: { version: 3, mode: 'continuable', provider: 'spawn', label: 'fixture child' },
+    }], { origin: 'subagent', parentSession: 'a-parent', createdAt: 2, delegationDepth: 1 })
+    const entrypoint = join(temporaryRoot(), 'retry-once.mjs')
+    const backendUrl = pathToFileURL(join(repository, 'packages/session/session-persistence-jsonl/src/index.ts')).href
+    const generationUrl = pathToFileURL(join(repository, 'packages/session/session-persistence-jsonl/src/generation.ts')).href
+    await writeFile(entrypoint, `
+      const { default: Backend } = await import(${JSON.stringify(backendUrl)});
+      const { JsonlGenerationSourceChangedError } = await import(${JSON.stringify(generationUrl)});
+      const open = Backend.prototype.open;
+      let changed = false;
+      Backend.prototype.open = async function(id, access, options) {
+        if (id === 'a-parent' && access === 'write' && !changed) {
+          changed = true;
+          throw new JsonlGenerationSourceChangedError(${JSON.stringify(child.path)});
+        }
+        return open.call(this, id, access, options);
+      };
+      process.argv[1] = ${JSON.stringify(script)};
+      await import(${JSON.stringify(pathToFileURL(script).href)});
+    `)
+    const result = await runAt(entrypoint, '--sessions-dir', root, '--jobs', '2')
+    expect(result.status, result.stdout + result.stderr).toBe(0)
+    const lines = result.stdout.split('\n')
+    const deferred = lines.findIndex(line => line.includes('[1/2]') && line.includes('DEFERRED'))
+    const childDone = lines.findIndex(line => line.includes('[2/2]') && line.includes('completed=1/2'))
+    const retry = lines.findIndex(line => line.includes('[1/2]') && line.includes('RETRY'))
+    expect(deferred).toBeGreaterThanOrEqual(0)
+    expect(childDone).toBeGreaterThan(deferred)
+    expect(retry).toBeGreaterThan(childDone)
+    expect(lines.filter(line => line.includes('RETRY'))).toHaveLength(1)
+    expect(result.summary).toMatchObject({ totals: { converted: 2, alreadyV4: 0, failed: 0, skipped: 0 }, failureGroups: [] })
+    const target = await readFile(join(parent.directory, 'session.v4.jsonl'), 'utf8')
+    expect(target).toContain('"type":"subagent/catalog"')
+    for (const source of [parent, child]) expect(await readFile(source.path)).toEqual(source.bytes)
   })
 
   it('opens an existing V4 torn tail without repairing its bytes', async () => {
