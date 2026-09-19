@@ -105,6 +105,7 @@
     "verify-dsh-package-licenses": "tsx scripts/verify-dsh-package-licenses.ts",
     "verify-config-source-ownership": "tsx scripts/verify-config-source-ownership.ts",
     "verify-package-invariants": "tsx scripts/verify-package-invariants.ts",
+    "verify-package-meta": "tsx scripts/verify-package-meta.ts",
     "verify-built-package-invariants": "node scripts/verify-built-package-invariants.mjs",
     "verify-package-readme-model-experience": "tsx scripts/verify-package-readme-model-experience.ts",
     "verify-package-readme-summaries": "tsx scripts/verify-package-readme-summaries.ts",
