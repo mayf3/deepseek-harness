@@ -6,7 +6,7 @@
 import {
   type SessionListState, type SessionSearchResultItem, type SessionSummary,
 } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { WorkspaceId, WorkspacePinnedSession, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {
   SessionStatusSnapshot,
 } from '@deepseek-ai/dsh-client-ui-session/client'
@@ -146,20 +146,16 @@ export function workspaceLabel(cwd: string | undefined): string {
  * Project known account members by current Session recency.
  * @param sessionIds - authoritative account membership.
  * @param summaries - current Session summaries; members without a summary are omitted until it arrives.
- * @param pinnedAt - pin instants by Session; a pinned row ranks by the later of its pin instant and update recency.
  * @returns known members newest first, with Session identity as the deterministic tie-break.
  */
 export function orderByRecency(
   sessionIds: readonly SessionId[],
   summaries: SessionListState['byId'],
-  pinnedAt?: ReadonlyMap<SessionId, number>,
 ): SessionId[] {
   return sessionIds.flatMap((id) => {
     const summary = summaries[id]
     if (summary === undefined) return []
-    const pin = pinnedAt?.get(id)
-    const rank = pin === undefined ? summary.updatedAt : Math.max(pin, summary.updatedAt)
-    return [{ id, rank }]
+    return [{ id, rank: summary.updatedAt }]
   })
     .sort((a, b) => {
       if (a.rank !== b.rank) return b.rank - a.rank
@@ -173,12 +169,14 @@ export function orderByRecency(
  * @param memberIds - authoritative account membership.
  * @param savedOrder - previously saved browser-local order.
  * @param summaries - current Session summaries used to append newly known members by recency.
- * @returns retained saved slots followed by newly known members; departed members and unknown new members are omitted.
+ * @param rowState - global pin and archive membership; only account members can supplement the order.
+ * @returns missing pins, retained saved slots, new ordinary members, then missing archives; unknown new members wait for their summaries.
  */
 export function reconcileManualOrder(
   memberIds: readonly SessionId[],
   savedOrder: readonly string[] | undefined,
   summaries: SessionListState['byId'],
+  rowState?: Pick<SessionRowState, 'pinnedSessionIds' | 'archivedSessionIds'>,
 ): SessionId[] {
   const members = new Map(memberIds.map(id => [id as string, id]))
   const included = new Set<string>()
@@ -189,12 +187,21 @@ export function reconcileManualOrder(
     ordered.push(id)
     included.add(key)
   }
-  for (const id of orderByRecency(memberIds, summaries)) {
-    if (included.has(id)) continue
-    ordered.push(id)
+  const archived = new Set(rowState?.archivedSessionIds)
+  const pins: SessionId[] = []
+  for (const sessionId of rowState?.pinnedSessionIds ?? []) {
+    const id = members.get(sessionId)
+    if (id === undefined || included.has(id) || archived.has(id) || summaries[id] === undefined) continue
+    pins.push(id)
     included.add(id)
   }
-  return ordered
+  const ordinary: SessionId[] = []
+  const archives: SessionId[] = []
+  for (const id of orderByRecency([...members.values()].filter(id => !included.has(id)), summaries)) {
+    if (archived.has(id)) archives.push(id)
+    else ordinary.push(id)
+  }
+  return [...pins, ...ordered, ...ordinary, ...archives]
 }
 
 /**
@@ -247,8 +254,8 @@ function sessionVisible(
 
 /** Registry-global row state consumed by every tree derivation. */
 export interface SessionRowState {
-  /** Pin set with pin instants; pinned rows lead their section in the local order. */
-  pinnedSessions: readonly WorkspacePinnedSession[]
+  /** Registry-global pin ids; pinned rows lead their section in the local order. */
+  pinnedSessionIds: readonly SessionId[]
   /** Archive set; members keep their slots and show grayed while visible. */
   archivedSessionIds: readonly SessionId[]
   /** Archived-row visibility choice applied to lists and search alike. */
@@ -256,24 +263,23 @@ export interface SessionRowState {
 }
 
 /**
- * Move pinned rows to the front without disturbing relative order on either
- * side of the partition. Pinned rows keep the caller order among themselves —
- * recency or the persisted manual order, so pinned-to-pinned drags hold — and
- * archived rows keep their caller slots: the order never absorbs pin state,
- * so unpinning restores the row's kept position.
+ * Keep the visible New Session placeholder first, then partition pinned and
+ * ordinary rows without changing either partition's caller order.
  */
 function sectionMembers(
   members: readonly SessionSummary[],
   pinned: ReadonlySet<SessionId>,
   archived: ReadonlySet<SessionId>,
 ): SessionSummary[] {
+  const placeholders: SessionSummary[] = []
   const leading: SessionSummary[] = []
   const rest: SessionSummary[] = []
   for (const member of members) {
-    if (!archived.has(member.id) && pinned.has(member.id)) leading.push(member)
+    if (member.blank) placeholders.push(member)
+    else if (!archived.has(member.id) && pinned.has(member.id)) leading.push(member)
     else rest.push(member)
   }
-  return [...leading, ...rest]
+  return [...placeholders, ...leading, ...rest]
 }
 
 /**
@@ -425,7 +431,7 @@ export function deriveGroups(
   view: TreeView,
 ): GroupNode[] {
   const archived = new Set(rowState.archivedSessionIds)
-  const pinned = new Set(rowState.pinnedSessions.map(entry => entry.sessionId))
+  const pinned = new Set(rowState.pinnedSessionIds)
   const expandedGroups = new Set(view.expandedGroups)
   const descendants = indexSubagentDescendants(list.byId)
   const current = mainSessionId(list)
@@ -454,7 +460,16 @@ export function deriveGroups(
 }
 
 /**
- * Select flat-list members without deriving row presentation or ordering.
+ * Select complete flat-list membership, independently of archive visibility.
+ * @param list - sessions list snapshot.
+ * @returns known ordinary Session ids, including archives and only the current blank.
+ */
+export function sessionMemberIds(list: SessionListState): SessionId[] {
+  return visibleSessionIds(list, [], 'show')
+}
+
+/**
+ * Select visible flat-list members without deriving row presentation or ordering.
  * @param list - sessions list snapshot.
  * @param archivedSessionIds - registry-global archive set.
  * @param archivedFilter - archived-row visibility choice.
@@ -474,10 +489,10 @@ export function visibleSessionIds(
 }
 
 /**
- * Derive flat rows from the browser's ordered visible Session ids, with
+ * Derive flat rows from the browser's complete ordered Session ids, with
  * pinned rows fronted ahead of the supplied order.
  * @param list - sessions list snapshot used to select the ids.
- * @param sessionIds - known visible members in render order, including any pinned blank.
+ * @param sessionIds - complete account members in the selected order, including hidden archives.
  * @param rowState - registry-global pin and archive sets plus the archived filter.
  * @param statuses - unified UI status by Session.
  * @returns flat rows in sectioned order with current status indicators.
@@ -489,9 +504,16 @@ export function deriveFlat(
   statuses: SessionStatuses,
 ): SessionNode[] {
   const archived = new Set(rowState.archivedSessionIds)
-  const pinned = new Set(rowState.pinnedSessions.map(entry => entry.sessionId))
+  const pinned = new Set(rowState.pinnedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
-  return sectionMembers(sessionIds.map(id => list.byId[id] as SessionSummary), pinned, archived)
+  const current = mainSessionId(list)
+  const members = sessionIds.flatMap((id) => {
+    const session = list.byId[id]
+    return session !== undefined && sessionVisible(session, current, archived, rowState.archivedFilter)
+      ? [session]
+      : []
+  })
+  return sectionMembers(members, pinned, archived)
     .map(session => sessionNode(session, descendants, statuses, pinned, archived))
 }
 

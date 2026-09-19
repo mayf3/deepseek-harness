@@ -34,7 +34,7 @@ export interface WorkspaceSnapshot {
   /** Complete registry-global archive set in Host order. */
   readonly archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds']
   /** Complete registry-global pin set, most recently pinned first. */
-  readonly pinnedSessions: WorkspacePinValue['pinnedSessions']
+  readonly pinnedSessionIds: WorkspacePinValue['pinnedSessionIds']
   readonly state: 'idle' | 'loading' | 'error'
   readonly phase: WorkspaceListPhase
   readonly error: RemoteFailure | null
@@ -53,7 +53,7 @@ export interface WorkspaceFollowSink {
   /** Replace the complete archived Session set. */
   replaceArchived(sessionIds: WorkspaceArchiveValue['archivedSessionIds']): void
   /** Replace the complete pinned Session set. */
-  replacePinned(pinnedSessions: WorkspacePinValue['pinnedSessions']): void
+  replacePinned(pinnedSessionIds: WorkspacePinValue['pinnedSessionIds']): void
 }
 
 /**
@@ -62,7 +62,7 @@ export interface WorkspaceFollowSink {
 export class ClientWorkspaceModel implements WorkspaceFollowSink {
   private items: readonly WorkspaceView[] = []
   private archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds'] = []
-  private pinnedSessions: WorkspacePinValue['pinnedSessions'] = []
+  private pinnedSessionIds: WorkspacePinValue['pinnedSessionIds'] = []
   private state: WorkspaceSnapshot['state'] = 'loading'
   private phase: WorkspaceListPhase = 'pending'
   private error: RemoteFailure | null = null
@@ -185,7 +185,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
       this.installArchived(result.value.archivedSessionIds)
       // The Host drops an archived session's pin in the same durable write;
       // mirror that locally so no frame shows the row both archived and pinned.
-      this.installPinned(this.pinnedSessions.filter(entry => entry.sessionId !== sessionId))
+      this.installPinned(this.pinnedSessionIds.filter(id => id !== sessionId))
     }
     return result
   }
@@ -219,7 +219,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     const requestSeq = ++this.pinRequestSeq
     const result = await this.remote.pinSession({ sessionId })
     if (result.ok && requestSeq === this.pinRequestSeq) {
-      this.installPinned(result.value.pinnedSessions)
+      this.installPinned(result.value.pinnedSessionIds)
     }
     return result
   }
@@ -236,7 +236,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     const requestSeq = ++this.pinRequestSeq
     const result = await this.remote.unpinSession({ sessionId })
     if (result.ok && requestSeq === this.pinRequestSeq) {
-      this.installPinned(result.value.pinnedSessions)
+      this.installPinned(result.value.pinnedSessionIds)
     }
     return result
   }
@@ -251,7 +251,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     this.pinRequestSeq++
     this.installViews(baseline.items)
     this.installArchived(baseline.archivedSessionIds)
-    this.installPinned(baseline.pinnedSessions)
+    this.installPinned(baseline.pinnedSessionIds)
     this.state = 'idle'
     this.phase = 'ready'
     this.error = null
@@ -285,11 +285,11 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
 
   /**
    * Replace the pinned Session set from the current follow generation.
-   * @param pinnedSessions - complete Host-confirmed pin set, most recently pinned first.
+   * @param pinnedSessionIds - complete Host-confirmed pin set, most recently pinned first.
    */
-  replacePinned(pinnedSessions: WorkspacePinValue['pinnedSessions']): void {
+  replacePinned(pinnedSessionIds: WorkspacePinValue['pinnedSessionIds']): void {
     this.pinRequestSeq++
-    this.installPinned(pinnedSessions)
+    this.installPinned(pinnedSessionIds)
   }
 
   /** Keep the last complete projection visible while a lost carrier reconnects. */
@@ -333,7 +333,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     return {
       items: this.items,
       archivedSessionIds: this.archivedSessionIds,
-      pinnedSessions: this.pinnedSessions,
+      pinnedSessionIds: this.pinnedSessionIds,
       state: this.state,
       phase: this.phase,
       error: this.error,
@@ -347,11 +347,10 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     this.invalidate()
   }
 
-  private installPinned(pinnedSessions: WorkspacePinValue['pinnedSessions']): void {
-    if (pinnedSessions.length === this.pinnedSessions.length
-      && pinnedSessions.every((entry, index) => entry.sessionId === this.pinnedSessions[index]?.sessionId
-        && entry.pinnedAt === this.pinnedSessions[index]?.pinnedAt)) return
-    this.pinnedSessions = [...pinnedSessions]
+  private installPinned(pinnedSessionIds: WorkspacePinValue['pinnedSessionIds']): void {
+    if (pinnedSessionIds.length === this.pinnedSessionIds.length
+      && pinnedSessionIds.every((id, index) => id === this.pinnedSessionIds[index])) return
+    this.pinnedSessionIds = [...pinnedSessionIds]
     this.invalidate()
   }
 

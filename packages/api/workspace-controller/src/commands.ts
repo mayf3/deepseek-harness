@@ -10,7 +10,7 @@ import {
   WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import { pinnedSessionViews, workspaceView } from './feed.ts'
+import { workspaceView } from './feed.ts'
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
@@ -194,7 +194,7 @@ export class WorkspaceCommands {
       }
       throw error
     }
-    return { pinnedSessions: pinnedSessionViews(this.ctx.workspaceRegistry.pinnedSessions) }
+    return { pinnedSessionIds: [...this.ctx.workspaceRegistry.pinnedSessionIds] }
   }
 
   /**
@@ -206,7 +206,7 @@ export class WorkspaceCommands {
    */
   async unpinSession(request: WorkspaceUnpinSessionRequest): Promise<WorkspacePinValue> {
     await this.ctx.workspaceRegistry.unpinSession(request.sessionId)
-    return { pinnedSessions: pinnedSessionViews(this.ctx.workspaceRegistry.pinnedSessions) }
+    return { pinnedSessionIds: [...this.ctx.workspaceRegistry.pinnedSessionIds] }
   }
 
   private requireWorkspace(workspaceId: WorkspaceId): Workspace {

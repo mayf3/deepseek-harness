@@ -17,12 +17,12 @@ import type { WorkspaceEntityHost } from './entity.ts'
 export { WorkspaceMoveInvalidError } from './entity.ts'
 import { defaultWorkspaceTitle, realpathNormalize } from './paths.ts'
 import { workspaceDomainSpec } from './spec.ts'
-import type { PinnedSession, WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
+import type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 import type { Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts'
 
 export type { Workspace } from './types.ts'
 export { workspaceDomainState, workspaceRecord, workspaceDomainSpec } from './spec.ts'
-export type { PinnedSession, WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
+export type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 export { realpathNormalize } from './paths.ts'
 
 /** Identifies one workspace record (see `src/types.ts` for the brand rationale). */
@@ -267,7 +267,7 @@ export class WorkspaceRegistry extends Service {
       await this.setState({
         ...state,
         archivedSessionIds: [...state.archivedSessionIds, sessionId],
-        pinnedSessions: state.pinnedSessions.filter(entry => entry.id !== sessionId),
+        pinnedSessionIds: state.pinnedSessionIds.filter(id => id !== sessionId),
       })
     })
   }
@@ -298,19 +298,16 @@ export class WorkspaceRegistry extends Service {
   /**
    * The registry-global pin set: sessions surfaced ahead of every unpinned
    * session on grouping surfaces. Pinning never touches workspace accounting.
-   * @returns the pin entries in pin order (most recently pinned first), each
-   * carrying the epoch-millisecond `pinnedAt` it was pinned at.
+   * @returns Session ids in pin order (most recently pinned first).
    */
-  get pinnedSessions(): readonly PinnedSession[] {
-    return this.requireState().pinnedSessions
+  get pinnedSessionIds(): readonly SessionId[] {
+    return this.requireState().pinnedSessionIds
   }
 
   /**
-   * Pin one session durably, prepending it to the registry-global pin set
-   * with the current wall-clock time as its `pinnedAt`. The session must
-   * exist (live or in session persistence) and must not be archived (pinning
-   * and archival are mutually exclusive). An already pinned id resolves
-   * without writing and keeps its original `pinnedAt`.
+   * Pin one session durably, prepending it to the registry-global pin set.
+   * The session must exist (live or in session persistence) and must not be
+   * archived. An already pinned id resolves without writing or reordering.
    * @param sessionId - The session to pin.
    * @returns resolution after durability.
    */
@@ -318,7 +315,7 @@ export class WorkspaceRegistry extends Service {
     return this.enqueueOperation(async () => {
       // The chain slot serializes against every other registry write, so this
       // check-then-write pair cannot interleave with another pin or archive.
-      if (this.requireState().pinnedSessions.some(entry => entry.id === sessionId)) return
+      if (this.requireState().pinnedSessionIds.includes(sessionId)) return
       if (this.requireState().archivedSessionIds.includes(sessionId)) {
         throw new WorkspaceArchivedSessionPinError(sessionId)
       }
@@ -328,7 +325,7 @@ export class WorkspaceRegistry extends Service {
       const state = this.requireState()
       await this.setState({
         ...state,
-        pinnedSessions: [{ id: sessionId, pinnedAt: Date.now() }, ...state.pinnedSessions],
+        pinnedSessionIds: [sessionId, ...state.pinnedSessionIds],
       })
     })
   }
@@ -346,10 +343,10 @@ export class WorkspaceRegistry extends Service {
       // The chain slot serializes against every other registry write, so this
       // check-then-write pair cannot interleave with a concurrent pin.
       const state = this.requireState()
-      if (!state.pinnedSessions.some(entry => entry.id === sessionId)) return
+      if (!state.pinnedSessionIds.includes(sessionId)) return
       await this.setState({
         ...state,
-        pinnedSessions: state.pinnedSessions.filter(entry => entry.id !== sessionId),
+        pinnedSessionIds: state.pinnedSessionIds.filter(id => id !== sessionId),
       })
     })
   }
@@ -431,7 +428,7 @@ export class WorkspaceRegistry extends Service {
         initialized: true,
         workspaceIds: [id, ...state.workspaceIds],
         archivedSessionIds: state.archivedSessionIds,
-        pinnedSessions: state.pinnedSessions,
+        pinnedSessionIds: state.pinnedSessionIds,
       })
     } catch (error) {
       this.entities.delete(id)
@@ -464,7 +461,7 @@ export class WorkspaceRegistry extends Service {
       initialized: true,
       workspaceIds: state.workspaceIds.filter(workspaceId => workspaceId !== id),
       archivedSessionIds: state.archivedSessionIds,
-      pinnedSessions: state.pinnedSessions,
+      pinnedSessionIds: state.pinnedSessionIds,
     }
     await this.setState({
       ...nextState,
@@ -522,7 +519,7 @@ export class WorkspaceRegistry extends Service {
       initialized: state.initialized,
       workspaceIds: state.workspaceIds,
       archivedSessionIds: state.archivedSessionIds,
-      pinnedSessions: state.pinnedSessions,
+      pinnedSessionIds: state.pinnedSessionIds,
     })
   }
 
@@ -609,14 +606,14 @@ export class WorkspaceRegistry extends Service {
         initialized: false,
         workspaceIds,
         archivedSessionIds: state.archivedSessionIds,
-        pinnedSessions: state.pinnedSessions,
+        pinnedSessionIds: state.pinnedSessionIds,
       })
     }
     await this.setState({
       initialized: true,
       workspaceIds,
       archivedSessionIds: state.archivedSessionIds,
-      pinnedSessions: state.pinnedSessions,
+      pinnedSessionIds: state.pinnedSessionIds,
     })
   }
 

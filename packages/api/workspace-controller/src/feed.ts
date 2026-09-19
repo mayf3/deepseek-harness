@@ -3,7 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Deque } from '@deepseek-ai/dsh-deque'
 import type { DomainChanged } from '@deepseek-ai/dsh-storage-domain'
-import type { PinnedSession, Workspace, WorkspaceRecord } from '@deepseek-ai/dsh-workspace'
+import type { Workspace, WorkspaceRecord } from '@deepseek-ai/dsh-workspace'
 import {
   workspaceDomainState,
   workspaceRecord,
@@ -12,7 +12,6 @@ import {
 import type {
   WorkspaceBaseline,
   WorkspaceFollowFrame,
-  WorkspacePinnedSession,
   WorkspaceView,
 } from './types.ts'
 
@@ -44,19 +43,6 @@ function changedWorkspaceView(workspaceId: string, value: unknown): WorkspaceVie
   }
 }
 
-/**
- * Project registry pin entries into their Remote values.
- * @param entries - authoritative registry pin entries.
- * @returns detached pin projections for Remote consumers.
- */
-export function pinnedSessionViews(entries: readonly PinnedSession[]): WorkspacePinnedSession[] {
-  return entries.map(entry => ({ sessionId: entry.id, pinnedAt: entry.pinnedAt }))
-}
-
-/** One comparable key per pin entry; pinnedAt participates so a re-pin at a new instant publishes. */
-const pinKeys = (entries: readonly PinnedSession[]): string[] =>
-  entries.map(entry => `${entry.id}@${entry.pinnedAt}`)
-
 /** Owns Workspace domain observation and all active follow generations. */
 export class WorkspaceFeed {
   private readonly followers = new Set<WorkspaceFollower>()
@@ -71,7 +57,7 @@ export class WorkspaceFeed {
     this.knownIds = new Set(baseline.map(workspace => String(workspace.id)))
     this.order = baseline.map(workspace => String(workspace.id))
     this.archived = ctx.workspaceRegistry.archivedSessionIds.map(String)
-    this.pinned = pinKeys(ctx.workspaceRegistry.pinnedSessions)
+    this.pinned = ctx.workspaceRegistry.pinnedSessionIds.map(String)
     ctx.on('domain/changed', (change: DomainChanged) => { this.changed(change) })
     ctx.effect(() => () => {
       for (const follower of this.followers) follower.close()
@@ -87,7 +73,7 @@ export class WorkspaceFeed {
     return {
       items: this.ctx.workspaceRegistry.list().map(workspaceView),
       archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds],
-      pinnedSessions: pinnedSessionViews(this.ctx.workspaceRegistry.pinnedSessions),
+      pinnedSessionIds: [...this.ctx.workspaceRegistry.pinnedSessionIds],
     }
   }
 
@@ -132,10 +118,10 @@ export class WorkspaceFeed {
         this.archived = nextArchived
         this.publish({ type: 'archived', archivedSessionIds: [...state.archivedSessionIds] })
       }
-      const nextPinned = pinKeys(state.pinnedSessions)
+      const nextPinned = state.pinnedSessionIds.map(String)
       if (!sameStrings(this.pinned, nextPinned)) {
         this.pinned = nextPinned
-        this.publish({ type: 'pinned', pinnedSessions: pinnedSessionViews(state.pinnedSessions) })
+        this.publish({ type: 'pinned', pinnedSessionIds: [...state.pinnedSessionIds] })
       }
       return
     }

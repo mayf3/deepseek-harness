@@ -73,7 +73,7 @@ export interface IWorkspaces {
    */
   pinSession(sessionId: SessionId): Promise<void>
   /**
-   * Unpin a Session back to its natural list position.
+   * Remove a Session's pin without changing its saved Session order.
    * @param sessionId - Session to unpin.
    */
   unpinSession(sessionId: SessionId): Promise<void>

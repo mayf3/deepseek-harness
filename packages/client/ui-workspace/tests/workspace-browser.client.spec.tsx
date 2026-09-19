@@ -71,7 +71,7 @@ const workspaceState = (
 ): WorkspaceSnapshot => ({
   items,
   archivedSessionIds,
-  pinnedSessions: pinnedSessionIds.map(sessionId => ({ sessionId, pinnedAt: 1 })),
+  pinnedSessionIds,
   state: 'idle',
   phase: 'ready',
   error: null,
@@ -297,10 +297,7 @@ describe('WorkspaceBrowser', () => {
     rerender(b, { useWorkspaces: hook(workspaceState([])) })
     await waitFor(() => {
       expect(b.store.getSnapshot().groupExpansion).toEqual({})
-      expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({
-        [UNGROUPED_KEY]: [],
-        [FLAT_SESSION_ORDER_KEY]: [],
-      })
+      expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({})
     })
   })
 
@@ -346,7 +343,7 @@ describe('WorkspaceBrowser', () => {
       useSessions: hook(sessionState([old, { ...blank, blank: false, updatedAt: 20 }], { main: blank.id })),
       useWorkspaces: hook(groups(['old', 'blank'])),
     })
-    expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(['blank', 'old'])
+    expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(['blank', 'old', 'absent'])
   })
 
   it('reconciles a late blank and its first prompt while the sidebar is collapsed', async () => {
@@ -357,9 +354,7 @@ describe('WorkspaceBrowser', () => {
       useSessions: hook(sessionState([old])),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['old', 'blank'])])),
     })
-    await waitFor(() => {
-      expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['old'])
-    })
+    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toBeUndefined()
 
     rerender(b, {
       useSessions: hook(sessionState([old, blank], { main: blank.id })),
@@ -396,6 +391,31 @@ describe('WorkspaceBrowser', () => {
       const persisted = JSON.parse(localStorage.getItem('dsh.workspace.view.v5') ?? '{}') as Record<string, unknown>
       expect(persisted).not.toHaveProperty('sessionUpdatedAtByAccount')
     })
+  })
+
+  it('hides archived Sessions when a persisted v5 view has no archived filter', () => {
+    const key = 'dsh.workspace.view.v5'
+    const previous = localStorage.getItem(key)
+    try {
+      localStorage.setItem(key, JSON.stringify({
+        groupBy: 'workspace', orderBy: 'manual', groupExpansion: { alpha: true }, sessionOrderByAccount: {},
+      }))
+      const b = mount({
+        useSessions: hook(sessionState([summary('alive', 2), summary('gone', 1)])),
+        useWorkspaces: hook(workspaceState([workspace('alpha', ['alive', 'gone'])], [sid('gone')])),
+      })
+      expect(b.store.getSnapshot().archivedFilter).toBeUndefined()
+      expect(screen.getByText('alive')).toBeTruthy()
+      expect(screen.queryByText('gone')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: '显示已归档' }))
+      expect(b.store.getSnapshot().archivedFilter).toBe('show')
+      expect(screen.getByText('gone')).toBeTruthy()
+    } finally {
+      cleanup()
+      if (previous === null) localStorage.removeItem(key)
+      else localStorage.setItem(key, previous)
+    }
   })
 
   it('renders the grouped tree by default and switches to the flat list via Group by', () => {
@@ -557,10 +577,7 @@ describe('WorkspaceBrowser', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
-    await waitFor(() => {
-      expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY])
-        .toEqual(['one', 'two', 'three'])
-    })
+    expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toBeUndefined()
 
     const one = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
     const three = screen.getByText('three').closest('[role="treeitem"]') as HTMLElement
@@ -807,15 +824,13 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: '会话“three”的操作' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '置顶会话' }))
     expect(pinSession).toHaveBeenCalledWith(sid('three'))
-    // The seeded group order fronts the pin; the flat account starts from the
-    // pinned row and the membership reconciler appends the remaining rows.
     await waitFor(() => {
       expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['three', 'one', 'two'])
     })
     expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toEqual(['three', 'one', 'two'])
   })
 
-  it('leaves saved orders alone for updated-mode pins and for unpins', async () => {
+  it('saves a Pin reorder without leaving Last updated and leaves positions unchanged on unpin', async () => {
     localStorage.clear()
     const pinSession = vi.fn(async () => {})
     const unpinSession = vi.fn(async () => {})
@@ -830,12 +845,16 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '置顶会话' }))
     expect(pinSession).toHaveBeenCalledWith(sid('two'))
     await act(async () => { await Promise.resolve() })
-    expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({})
+    expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({
+      alpha: ['two', 'one'],
+      [UNGROUPED_KEY]: [],
+      [FLAT_SESSION_ORDER_KEY]: ['two', 'one'],
+    })
+    expect(b.store.getSnapshot().orderBy).toBe('updated')
 
-    // Unpinning in manual mode does not rewrite any saved slot: the orders the
-    // membership reconciler seeded on entering manual mode stay as they are.
     rerender(b, { useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])], [], [sid('two')])) })
-    act(() => { b.store.actions.setOrderBy('manual', {}) })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '手动排序' }))
     const before = b.store.getSnapshot().sessionOrderByAccount
     expect(before).toEqual({
       alpha: ['one', 'two'],
@@ -847,6 +866,138 @@ describe('WorkspaceBrowser', () => {
     expect(unpinSession).toHaveBeenCalledWith(sid('two'))
     await act(async () => { await Promise.resolve() })
     expect(b.store.getSnapshot().sessionOrderByAccount).toEqual(before)
+  })
+
+  it('keeps newer saved orders when a pending Pin completes', async () => {
+    const pending = Promise.withResolvers<undefined>()
+    const pinSession = vi.fn(() => pending.promise)
+    const b = mount({
+      useSessions: hook(sessionState([summary('one', 3), summary('two', 2), summary('three', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'three'])])),
+      pinSession,
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.click(screen.getByRole('button', { name: '会话“three”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '置顶会话' }))
+    expect(pinSession).toHaveBeenCalledWith(sid('three'))
+    act(() => {
+      b.store.actions.setSessionOrder('alpha', ['two', 'one', 'three'], {})
+      b.store.actions.setSessionOrder(FLAT_SESSION_ORDER_KEY, ['two', 'one', 'three'], {})
+    })
+    await act(async () => { pending.resolve(undefined) })
+    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['three', 'two', 'one'])
+    expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toEqual(['three', 'two', 'one'])
+  })
+
+  it('uses current membership when a Workspace disappears during a pending Pin', async () => {
+    const pending = Promise.withResolvers<undefined>()
+    const b = mount({
+      useSessions: hook(sessionState([summary('one', 2), summary('two', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
+      pinSession: vi.fn(() => pending.promise),
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.click(screen.getByRole('button', { name: '会话“two”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '置顶会话' }))
+    rerender(b, { useWorkspaces: hook(workspaceState([])) })
+    await act(async () => { pending.resolve(undefined) })
+    expect(b.store.getSnapshot().sessionOrderByAccount).not.toHaveProperty('alpha')
+    expect(b.store.getSnapshot().sessionOrderByAccount[UNGROUPED_KEY]).toEqual(['two', 'one'])
+    expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toEqual(['two', 'one'])
+  })
+
+  it('keeps saved Workspace members with temporarily missing summaries when pinning in Last updated', async () => {
+    localStorage.clear()
+    const b = mount({
+      useSessions: hook(sessionState([summary('one', 3), summary('two', 2), summary('three', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'three'])])),
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.click(screen.getByRole('button', { name: '会话“one”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '置顶会话' }))
+    await act(async () => { await Promise.resolve() })
+    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['one', 'two', 'three'])
+    rerender(b, {
+      useSessions: hook(sessionState([summary('one', 3), summary('three', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'three'])], [], [sid('one')])),
+    })
+    fireEvent.click(screen.getByRole('button', { name: '会话“three”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '置顶会话' }))
+    await act(async () => { await Promise.resolve() })
+    expect(b.store.getSnapshot().orderBy).toBe('updated')
+    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['three', 'one', 'two'])
+  })
+
+  it.each(['workspace', 'flat', 'ungrouped'] as const)(
+    'keeps complete %s order through archived filters and both drag partitions',
+    async (mode) => {
+      const account = mode === 'flat' ? FLAT_SESSION_ORDER_KEY : mode === 'ungrouped' ? UNGROUPED_KEY : 'alpha'
+      const saved = ['a', 'p', 'kept-archive', 'b', 'q', 'c']
+      const preferences = createWorkspaceViewStore().create()
+      preferences.actions.setGroupBy(mode === 'flat' ? 'flat' : 'workspace')
+      preferences.actions.setGroupExpanded(account, true)
+      preferences.actions.setSessionOrder(account, saved, {})
+      const items = ['a', 'p', 'kept-archive', 'b', 'q', 'c', 'missing-archive']
+        .map((id, index) => summary(id, 100 - index))
+      const b = mount({
+        useSessions: hook(sessionState(items)),
+        useWorkspaces: hook(workspaceState(
+          mode === 'ungrouped' ? [] : [workspace('alpha', items.map(item => item.id))],
+          [sid('kept-archive'), sid('missing-archive')],
+          [sid('p'), sid('q')],
+        )),
+      })
+      const names = () => screen.getAllByRole('treeitem')
+        .filter(row => row.getAttribute('aria-expanded') === null)
+        .map(row => row.querySelector('[class*="title"]')?.textContent)
+      expect(names()).toEqual(['p', 'q', 'a', 'b', 'c'])
+      expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(saved)
+
+      act(() => { b.store.actions.setArchivedFilter('only') })
+      await waitFor(() => { expect(names()).toEqual(['kept-archive', 'missing-archive']) })
+      expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(saved)
+      act(() => { b.store.actions.setArchivedFilter('default') })
+      await waitFor(() => { expect(names()).toEqual(['p', 'q', 'a', 'b', 'c']) })
+
+      const dragBefore = (sourceId: string, targetId: string): void => {
+        const source = screen.getByText(sourceId).closest('[role="treeitem"]') as HTMLElement
+        const target = screen.getByText(targetId).closest('[role="treeitem"]') as HTMLElement
+        target.getBoundingClientRect = () => ({
+          top: 100, bottom: 134, left: 0, right: 200, width: 200, height: 34, x: 0, y: 100, toJSON: () => ({}),
+        })
+        fireEvent.dragStart(source, { dataTransfer: dragData() })
+        fireDrag(target, 'drop', 105)
+      }
+      dragBefore('b', 'a')
+      expect(b.store.getSnapshot().sessionOrderByAccount[account])
+        .toEqual(['b', 'a', 'p', 'kept-archive', 'q', 'c', 'missing-archive'])
+      await waitFor(() => { expect(names()).toEqual(['p', 'q', 'b', 'a', 'c']) })
+      dragBefore('q', 'p')
+      expect(b.store.getSnapshot().sessionOrderByAccount[account])
+        .toEqual(['b', 'a', 'q', 'p', 'kept-archive', 'c', 'missing-archive'])
+      await waitFor(() => { expect(names()).toEqual(['q', 'p', 'b', 'a', 'c']) })
+      b.view.unmount()
+
+      const restored = mount({ useSessions: b.props.useSessions, useWorkspaces: b.props.useWorkspaces })
+      expect(names()).toEqual(['q', 'p', 'b', 'a', 'c'])
+      act(() => { restored.store.actions.setArchivedFilter('only') })
+      await waitFor(() => { expect(names()).toEqual(['kept-archive', 'missing-archive']) })
+    },
+  )
+
+  it('does not replace a saved flat order when the archived-only view is empty', () => {
+    const preferences = createWorkspaceViewStore().create()
+    preferences.actions.setGroupBy('flat')
+    preferences.actions.setSessionOrder(FLAT_SESSION_ORDER_KEY, ['c', 'a', 'b'], {})
+    const b = mount({
+      useSessions: hook(sessionState([summary('a', 3), summary('b', 2), summary('c', 1)])),
+    })
+    act(() => { b.store.actions.setArchivedFilter('only') })
+    expect(screen.queryByRole('treeitem')).toBeNull()
+    expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toEqual(['c', 'a', 'b'])
+    act(() => { b.store.actions.setArchivedFilter('default') })
+    expect(screen.getAllByRole('treeitem').map(row => row.querySelector('[class*="title"]')?.textContent))
+      .toEqual(['c', 'a', 'b'])
   })
 
   it('surfaces pin and unpin rejections as toasts', async () => {
@@ -914,6 +1065,42 @@ describe('WorkspaceBrowser', () => {
     rerender(b, { wide: false })
     rerender(b, { wide: true })
     expect(screen.queryByRole('menuitem', { name: '显示已归档' })).toBeNull()
+  })
+
+  it.each(['show', 'only'] as const)('does not open an archived row in the %s filter', (filter) => {
+    const open = vi.fn()
+    const b = mount({
+      useSessions: hook(sessionState([summary('gone', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['gone'])], [sid('gone')])),
+      open,
+    })
+    act(() => { b.store.actions.setArchivedFilter(filter) })
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.click(screen.getByText('gone'))
+    expect(open).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert').textContent).toBe('已归档对话暂时无法查看，请取消归档后查看')
+    expect(screen.getByText('gone').closest('[role="treeitem"]')?.getAttribute('aria-description'))
+      .toBe('已归档对话暂时无法查看，请取消归档后查看')
+  })
+
+  it('does not open an archived search result or clear its query', async () => {
+    const open = vi.fn()
+    const b = mount({
+      useSessions: hook(sessionState([summary('gone', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['gone'])], [sid('gone')])),
+      open,
+    })
+    act(() => { b.store.actions.setArchivedFilter('show') })
+    fireEvent.click(screen.getByRole('button', { name: '搜索会话' }))
+    const input = screen.getByPlaceholderText('搜索会话名称')
+    fireEvent.change(input, { target: { value: 'gone' } })
+    await act(async () => { await Promise.resolve() })
+    const row = within(screen.getByRole('tree', { name: '搜索结果' })).getByRole('treeitem')
+    fireEvent.click(row)
+    expect(open).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert').textContent).toBe('已归档对话暂时无法查看，请取消归档后查看')
+    expect(row.getAttribute('aria-description')).toBe('已归档对话暂时无法查看，请取消归档后查看')
+    expect((input as HTMLInputElement).value).toBe('gone')
   })
 
   it('offers unarchive on archived search results only', async () => {
@@ -1654,12 +1841,10 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['two', 'one', 'three'])
   })
 
-  it('drags a pinned row within the pinned block, rewriting only pinned slots', () => {
+  it('drags a pinned row by moving its position in the complete Session sequence', () => {
     const sessions = sessionState([
       summary('one', 4), summary('two', 3), summary('three', 2), summary('four', 1),
     ])
-    // Interleaved manual slots: pinned rows front in render while unpinned
-    // members keep their account positions when the pinned block reorders.
     createWorkspaceViewStore().create().actions.setSessionOrder('alpha', ['three', 'one', 'four', 'two'], {})
     const b = mount({
       useSessions: hook(sessions),
@@ -1680,7 +1865,7 @@ describe('WorkspaceBrowser', () => {
     fireEvent.dragStart(two, { dataTransfer: dragData() })
     fireDrag(one, 'dragOver', 105)
     fireDrag(one, 'drop', 105)
-    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['three', 'two', 'four', 'one'])
+    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['three', 'two', 'one', 'four'])
     expect(screen.getAllByRole('treeitem').slice(1).map(row => row.textContent)).toEqual([
       expect.stringContaining('two'), expect.stringContaining('one'),
       expect.stringContaining('three'), expect.stringContaining('four'),
@@ -1695,7 +1880,7 @@ describe('WorkspaceBrowser', () => {
     })
     fireEvent.dragStart(oneAgain, { dataTransfer: dragData() })
     fireDrag(twoAgain, 'drop', 130)
-    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['three', 'two', 'four', 'one'])
+    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['three', 'two', 'one', 'four'])
   })
 
   it('keeps pinned and unpinned rows in separate drag domains', () => {
@@ -1773,7 +1958,7 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(before)
   })
 
-  it('drags pinned rows within the flat pinned block and keeps cross-block targets inert', async () => {
+  it('drags pinned rows within the flat pinned block and keeps cross-block targets inert', () => {
     const sessions = sessionState([summary('one', 3), summary('two', 2), summary('three', 1)])
     const b = mount({
       useSessions: hook(sessions),
@@ -1781,10 +1966,7 @@ describe('WorkspaceBrowser', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
-    await waitFor(() => {
-      expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY])
-        .toEqual(['one', 'two', 'three'])
-    })
+    expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toBeUndefined()
     const one = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
     const two = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
     for (const row of [one, two]) {
@@ -1872,7 +2054,7 @@ describe('WorkspaceBrowser', () => {
       top: 150, bottom: 184, left: 0, right: 200, width: 200, height: 34, x: 0, y: 150, toJSON: () => ({}),
     })
     fireDrag(two, 'drop', 155)
-    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['two'])
+    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toBeUndefined()
   })
 
   it('drag end without a drop clears markers; bottom-half drop appends past the last row', () => {
@@ -1891,7 +2073,7 @@ describe('WorkspaceBrowser', () => {
     fireEvent.dragEnd(one)
     // The drag ended: rows no longer accept drops.
     fireDrag(two, 'drop', 180)
-    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['one', 'two'])
+    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toBeUndefined()
 
     // Bottom half of the last row: append (anchor omitted).
     fireEvent.dragStart(one, { dataTransfer })

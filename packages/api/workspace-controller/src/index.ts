@@ -134,7 +134,7 @@ export class WorkspaceController extends TypertRemoteService {
   }
 
   /**
-   * Return one pinned Session to its natural list position.
+   * Remove one Session's pin without changing its saved Session order.
    * @param request - Session identity to unpin.
    * @returns the complete resulting pin set, most recently pinned first.
    */

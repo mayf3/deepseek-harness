@@ -88,7 +88,7 @@ function workspaceState(
   return {
     items,
     archivedSessionIds,
-    pinnedSessions: [],
+    pinnedSessionIds: [],
     phase,
     state: phase === 'ready' ? 'idle' : 'loading',
     error: null,

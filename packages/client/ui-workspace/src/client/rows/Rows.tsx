@@ -2,9 +2,8 @@
  * Workspace browser tree row components (figma Cell set 14:3080): pure presentational —
  * all data and callbacks arrive via props. Hover swaps (folder->chevron,
  * time->ellipsis, action buttons) are CSS-only, and a session row's clipped
- * title is scrolled programmatically while the row is hovered. Row ... menus are
- * visual-only except workspace Rename/Delete and session Rename/Fork/Archive; the
- * session and workspace hover cards are suppressed while a menu is open.
+ * title is scrolled programmatically while the row is hovered. Session and
+ * Workspace hover cards are suppressed while a menu is open.
  */
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
@@ -412,6 +411,7 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }: 
       className={clsx(css.searchResultRow, selected && css.selected, result.archived && css.archived)}
       role="treeitem"
       aria-selected={selected}
+      aria-description={result.archived ? t('toast.archivedNotOpenable') : undefined}
       onClick={() => { onOpen(result.id) }}
     >
       <span className={css.searchResultHeading}>
@@ -542,6 +542,7 @@ export function SessionNodeItem({
       )}
       role="treeitem"
       aria-selected={selected}
+      aria-description={row.archived ? t('toast.archivedNotOpenable') : undefined}
       onClick={() => { onOpen(node.id) }}
       onPointerEnter={() => { revealClippedTitle(titleRef.current, true) }}
       onPointerLeave={() => { revealClippedTitle(titleRef.current, false) }}

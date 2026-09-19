@@ -173,9 +173,9 @@ export class TestWorkspaces implements IWorkspaces {
       return
     }
     await this.update((draft) => {
-      draft.pinnedSessions = [
-        { sessionId, pinnedAt: Date.now() },
-        ...draft.pinnedSessions.filter(entry => entry.sessionId !== sessionId),
+      draft.pinnedSessionIds = [
+        sessionId,
+        ...draft.pinnedSessionIds.filter(id => id !== sessionId),
       ]
     })
   }
@@ -193,7 +193,7 @@ export class TestWorkspaces implements IWorkspaces {
       return
     }
     await this.update((draft) => {
-      draft.pinnedSessions = draft.pinnedSessions.filter(entry => entry.sessionId !== sessionId)
+      draft.pinnedSessionIds = draft.pinnedSessionIds.filter(id => id !== sessionId)
     })
   }
 }

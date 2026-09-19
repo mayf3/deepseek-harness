@@ -9,7 +9,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   type ArchivedFilter,
   deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey, owningParentFolder,
-  pinCurrentBlank, reconcileManualOrder, visibleSessionIds, workspaceLabel, UNGROUPED_KEY,
+  pinCurrentBlank, reconcileManualOrder, sessionMemberIds, visibleSessionIds, workspaceLabel, UNGROUPED_KEY,
 } from '../src/client/tree.ts'
 import { createWorkspaceViewStore } from '../src/client/stores.ts'
 
@@ -51,7 +51,7 @@ const rowState = (options: {
   archived?: readonly string[]
   archivedFilter?: ArchivedFilter
 } = {}) => ({
-  pinnedSessions: (options.pinned ?? []).map(id => ({ sessionId: sid(id), pinnedAt: 1 })),
+  pinnedSessionIds: (options.pinned ?? []).map(sid),
   archivedSessionIds: (options.archived ?? []).map(sid),
   archivedFilter: options.archivedFilter ?? 'default' as const,
 })
@@ -72,6 +72,26 @@ describe('owningGroupKey', () => {
 })
 
 describe('Session ordering', () => {
+  it.each(['workspace', 'ungrouped', 'flat'] as const)('keeps the current New Session before pins in %s', (mode) => {
+    const sessions = withMain(list(
+      summary('pin', 30),
+      summary('ordinary', 20),
+      { ...summary('blank', 0), blank: true },
+    ), sid('blank'))
+    const order = pinCurrentBlank(sessions.ids, sid('blank'))
+    const state = rowState({ pinned: ['pin'] })
+    const rows = mode === 'flat'
+      ? deriveFlat(sessions, order, state, noAttention)
+      : deriveGroups(
+        sessions,
+        mode === 'workspace' ? [workspace('alpha', order)] : [],
+        state,
+        noAttention,
+        view([mode === 'workspace' ? 'alpha' : UNGROUPED_KEY], order),
+      )[0]!.sessions
+    expect(rows.map(row => row.id)).toEqual([sid('blank'), sid('pin'), sid('ordinary')])
+  })
+
   it('orders known members by recency with a stable identity tie-break', () => {
     const summaries = list(summary('tie-b', 20), summary('older', 10), summary('tie-a', 20)).byId
     expect(orderByRecency(
@@ -80,14 +100,18 @@ describe('Session ordering', () => {
     )).toEqual([sid('tie-a'), sid('tie-b'), sid('older')])
   })
 
-  it('ranks a pinned member by the later of its pin instant and update recency', () => {
-    const summaries = list(summary('stale-pin', 10), summary('fresh-pin', 30), summary('plain', 20)).byId
-    const pinnedAt = new Map([[sid('stale-pin'), 25], [sid('fresh-pin'), 5]])
-    expect(orderByRecency(
-      [sid('stale-pin'), sid('fresh-pin'), sid('plain')],
-      summaries,
-      pinnedAt,
-    )).toEqual([sid('fresh-pin'), sid('stale-pin'), sid('plain')])
+  it('orders each partition strictly by Session recency, independent of pin-array order', () => {
+    const sessions = list(summary('stale-pin', 10), summary('fresh-pin', 30), summary('plain', 20))
+    const state = {
+      ...noRows,
+      pinnedSessionIds: [
+        sid('stale-pin'),
+        sid('fresh-pin'),
+      ],
+    }
+    const order = orderByRecency(sessions.ids, sessions.byId)
+    expect(deriveFlat(sessions, order, state, noAttention).map(row => row.id))
+      .toEqual([sid('fresh-pin'), sid('stale-pin'), sid('plain')])
   })
 
   it('reconciles retained manual slots and appends newly known members by recency', () => {
@@ -99,6 +123,39 @@ describe('Session ordering', () => {
     )).toEqual([
       sid('saved-without-summary'), sid('kept'), sid('newer'), sid('older'),
     ])
+  })
+
+  it('supplements only missing account members with pins first and archives last', () => {
+    const sessions = list(
+      summary('saved-archive', 80), summary('saved-plain', 1), summary('saved-pin', 2),
+      summary('pin-a', 5), summary('pin-b', 6), summary('new-plain', 100),
+      summary('archive-newer', 90), summary('archive-older', 10), summary('both', 50),
+      summary('outside', 200),
+    )
+    const members = [...sessions.ids.filter(id => id !== 'outside'), sid('pending-pin')]
+    const saved = ['saved-archive', 'saved-plain', 'saved-pin']
+    const state = rowState({
+      pinned: ['outside', 'pin-b', 'saved-pin', 'both', 'pin-a', 'pending-pin'],
+      archived: ['archive-older', 'saved-archive', 'both', 'archive-newer'],
+    })
+    const complete = reconcileManualOrder(members, saved, sessions.byId, state)
+    expect(complete).toEqual([
+      'pin-b', 'pin-a', 'saved-archive', 'saved-plain', 'saved-pin', 'new-plain',
+      'archive-newer', 'both', 'archive-older',
+    ])
+    expect(reconcileManualOrder(members, complete, sessions.byId, state)).toEqual(complete)
+    expect(saved).toEqual(['saved-archive', 'saved-plain', 'saved-pin'])
+  })
+
+  it('keeps archive filtering out of complete flat membership', () => {
+    const sessions = list(summary('plain', 1), summary('archived', 2))
+    const members = sessionMemberIds(sessions)
+    expect(members).toEqual(['plain', 'archived'])
+    expect(deriveFlat(sessions, members, rowState({ archived: ['archived'] }), noAttention).map(row => row.id))
+      .toEqual(['plain'])
+    expect(deriveFlat(sessions, members, rowState({ archived: ['archived'], archivedFilter: 'only' }), noAttention)
+      .map(row => row.id)).toEqual(['archived'])
+    expect(members).toEqual(['plain', 'archived'])
   })
 
   it('pins only the selected blank without changing the base order', () => {
@@ -178,7 +235,7 @@ describe('deriveGroups', () => {
       sessions, [workspace('first', ['shown', 'current-blank', 'stale-blank'])],
       noRows, noAttention, view(['first']),
     )
-    expect(groups[0]!.sessions.map(session => session.id)).toEqual([real.id, currentBlank.id])
+    expect(groups[0]!.sessions.map(session => session.id)).toEqual([currentBlank.id, real.id])
     const blankNode = groups[0]!.sessions.find(session => session.id === currentBlank.id)!
     // The stored placeholder title stays canonical; the renderer swaps in
     // the localized New Session label via the blank flag.
@@ -665,6 +722,40 @@ describe('createWorkspaceViewStore', () => {
     const store = createWorkspaceViewStore().create()
     store.actions.syncSessionOrders({ alpha: ['one'] })
     expect(store.getSnapshot().sessionOrderByAccount).toEqual({})
+  })
+
+  it('saves Pin positions and complete accounts without changing the selected ordering mode', () => {
+    const store = createWorkspaceViewStore().create()
+    store.actions.pinSessionOrder('old', ['alpha'], {
+      members: {
+        alpha: [sid('new'), sid('archive'), sid('old')],
+        beta: [sid('other-archive')],
+      },
+      summaries: list(summary('new', 3), summary('old', 2), summary('archive', 1), summary('other-archive', 0)).byId,
+      rowState: rowState({ archived: ['archive', 'other-archive'] }),
+    })
+    expect(store.getSnapshot()).toMatchObject({
+      orderBy: 'updated',
+      sessionOrderByAccount: { alpha: ['old', 'new', 'archive'], beta: ['other-archive'] },
+    })
+    store.actions.setOrderBy('manual', { alpha: ['new', 'old', 'archive'], beta: ['other-archive'] })
+    store.actions.setSessionOrder('alpha', ['old', 'new', 'archive'], {
+      alpha: ['new', 'old', 'archive'], beta: ['other-archive', 'missing-archive'],
+    })
+    expect(store.getSnapshot().sessionOrderByAccount)
+      .toEqual({ alpha: ['old', 'new', 'archive'], beta: ['other-archive', 'missing-archive'] })
+  })
+
+  it('uses current saved positions when a Pin source carries an earlier order', () => {
+    const store = createWorkspaceViewStore().create()
+    const source = {
+      members: { alpha: [sid('a'), sid('b'), sid('c')] },
+      summaries: list(summary('a', 3), summary('b', 2), summary('c', 1)).byId,
+      rowState: noRows,
+    }
+    store.actions.setSessionOrder('alpha', ['b', 'a', 'c'], {})
+    store.actions.pinSessionOrder('c', ['alpha'], source)
+    expect(store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['c', 'b', 'a'])
   })
 
   it('removes view state outside the retained Workspace key set', () => {

@@ -20,7 +20,6 @@ import type {
   WorkspaceUnpinSessionRequest,
   WorkspaceValue,
   WorkspaceId,
-  WorkspacePinnedSession,
   WorkspaceView,
 } from '../src/types.ts'
 import { RemoteError, type RemoteFailure, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
@@ -28,9 +27,6 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 const sid = (id: string): SessionId => id as SessionId
 const wid = (id: string): WorkspaceId => id as WorkspaceId
-const pin = (id: string, pinnedAt = 1): WorkspacePinnedSession => ({ sessionId: sid(id), pinnedAt })
-const pinnedIds = (entries: readonly WorkspacePinnedSession[]): string[] =>
-  entries.map(entry => String(entry.sessionId))
 
 function workspace(
   id: string,
@@ -99,11 +95,11 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
   onPinSession: (
     request: WorkspacePinSessionRequest,
   ) => Promise<RemoteResult<WorkspacePinValue>> = request =>
-    Promise.resolve(remoteOk({ pinnedSessions: [{ sessionId: request.sessionId, pinnedAt: 1 }] }))
+    Promise.resolve(remoteOk({ pinnedSessionIds: [request.sessionId] }))
   onUnpinSession: (
     _request: WorkspaceUnpinSessionRequest,
   ) => Promise<RemoteResult<WorkspacePinValue>> = () =>
-    Promise.resolve(remoteOk({ pinnedSessions: [] }))
+    Promise.resolve(remoteOk({ pinnedSessionIds: [] }))
 
   create(request: WorkspaceCreateRequest): Promise<RemoteResult<WorkspaceCreateValue>> {
     this.record('create', request)
@@ -165,9 +161,9 @@ function baseline(
   model: ClientWorkspaceModel,
   items: readonly WorkspaceView[] = [],
   archivedSessionIds: readonly SessionId[] = [],
-  pinnedSessions: readonly WorkspacePinnedSession[] = [],
+  pinnedSessionIds: readonly SessionId[] = [],
 ): void {
-  model.replaceBaseline({ items, archivedSessionIds, pinnedSessions })
+  model.replaceBaseline({ items, archivedSessionIds, pinnedSessionIds })
 }
 
 describe('ClientWorkspaceModel', () => {
@@ -422,38 +418,36 @@ describe('ClientWorkspaceModel', () => {
   it('applies pin mutation echoes and leaves failed results unchanged', async () => {
     const remote = new FakeWorkspaceRemote()
     const model = modelFor(remote)
-    baseline(model, [], [], [pin('kept')])
+    baseline(model, [], [], [sid('kept')])
 
     remote.onPinSession = () => Promise.resolve(workspaceError(
       new RemoteError('session/not-found', 'missing', { sessionId: sid('missing') }),
     ))
     await expect(model.pinSession(sid('missing'))).resolves.toMatchObject({ ok: false })
-    expect(pinnedIds(model.getSnapshot().pinnedSessions)).toEqual(['kept'])
+    expect(model.getSnapshot().pinnedSessionIds).toEqual(['kept'])
     remote.onPinSession = request => Promise.resolve(remoteOk({
-      pinnedSessions: [{ sessionId: request.sessionId, pinnedAt: 2 }, pin('kept')],
+      pinnedSessionIds: [request.sessionId, sid('kept')],
     }))
     await expect(model.pinSession(sid('fresh'))).resolves.toMatchObject({ ok: true })
-    expect(pinnedIds(model.getSnapshot().pinnedSessions)).toEqual(['fresh', 'kept'])
+    expect(model.getSnapshot().pinnedSessionIds).toEqual(['fresh', 'kept'])
     expect(remote.calls).toContainEqual({ method: 'pinSession', request: { sessionId: 'fresh' } })
 
     remote.onUnpinSession = () => Promise.resolve(workspaceError(
       new RemoteError('gateway/internal', 'wire down', {}),
     ))
     await expect(model.unpinSession(sid('fresh'))).resolves.toMatchObject({ ok: false })
-    expect(pinnedIds(model.getSnapshot().pinnedSessions)).toEqual(['fresh', 'kept'])
-    remote.onUnpinSession = () => Promise.resolve(remoteOk({ pinnedSessions: [pin('kept')] }))
+    expect(model.getSnapshot().pinnedSessionIds).toEqual(['fresh', 'kept'])
+    remote.onUnpinSession = () => Promise.resolve(remoteOk({ pinnedSessionIds: [sid('kept')] }))
     await expect(model.unpinSession(sid('fresh'))).resolves.toMatchObject({ ok: true })
-    expect(pinnedIds(model.getSnapshot().pinnedSessions)).toEqual(['kept'])
+    expect(model.getSnapshot().pinnedSessionIds).toEqual(['kept'])
     expect(remote.calls).toContainEqual({ method: 'unpinSession', request: { sessionId: 'fresh' } })
 
-    // A pushed set identical to the local one publishes no new snapshot; the
-    // same member re-pinned at a new instant does.
     const before = model.getSnapshot()
-    model.replacePinned([pin('kept')])
+    model.replacePinned([sid('kept')])
     expect(model.getSnapshot()).toBe(before)
-    model.replacePinned([pin('kept', 9)])
+    model.replacePinned([sid('other')])
     expect(model.getSnapshot()).not.toBe(before)
-    expect(model.getSnapshot().pinnedSessions).toEqual([pin('kept', 9)])
+    expect(model.getSnapshot().pinnedSessionIds).toEqual([sid('other')])
   })
 
   it('keeps the latest pin reply when overlapping requests settle out of order', async () => {
@@ -466,36 +460,36 @@ describe('ClientWorkspaceModel', () => {
 
     const first = model.pinSession(sid('first'))
     const second = model.pinSession(sid('second'))
-    secondGate.resolve(remoteOk({ pinnedSessions: [pin('second', 2), pin('first')] }))
+    secondGate.resolve(remoteOk({ pinnedSessionIds: [sid('second'), sid('first')] }))
     await expect(second).resolves.toMatchObject({ ok: true })
-    expect(pinnedIds(model.getSnapshot().pinnedSessions)).toEqual(['second', 'first'])
-    firstGate.resolve(remoteOk({ pinnedSessions: [pin('first')] }))
+    expect(model.getSnapshot().pinnedSessionIds).toEqual(['second', 'first'])
+    firstGate.resolve(remoteOk({ pinnedSessionIds: [sid('first')] }))
     await expect(first).resolves.toMatchObject({ ok: true })
-    expect(pinnedIds(model.getSnapshot().pinnedSessions)).toEqual(['second', 'first'])
+    expect(model.getSnapshot().pinnedSessionIds).toEqual(['second', 'first'])
   })
 
   it('keeps a pushed pin set when an unpin reply lands later', async () => {
     const remote = new FakeWorkspaceRemote()
     const model = modelFor(remote)
-    baseline(model, [], [], [pin('first')])
+    baseline(model, [], [], [sid('first')])
     const gate = deferred<RemoteResult<WorkspacePinValue>>()
     remote.onUnpinSession = () => gate.promise
 
     const pending = model.unpinSession(sid('first'))
-    model.replacePinned([pin('first'), pin('second', 2)])
-    gate.resolve(remoteOk({ pinnedSessions: [] }))
+    model.replacePinned([sid('first'), sid('second')])
+    gate.resolve(remoteOk({ pinnedSessionIds: [] }))
     await expect(pending).resolves.toMatchObject({ ok: true })
-    expect(pinnedIds(model.getSnapshot().pinnedSessions)).toEqual(['first', 'second'])
+    expect(model.getSnapshot().pinnedSessionIds).toEqual(['first', 'second'])
   })
 
   it('mirrors the Host pin drop locally when an archive echo lands', async () => {
     const remote = new FakeWorkspaceRemote()
     const model = modelFor(remote)
-    baseline(model, [], [], [pin('pinned'), pin('kept')])
+    baseline(model, [], [], [sid('pinned'), sid('kept')])
 
     await expect(model.archiveSession(sid('pinned'))).resolves.toMatchObject({ ok: true })
     expect(model.getSnapshot().archivedSessionIds).toEqual(['pinned'])
-    expect(pinnedIds(model.getSnapshot().pinnedSessions)).toEqual(['kept'])
+    expect(model.getSnapshot().pinnedSessionIds).toEqual(['kept'])
   })
 
   it('keeps the newest row and places Workspaces missing from partial orders last', async () => {

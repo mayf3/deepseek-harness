@@ -154,7 +154,7 @@ describe('Workspace state stream', () => {
       { type: 'remove', workspaceId: view.workspaceId },
       { type: 'order', workspaceIds: [view.workspaceId] },
       { type: 'archived', archivedSessionIds: [sid('session-one')] },
-      { type: 'pinned', pinnedSessions: [{ sessionId: sid('session-two'), pinnedAt: 1 }] },
+      { type: 'pinned', pinnedSessionIds: [sid('session-two')] },
     ]
     mock.stream(FOLLOW, openStream([opening, ...increments]))
     const replaceBaseline = vi.fn<WorkspaceFollowSink['replaceBaseline']>()
@@ -177,7 +177,7 @@ describe('Workspace state stream', () => {
     expect(removeView).toHaveBeenCalledWith(view.workspaceId)
     expect(replaceOrder).toHaveBeenCalledWith([view.workspaceId])
     expect(replaceArchived).toHaveBeenCalledWith(['session-one'])
-    expect(replacePinned).toHaveBeenCalledWith([{ sessionId: 'session-two', pinnedAt: 1 }])
+    expect(replacePinned).toHaveBeenCalledWith(['session-two'])
     await stream.dispose()
     expect(streamStates(mock)).toEqual(['cancelled'])
   })
@@ -313,7 +313,7 @@ describe('WorkspaceController', () => {
   it('publishes the model source and exposes successful Workspace commands', async ({ mock, start }) => {
     const { remote, client } = await gatewayClient(mock, start)
     const model = new ClientWorkspaceModel(remote.workspace)
-    model.replaceBaseline({ items: [workspace('one')], archivedSessionIds: [], pinnedSessions: [] })
+    model.replaceBaseline({ items: [workspace('one')], archivedSessionIds: [], pinnedSessionIds: [] })
     const controller = new WorkspaceController(client.ctx, model)
 
     expect(controller.list).toBe(model)
