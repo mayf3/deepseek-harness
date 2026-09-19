@@ -393,13 +393,14 @@ class ResolutionRouter {
       }
     }
 
-    // The interception layer is the node_modules directory of the profile's parent.
-    const layer = dirname(localRoot)
+    // The interception layer is `<profileParent>/node_modules`: a fallback entry occupies its name
+    // there, so its subpath misses continue above it; a name without an entry continues at it.
+    const profileParent = dirname(localRoot)
     const eligible = target?.scope === 'installation'
       || (target?.scope === 'profile' && parentRoutes.activeProfile)
     const route: ResolutionRoute = eligible
-      ? { kind: 'fallback', entry: target, after: join(dirname(layer), 'package.json') }
-      : { kind: 'after-fallback', parent: join(layer, 'package.json') }
+      ? { kind: 'fallback', entry: target, after: join(dirname(profileParent), 'package.json') }
+      : { kind: 'after-fallback', parent: join(profileParent, 'package.json') }
     const state: ResolutionRouteState = { route }
     if (route.kind === 'fallback') requests.set(request, state)
     return state
