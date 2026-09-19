@@ -20,7 +20,7 @@ dsh 打包与发布集合以及本地基线发布器包含这四个 Agent Teams 
 
 [单组合包决策](2026-09-18-agent-teams-single-bundle.zh.md)取代了独立 Host 与 Web 组合包的组合方式。本记录保留发布、依赖隔离与 promotion 的理由。当前 Team profile 仍须显式启用，并禁用模型可见名称与 Team 工具重叠的全局 continuable-child control；[可选组合包决策](../process/2026-09-15-shipped-optional-bundles.zh.md)负责其随安装交付的规则。
 
-profile 启动会先解析所选 bundle，再计算[不可变 profile resolution generation](2026-09-09-profile-resolution-generations.zh.md)。generation 保留安装优先顺序，按 profile 顺序完整遍历每个显式 bundle 根，并让 pnpm 管理的 profile 包保持优先。runtime 模式在内存中强制该结果；保留的 link 与 dual 模式把同一结果物化为共享和 profile 自有投影。因此，私有 profile 层可以携带实验性 plugin 配置行，而无需把这些 plugin 加入发布 app、要求 profile 用户直接安装传递依赖、破坏 packaged-runtime 的模块身份，或改变其他 profile 的解析结果。
+profile 启动会先解析所选 bundle，再计算[不可变 runtime resolution](2026-09-09-profile-resolution-generations.zh.md)。runtime resolution 保留安装优先顺序，按 profile 顺序完整遍历每个显式 bundle 根，并让 pnpm 管理的 profile 包保持优先。运行时拦截在内存中强制该结果，不物化 fallback 链接。因此，私有 profile 层可以携带实验性 plugin 配置行，而无需把这些 plugin 加入发布 app、要求 profile 用户直接安装传递依赖、破坏 packaged-runtime 的模块身份，或改变其他 profile 的解析结果。
 
 对这四个包而言，实验性状态改变兼容性与支持预期，而不阻止发布。这些包仍须满足仓库的一般文档、不变式、生命周期、安全、单元测试、真实组合测试和快照要求。promotion 前仍须评审公开约定、限制、测试证据、运行时依赖方，并由一名具名 owner 接受稳定包义务。
 

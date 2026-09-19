@@ -55,6 +55,9 @@ async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, pre
     ctx.loader.builtins.manager = PluginManager
   })
   onTestFinished(async () => { await ctx.fiber.dispose(); rmSync(home, { recursive: true, force: true }) })
+  // What pnpm's own configuration names is read from pnpm before every registry plan; the fixture answers npm's own registry.
+  const registry = vi.spyOn(operations, 'readProfileRegistry').mockResolvedValue('https://registry.npmjs.org/')
+  onTestFinished(() => { registry.mockRestore() })
   let stopHmr = async () => {}
   if (reload === 'live') {
     await ctx.plugin(Timer)
@@ -348,10 +351,11 @@ it('restores the manifest and lockfile after a failed package run, classifying t
   })
   onTestFinished(() => { install.mockRestore() })
   const before = readFileSync(join(dir, 'package.json'), 'utf8')
+  // A registry that does not answer sends the installation on to the configured fallback; the failure reported is the last one's.
   expect(await manager.installBundle('partial')).toMatchObject({
     changed: false, application: 'failed', stage: 'install', target: 'partial',
     error: { code: 'operation-error', diagnostic: expect.stringContaining('ENOTFOUND') as string },
-    packageResult: { exitCode: 42, kind: 'network' },
+    packageResult: { exitCode: 42, kind: 'network' }, registries: [null, MIRROR],
   })
   expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(before)
   // A lockfile the run created is removed; one that existed is put back.
@@ -360,7 +364,7 @@ it('restores the manifest and lockfile after a failed package run, classifying t
   expect(await manager.installBundle('partial')).toMatchObject({ changed: false, application: 'failed' })
   expect(readFileSync(lockPath, 'utf8')).toBe('original lockfile\n')
   expect((await manager.listBundles()).some(row => row.name === 'partial')).toBe(false)
-  expect(install).toHaveBeenCalledTimes(2)
+  expect(install).toHaveBeenCalledTimes(4)
 })
 
 it('keeps saved changes after activation failure and allows a corrected configuration to retry', async () => {
@@ -566,7 +570,7 @@ it('streams pnpm output, reports the installation phases, and names the installe
     { requestId, jobId, argv: ['pnpm', 'add', 'streamed'], cwd: dir, stream: 'stderr', text: 'warning\n' },
     { requestId, jobId, argv: ['pnpm', 'add', 'streamed'], cwd: dir, stream: 'stdout', text: '', exitCode: 0 },
   ])
-  expect(phases).toEqual([{ requestId, phase: 'installing' }, { requestId, phase: 'applying' }])
+  expect(phases).toEqual([{ requestId, phase: 'installing', attempt: { registry: null, index: 1, total: 2 } }, { requestId, phase: 'applying' }])
   expect(changes).toEqual([{ reason: 'install' }])
   // A run without a request id streams too, unidentified.
   await manager.removeBundle('streamed')
@@ -603,7 +607,7 @@ it('stops a run on request, restores the files, and answers not-running or too-l
   expect(await manager.waitForInstall(requestId)).toBeNull()
   expect(cancelled).toMatchObject({ application: 'cancelled', changed: false, stage: 'install', packageResult: { exitCode: 1 } })
   expect(cancelled.error).toBeUndefined()
-  expect(phases).toEqual([{ requestId, phase: 'installing' }, { requestId, phase: 'cancelling' }])
+  expect(phases).toEqual([{ requestId, phase: 'installing', attempt: { registry: null, index: 1, total: 2 } }, { requestId, phase: 'cancelling' }])
   expect(await manager.cancelInstall(requestId)).toEqual({ status: 'not-running' })
   // Once pnpm has exited and the bundle is being applied, the run cannot be stopped.
   install.mockImplementation(async (_context, args) => {
@@ -633,22 +637,22 @@ it('stops a run on request, restores the files, and answers not-running or too-l
 })
 
 it('reads what a spec names before installing it', async () => {
-  const { manager, dir, profile } = await fixture(undefined, false, undefined, { inspectTimeoutMs: 1000, pnpmCommand: 'pnpm-test' })
+  const { manager, dir, profile } = await fixture(undefined, false, undefined, { inspectTimeoutMs: 1000, pnpmCommand: 'pnpm-test', fallbackRegistries: [] })
   const view = vi.spyOn(operations, 'viewProfilePackage')
   onTestFinished(() => { view.mockRestore() })
   const answers = (stdout: string) => view.mockResolvedValueOnce({ exitCode: 0, stdout, stderr: '', timedOut: false })
   answers(JSON.stringify({ name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
   expect(await manager.inspect('dsh-x')).toEqual({
-    status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', bundle: true,
+    status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.4.2', description: 'A sidebar.', bundle: true, registry: null,
   })
-  expect(view).toHaveBeenCalledWith(dir, 'dsh-x', { command: 'pnpm-test', timeoutMs: 1000 })
+  expect(view).toHaveBeenCalledWith(dir, 'dsh-x', { command: 'pnpm-test', timeoutMs: 1000, registry: null })
   const signal = AbortSignal.abort()
   answers(JSON.stringify([{ name: 'dsh-lib', version: '1.0.0', dsh: { bundle: {} } }, { name: 'dsh-lib', version: '1.1.0', dsh: null }]))
-  expect(await manager.inspect('dsh-lib@^1', signal)).toEqual({ status: 'refused', problem: 'not-a-bundle', reason: 'dsh-lib declares no dsh.bundle' })
-  expect(view).toHaveBeenLastCalledWith(dir, 'dsh-lib@^1', { command: 'pnpm-test', timeoutMs: 1000, signal })
+  expect(await manager.inspect('dsh-lib@^1', undefined, signal)).toEqual({ status: 'refused', problem: 'not-a-bundle', reason: 'dsh-lib declares no dsh.bundle', registries: [null] })
+  expect(view).toHaveBeenLastCalledWith(dir, 'dsh-lib@^1', { command: 'pnpm-test', timeoutMs: 1000, signal, registry: null })
   // An answer that names no package keeps the name the spec gave; colour escapes around the JSON are dropped.
   answers('\x1b[36m' + JSON.stringify({ version: '0.0.1', description: '', dsh: { bundle: { patch: './p.yml' } } }) + '\x1b[39m\n')
-  expect(await manager.inspect('dsh-bare')).toEqual({ status: 'accepted', kind: 'registry', name: 'dsh-bare', version: '0.0.1', bundle: true })
+  expect(await manager.inspect('dsh-bare')).toEqual({ status: 'accepted', kind: 'registry', name: 'dsh-bare', version: '0.0.1', bundle: true, registry: null })
   const failure = (stderr: string, exitCode: number | null = 1, more: Partial<operations.PackageViewResult> = {}) =>
     view.mockResolvedValueOnce({ exitCode, stdout: '', stderr, timedOut: false, ...more })
   failure('npm error code E404\nnpm error 404 Not Found - GET https://registry/nope\n')
@@ -658,28 +662,29 @@ it('reads what a spec names before installing it', async () => {
   failure('ERR_PNPM_META_FETCH_FAIL  request failed, reason: getaddrinfo ENOTFOUND registry\n')
   expect(await manager.inspect('far')).toMatchObject({ status: 'refused', problem: 'network' })
   view.mockResolvedValueOnce({ exitCode: 3, stdout: 'plain text\n', stderr: '', timedOut: false })
-  expect(await manager.inspect('odd')).toEqual({ status: 'refused', problem: 'unknown', reason: 'plain text' })
+  expect(await manager.inspect('odd')).toEqual({ status: 'refused', problem: 'unknown', reason: 'plain text', registries: [null] })
   failure('', 4)
-  expect(await manager.inspect('quiet')).toEqual({ status: 'refused', problem: 'unknown', reason: 'pnpm view exited with 4' })
+  expect(await manager.inspect('quiet')).toEqual({ status: 'refused', problem: 'unknown', reason: 'pnpm view exited with 4', registries: [null] })
   failure('', null, { timedOut: true })
-  expect(await manager.inspect('slow')).toEqual({ status: 'refused', problem: 'unknown', reason: 'pnpm view timed out after 1000ms' })
+  // A registry that never answered within the bound is unreachable.
+  expect(await manager.inspect('slow')).toEqual({ status: 'refused', problem: 'network', reason: 'pnpm view timed out after 1000ms', registries: [null] })
   failure('', null, { cause: Object.assign(new Error('spawn pnpm ENOENT'), { code: 'ENOENT' }) })
   expect(await manager.inspect('gone')).toMatchObject({ status: 'refused', problem: 'unknown', reason: expect.stringContaining('ENOENT') as string })
   answers('not json')
   expect(await manager.inspect('garbled')).toMatchObject({ status: 'refused', problem: 'unknown', reason: expect.stringContaining('unreadable pnpm view output') as string })
   answers('"just a string"')
-  expect(await manager.inspect('scalar')).toEqual({ status: 'refused', problem: 'unknown', reason: 'pnpm view answered no package' })
+  expect(await manager.inspect('scalar')).toEqual({ status: 'refused', problem: 'unknown', reason: 'pnpm view answered no package', registries: [null] })
   answers('')
-  expect(await manager.inspect('silent')).toEqual({ status: 'refused', problem: 'unknown', reason: 'pnpm view answered no package' })
+  expect(await manager.inspect('silent')).toEqual({ status: 'refused', problem: 'unknown', reason: 'pnpm view answered no package', registries: [null] })
   // What is installed, or supplied by the installation, is refused before the registry is asked.
   expect(await manager.inspect('extra')).toEqual({ status: 'refused', problem: 'already-installed', reason: 'extra is already installed' })
   expect(await manager.inspect('./relative')).toEqual({ status: 'refused', problem: 'invalid-spec', reason: 'a local path must be absolute' })
-  expect(await manager.inspect('github:acme/dsh-remote')).toEqual({ status: 'accepted', kind: 'git', bundle: null })
+  expect(await manager.inspect('github:acme/dsh-remote')).toEqual({ status: 'accepted', kind: 'git', bundle: null, registry: null, host: 'github.com' })
   const tarball = join(profile.home, 'pack.tgz')
   expect(await manager.inspect(tarball)).toEqual({ status: 'refused', problem: 'not-a-package', reason: 'the tarball does not exist' })
   writeFileSync(tarball, '')
-  expect(await manager.inspect(tarball)).toEqual({ status: 'accepted', kind: 'tarball', bundle: null })
-  expect(await manager.inspect('https://cdn.example.com/x/y/z/dsh-x-1.0.0.tgz')).toEqual({ status: 'accepted', kind: 'tarball', bundle: null })
+  expect(await manager.inspect(tarball)).toEqual({ status: 'accepted', kind: 'tarball', bundle: null, registry: null })
+  expect(await manager.inspect('https://cdn.example.com/x/y/z/dsh-x-1.0.0.tgz')).toEqual({ status: 'accepted', kind: 'tarball', bundle: null, registry: null, host: 'cdn.example.com' })
   // A directory answers from its own manifest.
   const local = join(profile.home, 'dev', 'dsh-local')
   mkdirSync(local, { recursive: true })
@@ -690,13 +695,13 @@ it('reads what a spec names before installing it', async () => {
   writeFileSync(join(local, 'package.json'), JSON.stringify({ name: 'dsh-local', version: '0.1.0', description: 'Local.' }))
   expect(await manager.inspect(local)).toEqual({ status: 'refused', problem: 'not-a-bundle', reason: 'dsh-local declares no dsh.bundle' })
   writeFileSync(join(local, 'package.json'), JSON.stringify({ name: 'dsh-local', version: '0.1.0', description: 'Local.', dsh: { bundle: { patch: './p.yml' } } }))
-  expect(await manager.inspect(`file:${local}`)).toEqual({ status: 'accepted', kind: 'path', name: 'dsh-local', version: '0.1.0', description: 'Local.', bundle: true })
+  expect(await manager.inspect(`file:${local}`)).toEqual({ status: 'accepted', kind: 'path', name: 'dsh-local', version: '0.1.0', description: 'Local.', bundle: true, registry: null })
   writeFileSync(join(local, 'package.json'), JSON.stringify({ name: 'core', dsh: { bundle: { patch: './p.yml' } } }))
   expect(await manager.inspect(local)).toEqual({ status: 'refused', problem: 'already-installed', reason: 'core is already installed' })
   // A profile and an installation that list nothing know nothing.
   writeFileSync(join(dir, 'package.json'), '{}')
   writeFileSync(profile.installAnchor, '{}')
-  expect(await manager.inspect(local)).toEqual({ status: 'accepted', kind: 'path', name: 'core', bundle: true })
+  expect(await manager.inspect(local)).toEqual({ status: 'accepted', kind: 'path', name: 'core', bundle: true, registry: null })
   expect(view).toHaveBeenCalledTimes(13)
 })
 
@@ -838,4 +843,166 @@ it('installs and removes with the bundled pnpm when PATH contains no pnpm', asyn
   expect(removed.error).toBeUndefined()
   expect(removed.packageResult?.exitCode).toBe(0)
   expect(readProfileManifest('test', dir).dependencies ?? {}).not.toHaveProperty('@test/desktop-manager')
+})
+
+const MIRROR = 'https://registry.npmmirror.com/'
+const OFFICIAL = 'https://registry.npmjs.org/'
+
+/** What pnpm's own configuration names in the profile, for the tests that need something other than npm's own registry. */
+function pnpmNames(url: string | null = OFFICIAL) {
+  return vi.spyOn(operations, 'readProfileRegistry').mockResolvedValue(url)
+}
+
+it('asks the registries in turn while one is unreachable or stale, and names the one that answered', async () => {
+  const { manager, dir } = await fixture(undefined, false, undefined, { inspectTimeoutMs: 1000, fallbackRegistries: ['https://REGISTRY.npmmirror.com'] })
+  const read = pnpmNames()
+  const view = vi.spyOn(operations, 'viewProfilePackage')
+  onTestFinished(() => { view.mockRestore() })
+  const failure = (stderr: string, exitCode = 1) => view.mockResolvedValueOnce({ exitCode, stdout: '', stderr, timedOut: false })
+  const answers = (stdout: string) => view.mockResolvedValueOnce({ exitCode: 0, stdout, stderr: '', timedOut: false })
+  const asked = (from: number) => view.mock.calls.slice(from).map(call => call[2].registry)
+  const manifest = JSON.stringify({ name: 'dsh-x', version: '1.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } } })
+  // pnpm's own registry is unreachable; the mirror answers and the install is told to start there.
+  failure('ERR_PNPM_META_FETCH_FAIL  GET https://registry.npmjs.org/dsh-x: ETIMEDOUT\n')
+  answers(manifest)
+  expect(await manager.inspect('dsh-x')).toEqual({ status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.0.0', bundle: true, registry: MIRROR })
+  expect(asked(0)).toEqual([null, MIRROR])
+  expect(read).toHaveBeenCalledWith(dir, { command: 'pnpm', timeoutMs: 1000 })
+  expect(view).toHaveBeenLastCalledWith(expect.any(String), 'dsh-x', { command: 'pnpm', timeoutMs: 1000, registry: MIRROR })
+  // pnpm prints a refusal as JSON on stdout with nothing on stderr: it is read the same way, and the reason is its message.
+  view.mockResolvedValueOnce({ exitCode: 1, stdout: '{\n  "error": {\n    "code": "ERR_PNPM_META_FETCH_FAIL",\n    "message": "GET https://registry.npmjs.org/dsh-x: fetch failed"\n  }\n}\n', stderr: '', timedOut: false })
+  answers(manifest)
+  expect(await manager.inspect('dsh-x')).toMatchObject({ status: 'accepted', registry: MIRROR })
+  expect(asked(2)).toEqual([null, MIRROR])
+  // A requested registry goes first. A mirror's 404 may be a copy not yet synced, so the lookup goes on; every registry's 404 is not-found.
+  view.mockResolvedValueOnce({ exitCode: 1, stdout: '{"error":{"code":"ERR_PNPM_FETCH_404","message":"GET https://registry.npmmirror.com/dsh-x: Not Found - 404"}}', stderr: '', timedOut: false })
+  failure('ERR_PNPM_FETCH_404  GET https://registry.npmjs.org/dsh-x: Not Found - 404\n')
+  expect(await manager.inspect('dsh-x', { registry: MIRROR })).toMatchObject({
+    status: 'refused', problem: 'not-found', reason: 'ERR_PNPM_FETCH_404  GET https://registry.npmjs.org/dsh-x: Not Found - 404', registries: [MIRROR, null],
+  })
+  expect(asked(4)).toEqual([MIRROR, null])
+  // A registry outside the configured set is asked alone.
+  failure('ERR_PNPM_META_FETCH_FAIL  GET https://npm.corp.example/dsh-x: ECONNREFUSED\n')
+  expect(await manager.inspect('dsh-x', { registry: 'https://npm.corp.example' })).toMatchObject({ status: 'refused', problem: 'network', registries: ['https://npm.corp.example/'] })
+  expect(asked(6)).toEqual(['https://npm.corp.example/'])
+  // A failure no registry changes ends the round at once.
+  failure('', 4)
+  expect(await manager.inspect('dsh-x')).toMatchObject({ status: 'refused', problem: 'unknown', registries: [null] })
+  expect(asked(7)).toEqual([null])
+  // A registry that never answered is unreachable, like one that refused the connection: the round goes on, and the
+  // refusal is a network one.
+  view.mockResolvedValueOnce({ exitCode: null, stdout: '', stderr: '', timedOut: true })
+  view.mockResolvedValueOnce({ exitCode: null, stdout: '', stderr: '', timedOut: true })
+  expect(await manager.inspect('dsh-x')).toEqual({ status: 'refused', problem: 'network', reason: 'pnpm view timed out after 1000ms', registries: [null, MIRROR] })
+  expect(asked(8)).toEqual([null, MIRROR])
+  // A lookup the caller dropped is not carried to the next registry.
+  const controller = new AbortController()
+  view.mockImplementationOnce(async () => { controller.abort(); return { exitCode: 1, stdout: '', stderr: 'ECONNRESET\n', timedOut: false } })
+  expect(await manager.inspect('dsh-x', {}, controller.signal)).toMatchObject({ status: 'refused', problem: 'network', registries: [null] })
+  expect(asked(10)).toEqual([null])
+  // The other forms ask no registry and carry the one the install starts with.
+  expect(await manager.inspect('github:acme/dsh-remote', { registry: MIRROR })).toEqual({ status: 'accepted', kind: 'git', bundle: null, registry: MIRROR, host: 'github.com' })
+  expect(await manager.inspect('github:acme/dsh-remote')).toEqual({ status: 'accepted', kind: 'git', bundle: null, registry: null, host: 'github.com' })
+  expect(view).toHaveBeenCalledTimes(11)
+})
+
+it('keeps pnpm\'s own registry alone when it names a private one, or cannot be read', async () => {
+  const { manager } = await fixture(undefined, false, undefined, { inspectTimeoutMs: 1000 })
+  const read = pnpmNames('https://npm.corp.example/')
+  const view = vi.spyOn(operations, 'viewProfilePackage')
+  onTestFinished(() => { view.mockRestore() })
+  view.mockResolvedValue({ exitCode: 1, stdout: '', stderr: 'ERR_PNPM_META_FETCH_FAIL  GET https://npm.corp.example/dsh-x: ETIMEDOUT\n', timedOut: false })
+  expect(await manager.inspect('dsh-x')).toMatchObject({ status: 'refused', problem: 'network', registries: [null] })
+  expect(await manager.inspect('dsh-x', { registry: MIRROR })).toMatchObject({ status: 'refused', problem: 'network', registries: [MIRROR] })
+  read.mockResolvedValue(null)
+  expect(await manager.inspect('dsh-x')).toMatchObject({ status: 'refused', problem: 'network', registries: [null] })
+  expect(await manager.registries()).toEqual({ registry: null, fallbackRegistries: [MIRROR], resolved: null })
+  expect(view).toHaveBeenCalledTimes(3)
+})
+
+it('installs from the next registry after one is unreachable, restoring the files between attempts', async () => {
+  const { ctx, manager, dir, bundle } = await fixture()
+  const phases: PluginInstallProgress[] = []
+  const chunks: PluginInstallLogChunk[] = []
+  ctx.on('plugin-manager/install-state', (progress) => { phases.push(progress) })
+  ctx.on('plugin-manager/install-log', (chunk) => { chunks.push(chunk) })
+  const lockPath = join(dir, 'pnpm-lock.yaml')
+  const install = vi.spyOn(operations, 'runProfilePnpm')
+    .mockImplementationOnce(async () => {
+      writeFileSync(lockPath, 'partial lockfile\n')
+      return { exitCode: 1, output: 'ERR_PNPM_META_FETCH_FAIL  GET https://registry.npmjs.org/fallen: ETIMEDOUT', truncated: false, logPath: join(dir, 'pnpm.log') }
+    })
+    .mockImplementationOnce(async (_context, args) => {
+      // The failed attempt's lockfile is gone before the next registry is asked.
+      expect(existsSync(lockPath)).toBe(false)
+      const name = String(args[1])
+      bundle(name, [{ id: name, name: './plugin.mjs', config: { service: name } }])
+      const manifest = readProfileManifest('test', dir)
+      manifest.dependencies = { ...manifest.dependencies, [name]: '1.0.0' }
+      writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+      return { exitCode: 0, output: 'installed', truncated: false, logPath: join(dir, 'pnpm.log') }
+    })
+  onTestFinished(() => { install.mockRestore() })
+  const requestId = 'f2340b6d-40bb-46b7-8b94-217bdf5010bd' as PluginInstallRequestId
+  const result = await manager.installBundle('fallen', { enabled: false, requestId })
+  expect(result).toMatchObject({ application: 'applied', bundle: 'fallen', registries: [null, MIRROR], packageResult: { exitCode: 0 } })
+  expect(result.failedAt).toBeUndefined()
+  expect(install.mock.calls.map(call => call[1])).toEqual([['add', 'fallen'], ['add', 'fallen', `--registry=${MIRROR}`]])
+  expect(phases).toEqual([
+    { requestId, phase: 'installing', attempt: { registry: null, index: 1, total: 2 } },
+    { requestId, phase: 'installing', attempt: { registry: MIRROR, index: 2, total: 2 } },
+    { requestId, phase: 'applying' },
+  ])
+  // Each attempt streams as its own run, the command line naming the registry it asked.
+  expect(new Set(chunks.map(chunk => chunk.jobId)).size).toBe(2)
+  expect(chunks.at(-1)).toMatchObject({ requestId, argv: ['pnpm', 'add', 'fallen', `--registry=${MIRROR}`], exitCode: 0 })
+})
+
+it('stops at a failure no registry changes, at a host the spec itself is fetched from, and after a registry outside the configured set', async () => {
+  const { manager } = await fixture()
+  const failing = (output: string) => ({ exitCode: 1, output, truncated: false, logPath: '/dev/null' })
+  const install = vi.spyOn(operations, 'runProfilePnpm').mockResolvedValue(failing('ERR_PNPM_IGNORED_BUILDS  Ignored build scripts: native'))
+  onTestFinished(() => { install.mockRestore() })
+  const blocked = await manager.installBundle('blocked')
+  expect(blocked).toMatchObject({ application: 'failed', registries: [null], packageResult: { kind: 'build-blocked' } })
+  expect(blocked.failedAt).toBeUndefined()
+  expect(install).toHaveBeenCalledTimes(1)
+  install.mockResolvedValue(failing('fatal: unable to access \'https://github.com/acme/dsh-x/\': Could not resolve host: github.com'))
+  expect(await manager.installBundle('github:acme/dsh-x')).toMatchObject({ application: 'failed', registries: [null], failedAt: 'spec-host', packageResult: { kind: 'network' } })
+  expect(install).toHaveBeenCalledTimes(2)
+  install.mockResolvedValue(failing('ERR_PNPM_META_FETCH_FAIL  GET https://npm.corp.example/dsh-x: ECONNREFUSED'))
+  expect(await manager.installBundle('dsh-x', { registry: 'https://npm.corp.example' })).toMatchObject({
+    application: 'failed', registries: ['https://npm.corp.example/'], failedAt: 'registry', packageResult: { kind: 'network' },
+  })
+  expect(install).toHaveBeenCalledTimes(3)
+  expect(install).toHaveBeenLastCalledWith(expect.anything(), ['add', 'dsh-x', '--registry=https://npm.corp.example/'], expect.anything())
+  // Every configured registry unreachable: the failure is the last attempt's, and all of them are named.
+  install.mockResolvedValue(failing('ERR_PNPM_META_FETCH_FAIL  GET https://registry/dsh-x: ETIMEDOUT'))
+  expect(await manager.installBundle('dsh-x')).toMatchObject({ application: 'failed', registries: [null, MIRROR], failedAt: 'registry', packageResult: { kind: 'network' } })
+  expect(install).toHaveBeenCalledTimes(5)
+})
+
+it('reports a stop that lands before a run starts, while the registries are read, as cancelled', async () => {
+  const { manager } = await fixture()
+  const requestId = 'f2340b6d-40bb-46b7-8b94-217bdf5010bd' as PluginInstallRequestId
+  // The stop lands while the plan is being read: the run after it must not start on a dead signal.
+  const read = vi.spyOn(operations, 'readProfileRegistry').mockImplementation(async () => {
+    void manager.cancelInstall(requestId)
+    await Promise.resolve()
+    return OFFICIAL
+  })
+  const install = vi.spyOn(operations, 'runProfilePnpm')
+  onTestFinished(() => { read.mockRestore(); install.mockRestore() })
+  const result = await manager.installBundle('dsh-x', { requestId })
+  expect(result).toMatchObject({ application: 'cancelled', registries: [] })
+  expect(result.error).toBeUndefined()
+  expect(install).not.toHaveBeenCalled()
+})
+
+it('answers the configured registries in pnpm\'s comparison form with what pnpm names, and refuses one that is not an http(s) URL at load', async () => {
+  expect(await (await fixture()).manager.registries()).toEqual({ registry: null, fallbackRegistries: [MIRROR], resolved: OFFICIAL })
+  const { manager } = await fixture(undefined, false, undefined, { registry: 'https://NPM.corp.example', fallbackRegistries: [] })
+  expect(await manager.registries()).toEqual({ registry: 'https://npm.corp.example/', fallbackRegistries: [], resolved: OFFICIAL })
+  expect(() => PluginManager.Config({ registry: 'npm.corp.example' })).toThrow()
+  expect(() => PluginManager.Config({ fallbackRegistries: ['ftp://npm.corp.example/'] })).toThrow()
 })

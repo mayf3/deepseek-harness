@@ -1,6 +1,6 @@
 /** Display labels and toast sentences for global plugin management. */
 
-import type { ManagementError } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ManagementError, Registry } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginManagerLocaleKey } from './locales.ts'
 import type { FailedAction, ManagerNotice, PackageView } from './manager-store.ts'
@@ -17,6 +17,39 @@ const BUILTIN_COPY = new Map<string, { title: PluginManagerLocaleKey; descriptio
     title: 'builtinAutoReviewTitle', description: 'builtinAutoReviewDescription', beta: true,
   }],
 ])
+
+/** The registries with a name of their own, by host. */
+const REGISTRY_COPY = new Map<string, PluginManagerLocaleKey>([
+  ['registry.npmmirror.com', 'registryNpmmirror'],
+])
+
+/** npm's own registry, which pnpm names without any configuration. */
+const OFFICIAL_NPM_HOST = 'registry.npmjs.org'
+
+/**
+ * What a registry reads as: pnpm's own as the default registry, a known mirror by its name, any other registry by
+ * its host; and the host each names, for where the name alone would leave it unsaid.
+ * @param registry - the registry, null for the one pnpm's own configuration names.
+ * @param t - the manager's translate seat.
+ * @param resolved - the URL pnpm's own configuration names, null while unknown, when it reads as npm's own.
+ * @returns the name and the host.
+ */
+export function registryText(registry: Registry, t: Translate, resolved: string | null): { name: string; host: string } {
+  if (registry === null) return { name: t('registryDefault'), host: resolved === null ? OFFICIAL_NPM_HOST : registryHost(resolved) }
+  const host = registryHost(registry)
+  const key = REGISTRY_COPY.get(host)
+  return { name: key === undefined ? host : t(key), host }
+}
+
+/** The host of a registry URL; the URL as written when it does not parse. */
+function registryHost(registry: string): string {
+  try {
+    return new URL(registry).host
+  } catch {
+    // The Host validated its own registries; a remembered one that no longer parses is shown as written.
+    return registry
+  }
+}
 
 /** The sentence each of the Host's refusal codes reads as. */
 const CODE_KEYS = {

@@ -35,13 +35,11 @@ declare module '@deepseek-ai/cordis' {
 
 export {
   composeEntries,
-  createProfileResolutionGeneration,
+  createRuntimeResolution,
   DEFAULT_PROFILE_BUNDLES,
   OPTIONAL_BUNDLES,
-  healProfilesModuleFallback,
-  healIsolatedProfileModuleFallback,
-  unlinkProfileModuleFallback,
   initProfile,
+  removeLinkProjections,
   loadProfile,
   loadProfileDirectory,
   PROFILE_PATCH_FILENAME,
@@ -54,10 +52,9 @@ export {
   type Profile,
   type ProfileLayer,
   type ProfileManifest,
-  type ProfileModuleFallbackOptions,
-  type ProfileResolutionEntry,
-  type ProfileResolutionGeneration,
-  type ProfileResolutionMode,
+  type RuntimeResolutionOptions,
+  type RuntimeResolutionEntry,
+  type RuntimeResolution,
   type ProfileTemplate,
 } from './profile.ts'
 export {

@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Stream one TypeScript fence for" [disabled]
+  - navigation "Session hierarchy": Stream one TypeScript fence for
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"

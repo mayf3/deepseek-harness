@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Reply with a one-sentence description" [disabled]
+  - navigation "Session hierarchy": Reply with a one-sentence description
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"

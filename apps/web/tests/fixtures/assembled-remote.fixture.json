@@ -253,7 +253,8 @@
           "updatedAt": "2026-09-13T03:02:55.884Z"
         }
       ],
-      "archivedSessionIds": []
+      "archivedSessionIds": [],
+      "pinnedSessionIds": []
     }
   },
   "control": {

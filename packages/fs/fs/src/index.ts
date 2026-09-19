@@ -89,6 +89,16 @@ export abstract class FileSystem extends Service {
   }
 
   /**
+   * Observe one file or a directory's direct entries in this provider's execution world.
+   * @param target - resolved file or directory, including an absent path to observe for creation.
+   * @param changed - invalidation callback; errors can be reported during or after initialization.
+   * @param signal - cancels watcher initialization; the caller closes an initialized watcher.
+   * @returns a promise resolving once observation is active, with an asynchronous close function.
+   * @throws when the provider does not support watching or cannot initialize the watcher.
+   */
+  abstract watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>>
+
+  /**
    * The sandbox mode this backend enforces on mutations BY DEFAULT, or
    * `undefined` when it does not confine at all — the capability fact the tool
    * layer reads to advertise the escalation fields honestly (mirrors

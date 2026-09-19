@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Clickable links gallery" [disabled]
+  - navigation "Session hierarchy": Clickable links gallery
   - button "More actions"
   - button "Open right sidebar"
   - tablist:

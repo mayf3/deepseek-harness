@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Reference order target" [disabled]
+  - navigation "Session hierarchy": Reference order target
   - button "More actions"
   - button "Open right sidebar"
   - tablist:

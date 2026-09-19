@@ -60,6 +60,9 @@
       "path": "../ui-session"
     },
     {
+      "path": "../../util/values"
+    },
+    {
       "path": "../../util/workspace-path"
     }
   ]

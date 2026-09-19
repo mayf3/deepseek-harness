@@ -19,9 +19,12 @@ import type {
   PluginInstallLogChunk,
   PluginInstallProgress,
   PluginInstallRequestId,
+  PluginRegistries,
   PluginSpecInspection,
   ReadOnlyReason,
+  Registry,
 } from '@deepseek-ai/dsh-api-remotes/client'
+import { REGISTRY_URL } from '@deepseek-ai/dsh-plugin-manager/registry'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConfigLedger } from './config-ledger.ts'
@@ -85,10 +88,33 @@ export interface PackageView {
 /** The typed spec as the Host read it, on the installing, installed, and failed screens. */
 export type InstallSubject = Extract<PluginSpecInspection, { status: 'accepted' }> & { readonly spec: string }
 
+/** The registry the person picked for an install: one the Host offers, or a typed URL. */
+export type RegistryChoice =
+  | { readonly kind: 'offered'; readonly registry: Registry }
+  | { readonly kind: 'custom'; readonly url: string }
+
+/** The choice shown until the Host has said which registry it asks first: the one pnpm's own configuration names. */
+const OFFICIAL_REGISTRY: RegistryChoice = { kind: 'offered', registry: null }
+
+/**
+ * The registries the dialog offers: the Host's first, its fallbacks, and pnpm's own, each once.
+ * @param registries - what the Host configured, or null while unread.
+ * @returns the registries in the order the dialog lists them.
+ */
+export function offeredRegistries(registries: PluginRegistries | null): Registry[] {
+  const offered: Registry[] = []
+  for (const registry of [...registries === null ? [] : [registries.registry, ...registries.fallbackRegistries], null]) {
+    if (!offered.includes(registry)) offered.push(registry)
+  }
+  return offered
+}
+
 /** Why the typed spec was refused before anything installed. */
 export interface InstallInputError {
   readonly problem: PluginInspectProblem
   readonly reason: string
+  /** The registries the check asked, in order, when the refusal came from asking them. */
+  readonly registries?: readonly Registry[]
 }
 
 /** One pnpm run of an install, as the dialog's terminal draws it. */
@@ -115,6 +141,16 @@ export interface InstallState {
   readonly open: boolean
   /** The package spec as typed. */
   readonly spec: string
+  /** The registries the Host configured, read when the dialog opens; null until the Host answered. */
+  readonly registries: PluginRegistries | null
+  /** The registry this install asks first: the one last used, else the Host's first. */
+  readonly registry: RegistryChoice
+  /** Whether the registry options are unfolded under the spec. */
+  readonly registryOpen: boolean
+  /** Whether the typed registry was refused for not being an http(s) URL. */
+  readonly registryError: boolean
+  /** The registries the Host asked for this install, in order, and how many it may ask; null before the run. */
+  readonly attempts: { readonly registries: readonly Registry[]; readonly total: number } | null
   readonly phase: 'idle' | 'checking' | 'starting' | 'running' | 'cancelling' | 'applying' | 'unconfirmed' | 'unknown' | 'done' | 'failed'
   /** Identifies this dialog's installation, including log and cancellation messages. */
   readonly requestId?: PluginInstallRequestId
@@ -142,6 +178,8 @@ export interface InstallState {
     readonly reason: string
     readonly code?: ManagementError['code']
     readonly kind?: PluginInstallFailureKind
+    /** What the last failed run could not reach, as the Host attributed it: the registry, or the spec's own host. */
+    readonly failedAt?: 'registry' | 'spec-host'
     readonly pendingBuilds?: readonly string[]
     readonly uncertainty?: 'result' | 'cancellation' | 'acceptance'
   } | null
@@ -198,6 +236,12 @@ export interface PluginManagerFace {
   editInstallSpec: (text: string) => void
   /** Check the spec with the Host, then install it; from the failed screen, run it again. */
   runInstall: () => void
+  /** Fold or unfold the registry options under the spec. */
+  toggleRegistryOptions: () => void
+  /** Pick the registry the install asks first, or type one. */
+  chooseRegistry: (choice: RegistryChoice) => void
+  /** From the failed screen: back to the spec with the registry options unfolded. */
+  changeRegistry: () => void
   /** Allow the install scripts the failed run left pending, saved for this profile, and run the same spec again. */
   approveBuildsAndRetry: () => void
   /** Leave the check or the failed screen for the spec, or ask the Host to stop the run and wait for its cleanup. */
@@ -236,11 +280,13 @@ class RemoteAnswerError extends Error {
 /** The dialog's reading of a failed change: the Host's code and diagnostic, and the run's classified failure. */
 function failureOf(
   error: ManagementError | undefined, kind: PluginInstallFailureKind | undefined, pendingBuilds?: readonly string[],
+  failedAt?: ChangeResult['failedAt'],
 ): NonNullable<InstallState['failure']> {
   return {
     reason: error?.diagnostic ?? '',
     ...error === undefined ? {} : { code: error.code },
     ...kind === undefined ? {} : { kind },
+    ...failedAt === undefined ? {} : { failedAt },
     ...pendingBuilds === undefined || pendingBuilds.length === 0 ? {} : { pendingBuilds },
   }
 }
@@ -307,8 +353,26 @@ export function sortPackages(packages: readonly PackageView[]): PackageView[] {
 }
 
 const IDLE_INSTALL: InstallState = {
-  open: false, spec: '', phase: 'idle', inputError: null, subject: null, runs: [], detailsOpen: false,
+  open: false, spec: '', registries: null, registry: OFFICIAL_REGISTRY, registryOpen: false, registryError: false, attempts: null,
+  phase: 'idle', inputError: null, subject: null, runs: [], detailsOpen: false,
   installed: null, restartRequired: false, failure: null, approvedBuilds: [], enabling: false,
+}
+
+/** The dialog back at its spec: the run and its outcome forgotten, the spec and the registries kept. */
+function specAgain(install: InstallState): InstallState {
+  const { open, spec, registries, registry } = install
+  return { ...IDLE_INSTALL, open, spec, registries, registry }
+}
+
+/**
+ * The choice as the dialog can show it once the Host has answered: nothing remembered starts from the registry the
+ * Host asks first; a remembered registry the Host no longer offers is kept as a typed one.
+ */
+function reconciled(remembered: RegistryChoice | null, registries: PluginRegistries): RegistryChoice {
+  if (remembered === null) return { kind: 'offered', registry: registries.registry }
+  return remembered.kind === 'offered' && remembered.registry !== null && !offeredRegistries(registries).includes(remembered.registry)
+    ? { kind: 'custom', url: remembered.registry }
+    : remembered
 }
 
 /** One installation owns acceptance, response recovery, and every cancellation attempt. */
@@ -332,6 +396,10 @@ export class PluginManagerController {
   private inspectAbort: AbortController | undefined
   private request: InstallRequest | undefined
   private noticeSeq = 0
+  /** The registry last used from this browser, kept across dialogs and page loads; null until one was used. */
+  private readonly registryMemory: SnapshotStore<RegistryChoice | null> = createSnapshotStore<RegistryChoice | null>(null, {
+    persist: { name: 'dsh.plugin-manager.install-registry' },
+  })
 
   /**
    * @param ctx - the tab plugin's context, whose `remote.pluginManager` and `remote.pluginInventory` namespaces answer.
@@ -372,7 +440,13 @@ export class PluginManagerController {
       refresh: () => { void this.load() },
       openInstall: () => {
         const install = this.getSnapshot().install
-        this.patch({ install: { ...(install.requestId === undefined ? IDLE_INSTALL : install), open: true } })
+        if (install.requestId === undefined) {
+          // A new dialog starts from the registry last used here and reads what the Host offers; a hidden install reopens as it is.
+          this.patch({ install: { ...IDLE_INSTALL, open: true, registry: this.registryMemory.getSnapshot() ?? OFFICIAL_REGISTRY } })
+          void this.readRegistries()
+        } else {
+          this.patchInstall({ open: true })
+        }
         void this.reconcileInstall()
       },
       closeInstall: () => {
@@ -388,9 +462,17 @@ export class PluginManagerController {
         const install = this.getSnapshot().install
         // Typing while the Host checks or installs is not possible; a new spec after an outcome starts over.
         if (install.phase === 'checking' || isInstallPending(install.phase)) return
-        this.patchInstall(install.phase === 'idle' ? { spec: text, inputError: null } : { ...IDLE_INSTALL, open: true, spec: text })
+        this.patchInstall(install.phase === 'idle' ? { spec: text, inputError: null } : { ...specAgain(install), spec: text })
       },
       runInstall: () => { void this.runInstall() },
+      toggleRegistryOptions: () => { this.patchInstall({ registryOpen: !this.getSnapshot().install.registryOpen }) },
+      chooseRegistry: (choice) => {
+        if (this.getSnapshot().install.phase === 'idle') this.patchInstall({ registry: choice, registryError: false })
+      },
+      changeRegistry: () => {
+        const install = this.getSnapshot().install
+        if (install.phase === 'failed') this.patch({ install: { ...specAgain(install), registryOpen: true } })
+      },
       approveBuildsAndRetry: () => { void this.approveBuildsAndRetry() },
       cancelInstall: () => { void this.cancelInstall() },
       reconcileInstall: () => { void this.reconcileInstall() },
@@ -435,7 +517,21 @@ export class PluginManagerController {
       if (request.cancellation.waitingForStart) void this.sendCancellation(request, request.cancellation)
       return
     }
-    this.patchInstall({ phase: progress.phase === 'installing' ? 'running' : progress.phase })
+    const attempt = progress.attempt
+    this.patchInstall({
+      phase: progress.phase === 'installing' ? 'running' : progress.phase,
+      ...attempt === undefined
+        ? {}
+        : { attempts: { registries: [...install.attempts?.registries ?? [], attempt.registry], total: attempt.total } },
+    })
+  }
+
+  /** Read the registries the Host offers, for the dialog just opened; a refused read leaves pnpm's own and a typed one. */
+  private async readRegistries(): Promise<void> {
+    const answer = await this.ctx.remote.pluginManager.registries()
+    const install = this.getSnapshot().install
+    if (this.disposed || !install.open || !answer.ok) return
+    this.patchInstall({ registries: answer.value, registry: reconciled(this.registryMemory.getSnapshot(), answer.value) })
   }
 
   /**
@@ -550,14 +646,22 @@ export class PluginManagerController {
       this.patchInstall({ phase: 'idle', inputError: { problem: 'already-installed', reason: spec } })
       return
     }
+    const choice = install.registry
+    const typed = choice.kind === 'custom' ? choice.url.trim() : undefined
+    if (typed !== undefined && !REGISTRY_URL.test(typed)) {
+      this.patchInstall({ phase: 'idle', registryError: true })
+      return
+    }
+    const registry: Registry = typed ?? (choice as Extract<RegistryChoice, { kind: 'offered' }>).registry
+    this.registryMemory.set(typed === undefined ? choice : { kind: 'custom', url: typed })
     this.abortInspect()
     const controller = new AbortController()
     this.inspectAbort = controller
     this.patchInstall({
-      phase: 'checking', inputError: null, subject: null, runs: [], detailsOpen: false,
+      phase: 'checking', inputError: null, subject: null, runs: [], detailsOpen: false, attempts: null, registryOpen: false,
       installed: null, restartRequired: false, failure: null, approvedBuilds: [],
     })
-    const inspected = await this.ctx.remote.pluginManager.inspect(spec, controller.signal)
+    const inspected = await this.ctx.remote.pluginManager.inspect(spec, { registry }, controller.signal)
     if (this.gone(controller.signal)) return
     this.inspectAbort = undefined
     if (!inspected.ok) {
@@ -565,7 +669,8 @@ export class PluginManagerController {
       return
     }
     if (inspected.value.status === 'refused') {
-      this.patchInstall({ phase: 'idle', inputError: { problem: inspected.value.problem, reason: inspected.value.reason } })
+      const { problem, reason, registries } = inspected.value
+      this.patchInstall({ phase: 'idle', inputError: { problem, reason, ...registries === undefined ? {} : { registries } } })
       return
     }
     await this.startInstall({ spec, ...inspected.value })
@@ -577,16 +682,16 @@ export class PluginManagerController {
    * the Host saves that permission for this profile before pnpm runs.
    */
   private async startInstall(subject: InstallSubject, approvedBuilds?: readonly string[]): Promise<void> {
-    const { spec } = subject
+    const { spec, registry } = subject
     const requestId = randomUUID() as PluginInstallRequestId
     const request: InstallRequest = { requestId, acknowledged: false, replyLost: false, recovering: false }
     this.request = request
-    this.patchInstall({ phase: 'starting', requestId, subject, runs: [], failure: null, installed: null, approvedBuilds: [] })
+    this.patchInstall({ phase: 'starting', requestId, subject, runs: [], attempts: null, failure: null, installed: null, approvedBuilds: [] })
     // The Host announces `plugin-manager/changed` while the run is still on
     // the wire, and every such event reads again; those reads must not cancel
     // the run's settlement.
     const result = await this.ctx.remote.pluginManager.installBundle(spec, {
-      enabled: false, requestId, ...approvedBuilds === undefined ? {} : { approvedBuilds: [...approvedBuilds] },
+      enabled: false, requestId, registry, ...approvedBuilds === undefined ? {} : { approvedBuilds: [...approvedBuilds] },
     })
     if (this.disposed || this.request !== request) return
     if (!result.ok) {
@@ -621,15 +726,20 @@ export class PluginManagerController {
   }
 
   private settleInstall(result: ChangeResult): void {
-    const runs = this.getSnapshot().install.runs
+    const { runs, attempts } = this.getSnapshot().install
     this.request = undefined
+    // The Host's answer names every registry it asked, whether or not each attempt's announcement arrived.
+    const asked = result.registries === undefined
+      ? {}
+      : { attempts: { registries: result.registries, total: Math.max(attempts?.total ?? 0, result.registries.length) } }
     if (result.application === 'cancelled') {
       this.offerSpecAgain({ kind: 'cancelled', seq: ++this.noticeSeq })
     } else if (result.application === 'failed') {
       const packages = result.packageResult
       this.patchInstall({
         phase: 'failed', runs: settledRuns(runs, packages?.exitCode ?? null),
-        failure: failureOf(result.error, packages?.kind, result.pendingBuilds),
+        failure: failureOf(result.error, packages?.kind, result.pendingBuilds, result.failedAt),
+        ...asked,
       })
     } else {
       this.patchInstall({
@@ -637,6 +747,7 @@ export class PluginManagerController {
         installed: result.bundle ?? null,
         restartRequired: result.application === 'restart-required',
         approvedBuilds: result.approvedBuilds ?? [],
+        ...asked,
       })
     }
     const phase = this.getSnapshot().install.phase
@@ -732,8 +843,7 @@ export class PluginManagerController {
    */
   private offerSpecAgain(notice: ManagerNotice | null = null): void {
     this.request = undefined
-    const { open, spec } = this.getSnapshot().install
-    this.patch({ install: { ...IDLE_INSTALL, open, spec }, ...notice === null ? {} : { notice } })
+    this.patch({ install: specAgain(this.getSnapshot().install), ...notice === null ? {} : { notice } })
   }
 
   /**

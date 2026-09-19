@@ -12,9 +12,11 @@ The [boot package group](../../packages/boot/README.md) owns launcher-provided p
 
 `BundleInfo` carries the package name, optional installed version, selected enablement, removal availability and optional resolution error.
 
-`InstallBundleOptions.enabled` defaults to true. False installs without selecting the bundle layer. `approvedBuilds` grants persistent script permission to the supplied pending package names before installation.
+`InstallBundleOptions.enabled` defaults to true. False installs without selecting the bundle layer. `approvedBuilds` grants persistent script permission to the supplied pending package names before installation. `registry` names the registry asked first; absent, the configured one.
 
-`ChangeResult.changed` reports a disk edit independently of `application`: `applied`, `restart-required`, `overridden` or `failed`. Optional `error` carries a localizable code and external diagnostic. `packageResult` records the pnpm exit code, bounded output, truncation flag and complete diagnostic log path. `pendingBuilds` lists undecided packages across the profile; `approvedBuilds` records the names granted permission by this operation.
+`PluginRegistries` carries the configured first registry, `null` for the one pnpm's own configuration names, the fallbacks asked after it, and `resolved`, the URL pnpm's own configuration names or `null` while unread. `InspectOptions.registry` names the registry a lookup asks first.
+
+`ChangeResult.changed` reports a disk edit independently of `application`: `applied`, `restart-required`, `overridden` or `failed`. Optional `error` carries a localizable code and external diagnostic. `packageResult` records the pnpm exit code, bounded output, truncation flag and complete diagnostic log path. `pendingBuilds` lists undecided packages across the profile; `approvedBuilds` records the names granted permission by this operation; `registries` lists the registries an installation asked, in order; `failedAt` says whether the last failed run could not reach the registry it asked or the host a git or tarball spec is fetched from.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -72,12 +74,18 @@ Manage profile files and apply their declared reload lifecycle.
  */
 @Remote listBundles(): Promise<BundleInfo[]>
 
+/** Read the registries this manager asks: the configured first one, its fallbacks in order, and what pnpm's own configuration names.
+ * @returns The registries in pnpm's comparison form; null is the one pnpm's own configuration names, `resolved` as pnpm reads it now.
+ */
+@Remote async registries(): Promise<PluginRegistries>
+
 /** Read what a spec names before installing it.
  * @param spec One package spec: a registry name, an absolute path, a git address, or a tarball.
+ * @param options The registry asked first.
  * @param signal Ends a registry lookup early.
  * @returns The package the spec names, or why it is refused.
  */
-@Remote async inspect(spec: string, signal?: AbortSignal): Promise<PluginSpecInspection>
+@Remote async inspect(spec: string, options?: InspectOptions, signal?: AbortSignal): Promise<PluginSpecInspection>
 
 /** Persist a plugin entry's desired enablement and apply it on live profiles.
  * @param id Loader entry identity returned by listPlugins.
@@ -98,9 +106,9 @@ Manage profile files and apply their declared reload lifecycle.
  * that fails, is cancelled, or adds a package without a bundle patch restores
  * `package.json` and `pnpm-lock.yaml` as they were; downloaded files can stay.
  * @param spec One package spec, including local paths relative to the invocation directory.
- * @param options Whether to activate the installed bundle (defaults to true), the request id a cancellation names, and
- * the pending build scripts to allow for this profile before pnpm runs.
- * @returns Package-manager diagnostics and observed activation outcome.
+ * @param options Whether to activate the installed bundle (defaults to true), the request id a cancellation names,
+ * the pending build scripts to allow for this profile before pnpm runs, and the registry asked first.
+ * @returns Package-manager diagnostics, the registries asked, and the observed activation outcome.
  */
 @Remote installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>
 
@@ -215,13 +223,14 @@ Source: [`packages/boot/plugin-manager/src/types.ts`](../../packages/boot/plugin
 
 #### `plugin-manager/install-state` — emit
 
-An installation moved between its Host phases.
+An installation moved between its Host phases. `installing` is announced once per registry the installation asks, with the attempt's registry and position; `cancelling` and `applying` once.
 
 ```ts cordis-catalog
 /**
- * An installation moved between its Host phases.
+ * An installation moved between its Host phases. `installing` is announced once per registry the
+ * installation asks, with the attempt's registry and position; `cancelling` and `applying` once.
  * @mode emit
- * @param progress - the installation's request id and phase.
+ * @param progress - the installation's request id and phase, with the attempt while installing.
  */
 'plugin-manager/install-state'(progress: PluginInstallProgress): void
 ```
