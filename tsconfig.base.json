@@ -82,6 +82,7 @@
       "@deepseek-ai/dsh-api-workspace-controller/types": ["./packages/api/workspace-controller/src/types.ts"],
       "@deepseek-ai/dsh-typert-protocol": ["./packages/typert/protocol/src/index.ts"],
       "@deepseek-ai/dsh-typert-protocol/types": ["./packages/typert/protocol/src/types.ts"],
+      "@deepseek-ai/dsh-typert-protocol/client": ["./packages/typert/protocol/src/client/index.ts"],
       "@deepseek-ai/dsh-typert-loader": ["./packages/typert/loader/src/index.ts"],
       "@deepseek-ai/dsh-session/invariant": ["./packages/core/session/src/invariant.ts"],
       "@deepseek-ai/dsh-typert-registry/types": ["./packages/typert/registry/src/types.ts"],

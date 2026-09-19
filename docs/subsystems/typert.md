@@ -85,8 +85,8 @@ interface InvocationDescriptor {
   readonly method: string
   /** Service member invoked when the exported method name is an alias. */
   readonly implementation?: string
-  /** Absent for unary calls; stream calls validate and deliver every yielded item. */
-  readonly mode?: 'stream'
+  /** Absent for unary calls; stream and duplex calls validate and deliver every yielded item. */
+  readonly mode?: 'stream' | 'duplex'
   /** Receiver selection mode. */
   readonly invocation:
     | { readonly kind: 'direct' }
@@ -105,6 +105,13 @@ interface InvocationDescriptor {
   }
   /** Ordered business parameters. */
   readonly parameters: readonly InvocationParameterDescriptor[]
+  /** Duplex only: Client-to-Host item stream injected before `signal` instead of entering wire args. */
+  readonly uplink?: {
+    /** Reserved Host method parameter preceding the optional `signal`. */
+    readonly parameter: 'uplink'
+    /** Codec validating every uplink item before it reaches the Host method. */
+    readonly codec: TypertCodec
+  }
   /** Transport cancellation injected after business parameters instead of entering wire args. */
   readonly cancellation?: {
     /** Reserved final Host method parameter. */
@@ -151,6 +158,8 @@ interface InvokeRemoteRequest {
   readonly method: string
   /** Named wire values; fields must exactly match the descriptor. */
   readonly args: Readonly<Record<string, unknown>>
+  /** Duplex uplink items decoded per item before reaching the method; absent means an immediately ended iterable. */
+  readonly uplink?: AsyncIterable<unknown>
   /** Carrier or direct-caller cancellation injected only into cancellation-aware methods. */
   readonly signal?: AbortSignal
 }
@@ -172,10 +181,12 @@ type TypertGatewayErrorCode =
   | 'gateway/lookup-not-found'
   | 'gateway/lookup-unavailable'
   | 'gateway/method-unavailable'
+  | 'gateway/protocol'
   | 'gateway/provider-mismatch'
   | 'gateway/result-invalid'
   | 'gateway/service-unavailable'
   | 'gateway/signature-invalid'
+  | 'gateway/uplink-overflow'
 ```
 
 ```ts type-equiv
@@ -201,8 +212,8 @@ interface TypertGateway {
    */
   invoke(request: InvokeRemoteRequest): Promise<unknown>
   /**
-   * Open one live stream Remote method without assuming a physical carrier.
-   * @param request - decoded endpoint and named wire arguments.
+   * Open one live stream or duplex Remote method without assuming a physical carrier.
+   * @param request - decoded endpoint, named wire arguments, and the duplex uplink when the method reads one.
    * @returns a cancellation-aware iterable over the business results.
    */
   stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
@@ -333,8 +344,8 @@ registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo
 async invoke(request: InvokeRemoteRequest): Promise<unknown>
 
 /**
- * Open one live stream Remote method without assuming a physical carrier.
- * @param request - decoded endpoint and named wire arguments.
+ * Open one live stream or duplex Remote method without assuming a physical carrier.
+ * @param request - decoded endpoint, named wire arguments, and the duplex uplink when the method reads one.
  * @returns a cancellation-aware iterable over the business results.
  */
 async stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>

@@ -28,6 +28,13 @@ interface SocketWaiter {
   reject(error: unknown): void
 }
 
+interface UplinkPump {
+  /** Settles once the pump has stopped sending. */
+  readonly done: Promise<void>
+  /** Interrupt the pump, including a read blocked on the caller's iterator. */
+  stop(): void
+}
+
 /**
  * Keep one physical WebSocket and share it among independently cancellable
  * Remote streams. A carrier that supplies an in-process stream opener never
@@ -77,12 +84,15 @@ export class RemoteStreamMuxClient {
    * @param endpoint - Typert Remote stream endpoint.
    * @param payload - endpoint request encoded on the wire.
    * @param signal - cancellation for this logical stream.
+   * @param uplink - the Client's items: each is sent as an `item` frame, its end as `end`; its `return()`
+   * runs when the stream finishes, and its failure cancels the stream and fails the downlink.
    * @returns Host items until completion, cancellation, or failure.
    */
   async *open(
     endpoint: string,
     payload: unknown,
     signal: AbortSignal,
+    uplink?: AsyncIterable<unknown>,
   ): AsyncGenerator {
     signal.throwIfAborted()
     const streamId = randomUUID()
@@ -90,6 +100,7 @@ export class RemoteStreamMuxClient {
     let carrier: WebSocket | undefined
     let opened = false
     let terminal = false
+    let pump: UplinkPump | undefined
     const abort = (): void => { inbox.fail(signal.reason) }
     signal.addEventListener('abort', abort, { once: true })
     try {
@@ -99,6 +110,7 @@ export class RemoteStreamMuxClient {
       this.streams.set(streamId, inbox)
       this.send(socket, { type: 'open', streamId, endpoint, payload })
       opened = true
+      if (uplink !== undefined) pump = this.pumpUplink(socket, streamId, uplink, signal, inbox)
       while (true) {
         const frame = await inbox.next()
         signal.throwIfAborted()
@@ -115,9 +127,55 @@ export class RemoteStreamMuxClient {
     } finally {
       signal.removeEventListener('abort', abort)
       this.streams.delete(streamId)
+      pump?.stop()
       if (opened && !terminal && carrier?.readyState === WebSocket.OPEN) {
         this.send(carrier, { type: 'cancel', streamId })
       }
+      // The old generation's pump has stopped before a supervisor reopens the next one.
+      if (pump !== undefined) await pump.done
+    }
+  }
+
+  /**
+   * Send the caller's uplink items on this generation's socket. `stop()`
+   * interrupts a pump blocked on `uplink.next()`; the uplink iterator's
+   * `return()` is invoked without being awaited because a generator blocked in
+   * `next()` only completes it once it yields.
+   */
+  private pumpUplink(
+    socket: WebSocket,
+    streamId: string,
+    uplink: AsyncIterable<unknown>,
+    signal: AbortSignal,
+    inbox: StreamInbox,
+  ): UplinkPump {
+    const stopped = Promise.withResolvers<IteratorReturnResult<undefined>>()
+    const interruption: IteratorReturnResult<undefined> = { value: undefined, done: true }
+    const uplinkIterator = uplink[Symbol.asyncIterator]()
+    const done = (async (): Promise<void> => {
+      let exhausted = false
+      try {
+        while (true) {
+          const next = await Promise.race([uplinkIterator.next(), stopped.promise])
+          if (next === interruption || signal.aborted || this.socket !== socket) return
+          if (next.done === true) {
+            exhausted = true
+            break
+          }
+          this.send(socket, { type: 'item', streamId, value: next.value })
+        }
+        this.send(socket, { type: 'end', streamId })
+      } catch (error) {
+        inbox.fail(error)
+      } finally {
+        if (!exhausted) {
+          void Promise.resolve().then(() => uplinkIterator.return?.()).catch(() => undefined)
+        }
+      }
+    })()
+    return {
+      done,
+      stop: () => { stopped.resolve(interruption) },
     }
   }
 

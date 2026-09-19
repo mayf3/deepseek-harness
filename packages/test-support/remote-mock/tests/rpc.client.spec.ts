@@ -18,6 +18,25 @@ describe('RemoteMock.rpc', () => {
     expect(mock.log.streams('session/control').map(open => open.args)).toEqual([[{ since: 1 }]])
   })
 
+  it('hands the uplink to the script and keeps it out of the logged args', async () => {
+    const mock = RemoteMock.create().stream('job/attach', async (args, stream) => {
+      for await (const item of stream.uplink) stream.push(`${String(args[0])}:${String(item)}`)
+      stream.end()
+    })
+    const drain = async (source: AsyncIterable<unknown>): Promise<unknown[]> => {
+      const items: unknown[] = []
+      for await (const item of source) items.push(item)
+      return items
+    }
+    const uplink = (values: readonly string[]): AsyncIterable<string> => (async function *() { yield* values })()
+
+    await expect(drain(mock.rpc.open!('/api', 'job/attach', { args: ['job-1'] }, idle(), uplink(['a', 'b']))))
+      .resolves.toEqual(['job-1:a', 'job-1:b'])
+    await expect(drain(mock.open('job/attach', ['job-2', uplink(['c'])], idle()))).resolves.toEqual(['job-2:c'])
+    await expect(drain(mock.open('job/attach', ['job-3'], idle()))).resolves.toEqual([])
+    expect(mock.log.streams('job/attach').map(open => open.args)).toEqual([['job-1'], ['job-2'], ['job-3']])
+  })
+
   it('rejects malformed payloads and unmatched endpoints, logging the miss', async () => {
     const mock = RemoteMock.create()
     await expect(mock.rpc.call('/api', 'a/b', 'bare')).rejects.toThrow('remote-mock: payload of a/b must be { args: unknown[] | object }')

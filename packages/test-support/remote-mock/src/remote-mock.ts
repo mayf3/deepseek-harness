@@ -156,7 +156,7 @@ export class RemoteMock {
       // The carrier contract names the result envelope; the registered value is taken as that envelope unchecked.
       return value as ConnectionRpcResult<unknown>
     },
-    open: (_channel, endpoint, payload, signal) => this.open(endpoint, argsOf(endpoint, payload), signal),
+    open: (_channel, endpoint, payload, signal, uplink) => this.open(endpoint, argsOf(endpoint, payload), signal, uplink),
   }
 
   private constructor() {}
@@ -282,11 +282,17 @@ export class RemoteMock {
    * @param endpoint - endpoint.
    * @param args - positional args.
    * @param signal - consumer cancellation.
+   * @param uplink - the stream's uplink, passed positionally after the args as the whole-client proxies send it.
    * @returns the controlled script stream or the native override's caller-owned iterable.
    * @throws {Error} when the default runs without a registered script (logged as unmatched).
    */
-  open(endpoint: string, args: readonly unknown[], signal: AbortSignal): AsyncIterable<unknown> {
-    return this.streamMock(endpoint)(...args, signal) as AsyncIterable<unknown>
+  open(
+    endpoint: string,
+    args: readonly unknown[],
+    signal: AbortSignal,
+    uplink?: AsyncIterable<unknown>,
+  ): AsyncIterable<unknown> {
+    return this.streamMock(endpoint)(...args, ...(uplink === undefined ? [] : [uplink]), signal) as AsyncIterable<unknown>
   }
 
   private streamMock(endpoint: string): Mock<UnaryRuleFn> {
@@ -295,20 +301,27 @@ export class RemoteMock {
       mock = fn((...values: readonly unknown[]) => {
         const args = [...values]
         const signal = args.at(-1) instanceof AbortSignal ? args.pop() as AbortSignal : new AbortController().signal
-        return this.openScript(endpoint, args, signal)
+        // Wire args are JSON values, so a trailing async iterable is the stream's uplink.
+        const uplink = isAsyncIterable(args.at(-1)) ? args.pop() as AsyncIterable<unknown> : EMPTY_UPLINK
+        return this.openScript(endpoint, args, signal, uplink)
       })
       this.streamMocks.set(endpoint, mock)
     }
     return mock
   }
 
-  private openScript(endpoint: string, args: readonly unknown[], signal: AbortSignal): AsyncIterable<unknown> {
+  private openScript(
+    endpoint: string,
+    args: readonly unknown[],
+    signal: AbortSignal,
+    uplink: AsyncIterable<unknown>,
+  ): AsyncIterable<unknown> {
     const script = this.scripts.get(endpoint)
     if (script === undefined) {
       this.logStore.miss(endpoint, 'stream')
       throw new Error(this.noRuleMessage(endpoint))
     }
-    const stream = new MockStream(this.logStore.stream(endpoint, args), signal)
+    const stream = new MockStream(this.logStore.stream(endpoint, args), signal, uplink)
     this.live.push(stream)
     this.wakeOpened(endpoint)
     stream.run(script, args)
@@ -349,6 +362,14 @@ export class RemoteMock {
 
 function isRuleFn(rule: unknown): rule is UnaryRuleFn {
   return typeof rule === 'function'
+}
+
+const EMPTY_UPLINK: AsyncIterable<never> = {
+  [Symbol.asyncIterator]: () => ({ next: () => Promise.resolve({ value: undefined, done: true }) }),
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  return typeof value === 'object' && value !== null && Symbol.asyncIterator in value
 }
 
 /** A rule's synchronous throw becomes a rejection so the call settles through one path. */

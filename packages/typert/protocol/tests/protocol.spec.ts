@@ -240,6 +240,19 @@ describe('typert-protocol Remote declarations', () => {
     expect(remoteMethods(prototypeLess)).toEqual([])
   })
 
+  it('records the stream mode on the Remote marker', () => {
+    class Jobs {
+      follow(): void {}
+    }
+    const initializers: Array<(this: Jobs) => void> = []
+    Remote({ mode: 'stream' })(Reflect.get(Jobs.prototype, 'follow'), methodContext('follow', initializers))
+    const jobs = new Jobs()
+    for (const initialize of initializers) initialize.call(jobs)
+    expect(remoteMethods(jobs)).toEqual([
+      { method: 'follow', mode: 'stream', invocation: { kind: 'direct' } },
+    ])
+  })
+
   it('rejects malformed decorator calls and targets', () => {
     const method: (this: object) => void = function (this: object): void {}
     expect(() => { (Remote as unknown as (value: typeof method) => void)(method) }).toThrow('context is missing')
@@ -250,6 +263,9 @@ describe('typert-protocol Remote declarations', () => {
     expect(() => Remote('..')).toThrow('export name')
     expect(() => Remote({ mode: 'unary' } as unknown as { mode: 'stream' })).toThrow('exactly mode')
     expect(() => Remote({ mode: 'stream', extra: true } as unknown as { mode: 'stream' })).toThrow('exactly mode')
+    const bogusMode: string = 'duplex'
+    expect(() => Remote({ mode: bogusMode } as { mode: 'stream' }))
+      .toThrow('Remote options must contain exactly mode: "stream"')
     expect(() => RemoteScope('' as 'metaFixture')).toThrow('Scope key')
     expect(() => RemoteScope('metaFixture', 'bad/name')).toThrow('export name')
 

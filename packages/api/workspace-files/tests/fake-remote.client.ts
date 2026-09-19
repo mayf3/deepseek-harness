@@ -5,6 +5,8 @@
  */
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteStreamHandle } from '@deepseek-ai/dsh-typert-protocol/client'
+import { streamHandle } from '@deepseek-ai/dsh-remote-mock'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceFileWatchFrame, WorkspaceFileStat } from '../src/types.ts'
 import type { SupervisedStream, SupervisedStreamOptions, WorkspaceFilesRemote } from '../src/client/remote.ts'
@@ -225,7 +227,7 @@ export class FakeRemote implements WorkspaceFilesRemote {
         this.statWaiters.delete(index)
         if (this.closed) resolve(this.closedStat())
       }),
-    changes: (sessionId: SessionId, path: string, signal?: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame> => {
+    changes: (sessionId: SessionId, path: string, signal?: AbortSignal): RemoteStreamHandle<WorkspaceFileWatchFrame, never> => {
       this.calls.push('changes')
       if (signal === undefined) throw new Error('the feed must hand its signal to the Host stream')
       const source = new Source<WorkspaceFileWatchFrame>(signal)
@@ -235,7 +237,7 @@ export class FakeRemote implements WorkspaceFilesRemote {
       for (const waiter of this.watchWaiters.get(index) ?? []) waiter(watch)
       this.watchWaiters.delete(index)
       if (this.autoReady) source.push({ kind: 'ready' })
-      return source
+      return streamHandle(source)
     },
   }
 }

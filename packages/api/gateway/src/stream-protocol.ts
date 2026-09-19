@@ -239,7 +239,7 @@ export function isRemoteEventAgentId(value: unknown): value is RemoteEventAgentI
   return typeof value === 'string' && value.length > 0
 }
 
-/** One logical stream request sent from the browser. */
+/** One logical stream request sent from the browser: open, one uplink item, uplink half-close, or cancel. */
 export type RemoteStreamClientMessage =
   | {
     readonly type: 'open'
@@ -247,6 +247,8 @@ export type RemoteStreamClientMessage =
     readonly endpoint: string
     readonly payload: unknown
   }
+  | { readonly type: 'item'; readonly streamId: string; readonly value?: unknown }
+  | { readonly type: 'end'; readonly streamId: string }
   | { readonly type: 'cancel'; readonly streamId: string }
 
 /** Carrier-safe failure delivered by the Host. */
@@ -269,7 +271,15 @@ export type RemoteStreamServerMessage =
  */
 export function parseRemoteStreamClientMessage(text: string): RemoteStreamClientMessage {
   return parseMessage(text, (value) => {
-    if (value.type === 'cancel' && exactKeys(value, ['type', 'streamId']) && validId(value.streamId)) {
+    if ((value.type === 'cancel' || value.type === 'end')
+      && exactKeys(value, ['type', 'streamId'])
+      && validId(value.streamId)) {
+      return value as RemoteStreamClientMessage
+    }
+    if (value.type === 'item'
+      && (exactKeys(value, ['type', 'streamId']) || exactKeys(value, ['type', 'streamId', 'value']))
+      && validId(value.streamId)
+      && (!Object.hasOwn(value, 'value') || isRemoteJsonValue(value.value))) {
       return value as RemoteStreamClientMessage
     }
     if (value.type === 'open'

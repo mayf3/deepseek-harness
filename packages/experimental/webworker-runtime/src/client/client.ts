@@ -13,6 +13,8 @@ import type {
   TunnelRequestId,
   TunnelStreamEndFrame,
   TunnelStreamErrorFrame,
+  TunnelStreamUplinkEndFrame,
+  TunnelStreamUplinkItemFrame,
   TunnelStreamItemFrame,
   TunnelStreamOpenFrame,
 } from '../transport/frames.ts'
@@ -32,6 +34,13 @@ interface PendingUnary {
 }
 
 type LogicalStreamFrame = TunnelStreamItemFrame | TunnelStreamEndFrame | TunnelStreamErrorFrame
+
+interface UplinkPump {
+  /** Settles once the pump has stopped posting frames. */
+  readonly done: Promise<void>
+  /** Interrupt the pump, including a read blocked on the caller's iterator. */
+  stop(): void
+}
 
 interface TunnelStreamFailureMarker {
   readonly kind: 'remote' | 'carrier'
@@ -234,14 +243,16 @@ export class WorkerTunnel {
    * @param endpoint - canonical Gateway Remote endpoint.
    * @param payload - decoded endpoint payload.
    * @param signal - logical-stream cancellation.
+   * @param uplink - the stream's uplink, posted as `stream-uplink-item` frames and closed with `stream-uplink-end`.
    * @returns decoded stream values from the worker Host.
    */
-  async *open(endpoint: string, payload: unknown, signal: AbortSignal): AsyncGenerator {
+  async *open(endpoint: string, payload: unknown, signal: AbortSignal, uplink?: AsyncIterable<unknown>): AsyncGenerator {
     signal.throwIfAborted()
     const id = this.nextId++
     const inbox = new LogicalStreamInbox()
     let opened = false
     let terminal = false
+    let pump: UplinkPump | undefined
     const onAbort = (): void => { inbox.fail(signal.reason) }
     signal.addEventListener('abort', onAbort, { once: true })
     this.logicalStreams.set(id, inbox)
@@ -257,6 +268,7 @@ export class WorkerTunnel {
           message: `web-preview tunnel: failed to open Remote stream ${endpoint}`,
         }, { cause })
       }
+      if (uplink !== undefined) pump = this.pumpUplink(id, uplink, signal, inbox)
       while (true) {
         const response = await inbox.next()
         signal.throwIfAborted()
@@ -272,7 +284,56 @@ export class WorkerTunnel {
       signal.removeEventListener('abort', onAbort)
       this.logicalStreams.delete(id)
       this.inFlight.delete(id)
+      pump?.stop()
       if (opened && !terminal) this.abortWorkerOperation(id)
+      if (pump !== undefined) await pump.done
+    }
+  }
+
+  /**
+   * Post the caller's uplink items for one logical stream. A failing uplink
+   * fails the downlink, and the enclosing `open` then aborts the worker side.
+   */
+  private pumpUplink(
+    id: TunnelRequestId,
+    uplink: AsyncIterable<unknown>,
+    signal: AbortSignal,
+    inbox: LogicalStreamInbox,
+  ): UplinkPump {
+    const interrupt = Promise.withResolvers<IteratorReturnResult<undefined>>()
+    let active = true
+    const done = this
+      .forwardUplink(id, uplink[Symbol.asyncIterator](), interrupt.promise, () => active && !signal.aborted)
+      .catch((error: unknown) => { inbox.fail(error) })
+    return {
+      done,
+      stop: () => {
+        active = false
+        interrupt.resolve({ value: undefined, done: true })
+      },
+    }
+  }
+
+  /** Post items until the caller's iterator ends, the pump is stopped, or the page aborts the stream. */
+  private async forwardUplink(
+    id: TunnelRequestId,
+    iterator: AsyncIterator<unknown>,
+    interrupt: Promise<IteratorReturnResult<undefined>>,
+    isActive: () => boolean,
+  ): Promise<void> {
+    let exhausted = false
+    try {
+      for (;;) {
+        const next = await Promise.race([iterator.next(), interrupt])
+        if (!isActive()) return
+        if (next.done === true) break
+        this.worker.postMessage({ t: 'stream-uplink-item', id, value: next.value } satisfies TunnelStreamUplinkItemFrame)
+      }
+      exhausted = true
+      this.worker.postMessage({ t: 'stream-uplink-end', id } satisfies TunnelStreamUplinkEndFrame)
+    } finally {
+      // A generator blocked in next() completes this return only once it yields, so it is not awaited.
+      if (!exhausted) void Promise.resolve().then(() => iterator.return?.()).catch(() => undefined)
     }
   }
 

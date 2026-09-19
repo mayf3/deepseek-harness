@@ -23,6 +23,8 @@ import type {
   WorkspaceView,
 } from '../src/types.ts'
 import { RemoteError, type RemoteFailure, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteStreamHandle } from '@deepseek-ai/dsh-typert-protocol/client'
+import { streamHandle } from '@deepseek-ai/dsh-remote-mock'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 const sid = (id: string): SessionId => id as SessionId
@@ -146,7 +148,9 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
     return this.onUnpinSession(request)
   }
 
-  async *follow(_signal?: AbortSignal): AsyncGenerator<WorkspaceFollowFrame> {}
+  follow(_signal?: AbortSignal): RemoteStreamHandle<WorkspaceFollowFrame, never> {
+    return streamHandle<WorkspaceFollowFrame>((async function* () {})())
+  }
 
   private record(method: string, request: unknown): void {
     this.calls.push({ method, request })

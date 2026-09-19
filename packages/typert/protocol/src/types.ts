@@ -5,6 +5,7 @@
  */
 
 import type { Context, Events } from '@deepseek-ai/cordis'
+import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { TypertOwnedValue } from './owned-value.ts'
 
 declare const LOOKUP_HOST: unique symbol
@@ -75,6 +76,22 @@ export type RemoteFailure = {
 export type RemoteResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: RemoteFailure }
+
+declare const STREAM_UPLINK: unique symbol
+
+/**
+ * One Remote stream as a Host method returns it: the items it yields to the
+ * Client, iterated as a plain `AsyncIterable<Out>`. `In` is the type of the
+ * items the Client may send back on the same logical stream, read through
+ * `RemoteInvocation.uplink()`; it is carried only as a type-level marker. The
+ * default `never` declares a method that reads none, and its descriptor
+ * carries no uplink codec. On the Client face the same alias, exported by
+ * `@deepseek-ai/dsh-typert-protocol/client`, is the stream handle a generated
+ * method returns as `RemoteStreamHandle<Out, In>`.
+ * @template Out - item type the Host method yields.
+ * @template In - item type the Client may send; `never` when the method reads none.
+ */
+export type RemoteStream<Out, In = never> = AsyncIterable<Out> & { readonly [STREAM_UPLINK]?: In }
 
 /** Merge-extensible scoped Remote method signatures generated for consumers. */
 export interface TypertRemoteScopeMap {}
@@ -286,6 +303,16 @@ export interface InvocationDescriptor {
   }
   /** Ordered business parameters. */
   readonly parameters: readonly InvocationParameterDescriptor[]
+  /**
+   * Client-to-Host items of the same logical stream, generated from the `In`
+   * type argument of the method's `RemoteStream<Out, In>` return type; absent
+   * when `In` is `never`. The method reads the items through
+   * `RemoteInvocation.uplink()`, so nothing enters the parameter list.
+   */
+  readonly uplink?: {
+    /** Codec validating every uplink item before `uplink()` delivers it. */
+    readonly codec: TypertCodec
+  }
   /** Transport cancellation injected after business parameters instead of entering wire args. */
   readonly cancellation?: {
     /** Reserved final Host method parameter. */
@@ -295,6 +322,60 @@ export interface InvocationDescriptor {
   readonly result: TypertCodec
   /** Source declaration used only for diagnostics. */
   readonly sourceLocation?: InvocationSourceLocation
+}
+
+/**
+ * Opaque identity of one Peer: a party admitted to this Host by the connection
+ * layer. "Peer" is a connection-layer word; the browser application keeps the
+ * word "Client".
+ */
+export type PeerId = Branded<'PeerId'>
+
+/**
+ * One Peer's session on this Host. Opened and disposed by whoever admitted the
+ * Peer; `ctx` is the Cordis scope that owns connection-lifetime registrations.
+ * Who the Peer is and what it may do are not recorded here: business plugins
+ * attach that through `ctx` or a registry keyed by this object.
+ */
+export interface PeerScope {
+  readonly id: PeerId
+  readonly ctx: Context
+  /**
+   * Tear down every registration made through `ctx`.
+   * @returns settles once the scope has quiesced; racing calls share one completion.
+   */
+  dispose(): Promise<void>
+}
+
+/**
+ * The context of one Remote call, reachable inside the receiving method as
+ * `this.ctx.invocation`. The Gateway derives the receiver from a Context that
+ * carries it, so no parameter is injected and nothing crosses the wire.
+ */
+export interface RemoteInvocation {
+  readonly request: {
+    readonly namespace: string
+    readonly method: string
+    readonly args: Readonly<Record<string, unknown>>
+  }
+  /** Cordis service key of the receiving Service. */
+  readonly service: string
+  /** Peer the call speaks for; an in-process carrier speaks for the operator. */
+  readonly peer: PeerScope
+  /** Carrier cancellation: Client cancel, socket close, or an uplink failure. */
+  readonly signal: AbortSignal
+  /**
+   * The Client's uplink items for this call. Available once; a second call
+   * throws. With an uplink codec on the descriptor every item is decoded to
+   * `In`; without one items arrive as `unknown` after a JSON-safety check.
+   * Iteration ends when the Client ends its uplink; when the method finishes
+   * its downlink the Gateway calls the iterator's `return()` and unread items
+   * are dropped. `In` is the caller's assertion: the runtime decodes by the
+   * descriptor and does not cross-check it.
+   * @template In - item type the caller reads; the descriptor codec decides what arrives.
+   * @returns the single-consumer uplink iterable.
+   */
+  uplink<In = unknown>(): AsyncIterable<In>
 }
 
 /** Generated Host contract selected explicitly by a Client assembly. */
@@ -569,5 +650,11 @@ export interface TypertRegistryContract {
 declare module '@deepseek-ai/cordis' {
   interface Context {
     typert: TypertRegistryContract
+    /**
+     * The Remote call this Context was derived for, or `undefined` on a
+     * Context no Remote call derived. A Service method reads it as
+     * `this.ctx.invocation`.
+     */
+    readonly invocation: RemoteInvocation | undefined
   }
 }

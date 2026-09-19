@@ -27,10 +27,14 @@ export type {
   InvocationDescriptor,
   InvocationParameterDescriptor,
   InvocationSourceLocation,
+  PeerId,
+  PeerScope,
   RemoteErrorCode,
   RemoteErrorDetailsMap,
   RemoteFailure,
+  RemoteInvocation,
   RemoteResult,
+  RemoteStream,
   TypertClientEventListener,
   TypertClientRemote,
   TypertClientContextAdapter,
@@ -94,13 +98,13 @@ export interface RemoteMethodMarker {
   /** Endpoint method when it differs from the implementation member. */
   readonly exportName?: string
   /** Stream methods yield many independently validated result items. */
-  readonly mode?: 'stream'
+  readonly mode?: RemoteMethodOptions['mode']
   readonly invocation: RemoteInvocationMarker
 }
 
 /** Options for a non-unary Remote method. */
 export interface RemoteMethodOptions {
-  /** Deliver each Iterable item over the shared logical-stream carrier. */
+  /** `stream`: deliver each Iterable item over the shared logical-stream carrier. */
   readonly mode: 'stream'
 }
 
@@ -118,7 +122,7 @@ interface RemoteInitializerContext<This extends object> {
 
 interface StoredRemoteMethodMarker {
   readonly exportName?: string
-  readonly mode?: 'stream'
+  readonly mode?: RemoteMethodOptions['mode']
   readonly invocation: RemoteInvocationMarker
 }
 
@@ -208,7 +212,7 @@ function remoteOptionMode(options: object): unknown {
 
 function remoteDecorator(
   invocation: RemoteInvocationMarker,
-  mode?: 'stream',
+  mode?: RemoteMethodOptions['mode'],
   exportName?: string,
 ): RemoteMethodDecorator {
   return function <This extends object, Args extends unknown[], Result>(
@@ -267,7 +271,7 @@ function readRemoteMethodDescriptor(prototype: object): RemoteMethodDescriptorV1
 function addMarkerInitializer<This extends object>(
   context: RemoteInitializerContext<This>,
   invocation: RemoteInvocationMarker,
-  mode?: 'stream',
+  mode?: RemoteMethodOptions['mode'],
   exportName?: string,
 ): void {
   if (context.private || context.static || typeof context.name !== 'string') {
@@ -287,7 +291,7 @@ function mark(
   prototype: object,
   method: string,
   invocation: RemoteInvocationMarker,
-  mode?: 'stream',
+  mode?: RemoteMethodOptions['mode'],
   exportName?: string,
 ): void {
   const descriptor = readRemoteMethodDescriptor(prototype)

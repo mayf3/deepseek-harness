@@ -2,7 +2,7 @@
 
 English | [中文](api-gateway.zh.md)
 
-This is the current-state reference for the Typert API Gateway. It describes how business services declare unary Remote methods, how the build generates Host and Client contracts, and how calls reuse the Connection RPC and `/api` route. Session events, incremental data, and other streaming protocols are outside this document's scope; they may use the same Connection but do not use Remote method descriptors.
+This is the current-state reference for the Typert API Gateway. It describes how business services declare unary, stream, and duplex Remote methods, how the build generates Host and Client contracts, and how calls reuse the Connection RPC and `/api` route. Session events, incremental data, and other streaming protocols are outside this document's scope; they may use the same Connection but do not use Remote method descriptors.
 
 ## Programming model
 
@@ -54,6 +54,8 @@ export class GoalService extends TypertRemoteService {
 ```
 
 Remote methods may return a value synchronously or return a Promise. For cooperative cancellation, the final parameter in the Host signature must be `signal: AbortSignal` using the global type; it is recorded in the descriptor instead of entering `args`, while the generated Client method accepts an optional final `AbortSignal`.
+
+`@Remote({ mode: 'stream' })` marks a method that returns `Iterable` or `AsyncIterable`: the Gateway validates and delivers each yielded item over its multiplexed `/api/remote.mux` WebSocket or an in-process carrier, and the generated Client method returns an `AsyncIterable`. `@Remote({ mode: 'duplex' })` adds the Client-to-Host direction: the Host signature declares the reserved `uplink: AsyncIterable<In>` parameter immediately before the optional `signal`, the generated Client method accepts an `AsyncIterable<In>` in the same position, and the Gateway validates each item the Client sends with the generated `In` codec before the Host method reads it. Like `signal`, `uplink` is recorded in the descriptor instead of entering `args`; the [Gateway README](../packages/api/gateway/README.md) owns the frame, half-close, cancellation, and inbox-bound contracts.
 
 The Client uses concrete functions on ordinary objects, not a JavaScript Proxy. Direct and scoped calls appear under `ctx.remote.<namespace>` and `agentCtx.remote.<namespace>`. Each namespace is a traced Cordis child Service registered as `remote.<namespace>`; the Client assembly mounts contributions through `ctx.remote.$mount()`, and the namespace unloads after its last method is withdrawn. Dependency declarations belong to the actual caller: only a business package that reads `ctx.remote.<namespace>` or `agentCtx.remote.<namespace>` declares both `remote` and `remote.<namespace>` in its own `inject`; assemblies that only mount contributions and higher-level runtimes that do not call that namespace do not declare the namespace dependency on the business package's behalf. When an `@Remote` method has exactly one lookup parameter and a same-named `TypertContextMap` uses the same wire identity, the generated scoped signature omits that identity parameter. `@RemoteScope` generates only the scoped invocation interface.
 
@@ -156,7 +158,7 @@ The running Client watcher consumes these generated files when it rebundles. If 
 
 ## Boundaries
 
-Remote handles only unary method calls with one request and one result. Session event streams, pagination, incremental reduce, projection, and entity substreams require a separate data protocol and registration model; even when they reuse the Connection, they must not masquerade as Remote methods or enter invocation descriptors.
+Remote handles unary method calls with one request and one result, stream methods whose items flow Host → Client, and duplex methods whose Client items reach the running Host method through the reserved `uplink` parameter. Session event streams, pagination, incremental reduce, projection, and entity substreams still require a separate data protocol and registration model; even when they reuse the Connection, they must not masquerade as Remote methods or enter invocation descriptors.
 
 The API layers are organized as `remotes → gateway → connection → webserver`. The BFF and Typert RPC layers live under `packages/api`; Connection and WebServer live at `packages/client/connection` and `packages/host/webserver`. A feature that needs a streamed or browser-native response registers an exact Connection Fetch route instead of defining a Remote method.
 

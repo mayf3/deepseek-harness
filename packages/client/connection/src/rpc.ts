@@ -1,6 +1,7 @@
 /** Generic unary RPC contracts shared by the Host and Client Connection halves. */
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
+import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 
 /** Correlation id minted by a caller and echoed by the Connection response. */
 export type RpcId = Branded<'rpc-id'>
@@ -96,11 +97,44 @@ export interface ConnectionIndexResponse {
   end(body?: string): unknown
 }
 
-/** Handler invoked after Connection has decoded the transport envelope. */
+/** Outcome of admitting one request: the Peer it speaks for, or the status refusing it. */
+export type PeerAdmission =
+  | { readonly peer: PeerScope }
+  | { readonly rejection: 401 | 403 }
+
+/** Registry of the Peers this Host answers to. */
+export interface PeerRegistryHandle {
+  /** The operator's own Peer: every browser-cookie request and every in-process carrier speaks for it. */
+  readonly operator: PeerScope
+  /**
+   * Admit one Peer on behalf of an admitter. What the Peer may do is not
+   * recorded here: the admitter attaches its own policy through the scope.
+   * @returns the opened scope; the admitter disposes it when the Peer leaves.
+   */
+  open(): PeerScope
+  /**
+   * Record which Peer one carrier object speaks for, before it is dispatched.
+   * @param carrier - node request, upgrade request, WebSocket, or Fetch `Request`.
+   * @param peer - the Peer it was admitted as.
+   */
+  bind(carrier: object, peer: PeerScope): void
+  /**
+   * Read the Peer a carrier object was bound to.
+   * @param carrier - node request, upgrade request, WebSocket, or Fetch `Request`.
+   * @returns the bound Peer, or undefined when nobody bound one.
+   */
+  of(carrier: object): PeerScope | undefined
+}
+
+/**
+ * Handler invoked after Connection has decoded the transport envelope.
+ * `peer` is the Peer the request was admitted as.
+ */
 export type ConnectionRpcHandler = (
   endpoint: string,
   payload: unknown,
   signal: AbortSignal,
+  peer: PeerScope,
 ) => Promise<ConnectionRpcResult<unknown>>
 
 /** Synchronous ownership test for one endpoint on a shared RPC channel. */
@@ -161,12 +195,14 @@ export interface HostConnectionRpc {
   ): () => Promise<void>
 }
 
-/** Host `ctx.connection` shape consumed by transport-independent adapters. */
+/** Host `ctx.connection` members consumed by transport-independent adapters. */
 export interface HostConnectionHandle {
   /** Generic RPC channel registry. */
   readonly rpc: HostConnectionRpc
   /** Exact Fetch routes for streaming or browser-native responses. */
   readonly fetch: HostConnectionFetch
+  /** Peers this Host answers to. */
+  readonly peers: PeerRegistryHandle
 
   /**
    * Compose exact Fetch routes and the shared-channel RPC interceptor.
@@ -182,6 +218,15 @@ export interface HostConnectionHandle {
    * @returns rejection status, or undefined when the route may accept the request.
    */
   requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection
+
+  /**
+   * Decide which Peer one request speaks for: a carrier bound through `peers`
+   * answers from its binding; every other request passes {@link requestRejection}
+   * and speaks for the operator.
+   * @param request - request headers from the HTTP or upgrade request.
+   * @returns the admitted Peer, or the rejection status.
+   */
+  admit(request: ConnectionTrustRequest): PeerAdmission
 
   /**
    * Authenticate one frontend index request, owning a token redirect or 401.
@@ -240,6 +285,7 @@ export interface ClientConnectionRpc {
    * @param endpoint - channel-relative endpoint such as `session/follow`.
    * @param payload - channel-owned request payload.
    * @param signal - caller cancellation for this logical stream.
+   * @param uplink - Client uplink items the Host method reads through `invocation.uplink()`.
    * @returns decoded stream values from the in-process carrier.
    */
   readonly open?: (
@@ -247,5 +293,6 @@ export interface ClientConnectionRpc {
     endpoint: string,
     payload: unknown,
     signal: AbortSignal,
+    uplink?: AsyncIterable<unknown>,
   ) => AsyncIterable<unknown>
 }

@@ -1,6 +1,39 @@
 /** Stream scripts and the pushable, abort-aware stream a script drives. */
 
+import type { RemoteStreamHandle } from '@deepseek-ai/dsh-typert-protocol/client'
 import type { StreamRecord } from './log.ts'
+
+/**
+ * Type a fake stream method's result as the handle a generated Client method
+ * returns. The uplink members are inert: a fake built on it drives the downlink only.
+ * @param source - downlink items the fake yields.
+ * @returns a handle that iterates `source`.
+ */
+export function streamHandle<Out, In = never>(source: AsyncIterable<Out>): RemoteStreamHandle<Out, In> {
+  return {
+    [Symbol.asyncIterator]: () => source[Symbol.asyncIterator](),
+    send: () => undefined,
+    end: () => undefined,
+    dispose: () => undefined,
+  }
+}
+
+/** Downlink item type of one generated stream method. */
+type StreamItem<Method> = Method extends (...args: never[]) => RemoteStreamHandle<infer Out, unknown> ? Out : never
+
+/**
+ * Lift a fake stream method written as an async generator function into the
+ * signature of the generated method it stands in for.
+ * @param method - fake taking the method's arguments and yielding its downlink items.
+ * @returns the fake returning {@link streamHandle} of each call.
+ */
+export function streamMethod<Method extends (...args: never[]) => RemoteStreamHandle<unknown, unknown>>(
+  method: (...args: Parameters<Method>) => AsyncIterable<StreamItem<Method>>,
+): Method {
+  const lifted = (...args: Parameters<Method>): RemoteStreamHandle<StreamItem<Method>, unknown> =>
+    streamHandle(method(...args))
+  return lifted as Method
+}
 
 /** Test-side controls over one open stream. */
 export interface StreamHandle {
@@ -12,6 +45,8 @@ export interface StreamHandle {
   fail(error: Error): void
   /** Aborts when the opening signal aborts or the consumer returns early. */
   readonly signal: AbortSignal
+  /** Uplink items the caller passed with the open; an immediately ended iterable when it passed none. */
+  readonly uplink: AsyncIterable<unknown>
 }
 
 /**
@@ -66,8 +101,13 @@ export class MockStream implements StreamHandle, AsyncIterable<unknown> {
   /**
    * @param record - log entry this stream updates.
    * @param sourceSignal - cancellation from the caller that opened the stream.
+   * @param uplink - the caller's uplink, exposed to the script unchanged.
    */
-  constructor(readonly record: StreamRecord, private readonly sourceSignal: AbortSignal) {
+  constructor(
+    readonly record: StreamRecord,
+    private readonly sourceSignal: AbortSignal,
+    readonly uplink: AsyncIterable<unknown>,
+  ) {
     if (sourceSignal.aborted) this.cancel(sourceSignal.reason)
     else sourceSignal.addEventListener('abort', this.onAbort, { once: true })
   }
