@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
-import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
@@ -209,12 +209,10 @@ describe('archived version recovery', () => {
     const { ctx, cache } = await harness(root)
     expect(cache.cachedSnapshot(
       headerFor(SessionId(sid), record.identity),
-      SessionLogOffset(0),
       ['title'],
     )).toBeUndefined()
     expect(cache.cachedPredecessorTitle(
       headerFor(SessionId(sid), record.identity),
-      SessionLogOffset(0),
     )).toEqual({
       asOfSeq: -1,
       values: { title: record.rows.title?.val },
@@ -243,12 +241,10 @@ describe('archived version recovery', () => {
       const { ctx, cache } = await harness(root)
       expect(cache.cachedSnapshot(
         headerFor(id, doc.record.identity),
-        SessionLogOffset(0),
         ['title'],
       )).toBeUndefined()
       expect(cache.cachedPredecessorTitle(
         headerFor(id, doc.record.identity),
-        SessionLogOffset(0),
       )).toEqual({
         asOfSeq: -1,
         values: { title: doc.record.rows.title?.val },
@@ -290,25 +286,25 @@ describe('archived version recovery', () => {
       cwd: '/work',
       isSeeded: false,
     })
-    expect(cache.cachedPredecessorTitle(listed('older'), SessionLogOffset(0))).toEqual({
+    expect(cache.cachedPredecessorTitle(listed('older'))).toEqual({
       asOfSeq: -1,
       values: { title: 'older title' },
     })
-    expect(cache.cachedPredecessorTitle(listed('current'), SessionLogOffset(0))).toBeUndefined()
-    expect(cache.cachedPredecessorTitle(listed('newer'), SessionLogOffset(0))).toBeUndefined()
-    expect(cache.cachedPredecessorTitle(listed('stale-title'), SessionLogOffset(0))).toBeUndefined()
-    expect(cache.cachedPredecessorTitle(listed('missing'), SessionLogOffset(0))).toBeUndefined()
+    expect(cache.cachedPredecessorTitle(listed('current'))).toBeUndefined()
+    expect(cache.cachedPredecessorTitle(listed('newer'))).toBeUndefined()
+    expect(cache.cachedPredecessorTitle(listed('stale-title'))).toBeUndefined()
+    expect(cache.cachedPredecessorTitle(listed('missing'))).toBeUndefined()
   })
 
-  it('refuses a lineage-less archive for a seeded caller (identity mismatch, cold rebuild)', async () => {
+  it('refuses a lineage-less archive for a seeded caller (lifecycle mismatch, cold rebuild)', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-fx-'))
     const id = SessionId('fixture-seeded')
     const doc = await placeDoc(root, id, 'v5-lineageless-doc.json')
 
     const { cache } = await harness(root)
     const seeded = { ...headerFor(id, doc.record.identity), isSeeded: true }
-    expect(cache.cachedSnapshot(seeded, SessionLogOffset(2), ['title'])).toBeUndefined()
-    expect(cache.cachedPredecessorTitle(seeded, SessionLogOffset(2))).toBeUndefined()
+    expect(cache.cachedSnapshot(seeded, ['title'])).toBeUndefined()
+    expect(cache.cachedPredecessorTitle(seeded)).toBeUndefined()
   })
 
   it('backs up and skips a record that fails schema validation instead of failing the boot', async () => {
@@ -350,11 +346,10 @@ describe('archived version recovery', () => {
     // The broken record reads as absent; its predecessor-stamped neighbor
     // remains available for a safe current rewrite.
     const cache = ctx.sessionProjectionCache
-    expect(cache.cachedSnapshot(headerFor(SessionId('broken'), { createdAt: 0 }), SessionLogOffset(0)))
+    expect(cache.cachedSnapshot(headerFor(SessionId('broken'), { createdAt: 0 })))
       .toBeUndefined()
     expect(cache.cachedSnapshot(
       headerFor(SessionId('survivor'), good.record.identity),
-      SessionLogOffset(0),
       ['title'],
     )).toBeUndefined()
     await assertRewrite(ctx, root, SessionId('survivor'))
