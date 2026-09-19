@@ -156,6 +156,21 @@ function records(log: string): JsonObject[] {
     .map(line => JSON.parse(line) as JsonObject)
 }
 
+/** Compare migrated expectations with native writer fields before any format-normalizing comparison. */
+function verifyToolResultWriterParity(fixture: string, actual: string): void {
+  expect(sessionHeaderVersion(fixture, 'retained tool-result input')).toBe(3)
+  expect(sessionHeaderVersion(actual, 'raw tool-result writer')).toBe(SESSION_FORMAT_VERSION)
+  const withoutMessageId = (message: object): JsonObject => Object.fromEntries(
+    Object.entries(message).filter(([key]) => key !== 'id'),
+  )
+  const expected = parseSessionLog(fixture).flatMap(event => event.type === 'tool/result'
+    ? [withoutMessageId(event.data.message)] : [])
+  const written = records(actual).flatMap(event => event.type === 'tool/result'
+    ? [withoutMessageId((event.data as JsonObject).message as JsonObject)] : [])
+  expect(expected.length, 'recorded stock tool results').toBeGreaterThan(0)
+  expect(written, 'native tool-result messages match migration output').toEqual(expected)
+}
+
 function headerOf(log: string): JsonObject {
   return records(log)[0] ?? {}
 }
@@ -1040,6 +1055,14 @@ describe('headless recorded-session snapshots', () => {
     expect(await readFile(join(snapshotsRoot, 'session-reference-spill/session.v3.jsonl'), 'utf8')).toBe(fixture)
   })
 
+  it('rejects a native writer that still emits the recorded tool-result wrapper', async () => {
+    const fixture = await readFile(join(snapshotsRoot, 'tool-call-turn/session.v3.jsonl'), 'utf8')
+    const unconverted = records(fixture)
+    unconverted[0]!.version = SESSION_FORMAT_VERSION
+    expect(() => verifyToolResultWriterParity(fixture, unconverted.map(row => JSON.stringify(row)).join('\n')))
+      .toThrow('native tool-result messages match migration output')
+  })
+
   for (const scenario of scenarios) {
     const skipped = scenario.manifest.platform === 'posix' && process.platform === 'win32'
       || scenario.manifest.platform === 'pwsh' && !hasPwsh
@@ -1144,6 +1167,10 @@ describe('headless recorded-session snapshots', () => {
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
+            if (replaying && scenario.name === 'tool-call-turn') {
+              const retainedV3 = await readFile(join(scenario.dir, 'session.v3.jsonl'), 'utf8')
+              verifyToolResultWriterParity(retainedV3, actualLogs[0]!.content)
+            }
             if (mcpDemo !== undefined) {
               const log = actualLogs[0]!.content
               expect(log).toContain('mcp__demo__ping')
