@@ -388,6 +388,22 @@ describe('restrictTokenIntegrity', () => {
     expect(setTokenInformation).toHaveBeenCalledTimes(1)
   })
 
+  it('fails closed when the Low label SID has no length', () => {
+    const api = {
+      getLengthSid: vi.fn(() => 0),
+      getLastError: vi.fn(() => 87),
+      formatMessageW: vi.fn(() => 0),
+    } as unknown as Win32Bindings
+    let caught: unknown
+    try {
+      restrictTokenIntegrity(api, 5n as NativePtr, allocBytes(12))
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(Win32Error)
+    expect((caught as Win32Error).api).toBe('GetLengthSid')
+  })
+
   it('fails closed when SetTokenInformation rejects the integrity level', () => {
     const api = {
       getLengthSid: vi.fn(() => 12),

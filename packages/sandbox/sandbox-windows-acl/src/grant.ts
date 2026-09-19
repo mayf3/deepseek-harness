@@ -7,7 +7,8 @@
  *
  * Fail-closed: `add` throws on any grant failure and the caller disposes the
  * instance (revoking every path granted so far); `dispose` revokes every
- * standing grant and reports every cleanup failure.
+ * revocable grant, leaves the standing workspace edits in place, and reports
+ * every cleanup failure.
  * @module @deepseek-ai/dsh-sandbox-windows-acl/grant
  */
 
@@ -69,13 +70,21 @@ export class AclWriteGrant {
     }
     const sidPtr = decodePtr(sidSlot)
     if (sidPtr === null) throwLastError(bindings, 'ConvertStringSidToSidW', `null SID for ${writeSid}`)
-    return new AclWriteGrant(
-      bindings,
-      sidPtr,
-      makeWellKnownSid(bindings, abi.WinLowLabelSid),
-      makeWellKnownSid(bindings, abi.WinWorldSid),
-      writeSid,
-    )
+    try {
+      const lowLabelSidPtr = makeWellKnownSid(bindings, abi.WinLowLabelSid)
+      try {
+        const worldSidPtr = makeWellKnownSid(bindings, abi.WinWorldSid)
+        return new AclWriteGrant(bindings, sidPtr, lowLabelSidPtr, worldSidPtr, writeSid)
+      } catch (error) {
+        // The Low label SID is LocalAlloc'd: release it before the world-SID
+        // failure propagates to the sidPtr release below.
+        bindings.localFree(lowLabelSidPtr)
+        throw error
+      }
+    } catch (error) {
+      bindings.localFree(sidPtr)
+      throw error
+    }
   }
 
   /**

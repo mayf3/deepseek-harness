@@ -85,6 +85,8 @@ export const DENY_ACCESS = 3
 export const REVOKE_ACCESS = 4
 /** ACE inheritance flags for child containers and objects. */
 export const SUB_CONTAINERS_AND_OBJECTS_INHERIT = 0x3
+/** ACE inheritance flag for child containers only (directories; files do not inherit). */
+export const CONTAINER_INHERIT_ACE = 0x2
 /** Legacy Win32 maximum path character count used by GetTempPathW. */
 export const MAX_PATH = 260
 /** Successful Win32 status code. */

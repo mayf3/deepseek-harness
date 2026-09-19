@@ -79,9 +79,17 @@ function craftWorldSid(): NativePtr {
 }
 
 /** Write one 16-byte ACE (AceType@0, AceFlags@1, AceSize@2, Mask@4, inline SID@8) at `offset`. */
-function writeAce(acl: NativePtr, offset: number, aceType: number, mask: number, sid: NativePtr, match: boolean): void {
+function writeAce(
+  acl: NativePtr,
+  offset: number,
+  aceType: number,
+  mask: number,
+  sid: NativePtr,
+  match: boolean,
+  inheritance: number = abi.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+): void {
   koffi.encode(acl, offset + 0, 'uint8', aceType)
-  koffi.encode(acl, offset + 1, 'uint8', abi.SUB_CONTAINERS_AND_OBJECTS_INHERIT)
+  koffi.encode(acl, offset + 1, 'uint8', inheritance)
   koffi.encode(acl, offset + 2, 'uint16', 16)
   koffi.encode(acl, offset + 4, 'uint32', mask)
   for (let byte = 0; byte < 8; byte++) {
@@ -122,7 +130,7 @@ function craftPair(
   koffi.encode(acl, 'uint8', 2)
   koffi.encode(acl, 2, 'uint16', 40)
   koffi.encode(acl, 4, 'uint16', 2)
-  writeAce(acl, 8, denyType, denyMask, world, denyMatches)
+  writeAce(acl, 8, denyType, denyMask, world, denyMatches, abi.CONTAINER_INHERIT_ACE)
   writeAce(acl, 24, abi.ACCESS_ALLOWED_ACE_TYPE, abi.GRANT_MASK, grantSid, grantMatches)
   return acl
 }
@@ -404,6 +412,161 @@ describe('mergeAndApply failure paths', () => {
     expect(caught).toBeInstanceOf(Win32Error)
     expect((caught as Win32Error).api).toBe('LocalFree')
     expect(localFree).toHaveBeenLastCalledWith(11n)
+  })
+
+  it('frees the label ACL when SetEntriesInAclW fails during a revoke', () => {
+    // The revoke carries no label ACL of its own: the early exit must still
+    // release the descriptor and leave the label edit untouched.
+    const localFree = vi.fn(() => 0n as NativePtr)
+    const sid = craftSid(1, 0)
+    const api = aclApi({
+      getNamedSecurityInfoW: readStub(craftAcl(abi.ACCESS_ALLOWED_ACE_TYPE, abi.GRANT_MASK, sid, true), null, 6n),
+      setEntriesInAclW: vi.fn(() => 5),
+      localFree,
+    })
+    let caught: unknown
+    try {
+      revokeWrite(api, 'C:\\granted', sid)
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(Win32Error)
+    expect((caught as Win32Error).api).toBe('SetEntriesInAclW')
+    expect(localFree).toHaveBeenCalledWith(6n)
+  })
+
+  it('frees the descriptor on the null-merged-ACL path during a revoke', () => {
+    const localFree = vi.fn(() => 0n as NativePtr)
+    const sid = craftSid(1, 0)
+    const api = aclApi({
+      getNamedSecurityInfoW: readStub(craftAcl(abi.ACCESS_ALLOWED_ACE_TYPE, abi.GRANT_MASK, sid, true), null, 6n),
+      setEntriesInAclW: vi.fn(() => 0), // success without writing the out slot
+      localFree,
+    })
+    let caught: unknown
+    try {
+      revokeWrite(api, 'C:\\granted', sid)
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(Win32Error)
+    expect((caught as Win32Error).api).toBe('SetEntriesInAclW')
+    expect(localFree).toHaveBeenCalledWith(6n)
+  })
+
+  it('frees the descriptor when the label ACL build fails', () => {
+    // The read already owns a descriptor allocation; the label failure must
+    // not strand it.
+    const localFree = vi.fn(() => 0n as NativePtr)
+    const api = aclApi({
+      getNamedSecurityInfoW: readStub(null, null, 6n),
+      initializeAcl: vi.fn(() => 0),
+      localFree,
+    })
+    let caught: unknown
+    try {
+      grantWrite(api, 'C:\\granted', craftSid(1, 0), craftLowLabelSid(), craftWorldSid())
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(Win32Error)
+    expect((caught as Win32Error).api).toBe('InitializeAcl')
+    expect(localFree).toHaveBeenCalledWith(11n) // the half-built label ACL
+    expect(localFree).toHaveBeenCalledWith(6n) // the read descriptor
+  })
+
+  it('frees the label ACL when SetEntriesInAclW fails', () => {
+    const localFree = vi.fn(() => 0n as NativePtr)
+    const api = aclApi({ setEntriesInAclW: vi.fn(() => 5), localFree })
+    let caught: unknown
+    try {
+      grantWrite(api, 'C:\\granted', craftSid(1, 0), craftLowLabelSid(), craftWorldSid())
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(Win32Error)
+    expect((caught as Win32Error).api).toBe('SetEntriesInAclW')
+    expect(localFree).toHaveBeenCalledWith(11n) // the label ACL this apply owns
+  })
+
+  it('frees the label ACL and the descriptor on the null-merged-ACL path', () => {
+    const localFree = vi.fn(() => 0n as NativePtr)
+    const api = aclApi({
+      getNamedSecurityInfoW: readStub(null, null, 6n),
+      setEntriesInAclW: vi.fn(() => 0), // success without writing the out slot
+      localFree,
+    })
+    let caught: unknown
+    try {
+      grantWrite(api, 'C:\\granted', craftSid(1, 0), craftLowLabelSid(), craftWorldSid())
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(Win32Error)
+    expect((caught as Win32Error).api).toBe('SetEntriesInAclW')
+    expect(localFree).toHaveBeenCalledWith(6n)
+    expect(localFree).toHaveBeenCalledWith(11n)
+  })
+})
+
+describe('revokeWrite label handling', () => {
+  /** The SECURITY_INFORMATION and SACL of the last apply. */
+  function applyArgs(api: Win32Bindings): { information: number; sacl: unknown } {
+    const call = (api.setNamedSecurityInfoW as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)
+    return { information: call?.[2] as number, sacl: call?.[6] }
+  }
+
+  it('keeps the shared Low label while another capability grant stands', () => {
+    const sid = craftSid(1, 0)
+    const otherSid = craftSid(1, 0, [0, 0, 0, 0, 0, 6])
+    const world = craftWorldSid()
+    const setNamedSecurityInfoW = vi.fn(() => 0)
+    const api = aclApi({
+      // The directory carries the deny plus a grant for a DIFFERENT SID.
+      getNamedSecurityInfoW: readStub(
+        craftPair(otherSid, world, abi.ACCESS_DENIED_ACE_TYPE, abi.FILE_DELETE_CHILD, true, true), null, 6n,
+      ),
+      setNamedSecurityInfoW,
+    })
+    expect(revokeWrite(api, 'C:\\granted', sid)).toBe(true)
+    const { information, sacl } = applyArgs(api)
+    expect(information & abi.LABEL_SECURITY_INFORMATION).toBe(0) // the label was left untouched
+    expect(sacl).toBeNull()
+  })
+
+  it('clears the Low label once the last capability grant is revoked', () => {
+    const sid = craftSid(1, 0)
+    const world = craftWorldSid()
+    const setNamedSecurityInfoW = vi.fn(() => 0)
+    const api = aclApi({
+      getNamedSecurityInfoW: readStub(craftGrantedAcl(sid, world, true), null, 6n),
+      setNamedSecurityInfoW,
+    })
+    expect(revokeWrite(api, 'C:\\granted', sid)).toBe(true)
+    expect(applyArgs(api).information & abi.LABEL_SECURITY_INFORMATION).toBe(abi.LABEL_SECURITY_INFORMATION)
+  })
+
+  it('clears the Low label when a malformed tiny DACL hides any foreign grant', () => {
+    const acl = allocBytes(32)
+    koffi.encode(acl, 'uint8', 2)
+    koffi.encode(acl, 2, 'uint16', 4) // smaller than the ACL header
+    koffi.encode(acl, 4, 'uint16', 1)
+    const setNamedSecurityInfoW = vi.fn(() => 0)
+    const api = aclApi({ getNamedSecurityInfoW: readStub(acl, null, 6n), setNamedSecurityInfoW })
+    expect(revokeWrite(api, 'C:\\granted', craftSid(1, 0))).toBe(true)
+    expect(applyArgs(api).information & abi.LABEL_SECURITY_INFORMATION).toBe(abi.LABEL_SECURITY_INFORMATION)
+  })
+
+  it('clears the Low label when a lying ACE size hides any foreign grant', () => {
+    const acl = allocBytes(32)
+    koffi.encode(acl, 'uint8', 2)
+    koffi.encode(acl, 2, 'uint16', 8)
+    koffi.encode(acl, 4, 'uint16', 1)
+    koffi.encode(acl, 10, 'uint16', 100)
+    const setNamedSecurityInfoW = vi.fn(() => 0)
+    const api = aclApi({ getNamedSecurityInfoW: readStub(acl, null, 6n), setNamedSecurityInfoW })
+    expect(revokeWrite(api, 'C:\\granted', craftSid(1, 0))).toBe(true)
+    expect(applyArgs(api).information & abi.LABEL_SECURITY_INFORMATION).toBe(abi.LABEL_SECURITY_INFORMATION)
   })
 })
 

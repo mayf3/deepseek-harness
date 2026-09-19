@@ -155,6 +155,7 @@ export function setTokenDefaultDaclGrant(api: Win32Bindings, token: NativePtr, s
  */
 export function restrictTokenIntegrity(api: Win32Bindings, token: NativePtr, lowLabelSidPtr: NativePtr): void {
   const sidLength = api.getLengthSid(lowLabelSidPtr)
+  if (sidLength === 0) throwLastError(api, 'GetLengthSid', 'Low integrity label SID')
   const info = Buffer.alloc(abi.TOKEN_MANDATORY_LABEL_SIZE + sidLength)
   info.writeBigUInt64LE(ptrAddress(lowLabelSidPtr), 0) // Label.Sid
   info.writeUInt32LE(abi.SE_GROUP_INTEGRITY, 8) // Label.Attributes
