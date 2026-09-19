@@ -12,11 +12,11 @@ Both kinds of residue exist only on internal development and test machines; Desk
 
 ## Decision
 
-Delete `apps/desktop/src/profile-core-cleanup.ts`, `apps/desktop/src/profile-packages.ts`, and their two specs. `DesktopProjectManager.applyRelease` only validates the runtime descriptor, migrates profile settings, and creates the profile files; neither production nor development launches modify the profile's `node_modules`, manifest, overrides, lockfile, or `desktop-runtime-state.json`.
+Delete `apps/desktop/src/profile-core-cleanup.ts`, `apps/desktop/src/profile-packages.ts`, and their two specs. `DesktopProjectManager.applyRelease` validates the runtime descriptor, migrates profile settings, creates the profile files, and removes the projections a link-backend launch wrote through the shared `removeLinkProjections`; beyond that, neither production nor development launches modify the profile's `node_modules`, manifest, overrides, lockfile, or `desktop-runtime-state.json`.
 
 Resolution inside the profile follows the [lookup-order Note](../architecture/2026-09-19-profile-resolution-lookup-order.md): packages in the profile's own `node_modules` win as the nearest layer, and installation package names are occupied by the generation at `$DSH_HOME/profiles/node_modules`. When a package installed into the profile declares `@deepseek-ai/*` packages under `dependencies`, pnpm installs copies into the profile and those copies run at their own versions. Official packages keep only pure-function packages under `dependencies` and declare every package with module-level identity as a peer; a third-party plugin that declares an identity-bearing dsh package as a real dependency makes that packaging choice for itself.
 
-Capability given up: residue left on internal machines by earlier Desktop builds or the link backend needs one manual removal; `desktop-runtime-state.json` is no longer read or deleted.
+Capability given up: core-package copies and their declarations that earlier Desktop builds installed into a profile need one manual removal; `desktop-runtime-state.json` is no longer read or deleted. Projections the link backend wrote are removed by the shared profile load, see the [lookup-order Note](../architecture/2026-09-19-profile-resolution-lookup-order.md).
 
 Reintroduction conditions: a released Desktop wrote core-package copies into external users' profiles, or official packages change their dependency conventions so that profiles gain copies competing with the runtime for identity.
 
@@ -37,4 +37,4 @@ Reintroduction conditions: a released Desktop wrote core-package copies into ext
 
 ## Consequences
 
-Bought: production launches no longer write into the profile, there is no temporary enable switch, and Desktop and the CLI apply one rule to copies inside a profile. Paid: historical residue on internal machines is removed by hand; dsh copies that third-party plugins bring into the profile as real dependencies run at their own versions.
+Bought: production launches no longer write into the profile, there is no temporary enable switch, and Desktop and the CLI apply one rule to copies inside a profile. Paid: core-package copies earlier Desktop builds installed into a profile are removed by hand; dsh copies that third-party plugins bring into the profile as real dependencies run at their own versions.

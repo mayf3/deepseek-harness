@@ -42,7 +42,7 @@ generation 中的每个包名，在这一层上占据 `<拦截层>/<包名>` 这
 
 Node 仍然负责 `exports`、`imports`、conditions、`main`、子路径、扩展名、缓存与错误码。被选中的包因 `exports` 拒绝某个子路径时报错终局，不会换另一个同名包。
 
-拦截层不读、不写、不删任何磁盘链接。历史残留的软链接一律按普通文件系统内容处理：本体包名在 ③ 上的位置已被 generation 占据，旧链接永远不会被读到；其余包名按主线正常看到 ③ 里的内容。
+拦截层不读、不写、不删任何磁盘链接。历史残留的软链接一律按普通文件系统内容处理：本体包名在 ③ 上的位置已被 generation 占据，旧链接永远不会被读到；其余包名按主线正常看到 ③ 里的内容。profile 加载时一次性删除 dsh 0.1.5 系列发布版的 Link 后端写进 profile 的投影：profile `node_modules` 下目标位于 `<profile>/.dsh-module-fallback/node_modules` 内的软链接，以及该目录本身。pnpm 安装的包和其他软链接都保留。
 
 #### 3. 拦截层里有什么：generation 的扫描内容
 
@@ -120,7 +120,7 @@ ESM 与 CommonJS 两个适配器调用同一个路由函数，主线程与 Harne
 
 **让 installation 闭包条目绝对优先于更近的副本。** 闭包含 281 个第三方库。插件私有的 `zod`、`yaml` 等版本会被安装闭包里的版本覆盖，破坏与 Node 一致的最近者优先。受支持的安装流程已经不把 dsh 的 peer 装进 profile，不需要再用覆盖来保证单实例。
 
-**识别 `.dsh-module-fallback` 形状的软链接并绕过。** 这是为不再产生的目录保留专门逻辑。按普通软链接处理后，profile 内的历史投影指向的目录与 generation 算出的相同，行为不变。
+**在解析时识别 `.dsh-module-fallback` 形状的软链接并绕过。** 这会为不再产生的目录在查找路径里保留专门逻辑，每次解析都要付出判断。在 profile 加载时一次性删除这些投影能得到同样的结果：一个 bundle 被停用但仍装着时，它投影出来的插件不再遮住 generation 从另一个 bundle 选出的同名插件。
 
 **把拦截层所在的物理目录整层隐藏。** 与"其余解析与 Node 一致"冲突：放在 `$DSH_HOME/profiles/node_modules` 的非本体包会对所有 profile 不可见。
 

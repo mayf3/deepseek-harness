@@ -42,7 +42,7 @@ The order for one bare package name request: the ancestor chain first walks the 
 
 Node remains responsible for `exports`, `imports`, conditions, `main`, subpaths, extensions, caching, and error codes. When the selected package rejects a subpath through `exports`, the error is final; Node does not switch to another package of the same name.
 
-The interception layer reads, writes, and deletes no disk links. Leftover historical symlinks are treated as ordinary filesystem content: the positions of installation package names at ③ are already occupied by the generation, so old links are never read; all other package names see the contents of ③ normally along the ancestor chain.
+The interception layer reads, writes, and deletes no disk links. Leftover historical symlinks are treated as ordinary filesystem content: the positions of installation package names at ③ are already occupied by the generation, so old links are never read; all other package names see the contents of ③ normally along the ancestor chain. Profile load removes, once, the projections the link backend of the dsh 0.1.5 releases wrote into a profile: symlinks under the profile's `node_modules` whose target lies inside `<profile>/.dsh-module-fallback/node_modules`, followed by that directory. pnpm-installed packages and every other symlink stay.
 
 #### 3. What the interception layer holds: the generation's scan contents
 
@@ -120,7 +120,7 @@ Not provided and not recommended: having the hook proxy installation packages fo
 
 **Give installation closure entries absolute priority over nearer copies.** The closure contains 281 third-party libraries. A plugin's private versions of `zod`, `yaml`, and others would be overridden by the versions in the installation closure, breaking the nearest-wins rule shared with Node. The supported installation flow no longer installs dsh peers into the profile, so overriding is not needed to guarantee a single instance.
 
-**Recognize and bypass symlinks in the `.dsh-module-fallback` layout.** This keeps dedicated logic for directories that are no longer produced. Treated as ordinary symlinks, the historical projections inside the profile point to the same directories the generation computes, so behavior is unchanged.
+**Recognize and bypass symlinks in the `.dsh-module-fallback` layout at resolve time.** This keeps dedicated logic in the lookup path for directories that are no longer produced, and every resolution pays for it. Removing those projections once at profile load reaches the same result: after a bundle is deselected while it stays installed, its projected plugin no longer shadows the same-named plugin the generation selects from another bundle.
 
 **Hide the whole physical directory that holds the interception layer.** This conflicts with "all other resolution matches Node": non-installation packages placed in `$DSH_HOME/profiles/node_modules` would become invisible to every profile.
 

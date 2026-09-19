@@ -12,11 +12,11 @@ Status: implemented
 
 ## Decision
 
-删除 `apps/desktop/src/profile-core-cleanup.ts`、`apps/desktop/src/profile-packages.ts` 及其两个 spec。`DesktopProjectManager.applyRelease` 只校验运行时描述符、迁移 profile 设置并创建 profile 文件；生产与开发启动都不改动 profile 的 `node_modules`、manifest、overrides、锁文件与 `desktop-runtime-state.json`。
+删除 `apps/desktop/src/profile-core-cleanup.ts`、`apps/desktop/src/profile-packages.ts` 及其两个 spec。`DesktopProjectManager.applyRelease` 校验运行时描述符、迁移 profile 设置、创建 profile 文件，并通过共享的 `removeLinkProjections` 删除 Link 后端启动写下的投影；除此之外，生产与开发启动都不改动 profile 的 `node_modules`、manifest、overrides、锁文件与 `desktop-runtime-state.json`。
 
 profile 内的解析按[查找顺序 Note](../architecture/2026-09-19-profile-resolution-lookup-order.zh.md)：profile 自己 `node_modules` 里的包最近者优先，本体包名在 `$DSH_HOME/profiles/node_modules` 的位置由 generation 占据。装进 profile 的包若在 `dependencies` 里声明了 `@deepseek-ai/*`，pnpm 会把副本装进 profile，这些副本按其自身版本运行。官方包只把纯函数包放在 `dependencies`，带模块级身份的包一律声明为 peer；第三方插件把身份敏感的 dsh 包写成实依赖，是该插件自身的打包选择。
 
-放弃的能力：内部机器上由旧版 Desktop 或 Link 后端留下的残留需要手工删除一次；`desktop-runtime-state.json` 不再被读取或删除。
+放弃的能力：旧版 Desktop 装进 profile 的核心包副本及其声明需要手工删除一次；`desktop-runtime-state.json` 不再被读取或删除。Link 后端写下的投影由共享的 profile 加载一次性删除，见[查找顺序 Note](../architecture/2026-09-19-profile-resolution-lookup-order.zh.md)。
 
 重新引入的条件：外部用户的 profile 曾被某个发布版 Desktop 写入核心包副本，或官方包改变依赖声明约定，使 profile 内出现与运行时争抢身份的副本。
 
@@ -37,4 +37,4 @@ profile 内的解析按[查找顺序 Note](../architecture/2026-09-19-profile-re
 
 ## Consequences
 
-买到的：生产启动不再写 profile，没有临时启用开关，Desktop 与 CLI 对 profile 内副本采用同一套规则。付出的：内部机器的历史残留靠手工清理；第三方插件以实依赖带进 profile 的 dsh 副本按其自身版本运行。
+买到的：生产启动不再写 profile，没有临时启用开关，Desktop 与 CLI 对 profile 内副本采用同一套规则。付出的：旧版 Desktop 装进 profile 的核心包副本靠手工清理；第三方插件以实依赖带进 profile 的 dsh 副本按其自身版本运行。
