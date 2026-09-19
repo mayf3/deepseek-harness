@@ -355,10 +355,8 @@ describe('Agent Teams projection events', () => {
 
   it('rebuilds lossy version-3 Team checkpoints from the original log', async () => {
     const ctx = new Context()
-    const store = ctx.plugin(SessionStore)
     const registry = ctx.plugin(SessionProjectionRegistry)
     try {
-      await store
       await registry
       ctx.sessionProjections.register(teamProjectionDefinition)
       const extension = JSON.parse('{"type":"plugin/custom","__proto__":{"saved":true}}') as ContentBlock
@@ -379,7 +377,6 @@ describe('Agent Teams projection events', () => {
       expect(state.messages[0]?.content).toEqual([extension])
     } finally {
       await registry.dispose()
-      await store.dispose()
     }
   })
 
