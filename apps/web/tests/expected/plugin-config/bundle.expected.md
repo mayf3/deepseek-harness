@@ -1,10 +1,6 @@
-- button "返回插件列表":
-  - img
-  - text: 插件列表
+- button "返回插件列表": 插件列表
 - button "夹具操作"
-- button "卸载 live-client":
-  - img
-  - text: 卸载
+- button "卸载 live-client": 卸载
 - switch "启用 live-client" [checked]
 - heading "live-client" [level=3]
 - text: v0.0.1 夹具标签
@@ -15,9 +11,7 @@
 - text: 共 1 个 · 1 运行中
 - list:
   - listitem:
-    - button "配置 fixture-live-client":
-      - text: fixture-live-client
-      - img
+    - button "配置 fixture-live-client": fixture-live-client
     - text: "@fixture/live-client 运行中"
     - switch "启用组件 fixture-live-client" [checked]
 - region "夹具区块":
