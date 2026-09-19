@@ -223,15 +223,18 @@
 
 /* macOS desktop: an embedder may pin this surface under the window's top drag
    band (ui-layout .leadingBand — full-window geometry that Electron composes
-   in DOM order, not by stacking). The chip run, the strip-end chrome, and the
-   pane body subtract their whole boxes so tabs, controls, and content stay
-   clickable even where they overlap the band; the strip's blank fill and top
-   inset keep the band's drag, so the row moves the window like a native tab
-   bar. Hidden surfaces contribute nothing: Blink skips non-visible boxes when
-   it collects draggable regions. */
+   in DOM order, not by stacking). The chip run, the strip-end chrome, the
+   pane body, and the split divider subtract their whole boxes so tabs,
+   controls, content, and the resize grab stay usable even where they overlap
+   the band; the strip's blank fill and top inset keep the band's drag, so the
+   row moves the window like a native tab bar. The divider must be named here:
+   it is a plain div, so ui-web base.css's interactive-element subtraction
+   never matches it. Hidden surfaces contribute nothing: Blink skips
+   non-visible boxes when it collects draggable regions. */
 :global(html[data-platform='darwin']) .stripTabs,
 :global(html[data-platform='darwin']) .stripChrome,
-:global(html[data-platform='darwin']) .paneBody {
+:global(html[data-platform='darwin']) .paneBody,
+:global(html[data-platform='darwin']) .divider {
   -webkit-app-region: no-drag;
 }
 
