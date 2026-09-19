@@ -95,6 +95,23 @@ describe('Tooltip', () => {
   const rect = (left: number, right: number): DOMRect =>
     ({ left, right, top: 0, bottom: 20, width: right - left, height: 20, x: left, y: 0, toJSON: () => ({}) })
 
+  it('aligns the end of a bottom tooltip with the anchor right edge', () => {
+    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(rect(100, 200))
+    try {
+      render(
+        <Tooltip label="End aligned" side="bottom" align="end">
+          <button type="button">anchor</button>
+        </Tooltip>,
+      )
+      fireEvent.mouseEnter(screen.getByText('anchor'))
+      const bubble = screen.getByRole('tooltip')
+      expect(bubble.getAttribute('data-align')).toBe('end')
+      expect(bubble.style.left).toBe('200px')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it('caps the bubble width where the label would otherwise slab across the surface', () => {
     render(
       <Tooltip label="A description long enough to need a cap" side="bottom" maxWidth={360}>

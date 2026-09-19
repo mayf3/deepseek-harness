@@ -681,7 +681,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     expect(await catalogRow.getByRole('img', { name: ACTIVE_SCHEDULE_LABEL }).count()).toBe(1)
 
     await page.getByRole('button', { name: 'Search sessions' }).click()
-    const search = page.getByPlaceholder('Search sessions', { exact: false })
+    const search = page.getByPlaceholder('Search session names', { exact: false })
     await search.fill(CATALOG_TITLE)
     const result = page.getByRole('tree', { name: 'Search results' })
       .getByRole('treeitem', { name: new RegExp(CATALOG_TITLE) })
