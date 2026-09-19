@@ -147,7 +147,7 @@ Team events are appended to the exact live Lead Session and flushed before the o
 
 Native V4 Team event and checkpoint admission reject retired `tool-result` content before it can enter mailbox state. Historical conversion belongs to the Session-format migration; the Team projection does not convert old wrappers.
 
-Mailbox projection and checkpoint admission preserve every decoded JSON field of unknown plugin content, including an own `__proto__` key. Known content variants retain their declared validation. Team projection cache version 4 rebuilds older checkpoints from the Session log to recover previously omitted keys; the Session format version is unchanged.
+Mailbox projection and checkpoint admission preserve every decoded JSON field of accepted content outside the locally declared validators, including an own `__proto__` key. Local field checks cover `text`, `reasoning`, `image`, and `tool-call`; accepted unknown tags remain opaque. Team projection cache version 4 rebuilds checkpoints from earlier cache versions from the Session log; the Session format version is unchanged.
 
 ### Disposal
 

@@ -147,7 +147,7 @@ Team 事件追加到精确的 live Lead 会话，并在操作报告成功或唤�
 
 原生 V4 的 Team 事件及检查点准入会拒绝退役的 `tool-result` 内容，防止它进入邮箱状态。历史转换由 Session 格式迁移负责，Team 投影不转换旧包装。
 
-Mailbox projection 和 checkpoint 准入保留未知 plugin 内容已解码 JSON 的全部字段，包括自有 `__proto__` 键。已知内容变体保留其声明的校验。Team projection cache version 4 会从 Session 日志重建较旧的 checkpoint，恢复此前省略的键；Session format version 不变。
+Mailbox 投影与 checkpoint 准入保留本地声明的校验器之外获准内容中全部已解码 JSON 字段，包括自有 `__proto__` 键。本地字段检查覆盖 `text`、`reasoning`、`image` 和 `tool-call`；获准的未知标签保持不透明。Team 投影缓存版本 4 从 Session 日志重建较早缓存版本的 checkpoint；Session 格式版本保持不变。
 
 ### Dispose
 

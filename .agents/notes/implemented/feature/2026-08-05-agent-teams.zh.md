@@ -40,7 +40,7 @@ fresh child 不继承对话。fork child 只捕获一次 Lead 已完成 turn 前
 
 Peer 通讯使用 Lead 日志 mailbox。投递前先追加并 flush `team/message/queued`。target message 会在持久 source metadata 与短模型可见前缀中同时携带稳定 message id 和 sender identity。只有 pending inbox 条目或已记录用户消息完成 flush，Lead 日志才写入 `team/message/delivered` acknowledgement。即时准入按 target 和 queued 日志顺序串行化，恢复按同一顺序重试 queued-minus-delivered，并在冷恢复前折叠 live 或 persisted target 的 inbox／历史状态。每个当前版本 Team payload 都会经过运行时验证后才进入 replay state。Team runtime 从同步准入到 settlement 全程跟踪 dispatch 与异步 acknowledgement 工作；dispose 会关闭准入，并在移除服务前等待两者。当前 waiter 只在所属 Team event flush 成功后被唤醒。
 
-事件投影和 checkpoint 准入期间，未知 mailbox 内容保持为已解码 JSON。校验只检查其 type，不重建字段，因为通用对象解析可能省略有效的自有 `__proto__` 键。已知内容变体保持结构校验；不透明的插件字段不获得 Team 语义。Team 投影缓存版本 4 丢弃旧 checkpoint，因为只修正解析器无法恢复缓存状态中已经省略的键。重建使用未修改的 Session 日志，不改变其格式版本。
+事件投影和 checkpoint 准入期间，未知 mailbox 内容保持为已解码 JSON。校验只检查其 type，不重建字段，因为通用对象解析可能省略有效的自有 `__proto__` 键。本地声明的内容变体接受结构校验；不透明的插件字段不获得 Team 语义。缓存失效是必要的，因为只修正解析器无法恢复缓存状态中省略的键。[Team 文档](../../../../packages/experimental/agent-team/README.zh.md)拥有恢复行为的说明。
 
 `send_message` 始终尝试 Steer 投递。running target 在最近的步骤边界收到消息，inactive target 在已加载时启动一个轮次，否则冷恢复。即使临时投递失败让消息保持 queued，成功也表示消息已经持久化。该机制提供进程内重试与 target Session 去重，不宣称跨进程 exactly-once。[Team Steer 消息决策](../../archived/simplification/2026-08-30-team-send-message-steer.md)负责单工具调度的理由。
 

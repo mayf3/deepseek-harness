@@ -52,7 +52,7 @@ const contentBlockSchema: z.ZodType<ContentBlock> = z.lazy(() => z.union([
     name: z.string(),
     arguments: z.string(),
   }).strict(),
-  // Unknown content is decoded JSON; validation must preserve its own extension keys.
+  // Keep unknown JSON objects by reference; loose-object parsing drops their own __proto__ keys.
   z.custom<ContentBlock>((value) => {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
     const type = (value as { type?: unknown }).type
