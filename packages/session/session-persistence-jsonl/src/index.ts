@@ -134,7 +134,7 @@ interface PreparedStoredLog extends StoredLogBase {
 /** A validated logical log, either durable current state or prepared historical state. */
 type StoredLog = CurrentStoredLog | PreparedStoredLog
 
-/** Deep-freeze one acyclic stored JSON event without recursive calls. */
+/** Deep-freeze acyclic stored JSON; its arrays contain only indexed JSON values. */
 function freezeStoredEvent(event: SessionEvent): void {
   const pending: object[] = [event]
   while (pending.length > 0) {
@@ -142,9 +142,16 @@ function freezeStoredEvent(event: SessionEvent): void {
     // oxlint-disable-next-line typescript/no-non-null-assertion
     const current = pending.pop()!
     Object.freeze(current)
-    for (const key in current) {
-      const child = (current as Record<string, unknown>)[key]
-      if (child !== null && typeof child === 'object') pending.push(child)
+    if (Array.isArray(current)) {
+      for (let index = 0; index < current.length; index += 1) {
+        const child: unknown = current[index]
+        if (child !== null && typeof child === 'object') pending.push(child)
+      }
+    } else {
+      for (const key in current) {
+        const child = (current as Record<string, unknown>)[key]
+        if (child !== null && typeof child === 'object') pending.push(child)
+      }
     }
   }
 }

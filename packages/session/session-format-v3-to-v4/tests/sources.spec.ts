@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionFormatEvent, SessionFormatJsonObject, SessionFormatJsonValue } from '@deepseek-ai/dsh-session-format'
-import { mapEventMessages, rewritePluginSource } from '../src/sources.ts'
+import { mapEventMessages, rewritePluginSource, rewriteV3MessageSource } from '../src/sources.ts'
 
 function event(type: string, data: SessionFormatJsonObject): SessionFormatEvent {
   return { type, seq: 0, time: 1, data }
@@ -59,23 +59,44 @@ describe('rewritePluginSource', () => {
     expect(rewritePluginSource({ kind: 'plugin', plugin: 'tools-code-mode' }, 1, 'user')).toEqual({ kind: 'ptc-mode' })
     expect(rewritePluginSource({ kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' }, 1, 'system')).toEqual({ kind: 'system-prompt' })
     expect(rewritePluginSource({ kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' }, 1, 'user')).toEqual({ kind: 'runtime-context' })
-    expect(rewritePluginSource({ kind: 'plugin', plugin: 'external', extra: true }, 1, 'user')).toEqual({ kind: 'external', extra: true })
+    expect(rewritePluginSource({ kind: 'plugin', plugin: 'external', extra: true }, 1, 'user')).toEqual({ kind: 'plugin:external', extra: true })
   })
 
-  it('refuses a plugin field that is not a non-empty string', () => {
-    const plugins: readonly SessionFormatJsonValue[] = [null, '', 7]
+  it('refuses a plugin field that is not a string', () => {
+    const plugins: readonly SessionFormatJsonValue[] = [null, 7]
     for (const plugin of plugins) {
       expect(() => rewritePluginSource({ kind: 'plugin', plugin }, 3, 'user')).toThrow(/not canonical/)
     }
   })
 
-  it('refuses external plugin names that collide with current producer kinds', () => {
+  it('namespaces external plugin names while retaining released first-party producers', () => {
     for (const plugin of ['plugin', 'user', 'model', 'tool', 'system-prompt', 'runtime-context', 'compact-checkpoint', 'ptc-mode', 'compact-basic', 'auto-review']) {
-      expect(() => rewritePluginSource({ kind: 'plugin', plugin }, 3, 'user')).toThrow(/collides with a current producer kind/)
+      expect(rewritePluginSource({ kind: 'plugin', plugin }, 3, 'user')).toEqual({ kind: `plugin:${plugin}` })
     }
     expect(rewritePluginSource({ kind: 'plugin', plugin: 'agent-instructions', form: 'instructions', changes: [] }, 3, 'user'))
       .toEqual({ kind: 'agent-instructions', form: 'instructions', changes: [] })
     expect(rewritePluginSource({ kind: 'plugin', plugin: 'tool-jobs' }, 3, 'user')).toEqual({ kind: 'tool-jobs' })
     expect(rewritePluginSource({ kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' }, 3, 'system')).toEqual({ kind: 'system-prompt' })
+  })
+})
+
+describe('external V3 source identities', () => {
+  it.each(['', 'acme', 'plugin:x', 'source:x', 'message', 'x/y', '\ud800', '__proto__'])('prefixes the complete plugin name %j', (name) => {
+    expect(rewritePluginSource({ kind: 'plugin', plugin: name }, 1, 'user')).toEqual({ kind: `plugin:${name}` })
+  })
+
+  it.each(['acme', 'plugin:acme', 'source:acme', 'message', 'x/y', '\ud800', '__proto__'])('preserves direct source kind %j and its metadata', (kind) => {
+    const source = { kind, payload: { kind: 'plugin', plugin: kind } }
+    expect(rewriteV3MessageSource(source, 1, 'user')).toBe(source)
+  })
+
+  it('preserves native V3 sources and converts plugin wrappers', () => {
+    const source = { kind: 'tool', callId: 'call', extra: true }
+    expect(rewriteV3MessageSource(source, 1, 'user')).toBe(source)
+    expect(rewriteV3MessageSource({ kind: 'plugin', plugin: 'compact' }, 1, 'user')).toEqual({ kind: 'compact-checkpoint' })
+  })
+
+  it.each([null, 0, ''])('rejects type-invalid source kind %j', (kind) => {
+    expect(() => rewriteV3MessageSource({ kind }, 1, 'user')).toThrow(/requires a nonempty kind/)
   })
 })

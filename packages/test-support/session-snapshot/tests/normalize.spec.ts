@@ -755,13 +755,13 @@ describe('normalizeSessionSnapshot', () => {
       .toThrow('session snapshot must start with a session header')
   })
 
-  function deliveryLog(version: number, deliveryVersion = version): string {
+  function deliveryLog(version: number, deliveryVersion = version, id = 'delivery'): string {
     return [
-      { type: 'session', version, id: 'delivery', createdAt: 1, isSeeded: false, delegationDepth: 0 },
+      { type: 'session', version, id, createdAt: 1, isSeeded: false, delegationDepth: 0 },
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
       {
         type: 'session-log-deepseek/delivery-accepted', seq: 1, time: 2,
-        data: { sessionId: 'delivery', throughSeq: 0, sessionFormatVersion: deliveryVersion },
+        data: { sessionId: id, throughSeq: 0, sessionFormatVersion: deliveryVersion },
       },
     ].map(record => JSON.stringify(record)).join('\n') + '\n'
   }
@@ -792,9 +792,23 @@ describe('normalizeSessionSnapshot', () => {
     expect(staleCurrent).toContain('"sessionFormatVersion":3')
   })
 
-  it('refuses a source marker claiming the migration target before creating comparison tokens', () => {
+  it('refuses source delivery claiming V4 before creating comparison tokens', () => {
     expect(() => normalizeSessionSnapshots([deliveryLog(3, 4)], ctx, { nativeWriterOutput: true }))
       .toThrow('format v3 delivery marker claims target format v4')
+  })
+
+  it('retains future delivery generations without renaming their event identity', () => {
+    const source = deliveryLog(3, 99, 'recorded-session')
+    const target = prepareSessionSnapshotFixtureForComparison(source)
+    const marker = JSON.parse(target.trimEnd().split('\n').at(-1)!) as unknown
+    expect(marker).toEqual({
+      type: 'session-log-deepseek/delivery-accepted', seq: 1, time: 2,
+      data: { sessionId: 'recorded-session', throughSeq: 0, sessionFormatVersion: 99 },
+    })
+    const [historical, migrated] = normalizeSessionSnapshots([source, target], ctx, { nativeWriterOutput: true })
+    expect(historical).toBe(migrated)
+    expect(historical).toContain('"sessionFormatVersion":99')
+    expect(historical).not.toContain('{{sourceSessionFormatVersion}}')
   })
 
   it('keeps captured generations and delivery lookalikes numeric in versioned inputs', () => {

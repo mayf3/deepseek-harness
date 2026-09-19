@@ -17,6 +17,7 @@ kind: "package-library"
 - [V3 到 V4 规范](#v3-to-v4-specification)
   - [Header 与物理分帧](#header-and-framing)
   - [工具结果表示](#tool-results)
+  - [扩展数据](#extension-data)
   - [消息来源转换](#message-sources)
   - [父目录前置证据](#parent-catalog)
   - [序号引用与继承](#sequence-references)
@@ -65,7 +66,7 @@ const artifact = restore.finish()
 <a id="v3-to-v4-specification"></a>
 ## V3 到 V4 规范
 
-本边只改变下列明确命名的表示，并追加缺失的目录事实。每个获准源事件的 type、time、sequence、消息身份、表面操作、引用以及转换之外的字段均保留。它不创建 system prompt、developer 事件、工具执行或替换消息。更早的 V0–V2 输入先经过各自现有迁移边到达 V3；那些边保留自身的转换与拒绝策略。
+本边只改变下列明确命名的表示，并追加证据完整的缺失目录事实。未知可忽略事件的类型获得命名空间；每个获准源事件的 time、sequence、消息身份、表面操作、引用以及转换之外的字段均保留。它不创建 system prompt、developer 事件、工具执行或替换消息。更早的 V0–V2 输入先经过各自现有迁移边到达 V3；那些边保留自身的转换与拒绝策略。
 
 <a id="header-and-framing"></a>
 ### Header 与物理分帧
@@ -76,7 +77,7 @@ const artifact = restore.finish()
 | V3 物理行 | 已发布 V3 源 codec 解码事件与紧凑 run | 源分帧和源事件区间解码仍归前一个包所有。 |
 | V4 物理行 | `releasedV4SessionFormatCodec` 复用已发布 V2 分帧并执行原生 V4 接纳 | 不把 V4 事件投影到 V3 语义校验器。编码和解码不运行此入边迁移。 |
 
-本边不重命名 preset id、PTC dispatch 事件标签、文件附件、内嵌流或物理文件名。对应的早期迁移和存储所有者仍是权威。
+本边不重命名 preset id、PTC dispatch 事件标签、文件附件或物理文件名。内嵌流中的内容扩展遵循下列规则，流顺序和索引保持不变。
 
 <a id="tool-results"></a>
 ### 工具结果表示
@@ -90,16 +91,23 @@ const artifact = restore.finish()
 | `data.message.content[0].content` | 直接作为 `data.message.content`，包括空内容 |
 | `data.message.content[0].isError` | 可选的 `data.message.isError` |
 | Wrapper 的 `type: 'tool-result'` | 随 wrapper 移除 |
-| 消息 `id`、`source`、外层扩展和事件字段 | 保留；不生成新的消息或调用 id |
+| 消息 `id`、`source` 和事件字段 | 保留；不生成新的消息或调用 id |
 
-Wrapper 只允许 `type`、`toolCallId`、`content` 和 `isError`。未知 wrapper 字段没有定义好的目标，因此拒绝迁移。结果内容中嵌套的 `tool-result` block 也被拒绝，因为展平无法保留它们独立的调用身份和错误状态。已有外层 `toolCallId` 必须匹配；已有外层 `isError` 必须为布尔值，并与 wrapper 值一致，此冲突检查把省略视为 false。Wrapper 省略 `isError` 时，一致的已有外层值仍保留。`__proto__` 和 `constructor` 等外层 JSON 属性仍是自有数据属性。
+只有 wrapper 提供具有解释语义的调用 id、content 和可选错误标志。Wrapper 的其他字段变为 `plugin:result:<原字段名>`；外层消息除 `id`、`role`、`source` 和 `content` 外的字段变为 `plugin:message:<原字段名>`。后缀保留完整原名称，包括已有前缀。不同 owner 与重名字段分别保留值；`__proto__` 和 `constructor` 的自有数据保持完整。不添加 metadata 容器或新的内容类型。
 
-格式错误的 canonical wrapper 产生格式错误；没有映射的 wrapper 扩展、嵌套结果或冲突目标字段产生不支持迁移错误。转换不修复矛盾的 `data.error`；原生目标校验要求它与 `message.isError: true` 同时出现。
+格式错误的 canonical wrapper 引发格式错误。当前转换器不支持嵌套结果，遇到时拒绝且不发布 successor。转换不会修复矛盾的 `data.error`；原生目标校验要求它与 wrapper 的 `isError: true` 同时出现。后续可以扩展转换器支持范围，同时保持既定的原生 V4 表示。
+
+<a id="extension-data"></a>
+### 扩展数据
+
+V3 未知内容标签变为 `plugin:<original-type>`，其他字段原样保留且不作解释。流起始块的 `blockType` 使用相同标签，其他字段的原始键和值均保留。内容标签的已有前缀会再次添加，使不同旧名称保持不同。不遍历实参、回放状态和插件内容字段。这些名称不会加载或执行插件。
+
+请求工具定义保留自有字段的原始名称和值，包括普通扩展元数据。若定义拥有顶层 `deferLoading` 字段，则拒绝 V3 迁移：该字段仅在 V4 中定义，因此本迁移边不为它赋予历史含义。嵌套参数数据保持不变。原生 V4 对 `deferLoading: true` 的接纳规则不变。
 
 <a id="message-sources"></a>
 ### 消息来源转换
 
-[消息遍历器](src/sources.ts)只访问以下载荷位置。仅在 `source.kind === 'plugin'` 时改写来源；其他来源值原样进入目标接纳。
+[消息遍历器](src/sources.ts) 只访问下列 payload 位置。它转换旧插件包装，并保留直接来源 kind。
 
 | 所属事件 | 消息位置 |
 |---|---|
@@ -107,9 +115,9 @@ Wrapper 只允许 `type`、`toolCallId`、`content` 和 `isError`。未知 wrapp
 | `system/message`、`assistant/message`、`tool/result` | `data.message` |
 | `agent/inbox/spliced` | 每个 `data.inserted[]` 成员 |
 | `session/title-llm-request` | 每个 `data.messages[]` 成员 |
-| `developer/message` | `data.message`；由共享的原生遍历器识别，V3→V4 Stage 从不生成该事件 |
+| `developer/message` | 仅由原生遍历器处理；未知可忽略 V3 事件被命名空间化，其 payload 不被访问 |
 
-Plugin 来源要求非空字符串 `plugin`。转换移除该属性、替换 `kind`，并保留其他所有自有 JSON 属性。它不从消息文本、工具参数、插件配置或当前文件推断缺失的生产者元数据。
+插件来源要求字符串 `plugin`，允许空字符串。转换移除该属性、替换 `kind`，并保留其他所有自有 JSON 属性。直接来源 kind 必须为非空字符串。转换不从消息文本、工具参数、配置或当前文件推断缺失元数据。
 
 | 精确的 V3 `plugin` | V4 `kind` |
 |---|---|
@@ -119,11 +127,11 @@ Plugin 来源要求非空字符串 `plugin`。转换移除该属性、替换 `ki
 | system 角色消息中的 `@deepseek-ai/dsh-system-prompt` | `system-prompt` |
 | 其他角色中的 `@deepseek-ai/dsh-system-prompt` | `runtime-context` |
 | 下文列出的同名第一方生产者 | 精确的 plugin 字符串 |
-| 保留冲突集合之外的其他非空名称 | 精确的 plugin 字符串，包括未知外部名称 |
+| 其他任何插件名 | `plugin:` 后接完整的原始名称 |
 
 同名生产者为 `agent-instructions`、`session-reference`、`team-message`、`goal`、`skill-invocation`、`skill-catalog`、`coordinator`、`subagent-report`、`subagent-settled`、`webhook`、`agent-message`、`model-selection`、`plan-mode`、`time-context`、`tmux-context`、`user-approval`、`repeat-tool-reminder`、`tool-cordis`、`cordis-host-runner`、`tool-goal`、`tool-jobs`、`hooks-codex`、`hooks-claude-code`、`schedule` 和 `dsh-session-title-llm`。
 
-保留的冲突名称为 `plugin`、`user`、`model`、`tool`、`system-prompt`、`tool-registry`、`runtime-context`、`compact-checkpoint`、`ptc-mode`、`compact-basic` 和 `auto-review`。使用其中任一名称的 V3 plugin 来源会被拒绝，避免获得不同的当前角色或生产者含义。精确重命名项优先匹配。相似字符串、`constructor` 和 `__proto__` 都是普通外部名称。
+完整的插件字符串保留在 `plugin:` 之后：名为 `acme` 的插件变为 `plugin:acme`。直接来源保留原 kind 和每个自有 JSON 字段，包括未知或已有前缀的 kind。
 
 来源查找不递归进行。捕获的请求文本、assistant 回放状态与流、工具参数／内容元数据、Team 载荷以及任意嵌套对象均保留，除非另有明确命名的规则适用。
 
@@ -137,16 +145,16 @@ Plugin 来源要求非空字符串 `plugin`。转换移除该属性、替换 `ki
 | 一个 version 1 descriptor | 要求字符串 provider 与 label；导出 `mode: 'continuable'`。 |
 | 一个 version 2 或 3 descriptor | 要求字符串 provider；按目录规则使用其 mode 和可选 label。 |
 | 没有 descriptor，或 descriptor 版本不受支持 | 可以保留已有父目录项；不能创建缺失项。 |
-| 多个自身 descriptor | 拒绝，包括父目录中已经存在条目的情况。 |
-| 已有自身父目录项 | 保留条目及其扩展；要求子创建时间以及可用且受支持的 mode／label 一致。 |
+| 多个自身 descriptor | 保留已有父目录项，不比较 mode／label；不创建缺失项。 |
+| 已有自身父目录项 | 保留条目及其扩展；要求子创建时间一致，并在恰好一个受支持的自身 descriptor 可用时比较其 mode／label。 |
 | 缺少自身父目录项，且受支持证据完整 | 追加带 child id、创建时间、mode 和可选 label 的 version-0 目录事实。 |
-| 缺少自身父目录项，且证据不完整 | 拒绝迁移，不发布后继代际。 |
+| 缺少自身父目录项，且证据不完整 | 保留父 Session，不凭空创建目录项。 |
 
 Catalog version 0 要求字符串 `childId`、非负安全整数 `childCreatedAt`、`continuable` 或 `one-shot` mode，以及 continuable mode 下的字符串 label；存在的 one-shot label 也必须是字符串。重复的自身 child id 被拒绝。没有对应保留子日志的已有条目仍保留在父日志中。Descriptor 收集不恢复子级的旧 continuation composition，也不从工具参数恢复已删除子级。
 
 Stage 只把最终继承截点之后的父目录记录作为候选。每个 inherited marker 都会丢弃更早的目录候选，不解释其载荷。缺失项追加在所有源事件之后，按创建时间、child id 排序，并使用连续的新序号。时间取最后一个源事件的 time；空日志则取 header 创建时间。这些记录既不进入模型表面，也不改变继承计数。
 
-存储层提供其根目录内完整的可识别子级集合，并在准备、复用 memo 与发布时复查成员及物理版本。缺失必要证据、无法据此判断成员关系的不可读 header、不受支持的所选代际或源变化都会拒绝操作。本包不读取文件；[持久化层](../session-persistence-jsonl/README.zh.md)负责编码、锁、取消与发布。
+存储层提供其根目录内完整的可识别子级集合，并在准备、复用 memo 与发布时复查成员及物理版本。不完整的 descriptor 证据只阻止补填对应子 Session 的目录项。无法据此判断成员关系的不可读 header、不受支持的所选代际或源变化都会拒绝操作。本包不读取文件；[持久化层](../session-persistence-jsonl/README.zh.md)负责编码、锁、取消与发布。
 
 <a id="sequence-references"></a>
 ### 序号引用与继承
@@ -161,20 +169,20 @@ Stage 只把最终继承截点之后的父目录记录作为候选。每个 inhe
 | Delivery 记录 | 接纳与保留 |
 |---|---|
 | 任何被解释的 `session-log-deepseek/delivery-accepted` | 代际必须为非负安全整数；省略表示 V0。 |
-| 声称 generation 4 的 V3 源 marker | 拒绝：改变 header 不得激活目标代际的 watermark。 |
+| V3 源 marker 声明 generation 4 | 拒绝：提升 header 不得激活目标代际的 watermark。 |
 | generation 3 的 V3 源 marker | 要求非空 Session id 和早于 marker 的非负安全整数 `throughSeq`；只有在继承截点之前且带 `parentSession` 时才允许其他 Session id。 |
-| 其他源代际 | 保留 id、generation 和坐标，不激活它们。 |
+| 其他源代际，包括高于 4 的值 | 原样保留事件类型、payload 与坐标；它们在 V4 中仍未激活。 |
 | generation 4 的原生 V4 marker | 以 V4 为当前代际，应用同样的较早坐标和 Session 归属检查。 |
 | 原生 V4 中的历史 marker，包括 generation 3 | 保留记录的坐标与身份；它不是 V4 接纳 watermark。 |
 
-任何 delivery 载荷均不改写。该边也保留 marker 的信封序号。
+不改写投递 payload 或事件类型。未来的激活检查归对应的更高版本迁移所有，本边只检查向 V4 的提升。标记的信封序号保持不变。
 
 <a id="source-audit"></a>
 ### 源审计与拒绝
 
 Stage 之前先执行 V3 物理解码与 header 校验。Stage 按上述规范检查连续序号、源截点、canonical 工具结果 wrapper、命名的 plugin 来源、delivery 归属及传入的目录证据。它不运行完整的已发布 V3 语义恢复器，也不复制 V2→V3 的事件／内容允许列表。完整恢复还会应用下述 V4 目标规则；物理解析、Stage 转换与目标恢复是不同的检查。
 
-只有枚举出的消息与字段会转换。无关事件和任意 JSON 不会因字符串或数字相同而获得新含义。未知 required 事件由支持事件词汇表的目标恢复器拒绝；未知 ignorable 事件在其物理分帧与明确所属的接纳规则下保持不透明。这不意味着通用源 schema 校验或递归数字字段推断。
+只转换列明的消息及字段。无关事件及任意 JSON 不会因字符串或数字匹配而获得新含义。固定的 `RELEASED_V3_EVENT_TYPES` 集合独立于当前 writer 区分源事件和扩展。Stage 在解释载荷或查询 V4 词汇之前拒绝 V3 未知必需事件，包括 V4 已认识的名称。未知可忽略事件名称变为 `plugin:<original-name>`，载荷不变。不隐含通用源 schema 校验或递归数字字段推断。
 
 只有 canonical V3 `tool/result` wrapper 具有保留信息的转换。其他被解释位置中的已退役 `tool-result` block 由目标接纳拒绝，不作为无效 V4 block 保留。原生 V4 在 recoverable 后缀抑制前应用同样的标签拒绝。检查只覆盖以下位置：
 
@@ -320,11 +328,13 @@ Fork 种子构造归核心 Session 所有，不属于此迁移。原生 V4 接�
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **历史转换器覆盖范围** — 未支持的源表示可能拒绝迁移，不发布后继文件，也不修改源文件。一方录制不等于第三方扩展全集。V4 发布后，只要输出仍兼容 V4，后续转换器修复就可以增加支持。解释流起始块的额外字段或处理未来投递代际，应以具体格式变更为依据。
 - **已接受 V4 转换**——[检查点](../../../docs/session-format-status.zh.md#finalization-record)保护已接受历史。向后兼容的新增可以通过新的确认记录保留 V4；破坏性变更要求后继版本。已写入的 V4 文件不会重跑此入边，历史输入保持不变。
 - **V5 前置读取器**——V4 子日志证据目前经过已安装目录。后续写入器在改变该目录前，须绑定固定代际的 V4 前置读取。导出的 V4 恢复器提供代际自有检查；完整的通用消息接纳还使用已安装的 Session 校验。
-- **历史嵌套工具结果**——迁移会拒绝包含另一层 tool-result 包装的结果，因为展平会丢失其调用身份和错误状态。原始代际保持不变，也不会发布 V4 后继；这些历史需要能保留信息的转换才能继续运行。
-- **历史工具结果扩展**——外层消息的 JSON 属性仍保留为自有数据属性，包括 `__proto__` 和 `constructor`。未知 wrapper 字段没有已定义的 V4 存放位置，因此拒绝迁移。已有外层 `toolCallId` 或 `isError` 字段必须与提升后的结果一致；冲突时拒绝且不发布 successor。
+- **历史嵌套工具结果**——当前迁移拒绝包含另一个 tool-result wrapper 的结果。原始代际保持完整，且不发布 V4 successor。后续转换器可以支持有证据的源数据场景，而不改变既定 V4 格式；[迁移 cookbook](../../../docs/cookbook/adding-a-session-format-version.zh.md#stages-and-validation) 定义了这一区别。
+- **历史扩展消费者**——带前缀的消息与结果字段保留 JSON 数据，不激活核心字段。消费者必须明确理解这些字段后才能解释它们。
 - **依赖保留的子日志**——仅凭父日志无法恢复未记录的子 id、创建时间或 descriptor。删除的子 Session 无法从工具参数恢复；已存在的父目录记录仍保留。
+- **历史目录项缺失**——没有恰好一个受支持的自身 descriptor 时，不补填父目录缺失项。子日志仍可按 id 读取；当前 V4 读取不会重新扫描子日志来补齐该条目。
 - **存储范围**——事实只覆盖同一持久化根目录内可识别的子 Session。跨根目录导入和损坏日志修复不属于此迁移。
 
 <a id="dev-note"></a>

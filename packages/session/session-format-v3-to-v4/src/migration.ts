@@ -3,8 +3,10 @@
 import { defineSessionFormatMigration, SessionFormatError, SessionFormatUnsupportedMigrationError, isSessionFormatJsonObject, sessionFormatCount } from '@deepseek-ai/dsh-session-format'
 import type { SessionFormatEvent, SessionFormatEventRun, SessionFormatJsonObject, SessionFormatJsonValue, SessionFormatMigration, SessionFormatMigrationContext, SessionFormatMigrationStage, SessionFormatMigrationStageInput } from '@deepseek-ai/dsh-session-format'
 import { assertReleasedV3Header } from '@deepseek-ai/dsh-session-format-v2-to-v3'
-import { mapEventMessages, rewritePluginSource } from './sources.ts'
+import { mapEventMessages, rewriteV3MessageSource } from './sources.ts'
 import { liftToolResult } from './tool-role.ts'
+import { migrateV3EventContent } from './content.ts'
+import { namespaceV3OpaqueEvent, RELEASED_V3_EVENT_TYPES } from './extension-identities.ts'
 import { assertReleasedV4Header, validateDeliveryAccepted } from './validation.ts'
 import { catalogFact, childCatalogSource, childCatalogFact, childCatalogSubject } from './facts.ts'
 
@@ -70,12 +72,20 @@ class ReleasedV3ToV4Stage implements SessionFormatMigrationStage {
       }
       if (deliveryId !== undefined && deliveryId !== this.input.sourceHeader.id) this.foreignDeliverySeq = event.seq
     }
+    const opaque = namespaceV3OpaqueEvent(event)
+    if (opaque !== event) { context.emitEvent(opaque); return }
+    if (!RELEASED_V3_EVENT_TYPES.has(event.type)) {
+      throw new SessionFormatUnsupportedMigrationError(
+        `format v3 contains unknown event type ${JSON.stringify(event.type)} at seq ${event.seq}`,
+      )
+    }
     const rewritten = mapEventMessages(event, (message) => {
       const source = message['source']
-      if (!isSessionFormatJsonObject(source) || source['kind'] !== 'plugin') return message
-      return { ...message, source: rewritePluginSource(source, event.seq, message['role']) }
+      if (!isSessionFormatJsonObject(source)) return message
+      const converted = rewriteV3MessageSource(source, event.seq, message['role'])
+      return converted === source ? message : { ...message, source: converted }
     })
-    context.emitEvent(liftToolResult(rewritten))
+    context.emitEvent(migrateV3EventContent(liftToolResult(rewritten)))
   }
 
   transformRun(run: SessionFormatEventRun, context: SessionFormatMigrationContext): void {
@@ -112,7 +122,7 @@ class ReleasedV3ToV4Stage implements SessionFormatMigrationStage {
         }
         continue
       }
-      if (fact === undefined) throw new SessionFormatUnsupportedMigrationError(`${childCatalogSubject(source)} requires exactly one own supported subagent descriptor to complete its parent catalog`)
+      if (fact === undefined) continue
       existingCatalogs.set(id, fact)
       context.emitEvent({ type: 'subagent/catalog', seq: this.nextSeq++, time: this.time, data: fact })
     }

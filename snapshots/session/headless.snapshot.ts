@@ -156,6 +156,21 @@ function records(log: string): JsonObject[] {
     .map(line => JSON.parse(line) as JsonObject)
 }
 
+/** Compare deterministic recorded tool output with raw writer fields; only message ids are volatile. */
+function verifyToolResultWriterParity(fixture: string, actual: string): void {
+  expect(sessionHeaderVersion(fixture, 'retained tool-result input')).toBe(3)
+  expect(sessionHeaderVersion(actual, 'raw tool-result writer')).toBe(SESSION_FORMAT_VERSION)
+  const withoutMessageId = (message: object): JsonObject => Object.fromEntries(
+    Object.entries(message).filter(([key]) => key !== 'id'),
+  )
+  const expected = parseSessionLog(fixture).flatMap(event => event.type === 'tool/result'
+    ? [withoutMessageId(event.data.message)] : [])
+  const written = records(actual).flatMap(event => event.type === 'tool/result'
+    ? [withoutMessageId((event.data as JsonObject).message as JsonObject)] : [])
+  expect(expected.length, 'recorded stock tool results').toBeGreaterThan(0)
+  expect(written, 'native tool-result messages match migration output').toEqual(expected)
+}
+
 function headerOf(log: string): JsonObject {
   return records(log)[0] ?? {}
 }
@@ -196,8 +211,8 @@ async function persistedSessions(cwd: string): Promise<SessionLog[]> {
   })
 }
 
-async function fixtureSessions(scenario: HeadlessScenario): Promise<string[]> {
-  const files = sessionFixtureNames(await readdir(scenario.dir))
+async function fixtureSessions(scenario: HeadlessScenario, selectedFiles?: readonly string[]): Promise<string[]> {
+  const files = selectedFiles ?? sessionFixtureNames(await readdir(scenario.dir))
   return Promise.all(files.map(async (file) => {
     const content = await readFile(join(scenario.dir, file), 'utf8')
     assertSessionFixtureVersion(file, content)
@@ -1040,14 +1055,31 @@ describe('headless recorded-session snapshots', () => {
     expect(await readFile(join(snapshotsRoot, 'session-reference-spill/session.v3.jsonl'), 'utf8')).toBe(fixture)
   })
 
-  for (const scenario of scenarios) {
+  it('rejects a native writer that still emits the recorded tool-result wrapper', async () => {
+    const fixture = await readFile(join(snapshotsRoot, 'tool-call-turn/session.v3.jsonl'), 'utf8')
+    const unconverted = records(fixture)
+    unconverted[0]!.version = SESSION_FORMAT_VERSION
+    expect(() => verifyToolResultWriterParity(fixture, unconverted.map(row => JSON.stringify(row)).join('\n')))
+      .toThrow('native tool-result messages match migration output')
+  })
+
+  const runs = scenarios.flatMap((scenario): { scenario: HeadlessScenario; retainedToolInput?: string }[] => [
+    { scenario },
+    // This comparison retains its own V3 input even after the ordinary scenario records a newer generation.
+    ...mode === 'replay' && scenario.name === 'tool-call-turn'
+      ? [{ scenario, retainedToolInput: 'session.v3.jsonl' }] : [],
+  ])
+  for (const { scenario, retainedToolInput } of runs) {
     const skipped = scenario.manifest.platform === 'posix' && process.platform === 'win32'
       || scenario.manifest.platform === 'pwsh' && !hasPwsh
       || mode === 'record' && scenario.manifest.recording === 'authored'
       || mode === 'record' && scenario.manifest.sessionFormat !== undefined
     const scenarioTest = skipped ? it.skip : mode === 'replay' ? it.concurrent : it
-    scenarioTest(`${mode}s ${scenario.name} through dsh --profile headless`, async () => {
-      let fixtures = await fixtureSessions(scenario)
+    const inputLabel = retainedToolInput === undefined ? '' : ' from retained V3 input'
+    scenarioTest(`${mode}s ${scenario.name}${inputLabel} through dsh --profile headless`, async () => {
+      let fixtureFiles = retainedToolInput === undefined
+        ? sessionFixtureNames(await readdir(scenario.dir)) : [retainedToolInput]
+      let fixtures = await fixtureSessions(scenario, fixtureFiles)
       const primaryFixture = fixtures[0]
       if (primaryFixture === undefined) throw new Error(`${scenario.name}: missing primary session fixture`)
       const task = taskFromSession(primaryFixture) ?? scenario.manifest.input?.task
@@ -1062,7 +1094,6 @@ describe('headless recorded-session snapshots', () => {
       const composition = ownerOf(scenario)
       const baseComposition = compositionOwners.get('default')
       if (baseComposition === undefined) throw new Error('headless corpus has no default composition')
-      let fixtureFiles = sessionFixtureNames(await readdir(scenario.dir))
       const replaying = mode !== 'record'
       const compositionPatch = join(composition.dir, replaying ? 'cordis.snapshot.yml' : 'cordis.yml')
       const patchSources = [
@@ -1144,6 +1175,9 @@ describe('headless recorded-session snapshots', () => {
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
+            if (retainedToolInput !== undefined) {
+              verifyToolResultWriterParity(primaryFixture, actualLogs[0]!.content)
+            }
             if (mcpDemo !== undefined) {
               const log = actualLogs[0]!.content
               expect(log).toContain('mcp__demo__ping')

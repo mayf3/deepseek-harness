@@ -81,7 +81,7 @@ function mountFrame(windowWidth = frameWidth) {
     jobsBySession: {},
   })
   const workspaceState: WorkspaceSnapshot = {
-    items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+    items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
     ...(workspacesReady ? {} : { state: 'loading' as const, phase: 'pending' as const }),
   }
   const useStore = bindSnapshotSelector(instance)

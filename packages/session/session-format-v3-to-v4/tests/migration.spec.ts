@@ -40,6 +40,39 @@ function restoreHistorical(events: readonly SessionFormatEvent[], sourceHeader: 
 }
 
 describe('V3 to V4 source preservation', () => {
+  it('rejects required V3 developer events while preserving ignorable events and native V4 admission', () => {
+    const rows: SessionFormatEvent[] = [
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      { type: 'step/start', seq: 1, time: 2, data: { turn: 1, step: 1 } },
+      { type: 'developer/message', seq: 2, time: 3, surfaceOp: 'append', data: {
+        turn: 1, step: 1, message: { id: 'developer', role: 'developer', source: { kind: 'tool-registry' }, content: [] },
+      } },
+      { type: 'step/end', seq: 3, time: 4, data: { turn: 1, step: 1 } },
+      { type: 'turn/end', seq: 4, time: 5, data: { turn: 1, reason: { kind: 'completed' } } },
+    ]
+    const before = structuredClone(rows)
+    expect(() => migrate(rows)).toThrow('format v3 contains unknown event type "developer/message" at seq 2')
+    expect(() => restore(rows)).toThrow('format v3 contains unknown event type "developer/message" at seq 2')
+    expect(() => restoreHistorical(rows, header)).toThrow('unknown event type')
+    const ignorable = rows.map(row => row.type === 'developer/message' ? { ...row, ignorable: true } : row)
+    expect(restore(ignorable).events).toEqual(ignorable.map(row =>
+      row.type === 'developer/message' ? { ...row, type: 'plugin:developer/message' } : row))
+    const native = sessionFormatCatalog.createRestore({ type: 'session', ...header, version: 4 }, {
+      recovery: 'strict', validation: 'current',
+    })
+    for (const row of rows) native.decodeRow(row)
+    expect(native.finish().events).toEqual(rows)
+    expect(rows).toEqual(before)
+  })
+
+  it('rejects generic required V3 extensions before target vocabulary admission', () => {
+    const required = { ...fact, type: 'external/required' }
+    expect(() => migrate([required])).toThrow('format v3 contains unknown event type "external/required" at seq 0')
+    expect(() => restore([required])).toThrow('format v3 contains unknown event type "external/required" at seq 0')
+    const ignorable = { ...required, ignorable: true }
+    expect(restore([ignorable]).events).toEqual([{ ...ignorable, type: 'plugin:external/required' }])
+  })
+
   it('changes only the header version and retains event objects, payloads, timestamps, and coordinates', () => {
     const rows = [fact, delivery(3)]
     const before = JSON.stringify({ header, rows })
@@ -86,12 +119,13 @@ describe('V3 to V4 source preservation', () => {
     expect(() => migrate([fact, { ...seed, data: {} }], { ...header, isSeeded: true })).toThrow('inherited event count')
   })
 
-  it('refuses a target-generation delivery without changing predecessor or future delivery values', () => {
+  it('refuses target-generation delivery while retaining other generations unchanged', () => {
     expect(() => migrate([fact, delivery(4)])).toThrow('claims target format v4')
     expect(() => restore([fact, delivery(4)])).toThrow('claims target format v4')
-    for (const version of [undefined, 0, 1, 2, 3, 5]) {
+    for (const version of [undefined, 0, 1, 2, 3, 5, 99]) {
       const marker = delivery(version)
       expect(migrate([fact, marker]).events[1]).toBe(marker)
+      expect(restore([fact, marker]).events[1]).toEqual(marker)
     }
   })
 
@@ -122,7 +156,7 @@ describe('V3 to V4 source preservation', () => {
       type: 'external/opaque', seq: 0, time: -5, ignorable: true,
       data: { nested: { seq: 40 }, content: ['opaque'] }, surfaceOp: { future: { ref: 9 } },
     }
-    expect(restore([opaque]).events).toEqual([opaque])
+    expect(restore([opaque]).events).toEqual([{ ...opaque, type: 'plugin:external/opaque' }])
     const { ignorable: _ignorable, ...required } = opaque
     expect(() => restore([required])).toThrow('unknown event type')
     expect(() => restore([{ ...fact, time: 1.5 }])).toThrow('time')

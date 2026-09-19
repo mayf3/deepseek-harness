@@ -36,6 +36,8 @@ V4 has an accepted compatibility baseline in the [checkpoint](persistence-change
 
 Finalization does not freeze every future V4 addition and does not assert publication. The release record below retains the independently verified published version. Ordinary comments, aliases, source locations, and implementation fixes preserving the accepted meaning do not change this baseline.
 
+Before the first V4 publication, every integration of a newer V3-writing master must pass the [explicit V3 vocabulary check](cookbook/adding-a-session-format-version.md#final-v3-vocabulary) against the recorded local source commit. Verify the source pin’s freshness and review new event payload conversions before updating the migration-owned set. After publication, the final V3 vocabulary remains historical and independent of current V4 additions.
+
 <a id="release-record"></a>
 ## Release record
 

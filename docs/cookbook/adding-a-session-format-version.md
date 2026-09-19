@@ -25,7 +25,7 @@ Let N be the accepted or published version in [version/status](../session-format
 
 Use a shared `release/*` integration base for N+1. The base change adds the writer, codec, catalog wiring, identity migration, and verification. Create each independent child branch from that base and target its PR at the release branch, not another independent child’s branch. Each child adds its structural transformation, validators, consumers, and tests to the same adjacent migration package. Do not allocate extra versions just to represent review order. Merge reviewed children into the release branch through PRs, then validate the combined result before release. Honor release-branch force-push and deletion protections; do not force-sync it.
 
-Released codecs and accepted migration meanings remain stable. An unaccepted N→N+1 transition may combine coordinated breaking changes. Once accepted, preserve that transition: later compatible evolution uses new same-version records, while new breaking changes require the next edge and their own header increase.
+Released codecs and accepted target-format meanings remain stable. The N→N+1 converter may receive fixes or support additional historical cases after N+1 ships, without a version bump, if its output remains compatible with N+1. A converter fix affects subsequent conversions, not existing N+1 successors. Document changes to previously accepted mappings and how existing outputs remain supported. Changing the established target representation or interpretation incompatibly requires the next version.
 
 Use disposable, isolated Harness homes while N+1 remains open for integration. An interim N+1 file already has the target writer version, so a later edit to N→N+1 will not migrate that file again. Re-run from unchanged historical input in a fresh test home; never repair this by rewriting a committed generation or reusing a real user's home.
 
@@ -56,6 +56,12 @@ Implement `transformEvent(event, context)`, `transformRun(run, context)`, and `f
 Treat the inherited cut as a logical event count, not a physical row count. Expose `headerInheritedEventCount` only when it is known before EOF; `finish` returns the exact target cut. A preceding cardinality-changing edge can make that count unavailable at construction. Derive it from validated seed markers when required, and test seeded multi-hop restoration from each supported historical generation through N+1, not just direct N input. Never substitute zero for an unknown cut.
 
 Define the new edge's event admission and transformation rules explicitly. The [V2-to-V3 source audit](../../packages/session/session-format-v2-to-v3/README.md#source-audit) and [alpha V0→V1 rule](../../.agents/notes/implemented/architecture/2026-08-31-alpha-historical-unknown-event-refusal.md) own the policies of those released edges, not the new edge. Do not generalize either to every edge. A change to structure or event positions requires classifying source events, payload members, and references, and explicitly deciding whether opaque data can remain valid. [Equal-version retention](../../.agents/notes/implemented/architecture/2026-08-30-retain-ignorable-external-session-events.md) alone does not prove a structural transformation safe. Validate target semantics and give each newly accepted case a rejecting counterexample; never widen older edges to hide an unsupported transformation.
+
+Use native writer output as the conversion oracle: replay the same recorded LLM messages, tool outputs, and other inputs through the old and target writers. Compare migrated old output with raw target output before any format-normalizing helper; mask only documented volatile fields. For V4, ordinary tool results become flat tool-role messages with ordinary content blocks. A theoretically permitted old structure alone does not justify a new core content type.
+
+Alpha converters may explicitly refuse historical cases without an implemented, evidenced mapping, including otherwise valid logs. Keep the source unchanged and publish no partial successor. Prefer real corpora and reproducible writers when extending support; inspect user corpora read-only and create sanitized regression fixtures.
+
+Document only the identifier and field mappings needed by the target format in the edge README, with a reason for each. Do not add namespaces to direct source kinds or ordinary metadata solely because they are extensible. Preserve opaque nested data. Alpha converters may refuse unexpected source fields that would acquire new target meanings rather than invent an interpretation.
 
 Maintain the new edge's README as its single complete transformation and admission catalog, following the [V2-to-V3 specification](../../packages/session/session-format-v2-to-v3/README.md#v2-to-v3-specification). Enumerate every converted header, event, message slot, and payload field; exact rename or collision rules; preserved ids, coordinates, references, and inherited cuts; external prerequisites; refusal and opaque-data policies; and unsupported or deferred behavior. Separate historical source conversion from native target admission, and state which codec, restorer, installed validator, and recovery policy performs each check. Record any validation that is deliberately narrower than the declared schema. Update this catalog in the same change as its code; a generated schema inventory or PR description does not replace it.
 
@@ -108,6 +114,20 @@ pnpm run doc-sync
 pnpm run lint
 git diff --check
 ```
+
+<a id="final-v3-vocabulary"></a>
+### Final V3 event vocabulary before V4 publication
+
+While the published format remains V3 and the integration writer is V4, master can still add valid V3 event types. After each master integration and before the first V4 publication, compare the migration-owned `RELEASED_V3_EVENT_TYPES` with the latest V3-writer commit used by that refresh. Capture its full immutable id while the locally verified `origin/master` still writes V3:
+
+```sh
+V3_SOURCE_REF="$(git rev-parse --verify 'origin/master^{commit}')"
+pnpm run verify-v3-event-vocabulary --source-ref "$V3_SOURCE_REF"
+```
+
+The verifier reads only that local commit and requires exact event-name equality. It rejects missing V3 names, extra copied names, and a source writer other than V3. In particular, V4-only `developer/message` must not enter the frozen V3 set. Review each difference against the V3 payload, required conversions, target admission, and consumers; adding the name alone does not establish a complete migration. Add the corresponding migration regression before accepting a new source event.
+
+This command does not fetch or establish remote freshness. The release operator must verify that the selected commit is the latest V3 writer included in the integration; an old remote-tracking ref or passing result for an older pin is insufficient. Record the checked id with release validation. If master already writes V4, reuse the recorded final V3 commit rather than resolving current master. After V4 ships, keep the V3 vocabulary tied to that historical source; later V4 event additions do not update it. Regular static CI has no dependency on a mutable master ref.
 
 <a id="dev-note"></a>
 ## Dev Note

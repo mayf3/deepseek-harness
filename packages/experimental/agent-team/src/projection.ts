@@ -40,8 +40,8 @@ const imageAttachmentSchema = z.object({
   name: z.string().optional(),
 }).strict()
 
-// ContentBlockMap is merge-extensible. Validate every core variant exactly,
-// while retaining JSON-decoded plugin variants under an unknown type tag.
+// Validate the listed variants; retired tool-result tags cannot enter the
+// merge-extensible fallback for JSON-decoded plugin content.
 const contentBlockSchema: z.ZodType<ContentBlock> = z.lazy(() => z.union([
   z.object({ type: z.literal('text'), text: z.string() }).strict(),
   z.object({ type: z.literal('reasoning'), text: z.string() }).strict(),
@@ -51,12 +51,6 @@ const contentBlockSchema: z.ZodType<ContentBlock> = z.lazy(() => z.union([
     id: z.string().min(1),
     name: z.string(),
     arguments: z.string(),
-  }).strict(),
-  z.object({
-    type: z.literal('tool-result'),
-    toolCallId: z.string().min(1),
-    content: z.array(contentBlockSchema),
-    isError: z.boolean().optional(),
   }).strict(),
   z.object({ type: z.string().min(1) }).loose().refine(
     block => !coreContentBlockTypes.has(block.type),

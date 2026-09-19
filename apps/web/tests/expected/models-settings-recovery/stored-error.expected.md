@@ -5,7 +5,6 @@
     - button "模型"
     - button "内置插件"
     - button "Agent 预设"
-    - button "已归档会话"
   - button "打开配置文件"
   - button "关闭"
   - heading "模型" [level=2]
