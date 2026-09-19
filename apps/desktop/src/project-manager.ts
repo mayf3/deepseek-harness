@@ -25,8 +25,6 @@ import { readDesktopRuntime } from './runtime-tree.ts'
 import {
   initProfile, PROFILE_TEMPLATES, sanitizeProfile, type ProfileTemplate,
 } from '@deepseek-ai/dsh-app-boot'
-import { migrateDesktopProfileLinks } from './profile-packages.ts'
-import { cleanProfileCorePackages } from './profile-core-cleanup.ts'
 
 const PROJECT_NAME = '@deepseek-ai/dsh-desktop-runtime'
 const DSH_PACKAGE = '@deepseek-ai/dsh'
@@ -81,14 +79,11 @@ export class DesktopProjectManager {
 
   /**
    * Load application metadata and prepare the external plugin profile without installing packages.
-   * @param production - Remove application-owned profile packages before packaged Host startup.
    */
-  async applyRelease(production = false): Promise<void> {
+  async applyRelease(): Promise<void> {
     await this.withLock(() => {
-      const descriptor = readDesktopRuntime(this.runtime.dsh)
-      cleanProfileCorePackages(this.paths.profile, descriptor.sharedPackages.map(entry => entry.name), production)
+      readDesktopRuntime(this.runtime.dsh)
       migrateProfileSettings(this.paths.profile)
-      migrateDesktopProfileLinks(this.paths.profile)
       createPluginProfile(this.paths.profile)
     })
   }

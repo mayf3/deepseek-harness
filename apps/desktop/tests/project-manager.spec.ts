@@ -43,16 +43,37 @@ afterEach(() => {
 })
 
 describe('desktop external plugin profile', () => {
-  it('cleans application packages only when preparing a production launch', async () => {
+  it('preserves installed packages, profile state, and the lockfile when preparing a launch', async () => {
     const { manager } = setup()
     await manager.applyRelease()
+    seedPlugin(manager)
+    const profile = manager.paths.profile
     const name = '@deepseek-ai/dsh-web-app'
-    const path = join(manager.paths.profile, 'node_modules', name)
+    const path = join(profile, 'node_modules', name)
     mkdirSync(path, { recursive: true })
-    await manager.applyRelease()
-    expect(existsSync(path)).toBe(true)
-    await manager.applyRelease(true)
-    expect(existsSync(path)).toBe(false)
+    writeFileSync(join(path, 'package.json'), JSON.stringify({ name, version: '1.0.0' }))
+    const manifestPath = join(profile, 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { dependencies: Record<string, string> }
+    manifest.dependencies[name] = '1.0.0'
+    writeFileSync(manifestPath, JSON.stringify(manifest))
+    writeFileSync(join(profile, 'desktop-runtime-state.json'), JSON.stringify({ links: [] }))
+    writeFileSync(join(profile, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\n')
+    const files = [
+      'package.json',
+      'pnpm-workspace.yaml',
+      'desktop-runtime-state.json',
+      'pnpm-lock.yaml',
+      `node_modules/${name}/package.json`,
+      'node_modules/plugin/package.json',
+      'node_modules/plugin/bundle.yml',
+    ]
+    const before = files.map(file => readFileSync(join(profile, file), 'utf8'))
+
+    await expect(manager.applyRelease()).resolves.toBeUndefined()
+
+    expect(files.map(file => readFileSync(join(profile, file), 'utf8'))).toEqual(before)
+    expect(lstatSync(path).isDirectory()).toBe(true)
+    expect(lstatSync(join(profile, 'node_modules/plugin')).isDirectory()).toBe(true)
   })
   it('reuses plugin files without scanning manifests and can disable them', async () => {
     const { manager } = setup()

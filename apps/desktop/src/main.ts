@@ -326,7 +326,7 @@ async function main(): Promise<void> {
     startup ??= (async () => {
       await navigateMain(applicationUrl)
       await backend.start(async () => {
-        await manager.applyRelease(app.isPackaged)
+        await manager.applyRelease()
       })
       if (backend.host !== undefined) updateJournal?.action('workspace-ready')
       // The existing Web document resumes through the boot IPC response.
