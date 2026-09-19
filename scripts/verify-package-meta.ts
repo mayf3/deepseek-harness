@@ -22,7 +22,7 @@ function sourceJsonFiles(dir: string): SourceJson[] {
     const file = path.replaceAll('\\', '/')
     let contents: unknown
     try {
-      contents = JSON.parse(readFileSync(join(dir, file), 'utf8')) as unknown
+      contents = JSON.parse(readFileSync(join(dir, file), 'utf8'))
     } catch (_error) {
       return { file, metadata: false, invalid: true }
     }

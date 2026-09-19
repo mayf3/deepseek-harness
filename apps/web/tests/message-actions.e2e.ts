@@ -396,9 +396,10 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     // The child row is published before its inherited title rename settles;
     // wait for that second RPC projection before freezing the ARIA tree.
     await expect.poll(
-      () => page.locator('[role="treeitem"][aria-selected="true"]').textContent(),
+      () => page.locator('[role="treeitem"]').allTextContents(),
       { timeout: 10_000 },
-    ).toContain('Use the read tool twice (2)')
+    ).toEqual(expect.arrayContaining([expect.stringContaining('Use the read tool twice (2)')]))
+    expect(await sourceRow.textContent()).toContain('Use the read tool twice (1)')
     const tree = await captureStableAria(
       page,
       '[role="tree"][aria-label="Sessions"]',

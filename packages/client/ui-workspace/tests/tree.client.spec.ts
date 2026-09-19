@@ -156,6 +156,54 @@ describe('Session ordering', () => {
     expect(saved).toEqual(['saved-archive', 'saved-plain', 'saved-pin'])
   })
 
+  it('inserts new forks before their saved source while preserving saved positions', () => {
+    const sessions = list(
+      summary('source', 1), summary('other', 2),
+      { ...summary('older-fork', 3), parentId: sid('source') },
+      { ...summary('newer-fork', 4), parentId: sid('source') },
+    )
+    const order = reconcileManualOrder(sessions.ids, ['other', 'source'], sessions.byId)
+    expect(order).toEqual(['other', 'older-fork', 'newer-fork', 'source'])
+    expect(reconcileManualOrder(sessions.ids, ['source', 'other', 'older-fork', 'newer-fork'], sessions.byId))
+      .toEqual(['source', 'other', 'older-fork', 'newer-fork'])
+  })
+
+  it('places nested new forks before their parents even when catalog recency differs', () => {
+    const sessions = list(
+      summary('source', 1), summary('other', 2),
+      { ...summary('parent', 4), parentId: sid('source') },
+      { ...summary('child', 3), parentId: sid('parent') },
+    )
+    expect(reconcileManualOrder(sessions.ids, ['source', 'other'], sessions.byId))
+      .toEqual(['child', 'parent', 'source', 'other'])
+  })
+
+  it('appends forks with absent or self-referencing parents without duplicating rows', () => {
+    const sessions = list(
+      summary('source', 1),
+      { ...summary('orphan', 3), parentId: sid('absent') },
+      { ...summary('self', 2), parentId: sid('self') },
+    )
+    expect(reconcileManualOrder(sessions.ids, ['source'], sessions.byId))
+      .toEqual(['source', 'orphan', 'self'])
+  })
+
+  it.each(['workspace', 'ungrouped', 'flat'] as const)('keeps forks of pinned sources in the ordinary %s section', (mode) => {
+    const sessions = list(
+      summary('source', 1), summary('other-pin', 2), summary('ordinary', 3),
+      { ...summary('fork', 4), parentId: sid('source') },
+    )
+    const state = rowState({ pinned: ['source', 'other-pin'] })
+    const order = reconcileManualOrder(sessions.ids, ['source', 'other-pin', 'ordinary'], sessions.byId, state)
+    const rows = mode === 'flat'
+      ? deriveFlat(sessions, order, state, noAttention)
+      : deriveGroups(
+        sessions, mode === 'workspace' ? [workspace('alpha', order)] : [], state, noAttention,
+        view([mode === 'workspace' ? 'alpha' : UNGROUPED_KEY], order),
+      )[0]!.sessions
+    expect(rows.map(row => row.id)).toEqual(['source', 'other-pin', 'fork', 'ordinary'])
+  })
+
   it('keeps archive filtering out of complete flat membership', () => {
     const sessions = list(summary('plain', 1), summary('archived', 2))
     const members = sessionMemberIds(sessions)

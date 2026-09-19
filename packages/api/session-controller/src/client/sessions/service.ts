@@ -54,7 +54,7 @@ export interface SessionSummary {
 export interface SessionListState {
   /** Host list order; every id has a matching byId row in the same snapshot. */
   ids: SessionId[]
-  /** Host/catalog rows plus local fallback rows for live Client generations; only `ids` expresses Host-list membership. */
+  /** Host/catalog rows plus retained subagent fallbacks; only `ids` expresses Host-list membership. */
   byId: Record<SessionId, SessionSummary>
   /** Arrival lifecycle projected 1:1 from the manager snapshot (see SessionListPhase): empty-with-ready means "truly no sessions". */
   phase: SessionListPhase
@@ -470,14 +470,8 @@ export class ClientSessions implements ISessions {
     this.projectList()
     const childId = result.value.sessionId
     if (sourceTitle !== undefined) {
-      const reference = this.retain(childId, { source: 'controllerOperation' })
-      try {
-        await reference.ready
-        const renamed = await reference.binding.session.rename(increasedForkTitle(sourceTitle))
-        if (!renamed.ok) throw new Error(`fork child rename failed: ${renamed.error.code}: ${renamed.error.message}`)
-      } finally {
-        reference.release()
-      }
+      const renamed = await this.manager.rename(childId, increasedForkTitle(sourceTitle))
+      if (!renamed.ok) throw new Error(`fork child rename failed: ${renamed.error.code}: ${renamed.error.message}`)
     }
     return childId
   }
@@ -558,7 +552,9 @@ export class ClientSessions implements ISessions {
       if (count === 0) this.retireScope(id, record)
       else this.publishRetention(id)
     })
-    if (this.list.getSnapshot().byId[id] === undefined) this.projectList()
+    if (this.list.getSnapshot().byId[id] === undefined && this.manager.subagentAddress(id) !== undefined) {
+      this.projectList()
+    }
     this.publishRetention(id)
     return reference
   }
@@ -666,15 +662,22 @@ export class ClientSessions implements ISessions {
     }
     for (const [id, record] of this.scopes) {
       if (byId[id] !== undefined) continue
+      const address = this.manager.subagentAddress(id)
+      if (address === undefined) continue
       const previous = previousById[id]
       const snapshot = record.session.getSnapshot()
-      const address = this.manager.subagentAddress(id)
+      const projectionValues = this.manager.projectionValues(id)
+      const projectedTitle = projectionValues?.title
+      const title = typeof projectedTitle === 'string' && projectedTitle !== '' ? projectedTitle : previous?.title
       byId[id] = {
         ...(previous ?? { id, displayTitle: id, updatedAt: 0 }),
         running: snapshot.running,
         retainedBy: record.retention.retainedBy,
         blank: snapshot.blank,
-        ...(address === undefined ? {} : { parentId: address.parentSessionId, origin: 'subagent' }),
+        parentId: address.parentSessionId,
+        origin: 'subagent',
+        ...(projectionValues === undefined ? {} : { projectionValues }),
+        ...(title === undefined ? {} : { title, displayTitle: title }),
       }
     }
     this.list.set({ ids, byId, phase, projectionsBySession, jobsBySession })
