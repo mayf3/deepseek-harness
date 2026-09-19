@@ -97,7 +97,7 @@ describe('sessions.list cold merge', () => {
     ctx.provide('sessionProjectionCache', {
       cachedSnapshot: () => undefined,
       cachedPredecessorTitle: (meta: SessionHeader) => meta.id === sid('legacy-title')
-        ? { asOfSeq: -1, values: { title: 'Cached predecessor title' } }
+        ? { asOfSeq: 2, values: { title: 'Cached predecessor title' } }
         : undefined,
     } as never)
     const remote = createSessionTestRemote(ctx, {
@@ -119,7 +119,7 @@ describe('sessions.list cold merge', () => {
         sessionId: sid('legacy-title'),
         blank: false,
         updatedAt: 100,
-        projections: { asOfSeq: -1, values: { title: 'Cached predecessor title' } },
+        projections: { kind: 'cached', asOfSeq: 2, values: { title: 'Cached predecessor title' } },
       }),
     ])
     expect(stat).not.toHaveBeenCalled()
@@ -154,7 +154,7 @@ describe('sessions.list cold merge', () => {
         }
         if (meta.id === sid('seeded-cold')) {
           return {
-            asOfSeq: -1,
+            asOfSeq: 5,
             values: { title: 'Forked title', sessionListMetadata: { blank: false, lastPromptAt: 1200 } },
           }
         }
@@ -184,7 +184,8 @@ describe('sessions.list cold merge', () => {
       blank: false,
       updatedAt: 1200,
       projections: {
-        asOfSeq: -1,
+        kind: 'cached',
+        asOfSeq: 5,
         values: { title: 'Forked title', sessionListMetadata: { blank: false, lastPromptAt: 1200 } },
       },
     })

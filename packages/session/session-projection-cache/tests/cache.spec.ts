@@ -375,7 +375,7 @@ describe('SessionProjectionCache listing read', () => {
     )).toThrow('unseeded projection-cache identity inherited event count must be 0')
   })
 
-  it('serves rows with differing watermarks as one cached block that claims no watermark', async () => {
+  it('serves rows with differing watermarks as one block at the lowest served watermark', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
     roots.push(root)
     await seedRecord(root, 'watermark-lower', {
@@ -389,9 +389,11 @@ describe('SessionProjectionCache listing read', () => {
     const { ctx, cache } = await harness({ root })
     ctx.sessionProjections.register(secondaryMarksUnit)
 
-    for (const id of ['watermark-lower', 'watermark-higher']) {
+    // The block carries one watermark: the seq every served value has folded
+    // through at least, so the lower of the two rows names the block.
+    for (const [id, asOfSeq] of [['watermark-lower', 2], ['watermark-higher', 4]] as const) {
       expect(cache.cachedSnapshot(headerOf(SessionId(id)))).toEqual({
-        asOfSeq: -1,
+        asOfSeq,
         values: {
           'cache-test/marks': { marks: ['primary'] },
           'cache-test/secondary-marks': { marks: ['secondary'] },
@@ -425,7 +427,7 @@ describe('SessionProjectionCache listing read', () => {
     // The listing knows only the header: the record's lifecycle matches, so
     // its rows are viewed without any cut.
     expect(cache.cachedSnapshot(seededHeader))
-      .toEqual({ asOfSeq: -1, values: { 'cache-test/marks': { marks: ['seed'] } } })
+      .toEqual({ asOfSeq: 1, values: { 'cache-test/marks': { marks: ['seed'] } } })
     // An unseeded header names another lifecycle even though the id matches.
     expect(cache.cachedSnapshot(headerOf(id))).toBeUndefined()
     // The fold face holds the exact cut: the matching cut seeds from the row,
@@ -462,7 +464,7 @@ describe('SessionProjectionCache listing read', () => {
     // survives the format edge, for a seeded lifecycle as for an unseeded one.
     expect(cache.cachedSnapshot(seededHeader)).toBeUndefined()
     expect(cache.cachedPredecessorTitle(seededHeader))
-      .toEqual({ asOfSeq: -1, values: { title: 'forked title' } })
+      .toEqual({ asOfSeq: 3, values: { title: 'forked title' } })
     // An unseeded header names another lifecycle: no title either.
     expect(cache.cachedPredecessorTitle(headerOf(id))).toBeUndefined()
   })
@@ -511,7 +513,7 @@ describe('SessionProjectionCache listing read', () => {
     const header = headerOf(SessionId('host-state'))
 
     expect(cache.cachedSnapshot(header)).toEqual({
-      asOfSeq: -1,
+      asOfSeq: 4,
       values: { 'cache-test/marks': { marks: ['wire'] } },
     })
     expect(JSON.stringify(cache.cachedSnapshot(header)))
@@ -526,9 +528,9 @@ describe('SessionProjectionCache listing read', () => {
     })
     const { cache } = await harness({ root })
     const id = SessionId('listed')
-    // Matching header: the values, claiming no watermark the client could compare.
+    // Matching header: the values at the stored row's own watermark.
     expect(cache.cachedSnapshot(headerOf(id)))
-      .toEqual({ asOfSeq: -1, values: { 'cache-test/marks': { marks: ['t'] } } })
+      .toEqual({ asOfSeq: 4, values: { 'cache-test/marks': { marks: ['t'] } } })
     // A recreated id (different createdAt): the record is unrelated — no block.
     expect(cache.cachedSnapshot(headerOf(id, 777))).toBeUndefined()
     // Unknown id: no block.
@@ -550,7 +552,7 @@ describe('SessionProjectionCache listing read', () => {
       'cache-test/marks': { marks: ['a'] },
       'cache-test/marks3': { marks: ['b'] },
     })
-    expect(block?.asOfSeq).toBe(-1)
+    expect(block?.asOfSeq).toBe(4)
   })
 
   it('returns undefined when the stored record version is not accepted', async () => {
@@ -595,7 +597,7 @@ describe('SessionProjectionCache listing read', () => {
     const id = SessionId('pre-lineage')
     // Unseeded caller: the absent lineage is exactly its identity — served.
     expect(cache.cachedSnapshot(headerOf(id)))
-      .toEqual({ asOfSeq: -1, values: { 'cache-test/marks': { marks: ['kept'] } } })
+      .toEqual({ asOfSeq: 4, values: { 'cache-test/marks': { marks: ['kept'] } } })
     // Seeded caller: the lineage-less record cannot vouch for a seeded lifecycle — refused.
     expect(cache.cachedSnapshot({ ...headerOf(id), isSeeded: true }))
       .toBeUndefined()

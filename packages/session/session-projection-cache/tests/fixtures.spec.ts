@@ -214,7 +214,7 @@ describe('archived version recovery', () => {
     expect(cache.cachedPredecessorTitle(
       headerFor(SessionId(sid), record.identity),
     )).toEqual({
-      asOfSeq: -1,
+      asOfSeq: record.rows.title?.seq,
       values: { title: record.rows.title?.val },
     })
 
@@ -246,7 +246,7 @@ describe('archived version recovery', () => {
       expect(cache.cachedPredecessorTitle(
         headerFor(id, doc.record.identity),
       )).toEqual({
-        asOfSeq: -1,
+        asOfSeq: doc.record.rows.title?.seq,
         values: { title: doc.record.rows.title?.val },
       })
 
@@ -287,7 +287,7 @@ describe('archived version recovery', () => {
       isSeeded: false,
     })
     expect(cache.cachedPredecessorTitle(listed('older'))).toEqual({
-      asOfSeq: -1,
+      asOfSeq: 2,
       values: { title: 'older title' },
     })
     expect(cache.cachedPredecessorTitle(listed('current'))).toBeUndefined()

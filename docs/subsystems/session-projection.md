@@ -129,14 +129,14 @@ The persisted projection cache service. Opens the `session_projcache` domain at 
  * generation the cut is fixed at fork time, so it distinguishes no
  * lifecycle the other fields do not, and a viewed value never seeds a fold.
  * The view is as stale as the last durable checkpoint but never wrong and
- * never from an unrelated log. It is served as a cached block
- * (`asOfSeq: -1`): the header cannot vouch that the stored row sequence is
- * comparable with the caller's log, so the block claims no watermark and
- * any sequenced value (a history baseline, a control baseline, a frame)
- * supersedes it once the session is opened.
+ * never from an unrelated log. Its `asOfSeq` is the lowest watermark among
+ * the served rows: the stored record's own position, which the header
+ * cannot relate to the log the caller later opens. The Session list
+ * therefore labels the block as cached, and the client lets every value the
+ * connected Session produces supersede it whatever this number says.
  * @param meta - the listed session's header (identity witness; no log read).
  * @param keys - optional projection keys required by the caller's audience.
- * @returns the cached block, or `undefined` when no usable row exists for
+ * @returns the viewed block, or `undefined` when no usable row exists for
  *   this lifecycle at the current Session format.
  */
 cachedSnapshot( meta: SessionHeader, keys?: readonly Extract<keyof SessionProjectionMap, string>[], ): ProjectionSnapshot | undefined
@@ -152,9 +152,9 @@ cachedSnapshot( meta: SessionHeader, keys?: readonly Extract<keyof SessionProjec
  * exposed: format normalization can change their current meaning, and the
  * {@link cachedSnapshot} / hydration paths continue to reject them.
  * @param meta - authoritative listed Session header.
- * @returns a title-only cached block (`asOfSeq: -1`), or `undefined` when
- *   the record is current, newer, unrelated, missing, or incompatible with
- *   the title unit.
+ * @returns a title-only block at the stored title row's watermark, or
+ *   `undefined` when the record is current, newer, unrelated, missing, or
+ *   incompatible with the title unit.
  */
 cachedPredecessorTitle(meta: SessionHeader): ProjectionSnapshot | undefined
 

@@ -49,10 +49,24 @@ export interface SessionListMetadata {
   readonly lastPromptAt: number | null
 }
 
-/** Every available cached wire value used as partial, possibly stale Session-list hints. */
+/**
+ * Every available wire value a Session-list row carries as partial, possibly
+ * stale hints. `kind` and `asOfSeq` are independent facts: `kind` says which
+ * sequence space `asOfSeq` belongs to, and therefore how a client may merge
+ * the block; `asOfSeq` is the producer's watermark in that space.
+ */
 export interface SessionProjectionHints {
+  /**
+   * `sequenced`: the Host's live registry produced the block for an attached
+   * Session, so `asOfSeq` is comparable with baselines and frames of the same
+   * connection. `cached`: a header-only listing viewed the block from the
+   * persisted projection cache, so `asOfSeq` is the stored record's own
+   * watermark and must not be compared with the connected Session's values.
+   */
+  readonly kind: 'cached' | 'sequenced'
+  /** Watermark of the block in the sequence space named by `kind`. */
   readonly asOfSeq: number
-  /** Provider-validated values present in the cache; omitted keys remain unknown. */
+  /** Provider-validated values present in the block; omitted keys remain unknown. */
   readonly values: SessionProjectionValues
 }
 

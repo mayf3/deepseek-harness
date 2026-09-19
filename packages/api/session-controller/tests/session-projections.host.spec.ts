@@ -559,6 +559,7 @@ describe('session.list projections column', () => {
     const row = response.value.items.find(item => item.sessionId === coldId)
     expect(row?.running).toBe(false)
     expect(row?.projections).toEqual({
+      kind: 'cached',
       asOfSeq: 7,
       values: {
         'test/last-user': { text: 'cached' },

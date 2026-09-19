@@ -1879,15 +1879,15 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'cachedSnapshot( meta: SessionHeader, keys?: readonly Extract<keyof SessionProjectionMap, string>[], ): ProjectionSnapshot | undefined',
-        description: 'The zero-I/O listing read: whole values viewed straight from the stored rows (version-matching keys only) of the record bound to the caller\'s lifecycle. The header is the only identity witness a listing holds, so this face matches the lifecycle identity (`formatVersion`, `createdAt`, `cwd`, `isSeeded`) and not the inherited cut: within one format generation the cut is fixed at fork time, so it distinguishes no lifecycle the other fields do not, and a viewed value never seeds a fold. The view is as stale as the last durable checkpoint but never wrong and never from an unrelated log. It is served as a cached block (`asOfSeq: -1`): the header cannot vouch that the stored row sequence is comparable with the caller\'s log, so the block claims no watermark and any sequenced value (a history baseline, a control baseline, a frame) supersedes it once the session is opened.',
+        description: 'The zero-I/O listing read: whole values viewed straight from the stored rows (version-matching keys only) of the record bound to the caller\'s lifecycle. The header is the only identity witness a listing holds, so this face matches the lifecycle identity (`formatVersion`, `createdAt`, `cwd`, `isSeeded`) and not the inherited cut: within one format generation the cut is fixed at fork time, so it distinguishes no lifecycle the other fields do not, and a viewed value never seeds a fold. The view is as stale as the last durable checkpoint but never wrong and never from an unrelated log. Its `asOfSeq` is the lowest watermark among the served rows: the stored record\'s own position, which the header cannot relate to the log the caller later opens. The Session list therefore labels the block as cached, and the client lets every value the connected Session produces supersede it whatever this number says.',
         parameters: [{ name: 'meta', description: 'the listed session\'s header (identity witness; no log read).' }, { name: 'keys', description: 'optional projection keys required by the caller\'s audience.' }],
-        returns: 'the cached block, or `undefined` when no usable row exists for this lifecycle at the current Session format.',
+        returns: 'the viewed block, or `undefined` when no usable row exists for this lifecycle at the current Session format.',
       },
       {
         signature: 'cachedPredecessorTitle(meta: SessionHeader): ProjectionSnapshot | undefined',
         description: 'Read only a predecessor checkpoint\'s title as a zero-I/O listing hint.\n\nThe authoritative Session header supplies the lifecycle identity. A cache checkpoint can lag that log but cannot lead it because writes flush the log first, so a matching predecessor title is a genuine (possibly stale) fact from this Session. The registry still requires the current title projection\'s row version and schema. No other predecessor projection is exposed: format normalization can change their current meaning, and the cachedSnapshot / hydration paths continue to reject them.',
         parameters: [{ name: 'meta', description: 'authoritative listed Session header.' }],
-        returns: 'a title-only cached block (`asOfSeq: -1`), or `undefined` when the record is current, newer, unrelated, missing, or incompatible with the title unit.',
+        returns: 'a title-only block at the stored title row\'s watermark, or `undefined` when the record is current, newer, unrelated, missing, or incompatible with the title unit.',
       },
       {
         signature: 'hydratePrepared( session: Session, events: readonly SessionEvent[], ): ProjectionSnapshot',
@@ -6025,7 +6025,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionProjectionHints',
-    declaration: 'export interface SessionProjectionHints {\n    readonly asOfSeq: number;\n    readonly values: SessionProjectionValues;\n}',
+    declaration: 'export interface SessionProjectionHints {\n    readonly kind: \'cached\' | \'sequenced\';\n    readonly asOfSeq: number;\n    readonly values: SessionProjectionValues;\n}',
   },
   {
     name: 'SessionProjectionMap',
