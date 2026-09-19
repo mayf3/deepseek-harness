@@ -12,7 +12,7 @@ profile 从自己的包项目加载插件。dsh 本体包和 bundle 内嵌的依
 
 ## Decision
 
-profile 内模块的解析是一条普通的 Node 祖先 `node_modules` 链。dsh 只做一件事：启动时算出的 generation 中的每个包名，占据 `$DSH_HOME/profiles/node_modules/<包名>` 这个包目录的位置。链走到这一层时，有条目的包名由 generation 的包回答，没有条目的包名看这一层的物理目录。除此之外的一切解析行为与 Node 一致。[不可变 generation 的构造、发布、Worker 继承与运行时载体](2026-09-09-profile-resolution-generations.zh.md)由既有 Note 记录，本篇不复述。
+profile 内模块的解析是一条普通的 Node 祖先 `node_modules` 链。dsh 只做一件事：启动时算出的 runtime resolution 中的每个包名，占据 `$DSH_HOME/profiles/node_modules/<包名>` 这个包目录的位置。链走到这一层时，有条目的包名由 runtime resolution 的包回答，没有条目的包名看这一层的物理目录。除此之外的一切解析行为与 Node 一致。[不可变 generation 的构造、发布、Worker 继承与运行时载体](2026-09-09-profile-resolution-generations.zh.md)由既有 Note 记录，本篇不复述。
 
 ### 一、解析规则
 
@@ -27,26 +27,26 @@ importer 指发起 `import` 或 `require` 的那个模块文件。Node 从 impor
 ```text
 ① $DSH_HOME/profiles/web/node_modules/my-plugin/node_modules   插件私有依赖
 ② $DSH_HOME/profiles/web/node_modules                          profile 安装的包
-③ $DSH_HOME/profiles/node_modules                              拦截层：generation 占据其中有条目的包目录
+③ $DSH_HOME/profiles/node_modules                              拦截层：runtime resolution 占据其中有条目的包目录
 ④ $DSH_HOME/node_modules
 ⑤ /node_modules，随后是 NODE_PATH 与全局目录
 ```
 
-#### 2. 拦截层：generation 占据 `$DSH_HOME/profiles/node_modules/<包名>`
+#### 2. 拦截层：runtime resolution 占据 `$DSH_HOME/profiles/node_modules/<包名>`
 
 拦截层是 importer 所属 profile 目录（`$DSH_HOME/profiles/<name>`）之上的第一个祖先 `node_modules`。树内所有 profile 的这一层都是 `$DSH_HOME/profiles/node_modules`。
 
-generation 中的每个包名，在这一层上占据 `<拦截层>/<包名>` 这个包目录的位置。对 `@deepseek-ai/dsh-tools` 这样的本体包名，③ 上的包目录就是运行中安装的那一份；磁盘上同名的旧链接或旧目录不再是链上的成员。对 generation 没有的包名，③ 上的包目录就是磁盘上的物理内容。
+runtime resolution 中的每个包名，在这一层上占据 `<拦截层>/<包名>` 这个包目录的位置。对 `@deepseek-ai/dsh-tools` 这样的本体包名，③ 上的包目录就是运行中安装的那一份；磁盘上同名的旧链接或旧目录不再是链上的成员。对 runtime resolution 没有的包名，③ 上的包目录就是磁盘上的物理内容。
 
-一次裸包名请求的顺序：主线先走完 profile 目录内部的各层（①②），有候选就交给 Node 在候选内解析并返回。走到 ③ 时，generation 有该包名的条目，Node 就在条目记录的包目录内解析；找到就返回，包内缺文件则按 Node 自身对"已找到包"的处理继续，CommonJS 从 ④ 继续逐层找子路径，ESM 直接报错。generation 没有条目，Node 就看 ③ 的物理目录，再到 ④。
+一次裸包名请求的顺序：主线先走完 profile 目录内部的各层（①②），有候选就交给 Node 在候选内解析并返回。走到 ③ 时，runtime resolution 有该包名的条目，Node 就在条目记录的包目录内解析；找到就返回，包内缺文件则按 Node 自身对"已找到包"的处理继续，CommonJS 从 ④ 继续逐层找子路径，ESM 直接报错。runtime resolution 没有条目，Node 就看 ③ 的物理目录，再到 ④。
 
 Node 仍然负责 `exports`、`imports`、conditions、`main`、子路径、扩展名、缓存与错误码。被选中的包因 `exports` 拒绝某个子路径时报错终局，不会换另一个同名包。
 
-拦截层不读、不写、不删任何磁盘链接。历史残留的软链接一律按普通文件系统内容处理：本体包名在 ③ 上的位置已被 generation 占据，旧链接永远不会被读到；其余包名按主线正常看到 ③ 里的内容。profile 加载时一次性删除 dsh 0.1.5 系列发布版的 Link 后端写进 profile 的投影：profile `node_modules` 下目标位于 `<profile>/.dsh-module-fallback/node_modules` 内的软链接，以及该目录本身。pnpm 安装的包和其他软链接都保留。
+拦截层不读、不写、不删任何磁盘链接。历史残留的软链接一律按普通文件系统内容处理：本体包名在 ③ 上的位置已被 runtime resolution 占据，旧链接永远不会被读到；其余包名按主线正常看到 ③ 里的内容。profile 加载时一次性删除 dsh 0.1.5 系列发布版的 Link 后端写进 profile 的投影：profile `node_modules` 下目标位于 `<profile>/.dsh-module-fallback/node_modules` 内的软链接，以及该目录本身。pnpm 安装的包和其他软链接都保留。
 
-#### 3. 拦截层里有什么：generation 的扫描内容
+#### 3. 拦截层里有什么：runtime resolution 的扫描内容
 
-generation 在 profile 启动时一次算出，由三部分组成。
+runtime resolution 在 profile 启动时一次算出，由三部分组成。
 
 - installation 闭包：从当前运行的 dsh 包的 `package.json` 出发，沿 `dependencies` 与 `peerDependencies` 做广度优先遍历，每条边从声明它的 manifest 按 Node 规则解析，同一个包名由第一次找到的已安装包占有。当前源码树实测 539 条，其中 258 条在 `@deepseek-ai/` 作用域，281 条是第三方库。这些条目对所有 profile 生效。
 - bundle-only 条目：profile 选中的、不属于闭包的 bundle，从它的 manifest 出发做同样的遍历，闭包已占有的包名不覆盖。这些条目只对选中该 bundle 的 profile 生效，用于让 Loader 从 profile 根按裸名导入 bundle 内嵌的插件。
@@ -58,26 +58,26 @@ generation 在 profile 启动时一次算出，由三部分组成。
 
 hook 只在 importer 位于 `$DSH_HOME/profiles/**` 时参与。builtin、相对路径、绝对路径、URL 请求，以及 importer 在树外的一切请求，直接交给 Node。
 
-ESM 与 CommonJS 两个适配器调用同一个路由函数，主线程与 Harness 自有 Worker 都安装同一份 generation。实现位于 `packages/boot/app-boot/src/profile-resolution/resolver.ts`，generation 的构造位于 `packages/boot/app-boot/src/profile.ts`。
+ESM 与 CommonJS 两个适配器调用同一个路由函数，主线程与 Harness 自有 Worker 都安装同一份 runtime resolution。实现位于 `packages/boot/app-boot/src/profile-resolution/resolver.ts`，runtime resolution 的构造位于 `packages/boot/app-boot/src/profile.ts`。
 
 ### 二、预演
 
 #### 表 1：ESM 与 CommonJS 在各类请求下的主线与拦截
 
-下表以本体包 `@deepseek-ai/dsh-tools`（generation 有条目）和第三方库 `left-pad`（generation 无条目）为例；`pkg` 泛指两者。
+下表以本体包 `@deepseek-ai/dsh-tools`（runtime resolution 有条目）和第三方库 `left-pad`（runtime resolution 无条目）为例；`pkg` 泛指两者。
 
 | 请求形态 | ESM | CommonJS | ③ 上该包名的位置 | 包内缺文件时 |
 |---|---|---|---|---|
-| 裸包名 `pkg`，包有 `exports` | ①② 有 `pkg` 目录则 Node 在其中按 `exports` 取入口 | 同 ESM；①② 的候选目录缺入口文件时不算候选 | 有条目：generation 的包；无条目：物理目录 | 有 `exports` 的入口缺失是 `exports` 错误，终局 |
+| 裸包名 `pkg`，包有 `exports` | ①② 有 `pkg` 目录则 Node 在其中按 `exports` 取入口 | 同 ESM；①② 的候选目录缺入口文件时不算候选 | 有条目：runtime resolution 的包；无条目：物理目录 | 有 `exports` 的入口缺失是 `exports` 错误，终局 |
 | 裸包名 `pkg`，包无 `exports` | 同上，入口取 `main` 或 `index` | 同上 | 同上 | ESM 终局报错；CommonJS 从下一层继续找入口 |
 | 子路径 `pkg/sub`，包有 `exports` | 第一个找到的 `pkg` 决定；`./sub` 未导出则 `ERR_PACKAGE_PATH_NOT_EXPORTED` 终局 | 同 ESM | 同上 | 终局，不找别的副本 |
-| 子路径 `pkg/sub`，包无 `exports` | 第一个找到的 `pkg` 内没有 `sub` 则 `ERR_MODULE_NOT_FOUND` 终局 | 逐层尝试 `<层>/pkg/sub`：①②，然后 ③ 上该包名的位置（有条目即 generation 的包目录），然后 ④ | 同上 | ESM 终局；CommonJS 继续下一层，即 ④ |
+| 子路径 `pkg/sub`，包无 `exports` | 第一个找到的 `pkg` 内没有 `sub` 则 `ERR_MODULE_NOT_FOUND` 终局 | 逐层尝试 `<层>/pkg/sub`：①②，然后 ③ 上该包名的位置（有条目即 runtime resolution 的包目录），然后 ④ | 同上 | ESM 终局；CommonJS 继续下一层，即 ④ |
 | `#alias` 包内别名 | 所属 manifest 的 `imports` 映射到裸包名后，按上面各行处理；映射到相对路径则直接交 Node | 同 ESM，conditions 取调用方传入或默认值 | 同对应行 | 同对应行 |
 | `require.resolve(pkg, { paths })` | 无此形式 | 对 `paths` 中每一项独立套用同一规则：项在 profile 树内则从该项出发走 ①②、③、④；项在树外交 Node；按调用方给出的顺序 | 同上 | 该项继续下一层，再轮到下一项 |
 | 包自引用（importer 所属包按自己的 `name` import） | 交 Node，保留原 importer | 同 ESM | 不参与 | 不适用 |
 | 相对 / 绝对 / URL / builtin | 交 Node | 交 Node | 不参与 | 不适用 |
 
-命中 generation 后，Node 报出的 `ERR_MODULE_NOT_FOUND` 与 `ERR_PACKAGE_PATH_NOT_EXPORTED` 会把内部的声明位置替换回原 importer；CommonJS 的 require stack 也去掉内部锚点。
+命中 runtime resolution 后，Node 报出的 `ERR_MODULE_NOT_FOUND` 与 `ERR_PACKAGE_PATH_NOT_EXPORTED` 会把内部的声明位置替换回原 importer；CommonJS 的 require stack 也去掉内部锚点。
 
 #### 表 2：Web 与 Desktop 两种 profile 的拦截位置
 
@@ -107,20 +107,20 @@ ESM 与 CommonJS 两个适配器调用同一个路由函数，主线程与 Harne
 
 `npm link`，或 `dsh plugin add ../my-plugin` 这类裸目录路径（pnpm 按 `link:` 处理），会让 profile 里的条目成为指向插件仓库的软链接。插件以真实路径加载，hook 不参与它的 import。dsh 本体包必须由插件仓库自己的依赖树解析到与运行中 dsh 同一份，两种布局都满足这一点。
 
-- 布局 A：插件仓库把 `@deepseek-ai/dsh` 以及插件用到的 `@deepseek-ai/dsh-*` peer 装成 devDependency，并用该仓库里的 dsh 启动，例如 `pnpm exec dsh --profile <name>`。运行中的安装就是插件祖先链上的那一份，两者的 generation 与真实路径一致。
+- 布局 A：插件仓库把 `@deepseek-ai/dsh` 以及插件用到的 `@deepseek-ai/dsh-*` peer 装成 devDependency，并用该仓库里的 dsh 启动，例如 `pnpm exec dsh --profile <name>`。运行中的安装就是插件祖先链上的那一份，两者的 runtime resolution 与真实路径一致。
 - 布局 B：插件仓库把用到的 dsh 包 link 到本机的 dsh 源码仓（`link:../deepseek-harness/packages/core/tools` 或 `pnpm link`），并从源码仓启动 `pnpm dsh --profile <name>`。两边加载的都是源码仓里的同一份。
 
 不提供、不建议的做法：由 hook 为 link 出去的真实路径代理本体包，这需要追踪从 profile 进入的每个真实根目录，Node 自身也不替开发者做这件事；用别处安装的 dsh 启动，同时插件仓库另装一套 dsh devDependency，这会产生两个模块实例，`Symbol()` 键与 `instanceof` 判断都会分裂。
 
 ## Alternatives considered
 
-**让 generation 只在主线全部走完后兜底。** 主线会先在 ③ 读到历史残留的本体链接并使用它，与"本体以当前运行的安装为准"冲突。generation 必须占据 ③ 上本体包名的位置。
+**让 runtime resolution 只在主线全部走完后兜底。** 主线会先在 ③ 读到历史残留的本体链接并使用它，与"本体以当前运行的安装为准"冲突。runtime resolution 必须占据 ③ 上本体包名的位置。
 
-**把 generation 当作插入主线的一整层，而不是占据 ③ 上的包目录。** 两者只在一处不同：CommonJS 命中 generation 的包后子路径缺失时，前者会再回头读 ③ 上同名的旧副本，后者按 Node 对"已找到的包"的处理直接到 ④。占据包目录与 Node 语义一致，也不需要为 ③ 保留任何额外判断。
+**把 runtime resolution 当作插入主线的一整层，而不是占据 ③ 上的包目录。** 两者只在一处不同：CommonJS 命中 runtime resolution 的包后子路径缺失时，前者会再回头读 ③ 上同名的旧副本，后者按 Node 对"已找到的包"的处理直接到 ④。占据包目录与 Node 语义一致，也不需要为 ③ 保留任何额外判断。
 
 **让 installation 闭包条目绝对优先于更近的副本。** 闭包含 281 个第三方库。插件私有的 `zod`、`yaml` 等版本会被安装闭包里的版本覆盖，破坏与 Node 一致的最近者优先。受支持的安装流程已经不把 dsh 的 peer 装进 profile，不需要再用覆盖来保证单实例。
 
-**在解析时识别 `.dsh-module-fallback` 形状的软链接并绕过。** 这会为不再产生的目录在查找路径里保留专门逻辑，每次解析都要付出判断。在 profile 加载时一次性删除这些投影能得到同样的结果：一个 bundle 被停用但仍装着时，它投影出来的插件不再遮住 generation 从另一个 bundle 选出的同名插件。
+**在解析时识别 `.dsh-module-fallback` 形状的软链接并绕过。** 这会为不再产生的目录在查找路径里保留专门逻辑，每次解析都要付出判断。在 profile 加载时一次性删除这些投影能得到同样的结果：一个 bundle 被停用但仍装着时，它投影出来的插件不再遮住 runtime resolution 从另一个 bundle 选出的同名插件。
 
 **把拦截层所在的物理目录整层隐藏。** 与"其余解析与 Node 一致"冲突：放在 `$DSH_HOME/profiles/node_modules` 的非本体包会对所有 profile 不可见。
 
@@ -129,7 +129,7 @@ ESM 与 CommonJS 两个适配器调用同一个路由函数，主线程与 Harne
 ## Verification
 
 - [profile-resolution.spec.ts](../../../../packages/boot/app-boot/tests/profile-resolution.spec.ts) 中的表驱动矩阵：importer 取 profile 根与 profile 内插件，包名取 installation 条目、bundle-only 条目与表外包名，①②③④ 四层的每一种有无组合，②③ 各含真目录与指向别处的软链接两种形态；每格断言 ESM import、CommonJS require、`require.resolve` 与 `packageDir` 元数据落在同一个目录。
-- 同一文件内的专项用例覆盖表 1 各行：有无 `exports` 的裸包名与子路径、`#alias`、显式 `paths`、包自引用、命中 generation 后 CommonJS 子路径缺失时跳过 ③ 直接到 ④，以及树外 profile 的拦截位置。
+- 同一文件内的专项用例覆盖表 1 各行：有无 `exports` 的裸包名与子路径、`#alias`、显式 `paths`、包自引用、命中 runtime resolution 后 CommonJS 子路径缺失时跳过 ③ 直接到 ④，以及树外 profile 的拦截位置。
 - [CLI 真启动测试](../../../../apps/cli/tests/profiles/headless/tests/profile-resolution.ts)在 src 与 lib 两种启动、普通目录与 npm-link 两种布局下，放置 ③ 的旧 `@deepseek-ai/dsh-tools` 链接、③ 的外部包及其内嵌依赖，断言 Tools 与 AgentLoop 共用同一模块实例、外部包沿真实路径解析、所有文件与链接目标逐字节不变。
 
 ## Consequences

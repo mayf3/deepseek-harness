@@ -12,7 +12,7 @@ profile 从自己的包项目加载插件配置项，而 Harness 包和所选 bu
 
 ## Decision
 
-profile 启动生成一个不可变 `ProfileResolutionGeneration`，并将其安装到 Node 的 ESM 与 CommonJS 解析器。runtime 是唯一的解析后端，不提供模式选择器或磁盘物化器。`PluginPackages.replace()` 通过一次引用替换发布完整的新增型后继 generation。
+profile 启动生成一个不可变 `RuntimeResolution`，并将其安装到 Node 的 ESM 与 CommonJS 解析器。runtime 是唯一的解析后端，不提供模式选择器或磁盘物化器。`PluginPackages.replace()` 通过一次引用替换发布完整的新增型后继 generation。
 
 ### 唯一选包算法
 
@@ -104,7 +104,7 @@ resolution generation 列出可用 fallback 包；Loader entries 组成活动插
 
 ### 文件系统与运行时载体
 
-解析器不创建、更新或删除 fallback 软链接与代理包。generation 条目占据 `$DSH_HOME/profiles/node_modules` 上各自的包名位置；其余包名把该目录当作普通祖先，profile 树内任何位置的软链接都是普通文件系统内容，没有专门识别。profile 本地包元数据与 bundle 依赖展开遵循同一套 Node 查找；正常由 pnpm 安装的包保留原生优先级。完整顺序见[查找顺序 Note](2026-09-19-profile-resolution-lookup-order.zh.md)。可写 profile 状态和包管理器事务不属于解析器。
+解析器不创建、更新或删除 fallback 软链接与代理包。runtime resolution 条目占据 `$DSH_HOME/profiles/node_modules` 上各自的包名位置；其余包名把该目录当作普通祖先，profile 树内任何位置的软链接都是普通文件系统内容，没有专门识别。profile 本地包元数据与 bundle 依赖展开遵循同一套 Node 查找；正常由 pnpm 安装的包保留原生优先级。完整顺序见[查找顺序 Note](2026-09-19-profile-resolution-lookup-order.zh.md)。可写 profile 状态和包管理器事务不属于解析器。
 
 运行时解析要求受支持的 Node Internal loader 接口。Electron Host 通过设置 `ELECTRON_RUN_AS_NODE=1` 的 Electron 可执行文件运行；打包构建从 ASAR 读取 dsh 依赖树，并把 ASAR 中的可执行条目映射到 electron-builder 的 unpacked 目录。pkg 与 Electron 使用和普通 Node 启动相同的 runtime generation 机制。
 

@@ -12,7 +12,7 @@ The runtime design keeps installation-first, ordered-bundle, and local-before-fa
 
 ## Decision
 
-Profile startup computes one immutable `ProfileResolutionGeneration` and installs it into Node's ESM and CommonJS resolvers. Runtime is the only resolution backend; there is no mode selector or disk materializer. `PluginPackages.replace()` publishes a complete additive successor with one reference replacement.
+Profile startup computes one immutable `RuntimeResolution` and installs it into Node's ESM and CommonJS resolvers. Runtime is the only resolution backend; there is no mode selector or disk materializer. `PluginPackages.replace()` publishes a complete additive successor with one reference replacement.
 
 ### One selection algorithm
 
@@ -104,7 +104,7 @@ Replacing, upgrading, or removing an already loaded package requires process res
 
 ### Filesystem and runtime carriers
 
-The resolver does not create, update, or remove fallback symlinks and proxy packages. Generation entries occupy their package names at `$DSH_HOME/profiles/node_modules`; every other name sees that directory as an ordinary ancestor, and symlinks anywhere in the profile tree are ordinary filesystem content without dedicated recognition. Profile-local package metadata and bundle dependency discovery follow the same Node lookup; ordinary pnpm-installed packages retain native precedence. The [lookup-order Note](2026-09-19-profile-resolution-lookup-order.md) records the complete order. Writable profile state and package-manager transactions remain outside the resolver.
+The resolver does not create, update, or remove fallback symlinks and proxy packages. Runtime resolution entries occupy their package names at `$DSH_HOME/profiles/node_modules`; every other name sees that directory as an ordinary ancestor, and symlinks anywhere in the profile tree are ordinary filesystem content without dedicated recognition. Profile-local package metadata and bundle dependency discovery follow the same Node lookup; ordinary pnpm-installed packages retain native precedence. The [lookup-order Note](2026-09-19-profile-resolution-lookup-order.md) records the complete order. Writable profile state and package-manager transactions remain outside the resolver.
 
 Runtime resolution requires a supported Node Internal loader interface. The Electron Host runs through the Electron executable with `ELECTRON_RUN_AS_NODE=1`; packaged builds read the dsh tree from ASAR and map executable ASAR entries to electron-builder's unpacked tree. Pkg and Electron use the same runtime-generation mechanism as ordinary Node launches.
 
