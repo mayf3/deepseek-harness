@@ -16,8 +16,11 @@ import type {
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
+  WorkspacePinSessionRequest,
+  WorkspacePinValue,
   WorkspaceRenameRequest,
   WorkspaceUnarchiveSessionRequest,
+  WorkspaceUnpinSessionRequest,
   WorkspaceValue,
 } from './types.ts'
 
@@ -118,6 +121,26 @@ export class WorkspaceController extends TypertRemoteService {
   @Remote('unarchiveSession')
   unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue> {
     return this.commands.unarchiveSession(request)
+  }
+
+  /**
+   * Surface one known unarchived Session ahead of unpinned Sessions.
+   * @param request - Session identity to pin.
+   * @returns the complete resulting pin set, most recently pinned first.
+   */
+  @Remote('pinSession')
+  pinSession(request: WorkspacePinSessionRequest): Promise<WorkspacePinValue> {
+    return this.commands.pinSession(request)
+  }
+
+  /**
+   * Remove one Session's pin without changing its saved Session order.
+   * @param request - Session identity to unpin.
+   * @returns the complete resulting pin set, most recently pinned first.
+   */
+  @Remote('unpinSession')
+  unpinSession(request: WorkspaceUnpinSessionRequest): Promise<WorkspacePinValue> {
+    return this.commands.unpinSession(request)
   }
 
   /**
