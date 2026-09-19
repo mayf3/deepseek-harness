@@ -40,8 +40,6 @@ export async function runCli(): Promise<void> {
           profile: invocation.profile,
           fromDefaultProfile: invocation.fromDefaultProfile,
           patchFiles: invocation.patches,
-          // Keep tsx workspace imports and profile plugins in the same source module graph.
-          ...(import.meta.url.endsWith('.ts') ? { resolutionMode: 'link' as const } : {}),
           args: invocation.args,
         })
       } catch (error) {

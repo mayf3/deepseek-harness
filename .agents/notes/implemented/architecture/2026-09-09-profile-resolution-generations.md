@@ -14,8 +14,6 @@ The runtime design keeps installation-first, ordered-bundle, and local-before-fa
 
 Profile startup computes one immutable `RuntimeResolution` and installs it into Node's ESM and CommonJS resolvers. Runtime is the only resolution backend; there is no mode selector or disk materializer. `PluginPackages.replace()` publishes a complete additive successor with one reference replacement.
 
-The TypeScript CLI entry explicitly selects link mode. Its tsx workspace imports and profile plugins must share module URLs; combining `src/index.ts` and `lib/index.js` creates distinct private Symbols and service identities. The built CLI keeps runtime mode, and explicit `runProfile` resolution overrides remain available.
-
 ### One selection algorithm
 
 The package traversal belongs to `@deepseek-ai/dsh-app-boot` beside profile loading. Ordinary Node, source launches, packaged executables, and the Electron Host consume the same runtime resolution and interception.

@@ -14,8 +14,6 @@ profile 从自己的包项目加载插件配置项，而 Harness 包和所选 bu
 
 profile 启动生成一个不可变 `RuntimeResolution`，并将其安装到 Node 的 ESM 与 CommonJS 解析器。runtime 是唯一的解析后端，不提供模式选择器或磁盘物化器。`PluginPackages.replace()` 通过一次引用替换发布完整的新增型后继 generation。
 
-TypeScript CLI 入口显式选择 link 模式。其 tsx workspace 导入与 profile 插件必须共享模块 URL；同时加载 `src/index.ts` 与 `lib/index.js` 会产生不同的私有 Symbol 和服务身份。构建后的 CLI 保持 runtime 模式，`runProfile` 的显式解析模式覆盖仍然可用。
-
 ### 唯一选包算法
 
 包遍历属于 `@deepseek-ai/dsh-app-boot`，与 profile 加载代码放在一起。普通 Node、源码启动、打包可执行文件和 Electron Host 消费相同的 runtime resolution 与拦截。
