@@ -17,7 +17,7 @@ The sidebar derives both states in `ui-workspace`:
 - Pinned rows lead their section as a partition that never disturbs relative order on either side, so unpinning restores the row's kept slot. Under recency order a pinned row ranks by the later of its pin instant and update recency; under manual order pinned-to-pinned drags hold.
 - Archived rows keep their accounting slots, render grayed, and are not openable. The view-options menu owns an `ArchivedFilter` (`default` hide / `show` / `only`) applied to lists and search alike; the settings-page archived list is deleted with its package.
 - Archiving raises a toast with undo and filter-archived actions, and a one-time hint anchors under the view-options trigger.
-- Row motion uses `@formkit/auto-animate` reserved for pin jumps and archive/unarchive fades; wholesale layout passes (expand/collapse, drag commit, grouping/ordering/filter switches) mute row animations for one frame through `muteNextRowAnimations`.
+- Row motion uses a private React component with native position and opacity animations. It captures row positions around structural commits without observers or polling; removed rows leave inert fading copies outside the scrolling list. Initial loading, drag commits, overflow expansion/collapse, and grouping/ordering/filter switches settle immediately.
 
 ## Alternatives considered
 
@@ -25,8 +25,8 @@ The sidebar derives both states in `ui-workspace`:
 
 **Fold pin position into the persisted manual order.** The order would absorb pin state, so unpinning could not restore the row's previous slot; the partition keeps pin state and row order independent.
 
-**Animate every list pass with auto-animate defaults.** Expanding a group, committing a drag, or switching the filter moves rows wholesale and reads as exaggerated motion; those passes apply instantly and animation stays reserved for single-row pin and archive changes.
+**Animate every list pass.** Revealing hidden rows, committing a drag, or switching the filter moves rows wholesale and reads as exaggerated motion; those passes apply instantly while pin jumps, archive fades, and neighboring-row movement retain their animations.
 
 ## Consequences
 
-The sidebar owns archived visibility end to end and settings loses a package. The pin set is registry-global, so pins survive grouping and ordering switches. `ui-workspace` gains a client dependency on `@formkit/auto-animate`. Unit suites pin the partition, filter, toast, and mute behavior; the workspace Host suite pins pin/archive exclusivity and durability.
+The sidebar owns archived visibility end to end and settings loses a package. The pin set is registry-global, so pins survive grouping and ordering switches. Row animation owns no persistent state or dependency. Unit suites cover the partition, filter, toast, and animation lifecycle; the workspace Host suite covers pin/archive exclusivity and durability.

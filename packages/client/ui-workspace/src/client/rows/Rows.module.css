@@ -101,9 +101,7 @@
   height: 20px;
 }
 
-/* Session cell (figma): pad 8, a 16px status slot, then a 4px title gap.
-   Row appearance/removal animates through the browser's auto-animate
-   containers, so the row itself declares no mount animation. */
+/* Session cell (figma): pad 8, a 16px status slot, then a 4px title gap. */
 .sessionRow {
   height: 32px;
   gap: 0;

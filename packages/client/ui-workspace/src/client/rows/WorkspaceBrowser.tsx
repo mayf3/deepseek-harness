@@ -9,9 +9,8 @@
  * menu in between; the flow and its error dialog live in WorkspacePicker
  * (same package — direct composition, no slot between them).
  */
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
-import autoAnimate, { type AnimationController, type AutoAnimationPlugin } from '@formkit/auto-animate'
 import {
   Button, IconArchiveCheckOutlineRegular, IconArchiveOutlineRegular,
   IconChevronsUpDownOutlineRegular, IconClockOutlineRegular, IconCloseFillRegular,
@@ -31,6 +30,7 @@ import {
   pinCurrentBlank, reconcileManualOrder, UNGROUPED_KEY, visibleSessionIds,
 } from '../tree.ts'
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
+import { AnimatedRows } from './AnimatedRows.tsx'
 import { FLAT_SESSION_ORDER_KEY, type SessionGroupBy } from '../stores.ts'
 import { WorkspacePickFlow } from '../WorkspacePicker.tsx'
 import css from './WorkspaceBrowser.module.css'
@@ -98,113 +98,6 @@ function useNativeDragAcceptance(active: boolean): void {
       document.removeEventListener('drop', acceptDrop)
     }
   }, [active])
-}
-
-/**
- * First-interaction gate for the row animations: a reload streams the initial
- * workspace/session data into freshly mounted containers, and auto-animate
- * would play that whole arrival burst as entry animations. Controllers attach
- * disabled and arm on the first pointer or keyboard input — every pin,
- * archive, or reorder a user can trigger happens after that gate opens. The
- * window guard keeps the module loadable where no window exists (node-side
- * imports of the plugin entry).
- */
-let rowAnimationsArmed = false
-const disarmedRowControllers = new Set<AnimationController>()
-function armRowAnimations(): void {
-  rowAnimationsArmed = true
-  window.removeEventListener('pointerdown', armRowAnimations, true)
-  window.removeEventListener('keydown', armRowAnimations, true)
-  for (const controller of disarmedRowControllers) controller.enable()
-  disarmedRowControllers.clear()
-}
-if (typeof window !== 'undefined') {
-  window.addEventListener('pointerdown', armRowAnimations, true)
-  window.addEventListener('keydown', armRowAnimations, true)
-}
-
-/** Fade window for rows that appear or disappear; shorter than the glide so the two motions read apart. */
-const ROW_FADE_MS = 100
-/** Glide window for rows that move to a new position. */
-const ROW_GLIDE_MS = 200
-
-/**
- * One-pass mute for whole-list layout changes: expanding or collapsing a
- * group's hidden sessions, committing a drag, and switching the grouping,
- * ordering, or archived filter reposition rows wholesale, so those passes
- * apply instantly and animation stays reserved for pin jumps and archive
- * fades. The DOM mutation auto-animate observes lands before the next frame
- * renders, so the flag lifts there.
- */
-let rowAnimationsMuted = false
-export function muteNextRowAnimations(): void {
-  rowAnimationsMuted = true
-  requestAnimationFrame(() => { rowAnimationsMuted = false })
-}
-
-/**
- * Auto-animate keyframes for the row containers: appearing and disappearing
- * rows fade over {@link ROW_FADE_MS} while surviving rows glide to their new
- * position over the longer {@link ROW_GLIDE_MS}. A muted pass
- * ({@link muteNextRowAnimations}) settles every element immediately.
- * @param el - the row element entering, leaving, or moving.
- * @param action - what happened to the element in this layout pass.
- * @param oldCoords - the element's box before the pass (moves only).
- * @param newCoords - the element's box after the pass (moves only).
- * @returns the keyframe effect auto-animate plays for the element.
- */
-export const rowTransition: AutoAnimationPlugin = (el, action, oldCoords, newCoords) => {
-  if (rowAnimationsMuted) return new KeyframeEffect(el, [], { duration: 0 })
-  if (action === 'add' || action === 'remove') {
-    return new KeyframeEffect(el, [
-      { opacity: action === 'add' ? 0 : 1 },
-      { opacity: action === 'add' ? 1 : 0 },
-    ], { duration: ROW_FADE_MS, easing: 'ease-out' })
-  }
-  const dx = (oldCoords?.left ?? 0) - (newCoords?.left ?? 0)
-  const dy = (oldCoords?.top ?? 0) - (newCoords?.top ?? 0)
-  return new KeyframeEffect(el, [
-    { transform: `translate(${String(dx)}px, ${String(dy)}px)` },
-    { transform: 'translate(0, 0)' },
-  ], { duration: ROW_GLIDE_MS, easing: 'ease-out' })
-}
-
-/**
- * Keyed auto-animate attachment for the row containers: rows glide to their
- * new position when a pin reorders them and fade in or out when the archived
- * filter, an archive, or an unarchive adds or removes them. Each key names one
- * container; the factory hands out identity-stable callback refs so React
- * attaches once per mounted element, and detach destroys the controller
- * (auto-animate retains attached parents in a module-level strong set, so an
- * undisposed controller would keep unmounted subtrees reachable across sidebar
- * remounts). The library self-disables without ResizeObserver (jsdom) and
- * under prefers-reduced-motion.
- * @returns a factory yielding the stable callback ref for one container key.
- */
-function useRowAnimator(): (key: string) => (el: HTMLElement | null) => void {
-  const controllers = useRef(new Map<string, AnimationController>())
-  const refs = useRef(new Map<string, (el: HTMLElement | null) => void>())
-  return useCallback((key: string) => {
-    const existing = refs.current.get(key)
-    if (existing !== undefined) return existing
-    const ref = (el: HTMLElement | null): void => {
-      const previous = controllers.current.get(key)
-      if (previous !== undefined) {
-        previous.destroy?.()
-        disarmedRowControllers.delete(previous)
-        controllers.current.delete(key)
-      }
-      if (el === null) return
-      const controller = autoAnimate(el, rowTransition)
-      if (!rowAnimationsArmed) {
-        controller.disable()
-        disarmedRowControllers.add(controller)
-      }
-      controllers.current.set(key, controller)
-    }
-    refs.current.set(key, ref)
-    return ref
-  }, [])
 }
 
 /** Grouping, ordering, and archived-filter menu; own open state so it resets with the wide chrome. */
@@ -328,6 +221,8 @@ type SessionTreeProps = Pick<
   ungroupedSessionIds: readonly SessionId[]
   /** Whether the current Workspace stream has a complete Host baseline. */
   workspaceReady: boolean
+  /** Grouping, ordering, and filter changes replace the view without row motion. */
+  animationResetKey: string
   /** Nest Workspaces under their nearest registered ancestors. */
   nestWorkspaces: boolean
   /** Explicit persisted group expansion, including descendants in tree mode. */
@@ -360,7 +255,7 @@ type SessionTreeProps = Pick<
 function SessionTree({
   list, useSessionStatus, startSession, open, forkSession, workspaces, ungroupedSessionIds,
   rowState,
-  workspaceReady, usePanelInfo,
+  workspaceReady, animationResetKey, usePanelInfo,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionUnarchive, onSessionPin,
   insertWorkspaceBefore,
   nestWorkspaces, groupExpansion, setGroupExpanded,
@@ -376,7 +271,6 @@ function SessionTree({
     ? undefined
     : owningGroupKey(workspaces, revealSessionId)
   const [expandedSessionGroups, setExpandedSessionGroups] = useState<string[]>([])
-  const animator = useRowAnimator()
   // Transient drag marker state; the selected mode owns the resulting order.
   const [drag, setDrag] = useState<DragState | null>(null)
   const sessionDropCommitted = useRef(false)
@@ -431,14 +325,12 @@ function SessionTree({
     const group = groups.find(candidate => candidate.key === revealGroup)
     if (group === undefined || !group.expanded || !group.sessions.some(row => row.id === revealSessionId)) return
     if (collapsedSessionRows(group.sessions).rows.some(row => row.id === revealSessionId)) return
-    muteNextRowAnimations()
     setExpandedSessionGroups(keys => keys.includes(revealGroup) ? keys : [...keys, revealGroup])
   }, [groups, revealGroup, revealSessionId])
   const now = Date.now()
   const commitSessionDrag = (activeDrag: DragState, over: NonNullable<DragState['over']>): void => {
     if (sessionDropCommitted.current) return
     sessionDropCommitted.current = true
-    muteNextRowAnimations()
     setDrag(null)
     const group = groups.find(candidate => candidate.key === activeDrag.accountKey)
     if (group === undefined) return
@@ -510,7 +402,6 @@ function SessionTree({
   ): void => {
     if (workspaceDropCommitted.current) return
     workspaceDropCommitted.current = true
-    muteNextRowAnimations()
     setWorkspaceDrag(null)
     const owner = parents.get(activeDrag.workspaceId)
     const siblings = workspaces.filter(workspace => parents.get(workspace.workspaceId) === owner)
@@ -542,12 +433,18 @@ function SessionTree({
     && workspaceDrag?.over?.id === rootGroups[0].workspaceId
     && workspaceDrag.over.half === 'before'
 
+  const rowKeys: string[] = groups.length === 0 ? ['empty'] : []
   const renderGroup = (group: GroupNode, depth: number): ReactNode => {
     const workspaceId = group.workspaceId
     const children = childrenByParent.get(group.key) ?? []
     const compatibleDrag = workspaceDrag !== null && parents.get(workspaceDrag.workspaceId) === parents.get(group.key)
     const collapsed = collapsedSessionRows(group.sessions)
     const sessionsExpanded = expandedSessionGroups.includes(group.key)
+    rowKeys.push(`workspace:${group.key}`)
+    const childRows = group.expanded ? children.map(child => renderGroup(child, depth + 1)) : []
+    const sessions = sessionsExpanded ? group.sessions : collapsed.rows
+    for (const node of sessions) rowKeys.push(`session:${node.id}`)
+    if (collapsed.hiddenCount > 0) rowKeys.push(`overflow:${group.key}`)
     const workspaceMarker = workspaceId !== undefined && workspaceDrag?.over?.id === workspaceId
       ? workspaceDrag.over.half
       : null
@@ -583,7 +480,6 @@ function SessionTree({
     // (WorkspaceBrowser.module.css).
       <div
         key={group.key}
-        ref={animator(group.key)}
         style={{ '--dsh-workspace-indent': `${depth * 12}px` } as CSSProperties}
         className={clsx(
           css.groupSection,
@@ -649,15 +545,12 @@ function SessionTree({
               },
             }}
         />
-        {group.expanded && children.length > 0 && (
-          <div role="group" ref={animator(`${group.key}:children`)}>
-            {children.map(child => renderGroup(child, depth + 1))}
+        {childRows.length > 0 && (
+          <div role="group">
+            {childRows}
           </div>
         )}
-        {(sessionsExpanded
-          ? group.sessions
-          : collapsed.rows
-        ).map((node) => {
+        {sessions.map((node) => {
         // Session drag never leaves its browser-local account, and pinned
         // rows reorder only within their leading pinned block.
           const sameGroupDrag = drag !== null && drag.accountKey === group.key
@@ -712,8 +605,9 @@ function SessionTree({
           <button
             type="button"
             className={css.sessionOverflowButton}
+            data-row-key={`overflow:${group.key}`}
             aria-expanded={sessionsExpanded}
-            onClick={() => { muteNextRowAnimations(); setExpandedSessionGroups(keys => toggled(keys, group.key)) }}
+            onClick={() => { setExpandedSessionGroups(keys => toggled(keys, group.key)) }}
           >
             {sessionsExpanded
               ? t('sessions.collapse')
@@ -724,20 +618,22 @@ function SessionTree({
     )
   }
 
+  const groupRows = rootGroups.map(group => renderGroup(group, 0))
   return (
     <div className={clsx(css.treeBody, css.wide)}>
       {workspaceDropAtListStart && <span className={css.listTopDropIndicator} aria-hidden="true" />}
-      <div
+      <AnimatedRows
         className={clsx(css.list, workspaceDropAtListStart && css.listTopDropActive)}
-        role="tree"
-        aria-label={t('section.sessions')}
-        ref={animator('__list__')}
+        label={t('section.sessions')}
+        rowKeys={rowKeys}
+        ready={list.phase === 'ready' && workspaceReady && !nativeDragActive}
+        resetKey={JSON.stringify([animationResetKey, expandedSessionGroups])}
       >
         {groups.length === 0 && (
-          <div className={css.empty}>{t('empty.none')}</div>
+          <div className={css.empty} data-row-key="empty">{t('empty.none')}</div>
         )}
-        {rootGroups.map(group => renderGroup(group, 0))}
-      </div>
+        {groupRows}
+      </AnimatedRows>
       <span className={css.fade} />
     </div>
   )
@@ -747,7 +643,7 @@ function SessionTree({
 function FlatList({
   list, sessionIds, rowState, useSessionStatus, open, forkSession, onSessionRename, onSessionArchive,
   onSessionUnarchive, onSessionPin,
-  usePanelInfo, setSessionOrder,
+  usePanelInfo, setSessionOrder, workspaceReady, animationResetKey,
   revealSessionId, onSessionRevealed, t,
 }: Pick<
   SessionTreeProps,
@@ -760,6 +656,8 @@ function FlatList({
   | 'onSessionPin'
   | 'usePanelInfo'
   | 'setSessionOrder'
+  | 'workspaceReady'
+  | 'animationResetKey'
   | 'revealSessionId'
   | 'onSessionRevealed'
   | 'rowState'
@@ -798,12 +696,17 @@ function FlatList({
     setSessionOrder(FLAT_SESSION_ORDER_KEY, pinCurrentBlank(nextOrder, currentBlank))
   }
   const now = Date.now()
-  const animator = useRowAnimator()
   return (
     <div className={clsx(css.treeBody, css.wide)}>
-      <div className={clsx(css.list, css.flatList)} role="tree" aria-label={t('section.sessions')} ref={animator('__flat__')}>
+      <AnimatedRows
+        className={clsx(css.list, css.flatList)}
+        label={t('section.sessions')}
+        rowKeys={rows.length === 0 ? ['empty'] : rows.map(row => `session:${row.id}`)}
+        ready={list.phase === 'ready' && workspaceReady && drag === null}
+        resetKey={animationResetKey}
+      >
         {rows.length === 0 && (
-          <div className={css.empty}>{t('empty.none')}</div>
+          <div className={css.empty} data-row-key="empty">{t('empty.none')}</div>
         )}
         {rows.map((node) => {
           // Pinned rows reorder only within their leading pinned block; the
@@ -852,7 +755,7 @@ function FlatList({
             />
           )
         })}
-      </div>
+      </AnimatedRows>
       <span className={css.fade} />
     </div>
   )
@@ -1462,9 +1365,9 @@ export function WorkspaceBrowser({
               groupBy={groupBy}
               orderBy={orderBy}
               archivedFilter={archivedFilter}
-              onGroupPick={(mode) => { muteNextRowAnimations(); actions.setGroupBy(mode) }}
-              onOrderPick={(mode) => { muteNextRowAnimations(); actions.setOrderBy(mode, activeSessionOrders) }}
-              onArchivedFilterPick={(filter) => { muteNextRowAnimations(); actions.setArchivedFilter(filter) }}
+              onGroupPick={actions.setGroupBy}
+              onOrderPick={(mode) => { actions.setOrderBy(mode, activeSessionOrders) }}
+              onArchivedFilterPick={actions.setArchivedFilter}
               openSeq={viewOptionsOpenSeq}
               anchorRef={(el) => { viewOptionsButton.current = el }}
               t={t}
@@ -1553,6 +1456,8 @@ export function WorkspaceBrowser({
                 list={list}
                 sessionIds={orderedFlatSessionIds}
                 rowState={rowState}
+                workspaceReady={workspaceReady}
+                animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
                 useSessionStatus={useSessionStatus}
                 open={guardedOpen} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
@@ -1577,6 +1482,7 @@ export function WorkspaceBrowser({
                 ungroupedSessionIds={orderedUngroupedSessionIds}
                 workspaceReady={workspaceReady}
                 nestWorkspaces={groupBy === 'workspace-tree'}
+                animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
                 groupExpansion={groupExpansion}
                 setGroupExpanded={actions.setGroupExpanded}
                 setSessionOrder={saveSessionOrder}

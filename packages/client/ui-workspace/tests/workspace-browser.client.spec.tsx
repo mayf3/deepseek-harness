@@ -14,7 +14,7 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import type { DirectoryFlowOwnerProps, WorkspaceBrowserProps } from '../src/client/contract/slots.ts'
 import { createWorkspaceViewStore, FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
 import { UNGROUPED_KEY } from '../src/client/tree.ts'
-import { muteNextRowAnimations, rowTransition, WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
+import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
 import { zh } from '../src/client/locales.ts'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
@@ -935,50 +935,6 @@ describe('WorkspaceBrowser', () => {
     expect(unarchive).toHaveLength(1)
     fireEvent.click(unarchive[0]!)
     expect(unarchiveSession).toHaveBeenCalledWith(sid('gone'))
-  })
-
-  it('fades appearing and disappearing rows quicker than it glides moved ones, and mutes gesture passes', async () => {
-    class FakeKeyframeEffect {
-      constructor(
-        readonly target: Element | null,
-        readonly keyframes: readonly Keyframe[],
-        readonly options: KeyframeEffectOptions,
-      ) {}
-    }
-    vi.stubGlobal('KeyframeEffect', FakeKeyframeEffect)
-    try {
-      const el = document.createElement('div')
-      const effect = (value: unknown): FakeKeyframeEffect => value as FakeKeyframeEffect
-      const added = effect(rowTransition(el, 'add'))
-      expect(added.options).toEqual({ duration: 100, easing: 'ease-out' })
-      expect(added.keyframes).toEqual([{ opacity: 0 }, { opacity: 1 }])
-      const removed = effect(rowTransition(el, 'remove'))
-      expect(removed.keyframes).toEqual([{ opacity: 1 }, { opacity: 0 }])
-      const moved = effect(rowTransition(
-        el, 'remain',
-        { top: 40, left: 10, width: 200, height: 30 },
-        { top: 10, left: 10, width: 200, height: 30 },
-      ))
-      expect(moved.options).toEqual({ duration: 200, easing: 'ease-out' })
-      expect(moved.keyframes).toEqual([
-        { transform: 'translate(0px, 30px)' },
-        { transform: 'translate(0, 0)' },
-      ])
-      const settled = effect(rowTransition(el, 'remain'))
-      expect(settled.keyframes).toEqual([
-        { transform: 'translate(0px, 0px)' },
-        { transform: 'translate(0, 0)' },
-      ])
-      // A muted pass (expand/collapse or drag commit) settles instantly, and
-      // the mute lifts by the next frame.
-      muteNextRowAnimations()
-      expect(effect(rowTransition(el, 'add')).options).toEqual({ duration: 0 })
-      expect(effect(rowTransition(el, 'remain')).options).toEqual({ duration: 0 })
-      await new Promise(resolve => requestAnimationFrame(resolve))
-      expect(effect(rowTransition(el, 'add')).options).toEqual({ duration: 100, easing: 'ease-out' })
-    } finally {
-      vi.unstubAllGlobals()
-    }
   })
 
   it('renders a fork child as a top-level row without a session twist', () => {

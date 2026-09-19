@@ -72,7 +72,6 @@
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
     "@deepseek-ai/dsh-util-values": "workspace:^",
     "@deepseek-ai/dsh-util-workspace-path": "workspace:^",
-    "@formkit/auto-animate": "0.10.0",
     "@types/react": "~18.3.1",
     "clsx": "^2.0.0",
     "react": "^18.2.0"

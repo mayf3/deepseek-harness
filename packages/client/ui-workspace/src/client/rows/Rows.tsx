@@ -167,6 +167,7 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
   const ownRow = (
     <div
       className={clsx(css.projectRow, menuOpen && css.menuOpen)}
+      data-row-key={`workspace:${group.key}`}
       role="treeitem"
       aria-expanded={row.expanded}
       onClick={onToggle}
@@ -532,6 +533,7 @@ export function SessionNodeItem({
   const ownRow = (
     <div
       ref={rowRef}
+      data-row-key={`session:${node.id}`}
       className={clsx(
         css.sessionRow, selected && css.selected, menuOpen && css.menuOpen,
         row.archived && css.archived,
