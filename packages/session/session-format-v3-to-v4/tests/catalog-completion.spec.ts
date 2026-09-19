@@ -142,6 +142,16 @@ describe('V3 parent catalog completion', () => {
     expect(() => migrate(source, [{ ...evidence, childCreatedAt: 3 }])).toThrow('conflicts')
   })
 
+  it.each(['missing', 'unknown', 'multiple'] as const)('continues catalog backfill after %s child evidence', (kind) => {
+    const descriptor: SessionFormatJsonValue = kind === 'missing' ? null : kind === 'unknown' ? { version: 99 }
+      : { version: 3, mode: 'one-shot', provider: 'spawn' }
+    const unavailable = { childId: 'unavailable', childCreatedAt: 1,
+      descriptorCount: kind === 'missing' ? 0 : kind === 'multiple' ? 2 : 1, descriptor }
+    expect(migrate([], [child, unavailable]).events).toEqual([
+      { type: 'subagent/catalog', seq: 0, time: 1, data: child },
+    ])
+  })
+
   it('refuses malformed supplemental evidence and known descriptor conflicts', () => {
     for (const source of [null, {}, { childId: 'child', childCreatedAt: 2, descriptor: null, descriptorCount: -1 }]) {
       expect(() => migrate([], [source])).toThrow()
