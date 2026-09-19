@@ -2,7 +2,7 @@
 
 import { execFileSync } from 'node:child_process'
 import assert from 'node:assert/strict'
-import { appendFileSync, closeSync, mkdtempSync, openSync, realpathSync } from 'node:fs'
+import { appendFileSync, closeSync, mkdtempSync, openSync, realpathSync, writeFileSync } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import { availableParallelism, homedir, tmpdir } from 'node:os'
 import { basename, join, relative, resolve } from 'node:path'
@@ -13,13 +13,14 @@ import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { encodeSegment, generationLogFilename, parseGenerationLogFilename, type JsonlCompression } from '../packages/session/session-persistence-jsonl/src/format.ts'
 import { JsonlGenerationSourceChangedError } from '../packages/session/session-persistence-jsonl/src/generation.ts'
+import { classifyMigrationFailure, type MigrationFailureDiagnostic } from './migration-failure-summary.ts'
 
 const usage = `Usage: pnpm run migrate:sessions-to-v4 [--sessions-dir PATH] [--jobs N]
 
 Publish V4 successors beside unchanged historical Session generations.
 Defaults to ~/.dsh/sessions. Already-V4 Sessions are opened read-only.
 No model or API key is used. Failures do not stop subsequent Sessions.
-The complete report is saved in a private OS temporary directory.
+The text log and final JSON summary are saved in a private OS temporary directory.
 
 Options:
   --sessions-dir PATH  Session root to migrate
@@ -31,6 +32,54 @@ interface Candidate {
   readonly directory: string
   readonly source?: { readonly filename: string; readonly version: number; readonly compression: JsonlCompression; readonly bytes: number }
   readonly error?: unknown
+}
+
+interface OutcomeCounts {
+  converted: number
+  alreadyV4: number
+  failed: number
+  skipped: number
+}
+
+type SourceVersion = number | 'unknown'
+interface Failure extends MigrationFailureDiagnostic {
+  inputPath: string
+  sourceVersion: SourceVersion
+}
+
+interface FailureGroup extends Pick<MigrationFailureDiagnostic, 'reason' | 'errorName' | 'eventType' | 'member' | 'child'> {
+  sourceVersion: SourceVersion
+  count: number
+  items: Array<MigrationFailureDiagnostic & { inputPath: string }>
+}
+
+function emptyCounts(): OutcomeCounts {
+  return { converted: 0, alreadyV4: 0, failed: 0, skipped: 0 }
+}
+
+function summarizeFailures(failures: readonly Failure[]): FailureGroup[] {
+  const groups = new Map<string, FailureGroup>()
+  for (const { sourceVersion, ...item } of failures) {
+    const key = JSON.stringify([
+      String(sourceVersion), item.reason, item.errorName, item.eventType ?? null, item.member ?? null, item.child ?? false,
+    ])
+    let group = groups.get(key)
+    if (group === undefined) {
+      group = {
+        sourceVersion, reason: item.reason, errorName: item.errorName,
+        ...item.eventType === undefined ? {} : { eventType: item.eventType },
+        ...item.member === undefined ? {} : { member: item.member },
+        ...item.child === undefined ? {} : { child: item.child },
+        count: 0, items: [],
+      }
+      groups.set(key, group)
+    }
+    group.count += 1
+    group.items.push(item)
+  }
+  return [...groups].sort(([left], [right]) => left.localeCompare(right)).map(([, group]) => ({
+    ...group, items: group.items.sort((left, right) => left.inputPath.localeCompare(right.inputPath)),
+  }))
 }
 
 async function inspectDirectory(directory: string): Promise<Candidate> {
@@ -115,32 +164,44 @@ export async function runMigrationJobs(
 }
 
 async function migrate(root: string, jobs: number): Promise<number> {
-  const logPath = join(mkdtempSync(join(tmpdir(), 'dsh-migrate-v4-')), 'migration.log')
+  const reportDirectory = mkdtempSync(join(tmpdir(), 'dsh-migrate-v4-'))
+  const logPath = join(reportDirectory, 'migration.log')
+  const summaryPath = join(reportDirectory, 'summary.json')
   const log = openSync(logPath, 'wx', 0o600)
   const write = (line: string): void => {
     appendFileSync(log, `${line}\n`)
     console.log(line)
   }
-  const failures: { directory: string; message: string }[] = []
-  const fail = (directory: string, error: unknown): void => {
-    const message = error instanceof Error ? error.message : String(error)
-    failures.push({ directory, message })
-    write(`ERROR ${JSON.stringify(directory)}: ${message}`)
+  const totals = emptyCounts()
+  const bySourceVersion: Record<string, OutcomeCounts> = {}
+  const recordOutcome = (version: SourceVersion, outcome: keyof OutcomeCounts): void => {
+    totals[outcome] += 1
+    const counts = bySourceVersion[String(version)] ??= emptyCounts()
+    counts[outcome] += 1
+  }
+  const failures: Failure[] = []
+  const fail = (inputPath: string, error: unknown, sourceVersion: SourceVersion = 'unknown'): void => {
+    const diagnostic = classifyMigrationFailure(error)
+    failures.push({ inputPath, sourceVersion, ...diagnostic })
+    recordOutcome(sourceVersion, 'failed')
+    write(`ERROR ${JSON.stringify(inputPath)}: ${diagnostic.message}`)
     appendFileSync(log, `${inspect(error, { depth: null, colors: false })}\n`)
   }
-  let converted = 0
-  let current = 0
-  let skipped = 0
+  const startedAt = new Date().toISOString()
+  let inputCount = 0
+  let checkoutCommit: string | null = null
   try {
-    write(`Session migration to V4 started ${new Date().toISOString()}`)
+    write(`Session migration to V4 started ${startedAt}`)
     write(`Root: ${root}`)
     write(`Session jobs: ${jobs}`)
     write(`Node: ${process.version}; platform: ${process.platform}/${process.arch}`)
-    write(`Git HEAD: ${execFileSync('git', ['rev-parse', 'HEAD'], { cwd: resolve(import.meta.dirname, '..'), encoding: 'utf8' }).trim()}`)
+    checkoutCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: resolve(import.meta.dirname, '..'), encoding: 'utf8' }).trim()
+    write(`Git HEAD: ${checkoutCommit}`)
     write(`Full log: ${logPath}`)
     assert.equal(SESSION_FORMAT_VERSION, 4, 'this one-time command requires a V4 Session writer')
     assert.equal(sessionFormatCatalog.currentVersion, 4, 'this one-time command requires a V4 format catalog')
     const candidates = await discover(root)
+    inputCount = candidates.length
     write(`Discovered ${candidates.length} Session directories or invalid layout entries.`)
     const compression = candidates.find(candidate => candidate.source !== undefined)?.source?.compression ?? 'zstd'
     const ctx = new Context()
@@ -163,15 +224,14 @@ async function migrate(root: string, jobs: number): Promise<number> {
             throw candidate.error instanceof Error ? candidate.error : new Error('directory inspection failed', { cause: candidate.error })
           }
           if (source === undefined) {
-            skipped += 1
+            recordOutcome('unknown', 'skipped')
             finish('SKIPPED: no canonical Session generation')
             return false
           }
           const id = directoryId(directory)
           const handle = await ctx.sessionPersistence.open(id, source.version === 4 ? 'read' : 'write')
           await handle.close()
-          if (source.version === 4) current += 1
-          else converted += 1
+          recordOutcome(source.version, source.version === 4 ? 'alreadyV4' : 'converted')
           finish(`${source.version === 4 ? 'already V4 (opened successfully)' : `V${source.version} -> V4: ${generationLogFilename(4, source.compression)}`} (${((performance.now() - started) / 1000).toFixed(2)}s)`)
         } catch (error: unknown) {
           if (!retry && error instanceof JsonlGenerationSourceChangedError) {
@@ -180,7 +240,7 @@ async function migrate(root: string, jobs: number): Promise<number> {
             return true
           }
           finish(`FAILED (${((performance.now() - started) / 1000).toFixed(2)}s)`)
-          fail(source === undefined ? directory : join(directory, source.filename), error)
+          fail(source === undefined ? directory : join(directory, source.filename), error, source?.version)
         }
         return false
       })
@@ -190,15 +250,37 @@ async function migrate(root: string, jobs: number): Promise<number> {
   } catch (error: unknown) {
     fail(root, error)
   } finally {
-    write(`Summary: converted=${converted}, already-V4=${current}, failed=${failures.length}, skipped=${skipped}`)
-    if (failures.length > 0) {
-      write('Failures (full stacks and causes are in the log):')
-      for (const failure of failures) write(`- ${JSON.stringify(failure.directory)}: ${failure.message}`)
+    try {
+      write(`Summary: converted=${totals.converted}, already-V4=${totals.alreadyV4}, failed=${totals.failed}, skipped=${totals.skipped}`)
+      if (failures.length > 0) {
+        write('Failures (full stacks and causes are in the log):')
+        for (const failure of failures) write(`- ${JSON.stringify(failure.inputPath)}: ${failure.message}`)
+      }
+      write(`Full log: ${logPath}`)
+      const summary = JSON.stringify({
+        schemaVersion: 1,
+        targetVersion: 4,
+        sessionRoot: root,
+        inputCount,
+        jobs,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        checkoutCommit,
+        runtime: { node: process.version, platform: process.platform, arch: process.arch },
+        textLogPath: logPath,
+        summaryPath,
+        totals,
+        bySourceVersion,
+        failureGroups: summarizeFailures(failures),
+      }, null, 2)
+      writeFileSync(summaryPath, `${summary}\n`, { flag: 'wx', mode: 0o600 })
+      write(`JSON summary: ${summaryPath}`)
+      write(summary)
+    } finally {
+      closeSync(log)
     }
-    write(`Full log: ${logPath}`)
-    closeSync(log)
   }
-  return failures.length > 0 ? 1 : 0
+  return totals.failed > 0 ? 1 : 0
 }
 
 if (process.argv[1] !== undefined && realpathSync(process.argv[1]) === realpathSync(import.meta.filename)) {
