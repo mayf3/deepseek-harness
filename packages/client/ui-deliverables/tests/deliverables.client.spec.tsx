@@ -745,7 +745,7 @@ describe('plugin registration', () => {
       3,
       (path) => { opened.push(path) },
     )
-    const service = (ctx as unknown as { get(name: string): ChatFileMentions | undefined }).get('chatFileMentions')
+    const service = (ctx as { get(name: string): ChatFileMentions | undefined }).get('chatFileMentions')
     const mentions = service?.forClosing(owner, SessionId('viewed-session'))
     expect(mentions?.resolve('report.html')?.label).toBe('Open site/report.html in sidebar')
     mentions?.resolve('report.html')?.open()
@@ -813,7 +813,7 @@ describe('plugin registration', () => {
     expect(ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(0)
     expect(registered).toBeUndefined()
     // Fiber teardown retracts the service: the consumer's ctx.get sees the off state.
-    expect((ctx as unknown as { get(name: string): unknown }).get('chatFileMentions')).toBeUndefined()
+    expect((ctx as { get(name: string): unknown }).get('chatFileMentions')).toBeUndefined()
   })
 })
 

@@ -365,7 +365,7 @@ describe('LlmRuntime', () => {
     Object.defineProperty(result, field, { get: () => { throw original } })
     let cleanupLookups = 0
     const iterator: AsyncIterator<StreamChunk> = {
-      next: () => Promise.resolve(result as unknown as IteratorResult<StreamChunk>),
+      next: () => Promise.resolve(result as IteratorResult<StreamChunk>),
     }
     Object.defineProperty(iterator, 'return', {
       get: () => {

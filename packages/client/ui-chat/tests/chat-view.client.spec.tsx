@@ -285,8 +285,8 @@ function makeHarness(
     inspectCall: ChatNodeOwnerProps['inspectCall']
   }> = []
   const renderCommandSlot = ((_key: string, _owner: object, opts?: { fallback?: React.ReactNode }) =>
-    opts?.fallback ?? null) as unknown as React.ComponentProps<typeof CommandNodeView>['renderSlot']
-  const renderTurnTailSlot = (() => null) as unknown as
+    opts?.fallback ?? null) as React.ComponentProps<typeof CommandNodeView>['renderSlot']
+  const renderTurnTailSlot = (() => null) as
     React.ComponentProps<typeof TurnTailNodeView>['renderSlot']
   let nodeSlotOverride: React.ComponentProps<typeof ChatNodeSeat>['renderSlot'] | undefined
   const renderNodeSlot = ((key: string, owner: object, opts?: {
@@ -367,7 +367,7 @@ function makeHarness(
       default:
         return opts?.fallback ?? null
     }
-  }) as unknown as React.ComponentProps<typeof ChatNodeSeat>['renderSlot']
+  }) as React.ComponentProps<typeof ChatNodeSeat>['renderSlot']
   const renderSlot = renderNodeSlot
   // SessionProvider seat arrives with the session-scope child declaration;
   // ChatView never invokes it (pass-through stub).
@@ -1244,7 +1244,7 @@ describe('ChatView', () => {
           data-first={JSON.stringify(images[0])}
         />
       )
-    }) as unknown as ChatViewSlotProps['renderSlot']
+    }) as ChatViewSlotProps['renderSlot']
     const view = render(<h.ChatView {...{ ...h.props, renderSlot }} />)
     const images = view.getAllByTestId('echo-image')
     expect(images).toHaveLength(2)
@@ -1289,7 +1289,7 @@ describe('ChatView', () => {
           data-compact={String(compact)}
         />
       )
-    }) as unknown as ChatViewSlotProps['renderSlot']
+    }) as ChatViewSlotProps['renderSlot']
     const view = render(<h.ChatView {...{ ...h.props, renderSlot }} />)
     const first = view.getByTestId('images-first.png')
     const file = view.getByTitle('notes.txt')

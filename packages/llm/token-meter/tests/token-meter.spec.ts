@@ -126,7 +126,7 @@ describe('TokenMeter configuration and registration', () => {
   it.each(['models', 'contextWindow', 'contextWidow'])(
     'rejects stale or unknown top-level config key %s',
     (key) => {
-      expect(() => meter({ [key]: {} } as unknown as TokenMeterConfig))
+      expect(() => meter({ [key]: {} } as TokenMeterConfig))
         .toThrow(`TokenMeterConfig: unknown key "${key}"`)
     },
   )

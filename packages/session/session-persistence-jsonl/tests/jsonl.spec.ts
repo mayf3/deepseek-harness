@@ -234,7 +234,7 @@ function releasedV1PackedPhysicalLog(header: SessionHeader): string {
       ...(event.type === 'assistant/message'
         ? { sourceEventSeqs: [3, 4, 5, 6, 7, 8].map(SessionSeq) }
         : {}),
-    } as unknown as SessionEvent)),
+    } as SessionEvent)),
   ]
   const packed = {
     type: 'text-chunks',

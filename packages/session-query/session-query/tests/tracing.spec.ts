@@ -45,7 +45,7 @@ function appendEvent(seq: number, sources?: readonly number[]): SessionEvent {
       content: [{ type: 'text', text: `event ${seq}` }], source: { kind: 'user' },
     }),
     surfaceOp: 'append',
-    ...sources === undefined ? {} : { sourceEventSeqs: sources as unknown as SessionSeq[] },
+    ...sources === undefined ? {} : { sourceEventSeqs: sources as SessionSeq[] },
   }
 }
 

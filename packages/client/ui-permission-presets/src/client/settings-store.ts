@@ -61,7 +61,7 @@ export function permissionDefaultOf(view: SettingsNamespaceView, schema: Setting
     ? (node.list as SchemaNode[] | undefined) ?? []
     : [node]
   const options = rawChoices.flatMap((candidate) => {
-    const choice = candidate as unknown as ConstChoice
+    const choice = candidate as ConstChoice
     if (choice.type !== 'const' || typeof choice.value !== 'string') return []
     const described = choice.meta?.description
     return [{

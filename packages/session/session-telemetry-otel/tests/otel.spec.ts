@@ -812,7 +812,7 @@ describe('OpenTelemetrySessionBackend config fails loud', () => {
       get shutdownTimeoutMillis() {
         return transportRead()
       },
-    } as unknown as Config
+    } as Config
 
     new OpenTelemetrySessionBackend(ctx, config)
     expect(transportRead).not.toHaveBeenCalled()

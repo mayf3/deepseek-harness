@@ -84,7 +84,7 @@ async function startSearchServer(captured: CapturedSearchRequest[]): Promise<{ s
     request.setEncoding('utf8')
     request.on('data', (chunk: string) => { body += chunk })
     request.on('end', () => {
-      const parsedBody = JSON.parse(body) as unknown
+      const parsedBody: unknown = JSON.parse(body)
       captured.push({
         path: request.url ?? '',
         apiKey: typeof request.headers['x-api-key'] === 'string' ? request.headers['x-api-key'] : undefined,

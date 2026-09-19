@@ -351,10 +351,10 @@ describe('ToolRuntime', () => {
       output: {
         schema: { type: 'string' },
         render: () => projector === 'render'
-          ? hostile as unknown as ContentBlock[]
+          ? hostile as ContentBlock[]
           : [{ type: 'text', text: 'ok' }],
         presentationMeta: () => projector === 'presentationMeta'
-          ? hostile as unknown as JsonValue
+          ? hostile as JsonValue
           : null,
       },
       execute: async () => 'ok',

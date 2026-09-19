@@ -1384,7 +1384,7 @@ describe('installLlmReplay (through the real LlmRuntime)', () => {
     })
 
     it('skips non-string request leaves when building the corpus', () => {
-      const messages = requestMessages.map(message => ({ ...message, seq: 7 })) as unknown as GenerateOptions['messages']
+      const messages = requestMessages.map(message => ({ ...message, seq: 7 })) as GenerateOptions['messages']
       const entry: ReplayEntry = { kind: 'chunks', chunks: scriptedCall('{"goal_id":"{{fromRequest:goal-42[a-z]+}}"}') }
       const resolved = resolveScriptedEntry(entry, messages)
       if (resolved.kind !== 'chunks') throw new Error('expected chunks entry')
@@ -2197,7 +2197,7 @@ describe('apply (the plugin entry)', () => {
 
   it('rejects imageRequestTokens on a model without the image modality during load', () => {
     const ctx = new Context()
-    const providers = [{ id: 'm', models: [{ id: 'm', imageRequestTokens: 384 }] }] as unknown as
+    const providers = [{ id: 'm', models: [{ id: 'm', imageRequestTokens: 384 }] }] as
       NonNullable<Config['providers']>
     expect(() => { apply(ctx, { file, providers }) }).toThrow(
       'llm-replay: provider "m" model "m" imageRequestTokens requires inputModalities to include "image"',
@@ -2209,7 +2209,7 @@ describe('apply (the plugin entry)', () => {
     ['a float', 1.5],
   ])('rejects imageRequestTokens configured as %s during load', (_case, imageRequestTokens) => {
     const ctx = new Context()
-    const providers = [{ id: 'm', models: [{ id: 'm', imageRequestTokens }] }] as unknown as
+    const providers = [{ id: 'm', models: [{ id: 'm', imageRequestTokens }] }] as
       NonNullable<Config['providers']>
     expect(() => { apply(ctx, { file, providers }) }).toThrow(
       'llm-replay: provider "m" model "m" imageRequestTokens must be a positive safe integer',

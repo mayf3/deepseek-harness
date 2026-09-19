@@ -156,12 +156,12 @@ function parseArguments(raw: string): unknown {
   if (raw === '') return {}
   const seen = { nonFinite: false }
   try {
-    const parsed = JSON.parse(raw, (_key, value: unknown) => {
+    const parsed: unknown = JSON.parse(raw, (_key, value: unknown) => {
       // `1e400` is valid JSON but parses to Infinity, which JSON.stringify
       // reports as null; keep the raw text rather than misdescribe the call.
       if (typeof value === 'number' && !Number.isFinite(value)) seen.nonFinite = true
       return value
-    }) as unknown
+    })
     return seen.nonFinite ? raw : parsed
   } catch {
     return raw

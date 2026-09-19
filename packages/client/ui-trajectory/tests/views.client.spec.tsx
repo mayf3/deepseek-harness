@@ -457,7 +457,7 @@ describe('plugin registration', () => {
 
     expect(resolveSource(binding)).toBe(source)
     expect(resolveSource(binding)).toBe(source)
-    const optionalTrajectory = b.trajectoryStore as unknown as {
+    const optionalTrajectory = b.trajectoryStore as {
       set(value: TrajectorySnapshot | undefined): void
     }
     optionalTrajectory.set(undefined)
