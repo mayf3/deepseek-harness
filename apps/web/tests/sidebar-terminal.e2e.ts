@@ -409,6 +409,8 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     await openTerminal(page)
     const firstTab = await page.locator('[data-dockkit-tab][aria-selected="true"]').getAttribute('data-dockkit-tab')
     const firstProcess = processIdentity(0)
+    // Busy activity isolates layout recovery from unattended idle reclamation.
+    vi.spyOn(handles[0]!, 'inspectActivity').mockResolvedValue({ state: 'busy', revision: 1 })
     await command(page, "printf 'WINDOW_A\\n'")
     await expect.poll(() => page.locator('.xterm-rows:visible').innerText()).toContain('WINDOW_A')
     await openTerminal(second)
@@ -436,6 +438,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     await page.getByText('Ready for terminal input.').waitFor()
     // The second window saved an empty layout; disabled recovery does not recreate the first window's tab.
     expect(await page.locator('[data-sidebar-terminal]:visible').count()).toBe(0)
+    expect(alive(firstProcess)).toBe(true)
     expect(handles).toHaveLength(2)
     expect(tripwire.pageErrors).toEqual([])
     expect(secondErrors.pageErrors).toEqual([])
