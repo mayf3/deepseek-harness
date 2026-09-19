@@ -20,8 +20,6 @@ import SessionReferenceResolver, {
 import { stringifyTagSafeJson } from '../src/serialization.ts'
 import { SpillLocator, SpillStore, type SaveTextSpill, type SpillRef } from '@deepseek-ai/dsh-spill'
 
-import type { MessageSource } from '@deepseek-ai/dsh-llm'
-
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     'test': { kind: 'test' } & ContextFormed
@@ -166,7 +164,7 @@ function appendConversation(session: Session): void {
     'user/message',
     createUserMessage({
       content: [{ type: 'text', text: 'plugin steer' }],
-      source: { kind: 'goal' } as unknown as MessageSource,
+      source: { kind: 'test' },
     }),
     { surfaceOp: 'append' },
   )
@@ -202,7 +200,7 @@ function appendConversation(session: Session): void {
   session.append(
     'user/message',
     createUserMessage({
-      content: [{ type: 'text', text: 'plugin-generated user' }], source: { kind: 'goal' } as unknown as MessageSource,
+      content: [{ type: 'text', text: 'plugin-generated user' }], source: { kind: 'test' },
     }),
     { surfaceOp: 'append' },
   )
