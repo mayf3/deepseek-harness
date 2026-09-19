@@ -139,6 +139,7 @@ function directoryId(directory: string): SessionId {
 
 /**
  * Run bounded Session jobs, then retry deferred inputs once after every initial job settles.
+ * An unexpected visit rejection drains active workers and aborts the retry pass.
  * @param count - Number of discovered inputs.
  * @param jobs - Positive number of concurrent initial operations.
  * @param visit - Attempt an input; return true to defer its first attempt until the serial retry pass.
