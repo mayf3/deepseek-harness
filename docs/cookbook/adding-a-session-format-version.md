@@ -14,6 +14,7 @@ Use this tutorial to introduce the next structural Session log version without r
 - [4. Update current-version consumers](#current-version-consumers)
 - [5. Create snapshot successors](#snapshot-successors)
 - [6. Validate the integrated result](#validate)
+- [Developer V4 corpus trial](#v4-corpus-trial)
 - [Dev Note](#dev-note)
 
 <a id="choose-the-version"></a>
@@ -114,6 +115,19 @@ pnpm run doc-sync
 pnpm run lint
 git diff --check
 ```
+
+<a id="v4-corpus-trial"></a>
+### Developer V4 corpus trial
+
+Use the one-time [migration script](../../scripts/migrate-sessions-to-v4.ts) from an installed contributor checkout whose writer is V4. Stop DSH processes using the target root before starting so writer locks and changing child logs do not prevent migration. Run from the repository root:
+
+```sh
+pnpm run migrate:sessions-to-v4
+```
+
+The default root is `~/.dsh/sessions`. Use `--sessions-dir /path/to/sessions-copy` for another corpus, or `--help` for usage. Each historical Session goes through the normal locked, validated publication path to create a V4 successor beside its unchanged source files. Existing V4 Sessions are opened read-only; rerunning does not reconvert them. The script makes no model requests and does not change conversion or refusal rules.
+
+The terminal reports each Session's selected file, version, progress, outcome, and elapsed time. Individual errors do not stop later Sessions. The final summary lists every failure and the full diagnostic log under the system temporary directory; any failure returns a nonzero exit status. Include that log and the printed checkout commit when reporting a migration problem. The report distinguishes Sessions converted during this run from those already at V4.
 
 <a id="final-v3-vocabulary"></a>
 ### Final V3 event vocabulary before V4 publication
