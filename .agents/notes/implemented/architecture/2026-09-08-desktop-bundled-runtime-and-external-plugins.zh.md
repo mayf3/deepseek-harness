@@ -38,7 +38,7 @@ profile manifest 分别记录 pnpm 安装的依赖及已启用 bundle 列表。�
 
 首次启动创建 profile 元数据，不运行 pnpm，并保留无关文件。每次启动都从当前安装计算 generation，包括兼容的发布变化或应用移动之后。Node 版本、平台或架构变化时保留已安装插件；安装和兼容性错误由 pnpm 与加载器报告。
 
-共享包目录使用原生规范路径识别。Windows 启动器可能改变路径大小写而不移动应用；字符串相等判断会触发不必要的 profile 准备。profile 清理在移除真实目录前，显式解除每一个嵌套目录链接。Windows 夹具在 Electron 44 下复现了递归 `fs.rmSync` 沿嵌套 junction 删除目标文件，而内置上游 Node 24.17 会保留它们。因此清理验收包含真实 Electron 运行时；仅在 Node 下测试不能证明目标文件会保留。
+共享包目录使用原生规范路径识别。Windows 启动器可能改变路径大小写而不移动应用；字符串相等判断会触发不必要的 profile 准备。
 
 共享[插件管理器](../../../../packages/boot/plugin-manager/README.zh.md)负责支持的包规格、bundle 验证、激活和安装失败处理。内置 pnpm 读取正常的用户和 profile 设置。开发模式使用相同的 Web 管理器操作独立 Desktop profile，工作区包由开发运行时提供。
 

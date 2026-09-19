@@ -38,7 +38,7 @@ The profile manifest records pnpm-installed dependencies separately from its ena
 
 First launch creates profile metadata without running pnpm, preserving unrelated files. Each launch computes a generation from the current installation, including after a compatible release change or application relocation. Node version, platform, or architecture changes preserve installed plugins; pnpm and the loader report installation and compatibility failures.
 
-Native canonical paths identify shared package directories. Windows launchers can vary path casing without moving the application; string equality would trigger unnecessary profile preparation. Profile cleanup explicitly unlinks every nested directory link before removing real directories. A Windows fixture under Electron 44 reproduces recursive `fs.rmSync` deleting files through a nested junction, while bundled upstream Node 24.17 preserves them. Cleanup qualification therefore includes the real Electron runtime; Node-only tests do not establish target preservation.
+Native canonical paths identify shared package directories. Windows launchers can vary path casing without moving the application; string equality would trigger unnecessary profile preparation.
 
 The shared [plugin manager](../../../../packages/boot/plugin-manager/README.md) owns supported package specifications, bundle validation, activation, and installation failure handling. The bundled pnpm reads normal user and profile settings. Development uses the same Web manager against a separate Desktop profile, with workspace packages supplied by the development runtime.
 
