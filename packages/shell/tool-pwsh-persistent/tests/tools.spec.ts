@@ -571,6 +571,7 @@ describe('tool-pwsh-persistent', () => {
     const session = stub.sessions[0]!
     session.mode = 'wait-for-abort'
     const runningController = new AbortController()
+    // Dispatch observation distinguishes the tool's queue from cancellation before tool entry.
     const execute = vi.spyOn(ctx.tools.get('pwsh', owner)!, 'execute')
     const queuedController = new AbortController()
     const running = call(ctx, owner, 'hang', runningController.signal)

@@ -428,7 +428,7 @@ function registerPersistentBash(ctx: Context, config: ResolvedConfig): void {
       const owner = exec.agent
       if (owner === undefined) throw new Error('bash requires an owning agent session')
       return serialized(owner, async () => {
-        if (exec.signal.aborted) return ''
+        if (exec.signal.aborted) return '' // ToolRuntime publishes ABORTED after settlement.
         return executeCommand(ctx, shells, owner, args.command, config, exec.signal)
       })
     },
