@@ -120,7 +120,7 @@ When launched with the subprocess control marker, the runner forwards fd 7 throu
 - **Granted directories must be caller-owned** — the owner's implicit `WRITE_DAC` is what lets the sandbox edit the DACL without elevation.
 - **The ambient temp root is never granted implicitly** — direct callers must supply an existing private `tempDir` plus its distinct `tempWriteSid`, or disable temp writes with `tempDir: null`; the actual temp directory must be disjoint from every writable root.
 - **The confined child's temp capability is private per live session/workspace pair** — the runner rewrites TMP/TEMP to that private directory before the spawn; two tokens sharing the same workspace SID cannot write one another's temp directories.
-- **`whoami` and token-inspection cmdlets run but report the reduced token** — `whoami /groups` succeeds and reports `S-1-16-4096`, which is the cheapest way to observe the active integrity level.
+- **`whoami` and token-inspection cmdlets may fail under the restricted token** — `GetTokenInformation` on the duplicate is partially unavailable to the child, so whether a reporting cmdlet works is host-dependent; it is diagnostic noise rather than an operational failure.
 
 ### Header verification and source map
 

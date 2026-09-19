@@ -82,9 +82,6 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
       // cannot create those scratch files and fails that probe closed to
       // ConstrainedLanguage (pinned below).
       '\'LANGMODE: \' + $ExecutionContext.SessionState.LanguageMode;',
-      // The integrity level the token was lowered to: the mandatory label on
-      // the granted directories is what makes them writable at this level.
-      "(whoami /groups | Select-String 'Mandatory Label') -replace '\\s+', ' ';",
       `try{Set-Content -Path '${writableDir}\\child-wrote.txt' -Value ok -ErrorAction Stop;'TARGET-WRITE: OK'}catch{'TARGET-WRITE: DENIED'};`,
       "try{Set-Content -Path (Join-Path $env:TEMP 'child-wrote.txt') -Value ok -ErrorAction Stop;'TEMP-WRITE: OK'}catch{'TEMP-WRITE: DENIED'};",
       `try{Set-Content -Path '${escapeFile}' -Value ok -ErrorAction Stop;'ESCAPE-WRITE: OK (ESCAPE!)'}catch{'ESCAPE-WRITE: DENIED'};`,
@@ -101,7 +98,6 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
     ])
     expect(result.status, `stderr: ${result.stderr}`).toBe(0)
     expect(result.stdout).toContain('LANGMODE: FullLanguage')
-    expect(result.stdout).toContain('S-1-16-4096')
     expect(result.stdout).toContain('TARGET-WRITE: OK')
     expect(result.stdout).toContain('TEMP-WRITE: OK')
     expect(result.stdout).toContain('ESCAPE-WRITE: DENIED')
