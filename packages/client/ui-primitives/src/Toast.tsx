@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { IconCheckCircleOutlineRegular } from './icons/index.tsx'
@@ -16,6 +16,8 @@ const FADE_MS = 1000
  * per-show sequence). Rendered through a body portal so an owner inside a
  * transformed or filtered ancestor cannot trap the fixed banner in that
  * ancestor's box.
+ * With unchanged holdMs, parent rerenders do not extend the lifetime.
+ * Completion calls the latest onDone handler; fully faded actions receive no input.
  *
  * The hold is the owner's to set, because how long a banner has to stay
  * depends on how much there is to read: a one-line limit lands in the default
@@ -50,10 +52,12 @@ export function Toast({ text, icon, tone, anchor, holdMs = HOLD_MS, actions, onD
   actions?: readonly { label: string; prefix?: string; onClick: () => void }[]
   onDone: () => void
 }) {
+  const latestOnDone = useRef(onDone)
+  useLayoutEffect(() => { latestOnDone.current = onDone }, [onDone])
   useEffect(() => {
-    const timer = setTimeout(onDone, holdMs + FADE_MS)
+    const timer = setTimeout(() => { latestOnDone.current() }, holdMs + FADE_MS)
     return () => { clearTimeout(timer) }
-  }, [holdMs, onDone])
+  }, [holdMs])
   // Anchor-centered placement re-measures on window resizes; the banner lives
   // four seconds, so sub-window layout drift within that span stays out of
   // scope.

@@ -42,6 +42,25 @@ describe('Toast', () => {
     }
   })
 
+  it('keeps its original expiry across rerenders and calls the latest completion handler', () => {
+    vi.useFakeTimers()
+    try {
+      const first = vi.fn()
+      const latest = vi.fn()
+      const view = render(<Toast text="archived" onDone={first} />)
+      vi.advanceTimersByTime(1000)
+      view.rerender(<Toast text="archived" onDone={latest} />)
+      vi.advanceTimersByTime(2999)
+      expect(first).not.toHaveBeenCalled()
+      expect(latest).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1)
+      expect(first).not.toHaveBeenCalled()
+      expect(latest).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('centers over its anchor and re-measures on window resize', () => {
     vi.useFakeTimers()
     try {
