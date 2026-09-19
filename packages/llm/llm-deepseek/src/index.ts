@@ -1,4 +1,4 @@
-/** Register DeepSeek with protocol selection and request-local settings and credentials. */
+/** Register DeepSeek Messages with request-local settings and credentials. */
 import type { Context } from '@deepseek-ai/cordis'
 import { assertUsableApiKey, LlmError, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-fs'
@@ -10,7 +10,7 @@ import { DeepSeekAdapter } from './adapter.ts'
 import { Config, resolveAdapterOptions } from './config.ts'
 import type { ResolvedDeepSeekOptions } from './config.ts'
 
-export { Config, resolveAdapterOptions, PUBLIC_BASE_URL, MESSAGES_BASE_URL } from './config.ts'
+export { Config, resolveAdapterOptions, PUBLIC_BASE_URL } from './config.ts'
 export type { ResolvedDeepSeekOptions } from './config.ts'
 export {
   DEFAULT_CONTEXT_WINDOW,
@@ -24,10 +24,9 @@ export {
   DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES,
   DEFAULT_MAX_TOKENS,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
-} from './common/defaults.ts'
+} from './defaults.ts'
 export { DeepSeekAdapter } from './adapter.ts'
-export type { DeepSeekProtocol } from './common/types.ts'
-export type { DeepSeekAdapterOptions, DeepSeekCatalogModel, DeepSeekConnectionOptions } from './common/types.ts'
+export type { DeepSeekAdapterOptions, DeepSeekCatalogModel, DeepSeekConnectionOptions } from './types.ts'
 export {
   DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET,
   DEFAULT_MAX_IMAGES_PER_REQUEST,
@@ -37,18 +36,18 @@ export {
   deepSeekImageRequestPricing,
   resolveRequestImageMaxBytes,
   resolveRequestImageTarget,
-} from './common/request-pricing.ts'
-export { deepSeekImageTokens, deepSeekRequestImageDimensions } from './common/image-tokens.ts'
-export { DeepSeekFileStore, MAX_IMAGE_BYTES } from './common/file-store.ts'
-export type { DeepSeekFileConnection, DeepSeekFilePolicy, DeepSeekFileReference } from './common/file-store.ts'
-export { DeepSeekFilesClient, MAX_FILE_EXPIRY_SECONDS, MAX_FILE_UPLOAD_BYTES, MAX_STORED_FILE_BYTES, MAX_STORED_FILE_COUNT, MIN_FILE_EXPIRY_SECONDS } from './common/files-api.ts'
-export type { DeepSeekFileObject, DeepSeekFilePage } from './common/files-api.ts'
-export { DeepSeekFileId } from './common/file-id.ts'
-export type { DeepSeekFileId as DeepSeekFileIdType } from './common/file-id.ts'
-export { DeepSeekUploadIndex, deepSeekFileScope } from './common/upload-index.ts'
-export type { DeepSeekUploadRecord } from './common/upload-index.ts'
-export type { RequestDefaults } from './common/types.ts'
-export type * from './protocols/chat-completions/types.ts'
+} from './request-pricing.ts'
+export { deepSeekImageTokens, deepSeekRequestImageDimensions } from './image-tokens.ts'
+export { DeepSeekFileStore, MAX_IMAGE_BYTES } from './file-store.ts'
+export type { DeepSeekFileConnection, DeepSeekFilePolicy, DeepSeekFileReference } from './file-store.ts'
+export { DeepSeekFilesClient, MAX_FILE_EXPIRY_SECONDS, MAX_FILE_UPLOAD_BYTES, MAX_STORED_FILE_BYTES, MAX_STORED_FILE_COUNT, MIN_FILE_EXPIRY_SECONDS } from './files-api.ts'
+export type { DeepSeekFileObject, DeepSeekFilePage } from './files-api.ts'
+export { DeepSeekFileId } from './file-id.ts'
+export type { DeepSeekFileId as DeepSeekFileIdType } from './file-id.ts'
+export { DeepSeekUploadIndex, deepSeekFileScope } from './upload-index.ts'
+export type { DeepSeekUploadRecord } from './upload-index.ts'
+export type { RequestDefaults } from './types.ts'
+export type * from './wire-types.ts'
 
 export const name = 'llm-deepseek'
 export const inject = ['llm']

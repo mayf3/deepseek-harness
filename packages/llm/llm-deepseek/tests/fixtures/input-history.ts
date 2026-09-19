@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
-import { resolveAdapterOptions } from '../../../src/config.ts'
-import { serialize } from '../../../src/protocols/messages/serialize.ts'
+import { resolveAdapterOptions } from '../../src/config.ts'
+import { serialize } from '../../src/serialize.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {

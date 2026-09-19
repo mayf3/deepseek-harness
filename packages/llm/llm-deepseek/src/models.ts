@@ -1,4 +1,4 @@
-/** Default catalog shared by every DeepSeek protocol. */
+/** Default DeepSeek model catalog. */
 import { DEFAULT_CONTEXT_WINDOW } from './defaults.ts'
 import type { DeepSeekCatalogModel } from './types.ts'
 

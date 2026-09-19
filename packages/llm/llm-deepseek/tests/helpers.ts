@@ -1,14 +1,18 @@
 /** Deterministic Messages fixtures and loopback transport with explicit teardown. */
+import { Context } from '@deepseek-ai/cordis'
+import AttachmentStore from '@deepseek-ai/dsh-attachment'
+import type { ModuleLoaderV2 } from '@deepseek-ai/cordis-plugin-loader'
+import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { createServer } from 'node:http'
 import type { IncomingHttpHeaders, ServerResponse } from 'node:http'
 import { once } from 'node:events'
-import { object } from '../../src/protocols/messages/replay.ts'
+import { object } from '../src/replay.ts'
 import { BlockAssembler, createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { resolveAdapterOptions } from '../../src/index.ts'
-import { DeepSeekMessagesAdapter } from '../../src/protocols/messages/adapter.ts'
-import type { Config } from '../../src/config.ts'
-import { DeepSeekFileStore } from '../../src/common/file-store.ts'
+import { resolveAdapterOptions } from '../src/index.ts'
+import { DeepSeekAdapter } from '../src/adapter.ts'
+import type { Config } from '../src/config.ts'
+import { DeepSeekFileStore } from '../src/file-store.ts'
 
 export const prepareExtensions = async () => ({ fields: {}, accept: async () => {} })
 
@@ -40,7 +44,7 @@ export async function assemble(stream: AsyncIterable<StreamChunk>, model = MODEL
 }
 export function adapter(config: Config = {}) {
   const files = new DeepSeekFileStore()
-  return new DeepSeekMessagesAdapter({ connection: () => resolveAdapterOptions(config), apiKey: () => Promise.resolve('test-key'), userId: () => 'test-user', attachments: () => undefined, imageAccess: () => undefined, files: () => files, prepareExtensions })
+  return new DeepSeekAdapter({ options: () => resolveAdapterOptions(config), resolveApiKey: () => Promise.resolve('test-key'), resolveUserId: () => 'test-user' as AnonymousUserId, resolveAttachments: () => undefined, resolveImageAccess: () => undefined, resolveFiles: () => files, prepareExtensions })
 }
 export async function server(reply: (response: ServerResponse, count: number) => void = response => response.end(sse(textEvents))) {
   const requests: { path: string; headers: IncomingHttpHeaders; body: Record<string, unknown> }[] = []
@@ -68,5 +72,30 @@ export async function server(reply: (response: ServerResponse, count: number) =>
       http.closeAllConnections()
       await closed
     },
+  }
+}
+
+/** Supply only the image projection operation; any unexpected storage work fails. */
+export function requestImageStore(readImageRequest: AttachmentStore['readImageRequest']): AttachmentStore {
+  class ProjectedAttachments extends AttachmentStore {
+    get imageLimits(): never { throw new Error('unexpected image policy read') }
+    validateImage(): never { throw new Error('unexpected image validation') }
+    saveImage(): never { throw new Error('unexpected image save') }
+    readImage(): never { throw new Error('unexpected original image read') }
+    override readImageRequest = readImageRequest
+  }
+  return new ProjectedAttachments(new Context())
+}
+
+/** Import mapped source modules without claiming support for Node's HMR internals. */
+export function sourceModuleLoader(importModule: (specifier: string) => Promise<unknown>): ModuleLoaderV2 {
+  return {
+    version: 'v2',
+    import: importModule,
+    get loadCache(): never { throw new Error('unexpected module cache access') },
+    register(): never { throw new Error('unexpected module hook registration') },
+    getOrCreateModuleJob(): never { throw new Error('unexpected module job creation') },
+    resolveSync(): never { throw new Error('unexpected synchronous module resolution') },
+    load(): never { throw new Error('unexpected module load') },
   }
 }

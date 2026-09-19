@@ -5,9 +5,9 @@ import type { DeepSeekLlmApiExtensionRequest, PreparedDeepSeekLlmApiExtensions }
 import type { DeepSeekAdapterOptions } from './types.ts'
 
 /**
- * Merge contributions without replacing protocol-owned fields. Preparation and
- * acceptance failures retain the same error category across DeepSeek protocols.
- * @param body - serialized protocol request before extension fields.
+ * Merge contributions without replacing Messages fields. Preparation and
+ * acceptance failures report REQUEST_EXTENSION.
+ * @param body - serialized Messages request before extension fields.
  * @param options - request identity, purpose, and cancellation.
  * @param prepare - contributor registry captured for this adapter.
  * @returns HTTP payload and a commit to invoke only after a successful HTTP response.

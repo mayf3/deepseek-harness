@@ -131,7 +131,7 @@ async function boot(dir: string, config: object): Promise<Harness> {
   const settingsFiber = ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
   await settingsFiber
   await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
-  await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', ...config })
+  await ctx.plugin(LlmDeepSeek, { ...config })
   return { ctx, settingsFiber }
 }
 
@@ -149,7 +149,7 @@ describe('request-level dynamic configuration', () => {
     const { ctx } = await boot(dir, { baseURL: serverA.url })
 
     await prompt(ctx)
-    expect(serverA.headers[0]?.authorization).toBe('Bearer first-key')
+    expect(serverA.headers[0]?.['x-api-key']).toBe('first-key')
 
     await ctx.settings.update(NS, { baseURL: serverB.url })
     await ctx.credentials.set(KEY_REF, 'second-key')
@@ -157,7 +157,7 @@ describe('request-level dynamic configuration', () => {
     await prompt(ctx)
     // No restart, no re-registration: the next request resolved both facts.
     expect(serverA.requests).toHaveLength(1)
-    expect(serverB.headers[0]?.authorization).toBe('Bearer second-key')
+    expect(serverB.headers[0]?.['x-api-key']).toBe('second-key')
   })
 
   it('starts keyless and serves the next request once the key arrives', async () => {
@@ -171,7 +171,7 @@ describe('request-level dynamic configuration', () => {
     await expect(access(join(dir, '.anonymous-user-id'))).rejects.toMatchObject({ code: 'ENOENT' })
     await ctx.credentials.set(KEY_REF, 'sk-arrived')
     await prompt(ctx)
-    expect(server.headers[0]?.authorization).toBe('Bearer sk-arrived')
+    expect(server.headers[0]?.['x-api-key']).toBe('sk-arrived')
     await expect(access(join(dir, '.anonymous-user-id'))).resolves.toBeUndefined()
   })
 
@@ -246,10 +246,10 @@ describe('request-level dynamic configuration', () => {
     const first = (server.requests[0] as { messages: Array<{ content: unknown }> }).messages[0]?.content
     const second = (server.requests[1] as { messages: Array<{ content: unknown }> }).messages[0]?.content
     expect(server.requests).toHaveLength(2)
-    expect(JSON.stringify(first).match(/"type":"file"/g)).toHaveLength(2)
+    expect(JSON.stringify(first).match(/"type":"image"/g)).toHaveLength(2)
     expect(JSON.stringify(second)).toContain('[image omitted to fit request image limits')
     expect(JSON.stringify(second)).toContain(MODEL_IMAGE_PATH)
-    expect(JSON.stringify(second).match(/"type":"file"/g)).toHaveLength(1)
+    expect(JSON.stringify(second).match(/"type":"image"/g)).toHaveLength(1)
   })
   it('re-registers the route in place when the captured retry policy changes, without an empty-registry window', async () => {
     const dir = await home()
@@ -309,7 +309,7 @@ describe('request-level dynamic configuration', () => {
     // regression this pins — not its key either.
     expect(rejected.requests).toHaveLength(0)
     expect(good.requests).toHaveLength(1)
-    expect(good.headers[0]?.authorization).toBe('Bearer good-key')
+    expect(good.headers[0]?.['x-api-key']).toBe('good-key')
   })
 
   it('falls back to the composition entry when settings detach', async () => {
@@ -327,6 +327,6 @@ describe('request-level dynamic configuration', () => {
     await settingsFiber.dispose()
     await prompt(ctx)
     expect(serverA.requests).toHaveLength(1)
-    expect(serverA.headers[0]?.authorization).toBe('Bearer steady-key')
+    expect(serverA.headers[0]?.['x-api-key']).toBe('steady-key')
   })
 })

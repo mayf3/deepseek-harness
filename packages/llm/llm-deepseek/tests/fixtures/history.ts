@@ -1,7 +1,7 @@
 /** Exercise Messages request conversion with recorded responses from another protocol. */
 import type { Context } from '@deepseek-ai/cordis'
-import { resolveAdapterOptions } from '../../../src/config.ts'
-import { serialize } from '../../../src/protocols/messages/serialize.ts'
+import { resolveAdapterOptions } from '../../src/config.ts'
+import { serialize } from '../../src/serialize.ts'
 
 export const name = 'messages-history-snapshot'
 export const inject = ['llm']
