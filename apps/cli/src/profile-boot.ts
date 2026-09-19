@@ -173,7 +173,7 @@ export function prepareProfile(name: string, userLayer = true, fromDefaultProfil
 /** One profile's patch layers, in application order. */
 interface ComposedProfile {
   profile: Profile
-  /** Immutable package fallback selected before any plugin imports. */
+  /** Immutable runtime resolution computed before any plugin imports. */
   resolution: RuntimeResolution
   /** Command-line overlay contents, frozen for this invocation. */
   overlays: PatchOptions[]

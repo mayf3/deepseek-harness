@@ -1,4 +1,4 @@
-/** Package metadata resolved through one profile resolution registration. */
+/** Package metadata resolved through one runtime interception. */
 
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -57,18 +57,18 @@ function readPackage(dir: string, fallbackName: string): PluginPackage | undefin
 /** Package lookup shared by metadata consumers in one profile process. */
 export class PluginPackages extends Service {
   private packages = new Map<string, PluginPackage | undefined>()
-  private readonly resolver: RuntimeInterception | undefined
+  private readonly interception: RuntimeInterception | undefined
   private disposeWorkerResolution: (() => void) | undefined
 
   constructor(ctx: Context, config: PluginPackagesConfig = {}) {
     super(ctx, 'pluginPackages')
     if (config.resolution === undefined) return
-    const resolver = installRuntimeInterception(config.resolution)
+    const interception = installRuntimeInterception(config.resolution)
     this.disposeWorkerResolution = registerWorkerResolution(config.resolution)
-    this.resolver = resolver
+    this.interception = interception
     ctx.effect(() => () => {
       this.disposeWorkerResolution?.()
-      resolver.dispose()
+      interception.dispose()
     }, 'profile package resolution')
   }
 
@@ -77,8 +77,8 @@ export class PluginPackages extends Service {
    * @param successor - fully constructed successor generation.
    */
   replace(successor: RuntimeResolution): void {
-    if (this.resolver === undefined) throw new Error('plugin-packages: runtime resolution is not installed')
-    this.resolver.replace(successor)
+    if (this.interception === undefined) throw new Error('plugin-packages: runtime resolution is not installed')
+    this.interception.replace(successor)
     this.packages = new Map()
     this.disposeWorkerResolution?.()
     this.disposeWorkerResolution = registerWorkerResolution(successor)
@@ -93,9 +93,9 @@ export class PluginPackages extends Service {
   packageOf(specifier: string, parentURL: string): PluginPackage | undefined {
     const name = barePackageName(specifier)
     if (name === undefined) return undefined
-    const dir = this.resolver === undefined
+    const dir = this.interception === undefined
       ? packageDirFromParent(name, parentURL)
-      : this.resolver.packageDir(name, parentURL)
+      : this.interception.packageDir(name, parentURL)
     if (dir === undefined) return undefined
     const key = JSON.stringify({ dir, name })
     if (!this.packages.has(key)) this.packages.set(key, readPackage(dir, name))

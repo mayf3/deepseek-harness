@@ -51,8 +51,8 @@ type EsmResolve = (
  * Where Node continues a scoped bare request. `native` keeps the importer's own lookup: the chain is
  * answered below the interception layer. `interception` answers at the interception layer from the
  * entry's declaring manifest; `after` anchors Node's chain above the layer for a CommonJS subpath the
- * entry lacks. `native-after-interception` has no entry: Node's chain resumes at the interception layer,
- * anchored by `parent`.
+ * entry lacks. `native-after-interception` resumes Node's chain from `parent`: the interception layer for a
+ * name without an entry, or the layer above it after an `interception` subpath miss.
  */
 type ResolutionRoute =
   | { readonly kind: 'interception'; readonly entry: RuntimeResolutionEntry; readonly after: string }
@@ -105,7 +105,7 @@ export interface RuntimeInterception {
    * @throws when the profile scope or an existing package mapping changes.
    */
   replace(successor: RuntimeResolution): void
-  /** Restore the native resolver methods. Registrations dispose in reverse order. */
+  /** Restore the native resolver methods. Interceptions dispose in reverse order. */
   dispose(): void
 }
 
@@ -695,7 +695,7 @@ export function installRuntimeInterception(
     )
     loader.resolveSync = wrapped
     restoreEsm = () => {
-      /* v8 ignore else -- registrations are disposed in reverse installation order */
+      /* v8 ignore else -- interceptions are disposed in reverse installation order */
       if (loader.resolveSync === wrapped) loader.resolveSync = original
     }
   } else {
@@ -865,7 +865,7 @@ export function installRuntimeInterception(
     },
     replace(next) { router.replace(next) },
     dispose() {
-      /* v8 ignore else -- registrations are disposed in reverse installation order */
+      /* v8 ignore else -- interceptions are disposed in reverse installation order */
       if (cjs._resolveFilename === wrappedFilename) cjs._resolveFilename = originalFilename
       restoreEsm()
     },

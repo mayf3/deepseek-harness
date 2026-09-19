@@ -92,7 +92,7 @@ function stageProfile(home: string, name: string, bundleAnchor: string): Profile
   }
 }
 
-async function importFromGeneration(
+async function importFromResolution(
   resolution: RuntimeResolution, specifier: string,
 ): Promise<Record<string, unknown>> {
   const addon = createRequire(import.meta.url)('node-addon-require-builtin') as {
@@ -584,8 +584,8 @@ describe('createRuntimeResolution', () => {
     writeFileSync(join(nestedDir, 'index.js'), 'export const nested = "selected"\n')
     const home = tmp()
     const resolution = await createRuntimeResolution({ installAnchor: anchor, home })
-    await expect(importFromGeneration(resolution, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
-    await expect(importFromGeneration(resolution, 'nested-esm')).resolves.toMatchObject({ nested: 'selected' })
+    await expect(importFromResolution(resolution, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
+    await expect(importFromResolution(resolution, 'nested-esm')).resolves.toMatchObject({ nested: 'selected' })
   })
 
   it('resolves conditional subpath exports through Node', async () => {
@@ -604,8 +604,8 @@ describe('createRuntimeResolution', () => {
     writeFileSync(join(bundleDir, 'dist', 'web', 'index.mjs'), 'export const web = true\n')
     const home = tmp()
     const resolution = await createRuntimeResolution({ installAnchor: anchor, home })
-    await expect(importFromGeneration(resolution, 'bundle-a/mini')).resolves.toMatchObject({ mini: true })
-    await expect(importFromGeneration(resolution, 'bundle-a/web')).resolves.toMatchObject({ web: true })
+    await expect(importFromResolution(resolution, 'bundle-a/mini')).resolves.toMatchObject({ mini: true })
+    await expect(importFromResolution(resolution, 'bundle-a/web')).resolves.toMatchObject({ web: true })
   })
 
   it('uses the legacy index fallback when a package has no exports or main', async () => {
@@ -616,7 +616,7 @@ describe('createRuntimeResolution', () => {
     writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
     const home = tmp()
     const resolution = await createRuntimeResolution({ installAnchor: anchor, home })
-    await expect(importFromGeneration(resolution, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
+    await expect(importFromResolution(resolution, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
   })
 
   it('uses Node legacy resolution for an extensionless main entry', async () => {
@@ -627,7 +627,7 @@ describe('createRuntimeResolution', () => {
     writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
     const home = tmp()
     const resolution = await createRuntimeResolution({ installAnchor: anchor, home })
-    await expect(importFromGeneration(resolution, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
+    await expect(importFromResolution(resolution, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
   })
 
   it('fails loud on a missing legacy main entry', async () => {
@@ -638,7 +638,7 @@ describe('createRuntimeResolution', () => {
     writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
     rmSync(join(bundleDir, 'index.js'))
     const resolution = await createRuntimeResolution({ installAnchor: anchor, home: tmp() })
-    await expect(importFromGeneration(resolution, 'bundle-a')).rejects.toMatchObject({ code: 'ERR_MODULE_NOT_FOUND' })
+    await expect(importFromResolution(resolution, 'bundle-a')).rejects.toMatchObject({ code: 'ERR_MODULE_NOT_FOUND' })
   })
 
   it('preserves native ESM export errors and null-map legacy resolution', async () => {
@@ -658,14 +658,14 @@ describe('createRuntimeResolution', () => {
       const home = tmp()
       const resolution = await createRuntimeResolution({ installAnchor: anchor, home })
       if (mode === 'absent-map') {
-        await expect(importFromGeneration(resolution, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
+        await expect(importFromResolution(resolution, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
       } else {
         const specifier = mode === 'null-subpath' ? 'bundle-a/bad' : 'bundle-a'
         const code = mode === 'missing' ? 'ERR_MODULE_NOT_FOUND'
           : mode === 'directory' ? 'ERR_UNSUPPORTED_DIR_IMPORT'
             : mode === 'null' || mode === 'null-subpath' ? 'ERR_PACKAGE_PATH_NOT_EXPORTED'
               : 'ERR_INVALID_PACKAGE_TARGET'
-        await expect(importFromGeneration(resolution, specifier)).rejects.toMatchObject({ code })
+        await expect(importFromResolution(resolution, specifier)).rejects.toMatchObject({ code })
       }
     }
   })

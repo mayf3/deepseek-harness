@@ -1,4 +1,4 @@
-/** Package metadata queries share the active profile resolution resolution. */
+/** Package metadata queries share the active runtime resolution. */
 
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
