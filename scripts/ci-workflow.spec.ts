@@ -659,6 +659,19 @@ describe('Runtime and LLM e2e Blacksmith routing', () => {
   })
 })
 
+describe('bubblewrap preparation script', () => {
+  it('pins bubblewrap to a recorded Launchpad build and excludes Ubuntu pool downloads', () => {
+    const script = readFileSync(resolve(root, 'scripts/prepare-ci-bubblewrap.sh'), 'utf8')
+    const url = /^readonly BUBBLEWRAP_URL="([^"]+)"$/mu.exec(script)?.[1]
+
+    expect(url).toMatch(
+      /^https:\/\/launchpad\.net\/ubuntu\/\+source\/bubblewrap\/[^/]+\/\+build\/\d+\/\+files\/bubblewrap_[^/]+_amd64\.deb$/u,
+    )
+    // Ubuntu removes superseded versions from its live package pool.
+    expect(script).not.toMatch(/https?:\/\/[^/'"\s]+\/ubuntu(?:-ports)?\/pool\//u)
+  })
+})
+
 describe('DeepSeek e2e workflow', () => {
   it('prepares bubblewrap from the pinned payload without a package transaction', () => {
     const workflow = loadWorkflow('.github/workflows/e2e.yml')
