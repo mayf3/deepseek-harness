@@ -22,8 +22,8 @@ import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
  * minus the two record keys). `val` is the unit's internal state — plain
  * JSON by the unit contract. Validation uses the same lossless JSON rules as
  * writes and preserves every state key without cloning. A row is never wrong,
- * only possibly stale: `seq` says exactly
- * how stale, and a `ver` mismatch against the live unit's `stateVersion`
+ * only possibly stale: `seq` says exactly how stale, and a `ver` mismatch
+ * against the live unit's `stateVersion`
  * discards it at read time (never a migration).
  */
 export const checkpointRow = z.object({

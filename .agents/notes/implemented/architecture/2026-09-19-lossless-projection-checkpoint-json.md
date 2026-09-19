@@ -19,4 +19,6 @@ The checkpoint value schema uses the existing `isJsonValue` predicate from `dsh-
 
 ## Consequences
 
-Every valid own key survives domain reopen, including nested `__proto__` and `constructor` properties. The domain version remains unchanged because the stored JSON representation is unchanged; this corrects its reader. Regression coverage opens a fixture produced by the real writer, then writes, closes, and reopens it through `StorageDomain`. Session format versions and historical generations do not change.
+Domain reads preserve every valid own key in checkpoint values, including nested `__proto__` and `constructor` properties. A projection's `stateSchema` still owns its hydration value; opaque fields must use validation that preserves their keys. The borrowed-value validator does not create an independent copy or project to JSON Schema.
+
+The domain version remains unchanged because the stored JSON representation is unchanged; this corrects its reader. Regression coverage opens a synthetic fixture produced by the real writer, then writes, closes, and reopens it through `StorageDomain`. Session format versions and historical generations do not change. [Predecessor recovery and Session-format binding](2026-09-02-projcache-cross-version-read-compat.md) continue to own cache-version and identity compatibility.

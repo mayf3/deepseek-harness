@@ -1,16 +1,16 @@
 /**
- * Cross-version recovery over archived on-disk artifacts. `fixtures/` holds
- * real `session_projcache` media, each produced by driving the named release
- * through its own web app (session created over RPC, real model turns, a
- * rename): the v3 whole-unit file (published 0.1.1-rc.2), a v4 per-record
+ * Cross-version recovery and lossless checkpoint JSON validation. The released
+ * `session_projcache` fixtures were captured through their own web app
+ * (session created over RPC, real model turns, a rename): the v3 whole-unit
+ * file (published 0.1.1-rc.2), a v4 per-record
  * document (published 0.1.2-alpha.3), a published v5 document, and the
  * v5-stamped lineage-less document reproducing byte-for-byte what the
  * formerly unguarded legacy bootstrap wrote over v3 records. Each must open
  * through the real storage stack without becoming a fold shortcut for the
  * current Session format, then accept a current checkpoint rewrite. A record
  * that fails schema validation is backed up and skipped instead of failing the
- * boot. The V7 opaque-state fixture was captured through the real storage
- * domain before replacing the checkpoint state's cloning JSON validator.
+ * boot. The synthetic V7 fixture comes from the real StorageDomain per-record
+ * writer and contains opaque keys and arrays, independent of Session messages.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -150,8 +150,8 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })))
 })
 
-describe('archived version recovery', () => {
-  it('preserves every opaque key through an archived V7 read, current rewrite, and StorageDomain reopen', async () => {
+describe('checkpoint JSON preservation', () => {
+  it('preserves opaque keys through StorageDomain read, put, and reopen', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-opaque-'))
     const id = SessionId('opaque-fixture')
     const archived = await placeDoc(root, id, 'v7-opaque-session-doc.json')
@@ -192,7 +192,9 @@ describe('archived version recovery', () => {
     const val = JSON.parse('{"__proto__":{"saved":true},"constructor":{"saved":false},"nested":{"__proto__":[null,true,4,"text"]}}') as Record<string, unknown>
     expect(checkpointRow.parse({ ver: 1, seq: 0, val }).val).toBe(val)
   })
+})
 
+describe('archived version recovery', () => {
   it('recovers the v3 whole-unit archive through the legacy bootstrap', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-fx-'))
     await cp(join(FIXTURES, 'v3-single-unit.json'), join(root, `${projectionCacheDomainSpec.name}.json`))
