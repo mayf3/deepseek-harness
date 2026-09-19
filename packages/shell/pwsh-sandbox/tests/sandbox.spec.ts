@@ -164,6 +164,19 @@ describe('helpers (pure)', () => {
 })
 
 describe('SandboxPwshExecutor asynchronous confinement', () => {
+  it('reports caller cancellation when a failed launch result is read after abort', async () => {
+    const failure = Object.assign(new Error('launch refused'), { code: 'ENOENT', syscall: 'spawn node', path: 'node' })
+    const { ctx, executor } = await setup(() => passthrough(['node']), throwingSubprocessRuntime(failure))
+    const controller = new AbortController()
+    const reason = new Error('caller abandoned the failed launch')
+    try {
+      const execution = await executor.execute(executor.resolve({ command: 'Write-Output ready', signal: controller.signal }))
+      await execution.done
+      controller.abort(reason)
+      await expect(execution.result()).rejects.toBe(reason)
+    } finally { await ctx.fiber.dispose() }
+  })
+
   it('reports synchronous subprocess spawn errors through the prepared handle result', async () => {
     const RO: SandboxPolicy = { mode: 'read-only', workspaceRoot: spillDir }
     const contexts: Context[] = []

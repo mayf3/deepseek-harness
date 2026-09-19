@@ -104,6 +104,24 @@ function executionPolicy(mode: SandboxMode, workspaceRoot = resolve(process.cwd(
 }
 
 describe('the provider hand-off', () => {
+  it('reports caller cancellation when a failed launch result is read after abort', async () => {
+    const { ctx, bash } = await setup({}, () => passthrough(['node']))
+    const controller = new AbortController()
+    const reason = new Error('caller abandoned the failed launch')
+    const spawn = vi.spyOn(ctx.subprocess, 'spawn').mockImplementation(() => {
+      throw Object.assign(new Error('launch refused'), { code: 'ENOENT', syscall: 'spawn node', path: 'node' })
+    })
+    try {
+      const execution = await bash.execute(bash.resolve({ command: 'true', signal: controller.signal }))
+      await execution.done
+      controller.abort(reason)
+      await expect(execution.result()).rejects.toBe(reason)
+    } finally {
+      spawn.mockRestore()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('preserves cancellation when a pending subprocess launch later rejects', async () => {
     const { ctx, bash } = await setup({}, () => passthrough(['node']))
     const entered = Promise.withResolvers<undefined>()
