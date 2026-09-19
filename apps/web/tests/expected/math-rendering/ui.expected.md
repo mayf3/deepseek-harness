@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Math rendering" [disabled]
+  - navigation "Session hierarchy": Math rendering
   - button "More actions"
   - button "Open right sidebar"
   - tablist:

@@ -102,7 +102,9 @@ describe('document extension seat', () => {
       const h = await boot()
       act(() => { h.rt.ctx.sidebarRight.openResource(sessionFileAddress('address-session', path)) })
       await waitFor(() => { expect(h.view.container.querySelectorAll('[data-textpreview-line]')).toHaveLength(2) })
-      expect(h.read).toHaveBeenCalledExactlyOnceWith('address-session', path, { offset: 1 }, expect.any(AbortSignal))
+      expect(h.read.mock.calls).toEqual([
+        ['address-session', path, { offset: 1 }, expect.any(AbortSignal)],
+      ])
       expect(h.bytes).not.toHaveBeenCalled()
     },
   )
@@ -149,7 +151,7 @@ describe('document extension seat', () => {
     })
     const tab = h.view.container.querySelector('[data-renderer-tab]')?.getAttribute('data-renderer-tab')
     expect(h.read).not.toHaveBeenCalled()
-    expect(h.bytes).toHaveBeenCalledTimes(1)
+    expect(h.bytes).toHaveBeenCalledOnce()
     fireEvent.click(h.view.container.querySelector('[data-document-viewer-menu]')!)
     fireEvent.click(screen.getByRole('menuitem', { name: 'builtin-reader' }))
     await waitFor(() => { expect(h.view.container.querySelector('[data-renderer="builtin-reader"]')?.textContent).toBe('first\nsecond') })
@@ -171,6 +173,6 @@ describe('document extension seat', () => {
     })
     await act(async () => { await remove!() })
     await waitFor(() => { expect(h.view.container.querySelector('[data-document-markdown]')).not.toBeNull() })
-    expect(h.read).toHaveBeenCalledTimes(1)
+    expect(h.read).toHaveBeenCalledOnce()
   })
 })

@@ -93,6 +93,7 @@ interface ScrollWorld {
 
 interface ScrollWorldOptions {
   readonly failureShot: string
+  readonly paceMs?: number
   readonly replay?: ReplayOverrideDoc
   readonly seeds: readonly { fixture: ChatScrollFixture; id: string }[]
 }
@@ -114,6 +115,22 @@ function textStream(first: string, done: string, deltaCount: number): StreamChun
     },
     { type: 'finish', reason: { kind: 'stop' } },
   ]
+}
+
+/** Hold replay text after the initial deltas until browser setup releases it. */
+function holdTextAfter(world: ScrollWorld, initialDeltas: number): () => void {
+  const gate = Promise.withResolvers<undefined>()
+  const dispose = world.scaffold.ctx.on('llm/stream', async function* (_options, next) {
+    let deltas = 0
+    for await (const chunk of next()) {
+      if (chunk.type === 'text-delta' && deltas++ === initialDeltas) await gate.promise
+      yield chunk
+    }
+  })
+  return () => {
+    gate.resolve(undefined)
+    dispose()
+  }
 }
 
 function toolStream(): StreamChunk[] {
@@ -159,7 +176,7 @@ async function launchScrollWorld(options: ScrollWorldOptions): Promise<ScrollWor
       scaffold = await launchWebScaffold({
         replayFixture: join(replayDir, 'override-only.jsonl'),
         replayOverride,
-        paceMs: STREAM_PACE_MS,
+        paceMs: options.paceMs ?? STREAM_PACE_MS,
         replayContextWindow: REPLAY_CONTEXT_WINDOW,
       })
     } else {
@@ -274,7 +291,7 @@ async function openSeed(page: Page, fixture: ChatScrollFixture, tailMarker?: str
   // Search collapsed into a header action; expand it before filling.
   const searchButton = page.getByRole('button', { name: 'Search sessions' })
   if (await searchButton.getAttribute('aria-expanded') !== 'true') await searchButton.click()
-  const search = page.getByRole('textbox', { name: 'Search sessions...', exact: true })
+  const search = page.getByRole('textbox', { name: 'Search session names', exact: true })
   // Cold summaries initially show the temporary workspace basename, so the
   // persisted first-prompt marker is the stable user-facing identity. The
   // query itself triggers lazy content-index reconciliation; no transient
@@ -538,6 +555,7 @@ describe('web e2e: long Chat scroll contract', () => {
       })
 
       const settled = world.scaffold.whenTurnSettled(60_000)
+      const releaseText = holdTextAfter(world, 1)
       try {
         const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
         await composer.fill(LIVE_TEXT_PROMPT)
@@ -551,6 +569,7 @@ describe('web e2e: long Chat scroll contract', () => {
         await wheelTranscript(world.page, 420)
         const readerAnchor = await visibleFlowAnchor(world.page)
         const chunksAfterAnchor = world.assistantFrames.filter(frame => frame.type === 'chunk').length
+        releaseText()
         await expect.poll(
           () => world.assistantFrames.filter(frame => frame.type === 'chunk').length,
           { timeout: 10_000 },
@@ -561,6 +580,7 @@ describe('web e2e: long Chat scroll contract', () => {
         await nextPaint(world.page)
         await expectSameFlowTop(world.page, readerAnchor)
       } finally {
+        releaseText()
         releaseHistory()
       }
 
@@ -904,6 +924,7 @@ describe('web e2e: long Chat scroll contract', () => {
   it.skipIf(MODE === 'record')('touch-style fling scrolling owns streaming bottom-follow without wheel input', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-chat-scroll-fling-stream',
+      paceMs: 0,
       replay: [
         replayEntry(toolStream()),
         replayEntry(textStream(LIVE_FLING_FIRST, LIVE_FLING_DONE, 240)),
@@ -915,6 +936,7 @@ describe('web e2e: long Chat scroll contract', () => {
       await openSeed(world.page, INPUTS_FIXTURE, INPUTS_FIXTURE.markers.assistant(INPUTS_FIXTURE.turns))
       const backToBottom = world.page.getByRole('button', { name: 'Back to bottom', exact: true })
       const settled = world.scaffold.whenTurnSettled(60_000)
+      const releaseText = holdTextAfter(world, 16)
       let released = false
       try {
         const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
@@ -952,12 +974,14 @@ describe('web e2e: long Chat scroll contract', () => {
         await expectBottom(world.page)
         await expect.poll(() => backToBottom.count(), { timeout: 10_000 }).toBe(0)
         const chunksAtRepin = world.assistantFrames.filter(frame => frame.type === 'chunk').length
+        releaseText()
         await expect.poll(
           () => world.assistantFrames.filter(frame => frame.type === 'chunk').length,
           { timeout: 15_000 },
         ).toBeGreaterThan(chunksAtRepin + 5)
         await expectBottom(world.page)
       } finally {
+        releaseText()
         if (!released) await writeFile(releasePath, 'release\n').catch(() => {})
       }
 

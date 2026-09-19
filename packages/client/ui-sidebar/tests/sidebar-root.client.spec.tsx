@@ -226,19 +226,20 @@ it('keeps the macOS sidebar toggle in its top strip', () => {
   const shell = mountShell()
   fireEvent.click(screen.getByRole('button', { name: en['toggle.collapse'] }))
   expect(shell.toggleSidebar).toHaveBeenCalledOnce()
+  // The brand stays part of the logo row's window-drag surface: no button
+  // role (the global no-drag rule would subtract it); only the dedicated
+  // New Session capsule starts a session.
+  expect(screen.getAllByRole('button', { name: 'New session' })).toHaveLength(1)
+  expect(screen.getByTestId('custom-brand-mark')).toBeTruthy()
 })
 
-it.each([undefined, 'win32', 'linux', 'darwin'])('shows header sidebar controls only on macOS desktop (%s)', (platform) => {
-  if (platform !== undefined) document.documentElement.dataset.platform = platform
+it('wires the shell.leading controls to the shared sidebar actions', () => {
   const toggleSidebar = vi.fn()
   const startSession = vi.fn()
-  // This occupant only consumes its two actions and locale, not Session hooks.
+  // This occupant only consumes its two actions and locale, not Session hooks;
+  // mounting is the frame's decision (ui-layout shell.leading seat).
   const props = { toggleSidebar, startSession, t } as HeaderLeadingControlsProps
-  const view = render(<HeaderLeadingControls {...props} />)
-  if (platform !== 'darwin') {
-    expect(view.container.innerHTML).toBe('')
-    return
-  }
+  render(<HeaderLeadingControls {...props} />)
   fireEvent.click(screen.getByRole('button', { name: en['toggle.open'] }))
   fireEvent.click(screen.getByRole('button', { name: en['session.new.label'] }))
   expect(toggleSidebar).toHaveBeenCalledOnce()

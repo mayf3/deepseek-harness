@@ -2,17 +2,16 @@
  * Workspace browser tree row components (figma Cell set 14:3080): pure presentational —
  * all data and callbacks arrive via props. Hover swaps (folder->chevron,
  * time->ellipsis, action buttons) are CSS-only, and a session row's clipped
- * title is scrolled programmatically while the row is hovered. Row ... menus are
- * visual-only except workspace Rename/Delete and session Rename/Fork/Archive; the
- * session and workspace hover cards are suppressed while a menu is open.
+ * title is scrolled programmatically while the row is hovered. Session and
+ * Workspace hover cards are suppressed while a menu is open.
  */
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   HoverCard, IconAlarmClockOutlineRegular, IconArchiveOutlineRegular, IconBranchOutlineRegular,
   IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderCloseRegular, IconFolderOpenRegular,
-  IconPlusOutlineMedium, IconTrashOutlineRegular, IconTriangleRightFillRegular, Menu, relativeTime,
-  StateDot,
+  IconNewChatOutlineRegular, IconPinFillRegular, IconPinOutlineRegular, IconTrashOutlineRegular,
+  IconTriangleRightFillRegular, IconUnarchiveOutlineRegular, Menu, relativeTime, StateDot, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
@@ -28,14 +27,19 @@ function displayTitle(node: SessionNode, t: RowTranslate): string {
   return node.blank ? t('session.new') : node.title
 }
 
+/* Overflow this small hides no meaningful tail; scrolling for it reads as an
+   accidental jitter, so the title stays put. */
+const MIN_TITLE_REVEAL_PX = 8
+
 /**
  * Reveal a title wider than its one-line cell while its row is hovered: the
  * title clips its own text, so the far edge (a fork's incremented title, for
- * example) is reachable by scrolling the element to its end. Leaving returns it
- * to the start in one step, because the resting ellipsis and the narrowed cell
- * would otherwise meet the text while it travelled back. A title that fits has
- * no scroll range to move, and the stylesheet decides whether either move
- * glides or jumps.
+ * example) is reachable by scrolling the element to its end. Overflow of at
+ * most {@link MIN_TITLE_REVEAL_PX} stays put — a barely-clipped title moving a
+ * few pixels reads as jitter, not a reveal. Leaving returns the title to the
+ * start in one step, because the resting ellipsis and the narrowed cell would
+ * otherwise meet the text while it travelled back. The stylesheet decides
+ * whether either move glides or jumps.
  * @param title - the row's clipping title element.
  * @param revealed - whether the pointer is on the row.
  */
@@ -43,7 +47,9 @@ function revealClippedTitle(title: HTMLSpanElement | null, revealed: boolean): v
   /* v8 ignore next -- defensive: the title span renders unconditionally. */
   if (title === null) return
   if (revealed) {
-    title.scrollLeft = title.scrollWidth - title.clientWidth
+    const range = title.scrollWidth - title.clientWidth
+    if (range <= MIN_TITLE_REVEAL_PX) return
+    title.scrollLeft = range
     return
   }
   // jsdom implements no scrollTo; the lane's direct assignment is instant there
@@ -160,6 +166,7 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
   const ownRow = (
     <div
       className={clsx(css.projectRow, menuOpen && css.menuOpen)}
+      data-row-key={`workspace:${group.key}`}
       role="treeitem"
       aria-expanded={row.expanded}
       onClick={onToggle}
@@ -211,14 +218,16 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
             )}
           />
         )}
-        <button
-          type="button"
-          className={css.iconButton}
-          aria-label={t('actions.newSession.aria', { name: label })}
-          onClick={(e) => { e.stopPropagation(); onCreate() }}
-        >
-          <IconPlusOutlineMedium />
-        </button>
+        <Tooltip label={t('actions.newSession')} side="bottom" align="end" delayMs={500}>
+          <button
+            type="button"
+            className={css.iconButton}
+            aria-label={t('actions.newSession.aria', { name: label })}
+            onClick={(e) => { e.stopPropagation(); onCreate() }}
+          >
+            <IconNewChatOutlineRegular />
+          </button>
+        </Tooltip>
       </span>
     </div>
   )
@@ -233,6 +242,7 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
         createdAt={row.createdAt}
         t={t}
       />}
+      openDelayMs={800}
       disabled={menuOpen}
       copyText={row.cwd}
       copyLabel={t('copy')}
@@ -336,9 +346,22 @@ function ActiveScheduleIndicator({ t, search = false }: { t: RowTranslate; searc
   )
 }
 
+/** Non-interactive pinned-row marker; the enclosing row remains the only action. */
+function PinnedIndicator({ t }: { t: RowTranslate }) {
+  const label = t('row.pinned')
+  return (
+    <span className={css.pinIndicator} role="img" aria-label={label} title={label}>
+      <IconPinFillRegular size={14} />
+    </span>
+  )
+}
+
 /** Hover-card body: full title, relative time, and every relevant live status. */
 function SessionHoverContent({ node, now, t }: { node: SessionNode; now: number; t: RowTranslate }) {
+  // On archived rows the archived line already says the session is inactive,
+  // so resting statuses (idle/completed) drop; live activity still shows.
   const statuses = sessionStatuses(node, t)
+    .filter(status => !(node.archived && (status.state === 'done' || status.state === 'idle')))
   return (
     <div className={css.hoverContent}>
       <div className={css.hoverTitle}>{displayTitle(node, t)}</div>
@@ -351,6 +374,12 @@ function SessionHoverContent({ node, now, t }: { node: SessionNode; now: number;
           <span>{status.label}</span>
         </div>
       ))}
+      {node.archived && (
+        <div className={clsx(css.hoverStatus, css.hoverArchived)}>
+          <IconArchiveOutlineRegular size={14} />
+          <span>{t('row.archived')}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -358,38 +387,58 @@ function SessionHoverContent({ node, now, t }: { node: SessionNode; now: number;
 /**
  * One flat search result: title, Workspace context, and optional content
  * excerpt. Search navigation opens the session only; it does not address an
- * event inside the conversation.
+ * event inside the conversation. Archived rows carry a hover unarchive
+ * button, because search is where the filter surfaces them for recovery.
  * @param props.result - merged local/content search row.
  * @param props.currentId - selected session id.
  * @param props.onOpen - open the selected session.
+ * @param props.onUnarchive - unarchive an archived result row.
  * @param props.t - Workspace-browser translation seat.
- * @returns the result button.
+ * @returns the result row.
  */
-export function SearchResultItem({ result, currentId, onOpen, t }: {
+export function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }: {
   result: SearchResultNode
   currentId: string | undefined
   onOpen: (id: SearchResultNode['id']) => void
+  onUnarchive: (id: SearchResultNode['id']) => void
   t: RowTranslate
 }) {
   const selected = result.id === currentId
   const statuses = sessionStatuses(result, t)
   const primaryStatus = statuses[0]
   return (
-    <button
-      type="button"
-      className={clsx(css.searchResultRow, selected && css.selected)}
+    <div
+      className={clsx(css.searchResultRow, selected && css.selected, result.archived && css.archived)}
       role="treeitem"
       aria-selected={selected}
+      aria-description={result.archived ? t('toast.archivedNotOpenable') : undefined}
       onClick={() => { onOpen(result.id) }}
     >
       <span className={css.searchResultHeading}>
+        {/* Like session rows, the leading slot owns every row marker; on
+            archived rows it stays blank — the grayed row carries the
+            archived look. */}
         <span className={css.slot}>
-          {primaryStatus.state !== 'idle' && (
+          {!result.archived && primaryStatus.state !== 'idle' && (
             <SessionStatusDots statuses={statuses} />
           )}
         </span>
         <span className={css.searchResultTitle}>{result.title}</span>
         {result.hasActiveSchedule && <ActiveScheduleIndicator t={t} search />}
+        {result.archived && (
+          <span className={css.rowActions}>
+            <Tooltip label={t('actions.unarchive')} side="bottom" align="end" delayMs={500}>
+              <button
+                type="button"
+                className={css.iconButton}
+                aria-label={t('menu.unarchiveSession')}
+                onClick={(e) => { e.stopPropagation(); onUnarchive(result.id) }}
+              >
+                <IconUnarchiveOutlineRegular size={14} />
+              </button>
+            </Tooltip>
+          </span>
+        )}
       </span>
       <span className={css.searchResultMeta}>
         <span className={css.searchResultWorkspace}>{result.workspace || t('group.ungrouped')}</span>
@@ -397,7 +446,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
           <span className={css.searchResultSnippet}>{result.snippet}</span>
         )}
       </span>
-    </button>
+    </div>
   )
 }
 
@@ -419,7 +468,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, onReveal, drag, flat = false, t,
+  node, currentId, now, onOpen, onRename, onFork, onArchive, onUnarchive, onPin, onReveal, drag, flat = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -431,6 +480,10 @@ export function SessionNodeItem({
   onFork: (id: SessionNode['id']) => void
   /** Archive this session (row menu action; commits without a dialog). */
   onArchive: (id: SessionNode['id']) => void
+  /** Unarchive this session (row menu action on archived rows). */
+  onUnarchive: (id: SessionNode['id']) => void
+  /** Pin or unpin this session (row menu action; `pin` false unpins). */
+  onPin: (id: SessionNode['id'], pin: boolean) => void
   /** Scroll this row into view after search navigation, then acknowledge it. */
   onReveal?: (() => void) | undefined
   /** Present on reorderable-list rows so every row can remain a drop target. */
@@ -445,7 +498,10 @@ export function SessionNodeItem({
   const statuses = sessionStatuses(node, t)
   const primaryStatus = statuses[0]
   const showStatus = primaryStatus.state !== 'idle'
-  const draggable = drag !== undefined && !row.blank
+  // Archived rows hold their in-place grayed slot, so manual reorder cannot
+  // move them. Pinned rows drag within the pinned block: the browser gates
+  // their drop targets to fellow pinned rows.
+  const draggable = drag !== undefined && !row.blank && !row.archived
   const [menuOpen, setMenuOpen] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLSpanElement>(null)
@@ -456,35 +512,49 @@ export function SessionNodeItem({
   }, [onReveal])
   // Archive hides the row through the registry-global archive set and never
   // touches the session log, so it is not styled as destructive and needs no
-  // confirmation dialog.
-  const sessionMenuItems = [
-    { id: 'rename', label: t('rename'), icon: <IconEditOutlineRegular /> },
-    { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutlineRegular /> },
-    { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutlineRegular size={14} /> },
-  ]
+  // confirmation dialog. Archived rows swap pin/archive for unarchive.
+  const sessionMenuItems = row.archived
+    ? [
+      { id: 'rename', label: t('rename'), icon: <IconEditOutlineRegular /> },
+      { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutlineRegular /> },
+      { id: 'unarchive', label: t('menu.unarchiveSession'), icon: <IconUnarchiveOutlineRegular size={14} /> },
+    ]
+    : [
+      {
+        id: row.pinned ? 'unpin' : 'pin',
+        label: t(row.pinned ? 'menu.unpinSession' : 'menu.pinSession'),
+        icon: row.pinned ? <IconPinFillRegular /> : <IconPinOutlineRegular />,
+      },
+      { id: 'rename', label: t('rename'), icon: <IconEditOutlineRegular /> },
+      { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutlineRegular /> },
+      { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutlineRegular size={14} /> },
+    ]
   // Figma session cell: pad 8, status slot 16, then a 4px title gap.
   const ownRow = (
     <div
       ref={rowRef}
+      data-row-key={`session:${node.id}`}
       className={clsx(
         css.sessionRow, selected && css.selected, menuOpen && css.menuOpen,
+        row.archived && css.archived,
         flat && !showStatus && css.flatSessionRowWithoutStatus,
         drag?.marker === 'before' && css.dropBefore, drag?.marker === 'after' && css.dropAfter,
       )}
       role="treeitem"
       aria-selected={selected}
+      aria-description={row.archived ? t('toast.archivedNotOpenable') : undefined}
       onClick={() => { onOpen(node.id) }}
       onPointerEnter={() => { revealClippedTitle(titleRef.current, true) }}
       onPointerLeave={() => { revealClippedTitle(titleRef.current, false) }}
       draggable={draggable}
-      onDragStart={drag === undefined || row.blank
+      onDragStart={!draggable
         ? undefined
         : (e) => {
           e.dataTransfer.effectAllowed = 'move'
           e.dataTransfer.setData('text/plain', node.id)
           drag.start()
         }}
-      onDragEnd={drag === undefined || row.blank ? undefined : drag.end}
+      onDragEnd={!draggable ? undefined : drag.end}
       onDragOver={drag === undefined
         ? undefined
         : (e) => {
@@ -503,13 +573,23 @@ export function SessionNodeItem({
     >
       {/* Pending interaction and own or descendant activity outrank the
           finished-but-unviewed reminder, which returns after activity stops
-          and is cleared by opening the session. */}
+          and is cleared by opening the session. Archived rows keep the slot
+          blank — the grayed row carries the archived look — and their live
+          status stays on the hover card only. */}
       {(!flat || showStatus) && (
         <span className={css.slot}>
-          {showStatus && <SessionStatusDots statuses={statuses} />}
+          {!row.archived && showStatus && <SessionStatusDots statuses={statuses} />}
         </span>
       )}
-      <span ref={titleRef} className={css.title}>{title}</span>
+      <span
+        ref={titleRef}
+        className={css.title}
+        onDoubleClick={row.blank
+          ? undefined
+          : (e) => { e.stopPropagation(); onRename(node.id, row.title) }}
+      >
+        {title}
+      </span>
       {row.hasActiveSchedule && <ActiveScheduleIndicator t={t} />}
       {/* A blank New Session row is a provisional placeholder: nothing has
           happened in it yet, so a "now" timestamp and the row verbs
@@ -523,6 +603,9 @@ export function SessionNodeItem({
           {primaryStatus.trailingLabel ?? timeLabel(row.updatedAt, now, t)}
         </span>
       )}
+      {/* Trails the time so the marker occupies the same right-edge cell as
+          the hover pin button that replaces it. */}
+      {row.pinned && !row.archived && <PinnedIndicator t={t} />}
       {!row.blank && (
         <span className={css.rowActions}>
           <Menu
@@ -534,6 +617,9 @@ export function SessionNodeItem({
               if (id === 'rename') onRename(node.id, row.title)
               if (id === 'fork') onFork(node.id)
               if (id === 'archive') onArchive(node.id)
+              if (id === 'unarchive') onUnarchive(node.id)
+              if (id === 'pin') onPin(node.id, true)
+              if (id === 'unpin') onPin(node.id, false)
             }}
             portal
             closeOnPointerLeave
@@ -548,6 +634,33 @@ export function SessionNodeItem({
               </button>
             )}
           />
+          <Tooltip label={row.archived ? t('actions.unarchive') : t('actions.archive')} side="bottom" align="end" delayMs={500}>
+            <button
+              type="button"
+              className={css.iconButton}
+              aria-label={row.archived ? t('menu.unarchiveSession') : t('menu.archiveSession')}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (row.archived) onUnarchive(node.id)
+                else onArchive(node.id)
+              }}
+            >
+              {row.archived ? <IconUnarchiveOutlineRegular size={14} /> : <IconArchiveOutlineRegular size={14} />}
+            </button>
+          </Tooltip>
+          {/* Rightmost so it lands where the rest-state pin marker sits. */}
+          {!row.archived && (
+            <Tooltip label={row.pinned ? t('actions.unpin') : t('actions.pin')} side="bottom" align="end" delayMs={500}>
+              <button
+                type="button"
+                className={css.iconButton}
+                aria-label={row.pinned ? t('menu.unpinSession') : t('menu.pinSession')}
+                onClick={(e) => { e.stopPropagation(); onPin(node.id, !row.pinned) }}
+              >
+                {row.pinned ? <IconPinFillRegular size={14} /> : <IconPinOutlineRegular size={14} />}
+              </button>
+            </Tooltip>
+          )}
         </span>
       )}
     </div>
@@ -556,6 +669,7 @@ export function SessionNodeItem({
     <HoverCard
       anchor={ownRow}
       content={<SessionHoverContent node={node} now={now} t={t} />}
+      openDelayMs={800}
       disabled={menuOpen || drag?.active === true}
       copyText={row.blank ? undefined : row.title}
       copyLabel={t('copy')}
