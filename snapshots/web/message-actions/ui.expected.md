@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Use the read tool twice" [disabled]
+  - navigation "Session hierarchy": Use the read tool twice
   - button "More actions"
   - button "Open right sidebar"
   - tablist:

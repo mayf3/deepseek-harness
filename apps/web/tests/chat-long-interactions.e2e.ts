@@ -83,7 +83,7 @@ async function openSeed(page: Page): Promise<void> {
   // Search collapsed into a header action; expand it before filling.
   const searchButton = page.getByRole('button', { name: 'Search sessions' })
   if (await searchButton.getAttribute('aria-expanded') !== 'true') await searchButton.click()
-  const search = page.getByRole('textbox', { name: 'Search sessions...', exact: true })
+  const search = page.getByRole('textbox', { name: 'Search session names', exact: true })
   await search.fill(FIXTURE.markers.user(1))
   const results = page.getByRole('tree', { name: 'Search results' }).getByRole('treeitem')
   await results.first().waitFor({ timeout: 60_000 })
@@ -321,10 +321,10 @@ describe('web e2e: long Chat interaction contract', () => {
     expect(child.session.snapshotEvents().some(event => carries(event, FIXTURE.markers.user(BRANCH_TURN + 1)))).toBe(false)
     expect(child.session.snapshotEvents().some(event => carries(event, FIXTURE.markers.user(FIXTURE.turns)))).toBe(false)
 
+    // The current crumb renders as plain text, not a button.
     const currentCrumb = page.getByRole('navigation', { name: 'Session hierarchy' })
-      .getByRole('button').last()
-    await expect.poll(() => currentCrumb.textContent(), { timeout: 15_000 })
-      .toBe(`${FIXTURE.title} (1)`)
+      .getByText(`${FIXTURE.title} (1)`, { exact: true })
+    await expect.poll(() => currentCrumb.count(), { timeout: 15_000 }).toBe(1)
     await page.getByText(branchAssistantMarker, { exact: false }).last().waitFor({ timeout: 15_000 })
     const settled = scaffold.whenTurnSettled(60_000)
     const composer = page.locator('[data-composer-input][contenteditable="true"]').last()

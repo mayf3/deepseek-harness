@@ -38,7 +38,7 @@ The `present` tool row retains the delivery-document glyph while showing running
 
 Developer tools must be enabled to show this card or request its summary. Turning the preference off removes the card immediately while explicit delivery cards, inline file links, and recorded workspace changes remain available.
 
-The card renders the summary the Host serves for the turn's latest `workspace/changes` announcement, read once per announcement through the authenticated summary route; while the read is pending, once the Host answers that the summary is gone, or when it lists no file, there is no card. Its header names the complete changed-file count and summed added and deleted lines; hovering or focusing it replaces the counts with “Preview in sidebar”. Each row shows one file's display path with its own counts, “binary” for a binary file, or “too large” for a file the Host did not capture. Rows appear in the recorded display order, so repository files above the working directory and files outside it sort first. Four rows show before a fold; the control reveals every recorded file and, once expanded, collapses the list again from the bottom. Each row opens the turn's review in the right Sidebar on that file, and the header opens it on the first file. Final file deliveries still require `present`.
+The card renders the summary the Host serves for the turn's latest `workspace/changes` announcement, read once per announcement through the authenticated summary route; while the read is pending, once the Host answers that the summary is gone, or when it lists no file, there is no card. Its header names the complete changed-file count and summed added and deleted lines; hovering or focusing it replaces the counts with “Preview in sidebar”. Each row shows one file's display path with its own counts, “binary” for a binary file, or “too large” for a file the Host did not capture. Rows appear in the recorded display order, so repository files above the working directory and files outside it sort first. Four rows show before a fold; the control reveals every recorded file and, once expanded, collapses the list again from the bottom. Each row opens the turn's review in the right Sidebar on that file, and the header opens it on the first file.
 
 ### The review tab
 
@@ -87,11 +87,11 @@ Read these pages when the deliverables surface is not enough. They move from the
 
 #### What the model sees
 
-The guidance asks the model to name primary outputs after successful creation or modification and link every existing-file mention outside commands, configuration expressions, and code blocks, including repeats and tables. Labels default to filenames or clear aliases, with only enough parent directories to distinguish files. Precise references display `filename:24` or `filename:24–30`; their destinations retain full relative or absolute paths with `#L24` or `#L24-L30` anchors. The display suffix contains neither `#` nor `L`.
+The guidance prefers primary results in the final reply: file links open Sidebar previews, and image previews include a file link for clients without inline-image support. It recommends separate `present` cards for complete file deliverables, especially Office files, usually selecting the most important one or two, with at most four files per call when more are needed. It discourages cards solely for code edits and extra commands to inspect diff visibility. This guidance applies even with developer tools disabled: it accepts fewer file surfaces to avoid duplicate presentation and unnecessary tool calls. It asks the model to link every existing-file mention outside commands, configuration expressions, and code blocks, including repeats and tables. Labels default to filenames or clear aliases, with only enough parent directories to distinguish files. Precise references display `filename:24` or `filename:24–30`; their destinations retain full relative or absolute paths with `#L24` or `#L24-L30` anchors. The display suffix contains neither `#` nor `L`.
 
 #### Token effect
 
-One fixed paragraph containing an output reminder and file-reference guidance whenever this package is loaded. The [present tool](../../deliverables/tool-present/README.md#model-experience) owns the delivery schema and result text.
+One fixed paragraph containing output-selection, rendering, and file-reference guidance whenever this package is loaded. The [present tool](../../deliverables/tool-present/README.md#model-experience) owns the delivery schema and result text.
 
 #### KV Cache effect
 
@@ -104,6 +104,7 @@ The section is static at first-party order 9000 for the lifetime of the package 
 
 These limits define the current deliverables vocabulary. They are current package constraints, not a general file-linking comparison or a task backlog.
 
+- **Inline local images require HTTP(S) and POSIX absolute paths**: Desktop’s `dsh-app:` pages and Windows drive-letter paths do not support inline local images. The guidance retains a Markdown file link so users can open the Sidebar preview.
 - **Mention matching is exact path or unique basename only** — a suffix mention stays inert; widening the matcher is deferred until a real closing-message shape needs it.
 - **Terminal-created files require explicit delivery** — the card lists them once git records the change, but delivery cards and inline-code references require `present`; explicit Markdown links can reference existing files directly.
 - **Declarations do not preserve file contents** — reopening or transferring a Session requires source files accessible through the viewed Session’s filesystem. Missing files, directories, and final symbolic links return 404.

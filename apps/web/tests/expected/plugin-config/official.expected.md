@@ -11,19 +11,19 @@
     - switch "启用 智能体团队"
   - listitem:
     - button "查看 终端": 终端
-    - text: 限制 agent 运行的每一条命令。
+    - text: 限制每条命令最多能跑多久、最多输出多少内容。
   - listitem:
     - button "查看 Agent 循环": Agent 循环
-    - text: Agent 如何派发工具调用。
+    - text: 控制 Agent 派发工具调用的方式。
   - listitem:
     - button "查看 Subagent": Subagent
     - text: 设置 Subagent 的递归层级、数量和模型。
   - listitem:
     - button "查看 网页搜索": 网页搜索
-    - text: DeepSeek 搜索提供方。
+    - text: 设置 DeepSeek 的搜索提供方。
 - heading "已安装" [level=3]
 - text: "1"
 - list:
   - listitem:
-    - button "查看 live-client": live-client
-    - switch "启用 live-client"
+    - button "查看 @fixture/live-client": "@fixture/live-client"
+    - switch "启用 @fixture/live-client"

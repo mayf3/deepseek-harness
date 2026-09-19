@@ -48,7 +48,7 @@ async function bench() {
   ctx.provide('workspaces', {
     list: {
       getSnapshot: () => ({
-        items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+        items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
       }),
       subscribe,
     },
@@ -62,8 +62,8 @@ async function bench() {
   ctx.provide('sessions', {
     list: {
       getSnapshot: () => ({
-        ids: [], byId: {}, current: undefined, phase: 'ready',
-        subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+        ids: [], byId: {}, phase: 'ready',
+        projectionsBySession: {}, jobsBySession: {},
       }),
       subscribe,
     },
@@ -74,7 +74,7 @@ async function bench() {
     searchResultLimit: 20,
     binding,
     subagentAddress: vi.fn(() => undefined),
-    refreshSubagents: vi.fn(() => Promise.resolve()),
+    refreshProjections: vi.fn(() => Promise.resolve()),
     fork,
   } as never)
   const pickDirectory = vi.fn(() => Promise.resolve({ ok: true as const, value: '/projects/picked' }))

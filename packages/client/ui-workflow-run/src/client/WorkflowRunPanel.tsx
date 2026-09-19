@@ -10,6 +10,7 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type { SessionListState, SessionTarget } from '@deepseek-ai/dsh-api-session-controller/client'
 import { shallowEqual } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { WorkflowRunKey } from './locales.ts'
 import type {
   WorkflowRunMemberData, WorkflowRunPhaseData, WorkflowRunStatus,
@@ -183,17 +184,15 @@ function navigableMembers(
   sessions: SessionListState,
   phases: readonly WorkflowRunPhaseData[],
   parentId: SessionId,
+  statuses: SessionStatusSnapshot,
 ): readonly SessionId[] {
-  const ordinary = new Set(sessions.ids)
+  const catalog = sessions.projectionsBySession[parentId]
   const result: SessionId[] = []
   for (const phase of phases) {
     for (const member of phase.members) {
-      const summary = sessions.byId[member.childId]
+      const child = catalog?.values.subagentCatalog?.find(entry => entry.id === member.childId)
       if (member.status === 'running'
-        && ordinary.has(member.childId)
-        && summary?.origin === 'subagent'
-        && summary.parentId === parentId
-        && summary.running) {
+        && child !== undefined && (statuses.get(child.id)?.running ?? sessions.byId[child.id]?.running) === true) {
         result.push(member.childId)
       }
     }
@@ -341,7 +340,7 @@ function PhaseSection({
 }
 
 /** Render one durable workflow run with status-driven run and phase disclosure. */
-export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t }: WorkflowRunPanelProps) {
+export function WorkflowRunPanel({ node, sessionId, useSessions, useSessionStatus, openSession, t }: WorkflowRunPanelProps) {
   const phaseFacts = useMemo(() => node.data.phases.map(phase => (
     [phase.key, phaseDisclosureFacts(phase)] as const
   )), [node.data.phases])
@@ -356,8 +355,9 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
   }))
   const runContentRef = useRef<HTMLDivElement>(null)
   const phaseContentRefs = useRef(new Map<string, HTMLDivElement>())
+  const statuses = useSessionStatus(value => value)
   const navigable = useSessions(
-    sessions => navigableMembers(sessions, node.data.phases, sessionId),
+    sessions => navigableMembers(sessions, node.data.phases, sessionId, statuses),
     shallowEqual,
   )
 

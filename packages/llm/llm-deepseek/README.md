@@ -27,6 +27,8 @@ Stream DeepSeek models through `deepseek-official` with Messages by default, or 
 
 Mount this plugin when a composition streams DeepSeek models through the harness LLM service. It registers the single `deepseek-official` route and resolves connection facts per request, so a composition entry plus an optional user settings section drive the whole adapter.
 
+Both protocols accept the LLM service's [request-only user inputs](../llm/README.md#use-this-package) alongside durable history; omitting request-only identity and attribution does not alter provider content.
+
 ### When to choose it
 
 Choose this adapter for DeepSeek's official API or a gateway that supports the selected protocol through `baseURL`. Choose `dsh-llm-pi-ai` when the same composition also routes other providers or hand-declared gateways through pi-ai's catalogs; the two adapters can be mounted together because their route names do not collide. Registering any other adapter for `deepseek-official` fails with `DUPLICATE_ADAPTER`.
@@ -71,6 +73,8 @@ A request selects the route with `provider: deepseek-official`; the model id pas
 | `retryPolicy` | normal, 5 retries | Provider-owned retry policy executed by `dsh-llm-retry` |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-llm-deepseek) is the exhaustive source for every accepted field and its JSDoc.
+
+When [proactive compaction](../../compaction/compaction-basic/README.md#use-this-package) is enabled, `models[].contextWindow` (or `defaultContextWindow` when absent) must exceed the effective request `maxTokens` plus the compaction policy’s `headroomTokens`. Requests without an explicit output cap use the model’s `maxTokens` or the adapter default. For small-window deployments, configure headroom within that capacity; lower `thresholdRatio` to compact earlier.
 
 <a id="choose-a-protocol"></a>
 ### Choose a protocol

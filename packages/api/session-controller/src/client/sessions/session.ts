@@ -63,7 +63,7 @@ interface PendingHistory {
 export interface SessionOptions {
   /** Catalog-discovered address selecting non-activating subagent transport. */
   address?: SubagentAddress
-  /** Whether the exact direct parent Agent was live at the latest catalog read; absent before that read. */
+  /** Whether the exact direct parent Agent is available in Host summaries; absent until known. */
   parentAvailable?: boolean
   /**
    * First ACCEPTED prompt on a blank session (fires at most once, on the

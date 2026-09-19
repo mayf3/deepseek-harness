@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Use the ask_user_question tool to" [disabled]
+  - navigation "Session hierarchy": Use the ask_user_question tool to
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
@@ -10,7 +9,7 @@
 - button "System prompt"
 - text: Use the ask_user_question tool to ask me exactly one question with id "checkpoint", question "Ready to continue?", header "Checkpoint", and options labeled "Yes" and "No". After I answer, reply with one short sentence acknowledging my answer and stop. {{clock}}
 - button "Copy"
-- button "Context injection @deepseek-ai/dsh-system-prompt"
+- button "Context injection runtime-context"
 - text: Running
 - button "Ask question waiting"
 - status: Deep diving...

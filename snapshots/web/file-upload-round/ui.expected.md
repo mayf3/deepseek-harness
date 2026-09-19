@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Read the attached file with" [disabled]
+  - navigation "Session hierarchy": Read the attached file with
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"

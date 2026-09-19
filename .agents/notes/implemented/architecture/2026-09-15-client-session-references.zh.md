@@ -101,7 +101,7 @@ Controller 将来源计数与每个活跃代的引用共同管理。每个来源
 
 待处理领域保留 `SessionPendingInteractionMap`、请求身份、优先级、发布清理函数与卸载委托。统一状态包含同一个有效请求对象，不复制请求，也不创建第二套待处理注册表。Workspace 状态指示器与 Conversation composer 选择读取 `useSessionStatus`，不再分别读取 `useSessionPendingInteraction` 和 `useCompletedSessionIds` 钩子。
 
-完成跟踪订阅已有 `api-session/status` 事件，避免 running 到 idle 的变化在合批目录快照中丢失。目录快照建立初始与重连基线。pending 状态下的空目录不能证明 Session 已消失。更新规则如下：
+完成跟踪订阅已有 `api-session/status` 事件，避免 running 到 idle 的变化在合批目录快照中丢失。Host 列表行（`ids`）建立初始与重连的 running 基线；目录合成行与 retained 行保留独立观察到的状态。pending 状态下的空目录不能证明 Session 已消失。更新规则如下：
 
 - 初始 idle 基线不产生完成提醒。
 - 观察到 running 时清除旧提醒，并记录运行基线。

@@ -562,10 +562,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     hookContext: '',
     slotInject: '',
     declaredBy: 'an entry in \'conversation.header\' (client-ui-conversation), so it exists while that entry is mounted',
-    occupants: [
-      'client-ui-sidebar HeaderLeadingControls',
-    ],
-    replaceRisk: 'shadows-shipped-ui',
+    occupants: [],
+    replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.header.leading\', () => ctx.slots.register(\n      { name: \'conversation.header.leading\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
     source: 'packages/client/ui-conversation/src/client/contract/slots.ts:164',
   },
@@ -1673,7 +1671,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'plugins.bundle.config\', () => ctx.slots.register(\n      { name: \'plugins.bundle.config\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:38',
+    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:39',
   },
   {
     key: 'plugins.item',
@@ -1726,14 +1724,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'plugins.item\', () => ctx.slots.register(\n      { name: \'plugins.item\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:32',
+    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:33',
   },
   {
     key: 'plugins.row.config',
     kind: 'keyed',
     scope: 'root',
-    summary: 'The configuration of one row a bundle declares, keyed by `<package name>#<row id>` with the row id as the bundle\'s patch declares it: the row on the bundle\'s page gains a configure control that opens the entry\'s page, headed by the row id and the entry\'s summary.',
-    doc: 'The configuration of one row a bundle declares, keyed by\n`<package name>#<row id>` with the row id as the bundle\'s patch declares\nit: the row on the bundle\'s page gains a configure control that opens\nthe entry\'s page, headed by the row id and the entry\'s summary.',
+    summary: 'The configuration of one row a bundle declares, keyed by `<package name>#<row id>` with the row id as the bundle\'s patch declares it: the row on the bundle\'s page gains a configure control that opens the entry\'s page, headed by the plugin\'s display title and description.',
+    doc: 'The configuration of one row a bundle declares, keyed by\n`<package name>#<row id>` with the row id as the bundle\'s patch declares\nit: the row on the bundle\'s page gains a configure control that opens\nthe entry\'s page, headed by the plugin\'s display title and description.\nAn absent description falls back to the entry\'s `view: \'summary\'`.',
     registerOptions: [
       {
         name: 'key',
@@ -1762,7 +1760,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'plugins.row.config\', () => ctx.slots.register(\n      { name: \'plugins.row.config\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:45',
+    source: 'packages/client/ui-plugin-manager/src/client/slot-contract.ts:47',
   },
   {
     key: 'rightbar',
@@ -2269,7 +2267,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-settings-general GeneralSection id \'general\'',
       'client-ui-settings-models ModelsSection id \'models\'',
       'client-ui-settings-plugins PluginsSettingsSection id \'plugins\'',
-      'client-ui-settings-unarchive-sessions ArchivedSessionsSection id \'archived-sessions\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.section\', () => ctx.slots.register(\n      { name: \'settings.section\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -2305,6 +2302,35 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.trigger\', () => ctx.slots.register(\n      { name: \'settings.trigger\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
     source: 'packages/client/ui-settings/src/client/contract/slots.ts:24',
+  },
+  {
+    key: 'shell.leading',
+    kind: 'single',
+    scope: 'root',
+    summary: 'Window-chrome seat at the frame\'s top-left, over every main panel.',
+    doc: 'Window-chrome seat at the frame\'s top-left, over every main panel.\nMounted only while the sidebar column is fully hidden (macOS desktop\ncollapse; other platforms keep the rail), so the occupant can assume the\nframe edge is the window edge and the macOS traffic lights sit before it.\nOCCUPIED by ui-sidebar\'s reopen/New Session controls.\n\nWhile the seat is mounted the frame publishes\n`--dsh-frame-leading-clearance` (the inline inset the seat\'s band\noccupies, measured from the frame\'s left edge); a main panel whose\ncontent reaches the top-left corner pads by it so nothing lands under\nthe lights or the controls.',
+    registerOptions: [],
+    ownerProps: [],
+    ownerPropsReferences: [],
+    standardProps: [
+      'useResource: UseResource',
+      'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
+      'usePanelInfo: UsePanelInfo',
+      'useSessions: UseSessions',
+      'useSessionStatus: UseSessionStatus',
+      'useSessionRetainInfo: UseSessionRetainInfo',
+      'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
+    ],
+    keyDomain: '',
+    hookContext: '',
+    slotInject: '',
+    declaredBy: 'an entry in \'root\' (client-ui-layout), so it exists while that entry is mounted',
+    occupants: [
+      'client-ui-sidebar HeaderLeadingControls',
+    ],
+    replaceRisk: 'shadows-shipped-ui',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'shell.leading\', () => ctx.slots.register(\n      { name: \'shell.leading\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-layout/src/client/index.ts:105',
   },
   {
     key: 'shell.overlay',
@@ -2699,7 +2725,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Content and viewing inputs shared by document bodies and nested PDF presentation. */\nexport interface DocumentBodyOwner {\n  /** Original file address, also readable through the standard useResource hook. */\n  readonly resourceAddress: string\n  /** Ordinary file content or a renderer-owned loading request; text accumulates until eof. */\n  readonly content: DocumentContent\n  /** The document toolbar\'s current wrapping preference. */\n  readonly wrap: boolean\n  /** Report a renderer-owned scrollport; passing `null` restores the shared body as the owner. */\n  readonly scrollportRef: RefCallback<HTMLElement>\n}',
+      '/** Content and viewing inputs shared by document bodies and nested PDF presentation. */\nexport interface DocumentBodyOwner {\n  /** Observe a file read by this renderer. @param address - complete file resource address. */\n  readonly addResource: (address: string) => void\n  /** Replace this renderer\'s dependencies. @param addresses - complete file resource addresses. */\n  readonly setResources: (addresses: readonly string[]) => void\n  /** Original file address, also readable through the standard useResource hook. */\n  readonly resourceAddress: string\n  /** Ordinary file content or a renderer-owned loading request; text accumulates until eof. */\n  readonly content: DocumentContent\n  /** The document toolbar\'s current wrapping preference. */\n  readonly wrap: boolean\n  /** Report a renderer-owned scrollport; passing `null` restores the shared body as the owner. */\n  readonly scrollportRef: RefCallback<HTMLElement>\n}',
     ],
     ownerPropsReferences: [
       'DocumentContent',
@@ -2736,7 +2762,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:45',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:51',
   },
   {
     key: 'sidebar.right.tab.document.action',
@@ -2753,7 +2779,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/**\n * Ordinary file contents, or a request for the selected renderer to load its content.\n * Byte arrays are transient UI input, never persisted layout or Session data.\n */\nexport type DocumentContent =\n  | { readonly kind: \'text\'; readonly text: string; readonly pages: readonly DocumentTextPage[]; readonly eof: boolean }\n  | { readonly kind: \'bytes\'; readonly data: Uint8Array<ArrayBuffer> }\n  | {\n    readonly kind: \'renderer\'\n    /** Changes on reload or implementation replacement; retained contents belong to one revision. */\n    readonly revision: number\n    /** Report the displayed source version; stale revisions cannot update the owner. @param version - loaded source version. */\n    readonly loaded: (version: string) => void\n    /** Cancel the current load and start a new revision. */\n    readonly reload: () => void\n  }',
+      '/**\n * Ordinary file contents, or a request for the selected renderer to load its content.\n * Byte arrays are transient UI input, never persisted layout or Session data.\n */\nexport type DocumentContent =\n  | { readonly kind: \'text\'; readonly text: string; readonly pages: readonly DocumentTextPage[]; readonly eof: boolean }\n  | { readonly kind: \'bytes\'; readonly data: Uint8Array<ArrayBuffer> }\n  | {\n    readonly kind: \'renderer\'\n    /** Changes on reload or implementation replacement; retained contents belong to one revision. */\n    readonly revision: number\n    /** Report the displayed source version; stale revisions cannot update the owner. @param version - loaded source version. */\n    readonly loaded: (version: string) => void\n    /** End a failed load; a later file change can start another revision. */\n    readonly failed: () => void\n    /** Cancel the current load and start a new revision. */\n    readonly reload: () => void\n  }',
     ],
     ownerPropsReferences: [
       'DocumentTextPage',
@@ -2784,7 +2810,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document.action\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document.action\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:81',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:87',
   },
   {
     key: 'sidebar.right.tab.document.actions',
@@ -2840,7 +2866,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document.actions\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document.actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:60',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:66',
   },
   {
     key: 'sidebar.right.tab.document.office.pdf',
@@ -2857,7 +2883,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Content and viewing inputs shared by document bodies and nested PDF presentation. */\nexport interface DocumentBodyOwner {\n  /** Original file address, also readable through the standard useResource hook. */\n  readonly resourceAddress: string\n  /** Ordinary file content or a renderer-owned loading request; text accumulates until eof. */\n  readonly content: DocumentContent\n  /** The document toolbar\'s current wrapping preference. */\n  readonly wrap: boolean\n  /** Report a renderer-owned scrollport; passing `null` restores the shared body as the owner. */\n  readonly scrollportRef: RefCallback<HTMLElement>\n}',
+      '/** Content and viewing inputs shared by document bodies and nested PDF presentation. */\nexport interface DocumentBodyOwner {\n  /** Observe a file read by this renderer. @param address - complete file resource address. */\n  readonly addResource: (address: string) => void\n  /** Replace this renderer\'s dependencies. @param addresses - complete file resource addresses. */\n  readonly setResources: (addresses: readonly string[]) => void\n  /** Original file address, also readable through the standard useResource hook. */\n  readonly resourceAddress: string\n  /** Ordinary file content or a renderer-owned loading request; text accumulates until eof. */\n  readonly content: DocumentContent\n  /** The document toolbar\'s current wrapping preference. */\n  readonly wrap: boolean\n  /** Report a renderer-owned scrollport; passing `null` restores the shared body as the owner. */\n  readonly scrollportRef: RefCallback<HTMLElement>\n}',
     ],
     ownerPropsReferences: [
       'DocumentContent',
@@ -2944,7 +2970,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document.unpreviewable\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document.unpreviewable\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:72',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:78',
   },
   {
     key: 'sidebar.right.tab.guide',

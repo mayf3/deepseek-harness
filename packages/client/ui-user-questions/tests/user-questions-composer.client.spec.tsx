@@ -50,13 +50,14 @@ const sessionList = {
   ids: [SID],
   byId: { [SID]: { id: SID, displayTitle: 'Session', running: false, retainedBy: {}, blank: false, updatedAt: 0 } },
   phase: 'ready' as const,
-  subagentsByParent: {},
+  projectionsBySession: {},
   jobsBySession: {},
 }
 const attentionState: AttentionState = new Map()
 const workspaceState = {
   items: [],
   archivedSessionIds: [],
+  pinnedSessionIds: [],
   state: 'idle' as const,
   phase: 'ready' as const,
   error: null,

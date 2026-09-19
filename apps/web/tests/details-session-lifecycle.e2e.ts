@@ -84,6 +84,10 @@ async function paneSnapshot(page: Page) {
 
 /** Product-visible geometry, pane state, and expanded Files directories at a settled checkpoint. */
 async function sidebarSnapshot(page: Page) {
+  // A toggle holds data-animating until transitionend or its 600ms fallback
+  // (ui-layout AppFrame); computed transition values are stable only after it
+  // drops, so capturing earlier races the settle window.
+  await expect.poll(() => appFrame(page).evaluate(frame => frame.hasAttribute('data-animating'))).toBe(false)
   const geometry = await appFrame(page).evaluate((frame) => {
     const panel = frame.querySelector<HTMLElement>('[data-sidebar-right-panel]')
     if (panel === null) throw new Error('Sidebar panel is not mounted')

@@ -57,7 +57,7 @@ import {
   writesCurrentSessionFixtures,
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
-import type { Profile, ProfileContext, ProfileResolutionMode } from '@deepseek-ai/dsh-app-boot'
+import type { Profile, ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type {
@@ -83,6 +83,7 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
+import { startPrefixProxy, type PrefixProxy } from './prefix-proxy.ts'
 import { REPO_ROOT, requireBuilt, requireDist } from './support.ts'
 
 type AppBoot = typeof import('@deepseek-ai/dsh-app-boot')
@@ -195,7 +196,7 @@ export function recordedSessionFixturePath(path: string, version: number): strin
 /** The shipped composition under test: the dsh-base and dsh-web-app bundle patches over the empty profile root. */
 const BASE_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
 const WEB_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
-/** The installation anchor whose dependency surface the profile module fallback mirrors. */
+/** The installation anchor whose dependency surface the runtime resolution mirrors. */
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 
 // Replay publishes the provider catalog the gateway routes to (providers
@@ -275,7 +276,7 @@ function replayProviders(contextWindow: number | undefined, messages: boolean): 
 export interface WebScaffold {
   /** The active snapshot mode this scaffold booted under. */
   mode: WebSnapshotMode
-  /** Browser-facing origin for the bound test server. */
+  /** Browser-facing origin for the bound test server (the mount root under `publicMount`). */
   baseUrl: string
   /** Process-token URL that establishes this scaffold's browser session. */
   authenticatedUrl: string
@@ -303,8 +304,6 @@ export interface WebScaffold {
 export interface LaunchOptions {
   /** The scaffold enables developer tools unless false preserves the shipped default. */
   developerTools?: boolean
-  /** Profile resolver backend used by this test Host; defaults to runtime coverage. */
-  profileResolutionMode?: Extract<ProfileResolutionMode, 'dual' | 'runtime'>
   /** Enable the real Open In rows with deterministic launch-environment facts. */
   openInAppEnvironment?: LaunchEnvironmentSnapshot
   /** Compare the replayed root session with `replayFixture`; defaults on for a manifest-owned canonical recording. */
@@ -435,6 +434,16 @@ export interface LaunchOptions {
    * 127.0.0.1; a non-resolving authority fails before Host trust is exercised.
    */
   remoteAuthority?: string
+  /**
+   * Serve the same listener through the private plain-HTTP prefix-stripping
+   * proxy in `./prefix-proxy.ts`, which owns the mount, upgrade, and cookie
+   * behavior. The proxy authority joins `trustedHosts` because the direct
+   * composition grants no trust. The listen socket is unaffected.
+   */
+  publicMount?: {
+    /** Canonical mount prefix (default `tools/dsh/`, normalized to lead and end in `/`). */
+    prefix?: string
+  }
   /** Reuse an existing harness home so a second Host can verify user settings across origins. */
   harnessHome?: string
 }
@@ -456,7 +465,7 @@ async function cleanupScaffoldWorld(ctx: Context, workspaceCwd: string, persiste
 export async function launchWebScaffold(options: LaunchOptions = {}): Promise<WebScaffold> {
   requireDist()
   const {
-    auditStartupEntries, composeEntries, createProfileResolutionGeneration, healProfilesModuleFallback, initProfile,
+    auditStartupEntries, composeEntries, createRuntimeResolution, initProfile,
     mountRootInclude, readProfileManifest, readProfilePatches, loadProfileDirectory, loadOverlayPatches, PluginPackages,
   } = appBoot()
   const mode = webSnapshotMode()
@@ -467,6 +476,12 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     ? undefined
     : await Promise.all(options.replayChildFixtures.map(path => selectedSessionFixture(path)))
   const compareReplaySession = options.compareReplaySession ?? await ownsReplayFixture(replayFixture)
+  const publicMount = options.publicMount
+  // Chromium maps *.localhost to loopback without a resolver.
+  const publicHost = publicMount === undefined ? undefined : 'public.localhost'
+  const publicPrefix = publicMount === undefined
+    ? undefined
+    : `/${(publicMount.prefix ?? 'tools/dsh/').replace(/^\/+|\/+$/gu, '')}/`
   const browserHost = options.remoteAuthority ?? '127.0.0.1'
   if (mode === 'record') {
     // Both owning vitest configs (web unconditionally, snapshot in record
@@ -635,9 +650,17 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // Preserve the composed surface-context choice because a patch replaces
     // the row's complete config.
     { id: 'web-runtime', config: { openBrowser: false, printUrl: false, surfaceContext } },
-    ...options.remoteAuthority === undefined
+    ...publicHost === undefined && options.remoteAuthority === undefined
       ? []
-      : [{ id: 'connection', config: { trustedHosts: [options.remoteAuthority] } }],
+      : [{
+        id: 'connection',
+        config: {
+          trustedHosts: [
+            ...publicHost === undefined ? [] : [publicHost],
+            ...options.remoteAuthority === undefined ? [] : [options.remoteAuthority],
+          ],
+        },
+      }],
     { id: 'settings', config: { dshHome: harnessHome } },
     { id: 'credentials', config: { dshHome: harnessHome } },
     // The shipped directory-picker row is the -auto chooser, which resolves
@@ -690,8 +713,14 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   let baseUrl = ''
   let authenticatedUrl = ''
   let cookieHeader = ''
+  let publicProxy: PrefixProxy | undefined
   let replayHandle: ReplayHandle | undefined
   try {
+    // The proxy takes its browser-facing port before the boot so the mount URL
+    // is final by the time any row reads it; its target follows the listener.
+    if (publicHost !== undefined && publicPrefix !== undefined) {
+      publicProxy = await startPrefixProxy({ prefix: publicPrefix })
+    }
     process.chdir(workspaceCwd)
     const profileDir = join(harnessHome, 'profiles', 'scaffold')
     const extraLayers: Profile['layers'] = await Promise.all((options.extraInstallAnchors ?? []).map(async (anchor) => {
@@ -719,11 +748,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       patchPath: join(profileDir, 'cordis.patch.yml'),
       patches: [],
     }
-    const profileResolutionMode = options.profileResolutionMode ?? 'runtime'
     const resolutionOptions = { installAnchor: INSTALL_ANCHOR, home: harnessHome, profile }
-    const resolution = profileResolutionMode === 'runtime'
-      ? await createProfileResolutionGeneration(resolutionOptions)
-      : await healProfilesModuleFallback(resolutionOptions)
+    const resolution = await createRuntimeResolution(resolutionOptions)
     await mkdir(profileDir, { recursive: true })
     const rootConfig = join(profileDir, 'cordis.yml')
     await writeFile(rootConfig, '[]\n')
@@ -770,8 +796,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       },
     })
     await ctx.plugin(PluginPackages, {
-      generation: resolution,
-      behavior: profileResolutionMode === 'dual' ? 'verify' : 'enforce',
+      resolution,
     })
     await ctx.plugin(Loader)
     if (profileContext === undefined) {
@@ -788,7 +813,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     } else {
       // The launcher's own mount, so the manager's reloads find the root Include
       // and compose the same layers the profile files name; bare names still
-      // resolve through the resolution generation above, as in the direct mount.
+      // resolve through the runtime resolution above, as in the direct mount.
       await mountRootInclude(ctx, rootConfig, readProfilePatches('dsh', profileContext))
     }
     await ctx.loader.await()
@@ -864,11 +889,22 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         new RouteOnlyAdapter(replayProviders(options.replayContextWindow, messages)),
       ), 'web e2e scaffold: route-only adapter')
     }
-    baseUrl = `http://${browserHost}:${String(port)}`
+    if (publicProxy === undefined || publicHost === undefined || publicPrefix === undefined) {
+      baseUrl = `http://${browserHost}:${String(port)}`
+    } else {
+      // The browser talks to the proxy's mount; Node-side requests emulate the
+      // browser by keeping the proxy's port while connecting to loopback.
+      publicProxy.setTarget(port)
+      baseUrl = `http://${publicHost}:${String(publicProxy.port)}${publicPrefix}`
+    }
     authenticatedUrl = ctx.connection.authenticatedUrl(baseUrl)
-    const login = await fetch(authenticatedUrl, { redirect: 'manual' })
+    // Chromium resolves *.localhost itself; Node may not, so a mounted scaffold
+    // posts the exchange to loopback, the authority the Host fence always trusts.
+    const loginUrl = new URL(authenticatedUrl)
+    if (publicPrefix !== undefined) loginUrl.hostname = '127.0.0.1'
+    const login = await fetch(loginUrl, { redirect: 'manual' })
     const setCookie = login.headers.get('set-cookie')
-    if (login.status !== 303 || login.headers.get('location') !== '/' || setCookie === null) {
+    if (login.status !== 303 || login.headers.get('location') !== './' || setCookie === null) {
       throw new Error('web e2e scaffold: browser token exchange did not return its session cookie')
     }
     cookieHeader = setCookie.split(';', 1)[0] ?? ''
@@ -878,6 +914,9 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   } catch (error) {
     if (process.cwd() !== originalCwd) process.chdir(originalCwd)
     const cleanupFailures = await cleanupScaffoldWorld(ctx, workspaceCwd, persistenceRoot)
+    if (publicProxy !== undefined) {
+      await publicProxy.close().catch((closeError: unknown) => cleanupFailures.push(closeError))
+    }
     restoreCredentialEnvironment()
     restoreSkillRootEnvironment()
     if (cleanupFailures.length > 0) {
@@ -951,6 +990,13 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       try {
         stopObservingSessions()
         failures.push(...await cleanupScaffoldWorld(ctx, workspaceCwd, persistenceRoot))
+        if (publicProxy !== undefined) {
+          try {
+            await publicProxy.close()
+          } catch (error) {
+            failures.push(error)
+          }
+        }
       } finally {
         restoreCredentialEnvironment()
         restoreSkillRootEnvironment()
@@ -1255,12 +1301,7 @@ export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, i
   }).join('\n')
 }
 
-/**
- * Parse a committed web seed fixture through the replay reader.
- * @param fixtureText - session JSONL fixture contents.
- * @returns the current header line, parsed header, and logical events.
- */
-/** Give a migrated fixture stream positive relative timing before its final wall-clock rebase. */
+/** Give reconstructed V0/V1 chunk streams positive intervals before the final wall-clock rebase. */
 function spreadMigratedSeedStream(
   stream: SessionEvent<'assistant/message'>['data']['stream'],
 ): SessionEvent<'assistant/message'>['data']['stream'] {
@@ -1277,6 +1318,12 @@ function spreadMigratedSeedStream(
   })
 }
 
+/**
+ * Parse a committed web seed fixture through the replay reader.
+ * Embedded streams retain their recorded timing; V0/V1 chunk streams receive positive relative intervals.
+ * @param fixtureText - session JSONL fixture contents.
+ * @returns the current header line, parsed header, and logical events.
+ */
 export function parseSeedFixture(fixtureText: string): {
   headerLine: string
   header: Record<string, unknown>
@@ -1291,7 +1338,7 @@ export function parseSeedFixture(fixtureText: string): {
   const header = JSON.parse(headerLine) as Record<string, unknown>
   if (header.type !== 'session') throw new Error('seed fixture must start with a session header')
   const events = parseSessionLog(current).map((event) => {
-    if (sourceHeader.version === SESSION_FORMAT_VERSION) return event
+    if (sourceHeader.version !== 0 && sourceHeader.version !== 1) return event
     if (event.type === 'assistant/message') {
       return { ...event, data: { ...event.data, stream: spreadMigratedSeedStream(event.data.stream) } }
     }
@@ -1652,10 +1699,20 @@ export async function assertFixtureInventory(dir: string, expected: string[]): P
 /**
  * Console tripwires: reconnect/gap-repair self-healing or a pageerror must
  * fail the scenario, not mask a dead wire behind eventual consistency.
+ */
+export interface WebConsoleTripwire {
+  /** Console warnings matching reconnect/gap-repair/discontinuity copy. */
+  warnings: string[]
+  /** Uncaught page errors. */
+  pageErrors: string[]
+}
+
+/**
+ * Collect the {@link WebConsoleTripwire} of one page.
  * @param page - the page under test.
  * @returns live warning/pageerror collectors to assert empty at scenario end.
  */
-export function watchConsole(page: Page): { warnings: string[]; pageErrors: string[] } {
+export function watchConsole(page: Page): WebConsoleTripwire {
   const warnings: string[] = []
   const pageErrors: string[] = []
   page.on('console', (message) => {
@@ -1673,7 +1730,7 @@ export function watchConsole(page: Page): { warnings: string[]; pageErrors: stri
  * @param warningStart - warning count captured immediately before reloading.
  */
 export function acknowledgeReloadConnectionLoss(
-  tripwire: ReturnType<typeof watchConsole>,
+  tripwire: WebConsoleTripwire,
   warningStart: number,
 ): void {
   const reloadWarnings = tripwire.warnings.splice(warningStart)

@@ -84,7 +84,7 @@ export function apply(ctx: ClientContext): void {
     name: 'main',
     key: PANEL_ID,
     locale: NS,
-    inject: () => controller.inject(configLedger),
+    inject: () => controller.inject(configLedger, text => ctx.locale.resolveText(text)),
     children: {
       'plugins.item': { kind: 'list', scope: 'root' },
       'plugins.bundle.config': { kind: 'keyed', scope: 'root' },
