@@ -347,7 +347,8 @@ describe('Agent Teams projection events', () => {
     { type: null },
     { type: 'text', text: false },
   ])('rejects malformed content in events and checkpoints: %j', (block) => {
-    const saved = message({ content: [block] as unknown as ContentBlock[] })
+    const content: unknown = [block]
+    const saved = message({ content: content as ContentBlock[] })
     const queued = event('team/message/queued', { version: 2, teamId: TEAM, message: saved }, SessionSeq(0))
     expect(() => projectTeam(ROOT, [queued])).toThrow(/team\/message\/queued payload is invalid/)
     expect(() => teamProjectionDefinition.stateSchema.parse({ ...project(ROOT, []), messages: [saved] })).toThrow()
@@ -363,8 +364,9 @@ describe('Agent Teams projection events', () => {
       const queued = event('team/message/queued', {
         version: 2, teamId: TEAM, message: message({ content: [extension] }),
       }, SessionSeq(0))
+      const oldContent: unknown = [{ type: 'plugin/custom' }]
       const oldState = project(ROOT, [event('team/message/queued', {
-        version: 2, teamId: TEAM, message: message({ content: [{ type: 'plugin/custom' } as unknown as ContentBlock] }),
+        version: 2, teamId: TEAM, message: message({ content: oldContent as ContentBlock[] }),
       }, SessionSeq(0))])
       const restored = ctx.sessionProjections.restore(
         { agentTeam: { ver: 3, seq: SessionSeq(0), val: oldState } },
