@@ -274,7 +274,8 @@ function collectInstallationScopePackages(
   const versions = new Map<string, string | undefined>()
   /* v8 ignore next -- a real app manifest always declares its name */
   if (appManifest.name !== undefined) {
-    // Supported launches derive the installation anchor from import.meta.url, so this directory is already real.
+    // The CLI derives the installation anchor from import.meta.url (already real) and the Desktop Host from its
+    // runtime directory (not a symlink); the directory is kept as given rather than canonicalized here.
     links.set(appManifest.name, dirname(installAnchor))
     declarers.set(appManifest.name, canonicalAnchor)
     versions.set(appManifest.name, appManifest.version)
