@@ -100,12 +100,16 @@ session.deriveMessages()         // the derived model history
 | [`src/surface.ts`](src/surface.ts) | 有序 surface 投影、替换校验、`deriveEventMessage` |
 | [`src/request-header.ts`](src/request-header.ts) | `request/header` 折叠与重建 |
 | [`dsh-util-values`](../../util/values/README.zh.md) | 共享无损 JSON 校验与分离式快照 |
-| [`src/repair.ts`](src/repair.ts) | 崩溃遗留日志的冷修复 |
+| [`src/repair.ts`](src/repair.ts) | 失败步骤与中断日志共享的工具结果恢复 |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式配套：序号、轮次／步骤闭合、工具调用／结果配对 |
 
 ### 追加校验
 
 每次追加都会使用共享的迭代式 `snapshotJsonValue()` 流程，对每个嵌套值只读取、校验并复制一次，因此有状态的 getter 无法给校验提供一个值、给存储提供另一个值。非无损 JSON 载荷（BigInt、循环、稀疏数组、`-0`、特殊原型）会在追加位置被拒绝，先于任何后端刷新。追加路径会构造每个 `SessionSeq`；surface 事件还会校验标记形态、被引用的源事件序号，以及替换的完整遮蔽节点覆盖。
+
+### 共享恢复逻辑
+
+`ToolCallRecovery` 从已提交事件中跟踪尚无结果的请求，不保留事件历史。`interruptedTurnClosers` 用它处理冷日志尾部，AgentLoop 用步骤本地观察器处理实时失败；两者都区分缺失调用记录与未提交的执行结果。调用方在关闭步骤之前追加恢复结果（[决策](../../../.agents/notes/implemented/bug-fix/2026-09-19-failed-step-tool-results.zh.md)）。
 
 ### 派生历史
 
@@ -149,7 +153,7 @@ session.deriveMessages()         // the derived model history
 
 追加的 surface 条目会保留可复用前缀。即使底层事件日志保持仅追加，`replace` 操作也会从首条被遮蔽消息起使缓存复用失效。
 
-### 崩溃修复结果
+### 工具结果恢复与 fork 结果
 
 #### 模型看到什么
 
@@ -159,7 +163,7 @@ Fork 生成的结果只描述继承记录：父会话可能已经在所选事件
 
 #### Token 影响
 
-未受损会话的 token 增量为零。恢复时，每个修复后的调用都会添加保留的、针对具体风险的错误文本。
+未受损会话的 token 增量为零。每个修复后的调用都会向后续请求添加保留的、针对具体风险的错误文本。
 
 #### KV Cache 影响
 
