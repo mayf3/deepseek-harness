@@ -139,8 +139,9 @@ function fixture(name = '@deepseek-ai/dsh-core'): {
   profile: Profile
 } {
   // root plays $DSH_HOME; the running dsh lives in a global install outside the profiles tree.
-  // macOS exposes tmpdir through /var while Node returns resolved module paths through /private/var.
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-profile-generation-')))
+  // Node reports resolved module paths through the native realpath: /private/var for a macOS tmpdir under /var,
+  // and the long directory name for a Windows tmpdir spelled with an 8.3 short name.
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-profile-generation-')))
   roots.push(root)
   const installDir = join(root, 'global', 'node_modules', '@deepseek-ai', 'dsh')
   const installed = join(installDir, 'node_modules', name)
@@ -1275,7 +1276,7 @@ describe('profile resolution generation', { concurrent: false }, () => {
   })
 
   it('uses shared packages in the canonicalized profiles tree before its ancestors', async () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-profile-generation-symlink-')))
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-profile-generation-symlink-')))
     roots.push(root)
     const carrier = join(root, 'carrier')
     const profilesDir = join(root, 'home', 'profiles')

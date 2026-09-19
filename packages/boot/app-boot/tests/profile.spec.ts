@@ -36,7 +36,7 @@ afterAll(() => {
 })
 
 const tmp = (): string => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-profile-')))
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-profile-')))
   tempRoots.push(dir)
   return dir
 }

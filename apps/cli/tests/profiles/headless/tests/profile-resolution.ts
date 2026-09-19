@@ -1,6 +1,7 @@
 /** Real CLI profile imports in source and built launches, including npm-link dependency layouts. */
 
-import { mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, readdir, readlink, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -50,7 +51,9 @@ export function testProfileResolution(mode: ExampleMode): void {
   it.each(['installed', 'npm-link'] as const)(`resolves a %s profile dependency graph in ${mode} mode`, {
     timeout: processTimeoutMs + 15_000, retry: 0,
   }, async (layout) => {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-profile-resolution-'))
+    // The child reports loaded module paths in the form DSH_HOME was given; hand it the native realpath so
+    // Windows 8.3 tmpdir names and macOS /var symlinks match the expectations computed below.
+    const root = realpathSync.native(await mkdtemp(join(tmpdir(), 'dsh-profile-resolution-')))
     const links: string[] = []
     try {
       const home = join(root, 'home')
@@ -212,17 +215,17 @@ export function testProfileResolution(mode: ExampleMode): void {
       const evidence = JSON.parse(records[0]!.slice(marker.length)) as ResolutionEvidence
       const selectedLeaf = layout === 'npm-link' ? realLeaf : logicalLeaf
       const version = layout === 'npm-link' ? '2.0.0' : '1.0.0'
-      expect(evidence.esm).toEqual({ version, url: pathToFileURL(await realpath(join(selectedLeaf, 'index.mjs'))).href })
-      expect(evidence.cjs).toEqual({ version, filename: await realpath(join(selectedLeaf, 'index.cjs')) })
+      expect(evidence.esm).toEqual({ version, url: pathToFileURL(realpathSync.native(join(selectedLeaf, 'index.mjs'))).href })
+      expect(evidence.cjs).toEqual({ version, filename: realpathSync.native(join(selectedLeaf, 'index.cjs')) })
       expect(evidence.sameEsmLeaf).toBe(true)
       expect(evidence.sameCjsLeaf).toBe(true)
       expect(evidence.externalEsm).toEqual({
-        version: '3.0.0', url: pathToFileURL(await realpath(join(externalDir, 'index.mjs'))).href,
-        leaf: { version: '4.0.0', url: pathToFileURL(await realpath(join(externalLeaf, 'index.mjs'))).href },
+        version: '3.0.0', url: pathToFileURL(realpathSync.native(join(externalDir, 'index.mjs'))).href,
+        leaf: { version: '4.0.0', url: pathToFileURL(realpathSync.native(join(externalLeaf, 'index.mjs'))).href },
       })
       expect(evidence.externalCjs).toEqual({
-        version: '3.0.0', filename: await realpath(join(externalDir, 'index.cjs')),
-        leaf: { version: '4.0.0', filename: await realpath(join(externalLeaf, 'index.cjs')) },
+        version: '3.0.0', filename: realpathSync.native(join(externalDir, 'index.cjs')),
+        leaf: { version: '4.0.0', filename: realpathSync.native(join(externalLeaf, 'index.cjs')) },
       })
       expect(evidence.sameEsmExternal).toBe(true)
       expect(evidence.sameCjsExternal).toBe(true)
