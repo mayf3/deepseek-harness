@@ -18,7 +18,7 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   boot,
   readProfilePatches,
-  createProfileResolutionGeneration,
+  createRuntimeResolution,
   initProfile,
   installFailLoud,
   loadOverlayPatches,
@@ -29,7 +29,7 @@ import {
   resolveProfileDir,
   type ProfileContext,
   type Profile,
-  type ProfileResolutionGeneration,
+  type RuntimeResolution,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
@@ -174,7 +174,7 @@ export function prepareProfile(name: string, userLayer = true, fromDefaultProfil
 interface ComposedProfile {
   profile: Profile
   /** Immutable package fallback selected before any plugin imports. */
-  resolution: ProfileResolutionGeneration
+  resolution: RuntimeResolution
   /** Command-line overlay contents, frozen for this invocation. */
   overlays: PatchOptions[]
 }
@@ -201,7 +201,7 @@ async function composeProfile(
   const profile = resolvedProfile?.profile ?? prepareProfile(name, true, fromDefaultProfile)
   if (resolvedProfile !== undefined) writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   const resolutionOptions = { installAnchor: resolvedProfile?.installAnchor ?? INSTALL_ANCHOR, profile }
-  const resolution = await createProfileResolutionGeneration(resolutionOptions)
+  const resolution = await createRuntimeResolution(resolutionOptions)
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   return { profile, resolution, overlays }
 }
@@ -298,7 +298,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       // environment values from the same immutable launch snapshot.
       hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
       await hostCtx.plugin(PluginPackages, {
-        generation: composed.resolution,
+        resolution: composed.resolution,
       })
       // The command line and bounded exit request are launcher facts available
       // to every app plugin that injects the argument snapshot.

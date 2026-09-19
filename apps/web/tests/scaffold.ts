@@ -465,7 +465,7 @@ async function cleanupScaffoldWorld(ctx: Context, workspaceCwd: string, persiste
 export async function launchWebScaffold(options: LaunchOptions = {}): Promise<WebScaffold> {
   requireDist()
   const {
-    auditStartupEntries, composeEntries, createProfileResolutionGeneration, initProfile,
+    auditStartupEntries, composeEntries, createRuntimeResolution, initProfile,
     mountRootInclude, readProfileManifest, readProfilePatches, loadProfileDirectory, loadOverlayPatches, PluginPackages,
   } = appBoot()
   const mode = webSnapshotMode()
@@ -749,7 +749,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       patches: [],
     }
     const resolutionOptions = { installAnchor: INSTALL_ANCHOR, home: harnessHome, profile }
-    const resolution = await createProfileResolutionGeneration(resolutionOptions)
+    const resolution = await createRuntimeResolution(resolutionOptions)
     await mkdir(profileDir, { recursive: true })
     const rootConfig = join(profileDir, 'cordis.yml')
     await writeFile(rootConfig, '[]\n')
@@ -796,7 +796,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       },
     })
     await ctx.plugin(PluginPackages, {
-      generation: resolution,
+      resolution,
     })
     await ctx.plugin(Loader)
     if (profileContext === undefined) {
@@ -813,7 +813,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     } else {
       // The launcher's own mount, so the manager's reloads find the root Include
       // and compose the same layers the profile files name; bare names still
-      // resolve through the resolution generation above, as in the direct mount.
+      // resolve through the runtime resolution above, as in the direct mount.
       await mountRootInclude(ctx, rootConfig, readProfilePatches('dsh', profileContext))
     }
     await ctx.loader.await()

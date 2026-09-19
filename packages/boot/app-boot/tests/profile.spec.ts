@@ -14,7 +14,7 @@ import { pathToFileURL } from 'node:url'
 import { afterAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import {
   composeEntries,
-  createProfileResolutionGeneration,
+  createRuntimeResolution,
   initProfile,
   loadProfile,
   loadProfileDirectory,
@@ -27,9 +27,9 @@ import {
   resolveProfileDir,
   writeProfileManifest,
   type Profile,
-  type ProfileResolutionGeneration,
+  type RuntimeResolution,
 } from '../src/index.ts'
-import { installProfileResolution } from '../src/profile-resolution/resolver.ts'
+import { installRuntimeInterception } from '../src/profile-resolution/resolver.ts'
 
 const tempRoots: string[] = []
 afterAll(() => {
@@ -93,7 +93,7 @@ function stageProfile(home: string, name: string, bundleAnchor: string): Profile
 }
 
 async function importFromGeneration(
-  generation: ProfileResolutionGeneration, specifier: string,
+  resolution: RuntimeResolution, specifier: string,
 ): Promise<Record<string, unknown>> {
   const addon = createRequire(import.meta.url)('node-addon-require-builtin') as {
     requireBuiltin(id: string): unknown
@@ -103,9 +103,9 @@ async function importFromGeneration(
       import(specifier: string, parent: string, attributes: ImportAttributes): Promise<Record<string, unknown>>
     }
   }
-  const registration = installProfileResolution(generation)
+  const registration = installRuntimeInterception(resolution)
   try {
-    const parent = pathToFileURL(join(generation.profilesDir, 'entry.mjs')).href
+    const parent = pathToFileURL(join(resolution.profilesDir, 'entry.mjs')).href
     return await loader.getOrInitializeCascadedLoader().import(specifier, parent, {})
   } finally {
     registration.dispose()
@@ -134,18 +134,18 @@ describe('isolated profile resolution', () => {
     writeFileSync(join(installed, 'package.json'), JSON.stringify({ name: 'pnpm-owned', main: 'index.js' }))
     writeFileSync(join(installed, 'index.js'), 'module.exports = "profile-installed"\n')
 
-    const generationA = await createProfileResolutionGeneration({ installAnchor: anchorA, profile: profileA, home })
-    const generationB = await createProfileResolutionGeneration({ installAnchor: anchorB, profile: profileB, home })
-    let registration = installProfileResolution(generationA)
+    const resolutionA = await createRuntimeResolution({ installAnchor: anchorA, profile: profileA, home })
+    const resolutionB = await createRuntimeResolution({ installAnchor: anchorB, profile: profileB, home })
+    let registration = installRuntimeInterception(resolutionA)
     try {
       expect(realpathSync.native(createRequire(consumerA).resolve('commander')))
         .toBe(realpathSync.native(join(anchorA, '..', 'node_modules', 'commander', 'index.js')))
       registration.dispose()
-      registration = installProfileResolution(generationB)
+      registration = installRuntimeInterception(resolutionB)
       expect(realpathSync.native(createRequire(consumerB).resolve('commander')))
         .toBe(realpathSync.native(join(anchorB, '..', 'node_modules', 'commander', 'index.js')))
       registration.dispose()
-      registration = installProfileResolution(generationA)
+      registration = installRuntimeInterception(resolutionA)
       expect(realpathSync.native(createRequire(consumerA).resolve('pnpm-owned'))).toBe(realpathSync.native(join(installed, 'index.js')))
       expect(readFileSync(join(installed, 'index.js'), 'utf8')).toContain('profile-installed')
       expect(realpathSync.native(createRequire(consumerA).resolve('bundle-only')))
@@ -153,11 +153,11 @@ describe('isolated profile resolution', () => {
       expect(existsSync(join(home, 'profiles', 'node_modules'))).toBe(false)
 
       registration.dispose()
-      registration = installProfileResolution(await createProfileResolutionGeneration({
+      registration = installRuntimeInterception(await createRuntimeResolution({
         installAnchor: anchorA, profile: { ...profileA, layers: [] }, home,
       }))
       expect(() => createRequire(consumerA).resolve('bundle-only')).toThrow(/Cannot find module/u)
-      expect(generationB.entries.find(entry => entry.name === 'bundle-only')?.packageDir)
+      expect(resolutionB.entries.find(entry => entry.name === 'bundle-only')?.packageDir)
         .toBe(realpathSync.native(join(bundleAnchor, '..', 'node_modules', 'bundle-only')))
       expect(realpathSync.native(createRequire(consumerA).resolve('commander')))
         .toBe(realpathSync.native(join(anchorA, '..', 'node_modules', 'commander', 'index.js')))
@@ -381,9 +381,9 @@ describe('loadProfile', () => {
         .toEqual([{ id: 'a', name: 'pkg-a', config: { value: 'after' } }])
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('skipping profile bundle "broken":'))
       expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(saved)
-      const generation = await createProfileResolutionGeneration({ installAnchor: anchor, profile, home })
+      const resolution = await createRuntimeResolution({ installAnchor: anchor, profile, home })
       const unavailable = failure === 'missing package' || failure === 'invalid manifest'
-      expect(generation.entries.map(entry => entry.name))
+      expect(resolution.entries.map(entry => entry.name))
         .toEqual(['dsh-app', 'before', ...unavailable ? [] : ['broken'], 'after'])
       mkdirSync(bundleDir, { recursive: true })
       writeFileSync(manifestPath, original)
@@ -419,7 +419,7 @@ describe('composeEntries', () => {
   })
 })
 
-describe('createProfileResolutionGeneration', () => {
+describe('createRuntimeResolution', () => {
   it('collects the app and bundle dependencies without writing profile packages', async () => {
     const anchor = stageInstallation({
       'bundle-a': { patch: '[]\n', deps: { 'dep-of-a': '0.0.0', 'ghost-dep': '0.0.0' } },
@@ -434,11 +434,11 @@ describe('createProfileResolutionGeneration', () => {
     mkdirSync(join(modules, 'dep-of-a'), { recursive: true })
     writeFileSync(join(modules, 'dep-of-a', 'package.json'), JSON.stringify({ name: 'dep-of-a', version: '0.0.0' }))
     const home = tmp()
-    const generation = await createProfileResolutionGeneration({ installAnchor: anchor, home })
-    expect(generation.entries.map(entry => entry.name)).toEqual(['dsh-app', 'bundle-a', 'plain-lib', 'dep-of-a'])
-    expect(generation.entries.find(entry => entry.name === 'dep-of-a')?.packageDir).toBe(join(modules, 'dep-of-a'))
+    const resolution = await createRuntimeResolution({ installAnchor: anchor, home })
+    expect(resolution.entries.map(entry => entry.name)).toEqual(['dsh-app', 'bundle-a', 'plain-lib', 'dep-of-a'])
+    expect(resolution.entries.find(entry => entry.name === 'dep-of-a')?.packageDir).toBe(join(modules, 'dep-of-a'))
     expect(existsSync(join(home, 'profiles', 'node_modules'))).toBe(false)
-    await expect(createProfileResolutionGeneration({ installAnchor: anchor, home })).resolves.toEqual(generation)
+    await expect(createRuntimeResolution({ installAnchor: anchor, home })).resolves.toEqual(resolution)
   })
 
   it('keeps selected bundle closures profile-local without overriding installation packages', async () => {
@@ -448,33 +448,33 @@ describe('createProfileResolutionGeneration', () => {
     const home = tmp()
     const profileA = stageProfile(home, 'a', bundleA)
     const profileB = stageProfile(home, 'b', bundleB)
-    const generationA = await createProfileResolutionGeneration({ installAnchor: installationAnchor, profile: profileA, home })
-    await expect(createProfileResolutionGeneration({ installAnchor: installationAnchor, profile: profileA, home }))
-      .resolves.toEqual(generationA)
-    const generationB = await createProfileResolutionGeneration({ installAnchor: installationAnchor, profile: profileB, home })
+    const resolutionA = await createRuntimeResolution({ installAnchor: installationAnchor, profile: profileA, home })
+    await expect(createRuntimeResolution({ installAnchor: installationAnchor, profile: profileA, home }))
+      .resolves.toEqual(resolutionA)
+    const resolutionB = await createRuntimeResolution({ installAnchor: installationAnchor, profile: profileB, home })
 
-    for (const generation of [generationA, generationB]) {
-      expect(generation.entries.find(entry => entry.name === 'shared')).toMatchObject({
+    for (const resolution of [resolutionA, resolutionB]) {
+      expect(resolution.entries.find(entry => entry.name === 'shared')).toMatchObject({
         packageDir: join(installationAnchor, '..', 'node_modules', 'shared'), scope: 'installation',
       })
     }
     expect(existsSync(join(home, 'profiles', 'node_modules'))).toBe(false)
     expect(existsSync(join(profileA.dir, 'node_modules', 'shared'))).toBe(false)
     expect(existsSync(join(profileB.dir, 'node_modules', 'shared'))).toBe(false)
-    expect(generationA.entries.find(entry => entry.name === '@scope/bundle-only')).toMatchObject({
+    expect(resolutionA.entries.find(entry => entry.name === '@scope/bundle-only')).toMatchObject({
       packageDir: realpathSync.native(join(bundleA, '..', 'node_modules', '@scope', 'bundle-only')), scope: 'profile',
     })
-    expect(generationB.entries.find(entry => entry.name === '@scope/bundle-only')).toMatchObject({
+    expect(resolutionB.entries.find(entry => entry.name === '@scope/bundle-only')).toMatchObject({
       packageDir: realpathSync.native(join(bundleB, '..', 'node_modules', '@scope', 'bundle-only')), scope: 'profile',
     })
 
-    const withoutBundles = await createProfileResolutionGeneration({
+    const withoutBundles = await createRuntimeResolution({
       installAnchor: installationAnchor,
       profile: { ...profileA, layers: [] },
       home,
     })
     expect(withoutBundles.entries.some(entry => entry.name === '@scope/bundle-only')).toBe(false)
-    expect(generationB.entries.find(entry => entry.name === '@scope/bundle-only')?.packageDir)
+    expect(resolutionB.entries.find(entry => entry.name === '@scope/bundle-only')?.packageDir)
       .toBe(realpathSync.native(join(bundleB, '..', 'node_modules', '@scope', 'bundle-only')))
   })
 
@@ -512,8 +512,8 @@ describe('createProfileResolutionGeneration', () => {
     const previous = Object.getOwnPropertyDescriptor(process, 'pkg')
     Object.defineProperty(process, 'pkg', { configurable: true, value: packaged ? {} : undefined })
     try {
-      const generation = await createProfileResolutionGeneration({ installAnchor: installationAnchor, profile, home })
-      expect(generation.entries.find(entry => entry.name === 'bundle-only')?.packageDir)
+      const resolution = await createRuntimeResolution({ installAnchor: installationAnchor, profile, home })
+      expect(resolution.entries.find(entry => entry.name === 'bundle-only')?.packageDir)
         .toBe(realpathSync.native(realDependency))
     } finally {
       if (previous === undefined) Reflect.deleteProperty(process, 'pkg')
@@ -559,10 +559,10 @@ describe('createProfileResolutionGeneration', () => {
       patches: [],
     }
 
-    const generation = await createProfileResolutionGeneration({ installAnchor: installationAnchor, profile, home })
+    const resolution = await createRuntimeResolution({ installAnchor: installationAnchor, profile, home })
 
-    expect(generation.entries.find(entry => entry.name === 'nested-only')?.packageDir).toBe(realpathSync.native(nestedOnly))
-    expect(generation.entries.find(entry => entry.name === 'explicit-only')?.packageDir).toBe(realpathSync.native(explicitOnly))
+    expect(resolution.entries.find(entry => entry.name === 'nested-only')?.packageDir).toBe(realpathSync.native(nestedOnly))
+    expect(resolution.entries.find(entry => entry.name === 'explicit-only')?.packageDir).toBe(realpathSync.native(explicitOnly))
   })
 
   it('resolves import-only exports from each package installation', async () => {
@@ -583,9 +583,9 @@ describe('createProfileResolutionGeneration', () => {
     }))
     writeFileSync(join(nestedDir, 'index.js'), 'export const nested = "selected"\n')
     const home = tmp()
-    const generation = await createProfileResolutionGeneration({ installAnchor: anchor, home })
-    await expect(importFromGeneration(generation, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
-    await expect(importFromGeneration(generation, 'nested-esm')).resolves.toMatchObject({ nested: 'selected' })
+    const resolution = await createRuntimeResolution({ installAnchor: anchor, home })
+    await expect(importFromGeneration(resolution, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
+    await expect(importFromGeneration(resolution, 'nested-esm')).resolves.toMatchObject({ nested: 'selected' })
   })
 
   it('resolves conditional subpath exports through Node', async () => {
@@ -603,9 +603,9 @@ describe('createProfileResolutionGeneration', () => {
     mkdirSync(join(bundleDir, 'dist', 'web'), { recursive: true })
     writeFileSync(join(bundleDir, 'dist', 'web', 'index.mjs'), 'export const web = true\n')
     const home = tmp()
-    const generation = await createProfileResolutionGeneration({ installAnchor: anchor, home })
-    await expect(importFromGeneration(generation, 'bundle-a/mini')).resolves.toMatchObject({ mini: true })
-    await expect(importFromGeneration(generation, 'bundle-a/web')).resolves.toMatchObject({ web: true })
+    const resolution = await createRuntimeResolution({ installAnchor: anchor, home })
+    await expect(importFromGeneration(resolution, 'bundle-a/mini')).resolves.toMatchObject({ mini: true })
+    await expect(importFromGeneration(resolution, 'bundle-a/web')).resolves.toMatchObject({ web: true })
   })
 
   it('uses the legacy index fallback when a package has no exports or main', async () => {
@@ -615,8 +615,8 @@ describe('createProfileResolutionGeneration', () => {
     delete manifest.main
     writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
     const home = tmp()
-    const generation = await createProfileResolutionGeneration({ installAnchor: anchor, home })
-    await expect(importFromGeneration(generation, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
+    const resolution = await createRuntimeResolution({ installAnchor: anchor, home })
+    await expect(importFromGeneration(resolution, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
   })
 
   it('uses Node legacy resolution for an extensionless main entry', async () => {
@@ -626,8 +626,8 @@ describe('createProfileResolutionGeneration', () => {
     manifest.main = './index'
     writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
     const home = tmp()
-    const generation = await createProfileResolutionGeneration({ installAnchor: anchor, home })
-    await expect(importFromGeneration(generation, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
+    const resolution = await createRuntimeResolution({ installAnchor: anchor, home })
+    await expect(importFromGeneration(resolution, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
   })
 
   it('fails loud on a missing legacy main entry', async () => {
@@ -637,8 +637,8 @@ describe('createProfileResolutionGeneration', () => {
     delete manifest.main
     writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
     rmSync(join(bundleDir, 'index.js'))
-    const generation = await createProfileResolutionGeneration({ installAnchor: anchor, home: tmp() })
-    await expect(importFromGeneration(generation, 'bundle-a')).rejects.toMatchObject({ code: 'ERR_MODULE_NOT_FOUND' })
+    const resolution = await createRuntimeResolution({ installAnchor: anchor, home: tmp() })
+    await expect(importFromGeneration(resolution, 'bundle-a')).rejects.toMatchObject({ code: 'ERR_MODULE_NOT_FOUND' })
   })
 
   it('preserves native ESM export errors and null-map legacy resolution', async () => {
@@ -656,16 +656,16 @@ describe('createProfileResolutionGeneration', () => {
       writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
       if (mode === 'directory') mkdirSync(join(bundleDir, 'mini'))
       const home = tmp()
-      const generation = await createProfileResolutionGeneration({ installAnchor: anchor, home })
+      const resolution = await createRuntimeResolution({ installAnchor: anchor, home })
       if (mode === 'absent-map') {
-        await expect(importFromGeneration(generation, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
+        await expect(importFromGeneration(resolution, 'bundle-a')).resolves.toMatchObject({ packageName: 'bundle-a' })
       } else {
         const specifier = mode === 'null-subpath' ? 'bundle-a/bad' : 'bundle-a'
         const code = mode === 'missing' ? 'ERR_MODULE_NOT_FOUND'
           : mode === 'directory' ? 'ERR_UNSUPPORTED_DIR_IMPORT'
             : mode === 'null' || mode === 'null-subpath' ? 'ERR_PACKAGE_PATH_NOT_EXPORTED'
               : 'ERR_INVALID_PACKAGE_TARGET'
-        await expect(importFromGeneration(generation, specifier)).rejects.toMatchObject({ code })
+        await expect(importFromGeneration(resolution, specifier)).rejects.toMatchObject({ code })
       }
     }
   })

@@ -6,11 +6,11 @@ import { join } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import {
   barePackageName,
-  installProfileResolution,
+  installRuntimeInterception,
   registerWorkerResolution,
-  type ProfileResolutionRegistration,
+  type RuntimeInterception,
 } from './resolver.ts'
-import type { ProfileResolutionGeneration } from '../profile.ts'
+import type { RuntimeResolution } from '../profile.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -33,10 +33,10 @@ export interface PluginPackage {
   manifest: Record<string, unknown>
 }
 
-/** Optional runtime resolver installed and owned by {@link PluginPackages}. */
+/** Optional runtime interception installed and owned by {@link PluginPackages}. */
 export interface PluginPackagesConfig {
   /** Complete package table; omit it to expose native package lookup only. */
-  generation?: ProfileResolutionGeneration
+  resolution?: RuntimeResolution
 }
 
 function readPackage(dir: string, fallbackName: string): PluginPackage | undefined {
@@ -57,14 +57,14 @@ function readPackage(dir: string, fallbackName: string): PluginPackage | undefin
 /** Package lookup shared by metadata consumers in one profile process. */
 export class PluginPackages extends Service {
   private packages = new Map<string, PluginPackage | undefined>()
-  private readonly resolver: ProfileResolutionRegistration | undefined
+  private readonly resolver: RuntimeInterception | undefined
   private disposeWorkerResolution: (() => void) | undefined
 
   constructor(ctx: Context, config: PluginPackagesConfig = {}) {
     super(ctx, 'pluginPackages')
-    if (config.generation === undefined) return
-    const resolver = installProfileResolution(config.generation)
-    this.disposeWorkerResolution = registerWorkerResolution(config.generation)
+    if (config.resolution === undefined) return
+    const resolver = installRuntimeInterception(config.resolution)
+    this.disposeWorkerResolution = registerWorkerResolution(config.resolution)
     this.resolver = resolver
     ctx.effect(() => () => {
       this.disposeWorkerResolution?.()
@@ -73,15 +73,15 @@ export class PluginPackages extends Service {
   }
 
   /**
-   * Publish an additive generation for this process and subsequently created Workers.
-   * @param generation - fully constructed successor generation.
+   * Publish an additive successor generation for this process and subsequently created Workers.
+   * @param successor - fully constructed successor generation.
    */
-  replace(generation: ProfileResolutionGeneration): void {
+  replace(successor: RuntimeResolution): void {
     if (this.resolver === undefined) throw new Error('plugin-packages: runtime resolution is not installed')
-    this.resolver.replace(generation)
+    this.resolver.replace(successor)
     this.packages = new Map()
     this.disposeWorkerResolution?.()
-    this.disposeWorkerResolution = registerWorkerResolution(generation)
+    this.disposeWorkerResolution = registerWorkerResolution(successor)
   }
 
   /**
