@@ -66,6 +66,10 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 启动前，你可以打印应用将挂载的确切配置：dump 会以 `!!js` 表达式原样展示组合后的条目列表，并按注释分组标明每个源文件及其 patch 层，输出是一份可加载的 YAML 文档。未匹配到任何行的 patch 会连同其层标签一起报告；配置缺失、无法解析或字段无效都会使 dump 失败。
 
+### 读取插件展示元信息
+
+使用 `readPluginMeta(specifier, parentURL)` 或 `ctx.pluginPackages.metaOf(specifier, parentURL)` 读取已安装包的展示文本，无需导入或激活插件。查询使用完整包标识与调用方的解析基准，并遵循 Node exports。文件路径与文件 URL 不解析资源，直接返回无元信息。缺失的 locale 字段回退到该地址下可访问的 `package.json`；格式错误的元信息返回 `error` 诊断。结果保留翻译，由 Client 选择语言。作者格式见[插件展示元信息](../../../docs/cookbook/adding-a-package.zh.md#plugin-display-metadata)。
+
 <a id="startup-and-reload-failures"></a>
 ### 启动与重载失败
 

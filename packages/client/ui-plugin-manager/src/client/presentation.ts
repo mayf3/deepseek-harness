@@ -3,19 +3,15 @@
 import type { ManagementError, Registry } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginManagerLocaleKey } from './locales.ts'
-import type { FailedAction, ManagerNotice, PackageView } from './manager-store.ts'
+import type { FailedAction, ManagerNotice, PackageRow, PackageView, PluginManagerFace } from './manager-store.ts'
 
 /** The translate seat of the manager's dictionary. */
 export type Translate = PropsLocale<'pluginManager'>['t']
 
-/** The official packages with copy of their own, and whether each is a beta feature the page tags as such. */
-const BUILTIN_COPY = new Map<string, { title: PluginManagerLocaleKey; description: PluginManagerLocaleKey; beta: boolean }>([
-  ['@deepseek-ai/dsh-experimental-agent-team-profile', {
-    title: 'builtinAgentTeamTitle', description: 'builtinAgentTeamDescription', beta: true,
-  }],
-  ['@deepseek-ai/dsh-experimental-auto-review', {
-    title: 'builtinAutoReviewTitle', description: 'builtinAutoReviewDescription', beta: true,
-  }],
+/** Official packages whose release status the page identifies as beta. */
+const BETA_PACKAGES = new Set([
+  '@deepseek-ai/dsh-experimental-agent-team-profile',
+  '@deepseek-ai/dsh-experimental-auto-review',
 ])
 
 /** The registries with a name of their own, by host. */
@@ -98,18 +94,34 @@ export function shortName(name: string): string {
 }
 
 /**
- * Localize known official packages by exact npm name at render time.
- * @param pkg - original package identity and optional metadata description.
- * @param t - the manager's current translate function.
- * @returns localized copy and whether the package is a beta feature, or the package's short name and original description.
+ * Resolve installed package metadata without changing its technical identity.
+ * @param pkg - package identity and local metadata.
+ * @param resolveText - current-locale package text resolver.
+ * @returns localized copy with a technical-name fallback and the independent beta status.
  */
 export function packageText(
-  pkg: Pick<PackageView, 'name' | 'description'>, t: Translate,
+  pkg: Pick<PackageView, 'name' | 'meta'>, resolveText: PluginManagerFace['resolveText'],
 ): { title: string; description: string | undefined; beta: boolean } {
-  const keys = BUILTIN_COPY.get(pkg.name)
-  return keys === undefined
-    ? { title: shortName(pkg.name), description: pkg.description, beta: false }
-    : { title: t(keys.title), description: t(keys.description), beta: keys.beta }
+  return {
+    title: pkg.meta?.title === undefined ? pkg.name : resolveText(pkg.meta.title),
+    description: pkg.meta?.description === undefined ? undefined : resolveText(pkg.meta.description) || undefined,
+    beta: BETA_PACKAGES.has(pkg.name),
+  }
+}
+
+/**
+ * Resolve a bundle row's plugin metadata, using its full module specifier as the final title fallback.
+ * @param row - row identity and local metadata.
+ * @param resolveText - current-locale package text resolver.
+ * @returns the row's display title and optional description.
+ */
+export function rowText(
+  row: Pick<PackageRow, 'moduleName' | 'meta'>, resolveText: PluginManagerFace['resolveText'],
+): { title: string; description: string | undefined } {
+  return {
+    title: row.meta?.title === undefined ? row.moduleName : resolveText(row.meta.title),
+    description: row.meta?.description === undefined ? undefined : resolveText(row.meta.description) || undefined,
+  }
 }
 
 /**

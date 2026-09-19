@@ -8,9 +8,9 @@ The [boot package group](../../packages/boot/README.md) owns launcher-provided p
 
 `PluginEntryId` identifies one Loader entry; callers obtain it from `listPlugins` rather than constructing a patch id.
 
-`PluginInfo` carries module identity, effective enablement and fiber phase, plus a unique `patchId` or a `readOnlyReason`.
+`PluginInfo` carries module identity, effective enablement, fiber phase and optional display `meta`, plus a unique `patchId` or a `readOnlyReason`.
 
-`BundleInfo` carries the package name, optional installed version, selected enablement, removal availability and optional resolution error.
+`BundleInfo` carries the package name, optional installed version, selected enablement, removal availability and optional resolution error. Its optional `meta` and each `BundleRowInfo.meta` contain display text or a metadata diagnostic; Clients select a language at render time.
 
 `InstallBundleOptions.enabled` defaults to true. False installs without selecting the bundle layer. `approvedBuilds` grants persistent script permission to the supplied pending package names before installation. `registry` names the registry asked first; absent, the configured one.
 
@@ -69,8 +69,8 @@ Manage profile files and apply their declared reload lifecycle.
 
 /** Read the profile's installed bundles, the bundles this dsh installation supplies, and the selected names that are not bundles.
  * A dependency without a bundle patch is listed, as a `not-bundle` problem, only while it is selected.
- * @returns Package versions, one-liners, rows, activation selections, whether the installation offers the
- * bundle, and removal availability.
+ * @returns Package versions, manifest descriptions, rows, optional display metadata, activation selections,
+ * whether the installation offers the bundle, and removal availability.
  */
 @Remote listBundles(): Promise<BundleInfo[]>
 
