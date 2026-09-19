@@ -3,12 +3,13 @@
  * gateway, a self-hosted server, or a provider newer than the installed
  * catalog.
  *
- * This is a create, not an edit, which is why it is its own card rather than
+ * This is a create, not an edit, which is why it is its own form rather than
  * the provider editor with extra fields: the route id is being *chosen* here,
- * and the settings address does not exist until it is. One `settings.mutate`
- * sets the whole profile at `providers.<route>`; the key travels separately
- * through `credentials/set` under the reference the profile records, exactly as
- * an existing provider's key does.
+ * and the settings address does not exist until it is. It renders as the
+ * custom-API panel of the section's add card, whose mode switch is its title.
+ * One `settings.mutate` sets the whole profile at `providers.<route>`; the key
+ * travels separately through `credentials/set` under the reference the profile
+ * records, exactly as an existing provider's key does.
  *
  * The three fields a hand-declared route cannot default — endpoint, protocol,
  * and at least one model — are required here rather than at load, so the
@@ -30,6 +31,7 @@ import { validateDeepSeekModels } from './DeepSeekModelsEditor.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
 import type { ModelDraft } from './ModelListEditor.tsx'
 import { deriveKeyRef } from './store.ts'
+import { protocolLabel } from './protocol-label.ts'
 import type { ModelsOperations } from './operations.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
@@ -198,9 +200,6 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
 
   return (
     <div className={styles['editor']}>
-      <div className={styles['editorHeader']}>
-        <span className={styles['editorTitle']}>{t('customTitle')}</span>
-      </div>
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('customRoute')}</span>
         <input
@@ -255,7 +254,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
           disabled={profileDisabled}
           onChange={(event) => { setProtocol(event.target.value) }}
         >
-          {protocols.map(choice => <option key={choice} value={choice}>{choice}</option>)}
+          {protocols.map(choice => <option key={choice} value={choice}>{protocolLabel(t, choice)}</option>)}
         </select>
       </div>
       <div className={styles['field']}>

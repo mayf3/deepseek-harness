@@ -46,6 +46,7 @@ function capacityInputs(label: string): HTMLInputElement[] {
 const PiAiConfig = Schema.object({
   providers: Schema.dict(Schema.object({
     apiKeyEnv: Schema.string().role('credential-ref'),
+    api: Schema.union(['openai-completions', 'openai-responses', 'anthropic-messages']),
     baseURL: Schema.string(),
     reasoning: Schema.union(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
     headers: Schema.dict(Schema.string()),
@@ -307,12 +308,11 @@ async function mountDeepSeekCard(overrides: Parameters<typeof scriptedFace>[0] =
 }
 
 describe('ModelsSection', () => {
-  it('hides both add actions when their settings namespaces are absent', async () => {
+  it('hides the add action when no settings namespace can open an editor', async () => {
     const scripted = scriptedFace()
     scripted.face.settings.describe.mockResolvedValue(remoteOk({ writable: true, hasDocument: false, namespaces: [] }))
     await mountFace(scripted)
     expect(screen.queryByRole('button', { name: en.add })).toBeNull()
-    expect(screen.queryByRole('button', { name: en.customAdd })).toBeNull()
   })
 
   it('offers only providers whose settings namespace can open an editor', async () => {
@@ -322,8 +322,11 @@ describe('ModelsSection', () => {
       namespaces: wireNamespaces().filter(view => view.ns !== 'llm-pi-ai'),
     }))
     await mountFace(scripted)
-    expect(screen.queryByRole('button', { name: en.customAdd })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.add }))
+    // Without the pi-ai namespace nothing can be hand-declared, so the card
+    // is the catalog form alone: no mode switch, no custom panel.
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.queryByRole('textbox', { name: en.customRoute })).toBeNull()
     expect(screen.queryByRole('option', { name: 'anthropic' })).toBeNull()
     expect(screen.getByRole('option', { name: 'plain' })).toBeTruthy()
   })
@@ -339,7 +342,6 @@ describe('ModelsSection', () => {
     fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.editProvider) }))
     expect(await screen.findByLabelText(en.keyInput)).toBeTruthy()
     expect(screen.getByRole('button', { name: en.add })).toBeTruthy()
-    expect(screen.getByRole('button', { name: en.customAdd })).toBeTruthy()
   })
 
   it('renders nothing before the slot injects its dependencies', () => {
@@ -1435,6 +1437,88 @@ describe('ModelsSection', () => {
     fireEvent.click(screen.getByText(en.cancel))
     expect(screen.queryAllByLabelText(en.keyInput)).toHaveLength(0)
     expect(mutate).not.toHaveBeenCalled()
+  })
+
+  it('opens the add card on the catalog mode with both modes offered', async () => {
+    await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    const modes = screen.getByRole('tablist', { name: en.addMode })
+    expect(within(modes).getByRole('tab', { name: en.addCatalog }).getAttribute('aria-selected')).toBe('true')
+    expect(within(modes).getByRole('tab', { name: en.addCustom }).getAttribute('aria-selected')).toBe('false')
+    expect(screen.getByText(en.addCatalogHint)).toBeTruthy()
+    expect(screen.queryByText(en.addCustomHint)).toBeNull()
+    expect(screen.getByRole('combobox', { name: en.provider })).toBeTruthy()
+    // The custom panel is mounted but hidden, so its fields are not reachable.
+    expect(screen.queryByRole('textbox', { name: en.customRoute })).toBeNull()
+  })
+
+  it('switches between the modes without losing either draft', async () => {
+    await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-catalog' } })
+
+    fireEvent.click(screen.getByRole('tab', { name: en.addCustom }))
+    expect(screen.getByText(en.addCustomHint)).toBeTruthy()
+    expect(screen.queryByText(en.addCatalogHint)).toBeNull()
+    expect(screen.queryByRole('combobox', { name: en.provider })).toBeNull()
+    fireEvent.change(screen.getByRole('textbox', { name: en.customRoute }), { target: { value: 'acme' } })
+
+    // Both panels stay mounted from here on, so the shown one is queried by name.
+    fireEvent.click(screen.getByRole('tab', { name: en.addCatalog }))
+    const catalog = screen.getByRole('tabpanel', { name: en.addCatalog })
+    expect(within(catalog).getByLabelText<HTMLInputElement>(en.keyInput).value).toBe('sk-catalog')
+    fireEvent.click(screen.getByRole('tab', { name: en.addCustom }))
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: en.customRoute }).value).toBe('acme')
+  })
+
+  it('opens on the custom mode when every catalog provider is already configured', async () => {
+    const scripted = scriptedFace()
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
+      { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [] },
+      { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'] },
+    ]))
+    await mountFace(scripted)
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    const catalog = screen.getByRole<HTMLButtonElement>('tab', { name: en.addCatalog })
+    expect(catalog.disabled).toBe(true)
+    expect(screen.getByRole('tab', { name: en.addCustom }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+  })
+
+  it('shows the custom form alone when no directory row can be adopted', async () => {
+    const scripted = scriptedFace()
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([]))
+    await mountFace(scripted)
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: en.provider })).toBeNull()
+    expect(screen.getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+  })
+
+  it('disables the add action when neither mode can proceed', async () => {
+    const scripted = scriptedFace()
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
+      { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'] },
+    ]))
+    // A pi-ai schema naming no protocol leaves nothing to declare either.
+    const protocolless = JSON.parse(JSON.stringify(
+      Schema.object({ providers: Schema.dict(Schema.object({})) }).toJSON(),
+    )) as JsonValue
+    scripted.face.settings.describe.mockResolvedValue(remoteOk({
+      writable: true, hasDocument: false,
+      namespaces: wireNamespaces().map(view => view.ns === 'llm-pi-ai' ? { ...view, schema: protocolless } : view),
+    }))
+    await mountFace(scripted)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.add }).disabled).toBe(true)
+  })
+
+  it('collapses the add card from the custom mode on cancel', async () => {
+    await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    fireEvent.click(screen.getByRole('tab', { name: en.addCustom }))
+    fireEvent.click(within(screen.getByRole('tabpanel', { name: en.addCustom })).getByText(en.cancel))
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.getByRole('button', { name: en.add })).toBeTruthy()
   })
 
   it('cancels the add card back to the add button', async () => {

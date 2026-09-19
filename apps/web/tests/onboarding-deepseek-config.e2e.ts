@@ -233,7 +233,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     for (let index = 0; index < 2; index++) {
       await settings.getByRole('button', { name: /删除模型/ }).first().click()
     }
-    await settings.getByRole('button', { name: '添加模型' }).click()
+    await settings.getByRole('button', { name: '添加模型', exact: true }).click()
     const customModelId = settings.getByLabel('模型 ID 1')
     await customModelId.fill('private-preview')
     await settings.getByLabel('显示名称 1').fill('Private Preview')
