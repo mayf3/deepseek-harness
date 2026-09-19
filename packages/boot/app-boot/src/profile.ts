@@ -240,7 +240,9 @@ function pointsInto(link: string, root: string): boolean {
     return parent === rootPath || parent.startsWith(rootPath + sep)
   } catch (error) {
     // A target whose parent no longer exists cannot be one of the projections this launch owns.
+    /* v8 ignore next 2 -- a non-ENOENT realpath failure requires a host filesystem fault */
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    /* v8 ignore next -- see the host-filesystem exception above */
     throw error
   }
 }

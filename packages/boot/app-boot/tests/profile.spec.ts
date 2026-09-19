@@ -712,6 +712,21 @@ describe('removeLinkProjections', () => {
     expect(() => { removeLinkProjections(profile) }).not.toThrow()
   })
 
+  it('removes the directory when the profile has no node_modules and keeps links whose target parent is gone', () => {
+    const home = tmp()
+    const profile = join(home, 'profiles', 'web')
+    mkdirSync(join(profile, '.dsh-module-fallback', 'node_modules'), { recursive: true })
+    removeLinkProjections(profile)
+    expect(existsSync(join(profile, '.dsh-module-fallback'))).toBe(false)
+
+    const other = join(home, 'profiles', 'other')
+    mkdirSync(join(other, '.dsh-module-fallback', 'node_modules'), { recursive: true })
+    link(join(home, 'missing-parent', 'pkg'), join(other, 'node_modules', 'orphan'))
+    removeLinkProjections(other)
+    expect(existsSync(join(other, '.dsh-module-fallback'))).toBe(false)
+    expect(lstatSync(join(other, 'node_modules', 'orphan')).isSymbolicLink()).toBe(true)
+  })
+
   it('leaves a profile without the directory untouched', () => {
     const home = tmp()
     const profile = join(home, 'profiles', 'web')
