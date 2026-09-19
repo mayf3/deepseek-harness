@@ -112,7 +112,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
   const window = new BrowserWindow({
     width: 1280,
     height: 820,
-    minWidth: 480,
+    minWidth: 520,
     minHeight: 600,
     show,
     ...(process.platform === 'win32' && primary ? {
