@@ -14,7 +14,7 @@ Status: proposed
 
 停用 `system-prompt/change`，接受已安装及动态编写的 Host 插件失去提示词注册表推送观测的代价。删除其声明、发出点、当前文档、生成的发现条目和通知专属测试。当前受支持的产品路径均不依赖此扩展。
 
-将 [`ScopedLayers`](../../../../packages/core/scope/src/store.ts) 构造函数的通知回调改为可选，并让 `SystemPrompt` 省略它；不提供无操作回调。保留共享 effect、操作回滚、撤销顺序、层回收，以及 `tools/change` 及其生产消费方。保留提示词提供方求值、作用域覆盖和组装 invariant。
+将 [`ScopedLayers`](../../../../packages/core/scope/src/store.ts) 构造函数的通知回调改为可选，并让 `SystemPrompt` 省略它；不提供无操作回调。更新此共享构造函数时，同时删除 [jobs-local](../../../../packages/jobs/jobs-local/src/index.ts) 和 [mcp-resources](../../../../packages/mcp/mcp-resources/src/index.ts) 中现有的无操作实参，并更新 jobs-local 相邻的通知说明。保留共享 effect、操作回滚、撤销顺序、层回收，以及 `tools/change` 及其生产消费方。保留提示词提供方求值、作用域覆盖和组装 invariant。
 
 实现时必须修订活动的 Remote 事件投递记录，说明本提案只取代其中保留 `system-prompt/change` 的承诺。从保留扩展的陈述中移除该事件，并链接到已实现的停用决策。让 Remote 投递记录保持活动并相互链接：其转发策略和其他扩展仍具有独立价值。不要重写或归档整个决策。
 
@@ -28,7 +28,7 @@ Status: proposed
 
 - 从源代码和当前生成目录中删除该事件，并在实现变更中修订活动记录中的保留承诺。
 - 删除通知次数和通知失败测试；保留提供方成员关系、disposer、重复注册、作用域覆盖及 HMR（热模块替换）覆盖。保留混合测试中的独立断言。
-- 运行针对作用域、工具和系统提示词的测试、循环请求重建覆盖、相关无密钥录制回放、目录生成、类型检查、lint 和 doc-sync（文档同步门禁）。提示词和日志输出保持不变。
+- 运行针对作用域、工具、系统提示词、jobs-local 和 mcp-resources 的测试、循环请求重建覆盖、相关无密钥录制回放、目录生成、类型检查、lint 和 doc-sync（文档同步门禁）。提示词和日志输出保持不变。
 
 ## 风险
 

@@ -12,7 +12,7 @@ Status: proposed
 
 ## 提案
 
-删除这四个方法、不再被引用的 [`SessionLogSnapshot`](../../../../packages/session-query/session-query/src/types.ts) 结果类型和 [`eventRecords`](../../../../packages/session-query/session-query/src/tracing.ts)。删除相关导入及当前文档，然后重新生成发现元数据。选定定义在清理导入之前约占八十行源代码；无须新增替代服务。
+删除这四个方法、不再被引用的 [`SessionLogSnapshot`](../../../../packages/session-query/session-query/src/types.ts) 结果类型和 [`eventRecords`](../../../../packages/session-query/session-query/src/tracing.ts)。删除相关导入及当前文档，包括两个子系统页面中的 `SessionLogSnapshot` 类型等价代码块和说明段落。删除[类型等价 manifest](../../../../scripts/type-equiv.manifest.json) 中手工维护的条目，以及[目录生成器](../../../../scripts/gen-cordis-catalog.ts) 中的 `LINK_MAP` 条目，然后重新生成发现元数据。选定定义在清理导入和元数据之前约占八十行源代码；无须新增替代服务。
 
 保留 `filterEvents` 和 `_filterEvents`，以及语义提取和过滤辅助函数。保留 `observeSession`、`readTitleSnapshots`、`readSurface`、`readEvent`、列举、搜索和追踪。保留共享会话集合解析及其现有所有权和失败行为。
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/simplification/2026-09-19-retire-prompt-registry-change-event.md
-2026-09-19-retire-prompt-registry-change-event.md: 72e74be6445d322a5c41e995a1c262c3113a877c
-2026-09-19-retire-prompt-registry-change-event.zh.md: 2b9b9bb8aa207b8fdf3256ec9c341ee0b9088326
+2026-09-19-retire-prompt-registry-change-event.md: 1103675525e30c7f6c345a1fe92f07cbd0bcce4a
+2026-09-19-retire-prompt-registry-change-event.zh.md: a49df2eebad7134b7b038ee2e6ab54610bd4c635

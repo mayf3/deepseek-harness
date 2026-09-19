@@ -14,7 +14,7 @@ The active [Remote event delivery decision](../../implemented/architecture/2026-
 
 Retire `system-prompt/change` and accept the loss of prompt-registry push observation for installed and dynamically authored Host plugins. Remove its declaration, emitter, current documentation, generated discovery entries, and notification-specific tests. No currently supported product path requires this extension.
 
-Make [`ScopedLayers`](../../../../packages/core/scope/src/store.ts)'s constructor notification callback optional and omit it for `SystemPrompt`; do not supply a no-op callback. Preserve shared effects, action rollback, undo ordering, layer reclamation, and `tools/change` with its production consumers. Keep prompt-provider evaluation, scope shadowing, and assembly invariants.
+Make [`ScopedLayers`](../../../../packages/core/scope/src/store.ts)'s constructor notification callback optional and omit it for `SystemPrompt`; do not supply a no-op callback. Remove the existing no-op arguments in [jobs-local](../../../../packages/jobs/jobs-local/src/index.ts) and [mcp-resources](../../../../packages/mcp/mcp-resources/src/index.ts) when updating this shared constructor, and update jobs-local's adjacent notification explanation. Preserve shared effects, action rollback, undo ordering, layer reclamation, and `tools/change` with its production consumers. Keep prompt-provider evaluation, scope shadowing, and assembly invariants.
 
 Implementation must amend the active Remote event delivery note to state that this proposal supersedes only its promise to retain `system-prompt/change`. Remove that event from the retained-extension statement and link the implemented retirement decision. Keep the Remote delivery note active and cross-linked: its forwarding policy and other extensions remain independently useful. Do not rewrite or archive that entire decision.
 
@@ -28,7 +28,7 @@ Implementation must amend the active Remote event delivery note to state that th
 
 - Remove the event from source and current generated inventories, and amend the active retention promise in the implementation change.
 - Remove notification-count and notification-failure tests; retain provider-membership, disposer, duplicate-registration, shadowing, and HMR coverage. Keep mixed tests' independent assertions.
-- Run focused scope, tools, and system-prompt tests, loop request-reconstruction coverage, a relevant keyless recording, catalog generation, typecheck, lint, and doc-sync. Prompt/log output remains unchanged.
+- Run focused scope, tools, system-prompt, jobs-local, and mcp-resources tests, loop request-reconstruction coverage, a relevant keyless recording, catalog generation, typecheck, lint, and doc-sync. Prompt/log output remains unchanged.
 
 ## Risks
 

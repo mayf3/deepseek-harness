@@ -12,7 +12,7 @@ These entry points add replay-validation and result-copying paths, wrappers, pub
 
 ## Proposal
 
-Remove the four methods, the unreferenced [`SessionLogSnapshot`](../../../../packages/session-query/session-query/src/types.ts) result type, and [`eventRecords`](../../../../packages/session-query/session-query/src/tracing.ts). Remove their imports and current documentation, then regenerate discovery metadata. The selected definitions occupy approximately eighty source lines before import cleanup; no replacement service is needed.
+Remove the four methods, the unreferenced [`SessionLogSnapshot`](../../../../packages/session-query/session-query/src/types.ts) result type, and [`eventRecords`](../../../../packages/session-query/session-query/src/tracing.ts). Remove their imports and current documentation, including the `SessionLogSnapshot` type-equivalence block and explanatory paragraph in both subsystem pages. Remove its hand-maintained entry in the [type-equivalence manifest](../../../../scripts/type-equiv.manifest.json) and its `LINK_MAP` entry in the [catalog generator](../../../../scripts/gen-cordis-catalog.ts), then regenerate discovery metadata. The selected definitions occupy approximately eighty source lines before import and metadata cleanup; no replacement service is needed.
 
 Retain `filterEvents` and `_filterEvents`, together with their semantic extraction and filtering helpers. Retain `observeSession`, `readTitleSnapshots`, `readSurface`, `readEvent`, listing, search, and tracing. Preserve shared corpus resolution and its existing ownership and failure behavior.
 

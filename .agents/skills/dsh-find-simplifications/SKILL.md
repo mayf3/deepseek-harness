@@ -46,7 +46,7 @@ For copies, freezes, validators, and callback captures, name the value's origin,
 
 For asynchronous machinery, map each promise, flag, cancellation path, disposer, and reservation to its owner and transition. Collapse mechanisms only when they express the same fact. Preserve synchronous publication and rollback, callback containment, first-terminal-outcome arbitration, worker/process ownership, and dispose-to-quiescence where required. Durable start/end markers can record real facts even when transcript renderers ignore them; dropping interrupted work is a capability loss, not redundant-log cleanup.
 
-An invariant companion earns its place by comparing independently produced observations that can diverge. Checks of service presence, plugin metadata, fixed examples, or the same mutation's return value do not qualify. Removing a companion includes its export, build entry, invariant-only compiler references, dependencies, and tests; record the package-specific omission reason in both READMEs. Keep checks comparing independent event producers, durable history, or mutable data.
+An invariant companion is justified by comparing independently produced observations that can diverge. Checks of service presence, plugin metadata, fixed examples, or the same mutation's return value do not qualify. Removing a companion includes its export, build entry, invariant-only compiler references, dependencies, and tests; record the package-specific omission reason in both READMEs. Keep checks comparing independent event producers, durable history, or mutable data.
 
 ## Replace infrastructure only for a net reduction
 

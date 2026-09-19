@@ -14,13 +14,13 @@ The [simplification skill](../../../skills/dsh-find-simplifications/SKILL.md) tr
 
 Production use changes the required trade-off evidence; it does not automatically veto a proposal or authorize implementation. Dynamic plugin discovery, installed consumers, generated runtime assets, profiles, applications, and Python participate in consumer tracing. Protected adapters and persistence designs, released data, trust boundaries, independent invariant observations, synchronous publication, cancellation, and quiescent disposal remain constraints.
 
-The entry point is 1,372 whitespace-delimited words versus 2,222 previously. An [optional 897-word reference](../../../skills/dsh-find-simplifications/references/historical-patterns.md) pairs historical mechanisms with counterexamples and residual obligations. Archive mechanics remain at their existing owner, and the proposal skeleton uses the canonical headings.
+The entry point separates decision criteria from an [optional historical reference](../../../skills/dsh-find-simplifications/references/historical-patterns.md) pairing mechanisms with counterexamples and residual obligations. Archive mechanics remain at their existing owner, and the proposal skeleton uses the canonical headings.
 
 ## Historical evidence
 
 The author sampled 26 of the 100 English implemented or archived simplification notes: 11 implemented and 15 archived. All nine rejected simplification notes supplied counterexamples. The sample covers producerless variants, inert request knobs, explicit inputs, public projections, derived data, shared composition, lifecycle ownership, and dependency replacements; it is purposeful, not random or exhaustive.
 
-The reference teaches questions rather than current deletion recipes. An adapter-rejected knob differs from a working extension API; a simpler public status can retain internal residency distinctions; reading at feedback time changes the observation promise; replacing a dependency can lose deterministic clocks or necessary teardown. Archived records were read without following or repairing outbound links. No old note was edited, archived, or deleted.
+The frozen comparison inputs contained 2,222 whitespace-delimited words in the baseline entry, 1,372 in the revised entry, and 897 in its reference; the hashes below identify those measured artifacts. The reference teaches questions rather than current deletion instructions. An adapter-rejected knob differs from a working extension API; a simpler public status can retain internal residency distinctions; reading at feedback time changes the observation promise; replacing a dependency can lose deterministic clocks or necessary teardown. Archived records were read without following or repairing outbound links. No old note was edited, archived, or deleted.
 
 ## Bounded survey evidence
 
@@ -30,7 +30,7 @@ A third matched domain, covering `llm`, `compaction`, `context`, `skill`, and `e
 
 The skill author derived the revision from historical notes while isolated from current candidates. The coordinator received accidental early baseline hints, but accepted the independent author's revision unchanged before revised runs. Candidate packets hid arm labels from a separate reviewer; the coordinator's integration was not blind. The frozen inputs had SHA-256 values `9830af2272a1a1c3832078f31a432c8abe0335a013bc6c248c072b388520e798` for the baseline entry, `3b101d16ae098855c9214ad7fed631a2f079b6078c83b49829ae87305f631a87` for the revised entry, and `9a6b674d1eeadb691481ea09838b211b8e94c94e5a8cd928726246b1c097b2b5` for its reference.
 
-Each prompt requested exact source/search evidence, producer and consumer classification, note overlap, net reduction, the strongest counterargument, and acceptance requirements. Review applied those same criteria to every submission, distinguished local edits from durable decisions, and did not treat either public discoverability or a line-deletion count as a verdict by itself.
+After these runs, review replaced only the skill phrase “earns its place” with “is justified”; no discovery criterion changed and no new discovery run was performed. Each prompt requested exact source/search evidence, producer and consumer classification, note overlap, net reduction, the strongest counterargument, and acceptance requirements. Review applied those same criteria to every submission, distinguished local edits from durable decisions, and did not treat either public discoverability or a line-deletion count as a verdict by itself.
 
 | Version | Domain | Cap | Submitted | Durable as submitted | Durable after refinement | Local | Deferred | Elapsed |
 |---|---|---|---:|---:|---:|---:|---:|---|
@@ -45,7 +45,7 @@ The baseline yields six durable proposals as submitted and two after refinement.
 
 Review narrowed the [query API proposal](../../proposed/simplification/2026-09-19-trim-session-query-convenience-api.md) to retain `filterEvents`, whose literal substring behavior differs from FTS. The [prompt-event proposal](../../proposed/simplification/2026-09-19-retire-prompt-registry-change-event.md) explicitly retires an active extension promise instead of claiming per-step assembly makes notifications redundant. Both refined baseline findings remain useful and are retained.
 
-Three revised-only local follow-ups receive no standalone Agent Notes: [SessionCorpus](../../../../packages/session-query/session-query/src/corpus.ts) can replace its provider-mirroring child with one scope-aware lookup per operation while retaining that provider across awaits; [fs-local](../../../../packages/fs/fs-local/src/index.ts) can reuse `FsTarget`/`FsDirEntry` and return fresh resolve/list outputs while retaining cancellation and mode-filtering projections; [BlockAssembler](../../../../packages/llm/llm/src/assembler.ts) can use Map insertion order instead of synchronizing a second order array, preserving first-seen and replay order.
+The three revised-only local findings were a mirrored provider reference, copied filesystem results, and duplicate assembler ordering state. They were counted separately and were not written as active design proposals.
 
 Review deferred replacing automatic Session-reference sizing with a fixed byte default. The [current budget decision](../bug-fix/2026-09-05-session-reference-model-budget.md) fixes lost useful context on large models; best-effort spill retrieval does not replace inline context. No new workload evidence justified restoring the problematic default. The proposal's deletion inventory was accurate, but that alone did not overcome the current requirement.
 
