@@ -402,10 +402,11 @@
 }
 
 /* Wider than the default dialog: pnpm's lines are long, and the terminal keeps them unwrapped. The card never
-   outgrows the viewport; the running screens scroll inside it so the head's controls stay reachable. */
+   outgrows the Modal's padding box and shares the settings panel's 800px height cap; the running screens
+   scroll inside it so the head's controls stay reachable. */
 .installDialog {
   width: min(560px, 100%);
-  max-height: calc(100vh - 48px);
+  max-height: min(800px, 100%);
 }
 
 /* The spec screen's content scrolls inside the card when the guide is open on a short viewport; the footer stays put. */

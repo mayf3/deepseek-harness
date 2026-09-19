@@ -81,11 +81,16 @@
    with the wallpaper and reads as a dark seam. */
 :global([data-platform='darwin']) .frame {
   background: transparent;
-  /* The constant step below the window's top strip (traffic lights, sidebar
-     toggle, shell.leading controls), the same in both sidebar states. Entry
-     pages in the main panel (plugin manager, settings-like pages — not the
-     conversation, which owns its header) pad their top by it so their leading
-     content clears the strip. */
+}
+
+/* The constant step below the window's top strip (traffic lights, sidebar
+   toggle, shell.leading controls), the same in both sidebar states. Entry
+   pages in the main panel (plugin manager, settings-like pages — not the
+   conversation, which owns its header) pad their top by it so their leading
+   content clears the strip, and overlay primitives keep it as their top
+   viewport margin. Declared on the root element rather than the frame so
+   overlays portalled to document.body inherit it too. */
+:global(html[data-platform='darwin']) {
   --dsh-frame-top-clearance: 48px;
 }
 
@@ -118,6 +123,17 @@
       rgb(143 137 184 / 0.07)
     ),
     color-mix(in srgb, var(--dsw-specific-sidebar-fill) 50%, transparent);
+}
+
+/* macOS Reduce Transparency: the OS flattens the window's vibrancy layer to a
+   solid grey, so the thin tint and washes read washed-out over it. Replace
+   them with a 90%-opaque fill of the same token in both themes (the dark
+   selector repeats so this outranks its thinner fill). */
+@media (prefers-reduced-transparency: reduce) {
+  :global([data-platform='darwin']) .sidebarCol,
+  :global([data-platform='darwin']) :global([data-ds-dark-theme]) .sidebarCol {
+    background: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 90%, transparent);
+  }
 }
 
 :global([data-platform='darwin']) .centerCol {

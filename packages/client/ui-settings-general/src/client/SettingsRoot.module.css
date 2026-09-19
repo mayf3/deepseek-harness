@@ -79,13 +79,16 @@
    One height for every section, taken from the viewport rather than the
    content: sections differ by hundreds of pixels (a settings list against the
    composition editor), and a content-sized panel would resize under the
-   pointer on every nav click. Whatever does not fit scrolls in `.options`. */
+   pointer on every nav click. Whatever does not fit scrolls in `.options`.
+   24px of air above and below, widened to the frame's published top clearance
+   (the macOS window strip, where clicks drag the window) on both sides so the
+   panel sits centered and clear of the strip. */
 .panel {
   position: relative;
   z-index: 1;
   display: flex;
   width: 800px;
-  height: min(800px, calc(100vh - 48px));
+  height: min(800px, calc(100vh - 2 * max(24px, var(--dsh-frame-top-clearance, 24px))));
   max-width: calc(100vw - 48px);
   border-radius: 32px;
   overflow: hidden;

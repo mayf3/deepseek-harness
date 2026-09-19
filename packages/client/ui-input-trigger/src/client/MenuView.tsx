@@ -26,6 +26,13 @@ export type MenuViewProps = MenuViewInjected & PropsLocale<'slash.menu'>
 /** Height cap that fits the two headings and eight built-in command rows. */
 const MAX_HEIGHT = 400
 
+/**
+ * Viewport top margin: the conversation header's 76px block (title row plus
+ * view tabs, ui-conversation) plus 8px of air, so a tall list stops below the
+ * header instead of sliding under it.
+ */
+const TOP_MARGIN = 84
+
 /** DOM id of one option row (the aria-activedescendant target). */
 function optionId(source: string, index: number): string {
   return `dsh-slash-option-${source}-${index}`
@@ -51,7 +58,7 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
   // The list is bottom-anchored above the composer; clamp the design cap to
   // the space above it, re-measured on every store update (the anchor moves
   // when the composer grows).
-  const maxHeight = useAnchoredMaxHeight(listRef, MAX_HEIGHT, state)
+  const maxHeight = useAnchoredMaxHeight(listRef, MAX_HEIGHT, state, TOP_MARGIN)
   const updateOverflowHint = useCallback(() => {
     const viewport = viewportRef.current
     setHasOverflowBelow(viewport !== null
