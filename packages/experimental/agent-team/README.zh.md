@@ -147,6 +147,8 @@ Team 事件追加到精确的 live Lead 会话，并在操作报告成功或唤�
 
 原生 V4 的 Team 事件及检查点准入会拒绝退役的 `tool-result` 内容，防止它进入邮箱状态。历史转换由 Session 格式迁移负责，Team 投影不转换旧包装。
 
+Mailbox projection 和 checkpoint 准入保留未知 plugin 内容已解码 JSON 的全部字段，包括自有 `__proto__` 键。已知内容变体保留其声明的校验。Team projection cache version 4 会从 Session 日志重建较旧的 checkpoint，恢复此前省略的键；Session format version 不变。
+
 ### Dispose
 
 dispose 会关闭准入、中止并等待已获准的创建与 mailbox dispatch 事务，再让 continuation owner 释放 roster 中确切的 live direct child 及其后代；Lead 的非 Team continuable child 不受影响。cleanup 失败会让 dispose 明确失败，并以 `disposalTimeoutMs` 为上限。

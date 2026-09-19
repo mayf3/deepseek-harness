@@ -1,3 +1,4 @@
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
@@ -323,6 +324,63 @@ describe('Agent Teams projection events', () => {
       message: message({ content: [extension] }),
     }, SessionSeq(0))])
     expect(pending(state)[0]?.content).toEqual([extension])
+  })
+
+  it('preserves opaque JSON through projection and checkpoints', () => {
+    const extension = JSON.parse('{"type":"plugin/custom","__proto__":{"saved":true},"constructor":{"saved":false},"content":[{"__proto__":{"nested":true},"opaque":true}]}') as ContentBlock
+    const content = [extension]
+    const queued = event('team/message/queued', { version: 2, teamId: TEAM, message: message({ content }) }, SessionSeq(0))
+    const before = JSON.stringify(queued)
+    const projected = projectTeam(ROOT, [queued])
+    expect(projected.messages[0]?.content).toEqual(content)
+    const checkpoint = teamProjectionDefinition.stateSchema.parse(JSON.parse(JSON.stringify(projected)))
+    expect(JSON.stringify(checkpoint)).toBe(JSON.stringify(projected))
+    expect(JSON.stringify(queued)).toBe(before)
+    const block = checkpoint.messages[0]!.content[0]!
+    expect(Object.hasOwn(block, '__proto__')).toBe(true)
+    expect(Object.getPrototypeOf(block)).toBe(Object.prototype)
+  })
+
+  it.each([
+    null, [], 3,
+    { type: '' },
+    { type: null },
+    { type: 'text', text: false },
+  ])('rejects malformed content in events and checkpoints: %j', (block) => {
+    const saved = message({ content: [block] as unknown as ContentBlock[] })
+    const queued = event('team/message/queued', { version: 2, teamId: TEAM, message: saved }, SessionSeq(0))
+    expect(() => projectTeam(ROOT, [queued])).toThrow(/team\/message\/queued payload is invalid/)
+    expect(() => teamProjectionDefinition.stateSchema.parse({ ...project(ROOT, []), messages: [saved] })).toThrow()
+  })
+
+  it('rebuilds lossy version-3 Team checkpoints from the original log', async () => {
+    const ctx = new Context()
+    const store = ctx.plugin(SessionStore)
+    const registry = ctx.plugin(SessionProjectionRegistry)
+    try {
+      await store
+      await registry
+      ctx.sessionProjections.register(teamProjectionDefinition)
+      const extension = JSON.parse('{"type":"plugin/custom","__proto__":{"saved":true}}') as ContentBlock
+      const queued = event('team/message/queued', {
+        version: 2, teamId: TEAM, message: message({ content: [extension] }),
+      }, SessionSeq(0))
+      const oldState = project(ROOT, [event('team/message/queued', {
+        version: 2, teamId: TEAM, message: message({ content: [{ type: 'plugin/custom' } as unknown as ContentBlock] }),
+      }, SessionSeq(0))])
+      const restored = ctx.sessionProjections.restore(
+        { agentTeam: { ver: 3, seq: SessionSeq(0), val: oldState } },
+        [queued],
+        SessionLogOffset(0),
+        { version: SESSION_FORMAT_VERSION, id: ROOT, createdAt: 0, isSeeded: false },
+        SessionLogOffset(0),
+      )
+      const state = teamProjectionDefinition.stateSchema.parse(restored.checkpoint['agentTeam']!.val)
+      expect(state.messages[0]?.content).toEqual([extension])
+    } finally {
+      await registry.dispose()
+      await store.dispose()
+    }
   })
 
   it('records unsupported event versions without applying them', () => {
