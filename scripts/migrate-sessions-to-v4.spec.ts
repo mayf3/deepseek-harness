@@ -1,5 +1,5 @@
 /** The contributor command uses real persistence on private temporary corpora. */
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs'
 import { mkdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises'
 import { availableParallelism, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -9,6 +9,7 @@ import type { SessionFormatJsonObject } from '@deepseek-ai/dsh-session-format'
 import { encodeSegment, generationLogFilename, type JsonlCompression } from '../packages/session/session-persistence-jsonl/src/format.ts'
 import { compressZstdFrame, decompressZstdFrame, scanZstdFrames } from '../packages/session/session-persistence-jsonl/src/zstd.ts'
 import { runMigrationJobs } from './migrate-sessions-to-v4.ts'
+import { removeFixtureSafely } from './test-fixture-cleanup.ts'
 
 const repository = resolve(import.meta.dirname, '..')
 const script = join(repository, 'scripts/migrate-sessions-to-v4.ts')
@@ -42,7 +43,7 @@ function run(...args: string[]) {
 
 afterEach(async () => {
   await Promise.all(stopProcesses.splice(0).map(stop => stop()))
-  for (const directory of directories) rmSync(directory, { recursive: true, force: true })
+  for (const directory of directories) removeFixtureSafely(directory)
   directories.clear()
 })
 
