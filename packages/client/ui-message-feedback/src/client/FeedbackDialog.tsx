@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
-  Button, IconCheckOutlineRegular, IconWarningOutlineRegular, Modal, Toast,
+  Button, IconWarningOutlineRegular, Modal, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FeedbackCategory } from '@deepseek-ai/dsh-command-feedback/types'
 import type { FeedbackDialogProps } from './slots.ts'
@@ -68,7 +68,7 @@ export function FeedbackDialog({
         <Toast
           key={toast}
           text={t('toast.recorded')}
-          icon={<span className={css.toastIcon}><IconCheckOutlineRegular size={12} /></span>}
+          tone="success"
           anchor={card}
           onDone={onToastDone}
         />

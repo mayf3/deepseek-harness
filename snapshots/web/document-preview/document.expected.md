@@ -11,6 +11,7 @@
 
 - Heading: Markdown smoke
 - Tail loaded by scrolling: Markdown tail
+- Loaded images: relative image | absolute image | reference image
 - Viewers: Markdown -> Code -> Plain text
 - Same tab: true
 

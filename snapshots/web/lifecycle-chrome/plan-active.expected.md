@@ -5,7 +5,7 @@
   - button "Plugins"
 - text: Workspaces
 - button "Search sessions"
-- textbox "Search sessions..."
+- textbox "Search session names"
 - button "View options"
 - button "Add workspace"
 - tree "Sessions":

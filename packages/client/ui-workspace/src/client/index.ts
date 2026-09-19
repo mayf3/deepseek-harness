@@ -132,6 +132,9 @@ export function apply(ctx: Context): void {
       await workspaces.insertBefore(workspaceId, beforeWorkspaceId)
     },
     archiveSession: async (sessionId) => { await uiWorkspace.archiveSession(sessionId) },
+    unarchiveSession: async (sessionId) => { await uiWorkspace.unarchiveSession(sessionId) },
+    pinSession: async (sessionId) => { await workspaces.pinSession(sessionId) },
+    unpinSession: async (sessionId) => { await workspaces.unpinSession(sessionId) },
     createWorkspace: input => workspaces.create(input),
     hooks: { directoryFlow: browserFlowSource, hostInfo },
   })

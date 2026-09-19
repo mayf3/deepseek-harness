@@ -5,7 +5,6 @@
     - button "Models"
     - button "Built-in plugins"
     - button "Agent presets"
-    - button "Archived sessions"
   - button "Open configuration file"
   - button "Close"
   - text: Permission Choose the default permission mode for new sessions
