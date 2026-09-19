@@ -2,7 +2,7 @@
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Context } from '@deepseek-ai/cordis'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type {
   SessionListState, SessionSnapshot, SessionSummary,
 } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -51,8 +51,8 @@ function sessionsWith(sessions: SessionSummary[]) {
     subagentAddress: (childSessionId: SessionId) => childSessionId === address.childSessionId
       ? address
       : undefined,
-    refreshProjections: (parentSessionId: SessionId) => {
-      actionCalls.push({ method: 'refreshProjections', args: [parentSessionId] })
+    refresh: () => {
+      actionCalls.push({ method: 'refresh', args: [] })
       return Promise.resolve()
     },
   }
@@ -74,6 +74,10 @@ async function fullBench(sessions: SessionSummary[]) {
   const ctx = new Context()
   const face = sessionsWith(sessions)
   ctx.provide('sessions', face)
+  const registerResources = vi.fn(() => () => {})
+  const registerTab = vi.fn(() => () => {})
+  ctx.provide('resources', { register: registerResources })
+  ctx.provide('sidebarRightTabs', { register: registerTab })
   ctx.provide('uiWorkspace', {
     openSession: (address: SubagentAddress) => {
       face.actionCalls.push({ method: 'openSession', args: [address] })
@@ -89,7 +93,7 @@ async function fullBench(sessions: SessionSummary[]) {
   await provideSlotFaces(ctx)
   await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
   await ctx.plugin({ inject: [...inject], apply }).await()
-  return { face, ctx }
+  return { face, ctx, registerResources, registerTab }
 }
 
 const FAMILY: SessionSummary[] = [
@@ -108,7 +112,9 @@ describe('apply', () => {
   })
 
   it('registers catalog actions and selects read-only subagent composers from session facts', async () => {
-    const { ctx, face } = await fullBench(FAMILY)
+    const { ctx, face, registerResources, registerTab } = await fullBench(FAMILY)
+    expect(registerResources).toHaveBeenCalledOnce()
+    expect(registerTab).toHaveBeenCalledOnce()
     const catalogEntry = ctx.slots.entries('conversation.session.header.lineage')
       .find(entry => entry.component === SubagentHeaderLineage)!
     const actions = (catalogEntry.inject as unknown as (id: SessionId) => SubagentCatalogInjected)(sid('parent'))
@@ -129,7 +135,7 @@ describe('apply', () => {
           { kind: 'subagentchat', preferNewPane: true },
         ],
       },
-      { method: 'refreshProjections', args: [sid('parent')] },
+      { method: 'refresh', args: [] },
     ])
 
     const composerEntry = ctx.slots.entries('conversation.composer')
@@ -146,6 +152,8 @@ describe('apply', () => {
       pendingInteraction: undefined,
     })
     expect(select(owner(undefined))).toBeNull()
+    expect(select(owner({ address: { ...address, mode: 'unresolved' }, parentAvailable: true })))
+      .toEqual({ reason: 'unresolved' })
     expect(select(owner(null))).toBeNull()
     expect(select(owner({ address: { ...address, mode: 'one-shot' }, parentAvailable: true })))
       .toEqual({ reason: 'one-shot' })

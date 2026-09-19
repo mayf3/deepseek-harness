@@ -561,6 +561,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ContinuableStartSpec: 'subagent.md',
   AgentMessageSource: 'subagent.md',
   SubagentCatalogEntry: 'subagent.md',
+  SubagentDiscoveryEntry: 'subagent.md',
   SubagentCatalogState: 'subagent.md',
   SessionProjectionsRequest: 'session.md',
   SessionProjectionsValue: 'session.md',

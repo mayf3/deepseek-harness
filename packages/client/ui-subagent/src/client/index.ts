@@ -37,6 +37,7 @@ export const inject = ['sessions', 'uiWorkspace', 'slots', 'locale', 'sidebarRig
 function selectReadOnlySubagent(owner: ComposerChainProps): SubagentReadOnlyMatch | null {
   const subagent = owner.session?.subagent
   if (subagent === undefined || subagent === null) return null
+  if (subagent.address.mode === 'unresolved') return { reason: 'unresolved' }
   if (subagent.address.mode === 'one-shot') return { reason: 'one-shot' }
   // Until a Host summary establishes parent availability, keep the normal
   // disabled composer instead of claiming that the parent is offline.
@@ -67,8 +68,8 @@ export function apply(ctx: ClientContext): void {
         preferNewPane: true,
       })
     },
-    refresh(parentSessionId: SessionId) {
-      void sessions.refreshProjections(parentSessionId)
+    refresh() {
+      void sessions.refresh()
     },
   })
   ctx.slots.inject(
