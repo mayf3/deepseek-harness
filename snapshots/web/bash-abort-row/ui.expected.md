@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - 'button "Run two shell commands: wait" [disabled]'
+  - navigation "Session hierarchy": "Run two shell commands: wait"
   - button "More actions"
   - button "Open right sidebar"
   - tablist:

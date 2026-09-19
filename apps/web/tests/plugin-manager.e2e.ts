@@ -174,7 +174,9 @@ describe('web e2e: plugin manager', () => {
       }), { surfaceOp: 'append' })
       agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
       await scaffold.ctx.sessions.flush(agent.session)
-      await teamPage.getByRole('button', { name: 'Team UI lifecycle', exact: true }).waitFor()
+      // The current crumb renders as plain text inside the zh-labeled hierarchy nav.
+      await teamPage.getByRole('navigation', { name: '会话层级' })
+        .getByText('Team UI lifecycle', { exact: true }).waitFor()
       const action = teamPage.locator('[data-team-action]')
       expect(await action.count()).toBe(0)
       await toggle.click()

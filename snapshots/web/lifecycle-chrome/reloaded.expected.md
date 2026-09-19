@@ -1,6 +1,5 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Reply with the single word" [disabled]
+  - navigation "Session hierarchy": Reply with the single word
   - text: Standard mode
   - button "More actions"
   - button "Open right sidebar"
