@@ -52,11 +52,18 @@ export interface ProjectionsBaseline {
   values: Readonly<Record<string, unknown>>
 }
 
-/** One key's row: the latest finished value and the seq it is consistent with. */
-interface Row {
-  value: unknown
-  seq: SessionSeqCursor
-}
+/**
+ * One key's row. A `sequenced` row was computed by the Host for this Session
+ * within the current connection generation and carries the seq it is
+ * consistent with; seqs of sequenced rows are comparable with each other. A
+ * `cached` row was viewed from the persisted projection checkpoint by a
+ * header-only listing without a Session: its origin cannot vouch that its
+ * stored seq is comparable with the log the client later opens, so it carries
+ * none and yields to every sequenced write.
+ */
+type Row =
+  | { kind: 'cached'; value: unknown }
+  | { kind: 'sequenced'; value: unknown; seq: SessionSeqCursor }
 
 /** Per-key notification channel: the bare face plus its batching notifier. */
 interface Channel {
@@ -66,10 +73,14 @@ interface Channel {
 
 /**
  * One session's projection values. Framework semantics, uniform across every
- * key: a baseline seeds rows at its cut, a push frame updates one row, and in
- * both paths a lower-or-equal seq within the Host generation loses. A replayed
- * frame cannot regress a value; a stale baseline cannot overwrite a newer
- * frame. A key the store has never seen reads `undefined` (capability absent). Faces are identity-stable
+ * key. Sequenced writes (a baseline seeds rows at its cut, a push frame
+ * updates one row) compare seqs among themselves: a lower-or-equal seq within
+ * the Host generation loses, so a replayed frame cannot regress a value and a
+ * stale baseline cannot overwrite a newer frame. Cached writes (the session
+ * list's zero-I/O block) only fill keys no sequenced row holds, and a baseline
+ * discards every cached row before it seeds, regardless of seq: the connected
+ * Session is the truth and a cached value never outranks it. A key the store
+ * has never seen reads `undefined` (capability absent). Faces are identity-stable
  * per key (create-on-demand, cached) so the React side binds each exactly
  * once; the store-level channel (`subscribeAny`) serves coarse consumers (the
  * manager's list projection reads the `title` key).
@@ -133,27 +144,51 @@ export class ProjectionValueStore {
    */
   apply(key: string, value: unknown, seq: SessionSeqCursor): void {
     const row = this.rows.get(key)
-    if (row !== undefined && seq <= row.seq) return // higher seq wins; replays and stale frames drop
-    this.rows.set(key, { value, seq })
+    // higher seq wins among sequenced rows; replays and stale frames drop. A
+    // cached row has no comparable seq and always yields.
+    if (row?.kind === 'sequenced' && seq <= row.seq) return
+    this.rows.set(key, { kind: 'sequenced', value, seq })
     this.changed(key)
   }
 
   /**
-   * Seed from a history tail page's projections block: every carried key
-   * lands under the same seq rule as frames; a key the block omits is
-   * capability-absent as of the cut — its row clears unless a newer frame
-   * already superseded the cut (a stale baseline can neither overwrite nor
-   * clear newer values).
+   * Fill keys from the session list's zero-I/O cached block. A cached value
+   * lands only where no sequenced row exists: a connected Session has already
+   * answered for such a key, and the list's view of the persisted checkpoint
+   * cannot be newer than it.
+   * @param values - whole values by key viewed from the persisted checkpoint.
+   */
+  applyCached(values: Readonly<Record<string, unknown>>): void {
+    for (const key of Object.keys(values)) {
+      if (this.rows.get(key)?.kind === 'sequenced') continue
+      this.rows.set(key, { kind: 'cached', value: values[key] })
+      this.changed(key)
+    }
+  }
+
+  /**
+   * Seed from a history tail page's projections block. Every cached row is
+   * discarded first, regardless of seq: the block comes from the connected
+   * Session, and a value viewed from the persisted checkpoint never outranks
+   * it. Then every carried key lands under the same seq rule as frames, and a
+   * key the block omits is capability-absent as of the cut — its row clears
+   * unless a newer frame already superseded the cut (a stale baseline can
+   * neither overwrite nor clear newer sequenced values).
    * @param baseline - the response's projections block.
    */
   seed(baseline: ProjectionsBaseline): void {
+    for (const [key, row] of this.rows) {
+      if (row.kind !== 'cached') continue
+      this.rows.delete(key)
+      this.changed(key)
+    }
     // Erased walk: the framework crosses the open key space; per-key typing
     // is re-established at the consumer (useProjection's map lookup).
     const values = baseline.values as Record<string, unknown>
     for (const key of Object.keys(values)) this.apply(key, values[key], baseline.asOfSeq)
     for (const [key, row] of this.rows) {
       if (Object.hasOwn(values, key)) continue
-      if (row.seq > baseline.asOfSeq) continue
+      if (row.kind === 'sequenced' && row.seq > baseline.asOfSeq) continue
       this.rows.delete(key)
       this.changed(key)
     }

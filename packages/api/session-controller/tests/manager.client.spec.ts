@@ -203,16 +203,19 @@ describe('list lifecycle', () => {
     }
   })
 
-  it('projects cold Session additions and an empty-cut control baseline before history exists', async ({ mock, remote }) => {
+  it('projects a cold Session addition as cached until an empty-cut control baseline replaces it', async ({ mock, remote }) => {
     const manager = makeManager(mock, remote)
     try {
       manager.handleSessionAdded({
         ...summary(S1), projections: { asOfSeq: -1, values: { title: 'before history' } },
       })
+      expect(manager.getListSnapshot().items[0]?.title).toBe('before history')
+      // The control baseline is the connected Session's own value: it replaces
+      // the list-surface title even at the same cursor.
       manager.handleControlFrame({
         type: 'baseline', value: { jobs: { [S1]: [] }, projections: { [S1]: { asOfSeq: -1, values: { title: 'cold baseline' } } } },
       })
-      expect(manager.getListSnapshot().items[0]?.title).toBe('before history')
+      expect(manager.getListSnapshot().items[0]?.title).toBe('cold baseline')
       expect(manager.getListSnapshot().jobsBySession).toEqual({})
     } finally {
       await manager.dispose()
@@ -317,23 +320,23 @@ describe('list lifecycle', () => {
     expect(manager.getListSnapshot().items.find(item => item.sessionId === S1)?.title).toBeUndefined()
   })
 
-  it('seeds cold titles from the list rows\' projections block under higher-seq-wins', async ({ mock, remote }) => {
+  it('fills cold titles from the list rows\' projections block as cached values', async ({ mock, remote }) => {
     const manager = makeManager(mock, remote)
-    // A push frame landed before the list (S2's title is newer than the block's cut).
+    // A push frame landed before the list: S2's title is a sequenced value.
     manager.handleControlFrame({
       type: 'projection', sessionId: S2, key: 'title', value: 'Pushed', seq: 9,
     })
     remote.session.list.mockResolvedValue(ok({
       items: [
         { ...summary(S1), projections: { asOfSeq: 4, values: { title: 'Cold cached' } } },
-        { ...summary(S2, { updatedAt: 200 }), projections: { asOfSeq: 5, values: { title: 'List stale' } } },
+        { ...summary(S2, { updatedAt: 200 }), projections: { asOfSeq: 50, values: { title: 'List stale' } } },
       ] as never[],
     }))
     await manager.refreshList()
     const items = manager.getListSnapshot().items
     // Cold row: title surfaces straight from the list block — no open, no history.
     expect(items.find(item => item.sessionId === S1)?.title).toBe('Cold cached')
-    // The stale list block (seq 5) cannot overwrite the newer push frame (seq 9).
+    // A list block never displaces a sequenced value, whatever watermark it claims.
     expect(items.find(item => item.sessionId === S2)?.title).toBe('Pushed')
   })
 

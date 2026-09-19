@@ -376,18 +376,16 @@ export class SessionManager {
             session.handleBlank(s.blank)
             session.handleRunning(s.running)
           }
-          // Seed each row's projection baseline into the per-session value
-          // store (cold titles surface without opening the session). Per-key
-          // apply, not seed(): the list block is a partial baseline — the
-          // cold cache serves only version-matching keys — so an absent key
-          // must not clear; higher-seq-wins still keeps a stale list block
-          // from overwriting a newer push frame or tail baseline.
+          // Fill each row's cached projection block into the per-session value
+          // store (cold titles surface without opening the session). Cached,
+          // not seeded: the list block is a partial view of the persisted
+          // checkpoint — only version-matching keys, no comparable seq — so an
+          // absent key must not clear, and any sequenced value (a push frame,
+          // a tail baseline) outranks it.
           for (const s of result.value.items) {
             const block = s.projections
             if (block === undefined) continue
-            const store = this.projectionStore(s.sessionId)
-            const values = block.values as Record<string, unknown>
-            for (const key of Object.keys(values)) store.apply(key, values[key], sessionSeqCursor(block.asOfSeq))
+            this.projectionStore(s.sessionId).applyCached(block.values)
           }
         } else {
           this.listState = 'error'
@@ -604,12 +602,11 @@ export class SessionManager {
   handleSessionAdded(summary: SessionSummary): void {
     this.mergeSummary(summary)
     this.sessions.get(summary.sessionId)?.handleBlank(summary.blank)
+    // A list-surface block is cached like the list response itself: the
+    // Session's own baseline replaces it once the client opens the Session.
     const projections = summary.projections
     if (projections !== undefined) {
-      const store = this.projectionStore(summary.sessionId)
-      for (const [key, value] of Object.entries(projections.values)) {
-        store.apply(key, value, sessionSeqCursor(projections.asOfSeq))
-      }
+      this.projectionStore(summary.sessionId).applyCached(projections.values)
     }
   }
 
