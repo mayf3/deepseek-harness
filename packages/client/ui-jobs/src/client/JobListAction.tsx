@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import type { JobsSnapshot, JobView, ObservedJob } from '@deepseek-ai/dsh-api-job-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  IconChevronDownOutline14, IconStopFill16, StateDot, TerminalBlock, useDismissOnOutsidePointer,
+  IconChevronDownOutlineRegular, IconStopFillRegular, StateDot, TerminalBlock, useDismissOnOutsidePointer,
   type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -216,7 +216,7 @@ function JobItem({ job, view, expanded, now, onToggle, kill, t }: {
         </span>
         {/* A live row is always observable: its output may still arrive. */}
         <span className={css.chevronBox}>
-          <IconChevronDownOutline14 size={12} className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
+          <IconChevronDownOutlineRegular size={12} className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
         </span>
       </>
     )
@@ -230,7 +230,7 @@ function JobItem({ job, view, expanded, now, onToggle, kill, t }: {
         {observable
           ? (
             <span className={css.chevronBox}>
-              <IconChevronDownOutline14 size={12} className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
+              <IconChevronDownOutlineRegular size={12} className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
             </span>
           )
           : null}
@@ -276,7 +276,7 @@ function JobItem({ job, view, expanded, now, onToggle, kill, t }: {
               title={killTitle}
               onClick={kill.onPress}
             >
-              <IconStopFill16 size={10} />
+              <IconStopFillRegular size={10} />
               {/* The armed press must be legible without hover: the button
                   widens into a labeled confirm pill instead of a tint only. */}
               {kill.state === 'armed' ? <span className={css.stopLabel}>{t('kill.confirmAction')}</span> : null}
@@ -523,7 +523,7 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, killJob,
       >
         {liveRows.length > 0 ? <StateDot state="ongoing" className={css.triggerDot} /> : null}
         <span className={css.count}>{countLabel}</span>
-        <IconChevronDownOutline14 className={open ? css.triggerOpen : undefined} />
+        <IconChevronDownOutlineRegular size={12} className={open ? css.triggerOpen : undefined} />
       </button>
       {open
         ? (
@@ -541,7 +541,7 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, killJob,
                     aria-expanded={settledExpanded}
                     onClick={() => { setSettledOpen(!settledExpanded) }}
                   >
-                    <IconChevronDownOutline14 size={12} className={settledExpanded ? `${css.sectionChevron} ${css.sectionChevronOpen}` : css.sectionChevron} />
+                    <IconChevronDownOutlineRegular size={12} className={settledExpanded ? `${css.sectionChevron} ${css.sectionChevronOpen}` : css.sectionChevron} />
                     {t('section.settledCount', { count: settledRows.length })}
                   </button>
                   <button type="button" className={css.sectionClear} onClick={clearSettled}>

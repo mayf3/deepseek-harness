@@ -93,6 +93,12 @@ describe('ToolCallTree', () => {
     ])
   })
 
+  it('omits Inspect from tool owners when the target view is unavailable', () => {
+    const owners: ToolCallOwnerProps[] = []
+    render(<ToolCallTree {...props(root('a', null), undefined, undefined, owners)} inspectCall={undefined} />)
+    expect(owners[0]?.inspect).toBeUndefined()
+  })
+
   it('dispatches a running call by its wire name and forwards inspect', () => {
     const owners: ToolCallOwnerProps[] = []
     const block: ToolCallBlock = {

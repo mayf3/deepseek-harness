@@ -15,14 +15,16 @@ const descriptor = JSON.parse(readFileSync(join(root, 'desktop-runtime.json'), '
 assert.equal(process.versions.node, descriptor.release.nodeVersion, 'Run with the Electron Node runtime version')
 assert.equal(process.platform, descriptor.platform)
 assert.equal(process.arch, descriptor.arch)
+const resourcesRuntime = process.argv[3] ?? join(dirname(root), 'runtime')
+const { verifyDesktopRuntime } = await import('../../lib/types/runtime-tree.js')
+await verifyDesktopRuntime(root, descriptor.release.version, { platform: process.platform, arch: process.arch })
 const requireRuntime = createRequire(join(root, 'package.json'))
 const scratch = mkdtempSync(join(tmpdir(), 'dsh-runtime-payload-'))
 
 /** Run a package script with only the shipped node launcher available on PATH. */
 function checkPnpm() {
-  const resources = dirname(root)
-  const bin = join(resources, 'runtime', 'bin')
-  const pnpm = join(resources, 'runtime', 'pnpm', 'bin', 'pnpm.mjs')
+  const bin = join(resourcesRuntime, 'bin')
+  const pnpm = join(resourcesRuntime, 'pnpm', 'bin', 'pnpm.mjs')
   writeFileSync(join(scratch, 'package.json'), JSON.stringify({
     name: 'desktop-node-script-smoke', private: true, scripts: { check: 'node check.cjs' },
   }))
@@ -54,7 +56,7 @@ async function checkPty() {
   )))
   Object.assign(env, { HOME: scratch, USERPROFILE: scratch, TMP: scratch, TEMP: scratch, TMPDIR: scratch })
   env.DSH_DESKTOP_NODE_EXECUTABLE = process.execPath
-  env.PATH = `${join(dirname(root), 'runtime', 'bin')}${delimiter}${env.PATH ?? env.Path ?? ''}`
+  env.PATH = `${join(resourcesRuntime, 'bin')}${delimiter}${env.PATH ?? env.Path ?? ''}`
   // A Windows GUI executable needs a console-owning shell when launched inside ConPTY.
   const executable = process.platform === 'win32' ? process.env.ComSpec : process.execPath
   const args = process.platform === 'win32' ? ['/d', '/c', 'node', script] : [script]
@@ -137,6 +139,8 @@ function checkHtml() {
 }
 
 try {
+  const builtin = requireRuntime('node-addon-require-builtin')
+  assert.equal(typeof builtin.requireBuiltin('internal/modules/esm/loader').getOrInitializeCascadedLoader, 'function')
   checkPnpm()
   checkKoffi()
   await checkSharp()

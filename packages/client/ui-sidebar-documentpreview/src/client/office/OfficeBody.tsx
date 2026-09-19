@@ -1,4 +1,4 @@
-/** Office owns source loading, conversion failures, and font notices around the shared PDF view. */
+/** Office owns source loading and conversion failures around the shared PDF view. */
 import { useEffect, type ReactNode } from 'react'
 import type { PropsLocale, PropsRenderSlots, PropsStore, SlotHookFactory } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
@@ -11,7 +11,6 @@ import { hostFileOf } from '../rpc.ts'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
 import type { ReadOfficeDocument } from './cache.ts'
 import type { OfficeStore } from './store.ts'
-import { FontNotice } from './FontNotice.tsx'
 import common from '../TextPreview.module.css'
 import css from './OfficeBody.module.css'
 
@@ -44,7 +43,7 @@ export type OfficeBodyProps = DocumentPreviewProps & PropsStore<OfficeStore> & O
 /**
  * Load one Office revision and preserve its result while its tab remains open.
  * @param props - renderer loading request, tab state, conversion callbacks, and PDF slot.
- * @returns conversion status or the font notice and PDF scrollport.
+ * @returns conversion status or the PDF scrollport.
  */
 export function OfficeBody(props: OfficeBodyProps): ReactNode {
   const { tab } = props.useTabInfo()
@@ -72,7 +71,11 @@ export function OfficeBody(props: OfficeBodyProps): ReactNode {
     return () => { controller.abort() }
   }, [revision, resourceAddress, tab.id, tab.signal, read, actions, describeFailure, settled])
   const file = view?.file
-  useEffect(() => { if (file !== undefined) request?.loaded(file.version) }, [file, request?.loaded])
+  useEffect(() => {
+    if (request === undefined) return
+    if (file !== undefined) request.loaded(file.version)
+    else if (view?.failure !== undefined) request.failed()
+  }, [file, view?.failure, request])
   if (request === undefined) return null
   if (view?.failure !== undefined) {
     const { name } = pathPartsOf(resourceAddress)
@@ -84,10 +87,10 @@ export function OfficeBody(props: OfficeBodyProps): ReactNode {
   }
   if (file === undefined) return <LoadingIndicator className={common.statusLine} label={t('loading')} />
   return <div className={css.body}>
-    <FontNotice resourceAddress={resourceAddress} sourceVersion={file.version} fonts={file.missingFonts} t={t} />
     <div className={css.scrollport} ref={props.scrollportRef}>
       {props.renderSlot('sidebar.right.tab.document.office.pdf', {
         resourceAddress, content: { kind: 'bytes', data: file.data }, wrap: props.wrap, scrollportRef: props.scrollportRef,
+        addResource: props.addResource, setResources: props.setResources,
       }, { entryKey: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/office', hookContext: props.useTabInfo })}
     </div>
   </div>

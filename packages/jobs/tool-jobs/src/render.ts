@@ -6,7 +6,7 @@
  * @module @deepseek-ai/dsh-tool-jobs/render
  */
 
-import type { JobChunk, JobView } from '@deepseek-ai/dsh-jobs'
+import type { JobChunk, JobView } from '@deepseek-ai/dsh-jobs/view'
 
 /** Job state safe for model-authored programs; ownership and offsets are omitted. */
 export interface PublicJobSnapshot {

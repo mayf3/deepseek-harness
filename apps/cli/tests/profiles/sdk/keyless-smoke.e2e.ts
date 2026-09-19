@@ -5,11 +5,15 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { zstdDecompress } from 'node:zlib'
+import { resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 import { execa } from 'execa'
 import { describe, expect, it } from 'vitest'
 
-const binScript = fileURLToPath(new URL('../../../src/bin.ts', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url))
+const launch = resolveExampleLaunch({
+  srcBin: fileURLToPath(new URL('../../../src/bin.ts', import.meta.url)),
+  mode: 'lib',
+})
 const decompress = promisify(zstdDecompress)
 
 /** Frame one text or tool response from the local Messages endpoint. */
@@ -86,16 +90,15 @@ describe('Python SDK dsh profile keyless smoke', () => {
     if (address === null || typeof address === 'string') throw new Error('model server did not bind a TCP port')
     // The line-predicate protocol driving below is the genuinely custom part;
     // execa owns spawn, the deadline, and exit settlement around it.
-    const child = execa(process.execPath, [
-      '--import',
-      'tsx/esm',
-      binScript,
+    const child = execa(launch.command, [
+      ...launch.args,
       '--profile',
       'sdk',
       ...(editorEnabled ? ['--patch', editorPatch] : []),
     ], {
       cwd: repoRoot,
       env: {
+        ...launch.env,
         DSH_HOME: join(root, '.dsh'),
         DSH_PERMISSION_MODE: 'danger-full-access',
         DSH_TELEMETRY_DISABLED: '1',
@@ -236,16 +239,15 @@ describe('Python SDK dsh profile keyless smoke', () => {
     await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
     const address = modelServer.address()
     if (address === null || typeof address === 'string') throw new Error('model server did not bind a TCP port')
-    const child = execa(process.execPath, [
-      '--import',
-      'tsx/esm',
-      binScript,
+    const child = execa(launch.command, [
+      ...launch.args,
       '--profile',
       'sdk-minimal',
       ...(editorEnabled ? ['--patch', editorPatch] : []),
     ], {
       cwd: repoRoot,
       env: {
+        ...launch.env,
         DSH_HOME: join(root, '.dsh'),
         DSH_SYSTEM_PROMPT: 'Minimal allowlist prompt.',
         DEEPSEEK_API_KEY: 'keyless-smoke-no-call',
@@ -285,7 +287,7 @@ describe('Python SDK dsh profile keyless smoke', () => {
         const event = params?.event as Record<string, unknown> | undefined
         return params?.sessionId === 'minimal' && event?.type === 'turn/end'
       }, () => stderr)
-      expect(turnEnd).toMatchObject({
+      expect(turnEnd, `${JSON.stringify(turnEnd)}\n${stderr}`).toMatchObject({
         params: { event: { data: { reason: { kind: 'completed' } } } },
       })
 
@@ -341,11 +343,11 @@ describe('Python SDK dsh profile keyless smoke', () => {
     await mkdir(home)
     if (blocked) await writeFile(join(home, 'logs'), 'blocked')
     await writeFile(patch, '- id: agent-loop\n  config:\n    maxParallelToolCalls: 0\n')
-    const child = execa(process.execPath, [
-      '--import', 'tsx/esm', binScript, '--profile', 'sdk', '--patch', patch,
+    const child = execa(launch.command, [
+      ...launch.args, '--profile', 'sdk', '--patch', patch,
     ], {
       cwd: repoRoot,
-      env: { DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1', DEEPSEEK_API_KEY: 'keyless-no-call' },
+      env: { ...launch.env, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1', DEEPSEEK_API_KEY: 'keyless-no-call' },
       stdin: 'pipe',
       stripFinalNewline: false,
       timeout: 25_000,
@@ -378,15 +380,14 @@ describe('Python SDK dsh profile keyless smoke', () => {
   it('rejects an invalid max-token success env value', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-python-sdk-runtime-invalid-'))
     try {
-      const { exitCode, stdout, stderr } = await execa(process.execPath, [
-        '--import',
-        'tsx/esm',
-        binScript,
+      const { exitCode, stdout, stderr } = await execa(launch.command, [
+        ...launch.args,
         '--profile',
         'sdk',
       ], {
         cwd: repoRoot,
         env: {
+          ...launch.env,
           DSH_HOME: join(root, '.dsh'),
           DEEPSEEK_API_KEY: 'keyless-smoke-no-call',
           DSH_MAX_TOKENS_AS_SUCCESS: 'sometimes',

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** Chat inject factories exercised over independently mounted Conversation and Chat plugins. */
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { describe, expect, it, vi } from 'vitest'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ISession, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -48,7 +49,7 @@ function sessionFakeFor() {
 
 async function bench() {
   const runtime = await SlotTestRuntime.create()
-  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  runtime.ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
   const layout = { closeRightbar: vi.fn(), openRightbar: vi.fn() }
   runtime.ctx.provide('layout', layout as never)
   const sidebarRight = {
@@ -58,8 +59,10 @@ async function bench() {
   runtime.ctx.provide('sidebarRight', sidebarRight as never)
   const sidebarRightTabs = {
     get: vi.fn<(kind: string) => object | undefined>(() => ({})),
+    register: vi.fn(() => () => {}),
   }
   runtime.ctx.provide('sidebarRightTabs', sidebarRightTabs as never)
+  runtime.ctx.provide('resources', { register: vi.fn(() => () => {}) } as never)
   const openWorkspacePath = vi.fn<ClientRemote['session']['openWorkspacePath']>(
     () => Promise.resolve({ ok: true, value: { opened: true } }),
   )

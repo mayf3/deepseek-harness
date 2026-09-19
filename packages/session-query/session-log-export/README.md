@@ -27,6 +27,8 @@ English | [中文](README.zh.md)
 
 Use this package when the Web bundle should let users export a session log. It requires Connection, the command registry, Session query and persistence, and attachments. Mount the plugin, then choose `Download session log` from the Session Header's more-actions menu or type `/export`; the browser downloads `dsh-session-<id>.zip`.
 
+When `ui-message-feedback` is mounted, the same menu also offers `Feedback`, which opens its existing Session feedback dialog. Opening or dismissing that form does not export the Session or submit feedback. The feedback row follows the feedback plugin's availability; export remains available independently.
+
 ### When to choose it
 
 Choose it for a Web deployment that needs user-facing session export with a visible download dialog. Avoid it when a programmatic or Host-side export is needed: this package produces a browser download, not a Host path write. The logs are serialized from persistence read handles, so any mounted backend is supported.
@@ -50,7 +52,7 @@ The Web bundle mounts the package with Connection, `dsh-commands`, `dsh-client-u
 
 | Input | Result |
 |---|---|
-| `/export` | Records a human-command lifecycle; the submitting browser downloads `GET /api/session.export?sessionId=<id>&includeDescendants=true` |
+| `/export` | Records a human-command lifecycle; the submitting browser downloads the document-relative `api/session.export?sessionId=<id>&includeDescendants=true` (Host route `/api/session.export`) |
 | `/export <path>` | An error; browser downloads choose their destination through the browser's ordinary download behavior |
 
 ### What to expect
@@ -77,7 +79,7 @@ The package has two halves. The Host half ([`src/index.ts`](src/index.ts)) regis
 
 ### Download flow
 
-Both entry paths issue a `HEAD` preflight to `/api/session.export?...`, then hand the GET URL to the browser download manager without buffering the ZIP in JavaScript. One controller owns one in-flight download per session, collapses concurrent gestures into that operation, and cancels the preflight on plugin disposal. Modal state lives in a snapshot store keyed by session, so the button and the command share one dialog per session.
+Both entry paths issue a `HEAD` preflight to the document-relative `api/session.export?...`, then hand the GET route to the browser download manager without buffering the ZIP in JavaScript. One controller owns one in-flight download per session, collapses concurrent gestures into that operation, and cancels the preflight on plugin disposal. Modal state lives in a snapshot store keyed by session, so the button and the command share one dialog per session.
 
 The Host route is a feature-owned exact Fetch contribution. Connection applies its Host/Origin and browser-session checks and bridges the streaming `Response`; this package owns query validation, live-session flushes, handle-based log reads and attachment reads, ZIP generation, and HTTP status semantics.
 

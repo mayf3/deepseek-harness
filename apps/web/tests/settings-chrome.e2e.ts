@@ -37,7 +37,7 @@ describe('web e2e: settings modal and General preferences', () => {
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({})
+    scaffold = await launchWebScaffold({ developerTools: false })
     browser = await chromium.launch()
     // Chinese browser: the shared page asserts the localized settings surface
     // the client derives from it (the English default has its own spec below).
@@ -126,6 +126,12 @@ describe('web e2e: settings modal and General preferences', () => {
     // presets took over included, preset compositions excluded.
     expect(await dialog.locator('[data-plugin-scope="global"] [data-plugin-entry]').count())
       .toBe(expectedPluginCount)
+    // The enablement tag is the row's collapsed status: an active fiber draws no
+    // dot, so no global row names the active phase. Guard the assertion against
+    // matching nothing because no row is enabled.
+    expect(await dialog.locator('[data-plugin-scope="global"] [data-plugin-entry] button[aria-label$="已启用"]').count())
+      .toBeGreaterThan(0)
+    expect(await dialog.locator('[data-plugin-scope="global"] [role="img"][aria-label="运行中"]').count()).toBe(0)
     expect(await dialog.locator('[data-plugin-count]').getAttribute('data-plugin-count'))
       .toBe(String(expectedPluginCount))
     expect(await dialog.getByRole('button', { name: '内置插件', exact: true }).getAttribute('aria-current')).toBe('true')
@@ -378,7 +384,7 @@ describe('web e2e: settings modal and General preferences', () => {
     // A second live Host binds another ephemeral port but shares the same
     // user-settings home. Its fresh origin has no theme localStorage and still
     // converges to dark before the settings dialog opens.
-    const second = await launchWebScaffold({ harnessHome: scaffold.harnessHome })
+    const second = await launchWebScaffold({ developerTools: false, harnessHome: scaffold.harnessHome })
     const secondPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     const secondTripwire = watchConsole(secondPage)
     try {
@@ -543,7 +549,7 @@ describe('web e2e: settings modal and General preferences', () => {
     const reloaded = page.getByRole('dialog', { name: '设置' })
     await reloaded.getByRole('button', { name: '插话发送' }).waitFor({ timeout: 10_000 })
 
-    const second = await launchWebScaffold({ harnessHome: scaffold.harnessHome })
+    const second = await launchWebScaffold({ developerTools: false, harnessHome: scaffold.harnessHome })
     const secondPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     const secondTripwire = watchConsole(secondPage)
     try {
@@ -609,7 +615,7 @@ describe('web e2e: settings modal and General preferences', () => {
 
     // A Chinese browser on another port still receives the explicit English
     // preference from the shared Host settings document.
-    const second = await launchWebScaffold({ harnessHome: scaffold.harnessHome })
+    const second = await launchWebScaffold({ developerTools: false, harnessHome: scaffold.harnessHome })
     const secondPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     const secondTripwire = watchConsole(secondPage)
     try {
@@ -643,7 +649,7 @@ describe('web e2e: settings modal and General preferences', () => {
     // browser. English is also FALLBACK_LOCALE, so this scenario alone cannot
     // distinguish detection from the default — the zh scenarios above supply
     // the discriminating half (a Chinese browser must NOT land on the default).
-    const fresh = await launchWebScaffold({})
+    const fresh = await launchWebScaffold({ developerTools: false })
     const enPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'en-US' })
     const enTripwire = watchConsole(enPage)
     onTestFailed(() => saveFailureShot(enPage, 'web-e2e-settings-browser-language'))
@@ -682,7 +688,7 @@ describe('web e2e: settings modal and General preferences', () => {
     // The product default for "no usable signal": a French browser ships
     // neither zh nor en, so resolution falls to FALLBACK_LOCALE (en) rather
     // than to Chinese.
-    const fresh = await launchWebScaffold({})
+    const fresh = await launchWebScaffold({ developerTools: false })
     const frPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'fr-FR' })
     const frTripwire = watchConsole(frPage)
     onTestFailed(() => saveFailureShot(frPage, 'web-e2e-settings-unshipped-language'))

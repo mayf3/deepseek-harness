@@ -1,3 +1,4 @@
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { toolSessionEvents } from './tool-fixtures.client.ts'
 // @vitest-environment jsdom
 /** Tool assembly acceptance through the real ui-conversation host. */
@@ -76,7 +77,7 @@ async function bench(nodes: ToolResultNode[]) {
       openWorkspacePath: vi.fn(async () => ({ ok: true, value: { opened: true } })),
     },
   })
-  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  runtime.ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) }, bind: () => stubSettingsScope().scope } as never)
   runtime.ctx.provide('layout', { openDetails: vi.fn(), closeDetails: vi.fn() })
   runtime.ctx.provide('sidebarRight', { openResource: vi.fn() } as never)
   runtime.ctx.provide('uiWorkspace', {
@@ -115,7 +116,7 @@ describe('todo_write assembly (product registrations, no outlet twins)', () => {
     // Keyed toolview registration took the row (summary derived from args).
     const row = view.container.querySelector('[data-tool="todo_write"]')
     expect(row).not.toBeNull()
-    expect(row!.textContent).toContain('1/3 已完成 · 实现 fixture 样本')
+    expect(row!.textContent).toContain('新增 3')
 
     // The plan strip sits in the input dock, fed by the projection
     // (default-collapsed: the header summary shows; rows appear on expand).

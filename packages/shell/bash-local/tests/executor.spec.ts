@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
@@ -176,15 +176,25 @@ describe('LocalBashExecutor.run', () => {
 })
 
 describe('LocalBashExecutor.start (background process handles)', () => {
-  it('start returns immediately with a running handle that settles as completed', async () => {
+  it('start returns a running handle before the child is allowed to finish', async (t) => {
     const { bash } = await setup()
-    const before = Date.now()
-    const proc = (await start(bash, bash.resolve({ command: 'sleep 0.2; echo done' })))
-    expect(Date.now() - before).toBeLessThan(150)
+    const directory = mkdtempSync(join(spillDir, 'start-'))
+    const proc = await start(bash, bash.resolve({
+      command: 'echo ready; while [ ! -f release ]; do sleep 0.02; done; echo done',
+      workdir: directory,
+    }))
+    t.onTestFinished(async () => {
+      proc.kill()
+      await proc.done
+      rmSync(directory, { recursive: true, force: true })
+    })
+    await readUntil(proc, 'ready\n')
     expect(proc.status).toBe('running')
+    writeFileSync(join(directory, 'release'), '')
     await proc.done
     expect(proc.status).toBe('completed')
     expect(proc.exitCode).toBe(0)
+    expect(proc.readOutput().delta).toBe('done\n')
   })
 
   it('threads stdin and extra env into a background process', async () => {

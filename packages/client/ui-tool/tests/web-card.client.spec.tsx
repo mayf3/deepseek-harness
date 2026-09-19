@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import type { RunningToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ToolCallOwnerProps } from '@deepseek-ai/dsh-client-ui-tool/client'
-import { IconGlobeOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconGlobeOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { webCardModel } from '../src/client/tool/models/web-card-model.ts'
 import { GenericToolCard } from '../src/client/tool/toolviews/GenericToolCard.tsx'
 import { WebRow, webToolview } from '../src/client/tool/toolviews/web-row.tsx'
@@ -138,7 +138,7 @@ describe('chat row web body', () => {
   }
 
   it('the WebRow collapses to the summary row, expanding to the full search card', () => {
-    const globe = render(<IconGlobeOutline14 />).container.querySelector('svg')!.outerHTML
+    const globe = render(<IconGlobeOutlineRegular />).container.querySelector('svg')!.outerHTML
     const view = render(<WebRow {...rowProps(settledSearch(), 'web_search')} />)
     // Collapsed: the summary row alone, no card in the DOM.
     expect(view.getByText('网页搜索')).toBeTruthy()
@@ -181,6 +181,7 @@ describe('chat row web body', () => {
     expect(view.container.querySelector('[data-web]')).toBeNull()
     // The row reflects the error state so the summary line still reads as failed.
     expect(view.container.querySelector('[data-state="error"]')).not.toBeNull()
+    expect(view.container.querySelector('[data-state="error"] svg')).not.toBeNull()
   })
 
   it('the GenericToolCard fallback does not promote an unknown tool from metadata alone', () => {

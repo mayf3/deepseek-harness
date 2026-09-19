@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** Document extension registration and dispatch through the production Sidebar and Slot renderer. */
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
@@ -36,6 +37,7 @@ afterEach(async () => {
 async function boot() {
   const rt = await SlotTestRuntime.create()
   runtime = rt
+  rt.ctx.provide('settingsScope', { developerTools: { enabled: createSnapshotStore(true) } } as never)
   rt.ctx.provide('layout', { openRightbar: vi.fn(), closeRightbar: vi.fn() } as never)
   const locale = new LocaleRuntime(rt.ctx)
   rt.ctx.provide('locale', locale)
@@ -100,7 +102,9 @@ describe('document extension seat', () => {
       const h = await boot()
       act(() => { h.rt.ctx.sidebarRight.openResource(sessionFileAddress('address-session', path)) })
       await waitFor(() => { expect(h.view.container.querySelectorAll('[data-textpreview-line]')).toHaveLength(2) })
-      expect(h.read).toHaveBeenCalledExactlyOnceWith('address-session', path, { offset: 1 }, expect.any(AbortSignal))
+      expect(h.read.mock.calls).toEqual([
+        ['address-session', path, { offset: 1 }, expect.any(AbortSignal)],
+      ])
       expect(h.bytes).not.toHaveBeenCalled()
     },
   )
@@ -147,7 +151,7 @@ describe('document extension seat', () => {
     })
     const tab = h.view.container.querySelector('[data-renderer-tab]')?.getAttribute('data-renderer-tab')
     expect(h.read).not.toHaveBeenCalled()
-    expect(h.bytes).toHaveBeenCalledTimes(1)
+    expect(h.bytes).toHaveBeenCalledOnce()
     fireEvent.click(h.view.container.querySelector('[data-document-viewer-menu]')!)
     fireEvent.click(screen.getByRole('menuitem', { name: 'builtin-reader' }))
     await waitFor(() => { expect(h.view.container.querySelector('[data-renderer="builtin-reader"]')?.textContent).toBe('first\nsecond') })
@@ -169,6 +173,6 @@ describe('document extension seat', () => {
     })
     await act(async () => { await remove!() })
     await waitFor(() => { expect(h.view.container.querySelector('[data-document-markdown]')).not.toBeNull() })
-    expect(h.read).toHaveBeenCalledTimes(1)
+    expect(h.read).toHaveBeenCalledOnce()
   })
 })
