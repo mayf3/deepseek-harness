@@ -97,6 +97,17 @@ describe('SegmentedControl', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
+  it('lands Home and End on the first and last enabled options, not the first and last options', () => {
+    const { onChange } = mount('import', {
+      options: [{ value: 'catalog', label: 'Catalog', disabled: true }, OPTIONS[1]!, OPTIONS[2]!],
+    })
+    fireEvent.keyDown(tab('Import'), { key: 'Home' })
+    expect(onChange).toHaveBeenLastCalledWith('custom')
+    onChange.mockClear()
+    fireEvent.keyDown(tab('Import'), { key: 'End' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
   it('skips disabled options while walking with the arrow keys', () => {
     const { onChange } = mount('catalog', {
       options: [OPTIONS[0]!, { value: 'custom', label: 'Custom', disabled: true }, OPTIONS[2]!],

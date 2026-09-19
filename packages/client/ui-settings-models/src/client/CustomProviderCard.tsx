@@ -6,10 +6,12 @@
  * This is a create, not an edit, which is why it is its own form rather than
  * the provider editor with extra fields: the route id is being *chosen* here,
  * and the settings address does not exist until it is. It renders as the
- * custom-API panel of the section's add card, whose mode switch is its title.
- * One `settings.mutate` sets the whole profile at `providers.<route>`; the key
- * travels separately through `credentials/set` under the reference the profile
- * records, exactly as an existing provider's key does.
+ * custom-API panel of the section's add card; the card's mode switch names it
+ * when both modes are offered, and with the custom mode alone the card shows
+ * this form directly. One `settings.mutate` sets the whole profile at
+ * `providers.<route>`; the key travels separately through `credentials/set`
+ * under the reference the profile records, exactly as an existing provider's
+ * key does.
  *
  * The three fields a hand-declared route cannot default — endpoint, protocol,
  * and at least one model — are required here rather than at load, so the
