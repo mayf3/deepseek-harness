@@ -12,7 +12,7 @@ This is neither cache corruption nor a version mismatch. The projcache record's 
 
 ### Mechanism
 
-A cache record is bound to a lifecycle identity: `formatVersion + createdAt + cwd + isSeeded + inheritedEventCount`, matched by `identityMatches` on full equality. Since [#3346](https://github.com/deepseek-harness/deepseek-harness/pull/3346), `inheritedEventCount` (the length of the event prefix a fork inherits, the cut below) no longer appears in the logical header: the header keeps only the `isSeeded` bit and the exact cut follows the body. Since Session format v2 (#3398) the physical header line no longer stores `seedLength` either; the reader derives the cut from the seq of the `session/end-seed {inherited: true}` marker in the body.
+A cache record (record format and predecessor recovery: [Projection-cache predecessor recovery and Session-format binding](2026-09-02-projcache-cross-version-read-compat.md)) is bound to a lifecycle identity: `formatVersion + createdAt + cwd + isSeeded + inheritedEventCount`, matched by `identityMatches` on full equality. Since #3346, `inheritedEventCount` (the length of the event prefix a fork inherits, the cut below) no longer appears in the logical header: the header keeps only the `isSeeded` bit and the exact cut follows the body. Since Session format v2 (#3398) the physical header line no longer stores `seedLength` either; the reader derives the cut from the seq of the `session/end-seed {inherited: true}` marker in the body.
 
 A header-only read therefore cannot obtain the cut: the JSONL backend's `fromHeaderLine` hard-codes `inheritedEventCount: 0` for header-only reads, and `SessionPersistenceSnapshot` carries only the header, the revision, and an optional eventCount. All three header-only cache consumers grew the same guard:
 
@@ -42,7 +42,7 @@ spec.ts and the README describe the purpose of the identity check with one verb:
 
 ### The client store cannot guarantee that connected data replaces hints
 
-Each session has exactly one `ProjectionValueStore` on the client (`manager.projectionStores`). The block delivered by the list, the history first-page baseline on open, the control baseline, push frames, and rename results all write into that one object, and `useProjection` reads it. All writers are peers under one higher-seq-wins rule: `apply` drops a new value when `seq <= row.seq`, and `seed` clears omitted keys only when `row.seq <= cut`. A list hint whose seq is equal or higher survives untouched after the session is opened. The hint's seq comes from a disk record; after a crash-repair truncation it can be numerically higher than the connected cursor, which is exactly the case where the cache is wrong and the connection is right. Comparing seqs against a hint is the wrong tool.
+Each session has exactly one `ProjectionValueStore` on the client (`manager.projectionStores`; its merge rules were recorded in [Session observations and projection-owned client state](2026-08-25-session-observations-and-projection-owned-client-state.md)). The block delivered by the list, the history first-page baseline on open, the control baseline, push frames, and rename results all write into that one object, and `useProjection` reads it. All writers are peers under one higher-seq-wins rule: `apply` drops a new value when `seq <= row.seq`, and `seed` clears omitted keys only when `row.seq <= cut`. A list hint whose seq is equal or higher survives untouched after the session is opened. The hint's seq comes from a disk record; after a crash-repair truncation it can be numerically higher than the connected cursor, which is exactly the case where the cache is wrong and the connection is right. Comparing seqs against a hint is the wrong tool.
 
 ## Decision
 
@@ -55,7 +55,7 @@ Each session has exactly one `ProjectionValueStore` on the client (`manager.proj
 
 The two read-only methods no longer take a cut parameter. `inheritedEventCount` is still written into every record and the fold face still compares it on full equality; the original design expectation, that records folded under different fork cuts never seed each other, is unchanged.
 
-The read-only face's output is cached: the returned block's `asOfSeq` is always `-1`, the sentinel `cachedPredecessorTitle` already used. A header can vouch neither for the cut nor for the comparability of the record's seq with the current log, so this face declares no seq. The cache stated the principle itself in `viewRecord`: under-claiming is safe under higher-seq-wins, over-claiming would let a stale value outrank pushes.
+In the block the read-only face returns, `asOfSeq` is the lowest watermark among the served rows, the stored record's own position. A header can vouch neither for the cut nor for the comparability of that watermark with the current log, so comparability is not expressed by this number: the Session list adds an independent field `kind` to each summary's `projections` block (`SessionProjectionHints`). A block a cold session's row viewed from projcache is `cached`; a block the Host's live registry computed for an attached session is `sequenced`. The two fields are independent facts: `kind` names the sequence space `asOfSeq` belongs to, and `asOfSeq` is the watermark within that space.
 
 ### Why the read-only face may skip the cut
 
@@ -95,15 +95,15 @@ Writer classification:
 
 | Entry | Row kind |
 |---|---|
-| the `projections` block of each summary in the `session.list` response (`manager.refreshList`) | cached |
-| the `projections` block of an `api-session/added` summary (`manager.handleSessionAdded`) | cached |
+| the `projections` block of each summary in the `session.list` response (`manager.refreshList`) | by the block's `kind`: `cached` for a cold session, `sequenced` for a live one |
+| the `projections` block of an `api-session/added` summary (`manager.handleSessionAdded`) | by the block's `kind`; the summary comes from a live session, so in practice `sequenced` |
 | the history first page's `projections` (`projections.seed` in `session.ts`) | sequenced |
 | the control baseline, live sessions only (`manager.replaceControlBaseline`) | sequenced |
 | the `session.projections` result of `refreshProjections` (a body observation) | sequenced |
 | push frames (the `projection` frame handled by `manager`) | sequenced |
 | the `title` after a successful rename (`session.ts`) | sequenced |
 
-The `seed` and `apply` signatures are unchanged. The server keeps the `asOfSeq` field on the wire; the client does not read it for cached writes.
+The `seed` and `apply` signatures are unchanged. The client routes by `kind`: a `sequenced` block goes through `apply` key by key, a `cached` block through `applyCached`, which does not read its `asOfSeq`.
 
 ### What stays untouched
 
@@ -128,7 +128,9 @@ The `seed` and `apply` signatures are unchanged. The server keeps the `asOfSeq` 
 
 **Restore a bounded body probe.** The `probeSmallCold` idea #3400 removed, or a client-side asynchronous `refreshProjections` for visible seeded sessions. It breaks the list's zero-I/O principle, and the historical 1KB threshold shows it never covered an ordinary fork. Rejected.
 
-**Only the `asOfSeq: -1` sentinel, without store tiers.** One server-side change makes hints always lose under the seq rule. It rests on a convention: when a hint's seq equals or exceeds the baseline cut (crash-repair truncation), `apply` keeps the old row and the wrong value survives until the next frame. The user requires connected data to replace hints unconditionally, so the rule belongs in the store rather than in a seq convention. The sentinel stays as the read-only face's honest declaration; the replacement guarantee rests on the row kind.
+**Only the `asOfSeq: -1` sentinel, without store tiers.** One server-side change makes hints always lose under the seq rule. It rests on a convention: when a hint's seq equals or exceeds the baseline cut (crash-repair truncation), `apply` keeps the old row and the wrong value survives until the next frame. The user requires connected data to replace hints unconditionally, so the rule belongs in the store rather than in a seq convention.
+
+**Express cached through `asOfSeq: -1` and let the client route on the sentinel.** The read-only face always emits `-1` and the client treats every list block as cached. Rejected: one field would carry two meanings, and the second could only be inferred by convention; a live session's list block carries a real seq comparable within the connection, and treating every block as cached demoted those too. The PR review reproduced the regression: a delayed control baseline at a lower cut overwrote a newer list value. The independent field `kind` replaces the sentinel, and `asOfSeq` keeps each source's own watermark.
 
 **Remove the cut from the cache identity entirely.** The fold face needs it: `restore` continues applying from the cached row's state, and `schedule`, `subagentCatalog`, `permissions.seeded`, and owned/inherited classification encode the cut; an error would be written back and persisted. Rejected.
 
@@ -146,16 +148,18 @@ Bought:
 Paid:
 
 - `cachedSnapshot` and `cachedPredecessorTitle` change signature; three callers change with them.
+- `SessionProjectionHints` gains the required field `kind`; every producer of a list summary and every test fixture that builds one carries it.
 - A hand-crafted record with the same four fields and a different cut is displayed in the list until the session is opened.
 - Keys the baseline omits clear together with their hints: when a Host does not mount `schedule`, the schedule mark the list hinted disappears after the session opens. Under "connected data is the truth" this is the correct behavior.
 - Old records still miss for seeded sessions until an open rewrites them.
 
 ## Testing
 
-- `session-projection-cache/tests/cache.spec.ts`: a seeded cold header obtains every version-matching row through `cachedSnapshot(header)` with `asOfSeq: -1`; an unseeded header is refused for the same id's seeded record; `coldSnapshot` continues from the row when the cut matches, refolds the whole log when it differs, and throws for an unseeded call with a nonzero cut; `cachedPredecessorTitle(header)` serves only `title` from a seeded record of an older `formatVersion`; rows with differing watermarks form one block that claims no watermark.
+- `session-projection-cache/tests/cache.spec.ts`: a seeded cold header obtains every version-matching row through `cachedSnapshot(header)` at the row's watermark; an unseeded header is refused for the same id's seeded record; `coldSnapshot` continues from the row when the cut matches, refolds the whole log when it differs, and throws for an unseeded call with a nonzero cut; `cachedPredecessorTitle(header)` serves only `title` from a seeded record of an older `formatVersion`; rows with differing watermarks form one block whose `asOfSeq` is the lowest row.
 - `session-projection-cache/tests/fixtures.spec.ts`: archived v3 to v6 records still expose only the predecessor title; lineage-less archives still miss for seeded callers.
-- `api/session-controller/tests/session-cold.host.spec.ts`: a seeded cold summary carries `title` and `sessionListMetadata`, `updatedAt` takes `lastPromptAt`, the cache is queried, and the body is not read.
-- `api/session-controller/tests/projection-store.client.spec.ts`: `applyCached` fills empty keys only and never displaces a sequenced row; every sequenced write (including a frame at cursor `-1` and a baseline at a lower cut) replaces cached rows; a baseline discards all cached rows before clearing omitted keys; face subscribers are notified on cached fills and their discard. Manager path: a list block claiming any watermark is replaced by a control baseline at a lower cut, and a later list refresh cannot bring it back.
-- `api/session-controller/tests/manager.client.spec.ts`: an `api-session/added` block is written as cached and replaced by a control baseline at the same cursor; a list block does not displace an existing sequenced title.
+- `api/session-controller/tests/session-cold.host.spec.ts`: a seeded cold summary carries `kind: 'cached'`, `title`, and `sessionListMetadata`, `updatedAt` takes `lastPromptAt`, the cache is queried, and the body is not read.
+- `api/session-controller/tests/projection-store.client.spec.ts`: `applyCached` fills empty keys only and never displaces a sequenced row; every sequenced write (including a frame at cursor `-1` and a baseline at a lower cut) replaces cached rows; a baseline discards all cached rows before clearing omitted keys; face subscribers are notified on cached fills and their discard. Manager path: a `cached` list block at any watermark is replaced by a control baseline at a lower cut, and a later list refresh cannot bring it back; a `sequenced` list block merges under higher-seq-wins, so a delayed baseline at a lower cut neither overwrites nor clears it while a higher-seq frame still advances it.
+- `api/session-controller/tests/manager.client.spec.ts`: a `cached` `api-session/added` block is replaced by a control baseline at the same cursor; a `cached` list block does not displace an existing sequenced title.
+- `api/session-controller/tests/inbox-projection.client.spec.ts`: unchanged; a live session's `sequenced` list block still outranks a delayed control baseline at a lower cut.
 - `context/session-reference/tests/session-reference.spec.ts`: a seeded cold session is labeled and searchable by its cached title, a session without a cache record is still labeled by id, and neither reads a log.
 - `subagent/subagent/tests/list-children.spec.ts`: unchanged; seeded children still go through body observation.

@@ -12,7 +12,7 @@ Host 进程重启后，所有 fork 出来的会话（`SessionHeader.isSeeded ===
 
 ### 机制
 
-缓存记录绑定一份 lifecycle identity：`formatVersion + createdAt + cwd + isSeeded + inheritedEventCount`，`identityMatches` 做全等匹配。其中 `inheritedEventCount`（fork 继承的事件前缀长度，下称 cut）从 [#3346](https://github.com/deepseek-harness/deepseek-harness/pull/3346) 起不再出现在逻辑 header 里：header 只保留 `isSeeded` 这一位，精确 cut 跟随正文。Session 格式 v2 起（#3398），物理 header 行也不再存 `seedLength`，reader 从正文里 `session/end-seed {inherited: true}` 标记的 seq 推出 cut。
+缓存记录（记录格式与前代恢复见 [投影缓存前代恢复与 Session 格式绑定](2026-09-02-projcache-cross-version-read-compat.zh.md)）绑定一份 lifecycle identity：`formatVersion + createdAt + cwd + isSeeded + inheritedEventCount`，`identityMatches` 做全等匹配。其中 `inheritedEventCount`（fork 继承的事件前缀长度，下称 cut）从 #3346 起不再出现在逻辑 header 里：header 只保留 `isSeeded` 这一位，精确 cut 跟随正文。Session 格式 v2 起（#3398），物理 header 行也不再存 `seedLength`，reader 从正文里 `session/end-seed {inherited: true}` 标记的 seq 推出 cut。
 
 于是 header-only 的读取拿不到 cut：JSONL 后端 `fromHeaderLine` 对 header-only 读取硬编码 `inheritedEventCount: 0`，`SessionPersistenceSnapshot` 只有 header、revision 和可选的 eventCount。三个只读 header 的缓存消费者都因此加了同一个守卫：
 
@@ -42,7 +42,7 @@ spec.ts 与 README 描述身份检查的目的时用的都是同一个动词：�
 
 ### 客户端 store 无法保证建连数据覆盖提示
 
-客户端每个会话只有一个 `ProjectionValueStore`（`manager.projectionStores`），列表下发的 block、打开会话的 history 首页基线、control 基线、推送 frame、rename 结果全部写进同一个对象，`useProjection` 读的也是它。所有写入者平等，只有一条 higher-seq-wins 规则：`apply` 在 `seq <= row.seq` 时丢弃新值，`seed` 清理没带的键时只清 `row.seq <= cut` 的行。一个 seq 相等或偏高的列表提示会在会话打开后原样留在格子里。列表提示的 seq 来自磁盘记录，crash-repair 截断日志后它可以数字上高于建连 cursor，而那正是缓存错、建连对的情形。对提示做 seq 比较是用错了工具。
+客户端每个会话只有一个 `ProjectionValueStore`（`manager.projectionStores`；合并规则原记录于 [Session observation 与 projection 所有的客户端状态](2026-08-25-session-observations-and-projection-owned-client-state.zh.md)），列表下发的 block、打开会话的 history 首页基线、control 基线、推送 frame、rename 结果全部写进同一个对象，`useProjection` 读的也是它。所有写入者平等，只有一条 higher-seq-wins 规则：`apply` 在 `seq <= row.seq` 时丢弃新值，`seed` 清理没带的键时只清 `row.seq <= cut` 的行。一个 seq 相等或偏高的列表提示会在会话打开后原样留在格子里。列表提示的 seq 来自磁盘记录，crash-repair 截断日志后它可以数字上高于建连 cursor，而那正是缓存错、建连对的情形。对提示做 seq 比较是用错了工具。
 
 ## Decision
 
@@ -55,7 +55,7 @@ spec.ts 与 README 描述身份检查的目的时用的都是同一个动词：�
 
 只读面的两个方法不再接受 cut 参数。`inheritedEventCount` 继续写入记录，fold 面继续全等比对它；"不同 fork cut 的记录不能互相当种子"这条原始设计预期不变。
 
-只读面的输出定性为 cached：返回的 block `asOfSeq` 恒为 `-1`，沿用 `cachedPredecessorTitle` 已有的哨兵。header 既作证不了 cut，也作证不了记录 seq 与当前日志的可比性，这一面就不声明 seq。缓存自己在 `viewRecord` 里写过这条原则：under-claiming 在 higher-seq-wins 下是安全的，over-claiming 会让陈旧值压过推送。
+只读面返回的 block 里，`asOfSeq` 是所服务各行中最低的水位，也就是存储记录自己的位置。header 既作证不了 cut，也作证不了这个水位与当前日志的可比性，所以可比性不由这个数字表达：Session list 给每条摘要的 `projections` block（`SessionProjectionHints`）加独立字段 `kind`，冷会话从 projcache 看出来的 block 标 `cached`，活会话由 Host live registry 算出的 block 标 `sequenced`。两个字段各管各的：`kind` 说明 `asOfSeq` 属于哪个序列空间，`asOfSeq` 是那个空间里的水位。
 
 ### 只读面为什么可以不比 cut
 
@@ -95,15 +95,15 @@ seq 比较只在同一条 Host 连接内发生：`handleConnected` 先整表 `cl
 
 | 入口 | 行类型 |
 |---|---|
-| `session.list` 响应里每条摘要的 `projections` block（`manager.refreshList`） | cached |
-| `api-session/added` 摘要的 `projections` block（`manager.handleSessionAdded`） | cached |
+| `session.list` 响应里每条摘要的 `projections` block（`manager.refreshList`） | 按 block 的 `kind`：冷会话 `cached`，活会话 `sequenced` |
+| `api-session/added` 摘要的 `projections` block（`manager.handleSessionAdded`） | 按 block 的 `kind`；该摘要来自活会话，实际为 `sequenced` |
 | history 首页 `projections`（`session.ts` 的 `projections.seed`） | sequenced |
 | control 基线，仅活会话（`manager.replaceControlBaseline`） | sequenced |
 | `refreshProjections` 的 `session.projections` 结果（正文观察） | sequenced |
 | 推送 frame（`manager` 处理 `projection` frame） | sequenced |
 | rename 成功后的 `title`（`session.ts`） | sequenced |
 
-`seed` 与 `apply` 签名不变。服务端线上的 `asOfSeq` 字段保留，客户端对 cached 写入不读它。
+`seed` 与 `apply` 签名不变。客户端按 `kind` 分流：`sequenced` block 逐键 `apply`，`cached` block 走 `applyCached`，不读它的 `asOfSeq`。
 
 ### 不动的部分
 
@@ -128,7 +128,9 @@ seq 比较只在同一条 Host 连接内发生：`handleConnected` 先整表 `cl
 
 **恢复有界正文探测。** #3400 删掉的 `probeSmallCold` 思路，或由客户端对可见 seeded 会话异步 `refreshProjections`。违背列表零 I/O 原则，且历史阈值 1KB 说明它从未覆盖过正常 fork。否决。
 
-**只用 `asOfSeq: -1` 哨兵，不给 store 分层。** 服务端一处改动即可让提示在 seq 规则下永远落败。但它靠约定成立：一旦提示 seq 与基线 cut 相等或偏高（crash-repair 截断），`apply` 保留旧行，错值存活到下一帧。用户要求建连数据无条件覆盖提示，规则要写进 store 而不是靠 seq 约定模拟。哨兵保留为只读面输出的诚实声明，覆盖保证由行类型承担。
+**只用 `asOfSeq: -1` 哨兵，不给 store 分层。** 服务端一处改动即可让提示在 seq 规则下永远落败。但它靠约定成立：一旦提示 seq 与基线 cut 相等或偏高（crash-repair 截断），`apply` 保留旧行，错值存活到下一帧。用户要求建连数据无条件覆盖提示，规则要写进 store 而不是靠 seq 约定模拟。
+
+**用 `asOfSeq: -1` 表达 cached，客户端按哨兵分流。** 只读面统一输出 `-1`，客户端把所有列表 block 当 cached。否决：一个字段同时承担两个含义，另一个含义只能靠约定推断；活会话的列表 block 带本连接可比的真实 seq，一律当 cached 就把它们也降级了，PR 评审复现了延迟到达、cut 更低的 control 基线覆盖更新列表值的回归。改为独立字段 `kind`，`asOfSeq` 保持各自来源的水位。
 
 **把 cut 从缓存身份里彻底删掉。** fold 面需要它：`restore` 从缓存行状态继续 apply，`schedule`、`subagentCatalog`、`permissions.seeded` 与 owned/inherited 归属都编码了 cut，错误会被写回并持久化。否决。
 
@@ -146,16 +148,18 @@ seq 比较只在同一条 Host 连接内发生：`handleConnected` 先整表 `cl
 付出的：
 
 - `cachedSnapshot` 与 `cachedPredecessorTitle` 签名变化，三个调用方同步修改。
+- `SessionProjectionHints` 新增必填字段 `kind`，所有产出列表摘要的地方和构造摘要的测试夹具都要带上。
 - 手工构造的同四字段、不同 cut 的记录会在列表上显示到会话被打开为止。
 - 基线没带的键连提示一起清掉：某个 Host 未挂载 `schedule` 时，打开会话后列表提示过的 schedule 标记消失。按"建连数据是真值"这是正确行为。
 - 老记录对 seeded 会话仍然 miss，直到打开重写。
 
 ## Testing
 
-- `session-projection-cache/tests/cache.spec.ts`：seeded 冷 header 通过 `cachedSnapshot(header)` 取到全部版本匹配的行，`asOfSeq` 为 `-1`；unseeded header 对同一 id 的 seeded 记录被拒；`coldSnapshot` 对 cut 一致的记录从行续算、对 cut 不一致的记录整段重新 fold，对 unseeded 且 cut 非 0 的调用抛错；`cachedPredecessorTitle(header)` 对 seeded 的更旧 `formatVersion` 记录只给 `title`；不同 watermark 的多行合成一个不声明 watermark 的 block。
+- `session-projection-cache/tests/cache.spec.ts`：seeded 冷 header 通过 `cachedSnapshot(header)` 取到全部版本匹配的行，`asOfSeq` 为行水位；unseeded header 对同一 id 的 seeded 记录被拒；`coldSnapshot` 对 cut 一致的记录从行续算、对 cut 不一致的记录整段重新 fold，对 unseeded 且 cut 非 0 的调用抛错；`cachedPredecessorTitle(header)` 对 seeded 的更旧 `formatVersion` 记录只给 `title`；不同 watermark 的多行合成一个 block，`asOfSeq` 取最低行。
 - `session-projection-cache/tests/fixtures.spec.ts`：归档的 v3 到 v6 记录继续只透出 predecessor title；无 lineage 字段的归档对 seeded 调用方继续 miss。
-- `api/session-controller/tests/session-cold.host.spec.ts`：seeded 冷会话摘要携带 `title` 与 `sessionListMetadata`，`updatedAt` 取 `lastPromptAt`，缓存确实被查询，正文没有被读。
-- `api/session-controller/tests/projection-store.client.spec.ts`：`applyCached` 只填空位、不覆盖 sequenced 行；任何 sequenced 写入（包括 cursor `-1` 的 frame 和 cut 更低的基线）替换 cached 行；基线先丢弃全部 cached 行再清理没带的键；面订阅在 cached 填充与丢弃时都收到通知。manager 路径：列表 block 声明的 watermark 再高，也被 cut 更低的 control 基线替换，之后的列表刷新拿不回来。
-- `api/session-controller/tests/manager.client.spec.ts`：`api-session/added` 的 block 写为 cached，同 cursor 的 control 基线替换它；列表 block 不覆盖已有的 sequenced title。
+- `api/session-controller/tests/session-cold.host.spec.ts`：seeded 冷会话摘要携带 `kind: 'cached'`、`title` 与 `sessionListMetadata`，`updatedAt` 取 `lastPromptAt`，缓存确实被查询，正文没有被读。
+- `api/session-controller/tests/projection-store.client.spec.ts`：`applyCached` 只填空位、不覆盖 sequenced 行；任何 sequenced 写入（包括 cursor `-1` 的 frame 和 cut 更低的基线）替换 cached 行；基线先丢弃全部 cached 行再清理没带的键；面订阅在 cached 填充与丢弃时都收到通知。manager 路径：`cached` 列表 block 的水位再高，也被 cut 更低的 control 基线替换，之后的列表刷新拿不回来；`sequenced` 列表 block 按 higher-seq-wins，cut 更低的延迟基线既不覆盖也不清掉它，更高 seq 的 frame 仍能推进它。
+- `api/session-controller/tests/manager.client.spec.ts`：`api-session/added` 的 `cached` block 被同 cursor 的 control 基线替换；`cached` 列表 block 不覆盖已有的 sequenced title。
+- `api/session-controller/tests/inbox-projection.client.spec.ts`：不变，活会话的 `sequenced` 列表 block 仍压过延迟到达、cut 更低的 control 基线。
 - `context/session-reference/tests/session-reference.spec.ts`：seeded 冷会话按缓存 title 标注并可按 title 搜到，没有缓存记录的会话仍按 id 标注，两者都不读日志。
 - `subagent/subagent/tests/list-children.spec.ts`：不变，seeded 子代仍走正文观察。
