@@ -785,7 +785,7 @@ describe('web e2e: settings modal and General preferences', () => {
     const dialog = withoutBrowser.getByRole('dialog', { name: 'Settings' })
     await dialog.getByRole('button', { name: 'Detailed', exact: true }).waitFor()
     expect(await dialog.getByText('Open chat links in', { exact: true }).count()).toBe(0)
-    const snapshot = await captureStableAria(withoutBrowser, '[role="dialog"]', fresh.workspaceCwd)
+    const snapshot = await captureStableAria(withoutBrowser, '[role="dialog"]', fresh.workspaceCwd, versionCapture)
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'dialog-no-browser.expected.md'), snapshot, MODE)
     expect(browserConsole.pageErrors).toEqual([])
     expect(browserConsole.warnings).toEqual([])
