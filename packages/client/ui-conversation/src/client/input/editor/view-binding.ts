@@ -14,7 +14,7 @@ interface DraftViewGate {
   running: boolean
   steeringAvailable: boolean
   busyEnter: BusyEnterBehavior
-  intakeFiles: (files: readonly File[], directories?: ReadonlySet<File>) => void
+  intakeFiles: (files: readonly File[]) => void
   uploadsPending: boolean
   showToast: (text: string) => void
   t: ComposerBarProps['t']

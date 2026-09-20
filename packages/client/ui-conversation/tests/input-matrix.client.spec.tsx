@@ -283,6 +283,11 @@ describe('matrix row: claimed with attachments', () => {
     act(() => { shell.addAttachments([img]) })
     fireEvent.keyDown(textarea, { key: 'Enter' })
     expect(shell.snapshot.phase).toBe('submitting')
+    const draft = shell.snapshot.draft
+    expect(shell.addFiles([{
+      source: 'reference', ref: '@note.txt', label: 'note.txt', clipboardText: '@note.txt',
+    }], ['new-file' as DraftAttachmentId])).toBe(false)
+    expect(shell.snapshot.draft).toBe(draft)
     let removed = true
     act(() => { removed = shell.removeAttachment(img) })
     expect(removed).toBe(false)

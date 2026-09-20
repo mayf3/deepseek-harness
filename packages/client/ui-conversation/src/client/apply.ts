@@ -18,9 +18,10 @@ import type {
   ConversationSessionInjected, DraftFileUploads,
 } from './contract/slots.ts'
 import type { InputNotice } from './contract/input.ts'
+import type { ReferenceInsert } from './contract/draft-editor.ts'
 import { createConversationStore, readConversationViewPreference } from './stores.ts'
 import { formatFileMention } from '@deepseek-ai/dsh-file-reference/grammar'
-import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
+import { relativizeToCwd, workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
 import { ConversationController, UnsupportedImageMediaTypeError, isImageMediaType } from './service.ts'
 import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
@@ -410,42 +411,40 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       const shell = inputHub.shell(sessionId)
       const inputTriggers = inputHub.inputTriggers(sessionId)
       const bridge = hostPathBridge()
-      // A folder or non-image file the shell can name is cited as the same
-      // `@path` reference the user could have typed: the model reads it with
-      // its file tools, nothing uploads, and the draft keeps the chip. A
-      // directory the shell cannot name has nothing to upload or cite.
-      const cite = (file: File, directory: boolean): boolean | string => {
-        if (bridge === undefined) return directory ? t('attachment.directoryDesktopOnly') : false
-        const path = bridge.pathFor(file)
-        if (path === '') return directory ? t('attachment.directoryDesktopOnly') : false
-        if (!directory && isImageMediaType(file.type)) return false
-        const mention = formatFileMention({ path, kind: directory ? 'directory' : 'file' }, false)
-        if (mention === undefined) return t('attachment.pathUnsupported')
-        const label = workspaceTitleOf(path) || file.name
-        const selection = shell.caretSpan()
-        shell.insertReference({
-          source: 'reference',
-          ref: mention,
-          label: directory ? `${label}/` : label,
-          appearance: directory ? 'folder' : 'file',
-          clipboardText: mention,
-        }, { ...selection, draftRev: shell.snapshot.draftRev })
-        return true
-      }
       return {
         keyboard: shell,
         addFiles: (files, directories = new Set()) => {
           if (sessions.binding(sessionId) === undefined) return t('file.sessionUnavailable')
+          if (shell.snapshot.phase === 'adjudicating' || shell.snapshot.phase === 'submitting') {
+            return t('attachment.dropBlocked')
+          }
           const uploads: File[] = []
+          const references: ReferenceInsert[] = []
+          const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
           for (const file of files) {
-            const cited = cite(file, directories.has(file))
-            if (typeof cited === 'string') return cited
-            if (!cited) uploads.push(file)
+            const directory = directories.has(file)
+            if (bridge === undefined && directory) return t('attachment.directoryDesktopOnly')
+            const path = bridge?.pathFor(file) ?? ''
+            if (directory && path === '') return t('attachment.pathUnavailable')
+            if (path === '' || (!directory && isImageMediaType(file.type))) {
+              uploads.push(file)
+              continue
+            }
+            const relative = relativizeToCwd(path, cwd)
+            // A completed directory chip needs closed quotes; the directory grammar keeps them open for drill.
+            const mention = formatFileMention({ path: directory ? `${relative}/` : relative, kind: 'file' }, false)
+            if (mention === undefined) return t('attachment.pathUnsupported')
+            const label = workspaceTitleOf(path) || file.name
+            references.push({
+              source: 'reference', ref: mention, label: directory ? `${label}/` : label,
+              appearance: directory ? 'folder' : 'file', clipboardText: mention,
+            })
           }
           try {
             const drafts = conversation.createDrafts(sessionId, uploads)
-            if (!shell.addAttachments(drafts.map(draft => draft.id))) {
+            if (!shell.addFiles(references, drafts.map(draft => draft.id))) {
               conversation.releaseDraftAttachments(drafts)
+              return t('attachment.dropBlocked')
             }
             return null
           } catch (error: unknown) {

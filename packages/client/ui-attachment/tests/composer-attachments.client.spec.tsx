@@ -120,7 +120,7 @@ describe('ComposerAttachments', () => {
     const folder = new File([], 'project')
     const note = new File([Uint8Array.of(1)], 'notes.md', { type: 'text/markdown' })
     const entry = (isDirectory: boolean | null, file: File) => ({
-      kind: 'file', getAsFile: () => file, webkitGetAsEntry: () => (isDirectory === null ? null : { isDirectory }),
+      kind: 'file', getAsFile: () => new File([], file.name), webkitGetAsEntry: () => (isDirectory === null ? null : { isDirectory }),
     })
     fireEvent.drop(document.body, {
       dataTransfer: {
@@ -136,7 +136,7 @@ describe('ComposerAttachments', () => {
       dataTransfer: {
         types: ['Files'],
         files: [note],
-        items: [entry(null, note), { kind: 'file', getAsFile: () => note }],
+        items: [entry(null, note), { kind: 'file', getAsFile: () => note }, entry(true, folder)],
         dropEffect: 'none',
       },
     })

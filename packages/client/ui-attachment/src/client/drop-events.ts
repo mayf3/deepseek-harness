@@ -6,13 +6,15 @@ import type { ComposerAttachmentsProps } from '@deepseek-ai/dsh-client-ui-conver
  * is indistinguishable from an empty file, so the entry API is the only
  * source of that fact; browsers without it report no directories.
  */
-function droppedDirectories(dataTransfer: DataTransfer): ReadonlySet<File> {
+function droppedDirectories(dataTransfer: DataTransfer, files: readonly File[]): ReadonlySet<File> {
   const directories = new Set<File>()
+  let fileIndex = 0
   for (const item of dataTransfer.items) {
-    if (item.kind !== 'file' || typeof item.webkitGetAsEntry !== 'function') continue
+    if (item.kind !== 'file') continue
+    const file = files[fileIndex++]
+    if (typeof item.webkitGetAsEntry !== 'function') continue
     if (item.webkitGetAsEntry()?.isDirectory !== true) continue
-    const file = item.getAsFile()
-    if (file !== null) directories.add(file)
+    if (file !== undefined) directories.add(file)
   }
   return directories
 }
@@ -65,7 +67,10 @@ export function installDocumentDropEvents(
     if (dataTransfer === null) return
     event.preventDefault()
     reset()
-    if (canAcceptDrop) onAddFiles([...dataTransfer.files], droppedDirectories(dataTransfer))
+    if (canAcceptDrop) {
+      const files = [...dataTransfer.files]
+      onAddFiles(files, droppedDirectories(dataTransfer, files))
+    }
   }
   document.addEventListener('dragenter', onDragEnter)
   document.addEventListener('dragover', onDragOver)

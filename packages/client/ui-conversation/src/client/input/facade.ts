@@ -216,6 +216,20 @@ export class SessionInputShell implements SessionInput {
   }
 
   /**
+   * Add validated file references and attachment ids while admission is editable.
+   * @param references - reference chips in source order.
+   * @param ids - newly allocated attachment ids.
+   * @returns false when admission is locked or the editor refuses the insertion.
+   */
+  addFiles(references: readonly ReferenceInsert[], ids: readonly DraftAttachmentId[]): boolean {
+    if (this.snapshot.phase === 'adjudicating' || this.snapshot.phase === 'submitting') return false
+    if (!this.draftEditor.insertFileReferences(references)) return false
+    this.attachmentIds = [...this.attachmentIds, ...ids]
+    this.publish()
+    return true
+  }
+
+  /**
    * Remove one attachment id from this draft. Busy admission phases refuse, like
    * {@link addAttachments}: a removal landing while a command submit serializes
    * would otherwise vanish from the rail yet still ride the in-flight send.
