@@ -88,6 +88,7 @@ export function apply(ctx: ClientContext): void {
           params: { planReview: { markdown: review.plan, title: extractMarkdownPlainText(review.plan, { mode: 'first-line' }) } },
         })
       },
+      hooks: { sidebarMounted: ctx.sidebarRight.mounted },
     }),
   }, PlanReviewOpen))
   ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({

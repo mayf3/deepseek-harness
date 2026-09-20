@@ -57,7 +57,6 @@ export function apply(ctx: ClientContext): void {
   ctx.inject(['resources', 'sidebarRightTabs'], (scope) => {
     registerSidebarChat(scope, ctx.locale.bind(NS))
   })
-  const sessions = ctx.sessions
   const catalogActions = (_parentSessionId: SessionId): SubagentCatalogInjected => ({
     openChild(address: SubagentAddress) {
       ctx.uiWorkspace.openSession(address)
@@ -68,8 +67,8 @@ export function apply(ctx: ClientContext): void {
         preferNewPane: true,
       })
     },
-    refresh(parentSessionId: SessionId) {
-      void sessions.refreshProjections(parentSessionId)
+    refreshProjection(parentSessionId: SessionId) {
+      void ctx.sessions.refreshProjections(parentSessionId)
     },
   })
   ctx.slots.inject(

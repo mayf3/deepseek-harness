@@ -232,6 +232,15 @@ describe('package payload constraints', () => {
       'cordis.patch.yml',
       'lib/types/**/*.d.ts',
     ])
+    expect(expectedDshPackageFiles({
+      name: '@deepseek-ai/dsh-private-profile',
+      dsh: { bundle: { patch: ['./cordis.patch.yml', './layers/web.patch.yml'] } },
+    })).toEqual([
+      'lib/index.js',
+      'cordis.patch.yml',
+      'layers/web.patch.yml',
+      'lib/types/**/*.d.ts',
+    ])
   })
 
   it.each([

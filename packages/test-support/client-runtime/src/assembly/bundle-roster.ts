@@ -1,6 +1,6 @@
 /**
  * The browser roster of a `dsh --profile`, read from its bundle patch files
- * the way the launcher composes them: each bundle's `dsh.bundle.patch` list is
+ * the way the launcher composes them: each bundle's `dsh.bundle.patch` file list is
  * parsed with the include plugin's YAML dialect (`entryListSchema`) and
  * composed by its `applyEntryPatches`; every enabled row whose package
  * declares `dsh.client.platform === 'web'` becomes a roster row carrying that
@@ -86,12 +86,18 @@ export function bundleRoster(
 function readLayer(bundle: string, anchor: string): BundleLayer {
   const manifestPath = locateManifest([anchor], bundle)
   if (manifestPath === undefined) throw new Error(`client-test-runtime: cannot resolve bundle ${bundle} from ${anchor}`)
-  const patch = readManifest(manifestPath).dsh?.bundle?.patch
-  if (typeof patch !== 'string') throw new Error(`client-test-runtime: bundle ${bundle} declares no dsh.bundle.patch in ${manifestPath}`)
-  const file = join(dirname(manifestPath), patch)
-  const parsed: unknown = yaml.load(readFileSync(file, 'utf8'), { schema: entryListSchema })
-  if (!Array.isArray(parsed)) throw new Error(`client-test-runtime: ${file} must be a top-level list of patches`)
-  return { manifestPath, patches: parsed as PatchOptions[] }
+  const declared = readManifest(manifestPath).dsh?.bundle?.patch
+  const files = typeof declared === 'string' ? [declared] : declared
+  if (!Array.isArray(files) || !files.every(file => typeof file === 'string')) {
+    throw new Error(`client-test-runtime: bundle ${bundle} declares no dsh.bundle.patch file list in ${manifestPath}`)
+  }
+  const patches = files.flatMap((patch) => {
+    const file = join(dirname(manifestPath), patch)
+    const parsed: unknown = yaml.load(readFileSync(file, 'utf8'), { schema: entryListSchema })
+    if (!Array.isArray(parsed)) throw new Error(`client-test-runtime: ${file} must be a top-level list of patches`)
+    return parsed as PatchOptions[]
+  })
+  return { manifestPath, patches }
 }
 
 /** One Loader row with its ancestor and own disable conditions, in outer-to-inner order. */

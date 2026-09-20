@@ -51,6 +51,8 @@ The source implements no adjudication hooks and no reference codec: the pick lan
 
 Catalogs cache per ordinary session with a single-flight fetch; the scope-birth `warm` hook prewarms the session's entry, the forwarded `agent-preset/selected` owner event drops that one session's entry (the catalog belongs to the preset, and a blank session may switch after the warm), and `connection/reset` clears everything. Catalog-addressed continuable children resolve no skill candidates locally because the existing skill RPC requires an attached session; viewing their persisted history must not activate them. The list RPC rides the plugin's root-context connection captured at registration; draft chip visuals derive from the `lexicon` scan.
 
+Each catalog fetch requires an existing retained Client Session and waits for its initial history open to succeed before sending `skills/list`. A temporary `skillCatalog` reference holds that Session until the fetch settles. An unretained Session or a failed open rejects without sending the RPC; preset invalidation, connection reset, and plugin disposal also cancel a pending history wait.
+
 ### Registration
 
 The `/client` exports are the plugin body (`apply`/`inject`) only; the source object is internal to the registration effect. The tool row registers the `skill` wire name in ui-tool's keyed `tool.call.toolview` slot.
