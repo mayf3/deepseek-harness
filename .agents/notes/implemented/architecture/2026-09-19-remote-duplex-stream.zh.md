@@ -1,6 +1,6 @@
 # Agent Note: Remote 双工流：一种流、上行通道与调用上下文
 
-Status: proposed
+Status: implemented
 
 [English](2026-09-19-remote-duplex-stream.md) | 中文
 
@@ -46,7 +46,7 @@ Host 方法也没有"这次调用是谁发起的"这个概念：`InvokeRemoteReq
 
 ### 与后台 job 的关系
 
-后台 job 的进程形双工流面（已存档为草稿 PR，分支 `worktree/job-stdio-stream-pair-archive`）把 job 建成一对镜像的流面，浏览器要接它就需要一条既下行又上行的 Remote 流。它是本 Note 的动机之一，但不是本 Note 的范围：job 要不要一种专用的读写流，是 jobs 那条线自己的架构问题。本 Note 只交付传输层。
+后台 job 的进程形双工流面（已存档为草稿 PR，分支 `worktree/job-stdio-stream-pair-archive`）把 job 建成一对镜像的流面，浏览器要接它就需要一条既下行又上行的 Remote 流。它是本 Note 的动机之一，但不是本 Note 的范围：job 要不要一种专用的读写流，是 jobs 那条线自己的架构问题。本 Note 只覆盖传输层。
 
 ### 目标
 
@@ -56,7 +56,7 @@ Host 方法也没有"这次调用是谁发起的"这个概念：`InvokeRemoteReq
 4. 客户端拿到的不再是裸 `AsyncIterable`，而是一个能读、能写、能关的句柄。
 5. 上层协议（snapshot、journal、任何业务自定义的流）不进传输层。
 
-## 提案
+## 决定
 
 ### 一句话
 
@@ -88,7 +88,7 @@ Host 方法也没有"这次调用是谁发起的"这个概念：`InvokeRemoteReq
 | 半关闭 | 一个方向已结束而另一个方向仍开放 |
 | 项 | 一个方向上的一个业务值；每项独立经 codec 校验 |
 | inbox | Host 侧每逻辑流一个的有界上行队列 |
-| Peer | 连接层被接纳的一方，一个 `PeerScope`；操作者是进程内默认 Peer |
+| Peer | 连接层被接纳的一方，一个 `PeerScope`；本 Host 只有操作者一个 Peer |
 | 调用上下文 | `RemoteInvocation`：本次调用的请求、接收服务、Peer、取消信号与上行入口 |
 
 ### 类型签名
@@ -97,7 +97,7 @@ Host 方法也没有"这次调用是谁发起的"这个概念：`InvokeRemoteReq
 // @deepseek-ai/dsh-typert-protocol
 /**
  * 一条 Remote 流。Host 面：方法返回它，运行时就是 AsyncIterable<Out>。
- * Client 面：生成方法返回的句柄，见 RemoteStreamHandle。
+ * Client 面上生成方法返回的是 RemoteStreamHandle<Out, In>；两个名字各自只有一个含义。
  * In 是客户端可上行的项类型；缺省 never 表示该方法不读上行。
  */
 export type RemoteStream<Out, In = never> = AsyncIterable<Out>
@@ -161,7 +161,7 @@ declare module '@deepseek-ai/cordis' {
 1. 任何 `mode: 'stream'` 方法都可以调用 `this.ctx.invocation.uplink()`；unary 方法也可以，但它的流在方法返回时结束，上行项只在方法运行期间可读。
 2. `uplink()` 未被调用时，上行项在 inbox 里攒着，直到超限（见背压）或流结束被丢弃。这是刻意的：不读上行的方法不用知道上行存在。
 3. `In` 缺省为 `never` 时描述符没有 uplink codec；客户端句柄的 `send` 类型为 `never`，编译期就不能发。运行时若仍有帧到达（手工构造的客户端），按 `unknown` 交付。
-4. `this.ctx.invocation` 在非 Remote 调用的 Context 上是 `undefined`；方法内读它时按 TS 的可选处理，或在方法第一行断言。
+4. `this.ctx.invocation` 在非 Remote 调用的 Context 上是 `undefined`；方法内读它时按 TS 的可选处理，或在方法第一行断言。该属性的 accessor 由 `TypertRemoteService` 基类构造时注册一次，任何装有 Remote 服务的组合都能读它。
 
 #### 调用上下文如何到达方法
 
@@ -185,25 +185,23 @@ export interface PeerScope {
 }
 ```
 
-`PeerRegistry` 放在 `@deepseek-ai/dsh-client-connection`（`src/peer-scope.ts`）：
+本 Host 只有一个 Peer：操作者。`@deepseek-ai/dsh-client-connection` 在服务 apply 时用 `createScope(connectionCtx, peer)` 建它，与 Agent 建自己的 scope 是同一机制：Peer 对象就是 ScopeKey，`peer.ctx` 承接连接期效果，`dispose()` 随 connection 释放让 fiber 静默。它以 `connection.operator` 暴露。
 
 | 成员 | 语义 |
 | --- | --- |
-| `operator: PeerScope` | 进程内默认 Peer，服务 apply 时打开 |
-| `open(): PeerScope` | 为一次连接打开一个 scope，`ctx` 由 `createScope(connectionCtx, peer)` 派生 |
-| `bind(carrier, peer)` / `of(carrier)` | 用 WeakMap 把 WebSocket 或 Fetch `Request` 绑到 Peer |
-| `dispose()` | scope 回收；`stream-server` 在 `peer.ctx.effect` 里登记 socket 关闭，scope 释放即断连 |
+| `connection.operator: PeerScope` | 唯一的 Peer，随 connection 生灭 |
+| `connection.admit(request): PeerAdmission` | 过既有的 `requestRejection`：被拒返回 `{ rejection: 401 \| 403 }`，否则返回 `{ peer: operator }`。将来的接纳方在这里接入 |
 
-网关 `handleUpgrade(req, socket, head, peer)` 为该 socket 绑一个固定 Peer 的 opener；`InvokeRemoteRequest.peer?` 与 `RemoteStreamOpener` 的 `peer` 形参缺席时按操作者作答，现有进程内调用方零改动。
+网关 `handleUpgrade(req, socket, head, peer)` 为该 socket 绑一个固定 Peer 的 opener，并在 `peer.ctx.effect` 里登记 socket 关闭；scope 已失效时改为直接以 1001 关闭 socket。`InvokeRemoteRequest.peer?` 与 `RemoteStreamOpener` 的 `peer` 形参缺席时按操作者作答，现有进程内调用方零改动；没有 connection 的组合里网关自建的操作者替身同样经 `createScope` 建立，`dispose()` 契约一致。按 id 查 Peer、把载体关联到第二个 Peer、Peer 的开关事件，都等第一个需要多 Peer 的消费者出现时再加。
 
-不采用的部分：`@Access`、`AccessDeclaration`、`AccessLevel`、`AccessTarget`、`vouch` / `vouched`、`remote/invoke` 与 `remote/deliver` 事件、`mayDeliver`、`requireVoucher`、`gateway/access-denied`。Peer 是谁、能做什么，由业务插件通过 `peer.ctx` 或按 `PeerScope` 键的注册表自行附加，与本 Note 无关。
+不采用的部分：`@Access`、`AccessDeclaration`、`AccessLevel`、`AccessTarget`、`vouch` / `vouched`、`remote/invoke` 与 `remote/deliver` 事件、`mayDeliver`、`requireVoucher`、`gateway/access-denied`。Peer 是谁、能做什么，由业务插件通过 `peer.ctx` 自行附加，与本 Note 无关。
 
 ### Client 面
 
 ```text
-/** Client 面上生成方法返回的句柄；RemoteStream<Out, In> 在 Client 面解析为它。 */
+/** 生成方法在 Client 面返回的句柄。与 Host 的 RemoteStream 是两个名字，从同一个入口导出。 */
 export interface RemoteStreamHandle<Out, In> extends AsyncIterable<Out> {
-  /** 发送一个上行项。流已终止或已 end 时抛错。 */
+  /** 发送一个上行项。非无损 JSON 值、流已终止或已 end 时抛错。 */
   send(item: In): void
   /** 上行半关闭：发 end 帧。幂等。 */
   end(): void
@@ -213,9 +211,10 @@ export interface RemoteStreamHandle<Out, In> extends AsyncIterable<Out> {
 ```
 
 - 句柄代表一个代际。载体丢失时 `for await` 以 `RemoteStreamCarrierError` 失败，句柄到此结束；要不要重开、带什么参数重开，是上层协议的事。
-- `send` 是同步的：浏览器 `WebSocket.send` 没有写回调，发送节流没有意义；Host 侧的 inbox 上限是唯一的背压点。
-- 消费者提前 `break` 出 `for await` 等价于 `dispose()`。
-- `$stream` 监督器、`RemoteSnapshotStream`、`RemoteJournalStream` 是上层工具，本 Note 不改它们；它们的 `open` 工厂将来接的是句柄而不是裸 `AsyncIterable`，属于平滑替换。
+- `send` 是同步的：入队前做 `isRemoteJsonValue` 校验，非无损 JSON 值同步抛错。浏览器 `WebSocket.send` 没有写回调，发送节流没有意义；Host 侧的 inbox 上限是唯一的背压点。
+- 收到终止帧（`end` / `error`）时，mux 客户端在收帧路径上立即停泵并关闭上行队列，之后 `send` / `end` 抛错，不等消费者下一次读。
+- `dispose()` 调用载体迭代器的 `return()`，让 `cancel` 帧在无人读下行时也发出；之后句柄的 `next()` 直接结束，缓冲项丢弃。消费者提前 `break` 出 `for await` 等价于 `dispose()`。
+- `$stream` 监督器、`RemoteSnapshotStream`、`RemoteJournalStream` 是上层工具，不在传输层内。它们的 `open` 工厂拿到的对象现在就是句柄，`for await` 行为不变；把 `send` 透出到这些上层协议是后续的事。
 
 ### 线路帧
 
@@ -233,7 +232,7 @@ export type RemoteStreamServerMessage =
   | { readonly type: 'end'; readonly streamId: string }
 ```
 
-解析规则：`item` 精确键 `type` `streamId` 加可选 `value`，`value` 须为无损 JSON 值（`isRemoteJsonValue`）；`end` 精确键 `type` `streamId`。其余形状仍是协议违规，socket 以 1008 关闭。不引入二进制帧。
+解析规则：`item` 精确键 `type` `streamId` 加可选 `value`，`value` 须为无损 JSON 值（`isRemoteJsonValue`）；`end` 精确键 `type` `streamId`。其余形状是帧格式违规，socket 以 1008 关闭。不引入二进制帧。
 
 ### 逻辑流状态机
 
@@ -273,7 +272,7 @@ export type RemoteStreamServerMessage =
 | 客户端 `dispose` 或 signal 中止 | 任意 | 发 `cancel`；Host `control.abort()`，`cancellableStream` 调方法迭代器的 `return()`，再调 `uplink` 的 `return()`；不发终止帧 |
 | socket 关闭 | 任意 | Host 中止全部流并等待 `done`；客户端每条流以 `RemoteStreamCarrierError` 失败 |
 | `end` 之后又收到 `item` | 任意 | 该流以 `gateway/protocol` 错误帧失败并中止；socket 不关闭 |
-| 未知 `streamId` 的 `item` / `end` | 任意 | 协议违规，socket 以 1008 关闭，与重复 id 同级 |
+| 未知 `streamId` 的 `item` / `end` | 任意 | 忽略，与 `cancel` 相同：Host 结束流并删除 id 后，客户端在途的上行帧属正常现象，不能连累同一 socket 上的其他流 |
 
 ### 顺序保证
 
@@ -281,7 +280,7 @@ export type RemoteStreamServerMessage =
 
 ### 背压
 
-WebSocket 没有 HTTP/2 那样的每流窗口，一个连接一条串行写链，慢流会拖住同连接的其他流。下行今天已经如此，本 Note 不改。上行：
+WebSocket 没有 HTTP/2 那样的每流窗口，一个连接一条串行写链，慢流会拖住同连接的其他流。下行的这一性质不变。上行：
 
 **有界 inbox 加整流失败。** Host 每条逻辑流的 inbox 按帧的 UTF-8 字节计量，上限为网关配置 `streamInboxBytes`（默认 262144），对所有流生效。超限时整条逻辑流以 `gateway/uplink-overflow` 失败：下行一起断，向客户端发 `error` 帧，`uplink()` 迭代器以同一错误结束。数据不丢弃；一个方法不读上行而客户端持续发，是用法错误，由失败显式暴露。
 
@@ -301,14 +300,14 @@ credit 帧留待需要持续大流量上行的消费者出现时再加；inbox �
 | 载体 | 改为 |
 | --- | --- |
 | `ClientConnectionRpc.open`（`packages/client/connection/src/rpc.ts:245-250`）与 `RpcStreamOpen`（`client/rpc.ts:21-25`） | 追加可选 `uplink?: AsyncIterable<unknown>`；进程内没有帧也没有 inbox，调用方迭代器直接作为 `uplink()` 的源，背压就是迭代器本身的节拍 |
-| worker 隧道（`packages/experimental/webworker-runtime`） | 页面新增 `stream-uplink-item` / `stream-uplink-end` 帧；`serveStream` 把它们组装成 `uplink` 交给 `seams.openStream` |
+| worker 隧道（`packages/experimental/webworker-runtime`） | 页面新增 `stream-uplink-item` / `stream-uplink-end` 帧；`serveStream` 把它们组装成 `uplink` 交给 `seams.openStream`。同源可信边界：没有 inbox 上限，`end` 之后的项丢弃 |
 | `remote-mock`（`packages/test-support/remote-mock`） | `StreamHandle.uplink: AsyncIterable<unknown>`；`rpc.open` 透传 |
 
 进程内载体的 `peer` 缺席即操作者。
 
 ### 与 `$events` 的关系
 
-`$events` 是一条保留端点的流；有了上行帧，waterfall 的回答可以成为同一 `streamId` 上的上行项，`clientId` 因 `streamId` 已标识代际而多余，`$events/result` 与 `index.ts:527-529` 的竞态一起消失。不在本 Note 范围，列在迁移的最后。
+`$events` 是一条保留端点的流；有了上行帧，waterfall 的回答可以成为同一 `streamId` 上的上行项，`clientId` 因 `streamId` 已标识代际而多余，`$events/result` 与 `index.ts:527-529` 的竞态一起消失。不在本 Note 范围，见「后续」。
 
 ## 类型与线路定义
 
@@ -338,12 +337,12 @@ export interface InvocationDescriptor {
 
 - `model.ts`：`InvocationModel.uplink?: { boundary: RemoteBoundaryModel }`。
 - `analyzer.ts` `remoteResultType`（现 `~1402`）：对 `mode: 'stream'`，接受的返回类型包装器为 `Iterable<Out>`、`AsyncIterable<Out>`、`RemoteStream<Out, In?>`。识别 `RemoteStream` 的方式与识别标准库 `AsyncIterable` 相同：符号名加声明所在文件（`@deepseek-ai/dsh-typert-protocol` 的 `types.ts`）。第一个类型参数是下行项，第二个存在且不是 `never` 时生成 `uplink` boundary，键名 `${endpoint}:uplink`。
-- `emitter.ts`：描述符字面量输出 `uplink: { codec }`；生成的 Client 签名返回类型原样渲染为 `RemoteStream<Out, In>`（Client 面解析为句柄类型，见下）。
+- `emitter.ts`：描述符字面量输出 `uplink: { codec }`；生成的 Client 签名返回 `RemoteStreamHandle<Out, In>`。
 - 参数循环不再识别任何名为 `uplink` 的参数。
 
-### Client 面的 `RemoteStream` 解析
+### 两个名字，一个入口
 
-`RemoteStream<Out, In>` 在 Host 面是 `AsyncIterable<Out>`，在 Client 面是 `RemoteStreamHandle<Out, In>`。两个编译面通过 protocol 包按面区分的入口各自导出同名别名；生成代码只写 `RemoteStream<Out, In>`，由所在编译面决定它是什么。这与 protocol 已有的 Host / Client 分面导出一致。
+Host 方法用 `RemoteStream<Out, In>` 声明一条流；Client 持有的是 `RemoteStreamHandle<Out, In>`。两者都从 `@deepseek-ai/dsh-typert-protocol` 主入口导出，句柄接口没有任何 Host 依赖。生成的 Client 契约把返回类型写成 `RemoteStreamHandle<Out, In>`。一个名字只有一个含义：Client 代码从主入口拿到的 `RemoteStream` 永远是声明类型，不会与句柄混淆。
 
 ### 网关 Host（`packages/api/gateway/src`）
 
@@ -395,7 +394,7 @@ const callReceiver = receiverContext.extend({ invocation }).get(descriptor.servi
 if (descriptor.cancellation !== undefined) args.push(signal)
 ```
 
-`GatewayInvocation.uplink()` 第一次调用返回解码器，第二次抛错。`UplinkDecoder` 是手写迭代器：有 codec 时逐项 `decode(codec, value, endpoint, 'uplink')`，失败即 `control.abort(failure)` 并抛出；无 codec 时只做 `isRemoteJsonValue` 校验。`cancellableStream` 的 `finally` 在方法迭代器 `return()` 之后调用解码器的 `return()`。unary 与 stream 的模式分支恢复为今天的两分支。SRC 回退：描述符无 `uplink` codec，`uplink()` 交付 `unknown`。
+`GatewayInvocation.uplink()` 第一次调用返回解码器，第二次抛错。`UplinkDecoder` 是手写迭代器：有 codec 时逐项 `decode(codec, value, endpoint, 'uplink')`，失败即 `control.abort(failure)` 并抛出；无 codec 时只做 `isRemoteJsonValue` 校验。`cancellableStream` 的 `finally` 先关闭解码器（`invocation.close()`）再等待方法迭代器的 `return()`，阻塞在 `uplink.next()` 上的方法得以退出。unary 与 stream 的模式分支恢复为今天的两分支。SRC 回退：描述符无 `uplink` codec，`uplink()` 交付 `unknown`。
 
 ### 网关 Host mux（`stream-server.ts`）
 
@@ -416,8 +415,8 @@ class UplinkInbox implements AsyncIterable<unknown>, AsyncIterator<unknown> {
 
 ```
 open   : 已存在 → 抛错（socket 1008）；否则创建 { control, inbox, done }，启动 pump
-item   : 不存在 → 抛错（socket 1008）；否则 inbox.push(value, bytes)
-end    : 不存在 → 抛错（socket 1008）；否则 inbox.end()
+item   : 不存在 → 忽略；否则 inbox.push(value, bytes)
+end    : 不存在 → 忽略；否则 inbox.end()
 cancel : 不存在 → 忽略；否则 control.abort(new Error('Remote stream cancelled'))
 ```
 
@@ -430,28 +429,18 @@ cancel : 不存在 → 忽略；否则 control.abort(new Error('Remote stream ca
 - `RemoteStreamMuxClient.open(endpoint, payload, signal, uplink?)`：在发出 `open` 帧后启动上行泵，逐项发 `item`，源结束发 `end`；下行终止或 signal 中止时停泵并调用源的 `return()`（不等待，避免键盘类生成器卡死）；源抛错时 `inbox.fail(error)`，下行以该错误失败，`finally` 按既有规则发 `cancel`。泵检查 `this.socket === socket`，旧代际不往新 socket 上发帧。
 - 进程内载体：`connection.rpc.open(channel, endpoint, payload, signal, uplink)`。
 
-## 实现要点
+## 落点
 
-按文件列出。实现者按此顺序推进，每步都应能单独 `typecheck`。
-
-| 步 | 文件 | 改动 |
-| --- | --- | --- |
-| 1 | `packages/typert/protocol/src/types.ts` | `RemoteStream` 别名、`PeerId`、`PeerScope`、`RemoteInvocation`、`ctx.invocation` 声明合并、`InvocationDescriptor.uplink`；`mode` 仍只有 `'stream'` |
-| 2 | `packages/typert/protocol/src/index.ts` | 修饰器恢复只认 `mode: 'stream'`；导出新类型；Client 面入口导出 `RemoteStreamHandle` 并把 `RemoteStream` 解析为它 |
-| 3 | `packages/typert/registry/src/service.ts` | 加载校验：`uplink.codec` 为有效的严格 codec |
-| 4 | `packages/typert/generator/src/model.ts` | `InvocationModel.uplink?: { boundary }` |
-| 5 | `packages/typert/generator/src/analyzer.ts` | `remoteResultType` 识别 `RemoteStream<Out, In>` 并生成 `uplink` boundary；参数循环只认业务参数与末位 `signal` |
-| 6 | `packages/typert/generator/src/emitter.ts` | 输出 `uplink: { codec }`；生成签名的参数恢复；返回类型渲染 `RemoteStream<Out, In>` |
-| 7 | `packages/client/connection/src/peer-scope.ts`（新，从 `remote-client-access` 分支照搬） | `PeerRegistry`：`operator`、`open`、`bind` / `of`、`dispose`；`rpc.ts` 暴露 `peers`；`/api` 与升级路由绑定 Peer |
-| 8 | `packages/api/gateway/src/stream-protocol.ts` | `item` / `end` 帧（已有） |
-| 9 | `packages/api/gateway/src/stream-server.ts` | opener 加 `peer`；`handleUpgrade(req, socket, head, peer)`；`UplinkInbox`（已有，改名配置） |
-| 10 | `packages/api/gateway/src/types.ts` | `InvokeRemoteRequest.uplink` / `peer`；`wireStream.open` 签名 |
-| 11 | `packages/api/gateway/src/index.ts` | `Config.streamInboxBytes`；`GatewayInvocation`；`extend({ invocation })`；`UplinkDecoder` 按描述符 codec 可选；`operatorPeer()`；unary 与 stream 两个模式分支 |
-| 12 | `packages/api/gateway/src/client/index.ts`、`stream-client.ts` | `invokeStream` 返回句柄；泵（已有）改由句柄的队列驱动 |
-| 13 | `packages/client/connection/src/rpc.ts`、`client/rpc.ts` | `open` 加可选 `uplink`（已有） |
-| 14 | `packages/experimental/webworker-runtime` | 两种上行帧与 `serveStream` 组装（已有） |
-| 15 | `packages/test-support/remote-mock` | `StreamHandle.uplink`（已有） |
-| 16 | 文档 | `docs/api-gateway.md:5, 160`；`packages/api/gateway/README.md:12, 35, 46, 54`、错误码与 Known Limitations；`packages/api/README.md:12, 30, 38`；`packages/client/connection/README.md:30`；`docs/subsystems/typert.md:88-89, 113`；`protocol/src/index.ts:96, 103` 与 `types.ts:269, 294` 的 JSDoc；Cordis 目录再生成 |
+| 包 | 承载 |
+| --- | --- |
+| `dsh-typert-protocol`（`types.ts`、`index.ts`） | `RemoteStream`、`RemoteStreamHandle`、`PeerId`、`PeerScope`、`RemoteInvocation`、`ctx.invocation` 声明合并、`InvocationDescriptor.uplink`；修饰器只认 `mode: 'stream'`；`TypertRemoteService` 构造时注册 `invocation` accessor |
+| `dsh-typert-registry` | 加载校验 `uplink.codec` 为有效的严格 codec |
+| `dsh-typert-generator`（`model.ts`、`analyzer.ts`、`emitter.ts`） | `remoteResultType` 识别 `RemoteStream<Out, In>` 并生成 `uplink` boundary；描述符输出 `uplink: { codec }`；生成的 Client 签名返回 `RemoteStreamHandle<Out, In>`；参数循环只认业务参数与末位 `signal` |
+| `dsh-client-connection`（`operator-peer.ts`、`rpc.ts`、`rpc-host.ts`、`index.ts`） | 操作者 `PeerScope`；`connection.operator` 与 `admit`；`/api` 与升级路由经 `admit` 取 Peer；`rpc.open` 的可选 `uplink` |
+| `dsh-api-gateway` Host（`stream-protocol.ts`、`stream-server.ts`、`types.ts`、`index.ts`） | `item` / `end` 帧；`UplinkInbox`；`Config.streamInboxBytes`；`GatewayInvocation` 与 `extend({ invocation })`；`UplinkDecoder`；`handleUpgrade(req, socket, head, peer)`；`operatorPeer()` |
+| `dsh-api-gateway` Client（`client/index.ts`、`client/stream-client.ts`） | `invokeStream` 返回句柄；上行泵由句柄的队列驱动 |
+| `dsh-webworker-runtime`、`dsh-remote-mock` | worker 隧道的两种上行帧与 `serveStream` 组装；`StreamHandle.uplink`；直接代理返回真句柄 |
+| 文档 | gateway、api 组、connection、protocol、generator 的 README；`docs/api-gateway`；`docs/subsystems/typert` 的 type-equiv 块；config 与 Cordis 目录 |
 
 ## 关键流程时序
 
@@ -498,8 +487,8 @@ Client 调用方         mux client             mux server                      
 
 | 事件 | opening | running | 上行已 end | 下行已终止 |
 | --- | --- | --- | --- | --- |
-| 收到 `item` | 入 inbox 缓冲 | 入 inbox | 流以 `gateway/protocol` 失败 | 流已不在表中 → socket 1008 |
-| 收到 `end` | inbox.end | inbox.end | 幂等 | 同上 |
+| 收到 `item` | 入 inbox 缓冲 | 入 inbox | 流以 `gateway/protocol` 失败 | 忽略 |
+| 收到 `end` | inbox.end | inbox.end | 幂等 | 忽略 |
 | 收到 `cancel` | abort | abort | abort | 忽略 |
 | inbox 超限 | 流以 `uplink-overflow` 失败 | 同 | 不可能 | 不可能 |
 | 解码失败 | 不可能 | 流以 `input-invalid` 失败 | 同 | 不可能 |
@@ -523,7 +512,7 @@ Client 调用方         mux client             mux server                      
 
 ## 最小 echo 方法
 
-验收用，放在网关测试支持里：
+`packages/api/gateway/tests/echo-stream.host.spec.ts` 让同一个方法分别穿过 WebSocket 载体与进程内载体：
 
 ```text
 class EchoService extends TypertRemoteService {
@@ -544,17 +533,6 @@ stream.send('a'); stream.send('b'); stream.end()
 const replies: string[] = []
 for await (const reply of stream) replies.push(reply)   // ['> a', '> b']
 ```
-
-## 迁移步骤
-
-| 阶段 | 内容 | 范围 |
-| --- | --- | --- |
-| A | 实现要点表第 1 到 15 步 | 本 Note |
-| B | 第 16 步文档；typert 与网关的测试；echo 端到端 | 合并前 |
-| C | `$stream` / snapshot / journal 的 `open` 工厂接句柄 | 后续 |
-| D | Web 终端：一条 `attach` 流取代 `follow` 加 `write` 加 `resize` | 独立 PR |
-| E | 双工 `$events`：回答成为上行项 | 独立 PR |
-| F | credit 帧 | 按需 |
 
 ## 考虑过的替代方案
 
@@ -580,29 +558,32 @@ for await (const reply of stream) replies.push(reply)   // ['> a', '> b']
 
 **WebTransport 或 HTTP/2 双向流。** 有每流流控，但浏览器与 Node 两侧的支持、代理穿透与 Electron 载体都不成熟；在现有 mux 上加两种帧比换传输层便宜几个量级。
 
-## 验收条件
+## 后果
 
-1. `RemoteStream<Out, In>` 在 Host 面是 `AsyncIterable<Out>`，在 Client 面是 `RemoteStreamHandle<Out, In>`；一个方法从 `AsyncIterable<Out>` 改为 `RemoteStream<Out>` 不改变任何生成产物。
-2. analyzer 对 `RemoteStream<Out, In>` 生成 `uplink` codec；`In` 缺省或为 `never` 时描述符无 `uplink`。
-3. 网关 Host 对每次调用派生 `extend({ invocation })` 视图；方法体内 `this.ctx.invocation.peer` 是接纳该 socket 的 Peer，进程内调用是操作者。
-4. `uplink()` 只能取一次；有 codec 时逐项解码并在失败时以 `gateway/input-invalid` 中止流；无 codec 时交付 `unknown`。
-5. mux 接受 `item` / `end`，opening 期间缓冲，`end` 后的 `item` 使流以 `gateway/protocol` 失败而不关 socket，未知 `streamId` 关 socket，超限以 `gateway/uplink-overflow` 失败并发 `error` 帧。
-6. 客户端句柄：`send` 在 open 前入队、open 后发帧，终止后抛错；`end` 幂等；`dispose` 发 `cancel`；下行先终止时停泵并调用源的 `return()`。
-7. 进程内载体、worker 隧道、remote-mock 都能打开带上行的流并把项交付到 `uplink()`。
-8. echo 方法在 WebSocket 与进程内载体上行为一致。
-9. 既有 `'stream'` 与 unary 方法的行为与线路帧不变；既有网关测试不改期望值即通过。
-10. `pnpm run typecheck`、`test:coverage`、`lint`、`duplication`、`build`、`hygiene`、`doc-sync` 通过。
+- **买到的**：一条流两个方向，终端按键、审批回答、后台任务 stdin 这类交互式场景不再各造一套"一条流加一个 unary"；Host 方法知道调用者；上行类型与下行类型在返回类型里一处声明，上行项与下行项同样逐项严格校验；既有 `AsyncIterable<Out>` 方法与 unary 方法的生成物与线路帧完全不变。
+- **`this.ctx.invocation` 在非 Remote 调用下是 `undefined`**，方法读它要处理可选；一个只被进程内直接调用的服务方法读到 `undefined` 是正确行为。
+- **inbox 上限对所有流生效**：一个不读上行的方法收到大量上行帧会整流失败。这是刻意的显式失败，README 记明。
+- **Peer 只有操作者一个**，`admit` 是唯一的接纳点；第一个需要第二个 Peer 的消费者要在 `dsh-client-connection` 加上打开、关联与事件。
+- **上行与下行之间没有跨方向顺序保证**；需要请求应答配对的协议自带序号。
+- **上层协议尚未透出 `send`**：`$stream`、snapshot、journal 的消费者今天只用下行；它们拿到的对象已经是句柄。
+- **worker 隧道与 WebSocket 载体行为不同**：没有 inbox 上限，`end` 之后的项丢弃，因为页面到 worker 是同源可信边界。
 
-## 风险
+## 测试
 
-- **`RemoteStream` 分面解析**依赖 protocol 包按 Host / Client 面导出同名别名；若某个编译面同时引用两侧类型，会看到两个不同的 `RemoteStream`。分面导出是仓库既有做法，但这是第一个在两面语义不同的类型。
-- **`this.ctx.invocation` 在非 Remote 调用下是 `undefined`**，方法体读它要处理可选；一个只被进程内直接调用（不经网关）的服务方法读到 `undefined` 是正确行为。
-- **PeerRegistry 从另一分支照搬**，其升级路由与 `/api` 路由的绑定改动落在 `dsh-client-connection`，是本 Note 唯一触及连接层的地方；照搬时剔除 access 相关成员。
-- **inbox 上限对所有流生效**，一个不读上行的方法收到大量上行帧会整流失败；这是刻意的显式失败，写进 README。
-- **本 Note 只有中文版**，配对门禁在补齐英文版之前失败；合并前补。
+- `packages/api/gateway/tests/echo-stream.host.spec.ts`：同一个 echo 方法分别穿过 WebSocket 载体与进程内载体。
+- 网关 Host：帧解析的精确键校验；`UplinkInbox` 的 opening 缓冲、`end` 后 `item`、超限、未知 `streamId` 忽略、socket 关闭时的收尾；`UplinkDecoder` 有无 codec 两种交付与解码失败中止；`uplink()` 只能取一次；`extend({ invocation })` 视图与 `peer` 的来源；`cancellableStream` 先关 uplink 再 `return()`。
+- 网关 Client：句柄的 `send`（JSON 校验、open 前入队、终止后抛错）、`end` 幂等、`dispose` 驱动 `cancel` 帧并结束后续读取；泵的三种退出；终止帧到达即停泵。
+- typert：analyzer 对 `RemoteStream<Out, In>`、`RemoteStream<Out>`、`never` 与既有 `AsyncIterable<Out>` 的处理；修饰器选项；registry 加载校验。
+- connection：`admit` 的 401、403 与操作者三种结果；操作者经桥与共享处理器到达；随 connection 释放。
+- remote-mock、worker 隧道：上行透传；直接代理返回真句柄。
+- 既有 stream 与 unary 方法的测试不改期望值即通过。
 
-## 未决问题
+## 后续
 
-1. `streamInboxBytes` 的默认值：262144 对键盘与 stdin 远超需要；若第一个消费者是终端粘贴，可能与 `terminal-controller` 的 `maxInputBytes` 对齐。
-2. 是否需要 Host 发起的半关闭帧（Host 不再读上行但继续写下行）。没有消费者，不加。
-3. unary 方法是否应禁止 `uplink()`：它能读到方法运行期间到达的项，语义成立但用处存疑；先允许，README 注明。
+- `$stream` / snapshot / journal 把句柄的 `send` 透出给上层协议。
+- Web 终端：一条 `attach` 流取代 `follow` 加 `write` 加 `resize`，`attachmentId` 退场。
+- 双工 `$events`：waterfall 的回答成为同一 `streamId` 上的上行项，`$events/result` 与 `clientId` 退场。
+- credit 帧：等需要持续大流量上行的消费者出现；inbox 上限就是初始授信。
+- `streamInboxBytes` 默认值 262144 对键盘与 stdin 远超需要；若第一个消费者是终端粘贴，可能与 `terminal-controller` 的 `maxInputBytes` 对齐。
+- Host 发起的半关闭帧（Host 不再读上行但继续写下行）：没有消费者，不加。
+- unary 方法的 `uplink()`：能读到方法运行期间到达的项，语义成立但用处存疑；允许，README 注明。
