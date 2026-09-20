@@ -30,6 +30,15 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* The action cluster animates its width and the search pill rounds its corners,
+ * so both clip an outer ring; these controls keep theirs inside instead. */
+.iconButton:focus-visible,
+.searchButton:focus-visible,
+.clearButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
 .iconButton:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
